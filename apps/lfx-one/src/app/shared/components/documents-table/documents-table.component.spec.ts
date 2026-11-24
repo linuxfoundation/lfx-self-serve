@@ -138,16 +138,21 @@ describe('DocumentsTableComponent row actions menu', () => {
     await fixture.whenStable();
   }
 
-  /** Opens the row's menu and clicks Delete. */
-  async function clickDelete(): Promise<void> {
+  const menuLabels = (): string[] =>
+    Array.from(body().querySelectorAll<HTMLElement>('.p-menu-item-link, [role="menuitem"] a')).map((el) => (el.textContent ?? '').trim());
+
+  /** Opens the row's menu and clicks the item with this label. */
+  async function clickMenuItem(label: string): Promise<void> {
     actionsButton()?.click();
     fixture.detectChanges();
     await fixture.whenStable();
-    const item = Array.from(body().querySelectorAll<HTMLElement>('.p-menu-item-link, [role="menuitem"] a')).find((el) => el.textContent?.includes('Delete'));
+    const item = Array.from(body().querySelectorAll<HTMLElement>('.p-menu-item-link, [role="menuitem"] a')).find((el) => el.textContent?.includes(label));
     item?.click();
     fixture.detectChanges();
     await fixture.whenStable();
   }
+
+  const clickDelete = (): Promise<void> => clickMenuItem('Delete');
 
   const confirmButton = (kind: 'accept' | 'reject'): HTMLElement | null =>
     body().querySelector(
@@ -232,6 +237,49 @@ describe('DocumentsTableComponent row actions menu', () => {
 
     expect(messageService.add).not.toHaveBeenCalled();
     expect(deleted.map((row) => row.id)).toEqual(['doc-1']);
+  });
+
+  it('emits the row when Rename is picked', async () => {
+    const renamed: MyDocumentItem[] = [];
+    fixture.componentInstance.documentRename.subscribe((item) => renamed.push(item));
+    await render(doc({ manageableType: 'link', name: 'Roadmap', url: 'https://example.com' }));
+
+    await clickMenuItem('Rename');
+
+    expect(renamed.map((row) => row.id)).toEqual(['doc-1']);
+  });
+
+  it('emits the row when Move to is picked on a file or link, if there is a folder to move to', async () => {
+    const moved: MyDocumentItem[] = [];
+    fixture.componentInstance.documentMove.subscribe((item) => moved.push(item));
+    fixture.componentRef.setInput('folders', [{ label: 'Reports', value: 'f-1' }]);
+    await render(doc({ manageableType: 'link', url: 'https://example.com' }));
+
+    await clickMenuItem('Move to');
+
+    expect(moved.map((row) => row.id)).toEqual(['doc-1']);
+  });
+
+  it('offers no Move to when there is no folder', async () => {
+    await render(doc({ manageableType: 'link', url: 'https://example.com' }));
+    actionsButton()?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(menuLabels().some((label) => label.includes('Move to'))).toBe(false);
+    expect(menuLabels().some((label) => label.includes('Rename'))).toBe(true);
+  });
+
+  it('offers a folder Rename and Delete but no Move to', async () => {
+    fixture.componentRef.setInput('folders', [{ label: 'Reports', value: 'f-1' }]);
+    await render(doc({ manageableType: 'folder', isFolder: true, childCount: 0, name: 'Archive' }));
+    actionsButton()?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(menuLabels().some((label) => label.includes('Move to'))).toBe(false);
+    expect(menuLabels().some((label) => label.includes('Rename'))).toBe(true);
+    expect(menuLabels().some((label) => label.includes('Delete'))).toBe(true);
   });
 
   describe('with two manageable rows', () => {

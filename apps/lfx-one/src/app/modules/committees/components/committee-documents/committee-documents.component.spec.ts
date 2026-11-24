@@ -10,6 +10,7 @@ import { Committee, CommitteeDocument, MyDocumentItem } from '@lfx-one/shared/in
 import { CommitteeService } from '@services/committee.service';
 import { DocumentService } from '@services/document.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { of, throwError } from 'rxjs';
 import type { Mock } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +33,8 @@ describe('CommitteeDocumentsComponent', () => {
   let getCommitteeDocuments: Mock;
   let deleteCommitteeDocument: Mock;
   let messageService: { add: Mock };
+  let dialogOpen: Mock;
+  let dialogResult: CommitteeDocument | undefined;
 
   async function render(canEdit = true): Promise<void> {
     await TestBed.configureTestingModule({
@@ -42,7 +45,10 @@ describe('CommitteeDocumentsComponent', () => {
         { provide: DocumentService, useValue: { getMyDocuments: vi.fn(() => of(relatedDocuments)) } },
         { provide: MessageService, useValue: messageService },
       ],
-    }).compileComponents();
+    })
+      // The component provides its own DialogService, so it is replaced on the component, not on the module.
+      .overrideComponent(CommitteeDocumentsComponent, { set: { providers: [{ provide: DialogService, useValue: { open: dialogOpen } }] } })
+      .compileComponents();
 
     fixture = TestBed.createComponent(CommitteeDocumentsComponent);
     fixture.componentRef.setInput('committee', { uid: 'group-1', name: 'Technical Steering Committee' } as Committee);
@@ -74,6 +80,8 @@ describe('CommitteeDocumentsComponent', () => {
     getCommitteeDocuments = vi.fn(() => of(committeeDocuments));
     deleteCommitteeDocument = vi.fn(() => of(undefined));
     messageService = { add: vi.fn() };
+    dialogResult = undefined;
+    dialogOpen = vi.fn(() => ({ onClose: of(dialogResult) }));
   });
 
   it('offers row actions on the group’s own links and files, but not on its folders (not deletable yet) or meeting and mailing list documents', async () => {
@@ -149,5 +157,92 @@ describe('CommitteeDocumentsComponent', () => {
     await fixture.whenStable();
 
     expect(deleteCommitteeDocument).not.toHaveBeenCalled();
+  });
+
+  describe('rename and move', () => {
+    it('opens the rename dialog with the document as it is now and the folders to choose from', async () => {
+      await render();
+
+      table().documentRename.emit(rowFor('committee_link:link-1'));
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(dialogOpen.mock.calls[0][1].data).toEqual({
+        mode: 'rename',
+        entityType: 'committee',
+        entityId: 'group-1',
+        documentUid: 'link-1',
+        documentType: 'link',
+        name: 'Roadmap',
+        parentUid: null,
+        folders: [{ label: 'Archive', value: 'folder-1' }],
+      });
+    });
+
+    it('passes the folders to the table so it can offer Move to', async () => {
+      await render();
+
+      expect(table().folders()).toEqual([{ label: 'Archive', value: 'folder-1' }]);
+    });
+
+    it('changes nothing when the dialog is dismissed', async () => {
+      await render();
+
+      table().documentRename.emit(rowFor('committee_link:link-1'));
+      await fixture.whenStable();
+
+      expect(getCommitteeDocuments).toHaveBeenCalledTimes(1);
+      expect(messageService.add).not.toHaveBeenCalled();
+    });
+
+    it('shows the new name, says so, and reloads, even when the reload still returns the old name', async () => {
+      dialogResult = committeeDocument({ uid: 'link-1', type: 'link', name: 'Roadmap 2027', updated_at: '2026-11-24T10:00:00Z' });
+      await render();
+      let changed = 0;
+      fixture.componentInstance.documentsChanged.subscribe(() => changed++);
+
+      table().documentRename.emit(rowFor('committee_link:link-1'));
+      await fixture.whenStable();
+
+      expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Renamed' }));
+      expect(getCommitteeDocuments).toHaveBeenCalledTimes(2);
+      expect(changed).toBe(1);
+      expect(rowFor('committee_link:link-1').name).toBe('Roadmap 2027');
+    });
+
+    it('shows a moved document in its new folder even when the reload is stale', async () => {
+      dialogResult = committeeDocument({ uid: 'file-1', type: 'file', name: 'Minutes.pdf', parent_uid: 'folder-1', updated_at: '2026-11-24T10:00:00Z' });
+      await render();
+
+      table().documentMove.emit(rowFor('committee_file:file-1'));
+      await fixture.whenStable();
+
+      expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Moved' }));
+      expect(rowFor('committee_folder:folder-1').childCount).toBe(1);
+      expect(rowFor('committee_file:file-1')).toBeUndefined();
+    });
+
+    it('lets a newer change from elsewhere show through', async () => {
+      dialogResult = committeeDocument({ uid: 'link-1', type: 'link', name: 'Roadmap 2027', updated_at: '2026-11-24T10:00:00Z' });
+      await render();
+
+      table().documentRename.emit(rowFor('committee_link:link-1'));
+      await fixture.whenStable();
+
+      committeeDocuments = [
+        committeeDocument({ uid: 'link-1', type: 'link', name: 'Renamed by someone else', updated_at: '2026-11-24T11:00:00Z', url: 'https://example.com' }),
+      ];
+      fixture.componentInstance.onDocumentsChanged();
+      await fixture.whenStable();
+
+      expect(rowFor('committee_link:link-1').name).toBe('Renamed by someone else');
+    });
+
+    it('ignores a row the group cannot manage', async () => {
+      await render();
+
+      table().documentRename.emit(rowFor('meeting_file:attachment-1'));
+
+      expect(dialogOpen).not.toHaveBeenCalled();
+    });
   });
 });

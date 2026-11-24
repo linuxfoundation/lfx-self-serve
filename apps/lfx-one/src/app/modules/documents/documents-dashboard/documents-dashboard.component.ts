@@ -18,6 +18,9 @@ import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
 import {
   DocumentFormMode,
+  DocumentUpdateDialogData,
+  DocumentUpdateMode,
+  DocumentUpdatePatch,
   FilterPillOption,
   GroupLinkState,
   MyDocumentItem,
@@ -26,7 +29,7 @@ import {
   ProjectContext,
   ProjectDocument,
 } from '@lfx-one/shared/interfaces';
-import { compareDocumentsByRecency, getDocumentSourceLink, resolveProjectDocumentKind } from '@lfx-one/shared/utils';
+import { applyDocumentUpdates, compareDocumentsByRecency, getDocumentSourceLink, mergeDocumentUpdate, resolveProjectDocumentKind } from '@lfx-one/shared/utils';
 import { DocumentService } from '@services/document.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -42,6 +45,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 
 import { DocumentFormComponent } from '@components/document-form/document-form.component';
+import { DocumentUpdateDialogComponent } from '@components/document-update-dialog/document-update-dialog.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
@@ -123,6 +127,8 @@ export class DocumentsDashboardComponent {
   protected readonly refreshTrigger = signal<number>(0);
   /** Uids of project documents deleted in this session, hidden from the list even if a reload still returns them. */
   private readonly deletedDocumentUids = signal<ReadonlySet<string>>(new Set());
+  /** Renames and moves made in this session, laid over a fetched list that may not show them yet (see `applyDocumentUpdates`). */
+  private readonly updatedDocuments = signal<ReadonlyMap<string, DocumentUpdatePatch>>(new Map());
   /** UID of the folder the user has drilled into; null means the root view (project mode only). */
   protected readonly currentFolderUid = signal<string | null>(null);
 
@@ -237,6 +243,16 @@ export class DocumentsDashboardComponent {
     this.currentFolderUid.set(null);
   }
 
+  /** Opens the rename dialog for a project document the user picked in the table. */
+  protected onDocumentRename(doc: MyDocumentItem): void {
+    this.openUpdateDialog(doc, 'rename');
+  }
+
+  /** Opens the move dialog for a project file or link the user picked in the table. */
+  protected onDocumentMove(doc: MyDocumentItem): void {
+    this.openUpdateDialog(doc, 'move');
+  }
+
   /** Deletes a project document the user already confirmed in the table, then refreshes the list. */
   protected onDocumentDelete(doc: MyDocumentItem): void {
     const projectUid = this.project()?.uid;
@@ -308,14 +324,16 @@ export class DocumentsDashboardComponent {
   }
 
   /**
-   * The fetched list without the rows deleted in this session. The list is read through an index that updates after
-   * the delete returns, so the refetch right after a delete can still contain the row; hiding it by id keeps it gone
-   * (and the folder's child count right) until the index catches up.
+   * The fetched list without the rows deleted in this session, and with the renames and moves made in it. The list is
+   * read through an index that updates after the write returns, so the refetch right after can still contain a deleted
+   * row or an old name or folder; applying what this session did keeps the list right (and the folder's child count)
+   * until the index catches up.
    */
   private initRawProjectDocuments(): Signal<ProjectDocument[]> {
     return computed(() => {
       const deleted = this.deletedDocumentUids();
-      return deleted.size === 0 ? this.fetchedProjectDocuments() : this.fetchedProjectDocuments().filter((doc) => !deleted.has(doc.uid));
+      const fetched = deleted.size === 0 ? this.fetchedProjectDocuments() : this.fetchedProjectDocuments().filter((doc) => !deleted.has(doc.uid));
+      return applyDocumentUpdates(fetched, this.updatedDocuments());
     });
   }
 
@@ -727,6 +745,43 @@ export class DocumentsDashboardComponent {
           this.refreshTrigger.update((v) => v + 1);
         }
       },
+    });
+  }
+
+  private openUpdateDialog(doc: MyDocumentItem, mode: DocumentUpdateMode): void {
+    const projectUid = this.project()?.uid;
+    const type = doc.manageableType;
+    if (!projectUid || !type) return;
+
+    // Row ids are `project_<type>:<uid>`.
+    const documentUid = doc.id.slice(doc.id.indexOf(':') + 1);
+    const current = this.rawProjectDocuments().find((d) => d.uid === documentUid);
+    const data: DocumentUpdateDialogData = {
+      mode,
+      entityType: 'project',
+      entityId: projectUid,
+      documentUid,
+      documentType: type,
+      name: current?.name ?? doc.name,
+      parentUid: current?.parent_uid ?? null,
+      folders: this.folderOptions(),
+    };
+
+    const dialogRef: DynamicDialogRef | null = this.dialogService.open(DocumentUpdateDialogComponent, {
+      header: `${mode === 'rename' ? 'Rename' : 'Move'} ${type}`,
+      width: '480px',
+      modal: true,
+      closable: true,
+      data,
+    });
+
+    dialogRef?.onClose.pipe(take(1)).subscribe((updated: ProjectDocument | undefined) => {
+      if (!updated) return;
+      this.messageService.add({ severity: 'success', summary: mode === 'rename' ? 'Renamed' : 'Moved', detail: `"${updated.name}" was updated.` });
+      this.updatedDocuments.update((patches) =>
+        mergeDocumentUpdate(patches, documentUid, { name: updated.name, parent_uid: updated.parent_uid ?? null, updated_at: updated.updated_at })
+      );
+      this.refreshTrigger.update((v) => v + 1);
     });
   }
 }

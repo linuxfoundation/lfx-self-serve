@@ -10,8 +10,17 @@ import { CardComponent } from '@components/card/card.component';
 import { DocumentsTableComponent } from '@components/documents-table/documents-table.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { Committee, CommitteeDocument, FilterPillOption, MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
-import { compareDocumentsByRecency } from '@lfx-one/shared/utils';
+import {
+  Committee,
+  CommitteeDocument,
+  DocumentUpdateDialogData,
+  DocumentUpdateMode,
+  DocumentUpdatePatch,
+  FilterPillOption,
+  MyDocumentItem,
+  MyDocumentSource,
+} from '@lfx-one/shared/interfaces';
+import { applyDocumentUpdates, compareDocumentsByRecency, mergeDocumentUpdate } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { DocumentService } from '@services/document.service';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
@@ -20,6 +29,7 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, merge, of, startWith, Subject, switchMap, take } from 'rxjs';
 
 import { DocumentFormComponent } from '@components/document-form/document-form.component';
+import { DocumentUpdateDialogComponent } from '@components/document-update-dialog/document-update-dialog.component';
 
 @Component({
   selector: 'lfx-committee-documents',
@@ -62,6 +72,8 @@ export class CommitteeDocumentsComponent {
   protected readonly refreshTrigger = signal<number>(0);
   /** Uids of group documents deleted in this session, hidden from the list even if a reload still returns them. */
   private readonly deletedDocumentUids = signal<ReadonlySet<string>>(new Set());
+  /** Renames and moves made in this session, laid over a fetched list that may not show them yet (see `applyDocumentUpdates`). */
+  private readonly updatedDocuments = signal<ReadonlyMap<string, DocumentUpdatePatch>>(new Map());
   /** Selected source pill: 'all' or a source bucket (link, file, meeting, mailing_list). */
   protected readonly sourceTab = signal<string>('all');
   /** UID of the folder the user has drilled into; null means the root view. */
@@ -194,6 +206,16 @@ export class CommitteeDocumentsComponent {
       });
   }
 
+  /** Opens the rename dialog for a group document the user picked in the table. */
+  public onDocumentRename(doc: MyDocumentItem): void {
+    this.openUpdateDialog(doc, 'rename');
+  }
+
+  /** Opens the move dialog for a group file or link the user picked in the table. */
+  public onDocumentMove(doc: MyDocumentItem): void {
+    this.openUpdateDialog(doc, 'move');
+  }
+
   public openUploadFileDialog(): void {
     const dialogRef: DynamicDialogRef | null = this.dialogService.open(DocumentFormComponent, {
       header: 'Upload Files',
@@ -219,6 +241,43 @@ export class CommitteeDocumentsComponent {
           this.onDocumentsChanged();
         }
       },
+    });
+  }
+
+  // === Private Methods ===
+  private openUpdateDialog(doc: MyDocumentItem, mode: DocumentUpdateMode): void {
+    const type = doc.manageableType;
+    if (!type) return;
+
+    // Row ids are `committee_<type>:<uid>`.
+    const documentUid = doc.id.slice(doc.id.indexOf(':') + 1);
+    const current = this.committeeDocuments().find((d) => d.uid === documentUid);
+    const data: DocumentUpdateDialogData = {
+      mode,
+      entityType: 'committee',
+      entityId: this.committee().uid,
+      documentUid,
+      documentType: type,
+      name: current?.name ?? doc.name,
+      parentUid: current?.parent_uid ?? null,
+      folders: this.folderOptions(),
+    };
+
+    const dialogRef: DynamicDialogRef | null = this.dialogService.open(DocumentUpdateDialogComponent, {
+      header: `${mode === 'rename' ? 'Rename' : 'Move'} ${type}`,
+      width: '480px',
+      modal: true,
+      closable: true,
+      data,
+    });
+
+    dialogRef?.onClose.pipe(take(1)).subscribe((updated: CommitteeDocument | undefined) => {
+      if (!updated) return;
+      this.messageService.add({ severity: 'success', summary: mode === 'rename' ? 'Renamed' : 'Moved', detail: `"${updated.name}" was updated.` });
+      this.updatedDocuments.update((patches) =>
+        mergeDocumentUpdate(patches, documentUid, { name: updated.name, parent_uid: updated.parent_uid ?? null, updated_at: updated.updated_at })
+      );
+      this.onDocumentsChanged();
     });
   }
 
@@ -375,14 +434,16 @@ export class CommitteeDocumentsComponent {
   }
 
   /**
-   * The fetched list without the rows deleted in this session. Files are read through an index that updates after the
-   * delete returns, so the refetch right after a delete can still contain the row; hiding it by id keeps it gone (and
-   * the folder's child count right) until the index catches up.
+   * The fetched list without the rows deleted in this session, and with the renames and moves made in it. Files are
+   * read through an index that updates after the write returns, so the refetch right after can still contain a deleted
+   * row or an old name or folder; applying what this session did keeps the list right (and the folder's child count)
+   * until the index catches up.
    */
   private initCommitteeDocuments(): Signal<CommitteeDocument[]> {
     return computed(() => {
       const deleted = this.deletedDocumentUids();
-      return deleted.size === 0 ? this.fetchedCommitteeDocuments() : this.fetchedCommitteeDocuments().filter((doc) => !deleted.has(doc.uid));
+      const fetched = deleted.size === 0 ? this.fetchedCommitteeDocuments() : this.fetchedCommitteeDocuments().filter((doc) => !deleted.has(doc.uid));
+      return applyDocumentUpdates(fetched, this.updatedDocuments());
     });
   }
 
