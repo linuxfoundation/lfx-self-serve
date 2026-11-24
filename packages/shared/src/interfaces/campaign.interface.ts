@@ -2720,6 +2720,13 @@ export interface MetaLeadFormPickerState {
   reason: string | null;
 }
 
+/**
+ * How the Implement tab's foundation changed (#6107): `resolved` when it first becomes known (from `''`), which
+ * restores what a draft held for it; `switched` when it changes from one foundation to another, which resets the
+ * foundation-scoped Meta choices; `same` otherwise.
+ */
+export type MetaFoundationChange = 'resolved' | 'switched' | 'same';
+
 /** What a saved Implement-tab draft restores for the Meta lead form (#5940); `leadFormId` `null` keeps the current one. */
 export interface MetaLeadFormRestore {
   objective: MetaObjective;

@@ -245,7 +245,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ProjectContextService } from '@services/project-context.service';
 import { extractFieldOrEnvelopeMessage, isBffValidationError, serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { catchError, filter, from, map, merge, Observable, of, scan, skip, startWith, Subscription, switchMap, take, tap, timer } from 'rxjs';
+import { catchError, filter, from, map, merge, Observable, of, pairwise, scan, startWith, Subscription, switchMap, take, tap, timer } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -481,6 +481,7 @@ import {
   metaDsaCountries,
   metaDsaFieldError,
   metaEffectiveGeoTargets,
+  metaFoundationChange,
   metaGeoIsIneligible,
   metaHasPlacement,
   metaImageAssetBlock,
@@ -1618,6 +1619,13 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaAdOptions = signal<MetaAdOptions>({});
   /** The Meta Instant Form picked or typed in `lfx-meta-lead-form-picker` (#5940); blank is none. Sent only under `leads`. */
   protected readonly metaLeadFormId = signal('');
+  /** Why the picker's held form cannot be sent once the Page's forms are read (#6107), or `null`; set by the picker. */
+  protected readonly metaLeadFormHeldRefusal = signal<string | null>(null);
+  /**
+   * A draft restored while the foundation was still unknown (#6107): its foundation-scoped Meta choices (targeting,
+   * ad options, lead form) could not be matched yet, so they are applied when the foundation first resolves.
+   */
+  private pendingMetaDraft: CampaignImplementationDraft | null = null;
   protected readonly creationProgress = signal<string[]>([]);
   protected readonly results = signal<CampaignCreateResult[]>([]);
   /**
@@ -3448,7 +3456,9 @@ export class ImplementationTabComponent implements OnInit {
         leadFormId: this.metaLeadFormId(),
         manualBidding: this.metaManualBidding(),
         callToAction: this.metaAdOptions().callToAction,
-      })?.message ?? null
+      })?.message ??
+      // A held form the Page now lists as inactive (#6107): refused here rather than at create.
+      (this.metaLeadFormRequested() ? this.metaLeadFormHeldRefusal() : null)
   );
   protected readonly metaAdOptionsBlock: Signal<CampaignBiddingCapabilityBlock | null> = this.initMetaAdOptionsBlock();
 
@@ -4957,10 +4967,19 @@ export class ImplementationTabComponent implements OnInit {
     // route is gated per project by requireCampaignManager, which can 403 for a foundation the
     // caller doesn't manage.
     toObservable(this.activeFoundationSlug)
-      .pipe(skip(1), takeUntilDestroyed())
-      .subscribe(() => {
+      .pipe(pairwise(), takeUntilDestroyed())
+      .subscribe(([previous, next]) => {
+        const change = metaFoundationChange(previous, next);
+        if (change === 'same') return;
         this.loadLinkedInAccounts();
         this.loadLinkedInTargetingProfiles();
+        // The foundation first becoming known is not a switch (#6107): nothing was chosen under another one, so a
+        // draft restored while it was unknown gets its foundation-scoped choices now, instead of losing them.
+        if (change === 'resolved') {
+          this.restorePendingMetaDraft();
+          return;
+        }
+        this.pendingMetaDraft = null;
         // The brief survives a foundation switch, but its Meta audience targeting does not: custom audience
         // ids belong to the previous foundation's ad account, and the capabilities are re-read for this one.
         this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
@@ -5670,6 +5689,11 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /** The lead form picked or typed in `lfx-meta-lead-form-picker` (#5940). Signal-backed like the other Meta fields, so it emits. */
+  /** The picker's report on the held form (#6107): not a draft field, so nothing is emitted. */
+  protected onMetaLeadFormHeldRefusal(refusal: string | null): void {
+    this.metaLeadFormHeldRefusal.set(refusal);
+  }
+
   protected onMetaLeadFormChange(leadFormId: string): void {
     this.metaLeadFormId.set(leadFormId);
     this.emitDraft();
@@ -8827,6 +8851,8 @@ export class ImplementationTabComponent implements OnInit {
     // Each field only when the draft carries it; targeting, ad options and the lead form only under their own
     // foundation; the objective after the lead form rule. See `metaDraftRestore`.
     const metaRestore = metaDraftRestore(draft, this.metaObjective(), this.activeFoundationSlug());
+    // Foundation-scoped choices cannot be matched while the foundation is unknown; keep the draft for when it resolves.
+    this.pendingMetaDraft = this.activeFoundationSlug() === '' ? draft : null;
     this.metaObjective.set(metaRestore.objective);
     if (metaRestore.placements !== undefined) this.metaPlacements.set(metaRestore.placements);
     if (metaRestore.pixelId !== undefined) this.metaPixelId.set(metaRestore.pixelId);
@@ -14158,6 +14184,22 @@ export class ImplementationTabComponent implements OnInit {
   /** Clears each Meta ad choice the current objective does not take (#5934). */
   private dropInapplicableMetaAdOptions(): void {
     this.metaAdOptions.update((options) => metaAdOptionsForObjective(options, this.metaObjective()));
+  }
+
+  /**
+   * Applies the foundation-scoped Meta choices of a draft restored while the foundation was unknown (#6107), with
+   * the same rules as a restore (`metaDraftRestore`): only what was chosen under this foundation, the lead form last.
+   */
+  private restorePendingMetaDraft(): void {
+    const draft = this.pendingMetaDraft;
+    this.pendingMetaDraft = null;
+    if (draft === null) return;
+    const restore = metaDraftRestore(draft, this.metaObjective(), this.activeFoundationSlug());
+    if (restore.audienceTargeting !== undefined) this.metaAudienceTargeting.set(restore.audienceTargeting);
+    if (restore.adOptions !== undefined) this.metaAdOptions.set(restore.adOptions);
+    this.metaObjective.set(restore.objective);
+    if (restore.leadFormId !== null) this.metaLeadFormId.set(restore.leadFormId);
+    this.emitDraft();
   }
 
   private defaultMetaAudienceTargeting(): MetaAudienceTargetingDraft {
