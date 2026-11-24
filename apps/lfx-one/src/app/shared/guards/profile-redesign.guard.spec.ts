@@ -8,7 +8,8 @@ import { PROFILE_REDESIGN_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { PROFILE_REDESIGN_KEY, profileRedesignEnabledGuard, profileRedesignRedirectGuard } from './profile-redesign.guard';
+import { PROFILE_REDESIGN_KEY } from '../utils/profile-redesign.util';
+import { profileRedesignEnabledGuard, profileRedesignRedirectGuard } from './profile-redesign.guard';
 
 describe('profile redesign guards', () => {
   let getFlagOverride: ReturnType<typeof vi.fn>;

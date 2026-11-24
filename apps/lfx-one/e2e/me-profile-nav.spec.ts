@@ -8,6 +8,8 @@
  *   1. Navbar "me card" — its "Profile & Account" action links to /profile.
  *   2. Navbar account menu — the "Settings" action (→ /profile/settings) and the
  *      "Profile & Account" action (→ /profile), each of which also activates the Me lens.
+ * Those run with the profile redesign flag pinned off. With it pinned on (#6069), the me card splits into Profile and
+ * Account & Settings, and the account menu's Settings opens the /account landing page.
  *
  * Both surfaces are desktop-shell affordances; on mobile the navbar sits in a drawer,
  * so these specs skip on the narrow (mobile) viewport.
@@ -23,6 +25,7 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (see global-setup.ts)
  */
 
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, PROFILE_REDESIGN_FLAG } from '@lfx-one/shared/constants';
 import type { LensItem } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
@@ -95,6 +98,22 @@ async function suppressCookieBanner(page: Page): Promise<void> {
       hide();
     }
   });
+}
+
+/**
+ * Pin the profile redesign flag (#6067) for every page in this context, so the test account's LaunchDarkly targeting can't
+ * decide which entry points render. The non-production localStorage override drives the browser; its cookie mirror drives
+ * the server render, which can't read localStorage.
+ */
+async function pinProfileRedesign(page: Page, enabled: boolean): Promise<void> {
+  const overrides = JSON.stringify({ [PROFILE_REDESIGN_FLAG]: enabled });
+  await page.addInitScript(
+    ([key, value]) => {
+      window.localStorage.setItem(key, value);
+      document.cookie = `${key}=${encodeURIComponent(value)}; path=/; SameSite=Lax`;
+    },
+    [FEATURE_FLAG_OVERRIDE_STORAGE_KEY, overrides] as const
+  );
 }
 
 /** Navigate to a Me-lens route and wait for the sidebar (with the me card) to render. */
@@ -189,6 +208,7 @@ test.describe('Me-lens profile card', () => {
   test.beforeEach(async ({ page }) => {
     skipOnMobileViewport(page);
     await suppressCookieBanner(page);
+    await pinProfileRedesign(page, false);
   });
 
   test('S1: Profile & Account navigates to /profile', async ({ page }) => {
@@ -209,6 +229,7 @@ test.describe('Navbar account menu', () => {
   test.beforeEach(async ({ page }) => {
     skipOnMobileViewport(page);
     await suppressCookieBanner(page);
+    await pinProfileRedesign(page, false);
   });
 
   test('S4: Settings action navigates to /profile/settings and activates the Me lens', async ({ page }) => {
@@ -232,5 +253,45 @@ test.describe('Navbar account menu', () => {
     // the action reached the Profile shell rather than merely staying on some /profile* URL.
     await expect(page, 'Profile & Account should navigate to the default Profile tab').toHaveURL(PROFILE_DEFAULT_URL, { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('me-selector'), 'Profile action should switch the lens to Me').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
+});
+
+// ─── S6: Profile redesign entry points (#6069) ───────────────────────────────
+
+test.describe('Profile redesign entry points', () => {
+  test.beforeEach(async ({ page }) => {
+    skipOnMobileViewport(page);
+    await suppressCookieBanner(page);
+    await pinProfileRedesign(page, true);
+  });
+
+  test('S6: the me card splits into Profile and Account & Settings, each active on its own pages', async ({ page }) => {
+    await gotoProfileAndWaitForCard(page, '/account/identities');
+    const profile = page.getByTestId('me-card-profile-link');
+    const account = page.getByTestId('me-card-account-link');
+
+    await expect(page.getByTestId('me-card-link'), 'the single Profile & Account link should be gone').toHaveCount(0);
+    await expect(profile).toHaveAttribute('href', '/profile');
+    await expect(account).toHaveAttribute('href', '/account');
+    await expect(account, 'Account & Settings should be active on an Account & Settings page').toHaveClass(/\bis-active\b/);
+    await expect(profile).not.toHaveClass(/\bis-active\b/);
+
+    await account.click();
+    await expect(page, 'Account & Settings should open the landing page').toHaveURL(/\/account$/, { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('account-landing')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    await profile.click();
+    await expect(page).toHaveURL(PROFILE_DEFAULT_URL, { timeout: ELEMENT_TIMEOUT });
+    await expect(profile, 'Profile should be active on the Profile pages').toHaveClass(/\bis-active\b/);
+    await expect(account).not.toHaveClass(/\bis-active\b/);
+  });
+
+  test('S7: the account menu Settings action opens the Account & Settings landing page', async ({ page }) => {
+    await openUserMenu(page);
+
+    await page.getByTestId('lens-settings').click();
+
+    await expect(page, 'Settings should open /account').toHaveURL(/\/account$/, { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('me-selector'), 'Settings action should switch the lens to Me').toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 });

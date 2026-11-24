@@ -1,16 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID, signal } from '@angular/core';
+import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute, provideRouter } from '@angular/router';
+import { ActivatedRoute, Event as RouterEvent, NavigationEnd, provideRouter, Router } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { PROFILE_AUTH_ERROR_MESSAGES } from '@lfx-one/shared/constants';
 import { AccountUnsavedChangesService } from '@services/account-unsaved-changes.service';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountLayoutComponent } from './account-layout.component';
@@ -20,6 +21,7 @@ describe('AccountLayoutComponent', () => {
   let impersonating: ReturnType<typeof signal<boolean>>;
   let add: ReturnType<typeof vi.fn>;
   let queryParams: Record<string, string>;
+  let childConfig: { path: string };
   let unsaved: {
     dirty: ReturnType<typeof signal<boolean>>;
     saving: ReturnType<typeof signal<boolean>>;
@@ -36,7 +38,7 @@ describe('AccountLayoutComponent', () => {
         provideRouter([]),
         provideNoopAnimations(),
         { provide: PLATFORM_ID, useValue: 'browser' },
-        { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
+        { provide: ActivatedRoute, useValue: { queryParams: of(queryParams), firstChild: { snapshot: { routeConfig: childConfig } } } },
         { provide: UserService, useValue: { impersonating, user: signal(null) } },
         { provide: NavbarCollapseService, useValue: { railAtAnyWidth: signal(true) } },
         { provide: MessageService, useValue: { add, messageObserver: of(), clearObserver: of() } },
@@ -57,6 +59,7 @@ describe('AccountLayoutComponent', () => {
     impersonating = signal(false);
     add = vi.fn();
     queryParams = {};
+    childConfig = { path: 'identities' };
     unsaved = { dirty: signal(false), saving: signal(false), save: vi.fn(), revert: vi.fn() };
   });
 
@@ -157,6 +160,34 @@ describe('AccountLayoutComponent', () => {
     ]);
   });
 
+  it('drops the left nav and the header rule on the landing page', async () => {
+    childConfig.path = '';
+    await setup();
+
+    expect(query('account-layout-nav')).toBeNull();
+    expect(query('account-layout-header-rule')?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('adds the nav when a page opens from the landing page, keeping the one content outlet', async () => {
+    childConfig.path = '';
+    await setup();
+    const content = query('account-layout-content');
+
+    childConfig.path = 'transactions';
+    (TestBed.inject(Router).events as Subject<RouterEvent>).next(new NavigationEnd(2, '/account/transactions', '/account/transactions'));
+    fixture.detectChanges();
+
+    expect(query('account-layout-nav')).not.toBeNull();
+    expect(query('account-layout-content')).toBe(content);
+  });
+
+  it('keeps the left nav and the header rule on a page', async () => {
+    await setup();
+
+    expect(query('account-layout-nav')).not.toBeNull();
+    expect(query('account-layout-header-rule')?.classList.contains('hidden')).toBe(false);
+  });
+
   it('shows the read-only notice only while impersonating', async () => {
     impersonating.set(true);
     await setup();
@@ -181,5 +212,42 @@ describe('AccountLayoutComponent', () => {
     await setup();
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: PROFILE_AUTH_ERROR_MESSAGES['profile_auth_failed'] }));
+  });
+});
+
+describe('AccountLayoutComponent — with the real router', () => {
+  @Component({ selector: 'lfx-test-page', template: '' })
+  class TestPageComponent {}
+
+  it('builds on the way in from another page, then reads the landing state once the child has activated', async () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([
+          { path: 'profile', component: TestPageComponent },
+          {
+            path: 'account',
+            component: AccountLayoutComponent,
+            children: [
+              { path: '', component: TestPageComponent },
+              { path: 'identities', component: TestPageComponent },
+            ],
+          },
+        ]),
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: UserService, useValue: { impersonating: signal(false), user: signal(null) } },
+        { provide: NavbarCollapseService, useValue: { railAtAnyWidth: signal(true) } },
+        { provide: MessageService, useValue: { add: vi.fn(), messageObserver: of(), clearObserver: of() } },
+        { provide: AccountUnsavedChangesService, useValue: { dirty: signal(false), saving: signal(false), save: vi.fn(), revert: vi.fn() } },
+      ],
+    });
+    const harness = await RouterTestingHarness.create('/profile');
+
+    await harness.navigateByUrl('/account');
+    expect(harness.routeNativeElement?.ownerDocument.querySelector('[data-testid="account-layout-nav"]')).toBeNull();
+
+    await harness.navigateByUrl('/account/identities');
+    expect(harness.routeNativeElement?.ownerDocument.querySelector('[data-testid="account-layout-nav"]')).not.toBeNull();
   });
 });
