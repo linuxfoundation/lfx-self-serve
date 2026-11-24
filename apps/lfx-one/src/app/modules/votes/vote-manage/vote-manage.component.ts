@@ -1182,7 +1182,9 @@ export class VoteManageComponent {
    *  pristine and still empty or holding this form's last seed, so an organizer's edit is never overwritten;
    *  clearing the group clears an unedited seed. Keyed on the form instance as well as the group name, because
    *  a clone -> create transition swaps in a fresh form (initCloneFromQuery). Edit and clone keep their
-   *  hydrated values. A seed's own setValue leaves the group name unchanged, so it never re-emits. */
+   *  hydrated values; a blocked or failed clone keeps `?clone=` but leaves a fresh form with nothing hydrated,
+   *  so the skip keys on a clone in flight or applied, not on the URL. A seed's own setValue leaves the group
+   *  name unchanged, so it never re-emits. */
   private initGroupBasicsDefaults(): void {
     const groupContext = computed(() => ({ form: this.form(), name: (this.formValue()['committee'] as CommitteeReference | null)?.name?.trim() || null }), {
       equal: (a, b) => a.form === b.form && a.name === b.name,
@@ -1191,7 +1193,7 @@ export class VoteManageComponent {
     toObservable(groupContext)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(({ form, name }) => {
-        if (this.isEditMode() || this.route.snapshot.queryParamMap.has('clone')) {
+        if (this.isEditMode() || this.loading() || this.cloneSourceVote() !== null) {
           return;
         }
         const lastSeed = this.seededForm() === form ? this.seededBasics() : null;

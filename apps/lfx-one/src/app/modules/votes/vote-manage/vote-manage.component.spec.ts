@@ -1059,6 +1059,19 @@ describe('VoteManageComponent', () => {
       expect(fixture.componentInstance.prefilledTitle()).toBe(false);
     });
 
+    it('keeps a description the organizer cleared when the group changes', async () => {
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+      await selectCommittee(fixture, COMMITTEE_A);
+
+      form.get('description')?.setValue('');
+      form.get('description')?.markAsDirty();
+      await selectCommittee(fixture, COMMITTEE_B);
+
+      expect(form.get('title')?.value).toBe('Committee B Vote');
+      expect(form.get('description')?.value).toBe('');
+    });
+
     it('seeds the title and description from a ?committee_uid= locked group', async () => {
       routeMock.queryParamMap = of(convertToParamMap({ committee_uid: COMMITTEE_A.uid }));
       getCommittee.mockReturnValue(of(COMMITTEE_A));
@@ -1117,17 +1130,58 @@ describe('VoteManageComponent', () => {
       expect(fixture.componentInstance.prefilledDescription()).toBe(false);
     });
 
-    it('seeds the fresh form after a clone -> create transition', async () => {
+    it.each([
+      [
+        'blocked',
+        () =>
+          of({
+            uid: 'vote-uid-source',
+            name: 'Secret ballot',
+            status: PollStatus.ACTIVE,
+            project_uid: PROJECT_UID,
+            pseudo_anonymity: true,
+            end_time: '2099-01-01T00:00:00Z',
+          } as Vote),
+      ],
+      ['failed', () => throwError(() => new Error('not found'))],
+    ])('seeds the fresh form a %s clone leaves behind once a group is picked', async (_label, source) => {
+      routeMock.queryParamMap = of(convertToParamMap({ clone: 'vote-uid-source' }));
+      routeMock.snapshot.queryParamMap = convertToParamMap({ clone: 'vote-uid-source' });
+      fetchVote.mockReturnValue(source());
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+      expect(form.get('title')?.value).toBe('');
+
+      await selectCommittee(fixture, COMMITTEE_A);
+
+      expect(form.get('title')?.value).toBe('Committee A Vote');
+      expect(form.get('description')?.value).toBe(descriptionFor('Committee A'));
+      expect(fixture.componentInstance.prefilledTitle()).toBe(true);
+    });
+
+    it('keys the seed to its form across a create -> clone -> create round trip', async () => {
       const queryParams$ = new Subject<ParamMap>();
       routeMock.queryParamMap = queryParams$.asObservable();
       fetchVote.mockReturnValue(
-        of({ uid: 'vote-uid-source', name: 'Original', status: PollStatus.ACTIVE, project_uid: PROJECT_UID, end_time: '2099-01-01T00:00:00Z' } as Vote)
+        of({
+          uid: 'vote-uid-source',
+          name: 'Original',
+          description: descriptionFor('Committee A'),
+          status: PollStatus.ACTIVE,
+          project_uid: PROJECT_UID,
+          end_time: '2099-01-01T00:00:00Z',
+        } as Vote)
       );
       const fixture = await createComponent();
+      await selectCommittee(fixture, COMMITTEE_A);
       routeMock.snapshot.queryParamMap = convertToParamMap({ clone: 'vote-uid-source' });
       queryParams$.next(convertToParamMap({ clone: 'vote-uid-source' }));
       await TestBed.inject(ApplicationRef).whenStable();
       const cloneForm = fixture.componentInstance.form();
+
+      // The clone's description matches the first form's seed, but it came from the source vote.
+      expect(cloneForm.get('description')?.value).toBe(descriptionFor('Committee A'));
+      expect(fixture.componentInstance.prefilledDescription()).toBe(false);
 
       routeMock.snapshot.queryParamMap = convertToParamMap({});
       queryParams$.next(convertToParamMap({}));
