@@ -10,7 +10,10 @@ import {
   META_FREQUENCY_CAP_MIN,
 } from '@lfx-one/shared/constants';
 import type { MetaAdScheduleDayView, MetaDeliveryDraft } from '@lfx-one/shared/interfaces';
-import { copyMetaDeliveryDraft, metaAdScheduleHourOptions, metaAdScheduleRefusal, metaAdScheduleWithDay, metaFrequencyCapRefusal } from '@lfx-one/shared/utils';
+import { metaAdScheduleHourOptions, metaAdScheduleRefusal, metaAdScheduleWithDay, metaFrequencyCapRefusal } from '@lfx-one/shared/utils';
+import { UiCheckboxComponent } from '@shared/uikit/checkbox/checkbox.component';
+import { UiOptionComponent } from '@shared/uikit/select/option.component';
+import { UiSelectComponent } from '@shared/uikit/select/select.component';
 
 /**
  * The Meta ad schedule and frequency cap on the Implement tab (#5904 row 5). The schedule shows only on a lifetime
@@ -19,6 +22,7 @@ import { copyMetaDeliveryDraft, metaAdScheduleHourOptions, metaAdScheduleRefusal
  */
 @Component({
   selector: 'lfx-meta-delivery-options',
+  imports: [UiCheckboxComponent, UiOptionComponent, UiSelectComponent],
   templateUrl: './meta-delivery-options.component.html',
 })
 export class MetaDeliveryOptionsComponent {
@@ -45,28 +49,31 @@ export class MetaDeliveryOptionsComponent {
     () => metaFrequencyCapRefusal({ objective: 'awareness', frequencyCap: this.delivery().frequencyCap })?.message ?? null
   );
 
-  protected onScheduleToggle(event: Event): void {
-    const on = (event.target as HTMLInputElement).checked;
-    this.update({ adSchedule: on ? copyMetaDeliveryDraft({ adSchedule: DEFAULT_META_AD_SCHEDULE, frequencyCap: null }).adSchedule : null });
+  protected onScheduleToggle(on: boolean): void {
+    this.update({ adSchedule: on ? { ...DEFAULT_META_AD_SCHEDULE, days: [...DEFAULT_META_AD_SCHEDULE.days] } : null });
   }
 
-  protected onDayToggle(day: number, event: Event): void {
+  protected onDayToggle(day: number, on: boolean): void {
     const schedule = this.delivery().adSchedule;
     if (schedule === null) return;
-    this.update({ adSchedule: metaAdScheduleWithDay(schedule, day, (event.target as HTMLInputElement).checked) });
+    this.update({ adSchedule: metaAdScheduleWithDay(schedule, day, on) });
   }
 
-  protected onHourChange(edge: 'startMinute' | 'endMinute', event: Event): void {
+  /** The select's value is the hour's minutes of the day, as text; "no choice" keeps the current hour. */
+  protected onHourChange(edge: 'startMinute' | 'endMinute', value: string | null): void {
     const schedule = this.delivery().adSchedule;
-    if (schedule === null) return;
-    this.update({ adSchedule: { ...schedule, [edge]: Number((event.target as HTMLSelectElement).value) } });
+    if (schedule === null || value === null || value === '') return;
+    this.update({ adSchedule: { ...schedule, [edge]: Number(value) } });
   }
 
-  protected onCapToggle(event: Event): void {
-    this.update({ frequencyCap: (event.target as HTMLInputElement).checked ? { ...DEFAULT_META_FREQUENCY_CAP } : null });
+  protected onCapToggle(on: boolean): void {
+    this.update({ frequencyCap: on ? { ...DEFAULT_META_FREQUENCY_CAP } : null });
   }
 
-  /** A box left empty or half-typed reads as 0, which the cap's own rule refuses on screen. */
+  /**
+   * A box left empty or half-typed reads as 0, which the cap's own rule refuses on screen. The template shows 0 as an
+   * empty box, so clearing a box to type a new number never puts a 0 back under the cursor.
+   */
   protected onCapInput(field: 'maxImpressions' | 'intervalDays', event: Event): void {
     const cap = this.delivery().frequencyCap;
     if (cap === null) return;

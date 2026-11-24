@@ -5,52 +5,42 @@
   @if (scheduleShown()) {
     <fieldset class="flex flex-col gap-2" data-testid="meta-delivery-schedule">
       <legend class="sr-only">Ad schedule</legend>
-      <label class="flex items-center gap-2 text-sm text-gray-700">
-        <input
-          type="checkbox"
-          [checked]="delivery().adSchedule !== null"
-          (change)="onScheduleToggle($event)"
-          class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-          data-testid="meta-delivery-schedule-toggle" />
-        Run the ads only at set times
-      </label>
+      <lfx-ui-checkbox
+        label="Run the ads only at set times"
+        [checked]="delivery().adSchedule !== null"
+        (checkedChange)="onScheduleToggle($event)"
+        data-testid="meta-delivery-schedule-toggle" />
       @if (delivery().adSchedule; as schedule) {
         <div class="flex flex-wrap items-center gap-3">
           @for (day of days(); track day.value) {
-            <label class="flex items-center gap-1 text-xs text-gray-700">
-              <input
-                type="checkbox"
-                [checked]="day.on"
-                (change)="onDayToggle(day.value, $event)"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                [attr.data-testid]="'meta-delivery-day-' + day.value" />
-              {{ day.label }}
-            </label>
+            <lfx-ui-checkbox
+              [label]="day.label"
+              [checked]="day.on"
+              (checkedChange)="onDayToggle(day.value, $event)"
+              [attr.data-testid]="'meta-delivery-day-' + day.value" />
           }
         </div>
-        <div class="flex flex-wrap items-center gap-2 text-xs text-gray-700">
-          <label for="meta-delivery-start">From</label>
-          <select
-            id="meta-delivery-start"
-            [value]="schedule.startMinute"
-            (change)="onHourChange('startMinute', $event)"
-            class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900"
+        <div class="flex flex-wrap items-end gap-2">
+          <lfx-ui-select
+            label="From"
+            size="small"
+            [value]="'' + schedule.startMinute"
+            (valueChange)="onHourChange('startMinute', $event)"
             data-testid="meta-delivery-start">
             @for (hour of startHours; track hour.value) {
-              <option [value]="hour.value" [selected]="hour.value === schedule.startMinute">{{ hour.label }}</option>
+              <lfx-ui-option [value]="'' + hour.value" [label]="hour.label" />
             }
-          </select>
-          <label for="meta-delivery-end">to</label>
-          <select
-            id="meta-delivery-end"
-            [value]="schedule.endMinute"
-            (change)="onHourChange('endMinute', $event)"
-            class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900"
+          </lfx-ui-select>
+          <lfx-ui-select
+            label="To"
+            size="small"
+            [value]="'' + schedule.endMinute"
+            (valueChange)="onHourChange('endMinute', $event)"
             data-testid="meta-delivery-end">
             @for (hour of endHours; track hour.value) {
-              <option [value]="hour.value" [selected]="hour.value === schedule.endMinute">{{ hour.label }}</option>
+              <lfx-ui-option [value]="'' + hour.value" [label]="hour.label" />
             }
-          </select>
+          </lfx-ui-select>
         </div>
         <p class="text-xs text-gray-500" data-testid="meta-delivery-schedule-hint">
           One window for every chosen day, in the Meta ad account's time zone. Meta schedules only lifetime budgets.
@@ -65,16 +55,18 @@
   @if (capShown()) {
     <fieldset class="flex flex-col gap-2" data-testid="meta-delivery-cap">
       <legend class="sr-only">Frequency cap</legend>
-      <label class="flex items-center gap-2 text-sm text-gray-700">
-        <input
-          type="checkbox"
-          [checked]="delivery().frequencyCap !== null"
-          (change)="onCapToggle($event)"
-          class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-          data-testid="meta-delivery-cap-toggle" />
-        Limit how often one person sees the ads
-      </label>
+      <lfx-ui-checkbox
+        label="Limit how often one person sees the ads"
+        [checked]="delivery().frequencyCap !== null"
+        (checkedChange)="onCapToggle($event)"
+        data-testid="meta-delivery-cap-toggle" />
       @if (delivery().frequencyCap; as cap) {
+        <!--
+          Raw <input type="number"> by exception to docs/reviews/frontend-checklist.md §14.1, for both boxes:
+          lfx-ui-input has no number type (UiInputType is text, email, url, tel, password or search), so it would
+          drop the min/max/step a whole number 1–90 wants, and lfx-input-text binds a FormGroup, which this
+          signal-driven child deliberately does not hold (the parent owns the draft as a signal).
+        -->
         <div class="flex flex-wrap items-center gap-2 text-xs text-gray-700">
           <label for="meta-delivery-impressions">At most</label>
           <input
@@ -83,7 +75,7 @@
             [min]="capMin"
             [max]="capMax"
             step="1"
-            [value]="cap.maxImpressions"
+            [value]="cap.maxImpressions || ''"
             (input)="onCapInput('maxImpressions', $event)"
             class="w-16 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900"
             data-testid="meta-delivery-impressions" />
@@ -94,7 +86,7 @@
             [min]="capMin"
             [max]="capMax"
             step="1"
-            [value]="cap.intervalDays"
+            [value]="cap.intervalDays || ''"
             (input)="onCapInput('intervalDays', $event)"
             class="w-16 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900"
             data-testid="meta-delivery-interval" />

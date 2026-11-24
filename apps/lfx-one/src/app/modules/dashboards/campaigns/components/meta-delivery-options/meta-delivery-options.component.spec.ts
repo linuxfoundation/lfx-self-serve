@@ -17,10 +17,16 @@ describe('MetaDeliveryOptionsComponent', () => {
   let model: MetaDeliveryDraft;
 
   const el = <T extends HTMLElement>(testId: string): T => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`) as T;
-  const change = (testId: string, set: (e: HTMLInputElement & HTMLSelectElement) => void, event = 'change'): void => {
-    const target = el<HTMLInputElement & HTMLSelectElement>(testId);
-    set(target);
-    target.dispatchEvent(new Event(event));
+  // The toggles and hour selects are uikit wrappers, so their handlers are called directly; the cap boxes are raw
+  // inputs (a §14.1 exception), so they are typed into.
+  const call = (name: string, ...args: unknown[]): void => {
+    (fixture.componentInstance as unknown as Record<string, (...a: unknown[]) => void>)[name](...args);
+    fixture.detectChanges();
+  };
+  const type = (testId: string, value: string): void => {
+    const target = el<HTMLInputElement>(testId);
+    target.value = value;
+    target.dispatchEvent(new Event('input'));
     fixture.detectChanges();
   };
 
@@ -35,20 +41,25 @@ describe('MetaDeliveryOptionsComponent', () => {
   });
 
   it('turns the schedule on at weekdays 9–17, then takes a day and an end hour', () => {
-    change('meta-delivery-schedule-toggle', (e) => (e.checked = true));
+    call('onScheduleToggle', true);
     expect(model.adSchedule).toEqual(DEFAULT_META_AD_SCHEDULE);
+    expect(model.adSchedule?.days).not.toBe(DEFAULT_META_AD_SCHEDULE.days);
 
-    change('meta-delivery-day-6', (e) => (e.checked = true));
-    change('meta-delivery-end', (e) => (e.value = '1200'));
+    call('onDayToggle', 6, true);
+    call('onHourChange', 'endMinute', '1200');
     expect(model.adSchedule).toEqual({ days: [1, 2, 3, 4, 5, 6], startMinute: 540, endMinute: 1200 });
   });
 
-  it('turns the cap on at 2 every 7 days, takes a typed value, and says why one is refused', () => {
-    change('meta-delivery-cap-toggle', (e) => (e.checked = true));
+  it('turns the cap on at 2 every 7 days, takes a typed value, says why one is refused, and leaves a cleared box empty', () => {
+    call('onCapToggle', true);
+    fixture.detectChanges();
     expect(model.frequencyCap).toEqual(DEFAULT_META_FREQUENCY_CAP);
 
-    change('meta-delivery-impressions', (e) => (e.value = '120'), 'input');
+    type('meta-delivery-impressions', '120');
     expect(model.frequencyCap).toEqual({ maxImpressions: 120, intervalDays: 7 });
     expect(el('meta-delivery-cap-error')?.textContent).toContain('from 1 to 90');
+
+    type('meta-delivery-impressions', '');
+    expect(el<HTMLInputElement>('meta-delivery-impressions').value).toBe('');
   });
 });
