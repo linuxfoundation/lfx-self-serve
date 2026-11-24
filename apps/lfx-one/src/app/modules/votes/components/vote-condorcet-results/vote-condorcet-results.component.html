@@ -74,7 +74,10 @@
               @if (standing.eliminatedInRound !== null) {
                 <span class="text-xs text-slate-500">Eliminated in round {{ standing.eliminatedInRound }}</span>
               } @else if (standing.totalMatchups > 0) {
-                <span class="text-xs text-slate-500">Won {{ standing.winCount }} out of {{ standing.totalMatchups }} possible head-to-head matchups</span>
+                <span class="text-xs text-slate-500"
+                  >Won {{ standing.winCount }} out of {{ standing.totalMatchups }} possible head-to-head
+                  {{ standing.totalMatchups === 1 ? 'matchup' : 'matchups' }}</span
+                >
               }
             </div>
           </li>
@@ -116,7 +119,9 @@
           <tr class="bg-gray-50">
             <th scope="col" class="sticky left-0 z-10 bg-gray-50 px-3 py-3 text-left font-medium text-gray-600">Options</th>
             @for (candidate of q.candidates; track candidate.choiceId) {
-              <th scope="col" class="whitespace-nowrap px-3 py-3 text-left font-medium text-gray-600">{{ candidate.choiceText }}</th>
+              <th scope="col" class="px-3 py-3 text-left font-medium text-gray-600">
+                <span class="block w-32 break-words whitespace-normal sm:w-40">{{ candidate.choiceText }}</span>
+              </th>
             }
           </tr>
         </thead>
@@ -172,7 +177,7 @@
         <li class="flex min-w-0 flex-col gap-2" [attr.data-testid]="'vote-condorcet-preference-' + choice.choiceId">
           <div class="flex flex-wrap items-baseline justify-between gap-2 text-sm">
             <span class="min-w-0 break-words font-semibold text-gray-900">{{ choice.choiceText }}</span>
-            <span class="text-slate-500">Ranked on {{ choice.totalRanked }} ballots</span>
+            <span class="text-slate-500">Ranked on {{ choice.totalRanked }} {{ choice.totalRanked === 1 ? 'ballot' : 'ballots' }}</span>
           </div>
           <div class="flex h-5 overflow-hidden rounded-md bg-gray-100" aria-hidden="true">
             @for (rc of choice.rankCounts; track rc.rank; let i = $index) {
@@ -241,7 +246,7 @@
           <summary
             class="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-3 text-sm font-medium text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
             data-testid="vote-condorcet-ballots-toggle">
-            View ballot rankings ({{ patterns.length }} distinct orders)
+            View ballot rankings ({{ patterns.length }} distinct {{ patterns.length === 1 ? 'order' : 'orders' }})
             <i class="fa-light fa-chevron-down ml-auto transition-transform group-open:rotate-180" aria-hidden="true"></i>
           </summary>
           <div class="flex flex-col gap-3 border-t border-gray-200 p-3">
@@ -266,7 +271,11 @@
                     <tr class="border-t border-gray-100">
                       <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-gray-900">{{ pattern.count }}</th>
                       @for (rank of q.ranks; track rank; let i = $index) {
-                        <td class="whitespace-nowrap px-3 py-2 text-gray-700">{{ i < pattern.ranking.length ? pattern.ranking[i] : 'Not ranked' }}</td>
+                        <td class="px-3 py-2 text-gray-700">
+                          <span class="block w-32 break-words whitespace-normal sm:w-40">{{
+                            i < pattern.ranking.length ? pattern.ranking[i] : 'Not ranked'
+                          }}</span>
+                        </td>
                       }
                     </tr>
                   }
@@ -290,7 +299,9 @@
           </div>
         </details>
       } @else {
-        <p class="text-sm text-slate-500" data-testid="vote-condorcet-ballots-empty">No ranked ballots recorded yet.</p>
+        <p class="text-sm text-slate-500" data-testid="vote-condorcet-ballots-empty">
+          {{ isClosed() ? 'No ranked ballots were submitted.' : 'No ranked ballots recorded yet.' }}
+        </p>
       }
     } @else if (ballotsLoading()) {
       <p class="text-sm text-slate-500" data-testid="vote-condorcet-ballots-loading">Loading ballot rankings…</p>

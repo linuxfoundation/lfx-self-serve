@@ -108,8 +108,35 @@ describe('VoteCondorcetResultsComponent', () => {
     const el = render(question());
     const winner = compact(text(byTestId(el, 'vote-condorcet-standing-a')));
     expect(winner).toContain(compact('1st Candidate A Winner'));
-    expect(winner).toContain(compact('Won 1 out of 1 possible head-to-head matchups'));
+    expect(winner).toContain(compact('Won 1 out of 1 possible head-to-head matchup'));
+    expect(winner).not.toContain(compact('matchups'));
     expect(compact(text(byTestId(el, 'vote-condorcet-standing-b')))).toContain(compact('2nd Candidate B'));
+  });
+
+  it('agrees count nouns with singular and plural counts', () => {
+    const one = render(
+      question({
+        rankSummary: [
+          { candidate: A, counts: [1, 0] },
+          { candidate: B, counts: [0, 0] },
+        ],
+        ballotPatterns: [{ key: 'a', count: 1, ranking: ['Candidate A'] }],
+      })
+    );
+    expect(text(byTestId(one, 'vote-condorcet-preference-a'))).toContain('Ranked on 1 ballot');
+    expect(text(byTestId(one, 'vote-condorcet-preference-a'))).not.toContain('Ranked on 1 ballots');
+    expect(text(byTestId(one, 'vote-condorcet-ballots-toggle'))).toBe('View ballot rankings (1 distinct order)');
+
+    const many = render(
+      question({
+        standings: [
+          { rank: 1, choiceId: 'a', choiceText: 'Candidate A', winCount: 2, totalMatchups: 2, isWinner: true, isTied: false, eliminatedInRound: null },
+        ],
+      })
+    );
+    expect(text(byTestId(many, 'vote-condorcet-standing-a'))).toContain('Won 2 out of 2 possible head-to-head matchups');
+    expect(text(byTestId(many, 'vote-condorcet-preference-a'))).toContain('Ranked on 5 ballots');
+    expect(text(byTestId(many, 'vote-condorcet-ballots-toggle'))).toBe('View ballot rankings (2 distinct orders)');
   });
 
   it('tags tied winners and shows the elimination round', () => {
@@ -149,7 +176,7 @@ describe('VoteCondorcetResultsComponent', () => {
     expect(byTestId(el, 'vote-condorcet-outcome-message')).not.toBeNull();
   });
 
-  it('renders pairwise cells with icons and screen-reader results', () => {
+  it('renders pairwise cells with icons and visible win, loss and tie labels', () => {
     const el = render(question());
     const rows = byTestId(el, 'vote-condorcet-pairwise')?.querySelectorAll('tbody tr') ?? [];
     expect(rows.length).toBe(2);
@@ -185,7 +212,7 @@ describe('VoteCondorcetResultsComponent', () => {
     expect(byTestId(el, 'vote-condorcet-ballots-unavailable')).toBeNull();
   });
 
-  it('keeps screen-reader cell text inside each scrolling table so it cannot widen the page', () => {
+  it('positions each scrolling table wrapper so its screen-reader caption cannot widen the page', () => {
     const el = render(question());
     const wrappers = Array.from(el.querySelectorAll('.overflow-x-auto'));
     expect(wrappers).toHaveLength(3);
@@ -206,6 +233,20 @@ describe('VoteCondorcetResultsComponent', () => {
     }
   });
 
+  it('bounds and wraps candidate names in pairwise column headers and ballot cells', () => {
+    const el = render(question());
+    const columnNames = Array.from(byTestId(el, 'vote-condorcet-pairwise')?.querySelectorAll('thead th[scope="col"] span') ?? []);
+    const ballotNames = Array.from(byTestId(el, 'vote-condorcet-ballots')?.querySelectorAll('tbody td span') ?? []);
+    expect(columnNames.map((name) => text(name))).toEqual(['Candidate A', 'Candidate B']);
+    expect(ballotNames.map((name) => text(name))).toEqual(['Candidate A', 'Candidate B', 'Candidate B', 'Not ranked']);
+    [...columnNames, ...ballotNames].forEach((name) => {
+      expect(name.classList).toContain('w-32');
+      expect(name.classList).toContain('break-words');
+      expect(name.classList).toContain('whitespace-normal');
+      expect(name.parentElement?.classList).not.toContain('whitespace-nowrap');
+    });
+  });
+
   it('moves the same ballot row nodes when counts change their order', () => {
     const initial = question();
     const el = render(initial);
@@ -218,8 +259,13 @@ describe('VoteCondorcetResultsComponent', () => {
   });
 
   it('shows an empty note when no ranked ballots exist yet', () => {
-    const el = render(question({ ballotPatterns: [] }));
+    const el = render(question({ ballotPatterns: [] }), false);
     expect(text(byTestId(el, 'vote-condorcet-ballots-empty'))).toBe('No ranked ballots recorded yet.');
+  });
+
+  it('drops "yet" from the empty ballot note once the vote is closed', () => {
+    const el = render(question({ ballotPatterns: [] }));
+    expect(text(byTestId(el, 'vote-condorcet-ballots-empty'))).toBe('No ranked ballots were submitted.');
   });
 
   it('renders the candidate rank summary with ordinal headers', () => {

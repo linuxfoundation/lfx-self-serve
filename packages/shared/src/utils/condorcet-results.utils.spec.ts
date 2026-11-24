@@ -257,6 +257,40 @@ describe('buildCondorcetQuestionViews', () => {
     ]);
   });
 
+  it('ranks every option first, in question order, when the service returns every option after IRV rounds', () => {
+    const q = question({
+      ranked_choice_winner_info: winners(['a', 'b', 'c'], true),
+      // A Condorcet cycle (A > B > C > A) with tied first choices: upstream appends the tie round and returns everyone.
+      ranked_choice_votes: rankedVotes([
+        ['a', 'b', 2, 1],
+        ['b', 'c', 2, 1],
+        ['c', 'a', 2, 1],
+      ]),
+      irv_round_summary: [
+        {
+          round_number: 1,
+          votes: [
+            { choice_id: 'a', vote_count: 1 },
+            { choice_id: 'b', vote_count: 1 },
+            { choice_id: 'c', vote_count: 1 },
+          ],
+          total_votes: 3,
+          exhausted_votes: 0,
+          threshold: 2,
+          message: '',
+          eliminated_choice_id: '',
+        },
+      ],
+    });
+    const v = view(q);
+    expect(v.outcome).toBe(CondorcetOutcome.NO_WINNER);
+    expect(v.standings.map((s) => [s.choiceId, s.rank, s.isWinner, s.eliminatedInRound])).toEqual([
+      ['a', 1, false, null],
+      ['b', 1, false, null],
+      ['c', 1, false, null],
+    ]);
+  });
+
   it.each([
     {
       name: 'one winner',

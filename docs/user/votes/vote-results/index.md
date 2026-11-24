@@ -4,7 +4,7 @@ description: How to see live and final results, abstentions, ranked questions, c
 audience: [all]
 product_area: Votes
 tags: [votes, results, abstain, comments, ranked, condorcet, tallies, voters]
-last_updated: 2026-11-23
+last_updated: 2026-11-24
 intercom_collection: Votes
 ---
 
@@ -77,7 +77,7 @@ Some votes rank their options instead of counting one choice. On an Instant Runo
 A Condorcet IRV vote shows its own results for each question. The winner comes from the voting service; it is not simply the candidate with the most first choices.
 
 - **Final result** puts the outcome first. A prominent card names the winning option and explains whether it beat every other option head-to-head or won through instant-runoff elimination. The method appears as a **Condorcet IRV** or **Instant-runoff fallback** badge. A tie names the tied options and says no single winner can be determined. If no winner could be determined, it says so.
-- **Final standings** lists every option in order, with the winner marked **Winner** and tied winners marked **Tied**. When head-to-head wins decided the result, each option shows how many head-to-head matchups it won. When instant-runoff elimination decided it, eliminated options show the round they were eliminated in, latest first.
+- **Final standings** lists every option in order, with the winner marked **Winner** and tied winners marked **Tied**. When head-to-head wins decided the result, each option shows how many head-to-head matchups it won. When instant-runoff elimination decided it, eliminated options show the round they were eliminated in, latest first. When no winner could be determined, the remaining options all share first place.
 - **Head-to-head results** compares every pair of options. Read across a row: the first number counts voters preferring that row's option, and the second counts voters preferring the column's option. Text, icons and shading distinguish wins, losses and ties. A closed Condorcet winner also has a short list of its available matchups above the table. On a narrow screen, scroll the table sideways; the option names stay in view, with long names wrapping inside their column.
 - **How voters ranked each option** shows a stacked preference bar and the exact count for each rank (**1st**, **2nd**, and so on). Each bar is based on ballots that ranked that option, not all invited voters or responses; ballots omitting the option and abstentions are excluded. These distributions are not the final result, and the option with the most first choices need not win. Select **View exact rank counts** to open the accompanying table. Its counts are not links to individual ballots.
 - **Ballot breakdown** comes last and starts collapsed when ranking orders are available. Select **View ballot rankings** to see the five most common orders and how many ballots used each. If there are more than five orders, select **Show all rankings** to see the full list, or **Show five most common** to return to the preview. Omitted preferences are marked **Not ranked**. Only managers of a named vote see this breakdown. On a pseudo-anonymous vote, or for voters, it says **Ballot-by-ballot rankings aren't available for this vote.** Managers of a named vote can still view individual ballots on the **Voters** tab.

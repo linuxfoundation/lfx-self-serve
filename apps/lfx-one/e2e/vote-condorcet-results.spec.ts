@@ -112,7 +112,7 @@ test.describe('Condorcet ballot result states', () => {
     } finally {
       release();
     }
-    await expect(page.getByTestId('vote-condorcet-ballots-empty')).toHaveText('No ranked ballots recorded yet.');
+    await expect(page.getByTestId('vote-condorcet-ballots-empty')).toHaveText('No ranked ballots were submitted.');
     await expect(page.getByTestId('vote-condorcet-ballots-loading')).toHaveCount(0);
     await expect(page.getByTestId('vote-condorcet-ballots').locator('table')).toHaveCount(0);
   });

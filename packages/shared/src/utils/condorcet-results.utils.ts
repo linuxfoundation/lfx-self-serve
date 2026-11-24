@@ -177,7 +177,9 @@ function buildCondorcetStandings(
 /**
  * Instant-runoff standings; mirrors PCC's irv-standings pipe
  * @description Winners first at rank 1, then survivors by final-round votes with head-to-head as the tiebreaker, then
- * eliminated candidates, latest round first. Without round data the non-winners share the next rank.
+ * eliminated candidates, latest round first. Without round data the non-winners share the next rank. With no winner
+ * (none returned, or every candidate returned) the service ordered none of the survivors, so they share rank 1 in
+ * question order, as PCC ranks every returned candidate first.
  */
 function buildIrvStandings(
   candidates: CondorcetCandidate[],
@@ -205,21 +207,23 @@ function buildIrvStandings(
   const finalRound = rounds.reduce((latest, round) => (round.round_number > latest.round_number ? round : latest), rounds[0]);
   const finalVotes = new Map((finalRound.votes ?? []).map((vote) => [vote.choice_id, vote.vote_count]));
 
-  const survivors = candidates
-    .filter((c) => !winners.has(c.choiceId) && !eliminatedIds.has(c.choiceId))
-    .sort((a, b) => {
+  const survivorsShareRank = winnerRows.length === 0;
+  const survivors = candidates.filter((c) => !winners.has(c.choiceId) && !eliminatedIds.has(c.choiceId));
+  if (!survivorsShareRank) {
+    survivors.sort((a, b) => {
       const byVotes = (finalVotes.get(b.choiceId) ?? 0) - (finalVotes.get(a.choiceId) ?? 0);
       if (byVotes !== 0) return byVotes;
       const [aOverB, bOverA] = pairwiseCounts(a.choiceId, b.choiceId, matrix);
       return bOverA - aOverB;
     });
+  }
 
   const standings = [...winnerRows];
   let rank = winnerRows.length > 0 ? 2 : 1;
   if (isTie) rank = winnerRows.length + 1;
   for (const survivor of survivors) {
     standings.push(standingRow(survivor, rank, winners, isTie, null, winCounts, totalMatchups));
-    rank++;
+    if (!survivorsShareRank) rank++;
   }
 
   rank = standings.length + 1;

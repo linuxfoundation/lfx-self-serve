@@ -28,6 +28,8 @@ import {
 import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import {
   CommentResponseView,
+  CondorcetBallotsKey,
+  CondorcetBallotsRead,
   CondorcetQuestionView,
   MyVoteBallot,
   MyVoteResponse,
@@ -321,10 +323,9 @@ export class VoteDetailComponent {
   /** Condorcet IRV gets its own results layout (#5969); Instant Runoff and Meek STV keep the ranked distributions. */
   protected readonly isCondorcetPoll: Signal<boolean> = computed(() => this.vote()?.poll_type === PollType.CONDORCET_IRV);
   /** Which vote's named ballots to read for the Condorcet ballot ranking distribution — a manager on a named vote only (#5969). */
-  private readonly condorcetBallotsKey: Signal<{ uid: string; tick: number; votesCast: number; closed: boolean; draft: boolean } | null> =
-    this.initCondorcetBallotsKey();
+  private readonly condorcetBallotsKey: Signal<CondorcetBallotsKey | null> = this.initCondorcetBallotsKey();
   /** The latest ballots read and the vote it belongs to; `voters` is null when the read failed. */
-  private readonly condorcetBallotsRead: Signal<{ uid: string; voters: VoteVoter[] | null } | null> = this.initCondorcetBallotsRead();
+  private readonly condorcetBallotsRead: Signal<CondorcetBallotsRead | null> = this.initCondorcetBallotsRead();
   /** Ballots for the current vote; null hides the table behind the "not available" note. */
   private readonly condorcetBallots: Signal<VoteVoter[] | null> = computed(() => {
     const read = this.condorcetBallotsRead();
@@ -850,7 +851,7 @@ export class VoteDetailComponent {
    * read ballots at all, so neither gets a key and the table gives way to a note (#5969). A draft has no ballots and
    * GET /api/votes/:uid/voters refuses it (409), so it skips the read, just as `showVotersTab` hides the Voters tab.
    */
-  private initCondorcetBallotsKey(): Signal<{ uid: string; tick: number; votesCast: number; closed: boolean; draft: boolean } | null> {
+  private initCondorcetBallotsKey(): Signal<CondorcetBallotsKey | null> {
     return computed(() => {
       const uid = this.vote()?.uid;
       const results = this.voteResults();
@@ -872,8 +873,8 @@ export class VoteDetailComponent {
    * A failed first read settles with null voters, so it ends the loading state and shows the "not available" note;
    * a failed re-read of the same vote keeps its last ballots.
    */
-  private initCondorcetBallotsRead(): Signal<{ uid: string; voters: VoteVoter[] | null } | null> {
-    let last: { uid: string; voters: VoteVoter[] | null } | null = null;
+  private initCondorcetBallotsRead(): Signal<CondorcetBallotsRead | null> {
+    let last: CondorcetBallotsRead | null = null;
     return toSignal(
       toObservable(this.condorcetBallotsKey).pipe(
         distinctUntilChanged(
