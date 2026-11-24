@@ -96,16 +96,20 @@ export async function assertOrgLensRead(
   orgUid: string,
   operation: string,
   roster?: Promise<AccessAwareOrgsResult>,
-  checkAuditor?: (orgUid: string) => Promise<boolean>
+  checkAuditor?: (orgUid: string) => Promise<boolean>,
+  options: { employeeView?: boolean } = {}
 ): Promise<OrgLensReadQualification> {
+  const employeeViewAllowed = options.employeeView !== false;
+  // A caller that refuses the employee view (the CLA gate) must not share a memoized answer that may have tried it, nor pay for the lookup.
+  const memoKey = employeeViewAllowed ? orgUid : `${orgUid}#no-employee-view`;
   let byOrg = qualificationByRequest.get(req);
   if (!byOrg) {
     byOrg = new Map();
     qualificationByRequest.set(req, byOrg);
   }
-  let qualification = byOrg.get(orgUid);
+  let qualification = byOrg.get(memoKey);
   if (!qualification) {
-    qualification = resolveOrgLensRead(req, orgUid, operation, roster, checkAuditor).then((resolved) => {
+    qualification = resolveOrgLensRead(req, orgUid, operation, roster, checkAuditor, employeeViewAllowed).then((resolved) => {
       let modes = viewModeByRequest.get(req);
       if (!modes) {
         modes = new Map();
@@ -114,7 +118,7 @@ export async function assertOrgLensRead(
       modes.set(orgUid, resolved === 'employee-view' ? ORG_LENS_EMPLOYEE_VIEW : ORG_LENS_FULL_VIEW);
       return resolved;
     });
-    byOrg.set(orgUid, qualification);
+    byOrg.set(memoKey, qualification);
   }
   return qualification;
 }
@@ -124,7 +128,8 @@ async function resolveOrgLensRead(
   orgUid: string,
   operation: string,
   roster: Promise<AccessAwareOrgsResult> | undefined,
-  checkAuditor: ((orgUid: string) => Promise<boolean>) | undefined
+  checkAuditor: ((orgUid: string) => Promise<boolean>) | undefined,
+  employeeViewAllowed: boolean
 ): Promise<OrgLensReadQualification> {
   const forbidden = (): MicroserviceError =>
     new MicroserviceError('You do not have access to Company Lens data for this company.', 403, 'FORBIDDEN', {
@@ -217,12 +222,12 @@ async function resolveOrgLensRead(
   // so no existing path could have admitted them. A roll-up check passes `roster`; a roll-up never admits the employee
   // view, so it is not even asked. Off by default until every page story has redacted its endpoint.
   // An unread staff check leaves "not staff" unproven: retriable 503 (as `resolveReduced` answers), never a 403 for an eligible employee.
-  if (!roster && staffCheckFailed && isOrgLensEmployeeViewEnabled(req)) {
+  if (employeeViewAllowed && !roster && staffCheckFailed && isOrgLensEmployeeViewEnabled(req)) {
     throw unavailable(undefined);
   }
 
   // One rule for who enters, shared with the selector and the slug resolver: no grants and not staff.
-  if (!roster && isOrgLensEmployeeViewEnabled(req) && !isStaff && !staffCheckFailed && grantedOrgCount === 0) {
+  if (employeeViewAllowed && !roster && isOrgLensEmployeeViewEnabled(req) && !isStaff && !staffCheckFailed && grantedOrgCount === 0) {
     let verdict: Awaited<ReturnType<OrgEmployeeViewService['resolve']>>;
     let timer: NodeJS.Timeout | undefined;
     try {

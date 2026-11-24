@@ -188,6 +188,26 @@ describe('assertOrgLensRead: employee-view qualification', () => {
     expect(mocks.getAccessAwareOrgs).not.toHaveBeenCalled();
   });
 
+  it('skips the employment lookup, and its 503s, when the caller refuses the employee view (the CLA gate)', async () => {
+    mocks.resolveEmployeeView.mockResolvedValue(eligible);
+    const r = req();
+
+    await expect(assertOrgLensRead(r, ORG_UID, 'op', undefined, undefined, { employeeView: false })).rejects.toMatchObject({ statusCode: 403 });
+    expect(mocks.resolveEmployeeView).not.toHaveBeenCalled();
+
+    // A staff check that failed must not turn the CLA path into a 503 either.
+    mocks.getAccessAwareOrgs.mockResolvedValue(roster({ staffCheck: 'failed' }));
+    await expect(assertOrgLensRead(req(), ORG_UID, 'op', undefined, undefined, { employeeView: false })).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it('keeps the CLA gate memo apart from the default one on the same request', async () => {
+    mocks.resolveEmployeeView.mockResolvedValue(eligible);
+    const r = req();
+
+    await expect(assertOrgLensRead(r, ORG_UID, 'op', undefined, undefined, { employeeView: false })).rejects.toMatchObject({ statusCode: 403 });
+    await expect(assertOrgLensRead(r, ORG_UID, 'op')).resolves.toBe('employee-view');
+  });
+
   it('memoizes per request, so one request makes one employment lookup', async () => {
     mocks.resolveEmployeeView.mockResolvedValue(eligible);
     const r = req();
