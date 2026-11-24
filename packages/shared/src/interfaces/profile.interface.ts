@@ -22,7 +22,7 @@ export interface AccountSettingsNavItem {
   label: string;
   /** Font Awesome classes for the nav item and the landing row's tile. */
   icon: string;
-  /** One-line description for the landing page (#6069). */
+  /** One-line description shown on the landing page. */
   blurb: string;
 }
 

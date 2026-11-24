@@ -2,17 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { inject, makeStateKey, PLATFORM_ID, REQUEST, REQUEST_CONTEXT, TransferState } from '@angular/core';
+import { inject, PLATFORM_ID, REQUEST, REQUEST_CONTEXT, TransferState } from '@angular/core';
 import { CanActivateFn, CanMatchFn, Router } from '@angular/router';
 import { PROFILE_REDESIGN_FLAG } from '@lfx-one/shared/constants';
 import { ServerRequestContext } from '@lfx-one/shared/interfaces';
 import { accountPathForProfileTab, profileTargetForAccountRoute } from '@lfx-one/shared/utils';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
+import { PROFILE_REDESIGN_KEY } from '../utils/profile-redesign.util';
 import { mirrorOverridesToCookie, readCookieOverride } from './meeting-page-redesign.guard';
-
-/** The server's answer for this visit, so hydration and every later navigation agree with the page it rendered. */
-export const PROFILE_REDESIGN_KEY = makeStateKey<boolean>('profileRedesign');
 
 /**
  * The redesign flag for a guard, read in its injection context. The server decides from the flags it evaluated for the

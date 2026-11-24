@@ -20,6 +20,7 @@ describe('AccountLayoutComponent', () => {
   let impersonating: ReturnType<typeof signal<boolean>>;
   let add: ReturnType<typeof vi.fn>;
   let queryParams: Record<string, string>;
+  let childPath: string;
   let unsaved: {
     dirty: ReturnType<typeof signal<boolean>>;
     saving: ReturnType<typeof signal<boolean>>;
@@ -36,7 +37,7 @@ describe('AccountLayoutComponent', () => {
         provideRouter([]),
         provideNoopAnimations(),
         { provide: PLATFORM_ID, useValue: 'browser' },
-        { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
+        { provide: ActivatedRoute, useValue: { queryParams: of(queryParams), firstChild: { snapshot: { routeConfig: { path: childPath } } } } },
         { provide: UserService, useValue: { impersonating, user: signal(null) } },
         { provide: NavbarCollapseService, useValue: { railAtAnyWidth: signal(true) } },
         { provide: MessageService, useValue: { add, messageObserver: of(), clearObserver: of() } },
@@ -57,6 +58,7 @@ describe('AccountLayoutComponent', () => {
     impersonating = signal(false);
     add = vi.fn();
     queryParams = {};
+    childPath = 'identities';
     unsaved = { dirty: signal(false), saving: signal(false), save: vi.fn(), revert: vi.fn() };
   });
 
@@ -155,6 +157,21 @@ describe('AccountLayoutComponent', () => {
       'Password',
       'Developer settings',
     ]);
+  });
+
+  it('drops the left nav and the header rule on the landing page', async () => {
+    childPath = '';
+    await setup();
+
+    expect(query('account-layout-nav')).toBeNull();
+    expect(query('account-layout-header-rule')?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('keeps the left nav and the header rule on a page', async () => {
+    await setup();
+
+    expect(query('account-layout-nav')).not.toBeNull();
+    expect(query('account-layout-header-rule')?.classList.contains('hidden')).toBe(false);
   });
 
   it('shows the read-only notice only while impersonating', async () => {

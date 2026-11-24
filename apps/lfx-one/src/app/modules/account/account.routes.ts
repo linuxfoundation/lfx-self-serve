@@ -32,8 +32,12 @@ export const ACCOUNT_ROUTES: Routes = [
     path: '',
     loadComponent: () => import('@app/layouts/account-layout/account-layout.component').then((m) => m.AccountLayoutComponent),
     children: withUnsavedChangesGuard([
-      // The landing page arrives with #6069.
-      { path: '', redirectTo: 'work-history', pathMatch: 'full' },
+      {
+        path: '',
+        pathMatch: 'full',
+        title: 'Account & Settings',
+        loadComponent: () => import('./landing/account-landing.component').then((m) => m.AccountLandingComponent),
+      },
       // Personal information is still the hub's Edit profile drawer until #6072.
       { path: 'personal-information', redirectTo: '/profile' },
       {

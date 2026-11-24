@@ -3,8 +3,9 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { filter, map } from 'rxjs';
+import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import {
   ACCOUNT_SETTINGS_DESCRIPTION,
   ACCOUNT_SETTINGS_NAV,
@@ -42,6 +43,8 @@ export class AccountLayoutComponent {
   private readonly belowLg = injectIsMobileViewport(NAVBAR_MOBILE_TOP_BAR_MEDIA_QUERY);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
   private readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
 
@@ -51,6 +54,8 @@ export class AccountLayoutComponent {
   protected readonly impersonating = this.userService.impersonating;
   /** The shown page's unsaved changes, for the header save bar. */
   protected readonly unsavedChanges = inject(AccountUnsavedChangesService);
+  /** True on the landing page at `/account`, which lists every page itself and so drops the left nav and header rule. */
+  protected readonly isLanding: Signal<boolean> = this.initIsLanding();
   /** Hidden while impersonating, when editing is disabled. */
   protected readonly showSaveBar = computed(() => this.unsavedChanges.dirty() && !this.impersonating());
   /** Whether keyboard focus is on a save bar button, so it can be moved before the bar goes away. */
@@ -103,6 +108,18 @@ export class AccountLayoutComponent {
   protected measureHeader(): void {
     const header = this.header()?.nativeElement;
     if (header) this.headerHeightPx.set(header.offsetHeight);
+  }
+
+  private initIsLanding(): Signal<boolean> {
+    // The landing page is the shell's empty-path child; read once each navigation has activated it.
+    const atLanding = () => this.route.firstChild?.snapshot.routeConfig?.path === '';
+    return toSignal(
+      this.router.events.pipe(
+        filter((event) => event instanceof NavigationEnd),
+        map(() => atLanding())
+      ),
+      { initialValue: atLanding() }
+    );
   }
 
   private initHeaderTopPx(): Signal<number> {
