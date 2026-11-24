@@ -20,6 +20,7 @@
             optionDisabled="disabled"
             [placeholder]="'Search ' + list.label.toLowerCase()"
             [delay]="0"
+            [minLength]="minQueryLength"
             [forceSelection]="true"
             [invalid]="list.failure !== null"
             styleClass="w-72"

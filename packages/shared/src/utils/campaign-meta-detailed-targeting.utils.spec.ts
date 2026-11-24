@@ -10,6 +10,9 @@ import {
   META_LOCALE_TARGETING_OFF_MESSAGE,
   META_TARGETING_SEARCH_BUSY_MESSAGE,
   META_TARGETING_SEARCH_FAILED_MESSAGE,
+  META_TARGETING_SEARCH_NO_MATCH_MESSAGE,
+  META_TARGETING_SEARCH_PENDING_MESSAGE,
+  META_TARGETING_SEARCH_TOO_SHORT_MESSAGE,
   META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE,
 } from '../constants/campaign.constants';
 import type { MetaTargetingFlags, MetaTargetingPick, MetaTargetingSearchOption } from '../interfaces/campaign.interface';
@@ -20,6 +23,7 @@ import {
   metaTargetingPicksWith,
   metaTargetingPicksWithout,
   metaTargetingSearchChoices,
+  metaTargetingSearchEmptyMessage,
   metaTargetingSearchFailure,
   metaTargetingSearchQuery,
   isMetaTargetingSearchType,
@@ -210,5 +214,14 @@ describe('the detailed-targeting picker rules', () => {
     [0, META_TARGETING_SEARCH_FAILED_MESSAGE],
   ])('explains a failed search (status %i)', (status, message) => {
     expect(metaTargetingSearchFailure(status)).toBe(message);
+  });
+
+  it.each([
+    ['searching', false, true, null, META_TARGETING_SEARCH_PENDING_MESSAGE],
+    ['failed', false, false, 'Busy', 'Busy'],
+    ['refused', true, false, null, META_TARGETING_SEARCH_TOO_SHORT_MESSAGE],
+    ['answered with nothing', false, false, null, META_TARGETING_SEARCH_NO_MATCH_MESSAGE],
+  ])('says what an empty popup means when the search %s', (_case, refused, pending, failure, message) => {
+    expect(metaTargetingSearchEmptyMessage(refused, pending, failure)).toBe(message);
   });
 });

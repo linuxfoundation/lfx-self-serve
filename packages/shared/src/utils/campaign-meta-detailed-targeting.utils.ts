@@ -14,6 +14,9 @@ import {
   META_TARGETING_QUERY_MIN_LENGTH,
   META_TARGETING_SEARCH_BUSY_MESSAGE,
   META_TARGETING_SEARCH_FAILED_MESSAGE,
+  META_TARGETING_SEARCH_NO_MATCH_MESSAGE,
+  META_TARGETING_SEARCH_PENDING_MESSAGE,
+  META_TARGETING_SEARCH_TOO_SHORT_MESSAGE,
   META_TARGETING_SEARCH_TYPES,
   META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE,
 } from '../constants/campaign.constants';
@@ -196,4 +199,16 @@ export function metaTargetingSearchFailure(status: number): string {
   if (status === 503) return META_TARGETING_SEARCH_BUSY_MESSAGE;
   if (status === 404) return META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE;
   return META_TARGETING_SEARCH_FAILED_MESSAGE;
+}
+
+/**
+ * What a list's search popup says while it has no rows: that it is searching, why the search failed, that the
+ * typed text cannot be searched (`refused`: too short after trimming, or holding a control character), or that
+ * nothing matched.
+ */
+export function metaTargetingSearchEmptyMessage(refused: boolean, pending: boolean, failure: string | null): string {
+  if (pending) return META_TARGETING_SEARCH_PENDING_MESSAGE;
+  if (failure !== null) return failure;
+  if (refused) return META_TARGETING_SEARCH_TOO_SHORT_MESSAGE;
+  return META_TARGETING_SEARCH_NO_MATCH_MESSAGE;
 }

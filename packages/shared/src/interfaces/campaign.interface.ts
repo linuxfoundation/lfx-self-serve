@@ -2561,6 +2561,22 @@ export interface MetaTargetingSearchChoice extends MetaTargetingSearchOption {
   disabled: boolean;
 }
 
+/** One search row as the detailed-targeting picker draws it, with its taxonomy path already joined. */
+export interface MetaDetailedTargetingChoiceView extends MetaTargetingSearchChoice {
+  pathLabel: string;
+}
+
+/** One detailed-targeting list as the picker draws it. */
+export interface MetaDetailedTargetingListView extends MetaTargetingKind {
+  picks: MetaTargetingPick[];
+  choices: MetaDetailedTargetingChoiceView[];
+  full: boolean;
+  /** What the search popup says while it has no rows. */
+  emptyMessage: string;
+  /** Why this list's last search failed, or `null`. */
+  failure: string | null;
+}
+
 /** The picker's targeting search: the kind it answers, its rows, whether it is waiting, and why it failed. */
 export interface MetaTargetingSearchState {
   type: MetaTargetingSearchType | null;

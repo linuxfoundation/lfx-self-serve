@@ -1690,11 +1690,15 @@ export const META_BEHAVIOR_TARGETING_OFF_MESSAGE =
   'Meta behavior and job title targeting is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for Meta languages while language targeting is off on this deployment. */
 export const META_LOCALE_TARGETING_OFF_MESSAGE = 'Meta language targeting is not available on this deployment. Reload the page, then create again without it.';
-/** The 503 a Meta targeting search gets when Meta or campaign-service cannot answer it (a throttle is not retried upstream). */
 /** A targeting search refused with a 404: the search is off on this deployment. */
 export const META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE = 'Meta targeting search is not available on this deployment.';
 /** A targeting search that failed for any other reason. */
 export const META_TARGETING_SEARCH_FAILED_MESSAGE = "Meta search didn't answer. Search again.";
+/** What the targeting search popup says while it waits, when the typed text cannot be searched, and when nothing matched. */
+export const META_TARGETING_SEARCH_PENDING_MESSAGE = 'Searching…';
+export const META_TARGETING_SEARCH_TOO_SHORT_MESSAGE = 'Type at least 2 characters, on one line.';
+export const META_TARGETING_SEARCH_NO_MATCH_MESSAGE = 'Nothing matches. Try another word.';
+/** The 503 a Meta targeting search gets when Meta or campaign-service cannot answer it (a throttle is not retried upstream). */
 export const META_TARGETING_SEARCH_BUSY_MESSAGE = "Meta targeting search isn't available right now. Wait a few seconds, then search again.";
 /**
  * The error `code` (HTTP 403) of a Meta lead form read, or a create naming a form, refused because the caller

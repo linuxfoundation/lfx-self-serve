@@ -6,11 +6,11 @@ import { Component, computed, inject, input, model, Signal, signal } from '@angu
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
-import { META_MAX_DETAILED_TARGETING_IDS, META_TARGETING_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
+import { META_MAX_DETAILED_TARGETING_IDS, META_TARGETING_QUERY_MIN_LENGTH, META_TARGETING_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import type {
+  MetaDetailedTargetingListView,
   MetaDetailedTargetingPicks,
   MetaTargetingKind,
-  MetaTargetingPick,
   MetaTargetingSearchChoice,
   MetaTargetingSearchState,
   MetaTargetingSearchType,
@@ -20,28 +20,13 @@ import {
   metaTargetingPicksWith,
   metaTargetingPicksWithout,
   metaTargetingSearchChoices,
+  metaTargetingSearchEmptyMessage,
   metaTargetingSearchFailure,
   metaTargetingSearchQuery,
 } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { catchError, map, of, startWith, switchMap, timer } from 'rxjs';
-
-/** One search row as the template draws it, with its taxonomy path already joined. */
-interface MetaDetailedTargetingChoiceView extends MetaTargetingSearchChoice {
-  pathLabel: string;
-}
-
-/** One list as the template draws it. */
-interface MetaDetailedTargetingListView extends MetaTargetingKind {
-  picks: MetaTargetingPick[];
-  choices: MetaDetailedTargetingChoiceView[];
-  full: boolean;
-  /** What the search popup says while it has no rows. */
-  emptyMessage: string;
-  /** Why this list's last search failed, or `null`. */
-  failure: string | null;
-}
 
 /**
  * Meta detailed targeting on the Implement tab (#5904 row 4): interests, behaviors and job titles, each picked
@@ -65,6 +50,8 @@ export class MetaDetailedTargetingComponent {
   public readonly picks = model.required<MetaDetailedTargetingPicks>();
 
   protected readonly maxIds = META_MAX_DETAILED_TARGETING_IDS;
+  /** The popup asks nothing before this many characters; text that trims shorter still gets its own message. */
+  protected readonly minQueryLength = META_TARGETING_QUERY_MIN_LENGTH;
   /** One control per search box; each is cleared after a pick, so the box reads "search another". */
   protected readonly searchForm = new FormGroup({
     interest: new FormControl<unknown>(null),
@@ -80,15 +67,15 @@ export class MetaDetailedTargetingComponent {
   protected readonly lists = computed<MetaDetailedTargetingListView[]>(() => {
     const picks = this.picks();
     const search = this.search();
+    const request = this.query();
     return this.kinds().map((kind) => {
       const answers = search.type === kind.type;
       const failure = answers ? search.failure : null;
+      const refused = request !== null && request.type === kind.type && request.query === '';
       const choices = answers
         ? metaTargetingSearchChoices(search.options, picks[kind.key]).map((choice) => ({ ...choice, pathLabel: choice.path.join(' › ') }))
         : [];
-      let emptyMessage = 'Nothing matches. Try another word.';
-      if (answers && search.pending) emptyMessage = 'Searching…';
-      else if (failure !== null) emptyMessage = failure;
+      const emptyMessage = metaTargetingSearchEmptyMessage(refused, answers && search.pending, failure);
       return { ...kind, picks: picks[kind.key], choices, full: picks[kind.key].length >= META_MAX_DETAILED_TARGETING_IDS, emptyMessage, failure };
     });
   });
