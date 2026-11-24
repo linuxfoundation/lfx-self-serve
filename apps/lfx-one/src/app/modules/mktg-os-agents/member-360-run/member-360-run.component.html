@@ -47,6 +47,8 @@
             [questions]="questions()"
             [projectName]="context.activeContext()?.name ?? ''"
             [busy]="answering()"
+            [initialDraft]="keptQuestionDraft()"
+            (draftChanged)="onQuestionDraft($event)"
             (answered)="onAnswers($event)" />
         </section>
       } @else {
@@ -82,11 +84,13 @@
       } @else if (retrying()) {
         <p role="status" class="text-xs text-gray-500" data-testid="member-360-retrying">{{ retryingText }}</p>
       }
-      <!-- The other agents' choice: this view is the open run; Start over shows the intake and discards nothing yet. -->
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500" data-testid="member-360-run-choice">
-        <span>Need a different report? This run keeps going until you confirm a new one.</span>
-        <lfx-button label="Start over" [text]="true" size="small" [disabled]="answering()" (onClick)="startOver()" data-testid="member-360-start-over" />
-      </div>
+      <!-- The other agents' choice, only while the run is going: this view is the open run; Start over shows the intake and discards nothing yet. -->
+      @if (!runEnded()) {
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500" data-testid="member-360-run-choice">
+          <span>Need a different report? This run keeps going until you confirm a new one.</span>
+          <lfx-button label="Start over" [text]="true" size="small" [disabled]="answering()" (onClick)="startOver()" data-testid="member-360-start-over" />
+        </div>
+      }
     } @else {
       @if (pending()) {
         <section
@@ -97,9 +101,11 @@
             A Member 360 run is in progress. Creating a new one asks you to discard it first; its questions and progress will be lost.
           </p>
           <div class="flex flex-wrap items-center gap-4">
-            <lfx-button [label]="openRunningLabel()" (onClick)="openRunning()" data-testid="member-360-waiting-open" />
+            <lfx-button [label]="openRunningLabel()" [disabled]="submitting()" (onClick)="openRunning()" data-testid="member-360-waiting-open" />
           </div>
         </section>
+      } @else if (earlierRunNotice()) {
+        <lfx-message severity="warn" [text]="earlierRunNotice()" data-testid="member-360-earlier-run-failed" />
       }
       <form [formGroup]="form" (ngSubmit)="run()" class="flex flex-col gap-5">
         <!-- Exact px per Member360Run.dc.html: 10px gap and 10px/12px padding in the Project box, 13px hints. -->
@@ -207,12 +213,13 @@
               </div>
             </div>
           </div>
-          @if (retrying()) {
-            <p role="status" class="text-xs text-gray-500" data-testid="member-360-retrying">{{ retryingText }}</p>
-          } @else if (error()) {
+          <!-- The form's own message outranks the connection line of the run behind a Start over intake. -->
+          @if (error()) {
             <div aria-live="polite">
               <lfx-message severity="error" [text]="error()" data-testid="member-360-error" />
             </div>
+          } @else if (retrying()) {
+            <p role="status" class="text-xs text-gray-500" data-testid="member-360-retrying">{{ retryingText }}</p>
           }
           @if (historyRetrying()) {
             <p role="status" class="text-xs text-gray-500" data-testid="member-360-history-retrying">{{ retryingText }}</p>
