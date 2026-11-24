@@ -15,7 +15,8 @@ import type {
   ParentCommitteeOption,
 } from '../interfaces/committee.interface';
 import type { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
-import type { CommitteeMember } from '../interfaces/member.interface';
+import type { User } from '../interfaces/auth.interface';
+import type { CommitteeMember, CreateCommitteeMemberRequest } from '../interfaces/member.interface';
 import type { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
 import type { PersonaType } from '../interfaces/persona.interface';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
@@ -381,6 +382,37 @@ export function isVotingRep(member: CommitteeMember): boolean {
 /** Count of members with an active "Voting Rep" status (excludes Alternate Voting Rep). */
 export function countVotingReps(members: CommitteeMember[]): number {
   return members.filter(isVotingRep).length;
+}
+
+// ── Add myself (#6117) ──────────────────────────────────────────────────────
+
+/**
+ * Build the member request that adds the signed-in user to a group from their session profile.
+ * Prefers the OIDC `given_name` / `family_name` claims and falls back to `first_name` / `last_name`.
+ * Returns null when the user has no email, since a member cannot be added without one.
+ */
+export function buildSelfMemberRequest(
+  user: Pick<User, 'email' | 'given_name' | 'family_name' | 'first_name' | 'last_name'> | null
+): Pick<CreateCommitteeMemberRequest, 'email' | 'first_name' | 'last_name'> | null {
+  const email = user?.email?.trim();
+  if (!user || !email) return null;
+  return {
+    email,
+    first_name: (user.given_name || user.first_name || '').trim(),
+    last_name: (user.family_name || user.last_name || '').trim(),
+  };
+}
+
+/**
+ * Whether adding the signed-in user needs the Add with details form instead of a one-click add.
+ * The member form requires names, plus company when a business email is required and role and
+ * voting status when voting is enabled, so any of those routes the user to the prefilled form.
+ */
+export function selfMemberNeedsDetails(
+  request: Pick<CreateCommitteeMemberRequest, 'first_name' | 'last_name'>,
+  requirements: Pick<Committee, 'business_email_required' | 'enable_voting'>
+): boolean {
+  return !request.first_name?.trim() || !request.last_name?.trim() || !!requirements.business_email_required || !!requirements.enable_voting;
 }
 
 // ── My Groups card grid (LFXV2-1715) ────────────────────────────────────────

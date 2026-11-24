@@ -27,8 +27,9 @@ import {
   SucceededMemberOperations,
   StagedCommitteeMemberRequest,
 } from '@lfx-one/shared/interfaces';
-import { generateTempId } from '@lfx-one/shared/utils';
+import { buildSelfMemberRequest, generateTempId, selfMemberNeedsDetails } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -63,6 +64,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
+  private readonly userService = inject(UserService);
   private readonly destroyRef = inject(DestroyRef);
 
   // Input signals
@@ -149,8 +151,12 @@ export class CommitteeMembersManagerComponent implements OnInit {
       this.loading() || this.committeeLoading() || this.membersLoadFailed() || this.committeeLoadFailed() || this.submitting() || this.loadingImportInvites()
   );
 
+  // The signed-in user as a member request for "Add myself" — null without a session email.
+  public readonly selfMemberRequest = computed(() => buildSelfMemberRequest(this.userService.user()));
+
   // Complex computed signals (using private initializers)
   public readonly filteredMembers = this.initFilteredMembers();
+  public readonly canAddSelf = this.initCanAddSelf();
   private readonly importedInviteUidsByEmail = this.initImportedInviteUidsByEmail();
 
   // Form instances
@@ -283,7 +289,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
       });
   }
 
-  public openAddMemberDialog(): void {
+  public openAddMemberDialog(prefill?: Pick<CreateCommitteeMemberRequest, 'email' | 'first_name' | 'last_name'>): void {
     const dialogRef = this.dialogService.open(MemberFormComponent, {
       header: 'Add Member',
       width: '700px',
@@ -293,6 +299,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
         isEditing: false,
         wizardMode: true, // Don't call API, return data instead
         committee: this.committee(),
+        prefill,
       },
     }) as DynamicDialogRef;
 
@@ -300,6 +307,33 @@ export class CommitteeMembersManagerComponent implements OnInit {
       if (result) {
         this.handleAddMemberResult(result);
       }
+    });
+  }
+
+  /**
+   * Stages the signed-in user as a new member in one click. When the group or the user's profile
+   * needs more than a name and email (voting, a business email, or a missing name), opens Add with
+   * details prefilled instead, since the member form requires those fields. No createOptions are
+   * passed, so no notification email goes to the user themselves (#6117).
+   */
+  public addMyself(): void {
+    const request = this.selfMemberRequest();
+    if (this.mutationsDisabled() || !this.canAddSelf() || !request) {
+      return;
+    }
+
+    // Live Step 3 draft overrides the persisted snapshot, mirroring votingEnabled.
+    const businessEmailRequired = this.organizationRequirements()?.business_email_required ?? this.committee()?.business_email_required ?? false;
+    if (selfMemberNeedsDetails(request, { business_email_required: businessEmailRequired, enable_voting: this.votingEnabled() })) {
+      this.openAddMemberDialog(request);
+      return;
+    }
+
+    this.handleAddMemberResult(request);
+    this.messageService.add({
+      severity: 'success',
+      summary: 'Added to members',
+      detail: "You're on the member list. Select Done or Update Group to save.",
     });
   }
 
@@ -549,6 +583,20 @@ export class CommitteeMembersManagerComponent implements OnInit {
       createOptions: memberData.createOptions,
       pendingInviteUids: memberData.pendingInviteUids,
     };
+  }
+
+  // Hidden once the user is an active (non-deleted) member or a staged invitee — same activeness
+  // rule as emitMemberUpdates(), compared by normalized email.
+  private initCanAddSelf() {
+    return computed(() => {
+      const email = this.selfMemberRequest()?.email.toLowerCase();
+      if (!email) {
+        return false;
+      }
+      const isMember = this.membersWithState().some((m) => m.state !== 'deleted' && (m.email ?? '').trim().toLowerCase() === email);
+      const isInvited = this.pendingInvites().some((invite) => (invite.invitee_email ?? '').trim().toLowerCase() === email);
+      return !isMember && !isInvited;
+    });
   }
 
   private initImportedInviteUidsByEmail() {

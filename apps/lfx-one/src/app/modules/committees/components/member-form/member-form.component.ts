@@ -60,6 +60,8 @@ export class MemberFormComponent {
   public readonly isEditing: boolean;
   public readonly memberId: string | undefined;
   public readonly member: CommitteeMember | undefined;
+  // Add-mode starting values (e.g. the signed-in user's details from "Add myself")
+  public readonly prefill: Partial<Pick<CreateCommitteeMemberRequest, 'email' | 'first_name' | 'last_name'>> | undefined;
   public readonly committee: Committee | undefined;
   // Wizard mode: returns data instead of calling API (used when committee doesn't exist yet)
   public readonly wizardMode: boolean;
@@ -77,6 +79,7 @@ export class MemberFormComponent {
     this.isEditing = this.config.data?.isEditing || false;
     this.memberId = this.config.data?.memberId;
     this.member = this.config.data?.member;
+    this.prefill = this.config.data?.prefill;
     this.committee = this.config.data?.committee;
     this.wizardMode = this.config.data?.wizardMode || false;
 
@@ -264,6 +267,12 @@ export class MemberFormComponent {
         voting_status_start: parseISODateString(member.voting?.start_date),
         voting_status_end: parseISODateString(member.voting?.end_date),
         permission: this.deriveInitialPermission(member),
+      });
+    } else if (!this.isEditing && this.prefill) {
+      this.form().patchValue({
+        email: this.prefill.email,
+        first_name: this.prefill.first_name,
+        last_name: this.prefill.last_name,
       });
     }
   }

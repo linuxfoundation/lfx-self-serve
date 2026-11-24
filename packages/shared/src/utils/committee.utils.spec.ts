@@ -21,6 +21,7 @@ import {
   buildCommitteeCreateQueryParams,
   buildEngagementStatCards,
   buildParentCommitteeOptions,
+  buildSelfMemberRequest,
   canManageCommitteeMembers,
   canViewCommitteeRoster,
   committeeRouteIdMatches,
@@ -36,6 +37,7 @@ import {
   resolveGroupsCardRoleSeverity,
   resolveJoinModeSeverity,
   resolveTypeDisplay,
+  selfMemberNeedsDetails,
 } from './committee.utils';
 
 /** Minimal committee builder — only the fields the resolver reads. */
@@ -499,6 +501,46 @@ describe('countVotingReps', () => {
 
   it('is 0 for an empty member list', () => {
     expect(countVotingReps([])).toBe(0);
+  });
+});
+
+describe('buildSelfMemberRequest', () => {
+  const user = { email: 'self@example.com', given_name: 'Self', family_name: 'User' };
+
+  it.each([
+    ['a null user', null, null],
+    ['an empty email', { ...user, email: '  ' }, null],
+    [
+      'the given and family names over the alternative fields',
+      { ...user, first_name: 'Other', last_name: 'Name' },
+      { email: 'self@example.com', first_name: 'Self', last_name: 'User' },
+    ],
+    [
+      'the first and last name fallback',
+      { ...user, given_name: '', family_name: '', first_name: 'Alt', last_name: 'Person' },
+      { email: 'self@example.com', first_name: 'Alt', last_name: 'Person' },
+    ],
+    [
+      'trimmed whitespace',
+      { email: ' self@example.com ', given_name: ' Self ', family_name: ' User ' },
+      { email: 'self@example.com', first_name: 'Self', last_name: 'User' },
+    ],
+  ])('returns the expected request for %s', (_description, input, expected) => {
+    expect(buildSelfMemberRequest(input)).toEqual(expected);
+  });
+});
+
+describe('selfMemberNeedsDetails', () => {
+  const names = { first_name: 'Self', last_name: 'User' };
+  const none = { business_email_required: false, enable_voting: false };
+
+  it.each([
+    ['complete names and no requirements', names, none, false],
+    ['a blank last name', { ...names, last_name: ' ' }, none, true],
+    ['a business email requirement', names, { ...none, business_email_required: true }, true],
+    ['voting enabled', names, { ...none, enable_voting: true }, true],
+  ])('with %s returns the expected result', (_description, request, requirements, expected) => {
+    expect(selfMemberNeedsDetails(request, requirements)).toBe(expected);
   });
 });
 

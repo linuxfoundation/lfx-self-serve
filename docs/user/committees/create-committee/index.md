@@ -4,7 +4,7 @@ description: How to create a group (committee) in LFX Self Serve with the four-s
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, create, wizard, join-mode, governance]
-last_updated: 2026-11-23
+last_updated: 2026-11-24
 intercom_collection: Committees
 ---
 
@@ -56,6 +56,8 @@ Select **Create Group**. The group is saved at this point, before you add member
 Add the first members, or skip this step. You can invite by email, add people with details, or import a CSV. See [Import members from a CSV](../manage-committees/#import-members-from-a-csv). Nothing you stage here is saved until you select **Done**.
 
 **Add with details** and CSV imports require a first and last name for each new member; empty or whitespace-only names are not accepted. CSV files must include the `first_name` and `last_name` columns. **Invite by email** does not require names because it stages invitations rather than creating members immediately.
+
+Creating a group doesn't make you a member of it. To join, select **Add myself**, to the right of the add buttons. It stages you as a member using the name and email from your profile, and it's saved with the others when you select **Done**. If the group has voting or requires a business email, or your profile has no name, **Add myself** opens **Add with details** with your name and email already filled in, so you can complete the remaining fields. The button disappears once you're on the member list or have a staged invitation. It's also available in **Edit Group** on the **Add Members** step.
 
 - **Done** saves the staged members and takes you back to the Groups page.
 - **Skip For Now** leaves without adding anyone. The group already exists, and you can add members later.

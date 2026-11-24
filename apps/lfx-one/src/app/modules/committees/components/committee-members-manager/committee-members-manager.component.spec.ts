@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
@@ -12,14 +13,17 @@ import {
   CreateCommitteeMemberRequest,
   MemberPendingChanges,
   StagedCommitteeMemberRequest,
+  User,
 } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ImportMembersDialogComponent } from '../import-members-dialog/import-members-dialog.component';
+import { MemberFormComponent } from '../member-form/member-form.component';
 import { CommitteeMembersManagerComponent } from './committee-members-manager.component';
 
 const GROUP = {
@@ -42,8 +46,9 @@ const REQUEST: CreateCommitteeMemberRequest = {
   voting: { status: CommitteeMemberVotingStatus.OBSERVER, start_date: '2026-01-01', end_date: '2027-01-01' },
   appointed_by: CommitteeMemberAppointedBy.COMMUNITY,
 };
+const SELF_USER = { email: 'self@example.com', given_name: 'Self', family_name: 'User' } as User;
 
-describe('CommitteeMembersManagerComponent CSV import', () => {
+describe('CommitteeMembersManagerComponent', () => {
   let fixture: ComponentFixture<CommitteeMembersManagerComponent>;
   let component: CommitteeMembersManagerComponent;
   let dialogClose: Subject<StagedCommitteeMemberRequest[] | undefined>;
@@ -56,7 +61,11 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
   };
   let updates: MemberPendingChanges[];
 
-  async function setup(inputs: Record<string, unknown> = {}, membersResponse: Observable<CommitteeMember[]> = of([EXISTING])): Promise<void> {
+  async function setup(
+    inputs: Record<string, unknown> = {},
+    membersResponse: Observable<CommitteeMember[]> = of([EXISTING]),
+    user: User | null = SELF_USER
+  ): Promise<void> {
     dialogClose = new Subject();
     dialogService = { open: vi.fn(() => ({ onClose: dialogClose })) };
     committeeService = {
@@ -67,7 +76,12 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
     };
     await TestBed.configureTestingModule({
       imports: [CommitteeMembersManagerComponent],
-      providers: [provideNoopAnimations(), MessageService, { provide: CommitteeService, useValue: committeeService }],
+      providers: [
+        provideNoopAnimations(),
+        MessageService,
+        { provide: CommitteeService, useValue: committeeService },
+        { provide: UserService, useValue: { user: signal(user) } },
+      ],
     })
       .overrideComponent(CommitteeMembersManagerComponent, {
         set: { providers: [ConfirmationService, { provide: DialogService, useValue: dialogService }] },
@@ -463,5 +477,61 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
     component.handleMemberUpdate({ id: staged.tempId!, data: { ...staged, email: 'uninvited@example.com' } });
     expect(updates.at(-1)?.toAdd[0].pendingInviteUids).toEqual([]);
     expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+  });
+
+  describe('Add myself', () => {
+    it('stages the signed-in user as a new member in one click and hides the button until removed', async () => {
+      await setup();
+      const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+      component.addMyself();
+      const self = { email: SELF_USER.email, first_name: 'Self', last_name: 'User' };
+      expect(component.membersWithState().at(-1)).toEqual(expect.objectContaining({ ...self, state: 'new' }));
+      expect(updates.at(-1)?.toAdd).toEqual([expect.objectContaining(self)]);
+      expect(updates.at(-1)?.toAdd[0].createOptions).toBeUndefined();
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Added to members' }));
+      expect(component.canAddSelf()).toBe(false);
+
+      vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm').mockImplementation((confirmation) => {
+        confirmation.accept?.();
+        return fixture.debugElement.injector.get(ConfirmationService);
+      });
+      component.handleMemberDelete(component.membersWithState().at(-1)!.tempId!);
+      expect(component.canAddSelf()).toBe(true);
+    });
+
+    it.each([
+      ['voting is enabled in the live settings', { organizationRequirements: { enable_voting: true, business_email_required: false } }],
+      ['a business email is required in the live settings', { organizationRequirements: { enable_voting: false, business_email_required: true } }],
+    ])('opens Add with details prefilled instead when %s', async (_description, inputs) => {
+      await setup(inputs);
+      component.addMyself();
+      expect(dialogService.open).toHaveBeenCalledWith(
+        MemberFormComponent,
+        expect.objectContaining({ data: expect.objectContaining({ prefill: { email: SELF_USER.email, first_name: 'Self', last_name: 'User' } }) })
+      );
+      dialogClose.next(undefined);
+      expect(component.membersWithState()).toEqual([expect.objectContaining({ email: EXISTING.email })]);
+      expect(component.canAddSelf()).toBe(true);
+    });
+
+    it.each([
+      ['an existing member, ignoring case', { ...SELF_USER, email: 'EXISTING@example.com' }, {}],
+      ['a staged invitation', SELF_USER, { memberUpdates: { toAdd: [], toUpdate: [], toDelete: [], toInvite: [{ invitee_email: ' Self@Example.com ' }] } }],
+    ])('is unavailable when the user is already %s', async (_description, user, inputs) => {
+      await setup(inputs, of([EXISTING]), user);
+      expect(component.canAddSelf()).toBe(false);
+      expect(query('add-myself-button')).toBeNull();
+    });
+
+    it('shows the button next to the add actions and disables it while saving', async () => {
+      await setup();
+      expect(query('add-myself-button')?.textContent).toContain('Add myself');
+      expect((query('add-myself-button')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+      fixture.componentRef.setInput('submitting', true);
+      await fixture.whenStable();
+      expect((query('add-myself-button')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      component.addMyself();
+      expect(component.membersWithState()).toHaveLength(1);
+    });
   });
 });

@@ -12,6 +12,7 @@ import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { UserService } from '@services/user.service';
 import { Committee, CommitteeMember, MemberPendingChanges, PersonaType, Project, StagedCommitteeMemberRequest } from '@lfx-one/shared/interfaces';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -137,6 +138,8 @@ describe('CommitteeManageComponent', () => {
         // evictOnWriteAccessLoss injects these directly — mocked so no transitive HttpClient chain.
         { provide: PersonaService, useValue: { currentPersona, personaLoaded } },
         { provide: LensService, useValue: { activeLens: signal('project') } },
+        // The rendered members manager reads the signed-in user for "Add myself".
+        { provide: UserService, useValue: { user: signal(null) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         // Real class, not a useValue fake — ConfirmDialog touches ConfirmationService's internal
         // Subjects in its constructor (same pattern as committee-settings-tab.component.spec.ts).
