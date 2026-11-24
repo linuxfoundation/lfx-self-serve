@@ -17,6 +17,7 @@ import {
   EntityWithProject,
   GroupsIOMailingList,
   GroupsIOService,
+  InheritedGroupsIOService,
 } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched, normalizeServicePrefix } from '@lfx-one/shared/utils';
 import { announcementVisibilityValidator, htmlMaxLengthValidator, htmlMinLengthValidator, htmlRequiredValidator } from '@lfx-one/shared/validators';
@@ -68,7 +69,7 @@ export class MailingListManageComponent {
   public readonly mailingListId = signal<string | null>(null);
   public readonly submitting = signal<boolean>(false);
   public readonly servicesLoaded = signal<boolean>(false);
-  public readonly parentService = signal<GroupsIOService | null>(null);
+  public readonly parentService = signal<InheritedGroupsIOService | null>(null);
   private readonly internalStep = signal<number>(1);
   private readonly createdService = signal<GroupsIOService | null>(null);
   public readonly hasDuplicateNameError = signal<boolean>(false);
@@ -80,8 +81,8 @@ export class MailingListManageComponent {
   // from the loaded entity, not the URL's lens prefix or a stale cookie-restored context (GH-1567).
   private readonly mailingListEntityContext: Signal<EntityWithProject | null> = this.initMailingListEntityContext();
   public readonly project: Signal<ReturnType<typeof this.projectContextService.selectedProject>> = this.initProject();
-  public readonly availableServices: Signal<GroupsIOService[]> = this.initServices();
-  public readonly selectedService: Signal<GroupsIOService | null> = this.initSelectedService();
+  public readonly availableServices: Signal<InheritedGroupsIOService[]> = this.initServices();
+  public readonly selectedService: Signal<InheritedGroupsIOService | null> = this.initSelectedService();
   public readonly needsSharedServiceCreation: Signal<boolean> = this.initNeedsSharedServiceCreation();
   public readonly servicePrefix: Signal<string> = this.initServicePrefix();
   public readonly maxGroupNameLength: Signal<number> = this.initMaxGroupNameLength();
@@ -323,7 +324,7 @@ export class MailingListManageComponent {
     return computed(() => this.projectContextService.activeContext());
   }
 
-  private initServices(): Signal<GroupsIOService[]> {
+  private initServices(): Signal<InheritedGroupsIOService[]> {
     return toSignal(
       toObservable(this.project).pipe(
         tap(() => {
@@ -343,24 +344,16 @@ export class MailingListManageComponent {
                 return of(services);
               }
 
-              // No services found, fetch full project to get parent_uid
-              return this.projectService.getProject(project.slug, false).pipe(
-                switchMap((fullProject) => {
-                  if (!fullProject?.parent_uid) {
-                    return of([]);
+              // No services found, resolve the parent project's services server-side so a project writer
+              // without direct access to them can still create a shared service
+              return this.mailingListService.getInheritedServices(project.uid).pipe(
+                tap((parentServices) => {
+                  // If parent has services, store the first one for shared service creation
+                  if (parentServices.length > 0) {
+                    this.parentService.set(parentServices[0]);
                   }
-
-                  // Fetch services from parent project
-                  return this.mailingListService.getServicesByProject(fullProject.parent_uid).pipe(
-                    tap((parentServices) => {
-                      // If parent has services, store the first one for shared service creation
-                      if (parentServices.length > 0) {
-                        this.parentService.set(parentServices[0]);
-                      }
-                    })
-                  );
                 }),
-                catchError(() => of([]))
+                catchError(() => of([] as InheritedGroupsIOService[]))
               );
             }),
             tap(() => this.servicesLoaded.set(true)),
@@ -375,7 +368,7 @@ export class MailingListManageComponent {
     );
   }
 
-  private initSelectedService(): Signal<GroupsIOService | null> {
+  private initSelectedService(): Signal<InheritedGroupsIOService | null> {
     return computed(() => this.createdService() ?? this.availableServices()[0] ?? null);
   }
 
@@ -536,7 +529,7 @@ export class MailingListManageComponent {
     }
   }
 
-  private prepareMailingListData(service: GroupsIOService): CreateMailingListRequest {
+  private prepareMailingListData(service: InheritedGroupsIOService): CreateMailingListRequest {
     const formValue = this.form().value;
     const prefix = this.servicePrefix() || this.cleanSlug(this.project()?.slug || '');
     const groupName = service.type === GroupsIOServiceType.PRIMARY ? formValue.group_name : `${prefix}-${formValue.group_name}`;
