@@ -24,7 +24,6 @@ import { OrgLensRoiController } from '../controllers/org-lens-roi.controller';
 import { OrgLensGroupsController } from '../controllers/org-lens-groups.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
 import { isOrgLensEmployeeViewEnabled } from '../helpers/org-lens-employee-view-flag.helper';
-import { blockEmployeeView } from '../middleware/block-employee-view.middleware';
 import { blockEmployeeViewEcosystemCard } from '../middleware/block-employee-view-ecosystem-card.middleware';
 import { requireOrgLensAccess } from '../middleware/require-org-lens-access.middleware';
 import { requireOrgLensRoiAudience } from '../middleware/require-org-lens-roi-audience.middleware';

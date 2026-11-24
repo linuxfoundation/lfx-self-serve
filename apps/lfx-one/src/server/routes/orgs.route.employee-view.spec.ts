@@ -103,6 +103,8 @@ let baseUrl: string;
 beforeAll(async () => {
   const app = express();
   app.use('/api/orgs', orgsRouter);
+  // Express recognises an error handler by its four parameters, so `_next` must stay.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: { statusCode?: number; code?: string; message?: string }, _req: Request, res: Response, _next: NextFunction) => {
     res.status(err.statusCode ?? 500).json({ code: err.code, message: err.message });
   });

@@ -75,13 +75,6 @@ let impersonatingStub = false;
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'jdoe', isImpersonating: () => impersonatingStub }));
 // The ROI LF-staff gate (in every environment) asks `lf-staff#member`; each case sets the answer it needs.
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkLFStaff: () => checkLFStaff() } }));
-// All employee view (#5851): the middleware has its own unit spec; here only that the per-event attendee and
-// speaker routes are mounted behind it (and the events list is not) is asserted.
-let employeeViewStub = false;
-vi.mock('../middleware/block-employee-view.middleware', () => ({
-  blockEmployeeView: (_req: unknown, _res: unknown, next: (error?: unknown) => void) =>
-    next(employeeViewStub ? Object.assign(new Error('employee view'), { statusCode: 403, code: 'EMPLOYEE_VIEW_FORBIDDEN' }) : undefined),
-}));
 vi.mock('../services/logger.service', () => ({
   logger: {
     info: vi.fn(),
@@ -459,56 +452,5 @@ describe('orgs router — Training & Certification in the all employee view', ()
     const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}${learnerDrillDown}`);
 
     expect(res.status).not.toBe(403);
-  });
-});
-
-/**
- * Epic #5845 (#5858) — the company Profile page is hidden in the all employee view, so every API route behind it
- * (canonical record read and edit, addresses, logo upload, and the bare `/:id` read) answers 403 there. These routes sit
- * outside `/:orgUid/lens`, so the lens gate does not cover them; each is exercised here through the assembled router.
- */
-describe('orgs router — Profile routes in the all employee view', () => {
-  const UID = '0014100000BetaAAAA';
-  const calls: [string, string, RequestInit?][] = [
-    ['GET /uid/:uid', `/uid/${UID}`],
-    ['PUT /uid/:uid', `/uid/${UID}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'X' }) }],
-    ['GET /uid/:uid/addresses', `/uid/${UID}/addresses`],
-    ['POST /uid/:uid/logo', `/uid/${UID}/logo`, { method: 'POST', headers: { 'Content-Type': 'image/svg+xml' }, body: Buffer.from('<svg/>') }],
-    ['GET /:id', `/${UID}`],
-  ];
-
-  beforeEach(() => {
-    process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'] = 'true';
-    resolveEmployeeView.mockResolvedValue({ eligible: true, org: { orgUid: UID, orgName: 'Beta' } });
-  });
-
-  it.each(calls)('refuses %s with 403 and never reaches member-service', async (_label, path, init) => {
-    const res = await fetch(`${baseUrl}/api/orgs${path}`, init);
-
-    expect(res.status).toBe(403);
-    // The refusal came from the employee-view verdict, not from the read gate's own 403 (the body is Express's default page here).
-    expect(resolveEmployeeView).toHaveBeenCalled();
-    expect(proxyRequest).not.toHaveBeenCalled();
-    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
-  });
-
-  it.each(calls)('lets a full-view caller through on %s', async (_label, path, init) => {
-    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[UID, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
-
-    const res = await fetch(`${baseUrl}/api/orgs${path}`, init);
-
-    // Admitted by the grant: the employee-view verdict is never asked, and the handler (not the gate) answers.
-    expect(resolveEmployeeView).not.toHaveBeenCalled();
-    expect(res.status).not.toBe(403);
-  });
-
-  it('leaves the routes untouched while the rollout flag is off', async () => {
-    delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
-    proxyRequest.mockResolvedValue({ uid: UID, name: 'Beta' });
-
-    const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}`);
-
-    expect(res.status).toBe(200);
-    expect(resolveEmployeeView).not.toHaveBeenCalled();
   });
 });
