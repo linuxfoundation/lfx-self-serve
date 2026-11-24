@@ -5,8 +5,9 @@ import { MAX_ORG_TRAINING_FILTER_VALUE_LENGTH, MAX_SNOWFLAKE_PAGINATION_PAGE } f
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { assertOrgLensRead, getTrainingStats, getFilterOptions, getGroups, getGroupEmployees, logger } = vi.hoisted(() => ({
+const { assertOrgLensRead, getOrgLensViewMode, getTrainingStats, getFilterOptions, getGroups, getGroupEmployees, logger } = vi.hoisted(() => ({
   assertOrgLensRead: vi.fn(),
+  getOrgLensViewMode: vi.fn(),
   getTrainingStats: vi.fn(),
   getFilterOptions: vi.fn(),
   getGroups: vi.fn(),
@@ -28,7 +29,7 @@ vi.mock('../services/org-lens-training.service', () => ({
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
-vi.mock('../helpers/org-lens-read-access.helper', () => ({ assertOrgLensRead }));
+vi.mock('../helpers/org-lens-read-access.helper', () => ({ assertOrgLensRead, getOrgLensViewMode }));
 
 import { ServiceValidationError } from '../errors';
 import { OrgLensTrainingController } from './org-lens-training.controller';
@@ -49,6 +50,7 @@ describe('OrgLensTrainingController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     assertOrgLensRead.mockResolvedValue('org-grant');
+    getOrgLensViewMode.mockReturnValue('full');
     getTrainingStats.mockResolvedValue({ rosterMembers: null, peopleWithTrainingActivity: 0, coursesTaken: 0 });
     getFilterOptions.mockResolvedValue({ courses: [] });
     getGroups.mockResolvedValue({ data: [], total: 0, totals: {} });
@@ -280,5 +282,24 @@ describe('OrgLensTrainingController', () => {
       expect(next).not.toHaveBeenCalled();
       expect(getTrainingStats.mock.calls[0][1]).toMatchObject({ level: 'Unknown' });
     });
+  });
+
+  it('stats: a full-view caller keeps the learners-not-on-the-people-list count', async () => {
+    getTrainingStats.mockResolvedValue({ peopleWithTrainingActivity: 5, learnersOutsidePeopleList: 12 });
+    const res = buildRes();
+
+    await controller.getTrainingStats(buildReq({}), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith({ peopleWithTrainingActivity: 5, learnersOutsidePeopleList: 12 });
+  });
+
+  it('stats: the all employee view keeps the aggregates but never receives the learners-not-on-the-people-list count', async () => {
+    getOrgLensViewMode.mockReturnValue('employee');
+    getTrainingStats.mockResolvedValue({ peopleWithTrainingActivity: 5, learnersOutsidePeopleList: 12 });
+    const res = buildRes();
+
+    await controller.getTrainingStats(buildReq({}), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith({ peopleWithTrainingActivity: 5, learnersOutsidePeopleList: null });
   });
 });

@@ -9,6 +9,7 @@ import {
   DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER,
   DEFAULT_ORG_TRAINING_TAB_ID,
   MAX_ORG_TRAINING_GROUPS_PAGE_SIZE,
+  ORG_LENS_EMPLOYEE_VIEW,
   ORG_TRAINING_FILTER_KEYS,
   ORG_TRAINING_VIEW_QUERY_PARAMS,
   VALID_ORG_TRAINING_GROUPS_SORT_FIELDS,
@@ -17,6 +18,7 @@ import {
 import type {
   OrgTrainingGroupSortField,
   OrgTrainingGroupStatus,
+  OrgTrainingStats,
   OrgTrainingStatsQuery,
   OrgTrainingTabId,
   OrgTrainingViewState,
@@ -25,7 +27,7 @@ import { orgTrainingStatsQuery, parseOrgTrainingViewState } from '@lfx-one/share
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
-import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
+import { assertOrgLensRead, getOrgLensViewMode } from '../helpers/org-lens-read-access.helper';
 import { assertWellFormedOrgTrainingFilterValue } from '../helpers/org-training-filter.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam, parseOffsetPagination } from '../helpers/validation.helper';
@@ -76,7 +78,10 @@ export class OrgLensTrainingController {
 
       // Spec 002: orgUid is the canonical org account id (SFID); pass it straight to Snowflake.
       const query: OrgTrainingStatsQuery = orgTrainingStatsQuery(parseViewState(req, operation));
-      const response = await this.service.getTrainingStats(orgUid, query, qualification);
+      const fullResponse = await this.service.getTrainingStats(orgUid, query, qualification);
+      // The all employee view has no People page, so the learners-not-on-the-people-list count means nothing there: it never leaves the API.
+      const response: OrgTrainingStats =
+        getOrgLensViewMode(req, orgUid) === ORG_LENS_EMPLOYEE_VIEW ? { ...fullResponse, learnersOutsidePeopleList: null } : fullResponse;
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,

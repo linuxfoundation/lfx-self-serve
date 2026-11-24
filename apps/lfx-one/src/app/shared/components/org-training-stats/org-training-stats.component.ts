@@ -5,7 +5,7 @@
 
 import { Component, computed, input, signal } from '@angular/core';
 import { ORG_TRAINING_STAT_PRIMARY_KEYS } from '@lfx-one/shared/constants';
-import type { OrgLensTimeRange, OrgTrainingStats, OrgTrainingStatTileVm } from '@lfx-one/shared/interfaces';
+import type { OrgLensTimeRange, OrgTrainingStatKey, OrgTrainingStats, OrgTrainingStatTileVm } from '@lfx-one/shared/interfaces';
 import { buildOrgTrainingStatTiles } from '@lfx-one/shared/utils';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -27,10 +27,15 @@ export class OrgTrainingStatsComponent {
   public readonly stats = input.required<OrgTrainingStats | null>();
   public readonly range = input.required<OrgLensTimeRange>();
   public readonly collapsible = input<boolean>(false);
+  /** Stats left off the strip entirely (the all employee view drops the learners-not-on-the-people-list tile). */
+  public readonly excludeKeys = input<readonly OrgTrainingStatKey[]>([]);
 
   protected readonly expanded = signal<boolean>(false);
 
-  protected readonly tiles = computed<OrgTrainingStatTileVm[]>(() => buildOrgTrainingStatTiles(this.stats(), this.range()));
+  protected readonly tiles = computed<OrgTrainingStatTileVm[]>(() => {
+    const excluded = this.excludeKeys();
+    return buildOrgTrainingStatTiles(this.stats(), this.range()).filter((tile) => !excluded.includes(tile.key));
+  });
   protected readonly collapsed = computed<boolean>(() => this.collapsible() && !this.expanded());
   protected readonly hiddenCount = computed<number>(() => (this.collapsible() ? this.tiles().filter((tile) => !PRIMARY_KEYS.has(tile.key)).length : 0));
 

@@ -8,7 +8,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DEFAULT_ORG_TRAINING_TAB_ID, ORG_TRAINING_TABS, VALID_ORG_TRAINING_TAB_IDS } from '@lfx-one/shared/constants';
-import type { OrgTrainingStats, OrgTrainingStatsQuery, OrgTrainingTabId, OrgTrainingViewState } from '@lfx-one/shared/interfaces';
+import type { OrgTrainingStatKey, OrgTrainingStats, OrgTrainingStatsQuery, OrgTrainingTabId, OrgTrainingViewState } from '@lfx-one/shared/interfaces';
 import { orgTrainingFiltersSignature, orgTrainingStatsQuery, orgTrainingTableNote, parseOrgTrainingViewState } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, distinctUntilChanged, finalize, of, skip, switchMap } from 'rxjs';
@@ -25,6 +25,7 @@ import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/pe
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
+import { OrgLensViewModeService } from '@shared/services/org-lens-view-mode.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 
 import { OrgTrainingGroupsTableComponent } from './components/org-training-groups-table/org-training-groups-table.component';
@@ -55,6 +56,9 @@ export class OrgTrainingComponent {
   private readonly trainingService = inject(OrgLensTrainingService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
+  protected readonly viewMode = inject(OrgLensViewModeService);
+  /** The all employee view has no People page, so the learners-not-on-the-people-list tile (and its endpoint) is gone there. */
+  protected readonly statsExcludeKeys = computed<OrgTrainingStatKey[]>(() => (this.viewMode.isEmployeeView() ? ['learnersOutsidePeopleList'] : []));
 
   // ─── Configuration ─────────────────────────────────────────────────────────
   // Shared constants are readonly; copy into a mutable array for the component input that expects it.
