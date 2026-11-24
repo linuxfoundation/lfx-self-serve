@@ -384,6 +384,7 @@ import type {
   StoredCreativeAsset,
   MetaAudienceTargetingDraft,
   MetaDetailedTargetingPicks,
+  MetaDeliveryDraft,
   MetaAdOptionKey,
   MetaAdOptions,
   MetaAdOptionView,
@@ -479,6 +480,13 @@ import {
   metaDetailedTargetingForCreate,
   metaDetailedTargetingPicksSendable,
   metaDetailedTargetingRefusal,
+  emptyMetaDeliveryDraft,
+  metaAdScheduleRefusal,
+  metaDeliveryApplicable,
+  metaDeliveryBlock,
+  metaDeliveryForCreate,
+  metaDeliverySendable,
+  metaFrequencyCapRefusal,
   metaBasicsRefusal,
   metaBriefSeed,
   metaCreateRefusal,
@@ -529,6 +537,7 @@ import { CampaignBiddingControlComponent } from '../campaign-bidding-control/cam
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
 import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
+import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
 import { MetaDetailedTargetingComponent } from '../meta-detailed-targeting/meta-detailed-targeting.component';
 import { MetaLeadFormPickerComponent } from '../meta-lead-form-picker/meta-lead-form-picker.component';
 import { CampaignGoogleDemographicsPanelComponent } from '../campaign-google-demographics-panel/campaign-google-demographics-panel.component';
@@ -614,6 +623,7 @@ let linkedInVariantKeySequence = 0;
     CampaignGoogleDemographicTargetingComponent,
     MetaAudienceTargetingComponent,
     MetaDetailedTargetingComponent,
+    MetaDeliveryOptionsComponent,
     MetaLeadFormPickerComponent,
     CampaignGoogleDemographicsPanelComponent,
     CampaignGoogleExclusionsPanelComponent,
@@ -1046,6 +1056,18 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaInterestTargetingEnabled = input<boolean | null>(null);
   /** The same for Meta behaviors and job titles — `CampaignListResult.metaBehaviorTargetingEnabled`. */
   public readonly metaBehaviorTargetingEnabled = input<boolean | null>(null);
+  /**
+   * Whether this deployment sends a Meta ad schedule (#5904 row 5) — `CampaignListResult.metaAdScheduleEnabled`, behind
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE`. Deployment-wide; `null` while unanswered.
+   */
+  public readonly metaAdScheduleEnabled = input<boolean | null>(null);
+  /** The same for the Meta frequency cap — `CampaignListResult.metaFrequencyCapEnabled`. */
+  public readonly metaFrequencyCapEnabled = input<boolean | null>(null);
+  /** The schedule is offered on its explicit yes and a lifetime budget, which Meta needs for one. */
+  protected readonly metaAdScheduleShown = computed<boolean>(() => this.metaAdScheduleEnabled() === true && this.metaLifetimeBudget());
+  /** The cap is offered on its explicit yes and the awareness objective, the only one Meta takes it on. */
+  protected readonly metaFrequencyCapShown = computed<boolean>(() => this.metaFrequencyCapEnabled() === true && this.metaObjective() === 'awareness');
+
   /** Whether any detailed-targeting list is offered: each only on an explicit yes. */
   protected readonly metaDetailedTargetingAvailable = computed<boolean>(
     () => this.metaInterestTargetingEnabled() === true || this.metaBehaviorTargetingEnabled() === true
@@ -1638,6 +1660,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaAudienceTargeting = signal<MetaAudienceTargetingDraft>(this.defaultMetaAudienceTargeting());
   /** The Meta interests, behaviors and job titles as picked in `lfx-meta-detailed-targeting` (#5904 row 4), kept whatever the flags say. */
   protected readonly metaDetailedTargeting = signal<MetaDetailedTargetingPicks>(emptyMetaDetailedTargetingPicks());
+  /** The Meta ad schedule and frequency cap as edited in `lfx-meta-delivery-options` (#5904 row 5); `null` is unset. */
+  protected readonly metaDelivery = signal<MetaDeliveryDraft>(emptyMetaDeliveryDraft());
   /** The Meta call to action, conversion event and optimization goal as chosen (#5934); an absent key is "Not set". */
   protected readonly metaAdOptions = signal<MetaAdOptions>({});
   /** The Meta Instant Form picked or typed in `lfx-meta-lead-form-picker` (#5940); blank is none. Sent only under `leads`. */
@@ -3472,6 +3496,26 @@ export class ImplementationTabComponent implements OnInit {
       briefId: this.briefPersistence().briefId,
     })
   );
+  /** The ad schedule and frequency cap the create carries (#5904 row 5): each only on its explicit yes. */
+  private readonly metaDeliveryRequested = computed(() =>
+    metaDeliveryForCreate(this.metaDelivery(), this.metaAdScheduleEnabled(), this.metaFrequencyCapEnabled())
+  );
+  /** Why Create is held for a schedule or cap the request cannot carry, or `null`: {@link metaAudienceTargetingBlock}'s states. */
+  protected readonly metaDeliveryBlock = computed(() =>
+    metaDeliveryBlock({
+      draft: this.metaDelivery(),
+      adScheduleEnabled: this.metaAdScheduleEnabled(),
+      frequencyCapEnabled: this.metaFrequencyCapEnabled(),
+      createCapabilityRead: this.createCapabilityRead(),
+      briefId: this.briefPersistence().briefId,
+    })
+  );
+  /** Why the schedule or cap cannot be sent, or `null`: the create route's own rules, on this budget mode and objective. */
+  protected readonly metaDeliveryError = computed<string | null>(() => {
+    const raw = { ...this.metaDeliveryRequested(), lifetimeBudget: this.metaLifetimeBudget(), objective: this.metaObjective() };
+    return (metaAdScheduleRefusal(raw) ?? metaFrequencyCapRefusal(raw))?.message ?? null;
+  });
+
   /** Why the detailed fields cannot be sent, or `null`: the create route's own rules. */
   protected readonly metaDetailedTargetingError = computed<string | null>(
     () => metaDetailedTargetingRefusal(this.metaDetailedTargetingRequested())?.message ?? null
@@ -4046,6 +4090,8 @@ export class ImplementationTabComponent implements OnInit {
           audienceTargetingError: this.metaAudienceTargetingError(),
           detailedTargetingBlock: this.metaDetailedTargetingBlock()?.message ?? null,
           detailedTargetingError: this.metaDetailedTargetingError(),
+          deliveryBlock: this.metaDeliveryBlock()?.message ?? null,
+          deliveryError: this.metaDeliveryError(),
           adOptionsBlock: this.metaAdOptionsBlock()?.message ?? null,
           adOptionsError: this.metaAdOptionsError(),
           leadFormError: this.metaLeadFormError(),
@@ -5694,6 +5740,8 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onMetaLifetimeBudgetChange(event: Event): void {
     this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
+    // Meta schedules only lifetime budgets, so a daily budget clears the schedule rather than hiding it (#5904 row 5).
+    this.dropInapplicableMetaDelivery();
     this.emitDraft();
   }
 
@@ -5705,6 +5753,8 @@ export class ImplementationTabComponent implements OnInit {
     this.dropInapplicableMetaAdOptions();
     // Only `leads` carries a lead form, so leaving it clears the form (#5940).
     this.metaLeadFormId.set(metaLeadFormForObjective(this.metaObjective(), this.metaLeadFormId()));
+    // Only awareness takes a frequency cap, so leaving it clears the cap (#5904 row 5).
+    this.dropInapplicableMetaDelivery();
     // Every Meta mutation emits. These signals are invisible to `campaignForm.valueChanges`, so
     // without this the parent's draft never learns the edit and a tab switch reverts it.
     this.emitDraft();
@@ -5758,6 +5808,16 @@ export class ImplementationTabComponent implements OnInit {
   /** Back to Meta's defaults: the way past an `unsupported` {@link metaAudienceTargetingBlock}, whose section is hidden. */
   protected clearMetaAudienceTargeting(): void {
     this.onMetaAudienceTargetingChange(this.defaultMetaAudienceTargeting());
+  }
+
+  protected onMetaDeliveryChange(delivery: MetaDeliveryDraft): void {
+    this.metaDelivery.set(delivery);
+    this.emitDraft();
+  }
+
+  /** Clears each option this deployment answered no to: the way past an `unsupported` {@link metaDeliveryBlock}, whose control is hidden. */
+  protected clearUnsendableMetaDelivery(): void {
+    this.onMetaDeliveryChange(metaDeliverySendable(this.metaDelivery(), this.metaAdScheduleEnabled(), this.metaFrequencyCapEnabled()));
   }
 
   protected onMetaDetailedTargetingChange(picks: MetaDetailedTargetingPicks): void {
@@ -6846,6 +6906,8 @@ export class ImplementationTabComponent implements OnInit {
               ...this.metaTargetingField(),
               // Only the choices this deployment confirmed; any other holds Create ({@link metaAdOptionsBlock}).
               ...this.metaAdOptionsField(),
+              // Only the schedule and cap this deployment confirmed; any other holds Create ({@link metaDeliveryBlock}).
+              ...this.metaDeliveryRequested(),
               // Only under `leads` for a caller who may send one; `canSubmit` has already refused a missing or bad form (#5940).
               ...(this.metaLeadFormRequested() ? { leadFormId: this.metaLeadFormId().trim() } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
@@ -8929,6 +8991,10 @@ export class ImplementationTabComponent implements OnInit {
     if (metaRestore.geoTargets !== undefined) this.metaGeoTargets.set(metaRestore.geoTargets);
     if (metaRestore.budgetUsd !== undefined) this.metaBudgetUsd.set(metaRestore.budgetUsd);
     if (metaRestore.lifetimeBudget !== undefined) this.metaLifetimeBudget.set(metaRestore.lifetimeBudget);
+    // After the budget mode and objective, so only what they can carry is restored (#5904 row 5).
+    if (metaRestore.delivery !== undefined) {
+      this.metaDelivery.set(metaDeliveryApplicable(metaRestore.delivery, this.metaLifetimeBudget(), this.metaObjective()));
+    }
 
     // Same present-only rule, for the same reason: an older draft omits these, and absence there
     // means "keep what the brief seeded".
@@ -9463,6 +9529,7 @@ export class ImplementationTabComponent implements OnInit {
         dsaPayor: this.metaInstagramDsaDraft().dsaPayor,
         audienceTargeting: this.metaAudienceTargeting(),
         detailedTargeting: this.metaDetailedTargeting(),
+        delivery: this.metaDelivery(),
         adOptions: this.metaAdOptions(),
         leadFormId: this.metaLeadFormId(),
         foundation: this.activeFoundationSlug(),
@@ -9850,6 +9917,7 @@ export class ImplementationTabComponent implements OnInit {
     // Another brief's audiences must never reach a live create either, nor its detailed targeting or Meta ad choices.
     this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
     this.metaDetailedTargeting.set(emptyMetaDetailedTargetingPicks());
+    this.metaDelivery.set(emptyMetaDeliveryDraft());
     this.metaAdOptions.set({});
     this.metaLeadFormId.set('');
     this.metaBudgetUsd.set(DEFAULT_META_BUDGET_USD);
@@ -14251,6 +14319,11 @@ export class ImplementationTabComponent implements OnInit {
   /** The Meta ad choices for the request: each only on an explicit yes, "Not set" never sent. */
   private metaAdOptionsField(): MetaAdOptions {
     return metaAdOptionsForCreate(this.metaAdOptions(), this.metaAdOptionsEnabled());
+  }
+
+  /** Clears the schedule off a daily budget and the cap off any objective but awareness (#5904 row 5). */
+  private dropInapplicableMetaDelivery(): void {
+    this.metaDelivery.update((delivery) => metaDeliveryApplicable(delivery, this.metaLifetimeBudget(), this.metaObjective()));
   }
 
   /** Clears each Meta ad choice the current objective does not take (#5934). */

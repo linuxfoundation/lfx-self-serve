@@ -1,0 +1,109 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="meta-delivery-options">
+  @if (scheduleShown()) {
+    <fieldset class="flex flex-col gap-2" data-testid="meta-delivery-schedule">
+      <legend class="sr-only">Ad schedule</legend>
+      <label class="flex items-center gap-2 text-sm text-gray-700">
+        <input
+          type="checkbox"
+          [checked]="delivery().adSchedule !== null"
+          (change)="onScheduleToggle($event)"
+          class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          data-testid="meta-delivery-schedule-toggle" />
+        Run the ads only at set times
+      </label>
+      @if (delivery().adSchedule; as schedule) {
+        <div class="flex flex-wrap items-center gap-3">
+          @for (day of days(); track day.value) {
+            <label class="flex items-center gap-1 text-xs text-gray-700">
+              <input
+                type="checkbox"
+                [checked]="day.on"
+                (change)="onDayToggle(day.value, $event)"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                [attr.data-testid]="'meta-delivery-day-' + day.value" />
+              {{ day.label }}
+            </label>
+          }
+        </div>
+        <div class="flex flex-wrap items-center gap-2 text-xs text-gray-700">
+          <label for="meta-delivery-start">From</label>
+          <select
+            id="meta-delivery-start"
+            [value]="schedule.startMinute"
+            (change)="onHourChange('startMinute', $event)"
+            class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900"
+            data-testid="meta-delivery-start">
+            @for (hour of startHours; track hour.value) {
+              <option [value]="hour.value" [selected]="hour.value === schedule.startMinute">{{ hour.label }}</option>
+            }
+          </select>
+          <label for="meta-delivery-end">to</label>
+          <select
+            id="meta-delivery-end"
+            [value]="schedule.endMinute"
+            (change)="onHourChange('endMinute', $event)"
+            class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900"
+            data-testid="meta-delivery-end">
+            @for (hour of endHours; track hour.value) {
+              <option [value]="hour.value" [selected]="hour.value === schedule.endMinute">{{ hour.label }}</option>
+            }
+          </select>
+        </div>
+        <p class="text-xs text-gray-500" data-testid="meta-delivery-schedule-hint">
+          One window for every chosen day, in the Meta ad account's time zone. Meta schedules only lifetime budgets.
+        </p>
+        @if (scheduleError(); as error) {
+          <p role="alert" class="text-xs text-red-600" data-testid="meta-delivery-schedule-error">{{ error }}</p>
+        }
+      }
+    </fieldset>
+  }
+
+  @if (capShown()) {
+    <fieldset class="flex flex-col gap-2" data-testid="meta-delivery-cap">
+      <legend class="sr-only">Frequency cap</legend>
+      <label class="flex items-center gap-2 text-sm text-gray-700">
+        <input
+          type="checkbox"
+          [checked]="delivery().frequencyCap !== null"
+          (change)="onCapToggle($event)"
+          class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          data-testid="meta-delivery-cap-toggle" />
+        Limit how often one person sees the ads
+      </label>
+      @if (delivery().frequencyCap; as cap) {
+        <div class="flex flex-wrap items-center gap-2 text-xs text-gray-700">
+          <label for="meta-delivery-impressions">At most</label>
+          <input
+            id="meta-delivery-impressions"
+            type="number"
+            [min]="capMin"
+            [max]="capMax"
+            step="1"
+            [value]="cap.maxImpressions"
+            (input)="onCapInput('maxImpressions', $event)"
+            class="w-16 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900"
+            data-testid="meta-delivery-impressions" />
+          <label for="meta-delivery-interval">impressions every</label>
+          <input
+            id="meta-delivery-interval"
+            type="number"
+            [min]="capMin"
+            [max]="capMax"
+            step="1"
+            [value]="cap.intervalDays"
+            (input)="onCapInput('intervalDays', $event)"
+            class="w-16 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900"
+            data-testid="meta-delivery-interval" />
+          <span>days</span>
+        </div>
+        @if (capError(); as error) {
+          <p role="alert" class="text-xs text-red-600" data-testid="meta-delivery-cap-error">{{ error }}</p>
+        }
+      }
+    </fieldset>
+  }
+</div>

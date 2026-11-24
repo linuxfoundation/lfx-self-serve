@@ -1266,6 +1266,10 @@ export interface CampaignImplementationDraft {
    * same. Not stamped with a foundation: Meta's targeting taxonomy is the same for every ad account.
    */
   metaDetailedTargeting?: MetaDetailedTargetingPicks;
+  /** The Meta ad schedule as edited (#5904 row 5); `null` is none. Not foundation-scoped. Absent means the draft predates it. */
+  metaAdSchedule?: MetaAdSchedule | null;
+  /** The Meta frequency cap as edited (#5904 row 5); `null` is none. */
+  metaFrequencyCap?: MetaFrequencyCap | null;
   /** The Meta call to action, conversion event and optimization goal as chosen (#5934); an absent key is "Not set". */
   metaAdOptions?: MetaAdOptions;
   /** The foundation slug {@link metaAdOptions} was chosen under: restored only under the same one, like the targeting. */
@@ -2352,6 +2356,8 @@ export interface MetaCreateRefusalInput {
   audienceTargetingError: string | null;
   detailedTargetingBlock: string | null;
   detailedTargetingError: string | null;
+  deliveryBlock: string | null;
+  deliveryError: string | null;
   adOptionsBlock: string | null;
   adOptionsError: string | null;
   leadFormError: string | null;
@@ -2626,6 +2632,41 @@ export interface MetaDeliveryOptions {
   frequencyCap?: MetaFrequencyCap;
 }
 
+/** The Meta delivery options as edited on the Implement tab (#5904 row 5): `null` is "not set". */
+export interface MetaDeliveryDraft {
+  adSchedule: MetaAdSchedule | null;
+  frequencyCap: MetaFrequencyCap | null;
+}
+
+/** One day toggle of the ad schedule: Meta's day number and its short label. */
+export interface MetaAdScheduleDayOption {
+  value: number;
+  label: string;
+}
+
+/** One day toggle as the delivery options component draws it: on when the schedule names the day. */
+export interface MetaAdScheduleDayView extends MetaAdScheduleDayOption {
+  on: boolean;
+}
+
+/** One hour of the ad schedule's start or end select: minutes of the day and a 24-hour label. */
+export interface MetaAdScheduleHourOption {
+  value: number;
+  label: string;
+}
+
+/** The Meta delivery state `metaDeliveryBlock` (`campaign-meta-delivery.utils.ts`) reads, as plain values. */
+export interface MetaDeliveryBlockInput {
+  draft: MetaDeliveryDraft;
+  /** `CampaignListResult.metaAdScheduleEnabled`: `null` while unanswered. */
+  adScheduleEnabled: boolean | null;
+  /** `CampaignListResult.metaFrequencyCapEnabled`: `null` while unanswered. */
+  frequencyCapEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
 /** Which Meta delivery options this deployment accepts on create, one answer per flag. */
 export interface MetaDeliveryFlags {
   adSchedule: boolean;
@@ -2666,6 +2707,8 @@ export type MetaDraftSnapshot = Pick<
   | 'metaAudienceTargeting'
   | 'metaAudienceTargetingProject'
   | 'metaDetailedTargeting'
+  | 'metaAdSchedule'
+  | 'metaFrequencyCap'
   | 'metaAdOptions'
   | 'metaAdOptionsProject'
   | 'metaLeadFormId'
@@ -2693,6 +2736,7 @@ export interface MetaDraftState {
   dsaPayor: string;
   audienceTargeting: MetaAudienceTargetingDraft;
   detailedTargeting: MetaDetailedTargetingPicks;
+  delivery: MetaDeliveryDraft;
   adOptions: MetaAdOptions;
   leadFormId: string;
   /** The foundation the choices were made under; targeting, ad options and the lead form restore only under it. */
@@ -2726,6 +2770,7 @@ export interface MetaDraftRestore {
   instagramDsaPatch: Partial<Record<'instagramUserId' | 'dsaBeneficiary' | 'dsaPayor', string>>;
   audienceTargeting?: MetaAudienceTargetingDraft;
   detailedTargeting?: MetaDetailedTargetingPicks;
+  delivery?: MetaDeliveryDraft;
   adOptions?: MetaAdOptions;
   /** `null` keeps the current form; `''` clears it. */
   leadFormId: string | null;

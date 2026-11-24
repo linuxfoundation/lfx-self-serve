@@ -1142,6 +1142,9 @@ export class CampaignsComponent {
   /** Meta interests, and behaviors with job titles (#5904 row 4): deployment-wide answers, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaInterestTargetingEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaBehaviorTargetingEnabled = signal<boolean | null>(null);
+  /** The Meta ad schedule and frequency cap (#5904 row 5): deployment-wide answers, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMetaAdScheduleEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaFrequencyCapEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaConversionEventEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaOptimizationGoalEnabled = signal<boolean | null>(null);
   /** Whether the Implement tab searches Google's geo target table — `CampaignListResult.googleGeoSearchEnabled`, read and cleared like the capabilities above. */
@@ -3123,6 +3126,8 @@ export class CampaignsComponent {
         this.briefCampaignsMetaLeadFormsEnabled.set(null);
         this.briefCampaignsMetaInterestTargetingEnabled.set(null);
         this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+        this.briefCampaignsMetaAdScheduleEnabled.set(null);
+        this.briefCampaignsMetaFrequencyCapEnabled.set(null);
         this.briefCampaignsMetaConversionEventEnabled.set(null);
         this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
         this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
@@ -5953,6 +5958,8 @@ export class CampaignsComponent {
           this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
+          this.briefCampaignsMetaAdScheduleEnabled.set(result.metaAdScheduleEnabled ?? null);
+          this.briefCampaignsMetaFrequencyCapEnabled.set(result.metaFrequencyCapEnabled ?? null);
           this.briefCampaignsMetaConversionEventEnabled.set(result.metaConversionEventEnabled ?? null);
           this.briefCampaignsMetaOptimizationGoalEnabled.set(result.metaOptimizationGoalEnabled ?? null);
           this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
@@ -5999,6 +6006,8 @@ export class CampaignsComponent {
           this.briefCampaignsMetaLeadFormsEnabled.set(null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+          this.briefCampaignsMetaAdScheduleEnabled.set(null);
+          this.briefCampaignsMetaFrequencyCapEnabled.set(null);
           this.briefCampaignsMetaConversionEventEnabled.set(null);
           this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
           this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
@@ -6090,6 +6099,8 @@ export class CampaignsComponent {
       this.briefCampaignsMetaLeadFormsEnabled.set(null);
       this.briefCampaignsMetaInterestTargetingEnabled.set(null);
       this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+      this.briefCampaignsMetaAdScheduleEnabled.set(null);
+      this.briefCampaignsMetaFrequencyCapEnabled.set(null);
       this.briefCampaignsMetaConversionEventEnabled.set(null);
       this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
       this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
@@ -6151,6 +6162,8 @@ export class CampaignsComponent {
             this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
+            this.briefCampaignsMetaAdScheduleEnabled.set(result.metaAdScheduleEnabled ?? null);
+            this.briefCampaignsMetaFrequencyCapEnabled.set(result.metaFrequencyCapEnabled ?? null);
             this.briefCampaignsMetaConversionEventEnabled.set(result.metaConversionEventEnabled ?? null);
             this.briefCampaignsMetaOptimizationGoalEnabled.set(result.metaOptimizationGoalEnabled ?? null);
             this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
@@ -6195,6 +6208,8 @@ export class CampaignsComponent {
             this.briefCampaignsMetaLeadFormsEnabled.set(null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+            this.briefCampaignsMetaAdScheduleEnabled.set(null);
+            this.briefCampaignsMetaFrequencyCapEnabled.set(null);
             this.briefCampaignsMetaConversionEventEnabled.set(null);
             this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
             this.briefCampaignsMetaCustomAudiencesEnabled.set(null);

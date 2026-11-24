@@ -4579,6 +4579,51 @@
             </div>
           }
 
+          <!-- The ad schedule (lifetime budgets) and frequency cap (awareness), #5904 row 5, each only on its own explicit yes. -->
+          @if (metaAdScheduleShown() || metaFrequencyCapShown()) {
+            <lfx-meta-delivery-options
+              class="mb-4 block"
+              [scheduleShown]="metaAdScheduleShown()"
+              [capShown]="metaFrequencyCapShown()"
+              [delivery]="metaDelivery()"
+              (deliveryChange)="onMetaDeliveryChange($event)"
+              data-testid="implementation-meta-delivery" />
+          }
+          @if (metaDeliveryBlock(); as block) {
+            <div
+              role="alert"
+              class="mb-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-meta-delivery-block-' + block.kind">
+              <p class="flex items-center gap-2">
+                @if (block.kind === 'pending') {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                }
+                {{ block.message }}
+              </p>
+              @if (block.kind === 'failed') {
+                <lfx-button
+                  label="Retry"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="retryCreateCapabilities.emit()"
+                  data-testid="implementation-meta-delivery-block-retry" />
+              } @else if (block.kind === 'unsupported') {
+                <lfx-button
+                  label="Clear schedule and cap"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="clearUnsendableMetaDelivery()"
+                  data-testid="implementation-meta-delivery-clear" />
+              }
+            </div>
+          }
+
           <!-- Interests, behaviors and job titles (#5904 row 4), each list only on its own explicit yes. -->
           @if (metaDetailedTargetingAvailable()) {
             <lfx-meta-detailed-targeting
