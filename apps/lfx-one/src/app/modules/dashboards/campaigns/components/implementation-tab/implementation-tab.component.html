@@ -4579,6 +4579,53 @@
             </div>
           }
 
+          <!-- Interests, behaviors and job titles (#5904 row 4), each list only on its own explicit yes. -->
+          @if (metaDetailedTargetingAvailable()) {
+            <lfx-meta-detailed-targeting
+              class="mb-4 block"
+              [projectSlug]="activeFoundationSlug()"
+              [interestEnabled]="metaInterestTargetingEnabled() === true"
+              [behaviorEnabled]="metaBehaviorTargetingEnabled() === true"
+              [picks]="metaDetailedTargeting()"
+              (picksChange)="onMetaDetailedTargetingChange($event)"
+              data-testid="implementation-meta-detailed-targeting" />
+          }
+          <!-- Picks the request cannot carry hold Create, on the audience block's kinds. -->
+          @if (metaDetailedTargetingBlock(); as block) {
+            <div
+              role="alert"
+              class="mb-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-meta-detailed-targeting-block-' + block.kind">
+              <p class="flex items-center gap-2">
+                @if (block.kind === 'pending') {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                }
+                {{ block.message }}
+              </p>
+              @if (block.kind === 'failed') {
+                <lfx-button
+                  label="Retry"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="retryCreateCapabilities.emit()"
+                  data-testid="implementation-meta-detailed-targeting-block-retry" />
+              } @else if (block.kind === 'unsupported') {
+                <lfx-button
+                  label="Clear detailed targeting"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="clearUnsendableMetaDetailedTargeting()"
+                  data-testid="implementation-meta-detailed-targeting-clear" />
+              }
+            </div>
+          }
+
           <!-- The lead form of a Leads create (#5940): only under `leads`, which is offered only to a caller who may send one. -->
           @if (metaLeadFormRequested()) {
             <lfx-meta-lead-form-picker

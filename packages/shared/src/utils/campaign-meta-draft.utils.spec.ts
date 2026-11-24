@@ -26,6 +26,7 @@ const state: MetaDraftState = {
   dsaBeneficiary: 'CNCF',
   dsaPayor: 'The Linux Foundation',
   audienceTargeting: { ...DEFAULT_META_AUDIENCE_TARGETING, ageMin: 25, customAudiences: ['1001'] },
+  detailedTargeting: { interests: [{ id: '6003', name: 'Open source' }], behaviors: [], workPositions: [] },
   adOptions: { conversionEvent: 'LEAD' },
   leadFormId: '',
   foundation: 'tlf',
@@ -45,6 +46,7 @@ describe('metaDraftFields', () => {
       metaDsaPayor: 'The Linux Foundation',
       metaAudienceTargeting: { ...DEFAULT_META_AUDIENCE_TARGETING, ageMin: 25, customAudiences: ['1001'] },
       metaAudienceTargetingProject: 'tlf',
+      metaDetailedTargeting: { interests: [{ id: '6003', name: 'Open source' }], behaviors: [], workPositions: [] },
       metaAdOptions: { conversionEvent: 'LEAD' },
       metaAdOptionsProject: 'tlf',
       metaLeadFormId: '',
@@ -61,6 +63,7 @@ describe('metaDraftFields', () => {
     expect(fields.metaAdOptions).not.toBe(state.adOptions);
     expect(fields.metaAudienceTargeting).not.toBe(state.audienceTargeting);
     expect(fields.metaAudienceTargeting?.customAudiences).not.toBe(state.audienceTargeting.customAudiences);
+    expect(fields.metaDetailedTargeting?.interests).not.toBe(state.detailedTargeting.interests);
   });
 });
 
@@ -113,6 +116,7 @@ describe('metaDraftRestore', () => {
       pixelId: '554433',
       instagramDsaPatch: { instagramUserId: '17841400000000000', dsaBeneficiary: 'CNCF', dsaPayor: 'The Linux Foundation' },
       audienceTargeting: { ...DEFAULT_META_AUDIENCE_TARGETING, ageMin: 25, customAudiences: ['1001'] },
+      detailedTargeting: { interests: [{ id: '6003', name: 'Open source' }], behaviors: [], workPositions: [] },
       adOptions: { conversionEvent: 'LEAD' },
       leadFormId: '',
       geoTargets: ['US', 'DE'],
@@ -126,6 +130,8 @@ describe('metaDraftRestore', () => {
     const restored = metaDraftRestore(saved, 'traffic', 'cncf');
     expect(restored.audienceTargeting).toBeUndefined();
     expect(restored.adOptions).toBeUndefined();
+    // Meta's taxonomy is the same for every ad account, so detailed targeting is kept.
+    expect(restored.detailedTargeting?.interests).toEqual([{ id: '6003', name: 'Open source' }]);
     expect(restored.leadFormId).toBe('');
     expect(restored.objective).not.toBe('leads');
   });

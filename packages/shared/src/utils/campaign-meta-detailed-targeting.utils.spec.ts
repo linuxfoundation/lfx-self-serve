@@ -18,6 +18,11 @@ import {
 import type { MetaTargetingFlags, MetaTargetingPick, MetaTargetingSearchOption } from '../interfaces/campaign.interface';
 import {
   compactMetaDetailedTargeting,
+  copyMetaDetailedTargetingPicks,
+  metaDetailedTargetingBlock,
+  metaDetailedTargetingForCreate,
+  metaDetailedTargetingPicksFromDraft,
+  metaDetailedTargetingPicksSendable,
   emptyMetaDetailedTargetingPicks,
   metaTargetingKindsShown,
   metaTargetingPicksWith,
@@ -223,5 +228,74 @@ describe('the detailed-targeting picker rules', () => {
     ['answered with nothing', false, false, null, META_TARGETING_SEARCH_NO_MATCH_MESSAGE],
   ])('says what an empty popup means when the search %s', (_case, refused, pending, failure, message) => {
     expect(metaTargetingSearchEmptyMessage(refused, pending, failure)).toBe(message);
+  });
+});
+
+describe('the detailed-targeting create rules', () => {
+  const picks = {
+    interests: [{ id: '6003', name: 'Open source' }],
+    behaviors: [{ id: '6004', name: 'Early adopters' }],
+    workPositions: [{ id: '105', name: 'Engineer' }],
+  };
+  const none = emptyMetaDetailedTargetingPicks();
+
+  it.each([
+    ['not a record', 'x', undefined],
+    ['null', null, undefined],
+    ['an empty record', {}, none],
+    [
+      'well-formed picks, dropping a bad id, a missing name, a repeat and a non-list',
+      {
+        interests: [{ id: '6003', name: 'Open source' }, { id: '06003', name: 'Bad' }, { id: '7' }, { id: '6003', name: 'Again' }],
+        behaviors: 'x',
+        workPositions: [{ id: ' 105 ', name: 'Engineer' }],
+      },
+      { interests: [{ id: '6003', name: 'Open source' }], behaviors: [], workPositions: [{ id: '105', name: 'Engineer' }] },
+    ],
+  ])('reads a saved draft holding %s', (_case, raw, expected) => {
+    expect(metaDetailedTargetingPicksFromDraft(raw)).toEqual(expected);
+  });
+
+  it('caps a saved list at 25', () => {
+    const raw = { interests: Array.from({ length: 30 }, (_, i) => ({ id: String(100 + i), name: `N${i}` })) };
+    expect(metaDetailedTargetingPicksFromDraft(raw)?.interests).toHaveLength(25);
+  });
+
+  it('copies every list', () => {
+    const copy = copyMetaDetailedTargetingPicks(picks);
+    expect(copy).toEqual(picks);
+    expect(copy.interests).not.toBe(picks.interests);
+  });
+
+  it.each([
+    [true, true, { interests: ['6003'], behaviors: ['6004'], workPositions: ['105'] }],
+    [true, false, { interests: ['6003'] }],
+    [null, true, { behaviors: ['6004'], workPositions: ['105'] }],
+    [false, null, null],
+  ])('sends the lists whose flag is a yes (interest %s, behavior %s)', (interest, behavior, expected) => {
+    expect(metaDetailedTargetingForCreate(picks, interest, behavior)).toEqual(expected);
+  });
+
+  it('sends nothing for empty lists', () => {
+    expect(metaDetailedTargetingForCreate(none, true, true)).toBeNull();
+  });
+
+  it('clears only the lists this deployment does not send', () => {
+    expect(metaDetailedTargetingPicksSendable(picks, true, false)).toEqual({ ...none, interests: picks.interests });
+  });
+
+  const block = (over: Partial<Parameters<typeof metaDetailedTargetingBlock>[0]>) =>
+    metaDetailedTargetingBlock({ picks, interestEnabled: true, behaviorEnabled: true, createCapabilityRead: 'ready', briefId: 'b-1', ...over })?.kind ?? null;
+
+  it.each([
+    ['every held list is sendable', {}, null],
+    ['nothing is picked in an unsendable list', { picks: { ...none, interests: picks.interests }, behaviorEnabled: false }, null],
+    ['a held list answered no', { behaviorEnabled: false }, 'unsupported'],
+    ['a no wins over an unanswered list', { interestEnabled: null, behaviorEnabled: false, createCapabilityRead: 'pending' }, 'unsupported'],
+    ['the answer is still out', { interestEnabled: null, createCapabilityRead: 'pending' }, 'pending'],
+    ['the brief is unsaved', { interestEnabled: null, briefId: null }, 'unsaved'],
+    ['the answer failed', { interestEnabled: null, createCapabilityRead: 'failed' }, 'failed'],
+  ] as const)('holds Create when %s', (_case, over, kind) => {
+    expect(block(over)).toBe(kind);
   });
 });

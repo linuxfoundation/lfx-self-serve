@@ -383,6 +383,7 @@ import type {
   RedditVideoGoal,
   StoredCreativeAsset,
   MetaAudienceTargetingDraft,
+  MetaDetailedTargetingPicks,
   MetaAdOptionKey,
   MetaAdOptions,
   MetaAdOptionView,
@@ -473,6 +474,11 @@ import {
   metaAudienceTargetingBlock,
   metaAudienceTargetingCapabilities,
   metaAudienceTargetingRefusal,
+  emptyMetaDetailedTargetingPicks,
+  metaDetailedTargetingBlock,
+  metaDetailedTargetingForCreate,
+  metaDetailedTargetingPicksSendable,
+  metaDetailedTargetingRefusal,
   metaBasicsRefusal,
   metaBriefSeed,
   metaCreateRefusal,
@@ -523,6 +529,7 @@ import { CampaignBiddingControlComponent } from '../campaign-bidding-control/cam
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
 import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
+import { MetaDetailedTargetingComponent } from '../meta-detailed-targeting/meta-detailed-targeting.component';
 import { MetaLeadFormPickerComponent } from '../meta-lead-form-picker/meta-lead-form-picker.component';
 import { CampaignGoogleDemographicsPanelComponent } from '../campaign-google-demographics-panel/campaign-google-demographics-panel.component';
 import { CampaignGoogleExclusionsPanelComponent } from '../campaign-google-exclusions-panel/campaign-google-exclusions-panel.component';
@@ -606,6 +613,7 @@ let linkedInVariantKeySequence = 0;
     CampaignBiddingControlComponent,
     CampaignGoogleDemographicTargetingComponent,
     MetaAudienceTargetingComponent,
+    MetaDetailedTargetingComponent,
     MetaLeadFormPickerComponent,
     CampaignGoogleDemographicsPanelComponent,
     CampaignGoogleExclusionsPanelComponent,
@@ -1030,6 +1038,18 @@ export class ImplementationTabComponent implements OnInit {
    */
   public readonly metaLeadFormsEnabled = input<boolean | null>(null);
   protected readonly metaLeadFormsAvailable = computed<boolean>(() => this.metaLeadFormsEnabled() === true);
+
+  /**
+   * Whether this deployment sends Meta interests (#5904 row 4) — `CampaignListResult.metaInterestTargetingEnabled`,
+   * behind `LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING`. Deployment-wide; `null` while unanswered.
+   */
+  public readonly metaInterestTargetingEnabled = input<boolean | null>(null);
+  /** The same for Meta behaviors and job titles — `CampaignListResult.metaBehaviorTargetingEnabled`. */
+  public readonly metaBehaviorTargetingEnabled = input<boolean | null>(null);
+  /** Whether any detailed-targeting list is offered: each only on an explicit yes. */
+  protected readonly metaDetailedTargetingAvailable = computed<boolean>(
+    () => this.metaInterestTargetingEnabled() === true || this.metaBehaviorTargetingEnabled() === true
+  );
 
   /**
    * Whether this deployment can SEARCH Google's geo target table for postal-code targets —
@@ -1616,6 +1636,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly step = signal<ImplementationStep>('form');
   /** The Meta audience targeting as edited in `lfx-meta-audience-targeting` (#5905); kept whatever the capability says, like the DSA fields. */
   protected readonly metaAudienceTargeting = signal<MetaAudienceTargetingDraft>(this.defaultMetaAudienceTargeting());
+  /** The Meta interests, behaviors and job titles as picked in `lfx-meta-detailed-targeting` (#5904 row 4), kept whatever the flags say. */
+  protected readonly metaDetailedTargeting = signal<MetaDetailedTargetingPicks>(emptyMetaDetailedTargetingPicks());
   /** The Meta call to action, conversion event and optimization goal as chosen (#5934); an absent key is "Not set". */
   protected readonly metaAdOptions = signal<MetaAdOptions>({});
   /** The Meta Instant Form picked or typed in `lfx-meta-lead-form-picker` (#5940); blank is none. Sent only under `leads`. */
@@ -3436,6 +3458,25 @@ export class ImplementationTabComponent implements OnInit {
     () => metaAudienceTargetingRefusal(this.metaAudienceTargetingRequested())?.message ?? null
   );
 
+  /** The detailed fields the create carries (#5904 row 4): each list only on its explicit yes. */
+  private readonly metaDetailedTargetingRequested = computed(() =>
+    metaDetailedTargetingForCreate(this.metaDetailedTargeting(), this.metaInterestTargetingEnabled(), this.metaBehaviorTargetingEnabled())
+  );
+  /** Why Create is held for picks in a list the request cannot carry, or `null`: {@link metaAudienceTargetingBlock}'s states. */
+  protected readonly metaDetailedTargetingBlock = computed(() =>
+    metaDetailedTargetingBlock({
+      picks: this.metaDetailedTargeting(),
+      interestEnabled: this.metaInterestTargetingEnabled(),
+      behaviorEnabled: this.metaBehaviorTargetingEnabled(),
+      createCapabilityRead: this.createCapabilityRead(),
+      briefId: this.briefPersistence().briefId,
+    })
+  );
+  /** Why the detailed fields cannot be sent, or `null`: the create route's own rules. */
+  protected readonly metaDetailedTargetingError = computed<string | null>(
+    () => metaDetailedTargetingRefusal(this.metaDetailedTargetingRequested())?.message ?? null
+  );
+
   /** Whether the Meta create carries manual bidding, a link-click bid cap that refuses LANDING_PAGE_VIEWS (#5934). */
   private readonly metaManualBidding = computed<boolean>(() => this.biddingField('meta-ads').bidding?.strategy === 'manual');
   /** The Meta ad choice dropdowns offered (#5934): each only on an explicit yes and where the objective fits. */
@@ -4003,6 +4044,8 @@ export class ImplementationTabComponent implements OnInit {
           instagramDsaInvalid: !!(this.metaInstagramUserIdError() || this.metaDsaBeneficiaryError() || this.metaDsaPayorError()),
           audienceTargetingBlock: this.metaAudienceTargetingBlock()?.message ?? null,
           audienceTargetingError: this.metaAudienceTargetingError(),
+          detailedTargetingBlock: this.metaDetailedTargetingBlock()?.message ?? null,
+          detailedTargetingError: this.metaDetailedTargetingError(),
           adOptionsBlock: this.metaAdOptionsBlock()?.message ?? null,
           adOptionsError: this.metaAdOptionsError(),
           leadFormError: this.metaLeadFormError(),
@@ -5715,6 +5758,18 @@ export class ImplementationTabComponent implements OnInit {
   /** Back to Meta's defaults: the way past an `unsupported` {@link metaAudienceTargetingBlock}, whose section is hidden. */
   protected clearMetaAudienceTargeting(): void {
     this.onMetaAudienceTargetingChange(this.defaultMetaAudienceTargeting());
+  }
+
+  protected onMetaDetailedTargetingChange(picks: MetaDetailedTargetingPicks): void {
+    this.metaDetailedTargeting.set(picks);
+    this.emitDraft();
+  }
+
+  /** Empties the lists this deployment does not send: the way past an `unsupported` {@link metaDetailedTargetingBlock}, whose lists are hidden. */
+  protected clearUnsendableMetaDetailedTargeting(): void {
+    this.onMetaDetailedTargetingChange(
+      metaDetailedTargetingPicksSendable(this.metaDetailedTargeting(), this.metaInterestTargetingEnabled(), this.metaBehaviorTargetingEnabled())
+    );
   }
 
   protected onMetaPixelIdInput(event: Event): void {
@@ -8868,6 +8923,7 @@ export class ImplementationTabComponent implements OnInit {
     // still saw blanks (PR #4483 review). The emit cannot loop: `applyDraft` runs only while `seeding`.
     if (Object.keys(metaRestore.instagramDsaPatch).length > 0) this.metaInstagramDsaForm.patchValue(metaRestore.instagramDsaPatch);
     if (metaRestore.audienceTargeting !== undefined) this.metaAudienceTargeting.set(metaRestore.audienceTargeting);
+    if (metaRestore.detailedTargeting !== undefined) this.metaDetailedTargeting.set(metaRestore.detailedTargeting);
     if (metaRestore.adOptions !== undefined) this.metaAdOptions.set(metaRestore.adOptions);
     if (metaRestore.leadFormId !== null) this.metaLeadFormId.set(metaRestore.leadFormId);
     if (metaRestore.geoTargets !== undefined) this.metaGeoTargets.set(metaRestore.geoTargets);
@@ -9406,6 +9462,7 @@ export class ImplementationTabComponent implements OnInit {
         dsaBeneficiary: this.metaInstagramDsaDraft().dsaBeneficiary,
         dsaPayor: this.metaInstagramDsaDraft().dsaPayor,
         audienceTargeting: this.metaAudienceTargeting(),
+        detailedTargeting: this.metaDetailedTargeting(),
         adOptions: this.metaAdOptions(),
         leadFormId: this.metaLeadFormId(),
         foundation: this.activeFoundationSlug(),
@@ -9790,8 +9847,9 @@ export class ImplementationTabComponent implements OnInit {
     this.metaPixelId.set('');
     // Another brief's payor and beneficiary must never reach a live create.
     this.metaInstagramDsaForm.reset();
-    // Another brief's audiences must never reach a live create either, nor its Meta ad choices.
+    // Another brief's audiences must never reach a live create either, nor its detailed targeting or Meta ad choices.
     this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
+    this.metaDetailedTargeting.set(emptyMetaDetailedTargetingPicks());
     this.metaAdOptions.set({});
     this.metaLeadFormId.set('');
     this.metaBudgetUsd.set(DEFAULT_META_BUDGET_USD);
@@ -14181,10 +14239,13 @@ export class ImplementationTabComponent implements OnInit {
     return bidding === null ? {} : { bidding };
   }
 
-  /** `metaConfig.targeting` for the request, or nothing when it asks for nothing. `canSubmit` has already refused a bad one. */
+  /**
+   * `metaConfig.targeting` for the request: the audience fields and the detailed ones (#5904 row 4) in one block, or
+   * nothing when it asks for nothing. `canSubmit` has already refused a bad one.
+   */
   private metaTargetingField(): Pick<MetaCampaignCreateRequest, 'targeting'> {
-    const targeting = compactMetaAudienceTargeting(this.metaAudienceTargetingRequested());
-    return targeting ? { targeting } : {};
+    const targeting = { ...compactMetaAudienceTargeting(this.metaAudienceTargetingRequested()), ...this.metaDetailedTargetingRequested() };
+    return Object.keys(targeting).length > 0 ? { targeting } : {};
   }
 
   /** The Meta ad choices for the request: each only on an explicit yes, "Not set" never sent. */

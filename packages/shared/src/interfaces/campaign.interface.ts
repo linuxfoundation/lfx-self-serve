@@ -1261,6 +1261,11 @@ export interface CampaignImplementationDraft {
    * because custom audience ids belong to the ad account that foundation's connection resolves to.
    */
   metaAudienceTargetingProject?: string;
+  /**
+   * The Meta interests, behaviors and job titles as picked (#5904 row 4), with names so a restored chip reads the
+   * same. Not stamped with a foundation: Meta's targeting taxonomy is the same for every ad account.
+   */
+  metaDetailedTargeting?: MetaDetailedTargetingPicks;
   /** The Meta call to action, conversion event and optimization goal as chosen (#5934); an absent key is "Not set". */
   metaAdOptions?: MetaAdOptions;
   /** The foundation slug {@link metaAdOptions} was chosen under: restored only under the same one, like the targeting. */
@@ -2345,6 +2350,8 @@ export interface MetaCreateRefusalInput {
   instagramDsaInvalid: boolean;
   audienceTargetingBlock: string | null;
   audienceTargetingError: string | null;
+  detailedTargetingBlock: string | null;
+  detailedTargetingError: string | null;
   adOptionsBlock: string | null;
   adOptionsError: string | null;
   leadFormError: string | null;
@@ -2618,6 +2625,7 @@ export type MetaDraftSnapshot = Pick<
   | 'metaDsaPayor'
   | 'metaAudienceTargeting'
   | 'metaAudienceTargetingProject'
+  | 'metaDetailedTargeting'
   | 'metaAdOptions'
   | 'metaAdOptionsProject'
   | 'metaLeadFormId'
@@ -2644,6 +2652,7 @@ export interface MetaDraftState {
   dsaBeneficiary: string;
   dsaPayor: string;
   audienceTargeting: MetaAudienceTargetingDraft;
+  detailedTargeting: MetaDetailedTargetingPicks;
   adOptions: MetaAdOptions;
   leadFormId: string;
   /** The foundation the choices were made under; targeting, ad options and the lead form restore only under it. */
@@ -2676,6 +2685,7 @@ export interface MetaDraftRestore {
   /** The Instagram id and DSA disclosures to patch, one emitting patch; empty when the draft carries none. */
   instagramDsaPatch: Partial<Record<'instagramUserId' | 'dsaBeneficiary' | 'dsaPayor', string>>;
   audienceTargeting?: MetaAudienceTargetingDraft;
+  detailedTargeting?: MetaDetailedTargetingPicks;
   adOptions?: MetaAdOptions;
   /** `null` keeps the current form; `''` clears it. */
   leadFormId: string | null;
@@ -7844,6 +7854,18 @@ export interface MetaAudienceTargetingBlockInput {
   targeting: MetaAudienceTargeting | null;
   targetingEnabled: boolean | null;
   customAudiencesEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
+/** The Meta detailed-targeting state `metaDetailedTargetingBlock` (`campaign-meta-detailed-targeting.utils.ts`) reads, as plain values. */
+export interface MetaDetailedTargetingBlockInput {
+  picks: MetaDetailedTargetingPicks;
+  /** `CampaignListResult.metaInterestTargetingEnabled`: `null` while unanswered. */
+  interestEnabled: boolean | null;
+  /** `CampaignListResult.metaBehaviorTargetingEnabled`, for behaviors and job titles: `null` while unanswered. */
+  behaviorEnabled: boolean | null;
   createCapabilityRead: CampaignCapabilityReadState;
   /** The open brief's id, or `null` while the brief is unsaved. */
   briefId: string | null;
