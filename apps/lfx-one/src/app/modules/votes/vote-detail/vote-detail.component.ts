@@ -311,10 +311,12 @@ export class VoteDetailComponent {
   /** Overview results tag — a draft reads "Not open yet", never "Voting in progress". */
   protected readonly resultsStatusTag: Signal<{ value: string; severity: 'success' | 'secondary' }> = this.initResultsStatusTag();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
-  protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults()));
+  protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults(), this.vote()?.poll_type));
+  /** Ranked outcome and standings show only once the vote has ended with final results — `isVoteClosed` alone is also true at 100% participation on an active vote. */
+  protected readonly showRankedOutcome: Signal<boolean> = computed(() => this.isEnded() && this.isVoteClosed());
   /** One leader/winner line per question for the Overview results card; the full breakdown stays on the Results tab. */
   protected readonly overviewSummary: Signal<VoteResultsSummaryLine[]> = computed(() =>
-    buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed())
+    buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed(), this.showRankedOutcome())
   );
   /** The lone generic question that renders as bars on the Overview results card; null for ranked and multi-question votes (#4769). */
   protected readonly overviewQuestion: Signal<VoteResultsQuestion | null> = computed(() => {

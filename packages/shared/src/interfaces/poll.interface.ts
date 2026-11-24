@@ -1079,7 +1079,7 @@ export interface VoteResultsQuestion {
 /**
  * One-line results summary for a question
  * @description Built by `buildVoteResultsSummary` for the vote detail Overview card, which shows the leading choice
- * instead of the full breakdown.
+ * (or, for an ended ranked vote, its final outcome) instead of the full breakdown.
  */
 export interface VoteResultsSummaryLine {
   /** Question identifier */
@@ -1132,6 +1132,24 @@ export interface RankCount {
 }
 
 /**
+ * One head-to-head pairing in a Condorcet matrix
+ * @description Each `ranked_choice_votes[]` row lists its own choice against every other choice, so a pair appears
+ * once from each side. Mirrors lfx-v2-voting-service `CondorcetMatrixEntryResponseBody`.
+ */
+export interface CondorcetMatrixEntry {
+  /** Choice this row belongs to */
+  choice_id: string;
+  /** Opponent choice */
+  other_choice_id: string;
+  /** Ballots that rank `choice_id` above `other_choice_id` */
+  choice_id_wins: number;
+  /** Ballots that rank `other_choice_id` above `choice_id` */
+  other_choice_id_wins: number;
+  /** Display string, e.g. `23(10)` */
+  result: string;
+}
+
+/**
  * Ranked-choice vote result for a single choice
  * @description Contains rank distribution and Condorcet matrix data
  */
@@ -1140,19 +1158,109 @@ export interface RankedChoiceVoteResult {
   choice_id: string;
   /** Distribution of ranks assigned to this choice */
   rank_counts: RankCount[];
-  /** Condorcet pairwise comparison matrix entries */
-  condorcet_matrix: any[];
+  /** Condorcet pairwise comparison matrix entries — upstream omits this with `omitempty` outside Condorcet-IRV */
+  condorcet_matrix?: CondorcetMatrixEntry[];
 }
 
 /**
  * Winner information for ranked-choice voting
- * @description Contains winning choices and algorithm metadata
+ * @description Computed by ITX (`pkg/results/calculate.go`) — the authoritative outcome for every ranked method
  */
 export interface RankedChoiceWinnerInfo {
-  /** Choices participating in the ranked vote */
+  /** Winning choices (several on a tie; the elected seats for Meek STV) — not every choice on the ballot */
   poll_choices: { choice_id: string; choice_text: string }[];
-  /** Whether Condorcet-IRV hybrid was used for tie-breaking */
-  condorcet_irv_used_for_eliminations: boolean;
+  /** Whether no Condorcet winner existed and Condorcet-IRV fell back to instant-runoff eliminations — upstream `*bool` */
+  condorcet_irv_used_for_eliminations?: boolean;
+}
+
+/**
+ * Per-choice vote count in one IRV round
+ * @description Mirrors lfx-v2-voting-service `VoteCountResponseBody`
+ */
+export interface IrvRoundVoteCount {
+  /** Choice identifier */
+  choice_id: string;
+  /** Continuing ballots counted for this choice in the round */
+  vote_count: number;
+  /** Share of the round's votes (0-100), when upstream supplies it */
+  percentage?: number;
+}
+
+/**
+ * State of a single instant-runoff counting round (Instant Runoff, or Condorcet-IRV with eliminations)
+ * @description Mirrors lfx-v2-voting-service `IRVRoundSummaryResponseBody`
+ */
+export interface IrvRoundSummary {
+  /** Round number (1-based) */
+  round_number: number;
+  /** Vote counts per continuing choice */
+  votes: IrvRoundVoteCount[];
+  /** Total votes counted in this round */
+  total_votes: number;
+  /** Lowest vote count in this round */
+  min_votes?: number;
+  /** Ballots with no continuing choice left */
+  exhausted_votes: number;
+  /** Votes moved to other choices by this round's elimination */
+  transferred_votes?: IrvRoundVoteCount[];
+  /** Votes needed to win */
+  threshold: number;
+  /** Choice eliminated at the end of this round */
+  eliminated_choice_id?: string;
+  /** Upstream round description */
+  message: string;
+}
+
+/**
+ * Per-choice vote count in one Meek STV round
+ * @description Mirrors lfx-v2-voting-service `MeekSTVVoteCountResponseBody`. ITX computes fractional values; the voting
+ * service currently declares them as integers.
+ */
+export interface MeekStvVoteCount {
+  /** Choice identifier */
+  choice_id: string;
+  /** Votes for this choice in the round */
+  vote_count: number;
+}
+
+/**
+ * Choice elected in a Meek STV round
+ * @description Mirrors lfx-v2-voting-service `MeekSTVElectedChoiceResponseBody`
+ */
+export interface MeekStvElectedChoice {
+  /** Choice identifier */
+  choice_id: string;
+  /** Votes for this choice when elected */
+  vote_count: number;
+  /** Votes over the quota, transferred onward */
+  surplus_votes: number;
+}
+
+/**
+ * State of a single Meek STV counting round
+ * @description Mirrors lfx-v2-voting-service `MeekSTVRoundSummaryResponseBody`
+ */
+export interface MeekStvRoundSummary {
+  /** Round number (1-based) */
+  round_number: number;
+  /** Vote counts per choice */
+  votes: MeekStvVoteCount[];
+  /** Total votes counted in this round */
+  total_votes: number;
+  /** Ballots with no continuing choice left */
+  exhausted_votes: number;
+  /** Quota needed to be elected */
+  threshold: number;
+  /** Upstream round description */
+  message: string;
+  /** Choices elected in this round */
+  elected_choices?: MeekStvElectedChoice[];
+  /** Choices eliminated in this round */
+  eliminated_choices?: MeekStvVoteCount[];
+  /** Votes transferred in this round */
+  transferred_votes?: MeekStvVoteCount[];
+  /** Surplus votes distributed in this round */
+  surplus_votes?: MeekStvVoteCount[];
 }
 
 /**
@@ -1183,10 +1291,10 @@ export interface PollQuestionResult {
   ranked_choice_votes?: RankedChoiceVoteResult[];
   /** Winner information for ranked-choice voting */
   ranked_choice_winner_info?: RankedChoiceWinnerInfo;
-  /** IRV round-by-round elimination summary */
-  irv_round_summary?: any;
-  /** Meek STV round-by-round summary */
-  meek_stv_round_summary?: any;
+  /** IRV round-by-round elimination summary — only for Instant Runoff, or Condorcet-IRV with eliminations */
+  irv_round_summary?: IrvRoundSummary[];
+  /** Meek STV round-by-round summary — only for Meek STV */
+  meek_stv_round_summary?: MeekStvRoundSummary[];
 }
 
 /**
@@ -1585,12 +1693,59 @@ export interface RankedChoiceDistribution {
   rankCounts: RankCountDistribution[];
 }
 
+/**
+ * Final outcome of a ranked-choice question, built by `buildRankedQuestionViews` from `ranked_choice_winner_info`
+ * @description `kind` is the counting method that decided it: `condorcet` (a Condorcet winner beat every other choice),
+ * `irv` (Instant Runoff, or Condorcet-IRV that fell back to eliminations) or `meek_stv`. `result` is `winner` for one
+ * winner (or any elected seats for Meek STV), `tie` for several, `none` for no winner. `roundCount` is 0 when the
+ * payload has no round summary.
+ */
+export interface RankedOutcome {
+  kind: 'condorcet' | 'irv' | 'meek_stv';
+  result: 'winner' | 'tie' | 'none';
+  winnerTexts: string[];
+  roundCount: number;
+  /** True for an `irv` outcome reached by Condorcet-IRV after no choice beat every other head-to-head */
+  condorcetFallback: boolean;
+}
+
+/** Outcome banner sentence for `lfx-vote-ranked-question-results`, split around the bolded winner names. */
+export interface RankedOutcomeCopy {
+  lead: string;
+  names: string;
+  tail: string;
+}
+
+/**
+ * One row of a ranked-choice question's standings, built by `buildRankedQuestionViews`
+ * @description `rank` uses competition ranking (1, 1, 3). `round` is the elimination or election round, when known.
+ * `headToHeadWins`/`headToHeadTotal` are set only for Condorcet-IRV.
+ */
+export interface RankedStanding {
+  choiceId: string;
+  choiceText: string;
+  rank: number;
+  label: 'winner' | 'tied' | 'eliminated' | 'survivor' | 'elected' | 'not_elected' | null;
+  round: number | null;
+  headToHeadWins: number | null;
+  headToHeadTotal: number | null;
+}
+
+/** A standings row with its display text, derived by `lfx-vote-ranked-question-results`; `statusText` is null for a row with nothing to add (a runoff survivor). */
+export interface RankedStandingRow extends RankedStanding {
+  rankText: string;
+  statusText: string | null;
+}
+
 /** Results view model for a ranked-choice question — projection of PollQuestionResult built by `buildRankedQuestionViews` (vote.utils) and rendered by `lfx-vote-ranked-question-results`. */
 export interface RankedQuestionView {
   questionId: string;
   prompt: string;
   choiceDistributions: RankedChoiceDistribution[];
-  hasRoundSummary: boolean;
+  /** Final outcome, or null when the payload has no ranked votes */
+  outcome: RankedOutcome | null;
+  /** Ordered standings rows, empty when `outcome` is null */
+  standings: RankedStanding[];
 }
 
 /**
