@@ -343,7 +343,11 @@ export interface MktgRestoreRevisionRequest extends MktgApproveRevisionRequest {
   revisionId: string;
 }
 
-/** Safe conflict projection: no stored subject, email, username or manifest. */
+/**
+ * Safe conflict projection: display names only, no stored subject, email, username or manifest.
+ * `selectedBy`/`selectedAt`: who made this revision current and when. `approvedBy`/`approvedAt`: set only when that
+ * selection was the revision's approval; null for a draft, or for a revision approved earlier and made current later.
+ */
 export interface MktgDocumentCurrentConflictResponse {
   code: typeof MKTG_APPROVED_CURRENT_CHANGED;
   current: {
@@ -351,6 +355,8 @@ export interface MktgDocumentCurrentConflictResponse {
     number: number;
     approvedBy: string | null;
     approvedAt: string | null;
+    selectedBy: string | null;
+    selectedAt: string | null;
   } | null;
 }
 

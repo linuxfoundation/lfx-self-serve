@@ -532,6 +532,8 @@ test('a stale approval after another context wins refreshes metadata and explain
             number: 4,
             approvedBy: 'Synthetic reviewer',
             approvedAt: approval.approvedAt,
+            selectedBy: 'Synthetic reviewer',
+            selectedAt: approval.approvedAt,
           },
         },
         409

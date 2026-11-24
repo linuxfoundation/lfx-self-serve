@@ -602,9 +602,11 @@ describe('MktgDocumentStoreService', () => {
           number: 2,
           approvedBy: 'The writer',
           approvedAt: current.approvals[second.id].approvedAt,
+          selectedBy: 'The writer',
+          selectedAt: current.changedAt,
         },
       });
-      expect(Object.keys(response['current']).sort()).toEqual(['approvedAt', 'approvedBy', 'number', 'revisionId']);
+      expect(Object.keys(response['current']).sort()).toEqual(['approvedAt', 'approvedBy', 'number', 'revisionId', 'selectedAt', 'selectedBy']);
       expect(JSON.stringify(response)).not.toMatch(/auth0|username|email|revisionIds|changedBy/);
       expect(store.conditionalWrites).toEqual([]);
       expect(storedObject(key).body).toBe(before);
@@ -639,6 +641,8 @@ describe('MktgDocumentStoreService', () => {
         storedObject(key).body = JSON.stringify({
           ...record,
           revisionId: second.id,
+          changedAt: '2026-10-29T12:50:00Z',
+          changedBy: 'auth0|selector',
           approvals: {
             [second.id]: { approvedAt: '2026-10-29T12:50:00Z', approvedBy: 'auth0|selector' },
           },
@@ -646,7 +650,52 @@ describe('MktgDocumentStoreService', () => {
       };
       const failure = await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id, second.id).catch((error: unknown) => error);
       if (!(failure instanceof ConflictError)) throw new Error('Expected CAS conflict');
-      expect(failure.toResponse()['current']).toEqual({ revisionId: second.id, number: 2, approvedBy: 'The selector', approvedAt: '2026-10-29T12:50:00Z' });
+      expect(failure.toResponse()['current']).toEqual({
+        revisionId: second.id,
+        number: 2,
+        approvedBy: 'The selector',
+        approvedAt: '2026-10-29T12:50:00Z',
+        selectedBy: 'The selector',
+        selectedAt: '2026-10-29T12:50:00Z',
+      });
+    });
+
+    it.each(['approve', 'restore'] as const)('reports a draft made current as a selection, never as an approval (%s)', async (action) => {
+      const { first, second } = await twoRevisions();
+      // The newest generated draft is current and nobody approved it.
+      const record = JSON.parse(storedObject(key).body);
+      expect(record.approvals).toBeUndefined();
+      const failure = await service[action === 'approve' ? 'approveRevision' : 'restoreRevision'](req, PROJECT, BRAND_KIT, 'living', first.id, first.id).catch(
+        (error: unknown) => error
+      );
+      if (!(failure instanceof ConflictError)) throw new Error('Expected selection conflict');
+      expect(failure.toResponse()['current']).toEqual({
+        revisionId: second.id,
+        number: 2,
+        approvedBy: null,
+        approvedAt: null,
+        selectedBy: 'The writer',
+        selectedAt: record.changedAt,
+      });
+    });
+
+    it('credits a later Make current to who made it, not to the earlier approver of that revision', async () => {
+      const { first, second } = await twoRevisions();
+      await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
+      await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', second.id);
+      // Someone else makes the earlier approved revision current again, later.
+      const record = JSON.parse(storedObject(key).body);
+      storedObject(key).body = JSON.stringify({ ...record, revisionId: first.id, changedAt: '2026-10-29T13:10:00Z', changedBy: 'auth0|selector' });
+      const failure = await service.restoreRevision(req, PROJECT, BRAND_KIT, 'living', second.id, second.id).catch((error: unknown) => error);
+      if (!(failure instanceof ConflictError)) throw new Error('Expected selection conflict');
+      expect(failure.toResponse()['current']).toEqual({
+        revisionId: first.id,
+        number: 1,
+        approvedBy: null,
+        approvedAt: null,
+        selectedBy: 'The selector',
+        selectedAt: '2026-10-29T13:10:00Z',
+      });
     });
 
     it('commits a generated draft while preserving the approved pointer and its selection attribution', async () => {

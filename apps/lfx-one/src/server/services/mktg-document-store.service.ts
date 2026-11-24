@@ -949,15 +949,24 @@ export class MktgDocumentStoreService {
     if (expectedCurrentId !== undefined && expectedCurrentId !== selected) throw this.currentChanged(detail);
   }
 
-  /** Only the existing public name projection crosses the error boundary, never stored identities. */
+  /**
+   * Only the existing public name projection crosses the error boundary, never stored identities.
+   * `selectedBy`/`selectedAt` say who made this revision current and when. `approvedBy`/`approvedAt` are set only when
+   * that selection was this revision's approval (one write stamps both with the same instant): an unapproved draft, or
+   * a revision approved earlier and made current later by someone else, reports no approval here.
+   */
   private currentChanged(detail: MktgDocumentDetailResponse | null): ConflictError {
-    const selected = detail?.revisions.find((revision) => revision.id === detail.current?.revisionId) ?? detail?.revisions.find((revision) => revision.latest);
+    const selection = detail?.current ?? null;
+    const selected = detail?.revisions.find((revision) => revision.id === selection?.revisionId) ?? detail?.revisions.find((revision) => revision.latest);
+    const approval = selected?.approval && selection && selected.approval.approvedAt === selection.changedAt ? selected.approval : null;
     const current: MktgDocumentCurrentConflictResponse['current'] = selected
       ? {
           revisionId: selected.id,
           number: selected.number,
-          approvedBy: selected.approval ? (selected.approval.approvedBy?.name ?? null) : (detail?.current?.changedBy?.name ?? null),
-          approvedAt: selected.approval?.approvedAt ?? detail?.current?.changedAt ?? null,
+          approvedBy: approval?.approvedBy?.name ?? null,
+          approvedAt: approval?.approvedAt ?? null,
+          selectedBy: selection?.changedBy?.name ?? null,
+          selectedAt: selection?.changedAt ?? null,
         }
       : null;
     return new ConflictError('The current revision changed. Review it before changing the current selection.', MKTG_APPROVED_CURRENT_CHANGED, {

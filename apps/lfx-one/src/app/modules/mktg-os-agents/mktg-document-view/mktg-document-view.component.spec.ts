@@ -4059,6 +4059,8 @@ describe('MktgDocumentViewComponent', () => {
             number: 3,
             approvedBy: name,
             approvedAt: approval.approvedAt,
+            selectedBy: name,
+            selectedAt: approval.approvedAt,
           },
         },
       });
@@ -4098,6 +4100,12 @@ describe('MktgDocumentViewComponent', () => {
       progressReader().observed.emit({ detail: refreshed, view: { ...loaded, revisions: refreshed.revisions } });
       await settle();
       expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
+      // A failed poll replays what the reader last knew, here the current from before the conflict: that is not a
+      // read of the server, so it neither retires the notice nor counts as one.
+      const replayed = { ...loaded, progressUnavailable: true };
+      progressReader().observed.emit({ detail: replayed, view: replayed });
+      await settle();
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
       // A read where the current moved again retires it: the notice would name the wrong revision.
       const moved = { ...refreshed, current: { revisionId: OLDER.id, changedAt: '2026-10-29T12:55:00Z', changedBy: null } };
       progressReader().observed.emit({ detail: moved, view: { ...loaded, revisions: moved.revisions, current: moved.current } });
@@ -4122,15 +4130,16 @@ describe('MktgDocumentViewComponent', () => {
             status: 409,
             error: {
               code: 'MKTG_APPROVED_CURRENT_CHANGED',
-              current: { revisionId: OLDER.id, number: 1, approvedBy: null, approvedAt: null },
+              current: { revisionId: OLDER.id, number: 1, approvedBy: null, approvedAt: null, selectedBy: null, selectedAt: null },
             },
           })
       )
     );
     component['onApprove']();
     await settle();
+    // No approval is reported for the current, so the notice claims none.
     expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(
-      'Someone just approved a newer version. Check it before you approve this one.'
+      'Someone just changed the current version. Check it before you switch.'
     );
     expect(query('mktg-document-view-current-conflict-open')?.textContent?.trim()).toBe('Open the latest version');
     expect(query('mktg-document-view-current-conflict-open')?.getAttribute('href')).toContain(`revision=${OLDER.id}`);
@@ -4143,6 +4152,75 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     expect(query('mktg-document-view-current-conflict')).toBeNull();
     expect(component['view']()?.revision.id).toBe(OLDER.id);
+  });
+
+  it('ignores a late conflict re-read once a landed write or a newer read has replaced what it describes', async () => {
+    const response = faqResponse();
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    await render('/documents/faq/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const selectedAt = '2026-10-29T12:50:00Z';
+    const conflict = new HttpErrorResponse({
+      status: 409,
+      error: {
+        code: 'MKTG_APPROVED_CURRENT_CHANGED',
+        current: { revisionId: OLDER.id, number: 1, approvedBy: null, approvedAt: null, selectedBy: 'Synthetic selector', selectedAt },
+      },
+    });
+    const notice = 'Synthetic selector made v1 the current version a moment ago. Check it before you switch.';
+    // What the conflict re-read answers: v1 is current.
+    const older: MktgDocumentDetailResponse = {
+      ...response,
+      revisions: response.revisions.map((entry) => ({ ...entry, latest: entry.id === OLDER.id })),
+      current: { revisionId: OLDER.id, changedAt: selectedAt, changedBy: { name: 'Synthetic selector' } },
+    };
+
+    // 1. The reader's next approval lands before the re-read answers.
+    const first = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(first);
+    store.approveRevision.mockReturnValue(throwError(() => conflict));
+    component['onApprove']();
+    await settle();
+    // An approve attempt against a current nobody approved: the notice claims a selection, not an approval.
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+    const approval = { approvedAt: '2026-10-29T12:55:00Z', approvedBy: { name: 'Project writer' } };
+    const approved: MktgRevisionResponse = {
+      ...response,
+      approval,
+      revision: { ...response.revision, approval },
+      revisions: response.revisions.map((entry) => ({ ...entry, approval: entry.id === LATEST.id ? approval : null })),
+      current: { revisionId: LATEST.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: LATEST.id, number: 2 },
+    };
+    store.approveRevision.mockReturnValue(of(approved));
+    component['onApprove']();
+    await settle();
+    expect(query('mktg-document-view-current-conflict')).toBeNull();
+    first.next(older);
+    first.complete();
+    await settle();
+    expect(query('mktg-document-view-current-conflict')).toBeNull();
+    expect(component['view']()?.current?.revisionId).toBe(LATEST.id);
+    expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Approved');
+
+    // 2. The poller reads newer metadata (same current, one more revision) before the re-read answers.
+    const second = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(second);
+    store.restoreRevision.mockReturnValue(throwError(() => conflict));
+    component['onRestore'](OLDER);
+    await settle();
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+    const newer = { ...older, revisions: [revision(3, { latest: false }), ...older.revisions] };
+    progressReader().observed.emit({ detail: newer, view: { ...approved, revisions: newer.revisions, current: newer.current, approvedCurrent: null } });
+    await settle();
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+    expect(component['view']()?.revisions).toHaveLength(newer.revisions.length);
+    second.next(older);
+    second.complete();
+    await settle();
+    expect(component['view']()?.revisions).toHaveLength(newer.revisions.length);
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
   });
 
   it('approves directly without confirmation and updates saving/state metadata', async () => {

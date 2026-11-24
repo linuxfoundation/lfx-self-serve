@@ -40,7 +40,6 @@ import {
   LINKEDIN_SHARE_LINK_MAX_CHARS,
   MKTG_DOCUMENT_REVISION_PREVIEW_COUNT,
   MKTG_APPROVED_CURRENT_CHANGED,
-  MKTG_DOCUMENT_CURRENT_CONFLICT_COPY,
   MKTG_DOCUMENT_MAKE_CURRENT_HINT,
   MKTG_KIT_FRAMEWORK_KEY,
   MKTG_DOCUMENT_TYPES,
@@ -92,6 +91,7 @@ import {
 import {
   boilerplatesAssetOfRevision,
   describeMktgAssetReadiness,
+  describeMktgCurrentConflict,
   faqAssetOfRevision,
   foundationMessageAssetOfRevision,
   findMktgRunIntake,
@@ -313,6 +313,7 @@ export class MktgDocumentViewComponent {
   private readonly refreshedFailures = new Set<string>();
   private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
+  private documentReads = 0;
   private loadedScope = '';
   private readonly concurrentAnswers = inject(MktgRunAnswersService);
   protected readonly answeredNotice = computed(() => this.concurrentAnswers.notice(this.projectUid(), this.params().agentKey, this.params().documentId));
@@ -952,7 +953,7 @@ export class MktgDocumentViewComponent {
                     unavailableCount = 0;
                     this.refreshWarning.set('');
                   }
-                  this.retireCurrentConflict(cycle.detail);
+                  this.retireCurrentConflict(cycle);
                   this.runDetail.set(cycle.detail);
                   this.activityContext.set([readerSubject, this.selectedRun()?.activity]);
                   const failure = this.selectedRun();
@@ -989,7 +990,7 @@ export class MktgDocumentViewComponent {
                         cycle.detail.documentId === request.documentId
                     ),
                     tap((cycle) => {
-                      this.retireCurrentConflict(cycle.detail);
+                      this.retireCurrentConflict(cycle);
                       this.runDetail.set(cycle.detail);
                       if (this.closedRun()) {
                         closedAttempt$.next();
@@ -1797,10 +1798,17 @@ export class MktgDocumentViewComponent {
   /**
    * The page reads continuously (one visibility poller), so a read alone must not take the notice away: it stays until
    * the reader moves, a write of theirs lands, or a read shows the current moved again past the revision it names.
+   * Only a cycle read from the server counts: the reader's fallback for a failed poll replays the last known detail,
+   * which can predate the conflict. Each counted read also outdates a conflict re-read still in flight.
    */
-  private retireCurrentConflict(detail: MktgDocumentDetailResponse): void {
-    const named = this.currentConflict()?.revisionId;
-    if (named && named !== this.expectedCurrentId(detail)) this.currentConflict.set(null);
+  private retireCurrentConflict(cycle: MktgDocumentReadCycle): void {
+    if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) return;
+    this.documentReads++;
+    const notice = this.currentConflict();
+    if (!notice) return;
+    const current = this.expectedCurrentId(cycle.detail) ?? null;
+    if (!notice.revisionId) this.currentConflict.set({ ...notice, revisionId: current });
+    else if (notice.revisionId !== current) this.currentConflict.set(null);
   }
 
   /** A rejected selection is never automatically replayed. Refresh metadata, not the viewed bytes. */
@@ -1809,10 +1817,11 @@ export class MktgDocumentViewComponent {
     const epoch = this.restoreEpoch;
     const subject = this.userService.user()?.sub;
     const body = error.error as MktgDocumentCurrentConflictResponse;
-    const notice = this.describeCurrentConflict(body.current, action);
+    const notice = describeMktgCurrentConflict(body.current, action);
     this.approvalError.set('');
     this.approvalAnnouncement.set('');
     this.currentConflict.set(notice);
+    const reads = this.documentReads;
     this.documentStore
       .getDocument(viewed.project, viewed.type.agentKey, viewed.documentId)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
@@ -1820,6 +1829,9 @@ export class MktgDocumentViewComponent {
         next: (detail) => {
           if (epoch !== this.restoreEpoch || subject !== this.userService.user()?.sub || !this.sameView(viewed.project, viewed, selection)) return;
           if (detail.project !== viewed.project || detail.type.agentKey !== viewed.type.agentKey || detail.documentId !== viewed.documentId) return;
+          // Late answer: the notice was retired or replaced (a write landed, the current moved on), or the poller has
+          // read since. Applying it would put older metadata and a cleared notice back.
+          if (this.currentConflict() !== notice || reads !== this.documentReads) return;
           const view = this.view();
           if (!view) return;
           this.view.set(this.mergeDocumentMetadata(view, detail));
@@ -1831,21 +1843,6 @@ export class MktgDocumentViewComponent {
         error: () => undefined,
       });
     return true;
-  }
-
-  private describeCurrentConflict(
-    current: MktgDocumentCurrentConflictResponse['current'],
-    action: MktgDocumentCurrentConflictAction
-  ): MktgDocumentCurrentConflictNotice {
-    const copy = MKTG_DOCUMENT_CURRENT_CONFLICT_COPY[action];
-    const name = typeof current?.approvedBy === 'string' ? current.approvedBy.trim() : '';
-    const known = !!name && typeof current?.number === 'number' && Number.isInteger(current.number) && current.number > 0;
-    const number = String(current?.number ?? '');
-    return {
-      message: known ? copy.known.replaceAll('<Name>', name).replaceAll('<N>', number) : copy.unknown,
-      buttonLabel: known ? MKTG_DOCUMENT_CURRENT_CONFLICT_COPY.openKnown.replaceAll('<N>', number) : MKTG_DOCUMENT_CURRENT_CONFLICT_COPY.openUnknown,
-      revisionId: typeof current?.revisionId === 'string' && current.revisionId ? current.revisionId : null,
-    };
   }
 
   private writeErrorText(error: HttpErrorResponse): string {

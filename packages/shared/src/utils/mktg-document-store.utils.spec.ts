@@ -19,6 +19,7 @@ import type { MktgDocumentType } from '../interfaces/mktg-document-store.interfa
 import type { MktgRunResultResponse } from '../interfaces/mktg-run.interface';
 import type { MktgStartedRunRecord } from '../interfaces/mktg-document-run.interface';
 import {
+  describeMktgCurrentConflict,
   buildMktgDocumentPrefix,
   buildMktgDocumentProjectPrefix,
   buildMktgLegacyRevisionId,
@@ -42,6 +43,43 @@ import {
 
 it('pins the shared approval/current contention wire code', () => {
   expect(MKTG_APPROVED_CURRENT_CHANGED).toBe('MKTG_APPROVED_CURRENT_CHANGED');
+});
+
+describe('describeMktgCurrentConflict', () => {
+  const REVISION_ID = `000004-${'b'.repeat(64)}`;
+  const at = '2026-10-29T12:50:00Z';
+  const approvedNow = {
+    revisionId: REVISION_ID,
+    number: 4,
+    approvedBy: 'Synthetic reviewer',
+    approvedAt: at,
+    selectedBy: 'Synthetic reviewer',
+    selectedAt: at,
+  };
+  // A draft made current, or a revision approved earlier by someone else and made current now: no approval reported.
+  const selectedOnly = { revisionId: REVISION_ID, number: 4, approvedBy: null, approvedAt: null, selectedBy: 'Synthetic selector', selectedAt: at };
+  const approval = 'Synthetic reviewer approved v4 a moment ago. Check v4 before you approve a different version.';
+  const selection = 'Synthetic selector made v4 the current version a moment ago. Check it before you switch.';
+  const someoneApproved = 'Someone just approved a newer version. Check it before you approve this one.';
+  const someoneChanged = 'Someone just changed the current version. Check it before you switch.';
+
+  it.each([
+    ['approve', approvedNow, approval, 'Open v4'],
+    ['restore', approvedNow, 'Synthetic reviewer made v4 the current version a moment ago. Check it before you switch.', 'Open v4'],
+    ['approve', selectedOnly, selection, 'Open v4'],
+    ['restore', selectedOnly, selection, 'Open v4'],
+    ['approve', { ...approvedNow, approvedBy: null, selectedBy: null }, someoneApproved, 'Open the latest version'],
+    ['approve', { ...selectedOnly, selectedBy: null }, someoneChanged, 'Open the latest version'],
+    ['restore', { ...selectedOnly, selectedBy: '  ' }, someoneChanged, 'Open the latest version'],
+    ['approve', { ...selectedOnly, number: 0 }, someoneChanged, 'Open the latest version'],
+  ] as const)('%s against %o', (action, current, message, buttonLabel) => {
+    expect(describeMktgCurrentConflict(current, action)).toEqual({ message, buttonLabel, revisionId: REVISION_ID });
+  });
+
+  it.each(['approve', 'restore'] as const)('claims no approval and invents no link when the %s conflict names no current', (action) => {
+    expect(describeMktgCurrentConflict(null, action)).toEqual({ message: someoneChanged, buttonLabel: 'Open the latest version', revisionId: null });
+    expect(describeMktgCurrentConflict(undefined, action)).toEqual({ message: someoneChanged, buttonLabel: 'Open the latest version', revisionId: null });
+  });
 });
 
 it('treats discarded records as closed terminal records with no public progress row', () => {
