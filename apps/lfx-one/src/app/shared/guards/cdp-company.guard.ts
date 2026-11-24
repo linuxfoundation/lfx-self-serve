@@ -10,8 +10,8 @@ import { map } from 'rxjs';
 import { CdpCompanyService } from '../services/cdp-company.service';
 
 /**
- * `/company/:cdpId` matches only a segment shaped like a CDP id (a crowd.dev organization UUID, spec 062 FR-024,
- * DR-012), in any letter case: `isOrgSlugSegment` rejects that shape, so no other Company Lens route can claim it and
+ * `/company/:cdpId` matches only a segment shaped like a CDP id (a crowd.dev organization UUID),
+ * in any letter case: `isOrgSlugSegment` rejects that shape, so no other Company Lens route can claim it and
  * a CDP-shaped address never reaches the B2B `/company/:orgSegment` tree or its resolver. Only the lowercase form is a
  * CDP id; the shell reads any other case as a malformed address, the same "no company" an unknown id gets.
  */
@@ -22,11 +22,11 @@ export const cdpCompanyMatchGuard: CanMatchFn = (_route, segments) => {
 
 /**
  * Holds the CDP company shell until the browser knows whether CDP pages are available to the caller
- * (`/api/companies/availability`, FR-014), so the shell never renders, or asks for a company, before the audience
+ * (`/api/companies/availability`), so the shell never renders, or asks for a company, before the audience
  * answer is in.
  *
  * It never redirects. An outsider, an unknown id and a malformed id render the same in-shell "no company" state at
- * the address the viewer opened, and a failed check renders "could not verify" (FR-012, FR-013, FR-035): a redirect
+ * the address the viewer opened, and a failed check renders "could not verify": a redirect
  * would tell those cases apart by where it lands. The shell decides the id format and the audience answer itself.
  *
  * The server passes straight through: SSR has no audience answer (`availability()` answers `unavailable` there), so the

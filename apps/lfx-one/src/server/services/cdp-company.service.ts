@@ -51,13 +51,13 @@ import { SnowflakeService } from './snowflake.service';
 import { buildCdpCompanyCacheKey, buildCdpProjectUidCacheKey, valkeyService } from './valkey.service';
 
 /**
- * Spec 062 — CDP company pages and sections (contracts/bff-cdp-companies.md). Every method runs behind
- * `requireCdpAudience`, so each cache entry here is read and filled only for a caller in the audience (FR-011).
+ * CDP company pages and sections. Every method runs behind
+ * `requireCdpAudience`, so each cache entry here is read and filled only for a caller in the audience.
  *
  * The cache holds unfiltered warehouse rows per CDP id (`cdp-company:v1:<id>:<section>`), shared across callers;
- * the per-caller `project#viewer` filter on Projects and the top project runs after the cache and is never stored
- * (FR-030). Each read is resolved per request, never from search results (FR-023). A missing table answers 503
- * `SECTION_COULD_NOT_LOAD`, so the app degrades until the warehouse tables are built in production (DR-017).
+ * the per-caller `project#viewer` filter on Projects and the top project runs after the cache and is never stored.
+ * Each read is resolved per request, never from search results. A missing table answers 503
+ * `SECTION_COULD_NOT_LOAD`, so the app degrades until the warehouse tables are built in production.
  */
 export class CdpCompanyService {
   private readonly snowflakeService = SnowflakeService.getInstance();
@@ -65,7 +65,7 @@ export class CdpCompanyService {
   private readonly microserviceProxy = new MicroserviceProxyService();
   private readonly projectService = new ProjectService();
 
-  /** `GET /api/companies/:cdpId`: the page, a redirect, or `NOT_FOUND` (FR-017, FR-033, FR-035). */
+  /** `GET /api/companies/:cdpId`: the page, a redirect, or `NOT_FOUND`. */
   public async getPage(req: Request, cdpId: string): Promise<CdpCompanyServiceResult<CdpCompanyResponse>> {
     let entry: CdpCompanyProfileCacheEntry;
     try {
@@ -93,7 +93,7 @@ export class CdpCompanyService {
         ...(topProjectName ? { topProjectName } : {}),
         lastActiveMonth: profile.lastActiveMonth,
       },
-      // A low-activity page serves no section (`getSection` answers 404 for each), so it lists none (FR-017).
+      // A low-activity page serves no section (`getSection` answers 404 for each), so it lists none.
       sections: state === 'ok' ? sectionStates() : [],
     };
     return { ok: true, value: page, outcome: state === 'ok' ? 'ok' : 'low_activity' };
@@ -101,8 +101,8 @@ export class CdpCompanyService {
 
   /**
    * `GET /api/companies/:cdpId/sections/:section`. A page that is not `ok` (low activity, redirect, unknown) answers
-   * 404 for every section (FR-017); an off section 403 `SECTION_OFF_BY_DESIGN` (FR-026); Meetings and Groups 403
-   * `SECTION_NO_ACCESS` to anyone the gate batch did not answer `lf-staff` for (FR-031, FR-032, DR-044).
+   * 404 for every section; an off section 403 `SECTION_OFF_BY_DESIGN`; Meetings and Groups 403
+   * `SECTION_NO_ACCESS` to anyone the gate batch did not answer `lf-staff` for.
    */
   public async getSection(
     req: Request,
@@ -137,7 +137,7 @@ export class CdpCompanyService {
   }
 
   /**
-   * Spec 062 FR-040 — which of the given CDP ids are addressable CDP companies: one bound read of
+   * Which of the given CDP ids are addressable CDP companies: one bound read of
    * `CDP_COMPANY_PROFILE`, at most one page of ids. The caller checks the CDP audience first; errors propagate.
    */
   public async filterAddressableCdpIds(cdpIds: readonly string[]): Promise<string[]> {
@@ -238,7 +238,7 @@ export class CdpCompanyService {
 
   /**
    * Projects rows for LF projects the caller passes `project#viewer` on, checked in one strict batch per request
-   * after the shared cache (FR-020, FR-030, DR-018). An authorizer failure answers 503 `SECTION_COULD_NOT_VERIFY`.
+   * after the shared cache. An authorizer failure answers 503 `SECTION_COULD_NOT_VERIFY`.
    */
   private async readProjects(req: Request, cdpId: string): Promise<CdpCompanyServiceResult<CdpCompanySectionPayload>> {
     const rows = await valkeyService.withCache<CdpCompanyCachedProjectRow[]>(
@@ -281,7 +281,7 @@ export class CdpCompanyService {
   }
 
   /**
-   * The top project's name when the caller passes `project#viewer` on it (FR-020). Fails closed: a failed check
+   * The top project's name when the caller passes `project#viewer` on it. Fails closed: a failed check
    * omits the top project rather than failing the page, so nothing is shown that was not verified.
    */
   private async readableTopProjectName(req: Request, profile: CdpCompanyCachedProfile): Promise<string | undefined> {
@@ -355,7 +355,7 @@ export class CdpCompanyService {
         const [redirect] = redirects;
         const kind = redirect?.TARGET_KIND?.trim().toLowerCase();
         const targetId = redirect?.TARGET_ID?.trim();
-        // One target per old id (FR-033); anything else is treated as no redirect.
+        // One target per old id; anything else is treated as no redirect.
         if (redirects.length === 1 && targetId && (kind === 'cdp' || kind === 'b2b')) {
           logger.debug(req, 'get_cdp_company', 'CDP id resolves to a redirect', { target_kind: kind });
           return { kind: 'redirect', targetKind: kind, targetId };
@@ -369,7 +369,7 @@ export class CdpCompanyService {
   }
 
   /**
-   * One step to the final target (FR-033). A CDP target is answered as is (the warehouse guarantees it is
+   * One step to the final target. A CDP target is answered as is (the warehouse guarantees it is
    * addressable); a B2B target is read from the Company Lens index with the caller's own token — never a service
    * token or a cache (ADR-0039) — and an unreadable or missing one is "No company at this address". A readable B2B
    * target is answered by its SFID, never its slug: slugs are not unique, and the path guard trusts a slug that matches
@@ -410,7 +410,7 @@ export class CdpCompanyService {
     );
   }
 
-  /** One bound read of a served CDP table: only the contract's columns (FR-018), keyed by the CDP id. */
+  /** One bound read of a served CDP table: only the contract's columns, keyed by the CDP id. */
   private async readTable<T>(table: string, columns: string, cdpId: string, tail: string, keyColumn = 'cdp_id'): Promise<T[]> {
     const sql = `SELECT ${columns} FROM ${this.table(table)} WHERE ${keyColumn} = ? ${tail}`;
     const binds: Bind[] = [cdpId];
@@ -422,7 +422,7 @@ export class CdpCompanyService {
     return `${resolveLfxOnePlatinumSchema()}.${name}`;
   }
 
-  /** A warehouse or index read failed (a table not built yet included, DR-017): 503 `SECTION_COULD_NOT_LOAD`. */
+  /** A warehouse or index read failed (a table not built yet included): 503 `SECTION_COULD_NOT_LOAD`. */
   private couldNotLoad<T>(req: Request, operation: string, error: unknown): CdpCompanyServiceResult<T> {
     logger.warning(req, operation, 'CDP company read failed', {
       err: error,
@@ -434,7 +434,7 @@ export class CdpCompanyService {
 
 /**
  * `ok` for a searchable company; otherwise the low-activity variant the warehouse decides: counted activity in the
- * last 730 days below the search rule is "not enough activity", none is "no activity" (FR-017, FR-034). Never derived
+ * last 730 days below the search rule is "not enough activity", none is "no activity". Never derived
  * from the last active month.
  */
 function pageState(profile: CdpCompanyCachedProfile): CdpCompanyPageState {
@@ -442,7 +442,7 @@ function pageState(profile: CdpCompanyCachedProfile): CdpCompanyPageState {
   return profile.hasActivity730d ? 'not-enough-activity' : 'no-activity';
 }
 
-/** Section states the server decides and the page carries (FR-025, FR-026): Meetings and Groups follow their flag. */
+/** Section states the server decides and the page carries: Meetings and Groups follow their flag. */
 function sectionStates(): CdpCompanySection[] {
   const staffSectionsOn = isServerFeatureEnabled(ServerFeatureFlag.OrgLensCdpMeetingsGroups);
   return CDP_COMPANY_SECTION_KEYS.map((key) => ({
@@ -466,7 +466,7 @@ function toCachedProfile(row: CdpCompanyProfileRow): CdpCompanyCachedProfile {
     lastActiveMonth: toIsoDate(row.LAST_ACTIVE_MONTH)?.slice(0, 7) ?? null,
     isSearchable,
     hasActivity730d: row.HAS_ACTIVITY_730D === true,
-    // Counts exist only for searchable companies, and are never served for any other (FR-017).
+    // Counts exist only for searchable companies, and are never served for any other.
     contributors730d: isSearchable && row.CONTRIBUTORS_730D != null ? Number(row.CONTRIBUTORS_730D) : null,
     activities730d: isSearchable && row.ACTIVITIES_730D != null ? Number(row.ACTIVITIES_730D) : null,
   };

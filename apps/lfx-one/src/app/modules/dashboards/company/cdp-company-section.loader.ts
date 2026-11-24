@@ -11,9 +11,9 @@ import { catchError, map, Observable, of, startWith, switchMap } from 'rxjs';
 import { cdpCompanySectionEmptyState, classifyCdpSectionError, isCdpSectionEmpty } from './cdp-company.util';
 
 /**
- * Reads one section of the CDP company on screen for a section page (spec 062). Construct it in a component field
+ * Reads one section of the CDP company on screen for a section page. Construct it in a component field
  * initializer (it injects). The section is requested only when the page the shell holds marks it `on`: an off section,
- * or one the page does not list, renders "off by design" without a request (FR-026); a refusal renders by its code.
+ * or one the page does not list, renders "off by design" without a request; a refusal renders by its code.
  */
 export class CdpCompanySectionLoader<K extends CdpSectionKey> {
   private readonly context = inject(CdpCompanyContextService);

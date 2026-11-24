@@ -14,7 +14,7 @@ import type {
 const MONTH_PATTERN = /^(\d{4})-(\d{2})$/;
 const MONTH_FORMAT = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
-/** `YYYY-MM` → "March 2026" (FR-034's "last active `<month year>`"); null when absent or not a month. */
+/** `YYYY-MM` → "March 2026" (for "last active `<month year>`"); null when absent or not a month. */
 export function formatCdpCompanyMonth(month: string | null | undefined): string | null {
   const match = month ? MONTH_PATTERN.exec(month) : null;
   if (!match) return null;
@@ -54,7 +54,7 @@ function errorCode(error: unknown): string | undefined {
 
 /**
  * A failed `GET /api/companies/:cdpId`: 404 is "no company at this address", whatever the reason (outsider, unknown,
- * malformed — FR-012); a failed audience check is "could not verify" (FR-013); anything else could not be loaded.
+ * malformed); a failed audience check is "could not verify"; anything else could not be loaded.
  */
 export function classifyCdpPageError(error: unknown): CdpCompanyShellState {
   if (errorCode(error) === CDP_COMPANY_ERROR_CODES.ROLE_GRANTS_UNAVAILABLE) return 'could-not-verify';
@@ -62,7 +62,7 @@ export function classifyCdpPageError(error: unknown): CdpCompanyShellState {
   return 'could-not-load';
 }
 
-/** A failed section read, by the refusal's stated `code`, never by status alone (contracts/bff-cdp-companies.md). */
+/** A failed section read, by the refusal's stated `code`, never by status alone. */
 export function classifyCdpSectionError(error: unknown): CdpCompanySectionViewState {
   switch (errorCode(error)) {
     case CDP_COMPANY_ERROR_CODES.SECTION_OFF_BY_DESIGN:
@@ -107,7 +107,7 @@ export function cdpCompanySectionEmptyState(state: CdpCompanySectionViewState): 
       return 'section-empty';
     case 'off-by-design':
       return 'off-by-design';
-    // `SECTION_NO_ACCESS` is only ever Meetings or Groups refused to a caller who is not LF staff (FR-031, FR-032).
+    // `SECTION_NO_ACCESS` is only ever Meetings or Groups refused to a caller who is not LF staff.
     case 'no-access':
       return 'section-staff-only';
     case 'could-not-verify':

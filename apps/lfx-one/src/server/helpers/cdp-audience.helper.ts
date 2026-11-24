@@ -13,14 +13,14 @@ import { isImpersonating } from '../utils/auth-helper';
 const accessCheck = new AccessCheckService();
 
 /**
- * Spec 062 FR-010, FR-011 — is the caller in the CDP company audience? One strict authorizer batch of
+ * Is the caller in the CDP company audience? One strict authorizer batch of
  * `team:<id>#member` over `cdpAudienceTeamIds()` (`lf-staff`, plus the global org admins team while
  * `OrgLensCdpGlobalOrgAdmins` is on): in as a member of any of them. Never the fail-soft `isStaff` affordance or
- * `checkLFStaff`. The `lf-staff` answer of the same batch is kept for Meetings and Groups (DR-044).
+ * `checkLFStaff`. The `lf-staff` answer of the same batch is kept for Meetings and Groups.
  *
  * An impersonating session is outside for every CDP request, decided before any check: the token carries the
- * target's identity, and CDP access must not follow a target into a "view as" session (research R2).
- * An authorizer failure is `unverifiable`, never `out`, so the caller sees "could not verify" (FR-013).
+ * target's identity, and CDP access must not follow a target into a "view as" session.
+ * An authorizer failure is `unverifiable`, never `out`, so the caller sees "could not verify".
  *
  * Shared by the `requireCdpAudience` route gate, the `/availability` answer and the Participating Companies links.
  */

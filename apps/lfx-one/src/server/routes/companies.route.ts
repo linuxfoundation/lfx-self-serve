@@ -7,7 +7,7 @@ import { CdpCompanyController } from '../controllers/cdp-company.controller';
 import { requireCdpAudience } from '../middleware/require-cdp-audience.middleware';
 
 /**
- * Spec 062 — CDP companies (`/api/companies`, contracts/bff-cdp-companies.md, contracts/bff-cdp-search.md).
+ * CDP companies (`/api/companies`).
  * `/availability` is the browser's only audience signal and runs outside the gate; every other route runs
  * `requireCdpAudience` first, before the id is parsed. `/search` is declared before `/:cdpId` so it is never
  * taken for an id (it would not match the id format anyway).

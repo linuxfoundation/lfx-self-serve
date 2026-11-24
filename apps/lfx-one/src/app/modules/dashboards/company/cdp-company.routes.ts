@@ -5,8 +5,8 @@ import { Routes } from '@angular/router';
 import { CDP_COMPANY_DEFAULT_SECTION, CDP_COMPANY_SECTION_META } from '@lfx-one/shared/constants';
 
 /**
- * Sections of a CDP company page, `/company/{CDP id}/{section}` (spec 062 FR-025). Every section is routable: which ones
- * are off is the server's answer, delivered with the page (FR-026), so an off section renders "off by design" in place.
+ * Sections of a CDP company page, `/company/{CDP id}/{section}`. Every section is routable: which ones
+ * are off is the server's answer, delivered with the page, so an off section renders "off by design" in place.
  * Titles are static — a CDP company's name never reaches the document title before the server has answered.
  */
 export const CDP_COMPANY_ROUTES: Routes = [

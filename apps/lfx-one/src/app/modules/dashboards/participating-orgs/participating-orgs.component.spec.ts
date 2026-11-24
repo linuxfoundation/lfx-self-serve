@@ -344,7 +344,7 @@ describe('ParticipatingOrgsComponent', () => {
     expect(query(`participating-orgs-row-${UNIDENTIFIED_KEY}`)?.textContent).not.toContain('Unidentified');
     expect(query(`participating-orgs-row-${UNIDENTIFIED_KEY}`)?.querySelector('a')).toBeNull();
     expect(text(`participating-orgs-row-${UNIDENTIFIED_KEY}-membership`)).toBe('Non-member');
-    // A non-member the viewer reads links to its Company Lens home (spec 062 DR-042).
+    // A non-member the viewer reads links to its Company Lens home.
     expect(query(`participating-orgs-row-${SYNTHETIC_SECOND_ORG_ACCOUNT_ID}-name`)?.getAttribute('data-name-kind')).toBe('org-lens-home-link');
   });
 

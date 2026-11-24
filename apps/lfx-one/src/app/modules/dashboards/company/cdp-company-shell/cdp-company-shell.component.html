@@ -14,7 +14,7 @@
       <p-skeleton height="16rem" />
     </div>
   } @else {
-    <!-- The company is named only once the server has answered a page for it: never on "no company" or "could not verify" (FR-035). -->
+    <!-- The company is named only once the server has answered a page for it: never on "no company" or "could not verify". -->
     @if (company(); as summary) {
       <section class="flex items-center gap-3" aria-label="Company" data-testid="cdp-company-header">
         <div class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-white">

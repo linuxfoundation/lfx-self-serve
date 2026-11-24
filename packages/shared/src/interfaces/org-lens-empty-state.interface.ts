@@ -3,7 +3,7 @@
 
 /**
  * Names of the Org Lens empty states shipped in spec 053 phase 1 (`ORG_LENS_EMPTY_STATE_COPY` keys), plus `affiliated-no-grant` (#4225)
- * and the CDP company states (spec 062 FR-034): `off-by-design`, the two `low-activity-*` variants and `no-company`.
+ * and the CDP company states: `off-by-design`, the two `low-activity-*` variants and `no-company`.
  */
 export type OrgLensEmptyStateName =
   | 'no-organization'
@@ -89,6 +89,6 @@ export interface OrgLensEmptyStateValues {
   orgList?: { uid: string; name: string }[];
   /** FR-013 — false when no caller-set filter narrows the query, so `section-empty` renders reason-only. Defaults true. */
   filterActive?: boolean;
-  /** Spec 062 FR-034 — a CDP company's last active month and year ("March 2026"), for the `low-activity-*` states. */
+  /** A CDP company's last active month and year ("March 2026"), for the `low-activity-*` states. */
   lastActive?: string | null;
 }

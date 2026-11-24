@@ -483,7 +483,7 @@ describe('SnowflakeService circuit breaker', () => {
     });
   });
 
-  describe('expected deadline miss (expectTimeout, spec 062 DR-043)', () => {
+  describe('expected deadline miss (expectTimeout)', () => {
     it('still counts an SDK or pool error toward the breaker when the caller set expectTimeout', async () => {
       const { service } = serviceWithPool(vi.fn(() => Promise.reject(new Error('ResourceRequest timed out'))));
 
@@ -616,7 +616,7 @@ describe('SnowflakeService query timeout', () => {
     expect(statement.cancel).not.toHaveBeenCalled();
   });
 
-  describe('expected deadline miss (expectTimeout, spec 062 DR-043)', () => {
+  describe('expected deadline miss (expectTimeout)', () => {
     const internalsOf = (service: SnowflakeService) =>
       service as unknown as { circuitState: SnowflakeCircuitState; lastFailureTime: number; consecutiveFailures: number; probeInFlight: boolean };
 

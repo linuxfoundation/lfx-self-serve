@@ -300,7 +300,7 @@ export class SnowflakeService {
                 err: error,
               });
             } else if (expectedTimeout) {
-              // The caller set a deadline it expects to miss (spec 062 DR-043): the miss says the statement was slower
+              // The caller set a deadline it expects to miss: the miss says the statement was slower
               // than that caller can wait, not that Snowflake is down, so it frees the HALF_OPEN probe slot without
               // booking a failure. Logged at warning by the caller, which knows why it set the deadline.
               span.setStatus({

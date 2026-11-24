@@ -10,7 +10,7 @@ import { logger } from '../services/logger.service';
 import { getEffectiveSub } from '../utils/auth-helper';
 
 /**
- * The `viewer` of a `cdp_company_view` event (FR-015, DR-050): `base64url(HMAC-SHA256(key, sub))` over the effective
+ * The `viewer` of a `cdp_company_view` event: `base64url(HMAC-SHA256(key, sub))` over the effective
  * subject (a "view as" session's target, never the operator), with the key derived from `PCC_AUTH0_SECRET` by HKDF
  * under its own info label. Stable per person, so an audit can follow one viewer and, holding the secret, test a known
  * subject; unreadable otherwise. LFID subjects are `auth0|<username>`, so the raw `sub` would expose the handle and is
@@ -26,7 +26,7 @@ export function cdpCompanyViewer(req: Request): string | null {
 }
 
 /**
- * FR-015, DR-022, DR-050 — exactly one `cdp_company_view` event per page or section response, emitted when the
+ * Exactly one `cdp_company_view` event per page or section response, emitted when the
  * response finishes, after the audience check and id validation: `{viewer, cdp_id, section, outcome}`. The viewer is
  * only the keyed pseudonym above; no username, email or raw `sub` is logged.
  */

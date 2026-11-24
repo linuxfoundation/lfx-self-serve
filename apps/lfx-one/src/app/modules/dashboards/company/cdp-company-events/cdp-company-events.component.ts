@@ -11,7 +11,7 @@ import { CdpCompanySectionFrameComponent } from '../components/cdp-company-secti
 import { CdpCompanySectionLoader } from '../cdp-company-section.loader';
 import { formatCdpCompanyDate } from '../cdp-company.util';
 
-/** CDP Events (spec 062 FR-028, FR-030): events attended by at least 5 of the company's people, with the attendee count. */
+/** CDP Events: events attended by at least 5 of the company's people, with the attendee count. */
 @Component({
   selector: 'lfx-cdp-company-events',
   imports: [CdpCompanySectionFrameComponent, CardComponent, TableComponent, DecimalPipe],

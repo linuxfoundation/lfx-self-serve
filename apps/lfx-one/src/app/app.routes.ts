@@ -523,10 +523,10 @@ export const routes: Routes = [
           // Legacy `/company/{page}` addresses (no organization named) (spec 050 Phase 5 adds the default-organization redirect guard).
           ...orgLensPageRoutes(),
           {
-            // Spec 062 — `/company/{CDP id}/{section}`: a company seen only in open source activity (FR-024). Declared
+            // `/company/{CDP id}/{section}`: a company seen only in open source activity. Declared
             // before `:orgSegment` and matched only by a CDP-shaped segment, which `isOrgSlugSegment` rejects, so the
             // two trees never share an address. The shell renders every outcome in place: an outsider, an unknown and
-            // a malformed id read the same (FR-012, FR-035). The id is never adopted as the selected B2B company.
+            // a malformed id read the same. The id is never adopted as the selected B2B company.
             path: ':cdpId',
             canMatch: [cdpCompanyMatchGuard],
             canActivate: [cdpCompanyGuard],

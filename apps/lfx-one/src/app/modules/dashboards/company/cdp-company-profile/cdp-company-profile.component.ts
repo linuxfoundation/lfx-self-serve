@@ -9,7 +9,7 @@ import { CdpCompanySectionLoader } from '../cdp-company-section.loader';
 import { formatCdpCompanyMonth } from '../cdp-company.util';
 
 /**
- * CDP Company Profile (spec 062 FR-018, FR-027): company-level facts only, read-only. It is not the B2B Profile
+ * CDP Company Profile: company-level facts only, read-only. It is not the B2B Profile
  * editor and offers no way into it.
  */
 @Component({

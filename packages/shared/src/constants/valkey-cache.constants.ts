@@ -147,7 +147,7 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the Foundation Lens → Participating Companies reads (the roster per foundation and range, and the project lines per project or company; keyed by the foundation slug, shared across callers). Its own namespace so its larger size cap does not apply to the per-project entries. */
   FOUNDATION_PARTICIPATING_ORGS_NAMESPACE: 'foundation-participating-orgs-sf:v1',
 
-  /** Domain + schema-version segment for the per-project Project Lens → Participating Organizations cache (summary + list pages; shared across callers, since the rows carry no per-caller data — Org Lens links are resolved per caller, uncached). `v2`: a foundation's own project lists every current member, contributing or not, and the Members count is the full roster. `v3`: rows carry `organizationId` (spec 062 FR-040) — no `v2` page may be served without it. */
+  /** Domain + schema-version segment for the per-project Project Lens → Participating Organizations cache (summary + list pages; shared across callers, since the rows carry no per-caller data — Org Lens links are resolved per caller, uncached). `v2`: a foundation's own project lists every current member, contributing or not, and the Members count is the full roster. `v3`: rows carry `organizationId` — no `v2` page may be served without it. */
   PROJECT_PARTICIPATING_ORGS_NAMESPACE: 'project-participating-orgs-sf:v3',
 
   /** Domain + schema-version segment for the per-viewer organizer attendance summaries on the meetings home feeds. */

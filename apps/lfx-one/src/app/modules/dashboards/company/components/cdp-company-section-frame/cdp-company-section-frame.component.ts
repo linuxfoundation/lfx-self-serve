@@ -15,7 +15,7 @@ import { PageHeaderComponent } from '@components/page-header/page-header.compone
 import { SkeletonModule } from 'primeng/skeleton';
 
 /**
- * The frame every CDP section page shares (spec 062): its page header, then a skeleton while loading, the shared
+ * The frame every CDP section page shares: its page header, then a skeleton while loading, the shared
  * Company Lens empty state for off, refused, failed and empty answers, or the projected content once ready.
  */
 @Component({

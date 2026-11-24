@@ -573,7 +573,7 @@ export interface OrgSelectorCdpRow extends CdpCompanyItem {
 }
 
 /**
- * The org selector's CDP group for the current search term (spec 062, FR-021–FR-023): `loading` until the CDP
+ * The org selector's CDP group for the current search term: `loading` until the CDP
  * search settles, then its rows, or `unavailable` when the read missed its deadline, failed, or its list was stale.
  */
 export interface OrgSelectorCdpGroup {

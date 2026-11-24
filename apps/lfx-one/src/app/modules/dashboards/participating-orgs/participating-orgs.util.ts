@@ -43,7 +43,7 @@ export function linksKey(slug: string, ids: ProjectParticipatingOrgsLinksQuery):
 }
 
 /**
- * Decorate a wire row for the table (spec 062 FR-040, DR-041, DR-042). A member the viewer can open in Company Lens
+ * Decorate a wire row for the table. A member the viewer can open in Company Lens
  * links to its membership page for this project's parent foundation, and falls back to the no-access hint when either
  * half of that address is missing. A non-member the viewer can read links to its Company Lens home; an Unidentified
  * company that is an addressable CDP company links to its CDP page. Anything else renders plain, with no hint. While

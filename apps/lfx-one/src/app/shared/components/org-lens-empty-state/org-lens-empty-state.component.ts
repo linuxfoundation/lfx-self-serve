@@ -11,8 +11,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 
 /**
- * States whose wording must never carry an addressed organization's name (spec 050 DR-002 / 053 DR-001), and the CDP
- * `no-company` state, which names neither the id nor any company (spec 062 FR-035), and the CDP `section-staff-only` state.
+ * States whose wording must never carry an addressed organization's name, and the CDP
+ * `no-company` state, which names neither the id nor any company, and the CDP `section-staff-only` state.
  */
 const UNHELD_ORG_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set([
   'no-access',

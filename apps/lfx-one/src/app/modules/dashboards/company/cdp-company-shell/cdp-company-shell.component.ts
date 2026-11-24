@@ -28,17 +28,17 @@ const LOADING: CdpCompanyShellView = { state: 'loading', page: null };
 const NO_COMPANY: CdpCompanyShellView = { state: 'no-company', page: null };
 
 /**
- * The CDP company page, `/company/{CDP id}/{section}` (lfx-self-serve#2092, spec 062): reads the page once per id
+ * The CDP company page, `/company/{CDP id}/{section}` (lfx-self-serve#2092): reads the page once per id
  * and renders its outcome in place, at the address the viewer opened.
  *
  * - An outsider (availability not `available`), an unknown id and a malformed id all render "no company at this
- *   address", naming neither the id nor any company (FR-012, FR-035). A malformed id is never sent to the server.
- * - A failed audience check renders "could not verify" (FR-013).
+ *   address", naming neither the id nor any company. A malformed id is never sent to the server.
+ * - A failed audience check renders "could not verify".
  * - A merged id moves to its surviving CDP id on the same section; a B2B-linked id moves to that company's Company
- *   Lens home. Both replace the address (FR-033).
- * - A company below the search rule renders its low-activity state with no counts and no section (FR-017, FR-034).
+ *   Lens home. Both replace the address.
+ * - A company below the search rule renders its low-activity state with no counts and no section.
  * - Otherwise the company header and the routed section. Counts and labels only: no edit, invite, permission or
- *   settings control, and no way into the B2B Profile editor (FR-018, FR-027).
+ *   settings control, and no way into the B2B Profile editor.
  *
  * The id never becomes the selected B2B company: it is held only by `CdpCompanyContextService` for the navigation.
  * Server-side rendering has no audience answer, so it renders the skeleton and the browser run decides.
@@ -139,7 +139,7 @@ export class CdpCompanyShellComponent {
   }
 
   /**
-   * One step to the final address (FR-033), replacing the old one in history. A target that is not a well-formed
+   * One step to the final address, replacing the old one in history. A target that is not a well-formed
    * address is treated as no company rather than followed.
    */
   private followRedirect(redirect: CdpCompanyRedirectTarget): Observable<CdpCompanyShellView> {

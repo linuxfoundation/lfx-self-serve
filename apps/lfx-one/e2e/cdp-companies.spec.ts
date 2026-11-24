@@ -2,28 +2,28 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Spec 062 (lfx-self-serve#2092) — Company Lens: CDP companies, `/company/{CDP id}/{section}`.
+ * Company Lens: CDP companies, `/company/{CDP id}/{section}` (lfx-self-serve#2092).
  *
  * The harness logs in one identity, so per-identity UI states are stubbed at the network edge (`page.route`) and the
  * server guarantees are asserted against the real BFF with `page.request`, each guarded on the identity the harness
- * has (skipped with the reason when it does not apply). Other identities are covered by quickstart App steps 2–5.
+ * has (skipped with the reason when it does not apply). Other identities are checked by hand against a deployed environment.
  *
- *   T042 (US2) — search and open: CDP rows load below the B2B rows, tagged "CDP"; a same-name B2B and CDP company are
+ *   Search and open: CDP rows load below the B2B rows, tagged "CDP"; a same-name B2B and CDP company are
  *          both listed, B2B rows unchanged; picking a CDP row opens `/company/{CDP id}`; under `/company`, a B2B slug
  *          and a static page (`/company/overview`) still open their B2B pages, and a CDP id opens the CDP page
  *          without reaching the B2B resolver.
- *   T044 (US3) — availability false hides every CDP surface and `/company/{CDP id}` reads "no company"; a malformed
+ *   Outside the audience: availability false hides every CDP surface and `/company/{CDP id}` reads "no company"; a malformed
  *          address reads the same with no page request; callers outside the audience (non-staff global org admin with
  *          the switch off, global-org-auditors with it on or off) get exactly what the server gives an outsider;
  *          against the real BFF an unknown and a malformed id get identical status and body, and search answers an
  *          outsider 404.
- *   T050 (US4) — navigation: sections the page marks `on` are links, every other Company Lens section is greyed with
+ *   Navigation: sections the page marks `on` are links, every other Company Lens section is greyed with
  *          "Not available for CDP companies"; off and refused sections render their state; against the real BFF an
  *          off section is refused 403 `SECTION_OFF_BY_DESIGN` and a low-activity company's sections 404; every CDP
- *          response, stubbed or real, carries only allow-listed keys (no person-level field, FR-018).
- *   T055 (US5) — Meetings and Groups: off by design while their flag is off; with it on, rows for LF staff and the
+ *          response, stubbed or real, carries only allow-listed keys (no person-level field).
+ *   Meetings and Groups: off by design while their flag is off; with it on, rows for LF staff and the
  *          no-access state for anyone else; against the real BFF the staff identity reads rows when the flag is on.
- *   T059 (US6) — merged (CDP redirect, same section), B2B-linked (the company's Company Lens home), unknown,
+ *   Redirects: merged (CDP redirect, same section), B2B-linked (the company's Company Lens home), unknown,
  *          no-activity and not-enough-activity ids.
  *
  * Optional environment for the real-BFF cases: `E2E_CDP_COMPANY_ID` (a searchable CDP id; otherwise one is found by
@@ -42,7 +42,7 @@ test.use({ viewport: { width: 1440, height: 900 } });
 
 const UI_TIMEOUT = 30_000;
 
-// Made-up crowd.dev organization ids (lowercase UUIDs, DR-012).
+// Made-up crowd.dev organization ids (lowercase UUIDs).
 const OK_ID = '1a2b3c4d-0000-4000-8000-000000000001';
 const MERGED_ID = '1a2b3c4d-0000-4000-8000-000000000002';
 const B2B_LINKED_ID = '1a2b3c4d-0000-4000-8000-000000000003';
@@ -214,7 +214,7 @@ const STANDARD_PAGES: Record<string, StubAnswer> = {
   },
 };
 
-/** Every key a CDP response may carry (contracts/bff-cdp-companies.md, bff-cdp-search.md): counts and labels only. */
+/** Every key a CDP response may carry: counts and labels only. */
 const ALLOWED_KEYS: Record<string, true> = {
   available: true,
   code: true,
@@ -254,7 +254,7 @@ const PERSON_KEY_PATTERN = /e-?mail|avatar|title|user_?name|login|first_?name|la
 
 /**
  * Fails on any key outside the allow-list, on any person-level key, and on a `name` anywhere but a company: a search
- * item or page summary (they carry `cdpId`) or the Profile payload's root (FR-018).
+ * item or page summary (they carry `cdpId`) or the Profile payload's root.
  */
 function assertCompanyLevelOnly(body: unknown, where: string, isProfileRoot = false): void {
   if (Array.isArray(body)) {
@@ -344,10 +344,10 @@ async function realPage(page: Page, cdpId: string): Promise<CdpCompanyPage> {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// T042 — search and open
+// Search and open
 // ---------------------------------------------------------------------------------------------------------------
 
-test.describe('CDP companies — search and open (T042, US2)', () => {
+test.describe('CDP companies — search and open', () => {
   test('CDP rows load below the B2B rows, tagged CDP, and a pick opens the CDP page', async ({ page }) => {
     const traffic = await stubCdp(page, {
       availability: AVAILABLE,
@@ -367,7 +367,7 @@ test.describe('CDP companies — search and open (T042, US2)', () => {
     await expect(cdpRow).toContainText(COMPANY_NAME);
     await expect(page.getByTestId(`org-selector-cdp-row-${OK_ID}-tag`)).toHaveText(CDP_COMPANY_SEARCH_TAG);
 
-    // Same name, both kinds: no de-duplication (FR-022). The B2B row is unchanged and sits above the CDP group.
+    // Same name, both kinds: no de-duplication. The B2B row is unchanged and sits above the CDP group.
     const b2bRow = page.getByTestId(`org-item-${B2B_UID}`);
     await expect(b2bRow).toBeVisible();
     await expect(b2bRow).toContainText(COMPANY_NAME);
@@ -429,11 +429,11 @@ test.describe('CDP companies — search and open (T042, US2)', () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-// T044 — outside the audience
+// Outside the audience
 // ---------------------------------------------------------------------------------------------------------------
 
-test.describe('CDP companies — outside the audience (T044, US3)', () => {
-  // What the server answers each of these callers is the same as for any outsider (FR-012, DR-040); the browser
+test.describe('CDP companies — outside the audience', () => {
+  // What the server answers each of these callers is the same as for any outsider; the browser
   // only ever sees `available: false` and 404s. Stubbed per caller so each case names what it stands for.
   const OUTSIDERS = [
     'a caller in no CDP audience team',
@@ -513,10 +513,10 @@ test.describe('CDP companies — outside the audience (T044, US3)', () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-// T050 — reduced page and navigation
+// Reduced page and navigation
 // ---------------------------------------------------------------------------------------------------------------
 
-test.describe('CDP companies — reduced page (T050, US4)', () => {
+test.describe('CDP companies — reduced page', () => {
   test('on sections are links; every other Company Lens section is greyed with its reason', async ({ page }) => {
     const traffic = await stubCdp(page, { availability: AVAILABLE, pages: STANDARD_PAGES });
     await page.goto(`/company/${OK_ID}/projects`, { waitUntil: 'domcontentloaded' });
@@ -533,11 +533,11 @@ test.describe('CDP companies — reduced page (T050, US4)', () => {
       await expect(item).toHaveAttribute('data-disabled-reason', CDP_COMPANY_OFF_BY_DESIGN_REASON);
       await expect(item).not.toHaveAttribute('href', /.*/);
     }
-    // No B2B navigation alongside it, and nothing that edits, invites or sets permissions (FR-027).
+    // No B2B navigation alongside it, and nothing that edits, invites or sets permissions.
     await expect(page.getByTestId('sidebar-org-easycla')).toHaveCount(0);
     await expect(page.getByTestId('cdp-company-page').getByRole('button', { name: /edit|invite|permission|settings/i })).toHaveCount(0);
 
-    // An off section renders "off by design" with no request for it (FR-026).
+    // An off section renders "off by design" with no request for it.
     await page.goto(`/company/${OK_ID}/meetings`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('cdp-company-meetings-state')).toHaveAttribute('data-state', 'off-by-design', { timeout: UI_TIMEOUT });
     expect(traffic.requests.some((path) => path.endsWith('/sections/meetings'))).toBe(false);
@@ -628,10 +628,10 @@ test.describe('CDP companies — reduced page (T050, US4)', () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-// T055 — Meetings and Groups
+// Meetings and Groups
 // ---------------------------------------------------------------------------------------------------------------
 
-test.describe('CDP companies — Meetings and Groups (T055, US5)', () => {
+test.describe('CDP companies — Meetings and Groups', () => {
   test('flag off: both are off by design, greyed in the navigation', async ({ page }) => {
     await stubCdp(page, { availability: AVAILABLE, pages: STANDARD_PAGES });
     await page.goto(`/company/${OK_ID}/groups`, { waitUntil: 'domcontentloaded' });
@@ -689,10 +689,10 @@ test.describe('CDP companies — Meetings and Groups (T055, US5)', () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-// T059 — redirects and low activity
+// Redirects and low activity
 // ---------------------------------------------------------------------------------------------------------------
 
-test.describe('CDP companies — redirects and low activity (T059, US6)', () => {
+test.describe('CDP companies — redirects and low activity', () => {
   test('a merged id moves to its surviving CDP id on the same section, replacing the address', async ({ page }) => {
     await stubCdp(page, { availability: AVAILABLE, pages: STANDARD_PAGES });
     await page.goto('/company/overview', { waitUntil: 'domcontentloaded' });

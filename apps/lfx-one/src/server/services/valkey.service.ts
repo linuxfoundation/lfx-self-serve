@@ -767,8 +767,8 @@ export function withProjectParticipatingOrgsCache<T>(
 }
 
 /**
- * Spec 062 — CDP company cache key, `cdp-company:v1:<cdp id>:<sub-resource>`: unfiltered warehouse rows per CDP id
- * (FR-030), shared across callers and read or filled only behind the CDP audience check. Null (fail-closed → direct
+ * CDP company cache key, `cdp-company:v1:<cdp id>:<sub-resource>`: unfiltered warehouse rows per CDP id,
+ * shared across callers and read or filled only behind the CDP audience check. Null (fail-closed → direct
  * fetch) when the id isn't filter-safe, so it can't corrupt the `:`-delimited key.
  */
 export function buildCdpCompanyCacheKey(cdpId: string, subResource: string): string | null {
@@ -777,7 +777,7 @@ export function buildCdpCompanyCacheKey(cdpId: string, subResource: string): str
 }
 
 /**
- * Spec 062 — CDP search cache key for one normalized term, `cdp-company:v1:search:<digest>`. The term is sha256-hashed,
+ * CDP search cache key for one normalized term, `cdp-company:v1:search:<digest>`. The term is sha256-hashed,
  * not concatenated, so a typed value can't corrupt the key (as the participating-orgs search key does).
  */
 export function buildCdpCompanySearchCacheKey(normalizedTerm: string): string {
@@ -785,7 +785,7 @@ export function buildCdpCompanySearchCacheKey(normalizedTerm: string): string {
   return `${keyPrefix()}:${CDP_COMPANY_CACHE_NAMESPACE}:search:${digest}`;
 }
 
-/** Spec 062 — a project slug's v2 uid, for the CDP Projects `project#viewer` check; null for an unsafe slug (direct lookup). */
+/** A project slug's v2 uid, for the CDP Projects `project#viewer` check; null for an unsafe slug (direct lookup). */
 export function buildCdpProjectUidCacheKey(projectSlug: string): string | null {
   if (!isFilterSafeIdentifier(projectSlug)) return null;
   return `${keyPrefix()}:${CDP_COMPANY_CACHE_NAMESPACE}:project-uid:${projectSlug}`;

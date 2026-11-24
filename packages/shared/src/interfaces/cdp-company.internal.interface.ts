@@ -2,22 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 // Company Lens — CDP companies (lfx-self-serve#2092): warehouse row shapes the BFF selects from
-// `PLATINUM_LFX_ONE.CDP_COMPANY_*` (contracts/warehouse-tables.md) and the server-side audience answer.
+// `PLATINUM_LFX_ONE.CDP_COMPANY_*` and the server-side audience answer.
 // Read by the BFF only; the client contract lives in `cdp-company.interface.ts`.
 
 import type { CdpCompanyErrorCode, CdpCompanyItem } from './cdp-company.interface';
 
 /**
- * The strict CDP audience answer for one request (FR-010, FR-011): `in` admits the caller to every CDP
+ * The strict CDP audience answer for one request: `in` admits the caller to every CDP
  * read, `out` is answered as an unknown address, `unverifiable` as "could not verify". `lfStaff` is the
- * `team:lf-staff#member` answer of the same batch, read by Meetings and Groups (DR-044); false unless `in`.
+ * `team:lf-staff#member` answer of the same batch, read by Meetings and Groups; false unless `in`.
  */
 export interface CdpAudienceAnswer {
   status: 'in' | 'out' | 'unverifiable';
   lfStaff: boolean;
 }
 
-/** The `outcome` of one `cdp_company_view` log event (FR-015). */
+/** The `outcome` of one `cdp_company_view` log event. */
 export type CdpViewOutcome = 'ok' | 'redirect' | 'low_activity' | 'not_found' | 'off_by_design' | 'no_access' | 'could_not_verify' | 'could_not_load' | 'error';
 
 /** What a CDP company service read answers: the value, or the refusal the controller sends as `{ code }`. */
@@ -25,7 +25,7 @@ export type CdpCompanyServiceResult<T> =
   | { ok: true; value: T; outcome: CdpViewOutcome }
   | { ok: false; status: 403 | 404 | 503; code: CdpCompanyErrorCode; outcome: CdpViewOutcome };
 
-/** One row of the CDP search read: the list's build metadata on every row, the matched company's columns when any (FR-022: no counts, domains, people or project columns). */
+/** One row of the CDP search read: the list's build metadata on every row, the matched company's columns when any (no counts, domains, people or project columns). */
 export interface CdpCompanySearchRow {
   CDP_ID: string | null;
   NAME: string | null;
@@ -49,7 +49,7 @@ export interface CdpCompanyProfileRow {
   LAST_ACTIVE_MONTH: string | Date | null;
   IS_SEARCHABLE: boolean | null;
   IS_ADDRESSABLE: boolean | null;
-  /** Any counted activity in the last 730 days; tells the two low-activity states apart (FR-034). */
+  /** Any counted activity in the last 730 days; tells the two low-activity states apart. */
   HAS_ACTIVITY_730D: boolean | null;
   CONTRIBUTORS_730D: number | null;
   ACTIVITIES_730D: number | null;
@@ -96,7 +96,7 @@ export interface CdpCompanyGroupsRow {
   ACTIVE_SEATS: number | null;
 }
 
-/** One `CDP_COMPANY_PROFILE` row read by the Participating Companies links (FR-040). */
+/** One `CDP_COMPANY_PROFILE` row read by the Participating Companies links. */
 export interface CdpCompanyAddressableRow {
   CDP_ID: string | null;
 }
@@ -107,7 +107,7 @@ export type CdpCompanyProfileCacheEntry =
   | { kind: 'redirect'; targetKind: 'cdp' | 'b2b'; targetId: string }
   | { kind: 'unknown' };
 
-/** The profile columns a page needs, unfiltered; the top project is filtered per caller after the cache (FR-030). */
+/** The profile columns a page needs, unfiltered; the top project is filtered per caller after the cache. */
 export interface CdpCompanyCachedProfile {
   name: string;
   logoUrl: string | null;

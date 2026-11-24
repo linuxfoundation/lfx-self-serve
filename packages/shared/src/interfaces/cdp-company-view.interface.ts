@@ -1,16 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Company Lens — CDP companies (lfx-self-serve#2092, spec 062): what the browser renders for a CDP company page.
+// Company Lens — CDP companies (lfx-self-serve#2092): what the browser renders for a CDP company page.
 
 import type { CdpCompanyPage, CdpCompanySectionPayloads, CdpSectionKey } from './cdp-company.interface';
 
 /**
  * What the company shell renders for `/company/{CDP id}`.
  *
- * `no-company` covers an outsider, an unknown id and a malformed id alike, so the three read the same (FR-012, FR-035);
- * `could-not-verify` is a failed audience check (FR-013); `could-not-load` any other failed page read; the
- * `low-activity-*` states carry no counts (FR-017, FR-034).
+ * `no-company` covers an outsider, an unknown id and a malformed id alike, so the three read the same;
+ * `could-not-verify` is a failed audience check; `could-not-load` any other failed page read; the
+ * `low-activity-*` states carry no counts.
  */
 export type CdpCompanyShellState = 'loading' | 'no-company' | 'could-not-verify' | 'could-not-load' | 'low-activity-none' | 'low-activity-not-enough' | 'ok';
 
@@ -20,7 +20,7 @@ export interface CdpCompanyShellView {
   page: CdpCompanyPage | null;
 }
 
-/** What one CDP section page renders (FR-025, FR-026, FR-031, FR-032). */
+/** What one CDP section page renders. */
 export type CdpCompanySectionViewState = 'loading' | 'ready' | 'empty' | 'off-by-design' | 'no-access' | 'could-not-verify' | 'could-not-load';
 
 /** One CDP section read as a page renders it: the payload only when `ready` or `empty`. */
@@ -46,7 +46,7 @@ export interface CdpCompanySectionMeta {
   description: string;
 }
 
-/** A Company Lens section a CDP company never offers, greyed in its navigation (FR-025). */
+/** A Company Lens section a CDP company never offers, greyed in its navigation. */
 export interface CdpCompanyOffNavItem {
   key: string;
   label: string;

@@ -280,7 +280,7 @@ export class SidebarNavService {
         return marketingSection ? [...items, marketingSection] : items;
       }
       case 'org':
-        // Spec 062: on a CDP company page, its own navigation; everywhere else (and on "no company") the B2B one.
+        // On a CDP company page, its own navigation; everywhere else (and on "no company") the B2B one.
         return this.cdpLensItems() ?? this.visibleOrgLensItems();
       default:
         return this.visibleMeLensItems();
@@ -294,7 +294,7 @@ export class SidebarNavService {
   private readonly showsOrgLfStaffOnlySection = computed(() => this.personaService.isLFStaff() && !this.userService.impersonating());
 
   /**
-   * Spec 062 FR-025 — the Company Lens navigation of the CDP company on screen: the sections its page marks `on` as
+   * The Company Lens navigation of the CDP company on screen: the sections its page marks `on` as
    * links to `/company/{CDP id}/{section}`, and every other Company Lens section, EasyCLA included, greyed in its usual
    * place with the reason "Not available for CDP companies". Null off CDP pages, and when the address opened no page
    * (no company, could not verify), so the B2B navigation shows as on any other Company Lens page. Empty while the

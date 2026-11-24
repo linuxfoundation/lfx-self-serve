@@ -108,13 +108,13 @@ export class ProjectParticipatingOrgsService {
   }
 
   /**
-   * Spec 062 FR-040, DR-041 — which of the shown page's companies the caller can open, decided per caller and never
+   * Which of the shown page's companies the caller can open, decided per caller and never
    * cached here. Three independent lookups, each dropping only the links it decides when it fails:
    * - member account ids: the caller's confirmed access roster (unchanged);
    * - non-member account ids: one batched `b2b_org` read of the Company Lens index with the caller's own token — the
    *   read `/company/{segment}` resolves through — so an access grant on an account with no indexed company never links;
    * - CDP ids: only after the strict CDP audience check passes (never while impersonating), from one bound read of the
-   *   addressable CDP companies. Outside the audience the answer is `[]` with the same shape (FR-012).
+   *   addressable CDP companies. Outside the audience the answer is `[]` with the same shape.
    */
   public async getOrgLensLinks(req: Request, query: ProjectParticipatingOrgsLinksQuery): Promise<ProjectParticipatingOrgsOrgLensLinksResponse> {
     const [members, nonMembers, cdpCompanyIds] = await Promise.all([
@@ -182,7 +182,7 @@ export class ProjectParticipatingOrgsService {
 
   /**
    * The given non-member account ids the caller reads from the Company Lens index (`b2b_org`, caller's token, chunked as
-   * the role-grants lookup), in request order. A failed chunk drops only its own ids (DR-041).
+   * the role-grants lookup), in request order. A failed chunk drops only its own ids.
    */
   private async getIndexedNonMemberAccountIds(req: Request, accountIds: string[]): Promise<string[]> {
     if (accountIds.length === 0) return [];

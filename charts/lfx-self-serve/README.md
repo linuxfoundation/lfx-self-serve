@@ -858,7 +858,7 @@ as long as the twin route is deployed, which is why step 1 precedes it.
 | `environment.LFX_ORG_LENS_CDP_GLOBAL_ORG_ADMINS` | Add the global org admins team to the CDP company audience (LF staff only while off)                    | No       | `"false"` |
 | `environment.LFX_ORG_LENS_CDP_MEETINGS_GROUPS`   | Serve the CDP company Meetings and Groups sections to LF staff (`off-by-design` for everyone while off) | No       | `"false"` |
 
-Spec 062 ([lfx-self-serve#2092](https://github.com/linuxfoundation/lfx-self-serve/issues/2092)). Turn the
+See [lfx-self-serve#2092](https://github.com/linuxfoundation/lfx-self-serve/issues/2092). Turn the
 global org admins switch on in an environment only after a real `cdp_company_view` log event was confirmed
 there; the Meetings and Groups switch goes on last, after its parity check. Both are safe in a rolling-update
 overlap: a flag-off pod answers as if the feature were absent and writes nothing.

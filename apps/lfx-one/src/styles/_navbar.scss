@@ -861,7 +861,7 @@
       pointer-events: none;
     }
 
-    // Spec 062 FR-025 — a section this context never offers: greyed like a disabled item but still hoverable and
+    // A section this context never offers: greyed like a disabled item but still hoverable and
     // focusable, so its reason tooltip can show. Not a control: no hover highlight.
     &.is-unavailable {
       opacity: 0.5;

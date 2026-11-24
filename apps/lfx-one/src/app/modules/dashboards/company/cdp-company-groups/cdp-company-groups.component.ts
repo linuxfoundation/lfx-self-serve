@@ -11,7 +11,7 @@ import { CdpCompanySectionFrameComponent } from '../components/cdp-company-secti
 import { CdpCompanySectionLoader } from '../cdp-company-section.loader';
 
 /**
- * CDP Groups (spec 062 FR-032, DR-044): active seats per committee or board, behind its server flag and for LF staff
+ * CDP Groups: active seats per committee or board, behind its server flag and for LF staff
  * only. Seat holders are never shown. Off renders "off by design"; any other caller in the audience gets no access.
  */
 @Component({

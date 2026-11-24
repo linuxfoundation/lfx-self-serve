@@ -61,7 +61,7 @@ export class ParticipatingOrgsService {
   }
 
   /**
-   * Which of the page's companies the viewer can open (spec 062 FR-040): members and non-members by account id, and
+   * Which of the page's companies the viewer can open: members and non-members by account id, and
    * Unidentified companies by CDP id. Browser only: on the server it emits `null` (links pending), so server rendering
    * never waits on the per-caller check. Nothing to ask yields no links; a failed read yields no links either.
    */

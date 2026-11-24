@@ -101,7 +101,7 @@ describe('OrgLensEmptyStateComponent', () => {
     const allowedKinds = new Set<string | undefined>([undefined, 'retry', 'reset-filters', 'org-list']);
     // Only the person's own profile, plus the staff dead end's way back to the Company Lens overview, the
     // roll-up state's way to Memberships (the page swaps in the roll-up's own address through `primaryRoute`), and
-    // the CDP no-company state's way back to the Company Lens overview (spec 062).
+    // the CDP no-company state's way back to the Company Lens overview.
     const allowedRoutes: Partial<Record<OrgLensEmptyStateName, string[]>> = {
       'not-found-staff': ['/company/overview'],
       'roll-up-unavailable': ['/company/memberships'],

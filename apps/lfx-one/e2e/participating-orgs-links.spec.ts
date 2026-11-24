@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Project Lens → Participating Companies name links (spec 062 FR-040, DR-041, DR-042), through the real template.
+ * Project Lens → Participating Companies name links, through the real template.
  *
  * Coverage:
  *   L1  Mocked links answer: a member keeps its membership link, a readable non-member links to its Company Lens home

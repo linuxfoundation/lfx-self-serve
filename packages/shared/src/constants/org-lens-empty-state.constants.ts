@@ -123,13 +123,13 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     // The legacy form names no company; the page passes the roll-up's own address as `primaryRoute`.
     primary: { label: 'Go to Memberships', route: ['/company', ORG_LENS_ROLL_UP_HOME_PAGE] },
   },
-  // Spec 062 FR-025 — a Company Lens section a CDP company cannot offer (greyed in the navigation).
+  // A Company Lens section a CDP company cannot offer (greyed in the navigation).
   'off-by-design': {
     headline: 'Not available for CDP companies',
     reason: 'This section covers companies with a company account. CDP companies are seen only in open source activity, so it does not apply to them.',
     icon: 'fa-light fa-ban',
   },
-  // Spec 062 FR-034 — an addressable CDP company below the search rule. No counts, by design (FR-017).
+  // An addressable CDP company below the search rule. No counts, by design.
   'low-activity-none': {
     headline: 'No activity in the last 2 years — last active {lastActive}',
     reason: 'This company has no counted open source activity in the last 2 years, so there is nothing to show.',
@@ -140,15 +140,15 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     reason: 'This company has too little open source activity in the last 2 years to show its figures.',
     icon: 'fa-light fa-chart-line-down',
   },
-  // Spec 062 FR-035 — never names the requested id or any company: it reads the same for an unknown, a
-  // malformed and a hidden address (FR-012).
+  // Never names the requested id or any company: it reads the same for an unknown, a
+  // malformed and a hidden address.
   'no-company': {
     headline: 'No company at this address',
     reason: 'This link does not open a company. Search for a company in the switcher above.',
     icon: 'fa-light fa-building-circle-xmark',
     primary: { label: 'Go to Company Lens', route: ['/company', 'overview'] },
   },
-  // Spec 062 FR-031, FR-032 — CDP Meetings and Groups refused to a caller in the CDP audience who is not LF staff. A CDP
+  // CDP Meetings and Groups refused to a caller in the CDP audience who is not LF staff. A CDP
   // company has no administrators, so `section-no-access` (access granted by the company's admins) would mislead.
   'section-staff-only': {
     headline: 'Only LF staff can see this section',

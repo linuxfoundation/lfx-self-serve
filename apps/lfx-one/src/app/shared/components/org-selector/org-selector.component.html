@@ -392,7 +392,7 @@
           } @else if (showSearchPrompt()) {
             <div class="text-center py-8 text-gray-500 text-sm" data-testid="org-selector-search-prompt">Search for any company…</div>
           } @else {
-            <!-- Spec 062: with a CDP group below, the empty B2B list is scoped to company accounts so it never contradicts CDP rows. -->
+            <!-- With a CDP group below, the empty B2B list is scoped to company accounts so it never contradicts CDP rows. -->
             <div class="text-center py-8 text-gray-500 text-sm" data-testid="org-selector-empty">
               {{ cdpGroup() ? cdpSearchNoAccountMatchMessage : 'No companies found' }}
             </div>
@@ -407,7 +407,7 @@
         </div>
       }
 
-      <!-- Spec 062 FR-021–FR-023: CDP companies for the term, below the B2B rows and their paging; never paged. -->
+      <!-- CDP companies for the term, below the B2B rows and their paging; never paged. -->
       @if (cdpGroup(); as cdp) {
         <div class="mt-1 flex flex-col gap-1" data-testid="org-selector-cdp-group" [attr.data-status]="cdp.status">
           <div role="presentation" class="h-px bg-gray-200 mx-2 mb-1"></div>

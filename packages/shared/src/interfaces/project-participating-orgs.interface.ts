@@ -74,8 +74,8 @@ export interface ProjectParticipatingOrg {
   /** Salesforce account id (the b2b_org uid); null for Unidentified companies. */
   accountId: string | null;
   /**
-   * The crowd.dev organization id of an Unidentified company (its CDP id, spec 062); null for every other row. A row
-   * key only: whether it opens a CDP company page is decided per caller by the links read (FR-040, DR-041).
+   * The crowd.dev organization id of an Unidentified company (its CDP id); null for every other row. A row
+   * key only: whether it opens a CDP company page is decided per caller by the links read.
    */
   organizationId: string | null;
   name: string;
@@ -126,13 +126,13 @@ export interface ProjectParticipatingOrgsPage {
 /**
  * `GET /api/projects/:slug/participating-orgs/org-lens-links?accountIds=&nonMemberAccountIds=&cdpIds=` — which of the
  * shown page's companies the caller can open: members through the Org Lens gate (`b2b_org#auditor`), non-members
- * through the caller's own Company Lens index read, CDP ids only inside the CDP audience (spec 062 FR-040). Per caller,
+ * through the caller's own Company Lens index read, CDP ids only inside the CDP audience. Per caller,
  * never shared-cached; each failed check drops only the links it decides, so names fall back to plain text.
  */
 export interface ProjectParticipatingOrgsOrgLensLinksResponse {
-  /** Member ids the caller's roster reads, plus non-member ids the caller reads from the Company Lens index (DR-041). */
+  /** Member ids the caller's roster reads, plus non-member ids the caller reads from the Company Lens index. */
   readableAccountIds: string[];
-  /** The given CDP ids that are addressable CDP companies; always empty outside the CDP audience (FR-040, FR-012). */
+  /** The given CDP ids that are addressable CDP companies; always empty outside the CDP audience. */
   cdpCompanyIds: string[];
 }
 
@@ -163,8 +163,8 @@ export type ProjectParticipatingOrgsViewState = 'ready' | 'empty' | 'forbidden' 
 
 /**
  * How a row's company name renders for the viewer: an Org Lens membership link, a member the viewer
- * cannot open (plain text + access tooltip), a non-member's Company Lens home link (DR-042), a CDP company
- * page link (spec 062 FR-040), or a plain name (anything else, with no hint).
+ * cannot open (plain text + access tooltip), a non-member's Company Lens home link, a CDP company
+ * page link, or a plain name (anything else, with no hint).
  */
 export type ProjectParticipatingOrgNameKind = 'org-lens-link' | 'no-access' | 'org-lens-home-link' | 'cdp-link' | 'plain';
 

@@ -40,7 +40,7 @@ function askedTeams(): string[] {
   return requests.map((request) => request.id);
 }
 
-describe('resolveCdpAudience (spec 062 FR-010, FR-011, DR-044)', () => {
+describe('resolveCdpAudience', () => {
   beforeEach(() => {
     checkAccessStrict.mockReset();
     impersonating = false;

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Company Lens — CDP companies (lfx-self-serve#2092, spec 062): page and navigation copy of a CDP company page.
+// Company Lens — CDP companies (lfx-self-serve#2092): page and navigation copy of a CDP company page.
 // User-facing copy says "company" (copy-terminology).
 
 import type { CdpSectionKey } from '../interfaces/cdp-company.interface';
@@ -10,7 +10,7 @@ import type { CdpCompanyOffNavItem, CdpCompanySectionMeta } from '../interfaces/
 /** The section `/company/{CDP id}` opens on, and the one a merge redirect falls back to. */
 export const CDP_COMPANY_DEFAULT_SECTION: CdpSectionKey = 'dashboard';
 
-/** Navigation label, icon and page-header description of every CDP section (FR-025). */
+/** Navigation label, icon and page-header description of every CDP section. */
 export const CDP_COMPANY_SECTION_META: Record<CdpSectionKey, CdpCompanySectionMeta> = {
   dashboard: {
     key: 'dashboard',
@@ -61,7 +61,7 @@ export const CDP_COMPANY_ENGAGEMENT_SECTION_KEYS: readonly CdpSectionKey[] = ['e
 
 /**
  * Company Lens sections a CDP company never offers, greyed in its navigation where the company navigation shows them
- * (FR-025, EasyCLA included). Keyed by their Company Lens page.
+ * (EasyCLA included). Keyed by their Company Lens page.
  */
 export const CDP_COMPANY_OFF_NAV_ITEMS = {
   memberships: { key: 'memberships', label: 'Memberships', icon: 'fa-light fa-folder-bookmark' },
@@ -81,5 +81,5 @@ export const CDP_COMPANY_SECTION_EMPTY_NOUN: Partial<Record<CdpSectionKey, strin
   groups: 'group seats',
 };
 
-/** Shown in place of a Training & Certification total the server withheld because fewer than 5 people make it up (FR-029, FR-030). */
+/** Shown in place of a Training & Certification total the server withheld because fewer than 5 people make it up. */
 export const CDP_COMPANY_HIDDEN_COUNT_LABEL = 'Fewer than 5';

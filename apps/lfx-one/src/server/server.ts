@@ -449,7 +449,7 @@ app.use('/api/organizations', organizationsRouter);
 // second would run the grant lookup there and again on the route that finally handles it.
 app.use('/api/orgs', orgClasRouter);
 app.use('/api/orgs', orgsRouter);
-// Spec 062 — CDP companies (LF staff, plus global org admins behind a server switch); every route but
+// CDP companies (LF staff, plus global org admins behind a server switch); every route but
 // `/availability` runs the strict CDP audience gate first.
 app.use('/api/companies', companiesRouter);
 app.use('/api/past-meetings', pastMeetingsRouter);

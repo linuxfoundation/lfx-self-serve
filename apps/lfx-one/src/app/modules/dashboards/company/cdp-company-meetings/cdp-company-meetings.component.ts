@@ -11,7 +11,7 @@ import { CdpCompanySectionFrameComponent } from '../components/cdp-company-secti
 import { CdpCompanySectionLoader } from '../cdp-company-section.loader';
 
 /**
- * CDP Meetings (spec 062 FR-031, DR-044): attendance per project and meeting type, behind its server flag and for LF
+ * CDP Meetings: attendance per project and meeting type, behind its server flag and for LF
  * staff only. Off renders "off by design"; any other caller in the audience gets the no-access state.
  */
 @Component({

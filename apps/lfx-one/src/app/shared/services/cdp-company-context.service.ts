@@ -5,9 +5,9 @@ import { computed, Injectable, signal } from '@angular/core';
 import type { CdpCompanyNavContext, CdpCompanyPage, CdpCompanySection, CdpSectionKey } from '@lfx-one/shared/interfaces';
 
 /**
- * The CDP company on screen (spec 062), shared between the company shell, its section pages and the Company Lens
+ * The CDP company on screen, shared between the company shell, its section pages and the Company Lens
  * navigation. Held in memory only: a CDP id is never a selected B2B company, so it never reaches the account context,
- * its cookie or the role-grants cache (FR-021).
+ * its cookie or the role-grants cache.
  */
 @Injectable({ providedIn: 'root' })
 export class CdpCompanyContextService {

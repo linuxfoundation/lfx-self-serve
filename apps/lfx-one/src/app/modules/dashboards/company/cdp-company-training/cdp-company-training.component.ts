@@ -10,8 +10,8 @@ import { CdpCompanySectionFrameComponent } from '../components/cdp-company-secti
 import { CdpCompanySectionLoader } from '../cdp-company-section.loader';
 
 /**
- * CDP Training & Certification (spec 062 FR-029, FR-030): two totals, each withheld by the server under 5 people and
- * shown here as "Fewer than 5". Course and certification names are never shown (FR-018).
+ * CDP Training & Certification: two totals, each withheld by the server under 5 people and
+ * shown here as "Fewer than 5". Course and certification names are never shown.
  */
 @Component({
   selector: 'lfx-cdp-company-training',

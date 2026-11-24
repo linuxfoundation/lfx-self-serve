@@ -219,7 +219,7 @@ export class OrgSelectorComponent {
 
   /**
    * Whether the router sits on an address that names no selected company — the org-lens not-found dead end or a CDP
-   * company page (spec 062) — re-read on every navigation. Re-picking the selected row is the way out of both.
+   * company page — re-read on every navigation. Re-picking the selected row is the way out of both.
    */
   private readonly onUnselectedAddress: Signal<boolean> = toSignal(
     this.router.events.pipe(
@@ -363,7 +363,7 @@ export class OrgSelectorComponent {
   private readonly popoverShown = signal(false);
 
   /**
-   * Spec 062 FR-021–FR-023: CDP companies matching the term, asked once per term — the B2B list's first page —
+   * CDP companies matching the term, asked once per term — the B2B list's first page —
    * alongside the B2B request and never holding it up. Debounced on its own, and a newer term cancels the
    * request in flight (`switchMap`). Only an `available` audience asks; everyone else never sees a CDP group.
    * Driven only while this selector's popover is shown: the search term lives in a root service both navbar
@@ -464,7 +464,7 @@ export class OrgSelectorComponent {
     // the same not-found exception: on the dead end the pick is the viewer's way out, and the
     // selection there never made it into the address.
     if (this.accountContextService.selectedRollUpRootUid() === rootUid) {
-      // A CDP company page (spec 062) shows no company account either, so re-picking the selection leaves it too.
+      // A CDP company page shows no company account either, so re-picking the selection leaves it too.
       if (this.isOnUnselectedAddress()) {
         this.orgLensNavigation.navigateToRollUpHome(rootUid);
       }
@@ -494,7 +494,7 @@ export class OrgSelectorComponent {
   }
 
   /**
-   * Spec 062 FR-021: a CDP row opens that company's page. It is not a company account, so it never becomes the
+   * A CDP row opens that company's page. It is not a company account, so it never becomes the
    * selection — no account context, cookie, role-grants or CLA-only bookkeeping.
    */
   protected selectCdpCompany(cdpId: string): void {
@@ -520,7 +520,7 @@ export class OrgSelectorComponent {
     // `/org/{page}` address a `'switch'` for the same organization would insert the segment, which
     // FR-014 forbids for a same-organization pick.
     if (item.uid === this.selectedAccountUid()) {
-      // A CDP company page (spec 062) shows no company account either, so re-picking the selection leaves it too.
+      // A CDP company page shows no company account either, so re-picking the selection leaves it too.
       if (this.isOnUnselectedAddress()) {
         this.orgLensNavigation.navigateToSelectedOrg('switch');
       }
@@ -799,7 +799,7 @@ export class OrgSelectorComponent {
     return computed(() => {
       const group = this.cdpSearch();
       if (!group || !this.isStaff() || group.term !== this.trimmedSearchTerm() || this.searchFailed()) return null;
-      // FR-021: the CDP group (loading, rows or "unavailable") belongs below the B2B results of the SAME search. Until
+      // The CDP group (loading, rows or "unavailable") belongs below the B2B results of the SAME search. Until
       // that search's first page lands, the rows on screen are an older search's, so nothing shows for CDP yet. Paging
       // keeps the term, so the group stays while later pages load.
       if (group.term !== this.orgNavigationService.displayedTerm()) return null;

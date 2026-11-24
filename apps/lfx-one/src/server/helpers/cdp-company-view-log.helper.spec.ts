@@ -30,7 +30,7 @@ function viewRecord(req: Request, outcome = 'ok'): { operation: string; metadata
   return { operation, metadata: metadata as Record<string, unknown> };
 }
 
-describe('cdp_company_view log (spec 062 FR-015, DR-050)', () => {
+describe('cdp_company_view log', () => {
   beforeEach(() => {
     vi.stubEnv('PCC_AUTH0_SECRET', 'synthetic-test-secret');
     vi.mocked(logger.info).mockClear();

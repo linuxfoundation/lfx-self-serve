@@ -8,10 +8,10 @@ import type { NextFunction, Request, Response } from 'express';
 import { resolveCdpAudience } from '../helpers/cdp-audience.helper';
 
 /**
- * Gate of every CDP company route but `/availability` (contracts/bff-cdp-companies.md). Runs before the id is
+ * Gate of every CDP company route but `/availability`. Runs before the id is
  * parsed and before any cache or warehouse read. Outside the audience answers exactly what an unknown address
- * answers (404 `NOT_FOUND`, FR-012); an unverifiable check answers 503 `ROLE_GRANTS_UNAVAILABLE` (FR-013). Inside,
- * the answer is stored on `res.locals` so Meetings and Groups read `lf-staff` from the same batch (DR-044).
+ * answers (404 `NOT_FOUND`); an unverifiable check answers 503 `ROLE_GRANTS_UNAVAILABLE`. Inside,
+ * the answer is stored on `res.locals` so Meetings and Groups read `lf-staff` from the same batch.
  */
 export async function requireCdpAudience(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {

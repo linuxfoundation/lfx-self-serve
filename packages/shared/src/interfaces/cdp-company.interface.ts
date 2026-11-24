@@ -1,47 +1,47 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Company Lens — CDP companies (lfx-self-serve#2092, spec 062): the wire shapes of `/api/companies/*`
-// (contracts/bff-cdp-companies.md, contracts/bff-cdp-search.md). Counts and labels only: no person-level field (FR-018).
+// Company Lens — CDP companies (lfx-self-serve#2092): the wire shapes of `/api/companies/*`.
+// Counts and labels only: no person-level field.
 
 import { CDP_COMPANY_ERROR_CODES, CDP_COMPANY_SECTION_KEYS } from '../constants/cdp-company.constants';
 
-/** A CDP company page section (FR-025). */
+/** A CDP company page section. */
 export type CdpSectionKey = (typeof CDP_COMPANY_SECTION_KEYS)[number];
 
-/** Whether the server serves a section for this company (FR-026). */
+/** Whether the server serves a section for this company. */
 export type CdpSectionState = 'on' | 'off-by-design';
 
-/** `ok`: a searchable company with counts; the other two: addressable but below the search rule, shown with no counts (FR-017, FR-034). */
+/** `ok`: a searchable company with counts; the other two: addressable but below the search rule, shown with no counts. */
 export type CdpCompanyPageState = 'ok' | 'no-activity' | 'not-enough-activity';
 
 /** A refusal code of the CDP company BFF. */
 export type CdpCompanyErrorCode = (typeof CDP_COMPANY_ERROR_CODES)[keyof typeof CDP_COMPANY_ERROR_CODES];
 
-/** `GET /api/companies/availability`: the browser's only CDP audience signal (FR-014). */
+/** `GET /api/companies/availability`: the browser's only CDP audience signal. */
 export interface CdpCompanyAvailability {
   available: boolean;
 }
 
-/** The browser's reading of `/availability`: `unverifiable` when the server could not decide (503), so pages show "could not verify" (FR-013). */
+/** The browser's reading of `/availability`: `unverifiable` when the server could not decide (503), so pages show "could not verify". */
 export type CdpCompanyAudienceSignal = 'available' | 'unavailable' | 'unverifiable';
 
-/** One CDP row of the org selector: name and logo only, never a top project, domain or count (FR-022). */
+/** One CDP row of the org selector: name and logo only, never a top project, domain or count. */
 export interface CdpCompanyItem {
   cdpId: string;
   name: string;
   logoUrl?: string;
 }
 
-/** `GET /api/companies/search?name=` (contracts/bff-cdp-search.md). */
+/** `GET /api/companies/search?name=`. */
 export interface CdpCompanySearchResponse {
   /** At most `CDP_COMPANY_SEARCH_MAX_ROWS`. */
   items: CdpCompanyItem[];
-  /** True when the read missed its deadline, failed, or the list was built more than 48 hours ago (FR-023). */
+  /** True when the read missed its deadline, failed, or the list was built more than 48 hours ago. */
   unavailable?: boolean;
 }
 
-/** Company-level facts of a CDP page; the top project only behind the caller's `project#viewer` (FR-020). */
+/** Company-level facts of a CDP page; the top project only behind the caller's `project#viewer`. */
 export interface CdpCompanySummary {
   cdpId: string;
   name: string;
@@ -63,7 +63,7 @@ export interface CdpCompanyPage {
   sections: CdpCompanySection[];
 }
 
-/** Where an old or B2B-linked CDP id now lives (FR-033): another CDP id, or a company's Company Lens segment. */
+/** Where an old or B2B-linked CDP id now lives: another CDP id, or a company's Company Lens segment. */
 export interface CdpCompanyRedirectTarget {
   kind: 'cdp' | 'b2b';
   /** `cdp`: a CDP id. `b2b`: the company's Company Lens address segment (slug, or SFID when it has none). */
@@ -77,12 +77,12 @@ export interface CdpCompanyRedirect {
 
 export type CdpCompanyResponse = CdpCompanyPage | CdpCompanyRedirect;
 
-/** Every refusal body of `/api/companies/*` (contracts/bff-cdp-companies.md). Never echoes the id (FR-035). */
+/** Every refusal body of `/api/companies/*`. Never echoes the id. */
 export interface CdpCompanyErrorBody {
   code: CdpCompanyErrorCode;
 }
 
-/** Dashboard section: totals over every project Insights shows, LF and non-LF (FR-019, DR-029). */
+/** Dashboard section: totals over every project Insights shows, LF and non-LF. */
 export interface CdpCompanyDashboard {
   contributors730d: number;
   activities730d: number;
@@ -96,7 +96,7 @@ export interface CdpCompanyProjectRow {
   activities: number;
 }
 
-/** Projects section: LF projects the caller passes `project#viewer` on (FR-020). */
+/** Projects section: LF projects the caller passes `project#viewer` on. */
 export interface CdpCompanyProjects {
   rows: CdpCompanyProjectRow[];
 }
@@ -115,12 +115,12 @@ export interface CdpCompanyEventRow {
   attendees: number;
 }
 
-/** Events section: people who attended, per event, at least 5 per row (FR-028, FR-030). */
+/** Events section: people who attended, per event, at least 5 per row. */
 export interface CdpCompanyEvents {
   rows: CdpCompanyEventRow[];
 }
 
-/** Training & Certification section: each total absent under 5 people (FR-029, FR-030). */
+/** Training & Certification section: each total absent under 5 people. */
 export interface CdpCompanyTraining {
   enrollments?: number;
   certifications?: number;
@@ -132,7 +132,7 @@ export interface CdpCompanyMeetingRow {
   attendance: number;
 }
 
-/** Meetings section (LF staff only, behind its flag): attendance per project and meeting type (FR-031). */
+/** Meetings section (LF staff only, behind its flag): attendance per project and meeting type. */
 export interface CdpCompanyMeetings {
   rows: CdpCompanyMeetingRow[];
 }
@@ -143,7 +143,7 @@ export interface CdpCompanyGroupRow {
   activeSeats: number;
 }
 
-/** Groups section (LF staff only, behind its flag): active seats per committee or board (FR-032). */
+/** Groups section (LF staff only, behind its flag): active seats per committee or board. */
 export interface CdpCompanyGroups {
   rows: CdpCompanyGroupRow[];
 }

@@ -21,13 +21,13 @@ import { buildCdpCompanySearchCacheKey, valkeyService } from './valkey.service';
 const SEARCH_TABLE = 'CDP_COMPANY_SEARCH';
 
 /**
- * Spec 062 DR-043 — CDP company search: one read of `CDP_COMPANY_SEARCH` per uncached term, behind the CDP audience
+ * CDP company search: one read of `CDP_COMPANY_SEARCH` per uncached term, behind the CDP audience
  * check (the route runs `requireCdpAudience` first, so nothing here is read or filled for an outsider).
  *
  * - Bounded by a 1-second deadline that does not count toward the shared circuit breaker (`expectTimeout`); every
  *   other error counts, and an open breaker fails the search fast.
  * - A missed deadline, an error, or a list built more than 48 hours ago answers no rows and `unavailable: true`,
- *   with a warning naming the reason (FR-023). B2B search is a separate request and is never affected.
+ *   with a warning naming the reason. B2B search is a separate request and is never affected.
  * - Rows are cached per normalized term for 15 minutes with the list's build time; the 48-hour limit is checked on
  *   every answer, cache hits included, so a cached entry is refused once its build passes 48 hours. An `unavailable`
  *   answer is never cached. With Valkey off every search reads the warehouse.
@@ -81,7 +81,7 @@ export class CdpCompanySearchService {
    * One statement: the list's build metadata — a single row from the whole table, so a term that matches nothing is
    * still age-checked and a fresh list with no match is told apart from an empty or stale one — left-joined to at
    * most 20 matches: names starting with the term first, then name, then id. No counts, domains, people or project
-   * columns are selected for a company (FR-022). An empty table yields no build time and so answers unavailable.
+   * columns are selected for a company. An empty table yields no build time and so answers unavailable.
    */
   private async read(normalized: string): Promise<CdpCompanySearchCacheEntry> {
     const table = `${resolveLfxOnePlatinumSchema()}.${SEARCH_TABLE}`;

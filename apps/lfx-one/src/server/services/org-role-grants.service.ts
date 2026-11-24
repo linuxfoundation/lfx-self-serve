@@ -61,8 +61,8 @@ import { cacheKeyNamespace, valkeyService } from './valkey.service';
 const ORG_WIDE_READ_TEAM_IDS = [...LF_TEAM_IDS, ...ORG_ADMIN_TEAM_IDS] as const;
 
 /**
- * Spec 062 FR-010 — the CDP company audience: `lf-staff`, plus the one global org admins team while the
- * `OrgLensCdpGlobalOrgAdmins` server switch is on (DR-040), and nothing else. Unlike `ORG_WIDE_READ_TEAM_IDS`
+ * The CDP company audience: `lf-staff`, plus the one global org admins team while the
+ * `OrgLensCdpGlobalOrgAdmins` server switch is on, and nothing else. Unlike `ORG_WIDE_READ_TEAM_IDS`
  * this IS a read gate (the gate of record for CDP companies, an ADR-0043 amendment): `requireCdpAudience` asks
  * the authorizer for `team:<id>#member` on exactly these ids in one strict batch. Composed from the dedicated
  * `CDP_GLOBAL_ORG_ADMINS_TEAM_ID` literal, never from `ORG_ADMIN_TEAM_IDS` or `LF_TEAM_IDS`, so a team added to
@@ -809,7 +809,7 @@ export class OrgRoleGrantsService {
    * `b2b_org:<uid>#auditor` directly. It is a separate list from
    * `PersonaDetectionService.checkLFStaff` (`LF_STAFF_TEAM_ID`), with separate
    * consumers: that one gates non-Org-Lens surfaces, so widening either must not widen the other.
-   * The CDP company read gate (spec 062) is the one team-membership read gate, and it uses neither:
+   * The CDP company read gate is the one team-membership read gate, and it uses neither:
    * `resolveCdpAudience` runs its own strict batch over `cdpAudienceTeamIds()`.
    *
    * No permission semantics live here: the relation is defined in the FGA model and this only reads the

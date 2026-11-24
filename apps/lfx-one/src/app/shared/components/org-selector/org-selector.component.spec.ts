@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgSelectorComponent } from './org-selector.component';
 
-// Spec 062: CDP search stays off here — the selector never asks unless the audience is `available`.
+// CDP search stays off here — the selector never asks unless the audience is `available`.
 const cdpCompanyServiceStub = { availability: () => of('unavailable'), search: () => of({ items: [] }) };
 
 /**
@@ -954,7 +954,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
 });
 
 /**
- * Spec 062 FR-021: the CDP group belongs below the B2B results of the SAME search. A CDP answer for a newer term must
+ * The CDP group belongs below the B2B results of the SAME search. A CDP answer for a newer term must
  * wait until that term's B2B first page is the one on screen, and paging the same search must not hide it.
  */
 describe('OrgSelectorComponent CDP group follows the displayed B2B search', () => {

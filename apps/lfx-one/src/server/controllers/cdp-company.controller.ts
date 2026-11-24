@@ -22,7 +22,7 @@ import { CdpCompanyService } from '../services/cdp-company.service';
 import { logger } from '../services/logger.service';
 
 /**
- * Spec 062 — CDP company BFF (contracts/bff-cdp-companies.md, contracts/bff-cdp-search.md). Every route but
+ * CDP company BFF. Every route but
  * `/availability` runs behind `requireCdpAudience`, so an outsider never reaches a handler here and never causes an id
  * lookup, a cache read or a warehouse read. Every answer is per caller: `Cache-Control: private, no-store`.
  */
@@ -49,7 +49,7 @@ export class CdpCompanyController {
     }
   }
 
-  // GET /api/companies/search?name= -> { items, unavailable? } (FR-021–FR-023). Not logged as a view.
+  // GET /api/companies/search?name= -> { items, unavailable? }. Not logged as a view.
   public async search(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'search_cdp_companies';
     const startTime = logger.startOperation(req, operation);
@@ -118,7 +118,7 @@ export class CdpCompanyController {
   }
 }
 
-/** The CDP id of the address, or null when it is not in the CDP id format (answered exactly as an unknown id, FR-024). */
+/** The CDP id of the address, or null when it is not in the CDP id format (answered exactly as an unknown id). */
 function parseCdpId(req: Request): string | null {
   const raw = req.params['cdpId'];
   return typeof raw === 'string' && CDP_COMPANY_ID_PATTERN.test(raw) ? raw : null;

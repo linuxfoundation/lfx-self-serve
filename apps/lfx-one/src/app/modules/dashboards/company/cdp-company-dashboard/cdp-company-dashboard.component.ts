@@ -9,7 +9,7 @@ import { CdpCompanySectionFrameComponent } from '../components/cdp-company-secti
 import { CdpCompanySectionLoader } from '../cdp-company-section.loader';
 import { formatCdpCompanyMonth } from '../cdp-company.util';
 
-/** CDP Dashboard (spec 062 FR-018, FR-019): two-year totals over every project Insights shows, the last active month and the top project. */
+/** CDP Dashboard: two-year totals over every project Insights shows, the last active month and the top project. */
 @Component({
   selector: 'lfx-cdp-company-dashboard',
   imports: [CdpCompanySectionFrameComponent, StatCardGridComponent],

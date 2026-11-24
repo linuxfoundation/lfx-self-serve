@@ -100,7 +100,7 @@ export function orgRollUpAccount(rootUid: string, familyName?: string | null): A
  * is not shaped like an SFID — the resolver classifies SFID syntax first, so a published slug that
  * happens to look like one (`0014100000mgaaaaaa`) would resolve as an account id, not as this slug;
  * such an organization is addressed by its real SFID instead. A CDP id (a crowd.dev organization UUID) is
- * never a slug either: `/company/{CDP id}` is a CDP company page (spec 062 FR-024), so an organization
+ * never a slug either: `/company/{CDP id}` is a CDP company page, so an organization
  * whose slug has that shape is addressed by its SFID. Does not mean the org exists — only
  * that a lookup is worth making. Uses `=== true`, not `in`: a plain-object `in` test also matches
  * `Object.prototype` keys (`'constructor' in {}` is true).

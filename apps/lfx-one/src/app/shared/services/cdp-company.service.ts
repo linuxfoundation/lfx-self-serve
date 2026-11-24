@@ -18,9 +18,9 @@ import { catchError, map, Observable, of, shareReplay, throwError } from 'rxjs';
 const BASE_URL = '/api/companies';
 
 /**
- * HTTP client for CDP company pages and search (spec 062, contracts/bff-cdp-companies.md and bff-cdp-search.md).
+ * HTTP client for CDP company pages and search.
  *
- * The browser learns only whether CDP pages and results are available to it (FR-014): `availability()` is the one
+ * The browser learns only whether CDP pages and results are available to it: `availability()` is the one
  * audience signal, asked once per load and shared. Page and section reads propagate their errors, so a page can tell
  * `NOT_FOUND`, `ROLE_GRANTS_UNAVAILABLE` and the section refusals apart by the body's `code`.
  */
@@ -59,7 +59,7 @@ export class CdpCompanyService {
       .pipe(catchError((error: unknown) => this.logAndRethrow('getCompany', { cdpId, error })));
   }
 
-  /** One section's payload. Errors propagate with the refusal `code` (contracts/bff-cdp-companies.md). */
+  /** One section's payload. Errors propagate with the refusal `code`. */
   public getSection<K extends CdpSectionKey>(cdpId: string, section: K): Observable<CdpCompanySectionPayloads[K]> {
     return this.http
       .get<CdpCompanySectionPayloads[K]>(`${BASE_URL}/${encodeURIComponent(cdpId)}/sections/${section}`)
@@ -67,7 +67,7 @@ export class CdpCompanyService {
   }
 
   /**
-   * CDP rows for one search term (FR-021–FR-023). Never errors: a failed request reads as "CDP search unavailable".
+   * CDP rows for one search term. Never errors: a failed request reads as "CDP search unavailable".
    * Unsubscribing cancels the request, which is how a superseded search is dropped.
    */
   public search(term: string): Observable<CdpCompanySearchResponse> {

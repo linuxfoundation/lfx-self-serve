@@ -41,7 +41,7 @@ async function run(answer: CdpAudienceAnswer | Error) {
   return { res, next };
 }
 
-describe('requireCdpAudience (spec 062 FR-012, FR-013)', () => {
+describe('requireCdpAudience', () => {
   beforeEach(() => {
     resolveCdpAudience.mockReset();
   });
