@@ -2898,6 +2898,40 @@ export interface MetaDraftRestore {
   lifetimeBudget?: boolean;
 }
 
+/** The LinkedIn signals `linkedInDraftFields` snapshots into the draft (#5980): budget, cap, variants and the upload slot. */
+export interface LinkedInDraftState {
+  budgetUsd: number;
+  lifetimeBudget: boolean;
+  dailyCapUsd: number | null;
+  variants: readonly LinkedInVariantDraft[];
+  uploadVariantKey: string;
+  uploadPendingName: string;
+  uploadPendingBriefId: string;
+  uploadError: string;
+  uploadFailedBriefId: string;
+}
+
+/** What a restored draft does to the LinkedIn section (#5980): values to set, and at most one upload step for the component to run. */
+export interface LinkedInDraftRestore {
+  /** Absent on a draft saved before #5546, which removed nothing: empty. */
+  targetingRemovals: LinkedInTargetingRemovals;
+  budgetUsd?: number;
+  lifetimeBudget?: boolean;
+  dailyCapUsd?: number | null;
+  variants?: LinkedInVariantDraft[];
+  uploadVariantKey: string;
+  failedUpload?: { message: string; briefId: string };
+  pendingUpload?: { name: string; briefId: string };
+}
+
+/** What a brief's LinkedIn copy seeds (#5980): variants, geos and profile, and a lifetime budget when the strategy names one. */
+export interface LinkedInBriefSeed {
+  variants: LinkedInVariantDraft[];
+  geoTargets: LinkedInGeoTarget[];
+  targetingProfile: LinkedInTargetingProfile;
+  lifetimeBudgetUsd?: number;
+}
+
 /** What a restored draft does to the Meta image: values to set, and at most one upload step for the component to run. */
 export interface MetaImageDraftRestore {
   imageUrl?: string;

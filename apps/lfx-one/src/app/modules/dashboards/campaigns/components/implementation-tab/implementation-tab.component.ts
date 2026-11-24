@@ -479,6 +479,10 @@ import {
   linkedInImageUploadHoldsCreate,
   linkedInImageUploadOrphaned,
   linkedInVariantViews,
+  linkedInBriefSeed,
+  linkedInDraftFields,
+  linkedInDraftRestore,
+  newLinkedInVariantDraft,
   metaAcceptedGeos,
   metaAdOptionsBlock,
   metaAdOptionsForCreate,
@@ -7804,15 +7808,12 @@ export class ImplementationTabComponent implements OnInit {
 
   /** A LinkedIn variant for the editor, with a fresh key and no upload. */
   private newLinkedInVariant(copy: LinkedInCreativeVariant): LinkedInVariantDraft {
-    return {
-      key: `linkedin-variant-${++linkedInVariantKeySequence}`,
-      introText: copy.introText,
-      headline: copy.headline,
-      ...(copy.imageUrn ? { imageUrn: copy.imageUrn } : {}),
-      imageAssetId: '',
-      imageAssetName: '',
-      imageAssetBriefId: '',
-    };
+    return newLinkedInVariantDraft(copy, this.nextLinkedInVariantKey());
+  }
+
+  /** A fresh variant key, unique for the page's life, so an upload lands on the variant it was chosen for. */
+  private nextLinkedInVariantKey(): string {
+    return `linkedin-variant-${++linkedInVariantKeySequence}`;
   }
 
   /** Set (or, with `''`, clear) one variant's upload. */
@@ -8663,6 +8664,8 @@ export class ImplementationTabComponent implements OnInit {
     }
 
     if (draft.eventSlug !== currentSlug) return;
+    // What the draft restores to the LinkedIn section (#5980); the writes below run it.
+    const linkedInRestore = linkedInDraftRestore(draft);
 
     // EMITS, unlike the first version of this method, and the difference is visible to the user.
     //
@@ -8713,8 +8716,8 @@ export class ImplementationTabComponent implements OnInit {
       linkedInAccountId: draft.linkedInAccountId,
       linkedInGeoTargets: draft.linkedInGeoTargets,
       linkedInTargetingProfile: draft.linkedInTargetingProfile,
-      // Absent on a draft saved before #5546, which removed nothing.
-      linkedInTargetingRemovals: draft.linkedInTargetingRemovals ?? { skills: [], groups: [] },
+      // Absent on a draft saved before #5546, which removed nothing (`linkedInDraftRestore`).
+      linkedInTargetingRemovals: linkedInRestore.targetingRemovals,
     });
 
     // The copy arrays stay silent: nothing derives a display from them, and rebuilding a FormArray
@@ -8964,18 +8967,10 @@ export class ImplementationTabComponent implements OnInit {
     // `!== undefined` test is what makes dropping them safe rather than merely tidy: a draft
     // written by an OLDER build still carries them, and this loop simply no longer looks, so the
     // brief's own seed stands instead of a stale copy being replayed over it.
-    if (draft.linkedInBudgetUsd !== undefined) {
-      this.linkedInBudgetUsd.set(draft.linkedInBudgetUsd);
-    }
-    if (draft.linkedInLifetimeBudget !== undefined) {
-      this.linkedInLifetimeBudget.set(draft.linkedInLifetimeBudget);
-    }
-    if (draft.linkedInDailyCapUsd !== undefined) {
-      // An unparsable entry (NaN) cannot be shown again: the remounted box starts empty, so it is
-      // restored as no cap, which is what that empty box says, rather than a hidden value blocking Create.
-      const cap = draft.linkedInDailyCapUsd;
-      this.linkedInDailyCapUsd.set(cap !== null && Number.isNaN(cap) ? null : cap);
-    }
+    // The LinkedIn budget pair and cap, present-only; an unparsable cap restores as no cap (`linkedInDraftRestore`).
+    if (linkedInRestore.budgetUsd !== undefined) this.linkedInBudgetUsd.set(linkedInRestore.budgetUsd);
+    if (linkedInRestore.lifetimeBudget !== undefined) this.linkedInLifetimeBudget.set(linkedInRestore.lifetimeBudget);
+    if (linkedInRestore.dailyCapUsd !== undefined) this.linkedInDailyCapUsd.set(linkedInRestore.dailyCapUsd);
     if (draft.redditBudgetUsd !== undefined) {
       this.redditBudgetUsd.set(draft.redditBudgetUsd);
     }
@@ -9027,17 +9022,11 @@ export class ImplementationTabComponent implements OnInit {
     if (metaImageRestore.pendingUpload) this.resumeMetaImageUpload(metaImageRestore.pendingUpload.name, metaImageRestore.pendingUpload.briefId);
     // The LinkedIn variants as edited, each with its own image, over the brief's seed (#5547). Each
     // entry copied, so the parent's draft is never reachable from the editor.
-    if (Array.isArray(draft.linkedInVariants)) {
-      this.linkedInVariants.set(draft.linkedInVariants.map((variant) => ({ ...variant })));
-    }
+    if (linkedInRestore.variants) this.linkedInVariants.set(linkedInRestore.variants);
     // The LinkedIn upload, on the Meta upload's terms above, for the variant it was chosen for.
-    this.linkedInImageUploadVariantKey.set(draft.linkedInImageUploadVariantKey ?? '');
-    if (draft.linkedInImageUploadFailedMessage && draft.linkedInImageUploadFailedBriefId) {
-      this.failLinkedInImageUpload(draft.linkedInImageUploadFailedMessage, draft.linkedInImageUploadFailedBriefId);
-    }
-    if (draft.linkedInImageUploadPendingName) {
-      this.resumeLinkedInImageUpload(draft.linkedInImageUploadPendingName, draft.linkedInImageUploadPendingBriefId ?? '');
-    }
+    this.linkedInImageUploadVariantKey.set(linkedInRestore.uploadVariantKey);
+    if (linkedInRestore.failedUpload) this.failLinkedInImageUpload(linkedInRestore.failedUpload.message, linkedInRestore.failedUpload.briefId);
+    if (linkedInRestore.pendingUpload) this.resumeLinkedInImageUpload(linkedInRestore.pendingUpload.name, linkedInRestore.pendingUpload.briefId);
     // The X section, on the same present-only rule.
     this.applyTwitterDraft(draft);
     // The Microsoft image, on the Meta upload's terms above.
@@ -9544,9 +9533,17 @@ export class ImplementationTabComponent implements OnInit {
       // test that drives the new binding, not one that writes the signal and calls `emitDraft` by
       // hand. That shape passes against a handler that never emits, which is how the LinkedIn
       // budget pair stayed broken behind three green tests.
-      linkedInBudgetUsd: this.linkedInBudgetUsd(),
-      linkedInLifetimeBudget: this.linkedInLifetimeBudget(),
-      linkedInDailyCapUsd: this.linkedInDailyCapUsd(),
+      ...linkedInDraftFields({
+        budgetUsd: this.linkedInBudgetUsd(),
+        lifetimeBudget: this.linkedInLifetimeBudget(),
+        dailyCapUsd: this.linkedInDailyCapUsd(),
+        variants: this.linkedInVariants(),
+        uploadVariantKey: this.linkedInImageUploadVariantKey(),
+        uploadPendingName: this.linkedInImageUploadPendingName(),
+        uploadPendingBriefId: this.linkedInImageUploadPendingBriefId(),
+        uploadError: this.linkedInImageUploadError(),
+        uploadFailedBriefId: this.linkedInImageUploadFailedBriefId(),
+      }),
       redditBudgetUsd: this.redditBudgetUsd(),
       redditObjective: this.redditObjective(),
       // Snapshotted whatever `redditCreativeAvailable()` says — see the draft interface for why a
@@ -9575,13 +9572,6 @@ export class ImplementationTabComponent implements OnInit {
         uploadError: this.metaImageUploadError(),
         uploadFailedBriefId: this.metaImageUploadFailedBriefId(),
       }),
-      // A real editor since #5547, so carried (see the note on the brief-derived arrays above).
-      linkedInVariants: this.linkedInVariants().map((variant) => ({ ...variant })),
-      linkedInImageUploadVariantKey: this.linkedInImageUploadVariantKey(),
-      linkedInImageUploadPendingName: this.linkedInImageUploadPendingName(),
-      linkedInImageUploadPendingBriefId: this.linkedInImageUploadPendingBriefId(),
-      linkedInImageUploadFailedMessage: this.linkedInImageUploadFailedBriefId() ? this.linkedInImageUploadError() : '',
-      linkedInImageUploadFailedBriefId: this.linkedInImageUploadFailedBriefId(),
       twitterBudget: form.twitterBudget,
       twitterTweetText: form.twitterTweetText,
       twitterImageAssetId: this.twitterImageAssetId(),
@@ -9741,8 +9731,9 @@ export class ImplementationTabComponent implements OnInit {
     // campaign-service links them before the ad groups and returns on a refusal there, which leaves
     // the campaign with no ad group, ad or keyword, so that step runs only when the operator asks.
 
-    if (brief.linkedInCopy) {
-      this.linkedInVariants.set(brief.linkedInCopy.variants.map((variant) => this.newLinkedInVariant(variant)));
+    const linkedInSeed = linkedInBriefSeed(brief.linkedInCopy, () => this.nextLinkedInVariantKey());
+    if (linkedInSeed) {
+      this.linkedInVariants.set(linkedInSeed.variants);
       // Seeded UNCONDITIONALLY, and the ticket's premise that this needs a "only when the parent
       // holds nothing" guard does not survive contact with the call order (LFXV2-3230).
       //
@@ -9764,18 +9755,12 @@ export class ImplementationTabComponent implements OnInit {
       //
       // Emitting is safe because `seeding` is true for the whole of this call, so the
       // `valueChanges` subscription returns early rather than snapshotting a half-built form.
-      this.campaignForm.controls.linkedInGeoTargets.setValue(brief.linkedInCopy.recommendedGeoTargets);
-      this.campaignForm.controls.linkedInTargetingProfile.setValue(brief.linkedInCopy.recommendedTargetingProfile);
+      this.campaignForm.controls.linkedInGeoTargets.setValue(linkedInSeed.geoTargets);
+      this.campaignForm.controls.linkedInTargetingProfile.setValue(linkedInSeed.targetingProfile);
       this.resetLinkedInTargeting();
-      // `budgetRecommendation` is guarded as well as `strategy`. Until LFXV2-3108 every brief
-      // reaching here came straight from the generator, which always emits both; a RESTORED
-      // brief is replayed from stored JSON, where `asVariantCopy` validates only the `variants`
-      // discriminator and leaves the inner shape alone. A `strategy` without a
-      // `budgetRecommendation` therefore reaches this line and throws on the nested read —
-      // every other field in this block is assigned whole, so this is the only such reach.
-      const lifetimeBudget = brief.linkedInCopy.strategy?.budgetRecommendation?.lifetimeBudgetUsd;
-      if (typeof lifetimeBudget === 'number' && Number.isFinite(lifetimeBudget)) {
-        this.linkedInBudgetUsd.set(lifetimeBudget);
+      // The strategy's lifetime budget, only when it is a finite number (`linkedInBriefSeed`).
+      if (linkedInSeed.lifetimeBudgetUsd !== undefined) {
+        this.linkedInBudgetUsd.set(linkedInSeed.lifetimeBudgetUsd);
         this.linkedInLifetimeBudget.set(true);
       }
     }

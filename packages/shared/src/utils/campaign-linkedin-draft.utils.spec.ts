@@ -1,0 +1,139 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { describe, expect, it } from 'vitest';
+
+import type { CampaignImplementationDraft, LinkedInBriefCopy, LinkedInDraftState, LinkedInVariantDraft } from '../interfaces/campaign.interface';
+import { linkedInBriefSeed, linkedInDraftFields, linkedInDraftRestore, newLinkedInVariantDraft } from './campaign-linkedin-draft.utils';
+
+const variant = (key: string, over: Partial<LinkedInVariantDraft> = {}): LinkedInVariantDraft => ({
+  key,
+  introText: 'Join us',
+  headline: 'Summit',
+  imageAssetId: '',
+  imageAssetName: '',
+  imageAssetBriefId: '',
+  ...over,
+});
+const draft = (over: Partial<CampaignImplementationDraft>): CampaignImplementationDraft => over as CampaignImplementationDraft;
+
+describe('newLinkedInVariantDraft', () => {
+  it('keeps the copy and image URN, with no upload', () => {
+    expect(newLinkedInVariantDraft({ introText: 'i', headline: 'h', imageUrn: 'urn:li:image:1' }, 'k1')).toEqual({
+      key: 'k1',
+      introText: 'i',
+      headline: 'h',
+      imageUrn: 'urn:li:image:1',
+      imageAssetId: '',
+      imageAssetName: '',
+      imageAssetBriefId: '',
+    });
+    expect('imageUrn' in newLinkedInVariantDraft({ introText: 'i', headline: 'h', imageUrn: '' }, 'k2')).toBe(false);
+  });
+});
+
+describe('linkedInDraftFields', () => {
+  const state: LinkedInDraftState = {
+    budgetUsd: 1000,
+    lifetimeBudget: true,
+    dailyCapUsd: Number.NaN,
+    variants: [variant('a')],
+    uploadVariantKey: 'a',
+    uploadPendingName: 'hero.png',
+    uploadPendingBriefId: 'b1',
+    uploadError: 'Too big.',
+    uploadFailedBriefId: '',
+  };
+
+  it('carries the budget pair and cap as held, and copies each variant', () => {
+    const fields = linkedInDraftFields(state);
+    expect(fields).toMatchObject({ linkedInBudgetUsd: 1000, linkedInLifetimeBudget: true, linkedInImageUploadPendingName: 'hero.png' });
+    expect(fields.linkedInDailyCapUsd).toBeNaN();
+    expect(fields.linkedInVariants).toEqual(state.variants);
+    expect(fields.linkedInVariants?.[0]).not.toBe(state.variants[0]);
+  });
+
+  it.each([
+    ['', ''],
+    ['b1', 'Too big.'],
+  ])('carries the failure message only with the brief it failed for (%j)', (failedBriefId, message) => {
+    expect(linkedInDraftFields({ ...state, uploadFailedBriefId: failedBriefId }).linkedInImageUploadFailedMessage).toBe(message);
+  });
+});
+
+describe('linkedInDraftRestore', () => {
+  it('restores nothing an older draft omits, and empty removals and slot', () => {
+    expect(linkedInDraftRestore(draft({}))).toEqual({ targetingRemovals: { skills: [], groups: [] }, uploadVariantKey: '' });
+  });
+
+  it.each([
+    ['a cap', 20, 20],
+    ['no cap', null, null],
+    ['an unparsable cap', Number.NaN, null],
+  ])('restores %s as %s', (_name, cap, expected) => {
+    expect(linkedInDraftRestore(draft({ linkedInDailyCapUsd: cap })).dailyCapUsd).toBe(expected);
+  });
+
+  it('restores the budget pair, removals and a copy of each variant', () => {
+    const variants = [variant('a')];
+    const restore = linkedInDraftRestore(
+      draft({ linkedInBudgetUsd: 250, linkedInLifetimeBudget: false, linkedInVariants: variants, linkedInTargetingRemovals: { skills: ['s'], groups: [] } })
+    );
+    expect(restore).toMatchObject({ budgetUsd: 250, lifetimeBudget: false, targetingRemovals: { skills: ['s'], groups: [] } });
+    expect(restore.variants).toEqual(variants);
+    expect(restore.variants?.[0]).not.toBe(variants[0]);
+  });
+
+  it.each([
+    [
+      'a failure with its brief',
+      { linkedInImageUploadFailedMessage: 'Too big.', linkedInImageUploadFailedBriefId: 'b1' },
+      { failedUpload: { message: 'Too big.', briefId: 'b1' } },
+    ],
+    ['a failure without its brief', { linkedInImageUploadFailedMessage: 'Too big.' }, {}],
+    [
+      'an upload still running',
+      { linkedInImageUploadPendingName: 'hero.png', linkedInImageUploadVariantKey: 'a' },
+      { pendingUpload: { name: 'hero.png', briefId: '' }, uploadVariantKey: 'a' },
+    ],
+  ])('restores %s', (_name, over, expected) => {
+    const restore = linkedInDraftRestore(draft(over));
+    expect(restore).toMatchObject(expected);
+    if (!('failedUpload' in expected)) expect(restore.failedUpload).toBeUndefined();
+  });
+});
+
+describe('linkedInBriefSeed', () => {
+  const copy: LinkedInBriefCopy = {
+    variants: [{ introText: 'i', headline: 'h' }],
+    recommendedGeoTargets: [{ urn: 'urn:li:geo:1', label: 'United States' }],
+    recommendedTargetingProfile: 'mcp',
+  };
+  let n = 0;
+  const nextKey = () => `k${++n}`;
+
+  it('seeds nothing without LinkedIn copy', () => {
+    expect(linkedInBriefSeed(undefined, nextKey)).toBeNull();
+  });
+
+  it('seeds the variants, geos and profile', () => {
+    const seed = linkedInBriefSeed(copy, nextKey);
+    expect(seed?.variants.map((v) => v.headline)).toEqual(['h']);
+    expect(seed?.geoTargets).toBe(copy.recommendedGeoTargets);
+    expect(seed?.targetingProfile).toBe('mcp');
+    expect(seed?.lifetimeBudgetUsd).toBeUndefined();
+  });
+
+  it.each([
+    [1500, 1500],
+    [Number.NaN, undefined],
+    ['1500', undefined],
+  ])("seeds the strategy's lifetime budget %j as %j", (budget, expected) => {
+    const strategy = { budgetRecommendation: { lifetimeBudgetUsd: budget } } as unknown as LinkedInBriefCopy['strategy'];
+    expect(linkedInBriefSeed({ ...copy, strategy }, nextKey)?.lifetimeBudgetUsd).toBe(expected);
+  });
+
+  it('survives a strategy without a budget recommendation', () => {
+    expect(linkedInBriefSeed({ ...copy, strategy: {} as LinkedInBriefCopy['strategy'] }, nextKey)?.lifetimeBudgetUsd).toBeUndefined();
+  });
+});
