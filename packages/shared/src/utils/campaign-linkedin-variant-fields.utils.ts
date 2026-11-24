@@ -19,6 +19,14 @@ function plainRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
+/** Whether `value` is a blank string, which campaign-service reads as not set: an empty name or description once normalized, or a blank call to action. */
+function isBlankField(key: VariantField, value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  if (key === 'name') return normalizeLinkedInCreativeName(value) === '';
+  if (key === 'description') return linkedInCreativeTextLength(value) === 0;
+  return value.trim() === '';
+}
+
 /** A call to action as campaign-service matches it: trimmed and upper-cased. `''` is none. */
 function callToActionToken(value: string): string {
   return value.trim().toUpperCase();
@@ -26,7 +34,7 @@ function callToActionToken(value: string): string {
 
 /**
  * Why `raw`'s variants cannot send their ad name, description or call to action, or `null`. Typed runtime checks, since
- * the create route has no body validator; an absent or null field is not set.
+ * the create route has no body validator; an absent, null or blank field is not set.
  *
  * - a field present while this deployment does not send it (`enabled`): refused, never dropped. The ad name and
  *   description need the campaign-service create path, since the legacy creator ignores them; the call to action also
@@ -51,7 +59,8 @@ export function linkedInVariantFieldsRefusal(raw: unknown, enabled: LinkedInVari
       const field = `linkedInConfig.variants[${index}].${key}`;
       const label = FIELD_LABELS[key];
       const on = key === 'callToAction' ? enabled.callToAction : enabled.copy;
-      if (!on) return { field, message: `This deployment cannot send a LinkedIn ${label}. Clear it to create the campaign.` };
+      // A blank value is not set, as campaign-service reads it, so it carries nothing to refuse or drop.
+      if (!on && !isBlankField(key, value)) return { field, message: `This deployment cannot send a LinkedIn ${label}. Clear it to create the campaign.` };
       if (typeof value !== 'string') return { field, message: `The ${label} must be text.` };
       if (key === 'name') {
         const name = normalizeLinkedInCreativeName(value);

@@ -17,6 +17,7 @@ describe('linkedInVariantFieldsRefusal', () => {
     ['null and blank fields', config(ad({ name: null, description: '', callToAction: '  ' })), ON],
     ['two unnamed ads', config(ad({}), ad({ name: '' })), ON],
     ['absent fields on a deployment that sends none', config(ad({})), { copy: false, callToAction: false }],
+    ['blank fields on a deployment that sends none', config(ad({ name: ' ', description: '', callToAction: '  ' })), { copy: false, callToAction: false }],
     ['no variants', {}, ON],
     ['a variant that is not an object', config('text'), ON],
     ['a name at the limit', config(ad({ name: 'n'.repeat(255) })), ON],
