@@ -825,6 +825,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_REVIEWED_SHAPES: readonly OrgLensEmployeeVie
   { key: 'org-events.interface.ts:orgSpeakerAcceptedCount', coveredBy: 'events.counts' },
   { key: 'org-events.interface.ts:orgSpeakerSubmittedCount', coveredBy: 'events.counts' },
   { key: 'org-events.interface.ts:initials', coveredBy: 'presentation' },
+  { key: 'org-events.interface.ts:attendeesOwner', coveredBy: 'presentation' },
   { key: 'org-events.interface.ts:avatarColorClass', coveredBy: 'presentation' },
   { key: 'org-events.interface.ts:OrgEventAttendee', coveredBy: 'events.attendees-panel' },
   { key: 'org-events.interface.ts:OrgEventAttendeeVm', coveredBy: 'events.attendees-panel' },
