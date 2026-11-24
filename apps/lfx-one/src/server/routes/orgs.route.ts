@@ -114,8 +114,8 @@ function buildOrgsRouter(): Router {
   // /attendees and /speakers paths, so ordering isn't strictly required; they're grouped here for readability.
   router.get('/:accountId/lens/events/summary', (req, res, next) => orgLensEventsController.getOrgEventsSummary(req, res, next));
   router.get('/:accountId/lens/events/foundations', (req, res, next) => orgLensEventsController.getOrgEventFoundations(req, res, next));
-  router.get('/:accountId/lens/events/:eventId/attendees', (req, res, next) => orgLensEventsController.getEventAttendees(req, res, next));
-  router.get('/:accountId/lens/events/:eventId/speakers', (req, res, next) => orgLensEventsController.getEventSpeakers(req, res, next));
+  router.get('/:orgUid/lens/events/:eventId/attendees', blockEmployeeView, (req, res, next) => orgLensEventsController.getEventAttendees(req, res, next));
+  router.get('/:orgUid/lens/events/:eventId/speakers', blockEmployeeView, (req, res, next) => orgLensEventsController.getEventSpeakers(req, res, next));
   router.get('/:accountId/lens/events', (req, res, next) => orgLensEventsController.getOrgEvents(req, res, next));
   router.get('/:orgUid/lens/memberships/active', (req, res, next) => orgLensMembershipsController.getActiveMemberships(req, res, next));
   router.get('/:orgUid/lens/memberships/expired', (req, res, next) => orgLensMembershipsController.getExpiredMemberships(req, res, next));
