@@ -125,7 +125,7 @@ describe('VoteBallotFormComponent (#4363)', () => {
     expect((byId('vote-link-rank-down-c-c') as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('drags a ranked card from anywhere on it, but never from its arrow buttons', async () => {
+  it('enables whole-card ranked drag, guards arrow presses and locks on abstain', async () => {
     await render(baseBallot({ poll_type: 'condorcet_irv' }));
 
     const card = byId('vote-link-rank-c-b') as HTMLElement;
@@ -144,6 +144,15 @@ describe('VoteBallotFormComponent (#4363)', () => {
       button.dispatchEvent(new Event('touchstart', { bubbles: true }));
     }
     expect(cardPress).not.toHaveBeenCalled();
+
+    (el().querySelector('#vote-link-abstain') as HTMLInputElement).click();
+    fixture.detectChanges();
+    expect(card.classList.contains('cdk-drag-disabled')).toBe(true);
+    expect(card.classList.contains('cursor-grab')).toBe(false);
+    expect(card.classList.contains('active:cursor-grabbing')).toBe(false);
+    expect(card.classList.contains('select-none')).toBe(false);
+    expect((byId('vote-link-rank-up-c-b') as HTMLButtonElement).disabled).toBe(true);
+    expect((byId('vote-link-rank-down-c-b') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('never drags a recorded ranked card from its remove button', async () => {

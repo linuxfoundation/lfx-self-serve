@@ -1619,8 +1619,8 @@ describe('VoteCastDrawerComponent — mobile layout (#4148)', () => {
     expect(el('vote-cast-rank-c1')?.querySelector('span.break-words')).toBeTruthy();
   });
 
-  it('drags an editable ranked card from anywhere on it, but never from its arrow buttons', async () => {
-    await setup(vi.fn().mockReturnValue(of(RANKED)));
+  it('enables whole-card ranked drag, guards arrow presses and locks on abstain', async () => {
+    await setup(vi.fn().mockReturnValue(of({ ...RANKED, allow_abstain: true })));
 
     await openWithoutListVote();
 
@@ -1641,6 +1641,16 @@ describe('VoteCastDrawerComponent — mobile layout (#4148)', () => {
       button.dispatchEvent(new Event('touchstart', { bubbles: true }));
     }
     expect(cardPress).not.toHaveBeenCalled();
+
+    (document.getElementById('vote-cast-abstain') as HTMLInputElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(card.classList.contains('cdk-drag-disabled')).toBe(true);
+    expect(card.classList.contains('cursor-grab')).toBe(false);
+    expect(card.classList.contains('active:cursor-grabbing')).toBe(false);
+    expect(card.classList.contains('select-none')).toBe(false);
+    expect((el('vote-cast-rank-up-c2') as HTMLButtonElement).disabled).toBe(true);
+    expect((el('vote-cast-rank-down-c2') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('submits the same ranked_choices payload whether reordered by arrow buttons or by drag', async () => {
