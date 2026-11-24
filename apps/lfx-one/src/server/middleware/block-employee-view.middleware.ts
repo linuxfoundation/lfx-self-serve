@@ -21,7 +21,9 @@ const OPERATION = 'block_employee_view';
  * It runs (or replays, the gate is memoized per request) `assertOrgLensRead` itself, so it works wherever it sits
  * relative to `requireOrgLensAccess` and a caller who is refused outright still gets that gate's 403/503, not this
  * one. A grant holder, an auditor-entitled caller and LF staff pass untouched. Roll-up segments pass: the roll-up
- * gate admits grant holders only, and the all employee view never reaches one.
+ * gate admits grant holders only, and the all employee view never reaches one. That is a precondition, not an authorization:
+ * a route that serves a roll-up must stay behind `requireOrgLensAccess` and the roll-up gate, because this middleware
+ * refuses nothing for a roll-up segment on its own.
  *
  * Requires an `:orgUid` route param; without one it fails closed rather than guessing.
  */

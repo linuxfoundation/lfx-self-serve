@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_ACCESS_UNVERIFIABLE_MESSAGE, ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE, ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_MESSAGE } from '@lfx-one/shared/constants';
+import type { OrgLensReadQualification } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 import { OrgClaManagerScopesService } from '../services/org-cla-manager-scopes.service';
 import { getEffectiveUsername } from '../utils/auth-helper';
-import { assertOrgLensRead, type OrgLensReadQualification } from './org-lens-read-access.helper';
+import { assertOrgLensRead } from './org-lens-read-access.helper';
 
 const claManagerScopes = new OrgClaManagerScopesService();
 

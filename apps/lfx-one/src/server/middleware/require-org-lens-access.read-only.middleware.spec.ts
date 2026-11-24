@@ -53,6 +53,13 @@ describe('requireOrgLensAccess: the all employee view is read-only', () => {
     expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403, code: 'EMPLOYEE_VIEW_FORBIDDEN' });
   });
 
+  it.each(['/READ-CHECK', '/Org-Scope/'])('matches the approved path %s the way Express routes it, ignoring case', async (path) => {
+    mocks.assertOrgLensRead.mockResolvedValue('employee-view');
+    mocks.getOrgLensViewMode.mockReturnValue('employee');
+
+    expect(await run('GET', ORG_UID, path)).toHaveBeenCalledWith();
+  });
+
   it('does not restrict paths for a grant holder', async () => {
     expect(await run('GET', ORG_UID, '/people/all')).toHaveBeenCalledWith();
   });

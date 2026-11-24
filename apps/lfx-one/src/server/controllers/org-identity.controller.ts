@@ -200,8 +200,8 @@ export class OrgIdentityController {
       // The one exception: the employee-view qualification could not be verified (epic #5845). That is a retriable 503 with
       // its code, not a transport failure of query-service, so the client does not cache it as "not found".
       if (error instanceof MicroserviceError && error.statusCode === 503 && error.code === 'ROLE_GRANTS_UNAVAILABLE') {
-        logger.warning(req, 'resolve_org_segment', 'Qualification lookup unavailable', { err: error, outcome: 'unavailable' });
-        res.status(503).json({ error: error.message, code: error.code });
+        // The central handler answers with the error's own status and `{ error, code }` (plus its path), logging it once.
+        next(error);
         return;
       }
       if (error instanceof MicroserviceError) {

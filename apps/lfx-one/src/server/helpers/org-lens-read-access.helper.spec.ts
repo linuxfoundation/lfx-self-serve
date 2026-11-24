@@ -79,6 +79,20 @@ describe('assertOrgLensRead: employee-view qualification', () => {
     await expect(assertOrgLensRead(req(), ORG_UID, 'op')).rejects.toMatchObject({ statusCode: 503, code: 'ROLE_GRANTS_UNAVAILABLE' });
   });
 
+  it('answers a retriable 503 when the employment lookup outlasts its budget', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.resolveEmployeeView.mockReturnValue(new Promise(() => {}));
+      const outcome = expect(assertOrgLensRead(req(), ORG_UID, 'op')).rejects.toMatchObject({ statusCode: 503, code: 'ROLE_GRANTS_UNAVAILABLE' });
+
+      await vi.advanceTimersByTimeAsync(5001);
+
+      await outcome;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('leaves an existing grant holder on the full view and never asks about employment', async () => {
     mocks.getAccessAwareOrgs.mockResolvedValue(roster({ resolved: new Map([[ORG_UID, 'direct-auditor']]) }));
     const r = req();
