@@ -1103,6 +1103,12 @@ export class MktgDocumentViewComponent {
   // === Protected methods ===
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
     if (cycle.detail.project !== this.projectContext.activeContextUid()) return;
+    // A poll that started before a conflict, or the reader's replay of one, answers with the selection from before
+    // it: older than what the page already shows. Merging it would mark the superseded revision current again.
+    if (this.predatesConflict(cycle.detail)) {
+      if (cycle.detail.progressUnavailable && this.publicProgressPolling()) this.refreshWarning.set(MKTG_POLL_RETRYING_TEXT);
+      return;
+    }
     const viewed = this.view();
     // False once the cycle's view is the body already on screen with fresh metadata merged in: its flags are an earlier read's.
     let viewRead = true;
@@ -1817,10 +1823,15 @@ export class MktgDocumentViewComponent {
   private retireCurrentConflict(cycle: MktgDocumentReadCycle): void {
     // The detail alone decides: a metadata-only cycle carries the body on screen, whose flag is an earlier read's.
     if (cycle.detail.progressUnavailable) return;
-    const selectedAt = cycle.detail.current?.changedAt;
-    if (this.currentConflict() && this.conflictSelectedAt && selectedAt && selectedAt < this.conflictSelectedAt) return;
+    if (this.predatesConflict(cycle.detail)) return;
     this.documentReads++;
     this.settleCurrentConflict(cycle.detail);
+  }
+
+  /** While a notice is up: whether this detail carries a selection made before the one the conflict named. */
+  private predatesConflict(detail: MktgDocumentDetailResponse): boolean {
+    const selectedAt = detail.current?.changedAt;
+    return !!this.currentConflict() && !!this.conflictSelectedAt && !!selectedAt && selectedAt < this.conflictSelectedAt;
   }
 
   /** Complete the notice's link from a read, or retire a notice that names a selection the read shows superseded. */

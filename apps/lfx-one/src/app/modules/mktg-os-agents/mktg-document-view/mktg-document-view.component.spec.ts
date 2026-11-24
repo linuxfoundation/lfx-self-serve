@@ -4113,6 +4113,12 @@ describe('MktgDocumentViewComponent', () => {
       expect(component['railReady']()).toBe(true);
       expect(query('mktg-document-view-error')).toBeNull();
       expect(query('mktg-document-view-approval-error')).toBeNull();
+      // The same earlier read answering after the re-read was applied does not put the superseded current back.
+      progressReader().observed.emit({ detail: earlier, view: earlier });
+      await settle();
+      expect(query('mktg-document-view-current-3')).not.toBeNull();
+      expect(component['view']()?.current?.revisionId).toBe(winner.id);
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
       // The page polls continuously: a read that still shows the named current keeps the notice on screen.
       progressReader().observed.emit({ detail: refreshed, view: { ...loaded, revisions: refreshed.revisions } });
       await settle();
