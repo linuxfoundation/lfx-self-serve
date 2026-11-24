@@ -155,6 +155,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { AeoGeoReportComponent } from '../components/aeo-geo-report/aeo-geo-report.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
+import { LinkedinPostIdentityComponent } from '../components/linkedin-post-identity/linkedin-post-identity.component';
 import { LinkedinPostOptionsComponent } from '../components/linkedin-post-options/linkedin-post-options.component';
 import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
@@ -214,6 +215,7 @@ import { createVisibilityPoll, pollBackoffDelayMs } from '@shared/utils/visibili
     MktgCommentsPanelComponent,
     TooltipModule,
     TooltipHostFocusDirective,
+    LinkedinPostIdentityComponent,
     LinkedinPostOptionsComponent,
     ReactiveFormsModule,
     InputTextComponent,
@@ -1454,6 +1456,23 @@ export class MktgDocumentViewComponent {
       state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.document },
       queryParams: { profile: 'edit', revision: null, type: null, ...(this.profileWarning() && { profileDocument: this.params().documentId }) },
       queryParamsHandling: 'merge',
+    });
+  }
+
+  /** An objection to the identity changes the profile, then drafts again: the agent reads it as the saved profile, never as feedback. */
+  protected onEditProfileAndRedraft(): void {
+    if (!this.linkedinContent()?.isAuthor || !this.writer()) return;
+    void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
+      relativeTo: this.route.parent,
+      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.redraft },
+      queryParams: {
+        ...this.runAgainParams(),
+        profile: 'edit',
+        revision: null,
+        type: null,
+        mode: mktgRunModeFor(LINKEDIN_POST_INTAKE.agentId),
+        ...(this.profileWarning() && { profileDocument: this.params().documentId }),
+      },
     });
   }
 

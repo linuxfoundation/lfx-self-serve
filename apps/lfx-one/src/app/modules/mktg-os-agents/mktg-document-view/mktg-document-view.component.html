@@ -412,6 +412,13 @@
       }
     } @else if (linkedinContent(); as content) {
       <section aria-label="LinkedIn post options" data-testid="mktg-document-view-document" class="flex min-w-0 flex-col gap-5">
+        @if (writer() && content.author; as author) {
+          <lfx-linkedin-post-identity
+            [authorName]="author.name"
+            [isAuthor]="!!content.isAuthor"
+            (editAndRedraft)="onEditProfileAndRedraft()"
+            (draftAsMe)="onDraftAnother()" />
+        }
         <section class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-gray-700">
           @if (content.source; as source) {
             <p class="min-w-0 grow break-words text-sm" data-testid="mktg-linkedin-document-source">
