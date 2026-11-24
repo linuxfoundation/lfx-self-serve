@@ -57,14 +57,12 @@ import {
   isCreativeAssetMimeType,
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
-  LINKEDIN_IMAGE_MAX_BYTES,
   LINKEDIN_MAX_VARIANTS,
   LINKEDIN_MIN_VARIANTS,
   TWITTER_IMAGE_MAX_BYTES,
   TWITTER_IMAGE_TOO_LARGE_MESSAGE,
   TWITTER_MAX_BUDGET,
   TWITTER_MAX_TWEET_WEIGHTED_CHARS,
-  LINKEDIN_IMAGE_TOO_LARGE_MESSAGE,
   META_CHAR_LIMITS,
   META_DEFAULT_PLACEMENTS,
   META_MESSENGER_INBOX_RETIRED_REASON,
@@ -371,6 +369,7 @@ import type {
   LinkedInTargetingProfileEdit,
   LinkedInTargetingFacets,
   LinkedInTargetingRemovals,
+  LinkedInImageSlot,
   LinkedInVariantDraft,
   LinkedInVariantView,
   MetaAdVariant,
@@ -463,7 +462,6 @@ import {
   isHttpUrl,
   isReversedCampaignFlight,
   joinAsSentenceList,
-  linkedInCreativeTextLength,
   linkedInAccountFields,
   linkedInCreateRefusal,
   linkedInDailyCapError,
@@ -473,9 +471,14 @@ import {
   linkedInTargetingEdit,
   linkedInTargetingEmptyWarning,
   linkedInTargetingRemovalsHeld,
-  linkedInVariantImageForBrief,
   linkedInVariantsForCreate,
-  linkedInVariantTextError,
+  linkedInCanAddVariant,
+  linkedInCanRemoveVariant,
+  linkedInImageFileRefusal,
+  linkedInImageSlotHeldByOther,
+  linkedInImageUploadHoldsCreate,
+  linkedInImageUploadOrphaned,
+  linkedInVariantViews,
   metaAcceptedGeos,
   metaAdOptionsBlock,
   metaAdOptionsForCreate,
@@ -1985,10 +1988,7 @@ export class ImplementationTabComponent implements OnInit {
    * keys) while it ran. It is not cancelled, because a draft restore that follows the re-seed brings
    * that variant back and the upload lands on it; until then it holds no picker and not Create.
    */
-  private readonly linkedInImageUploadOrphaned = computed(() => {
-    const slotKey = this.linkedInImageUploadVariantKey();
-    return slotKey !== '' && !this.linkedInVariants().some((variant) => variant.key === slotKey);
-  });
+  private readonly linkedInImageUploadOrphaned = computed(() => linkedInImageUploadOrphaned(this.linkedInImageSlot(), this.linkedInVariants()));
   protected readonly linkedInImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
   private readonly linkedInImageUploadPendingName = signal('');
   private readonly linkedInImageUploadPendingBriefId = signal('');
@@ -4236,10 +4236,12 @@ export class ImplementationTabComponent implements OnInit {
       return 'Waiting for the Google Ads image upload to finish.';
     // Not for an orphaned upload, whose image has no variant to land on and no Cancel on screen.
     if (
-      this.showLinkedInSection() &&
-      this.linkedInAssetUploadAvailable() &&
-      this.linkedInImageUploadStatus() === 'uploading' &&
-      !this.linkedInImageUploadOrphaned()
+      linkedInImageUploadHoldsCreate(
+        this.showLinkedInSection(),
+        this.linkedInAssetUploadAvailable(),
+        this.linkedInImageSlot(),
+        this.linkedInImageUploadOrphaned()
+      )
     )
       return 'Waiting for the LinkedIn Ads image upload to finish.';
     if (this.showTwitterSection() && this.twitterCreateAvailable() && this.twitterImageUploadStatus() === 'uploading')
@@ -5427,14 +5429,14 @@ export class ImplementationTabComponent implements OnInit {
 
   /** Add an empty LinkedIn variant, up to `LINKEDIN_MAX_VARIANTS`. */
   protected addLinkedInVariant(): void {
-    if (this.linkedInVariants().length >= LINKEDIN_MAX_VARIANTS) return;
+    if (!linkedInCanAddVariant(this.linkedInVariants().length)) return;
     this.linkedInVariants.update((variants) => [...variants, this.newLinkedInVariant({ introText: '', headline: '' })]);
     this.emitDraft();
   }
 
   /** Remove a LinkedIn variant, keeping at least `LINKEDIN_MIN_VARIANTS`; its upload in flight, if any, is cancelled. */
   protected removeLinkedInVariant(key: string): void {
-    if (this.linkedInVariants().length <= LINKEDIN_MIN_VARIANTS) return;
+    if (!linkedInCanRemoveVariant(this.linkedInVariants().length)) return;
     if (this.linkedInImageUploadVariantKey() === key) this.clearLinkedInImageUpload();
     this.linkedInVariants.update((variants) => variants.filter((variant) => variant.key !== key));
     this.emitDraft();
@@ -5461,13 +5463,9 @@ export class ImplementationTabComponent implements OnInit {
     // A refused pick is recorded against the open brief and saved, like a failed upload: the image
     // it replaced is gone, so Create stays blocked and the reason survives a tab switch.
     const briefId = this.briefPersistence().briefId ?? '';
-    if (!isCreativeAssetMimeType(file.type)) {
-      this.failLinkedInImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, briefId);
-      this.emitDraft();
-      return;
-    }
-    if (file.size > LINKEDIN_IMAGE_MAX_BYTES) {
-      this.failLinkedInImageUpload(LINKEDIN_IMAGE_TOO_LARGE_MESSAGE, briefId);
+    const refusal = linkedInImageFileRefusal(file);
+    if (refusal !== null) {
+      this.failLinkedInImageUpload(refusal, briefId);
       this.emitDraft();
       return;
     }
@@ -7745,22 +7743,23 @@ export class ImplementationTabComponent implements OnInit {
     return linkedInVariantsForCreate(this.linkedInVariants(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '');
   }
 
-  /** Whether the variant holds an upload made for the brief now open — the only one sent. */
-  private linkedInVariantImageForThisBrief(variant: LinkedInVariantDraft): boolean {
-    return linkedInVariantImageForBrief(variant, this.briefPersistence().briefId ?? '');
-  }
-
   /**
    * Whether the one LinkedIn upload belongs to ANOTHER variant and must not be replaced: still
    * running, or failed for the open brief (whose block holds Create until it is removed). An orphaned
    * upload (`linkedInImageUploadOrphaned`) holds nothing, so a new pick simply replaces it.
    */
   private linkedInImageSlotHeldByOther(key: string): boolean {
-    const slotKey = this.linkedInImageUploadVariantKey();
-    if (slotKey === '' || slotKey === key || this.linkedInImageUploadOrphaned()) return false;
-    if (this.linkedInImageUploadStatus() === 'uploading') return true;
-    const briefId = this.briefPersistence().briefId ?? '';
-    return this.linkedInImageUploadStatus() === 'error' && briefId !== '' && this.linkedInImageUploadFailedBriefId() === briefId;
+    return linkedInImageSlotHeldByOther(key, this.linkedInImageSlot(), this.linkedInImageUploadOrphaned(), this.briefPersistence().briefId ?? '');
+  }
+
+  /** The one LinkedIn upload slot as the image rules read it (`campaign-linkedin-image.utils`, #5980). */
+  private linkedInImageSlot(): LinkedInImageSlot {
+    return {
+      variantKey: this.linkedInImageUploadVariantKey(),
+      status: this.linkedInImageUploadStatus(),
+      failedBriefId: this.linkedInImageUploadFailedBriefId(),
+      error: this.linkedInImageUploadError(),
+    };
   }
 
   private initLinkedInSelectedTargetingProfile(): Signal<LinkedInTargetingProfileConfig | null> {
@@ -7790,87 +7789,17 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   private initLinkedInVariantViews(): Signal<LinkedInVariantView[]> {
-    return computed(() => {
-      const slotKey = this.linkedInImageUploadVariantKey();
-      const uploading = this.linkedInImageUploadStatus() === 'uploading';
-      const failed = this.linkedInImageUploadStatus() === 'error';
-      // The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief.
-      const pickerBlocked = !this.briefPersistence().briefId || this.briefPersistence().status === 'saving';
-      const variants = this.linkedInVariants();
-      const slotIndex = variants.findIndex((variant) => variant.key === slotKey);
-      return variants.map((variant, index): LinkedInVariantView => {
-        const ownsSlot = slotKey === variant.key;
-        const imageUploading = ownsSlot && uploading;
-        const forThisBrief = this.linkedInVariantImageForThisBrief(variant);
-        const heldByOther = this.linkedInImageSlotHeldByOther(variant.key);
-        const imagePickerNote = heldByOther ? `Finish or remove the image for variant ${slotIndex + 1} first.` : '';
-        let imageStatusMessage = '';
-        if (imageUploading) imageStatusMessage = 'Uploading image…';
-        else if (forThisBrief) imageStatusMessage = `Uploaded: ${variant.imageAssetName || 'image'}`;
-        return {
-          key: variant.key,
-          introText: variant.introText,
-          headline: variant.headline,
-          introTextLength: linkedInCreativeTextLength(variant.introText),
-          headlineLength: linkedInCreativeTextLength(variant.headline),
-          introTextError: linkedInVariantTextError('introText', variant.introText) ?? '',
-          headlineError: linkedInVariantTextError('headline', variant.headline) ?? '',
-          imageStatusMessage,
-          imageUploading,
-          imageHeld: variant.imageAssetId !== '',
-          imageError: ownsSlot && failed ? this.linkedInImageUploadError() : '',
-          imagePickerDisabled: pickerBlocked || heldByOther,
-          imagePickerNote,
-          imageBlock: this.linkedInVariantImageBlock(variant, index, imageUploading),
-        };
-      });
-    });
-  }
-
-  /** `initMetaImageAssetBlock`'s sibling, for one variant's upload alone. */
-  private linkedInVariantImageBlock(variant: LinkedInVariantDraft, index: number, imageUploading: boolean): CampaignLinkedInImageAssetBlock | null {
-    if (!this.showLinkedInSection()) return null;
-    const n = index + 1;
-    const briefId = this.briefPersistence().briefId;
-    if (variant.imageAssetId !== '' && briefId && variant.imageAssetBriefId !== briefId) {
-      return {
-        kind: 'otherBrief',
-        message: `The image for LinkedIn variant ${n} was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.`,
-      };
-    }
-    if (
-      this.linkedInImageUploadVariantKey() === variant.key &&
-      this.linkedInImageUploadStatus() === 'error' &&
-      briefId &&
-      this.linkedInImageUploadFailedBriefId() === briefId
-    ) {
-      return {
-        kind: 'uploadFailed',
-        message: `The image upload for LinkedIn variant ${n} did not complete: ${this.linkedInImageUploadError()} Remove it, or choose the image again.`,
-      };
-    }
-    // An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes.
-    const withheld = (this.linkedInVariantImageForThisBrief(variant) || imageUploading) && !this.linkedInAssetUploadAvailable();
-    if (!withheld) return null;
-    if (this.linkedInAssetUploadEnabled() === false) {
-      return {
-        kind: 'unsupported',
-        message: `LinkedIn ad images are not available on this deployment, so the image for variant ${n} cannot be sent. Remove it to create the campaign without it.`,
-      };
-    }
-    if (this.createCapabilityRead() === 'pending') {
-      return { kind: 'pending', message: 'Checking LinkedIn ad image support…' };
-    }
-    if (!briefId) {
-      return {
-        kind: 'unsaved',
-        message: "LinkedIn ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
-      };
-    }
-    return {
-      kind: 'failed',
-      message: `Could not confirm that LinkedIn ad images are supported, so the image for variant ${n} cannot be sent yet. Retry the check, or remove the image.`,
-    };
+    return computed(() =>
+      linkedInVariantViews({
+        variants: this.linkedInVariants(),
+        slot: this.linkedInImageSlot(),
+        briefId: this.briefPersistence().briefId ?? '',
+        briefSaving: this.briefPersistence().status === 'saving',
+        showSection: this.showLinkedInSection(),
+        uploadEnabled: this.linkedInAssetUploadEnabled(),
+        capabilityRead: this.createCapabilityRead(),
+      })
+    );
   }
 
   /** A LinkedIn variant for the editor, with a fresh key and no upload. */
@@ -8050,7 +7979,7 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
-  /** `linkedInVariantImageBlock`'s sibling, for the tweet image. */
+  /** The LinkedIn variant image notice's sibling (`linkedInVariantViews`), for the tweet image. */
   private initTwitterImageAssetBlock(): Signal<CampaignTwitterImageAssetBlock | null> {
     return computed(() => {
       if (!this.showTwitterSection()) return null;
