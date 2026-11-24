@@ -143,6 +143,27 @@ describe('MktgDocumentsComponent', () => {
     vi.restoreAllMocks();
   });
 
+  it('gives each one-off run in All documents its time in the viewer’s zone, and a living document its date only', async () => {
+    // The spec pins UTC; a viewer nine hours ahead proves the row follows the viewer's zone, not UTC.
+    TestBed.overrideProvider(DATE_PIPE_DEFAULT_OPTIONS, { useValue: { timezone: '+0900' } });
+    const response = documentsResponse();
+    const runs = response.groups.find((group) => group.type.agentKey === 'member-360');
+    const living = response.groups.find((group) => group.type.agentKey === 'brand-kit');
+    if (!runs || !living) throw new Error('fixture has no Member 360 or Brand Kit type');
+    const stored = { agentKey: 'member-360' as const, revisionCount: 1, latestRevisionId: 'rev-1', approvedCurrent: null };
+    runs.documents = [
+      { ...stored, documentId: 'run-evening', createdAt: '2026-11-09T12:17:00Z', updatedAt: '2026-11-09T12:17:00Z' },
+      { ...stored, documentId: 'run-morning', createdAt: '2026-11-09T00:05:00Z', updatedAt: '2026-11-09T00:05:00Z' },
+    ];
+    living.documents[0].updatedAt = '2026-11-09T12:17:00Z';
+    store.listDocuments.mockReturnValue(of(response));
+    await render('/');
+    const meta = (id: string) => query(`mktg-documents-all-meta-${id}`)?.textContent?.replace(/\s+/g, ' ').trim();
+    expect(meta('member-360-run-evening')).toBe('9 Nov 2026, 21:17 · 1 revision');
+    expect(meta('member-360-run-morning')).toBe('9 Nov 2026, 09:05 · 1 revision');
+    expect(meta('brand-kit-living')).toBe('9 Nov 2026 · 2 revisions');
+  });
+
   it('opens All documents by default as the fifth Kit tab, without fetching revision detail', async () => {
     await render('/');
     expect(query('mktg-documents-all')?.textContent).toContain('Brand Kit');

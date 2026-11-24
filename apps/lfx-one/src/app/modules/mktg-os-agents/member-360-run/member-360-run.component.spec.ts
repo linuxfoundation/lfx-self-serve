@@ -475,6 +475,22 @@ describe('Member360RunComponent', () => {
     expect(root?.querySelector('[data-testid="member-360-last-run"]')?.textContent).toContain('Last run Q3 2026, 1 Oct');
     expect(root?.querySelector('[data-testid="member-360-compare"]')?.textContent).toContain('Previous run: Q3 2026 (1 Oct)');
   });
+  it('tells two runs of one day apart by their time, in the viewer’s zone', async () => {
+    const zone = process.env['TZ'];
+    process.env['TZ'] = 'Asia/Tokyo';
+    try {
+      const evening = { ...MEMBER_360_STORED_DOCUMENT, documentId: 'run-evening', createdAt: '2026-11-09T12:17:00Z' };
+      const morning = { ...MEMBER_360_STORED_DOCUMENT, documentId: 'run-morning', createdAt: '2026-11-09T00:05:00Z' };
+      documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [{ type: member360DocumentType(), documents: [evening, morning] }] }));
+      await render();
+      const row = (id: string) => fixture.nativeElement.querySelector(`[data-testid="member-360-run-history-${id}"]`)?.textContent?.trim();
+      expect(row('run-evening')).toBe('9 Nov 2026, 21:17 · Open');
+      expect(row('run-morning')).toBe('9 Nov 2026, 09:05 · Open');
+    } finally {
+      if (zone === undefined) delete process.env['TZ'];
+      else process.env['TZ'] = zone;
+    }
+  });
   it('keeps duplicate filenames distinct and preserves focus after removing the middle file', async () => {
     await render();
     const chooser = fixture.nativeElement.querySelector('lfx-file-upload');
