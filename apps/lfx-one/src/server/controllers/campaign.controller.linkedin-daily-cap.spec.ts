@@ -213,4 +213,29 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
     expect(legacyCreate).not.toHaveBeenCalled();
     expect(refusal(next).field).toBe('linkedInConfig');
   });
+
+  // A variant's ad name, description and call to action (#5764 rows 16–17); the rules are table rows in
+  // `campaign-linkedin-variant-fields.utils.spec.ts`.
+  const variant = { introText: 'Join us', headline: 'Summit' };
+
+  it('forwards a variant ad name, description and call to action as checked and compacted', async () => {
+    const { next } = await create({
+      lifetimeBudget: false,
+      targetingProfile: 'cloud-native',
+      variants: [{ ...variant, name: '  Ad\tA ', description: 'Two days of talks', callToAction: ' register ' }],
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()['variants']).toEqual([{ ...variant, name: 'Ad A', description: 'Two days of talks', callToAction: 'REGISTER' }]);
+  });
+
+  it('refuses a call to action while its flag is off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInCallToAction);
+
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [{ ...variant, callToAction: 'REGISTER' }] });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.variants[0].callToAction');
+  });
 });

@@ -11,6 +11,7 @@ import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/sha
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
 import { linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
+import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
 import {
   googleAdScheduleRefusal,
   googleAdsDevicesOn,
@@ -415,7 +416,9 @@ import {
   canCreateWithGoogleCriteria,
   canChooseLinkedInAdAccount,
   canEditLinkedInTargeting,
+  canSetLinkedInCallToAction,
   canSetLinkedInDailyCap,
+  canSetLinkedInVariantCopy,
   canSearchGoogleGeoTargets,
   canSetMetaAudienceTargeting,
   canSetMetaCallToAction,
@@ -1326,6 +1329,18 @@ export class CampaignController {
       const linkedInKeyRefusal = linkedInConfigKeyRefusal(body?.linkedInConfig);
       if (linkedInKeyRefusal !== null) {
         throw ServiceValidationError.forField(linkedInKeyRefusal.field, linkedInKeyRefusal.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // A variant's ad name, description and call to action (#5764 rows 16–17): refused, never dropped, while this
+      // deployment cannot send them, and held to campaign-service's rules. See `linkedInVariantFieldsRefusal`.
+      const linkedInVariantRefusal = linkedInVariantFieldsRefusal(body?.linkedInConfig, {
+        copy: canSetLinkedInVariantCopy(),
+        callToAction: canSetLinkedInCallToAction(),
+      });
+      if (linkedInVariantRefusal !== null) {
+        throw ServiceValidationError.forField(linkedInVariantRefusal.field, linkedInVariantRefusal.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });
@@ -9655,6 +9670,9 @@ export class CampaignController {
    *
    * 4. Every other key goes out as it came, which is safe only because `createCampaign` has already refused any key
    *    outside the request's own top-level and variant fields (`linkedInConfigKeyRefusal`, #5764).
+   *
+   * 5. A variant's ad name, description and call to action go out only as `compactLinkedInVariantFields` checked and
+   *    compacted them (#5764 rows 16–17): the name normalized, the call to action upper-cased, a blank one dropped.
    */
   private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;
@@ -9669,12 +9687,21 @@ export class CampaignController {
     delete rest['selectedAdAccountId'];
     if (adAccountId !== null) rest['adAccountId'] = adAccountId;
     delete rest['targetingProfileEdit'];
+    if (Array.isArray(rest['variants'])) rest['variants'] = rest['variants'].map((variant: unknown) => this.linkedInVariantToForward(variant));
 
     return {
       ...rest,
       targetingProfiles: edit ? this.linkedInProfilesWithEdit(runtime.targetingProfiles, edit) : runtime.targetingProfiles,
       employerExclusions: runtime.employerExclusions,
     };
+  }
+
+  /** One variant as it goes out: its ad name, description and call to action replaced by their compacted form. */
+  private linkedInVariantToForward(variant: unknown): unknown {
+    if (variant === null || typeof variant !== 'object' || Array.isArray(variant)) return variant;
+    const record = variant as Record<string, unknown>;
+    const rest = Object.fromEntries(Object.entries(record).filter(([key]) => key !== 'name' && key !== 'description' && key !== 'callToAction'));
+    return { ...rest, ...compactLinkedInVariantFields(record) };
   }
 
   /**

@@ -407,6 +407,17 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInAccountSelection = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION',
 
   /**
+   * LinkedIn call to action (#5764 row 16): accept `linkedInConfig.variants[i].callToAction`, the dark post's button.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 DEPLOYED with
+   * `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED` on, since campaign-service refuses the field with a 400 otherwise, and is only
+   * meaningful while the create cutover is on (`cutoverOwnsCreate`). Off (the default), the create route refuses the
+   * field with a 400, never dropping it. The ad name and description need no flag, only the cutover. A request field
+   * only, so flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInCallToAction = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CALL_TO_ACTION',
+
+  /**
    * Offers Meta ad set audience targeting on the Implement tab (#5905), sent as `metaConfig.targeting`:
    * age range, gender and Advantage+ audience to every campaign manager, and included/excluded custom
    * audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only to a caller holding

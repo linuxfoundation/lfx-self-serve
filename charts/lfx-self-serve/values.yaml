@@ -773,6 +773,18 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION:
     value:
 
+  # LinkedIn call to action (#5764 row 16): accepts `linkedInConfig.variants[i].callToAction`, the dark post's
+  # button (one of campaign-service's labels, such as REGISTER or LEARN_MORE). The ad name and description
+  # (`name`, `description`) need no flag, only the create pipeline.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 DEPLOYED with
+  # `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED` on, and the create pipeline on. Off (the default), the create route
+  # refuses the field with a 400, never dropping it. A field only, so turning it back off strands nothing.
+  # Order: set campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags
+  # above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CALL_TO_ACTION:
+    value:
+
   # Offers Meta ad set audience targeting on the Implement tab (#5905), sent as
   # `metaConfig.targeting`: age range, gender and Advantage+ audience for every campaign manager, and
   # included/excluded custom audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only for

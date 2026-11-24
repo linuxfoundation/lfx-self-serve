@@ -1907,6 +1907,15 @@ export interface LinkedInCreativeVariant {
    * (`resolveLinkedInImages`, `internal/dispatch/linkedin_creative.go`).
    */
   imageAssetId?: string;
+  /**
+   * The ad's name in Campaign Manager and reporting (#5764 row 17, campaign-service #589). Omitted keeps
+   * "<event> | variant-N". No two variants of one campaign may share one. Only on the campaign-service road.
+   */
+  name?: string;
+  /** The article description under the headline (#5764 row 16, campaign-service #588), at most 300 characters. */
+  description?: string;
+  /** One of `LINKEDIN_CALL_TO_ACTION_LABELS` (campaign-service #588). Omitted sends no button. */
+  callToAction?: string;
 }
 
 /**
@@ -2231,6 +2240,14 @@ export interface LinkedInCampaignCreateRequest {
 export interface LinkedInConfigKeyRefusal {
   field: string;
   message: string;
+}
+
+/** Which of a LinkedIn variant's optional fields this deployment sends (#5764 rows 16–17). */
+export interface LinkedInVariantFieldsEnabled {
+  /** The ad name and description (`linkedInVariantCopyEnabled`). */
+  copy: boolean;
+  /** The call to action (`linkedInCallToActionEnabled`). */
+  callToAction: boolean;
 }
 
 export interface LinkedInCampaignCreateResult {
@@ -7621,6 +7638,17 @@ export interface CampaignListResult {
    * drop it and spend uncapped.
    */
   linkedInDailyCapEnabled: boolean;
+  /**
+   * Whether a LinkedIn variant may carry its ad `name` and `description` (#5764 row 17). `cutoverOwnsCreate()` and nothing
+   * else, like `linkedInDailyCapEnabled`: campaign-service takes both unflagged, and the legacy creator ignores them.
+   */
+  linkedInVariantCopyEnabled: boolean;
+  /**
+   * Whether a LinkedIn variant may carry a `callToAction` (#5764 row 16). `cutoverOwnsCreate()` AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CALL_TO_ACTION`, which follows campaign-service's
+   * `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED`.
+   */
+  linkedInCallToActionEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.

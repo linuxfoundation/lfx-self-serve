@@ -55,6 +55,26 @@ function isGoSpace(code: number): boolean {
 }
 
 /**
+ * A LinkedIn ad name as campaign-service sends it (`normalizeCreativeName`, #5764 row 17): Go's `strings.Fields` joined by
+ * one space, so every run of whitespace (a newline or tab included) becomes one space and the ends are trimmed. Dashes
+ * are kept, unlike ad copy. `''` means no name.
+ */
+export function normalizeLinkedInCreativeName(name: string): string {
+  const words: string[] = [];
+  let start = -1;
+  for (let i = 0; i <= name.length; i++) {
+    const space = i === name.length || isGoSpace(name.charCodeAt(i));
+    if (space && start !== -1) {
+      words.push(name.slice(start, i));
+      start = -1;
+    } else if (!space && start === -1) {
+      start = i;
+    }
+  }
+  return words.join(' ');
+}
+
+/**
  * The length campaign-service measures LinkedIn copy by: code points (Go runes) of the normalized
  * text. A dash counts as the two characters ", " it becomes.
  */

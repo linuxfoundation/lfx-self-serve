@@ -798,6 +798,36 @@ export const LINKEDIN_MIN_VARIANTS = 1;
  */
 export const LINKEDIN_MAX_VARIANTS = 15;
 
+/**
+ * The calls to action a LinkedIn variant may carry (#5764 rows 16–17), campaign-service's `CallToActionLabels`
+ * (`internal/platform/linkedin/variants.go`, v1.0.38): the Posts API's `ContentCallToActionLabel` values. campaign-service
+ * matches them exactly, so the create route sends each upper-cased.
+ */
+export const LINKEDIN_CALL_TO_ACTION_LABELS = [
+  'APPLY',
+  'DOWNLOAD',
+  'VIEW_QUOTE',
+  'LEARN_MORE',
+  'SIGN_UP',
+  'SUBSCRIBE',
+  'REGISTER',
+  'JOIN',
+  'ATTEND',
+  'REQUEST_DEMO',
+  'SEE_MORE',
+  'BUY_NOW',
+  'SHOP_NOW',
+] as const;
+
+/**
+ * The longest LinkedIn ad name and description, in runes after campaign-service's normalization (`maxCreativeNameLen`,
+ * `maxDescriptionLen`). campaign-service cuts longer ones without saying so, so the create route refuses them instead.
+ */
+export const LINKEDIN_VARIANT_FIELD_LIMITS = {
+  name: 255,
+  description: 300,
+} as const;
+
 export const META_CHAR_LIMITS = {
   primaryText: 125,
   headline: 40,
