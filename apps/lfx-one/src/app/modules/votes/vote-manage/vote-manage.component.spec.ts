@@ -9,6 +9,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, NavigationEnd, Router } from '@angular/router';
 import { CommitteeMemberVotingStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import { CommitteeMember, Vote } from '@lfx-one/shared/interfaces';
+import { getDefaultVoteCloseDate, toZonedDateCarrier } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -969,6 +970,177 @@ describe('VoteManageComponent', () => {
       const fixture = await createComponent();
 
       expect(fixture.componentInstance.form().get('timezone')?.value).toBe('UTC');
+    });
+  });
+
+  describe('create defaults (#6104)', () => {
+    const COMMITTEE_A = { uid: 'committee-uid-a', name: 'Committee A' };
+    const COMMITTEE_B = { uid: 'committee-uid-b', name: 'Committee B' };
+    const descriptionFor = (name: string) =>
+      `Members of the ${name} are asked to vote on the question(s) below. Please review the options and cast your ballot before the vote closes.`;
+
+    const selectCommittee = async (fixture: Awaited<ReturnType<typeof createComponent>>, committee: { uid: string; name: string } | null) => {
+      fixture.componentInstance.form().get('committee')?.setValue(committee);
+      await TestBed.inject(ApplicationRef).whenStable();
+    };
+
+    beforeEach(() => {
+      setRouteMode(null);
+      routeMock.queryParamMap = of(convertToParamMap({}));
+      getProject.mockReturnValue(of(null));
+    });
+
+    afterEach(() => {
+      routeMock.queryParamMap = of(convertToParamMap({}));
+      routeMock.snapshot.queryParamMap = convertToParamMap({});
+    });
+
+    it("starts a new vote with 'all' eligibility and a weekday close date 7 days out, with title and description empty", async () => {
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+
+      expect(form.get('eligible_participants')?.value).toBe('all');
+      const closeDate = form.get('close_date')?.value as Date;
+      expect(closeDate).toEqual(getDefaultVoteCloseDate(Date.now(), form.get('timezone')?.value));
+      expect([0, 6]).not.toContain(closeDate.getDay());
+      expect(form.get('title')?.value).toBe('');
+      expect(form.get('description')?.value).toBe('');
+      expect(fixture.componentInstance.prefilledTitle()).toBe(false);
+    });
+
+    it('seeds the title and description once per group pick, keeps them pristine, and re-seeds on a group switch', async () => {
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+      const titleWrites: unknown[] = [];
+      form.get('title')?.valueChanges.subscribe((value) => titleWrites.push(value));
+
+      await selectCommittee(fixture, COMMITTEE_A);
+
+      expect(form.get('title')?.value).toBe('Committee A Vote');
+      expect(form.get('description')?.value).toBe(descriptionFor('Committee A'));
+      expect(form.get('title')?.pristine).toBe(true);
+      expect(titleWrites).toEqual(['Committee A Vote']);
+      expect(fixture.componentInstance.prefilledTitle()).toBe(true);
+      expect(fixture.componentInstance.prefilledDescription()).toBe(true);
+
+      await selectCommittee(fixture, COMMITTEE_B);
+
+      expect(form.get('title')?.value).toBe('Committee B Vote');
+      expect(form.get('description')?.value).toBe(descriptionFor('Committee B'));
+      expect(titleWrites).toEqual(['Committee A Vote', 'Committee B Vote']);
+    });
+
+    it("keeps an organizer's edited title on a group switch while the unedited description re-seeds", async () => {
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+      await selectCommittee(fixture, COMMITTEE_A);
+
+      form.get('title')?.setValue('Approve the 2027 budget');
+      form.get('title')?.markAsDirty();
+      await selectCommittee(fixture, COMMITTEE_B);
+
+      expect(form.get('title')?.value).toBe('Approve the 2027 budget');
+      expect(form.get('description')?.value).toBe(descriptionFor('Committee B'));
+      expect(fixture.componentInstance.prefilledTitle()).toBe(false);
+      expect(fixture.componentInstance.prefilledDescription()).toBe(true);
+    });
+
+    it('clears only the unedited seed when the group is cleared', async () => {
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+      await selectCommittee(fixture, COMMITTEE_A);
+
+      form.get('description')?.setValue('Context the organizer wrote');
+      form.get('description')?.markAsDirty();
+      await selectCommittee(fixture, null);
+
+      expect(form.get('title')?.value).toBe('');
+      expect(form.get('description')?.value).toBe('Context the organizer wrote');
+      expect(fixture.componentInstance.prefilledTitle()).toBe(false);
+    });
+
+    it('seeds the title and description from a ?committee_uid= locked group', async () => {
+      routeMock.queryParamMap = of(convertToParamMap({ committee_uid: COMMITTEE_A.uid }));
+      getCommittee.mockReturnValue(of(COMMITTEE_A));
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+
+      expect(form.get('committee')?.disabled).toBe(true);
+      expect(form.get('title')?.value).toBe('Committee A Vote');
+      expect(form.get('description')?.value).toBe(descriptionFor('Committee A'));
+    });
+
+    it("keeps an edited vote's saved title, description, eligibility and close date", async () => {
+      setRouteMode(VOTE_UID);
+      fetchVote.mockReturnValue(
+        of({
+          ...unenrichedVote(),
+          name: 'Saved draft',
+          description: '',
+          committee_name: 'Committee A',
+          committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
+          end_time: '2099-03-14T18:00:00Z',
+          end_time_timezone: 'UTC',
+        } as Vote)
+      );
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+
+      expect(form.get('title')?.value).toBe('Saved draft');
+      expect(form.get('description')?.value).toBe('');
+      expect(form.get('eligible_participants')?.value).toBe('voting_rep');
+      expect(form.get('close_date')?.value).toEqual(toZonedDateCarrier(new Date('2099-03-14T18:00:00Z'), 'UTC'));
+      expect(fixture.componentInstance.prefilledTitle()).toBe(false);
+    });
+
+    it('keeps a clone\'s "Copy of" title and source description without seeding', async () => {
+      routeMock.queryParamMap = of(convertToParamMap({ clone: 'vote-uid-source' }));
+      routeMock.snapshot.queryParamMap = convertToParamMap({ clone: 'vote-uid-source' });
+      fetchVote.mockReturnValue(
+        of({
+          uid: 'vote-uid-source',
+          name: 'Original board election',
+          description: '',
+          status: PollStatus.ACTIVE,
+          project_uid: PROJECT_UID,
+          committee_uid: COMMITTEE_A.uid,
+          committee_name: COMMITTEE_A.name,
+          end_time: '2099-01-01T00:00:00Z',
+        } as Vote)
+      );
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+
+      expect(form.get('title')?.value).toBe('Copy of Original board election');
+      expect(form.get('description')?.value).toBe('');
+      expect(fixture.componentInstance.prefilledTitle()).toBe(false);
+      expect(fixture.componentInstance.prefilledDescription()).toBe(false);
+    });
+
+    it('seeds the fresh form after a clone -> create transition', async () => {
+      const queryParams$ = new Subject<ParamMap>();
+      routeMock.queryParamMap = queryParams$.asObservable();
+      fetchVote.mockReturnValue(
+        of({ uid: 'vote-uid-source', name: 'Original', status: PollStatus.ACTIVE, project_uid: PROJECT_UID, end_time: '2099-01-01T00:00:00Z' } as Vote)
+      );
+      const fixture = await createComponent();
+      routeMock.snapshot.queryParamMap = convertToParamMap({ clone: 'vote-uid-source' });
+      queryParams$.next(convertToParamMap({ clone: 'vote-uid-source' }));
+      await TestBed.inject(ApplicationRef).whenStable();
+      const cloneForm = fixture.componentInstance.form();
+
+      routeMock.snapshot.queryParamMap = convertToParamMap({});
+      queryParams$.next(convertToParamMap({}));
+      await TestBed.inject(ApplicationRef).whenStable();
+      const form = fixture.componentInstance.form();
+      expect(form).not.toBe(cloneForm);
+      expect(form.get('eligible_participants')?.value).toBe('all');
+
+      await selectCommittee(fixture, COMMITTEE_A);
+
+      expect(form.get('title')?.value).toBe('Committee A Vote');
+      expect(form.get('description')?.value).toBe(descriptionFor('Committee A'));
+      expect(fixture.componentInstance.prefilledTitle()).toBe(true);
     });
   });
 

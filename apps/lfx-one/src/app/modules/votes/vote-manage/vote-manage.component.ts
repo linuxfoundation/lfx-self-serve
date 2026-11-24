@@ -15,20 +15,31 @@ import {
   VOTE_CONDORCET_MIN_ELIGIBLE_VOTERS,
   VOTE_COMMENT_PROMPT_MAX_LENGTH,
   VOTE_DEFAULT_CLOSE_TIME,
+  VOTE_DEFAULT_ELIGIBLE_PARTICIPANTS,
   VOTE_LABEL,
   VOTE_QUESTION_MIN_LENGTH,
   VOTE_TITLE_MAX_LENGTH,
   VOTE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
 import { PollType } from '@lfx-one/shared/enums';
-import { Committee, CommitteeReference, EntityWithProject, Vote, VoteEligibleVoterCountState, VoteFormValue } from '@lfx-one/shared/interfaces';
+import {
+  Committee,
+  CommitteeReference,
+  EntityWithProject,
+  Vote,
+  VoteBasicsDefaults,
+  VoteEligibleVoterCountState,
+  VoteFormValue,
+} from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import {
   buildCreateVoteRequest,
   buildDraftUpdateVoteRequest,
   buildDraftVoteRequest,
   buildUpdateVoteRequest,
+  buildVoteBasicsDefaults,
   countEligibleVoters,
+  getDefaultVoteCloseDate,
   getUserTimezone,
   isRankedPollType,
   mapVoteToCloneFormValue,
@@ -110,6 +121,10 @@ export class VoteManageComponent {
   // source vote's own project/foundation context for entity-context sync and project-UID resolution.
   private readonly cloneSourceVote = signal<Vote | null>(null);
   private readonly internalStep = signal<number>(1);
+  // Group-based title/description last written by initGroupBasicsDefaults, and the form instance it went into —
+  // a clone -> create transition swaps the form, which must not inherit the old form's seed (#6104).
+  private readonly seededForm = signal<FormGroup | null>(null);
+  private readonly seededBasics = signal<VoteBasicsDefaults | null>(null);
   // Reactive, not a snapshot read — the rail's Create Vote dialog can navigate this reused component
   // to a new ?committee_uid= without a full reload (GH-3781); a one-time read would leave writeAccess's
   // committee leg and initCommitteeContext() pinned to whatever group was active when the route first matched.
@@ -132,6 +147,9 @@ export class VoteManageComponent {
   public readonly eligibleVoterCountState: Signal<VoteEligibleVoterCountState> = this.initEligibleVoterCountState();
   /** False while a Condorcet IRV vote's eligible count is loading or below the minimum; a failed count never blocks. */
   public readonly meetsVoterMinimum: Signal<boolean> = this.initMeetsVoterMinimum();
+  /** True while step 1's title / description still hold the group-based default seeded into this form (#6104). */
+  public readonly prefilledTitle: Signal<boolean> = this.initPrefilledBasic('title');
+  public readonly prefilledDescription: Signal<boolean> = this.initPrefilledBasic('description');
   private readonly voteEntityContext: Signal<EntityWithProject | null> = this.initVoteEntityContext();
   private readonly accessLegs = this.initWriteAccess();
   private readonly writeAccess: Signal<boolean> = this.accessLegs.optimistic;
@@ -146,6 +164,7 @@ export class VoteManageComponent {
     this.initCommitteeContext();
     this.initCloneFromQuery();
     this.initPollTypeFromQuery();
+    this.initGroupBasicsDefaults();
     evictOnWriteAccessLoss(this.writeAccess);
 
     // Context-less edit links land in the VOTE's project (not the cookie-restored one);
@@ -645,20 +664,22 @@ export class VoteManageComponent {
 
   // Private initializer functions
   private createFormGroup(): FormGroup {
+    const timezone = getUserTimezone();
     return new FormGroup(
       {
         // Step 1: Vote Basics
         title: new FormControl('', [trimmedRequired(), trimmedMinLength(3), Validators.maxLength(VOTE_TITLE_MAX_LENGTH)]),
         description: new FormControl(''),
         committee: new FormControl<CommitteeReference | null>(null, [Validators.required, validCommitteeReference()]),
-        eligible_participants: new FormControl('', [Validators.required]),
+        // Create defaults (#6104) — edit and clone hydration patch both fields, so they only survive on create.
+        eligible_participants: new FormControl(VOTE_DEFAULT_ELIGIBLE_PARTICIPANTS, [Validators.required]),
         // Seeded from ?poll_type= on create (initPollTypeFromQuery); disabled in edit mode.
         poll_type: new FormControl<PollType>(PollType.GENERIC, { nonNullable: true }),
-        close_date: new FormControl<Date | null>(null, [Validators.required]),
+        close_date: new FormControl<Date | null>(getDefaultVoteCloseDate(Date.now(), timezone), [Validators.required]),
         close_time: new FormControl<string>(VOTE_DEFAULT_CLOSE_TIME, { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
         // The v2 mutation contract requires end_time_timezone on every request (responses keep it
         // optional for legacy votes); combineDateTime also needs a zone to build a meaningful end_time.
-        timezone: new FormControl<string>(getUserTimezone(), { nonNullable: true, validators: [Validators.required] }),
+        timezone: new FormControl<string>(timezone, { nonNullable: true, validators: [Validators.required] }),
         allow_abstain: new FormControl<boolean>(false, { nonNullable: true }),
         allow_vote_change: new FormControl<boolean>(true, { nonNullable: true }),
 
@@ -670,6 +691,13 @@ export class VoteManageComponent {
       },
       { validators: voteDeadlineValidator() }
     );
+  }
+
+  private initPrefilledBasic(field: keyof VoteBasicsDefaults): Signal<boolean> {
+    return computed(() => {
+      const seeded = this.seededBasics();
+      return seeded !== null && this.seededForm() === this.form() && this.formValue()[field] === seeded[field];
+    });
   }
 
   private initIsEditMode(): Signal<boolean> {
@@ -1146,6 +1174,37 @@ export class VoteManageComponent {
           return;
         }
         this.form().get('poll_type')?.setValue(parseVoteMethodParam(pollType));
+      });
+  }
+
+  /** Prefills a new vote's title and description from its selected or locked group (#6104), mirroring the
+   *  meetings composer's pristine-guarded type template. A group change re-seeds a field only while it is
+   *  pristine and still empty or holding this form's last seed, so an organizer's edit is never overwritten;
+   *  clearing the group clears an unedited seed. Keyed on the form instance as well as the group name, because
+   *  a clone -> create transition swaps in a fresh form (initCloneFromQuery). Edit and clone keep their
+   *  hydrated values. A seed's own setValue leaves the group name unchanged, so it never re-emits. */
+  private initGroupBasicsDefaults(): void {
+    const groupContext = computed(() => ({ form: this.form(), name: (this.formValue()['committee'] as CommitteeReference | null)?.name?.trim() || null }), {
+      equal: (a, b) => a.form === b.form && a.name === b.name,
+    });
+
+    toObservable(groupContext)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ form, name }) => {
+        if (this.isEditMode() || this.route.snapshot.queryParamMap.has('clone')) {
+          return;
+        }
+        const lastSeed = this.seededForm() === form ? this.seededBasics() : null;
+        const defaults = name ? buildVoteBasicsDefaults(name) : null;
+        for (const field of ['title', 'description'] as const) {
+          const control = form.get(field);
+          const next = defaults?.[field] ?? '';
+          if (control?.pristine && (!control.value || control.value === lastSeed?.[field]) && control.value !== next) {
+            control.setValue(next);
+          }
+        }
+        this.seededForm.set(form);
+        this.seededBasics.set(defaults);
       });
   }
 
