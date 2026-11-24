@@ -7,9 +7,10 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { normalizeTShirtSize, OPEN_PROFILE_BANNER_LINK_CLICKED, PROFILE_TABS, TSHIRT_SIZES } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, UserMetadata } from '@lfx-one/shared/interfaces';
-import { buildDisplayName, formatMemberSince } from '@lfx-one/shared/utils';
+import { buildDisplayName, buildMentorshipLfxProfileFields, formatMemberSince } from '@lfx-one/shared/utils';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { IntercomService } from '@services/intercom.service';
+import { MentorshipService } from '@services/mentorship.service';
 import { ProfileAuthReturnService } from '@services/profile-auth-return.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, catchError, distinctUntilChanged, EMPTY, filter, map, of, startWith, switchMap, tap } from 'rxjs';
@@ -70,6 +71,7 @@ export class ProfileLayoutComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly rumService = inject(DataDogRumService);
   private readonly intercomService = inject(IntercomService);
+  private readonly mentorshipService = inject(MentorshipService);
 
   // Refresh trigger for profile data
   private readonly refreshProfile$ = new BehaviorSubject<void>(undefined);
@@ -177,7 +179,10 @@ export class ProfileLayoutComponent {
     afterNextRender(() => this.intercomService.update());
 
     // Flow C return: replay a save stashed before the redirect into this hub's optimistic view.
-    this.authReturn.listen((metadata) => this.applyOptimisticProfileUpdate(metadata));
+    this.authReturn.listen((metadata) => {
+      this.syncMentorshipProfiles(metadata);
+      this.applyOptimisticProfileUpdate(metadata);
+    });
   }
 
   // Public methods
@@ -198,6 +203,7 @@ export class ProfileLayoutComponent {
 
   /** Apply the optimistic update emitted by the edit drawer's `saved` output. */
   public onProfileSaved(metadata: Partial<UserMetadata>): void {
+    this.syncMentorshipProfiles(metadata);
     this.applyOptimisticProfileUpdate(metadata);
 
     // Sync a fresh avatar upload into the shared signal immediately, so the home sidebar/header
@@ -266,6 +272,31 @@ export class ProfileLayoutComponent {
       // body — even when the name is already the one shown, so this must not be skipped on equality.
       this.userService.applyDisplayName(givenName, familyName, true);
     }
+  }
+
+  /**
+   * Copies a new picture or name onto the user's mentor and mentee profiles, which Mentorship shows ahead of the LFX profile
+   * (linuxfoundation/lfx-mentorship#466). Called before the save is merged into `combinedProfile`, so a name is sent only when
+   * it differs from the one saved before; with no profile loaded yet it is sent as saved. The picture is sent only when this
+   * save uploaded one, so an unchanged save never replaces a photo kept in Mentorship with the avatar shown here.
+   *
+   * Copies are queued on `MentorshipService`, which sends them one at a time in save order, so a quick second save cannot be
+   * overtaken by the first. The BFF does nothing for a user with no mentorship record. A failure is only logged, since the
+   * LFX profile did save. The saved name is merged locally either way, so a later save here copies only a name or picture
+   * that changes again; a save from a Mentorship page, whose profile card sends every field, repairs the rows.
+   */
+  private syncMentorshipProfiles(metadata: Partial<UserMetadata>): void {
+    if (this.impersonating()) return;
+
+    const savedUser = this.combinedProfile?.user;
+    const fields = buildMentorshipLfxProfileFields({
+      firstName: metadata.given_name !== savedUser?.first_name ? metadata.given_name : undefined,
+      lastName: metadata.family_name !== savedUser?.last_name ? metadata.family_name : undefined,
+      logoUrl: metadata.picture,
+    });
+    if (Object.keys(fields).length === 0) return;
+
+    this.mentorshipService.queueLfxProfileSync(fields);
   }
 
   // After a GET populates combinedProfile, re-apply a save that was stashed because no base profile
