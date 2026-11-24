@@ -19,6 +19,7 @@ import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL } from '../constants/committees.c
 import { CommitteeMemberRole } from '../enums/committee-member.enum';
 import {
   buildCommitteeCreateQueryParams,
+  canGroupGrantSocialListening,
   buildEngagementStatCards,
   buildParentCommitteeOptions,
   buildSelfMemberRequest,
@@ -860,5 +861,13 @@ describe('getGroupChannels', () => {
 
   it('shows no chat button for an invalid chat URL', () => {
     expect(getGroupChannels({ ...base, chat_channel: 'javascript:alert(1)' })).toEqual([]);
+  });
+});
+
+describe('canGroupGrantSocialListening', () => {
+  it('is true only for Board groups', () => {
+    expect(canGroupGrantSocialListening('Board')).toBe(true);
+    expect(canGroupGrantSocialListening('Working Group')).toBe(false);
+    expect(canGroupGrantSocialListening(undefined)).toBe(false);
   });
 });

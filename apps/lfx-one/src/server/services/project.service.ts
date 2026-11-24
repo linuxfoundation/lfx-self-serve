@@ -206,6 +206,7 @@ import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { resolveAuditUserDisplayName } from '../utils/auth-helper';
+import { generateM2MToken } from '../utils/m2m-token.util';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { logger } from './logger.service';
@@ -389,6 +390,17 @@ export class ProjectService {
     // so the caller receives an error and can surface it rather than returning a stale/false view.
     const filtered = await this.fetchAllProjectsFiltered(req, {}, true);
     return filtered.map((p) => p.slug);
+  }
+
+  /**
+   * Reads a project's own record with an M2M token, for a caller that has authorised the user by other
+   * means and needs only the project's identity. Return no more than that identity to the user.
+   */
+  public async getProjectWithM2M(req: Request, uid: string): Promise<Project> {
+    const m2mToken = await generateM2MToken(req);
+    return this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, 'GET', undefined, undefined, undefined, {
+      bearerToken: m2mToken,
+    });
   }
 
   /**

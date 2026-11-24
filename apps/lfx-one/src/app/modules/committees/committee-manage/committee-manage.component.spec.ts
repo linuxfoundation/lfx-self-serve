@@ -219,6 +219,13 @@ describe('CommitteeManageComponent', () => {
     expect(navigate).toHaveBeenCalledWith([], { queryParams: { step: 1 }, queryParamsHandling: 'merge' });
   });
 
+  it('loads the group’s stored Social Listening setting', async () => {
+    getCommittee.mockReturnValue(of({ ...enrichedCommittee(), members_can_view_social_listening: true }));
+    const fixture = await createComponent();
+
+    expect(fixture.componentInstance.form.get('members_can_view_social_listening')?.value).toBe(true);
+  });
+
   describe('category preselection from ?category=', () => {
     const useRoute = (params: Record<string, string>, query: Record<string, string>) =>
       TestBed.overrideProvider(ActivatedRoute, {
@@ -1028,6 +1035,23 @@ describe('CommitteeManageComponent', () => {
       } finally {
         errorLog.mockRestore();
       }
+    });
+  });
+
+  describe('Members Can View Social Listening save rule', () => {
+    async function clean(category: string): Promise<Record<string, unknown>> {
+      getCommittee.mockReturnValue(of(enrichedCommittee()));
+      const fixture = await createComponent();
+      const instance = fixture.componentInstance as unknown as { cleanFormData: (data: Record<string, unknown>) => Record<string, unknown> };
+      return instance.cleanFormData({ category, members_can_view_social_listening: true });
+    }
+
+    it('keeps the setting on for a Board group', async () => {
+      expect((await clean('Board'))['members_can_view_social_listening']).toBe(true);
+    });
+
+    it('saves the setting as off for any other group', async () => {
+      expect((await clean('Working Group'))['members_can_view_social_listening']).toBe(false);
     });
   });
 });

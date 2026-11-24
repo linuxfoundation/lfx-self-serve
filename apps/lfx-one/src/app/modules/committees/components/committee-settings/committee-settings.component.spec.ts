@@ -21,6 +21,7 @@ function buildForm(): FormGroup {
     public: new FormControl(false),
     sso_group_enabled: new FormControl(false),
     show_meeting_attendees: new FormControl(false),
+    members_can_view_social_listening: new FormControl(false),
     chat_channel: new FormControl<string | null>(null),
     website: new FormControl<string | null>(null),
     chat_webhook_url: new FormControl<string | null>(null, [Validators.pattern(SLACK_INCOMING_WEBHOOK_URL_PATTERN)]),
@@ -291,5 +292,41 @@ describe('CommitteeSettingsComponent — chat-channel / website label associatio
     // Contained by the matching data-testid, not just any native input — catches the two ids
     // being swapped, which a bare `tagName === 'INPUT'` check would miss.
     expect(fixture.nativeElement.querySelector(`[data-testid="${inputTestId}"]`)?.contains(label.control)).toBe(true);
+  });
+});
+
+describe('CommitteeSettingsComponent — Social Listening toggle is Board only', () => {
+  let fixture: ComponentFixture<CommitteeSettingsComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsComponent],
+      providers: [provideRouter([]), provideNoopAnimations()],
+    }).compileComponents();
+    fixture = TestBed.createComponent(CommitteeSettingsComponent);
+    fixture.componentRef.setInput('form', buildForm());
+  });
+
+  function hasToggle(): boolean {
+    return !!fixture.nativeElement.querySelector('[data-testid="feature-members_can_view_social_listening"]');
+  }
+
+  it('shows the toggle for a Board group', async () => {
+    fixture.componentRef.setInput('category', 'Board');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(hasToggle()).toBe(true);
+  });
+
+  it('hides the toggle for any other group or no category', async () => {
+    fixture.componentRef.setInput('category', 'Working Group');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(hasToggle()).toBe(false);
+
+    fixture.componentRef.setInput('category', null);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(hasToggle()).toBe(false);
   });
 });

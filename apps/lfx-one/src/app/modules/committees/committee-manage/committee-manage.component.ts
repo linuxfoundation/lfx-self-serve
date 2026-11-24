@@ -18,7 +18,12 @@ import {
   ProjectContext,
   SucceededMemberOperations,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, getMissingCommitteeMemberRequirements, getSelectableCommitteeCategories } from '@lfx-one/shared/utils';
+import {
+  canGroupGrantSocialListening,
+  computeIsFoundation,
+  getMissingCommitteeMemberRequirements,
+  getSelectableCommitteeCategories,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -121,7 +126,7 @@ export class CommitteeManageComponent {
   public submitting = signal<boolean>(false);
 
   // Validation signals for template
-  private formValue = toSignal(this.form.valueChanges, { initialValue: this.form.value });
+  protected readonly formValue = toSignal(this.form.valueChanges, { initialValue: this.form.value });
   public readonly canProceed = computed(() => {
     this.formValue();
     return this.isStepValid(this.currentStep());
@@ -611,6 +616,7 @@ export class CommitteeManageComponent {
       join_mode: committee.join_mode || 'invite_only',
       member_visibility: committee.member_visibility || 'hidden',
       show_meeting_attendees: committee.show_meeting_attendees || false,
+      members_can_view_social_listening: committee.members_can_view_social_listening || false,
     });
   }
 
@@ -641,6 +647,7 @@ export class CommitteeManageComponent {
       join_mode: new FormControl('invite_only'),
       member_visibility: new FormControl('hidden'),
       show_meeting_attendees: new FormControl(false),
+      members_can_view_social_listening: new FormControl(false),
     });
   }
 
@@ -683,6 +690,12 @@ export class CommitteeManageComponent {
         cleaned[key] = value;
       }
     });
+
+    // The toggle is hidden for non-Board groups, so never save a value the user can no longer see.
+    if ('members_can_view_social_listening' in cleaned) {
+      cleaned['members_can_view_social_listening'] =
+        canGroupGrantSocialListening(formData['category'] as string | undefined) && cleaned['members_can_view_social_listening'] === true;
+    }
 
     return cleaned;
   }

@@ -82,6 +82,24 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     await fixture.whenStable();
   });
 
+  it('saves Members Can View Social Listening as on for a Board group', () => {
+    component.form.controls.members_can_view_social_listening.setValue(true);
+
+    component.saveSettings();
+
+    expect(updateCommittee.mock.calls[0][1].members_can_view_social_listening).toBe(true);
+  });
+
+  it('saves Members Can View Social Listening as off when the group is not a Board', () => {
+    component.form.controls.members_can_view_social_listening.setValue(true);
+    component.form.controls.category.setValue('Working Group');
+
+    // Skip the Change Group Type confirmation and save as if it were accepted.
+    (component as unknown as { persistSettings: () => void }).persistSettings();
+
+    expect(updateCommittee.mock.calls[0][1].members_can_view_social_listening).toBe(false);
+  });
+
   it('omits chat_webhook_url from the save payload when the control is pristine', () => {
     component.saveSettings();
 
