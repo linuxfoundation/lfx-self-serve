@@ -2526,6 +2526,11 @@ export class ImplementationTabComponent implements OnInit {
     { initialValue: this.campaignForm.controls.countryCode.value }
   );
 
+  /** The event name as typed, which an unnamed LinkedIn ad's default name is built from (#5764 row 17). */
+  private readonly linkedInEventName = toSignal(this.campaignForm.controls.eventName.valueChanges.pipe(startWith(this.campaignForm.controls.eventName.value)), {
+    initialValue: this.campaignForm.controls.eventName.value,
+  });
+
   /**
    * A counter that ticks on every form edit, so `canSubmit` can be a real `computed`.
    *
@@ -5447,7 +5452,7 @@ export class ImplementationTabComponent implements OnInit {
     }
     this.emitDraft();
   }
-  /** Edit one LinkedIn variant's intro text or headline. */
+  /** Edit one LinkedIn variant's intro text, headline, ad name, description or call to action. */
   protected onLinkedInVariantTextChange(key: string, field: 'introText' | 'headline' | 'name' | 'description' | 'callToAction', value: string): void {
     this.linkedInVariants.update((variants) => variants.map((variant) => (variant.key === key ? { ...variant, [field]: value } : variant)));
     this.emitDraft();
@@ -7827,6 +7832,7 @@ export class ImplementationTabComponent implements OnInit {
         showSection: this.showLinkedInSection(),
         uploadEnabled: this.linkedInAssetUploadEnabled(),
         capabilityRead: this.createCapabilityRead(),
+        eventName: this.linkedInEventName() ?? '',
       })
     );
   }

@@ -8322,6 +8322,8 @@ export interface LinkedInVariantViewsInput {
   /** `linkedInAssetUploadEnabled` as the page holds it: `null` while unknown. */
   uploadEnabled: boolean | null;
   capabilityRead: CampaignCapabilityReadState;
+  /** The campaign's event name, which an unnamed ad's default name is built from (#5764 row 17). */
+  eventName?: string;
 }
 
 /** `CampaignLinkedInImageAssetBlock`'s X sibling, for the authored tweet's image, with the same kinds. */

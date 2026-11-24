@@ -121,7 +121,7 @@ export function linkedInVariantViews(input: LinkedInVariantViewsInput): LinkedIn
   const pickerBlocked = !briefId || input.briefSaving;
   const orphaned = linkedInImageUploadOrphaned(slot, variants);
   const slotIndex = variants.findIndex((variant) => variant.key === slot.variantKey);
-  const fieldErrors = linkedInVariantFieldErrors(variants);
+  const fieldErrors = linkedInVariantFieldErrors(variants, input.eventName ?? '');
   return variants.map((variant, index): LinkedInVariantView => {
     const ownsSlot = slot.variantKey === variant.key;
     const imageUploading = ownsSlot && uploading;

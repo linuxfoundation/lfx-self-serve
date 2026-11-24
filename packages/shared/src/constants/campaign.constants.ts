@@ -820,22 +820,28 @@ export const LINKEDIN_CALL_TO_ACTION_LABELS = [
   'SHOP_NOW',
 ] as const;
 
-/** The calls to action the LinkedIn variant editor offers, in `LINKEDIN_CALL_TO_ACTION_LABELS` order, as they read. */
-export const LINKEDIN_CALL_TO_ACTION_OPTIONS: readonly LinkedInCallToActionOption[] = [
-  { value: 'APPLY', label: 'Apply' },
-  { value: 'DOWNLOAD', label: 'Download' },
-  { value: 'VIEW_QUOTE', label: 'View quote' },
-  { value: 'LEARN_MORE', label: 'Learn more' },
-  { value: 'SIGN_UP', label: 'Sign up' },
-  { value: 'SUBSCRIBE', label: 'Subscribe' },
-  { value: 'REGISTER', label: 'Register' },
-  { value: 'JOIN', label: 'Join' },
-  { value: 'ATTEND', label: 'Attend' },
-  { value: 'REQUEST_DEMO', label: 'Request demo' },
-  { value: 'SEE_MORE', label: 'See more' },
-  { value: 'BUY_NOW', label: 'Buy now' },
-  { value: 'SHOP_NOW', label: 'Shop now' },
-];
+/** How each of `LINKEDIN_CALL_TO_ACTION_LABELS` reads in the LinkedIn variant editor; a missing or misspelt label fails type-checking. */
+const LINKEDIN_CALL_TO_ACTION_TEXT: Record<(typeof LINKEDIN_CALL_TO_ACTION_LABELS)[number], string> = {
+  APPLY: 'Apply',
+  DOWNLOAD: 'Download',
+  VIEW_QUOTE: 'View quote',
+  LEARN_MORE: 'Learn more',
+  SIGN_UP: 'Sign up',
+  SUBSCRIBE: 'Subscribe',
+  REGISTER: 'Register',
+  JOIN: 'Join',
+  ATTEND: 'Attend',
+  REQUEST_DEMO: 'Request demo',
+  SEE_MORE: 'See more',
+  BUY_NOW: 'Buy now',
+  SHOP_NOW: 'Shop now',
+};
+
+/** The calls to action the LinkedIn variant editor offers, in `LINKEDIN_CALL_TO_ACTION_LABELS` order. */
+export const LINKEDIN_CALL_TO_ACTION_OPTIONS: readonly LinkedInCallToActionOption[] = LINKEDIN_CALL_TO_ACTION_LABELS.map((value) => ({
+  value,
+  label: LINKEDIN_CALL_TO_ACTION_TEXT[value],
+}));
 
 /**
  * The longest LinkedIn ad name and description, in runes after campaign-service's normalization (`maxCreativeNameLen`,

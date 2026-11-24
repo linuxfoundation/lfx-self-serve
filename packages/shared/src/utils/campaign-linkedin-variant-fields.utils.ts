@@ -7,8 +7,8 @@ import { linkedInCreativeTextLength, normalizeLinkedInCreativeName } from './cam
 
 /**
  * A LinkedIn variant's optional ad name, description and call to action (#5764 rows 16–17), mirroring campaign-service
- * v1.0.38 (`internal/platform/linkedin/variants.go`, #588, #589). One set of rules for the create route (a 400) and,
- * later, the Implement tab.
+ * v1.0.38 (`internal/platform/linkedin/variants.go`, #588, #589). One set of rules for the create route (a 400,
+ * `linkedInVariantFieldsRefusal`) and the Implement tab (the errors under each field, `linkedInVariantFieldErrors`).
  */
 
 const FIELD_LABELS = { name: 'ad name', description: 'description', callToAction: 'call to action' } as const;
@@ -106,17 +106,28 @@ export function compactLinkedInVariantFields(variant: Record<string, unknown>): 
  * campaign-service's limits once normalized, or a name another variant already has. `''` for none. The create route
  * refuses the same, so Create is held while any is set.
  */
-export function linkedInVariantFieldErrors(variants: readonly { name?: string; description?: string }[]): { name: string; description: string }[] {
-  const seen = new Map<string, number>();
+export function linkedInVariantFieldErrors(
+  variants: readonly { name?: string; description?: string }[],
+  eventName = ''
+): { name: string; description: string }[] {
+  // An unnamed ad goes out as "<event> | variant-N" (campaign-service `creativeName`), so a typed name equal to another
+  // ad's default collides too. Skipped while the event name is blank: campaign-service refuses that on its own.
+  const event = eventName.trim().replaceAll('|', '-');
+  const resolved = variants.map((variant, index) => {
+    const typed = normalizeLinkedInCreativeName(variant.name ?? '');
+    if (typed !== '') return typed;
+    return event === '' ? '' : `${event} | variant-${index + 1}`;
+  });
   return variants.map((variant, index) => {
     const name = normalizeLinkedInCreativeName(variant.name ?? '');
     let nameError = '';
     if (Array.from(name).length > LINKEDIN_VARIANT_FIELD_LIMITS.name) {
       nameError = `The ad name can be at most ${LINKEDIN_VARIANT_FIELD_LIMITS.name} characters.`;
-    } else if (name !== '' && seen.has(name)) {
-      nameError = `Ad ${(seen.get(name) ?? 0) + 1} already has this name. Give each ad its own name.`;
+    } else if (name !== '') {
+      // An earlier ad with the same name, or any unnamed ad whose default is this name.
+      const other = resolved.findIndex((n, i) => i !== index && n === name && (i < index || normalizeLinkedInCreativeName(variants[i].name ?? '') === ''));
+      if (other !== -1) nameError = `Ad ${other + 1} already has this name. Give each ad its own name.`;
     }
-    if (name !== '' && !seen.has(name)) seen.set(name, index);
     const tooLong = linkedInCreativeTextLength(variant.description ?? '') > LINKEDIN_VARIANT_FIELD_LIMITS.description;
     return { name: nameError, description: tooLong ? `The description can be at most ${LINKEDIN_VARIANT_FIELD_LIMITS.description} characters.` : '' };
   });

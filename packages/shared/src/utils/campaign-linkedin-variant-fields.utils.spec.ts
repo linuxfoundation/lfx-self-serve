@@ -88,4 +88,22 @@ describe('linkedInVariantFieldErrors', () => {
     expect(errors.map((e) => e.name)).toEqual(names);
     expect(errors.map((e) => e.description)).toEqual(descriptions);
   });
+  it.each([
+    [
+      "another ad's default name",
+      [{ name: 'KubeCon EU 2026 | variant-2' }, {}],
+      'KubeCon EU 2026',
+      ['Ad 2 already has this name. Give each ad its own name.', ''],
+    ],
+    [
+      'a default name with the event trimmed and its bar replaced',
+      [{}, { name: 'Open - Source | variant-1' }],
+      ' Open | Source ',
+      ['', 'Ad 1 already has this name. Give each ad its own name.'],
+    ],
+    ['its own default name', [{ name: 'KubeCon EU 2026 | variant-1' }], 'KubeCon EU 2026', ['']],
+    ['any name while the event name is blank', [{ name: ' | variant-2' }, {}], '', ['', '']],
+  ])('catches %s', (_name, variants, eventName, names) => {
+    expect(linkedInVariantFieldErrors(variants, eventName).map((e) => e.name)).toEqual(names);
+  });
 });
