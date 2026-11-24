@@ -100,6 +100,8 @@ import {
   KeywordMetricsResponse,
   MetaCustomAudiencesResult,
   MetaLeadFormsResult,
+  MetaTargetingSearchResult,
+  MetaTargetingSearchType,
   LinkedInAccount,
   LinkedInCreateAccountResult,
   LinkedInMonitorResponse,
@@ -771,6 +773,14 @@ export class CampaignService {
    */
   public getMetaLeadForms(projectSlug: string): Observable<MetaLeadFormsResult> {
     return this.http.get<MetaLeadFormsResult>('/api/campaigns/meta/lead-forms', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Meta's interests, behaviors or job titles matching `query`, for the Implement tab's detailed targeting (#5904
+   * row 4). A 404 while the search is off on this deployment, and a 503 when Meta is busy or refuses the read.
+   */
+  public searchMetaTargetingOptions(projectSlug: string, type: MetaTargetingSearchType, query: string): Observable<MetaTargetingSearchResult> {
+    return this.http.get<MetaTargetingSearchResult>('/api/campaigns/meta/targeting-search', { params: { project: projectSlug, type, query } });
   }
 
   /**

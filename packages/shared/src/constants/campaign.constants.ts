@@ -27,6 +27,7 @@ import type {
   MetaAudienceGender,
   MetaAudienceTargetingDraft,
   MetaCustomAudienceListView,
+  MetaTargetingKind,
   CampaignKeyword,
   CampaignLabelOption,
   CampaignNegativeKeywordMatchType,
@@ -970,6 +971,14 @@ export const META_TARGETING_SEARCH_TYPES = ['interest', 'behavior', 'work_positi
 /** A targeting search query is 2–100 characters after trimming, as campaign-service checks it. */
 export const META_TARGETING_QUERY_MIN_LENGTH = 2;
 export const META_TARGETING_QUERY_MAX_LENGTH = 100;
+/** How long the Implement tab's targeting search waits after the last keystroke before it asks Meta. */
+export const META_TARGETING_SEARCH_DEBOUNCE_MS = 300;
+/** The detailed-targeting lists the Implement tab offers, in order, with the search kind behind each. */
+export const META_TARGETING_KINDS: readonly MetaTargetingKind[] = [
+  { type: 'interest', key: 'interests', label: 'Interests' },
+  { type: 'behavior', key: 'behaviors', label: 'Behaviors' },
+  { type: 'work_position', key: 'workPositions', label: 'Job titles' },
+];
 export const META_AUDIENCE_GENDERS: readonly MetaAudienceGender[] = ['male', 'female'];
 /** The custom-audience lists the Implement tab offers, in order. */
 export const META_CUSTOM_AUDIENCE_LISTS: readonly MetaCustomAudienceListView[] = [
@@ -1682,6 +1691,10 @@ export const META_BEHAVIOR_TARGETING_OFF_MESSAGE =
 /** The 400 a create gets for Meta languages while language targeting is off on this deployment. */
 export const META_LOCALE_TARGETING_OFF_MESSAGE = 'Meta language targeting is not available on this deployment. Reload the page, then create again without it.';
 /** The 503 a Meta targeting search gets when Meta or campaign-service cannot answer it (a throttle is not retried upstream). */
+/** A targeting search refused with a 404: the search is off on this deployment. */
+export const META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE = 'Meta targeting search is not available on this deployment.';
+/** A targeting search that failed for any other reason. */
+export const META_TARGETING_SEARCH_FAILED_MESSAGE = "Meta search didn't answer. Search again.";
 export const META_TARGETING_SEARCH_BUSY_MESSAGE = "Meta targeting search isn't available right now. Wait a few seconds, then search again.";
 /**
  * The error `code` (HTTP 403) of a Meta lead form read, or a create naming a form, refused because the caller

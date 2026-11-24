@@ -8,10 +8,20 @@ import {
   META_BEHAVIOR_TARGETING_OFF_MESSAGE,
   META_INTEREST_TARGETING_OFF_MESSAGE,
   META_LOCALE_TARGETING_OFF_MESSAGE,
+  META_TARGETING_SEARCH_BUSY_MESSAGE,
+  META_TARGETING_SEARCH_FAILED_MESSAGE,
+  META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE,
 } from '../constants/campaign.constants';
-import type { MetaTargetingFlags } from '../interfaces/campaign.interface';
+import type { MetaTargetingFlags, MetaTargetingPick, MetaTargetingSearchOption } from '../interfaces/campaign.interface';
 import {
   compactMetaDetailedTargeting,
+  emptyMetaDetailedTargetingPicks,
+  metaTargetingKindsShown,
+  metaTargetingPicksWith,
+  metaTargetingPicksWithout,
+  metaTargetingSearchChoices,
+  metaTargetingSearchFailure,
+  metaTargetingSearchQuery,
   isMetaTargetingSearchType,
   metaDetailedTargetingRefusal,
   metaTargetingFlagRefusal,
@@ -138,5 +148,67 @@ describe('metaTargetingQueryRefusal', () => {
   it('narrows the search type', () => {
     expect(isMetaTargetingSearchType('work_position')).toBe(true);
     expect(isMetaTargetingSearchType('industry')).toBe(false);
+  });
+});
+
+describe('the detailed-targeting picker rules', () => {
+  const pick = (id: string, name = `Name ${id}`): MetaTargetingPick => ({ id, name });
+  const option = (id: string): MetaTargetingSearchOption => ({ id, name: `Name ${id}`, path: [] });
+  const full = Array.from({ length: 25 }, (_, i) => pick(String(1000 + i)));
+
+  it('starts every list empty, with a fresh object each time', () => {
+    expect(emptyMetaDetailedTargetingPicks()).toEqual({ interests: [], behaviors: [], workPositions: [] });
+    expect(emptyMetaDetailedTargetingPicks()).not.toBe(emptyMetaDetailedTargetingPicks());
+  });
+
+  it.each([
+    [{ interest: true, behavior: true }, ['interests', 'behaviors', 'workPositions']],
+    [{ interest: true, behavior: false }, ['interests']],
+    [{ interest: false, behavior: true }, ['behaviors', 'workPositions']],
+    [{ interest: false, behavior: false }, []],
+  ])('shows the lists %j turns on', (flags, keys) => {
+    expect(metaTargetingKindsShown(flags).map((kind) => kind.key)).toEqual(keys);
+  });
+
+  it.each([
+    ['  devops  ', 'devops'],
+    ['k', ''],
+    ['  k ', ''],
+    ['a\u0007b', ''],
+    ['x'.repeat(120), 'x'.repeat(100)],
+    ['😀'.repeat(101), '😀'.repeat(100)],
+  ])('searches %j as %j', (raw, query) => {
+    expect(metaTargetingSearchQuery(raw)).toBe(query);
+  });
+
+  it('adds a pick once, trimmed, and keeps its name', () => {
+    expect(metaTargetingPicksWith([], { id: ' 6003 ', name: ' Open source ' })).toEqual([{ id: '6003', name: 'Open source' }]);
+    expect(metaTargetingPicksWith([], { id: '6003', name: ' ' })).toEqual([{ id: '6003', name: '6003' }]);
+  });
+
+  it.each([
+    ['already picked', [pick('6003')], '6003'],
+    ['not a Meta id', [], '06003'],
+    ['the list is full', full, '6003'],
+  ])('leaves the list alone when the option is %s', (_case, picks, id) => {
+    expect(metaTargetingPicksWith(picks, option(id))).toBe(picks);
+  });
+
+  it('removes a pick by id', () => {
+    expect(metaTargetingPicksWithout([pick('1'), pick('2')], '1')).toEqual([pick('2')]);
+  });
+
+  it('disables a picked row, and every row once the list is full', () => {
+    expect(metaTargetingSearchChoices([option('1'), option('2')], [pick('1')]).map((c) => c.disabled)).toEqual([true, false]);
+    expect(metaTargetingSearchChoices([option('9')], full).map((c) => c.disabled)).toEqual([true]);
+  });
+
+  it.each([
+    [503, META_TARGETING_SEARCH_BUSY_MESSAGE],
+    [404, META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE],
+    [500, META_TARGETING_SEARCH_FAILED_MESSAGE],
+    [0, META_TARGETING_SEARCH_FAILED_MESSAGE],
+  ])('explains a failed search (status %i)', (status, message) => {
+    expect(metaTargetingSearchFailure(status)).toBe(message);
   });
 });

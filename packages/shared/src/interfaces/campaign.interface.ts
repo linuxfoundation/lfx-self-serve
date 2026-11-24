@@ -2537,6 +2537,38 @@ export interface MetaTargetingSearchResult {
   options: MetaTargetingSearchOption[];
 }
 
+/** A detailed-targeting id list on `metaConfig.targeting`. */
+export type MetaDetailedTargetingKey = 'interests' | 'behaviors' | 'workPositions';
+
+/** One detailed-targeting list the Implement tab offers: the search kind that fills it and the list it fills. */
+export interface MetaTargetingKind {
+  type: MetaTargetingSearchType;
+  key: MetaDetailedTargetingKey;
+  label: string;
+}
+
+/** One picked targeting option: the id sent, and the name kept so its chip reads the same after a restore. */
+export interface MetaTargetingPick {
+  id: string;
+  name: string;
+}
+
+/** The detailed-targeting picks of a Meta create, one list per kind. */
+export type MetaDetailedTargetingPicks = Record<MetaDetailedTargetingKey, MetaTargetingPick[]>;
+
+/** A search result row as the picker lists it: disabled when already picked or when its list is full. */
+export interface MetaTargetingSearchChoice extends MetaTargetingSearchOption {
+  disabled: boolean;
+}
+
+/** The picker's targeting search: the kind it answers, its rows, whether it is waiting, and why it failed. */
+export interface MetaTargetingSearchState {
+  type: MetaTargetingSearchType | null;
+  options: MetaTargetingSearchOption[];
+  pending: boolean;
+  failure: string | null;
+}
+
 /** campaign-service's raw answer for `search-meta-targeting-options` (snake_case, as on the wire). */
 export interface CampaignServiceMetaTargetingSearch {
   type?: string;

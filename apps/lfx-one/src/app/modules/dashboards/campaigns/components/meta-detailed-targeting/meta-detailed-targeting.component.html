@@ -1,0 +1,73 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (lists().length > 0) {
+  <fieldset class="flex flex-col gap-3" data-testid="meta-detailed-targeting">
+    <legend class="text-xs font-medium text-gray-700">Detailed targeting</legend>
+    <p class="text-xs text-gray-500" data-testid="meta-detailed-targeting-hint">
+      People who match any one of these are included. With Advantage+ audience on, Meta treats them as suggestions and may reach beyond them.
+    </p>
+    @for (list of lists(); track list.type) {
+      <div class="flex flex-col gap-2" [attr.data-testid]="'meta-detailed-targeting-' + list.key">
+        <span class="text-xs font-medium text-gray-700">{{ list.label }} ({{ list.picks.length }} of {{ maxIds }})</span>
+        @if (!list.full) {
+          <lfx-autocomplete
+            [form]="searchForm"
+            [control]="list.type"
+            [inputId]="'meta-detailed-targeting-' + list.key + '-search'"
+            [suggestions]="list.choices"
+            optionLabel="name"
+            optionDisabled="disabled"
+            [placeholder]="'Search ' + list.label.toLowerCase()"
+            [delay]="0"
+            [forceSelection]="true"
+            [invalid]="list.failure !== null"
+            styleClass="w-72"
+            [dataTestId]="'meta-detailed-targeting-' + list.key + '-input'"
+            (completeMethod)="onSearch(list.type, $event)"
+            (onSelect)="onSelect(list, $event)"
+            (onClear)="onClear()"
+            class="block">
+            <ng-template #item let-option>
+              <div class="flex flex-col">
+                <span class="text-xs font-medium text-gray-900">{{ option.name }}</span>
+                @if (option.pathLabel) {
+                  <span class="text-[10px] text-gray-500">{{ option.pathLabel }}</span>
+                }
+              </div>
+            </ng-template>
+            <ng-template #empty>
+              <span class="text-xs text-gray-500">{{ list.emptyMessage }}</span>
+            </ng-template>
+          </lfx-autocomplete>
+        } @else {
+          <span class="text-xs text-gray-500" [attr.data-testid]="'meta-detailed-targeting-' + list.key + '-full'">
+            Maximum of {{ maxIds }} reached. Remove one to add another.
+          </span>
+        }
+        @if (list.failure; as failure) {
+          <p role="alert" class="text-xs text-red-600" [attr.data-testid]="'meta-detailed-targeting-' + list.key + '-error'">{{ failure }}</p>
+        }
+        @if (list.picks.length > 0) {
+          <div class="flex flex-wrap items-center gap-2">
+            @for (pick of list.picks; track pick.id) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+                [attr.data-testid]="'meta-detailed-targeting-' + list.key + '-' + pick.id">
+                {{ pick.name }}
+                <button
+                  type="button"
+                  (click)="onRemove(list, pick.id)"
+                  class="ml-0.5 text-blue-600 hover:text-blue-800"
+                  [attr.aria-label]="'Remove ' + pick.name"
+                  [attr.data-testid]="'meta-detailed-targeting-' + list.key + '-remove-' + pick.id">
+                  <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                </button>
+              </span>
+            }
+          </div>
+        }
+      </div>
+    }
+  </fieldset>
+}
