@@ -14,7 +14,8 @@ import { META_TARGETING_SEARCH_BUSY_MESSAGE } from '@lfx-one/shared/constants';
 /**
  * Router-level coverage for the Meta targeting search (#5904 row 4): it sits behind the blanket
  * `requireCampaignManager` (Meta taxonomy, campaign-service's own gate), checks the kind and query before any
- * upstream call, camel-cases the answer, and turns a Meta throttle into a "busy, try again" 503.
+ * upstream call, camel-cases the answer, and turns a Meta throttle into a "busy, try again" 503. The LinkedIn location
+ * search (#5545) shares the harness for its guard test, at the end.
  */
 
 const { svcSearch, svcLinkedInSearch, isServerFeatureEnabled, checkProjectGlobalMarketingOpsStrict, blanketGuard } = vi.hoisted(() => ({
@@ -216,13 +217,13 @@ describe('GET /api/campaigns/meta/targeting-search', () => {
 
 // The LinkedIn location search (#5545) shares this router harness: it sits behind the same blanket guard.
 describe('GET /api/campaigns/linkedin/geo-targets', () => {
-  it('runs behind requireCampaignManager and answers the locations', async () => {
+  it('runs behind requireCampaignManager', async () => {
     svcLinkedInSearch.mockResolvedValueOnce({ facet: 'locations', entities: [{ urn: 'urn:li:geo:103035651', name: 'Berlin, Germany' }], entity_count: 1 });
 
     const res = await fetch(`${baseUrl}/api/campaigns/linkedin/geo-targets?project=tlf&q=Berlin`);
 
     expect(blanketGuard).toHaveBeenCalledWith('/linkedin/geo-targets');
+    // The answer's shape is the controller spec's (`campaign.controller.linkedin-geo-search.spec.ts`).
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ locations: [{ urn: 'urn:li:geo:103035651', label: 'Berlin, Germany' }] });
   });
 });
