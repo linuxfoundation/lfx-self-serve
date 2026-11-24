@@ -39,7 +39,11 @@ const imageUrl = z.union([
 const isoDay = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD')
-  .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)), 'must be a real date');
+  // Date.parse rolls impossible days over (2027-02-30 → March 2), so round-trip the day instead.
+  .refine((value) => {
+    const time = Date.parse(`${value}T00:00:00Z`);
+    return !Number.isNaN(time) && new Date(time).toISOString().slice(0, 10) === value;
+  }, 'must be a real date');
 
 const slug = z.string().regex(SHARE_KIT_SLUG_PATTERN, 'must be lowercase letters, digits and hyphens');
 

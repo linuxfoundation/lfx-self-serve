@@ -61,6 +61,12 @@ describe('validateShareKitContent', () => {
     expect(result.problems.join('\n')).not.toContain('SECRET');
   });
 
+  it.each(['2027-02-29', '2027-02-30', '2027-04-31', '2027-13-01'])('rejects the impossible date %s', (day) => {
+    const kit = validKit();
+    kit['startDate'] = day;
+    expect(validateShareKitContent(kit).problems.join('\n')).toContain('startDate: must be a real date');
+  });
+
   it('rejects an end date before the start date', () => {
     const kit = validKit();
     kit['endDate'] = '2027-04-27';

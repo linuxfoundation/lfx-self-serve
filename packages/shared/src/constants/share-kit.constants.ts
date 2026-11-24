@@ -54,3 +54,10 @@ export const SHARE_KIT_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /** Graphics may be served from the app's public folder under this path. */
 export const SHARE_KIT_LOCAL_ASSET_PREFIX = '/share-kits/';
+
+/**
+ * The share kit read, as `publicApiRateLimiter` sees it (mount-relative). It is skipped there because the
+ * page's SSR fetch arrives over loopback, so every visitor would otherwise share one per-IP budget; the
+ * read is an in-memory lookup of repo-owned content.
+ */
+export const SHARE_KIT_PUBLIC_READ_PATTERN = /^\/events\/[a-z0-9-]+\/share-kit\/?$/;

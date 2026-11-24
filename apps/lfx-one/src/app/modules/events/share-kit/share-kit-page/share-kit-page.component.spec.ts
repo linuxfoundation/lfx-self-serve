@@ -131,6 +131,17 @@ describe('ShareKitPageComponent', () => {
     expect(trackEvent).toHaveBeenCalledWith('share_kit_cfp_click', { event_slug: 'example-summit-2027', foundation: 'example-foundation', link: 'cfp' });
   });
 
+  it('offers same-origin graphics as downloads and other hosts as a new tab', async () => {
+    const external = { label: 'Banner', url: 'https://cdn.example.org/banner.png', alt: 'Banner', width: 1200, height: 628 };
+    await setup(of({ ...kit, graphics: [kit.graphics[0], external] }));
+    (fixture.componentInstance as unknown as { tab: { set(value: string): void } }).tab.set('graphics');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="share-kit-graphic-download-0"]').hasAttribute('download')).toBe(true);
+    const open = fixture.nativeElement.querySelector('[data-testid="share-kit-graphic-open-1"]') as HTMLAnchorElement;
+    expect(open.hasAttribute('download')).toBe(false);
+    expect(open.getAttribute('target')).toBe('_blank');
+  });
+
   it('shows the not-found state for an unknown event', async () => {
     await setup(throwError(() => new HttpErrorResponse({ status: 404 })));
     expect(text('share-kit-not-found')).toContain("We couldn't find a share kit for this event.");
