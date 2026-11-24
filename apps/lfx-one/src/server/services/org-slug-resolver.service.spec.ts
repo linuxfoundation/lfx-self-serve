@@ -33,7 +33,7 @@ vi.mock('./microservice-proxy.service', () => ({
   },
 }));
 vi.mock('./valkey.service', () => ({ buildPerUserOrgKey, valkeyService: { withCache } }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername, getEffectiveEmail: () => null }));
 vi.mock('./org-cla-only-orgs.service', () => ({
   OrgClaOnlyOrgsService: class {
     public resolveOrg = resolveClaOnlyOrg;
@@ -390,6 +390,16 @@ describe('OrgSlugResolverService — all employee view company (#5845)', () => {
       });
     });
 
+    it('answers a retriable 503, never a 409, when two readable companies share the slug and the preferred employee company cannot be confirmed', async () => {
+      resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
+      proxyRequest.mockResolvedValueOnce(page([{ uid: UID_A }, { uid: UID_C }])).mockResolvedValueOnce(page([]));
+
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_B)).rejects.toMatchObject({
+        statusCode: 503,
+        code: 'ROLE_GRANTS_UNAVAILABLE',
+      });
+    });
+
     it('keeps the readable company on a failed check when the caller\u2019s selection is itself readable', async () => {
       resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
       proxyRequest.mockResolvedValueOnce(page([{ uid: UID_A }])).mockResolvedValueOnce(page([{ uid: UID_C, slug: 'other-slug' }]));
@@ -453,6 +463,29 @@ describe('OrgSlugResolverService — all employee view company (#5845)', () => {
 
     await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).rejects.toMatchObject({ statusCode: 503, code: 'ROLE_GRANTS_UNAVAILABLE' });
     await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).rejects.toMatchObject({ statusCode: 503, code: 'ROLE_GRANTS_UNAVAILABLE' });
+  });
+
+  it('does not hold the address guard on a hung employee lookup: it gives up after the slug budget and answers the CLA-only company or the retriable 503', async () => {
+    vi.useFakeTimers();
+    try {
+      proxyRequest.mockResolvedValue(page([]));
+      resolveEmployeeView.mockReturnValue(new Promise(() => undefined));
+      resolveClaOnlyOrg.mockResolvedValue({ uid: UID_A, slug: null, name: 'Acme Motors', claOnly: true });
+
+      const withCla = new OrgSlugResolverService().resolveSegment(req, UID_A);
+      await vi.advanceTimersByTimeAsync(ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS + 1);
+      await expect(withCla).resolves.toMatchObject({ outcome: 'hit', org: { claOnly: true } });
+
+      resolveClaOnlyOrg.mockResolvedValue(null);
+      const without = expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).rejects.toMatchObject({
+        statusCode: 503,
+        code: 'ROLE_GRANTS_UNAVAILABLE',
+      });
+      await vi.advanceTimersByTimeAsync(ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS + 1);
+      await without;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('asks nothing of the employee view when the flag is off', async () => {

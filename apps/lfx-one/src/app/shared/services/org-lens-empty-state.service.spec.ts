@@ -982,6 +982,24 @@ describe('OrgLensEmptyStateService — all employee view and full-access readers
     expect(h.service.pageState()).toBeNull();
   });
 
+  it.each([
+    ['an employee-view company', 'employee'],
+    ['a full-access company', 'full'],
+  ])('keeps the Retry notice for %s when the lookup of what the caller holds failed', (_label, kind) => {
+    if (kind === 'employee') h.employeeViewOrgUids.set(new Set([OTHER]));
+    else h.fullAccessOrgUids.set(new Set([OTHER]));
+    h.claLookupFailed.set(true);
+
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it('does not show the Retry notice for an employee-view company when nothing failed', () => {
+    h.employeeViewOrgUids.set(new Set([OTHER]));
+
+    expect(h.service.listIncomplete()).toBe(false);
+  });
+
   it('does not let the signals for another company open this one', () => {
     h.fullAccessOrgUids.set(new Set([HELD]));
     h.employeeViewOrgUids.set(new Set([HELD]));

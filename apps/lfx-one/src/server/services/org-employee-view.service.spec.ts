@@ -7,14 +7,15 @@ import type { RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getEffectiveUsername, resolveVerifiedUserEmails, generateM2MToken, loggerWarning } = vi.hoisted(() => ({
+const { getEffectiveUsername, getEffectiveEmail, resolveVerifiedUserEmails, generateM2MToken, loggerWarning } = vi.hoisted(() => ({
   loggerWarning: vi.fn(),
   generateM2MToken: vi.fn(),
   getEffectiveUsername: vi.fn(() => 'employee'),
+  getEffectiveEmail: vi.fn((): string | null => 'dev@acme-motors.example'),
   resolveVerifiedUserEmails: vi.fn(),
 }));
 
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => getEffectiveUsername() }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => getEffectiveUsername(), getEffectiveEmail: () => getEffectiveEmail() }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken }));
 vi.mock('../helpers/user-emails.helper', () => ({ resolveVerifiedUserEmails }));
 vi.mock('./logger.service', () => ({ logger: { info: vi.fn(), warning: loggerWarning, error: vi.fn(), debug: vi.fn() } }));
@@ -87,6 +88,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   OrgEmployeeViewService.clearCache();
   getEffectiveUsername.mockReturnValue('employee');
+  getEffectiveEmail.mockReturnValue('dev@acme-motors.example');
   generateM2MToken.mockResolvedValue('m2m-token');
 });
 
@@ -337,6 +339,27 @@ describe('OrgEmployeeViewService.resolve', () => {
     await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
   });
 
+  it.each([
+    ['a missing resources array', {}],
+    ['a null body', null],
+    ['a null resources array', { resources: null }],
+  ])('rejects, and does not keep a denial, on a company lookup that answers %s', async (_label, body) => {
+    const { svc, proxy } = build();
+    // The page fetch retries a 5xx, so the malformed answer must persist for the whole retry budget.
+    proxy.proxyRequest.mockResolvedValue(body);
+
+    await expect(svc.resolve(req(), ORG_UID)).rejects.toMatchObject({ code: 'EMPLOYEE_VIEW_LOOKUP_INVALID_RESPONSE' });
+    // Not cached as "not an employee": once the upstream answers properly, the next attempt succeeds.
+    proxy.proxyRequest.mockResolvedValue(page([[ORG_UID, acme]]));
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('treats a confirmed empty page as no company, not as a malformed answer', async () => {
+    const { svc } = build({ orgs: [] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: false });
+  });
+
   it('shares ONE lookup between the specific-company and unscoped calls of one page', async () => {
     const { svc, workHistory } = build();
 
@@ -528,6 +551,19 @@ describe('OrgEmployeeViewService cache', () => {
     await expect(second.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: false });
     getEffectiveUsername.mockReturnValue('alice');
     await expect(second.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('never shares an entry between sessions of one user that verified different emails', async () => {
+    const { svc, workHistory } = build();
+
+    getEffectiveEmail.mockReturnValue('old@acme-motors.example');
+    await svc.resolve(req(), ORG_UID);
+    getEffectiveEmail.mockReturnValue('current@acme-motors.example');
+    await svc.resolve(req(), ORG_UID);
+    await svc.resolve(req(), ORG_UID);
+
+    // One compute per distinct session email; the repeat for the same email is served from its own entry.
+    expect(workHistory.getWorkExperiencesForKnownUser).toHaveBeenCalledTimes(2);
   });
 
   it('recomputes after the TTL', async () => {
