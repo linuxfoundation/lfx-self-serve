@@ -389,6 +389,18 @@ export const ACCOUNT_IDENTITIES_COPY = {
   emailProviderDescription: 'Add and verify an email address you use for open source work',
 } as const;
 
+/** Copy for the Account & Settings Linux.com email page (#6075). `{domain}` is the alias domain the server reports. */
+export const ACCOUNT_LINUX_EMAIL_COPY = {
+  subtitle: 'A personal @{domain} address that forwards to an inbox you choose. It’s a one-time add-on for Individual Supporters.',
+  claimNote: 'Your add-on is active. Pick your alias and where its email should go. You can’t change the alias later.',
+  aliasHint: 'Your alias can’t be changed after it’s claimed.',
+  forwardHint: 'Email sent to your alias is forwarded here.',
+  emptyTitle: 'Get your own Linux.com email',
+  emptyText:
+    'Show your support for Linux and open source with a personal @{domain} address that forwards to any inbox. It’s a one-time purchase for Individual Supporters.',
+  noVerifiedEmail: 'You don’t have a verified email address to forward to yet. Add and verify an email address first, then return here to set up forwarding.',
+} as const;
+
 /** Length limits of the Personal information fields; the server rejects longer values. */
 export const PERSONAL_INFORMATION_FIELD_LIMITS = {
   given_name: 50,

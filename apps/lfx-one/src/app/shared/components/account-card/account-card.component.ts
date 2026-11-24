@@ -5,8 +5,8 @@ import { _IdGenerator } from '@angular/cdk/a11y';
 import { Component, inject, input } from '@angular/core';
 
 /**
- * One card of an Account & Settings page (#6067): a 16px title, an optional subtitle, a right-hand slot for the card's action
- * (`[accountCardActions]`), then its content.
+ * One card of an Account & Settings page (#6067): a 16px title with an optional badge beside it (`[accountCardTitleSuffix]`), an
+ * optional subtitle, a right-hand slot for the card's action (`[accountCardActions]`), then its content.
  */
 @Component({
   selector: 'lfx-account-card',

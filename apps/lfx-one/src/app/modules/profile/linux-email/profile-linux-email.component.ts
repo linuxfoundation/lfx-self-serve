@@ -61,7 +61,7 @@ export class ProfileLinuxEmailComponent {
   public savingForward = signal(false);
 
   // Tracks the last loaded/saved forward-to value so we can detect unsaved changes.
-  private readonly savedForwardTo = signal<string>('');
+  protected readonly savedForwardTo = signal<string>('');
 
   // Data signals
   public data: Signal<LinuxAliasData | null> = this.initData();
