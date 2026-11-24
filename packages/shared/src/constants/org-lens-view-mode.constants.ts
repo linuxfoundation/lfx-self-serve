@@ -25,24 +25,24 @@ export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS_BY_PAGE: Readonly<Record<strin
   // Shared shell data several pages read (company scope, no people).
   shared: [/^\/org-scope\/?$/i],
   // overview
-  overview: [/^\/foundations-and-projects\/?$/],
+  overview: [/^\/foundations-and-projects\/?$/i],
   // projects
-  projects: [/^\/projects(\/search)?\/?$/, /^\/workspaces\/?$/],
+  projects: [/^\/projects(\/search)?\/?$/i, /^\/workspaces\/?$/i],
   // project-detail
   'project-detail': [
-    /^\/projects\/[^/]+\/(hero|influence|trend)\/?$/,
-    /^\/projects\/[^/]+\/leaderboard\/(technical|ecosystem)\/?$/,
-    /^\/projects\/[^/]+\/leaderboard\/technical\/organizations\/[^/]+\/?$/,
-    /^\/projects\/[^/]+\/cards\/[^/]+(\/roster)?\/?$/,
+    /^\/projects\/[^/]+\/(hero|influence|trend)\/?$/i,
+    /^\/projects\/[^/]+\/leaderboard\/(technical|ecosystem)\/?$/i,
+    /^\/projects\/[^/]+\/leaderboard\/technical\/organizations\/[^/]+\/?$/i,
+    /^\/projects\/[^/]+\/cards\/[^/]+(\/roster)?\/?$/i,
   ],
   // contributions
-  contributions: [/^\/contributions\/?$/],
+  contributions: [/^\/contributions\/?$/i],
   // events
-  events: [/^\/events(\/(summary|foundations))?\/?$/],
+  events: [/^\/events(\/(summary|foundations))?\/?$/i],
   // training
-  training: [/^\/training\/(stats|filter-options|groups)\/?$/],
+  training: [/^\/training\/(stats|filter-options|groups)\/?$/i],
   // meetings
-  meetings: [/^\/meetings\/(kpi|spend|influence)\/?$/],
+  meetings: [/^\/meetings\/(kpi|spend|influence)\/?$/i],
 };
 
 /** Every approved path across all pages. */
