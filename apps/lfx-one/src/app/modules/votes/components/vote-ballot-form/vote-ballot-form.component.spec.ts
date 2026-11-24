@@ -1,9 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CdkDrag } from '@angular/cdk/drag-drop';
+import { getDebugNode } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { VOTE_RANKED_CHOICE_DRAG_START_DELAY } from '@lfx-one/shared/constants';
 import { VoteBallotSubmission, VoteLinkBallot, VoteLinkBallotState } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -125,18 +128,49 @@ describe('VoteBallotFormComponent (#4363)', () => {
   it('drags a ranked card from anywhere on it, but never from its arrow buttons', async () => {
     await render(baseBallot({ poll_type: 'condorcet_irv' }));
 
-    const card = byId('vote-link-rank-c-a') as HTMLElement;
+    const card = byId('vote-link-rank-c-b') as HTMLElement;
     expect(card.querySelector('.cdk-drag-handle')).toBeNull();
     expect(card.classList.contains('cursor-grab')).toBe(true);
     expect(card.classList.contains('active:cursor-grabbing')).toBe(true);
     expect(card.classList.contains('select-none')).toBe(true);
+    expect(getDebugNode(card)!.injector.get(CdkDrag).dragStartDelay).toEqual(VOTE_RANKED_CHOICE_DRAG_START_DELAY);
 
     const cardPress = vi.fn();
     card.addEventListener('mousedown', cardPress);
     card.addEventListener('touchstart', cardPress);
-    const downButton = byId('vote-link-rank-down-c-a') as HTMLElement;
-    downButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    downButton.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    for (const dir of ['up', 'down']) {
+      const button = byId(`vote-link-rank-${dir}-c-b`) as HTMLElement;
+      button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      button.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    }
+    expect(cardPress).not.toHaveBeenCalled();
+  });
+
+  it('never drags a recorded ranked card from its remove button', async () => {
+    await render(
+      baseBallot({
+        poll_type: 'instant_runoff_vote',
+        poll_questions: [{ question_id: 'q1', prompt: 'Rank options', type: 'multiple_choice', choices: CHOICES }],
+      }),
+      votedState({
+        poll_answers: [
+          {
+            question_id: 'q1',
+            prompt: 'Rank options',
+            type: 'multiple_choice',
+            ranked_user_choice: [{ choice_id: 'c-a', choice_text: 'Alice', choice_rank: 1 }],
+          },
+        ],
+      })
+    );
+
+    const cardPress = vi.fn();
+    const card = byId('vote-link-rank-c-a') as HTMLElement;
+    card.addEventListener('mousedown', cardPress);
+    card.addEventListener('touchstart', cardPress);
+    const removeButton = byId('vote-link-rank-remove-c-a') as HTMLElement;
+    removeButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    removeButton.dispatchEvent(new Event('touchstart', { bubbles: true }));
     expect(cardPress).not.toHaveBeenCalled();
   });
 
