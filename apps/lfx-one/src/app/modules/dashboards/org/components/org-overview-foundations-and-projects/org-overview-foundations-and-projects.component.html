@@ -67,6 +67,7 @@
                 [row]="row"
                 [expanded]="!!expansionMap()[row.foundationId]"
                 [index]="i"
+                [navigable]="showMembershipsLink()"
                 (toggle)="toggleExpansion(row.foundationId)"
                 (rowClick)="onRowClick($event)"
                 (caretToggle)="onCaretToggle($event)" />

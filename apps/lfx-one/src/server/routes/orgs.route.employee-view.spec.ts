@@ -87,7 +87,8 @@ const HIDDEN_PAGE_ROUTES: Record<string, (path: string) => boolean> = {
   // The Profile page's API lives outside `/lens`: the canonical record, its addresses, the logo upload.
   profile: (p) => /^\/uid\/:uid(\/|$)/.test(p) || p === '/:id',
 };
-const COVERED_ELSEWHERE = new Set(['easycla']);
+// Crowdfunding Initiatives and Donations are served from `/api/crowdfunding`, not this router (crowdfunding.controller.employee-view.spec.ts).
+const COVERED_ELSEWHERE = new Set(['easycla', 'initiatives', 'donations']);
 
 /** Panels blocked on a page that is otherwise shown. `(method, router path)`. */
 const BLOCKED_PANEL_ROUTES: [string, string][] = [

@@ -85,4 +85,19 @@ describe('redactWorkspacesForEmployeeView', () => {
       { id: 'w2', name: 'Workspace 2', projectSlugs: ['helm'] },
     ]);
   });
+
+  it('never renames a persisted default workspace (resource id) even when a custom workspace sorts first', () => {
+    mocks.getOrgLensViewMode.mockReturnValue('employee');
+    const withPersistedDefault = {
+      workspaces: [
+        { id: 'w1', name: 'Ada Lovelace focus', projectSlugs: ['kubernetes'] },
+        { id: 'a1b2c3d4-0000-4000-8000-000000000001', name: 'All Projects with Activities', projectSlugs: [] },
+      ],
+    } as OrgProjectsWorkspacesResponse;
+
+    expect(redactWorkspacesForEmployeeView(req, 'org', withPersistedDefault).workspaces).toEqual([
+      { id: 'w1', name: 'Workspace 1', projectSlugs: ['kubernetes'] },
+      { id: 'a1b2c3d4-0000-4000-8000-000000000001', name: 'All Projects with Activities', projectSlugs: [] },
+    ]);
+  });
 });

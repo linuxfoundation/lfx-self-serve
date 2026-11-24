@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_ORG_PROJECTS_WORKSPACE_ID } from '@lfx-one/shared/constants';
+import { DEFAULT_ORG_PROJECTS_WORKSPACE_ID, DEFAULT_ORG_PROJECTS_WORKSPACE_NAME } from '@lfx-one/shared/constants';
 import type { OrgLensProject, OrgLensProjectPerson, OrgLensProjectsResponse, OrgProjectsWorkspacesResponse } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -39,8 +39,10 @@ export function redactProjectsForEmployeeView(req: Request, orgUid: string, resp
 
 /**
  * Workspace names are typed by company admins and can contain a person's name or email address. In the all employee
- * view every user-created workspace is renamed to a neutral `Workspace N` (the system default keeps its own name), so
- * the page's workspace selector still works; ids, project slugs and counts are unchanged.
+ * view every user-created workspace is renamed to a neutral `Workspace N`, so the page's workspace selector still works;
+ * ids, project slugs and counts are unchanged. The default workspace is never touched: it is the system's own, whether it
+ * is the `all-activities` sentinel or a persisted row with a resource id (recognised by its default name, as the service
+ * and the page do), and the page finds it by that name.
  */
 export function redactWorkspacesForEmployeeView(req: Request, orgUid: string, response: OrgProjectsWorkspacesResponse): OrgProjectsWorkspacesResponse {
   const redacted = redactForEmployeeView(req, orgUid, response, { page: PROJECTS_PAGE });
@@ -49,7 +51,9 @@ export function redactWorkspacesForEmployeeView(req: Request, orgUid: string, re
   return {
     ...response,
     workspaces: response.workspaces.map((workspace) =>
-      workspace.id === DEFAULT_ORG_PROJECTS_WORKSPACE_ID ? workspace : { ...workspace, name: `Workspace ${++custom}` }
+      workspace.id === DEFAULT_ORG_PROJECTS_WORKSPACE_ID || workspace.name === DEFAULT_ORG_PROJECTS_WORKSPACE_NAME
+        ? workspace
+        : { ...workspace, name: `Workspace ${++custom}` }
     ),
   };
 }

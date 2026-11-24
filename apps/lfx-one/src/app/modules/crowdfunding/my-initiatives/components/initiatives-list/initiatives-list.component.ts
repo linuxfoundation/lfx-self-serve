@@ -22,8 +22,6 @@ export class InitiativesListComponent {
   public readonly loadingMore = input<boolean>(false);
   /** Show who created each initiative; the lens pages set it (lfx-crowdfunding#452). */
   public readonly showCreator = input<boolean>(false);
-  /** The all employee view: cards do not open the initiative's detail. */
-  public readonly readOnly = input<boolean>(false);
   public readonly initiativeClick = output<string>();
   public readonly loadMore = output<void>();
 

@@ -8,6 +8,8 @@ import type {
   OrgLensEmployeeViewRegisterEntry,
   OrgLensEmployeeViewReviewedShape,
 } from '../interfaces/org-lens-employee-view-register.interface';
+import { ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES } from './org-lens-view-mode.constants';
+import { PD_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS } from './org-lens-project-detail.constants';
 
 /** Fields every Technical Influence row shares: allowed, public code contribution data, product owner approved the CDP name and avatar (2026-11-18). */
 const TECHNICAL_ROW = {
@@ -19,7 +21,7 @@ const TECHNICAL_ROW = {
 } as const;
 
 /** Technical Influence card keys, the only project detail panels that may open (mirrors `PD_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS` from #5849). */
-export const ORG_LENS_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS: readonly string[] = ['maintainers', 'contributors', 'commits', 'pull-requests', 'avg-merge-time'];
+export const ORG_LENS_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS: readonly string[] = [...PD_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS];
 
 /** Ecosystem Influence card keys: every one is blocked in the employee view (their rosters list people by name). */
 export const ORG_LENS_EMPLOYEE_VIEW_ECOSYSTEM_CARD_KEYS: readonly string[] = [
@@ -34,8 +36,8 @@ export const ORG_LENS_EMPLOYEE_VIEW_ECOSYSTEM_CARD_KEYS: readonly string[] = [
   'meetup-attendance',
 ];
 
-/** The five pages the view hides entirely. */
-export const ORG_LENS_EMPLOYEE_VIEW_REGISTERED_HIDDEN_PAGES: readonly string[] = ['memberships', 'people', 'easycla', 'profile', 'groups'];
+/** The pages the view hides entirely, derived from the list the nav and the guards read. Each needs its own `hidden.<page>` row below. */
+export const ORG_LENS_EMPLOYEE_VIEW_REGISTERED_HIDDEN_PAGES: readonly string[] = [...ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES];
 
 /** A snapshot of `ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS` as reviewed. Changing the shared list means updating this and the rows above. */
 export const ORG_LENS_EMPLOYEE_VIEW_REVIEWED_PERSONAL_FIELDS: readonly string[] = [
@@ -482,119 +484,6 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     note: 'Aggregates by construction, with the shared strip as defence in depth. A role or project segment backed by one person is identifiable. Accepted by product decision: small counts have no minimum floor.',
   },
 
-  // ─── Crowdfunding ──────────────────────────────────────────────────────────
-  {
-    id: 'crowdfunding.donations.donor-name',
-    page: 'crowdfunding',
-    surface: 'Donations table, Donor column',
-    endpoint: 'GET /api/crowdfunding/org-donations',
-    field: 'data[].donorName',
-    example: "donorName: 'Ada Example'",
-    source: 'crowdfunding',
-    verdict: 'count-only',
-    enforcement: 'stripped',
-    strippedBy: 'route-extra-fields',
-    status: 'enforced',
-    note: 'Removed in the employee view, together with the column.',
-  },
-  {
-    id: 'crowdfunding.donations.donor-email',
-    page: 'crowdfunding',
-    surface: 'Donations table, Email column',
-    endpoint: 'GET /api/crowdfunding/org-donations',
-    field: 'data[].donorEmail',
-    example: 'donorEmail: user@example.com',
-    source: 'crowdfunding',
-    verdict: 'count-only',
-    enforcement: 'stripped',
-    strippedBy: 'shared-list',
-    status: 'enforced',
-    note: 'Removed in the employee view; also an email-shaped value, which the strip drops under any key.',
-  },
-  {
-    id: 'crowdfunding.donations.anonymous-flag',
-    page: 'crowdfunding',
-    surface: 'payload only',
-    endpoint: 'GET /api/crowdfunding/org-donations',
-    field: 'data[].anonymous',
-    example: 'anonymous: true',
-    source: 'crowdfunding',
-    verdict: 'count-only',
-    enforcement: 'stripped',
-    strippedBy: 'route-extra-fields',
-    status: 'enforced',
-    note: 'Removed so the view cannot tell which donor chose to hide.',
-  },
-  {
-    id: 'crowdfunding.donations.row-records',
-    page: 'crowdfunding',
-    surface: 'Donations table',
-    endpoint: 'GET /api/crowdfunding/org-donations',
-    field: 'data[] initiative, date, amountCents',
-    example: 'amountCents: 5000',
-    source: 'crowdfunding',
-    verdict: 'count-only',
-    enforcement: 'none',
-    status: 'decision',
-    note: 'Donations matched to the company include individuals. A row with initiative, date and amount is a per-person record without the name; a colleague who knows the date can name the donor.',
-    followUp: 'Product owner: aggregate donations per initiative, or accept row-level records without names.',
-  },
-  {
-    id: 'crowdfunding.initiatives.creator',
-    page: 'crowdfunding',
-    surface: 'Initiative cards',
-    endpoint: 'GET /api/crowdfunding/initiatives?scope=organizations',
-    field: 'data[].creator',
-    example: "creator: 'Ada Example'",
-    source: 'crowdfunding',
-    verdict: 'count-only',
-    enforcement: 'stripped',
-    strippedBy: 'route-extra-fields',
-    status: 'enforced',
-    note: 'Removed in the employee view, and the card no longer shows the creator.',
-  },
-  {
-    id: 'crowdfunding.initiatives.personal-attribution',
-    page: 'crowdfunding',
-    surface: 'Initiative cards',
-    endpoint: 'GET /api/crowdfunding/initiatives?scope=organizations',
-    field: 'data[].attribution.name',
-    example: "attribution: { type: 'personal' }",
-    source: 'crowdfunding',
-    verdict: 'count-only',
-    enforcement: 'stripped',
-    strippedBy: 'route-extra-fields',
-    status: 'enforced',
-    note: 'A personal attribution carries the person own name; it is reduced to its type and entity id.',
-  },
-  {
-    id: 'crowdfunding.initiatives.free-text',
-    page: 'crowdfunding',
-    surface: 'Initiative cards',
-    endpoint: 'GET /api/crowdfunding/initiatives?scope=organizations',
-    field: 'data[].name / description / websiteUrl',
-    example: "name: 'Community lab'",
-    source: 'crowdfunding',
-    verdict: 'count-only',
-    enforcement: 'stripped',
-    strippedBy: 'shared-list',
-    status: 'enforced',
-    note: 'Free text written by initiative owners. The shared strip now removes an email address, mailto link or personal profile URL embedded in a string, so the name, description and website are scrubbed in the employee view.',
-  },
-  {
-    id: 'crowdfunding.initiatives.detail-routes',
-    page: 'crowdfunding',
-    surface: 'Initiative detail (the client route is blocked)',
-    endpoint: 'GET /api/crowdfunding/initiatives/:slug[/transactions|/announcements]',
-    field: 'sponsors[].name / avatarUrl, beneficiaries[].name / email, donorName, donorEmail',
-    example: 'beneficiaries[].email: user@example.com',
-    source: 'crowdfunding',
-    verdict: 'count-only',
-    enforcement: 'none',
-    status: 'enforced',
-    note: 'Product decision: a simple client block is accepted; the initiative, transaction and announcement data is not sensitive. These routes carry no company id, so the lens gate does not apply.',
-  },
-
   // ─── Navigation ────────────────────────────────────────────────────────────
   {
     id: 'navigation.own-identity',
@@ -688,6 +577,32 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     enforcement: 'blocked-403',
     status: 'enforced',
     note: 'Hidden entirely.',
+  },
+  {
+    id: 'hidden.initiatives',
+    page: 'hidden',
+    surface: 'Crowdfunding Initiatives (the initiatives list, stats and detail)',
+    endpoint: '/api/crowdfunding/initiatives?orgUid=..., /api/crowdfunding/initiatives/stats?orgUid=...',
+    field: 'initiative owners, sponsors, beneficiaries, creators, free-text names and descriptions',
+    example: "creator: 'Ada Example'",
+    source: 'crowdfunding',
+    verdict: 'count-only',
+    enforcement: 'blocked-403',
+    status: 'enforced',
+    note: 'Hidden entirely: no nav link, the route redirects to Overview, and the company-scoped reads answer 403 EMPLOYEE_VIEW_FORBIDDEN before the Crowdfunding service is called. The service would refuse an employee token for these reads anyway.',
+  },
+  {
+    id: 'hidden.donations',
+    page: 'hidden',
+    surface: 'Crowdfunding Donations (the company donations table)',
+    endpoint: '/api/crowdfunding/org-donations?orgUid=...',
+    field: 'donor name, donor email, anonymous flag, per-donation records',
+    example: "donorName: 'Ada Example'",
+    source: 'crowdfunding',
+    verdict: 'count-only',
+    enforcement: 'blocked-403',
+    status: 'enforced',
+    note: 'Hidden entirely: no nav link, the route redirects to Overview, and the read answers 403 EMPLOYEE_VIEW_FORBIDDEN before the Crowdfunding service is called.',
   },
 
   // ─── Cross-cutting ─────────────────────────────────────────────────────────
@@ -848,7 +763,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_ENDPOINTS: readonly OrgLensEmployeeViewEndpo
 
 /** `org-*.interface.ts` payload files, and how the shape scan treats each. A new file must be classified here. */
 export const ORG_LENS_EMPLOYEE_VIEW_INTERFACE_FILES: Readonly<Record<string, OrgLensEmployeeViewInterfaceFileClass>> = {
-  'crowdfunding.interface.ts': 'payload',
+  'crowdfunding.interface.ts': 'hidden-page',
   'org-cache-compact.interface.ts': 'internal',
   'org-commit-filters.interface.ts': 'query-only',
   'org-contributions.interface.ts': 'payload',
@@ -896,16 +811,6 @@ export const ORG_LENS_EMPLOYEE_VIEW_INTERFACE_FILES: Readonly<Record<string, Org
  * A new match that is not listed fails the spec, which is the prompt to review it and add a row.
  */
 export const ORG_LENS_EMPLOYEE_VIEW_REVIEWED_SHAPES: readonly OrgLensEmployeeViewReviewedShape[] = [
-  { key: 'crowdfunding.interface.ts:creator', coveredBy: 'crowdfunding.initiatives.creator' },
-  { key: 'crowdfunding.interface.ts:avatarUrl', coveredBy: 'crowdfunding.initiatives.detail-routes' },
-  { key: 'crowdfunding.interface.ts:donorName', coveredBy: 'crowdfunding.donations.donor-name' },
-  { key: 'crowdfunding.interface.ts:donorType', coveredBy: 'crowdfunding.initiatives.detail-routes' },
-  { key: 'crowdfunding.interface.ts:donorLogoUrl', coveredBy: 'crowdfunding.initiatives.detail-routes' },
-  { key: 'crowdfunding.interface.ts:donorUsername', coveredBy: 'crowdfunding.initiatives.detail-routes' },
-  { key: 'crowdfunding.interface.ts:donorEmail', coveredBy: 'crowdfunding.donations.donor-email' },
-  { key: 'crowdfunding.interface.ts:donorCategory', coveredBy: 'crowdfunding.initiatives.detail-routes' },
-  { key: 'crowdfunding.interface.ts:isOwner', coveredBy: 'crowdfunding.initiatives.detail-routes' },
-  { key: 'crowdfunding.interface.ts:email', coveredBy: 'crowdfunding.initiatives.detail-routes' },
   { key: 'org-contributions.interface.ts:displayName', coveredBy: 'code-contributions.employee-filter' },
   { key: 'org-contributions.interface.ts:personKey', coveredBy: 'code-contributions.commits-feed' },
   { key: 'org-contributions.interface.ts:committerName', coveredBy: 'code-contributions.commits-feed' },

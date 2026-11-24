@@ -3,6 +3,7 @@
 
 import { computed, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES } from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
@@ -145,7 +146,8 @@ describe('OrgLensViewModeService', () => {
       const service = TestBed.inject(OrgLensViewModeService);
 
       expect(service.managesSelectedCompanyClas()).toBe(false);
-      expect(service.hiddenPages()).toEqual(['memberships', 'people', 'easycla', 'profile', 'groups']);
+      expect(service.hiddenPages()).toEqual(ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES);
+      expect(service.hiddenPages()).toEqual(expect.arrayContaining(['easycla', 'initiatives', 'donations']));
     });
 
     it('keeps EasyCLA for an employee who is also a CLA Manager of the selected company, and hides the rest', () => {
@@ -154,7 +156,8 @@ describe('OrgLensViewModeService', () => {
       const service = TestBed.inject(OrgLensViewModeService);
 
       expect(service.managesSelectedCompanyClas()).toBe(true);
-      expect(service.hiddenPages()).toEqual(['memberships', 'people', 'profile', 'groups']);
+      expect(service.hiddenPages()).toEqual(ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES.filter((page) => page !== 'easycla'));
+      expect(service.hiddenPages()).toContain('initiatives');
     });
 
     it('does not carry a CLA scope on another company over to the selected one', () => {

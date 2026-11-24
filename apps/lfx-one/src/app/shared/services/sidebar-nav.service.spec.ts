@@ -697,6 +697,25 @@ describe('SidebarNavService', () => {
     expect(labels(items)).not.toContain('Company Profile');
   });
 
+  // Epic #5845: Crowdfunding (Initiatives and Donations) is hidden entirely in the all employee view. An employee holds no
+  // writer grant, so Initiatives never lists; Donations lists to every viewer and is the one the view must drop.
+  it('drops Crowdfunding Donations in the all employee view, lists no Initiatives, and keeps both pages for a writer in the full view', () => {
+    activeLens.set('org');
+    cfOrgDonationsEnabled.set(true);
+    selectedOrgUid.set('0014100000MgaAAAAA');
+    const grants = TestBed.inject(OrgRoleGrantsService);
+    (grants.writerSet as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set(['0014100000MgaAAAAA']));
+
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toEqual(expect.arrayContaining(['Crowdfunding Initiatives', 'Crowdfunding Donations']));
+
+    (grants.writerSet as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set());
+    (grants.employeeViewOrgUids as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set(['0014100000MgaAAAAA']));
+    const items = labels(TestBed.inject(SidebarNavService).sidebarItems());
+
+    expect(items).not.toContain('Crowdfunding Initiatives');
+    expect(items).not.toContain('Crowdfunding Donations');
+  });
+
   // Crowdfunding Donations is single-company too: its endpoint takes one `orgUid` (#4415, Copilot).
   it('drops Crowdfunding Donations in roll-up mode even with the flag on', () => {
     activeLens.set('org');

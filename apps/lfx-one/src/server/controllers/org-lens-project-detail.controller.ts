@@ -17,28 +17,18 @@ import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange, OrgScopeFil
 import { ServiceValidationError } from '../errors';
 import { parseOrgScope } from '../helpers/org-commit-filters.helper';
 import { redactForEmployeeView } from '../helpers/org-lens-employee-view.helper';
-import { getOrgLensViewMode } from '../helpers/org-lens-read-access.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensProjectDetailService } from '../services/org-lens-project-detail.service';
 
-const EMBEDDED_EMAIL = /[^\s@<>()[\]]+@[^\s@<>()[\]]+\.[^\s@<>()[\]]+/g;
-
-/** Removes an email address embedded in free text (a commit message's `Signed-off-by: A <a@b.co>`), at any depth. */
-function scrubEmbeddedEmails<T>(value: T): T {
-  if (typeof value === 'string') return value.replace(EMBEDDED_EMAIL, '') as unknown as T;
-  if (Array.isArray(value)) return value.map(scrubEmbeddedEmails) as unknown as T;
-  if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrubEmbeddedEmails(v)])) as T;
-  }
-  return value;
-}
-
-/** The all employee view (epic #5845, #5849) shows no email addresses in any panel; the full view is returned untouched. */
+/**
+ * The all employee view (epic #5845, #5849) shows no email addresses in any panel; the full view is returned untouched.
+ * The shared redactor already scrubs embedded addresses at every depth and keeps valid technical text (a Git remote, a
+ * package version), so no second pass runs here.
+ */
 function redactProjectDetail<T>(req: Request, orgUid: string, data: T): T {
-  if (getOrgLensViewMode(req, orgUid) === 'full') return data;
-  return scrubEmbeddedEmails(redactForEmployeeView(req, orgUid, data, { page: 'projects' }));
+  return redactForEmployeeView(req, orgUid, data, { page: 'projects' });
 }
 
 /** HTTP boundary for the Org Lens · Project Detail endpoint — validation, lifecycle logging, error propagation. */

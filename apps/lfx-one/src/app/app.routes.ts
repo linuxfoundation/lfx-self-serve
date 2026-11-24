@@ -109,8 +109,9 @@ function orgLensPageRoutes(): Routes {
       // Componentless parent so both children share its data.
       path: 'initiatives',
       data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your company.', icon: 'fa-light fa-box-dollar' },
-      // The crowdfunding list and stats take one `orgUid`, so the roll-up redirects (#4415).
-      canActivate: [orgRollUpSingleOrgPageGuard],
+      // The crowdfunding list and stats take one `orgUid`, so the roll-up redirects (#4415). The page is hidden entirely
+      // in the all employee view (epic #5845): the route redirects to Overview and the API refuses an employee.
+      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard()],
       children: [
         {
           path: '',
@@ -119,8 +120,6 @@ function orgLensPageRoutes(): Routes {
         {
           path: ':slug',
           data: { title: 'Initiative' },
-          // The all employee view lists initiatives but never opens one: the detail carries sponsors, beneficiaries and transactions.
-          canActivate: [orgLensFullViewOnlyGuard('initiatives')],
           loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
         },
       ],
@@ -129,8 +128,9 @@ function orgLensPageRoutes(): Routes {
       // Crowdfunding donations matched to the organization (#415), dark-launched behind `cf-org-donations`.
       path: 'donations',
       canMatch: [cfOrgDonationsGuard],
-      // `/api/crowdfunding/org-donations` takes one organization, so the roll-up redirects (#4415).
-      canActivate: [orgRollUpSingleOrgPageGuard],
+      // `/api/crowdfunding/org-donations` takes one organization, so the roll-up redirects (#4415). Hidden entirely in the
+      // all employee view (epic #5845): the route redirects to Overview and the API refuses an employee.
+      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard()],
       data: {
         lens: 'org',
         title: 'Donations',

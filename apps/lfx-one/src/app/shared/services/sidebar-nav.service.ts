@@ -290,11 +290,7 @@ export class SidebarNavService {
     const items = this.accountContext.isRollUp() ? base : this.withEasyclaNavItem(base);
     // Initiatives (#348) follows a direct writer grant on the selected organization — CF lists an
     // organization's initiatives to its writers only, and b2b_org writer access does not cascade from a parent.
-    // The all employee view (epic #5845) lists them too, read-only, with no names.
-    const initiativesItems =
-      this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '') || this.orgLensViewMode.isEmployeeView()
-        ? [this.orgInitiativesNavItem()]
-        : [];
+    const initiativesItems = this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '') ? [this.orgInitiativesNavItem()] : [];
     // Donations (#415) is dark-launched behind `cf-org-donations` and shown to every org viewer, like the other org
     // pages: CF lists them to auditors, which the lens route already requires. The page shows a 403 state otherwise.
     // Crowdfunding Donations is single-organization too: `/api/crowdfunding/org-donations` takes an

@@ -95,7 +95,7 @@ describe('the register itself', () => {
 
   it('keeps the register page set to the pages of the epic', () => {
     expect(registerPages.sort()).toEqual(
-      ['all', 'code-contributions', 'crowdfunding', 'events', 'hidden', 'meetings', 'navigation', 'overview', 'project-detail', 'projects', 'training'].sort()
+      ['all', 'code-contributions', 'events', 'hidden', 'meetings', 'navigation', 'overview', 'project-detail', 'projects', 'training'].sort()
     );
   });
 });
@@ -142,8 +142,16 @@ describe('the shared personal-field list', () => {
 });
 
 describe('hidden pages', () => {
-  it('registers exactly the five pages of the epic, each with its own row', () => {
-    expect([...ORG_LENS_EMPLOYEE_VIEW_REGISTERED_HIDDEN_PAGES].sort()).toEqual(['easycla', 'groups', 'memberships', 'people', 'profile']);
+  it('registers exactly the hidden pages of the epic, each with its own row', () => {
+    expect([...ORG_LENS_EMPLOYEE_VIEW_REGISTERED_HIDDEN_PAGES].sort()).toEqual([
+      'donations',
+      'easycla',
+      'groups',
+      'initiatives',
+      'memberships',
+      'people',
+      'profile',
+    ]);
     for (const page of ORG_LENS_EMPLOYEE_VIEW_REGISTERED_HIDDEN_PAGES) {
       expect(registerIds.has(`hidden.${page}`), `missing hidden.${page}`).toBe(true);
     }

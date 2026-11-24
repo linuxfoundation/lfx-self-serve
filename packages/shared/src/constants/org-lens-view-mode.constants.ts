@@ -106,12 +106,12 @@ export const ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS: readonly string[] = [
 export const ORG_LENS_EMPLOYEE_VIEW_EXCEPTIONS: readonly OrgLensEmployeeViewException[] = [];
 
 /**
- * Page segments (`memberships`, `people`, `easycla`, `profile`, `groups` ...) the all employee view hides entirely: no
- * left-nav link, and `orgLensFullViewOnlyGuard()` redirects the route to Overview. EMPTY at launch; each "hide page"
- * story (#5856-#5860) adds its page here and mounts `blockEmployeeView` on that page's API routes. The sidebar reads this
- * list, so a page needs no sidebar change of its own.
+ * Page segments the all employee view hides entirely: no left-nav link, and `orgLensFullViewOnlyGuard()` redirects the
+ * route to Overview. Each hidden page's API routes answer 403 (`blockEmployeeView` on the orgs router, or the Crowdfunding
+ * controller's own refusal for Initiatives and Donations). The sidebar reads this list, so a page needs no sidebar change
+ * of its own; EasyCLA stays open for the company's CLA Manager (`OrgLensViewModeService.hiddenPages`).
  */
-export const ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES: readonly string[] = ['memberships', 'people', 'easycla', 'profile', 'groups'];
+export const ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES: readonly string[] = ['memberships', 'people', 'easycla', 'profile', 'groups', 'initiatives', 'donations'];
 
 /** Selector row badge for the company a caller reaches only through the all employee view. */
 export const NAVBAR_ORG_EMPLOYEE_VIEW_ROLE = {

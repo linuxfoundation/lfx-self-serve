@@ -14,7 +14,6 @@ import { environment } from '@environments/environment';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_ORG_DONATIONS } from '@lfx-one/shared/constants';
 import { InitiativesLoadError, OrgDonationRow, OrgDonationsResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
-import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 import { of } from 'rxjs';
 import { catchError, filter, finalize, scan, switchMap, tap } from 'rxjs/operators';
@@ -30,7 +29,6 @@ export class OrgDonationsComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
   private readonly crowdfundingService = inject(CrowdfundingService);
   private readonly accountContext = inject(AccountContextService);
-  private readonly orgLensViewMode = inject(OrgLensViewModeService);
 
   // Public crowdfunding site, without the trailing slash.
   private readonly crowdfundingUrl = environment.urls.crowdfunding.replace(/\/+$/, '');
@@ -46,8 +44,6 @@ export class OrgDonationsComponent {
   // '' = the selected organization has not resolved yet. The account is re-set as its display fields hydrate, but
   // a computed string only changes for a different organization.
   private readonly orgUid = computed(() => this.accountContext.selectedAccount().uid ?? '');
-  // The all employee view (epic #5845) lists initiative, date and amount only: no donor name, no email.
-  protected readonly isEmployeeView = this.orgLensViewMode.isEmployeeView;
   protected readonly orgName = computed(() => this.accountContext.selectedAccount().accountName);
   // Pagination driver — back to the first page whenever the organization changes or Try again is clicked.
   private readonly page = linkedSignal({

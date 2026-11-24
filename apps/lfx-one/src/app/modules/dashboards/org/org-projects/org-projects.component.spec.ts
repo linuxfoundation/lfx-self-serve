@@ -498,6 +498,16 @@ describe('OrgProjectsComponent — Employees filter', () => {
     expect(rowNames()).toEqual([]);
   });
 
+  it('ignores an employees link in the all employee view: every project shows, in the table and the CSV, and the selection is cleared from the URL', async () => {
+    employeeView.set(true);
+    await open('/?employees=p-known');
+
+    expect(rowNames()).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    expect(await exportedProjectNames()).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    await settle();
+    expect(queryParams()['employees']).toBeUndefined();
+  });
+
   it('opens a link with only an unknown employee on the explained empty state, with Export disabled', async () => {
     await open('/?employees=p-unknown');
 

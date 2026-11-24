@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, model, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, model, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
@@ -345,6 +345,12 @@ export class OrgProjectsComponent {
     // A pick changes which projects an Employees filter matches, so it starts again on page 1, as the filters do.
     syncOrgScopeWithUrl(this.scopeForm.controls.orgScope, this.route, this.router, { page: null });
     syncOrgTeamMembersWithUrl(this.scopeForm.controls.teamMembers, this.route, this.router, { page: null });
+    // The all employee view has no Employees filter: clear a selection that arrived by link, in the form and the URL.
+    effect(() => {
+      if (this.isEmployeeView() && this.filterForm.controls.employees.value.length > 0) {
+        this.filterForm.controls.employees.setValue([]);
+      }
+    });
     // Filter changes (foundation / employees) write through to the URL and reset to page 1.
     this.filterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (this.resettingFilters) return;
@@ -1093,7 +1099,9 @@ export class OrgProjectsComponent {
     // event attendance attributed to every project in a foundation, which would match nearly every row.
     // Unknown ids (stale links, or maintainer-only people while roles are unavailable) stay in the
     // predicate and match nothing, so a selection never widens the list or the CSV export.
-    const employees = this.formValue().employees ?? [];
+    // The all employee view has no Employees picker and its rosters are anonymised, so a real member id from a shared link
+    // matches nothing: the filter is ignored there rather than emptying the table and the CSV.
+    const employees = this.isEmployeeView() ? [] : (this.formValue().employees ?? []);
     return all
       .filter((p) => foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER || p.foundation.slug === foundation)
       .filter((p) => employees.length === 0 || [...p.maintainers, ...p.contributors].some((person) => employees.includes(person.id)));

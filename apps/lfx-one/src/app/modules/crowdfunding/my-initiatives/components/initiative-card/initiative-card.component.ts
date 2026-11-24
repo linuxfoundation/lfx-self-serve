@@ -25,8 +25,6 @@ export class InitiativeCardComponent {
   public readonly initiative = input.required<InitiativeBase>();
   /** Show who created the initiative; the lens pages set it (lfx-crowdfunding#452). */
   public readonly showCreator = input(false);
-  /** The all employee view (epic #5845): the card shows the numbers but does not open the initiative's detail. */
-  public readonly readOnly = input(false);
   public readonly cardClick = output<string>();
 
   protected readonly fundTypeLabel = computed(() => CROWDFUNDING_FUND_TYPE_LABELS[this.initiative().initiativeType]);
@@ -50,7 +48,7 @@ export class InitiativeCardComponent {
   protected readonly progressPercent = this.initProgressPercent();
 
   protected readonly description = computed(() => stripHtml(this.initiative().description));
-  protected readonly isClickable = computed(() => this.initiative().status !== 'declined' && !this.readOnly());
+  protected readonly isClickable = computed(() => this.initiative().status !== 'declined');
   protected readonly publicPageUrl = computed(() => `${environment.urls.crowdfunding.replace(/\/+$/, '')}/initiatives/${this.initiative().slug}`);
 
   protected readonly formattedRaised = computed(() => formatCurrency((this.initiative().fundingStatus?.amountRaisedCents ?? 0) / 100));
