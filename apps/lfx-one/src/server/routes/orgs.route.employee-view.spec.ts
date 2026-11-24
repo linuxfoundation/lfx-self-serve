@@ -1,56 +1,111 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Same reason as orgs.route.spec.ts: the import graph transitively reaches Angular's
+// partially-compiled @angular/common, which needs the JIT compiler under vitest.
 import '@angular/compiler';
 
+import { ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES } from '@lfx-one/shared/constants';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-/**
- * #5856 — the People page is hidden in the all employee view (epic #5845). Router-level: drives real requests through
- * the assembled orgs router with the read gate passing and `blockEmployeeView` stubbed to answer 403 for the employee
- * view, so a People route that lost its block (or a new one added outside the guarded prefix) fails here. The
- * middleware's own verdict logic is covered by block-employee-view.middleware.spec.ts.
- */
-let employeeView = false;
-const blockCalls: string[] = [];
+import type * as ReadAccessHelper from '../helpers/org-lens-read-access.helper';
 
-vi.mock('../middleware/require-org-lens-access.middleware', () => ({
-  requireOrgLensAccess: (_req: Request, _res: Response, next: NextFunction) => next(),
+/**
+ * Epic #5845 (S15, #5860): router-level API checks for the all employee view.
+ *
+ * The data-driven half of "every endpoint behind a hidden page or blocked panel answers 403 for an employee-view user and
+ * not 403 for a full-view user". The route table is read off the assembled router, so a route added under a hidden
+ * page's prefix later is covered without touching this file, and a hidden page with no mapping here fails the suite.
+ *
+ * Only the gate decision is stubbed: `assertOrgLensRead` answers `employee-view` (or `org-grant` for the full view) and the
+ * real `requireOrgLensAccess`, `blockEmployeeView` and `blockEmployeeViewOnOrgRecord` run. Fixture identifiers are
+ * synthetic (reserved example domains, no real people).
+ */
+
+const ORG_UID = '0016100000ACMEAAA1';
+let mode: 'employee' | 'full' = 'employee';
+
+vi.mock('../helpers/org-lens-read-access.helper', async (importOriginal) => ({
+  ...(await importOriginal<typeof ReadAccessHelper>()),
+  assertOrgLensRead: async () => (mode === 'employee' ? 'employee-view' : 'org-grant'),
+  getOrgLensViewMode: () => mode,
+  resolveOrgLensViewMode: async () => mode,
 }));
-vi.mock('../middleware/block-employee-view.middleware', () => ({
-  blockEmployeeView: (req: Request, res: Response, next: NextFunction) => {
-    blockCalls.push(req.params['orgUid']);
-    if (employeeView) {
-      res.status(403).json({ error: { code: 'EMPLOYEE_VIEW_FORBIDDEN' } });
-      return;
-    }
-    next();
-  },
+vi.mock('../helpers/server-feature-flag.helper', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  isServerFeatureEnabled: () => true,
 }));
+vi.mock('../services/access-check.service', () => ({ AccessCheckService: class {} }));
+vi.mock('../services/org-role-grants.service', () => ({ OrgRoleGrantsService: class {} }));
 vi.mock('../services/microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
-    public proxyRequest = vi.fn().mockResolvedValue({});
-    public proxyRequestWithResponse = vi.fn().mockResolvedValue({});
+    public proxyRequest = vi.fn().mockResolvedValue({ resources: [] });
+    public proxyRequestWithResponse = vi.fn().mockResolvedValue({ data: { resources: [] }, headers: {} });
   },
 }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'employee', isImpersonating: () => false }));
+vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkLFStaff: async () => false } }));
 vi.mock('../services/logger.service', () => ({
   logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), startOperation: vi.fn(() => Date.now()), success: vi.fn() },
 }));
 
 const orgsRouter = (await import('./orgs.route')).default;
 
-const ORG = '0014100000Te2ovAAB';
+interface RouteEntry {
+  method: string;
+  path: string;
+  url: string;
+}
+
+/** Every concrete route on the orgs router, with each `:param` filled by the synthetic company id (or a placeholder). */
+const routeTable = (): RouteEntry[] => {
+  const entries: RouteEntry[] = [];
+  for (const layer of (orgsRouter as unknown as { stack: { route?: { path: string; methods: Record<string, boolean> } }[] }).stack) {
+    if (!layer.route) {
+      continue;
+    }
+    for (const method of Object.keys(layer.route.methods)) {
+      const url = layer.route.path.replace(/:(orgUid|accountId|uid|id)\b/g, ORG_UID).replace(/:[A-Za-z]+/g, 'x');
+      entries.push({ method: method.toUpperCase(), path: layer.route.path, url });
+    }
+  }
+  return entries;
+};
+
+/**
+ * Hidden page segment -> the API routes behind it. A page hidden in `ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES` must appear here;
+ * the matcher says which router paths belong to it. EasyCLA is not on this router: it is refused by
+ * `assertOrgLensClaRead` (covered in org-lens-employee-view-gates.spec.ts).
+ */
+const HIDDEN_PAGE_ROUTES: Record<string, (path: string) => boolean> = {
+  memberships: (p) => /\/lens\/(memberships|key-contacts|employees)(\/|$)/.test(p),
+  people: (p) => /\/lens\/(people|access)(\/|$)/.test(p),
+  groups: (p) => /\/lens\/groups(\/|$)/.test(p),
+  // The Profile page's API lives outside `/lens`: the canonical record, its addresses, the logo upload.
+  profile: (p) => /^\/uid\/:uid(\/|$)/.test(p) || p === '/:id',
+};
+const COVERED_ELSEWHERE = new Set(['easycla']);
+
+/** Panels blocked on a page that is otherwise shown. `(method, router path)`. */
+const BLOCKED_PANEL_ROUTES: [string, string][] = [
+  ['GET', '/:orgUid/lens/events/:eventId/attendees'],
+  ['GET', '/:orgUid/lens/events/:eventId/speakers'],
+  ['GET', '/:orgUid/lens/training/groups/employees'],
+  ['GET', '/:orgUid/lens/projects/:projectSlug/leaderboard/ecosystem/organizations/:organizationId'],
+];
 
 let server: Server;
 let baseUrl: string;
 
 beforeAll(async () => {
   const app = express();
-  app.use(express.json());
   app.use('/api/orgs', orgsRouter);
+  app.use((err: { statusCode?: number; code?: string; message?: string }, _req: Request, res: Response, _next: NextFunction) => {
+    res.status(err.statusCode ?? 500).json({ code: err.code, message: err.message });
+  });
   await new Promise<void>((resolve) => {
     server = app.listen(0, '127.0.0.1', resolve);
   });
@@ -63,58 +118,82 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  employeeView = false;
-  blockCalls.length = 0;
+  mode = 'employee';
 });
 
-// One entry per route family behind the People page: each tab, the CSV source, the drawers and the writes.
-const PEOPLE_ROUTES: [string, string, string][] = [
-  ['All Employees', 'GET', '/lens/people/all'],
-  ['All Employees (former, CSV source)', 'GET', '/lens/people/former'],
-  ['Contributors', 'GET', '/lens/people/contributors'],
-  ['Committee Members', 'GET', '/lens/people/committee-members'],
-  ['Committee Members reassign', 'PATCH', '/lens/people/committee-members/seat-1/reassign'],
-  ['Board Members', 'GET', '/lens/people/board-members'],
-  ['Board Members reassign', 'PATCH', '/lens/people/board-members/seat-1/reassign'],
-  ['Key Contacts', 'GET', '/lens/people/key-contacts'],
-  ['Trainees (Training learners tab)', 'GET', '/lens/people/trainees'],
-  ['Event Attendees tab', 'GET', '/lens/people/event-attendees'],
-  ['person drawer', 'GET', '/lens/people/person-key-1/detail'],
-  ['person drawer company emails', 'GET', '/lens/people/person-key-1/company-emails'],
-  ['person drawer key contacts', 'GET', '/lens/people/person-key-1/key-contacts'],
-  ['person drawer by username', 'GET', '/lens/people/by-username/someone/detail'],
-  ['person drawer emails by username', 'GET', '/lens/people/by-username/someone/company-emails'],
-  ['person drawer key contacts by username', 'GET', '/lens/people/by-username/someone/key-contacts'],
-  ['person drawer emails by key contact', 'GET', '/lens/people/by-key-contact/company-emails'],
-  ['Company Lens Access list', 'GET', '/lens/access/users'],
-  ['Company Lens Access add', 'POST', '/lens/access/users'],
-  ['Company Lens Access change role', 'PUT', '/lens/access/users/someone%40example.com'],
-  ['Company Lens Access remove', 'DELETE', '/lens/access/users/someone%40example.com'],
-];
+const call = async (method: string, url: string) => {
+  const res = await fetch(`${baseUrl}/api/orgs${url}`, { method, headers: { 'content-type': 'application/json' }, body: method === 'GET' ? undefined : '{}' });
+  const body = await res.json().catch(() => ({}));
+  return { status: res.status, code: (body as { code?: string }).code };
+};
 
-const call = (method: string, path: string) =>
-  fetch(`${baseUrl}/api/orgs/${ORG}${path}`, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: method === 'GET' || method === 'DELETE' ? undefined : '{}',
+describe('orgs router, all employee view: hidden pages', () => {
+  it('has a route mapping for every page the view hides', () => {
+    for (const page of ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES) {
+      expect(HIDDEN_PAGE_ROUTES[page] ?? (COVERED_ELSEWHERE.has(page) ? true : undefined), `no API route mapping for hidden page "${page}"`).toBeTruthy();
+    }
   });
 
-describe('orgs router — People page in the all employee view (#5856)', () => {
-  it.each(PEOPLE_ROUTES)('answers 403 EMPLOYEE_VIEW_FORBIDDEN on %s (%s %s) in the employee view', async (_label, method, path) => {
-    employeeView = true;
+  for (const page of ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES) {
+    const matcher = HIDDEN_PAGE_ROUTES[page];
+    if (!matcher) {
+      continue;
+    }
 
-    const res = await call(method, path);
+    it(`answers 403 EMPLOYEE_VIEW_FORBIDDEN on every "${page}" route in the employee view, whatever the method`, async () => {
+      const routes = routeTable().filter((r) => matcher(r.path));
+      expect(routes.length, `no routes found for hidden page "${page}"`).toBeGreaterThan(0);
 
-    expect(res.status).toBe(403);
-    expect((await res.json()).error.code).toBe('EMPLOYEE_VIEW_FORBIDDEN');
-    expect(blockCalls).toEqual([ORG]);
+      for (const route of routes) {
+        expect(await call(route.method, route.url), `${route.method} ${route.path}`).toEqual({ status: 403, code: 'EMPLOYEE_VIEW_FORBIDDEN' });
+      }
+    });
+
+    it(`does not answer EMPLOYEE_VIEW_FORBIDDEN on any "${page}" route in the full view`, async () => {
+      mode = 'full';
+      for (const route of routeTable().filter((r) => matcher(r.path))) {
+        expect((await call(route.method, route.url)).code, `${route.method} ${route.path}`).not.toBe('EMPLOYEE_VIEW_FORBIDDEN');
+      }
+    });
+  }
+});
+
+// The panel stories land on sibling branches; until the hide-page stories are in the tree (the hidden-page list is the
+// marker, it is empty on the bare gate) the panel routes are legitimately open, so the strict assertion waits for them.
+const PAGE_STORIES_APPLIED = ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES.length > 0;
+
+describe.skipIf(!PAGE_STORIES_APPLIED)('orgs router, all employee view: blocked panels on shown pages', () => {
+  it.each(BLOCKED_PANEL_ROUTES)('%s %s answers 403 EMPLOYEE_VIEW_FORBIDDEN, and 200-class handling in the full view', async (method, path) => {
+    const entry = routeTable().find((r) => r.method === method && r.path === path);
+    expect(entry, `panel route ${method} ${path} is no longer registered; update BLOCKED_PANEL_ROUTES`).toBeDefined();
+    if (!entry) {
+      return;
+    }
+    expect(await call(method, entry.url)).toEqual({ status: 403, code: 'EMPLOYEE_VIEW_FORBIDDEN' });
+
+    mode = 'full';
+    expect((await call(method, entry.url)).code).not.toBe('EMPLOYEE_VIEW_FORBIDDEN');
+  });
+});
+
+describe('orgs router, all employee view: read-only', () => {
+  it('answers 403 EMPLOYEE_VIEW_FORBIDDEN to every non-GET route under /:orgUid/lens', async () => {
+    const writes = routeTable().filter((r) => /^\/:(orgUid|accountId)\/lens\//.test(r.path) && r.method !== 'GET' && r.method !== 'HEAD');
+    expect(writes.length).toBeGreaterThan(0);
+
+    for (const route of writes) {
+      expect(await call(route.method, route.url), `${route.method} ${route.path}`).toEqual({ status: 403, code: 'EMPLOYEE_VIEW_FORBIDDEN' });
+    }
   });
 
-  it.each(PEOPLE_ROUTES)('runs the block, then lets the full view through, on %s (%s %s)', async (_label, method, path) => {
-    const res = await call(method, path);
-
-    expect(blockCalls).toEqual([ORG]);
-    // A handler may still refuse for its own reasons (no upstream here); only the employee-view refusal is ruled out.
-    expect(await res.text()).not.toContain('EMPLOYEE_VIEW_FORBIDDEN');
+  it('answers 403 to non-GET org record routes (profile edit, logo upload) in the employee view', async () => {
+    const writes = routeTable().filter((r) => /^\/uid\/:uid/.test(r.path) && r.method !== 'GET');
+    for (const route of writes) {
+      // Only asserted once the Profile story is applied; before then these routes are not behind the view gate.
+      if (!ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES.includes('profile')) {
+        continue;
+      }
+      expect((await call(route.method, route.url)).code, `${route.method} ${route.path}`).toBe('EMPLOYEE_VIEW_FORBIDDEN');
+    }
   });
 });
