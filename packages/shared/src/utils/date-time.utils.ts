@@ -124,6 +124,14 @@ export function toLocalDateOnlyString(date: Date): string {
 }
 
 /**
+ * Turns a `YYYY-MM-DD` calendar date into UTC midnight in RFC3339 form (e.g. "1990-05-10T00:00:00.000Z"), for
+ * APIs that want a datetime but keep only its UTC day. Returns `null` for anything that isn't a real date-only value.
+ */
+export function dateOnlyToUtcMidnightIso(value: string | null | undefined): string | null {
+  return value ? (parseIsoDateAsUtcMidnight(value)?.toISOString() ?? null) : null;
+}
+
+/**
  * Combines a date and time string into an ISO string in the specified timezone
  * @param date The date object
  * @param time The time string in 12-hour format (e.g., "12:45 AM")
