@@ -68,7 +68,8 @@ ProfileCardComponent.onProfileSaved() / ngOnInit()      only with [syncMentorshi
   → MentorshipService.syncLfxProfileFields()            PATCH /api/mentorship/me/lfx-profile
       → blockDuringImpersonation                        403 IMPERSONATION_READ_ONLY
       → MentorshipController.syncLfxProfile             401 with no signed-in user · 400 per field
-      → GET /mentorship/v1/me/profiles                  every page, via listAllMentorshipPages
+      → GET /mentorship/v1/me/profiles                  every page, via listAllMentorshipPages without provisioning
+                                                        not-provisioned 401 → 204, nothing written
       → resolveMentorshipPrimaryEmail                   only when there is a mentor or mentee row
       → resolveMentorshipGithubProfileLink              in parallel with the email
       → PATCH /mentorship/v1/me/profiles/by-id/{id}     once per mentor and mentee row; upstream checks the owner
@@ -76,6 +77,7 @@ ProfileCardComponent.onProfileSaved() / ngOnInit()      only with [syncMentorshi
 ```
 
 - **Which pages sync.** Every page with the card binds `[syncMentorshipProfiles]="true"`: the mentor and mentee profile, mentee apply, and both register pages. Someone registering in one role may already hold the other role's profile, and the BFF answers `204` without writing when they hold none; the registration itself still sends the fields at submit. While a registration is in flight the card is `inert` with the form, so an Edit LFX Profile save cannot change the name after the request was built.
+- **Profile & Account.** `ProfileLayoutComponent.syncMentorshipProfiles` calls the same endpoint after a drawer save or a save replayed after the Flow C authorization, skipped while impersonating (linuxfoundation/lfx-mentorship#466). It sends only what the save changed: the picture when the save uploaded one, and each name part that differs from the profile loaded before the save (both parts, as saved, when no profile has loaded yet). It never sends the avatar shown on the page, so a photo kept in Mentorship is not replaced by a Gravatar. A save with neither sends nothing. Most people who edit their LFX profile have no mentorship record, so the BFF reads the profiles without provisioning: unlike every other mentorship read it skips the once-per-login `PUT /me` and the provision-and-retry on upstream's not-provisioned `401`, and answers `204` on that `401` instead. A failure is only logged to the console, with no toast, since the LFX profile did save.
 - **Why by id.** `PATCH …/profiles/{type}` refuses a type that has more than one row, so the BFF patches each row by id, one at a time. Only the keys that have a value are patched; with no field, email or link there is nothing to patch.
 - **A failed copy.** A failed row stops the rest. The LFX profile itself did save, so the card logs the error and shows a warn toast (`LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_*`) that asks the user to save again; after a Connect the detail is `LFX_PROFILE_CARD_MENTORSHIP_LINK_SYNC_FAILED_DETAIL`. The request is not tied to the card's lifetime, so a user who saves and then leaves the page still gets the copy, or the toast. Every save sends all the fields, so the next save repairs every row.
 - **Primary email changes.** Changing the primary email on the Emails tab does not sync on its own; the next registration or Edit LFX Profile save on a syncing page copies the current primary.
