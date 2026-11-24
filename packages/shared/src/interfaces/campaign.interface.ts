@@ -8322,7 +8322,7 @@ export interface LinkedInVariantViewsInput {
   /** `linkedInAssetUploadEnabled` as the page holds it: `null` while unknown. */
   uploadEnabled: boolean | null;
   capabilityRead: CampaignCapabilityReadState;
-  /** The campaign's event name, which an unnamed ad's default name is built from (#5764 row 17). */
+  /** The stored brief's event name, which campaign-service builds an unnamed ad's default name from (#5764 row 17). */
   eventName?: string;
 }
 

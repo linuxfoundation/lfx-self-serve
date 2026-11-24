@@ -2526,11 +2526,6 @@ export class ImplementationTabComponent implements OnInit {
     { initialValue: this.campaignForm.controls.countryCode.value }
   );
 
-  /** The event name as typed, which an unnamed LinkedIn ad's default name is built from (#5764 row 17). */
-  private readonly linkedInEventName = toSignal(this.campaignForm.controls.eventName.valueChanges.pipe(startWith(this.campaignForm.controls.eventName.value)), {
-    initialValue: this.campaignForm.controls.eventName.value,
-  });
-
   /**
    * A counter that ticks on every form edit, so `canSubmit` can be a real `computed`.
    *
@@ -7832,7 +7827,9 @@ export class ImplementationTabComponent implements OnInit {
         showSection: this.showLinkedInSection(),
         uploadEnabled: this.linkedInAssetUploadEnabled(),
         capabilityRead: this.createCapabilityRead(),
-        eventName: this.linkedInEventName() ?? '',
+        // campaign-service builds an unnamed ad's default from the STORED brief's event name
+        // (`linkedinPreflightEventName`), not the editable field, so that is the name compared here.
+        eventName: this.briefData()?.eventDetails?.name ?? '',
       })
     );
   }

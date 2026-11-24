@@ -990,6 +990,16 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(at(f).createBlockedReason()).not.toBe('LinkedIn Ads: fix the ad name or description.');
     });
 
+    it("holds Create while a name equals another ad's default, built from the stored brief's event name", async () => {
+      const f = (await mount(null)).fixture;
+      f.componentRef.setInput('linkedInVariantCopyEnabled', true);
+      fillForm(f);
+      // The brief's event is "KubeCon EU 2026"; ad 2 is left unnamed, so campaign-service names it "KubeCon EU 2026 | variant-2".
+      type(f, 'implementation-linkedin-variant-name-0', 'KubeCon EU 2026 | variant-2');
+
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: fix the ad name or description.');
+    });
+
     it('sends the intro text and headline as edited, on that variant only', async () => {
       const f = (await mount(null)).fixture;
       type(f, 'implementation-linkedin-variant-intro-1', 'A new intro');
