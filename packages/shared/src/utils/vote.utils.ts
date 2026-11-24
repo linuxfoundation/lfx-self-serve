@@ -30,7 +30,7 @@ import { maxCodePointsValidator } from '../validators/max-code-points.validator'
 import { combineDateTime, formatTo12HourInTimezone, getUserTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import { normalizePollStatus, sortCommentResponsesByRecency } from './poll.utils';
 import { splitIntoParagraphs, truncateToUtf16Units } from './string.utils';
-import { isRankedPollType, votePermalinkPath } from './vote-results.utils';
+import { isRankedPollType, rankedAnswerChoices, votePermalinkPath } from './vote-results.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
 import type { CommitteeMember } from '../interfaces/member.interface';
@@ -43,7 +43,6 @@ import type {
   CreatePollQuestion,
   CreateVoteRequest,
   CursorWalkOutcome,
-  IndexedPollAnswer,
   MyVoteBallot,
   MyVoteResponse,
   MyVotesQuickFilter,
@@ -88,6 +87,7 @@ export {
   computeVoteParticipationStats,
   isRankedPollType,
   joinNames,
+  rankedAnswerChoices,
   votePermalinkPath,
 } from './vote-results.utils';
 
@@ -863,15 +863,6 @@ function parseVoteVoterChoiceKey(choiceKey: string): { questionId: string; choic
   const separator = choiceKey.indexOf(':');
   if (separator <= 0 || separator === choiceKey.length - 1) return null;
   return { questionId: choiceKey.slice(0, separator), choiceId: choiceKey.slice(separator + 1) };
-}
-
-/** A ranked answer's preferences in rank order — nonempty `ranked_user_choice`, else `user_choice`; unranked entries keep their order. */
-export function rankedAnswerChoices(answer: IndexedPollAnswer): UserChoice[] {
-  const choices = answer.ranked_user_choice?.length ? answer.ranked_user_choice : (answer.user_choice ?? []);
-  return choices
-    .map((choice, index) => ({ choice, index }))
-    .sort((a, b) => (a.choice.choice_rank ?? a.index + 1) - (b.choice.choice_rank ?? b.index + 1))
-    .map(({ choice }) => choice);
 }
 
 /** The voter's choices for one answer, in display order: ranked preferences for a ranked vote, selections otherwise. */

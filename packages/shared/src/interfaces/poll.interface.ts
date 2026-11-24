@@ -3,6 +3,7 @@
 
 import type { VOTE_DETAIL_SUMMARY_CARD_ACTIONS } from '../constants/vote.constants';
 import type {
+  CondorcetOutcome,
   IndexedVoteResponseStatus,
   IndividualVoteStatus,
   PollStatus,
@@ -1758,6 +1759,75 @@ export interface RankedQuestionView {
   outcome: RankedOutcome | null;
   /** Ordered standings rows, empty when `outcome` is null */
   standings: RankedStanding[];
+}
+
+/** A candidate in a Condorcet IRV question, in `question.choices` order (#5969). */
+export interface CondorcetCandidate {
+  choiceId: string;
+  choiceText: string;
+}
+
+/** One row of a Condorcet IRV question's standings (#5969). */
+export interface CondorcetStandingRow {
+  /** Competition rank ("1, 2, 2, 4") */
+  rank: number;
+  choiceId: string;
+  choiceText: string;
+  /** Head-to-head matchups this candidate won */
+  winCount: number;
+  /** Head-to-head matchups possible — 0 when the matrix is missing */
+  totalMatchups: number;
+  isWinner: boolean;
+  /** A winner who shares the win */
+  isTied: boolean;
+  /** Instant-runoff round that eliminated the candidate; null when not eliminated */
+  eliminatedInRound: number | null;
+}
+
+/** One pairwise comparison table cell: "{rowWins}–{colWins}" with its result for the row candidate (#5969). */
+export interface CondorcetPairwiseCell {
+  value: string;
+  result: 'win' | 'loss' | 'tie' | 'neutral' | 'self';
+}
+
+/** One row of the pairwise comparison table (#5969). */
+export interface CondorcetPairwiseRow {
+  candidate: CondorcetCandidate;
+  cells: CondorcetPairwiseCell[];
+}
+
+/** One row of the candidate rank summary: voters per rank position, index 0 = 1st (#5969). */
+export interface CondorcetRankSummaryRow {
+  candidate: CondorcetCandidate;
+  counts: number[];
+}
+
+/** One distinct ballot ordering and how many ballots used it (#5969). */
+export interface CondorcetBallotPatternRow {
+  /** Stable identity from ordered choice IDs; unchanged when its count or display names change */
+  key: string;
+  count: number;
+  /** Candidate names, 1st choice first; partial ballots are shorter than the candidate list */
+  ranking: string[];
+}
+
+/** Results view model for a Condorcet IRV question — built by `buildCondorcetQuestionViews`, rendered by `lfx-vote-condorcet-results` (#5969). */
+export interface CondorcetQuestionView {
+  questionId: string;
+  prompt: string;
+  candidates: CondorcetCandidate[];
+  outcome: CondorcetOutcome;
+  /** Winner names from the voting service; several for a tie, empty for no winner */
+  winnerNames: string[];
+  /** The service fell back to instant-runoff elimination */
+  usedIrv: boolean;
+  standings: CondorcetStandingRow[];
+  pairwise: CondorcetPairwiseRow[];
+  /** Rank positions 1..N, one per candidate */
+  ranks: number[];
+  rankSummary: CondorcetRankSummaryRow[];
+  /** Distinct ballot orderings, most common first; null when individual ballots aren't available */
+  ballotPatterns: CondorcetBallotPatternRow[] | null;
 }
 
 /**

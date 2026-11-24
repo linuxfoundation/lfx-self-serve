@@ -23,7 +23,7 @@ You can start from two places:
 - **Votes dashboard:** switch to your **Project** or **Foundation** lens, select **Votes** in the left navigation, then select **Create Vote** at the top of the page.
 - **A group's Votes tab:** open the group, select its **Votes** tab, and select **Create Vote**. The group is filled in and locked, and a note at the top says the vote will be created for that group.
 
-In both places, **Create Vote** opens a **Vote type** list. Select **Plurality vote** to open the form. **Condorcet IRV — Coming soon** is visible but disabled until its results support is available. When a project or foundation has no votes yet, the **Create Vote** button in the empty Votes dashboard starts a plurality vote.
+In both places, **Create Vote** opens a **Vote type** list. Select **Plurality vote** or **Condorcet IRV** to open the form with that method preselected. When a project or foundation has no votes yet, the **Create Vote** button in the empty Votes dashboard starts a plurality vote; you can change it in the form's **Voting Method** list.
 
 The form's **Previous**, **Cancel**, **Save as Draft**, and **Next** buttons stay at the top of the page. On the last step, **Next** becomes **Open Vote**.
 
@@ -47,11 +47,11 @@ Select **Next** when the required fields are filled in.
 ### Voting methods
 
 - **Plurality** (the default): voters pick from the options, and the option with the most votes wins.
-- **Condorcet IRV — Coming soon**: disabled for new votes in both the **Vote type** list and the form's **Voting Method** list while results support is being completed. Voters rank the options; the winner beats every other option head-to-head, with instant-runoff elimination when no such winner exists.
+- **Condorcet IRV**: voters rank the options; the winner beats every other option head-to-head, with instant-runoff elimination when no such winner exists. Select it in the **Vote type** list or the form's **Voting Method** list.
 
-Existing Condorcet IRV votes, including drafts created in PCC, keep their method and can still be managed. An existing Condorcet IRV draft needs at least three eligible voters before it can open. If the group has fewer, a warning shows how many it has, and **Next** and **Open Vote** stay unavailable until you pick another group or widen **Eligible Participants**. You can still save draft edits. If LFX can't check how many people are eligible, a note says so and you can continue.
+A Condorcet IRV vote needs at least three eligible voters before it can open. If the group has fewer, a warning shows how many it has, and **Next** and **Open Vote** stay unavailable until you pick another group or widen **Eligible Participants**. You can still save a draft. If LFX can't check how many people are eligible, a note says so and you can continue. Existing Condorcet IRV votes, including drafts created in PCC, keep their method and can still be managed.
 
-New votes currently use Plurality. A direct creation link requesting Condorcet IRV also starts with Plurality. After a vote is created, including when you edit a draft, its method can't be changed.
+New votes default to Plurality unless you choose Condorcet IRV. A direct creation link requesting Condorcet IRV also preselects that method. After a vote is created, including when you edit a draft, its method can't be changed.
 
 ## Step 2: Question & Options
 

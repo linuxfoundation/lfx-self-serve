@@ -349,7 +349,7 @@ describe('VoteBasicsComponent — voting method (#2921)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('disables Condorcet in the rendered creation select and labels it coming soon', async () => {
+  it('enables Condorcet in the rendered creation select without coming-soon copy', async () => {
     await render(PollType.GENERIC);
     element('vote-method-select')!.querySelector<HTMLElement>('[role="combobox"]')!.click();
     await fixture.whenStable();
@@ -357,13 +357,13 @@ describe('VoteBasicsComponent — voting method (#2921)', () => {
     const options = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'));
     const condorcet = options.find((option) => option.textContent?.includes('Condorcet IRV'))!;
     const plurality = options.find((option) => option.textContent?.includes('Plurality'))!;
-    expect(condorcet.getAttribute('data-p-disabled')).toBe('true');
-    expect(condorcet.textContent).toContain('Coming soon');
+    expect(condorcet.getAttribute('data-p-disabled')).not.toBe('true');
+    expect(condorcet.textContent).not.toContain('Coming soon');
     expect(plurality.getAttribute('data-p-disabled')).not.toBe('true');
     condorcet.click();
     await fixture.whenStable();
 
-    expect(form.get('poll_type')?.value).toBe(PollType.GENERIC);
+    expect(form.get('poll_type')?.value).toBe(PollType.CONDORCET_IRV);
   });
 
   it('offers Plurality and Condorcet IRV, describing the selected one', async () => {

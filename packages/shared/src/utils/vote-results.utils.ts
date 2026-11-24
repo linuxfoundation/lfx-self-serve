@@ -3,6 +3,7 @@
 
 import { PollType } from '../enums/poll.enum';
 import type {
+  IndexedPollAnswer,
   IrvRoundSummary,
   MeekStvRoundSummary,
   PollQuestionResult,
@@ -10,6 +11,7 @@ import type {
   RankedOutcome,
   RankedQuestionView,
   RankedStanding,
+  UserChoice,
   VoteParticipationStats,
   VoteResultsOption,
   VoteResultsQuestion,
@@ -247,6 +249,15 @@ function buildCondorcetStandings(
       headToHeadTotal: headToHead.total,
     };
   });
+}
+
+/** A ranked answer's preferences in rank order — nonempty `ranked_user_choice`, else `user_choice`; unranked entries keep their order. */
+export function rankedAnswerChoices(answer: IndexedPollAnswer): UserChoice[] {
+  const choices = answer.ranked_user_choice?.length ? answer.ranked_user_choice : (answer.user_choice ?? []);
+  return choices
+    .map((choice, index) => ({ choice, index }))
+    .sort((a, b) => (a.choice.choice_rank ?? a.index + 1) - (b.choice.choice_rank ?? b.index + 1))
+    .map(({ choice }) => choice);
 }
 
 /**
