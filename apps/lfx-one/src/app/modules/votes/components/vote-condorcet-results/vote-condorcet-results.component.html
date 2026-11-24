@@ -112,7 +112,11 @@
         </ul>
       </div>
     }
-    <div class="relative overflow-x-auto rounded-lg border border-gray-200">
+    <div
+      class="relative overflow-x-auto rounded-lg border border-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600"
+      tabindex="0"
+      role="region"
+      aria-label="Head-to-head results">
       <table class="w-full border-collapse text-sm">
         <caption class="sr-only">
           Voters preferring each row option over each column option, and the reverse
@@ -209,7 +213,11 @@
         View exact rank counts
         <i class="fa-light fa-chevron-down ml-auto transition-transform group-open:rotate-180" aria-hidden="true"></i>
       </summary>
-      <div class="relative overflow-x-auto border-t border-gray-200">
+      <div
+        class="relative overflow-x-auto border-t border-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600"
+        tabindex="0"
+        role="region"
+        aria-label="Exact rank counts">
         <table class="w-full border-collapse text-sm">
           <caption class="sr-only">
             Number of voters who ranked each option at each position
@@ -265,7 +273,11 @@
             <p class="text-xs text-slate-600">
               Most common orders first. Each row counts ballots with the same ranking. Omitted preferences are marked Not ranked.
             </p>
-            <div class="relative overflow-x-auto rounded-lg border border-gray-200">
+            <div
+              class="relative overflow-x-auto rounded-lg border border-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600"
+              tabindex="0"
+              role="region"
+              aria-label="Ballot ranking orders">
               <table class="w-full border-collapse text-sm" [id]="'vote-condorcet-ballot-orders-' + q.questionId">
                 <caption class="sr-only">
                   Number of ballots for each ranking order

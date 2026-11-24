@@ -137,6 +137,63 @@ describe('buildCondorcetQuestionViews', () => {
     expect(v.pairwise).toHaveLength(3);
   });
 
+  it('orders IRV survivors by final counts when the service winner has no table row', () => {
+    const q = question({
+      ranked_choice_winner_info: { poll_choices: [{ choice_id: 'x', choice_text: 'Service candidate' }], condorcet_irv_used_for_eliminations: true },
+      irv_round_summary: [
+        {
+          round_number: 1,
+          votes: [
+            { choice_id: 'a', vote_count: 1 },
+            { choice_id: 'b', vote_count: 3 },
+            { choice_id: 'c', vote_count: 2 },
+          ],
+          total_votes: 6,
+          exhausted_votes: 0,
+          threshold: 4,
+          message: '',
+        },
+      ],
+    });
+    const detail = view(q);
+    expect(detail.outcome).toBe(CondorcetOutcome.IRV_WINNER);
+    expect(detail.winnerNames).toEqual(['Service candidate']);
+    expect(detail.standings.map(({ choiceId, rank, isWinner }) => [choiceId, rank, isWinner])).toEqual([
+      ['b', 1, false],
+      ['c', 2, false],
+      ['a', 3, false],
+    ]);
+  });
+
+  it.each([false, true])('keeps a partial tie when a service winner is absent from configured and ranked choices (IRV: %s)', (usedIrv) => {
+    const q = question({
+      question: { question_id: 'q1', prompt: 'Who should chair the board?', type: 'single_choice', choices: CHOICES.slice(0, 2) },
+      ranked_choice_votes: rankedVotes([]).slice(0, 2),
+      ranked_choice_winner_info: winners(['a', 'c'], usedIrv),
+    });
+    const detail = view(q);
+    const [present] = buildRankedQuestionViews(results(q), PollType.CONDORCET_IRV);
+    expect(detail.outcome).toBe(CondorcetOutcome.TIE);
+    expect(detail.winnerNames).toEqual(['Candidate A', 'Candidate C']);
+    expect(detail.candidates.map(({ choiceId }) => choiceId)).toEqual(['a', 'b']);
+    expect(buildCondorcetSummaryLines([detail], true)[0].text).toBe('Tied: Candidate A and Candidate C');
+    expect(present.outcome?.result).toBe('tie');
+    expect(present.outcome?.winnerTexts).toEqual(detail.winnerNames);
+    expect(present.standings.filter(({ label }) => label === 'tied').map(({ choiceId }) => choiceId)).toEqual(['a', 'c']);
+  });
+
+  it('preserves configured names across Results, Overview, Present and ballot patterns', () => {
+    const q = question({ ranked_choice_winner_info: { poll_choices: [{ choice_id: 'a', choice_text: 'Stale service name' }] } });
+    const detail = view(q, [ballot('1', ['a', 'b'])]);
+    const [present] = buildRankedQuestionViews(results(q), PollType.CONDORCET_IRV);
+    expect(detail.winnerNames).toEqual(['Candidate A']);
+    expect(detail.standings[0].choiceText).toBe('Candidate A');
+    expect(detail.candidates[0].choiceText).toBe('Candidate A');
+    expect(detail.ballotPatterns?.[0].ranking).toEqual(['Candidate A', 'Candidate B']);
+    expect(buildCondorcetSummaryLines([detail], true)[0].text).toBe('Winner: Candidate A');
+    expect(present.outcome?.winnerTexts).toEqual(detail.winnerNames);
+  });
+
   it('orders every table by question.choices, whatever order ranked_choice_votes arrive in', () => {
     const q = question();
     q.ranked_choice_votes = [...(q.ranked_choice_votes ?? [])].reverse();
@@ -284,7 +341,7 @@ describe('buildCondorcetQuestionViews', () => {
     ]);
   });
 
-  it('breaks an IRV survivor tie on final-round votes head-to-head', () => {
+  it.each(['complete', 'mirrored', 'missing'])('shares the IRV survivor head-to-head tiebreaker with Present (%s pair)', (pair) => {
     const q = question({
       ranked_choice_winner_info: winners(['a'], true),
       // B and C both hold 2 votes in the final round; C beats B head-to-head.
@@ -308,6 +365,22 @@ describe('buildCondorcetQuestionViews', () => {
         },
       ],
     });
+    for (const rcv of q.ranked_choice_votes ?? []) {
+      rcv.condorcet_matrix = rcv.condorcet_matrix?.filter((entry) => {
+        if (pair === 'complete') return true;
+        if (entry.choice_id === 'b' && entry.other_choice_id === 'c') return false;
+        return pair !== 'missing' || entry.choice_id !== 'c' || entry.other_choice_id !== 'b';
+      });
+    }
+    const [present] = buildRankedQuestionViews(results(q), PollType.CONDORCET_IRV);
+    const [irv] = buildRankedQuestionViews(results(q), PollType.INSTANT_RUNOFF_VOTE);
+    const detail = view(q);
+    expect(present.standings.map(({ choiceId, rank }) => [choiceId, rank])).toEqual(detail.standings.map(({ choiceId, rank }) => [choiceId, rank]));
+    expect(irv.standings.map(({ choiceId }) => choiceId)).toEqual(['a', 'b', 'c']);
+    if (pair === 'missing') {
+      expect(detail.standings.map(({ choiceId }) => choiceId)).toEqual(['a', 'b', 'c']);
+      return;
+    }
     expect(view(q).standings.map((s) => [s.choiceId, s.rank])).toEqual([
       ['a', 1],
       ['c', 2],

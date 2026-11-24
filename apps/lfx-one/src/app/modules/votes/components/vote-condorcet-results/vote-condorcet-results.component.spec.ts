@@ -219,6 +219,22 @@ describe('VoteCondorcetResultsComponent', () => {
     expect(byTestId(el, 'vote-condorcet-pairwise')?.querySelector('caption.sr-only')).toBeTruthy();
   });
 
+  it('makes all scrolling tables labelled keyboard-focusable regions with visible inset focus rings', () => {
+    const el = render(question());
+    for (const details of el.querySelectorAll('details')) details.open = true;
+    const regions = Array.from(el.querySelectorAll<HTMLElement>('.overflow-x-auto'));
+    expect(regions.map((region) => region.getAttribute('aria-label'))).toEqual(['Head-to-head results', 'Exact rank counts', 'Ballot ranking orders']);
+    for (const region of regions) {
+      expect(region.getAttribute('role')).toBe('region');
+      expect(region.tabIndex).toBe(0);
+      expect(region.classList.contains('focus-visible:ring-2')).toBe(true);
+      expect(region.classList.contains('focus-visible:ring-inset')).toBe(true);
+      expect(region.classList.contains('focus-visible:ring-blue-600')).toBe(true);
+      region.focus();
+      expect(document.activeElement).toBe(region);
+    }
+  });
+
   it('renders ballot patterns, padding partial ballots', () => {
     const el = render(question());
     const rows = Array.from(byTestId(el, 'vote-condorcet-ballots')?.querySelectorAll('tbody tr') ?? []);

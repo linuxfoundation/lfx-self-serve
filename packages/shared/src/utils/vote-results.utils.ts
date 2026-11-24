@@ -6,6 +6,7 @@ import type {
   IndexedPollAnswer,
   IrvRoundSummary,
   MeekStvRoundSummary,
+  CondorcetMatrixEntry,
   PollQuestionResult,
   RankedChoiceVoteResult,
   RankedOutcome,
@@ -25,6 +26,22 @@ export function resolveCondorcetOutcome(winnerCount: number, candidateCount: num
   if (winnerCount === 1) return usedIrv ? CondorcetOutcome.IRV_WINNER : CondorcetOutcome.CONDORCET_WINNER;
   if (winnerCount > 1 && winnerCount < candidateCount) return CondorcetOutcome.TIE;
   return CondorcetOutcome.NO_WINNER;
+}
+
+/** Shared Condorcet IRV survivor tiebreaker; reads a missing pair from its mirror, then treats it as 0–0. */
+export function buildCondorcetSurvivorTiebreaker(rankedVotes: RankedChoiceVoteResult[]): (a: string, b: string) => number {
+  const matrix = new Map<string, CondorcetMatrixEntry>();
+  for (const rcv of rankedVotes) {
+    for (const entry of rcv.condorcet_matrix ?? []) {
+      matrix.set(JSON.stringify([entry.choice_id, entry.other_choice_id]), entry);
+    }
+  }
+  return (a, b) => {
+    const entry = matrix.get(JSON.stringify([a, b]));
+    if (entry) return entry.other_choice_id_wins - entry.choice_id_wins;
+    const mirror = matrix.get(JSON.stringify([b, a]));
+    return mirror ? mirror.choice_id_wins - mirror.other_choice_id_wins : 0;
+  };
 }
 
 /**
@@ -202,7 +219,15 @@ export function buildRankedQuestionViews(results: VoteResultsResponse | null, po
       standings =
         outcome.kind === 'condorcet' && headToHead
           ? buildCondorcetStandings(candidateIds, winnerIds, headToHead, textOf)
-          : buildIrvStandings(candidateIds, winnerIds, pr.irv_round_summary ?? [], headToHead, textOf, isCondorcet && outcome.result === 'none');
+          : buildIrvStandings(
+              candidateIds,
+              winnerIds,
+              pr.irv_round_summary ?? [],
+              headToHead,
+              textOf,
+              isCondorcet && outcome.result === 'none',
+              isCondorcet ? buildCondorcetSurvivorTiebreaker(rankedVotes) : null
+            );
     }
 
     return { ...view, outcome, standings };
@@ -271,7 +296,7 @@ export function rankedAnswerChoices(answer: IndexedPollAnswer): UserChoice[] {
 /**
  * Instant-runoff standings, mirroring legacy PCC: winners at rank 1, then survivors by final-round votes with sequential
  * ranks, then eliminated choices in reverse elimination order. Without rounds, winners take rank 1 and the rest share
- * the next rank. Head-to-head counts are added for Condorcet-IRV; its no-winner survivors share first place.
+ * the next rank. Condorcet-IRV adds head-to-head counts and a pairwise survivor tiebreaker; its no-winner survivors share first place.
  */
 function buildIrvStandings(
   candidateIds: string[],
@@ -279,7 +304,8 @@ function buildIrvStandings(
   rounds: IrvRoundSummary[],
   headToHead: { wins: Map<string, number>; total: number } | null,
   textOf: (choiceId: string) => string,
-  shareSurvivorRank = false
+  shareSurvivorRank = false,
+  survivorTiebreaker: ((a: string, b: string) => number) | null = null
 ): RankedStanding[] {
   const row = (choiceId: string, rank: number, label: RankedStanding['label'], round: number | null): RankedStanding => ({
     choiceId,
@@ -311,7 +337,12 @@ function buildIrvStandings(
 
   const finalVotes = new Map(orderedRounds[orderedRounds.length - 1].votes.map((v) => [v.choice_id, v.vote_count]));
   const survivors = others.filter((choiceId) => !eliminatedRound.has(choiceId));
-  if (!shareSurvivorRank) survivors.sort((a, b) => (finalVotes.get(b) ?? 0) - (finalVotes.get(a) ?? 0));
+  if (!shareSurvivorRank) {
+    survivors.sort((a, b) => {
+      const byVotes = (finalVotes.get(b) ?? 0) - (finalVotes.get(a) ?? 0);
+      return byVotes || survivorTiebreaker?.(a, b) || 0;
+    });
+  }
   const eliminated = others.filter((choiceId) => eliminatedRound.has(choiceId)).sort((a, b) => (eliminatedRound.get(b) ?? 0) - (eliminatedRound.get(a) ?? 0));
 
   const startRank = winners.length + 1;
@@ -391,6 +422,7 @@ function buildRankedOutcome(
     const candidateCount = new Set([
       ...(pr.question.choices ?? []).map((choice) => choice.choice_id),
       ...(pr.ranked_choice_votes ?? []).map((choice) => choice.choice_id),
+      ...winnerIds,
     ]).size;
     const outcome = resolveCondorcetOutcome(winnerIds.length, candidateCount, usedEliminations);
     if (outcome === CondorcetOutcome.NO_WINNER) result = 'none';

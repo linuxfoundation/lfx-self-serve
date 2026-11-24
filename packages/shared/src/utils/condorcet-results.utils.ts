@@ -17,7 +17,7 @@ import type {
   VoteResultsSummaryLine,
   VoteVoter,
 } from '../interfaces/poll.interface';
-import { joinNames, rankedAnswerChoices, resolveCondorcetOutcome } from './vote-results.utils';
+import { buildCondorcetSurvivorTiebreaker, joinNames, rankedAnswerChoices, resolveCondorcetOutcome } from './vote-results.utils';
 
 /**
  * Builds the Condorcet IRV results view for each question (#5969), a port of PCC's condorcet-poll-result derivations
@@ -84,7 +84,7 @@ function buildQuestionView(pr: PollQuestionResult, ballots: VoteVoter[] | null):
   const rankedVotes = pr.ranked_choice_votes ?? [];
   const textById = new Map((pr.question.choices ?? []).map((choice) => [choice.choice_id, choice.choice_text]));
   for (const choice of pr.ranked_choice_winner_info?.poll_choices ?? []) {
-    if (choice.choice_text) textById.set(choice.choice_id, choice.choice_text);
+    if (!textById.has(choice.choice_id) && choice.choice_text) textById.set(choice.choice_id, choice.choice_text);
   }
 
   const candidates: CondorcetCandidate[] = (pr.question.choices ?? []).map((choice) => ({
@@ -104,14 +104,15 @@ function buildQuestionView(pr: PollQuestionResult, ballots: VoteVoter[] | null):
 
   const winnerIds = [...new Set((pr.ranked_choice_winner_info?.poll_choices ?? []).map((choice) => choice.choice_id))];
   const usedIrv = pr.ranked_choice_winner_info?.condorcet_irv_used_for_eliminations === true;
-  const outcome = resolveCondorcetOutcome(winnerIds.length, candidates.length, usedIrv);
+  const candidateCount = new Set([...candidates.map((candidate) => candidate.choiceId), ...winnerIds]).size;
+  const outcome = resolveCondorcetOutcome(winnerIds.length, candidateCount, usedIrv);
   // Every candidate returned is no winner (PCC parity), so nobody is marked as a winner.
   const winners = new Set(outcome === CondorcetOutcome.NO_WINNER ? [] : winnerIds);
   const winnerNames = winnerIds.filter((id) => winners.has(id)).map((id) => textById.get(id) ?? id);
   const isTie = outcome === CondorcetOutcome.TIE;
 
   const standings = usedIrv
-    ? buildIrvStandings(candidates, winners, isTie, pr.irv_round_summary ?? [], matrix, winCounts, totalMatchups)
+    ? buildIrvStandings(candidates, winners, isTie, pr.irv_round_summary ?? [], buildCondorcetSurvivorTiebreaker(rankedVotes), winCounts, totalMatchups)
     : buildCondorcetStandings(candidates, winners, isTie, matrix, winCounts, totalMatchups);
 
   const ranks = candidates.map((_, index) => index + 1);
@@ -210,7 +211,7 @@ function buildIrvStandings(
   winners: Set<string>,
   isTie: boolean,
   rounds: IrvRoundSummary[],
-  matrix: Map<string, Map<string, CondorcetMatrixEntry>>,
+  survivorTiebreaker: (a: string, b: string) => number,
   winCounts: Map<string, number>,
   totalMatchups: number
 ): CondorcetStandingRow[] {
@@ -231,14 +232,13 @@ function buildIrvStandings(
   const finalRound = rounds.reduce((latest, round) => (round.round_number > latest.round_number ? round : latest), rounds[0]);
   const finalVotes = new Map((finalRound.votes ?? []).map((vote) => [vote.choice_id, vote.vote_count]));
 
-  const survivorsShareRank = winnerRows.length === 0;
+  const survivorsShareRank = winners.size === 0;
   const survivors = candidates.filter((c) => !winners.has(c.choiceId) && !eliminatedIds.has(c.choiceId));
   if (!survivorsShareRank) {
     survivors.sort((a, b) => {
       const byVotes = (finalVotes.get(b.choiceId) ?? 0) - (finalVotes.get(a.choiceId) ?? 0);
       if (byVotes !== 0) return byVotes;
-      const [aOverB, bOverA] = pairwiseCounts(a.choiceId, b.choiceId, matrix);
-      return bOverA - aOverB;
+      return survivorTiebreaker(a.choiceId, b.choiceId);
     });
   }
 

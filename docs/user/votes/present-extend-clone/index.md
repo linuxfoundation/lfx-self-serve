@@ -47,7 +47,7 @@ While the vote is open, **Exit** (or **Esc**) asks **Leave the presenter? The vo
 
 The same page switches to the final results: the tally for each question, abstentions when the vote allowed them, turnout (how many cast a vote out of those eligible, and how many didn't), and when the vote closed. For a ranked vote, each question shows its winner banner and standings above the rank breakdown, as described in [Ranked questions](../vote-results/#ranked-questions).
 
-For Condorcet IRV, the presenter and the vote's page use the same outcome interpretation. If the voting service returns every option without selecting a winner, both say no winner could be determined rather than marking every option **Tied**. A tie among only some options still names and marks those options **Tied**.
+For Condorcet IRV, the presenter and the vote's page use the same outcome interpretation. If the voting service returns every option without selecting a winner, both say no winner could be determined rather than marking every option **Tied**. A tie among only some options still names and marks those options **Tied**, including a service-selected option missing from the result tables. For instant-runoff fallback, both views order remaining non-winning options by final-round vote counts and use their head-to-head comparison when counts match. Configured option names are kept even if the service supplies different winner text.
 
 If results are still being finalized, the presenter keeps tallies, abstentions, and turnout hidden and checks again for a limited time. A failed check during that wait does not interrupt the finalizing message or stop the remaining checks. If results are still unavailable after the automatic checks stop, exit and reopen the presenter to try again.
 
