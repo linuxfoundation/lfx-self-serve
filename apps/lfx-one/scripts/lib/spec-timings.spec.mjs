@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { attachSpecPaths, parseVitestFileLines, vitestNameForSpec } from './spec-timings.mjs';
+import { attachSpecPaths, missingSpecs, parseVitestFileLines, vitestNameForSpec } from './spec-timings.mjs';
 
 const ESC = '\u001b';
 
@@ -28,6 +28,17 @@ describe('parseVitestFileLines', () => {
   it('reads every file line from multi-line output, with CRLF', () => {
     const text = ['noise', ' ✓ spec-app-a.spec.js (2 tests) 10ms', '   ✓ test 5ms', ' ✓ spec-app-b.spec.js (3 tests) 20ms'].join('\r\n');
     expect(parseVitestFileLines(text).map(({ name }) => name)).toEqual(['spec-app-a.spec.js', 'spec-app-b.spec.js']);
+  });
+});
+
+describe('missingSpecs', () => {
+  const files = ['src/app/a.spec.ts', 'src/app/b.spec.ts'];
+  it.each([
+    ['every expected file read', ' ✓ spec-app-a.spec.js (1 test) 5ms\n ↓ spec-app-b.spec.js (2 tests | 2 skipped) 0ms', []],
+    ['one readable line and one missing', ' ✓ spec-app-a.spec.js (1 test) 5ms\n ✓ spec-app-b.spec.js 7ms', ['src/app/b.spec.ts']],
+    ['nothing readable', 'no timing lines here', files],
+  ])('%s', (_label, output, expected) => {
+    expect(missingSpecs(attachSpecPaths(parseVitestFileLines(output), files).matched, files)).toEqual(expected);
   });
 });
 

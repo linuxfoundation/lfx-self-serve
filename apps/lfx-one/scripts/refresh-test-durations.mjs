@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { discoverSpecs } from './lib/app-test-shards.mjs';
 import { buildSpecBudgetBaseline } from './lib/check-spec-budget.mjs';
 import { buildTestDurations, DRIFT_THRESHOLD, weightDrift } from './lib/refresh-test-durations.mjs';
-import { attachSpecPaths, parseVitestFileLines } from './lib/spec-timings.mjs';
+import { attachSpecPaths, missingSpecs, parseVitestFileLines } from './lib/spec-timings.mjs';
 
 const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DURATIONS = join(APP_ROOT, 'scripts/frontend-test-durations.json');
@@ -39,12 +39,20 @@ try {
 
   const { logs, source, sha } = runId ? fetchRunLogs(runId) : readLogDir(resolve(logsDir));
   const parsed = logs.flatMap((text) => parseVitestFileLines(text));
-  const { matched, unknown } = attachSpecPaths(parsed, discoverSpecs(join(APP_ROOT, 'src/app'), APP_ROOT));
+  const discovered = discoverSpecs(join(APP_ROOT, 'src/app'), APP_ROOT);
+  const { matched, unknown } = attachSpecPaths(parsed, discovered);
   if (matched.length === 0) throw new Error('No per-file timings found in the logs. Did the Vitest output format change?');
   if (unknown.length > 0) console.log(`[durations] ignoring ${unknown.length} spec(s) no longer in src/app: ${unknown.join(', ')}`);
 
   const current = JSON.parse(readFileSync(DURATIONS, 'utf8'));
-  const files = buildTestDurations(matched);
+  // A spec with no readable timing line keeps its saved weight rather than being dropped (it may
+  // also be newer than the source run). The count is printed so a parser gap is visible.
+  const missing = missingSpecs(matched, discovered);
+  const kept = missing.filter((file) => file in current.files);
+  if (missing.length > 0) console.log(`[durations] ${missing.length} spec(s) had no timing line; kept the saved weight for ${kept.length}: ${kept.join(', ') || 'none'}`);
+  const files = Object.fromEntries(
+    Object.entries({ ...Object.fromEntries(kept.map((file) => [file, current.files[file]])), ...buildTestDurations(matched) }).sort(([a], [b]) => (a < b ? -1 : Number(a > b)))
+  );
   const drift = weightDrift(current.files, files);
   const drifted = drift > DRIFT_THRESHOLD;
   console.log(

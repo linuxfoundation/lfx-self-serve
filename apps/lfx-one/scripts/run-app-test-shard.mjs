@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createAppTestShards, discoverSpecs, parseShard } from './lib/app-test-shards.mjs';
 import { checkSpecBudget, formatViolation } from './lib/check-spec-budget.mjs';
-import { attachSpecPaths, parseVitestFileLines } from './lib/spec-timings.mjs';
+import { attachSpecPaths, missingSpecs, parseVitestFileLines } from './lib/spec-timings.mjs';
 
 const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -83,6 +83,15 @@ function checkBudget(output, selected) {
   if (unknown.length > 0) console.log(`[test:app] timings for specs outside this shard were ignored: ${unknown.join(', ')}`);
   if (matched.length === 0) {
     console.error('[test:app] Found no per-file Vitest timings in the shard output, so the runtime budget could not be checked. Update scripts/lib/spec-timings.mjs to match the new output.');
+    return true;
+  }
+  const missing = missingSpecs(matched, selected);
+  if (missing.length > 0) {
+    const shown = missing.slice(0, 10).join(', ');
+    console.error(
+      `[test:app] No Vitest timing line for ${missing.length} of ${selected.length} specs in this shard, so their runtime budget could not be checked: ` +
+        `${shown}${missing.length > 10 ? ', ...' : ''}. Update scripts/lib/spec-timings.mjs to match the output.`
+    );
     return true;
   }
   const { files: baseline } = JSON.parse(readFileSync(join(APP_ROOT, 'scripts/spec-budget-baseline.json'), 'utf8'));

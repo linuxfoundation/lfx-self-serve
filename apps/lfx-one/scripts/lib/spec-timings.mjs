@@ -62,3 +62,16 @@ export function attachSpecPaths(timings, files) {
   }
   return { matched, unknown };
 }
+
+/**
+ * The expected spec files that have no timing line at all. Vitest prints one summary line per
+ * file, fully skipped files included (the ↓ mark), so a missing file means its line could not
+ * be read, and its budget would otherwise go unchecked while the shard passes.
+ *
+ * @param {{ file: string }[]} matched - Output of attachSpecPaths.
+ * @param {string[]} files - The spec paths that were expected to run.
+ */
+export function missingSpecs(matched, files) {
+  const seen = new Set(matched.map(({ file }) => file));
+  return files.filter((file) => !seen.has(file));
+}
