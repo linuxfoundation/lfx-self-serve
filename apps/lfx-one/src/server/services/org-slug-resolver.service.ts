@@ -151,6 +151,12 @@ export class OrgSlugResolverService {
     if (preferred && preferred.slug === segment) {
       return { outcome: 'hit', org: preferred, cache };
     }
+    if (failed && !preferred) {
+      // The employee check could not answer and query-service does not show the caller their own selection, so it may be the all
+      // employee view company sharing this slug. A 409 would be kept by the client as "not found" for the page's lifetime: answer
+      // the retriable 503 instead.
+      throw this.employeeViewUnavailable(undefined);
+    }
     return { outcome: 'ambiguous', cache };
   }
 
@@ -163,16 +169,33 @@ export class OrgSlugResolverService {
    */
   private async employeeCandidateForSlug(req: Request, slug: string): Promise<{ employee: OrgLensEmployeeViewGrant | null; failed: boolean }> {
     if (!isOrgLensEmployeeViewEnabled(req)) return { employee: null, failed: false };
+    try {
+      const verdict = await this.resolveReducedWithinBudget(req, 'resolve_org_slug');
+      return { employee: verdict.eligible && verdict.org.orgSlug === slug ? verdict.org : null, failed: false };
+    } catch (error) {
+      logger.warning(req, 'resolve_employee_view_org', 'Could not check the employee-view company against a readable slug; keeping the readable answer', {
+        err: error,
+      });
+      return { employee: null, failed: true };
+    }
+  }
+
+  /**
+   * `resolveReduced` bounded by {@link ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS}: every employee-view lookup here rides the page-blocking
+   * address guard, so none may wait on a slow upstream past the resolver's budget. Expiry rejects with a typed 504 (the callers treat
+   * it like any other lookup failure); the lookup keeps running and its outcome stays cached for a retry.
+   */
+  private async resolveReducedWithinBudget(req: Request, operation: string): Promise<Awaited<ReturnType<OrgEmployeeViewService['resolveReduced']>>> {
     let timer: NodeJS.Timeout | undefined;
     try {
-      const verdict = await Promise.race([
+      return await Promise.race([
         this.employeeView.resolveReduced(req),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
             () =>
               reject(
-                new MicroserviceError(`Employee-view slug check exceeded ${ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS}ms budget`, 504, 'EMPLOYEE_VIEW_LOOKUP_TIMEOUT', {
-                  operation: 'resolve_org_slug',
+                new MicroserviceError(`Employee-view lookup exceeded ${ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS}ms budget`, 504, 'EMPLOYEE_VIEW_LOOKUP_TIMEOUT', {
+                  operation,
                   service: 'LFX_V2_SERVICE',
                 })
               ),
@@ -180,12 +203,6 @@ export class OrgSlugResolverService {
           );
         }),
       ]);
-      return { employee: verdict.eligible && verdict.org.orgSlug === slug ? verdict.org : null, failed: false };
-    } catch (error) {
-      logger.warning(req, 'resolve_employee_view_org', 'Could not check the employee-view company against a readable slug; keeping the readable answer', {
-        err: error,
-      });
-      return { employee: null, failed: true };
     } finally {
       clearTimeout(timer);
     }
@@ -221,7 +238,7 @@ export class OrgSlugResolverService {
     let employeeViewError: unknown;
     if (isOrgLensEmployeeViewEnabled(req)) {
       try {
-        const verdict = await this.employeeView.resolveReduced(req);
+        const verdict = await this.resolveReducedWithinBudget(req, 'resolve_employee_view_org');
         if (verdict.eligible && matches(verdict.org)) {
           return { uid: verdict.org.orgUid, slug: verdict.org.orgSlug ?? null, name: verdict.org.orgName, employeeView: true };
         }

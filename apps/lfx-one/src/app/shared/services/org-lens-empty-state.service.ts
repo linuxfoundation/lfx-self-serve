@@ -197,7 +197,7 @@ export class OrgLensEmptyStateService {
   public readonly listIncomplete: Signal<boolean> = computed(
     () =>
       this.settled() &&
-      (this.selectedHeld() || this.selectedClaOnly()) &&
+      (this.selectedHeld() || this.selectedClaOnly() || this.viewMode.isEmployeeView() || this.viewMode.isFullAccessReader()) &&
       (this.roleGrants.lookupOutcome() === 'partial' ||
         this.claOnlyAccess.lookupFailed() ||
         (!this.roleGrants.isStaff() && this.orgNavigation.upstreamFailed()))

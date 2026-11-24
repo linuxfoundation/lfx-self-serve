@@ -24,7 +24,7 @@ import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { isOrgLensEmployeeViewEnabled } from '../helpers/org-lens-employee-view-flag.helper';
 import { MicroserviceError } from '../errors/microservice.error';
 import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
-import { getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { AccessCheckService } from './access-check.service';
 import { CdpService } from './cdp.service';
@@ -165,19 +165,22 @@ export class OrgEmployeeViewService {
       return { eligible: false, reason: 'no-employer' };
     }
 
+    // The verdict depends on the session's verified email as well as the username (the strict email proof reads it), so an older
+    // session with a different email must never share, or evict, the entry of a current one.
+    const key = `${username}\u0000${getEffectiveEmail(req) ?? ''}`;
     const now = Date.now();
-    const hit = OrgEmployeeViewService.cache.get(username);
+    const hit = OrgEmployeeViewService.cache.get(key);
     let outcome: Promise<EmployeeViewOutcome>;
     if (hit && hit.expiresAt > now) {
       outcome = hit.outcome;
     } else {
       outcome = this.compute(req, username);
-      OrgEmployeeViewService.cache.set(username, { expiresAt: now + ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS, outcome });
+      OrgEmployeeViewService.cache.set(key, { expiresAt: now + ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS, outcome });
       if (OrgEmployeeViewService.cache.size > ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES) {
         this.evict(now);
       }
       outcome.catch(() => {
-        if (OrgEmployeeViewService.cache.get(username)?.outcome === outcome) OrgEmployeeViewService.cache.delete(username);
+        if (OrgEmployeeViewService.cache.get(key)?.outcome === outcome) OrgEmployeeViewService.cache.delete(key);
       });
     }
 
@@ -360,9 +363,20 @@ export class OrgEmployeeViewService {
                 { bearerToken }
               )
               // The canonical account id lives on the query-service wrapper (`resource.id`, `b2b_org:<sfid>`), which flattening drops.
+              .then((page) => {
+                // A confirmed empty page is `resources: []`. A missing or null array is a malformed answer, not "no company": reject it so it
+                // surfaces as the retriable 503 instead of a cached denial or an incomplete company set.
+                if (!Array.isArray(page?.resources)) {
+                  throw new MicroserviceError('Member-company lookup returned an unreadable response', 502, 'EMPLOYEE_VIEW_LOOKUP_INVALID_RESPONSE', {
+                    operation: OPERATION,
+                    service: 'LFX_V2_SERVICE',
+                  });
+                }
+                return page;
+              })
               .then((page) => ({
                 ...page,
-                resources: (page?.resources ?? []).map((resource) => ({
+                resources: page.resources.map((resource) => ({
                   ...resource,
                   data: { ...resource.data, uid: bareUid(resource.id) || resource.data?.uid },
                 })),
