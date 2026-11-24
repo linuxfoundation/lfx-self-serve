@@ -298,7 +298,8 @@ export class SidebarNavService {
    * links to `/company/{CDP id}/{section}`, and every other Company Lens section, EasyCLA included, greyed in its usual
    * place with the reason "Not available for CDP companies". Null off CDP pages, and when the address opened no page
    * (no company, could not verify), so the B2B navigation shows as on any other Company Lens page. Empty while the
-   * page is loading, so neither navigation flashes in before the answer.
+   * page is loading, so neither navigation flashes in before the answer, and on a low-activity page, which serves no
+   * section and shows only its low-activity state.
    */
   private readonly cdpLensItems = computed((): SidebarMenuItem[] | null => {
     const context = this.cdpCompanyContext.context();
@@ -306,6 +307,7 @@ export class SidebarNavService {
     if (!context.settled) return [];
     const page = context.page;
     if (!page) return null;
+    if (page.state !== 'ok') return [];
     const base = `/${CDP_COMPANY_ROUTE_PREFIX}/${context.cdpId}`;
     const on = new Set(page.sections.filter((section) => section.state === 'on').map((section) => section.key));
     const off = (item: CdpCompanyOffNavItem): SidebarMenuItem => ({

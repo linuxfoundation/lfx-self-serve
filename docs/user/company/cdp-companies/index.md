@@ -44,6 +44,8 @@ On **Events** and **Training & Certification**, a number that would describe few
 | **Not enough activity to show — last active** _month year_     | The company has some recent activity, but too little to show its figures.                                                   |
 | **Access could not be verified**                               | Whether you can see CDP companies could not be checked right now. Select **Retry**.                                         |
 
+On a company with one of the two activity messages, the sidebar lists no pages: the message is all the page shows.
+
 An old address of a company that was merged into another opens the company it was merged into. An address of a company that now has a company account opens that company's Company lens home, if you can open it.
 
 ## Related sections

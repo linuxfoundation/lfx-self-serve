@@ -23,6 +23,23 @@ export function formatCdpCompanyMonth(month: string | null | undefined): string 
   return MONTH_FORMAT.format(new Date(Date.UTC(Number(match[1]), monthIndex, 1)));
 }
 
+const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DATE_FORMAT = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+
+/**
+ * `YYYY-MM-DD` → "Mar 5, 2026". A date-only value is a calendar date, not an instant: it is built as that day at UTC
+ * midnight and formatted in UTC, so no timezone shifts the day and the server and browser renders agree.
+ * Null when absent or not a real date.
+ */
+export function formatCdpCompanyDate(date: string | null | undefined): string | null {
+  const match = date ? DATE_PATTERN.exec(date) : null;
+  if (!match) return null;
+  const [year, month, day] = [Number(match[1]), Number(match[2]) - 1, Number(match[3])];
+  const value = new Date(Date.UTC(year, month, day));
+  if (value.getUTCFullYear() !== year || value.getUTCMonth() !== month || value.getUTCDate() !== day) return null;
+  return DATE_FORMAT.format(value);
+}
+
 /** True for a CDP section key — guards a URL segment before it is reused in a redirect. */
 export function isCdpSectionKey(value: string | null | undefined): value is CdpSectionKey {
   return !!value && (CDP_COMPANY_SECTION_KEYS as readonly string[]).includes(value);

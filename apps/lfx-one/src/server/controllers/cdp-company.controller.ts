@@ -9,17 +9,17 @@ import {
   CDP_VIEW_OUTCOME_LOCALS_KEY,
   ORG_CATALOGUE_SEARCH_MIN_CHARS,
 } from '@lfx-one/shared/constants';
-import type { CdpCompanyAvailability, CdpCompanyErrorBody, CdpCompanyServiceResult, CdpSectionKey, CdpViewOutcome } from '@lfx-one/shared/interfaces';
+import type { CdpCompanyAvailability, CdpCompanyErrorBody, CdpCompanyServiceResult, CdpSectionKey } from '@lfx-one/shared/interfaces';
 import type { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { resolveCdpAudience } from '../helpers/cdp-audience.helper';
+import { logCdpCompanyViewOnFinish } from '../helpers/cdp-company-view-log.helper';
 import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
 import { cdpAudienceOf } from '../middleware/require-cdp-audience.middleware';
 import { CdpCompanySearchService } from '../services/cdp-company-search.service';
 import { CdpCompanyService } from '../services/cdp-company.service';
 import { logger } from '../services/logger.service';
-import { getEffectiveUsername } from '../utils/auth-helper';
 
 /**
  * Spec 062 — CDP company BFF (contracts/bff-cdp-companies.md, contracts/bff-cdp-search.md). Every route but
@@ -83,7 +83,7 @@ export class CdpCompanyController {
         sendRefusal(res, 404, CDP_COMPANY_ERROR_CODES.NOT_FOUND);
         return;
       }
-      logViewOnFinish(req, res, cdpId, 'page');
+      logCdpCompanyViewOnFinish(req, res, cdpId, 'page');
 
       const result = await this.service.getPage(req, cdpId);
 
@@ -106,7 +106,7 @@ export class CdpCompanyController {
         sendRefusal(res, 404, CDP_COMPANY_ERROR_CODES.NOT_FOUND);
         return;
       }
-      logViewOnFinish(req, res, cdpId, section);
+      logCdpCompanyViewOnFinish(req, res, cdpId, section);
 
       const result = await this.service.getSection(req, cdpAudienceOf(res), cdpId, section);
 
@@ -126,23 +126,6 @@ function parseCdpId(req: Request): string | null {
 
 function isSectionKey(value: unknown): value is CdpSectionKey {
   return typeof value === 'string' && (CDP_COMPANY_SECTION_KEYS as readonly string[]).includes(value);
-}
-
-/**
- * FR-015, DR-022 — exactly one `cdp_company_view` event per page or section response, emitted when the response
- * finishes, after the audience check and id validation. Only the caller's own username is logged about people.
- */
-function logViewOnFinish(req: Request, res: Response, cdpId: string, section: CdpSectionKey | 'page'): void {
-  res.once('finish', () => {
-    const outcome = (res.locals[CDP_VIEW_OUTCOME_LOCALS_KEY] as CdpViewOutcome | undefined) ?? 'error';
-    logger.info(req, 'cdp_company_view', 'CDP company viewed', {
-      username: getEffectiveUsername(req),
-      cdp_id: cdpId,
-      section,
-      outcome,
-      status_code: res.statusCode,
-    });
-  });
 }
 
 function sendResult<T>(res: Response, result: CdpCompanyServiceResult<T>): void {

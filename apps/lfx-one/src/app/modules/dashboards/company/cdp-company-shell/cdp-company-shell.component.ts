@@ -75,6 +75,11 @@ export class CdpCompanyShellComponent {
   protected readonly logoUrl: Signal<string | null> = computed(() => (this.logoFailed() ? null : (this.company()?.logoUrl ?? null)));
 
   public constructor() {
+    // Entered synchronously from the route param, before the first render and on the server too: the async `load`
+    // runs only after the first change detection, and until then an empty context would let the Company Lens
+    // navigation fall back to the selected B2B company's items for a moment.
+    this.enteredId = this.cdpId();
+    this.context.enter(this.enteredId);
     this.destroyRef.onDestroy(() => {
       if (this.enteredId !== null) this.context.leave(this.enteredId);
     });

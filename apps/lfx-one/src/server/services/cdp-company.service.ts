@@ -93,7 +93,8 @@ export class CdpCompanyService {
         ...(topProjectName ? { topProjectName } : {}),
         lastActiveMonth: profile.lastActiveMonth,
       },
-      sections: sectionStates(),
+      // A low-activity page serves no section (`getSection` answers 404 for each), so it lists none (FR-017).
+      sections: state === 'ok' ? sectionStates() : [],
     };
     return { ok: true, value: page, outcome: state === 'ok' ? 'ok' : 'low_activity' };
   }

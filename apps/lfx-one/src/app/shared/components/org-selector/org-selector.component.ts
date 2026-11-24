@@ -810,8 +810,8 @@ export class OrgSelectorComponent {
     if (term.length < ORG_CATALOGUE_SEARCH_MIN_CHARS) return of(null);
     return this.cdpCompanyService.availability().pipe(
       take(1),
-      switchMap((signal) => {
-        if (signal !== 'available') return of(null);
+      switchMap((audience) => {
+        if (audience !== 'available') return of(null);
         return this.cdpCompanyService.search(term).pipe(
           map(
             (response): OrgSelectorCdpGroup => ({

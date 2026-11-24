@@ -482,6 +482,27 @@ describe('SnowflakeService circuit breaker', () => {
       expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
     });
   });
+
+  describe('expected deadline miss (expectTimeout, spec 062 DR-043)', () => {
+    it('still counts an SDK or pool error toward the breaker when the caller set expectTimeout', async () => {
+      const { service } = serviceWithPool(vi.fn(() => Promise.reject(new Error('ResourceRequest timed out'))));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD, { timeout: 1_000, expectTimeout: true });
+
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+    });
+
+    it('still fails fast on an OPEN circuit when the caller set expectTimeout', async () => {
+      const use = vi.fn(querySuccess);
+      const { service, internals } = serviceWithPool(use);
+      internals.circuitState = SnowflakeCircuitState.OPEN;
+      internals.lastFailureTime = Date.now();
+
+      await expect(service.execute('SELECT 1', [], { timeout: 1_000, expectTimeout: true })).rejects.toBeDefined();
+      expect(use).not.toHaveBeenCalled();
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+    });
+  });
 });
 
 describe('SnowflakeService query timeout', () => {
@@ -593,6 +614,59 @@ describe('SnowflakeService query timeout', () => {
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(statement.cancel).not.toHaveBeenCalled();
+  });
+
+  describe('expected deadline miss (expectTimeout, spec 062 DR-043)', () => {
+    const internalsOf = (service: SnowflakeService) =>
+      service as unknown as { circuitState: SnowflakeCircuitState; lastFailureTime: number; consecutiveFailures: number; probeInFlight: boolean };
+
+    /** One query whose statement never finishes, so its own 1 s timer fires; resolves with what it rejected with. */
+    const missDeadline = async (service: SnowflakeService, options: SnowflakeQueryOptions) => {
+      const outcome = service.execute('SELECT 1', [], options).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(1_000);
+      return outcome;
+    };
+
+    it("leaves an opted-in miss of the query's own timer out of the failure count", async () => {
+      vi.useFakeTimers();
+      const { service } = serviceWithStatement(false);
+      internalsOf(service).consecutiveFailures = 2;
+
+      for (let i = 0; i < SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD; i++) {
+        expect(await missDeadline(service, { timeout: 1_000, expectTimeout: true })).toMatchObject({
+          message: expect.stringContaining('Snowflake query timed out after 1000ms'),
+        });
+      }
+
+      // Neither reset nor incremented: the miss says nothing about Snowflake's health.
+      expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 2 });
+    });
+
+    it('counts the same miss when the caller did not set expectTimeout', async () => {
+      vi.useFakeTimers();
+      const { service } = serviceWithStatement(false);
+
+      await missDeadline(service, { timeout: 1_000 });
+      expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 1 });
+
+      for (let i = 1; i < SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD; i++) {
+        await missDeadline(service, { timeout: 1_000 });
+      }
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+    });
+
+    it('frees the HALF_OPEN probe slot without booking a failure when the probe misses its expected deadline', async () => {
+      vi.useFakeTimers();
+      const { service } = serviceWithStatement(false);
+      const internals = internalsOf(service);
+      internals.circuitState = SnowflakeCircuitState.OPEN;
+      internals.lastFailureTime = Date.now() - SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_RESET_TIMEOUT_MS - 1;
+
+      await missDeadline(service, { timeout: 1_000, expectTimeout: true });
+
+      expect(internals.probeInFlight).toBe(false);
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.HALF_OPEN);
+    });
   });
 });
 

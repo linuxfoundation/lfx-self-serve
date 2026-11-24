@@ -76,3 +76,9 @@ export const CDP_AUDIENCE_LOCALS_KEY = 'cdpAudience';
 
 /** `res.locals` key under which a CDP page or section handler records its `cdp_company_view` outcome before responding (FR-015). */
 export const CDP_VIEW_OUTCOME_LOCALS_KEY = 'cdpViewOutcome';
+
+/**
+ * HKDF info label of the key behind the `cdp_company_view` event's `viewer` pseudonym (FR-015, DR-050): derived from
+ * `PCC_AUTH0_SECRET` under its own label, never the raw secret and never another feature's key.
+ */
+export const CDP_COMPANY_VIEW_VIEWER_HKDF_INFO = 'lfx-one:cdp-company-view:v1';

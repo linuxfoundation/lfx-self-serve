@@ -20,8 +20,8 @@
         <tr data-testid="cdp-company-events-row">
           <td class="font-medium text-gray-900">{{ row.eventName }}</td>
           <td>
-            @if (row.eventDate) {
-              {{ row.eventDate | date: 'mediumDate' : 'UTC' }}
+            @if (row.eventDateLabel) {
+              {{ row.eventDateLabel }}
             } @else {
               <span class="text-gray-400">&mdash;</span>
             }
