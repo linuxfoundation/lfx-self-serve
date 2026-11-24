@@ -12,6 +12,7 @@ import {
   MKTG_STARTED_RUN_DISCOVERY_LIMIT,
   MKTG_STARTED_RUN_TERMINAL_CACHE_LIMIT,
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
+  MKTG_ONE_OFF_STOPPED_MESSAGE,
 } from '@lfx-one/shared/constants';
 
 const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Record<string, string>; lastModified: Date }>());
@@ -34,6 +35,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-os-agents.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/member-360.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-one-off.constants')),
 }));
 vi.mock('@lfx-one/shared/utils', async () => vi.importActual('../../../../../packages/shared/src/utils/mktg-document-store.utils'));
 vi.mock('./mktg-document-comments.service', () => ({
@@ -276,12 +278,13 @@ describe('MktgDocumentRunService', () => {
     }
   );
 
-  it.each(['failed', 'refused'])('records a %s reply immediately without storing its text in size-limited metadata', async (status) => {
+  it.each(['failed', 'refused'])('marks a %s result immediately while hiding its reply from an unknown creator', async (status) => {
     await service.start(req, project, types[0].agentKey, session);
     const reply = 'Synthetic refusal <b>plain text</b> '.repeat(300);
     flows.result.mockResolvedValue({ status, failureText: reply, reply });
     const runs = await service.reconcile(req, project);
-    expect(runs[0]).toMatchObject({ state: 'failed', failureText: reply });
+    // No subject is attached to req: unknown creators must not receive prose.
+    expect(runs[0]).toMatchObject({ state: 'failed', failureText: MKTG_ONE_OFF_STOPPED_MESSAGE });
     expect(JSON.stringify(stored().metadata)).not.toContain(reply);
     await service.retry(req, project, types[0].agentKey, 'living', hash(session));
     expect(stored().metadata['state']).toBe('writing');
@@ -325,11 +328,11 @@ describe('MktgDocumentRunService', () => {
     expect(stored().metadata['state']).toBe('completed');
   });
 
-  it('never re-queries failed runs on list reads, bounds reply metadata, and refreshes the full reply only on detail', async () => {
+  it('never re-queries failed list reads, bounds metadata and keeps unknown-reader detail copy fixed', async () => {
     await service.start(req, project, types[0].agentKey, session);
     const reply = 'Synthetic plain reply. '.repeat(300);
     flows.result.mockResolvedValue({ status: 'failed', failureText: reply });
-    expect((await service.reconcile(req, project))[0].failureText).toBe(reply);
+    expect((await service.reconcile(req, project))[0].failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
     expect(Buffer.byteLength(JSON.stringify(stored().metadata))).toBeLessThan(2048);
     vi.advanceTimersByTime(3000);
     flows.result.mockClear();
@@ -340,7 +343,35 @@ describe('MktgDocumentRunService', () => {
     expect(flows.result).not.toHaveBeenCalled();
     expect(flows.head).not.toHaveBeenCalled();
     expect(flows.get).not.toHaveBeenCalled();
-    expect((await service.refreshFailure(req, project, types[0].agentKey, 'living', hash(session)))?.failureText).toBe(reply);
+    expect((await service.refreshFailure(req, project, types[0].agentKey, 'living', hash(session)))?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
+  });
+
+  it.each(['failed', 'refused'])('keeps a %s reply and full-detail refresh available only to its authenticated creator', async (status) => {
+    const creator = { oidc: { user: { sub: 'synthetic-creator' } } } as unknown as Request;
+    const visitor = { oidc: { user: { sub: 'synthetic-visitor' } } } as unknown as Request;
+    const reply = 'Synthetic creator-only reply. '.repeat(300);
+    await service.start(creator, project, types[0].agentKey, session);
+    flows.result.mockResolvedValue({ status, failureText: reply, reply });
+    expect((await service.reconcile(creator, project))[0]).toMatchObject({ state: 'failed', failureText: reply });
+    expect(stored().metadata['state']).toBe('failed');
+    expect(Buffer.byteLength(JSON.stringify(stored().metadata))).toBeLessThan(2048);
+    expect((await service.reconcile(visitor, project))[0]).toMatchObject({ state: 'failed', failureText: MKTG_ONE_OFF_STOPPED_MESSAGE });
+    expect((await service.refreshFailure(creator, project, types[0].agentKey, 'living', hash(session)))?.failureText).toBe(reply);
+    expect((await service.refreshFailure(visitor, project, types[0].agentKey, 'living', hash(session)))?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
+    vi.advanceTimersByTime(3000);
+    await service.reconcile(visitor, project); // Prime a stable, viewer-neutral terminal entry.
+    flows.result.mockClear();
+    flows.head.mockClear();
+    flows.get.mockClear();
+    for (const reader of [creator, visitor, creator, visitor]) {
+      const progress = (await service.reconcile(reader, project))[0];
+      if (reader === creator) expect(progress.failureText).toContain('Synthetic creator-only reply.');
+      else expect(progress.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
+      expect(JSON.stringify(progress)).not.toContain('synthetic-creator');
+    }
+    expect(flows.result).not.toHaveBeenCalled();
+    expect(flows.head).not.toHaveBeenCalled();
+    expect(flows.get).not.toHaveBeenCalled();
   });
 
   it.each(types)('passes $agentKey creator attribution separately from the visiting writer', async (type) => {
@@ -569,6 +600,58 @@ describe('MktgDocumentRunService', () => {
     });
     expect(await service.readProgress(req, project)).toEqual({ runs: [], progressUnavailable: true });
     expect(flows.result).not.toHaveBeenCalled();
+  });
+
+  it('marks a questions read partially unavailable when writer access cannot be verified, instead of reporting no questions', async () => {
+    const answerable = types.find((type) => !!MKTG_AGENT_INTAKES[type.catalogAgentId ?? '']?.endpoints.answers) ?? types[0];
+    await service.start(req, project, answerable.agentKey, session);
+    const questionsId = 'a'.repeat(64);
+    flows.result.mockResolvedValue({
+      status: 'questions',
+      questionsId,
+      questions: [{ key: 'audience', label: 'Audience', question: 'Who is this for?', why: '', suggestedAnswer: 'Synthetic maintainers', basis: [] }],
+    });
+    // A verified writer sees the block; the writer check is strict so an access-check failure is not read as a denial.
+    const verified = await service.readProgress(req, project);
+    expect(verified.progressUnavailable).toBeUndefined();
+    expect(verified.runs[0]).toMatchObject({ state: 'questions', pendingQuestions: { questionsId } });
+    expect(flows.project).toHaveBeenLastCalledWith(req, project, true, false, false, true);
+    // A verified non-writer gets a complete answer without the block.
+    flows.project.mockResolvedValue({ uid: project, writer: false });
+    const reader = await service.readProgress(req, project);
+    expect(reader.progressUnavailable).toBeUndefined();
+    expect(reader.runs[0].state).toBe('questions');
+    expect(reader.runs[0].pendingQuestions).toBeUndefined();
+    // An unverifiable reader gets a partial read: the client keeps the questions it already holds.
+    flows.project.mockRejectedValue(new MicroserviceError('Synthetic project outage', 503, 'PROJECT_UNAVAILABLE'));
+    const unverified = await service.readProgress(req, project);
+    expect(unverified.progressUnavailable).toBe(true);
+    expect(unverified.runs[0].state).toBe('questions');
+    expect(unverified.runs[0].pendingQuestions).toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'mktg_run_questions_access',
+      expect.stringContaining('could not be verified'),
+      expect.objectContaining({ project, run: hash(session) })
+    );
+    // The strict writer check rethrows an access-check outage: the same partial read, not a complete 'no questions'.
+    vi.mocked(logger.warning).mockClear();
+    flows.project.mockRejectedValue(new MicroserviceError('Synthetic access check outage', 503, 'ACCESS_CHECK_UNAVAILABLE'));
+    const accessUnverified = await service.readProgress(req, project);
+    expect(accessUnverified.progressUnavailable).toBe(true);
+    expect(accessUnverified.runs[0].state).toBe('questions');
+    expect(accessUnverified.runs[0].pendingQuestions).toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'mktg_run_questions_access', expect.stringContaining('could not be verified'), expect.anything());
+    // The same rule reaches an explicitly selected run whose row was not in the list.
+    const detail = { project, type: answerable, documentId: 'living', revisions: [], approvedCurrent: null };
+    const selected = await service.detailWithProgress(req, project, answerable, 'living', detail, { runs: [] }, false, undefined, hash(session));
+    expect(selected?.progressUnavailable).toBe(true);
+    expect(selected?.runs[0]).toMatchObject({ runId: hash(session), state: 'questions' });
+    expect(selected?.runs[0].pendingQuestions).toBeUndefined();
+    flows.project.mockResolvedValue({ uid: project, writer: true });
+    const selectedVerified = await service.detailWithProgress(req, project, answerable, 'living', detail, { runs: [] }, false, undefined, hash(session));
+    expect(selectedVerified?.progressUnavailable).toBeUndefined();
+    expect(selectedVerified?.runs[0]).toMatchObject({ state: 'questions', pendingQuestions: { questionsId } });
   });
 
   it('does not turn intentionally bounded closed history into an unavailable/active work signal', async () => {

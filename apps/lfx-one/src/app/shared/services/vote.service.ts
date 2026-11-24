@@ -6,8 +6,11 @@ import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import {
   INVITATION_NOT_FOUND,
   RECENTLY_OPENED_VOTE_TTL_MS,
+  VOTE_BALLOT_READ_RETRY_COUNT,
+  VOTE_BALLOT_READ_RETRY_DELAY_MS,
   VOTE_CREATE_COMPLETED_AT_HEADER,
   VOTE_DETAIL_CACHE_TTL_MS,
+  VOTE_DELETE_ENDED,
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
 } from '@lfx-one/shared/constants';
@@ -19,8 +22,10 @@ import {
   EnableVoteRequest,
   EnableVoteResponse,
   ExtendVoteRequest,
+  MyVoteBallot,
   MyVoteResponse,
   MyVotesApiResponse,
+  MyVoteWouldEndVote,
   MyVotesResponse,
   PaginatedResponse,
   QueryServiceCountResponse,
@@ -28,19 +33,24 @@ import {
   SendVoteReminderRequest,
   SendVoteReminderResponse,
   SendVoteSummaryResponse,
+  UpdateMyVoteResponseRequest,
   UpdateVoteRequest,
   Vote,
   VoteAnswerInput,
+  PublicProjectSummary,
   VoteLinkBallot,
   VoteLinkResponseRequest,
+  VoteParticipationVoter,
   VoteReminderRecipient,
   VoteResultsResponse,
   VoteListResponse,
   VoteStatusCounts,
   VoteSummary,
+  VoteSummaryPreviewResponse,
+  VoteVoter,
 } from '@lfx-one/shared/interfaces';
 import { computeVoteRowParticipation, isVoteClosingSoon } from '@lfx-one/shared/utils';
-import { catchError, map, Observable, of, retry, shareReplay, switchMap, take, tap, throwError, timer } from 'rxjs';
+import { catchError, defer, EMPTY, finalize, map, Observable, of, retry, shareReplay, Subject, switchMap, take, tap, throwError, timer } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -55,6 +65,14 @@ export class VoteService {
   // (GH-4078), so a later stale Draft row is overlaid with it (e.g. Ended) instead of being reopened as Active.
   private readonly recentlyOpenedConfirmedStatus = new Map<string, PollStatus>();
   private readonly recentlyCreatedVotes: WritableSignal<Map<string, { vote: Vote; markedAt: number }>> = signal(new Map());
+  private readonly confirmedEndedVotes = new Set<string>();
+  // Both carrier merges run in sequence: our own ENDED copies are not proof of index convergence.
+  private readonly endedVoteOverlays = new WeakSet<Vote>();
+  private readonly cancellingVotes = signal<ReadonlySet<string>>(new Set());
+  private readonly voteCancellationCompleted = new Subject<void>();
+  public readonly cancellingVoteUids = this.cancellingVotes.asReadonly();
+  /** Surviving management hosts refresh even when the initiating table has been destroyed. */
+  public readonly voteCancellationCompleted$ = this.voteCancellationCompleted.asObservable();
 
   /**
    * Single active speculative-create slot (GH-2826) — service-owned, not component-owned, so
@@ -307,10 +325,60 @@ export class VoteService {
       take(1),
       tap(() => {
         this.voteDetailCache.delete(voteUid);
+        this.confirmedEndedVotes.delete(voteUid);
         // Otherwise a deleted synthesized draft (GH-4007) keeps reappearing in the list until its TTL expires.
         this.evictRecentlyCreatedVote(voteUid);
       })
     );
+  }
+
+  /** Records confirmed ended state until the index agrees, independently of the optimistic carriers' TTLs. */
+  public markVoteEnded(voteUid: string): void {
+    this.voteDetailCache.delete(voteUid);
+    this.confirmedEndedVotes.add(voteUid);
+    this.updateRecentlyCreatedVoteStatus(voteUid, PollStatus.ENDED);
+    // An ENDED carrier inserted into an empty page is still local, not evidence that the index has caught up.
+    const carried = this.recentlyCreatedVotes().get(voteUid)?.vote;
+    if (carried) this.endedVoteOverlays.add(carried);
+    if (this.recentlyOpenedVotes().has(voteUid)) this.recentlyOpenedConfirmedStatus.set(voteUid, PollStatus.ENDED);
+  }
+
+  /** Cancellation-only lifecycle: pending guards and completion outlive a table or group tab. */
+  public cancelVote(voteUid: string): Observable<void> {
+    return defer(() => {
+      if (this.cancellingVotes().has(voteUid)) return EMPTY;
+      this.cancellingVotes.update((ids) => new Set(ids).add(voteUid));
+      return this.deleteVote(voteUid).pipe(
+        take(1),
+        tap({
+          next: () => this.voteCancellationCompleted.next(),
+          error: (error: unknown) => {
+            if (!(error instanceof HttpErrorResponse)) return;
+            const code = (error.error as { code?: unknown } | null)?.code;
+            if (error.status === 404) {
+              this.voteDetailCache.delete(voteUid);
+              this.confirmedEndedVotes.delete(voteUid);
+              this.evictRecentlyCreatedVote(voteUid);
+              this.evictRecentlyOpenedVote(voteUid);
+            } else if (error.status === 409 && code === VOTE_DELETE_ENDED) {
+              this.markVoteEnded(voteUid);
+            } else {
+              return;
+            }
+            this.voteCancellationCompleted.next();
+          },
+        }),
+        finalize(() =>
+          this.cancellingVotes.update((ids) => {
+            const next = new Set(ids);
+            next.delete(voteUid);
+            return next;
+          })
+        ),
+        // Once sent, the write and its host notification survive view unsubscription.
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
+    });
   }
 
   /**
@@ -319,6 +387,14 @@ export class VoteService {
    */
   public extendVote(voteUid: string, data: ExtendVoteRequest): Observable<Vote> {
     return this.http.post<Vote>(`/api/votes/${encodeURIComponent(voteUid)}/extend`, data).pipe(
+      take(1),
+      tap(() => this.voteDetailCache.delete(voteUid))
+    );
+  }
+
+  /** Ends an active vote now (writer only). Drops the cached detail so the next read sees `ended` and `early_end_time`. */
+  public endVote(voteUid: string): Observable<Vote> {
+    return this.http.post<Vote>(`/api/votes/${encodeURIComponent(voteUid)}/end`, {}).pipe(
       take(1),
       tap(() => this.voteDetailCache.delete(voteUid))
     );
@@ -356,6 +432,34 @@ export class VoteService {
     return this.http.post<VoteLinkBallot>('/public/api/votes/link-ballot', { vote_token: voteToken }).pipe(take(1));
   }
 
+  /**
+   * Re-reads the link ballot at submit time: whether this first submission would end the vote (#4726).
+   * Advisory and fail-open — a failed read emits false so voting is never blocked. Logs the status only, never the token.
+   */
+  public getLinkWouldEndVote(voteToken: string): Observable<boolean> {
+    return this.getLinkBallot(voteToken).pipe(
+      map((ballot) => ballot?.ballot?.would_end_vote === true),
+      catchError((error: unknown) => {
+        console.warn('Last-voter check failed; submitting without confirmation', error instanceof HttpErrorResponse ? error.status : 'unknown');
+        return of(false);
+      })
+    );
+  }
+
+  /** Anonymous branding lookup for the vote link page (#4692); a 404 (hidden or unknown project) is a branding miss, not an error. */
+  public getPublicProjectSummary(identifier: string): Observable<PublicProjectSummary | null> {
+    return this.http.get<PublicProjectSummary>(`/public/api/projects/${encodeURIComponent(identifier)}/summary`).pipe(
+      take(1),
+      catchError((error: unknown) => {
+        // A 404 is the expected miss for a hidden or unknown project; anything else is worth a trace. Status only.
+        if (!(error instanceof HttpErrorResponse && error.status === 404)) {
+          console.warn('Project branding lookup failed; rendering unbranded', error instanceof HttpErrorResponse ? error.status : 'unknown');
+        }
+        return of(null);
+      })
+    );
+  }
+
   /** First submission (`update: false`, POST) or change (`update: true`, PUT) of a ballot by vote link token. */
   public submitLinkResponse(body: VoteLinkResponseRequest, update: boolean): Observable<void> {
     const url = '/public/api/votes/link-responses';
@@ -367,10 +471,23 @@ export class VoteService {
     return this.http.get<VoteReminderRecipient[]>(`/api/votes/${encodeURIComponent(voteUid)}/reminder-recipients`).pipe(take(1));
   }
 
+  /**
+   * Every invited voter — vote managers only. Named votes return each voter's status and current ballot (#3911);
+   * pseudo-anonymous votes return participation-only rows (#3916).
+   */
+  public getVoteVoters(voteUid: string): Observable<VoteVoter[] | VoteParticipationVoter[]> {
+    return this.http.get<VoteVoter[] | VoteParticipationVoter[]>(`/api/votes/${encodeURIComponent(voteUid)}/voters`).pipe(take(1));
+  }
+
   /** Resends the vote email to the given recipients (#3769). */
   public sendReminders(voteUid: string, recipientIds: string[]): Observable<SendVoteReminderResponse> {
     const body: SendVoteReminderRequest = { recipient_ids: recipientIds };
     return this.http.post<SendVoteReminderResponse>(`/api/votes/${encodeURIComponent(voteUid)}/reminders`, body).pipe(take(1));
+  }
+
+  /** Who the on-demand close summary would reach: ready and missing-email voters, plus unique-address counts — vote managers only, ended votes (#4830). */
+  public getVoteSummaryPreview(voteUid: string): Observable<VoteSummaryPreviewResponse> {
+    return this.http.get<VoteSummaryPreviewResponse>(`/api/votes/${encodeURIComponent(voteUid)}/summary-recipients`).pipe(take(1));
   }
 
   /** Sends the on-demand close summary to every invited voter — vote managers only, after the vote has ended (#3662). */
@@ -433,6 +550,7 @@ export class VoteService {
    * overlaid with it (e.g. Ended) rather than reopened as Active.
    */
   public mergeRecentlyOpenedVotes(votes: Vote[]): Vote[] {
+    votes = this.reconcileConfirmedEndedVotes(votes);
     const recentlyOpened = this.getLiveRecentlyOpenedVotes();
     if (recentlyOpened.size === 0) {
       return votes;
@@ -544,6 +662,7 @@ export class VoteService {
     } = {}
   ): Vote[] {
     const { projectUid, committeeUid, statusFilter, closingOnly, nowMs = Date.now(), searchName, group, isFirstPage = true } = options;
+    votes = this.reconcileConfirmedEndedVotes(votes, statusFilter);
     const recentlyCreated = this.getLiveRecentlyCreatedVotes();
     if (recentlyCreated.size === 0) {
       return votes;
@@ -590,7 +709,14 @@ export class VoteService {
     return this.http.post<void>('/api/votes/responses', payload).pipe(take(1));
   }
 
-  /** Wraps getMyVoteResponse + createVoteResponse; throws INVITATION_NOT_FOUND if no row exists. */
+  /** Changes the caller's own submitted ballot (#4723); the BFF resolves which ballot from the caller's identity. */
+  public updateMyResponse(voteUid: string, body: UpdateMyVoteResponseRequest): Observable<void> {
+    return this.http.put<void>(`/api/votes/${encodeURIComponent(voteUid)}/my-response`, body).pipe(take(1));
+  }
+
+  /**
+   * Wraps getMyVoteResponse + createVoteResponse for an initial ballot; throws INVITATION_NOT_FOUND if no row exists.
+   */
   public submitMyResponse(
     voteUid: string,
     params: { abstain: boolean; userVoteContent: VoteAnswerInput[] | undefined; commentResponses?: CommentResponseInput[] }
@@ -620,6 +746,36 @@ export class VoteService {
         // instead of misreporting it as "Unable to find your invitation".
         if (err?.status === 404) return of(null);
         console.error(`Failed to load my-response for vote ${voteUid}:`, err);
+        return throwError(() => err);
+      })
+    );
+  }
+
+  /**
+   * Whether the caller's first submission would end the vote (#4726), read at submit time.
+   * Advisory and fail-open — a failed read emits false so voting is never blocked. Logs the status only.
+   */
+  public getMyWouldEndVote(voteUid: string): Observable<boolean> {
+    return this.http.get<MyVoteWouldEndVote>(`/api/votes/${encodeURIComponent(voteUid)}/my-response/would-end-vote`).pipe(
+      take(1),
+      map((response) => response?.would_end_vote === true),
+      catchError((error: unknown) => {
+        console.warn('Last-voter check failed; submitting without confirmation', error instanceof HttpErrorResponse ? error.status : 'unknown');
+        return of(false);
+      })
+    );
+  }
+
+  /** The caller's submitted ballot (#4331); retry index-lag 404s briefly, then return null. Other errors are rethrown. */
+  public getMyVoteBallot(voteUid: string): Observable<MyVoteBallot | null> {
+    return this.http.get<MyVoteBallot>(`/api/votes/${encodeURIComponent(voteUid)}/my-ballot`).pipe(
+      retry({
+        count: VOTE_BALLOT_READ_RETRY_COUNT,
+        delay: (err: HttpErrorResponse) => (err?.status === 404 ? timer(VOTE_BALLOT_READ_RETRY_DELAY_MS) : throwError(() => err)),
+      }),
+      catchError((err: HttpErrorResponse) => {
+        if (err?.status === 404) return of(null);
+        console.error(`Failed to load my-ballot for vote ${voteUid}:`, { status: err?.status, message: err?.message });
         return throwError(() => err);
       })
     );
@@ -711,6 +867,33 @@ export class VoteService {
         this.voteDetailCache.delete(key);
       }
     }
+  }
+
+  /** A definitive ended response wins over stale indexed statuses until a real indexed ENDED row catches up. */
+  private reconcileConfirmedEndedVotes(votes: Vote[], statusFilter?: PollStatus | null): Vote[] {
+    if (this.confirmedEndedVotes.size === 0) return votes;
+    let changed = false;
+    const reconciled: Vote[] = [];
+    for (const vote of votes) {
+      if (!this.confirmedEndedVotes.has(vote.uid)) {
+        reconciled.push(vote);
+        continue;
+      }
+      if (vote.status === PollStatus.ENDED && !this.endedVoteOverlays.has(vote)) this.confirmedEndedVotes.delete(vote.uid);
+      if (statusFilter != null && statusFilter !== PollStatus.ENDED) {
+        changed = true;
+        continue;
+      }
+      if (vote.status === PollStatus.ENDED) {
+        reconciled.push(vote);
+      } else {
+        const ended = { ...vote, status: PollStatus.ENDED };
+        this.endedVoteOverlays.add(ended);
+        reconciled.push(ended);
+        changed = true;
+      }
+    }
+    return changed ? reconciled : votes;
   }
 
   /** Returns the live recently-created map (uid → Vote), pruning entries older than RECENTLY_OPENED_VOTE_TTL_MS. */

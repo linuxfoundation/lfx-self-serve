@@ -27,8 +27,9 @@ export const ADMIN_OPEN_TERM_NAME = 'Test Term Open';
 export const ADMIN_MENTEES_TOTAL = 37;
 export const ADMIN_MENTEES_PAGE_SIZE = 10;
 
-const PROGRAM_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}`;
-const MENTEES_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/mentees*`;
+/** The page read's route; other admin helpers stub it too, so they share this glob. */
+export const ADMIN_PROGRAM_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}`;
+export const ADMIN_MENTEES_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/mentees*`;
 const MENTORS_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/mentors*`;
 const TERMS_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/terms*`;
 const TASKS_ROUTE = '**/api/mentorship/admin/applications/*/tasks';
@@ -42,7 +43,7 @@ export const ADMIN_PROGRAM_PAGE: MentorshipAdminProgramPage = {
     slug: 'test-program-admin',
     name: 'Test Program Admin',
     projectName: 'Test Project',
-    status: 'open',
+    status: 'accepting',
     stats: { mentors: 0, mentees: 1, graduated: 1 },
     createdOn: '2026-06-01',
     updatedOn: '2026-07-20',
@@ -52,6 +53,7 @@ export const ADMIN_PROGRAM_PAGE: MentorshipAdminProgramPage = {
     { id: ADMIN_OPEN_TERM_ID, name: ADMIN_OPEN_TERM_NAME, status: 'open' },
     { id: '67777777-7777-4777-8777-777777777777', name: 'Test Term Closed', status: 'closed' },
   ],
+  submitter: { name: 'Test Admin', email: 'test.admin@example.org', avatarUrl: null },
 };
 
 export const ADMIN_TASKS: MentorshipApplicantTask[] = [
@@ -154,15 +156,16 @@ export interface AdminProgramRequests {
   tasks: string[];
 }
 
-const fulfillJson = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+export const fulfillAdminJson = (route: Route, body: unknown, status = 200) =>
+  route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
 export async function stubAdminProgramPage(page: Page, body: MentorshipAdminProgramPage = ADMIN_PROGRAM_PAGE): Promise<void> {
-  await page.route(PROGRAM_ROUTE, (route) => fulfillJson(route, body));
+  await page.route(ADMIN_PROGRAM_ROUTE, (route) => fulfillAdminJson(route, body));
 }
 
 /** Answers the page read with an error status instead of a page. */
 export async function stubAdminProgramPageError(page: Page, status: number): Promise<void> {
-  await page.route(PROGRAM_ROUTE, (route) => fulfillJson(route, { error: 'stubbed' }, status));
+  await page.route(ADMIN_PROGRAM_ROUTE, (route) => fulfillAdminJson(route, { error: 'stubbed' }, status));
 }
 
 /** Whether an application matches the mentees `status` filter. `applied` and `tasks-completed` split `pending` on its tasks, as upstream does. */
@@ -179,10 +182,10 @@ function matchesStatusFilter(application: MentorshipProgramApplicant, status: st
  * every request, so a spec that records a saved note there gets it back on the next read.
  */
 export async function stubAdminMentees(page: Page, requests: AdminProgramRequests, failWith?: number, notes: Record<string, string> = {}): Promise<void> {
-  await page.route(MENTEES_ROUTE, (route) => {
+  await page.route(ADMIN_MENTEES_ROUTE, (route) => {
     const params = new URL(route.request().url()).searchParams;
     requests.mentees.push(params);
-    if (failWith) return fulfillJson(route, { error: 'stubbed' }, failWith);
+    if (failWith) return fulfillAdminJson(route, { error: 'stubbed' }, failWith);
 
     const status = params.get('status');
     const search = params.get('search')?.toLowerCase();
@@ -195,7 +198,7 @@ export async function stubAdminMentees(page: Page, requests: AdminProgramRequest
     const data = matching
       .slice(offset, offset + limit)
       .map((application) => (application.id in notes ? { ...application, note: notes[application.id] } : application));
-    return fulfillJson(route, { data, total: matching.length } satisfies MentorshipAdminMenteesResponse);
+    return fulfillAdminJson(route, { data, total: matching.length } satisfies MentorshipAdminMenteesResponse);
   });
 }
 
@@ -204,12 +207,12 @@ export async function stubAdminMentors(page: Page, requests: URLSearchParams[], 
   await page.route(MENTORS_ROUTE, (route) => {
     const params = new URL(route.request().url()).searchParams;
     requests.push(params);
-    if (failWith) return fulfillJson(route, { error: 'stubbed' }, failWith);
+    if (failWith) return fulfillAdminJson(route, { error: 'stubbed' }, failWith);
 
     const status = params.get('status');
     const search = params.get('search')?.toLowerCase();
     const matching = ADMIN_MENTORS.filter((mentor) => (!status || mentor.status === status) && (!search || mentor.name.toLowerCase().includes(search)));
-    return fulfillJson(route, { data: matching, total: matching.length } satisfies MentorshipAdminMentorsResponse);
+    return fulfillAdminJson(route, { data: matching, total: matching.length } satisfies MentorshipAdminMentorsResponse);
   });
 }
 
@@ -217,8 +220,8 @@ export async function stubAdminMentors(page: Page, requests: URLSearchParams[], 
 export async function stubAdminTerms(page: Page, requests: URLSearchParams[], failWith?: number): Promise<void> {
   await page.route(TERMS_ROUTE, (route) => {
     requests.push(new URL(route.request().url()).searchParams);
-    if (failWith) return fulfillJson(route, { error: 'stubbed' }, failWith);
-    return fulfillJson(route, { data: ADMIN_TERMS, total: ADMIN_TERMS.length } satisfies MentorshipAdminTermsResponse);
+    if (failWith) return fulfillAdminJson(route, { error: 'stubbed' }, failWith);
+    return fulfillAdminJson(route, { data: ADMIN_TERMS, total: ADMIN_TERMS.length } satisfies MentorshipAdminTermsResponse);
   });
 }
 
@@ -228,7 +231,7 @@ export async function stubAdminTasks(page: Page, requests: AdminProgramRequests,
     const applicationId = new URL(route.request().url()).pathname.split('/').slice(-2)[0];
     requests.tasks.push(applicationId);
     const status = failWith?.();
-    if (status) return fulfillJson(route, { error: 'stubbed' }, status);
-    return fulfillJson(route, ADMIN_TASKS);
+    if (status) return fulfillAdminJson(route, { error: 'stubbed' }, status);
+    return fulfillAdminJson(route, ADMIN_TASKS);
   });
 }

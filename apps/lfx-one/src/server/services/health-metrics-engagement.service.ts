@@ -5,10 +5,14 @@ import {
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
@@ -17,9 +21,11 @@ import {
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS,
   HEALTH_METRICS_ENGAGEMENT_RANGES,
-  HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
+  HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
+  HEALTH_METRICS_NEWSLETTER_VIEWS,
 } from '@lfx-one/shared/constants';
 import type {
   HealthMetricsEngagementAttendanceMonth,
@@ -30,10 +36,16 @@ import type {
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementGroupSortKey,
   HealthMetricsEngagementMeetingParticipation,
-  HealthMetricsEngagementNonMemberPeriodCounts,
+  HealthMetricsEngagementNewsletter,
+  HealthMetricsEngagementNewsletterPerformance,
+  HealthMetricsEngagementNewsletterPeriod,
+  HealthMetricsEngagementNewsletterQuery,
+  HealthMetricsEngagementNewsletterRecipients,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementNonMemberPeriod,
+  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberQuery,
   HealthMetricsEngagementNonMemberRow,
   HealthMetricsEngagementOrgCounts,
@@ -44,14 +56,19 @@ import type {
   HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationQuery,
   HealthMetricsEngagementParticipationRow,
+  HealthMetricsEngagementRecipient,
+  HealthMetricsEngagementRecipientQuery,
   HealthMetricsEngagementRepPeriod,
   HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementRepQuery,
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementRepRow,
+  HealthMetricsSqlSortColumn,
 } from '@lfx-one/shared/interfaces';
 
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
+import { healthMetricsAccountLogoJoinSql, healthMetricsAccountLogoSql } from '../helpers/health-metrics-logo.helper';
+import { buildHealthMetricsSortOrderBy } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger } from '../helpers/validation.helper';
 import { logger } from './logger.service';
@@ -66,6 +83,18 @@ const MEETING_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETIN
 const ORG_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
 const NON_MEMBER_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_NON_MEMBER_PARTICIPATION';
 const REPRESENTATIVES_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_REPRESENTATIVES';
+
+/** The summary's per-period columns this section reads, each suffixed by period. */
+const NEWSLETTER_SUMMARY_COLUMNS = [
+  'subscribers_count',
+  'subscribers_growth_pct',
+  'subscribers_growth_baseline_date',
+  'newsletters_sent_count',
+  'avg_open_rate',
+  'avg_click_rate',
+  'avg_click_to_open_rate',
+  'avg_delivery_rate',
+] as const;
 
 /** The ranges this view has columns for — `COMPLETED_YEAR_4` is not one of them. */
 type SupportedEngagementRange = (typeof HEALTH_METRICS_ENGAGEMENT_RANGES)[number];
@@ -99,6 +128,7 @@ interface GroupAttendanceRow {
   PROJECT_SLUG: string | null;
   PROJECT_NAME: string | null;
   GROUP_TYPE_LABEL: string | null;
+  MEETING_TYPE_GROUP: string | null;
   LAST_MET_DATE: Date | string | null;
   SCOPE_GROUPS: number | null;
   TOTAL_RECORDS: number | null;
@@ -125,6 +155,7 @@ interface OrgParticipationRow {
   LAST_ENGAGED_DATE: Date | string | null;
   DAYS_SINCE_LAST_ENGAGED: number | null;
   IS_LAPSED_180D: boolean | null;
+  LOGO_URL: string | null;
   SCOPE_ORGS_COUNT: number | null;
   SCOPE_LAPSED_ORGS_COUNT: number | null;
   [periodColumn: string]: unknown;
@@ -133,7 +164,7 @@ interface OrgParticipationRow {
 interface NonMemberParticipationRow {
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
-  MEMBERSHIP_STATUS: string | null;
+  LOGO_URL: string | null;
   [periodColumn: string]: unknown;
 }
 
@@ -142,10 +173,34 @@ interface RepresentativesRow {
   PERSON_DISPLAY_NAME: string | null;
   IS_IDENTITY_UNRESOLVED: boolean | null;
   ACCOUNT_NAME: string | null;
-  MEMBERSHIP_TIER: string | null;
+  PERSON_JOB_TITLE: string | null;
   COMMITTEE_NAME: string | null;
   LAST_ATTENDED_DATE: Date | string | null;
   [periodColumn: string]: unknown;
+}
+
+interface NewsletterRow {
+  NEWSLETTER_KEY: string | null;
+  NEWSLETTER_NAME: string | null;
+  SENT_DATE: Date | string | null;
+  HAS_ENGAGEMENT_DATA: boolean | null;
+  [figureColumn: string]: unknown;
+}
+
+interface NewsletterRecipientRow {
+  NEWSLETTER_KEY: string | null;
+  NEWSLETTER_NAME: string | null;
+  SENT_AT: string | null;
+  ENGAGEMENT_RANK: number | string | null;
+  RECIPIENT_NAME: string | null;
+  ORGANIZATION_NAME: string | null;
+  DELIVERY_STATUS: string | null;
+  ENGAGEMENT_SEGMENT: string | null;
+  IS_CLICKED: boolean | null;
+  OPEN_COUNT: number | string | null;
+  LAST_OPENED_AT: string | null;
+  CLICK_COUNT: number | string | null;
+  LAST_CLICKED_AT: string | null;
 }
 
 interface MeetingParticipationRow {
@@ -216,7 +271,25 @@ export class HealthMetricsEngagementService {
       `${typeCondition ? `COUNT_IF(${typeCondition})` : 'COUNT(*)'} AS total_records`,
     ];
 
-    const size = clampInteger(query.size, 1, 100, 25);
+    // The reader's column first, over every page; with none, the view's rank. Only these trusted expressions reach the SQL.
+    const sortColumns: Record<HealthMetricsEngagementGroupSortKey, HealthMetricsSqlSortColumn> = {
+      group: { expression: 'committee_name', kind: 'text' },
+      // A group that held no meetings reads "—", so it sorts as empty.
+      meetings: { expression: `NULLIF(meetings_count_${suffix}, 0)`, kind: 'number' },
+      last: { expression: 'last_met_date', kind: 'date' },
+      // Dormant sorts below every rate; a group with too few meetings to rate reads "—", so it is empty.
+      attendance: {
+        expression: `CASE WHEN COALESCE(is_dormant_${suffix}, FALSE) THEN -1 WHEN meetings_count_${suffix} >= ${HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE} THEN attendance_pct_${suffix} END`,
+        kind: 'number',
+      },
+    };
+    const orderBy = buildHealthMetricsSortOrderBy(
+      query.sort,
+      sortColumns,
+      `sort_rank_${suffix} ASC NULLS LAST, committee_name ASC NULLS LAST, committee_id ASC NULLS LAST, project_slug ASC NULLS LAST, group_type_label ASC NULLS LAST`
+    );
+
+    const size = clampInteger(query.size, 1, 100, HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE);
     const offset = (clampInteger(query.page, 1, 10_000, 1) - 1) * size;
     const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => periodSelectList(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
 
@@ -246,8 +319,11 @@ export class HealthMetricsEngagementService {
           project_name,
           last_met_date,
           group_type_label,
+          meeting_type_group,
           ${periodColumns},
           sort_rank_${suffix} AS sort_rank,
+          -- The row's place in the page's order, which the outer select keeps after the join.
+          ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS page_position,
           -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
           -- committee_id cannot serve: it is nullable, so a null-id group would be dropped silently.
           TRUE AS is_page_row
@@ -258,14 +334,14 @@ export class HealthMetricsEngagementService {
         -- null id still tie; a hard guarantee needs a non-null row key on the view itself.
         -- Every key is nullable, and NULLS LAST pins their placement: the session's
         -- DEFAULT_NULL_ORDERING would otherwise let a pooled connection drift a null between pages.
-        ORDER BY sort_rank_${suffix} ASC NULLS LAST, committee_name ASC NULLS LAST, committee_id ASC NULLS LAST, project_slug ASC NULLS LAST, group_type_label ASC NULLS LAST
+        ORDER BY ${orderBy}
         LIMIT ${size} OFFSET ${offset}
       )
       -- ON TRUE keeps the single totals row when the page selected nothing.
       SELECT totals.*, page.*
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.sort_rank ASC NULLS LAST, page.committee_name ASC NULLS LAST, page.committee_id ASC NULLS LAST, page.project_slug ASC NULLS LAST, page.group_type_label ASC NULLS LAST
+      ORDER BY page.page_position ASC NULLS LAST
     `;
 
     const result = await executeSnowflakeViewRead<GroupAttendanceRow>(this.snowflakeService, req, sql, binds, {
@@ -367,8 +443,8 @@ export class HealthMetricsEngagementService {
   }
 
   /**
-   * The trailing twelve months of all-meeting attendance, oldest first. The view zero-fills every
-   * month of the window, so a quiet month arrives as a row with a null rate rather than a missing one.
+   * Every month of all-meeting attendance the view holds, oldest first; the client cuts the selected year out of
+   * it. The view zero-fills its window, so a quiet month arrives as a row with a null rate rather than a missing one.
    */
   public async getAttendanceTrend(req: Request, query: HealthMetricsEngagementAttendanceTrendQuery): Promise<HealthMetricsEngagementAttendanceTrend> {
     const sql = `
@@ -417,24 +493,27 @@ export class HealthMetricsEngagementService {
     // periods; the sentinel parks an org the view left unranked behind every ranked one.
     const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
 
-    // The caption counts are denormalized onto every row and cover the whole scope, so they are
+    // The scope counts are denormalized onto every row and cover the whole scope, so they are
     // read off a row rather than counted here — a `COUNT(*)` would only ever match the row count.
+    // The mapping shares `account_id`, `account_name` and `is_member`, so the view's own columns are qualified.
     const sql = `
       SELECT
-        account_id,
-        account_name,
-        membership_tier,
-        is_member,
-        last_engaged_date,
-        days_since_last_engaged,
-        is_lapsed_180d,
-        scope_orgs_count,
-        scope_lapsed_orgs_count,
+        v.account_id,
+        v.account_name,
+        v.membership_tier,
+        v.is_member,
+        v.last_engaged_date,
+        v.days_since_last_engaged,
+        v.is_lapsed_180d,
+        v.scope_orgs_count,
+        v.scope_lapsed_orgs_count,
+        ${healthMetricsAccountLogoSql('logos')} AS logo_url,
         ${periodColumns}
-      FROM ${ORG_PARTICIPATION_VIEW}
-      WHERE foundation_slug = ?
+      FROM ${ORG_PARTICIPATION_VIEW} v
+      ${healthMetricsAccountLogoJoinSql('logos', 'v.account_id')}
+      WHERE v.foundation_slug = ?
         AND ${PROJECT_SCOPE_PREDICATE}
-      ORDER BY ${bestSortRank} ASC, account_name ASC NULLS LAST, account_id ASC NULLS LAST
+      ORDER BY ${bestSortRank} ASC, v.account_name ASC NULLS LAST, v.account_id ASC NULLS LAST
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP + 1}
     `;
 
@@ -446,7 +525,7 @@ export class HealthMetricsEngagementService {
       {
         view: ORG_PARTICIPATION_VIEW,
         operation: 'get_engagement_org_participation',
-        clientMessage: 'Organization participation is unavailable right now.',
+        clientMessage: 'Company participation is unavailable right now.',
       }
     );
 
@@ -480,16 +559,18 @@ export class HealthMetricsEngagementService {
     const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
 
     // `scope_orgs_count_<period>` is denormalized onto every row and covers the whole scope, so it is
-    // read off a row rather than counted here — the unsuffixed column is all time, not a period caption.
+    // read off a row rather than counted here — the unsuffixed column is all time, not a period count.
+    // The mapping shares `account_id` and `account_name`, so the view's own columns are qualified.
     const sql = `
       SELECT
-        account_id,
-        account_name,
-        membership_status,
+        v.account_id,
+        v.account_name,
+        ${healthMetricsAccountLogoSql('logos')} AS logo_url,
         ${periodColumns}
-      FROM ${NON_MEMBER_PARTICIPATION_VIEW}
-      WHERE foundation_slug = ?
-      ORDER BY ${bestSortRank} ASC, account_name ASC NULLS LAST, account_id ASC NULLS LAST
+      FROM ${NON_MEMBER_PARTICIPATION_VIEW} v
+      ${healthMetricsAccountLogoJoinSql('logos', 'v.account_id')}
+      WHERE v.foundation_slug = ?
+      ORDER BY ${bestSortRank} ASC, v.account_name ASC NULLS LAST, v.account_id ASC NULLS LAST
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP + 1}
     `;
 
@@ -528,14 +609,14 @@ export class HealthMetricsEngagementService {
     const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
 
     // Caption counts are deduped to (person, committee) upstream while project rows are per project,
-    // so a rep on one committee under two projects is two rows the caption counts once.
+    // so a rep on one committee under two projects is two rows the scope count treats as one.
     const sql = `
       SELECT
         _key AS rep_key,
         person_display_name,
         is_identity_unresolved,
         account_name,
-        membership_tier,
+        person_job_title,
         committee_name,
         last_attended_date,
         ${periodColumns}
@@ -570,6 +651,134 @@ export class HealthMetricsEngagementService {
     };
   }
 
+  /**
+   * Every period's newsletter summary and every newsletter the foundation sent, latest first by the view's rank; the
+   * period pill picks a summary and the newsletters sent in its year client-side.
+   */
+  public async getNewsletterPerformance(req: Request, query: HealthMetricsEngagementNewsletterQuery): Promise<HealthMetricsEngagementNewsletterPerformance> {
+    const summaryColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.flatMap((range) =>
+      NEWSLETTER_SUMMARY_COLUMNS.map((column) => `${column}_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} AS ${column}_${range}`)
+    );
+    const summarySql = `
+      SELECT
+        ${summaryColumns.join(',\n        ')}
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.summary}
+      WHERE foundation_slug = ?
+      -- One row per foundation_slug, so LIMIT 1 has nothing to pick between.
+      LIMIT 1
+    `;
+    const newslettersSql = `
+      SELECT
+        newsletter_key,
+        newsletter_name,
+        sent_date,
+        has_engagement_data,
+        audience_count,
+        failed_count,
+        unique_opens_count,
+        total_opens_count,
+        unique_clicks_count,
+        total_clicks_count,
+        open_rate,
+        click_rate,
+        click_to_open_rate
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.byNewsletter}
+      WHERE foundation_slug = ?
+      -- sort_rank 1 is the latest send, so a capped read keeps the newest.
+      ORDER BY sort_rank ASC NULLS LAST, newsletter_key ASC
+      LIMIT ${HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP + 1}
+    `;
+    const read = { operation: 'get_engagement_newsletter_performance', clientMessage: 'Newsletter performance is unavailable right now.' };
+
+    const [summary, newsletters] = await Promise.all([
+      executeSnowflakeViewRead<Record<string, unknown>>(this.snowflakeService, req, summarySql, [query.foundationSlug], {
+        ...read,
+        view: HEALTH_METRICS_NEWSLETTER_VIEWS.summary,
+      }),
+      executeSnowflakeViewRead<NewsletterRow>(this.snowflakeService, req, newslettersSql, [query.foundationSlug], {
+        ...read,
+        view: HEALTH_METRICS_NEWSLETTER_VIEWS.byNewsletter,
+      }),
+    ]);
+
+    const row = summary.rows[0];
+    if (!row) return HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED;
+
+    const rows = this.capRows(req, newsletters.rows, {
+      cap: HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP,
+      operation: 'get_engagement_newsletter_performance',
+      subject: 'newsletters',
+      noun: 'Newsletter',
+      foundationSlug: query.foundationSlug,
+    });
+
+    return {
+      measured: true,
+      periods: {
+        YTD: mapNewsletterPeriod(row, 'YTD'),
+        COMPLETED_YEAR: mapNewsletterPeriod(row, 'COMPLETED_YEAR'),
+        COMPLETED_YEAR_2: mapNewsletterPeriod(row, 'COMPLETED_YEAR_2'),
+        COMPLETED_YEAR_3: mapNewsletterPeriod(row, 'COMPLETED_YEAR_3'),
+      },
+      newsletters: rows.map(mapNewsletter).filter((newsletter): newsletter is HealthMetricsEngagementNewsletter => newsletter !== null),
+    };
+  }
+
+  /**
+   * Every recipient of the foundation's latest newsletter, most engaged first. The view ranks newsletters and
+   * recipients itself, so search and the segment cut resolve client-side. The recipient's email is never read.
+   */
+  public async getNewsletterRecipients(req: Request, query: HealthMetricsEngagementRecipientQuery): Promise<HealthMetricsEngagementNewsletterRecipients> {
+    // NTZ times are stored in UTC, so they leave as UTC ISO strings rather than through the driver's local-time Date.
+    const sql = `
+      SELECT
+        newsletter_key,
+        newsletter_name,
+        TO_VARCHAR(sent_ts, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS sent_at,
+        engagement_rank,
+        recipient_name,
+        organization_name,
+        delivery_status,
+        engagement_segment,
+        is_clicked,
+        open_count,
+        TO_VARCHAR(last_opened_ts, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_opened_at,
+        click_count,
+        TO_VARCHAR(last_clicked_ts, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_clicked_at
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.recipients}
+      WHERE foundation_slug = ?
+        AND newsletter_sort_rank = 1
+      -- _key only breaks ties, so a capped read keeps the same people; it is never selected.
+      ORDER BY engagement_rank ASC NULLS LAST, _key ASC
+      LIMIT ${HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<NewsletterRecipientRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: HEALTH_METRICS_NEWSLETTER_VIEWS.recipients,
+      operation: 'get_engagement_newsletter_recipients',
+      clientMessage: 'Newsletter recipient engagement is unavailable right now.',
+    });
+
+    const rows = this.capRows(req, result.rows, {
+      cap: HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP,
+      operation: 'get_engagement_newsletter_recipients',
+      subject: 'newsletter recipients',
+      noun: 'Newsletter recipient',
+      foundationSlug: query.foundationSlug,
+    });
+
+    const first = rows[0];
+    const key = first?.NEWSLETTER_KEY?.trim();
+    if (!first || !key) return HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED;
+
+    return {
+      newsletter: { key, name: first.NEWSLETTER_NAME?.trim() || 'Untitled newsletter', sentDate: first.SENT_AT?.slice(0, 10) ?? null },
+      recipients: rows.map(mapRecipient).filter((recipient): recipient is HealthMetricsEngagementRecipient => recipient !== null),
+      // Read one past the cap, so a longer list is told apart from one of exactly the cap.
+      truncated: result.rows.length > HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP,
+    };
+  }
+
   /** One cap rule for every engagement read, so a new capped section cannot log or cut differently. */
   private capRows<T>(req: Request, rows: T[], context: CapContext): T[] {
     // Reading one past the cap is what separates a scope of exactly the cap from a truncated one.
@@ -581,7 +790,7 @@ export class HealthMetricsEngagementService {
       row_count: capped.length,
     });
 
-    // Truncating leaves the table short of the caption's own count, so say so out loud.
+    // Truncating leaves the table short of the view's own scope count, so say so out loud.
     if (truncated) {
       logger.warning(req, context.operation, `${context.noun} rows hit the read cap`, {
         foundation_slug: context.foundationSlug,
@@ -605,6 +814,7 @@ function mapGroupRow(row: GroupAttendanceRow): HealthMetricsEngagementGroupRow {
     projectSlug: row.PROJECT_SLUG,
     projectName: row.PROJECT_NAME,
     groupTypeLabel: row.GROUP_TYPE_LABEL,
+    meetingTypeGroup: row.MEETING_TYPE_GROUP,
     lastMetDate: toIsoDate(row.LAST_MET_DATE),
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapGroupPeriod(row, range)),
   };
@@ -645,12 +855,13 @@ function mapOrgRow(row: OrgParticipationRow): HealthMetricsEngagementOrgRow {
     accountId: row.ACCOUNT_ID ?? '',
     accountName: row.ACCOUNT_NAME ?? '',
     // Rendered as the view reports it: this view is not member-only, so `Non-Member` is a real tier
-    // here and filtering it out would desync the caption's own denormalized org count.
+    // here and filtering it out would desync the view's own denormalized org count.
     membershipTier: row.MEMBERSHIP_TIER ?? '',
     isMember: row.IS_MEMBER === true,
     lastEngagedDate: toIsoDate(row.LAST_ENGAGED_DATE),
     daysSinceLastEngaged: toNullableNumber(row.DAYS_SINCE_LAST_ENGAGED),
     lapsed: row.IS_LAPSED_180D === true,
+    logoUrl: row.LOGO_URL ?? '',
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapOrgPeriod(row, range)),
   };
 }
@@ -674,7 +885,7 @@ function mapOrgPeriod(row: OrgParticipationRow, range: SupportedEngagementRange)
 
 /**
  * Both counts are period-agnostic and identical on every row, so any row answers for the scope.
- * A null count over rows that exist is unmeasured — reporting 0 there would caption a full table.
+ * A null count over rows that exist is unmeasured — reporting 0 there would call a full table empty.
  */
 function mapOrgCounts(row: OrgParticipationRow): HealthMetricsEngagementOrgCounts | null {
   const orgs = toNullableNumber(row.SCOPE_ORGS_COUNT);
@@ -692,9 +903,7 @@ function mapNonMemberRow(row: NonMemberParticipationRow): HealthMetricsEngagemen
   return {
     accountId: row.ACCOUNT_ID ?? '',
     accountName: row.ACCOUNT_NAME ?? '',
-    // Rendered as the view reports it; the organization-matching gap the footnote warns about is a
-    // data problem upstream, not something to paper over by rewriting the status here.
-    membershipStatus: row.MEMBERSHIP_STATUS ?? '',
+    logoUrl: row.LOGO_URL ?? '',
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapNonMemberPeriod(row, range)),
   };
 }
@@ -712,7 +921,7 @@ function mapNonMemberPeriod(row: NonMemberParticipationRow, range: SupportedEnga
 
 /**
  * Each period's count is identical on every row, so any row answers for the scope. A null count
- * over rows that exist is unmeasured — reporting 0 there would caption a full table.
+ * over rows that exist is unmeasured — reporting 0 there would call a full table empty.
  */
 function mapNonMemberCounts(row: NonMemberParticipationRow): HealthMetricsEngagementNonMemberPeriodCounts[] | null {
   const counts = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => ({
@@ -776,8 +985,8 @@ function participationOrder(group: string | null): number {
 }
 
 /**
- * One period's columns as the view publishes them. A roll-up row captions the whole foundation and
- * a project row its project, so the caption reads whichever scope the row belongs to.
+ * One period's columns as the view publishes them. A roll-up row counts the whole foundation and
+ * a project row its project, so the counts read whichever scope the row belongs to.
  */
 function repSelectList(suffix: string): string {
   return [
@@ -797,7 +1006,7 @@ function mapRepRow(row: RepresentativesRow): HealthMetricsEngagementRepRow {
     personName: row.PERSON_DISPLAY_NAME ?? '',
     identityUnresolved: row.IS_IDENTITY_UNRESOLVED === true,
     accountName: row.ACCOUNT_NAME ?? '',
-    membershipTier: row.MEMBERSHIP_TIER,
+    jobTitle: row.PERSON_JOB_TITLE,
     committeeName: row.COMMITTEE_NAME ?? '',
     lastAttendedDate: toIsoDate(row.LAST_ATTENDED_DATE),
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapRepPeriod(row, range)),
@@ -818,8 +1027,8 @@ function mapRepPeriod(row: RepresentativesRow, range: SupportedEngagementRange):
 }
 
 /**
- * Unlike the org caption, this view counts its scope per period, so every period ships its own pair.
- * A null anywhere is unmeasured — reporting 0 there would caption a full table.
+ * Unlike the org counts, this view counts its scope per period, so every period ships its own pair.
+ * A null anywhere is unmeasured — reporting 0 there would call a full table empty.
  */
 function mapRepCounts(row: RepresentativesRow): HealthMetricsEngagementRepPeriodCounts[] | null {
   const counts = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => {
@@ -849,6 +1058,62 @@ function mapAttendanceMonth(row: HealthMetricsEngagementAttendanceMonthRow): Hea
     attended: toNullableNumber(row.ATTENDED_COUNT),
     attendancePct: toNullableNumber(row.ATTENDANCE_PCT),
     attendanceChangePp: toNullableNumber(row.ATTENDANCE_PCT_CHANGE_PP),
+  };
+}
+
+function mapNewsletterPeriod(row: Record<string, unknown>, range: SupportedEngagementRange): HealthMetricsEngagementNewsletterPeriod {
+  const column = (name: (typeof NEWSLETTER_SUMMARY_COLUMNS)[number]): unknown => row[`${name}_${range}`.toUpperCase()];
+
+  return {
+    subscribers: toNullableNumber(column('subscribers_count')),
+    subscribersGrowth: toNullableNumber(column('subscribers_growth_pct')),
+    growthBaselineDate: toIsoDate(column('subscribers_growth_baseline_date') as Date | string | null),
+    newslettersSent: toNullableNumber(column('newsletters_sent_count')),
+    avgOpenRate: toNullableNumber(column('avg_open_rate')),
+    avgClickRate: toNullableNumber(column('avg_click_rate')),
+    avgClickToOpenRate: toNullableNumber(column('avg_click_to_open_rate')),
+    avgDeliveryRate: toNullableNumber(column('avg_delivery_rate')),
+  };
+}
+
+/** A row without a key cannot be told apart from another, so it is dropped; an unnamed one still shows. */
+function mapNewsletter(row: NewsletterRow): HealthMetricsEngagementNewsletter | null {
+  const key = row.NEWSLETTER_KEY?.trim() ?? '';
+  if (!key) return null;
+
+  return {
+    key,
+    name: row.NEWSLETTER_NAME?.trim() || 'Untitled newsletter',
+    sentDate: toIsoDate(row.SENT_DATE),
+    hasEngagementData: row.HAS_ENGAGEMENT_DATA === true,
+    recipients: toNullableNumber(row['AUDIENCE_COUNT']),
+    failed: toNullableNumber(row['FAILED_COUNT']),
+    uniqueOpens: toNullableNumber(row['UNIQUE_OPENS_COUNT']),
+    totalOpens: toNullableNumber(row['TOTAL_OPENS_COUNT']),
+    uniqueClicks: toNullableNumber(row['UNIQUE_CLICKS_COUNT']),
+    totalClicks: toNullableNumber(row['TOTAL_CLICKS_COUNT']),
+    openRate: toNullableNumber(row['OPEN_RATE']),
+    clickRate: toNullableNumber(row['CLICK_RATE']),
+    clickToOpenRate: toNullableNumber(row['CLICK_TO_OPEN_RATE']),
+  };
+}
+
+/** A row without a rank has no place in the order and nothing to key it by, so it is dropped. */
+function mapRecipient(row: NewsletterRecipientRow): HealthMetricsEngagementRecipient | null {
+  const rank = toNullableNumber(row.ENGAGEMENT_RANK);
+  if (rank === null) return null;
+
+  return {
+    rank,
+    name: row.RECIPIENT_NAME?.trim() || null,
+    organization: row.ORGANIZATION_NAME?.trim() || null,
+    deliveryStatus: row.DELIVERY_STATUS,
+    segment: row.ENGAGEMENT_SEGMENT,
+    clicked: row.IS_CLICKED === true,
+    opens: toNullableNumber(row.OPEN_COUNT),
+    lastOpenedAt: row.LAST_OPENED_AT,
+    clicks: toNullableNumber(row.CLICK_COUNT),
+    lastClickedAt: row.LAST_CLICKED_AT,
   };
 }
 

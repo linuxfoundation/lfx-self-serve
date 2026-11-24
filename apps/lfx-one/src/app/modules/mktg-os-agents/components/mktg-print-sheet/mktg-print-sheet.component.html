@@ -1,0 +1,16 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="lfx-print-sheet-head" data-testid="mktg-print-sheet-head">
+  <div class="lfx-print-sheet-room" aria-hidden="true"></div>
+  @if (head(); as runningHead) {
+    <div class="lfx-print-sheet-head-row" data-testid="mktg-print-sheet-head-row">
+      <div class="lfx-print-sheet-head-cell">
+        <ng-container [ngTemplateOutlet]="runningHead" />
+      </div>
+    </div>
+  }
+</div>
+<div class="lfx-print-sheet-body" data-testid="mktg-print-sheet-body">
+  <ng-content />
+</div>

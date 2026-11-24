@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { createHash } from 'node:crypto';
 
-import { MEMBER_360_DOCUMENT_ID, openMember360, setupMember360 } from './helpers/member-360.helper';
+import { json, MEMBER_360_DOCUMENT_ID, openMember360, setupMember360 } from './helpers/member-360.helper';
+import { member360Revision } from './fixtures/mock-data/member-360.mock';
+import { MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 
 test.use({ storageState: { cookies: [], origins: [] } });
 test.describe.configure({ timeout: 60000 });
@@ -44,9 +47,19 @@ for (const width of [1440, 1280, 390]) {
   });
   test(`ranking structure and collapsed sections at ${width}px`, async ({ page, browserName }, info) => {
     await page.setViewportSize({ width, height: 1000 });
-    await setupMember360(page, { stored: true });
+    await setupMember360(page, { stored: true }); // Includes suppressCookieBanner(page).
+    const view = member360Revision();
+    const envelope = view.member360;
+    if (!envelope) throw new Error('Member 360 fixture is missing');
+    envelope.tabs.member_ranking[1].days_to_renewal = 120;
+    envelope.tabs.member_ranking[1].annual_value = null;
+    envelope.content_sha256 = createHash('sha256').update(JSON.stringify(envelope.tabs)).digest('hex');
+    await page.route(`**/api/mktg-agents/documents/member-360/${MEMBER_360_DOCUMENT_ID}**`, (route) => json(route, view));
     await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
     await expect(page.getByTestId('member-360-result')).toBeVisible();
+    const renewalNote = page.getByTestId('member-360-summary-renewals-note');
+    await expect(renewalNote).toBeVisible();
+    await expect(renewalNote).toHaveText('$25,000 known at list price · 1 without a value');
     await expect(page.getByTestId('member-360-summary')).toContainText('Members scored');
     await expect(page.getByTestId('member-360-summary')).toContainText('Renewals within 120 days');
     const evidence = page.getByTestId('member-360-evidence');
@@ -151,7 +164,7 @@ test('non-writer sees an access message, never a run form', async ({ page }, inf
   await page.screenshot({ path: info.outputPath('no-access.png'), fullPage: true });
 });
 
-test('the document has a loading state, then a recoverable read error', async ({ page }, info) => {
+test('the document has a loading state, then keeps checking a transient read failure on its own with no Retry button', async ({ page }, info) => {
   await setupMember360(page, { stored: true });
   let release: (() => void) | undefined;
   const pending = new Promise<void>((resolve) => {
@@ -165,8 +178,9 @@ test('the document has a loading state, then a recoverable read error', async ({
   await expect(page.getByTestId('mktg-document-view-loading')).toContainText('Loading the document');
   await expect(page.getByTestId('member-360-download')).toHaveCount(0);
   release?.();
-  await expect(page.getByTestId('mktg-document-view-error')).toContainText('could not be loaded');
-  await expect(page.getByTestId('mktg-document-view-retry')).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-refresh-warning')).toContainText(MKTG_POLL_RETRYING_TEXT);
+  await expect(page.getByTestId('mktg-document-view-retry')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-document-view-loading')).toBeVisible();
   await expect(page.getByTestId('member-360-download')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('document-error.png'), fullPage: true });
 });
@@ -195,7 +209,7 @@ test('evidence and method disclosures are keyboard accessible', async ({ page },
   await page.keyboard.press('Enter');
   await expect(method).toHaveAttribute('open', '');
   await expect(method.locator('summary')).toHaveText('Method');
-  await expect(method).toContainText('Routing rule version');
+  await expect(method).toContainText('Routing rules:');
   await page.screenshot({ path: info.outputPath('evidence-and-method.png'), fullPage: true });
 });
 

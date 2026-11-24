@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
+  HEALTH_METRICS_NEWSLETTER_VIEWS,
   HEALTH_METRICS_OVERVIEW_BOARD_COHORT,
   HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP,
   HEALTH_METRICS_OVERVIEW_ENGAGEMENT_SPLIT_RANGES,
   HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP,
+  HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP,
   HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE,
 } from '@lfx-one/shared/constants';
 
@@ -18,6 +20,7 @@ import { SnowflakeService } from './snowflake.service';
 
 import type {
   HealthMetricsL2Range,
+  HealthMetricsOverviewBalancePeriod,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewBoardAttendance,
   HealthMetricsOverviewBoardMember,
@@ -30,6 +33,9 @@ import type {
   HealthMetricsOverviewEngagementSplit,
   HealthMetricsOverviewEvent,
   HealthMetricsOverviewEvents,
+  HealthMetricsOverviewNewsletterPeriod,
+  HealthMetricsOverviewNewsletters,
+  HealthMetricsOverviewNewsletterSend,
   HealthMetricsOverviewNps,
   HealthMetricsOverviewNpsPeriod,
   HealthMetricsOverviewOutstandingBalance,
@@ -68,6 +74,7 @@ interface EventRowBase {
 
 interface UpcomingEventRow extends EventRowBase {
   COMP_SCORE: string | null;
+  PROPOSALS_COMP_SCORE: string | null;
 }
 
 interface PastEventRow extends EventRowBase {
@@ -112,7 +119,7 @@ export class HealthMetricsOverviewService {
     const result = await executeSnowflakeViewRead<WideRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
       view: PARTICIPATING_ORGS_VIEW,
       operation: 'get_overview_participating_orgs',
-      clientMessage: 'Participating organizations are unavailable right now.',
+      clientMessage: 'Participating companies are unavailable right now.',
     });
 
     const row = result.rows[0];
@@ -212,18 +219,22 @@ export class HealthMetricsOverviewService {
     };
   }
 
-  /** Overdue membership invoices today, split by risk; the view has no period columns. */
+  /** Overdue membership invoices in every period, split by risk; one row per foundation carries every period. */
   public async getOutstandingBalance(req: Request, query: HealthMetricsOverviewQuery): Promise<HealthMetricsOverviewOutstandingBalance> {
+    const columns = HEALTH_METRICS_L2_RANGES.flatMap((range) =>
+      [
+        'outstanding_balance_usd',
+        'overdue_members_count',
+        'high_risk_balance_usd',
+        'high_risk_members_count',
+        'high_risk_balance_share_pct',
+        'medium_risk_balance_usd',
+        'medium_risk_members_count',
+        'medium_risk_balance_share_pct',
+      ].map((column) => periodSelect(column, range))
+    );
     const sql = `
-      SELECT
-        outstanding_balance_usd,
-        overdue_members_count,
-        high_risk_balance_usd,
-        high_risk_members_count,
-        high_risk_balance_share_pct,
-        medium_risk_balance_usd,
-        medium_risk_members_count,
-        medium_risk_balance_share_pct
+      SELECT ${columns.join(',\n        ')}
       FROM ${OUTSTANDING_BALANCE_VIEW}
       WHERE foundation_slug = ?
       -- One row per foundation_slug, so LIMIT 1 has nothing to pick between.
@@ -237,17 +248,7 @@ export class HealthMetricsOverviewService {
     });
 
     const row = result.rows[0];
-    return {
-      measured: !!row,
-      outstandingUsd: toNullableNumber(row?.['OUTSTANDING_BALANCE_USD']),
-      overdueMembers: toNullableNumber(row?.['OVERDUE_MEMBERS_COUNT']),
-      highRiskUsd: toNullableNumber(row?.['HIGH_RISK_BALANCE_USD']),
-      highRiskMembers: toNullableNumber(row?.['HIGH_RISK_MEMBERS_COUNT']),
-      highRiskSharePct: toNullableNumber(row?.['HIGH_RISK_BALANCE_SHARE_PCT']),
-      mediumRiskUsd: toNullableNumber(row?.['MEDIUM_RISK_BALANCE_USD']),
-      mediumRiskMembers: toNullableNumber(row?.['MEDIUM_RISK_MEMBERS_COUNT']),
-      mediumRiskSharePct: toNullableNumber(row?.['MEDIUM_RISK_BALANCE_SHARE_PCT']),
-    };
+    return { measured: !!row, periods: byRange((range) => mapBalancePeriod(row, range)) };
   }
 
   /**
@@ -300,6 +301,7 @@ export class HealthMetricsOverviewService {
         NULLIF(TRIM(person_job_title), '') AS person_job_title,
         NULLIF(TRIM(account_name), '') AS account_name,
         NULLIF(TRIM(logo_url), '') AS logo_url,
+        NULLIF(TRIM(person_photo_url), '') AS person_photo_url,
         last_attended_date,
         ${memberColumns.join(',\n        ')}
       FROM ${BOARD_MEMBERS_VIEW}
@@ -368,6 +370,82 @@ export class HealthMetricsOverviewService {
     };
   }
 
+  /** The newsletter summary for each period, and every newsletter with engagement data, latest first. */
+  public async getNewsletters(req: Request, query: HealthMetricsOverviewQuery): Promise<HealthMetricsOverviewNewsletters> {
+    const columns = HEALTH_METRICS_L2_RANGES.flatMap((range) =>
+      [
+        'subscribers_count',
+        'subscribers_growth_pct',
+        'subscribers_growth_baseline_date',
+        'newsletters_sent_count',
+        'avg_open_rate',
+        'avg_click_to_open_rate',
+        'high_engagement_subscribers_count',
+        'medium_engagement_subscribers_count',
+        'low_engagement_subscribers_count',
+        'high_engagement_subscribers_pct',
+        'medium_engagement_subscribers_pct',
+        'low_engagement_subscribers_pct',
+        'engagement_newsletters_considered_count',
+        'most_engaging_newsletter_name',
+        'most_engaging_newsletter_click_to_open_rate',
+      ].map((column) => periodSelect(column, range))
+    );
+
+    const summarySql = `
+      SELECT
+        ${columns.join(',\n        ')}
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.summary}
+      WHERE foundation_slug = ?
+      -- One row per foundation_slug, so LIMIT 1 has nothing to pick between.
+      LIMIT 1
+    `;
+    const newslettersSql = `
+      SELECT
+        newsletter_key,
+        newsletter_name,
+        sent_date,
+        open_rate,
+        click_rate
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.byNewsletter}
+      WHERE foundation_slug = ?
+        AND has_engagement_data = TRUE
+      -- Latest first, so a capped read keeps the newest; the card puts them back in date order.
+      ORDER BY sent_date DESC NULLS LAST, newsletter_key ASC
+      LIMIT ${HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP + 1}
+    `;
+
+    const [summary, sends] = await Promise.all([
+      executeSnowflakeViewRead<WideRow>(this.snowflakeService, req, summarySql, [query.foundationSlug], {
+        view: HEALTH_METRICS_NEWSLETTER_VIEWS.summary,
+        operation: 'get_overview_newsletters',
+        clientMessage: 'Newsletter engagement is unavailable right now.',
+      }),
+      executeSnowflakeViewRead<WideRow>(this.snowflakeService, req, newslettersSql, [query.foundationSlug], {
+        view: HEALTH_METRICS_NEWSLETTER_VIEWS.byNewsletter,
+        operation: 'get_overview_newsletters',
+        clientMessage: 'Newsletter engagement is unavailable right now.',
+      }),
+    ]);
+
+    if (sends.rows.length > HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP) {
+      logger.warning(req, 'get_overview_newsletters', 'Overview newsletters hit the read cap', {
+        foundation_slug: query.foundationSlug,
+        row_cap: HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP,
+      });
+    }
+
+    const row = summary.rows[0];
+    return {
+      measured: !!row,
+      periods: byRange((range) => (row ? mapNewsletterPeriod(row, range) : null)),
+      newsletters: sends.rows
+        .slice(0, HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP)
+        .map(mapNewsletterSend)
+        .filter((send): send is HealthMetricsOverviewNewsletterSend => send !== null),
+    };
+  }
+
   /** The registrations view keys events by foundation id, so the slug resolves through the at-a-glance rollup. */
   private async getUpcomingEvents(req: Request, query: HealthMetricsOverviewQuery): Promise<UpcomingEventRow[]> {
     const sql = `
@@ -386,6 +464,7 @@ export class HealthMetricsOverviewService {
         r.count_registrations_all_time AS registrations,
         r.event_registrations_goal AS registrations_goal,
         NULLIF(TRIM(r.comp_score), '') AS comp_score,
+        NULLIF(TRIM(r.proposals_comp_score), '') AS proposals_comp_score,
         r.accepted_speaker_proposals_all_time AS accepted_talks,
         r.total_speaker_proposals_all_time AS total_proposals,
         NULLIF(TRIM(r.cfp_status), '') AS cfp_status
@@ -520,7 +599,7 @@ function mapChurnTier(row: WideRow, range: HealthMetricsL2Range): HealthMetricsO
 }
 
 /** The fields both lists share. */
-function mapEventBase(row: EventRowBase): Omit<HealthMetricsOverviewEvent, 'registrationsGoal' | 'compScore' | 'ranges'> {
+function mapEventBase(row: EventRowBase): Omit<HealthMetricsOverviewEvent, 'registrationsGoal' | 'compScore' | 'proposalsCompScore' | 'ranges'> {
   const eventId = String(row.EVENT_ID);
   return {
     eventId,
@@ -541,6 +620,7 @@ function mapUpcomingEvent(row: UpcomingEventRow): HealthMetricsOverviewEvent {
     ...mapEventBase(row),
     registrationsGoal: positiveOrNull(toNullableNumber(row.REGISTRATIONS_GOAL)),
     compScore: row.COMP_SCORE?.toLowerCase() ?? null,
+    proposalsCompScore: row.PROPOSALS_COMP_SCORE?.toLowerCase() ?? null,
     ranges: [],
   };
 }
@@ -551,7 +631,21 @@ function mapPastEvent(row: PastEventRow): HealthMetricsOverviewEvent {
     ...mapEventBase(row),
     registrationsGoal: row.HAS_GOAL === true ? toNullableNumber(row.REGISTRATIONS_GOAL) : null,
     compScore: null,
+    proposalsCompScore: null,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[`IS_IN_PERIOD_${range}`] === true),
+  };
+}
+
+function mapBalancePeriod(row: WideRow | undefined, range: HealthMetricsL2Range): HealthMetricsOverviewBalancePeriod {
+  return {
+    outstandingUsd: periodNumber(row, 'OUTSTANDING_BALANCE_USD', range),
+    overdueMembers: periodNumber(row, 'OVERDUE_MEMBERS_COUNT', range),
+    highRiskUsd: periodNumber(row, 'HIGH_RISK_BALANCE_USD', range),
+    highRiskMembers: periodNumber(row, 'HIGH_RISK_MEMBERS_COUNT', range),
+    highRiskSharePct: periodNumber(row, 'HIGH_RISK_BALANCE_SHARE_PCT', range),
+    mediumRiskUsd: periodNumber(row, 'MEDIUM_RISK_BALANCE_USD', range),
+    mediumRiskMembers: periodNumber(row, 'MEDIUM_RISK_MEMBERS_COUNT', range),
+    mediumRiskSharePct: periodNumber(row, 'MEDIUM_RISK_BALANCE_SHARE_PCT', range),
   };
 }
 
@@ -581,8 +675,44 @@ function mapBoardMember(row: WideRow): HealthMetricsOverviewBoardMember {
     jobTitle: jobTitle && jobTitle.toLowerCase() !== 'unavailable' ? jobTitle : null,
     organization: typeof row['ACCOUNT_NAME'] === 'string' ? row['ACCOUNT_NAME'] : null,
     logoUrl: typeof row['LOGO_URL'] === 'string' ? row['LOGO_URL'] : null,
+    photoUrl: typeof row['PERSON_PHOTO_URL'] === 'string' ? row['PERSON_PHOTO_URL'] : null,
     lastAttendedDate: toIsoDate(row['LAST_ATTENDED_DATE'] as Date | string | null),
     attendance,
+  };
+}
+
+function mapNewsletterPeriod(row: WideRow, range: HealthMetricsL2Range): HealthMetricsOverviewNewsletterPeriod {
+  return {
+    subscribers: periodNumber(row, 'SUBSCRIBERS_COUNT', range),
+    subscribersGrowth: periodNumber(row, 'SUBSCRIBERS_GROWTH_PCT', range),
+    growthBaselineDate: toIsoDate(row[`SUBSCRIBERS_GROWTH_BASELINE_DATE_${range}`] as Date | string | null),
+    newslettersSent: periodNumber(row, 'NEWSLETTERS_SENT_COUNT', range),
+    avgOpenRate: periodNumber(row, 'AVG_OPEN_RATE', range),
+    avgClickToOpenRate: periodNumber(row, 'AVG_CLICK_TO_OPEN_RATE', range),
+    highEngagement: periodNumber(row, 'HIGH_ENGAGEMENT_SUBSCRIBERS_COUNT', range),
+    mediumEngagement: periodNumber(row, 'MEDIUM_ENGAGEMENT_SUBSCRIBERS_COUNT', range),
+    lowEngagement: periodNumber(row, 'LOW_ENGAGEMENT_SUBSCRIBERS_COUNT', range),
+    highEngagementShare: periodNumber(row, 'HIGH_ENGAGEMENT_SUBSCRIBERS_PCT', range),
+    mediumEngagementShare: periodNumber(row, 'MEDIUM_ENGAGEMENT_SUBSCRIBERS_PCT', range),
+    lowEngagementShare: periodNumber(row, 'LOW_ENGAGEMENT_SUBSCRIBERS_PCT', range),
+    newslettersConsidered: periodNumber(row, 'ENGAGEMENT_NEWSLETTERS_CONSIDERED_COUNT', range),
+    mostEngagingName: periodText(row, 'MOST_ENGAGING_NEWSLETTER_NAME', range),
+    mostEngagingClickToOpenRate: periodNumber(row, 'MOST_ENGAGING_NEWSLETTER_CLICK_TO_OPEN_RATE', range),
+  };
+}
+
+/** A newsletter without a key cannot be told apart from another, so it is dropped. */
+function mapNewsletterSend(row: WideRow): HealthMetricsOverviewNewsletterSend | null {
+  const key = typeof row['NEWSLETTER_KEY'] === 'string' ? row['NEWSLETTER_KEY'].trim() : '';
+  if (!key) return null;
+  const name = typeof row['NEWSLETTER_NAME'] === 'string' ? row['NEWSLETTER_NAME'].trim() : '';
+
+  return {
+    key,
+    name: name || 'Untitled newsletter',
+    sentDate: toIsoDate(row['SENT_DATE'] as Date | string | null),
+    openRate: toNullableNumber(row['OPEN_RATE']),
+    clickRate: toNullableNumber(row['CLICK_RATE']),
   };
 }
 

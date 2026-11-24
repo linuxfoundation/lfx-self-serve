@@ -33,7 +33,6 @@ const application: MentorshipUpstreamApplication = {
   role: 'mentee',
   status: 'accepted',
   tasks_submitted: false,
-  admin_notified: false,
   created_on: '2026-06-01T10:00:00Z',
   updated_on: '2026-06-02T10:00:00Z',
 };

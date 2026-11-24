@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Location } from '@angular/common';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -47,6 +47,7 @@ function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: strin
   return {
     can_write: canWrite,
     can_set_status: canSetStatus,
+    can_edit_record: canSetStatus,
     formation: buildFormation(lifecycle, lifecycleRaw),
     template: {
       uid: 'template:test',
@@ -127,6 +128,10 @@ describe('FormationChecklistSectionComponent', () => {
     response: FormationChecklistResponse,
     options: {
       projectSlug?: string;
+      /** Sets the `heading` input; omitted keeps the component default. */
+      heading?: string;
+      /** Sets the `stage` input (the detail page passes its project's stage). */
+      stage?: string;
       /** Overrides what the checklist read returns — e.g. a `throwError` for the failure branch. */
       fetchResult?: Observable<FormationChecklistResponse>;
       /** `null` leaves the component with no slug at all (neither input nor context). */
@@ -164,6 +169,12 @@ describe('FormationChecklistSectionComponent', () => {
     fixture = TestBed.createComponent(FormationChecklistSectionComponent);
     if (options.projectSlug !== undefined) {
       fixture.componentRef.setInput('projectSlug', options.projectSlug);
+    }
+    if (options.stage !== undefined) {
+      fixture.componentRef.setInput('stage', options.stage);
+    }
+    if (options.heading !== undefined) {
+      fixture.componentRef.setInput('heading', options.heading);
     }
     if (options.onResponseLoaded) {
       fixture.componentInstance.responseLoaded.subscribe(options.onResponseLoaded);
@@ -380,6 +391,76 @@ describe('FormationChecklistSectionComponent', () => {
   });
 
   // GH-2573: ?item=<key> deep-link from assignment emails
+  describe('failed checklist read (#5541)', () => {
+    const failWith = (status: number) => throwError(() => new HttpErrorResponse({ status, statusText: 'x' }));
+    const byTestId = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+    for (const [mode, projectSlug] of [
+      ['context (/project/formation)', undefined],
+      ['explicit slug (/foundation/formations/:slug)', 'other-project'],
+    ] as const) {
+      it(`shows the neutral no-checklist state, with no Retry, for a 404 in ${mode}`, async () => {
+        const emitted: (FormationChecklistResponse | null)[] = [];
+        await render(buildResponse('live', 'live'), { projectSlug, fetchResult: failWith(404), onResponseLoaded: (value) => emitted.push(value) });
+
+        expect(fixture.componentInstance['pageState']()).toBe('no-checklist');
+        const empty = byTestId('formation-checklist-empty-no-checklist');
+        expect(empty?.textContent).toContain('Nothing to track for this project yet');
+        expect(empty?.textContent).toContain('Formation items start when the project moves into a formation stage.');
+        expect(empty?.textContent).not.toMatch(/access|exist/i);
+        expect(byTestId('formation-checklist-retry')).toBeNull();
+        expect(byTestId('formation-checklist-inline-error')).toBeNull();
+        expect(emitted).toEqual([null]);
+      });
+    }
+
+    // #5635 follow-up: Disengaged already is a formation stage, so "items start when the project moves into a formation stage" would be wrong for it.
+    it('explains a disengaged project with nothing to track, and keeps the existing copy for Draft and when no stage is given', async () => {
+      const copy = (): string | undefined => byTestId('formation-checklist-empty-no-checklist')?.textContent ?? undefined;
+
+      await render(buildResponse('live', 'live'), { projectSlug: 'other-project', fetchResult: failWith(404), stage: 'Formation - Disengaged' });
+      expect(copy()).toContain('This project is disengaged.');
+      expect(copy()).not.toContain('start when the project moves');
+
+      await render(buildResponse('live', 'live'), { projectSlug: 'other-project', fetchResult: failWith(404), stage: 'Prospect' });
+      expect(copy()).toContain('Formation items start when the project moves into a formation stage.');
+
+      await render(buildResponse('live', 'live'), { fetchResult: failWith(404) });
+      expect(copy()).toContain('Formation items start when the project moves into a formation stage.');
+    });
+
+    it('keeps the retryable error state for a 500', async () => {
+      await render(buildResponse('live', 'live'), { fetchResult: failWith(500) });
+
+      expect(fixture.componentInstance['pageState']()).toBe('error');
+      expect(byTestId('formation-checklist-inline-error')).not.toBeNull();
+      expect(byTestId('formation-checklist-retry')).not.toBeNull();
+      expect(byTestId('formation-checklist-empty-no-checklist')).toBeNull();
+    });
+
+    it('keeps the retryable error state for a 403 or a non-HTTP failure', async () => {
+      await render(buildResponse('live', 'live'), { fetchResult: failWith(403) });
+      expect(fixture.componentInstance['pageState']()).toBe('error');
+
+      await render(buildResponse('live', 'live'), { fetchResult: throwError(() => new Error('network error')) });
+      expect(fixture.componentInstance['pageState']()).toBe('error');
+    });
+
+    it('leaves the no-checklist state when a later read succeeds', async () => {
+      const response = buildResponse('live', 'live');
+      await render(response, { fetchResult: failWith(404) });
+      expect(fixture.componentInstance['pageState']()).toBe('no-checklist');
+
+      getProjectFormation.mockReturnValue(of(response));
+      fixture.componentInstance.reload();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance['pageState']()).toBe('ready');
+    });
+  });
+
   describe('?item= deep-link (GH-2573)', () => {
     async function renderWithItem(
       itemKey: string | null,
@@ -475,6 +556,15 @@ describe('FormationChecklistSectionComponent', () => {
       expect(replaceStateSpy).toHaveBeenCalledOnce();
     });
 
+    it('clears ?item= on a terminal no-checklist state without opening a drawer', async () => {
+      const { fixture, replaceStateSpy } = await renderWithItem('test-item', {
+        fetchResult: throwError(() => new HttpErrorResponse({ status: 404, statusText: 'Not Found' })),
+      });
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(false);
+      expect(replaceStateSpy).toHaveBeenCalledOnce();
+    });
+
     it('preserves ?item= on the retryable error state so an in-page retry can still open the drawer', async () => {
       const { fixture, replaceStateSpy } = await renderWithItem('test-item', {
         fetchResult: throwError(() => new Error('network error')),
@@ -515,6 +605,37 @@ describe('FormationChecklistSectionComponent', () => {
 
       expect(fixture.componentInstance.drawerVisible()).toBe(false);
       expect(replaceStateSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // #5635: the heading is an input (default unchanged for /project/formation) and the shared state
+  // copy is neutral, so the foundation drill-down never shows "checklist" wording.
+  describe('heading and neutral copy (#5635)', () => {
+    const headingText = (): string | undefined => fixture.nativeElement.querySelector('h2')?.textContent?.trim();
+
+    it('defaults the heading to "Formation Checklist" (the /project/formation host)', async () => {
+      await render(buildResponse('live', 'live'));
+
+      expect(headingText()).toBe('Formation Checklist');
+    });
+
+    it('renders the heading passed by the host', async () => {
+      await render(buildResponse('live', 'live'), { heading: 'Formation items' });
+
+      expect(headingText()).toBe('Formation items');
+    });
+
+    const states: [string, FormationChecklistResponse | null, Observable<FormationChecklistResponse> | undefined][] = [
+      ['error', null, throwError(() => new HttpErrorResponse({ status: 500, statusText: 'x' }))],
+      ['no-checklist', null, throwError(() => new HttpErrorResponse({ status: 404, statusText: 'x' }))],
+      ['no-template', { ...buildResponse('live', 'live'), template: null }, undefined],
+      ['no-items', { ...buildResponse('live', 'live'), items: [] }, undefined],
+    ];
+
+    it.each(states)('renders no "checklist" wording in the %s state when the host passes a neutral heading', async (_state, response, fetchResult) => {
+      await render(response ?? buildResponse('live', 'live'), { heading: 'Formation items', fetchResult });
+
+      expect(fixture.nativeElement.textContent).not.toMatch(/checklist/i);
     });
   });
 });

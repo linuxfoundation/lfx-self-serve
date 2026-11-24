@@ -32,6 +32,7 @@ import type {
   Meeting,
   MeetingAllowedVotingStatus,
   MeetingCommittee,
+  MeetingGuestRole,
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingOccurrenceOption,
@@ -390,7 +391,7 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
   const joinableOccurrence = activeOccurrences.find((occurrence) => {
     const startTime = new Date(occurrence.start_time);
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
 
     return now >= earliestJoinTime && now <= latestJoinTime;
   });
@@ -665,7 +666,7 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
     const now = new Date();
     const startTime = new Date(occurrence.start_time);
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
 
     return now >= earliestJoinTime && now <= latestJoinTime;
   }
@@ -678,7 +679,7 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
   const now = new Date();
   const startTime = new Date(meeting.start_time);
   const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-  const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + 40 * 60000); // 40 minutes after end
+  const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + MEETING_END_BUFFER_MS);
 
   return now >= earliestJoinTime && now <= latestJoinTime;
 }
@@ -695,12 +696,11 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
  */
 export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence): boolean {
   const now = new Date();
-  const buffer = 40 * 60000; // 40 minutes in milliseconds
 
   // For recurring meetings with occurrence
   if (occurrence) {
     const startTime = new Date(occurrence.start_time);
-    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + buffer);
+    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
     return now > endTime;
   }
 
@@ -710,7 +710,7 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   }
 
   const startTime = new Date(meeting.start_time);
-  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + buffer);
+  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + MEETING_END_BUFFER_MS);
   return now > endTime;
 }
 
@@ -1357,6 +1357,20 @@ export function getMeetingOrganizerDisplayName(organizer: MeetingUserInfo | null
   return organizer.name?.trim() || organizer.username?.trim() || organizer.email?.trim() || '';
 }
 
+/**
+ * Single display name for a meeting's organizer; never blank. Resolution order:
+ * `owner.name`, `created_by.name`, the local part of `owner.email`, then "Linux Foundation".
+ * Service-account and zero-valued identities are skipped (see {@link resolveMeetingOwner}), so a
+ * webhook-created meeting reads as "Linux Foundation" rather than `zoom.webhooks`.
+ */
+export function organizerDisplayName(meeting: Pick<Meeting, 'created_by' | 'owner'> | null | undefined): string {
+  const owner = resolveMeetingOwner(meeting);
+  const createdBy = resolveMeetingOrganizer({ created_by: meeting?.created_by });
+  const emailLocalPart = owner?.email?.split('@')[0]?.trim();
+
+  return owner?.name?.trim() || createdBy?.name?.trim() || emailLocalPart || 'Linux Foundation';
+}
+
 /** Maps a host registrant/participant candidate to the organizer display shape. */
 function hostToOrganizer(host: MeetingHostCandidate): MeetingUserInfo {
   const name = `${host.first_name ?? ''} ${host.last_name ?? ''}`.trim();
@@ -1476,13 +1490,13 @@ export function buildMeetingOrganizerMailto(params: {
  * Normalizes a username for viewer-identity comparison — lowercased and stripped of any
  * auth-provider prefix (e.g. `auth0|`), so an OIDC `sub` still matches a plain LFID.
  */
-function normalizeUsername(username: string | null | undefined): string {
+export function normalizeUsername(username: string | null | undefined): string {
   return (username ?? '').trim().toLowerCase().split('|').pop() ?? '';
 }
 
 /**
  * Whether a resolved organizer IS the current viewer — the single comparison behind both the
- * chip's "you" variant and the "Organized by me" list filter, so the two can never disagree.
+ * chip's "you" variant and the My Meetings dashboard's "Organized by me" filter, so the two can never disagree.
  * An absent/empty viewer never matches (a logged-out or unresolved viewer must not match every
  * meeting).
  */
@@ -1602,6 +1616,31 @@ export function compareMeetingPeopleByHostThenName<T extends { host?: boolean; f
 }
 
 /**
+ * Lowercased keys (email or username) of the meeting's listed organizers, for {@link resolveMeetingGuestRole}.
+ * @description The meeting's `organizers` list is typed as usernames on read and emails on create, so a guest
+ * is matched on either. People who organize through project permissions are not in the list.
+ */
+export function buildMeetingOrganizerKeys(organizers: readonly string[] | null | undefined): Set<string> {
+  return new Set((organizers ?? []).map((key) => key?.trim().toLowerCase()).filter(Boolean));
+}
+
+/**
+ * Which role label a guest carries: `organizer` for a listed organizer, `host` for a guest marked as a Meeting
+ * Host who is not one, otherwise `null`. An organizer counts as a host already, so a listed organizer is never
+ * reported as a host, whatever their `host` flag says.
+ */
+export function resolveMeetingGuestRole(person: MeetingHostCandidate, organizerKeys: ReadonlySet<string>): MeetingGuestRole {
+  const email = person.email?.trim().toLowerCase();
+  const username = person.username?.trim().toLowerCase();
+
+  if ((email && organizerKeys.has(email)) || (username && organizerKeys.has(username))) {
+    return 'organizer';
+  }
+
+  return person.host ? 'host' : null;
+}
+
+/**
  * Drops null/blank committee entries from a meeting payload.
  *
  * PrimeNG MultiSelect builds its trigger label with `label += getLabelByValue(...)`.
@@ -1660,6 +1699,15 @@ export function fromMeetingApiVotingStatuses(statuses: ReadonlyArray<string | nu
 /** Canonicalizes a stored status list to the deduped meeting-API vocabulary, mapping pre-migration display values. */
 export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string | null | undefined> | null | undefined): MeetingAllowedVotingStatus[] {
   return toMeetingApiVotingStatuses(fromMeetingApiVotingStatuses(statuses));
+}
+
+/** Stable roster-selection identity: group order, labels, and equivalent status spellings do not change coverage. */
+export function getMeetingCommitteeSelectionKey(committees: ReadonlyArray<MeetingCommittee | null | undefined> | null | undefined): string {
+  return JSON.stringify(
+    sanitizeMeetingCommittees(committees)
+      .map((committee) => JSON.stringify([committee.uid, normalizeMeetingApiVotingStatuses(committee.allowed_voting_statuses).sort()]))
+      .sort()
+  );
 }
 
 /**
@@ -1793,12 +1841,26 @@ export function isBatchRegistrantOperationResponse<T>(value: unknown): value is 
  * removal only ends their invitation, not their organizer access.
  */
 export function getMeetingSelfRemovalMessage(title: string, options: { viaCommittee?: boolean; organizer?: boolean } = {}): string {
-  const parts = [`Remove yourself from "${title}"? You will no longer be invited to any occurrence and will lose your RSVP.`];
-  if (options.organizer) {
-    parts.push('You will still be an organizer of this meeting.');
-  }
-  if (options.viaCommittee) {
-    parts.push("You stay in the committee, but it won't invite you to this meeting again.");
-  }
-  return parts.join(' ');
+  return [
+    `Remove yourself from "${title}"? You will no longer be invited to any occurrence and will lose your RSVP.`,
+    ...getMeetingSelfRemovalNotes(options),
+  ].join(' ');
+}
+
+/** The question of the meetings home Remove Yourself dialog, with curly quotes; its notes are listed under it. */
+export function getMeetingSelfRemovalQuestion(title: string): string {
+  return `Remove yourself from “${title}”? You will no longer be invited to any occurrence and will lose your RSVP.`;
+}
+
+/** What stays after a self-removal: organizer access, and the committee membership that will no longer invite them. */
+export function getMeetingSelfRemovalNotes(options: { viaCommittee?: boolean; organizer?: boolean } = {}): string[] {
+  const notes: string[] = [];
+  if (options.organizer) notes.push('You will still be an organizer of this meeting.');
+  if (options.viaCommittee) notes.push("You stay in the committee, but it won't invite you to this meeting again.");
+  return notes;
+}
+
+/** The question of the Resend Your Invitation dialog shown before an invitee resends their own invite, with curly quotes. */
+export function getMeetingOwnResendQuestion(title: string): string {
+  return `Resend your invitation to “${title}”? We'll email it to your own address again.`;
 }

@@ -184,3 +184,19 @@ export function dedupeUserSearchResults<T extends Pick<UserSearchResult, 'userna
 export function hasLfAccount(user: Pick<UserSearchResult, 'username'>): boolean {
   return !!user.username && user.username.trim().length > 0;
 }
+
+/**
+ * Drops the rows that belong to any of the given identities, matching on username or email,
+ * case-insensitively. Used to keep a person out of a picker they would never choose themselves,
+ * such as the signed-in admin in the impersonation search. Identities with neither field set
+ * match nothing, so an incomplete claim set never hides unrelated rows.
+ */
+export function excludeUserSearchIdentities<T extends Pick<UserSearchResult, 'email' | 'username'>>(
+  results: T[],
+  identities: { username?: string | null; email?: string | null }[]
+): T[] {
+  const usernames = new Set(identities.map((identity) => normalize(identity.username)).filter(Boolean));
+  const emails = new Set(identities.map((identity) => normalize(identity.email)).filter(Boolean));
+
+  return results.filter((result) => !usernames.has(normalize(result.username)) && !emails.has(normalize(result.email)));
+}

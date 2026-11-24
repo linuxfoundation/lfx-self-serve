@@ -25,28 +25,28 @@ import {
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
+  HEALTH_METRICS_BAR_CHART_LABEL_CLASSES,
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS,
-  HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES,
-  HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
-  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
-  HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
-  HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
-  HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
-  HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
-  HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
-  HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
-  HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
-  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
-  HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS,
+  HEALTH_METRICS_EVENTS_FORECAST_PACES,
+  HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES,
+  HEALTH_METRICS_MEMBERS_BOARD_FILL_CLASSES,
+  HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_BADGE_CLASSES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NO_NPS_ICON_CLASS,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_ICON_CLASSES,
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
-  HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER,
-  HEALTH_METRICS_MEMBERS_RENEWALS_RENEWED_MARKER,
-  HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS,
+  HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES,
+  HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES,
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
   HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES,
   lfxColors,
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
+  MEETING_ATTENDEE_STATUS_INFO,
+  MEETING_DETAILS_FEATURES,
+  MEETING_HOME_ATTENDANCE_BG_CLASSES,
+  MEETING_VISIBILITY_BG_CLASSES,
   MENTION_SENTIMENT_CONFIG,
   MENTORSHIP_ADMIN_MENTOR_ACTION_APPEARANCE,
   MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES,
@@ -64,7 +64,10 @@ import {
   MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
   MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES,
   MONITOR_PLATFORM_BUTTON_COLORS,
+  ORG_KEY_CONTACT_ROLE_PILL_CLASSES,
+  ORG_KEY_CONTACT_ROLE_PILL_FALLBACK,
   ORG_MEETINGS_KPI_ICON_CLASS,
+  ORG_TRAINING_STAT_TILES,
 } from '@lfx-one/shared/src/constants/index.ts';
 import plugin from 'tailwindcss/plugin';
 import PrimeUI from 'tailwindcss-primeui';
@@ -75,14 +78,20 @@ import uiTokens from './scripts/ui-tokens/tokens.json' with { type: 'json' };
 // LFX UI Library (uikit) mapping. Everything is derived from the canonical tokens.json and points at the
 // `--ui-*` CSS variables in src/styles/ui-tokens.css, so values follow the active `data-theme`.
 // Generated utilities: colours `*-ui-{background|neutral|neutral-alpha|accent|success|warning|danger|feature}-<step>`,
-// `*-ui-focus`, `*-ui-overlay` (kept under the `ui` key so the library's `neutral`/`red`/`amber` names cannot collide
+// `*-ui-focus`, `*-ui-overlay`, `*-ui-white`, `*-ui-black` (kept under the `ui` key so the library's `neutral`/`red`/`amber` names cannot collide
 // with Tailwind's palettes); `shadow-{border|small|medium|large|tooltip|menu|modal|fullscreen|focus}`;
-// `rounded-ui-{xs|sm|md|lg|full}`; `h-ui-{tiny|small|medium|large|menu-item|row}`; `text-<role>` and `<role>` type
-// classes; `edge`, `edge-hover`. The 14px root font makes rem scale, so every size is a literal px value.
+// `rounded-ui-{xs|sm|md|lg|full}`; `h-ui-{tiny|xsmall|small|medium|large|menu-item|row}`; `duration-ui-{fast|base|slow}`;
+// `ease-ui` (spring), `ease-ui-standard`; `text-<role>` and `<role>` type
+// classes; `edge`, `edge-hover`, `edge-control`, `edge-control-hover`. The 14px root font makes rem scale, so every size is a literal px value.
 // Any `ui-<family>-<step>` colour token is picked up, so a new role family needs no change here.
 const uiVar = (name) => `var(${uiVarName(name)})`;
 const uiColors = {};
 for (const { name } of uiTokens.color.tokens) {
+  // `white` and `black` are the only primitives exposed, as on-colour ink (`text-ui-white`); the unprefixed names stay lfxColors.
+  if (name === 'white' || name === 'black') {
+    uiColors[name] = uiVar(name);
+    continue;
+  }
   if (!name.startsWith('ui-')) continue;
   const scaled = /^ui-(.+)-(\d+)$/.exec(name);
   if (scaled) (uiColors[scaled[1]] ??= {})[scaled[2]] = uiVar(name);
@@ -90,12 +99,15 @@ for (const { name } of uiTokens.color.tokens) {
 }
 const uiVarMap = (tokens, prefix, keyPrefix = '') =>
   Object.fromEntries(tokens.filter((t) => t.name.startsWith(prefix)).map((t) => [`${keyPrefix}${t.name.slice(prefix.length)}`, uiVar(t.name)]));
+const uiMotion = (prefix) => uiVarMap(uiTokens.motion.tokens, prefix, 'ui-');
 const uiTypeStyles = uiTokens.type.groups.flatMap((group) => group.styles.map((style) => ({ ...style, family: style.family ?? group.family })));
 const uiFontSizes = Object.fromEntries(uiTypeStyles.map((s) => [s.name, [s.fontSize, { lineHeight: s.lineHeight }]]));
 
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ['./src/**/*.{html,ts}'],
+  // Story templates need utilities in Storybook, but must not add scan work or
+  // story-only CSS to application builds. Set by .storybook/main.ts for both targets.
+  content: ['./src/**/*.{html,ts}', ...(process.env.LFX_STORYBOOK_BUILD === 'true' ? [] : ['!./src/**/*.stories.ts'])],
   safelist: [
     'bg-violet-400',
     'bg-blue-400',
@@ -139,6 +151,14 @@ export default {
     ...Object.values(MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    // Meetings home visibility badge fills (MEETING_VISIBILITY_BG_CLASSES in @lfx-one/shared, not scanned here)
+    ...Object.values(MEETING_VISIBILITY_BG_CLASSES),
+    // Meetings home attendance bar and legend fills (MEETING_HOME_ATTENDANCE_BG_CLASSES, not scanned here)
+    ...Object.values(MEETING_HOME_ATTENDANCE_BG_CLASSES),
+    // Meetings attendee grid status dots (MEETING_ATTENDEE_STATUS_INFO, not scanned here)
+    ...Object.values(MEETING_ATTENDEE_STATUS_INFO).flatMap((info) => [info.dotClass, info.legendDotClass]),
+    // Meeting details drawer feature badge icon colours (MEETING_DETAILS_FEATURES, not scanned here)
+    ...MEETING_DETAILS_FEATURES.map((feature) => feature.iconClass),
     // Social Listening platform icon colors (MENTION_PLATFORM_CONFIG in @lfx-one/shared, not scanned here)
     ...Object.values(MENTION_PLATFORM_CONFIG).map((c) => c.colorClass),
     // Social Listening analytics distribution bars (barClass on MENTION_PLATFORM_CONFIG / MENTION_SENTIMENT_CONFIG)
@@ -157,6 +177,8 @@ export default {
     ...Object.values(DELTA_DIRECTION_TEXT_CLASS).flatMap((classes) => classes.split(' ')),
     // Groups dashboard engagement stat cards (GROUPS_ENGAGEMENT_ICON_CLASS in @lfx-one/shared, not scanned here)
     ...Object.values(GROUPS_ENGAGEMENT_ICON_CLASS).flatMap((classes) => classes.split(' ')),
+    // Org Lens Training & Certifications stat strip icon tints (ORG_TRAINING_STAT_TILES in @lfx-one/shared, not scanned here)
+    ...ORG_TRAINING_STAT_TILES.flatMap((tile) => tile.iconClass.split(' ')),
     // Formation readiness strip — per-segment fill colors (FORMATION_ITEM_SEGMENT_COLORS in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ITEM_SEGMENT_COLORS),
     // Formation checklist — row/section-header grid templates (container-query variants)
@@ -210,37 +232,43 @@ export default {
     'bg-gray-100',
     // Health Metrics Overview fills (HEALTH_METRICS_OVERVIEW_FILL_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_OVERVIEW_FILL_CLASSES),
-    // Events speaker-proposal status badges (HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS in @lfx-one/shared, not scanned
-    // here) — applied via [class].
-    ...Object.values(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS).flatMap((g) => g.badgeClass.split(' ')),
-    ...HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS.split(' '),
-    // Events organizations membership text and registrations bar (HEALTH_METRICS_EVENTS_ORGANIZATIONS_* in @lfx-one/shared) — applied via [class].
-    ...Object.values(HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP).map((m) => m.textClass),
-    HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
-    // Events forecast verdict banner accents, tag colours and tints (HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES in @lfx-one/shared) — applied via [class].
-    ...Object.values(HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES).flatMap((t) => [t.accentClass, t.textClass, t.tintClass].filter(Boolean)),
-    // Events sponsorship progress bar fill (HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS in @lfx-one/shared) — applied via [class].
-    HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
-    // Members directory tier pill, NPS chips and engagement dots (HEALTH_METRICS_MEMBERS_DIRECTORY_* in @lfx-one/shared) — applied via [class].
-    ...HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS.split(' '),
-    ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES).flatMap((c) => c.split(' ')),
-    ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES),
-    // Members at-risk aging bar fill (HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS in @lfx-one/shared) — applied via [class].
-    HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
-    // Members renewals balance and renewed markers (HEALTH_METRICS_MEMBERS_RENEWALS_*_MARKER in @lfx-one/shared) — applied via [class].
-    HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER.textClass,
-    HEALTH_METRICS_MEMBERS_RENEWALS_RENEWED_MARKER.textClass,
+    // Overview events list's stacked status lines (HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES),
+    // Events forecast goal-bar fills (HEALTH_METRICS_EVENTS_FORECAST_PACES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_EVENTS_FORECAST_PACES).map((pace) => pace.fillClass),
+    // The All members NPS dots and engagement badges (HEALTH_METRICS_MEMBERS_DIRECTORY_* in @lfx-one/shared) — applied via [class].
+    ...[...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_ICON_CLASSES), HEALTH_METRICS_MEMBERS_DIRECTORY_NO_NPS_ICON_CLASS].flatMap((c) => c.split(' ')),
+    ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_BADGE_CLASSES).flatMap((c) => c.split(' ')),
+    // Members at-risk age and risk dots (HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES),
+    // Bar chart value label tones (HEALTH_METRICS_BAR_CHART_LABEL_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_BAR_CHART_LABEL_CLASSES),
     // Members NPS distribution segments (HEALTH_METRICS_MEMBERS_NPS_SEGMENTS in @lfx-one/shared) — applied via [class].
     ...HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => segment.colorClass),
-    // Non-Members fit band dots (HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS in @lfx-one/shared) — applied via [class].
-    ...Object.values(HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS),
-    // Members churn share-of-loss bar fill (HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS in @lfx-one/shared) — applied via [class].
-    HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
-    // Engagement attendance bar fills and the board hero colour, per attendance tone — applied via [class] / [ngClass].
+    // Non-Members fit badges (HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES).flatMap((c) => c.split(' ')),
+    // Engagement attendance bar fills, per attendance tone — applied via [class].
     ...Object.values(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS),
-    ...Object.values(HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS),
-    // Training course type pills (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
+    // Newsletter recipient status dots (HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS in @lfx-one/shared) — applied via [class].
+    ...HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS.map((metric) => metric.dotClass),
+    // Members board attendance bar fills (HEALTH_METRICS_MEMBERS_BOARD_FILL_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_MEMBERS_BOARD_FILL_CLASSES),
+    // Members breakdown table cells and rules (HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES)
+      .flatMap((value) => (typeof value === 'string' ? [value] : Object.values(value)))
+      .flatMap((classes) => classes.split(' ')),
+    // Training course type badges (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES).flatMap((c) => c.split(' ')),
+    // Key-contact role pills — People → Key Contacts, the All Employees Key Contact column and the
+    // person-detail drawer all colour a role from ORG_KEY_CONTACT_ROLE_PILL_CLASSES in @lfx-one/shared,
+    // outside `content`. Eight of the palette's tokens appear nowhere under ./src and so were never
+    // generated: `bg-indigo-50` and `border-indigo-300` (Authorized Signatory), `bg-sky-50` and
+    // `border-sky-300` (Technical Contact), and the `border-*-300` of Representative/Voting, PO, PR,
+    // Legal and Event Sponsorship. Those pills rendered with no tint and no border. The rest survived
+    // only by appearing literally elsewhere, which is not a property to depend on — spread the source
+    // map so the palette cannot drift from the safelist.
+    ...Object.values(ORG_KEY_CONTACT_ROLE_PILL_CLASSES).flatMap((classes) => classes.split(' ')),
+    ...ORG_KEY_CONTACT_ROLE_PILL_FALLBACK.split(' '),
   ],
   theme: {
     // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does
@@ -272,6 +300,9 @@ export default {
       colors: { ...lfxColors, ui: uiColors },
       borderRadius: uiVarMap(uiTokens.radius.tokens, 'radius-', 'ui-'),
       height: uiVarMap(uiTokens.height.tokens, 'height-', 'ui-'),
+      transitionDuration: uiMotion('duration-'),
+      // The library's spring `--ease` maps to `ease-ui`; `--ease-standard` to `ease-ui-standard`.
+      transitionTimingFunction: { ui: uiVar('ease'), ...uiMotion('ease-') },
       boxShadow: {
         ...uiVarMap(uiTokens.shadow.tokens, 'shadow-'),
         md: '0px 1px 2px -1px rgba(0, 0, 0, 0.10), 0px 1px 3px 0px rgba(0, 0, 0, 0.10)',
@@ -279,6 +310,11 @@ export default {
         card: `inset 0 0 0 1px ${lfxColors.gray[100]}, 0px 1px 2px -1px rgba(0, 0, 0, 0.05), 0px 1px 3px 0px rgba(0, 0, 0, 0.05)`,
       },
       keyframes: {
+        // A meetings home row picked on the calendar: an accent wash that fades out.
+        'meetings-row-flash': {
+          '0%, 40%': { backgroundColor: lfxColors.blue[50] },
+          '100%': { backgroundColor: 'transparent' },
+        },
         'step-in': {
           '0%': { opacity: '0', transform: 'translateY(4px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
@@ -298,6 +334,7 @@ export default {
         'fade-in-up': 'fade-in-up 1s ease-out forwards', // Adjust duration and easing
         // A new row or card settling in (Marketing OS run feed and questions stepper); used behind `motion-safe:`.
         'step-in': 'step-in 180ms ease-out both',
+        'meetings-row-flash': 'meetings-row-flash 1.6s ease',
       },
       fontWeight: {
         normal: 400,
@@ -441,6 +478,11 @@ export default {
       addUtilities({
         '.edge': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-200')}` },
         '.edge-hover': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-300')}` },
+        // Form fields (input, textarea, select, multi-select, combobox) use a stronger ring than cards.
+        '.edge-control': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-300')}` },
+        '.edge-control-hover': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-400')}` },
+        // Library icon box (bundle.css `i[class*="fa-"]`): Font Awesome 7 sizes a glyph with --fa-width (1.25em); the library keeps 1em.
+        '.ui-icon': { '--fa-width': '1em', height: '1em', flexShrink: '0' },
       });
       // Full type roles (`heading-24`, `copy-14`, `button-14`, ...): family, size, line height, weight and tracking.
       addComponents(

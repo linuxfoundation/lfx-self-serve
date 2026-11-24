@@ -74,6 +74,8 @@ export async function mockProjectApplicationApis(
         uid: PROPOSAL_UID,
         revision: 1,
         application: (body as { application: ProjectApplicationAnswers }).application,
+        // The BFF forwards a valid foundation uid as the hint (#5187); the mock echoes it like the real list does.
+        target_parent_uid: (body as { target_parent_uid?: string | null }).target_parent_uid ?? null,
         created_at: '2026-09-27T10:00:00Z',
         updated_at: '2026-09-27T10:00:00Z',
       });

@@ -1,27 +1,86 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Exact px, not rem: the app root font is 14px, so rem utilities undershoot the design. -->
-<div role="tablist" [attr.aria-label]="ariaLabel() || null" class="flex items-end gap-[24px] border-b border-gray-200">
+<!-- Collapsed, the list is invisible (out of the accessibility tree and tab order) and only measured; inert keeps its tooltips shut. -->
+<div #tabList role="tablist" [attr.aria-label]="ariaLabel() || null" [attr.inert]="collapsed() ? '' : null" [class]="listClasses()" data-testid="ui-tabs-list">
   @for (tab of tabs(); track tab.value; let i = $index) {
     <button
       #tabButton
       type="button"
       role="tab"
+      [class]="tabClasses()"
       [attr.aria-selected]="value() === tab.value"
-      [attr.tabindex]="focusIndex() === i ? 0 : -1"
+      [attr.aria-disabled]="tab.disabled ? 'true' : null"
+      [attr.aria-label]="tab.countLabel ? tab.label + ', ' + tab.countLabel : null"
+      [attr.tabindex]="tabStopIndex() === i ? 0 : -1"
       [attr.id]="idPrefix() ? idPrefix() + '-tab-' + tab.value : null"
       [attr.aria-controls]="idPrefix() ? idPrefix() + '-panel-' + tab.value : null"
-      [disabled]="tab.disabled"
+      [lfxUiTooltip]="tab.disabledReason ?? ''"
+      [lfxUiTooltipDisabled]="!tab.disabled"
       (click)="select(tab)"
+      (focus)="focusedIndex.set(i)"
+      (blur)="focusedIndex.set(null)"
       (keydown)="onKeydown($event, i)"
-      class="-mb-px inline-flex items-center gap-[7px] whitespace-nowrap border-b-2 pb-[11px] pt-[8px] text-[13px] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-      [class]="value() === tab.value ? 'border-blue-500 font-medium text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'"
       [attr.data-testid]="'ui-tab-' + tab.value">
-      {{ tab.label }}
+      @if (tab.dotTone) {
+        <ng-container *ngTemplateOutlet="dot; context: { $implicit: tab }" />
+      }
+      @if (tab.icon) {
+        <i class="ui-icon" [class]="tab.icon" [style.font-size.px]="iconSize()" aria-hidden="true"></i>
+      }
+      <!-- The hidden 500-weight copy keeps the tab's width steady when the label turns bold. -->
+      <span
+        class="inline-grid after:invisible after:h-0 after:overflow-hidden after:font-medium after:content-[attr(data-label)]"
+        [attr.data-label]="tab.label"
+        >{{ tab.label }}</span
+      >
       @if (tab.count !== undefined) {
-        <span class="text-[12px] text-gray-500" [attr.data-testid]="'ui-tab-count-' + tab.value">{{ tab.count }}</span>
+        <!-- 12px as an exact px value, not rem (14px root), matching the library. -->
+        <span class="text-[12px] font-normal text-ui-neutral-400" [attr.data-testid]="'ui-tab-count-' + tab.value">{{ tab.count }}</span>
       }
     </button>
   }
 </div>
+@if (collapsed()) {
+  <!-- Exact px, not rem; 14px root: the trigger sits 8px above the rule, and its value and options keep the tabs' dots and counts. -->
+  <lfx-ui-select class="pb-[8px]" size="small" [ariaLabel]="ariaLabel()" [value]="value()" (valueChange)="onSelectChange($event)" data-testid="ui-tabs-select">
+    <ng-template lfxUiSelectValue>
+      @if (selectedTab(); as tab) {
+        <ng-container *ngTemplateOutlet="row; context: { $implicit: tab, spacer: false, part: 'value' }" />
+      }
+    </ng-template>
+    @for (tab of tabs(); track tab.value) {
+      <lfx-ui-option [value]="tab.value" [label]="tab.label" [disabled]="!!tab.disabled" [icon]="tab.icon ?? ''">
+        <ng-container *ngTemplateOutlet="row; context: { $implicit: tab, spacer: hasDots(), part: 'option' }" />
+      </lfx-ui-option>
+    }
+  </lfx-ui-select>
+}
+<ng-content />
+
+<ng-template #dot let-tab>
+  <!-- Exact px, not rem; 14px root. -->
+  <span
+    class="h-[7px] w-[7px] shrink-0 rounded-ui-full"
+    [class]="dotClasses()[tab.value]"
+    aria-hidden="true"
+    [attr.data-testid]="'ui-tab-dot-' + tab.value"></span>
+</ng-template>
+
+<ng-template #row let-tab let-spacer="spacer" let-part="part">
+  <!-- Exact px, not rem; 14px root. -->
+  <span class="flex min-w-0 items-center gap-[8px]" [attr.data-testid]="'ui-tabs-' + part + '-' + tab.value">
+    @if (tab.dotTone) {
+      <ng-container *ngTemplateOutlet="dot; context: { $implicit: tab }" />
+    } @else if (spacer) {
+      <span class="w-[7px] shrink-0" aria-hidden="true"></span>
+    }
+    <span class="truncate" [attr.title]="tab.label">{{ tab.label }}</span>
+    @if (tab.count !== undefined) {
+      <span class="text-[12px] font-normal text-ui-neutral-500" [attr.aria-hidden]="tab.countLabel ? 'true' : null">{{ tab.count }}</span>
+    }
+    @if (tab.countLabel) {
+      <span class="sr-only">, {{ tab.countLabel }}</span>
+    }
+  </span>
+</ng-template>

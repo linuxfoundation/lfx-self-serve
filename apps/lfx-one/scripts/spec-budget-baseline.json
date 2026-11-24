@@ -1,0 +1,378 @@
+{
+  "source": "https://github.com/linuxfoundation/lfx-self-serve/actions/runs/45292906999",
+  "note": "Spec files over the runtime budget in the source run, at their measured time plus 25% headroom. A listed file fails only if it gets slower than this. See docs/architecture/testing/unit-testing.md.",
+  "files": {
+    "src/app/modules/committees/committee-dashboard/committee-dashboard.component.spec.ts": {
+      "msPerTest": 631
+    },
+    "src/app/modules/committees/components/add-member-dialog/add-member-dialog.component.spec.ts": {
+      "msPerTest": 152
+    },
+    "src/app/modules/committees/components/committee-documents/committee-documents.component.spec.ts": {
+      "msPerTest": 479
+    },
+    "src/app/modules/committees/components/committee-members-manager/committee-members-manager.component.spec.ts": {
+      "msPerTest": 340
+    },
+    "src/app/modules/committees/components/committee-members/committee-members.component.spec.ts": {
+      "msPerTest": 301
+    },
+    "src/app/modules/committees/components/committee-settings-tab/committee-settings-tab.component.spec.ts": {
+      "msPerTest": 201
+    },
+    "src/app/modules/committees/components/committee-settings/committee-settings.component.spec.ts": {
+      "msPerTest": 201
+    },
+    "src/app/modules/committees/components/committee-table/committee-table.component.spec.ts": {
+      "msPerTest": 184
+    },
+    "src/app/modules/committees/components/import-members-dialog/import-members-dialog.component.spec.ts": {
+      "seconds": 23.7,
+      "msPerTest": 267
+    },
+    "src/app/modules/committees/groups-redesign/groups-redesign.component.spec.ts": {
+      "msPerTest": 227
+    },
+    "src/app/modules/dashboards/campaigns/campaigns.component.hubspot-and-recovery.spec.ts": {
+      "seconds": 23.3,
+      "msPerTest": 151
+    },
+    "src/app/modules/dashboards/campaigns/components/campaign-google-exclusions-panel/campaign-google-exclusions-panel.component.spec.ts": {
+      "msPerTest": 291
+    },
+    "src/app/modules/dashboards/campaigns/components/campaign-google-targeting-panel/campaign-google-targeting-panel.component.spec.ts": {
+      "msPerTest": 407
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.bidding-control.spec.ts": {
+      "msPerTest": 177
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.demand-gen-audience.spec.ts": {
+      "msPerTest": 449
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.demand-gen-demographics.spec.ts": {
+      "msPerTest": 386
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.demand-gen-prefill.spec.ts": {
+      "msPerTest": 195
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.display-audiences.spec.ts": {
+      "msPerTest": 485
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.draft-round-trip-2.spec.ts": {
+      "msPerTest": 193
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-ad-groups.spec.ts": {
+      "msPerTest": 326
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-bidding-1.spec.ts": {
+      "msPerTest": 161
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-call-and-search-themes.spec.ts": {
+      "msPerTest": 391
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-creative-minimums.spec.ts": {
+      "msPerTest": 189
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-exclusions-and-demographics.spec.ts": {
+      "msPerTest": 321
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-extensions.spec.ts": {
+      "msPerTest": 269
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-gates.spec.ts": {
+      "msPerTest": 202
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-geo.spec.ts": {
+      "msPerTest": 321
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-languages.spec.ts": {
+      "msPerTest": 230
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-locations.spec.ts": {
+      "msPerTest": 381
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-schedules-and-devices.spec.ts": {
+      "msPerTest": 208
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-search-and-pickers.spec.ts": {
+      "seconds": 22.3,
+      "msPerTest": 446
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-sitelinks.spec.ts": {
+      "msPerTest": 184
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-snippets-and-budget.spec.ts": {
+      "msPerTest": 155
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.google-stored-images.spec.ts": {
+      "msPerTest": 184
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.linkedin-facets.spec.ts": {
+      "msPerTest": 211
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.linkedin.spec.ts": {
+      "msPerTest": 153
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.microsoft-and-repeat-create.spec.ts": {
+      "msPerTest": 282
+    },
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.pmax-audience-signal.spec.ts": {
+      "msPerTest": 332
+    },
+    "src/app/modules/dashboards/campaigns/components/optimization-tab/optimization-tab.component.spec.ts": {
+      "seconds": 20.3
+    },
+    "src/app/modules/dashboards/components/pending-actions/pending-actions.component.spec.ts": {
+      "msPerTest": 411
+    },
+    "src/app/modules/dashboards/foundation-participating-orgs/foundation-participating-orgs.component.spec.ts": {
+      "msPerTest": 226
+    },
+    "src/app/modules/dashboards/health-metrics-engagement/components/engagement-newsletter-recipients/engagement-newsletter-recipients.component.spec.ts": {
+      "msPerTest": 225
+    },
+    "src/app/modules/dashboards/health-metrics-engagement/health-metrics-engagement.component.spec.ts": {
+      "msPerTest": 166
+    },
+    "src/app/modules/dashboards/health-metrics-events/health-metrics-events.component.spec.ts": {
+      "msPerTest": 202
+    },
+    "src/app/modules/dashboards/health-metrics-members/components/members-churn/members-churn.component.spec.ts": {
+      "msPerTest": 166
+    },
+    "src/app/modules/dashboards/health-metrics-members/components/members-directory/members-directory.component.spec.ts": {
+      "msPerTest": 162
+    },
+    "src/app/modules/dashboards/health-metrics-overview/components/overview-events-card/overview-events-card.component.spec.ts": {
+      "msPerTest": 291
+    },
+    "src/app/modules/dashboards/org/org-contributions/org-contributions.component.spec.ts": {
+      "msPerTest": 199
+    },
+    "src/app/modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-activity-log.component.spec.ts": {
+      "msPerTest": 225
+    },
+    "src/app/modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-approval-entries-dialog.component.spec.ts": {
+      "msPerTest": 166
+    },
+    "src/app/modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component.spec.ts": {
+      "seconds": 26.7
+    },
+    "src/app/modules/dashboards/org/org-groups/org-groups.component.spec.ts": {
+      "msPerTest": 205
+    },
+    "src/app/modules/dashboards/org/org-memberships/org-memberships.component.spec.ts": {
+      "msPerTest": 575
+    },
+    "src/app/modules/dashboards/org/org-people/components/all-employees/all-employees.component.spec.ts": {
+      "seconds": 26.3,
+      "msPerTest": 235
+    },
+    "src/app/modules/dashboards/org/org-people/components/contributors/contributors.component.spec.ts": {
+      "msPerTest": 168
+    },
+    "src/app/modules/dashboards/org/org-people/components/event-attendees/event-attendees.component.spec.ts": {
+      "msPerTest": 408
+    },
+    "src/app/modules/dashboards/org/org-people/components/org-lens-access/org-lens-access.component.spec.ts": {
+      "msPerTest": 259
+    },
+    "src/app/modules/dashboards/org/org-people/components/trainees/trainees.component.spec.ts": {
+      "msPerTest": 247
+    },
+    "src/app/modules/dashboards/org/org-projects/org-projects.component.spec.ts": {
+      "msPerTest": 343
+    },
+    "src/app/modules/dashboards/org/org-training/components/org-training-groups-table/org-training-groups-table.component.spec.ts": {
+      "msPerTest": 173
+    },
+    "src/app/modules/dashboards/org/org-training/org-training.component.spec.ts": {
+      "msPerTest": 352
+    },
+    "src/app/modules/dashboards/participating-orgs/participating-orgs.component.spec.ts": {
+      "msPerTest": 176
+    },
+    "src/app/modules/dashboards/social-listening/components/mentions-list/mentions-list.component.spec.ts": {
+      "msPerTest": 157
+    },
+    "src/app/modules/dashboards/social-listening/social-listening.component.spec.ts": {
+      "msPerTest": 174
+    },
+    "src/app/modules/documents/documents-dashboard/documents-dashboard.component.spec.ts": {
+      "msPerTest": 292
+    },
+    "src/app/modules/events/my-events-dashboard/components/events-list/events-list.component.spec.ts": {
+      "msPerTest": 217
+    },
+    "src/app/modules/events/org-events-dashboard/org-events-dashboard.component.spec.ts": {
+      "msPerTest": 230
+    },
+    "src/app/modules/formations/components/formations-pipeline/formations-pipeline.component.spec.ts": {
+      "msPerTest": 308
+    },
+    "src/app/modules/formations/components/formations-table/formations-table.component.spec.ts": {
+      "msPerTest": 161
+    },
+    "src/app/modules/formations/components/project-application-form/project-application-form.component.spec.ts": {
+      "msPerTest": 191
+    },
+    "src/app/modules/formations/my-formations/my-formations.component.spec.ts": {
+      "msPerTest": 213
+    },
+    "src/app/modules/formations/propose-project/propose-project.component.spec.ts": {
+      "msPerTest": 363
+    },
+    "src/app/modules/mailing-lists/components/mailing-list-members/mailing-list-members.component.spec.ts": {
+      "msPerTest": 330
+    },
+    "src/app/modules/mailing-lists/components/mailing-list-table/mailing-list-table.component.spec.ts": {
+      "msPerTest": 206
+    },
+    "src/app/modules/meetings/meeting-composer/quick-create-dialog.component.spec.ts": {
+      "msPerTest": 152
+    },
+    "src/app/modules/meetings/meeting-join/meeting-join.component.spec.ts": {
+      "seconds": 24.4,
+      "msPerTest": 171
+    },
+    "src/app/modules/meetings/meetings-redesign/components/meeting-details-drawer/meeting-details-drawer.component.spec.ts": {
+      "msPerTest": 188
+    },
+    "src/app/modules/meetings/meetings-redesign/components/meeting-details-drawer/schedule/meeting-details-schedule.component.spec.ts": {
+      "msPerTest": 185
+    },
+    "src/app/modules/meetings/meetings-redesign/components/meeting-home-actions/meeting-home-actions.component.spec.ts": {
+      "msPerTest": 185
+    },
+    "src/app/modules/meetings/meetings-redesign/components/meeting-home-attendance-popup/meeting-home-attendance-popup.component.spec.ts": {
+      "msPerTest": 273
+    },
+    "src/app/modules/meetings/meetings-redesign/components/meetings-filters/meetings-filters.component.spec.ts": {
+      "msPerTest": 205
+    },
+    "src/app/modules/meetings/meetings-redesign/meetings-redesign.component.spec.ts": {
+      "msPerTest": 254
+    },
+    "src/app/modules/meetings/public-project-calendar/public-project-calendar.component.spec.ts": {
+      "msPerTest": 177
+    },
+    "src/app/modules/meetups/meetups-dashboard/components/meetups-list/meetups-list.component.spec.ts": {
+      "msPerTest": 358
+    },
+    "src/app/modules/meetups/meetups-dashboard/meetups-dashboard.component.spec.ts": {
+      "msPerTest": 440
+    },
+    "src/app/modules/mentorship/admin/admin.component.spec.ts": {
+      "msPerTest": 440
+    },
+    "src/app/modules/mentorship/admin/program-detail/components/current-mentees-tab/current-mentees-tab.component.spec.ts": {
+      "seconds": 31,
+      "msPerTest": 330
+    },
+    "src/app/modules/mentorship/admin/program-detail/components/mentors-tab/mentors-tab.component.spec.ts": {
+      "msPerTest": 178
+    },
+    "src/app/modules/mentorship/admin/program-detail/components/past-mentees-tab/past-mentees-tab.component.spec.ts": {
+      "msPerTest": 250
+    },
+    "src/app/modules/mentorship/admin/program-detail/program-detail.component.spec.ts": {
+      "msPerTest": 312
+    },
+    "src/app/modules/mentorship/components/profile-card/profile-card.component.spec.ts": {
+      "msPerTest": 303
+    },
+    "src/app/modules/mentorship/mentee/mentee-apply/mentee-apply.component.spec.ts": {
+      "msPerTest": 164
+    },
+    "src/app/modules/mentorship/mentee/mentee-register/mentee-register.component.spec.ts": {
+      "msPerTest": 258
+    },
+    "src/app/modules/mentorship/mentor/mentor-program-detail/components/mentor-applicants-tab/mentor-applicants-tab.component.spec.ts": {
+      "msPerTest": 275
+    },
+    "src/app/modules/mentorship/mentor/mentor-program-detail/components/mentor-mentees-tab/mentor-mentees-tab.component.spec.ts": {
+      "msPerTest": 247
+    },
+    "src/app/modules/mentorship/mentor/mentor-register/mentor-register.component.spec.ts": {
+      "msPerTest": 320
+    },
+    "src/app/modules/mktg-os-agents/brand-kit-web-view/brand-kit-web-view.component.spec.ts": {
+      "msPerTest": 413
+    },
+    "src/app/modules/mktg-os-agents/components/member-360-result/member-360-result.component.spec.ts": {
+      "msPerTest": 158
+    },
+    "src/app/modules/mktg-os-agents/components/mktg-family-export-actions/mktg-family-export-actions.component.spec.ts": {
+      "msPerTest": 224
+    },
+    "src/app/modules/mktg-os-agents/mktg-agent-run/mktg-agent-run.component.spec.ts": {
+      "seconds": 30.6
+    },
+    "src/app/modules/mktg-os-agents/mktg-document-flow.spec.ts": {
+      "msPerTest": 155
+    },
+    "src/app/modules/mktg-os-agents/mktg-document-view/mktg-document-view-aeo-print.component.spec.ts": {
+      "msPerTest": 457
+    },
+    "src/app/modules/mktg-os-agents/mktg-document-view/mktg-document-view.component.spec.ts": {
+      "seconds": 38.6
+    },
+    "src/app/modules/mktg-os-agents/mktg-family/mktg-family.component.spec.ts": {
+      "msPerTest": 155
+    },
+    "src/app/modules/mktg-os-agents/mktg-framework-print/mktg-framework-print.component.pages.spec.ts": {
+      "msPerTest": 256
+    },
+    "src/app/modules/mktg-os-agents/mktg-framework-view/mktg-framework-view.component.spec.ts": {
+      "msPerTest": 185
+    },
+    "src/app/modules/newsletters/components/newsletter-recipient-engagement/newsletter-recipient-engagement.component.spec.ts": {
+      "msPerTest": 180
+    },
+    "src/app/modules/newsletters/my-newsletters/my-newsletters.component.spec.ts": {
+      "msPerTest": 308
+    },
+    "src/app/modules/profile/clas/cla-group-select.component.spec.ts": {
+      "seconds": 26.6,
+      "msPerTest": 806
+    },
+    "src/app/modules/surveys/components/survey-responses-list/survey-responses-list.component.spec.ts": {
+      "msPerTest": 1797
+    },
+    "src/app/modules/surveys/components/survey-results-drawer/survey-results-drawer.component.spec.ts": {
+      "msPerTest": 275
+    },
+    "src/app/modules/surveys/components/surveys-table/surveys-table.component.spec.ts": {
+      "msPerTest": 183
+    },
+    "src/app/modules/unavailable/unavailable.component.spec.ts": {
+      "msPerTest": 768
+    },
+    "src/app/modules/votes/components/vote-basics/vote-basics.component.spec.ts": {
+      "msPerTest": 240
+    },
+    "src/app/modules/votes/components/vote-voters/vote-voters.component.spec.ts": {
+      "msPerTest": 233
+    },
+    "src/app/modules/votes/components/votes-table/votes-table.component.spec.ts": {
+      "seconds": 91.9,
+      "msPerTest": 601
+    },
+    "src/app/modules/votes/vote-detail/vote-detail.component.spec.ts": {
+      "seconds": 31.7
+    },
+    "src/app/modules/votes/vote-manage/vote-manage.component.spec.ts": {
+      "msPerTest": 240
+    },
+    "src/app/modules/votes/votes-dashboard/votes-dashboard.component.spec.ts": {
+      "seconds": 27.8,
+      "msPerTest": 315
+    },
+    "src/app/shared/components/documents-table/documents-table.component.spec.ts": {
+      "msPerTest": 184
+    },
+    "src/app/shared/components/org-training-stats/org-training-parity.spec.ts": {
+      "msPerTest": 258
+    }
+  }
+}

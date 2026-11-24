@@ -11,7 +11,9 @@ Feature modules live as top-level directories under `apps/lfx-one/src/app/module
 ```text
 apps/lfx-one/src/app/modules/
 ├── committees/                 # Committee management
-│   ├── committee-dashboard/    # Main committees route component
+│   ├── groups-entry/           # Route entry for /groups: picks the dashboard or the redesign (flag + Me lens)
+│   ├── committee-dashboard/    # Existing groups page (also the only page at /foundation/groups and /project/groups)
+│   ├── groups-redesign/        # Me lens groups page redesign (flag-gated)
 │   ├── committee-view/         # Committee detail route component
 │   ├── committee-manage/       # Committee create/edit
 │   └── components/             # Committee-specific components
@@ -21,11 +23,10 @@ apps/lfx-one/src/app/modules/
 │   ├── maintainer/             # Maintainer dashboard
 │   └── components/             # Dashboard-specific components (drawers, cards)
 ├── meetings/                   # Meetings management
-│   ├── meetings-entry/         # Route entry for /meetings: picks the dashboard or the redesign (flag + Me lens)
-│   ├── meetings-dashboard/     # Existing meetings page (also the only page at /foundation/meetings and /project/meetings)
-│   ├── meetings-redesign/      # Me lens meetings redesign, layout shell (flag-gated)
-│   ├── meeting-manage/         # Pre-v2 full-page create/edit wizard — the shipping default
-│   ├── meeting-composer/       # v2 create/edit composer, a drawer over the current page (flag-gated)
+│   ├── meetings-entry/         # Route entry for the meetings lists: picks the dashboard or the redesign (flag; Me lens on /meetings)
+│   ├── meetings-dashboard/     # Existing meetings page, shown wherever the redesign flag is off
+│   ├── meetings-redesign/      # Meetings home redesign for the Me, project and foundation lists (flag-gated)
+│   ├── meeting-composer/       # Create/edit composer, a drawer over the current page
 │   ├── meeting-join/           # Public meeting join page
 │   ├── meeting-not-found/      # Meeting 404 page
 │   └── components/             # Meeting-specific components
@@ -59,9 +60,11 @@ apps/lfx-one/src/app/modules/
 
 > **Note**: Routes are FLAT under `MainLayoutComponent` — there is no `/project/:slug` nesting.
 >
-> **Meetings create/edit**: `meetings/` carries two implementations side by side. `meeting-manage/` is the pre-v2 full-page wizard; `meeting-composer/` is the v2 drawer. The `meeting-v2-enabled` LaunchDarkly flag (`MEETING_V2_ENABLED_FLAG`) decides which one a user gets at every entry point: the meetings dashboard, the group meetings tab, meeting cards, the dashboard quicklinks, the create-artifact dialog, and the `/meetings/create` and `/meetings/:id/edit` deep links. Each deep link is a pair of routes on the same path — a composer entry (`MeetingComposerRouteComponent`) behind the `meetingsV2Guard` CanMatch, then the wizard — so turning the flag off sends the same URL back to the wizard with no deploy. With no answer from LaunchDarkly the browser uses `MEETING_V2_ENABLED_DEFAULT` (`false`). Retiring the wizard means dropping each pair's wizard entry, the guard and the flag.
+> **Meetings create/edit**: `meeting-composer/` is the only create/edit surface, a drawer mounted once by `AppComponent` and raised from every entry point: the meetings dashboard, the group meetings tab, meeting cards, the dashboard quicklinks and the create-artifact dialog. The `/meetings/create` and `/meetings/:id/edit` deep links load `MeetingComposerRouteComponent`, which opens the composer in the browser and replaces the URL with the meetings list; on the server it renders nothing and does not redirect (an SSR redirect would become an HTTP 302 and drop the deep link).
 >
-> **Meetings page**: the flat `/meetings` route loads `MeetingsEntryComponent`, a thin wrapper that renders a loading state on the server and until LaunchDarkly is ready, then either `MeetingsDashboardComponent` or, when `MEETINGS_REDESIGN_FLAG` is on, the active lens is `me` and the URL is the flat `/meetings`, the `@defer`-loaded `MeetingsRedesignComponent`. The same routes are mounted at `/foundation/meetings` and `/project/meetings`, where the wrapper renders the dashboard immediately (server included) with no loader or flag wait. This is unrelated to the `meeting-v2-enabled` composer flag above.
+> **Meetings page**: the flat `/meetings` route loads `MeetingsEntryComponent`, a thin wrapper that renders a loading state on the server and until LaunchDarkly is ready, then either `MeetingsDashboardComponent` or, when `MEETINGS_REDESIGN_FLAG` is on, the active lens is `me` and the URL is the flat `/meetings`, the `@defer`-loaded `MeetingsRedesignComponent`. The same routes are mounted at `/foundation/meetings` and `/project/meetings`, where the wrapper renders the dashboard immediately (server included) with no loader or flag wait.
+>
+> **Groups page**: the flat `/groups` route loads `GroupsEntryComponent`, which works like `MeetingsEntryComponent`: a loading state on the server and until LaunchDarkly is ready, then `CommitteeDashboardComponent` or, when `GROUPS_REDESIGN_FLAG` is on in the Me lens, the `@defer`-loaded `GroupsRedesignComponent`. `/foundation/groups` and `/project/groups` render the dashboard immediately.
 
 ### Key Principles
 
@@ -120,7 +123,7 @@ Application Code → LFX Wrapper → PrimeNG Component → DOM
 
 - Selector prefix `lfx-ui-` (enforced by an ESLint override for `shared/uikit/**`) and class names `Ui*Component`, so they never collide with the wrapper classes
 - Standalone, signal inputs, `model()` for two-way values, `OnPush`
-- Styled with Tailwind only; new and realigned components use the LFX UI Library `ui-*` roles (see [Styling System](./styling-system.md#lfx-ui-library-tokens)), while the four first components still use `lfxColors` until they are realigned
+- Styled with Tailwind only; components use the LFX UI Library `ui-*` roles (see [Styling System](./styling-system.md#lfx-ui-library-tokens))
 - Overlays, when needed, build on `@angular/cdk`
 - Every component has a Storybook story and a unit spec; run Storybook with `yarn storybook` from the repo root
 
@@ -220,7 +223,7 @@ Every main lens page (Me, Foundation, Project, Org) opens with `<lfx-page-header
 - **Slots.** Use `[pageHeaderTitleSuffix]` for an inline tag beside the title, and `[pageHeaderActions]` for buttons or filters to the right of the title; they wrap below it when the row runs out of room. `eyebrow` adds an uppercase label above the title (Marketing Kit).
 - **Test ids.** `titleTestId` and `descriptionTestId` keep page-specific test ids. They default to `page-header-title` and `page-header-description`.
 
-Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header. Health Metrics is the exception: its gate builds its own sticky header, because its design sets the title in Roboto Slab light at 24px over a 13px subtitle and pins the tab bar inside the header. The Me lens meetings redesign (`meetings-redesign`, behind `MEETINGS_REDESIGN_FLAG`) is the other: it hand-builds a sticky header with the same type spec, and its fade and tabs bar stick to the measured header height.
+Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header. Health Metrics is the exception: its gate builds its own sticky header, because its design sets the title in Roboto Slab light at 24px over a 12px subtitle, pins the tab bar inside the header and compacts the header on scroll. The meetings redesign (`meetings-redesign` behind `MEETINGS_REDESIGN_FLAG`, on the Me, project and foundation lists) and the Me lens groups redesign (`groups-redesign` behind `GROUPS_REDESIGN_FLAG`) are the others: each hand-builds a sticky header with the same type spec, and its fade and tabs bar stick to the measured header height. Account & Settings (`account-layout` behind `PROFILE_REDESIGN_FLAG`) does the same, with its grouped left nav pinned below the measured header.
 
 ### Tab shells: signal state vs. child routes
 
@@ -251,7 +254,7 @@ Two rules this shell establishes:
 - **Chrome that outlives a tab switch is a component-provided service, never `providedIn: 'root'`.** `HealthMetricsChromeService` is listed in the gate's `providers`, so every child route inherits the same instance through the node injector — the selected period and the measured sticky-header height survive tab switches, and both reset when the user leaves the page. A root-provided service would leak that state across unrelated visits.
 - **`routerLinkActive` needs `queryParams: 'ignored'`.** Tab links carry no query params while the URL always carries `foundationSlug`, so the default matching never marks a tab active. Pass an explicit `IsActiveMatchOptions`, using `paths: 'exact'` for the empty-path tab and `paths: 'subset'` for the rest.
 
-A Level 2 tab composes `HealthMetricsL2ShellComponent` (`modules/dashboards/components/health-metrics-l2-shell/`) rather than re-implementing the layout. The tab passes its `sections`, `idPrefix`, `dataSections`, `subNavItems`, `blank`, `navLabel` and `testIdPrefix` — `sections` and `dataSections` are read once at init, while `subNavItems` stays reactive so badges update as counts arrive — projects each section body through an `<ng-template lfxHealthMetricsL2Section="key">`, and relays each body's `reading`/`settled` to the shell. The shell owns the sticky section nav (right of the sections, collapsing to a rail of ticks that opens as a floating panel once the gate's `hmpage` container is 1100px or narrower), the scroll-spy and fragment deep links, and the page itself scrolls the sections; a section with no projected body renders an anchored "Awaiting data" placeholder.
+A Level 2 tab composes `HealthMetricsL2ShellComponent` (`modules/dashboards/components/health-metrics-l2-shell/`) rather than re-implementing the layout. The tab passes its `sections`, `idPrefix`, `dataSections`, `subNavItems`, `blank`, `navLabel` and `testIdPrefix` — `sections` and `dataSections` are read once at init, while `subNavItems` stays reactive so badges update as counts arrive — projects each section body through an `<ng-template lfxHealthMetricsL2Section="key">`, and relays each body's `reading`/`settled` to the shell. The shell owns the sticky section nav (a 28px rail of ticks right of the sections at every width, opening as a floating panel on hover or focus), the scroll-spy and fragment deep links, and the page itself scrolls the sections; a section with no projected body renders an anchored "Awaiting data" placeholder.
 
 Each `settled` carries a verdict the tab relays as `sectionSettled(key, $event)`: `true` when the read found nothing for the period, `false` for data or a failed read, and `null` for no verdict (a closed period's forecast, a renewals window with none due). A section whose every read settled `true` shows the design's compact empty state in place of its body, controls and badge; once every data section has, the tab's `blank` card (`HEALTH_METRICS_<TAB>_BLANK`, through the shared `HealthMetricsBlankCardComponent`) replaces the sub-nav and sections. The bodies stay mounted but hidden, so a period with data brings them back. A section's verdict must not depend on its own filters or toggles, or its empty state would hide the control that switches back.
 
@@ -261,7 +264,7 @@ For the scroll-spy used inside a Level 2 page, five rules apply, each attributed
 - Keep an `intersecting` Set, so exactly one item is ever active (`account-settings.component.ts`).
 - Give a short last section an end sentinel with a **non-zero height** (`account-settings.component.ts`), and observe it only once it starts below the first screen (`health-metrics-l2-shell.component.ts`). A zero-height sentinel never intersects; one in a non-scrolling area intersects immediately and lights the last item at rest.
 - Register teardown once via `destroyRef.onDestroy`, **not** inside the setup function, which re-runs whenever the sticky offset changes (`health-metrics-l2-shell.component.ts`, whose observers are rebuilt as the sticky offset changes and the page starts or stops overflowing).
-- Release a fragment deep link only once **every** async section that can change the page's height has settled (`health-metrics-l2-shell.component.ts`'s `dataSections` input, e.g. `HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS`). Clearing the pending key on the first section to report leaves a later section's reflow to push the anchor out of view unanswered. A section joins that list only once its component emits `reading`/`settled` and the tab relays both to the shell's `sectionReading`/`sectionSettled` — a listed section that never emits `settled` holds every deep link until the TTL. A key names a read, not necessarily an anchor: two reads under one anchor each get their own key (Members' `bridge` under `#tiers`, in `HEALTH_METRICS_MEMBERS_DATA_SECTIONS`), so the first to settle cannot release the link.
+- Release a fragment deep link only once **every** async section that can change the page's height has settled (`health-metrics-l2-shell.component.ts`'s `dataSections` input, e.g. `HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS`). Clearing the pending key on the first section to report leaves a later section's reflow to push the anchor out of view unanswered. A section joins that list only once its component emits `reading`/`settled` and the tab relays both to the shell's `sectionReading`/`sectionSettled` — a listed section that never emits `settled` holds every deep link until the TTL. A key names a read, not necessarily an anchor: two reads under one anchor each get their own key, so the first to settle cannot release the link.
 
 Each async section of a Level 2 page owns its own read, and every one of them faces the same
 ordering problem: the foundation is not selected on the first pass. The rule the engagement sections
@@ -285,7 +288,7 @@ Known limitation: once latched, a scope cleared after a read renders the _measur
 rather than a neutral one. Distinguishing the third state ("no foundation selected") belongs to the
 page-wide neutral state, not to four per-section copies of the same computed.
 
-A Level 2 page scrolls the page itself, never an inner pane (`health-metrics-l2-shell.component.ts`). At the wide layout the sub-nav host is sticky 8px below `HealthMetricsChromeService.stickyTopPx`, and each section carries that offset as its `scroll-margin-top`, so `scrollIntoView({ block: 'start' })` lands a pick or a deep link below the sticky header. The spy observes the viewport with a band that is the top 30% of the viewport left below the header, set in pixels (`-<offset>px 0px -<bottom>px 0px`) and rebuilt when the viewport height changes — a percentage bottom margin is of the whole viewport and closes the band on a short window. Both sentinels are observed only while the end sentinel starts below the first screen (measured against the page, not the scroll), since a footer can make the page scroll while both sit in view; a start sentinel at the top of the column lights the first item when the reader jumps back to the top, since that jump never sweeps the first heading through the band. Because the page scrolls, the router's app-wide `scrollPositionRestoration: 'top'` would jump it up on every pill, search or page change, all of which write the query string. The shell puts the scroll position back after any navigation that changes only the query string, or restates the current URL (skipped, yet still scrolled), so a tab switch still lands at the top; a section jump made while that router scroll is still due is replayed after it. A section that starts a read keeps its height until every read rendering in it has painted (a read in a section keyed differently passes that section's key, as Members' bridge does inside `tiers`), so the loading state never shortens the page under the reader.
+A Level 2 page scrolls the page itself, never an inner pane (`health-metrics-l2-shell.component.ts`). The sub-nav host is sticky 8px below `HealthMetricsChromeService.stickyTopPx`, and each section carries that offset as its `scroll-margin-top`, so `scrollIntoView({ block: 'start' })` lands a pick or a deep link below the sticky header. The gate compacts that header once the page scrolls and restores it at the top or on a new tab; it compacts only when the page has room to stay scrolled after it shrinks, so a short page cannot flicker. The spy follows a new offset once the header's height settles rather than on every frame of that animation, and a jump still in flight when the header compacts is aimed again, so it lands under the compact header. The spy observes the viewport with a band that is the top 30% of the viewport left below the header, set in pixels (`-<offset>px 0px -<bottom>px 0px`) and rebuilt when the viewport height changes — a percentage bottom margin is of the whole viewport and closes the band on a short window. Both sentinels are observed only while the end sentinel starts below the first screen (measured against the page, not the scroll), since a footer can make the page scroll while both sit in view; a start sentinel at the top of the column lights the first item when the reader jumps back to the top, since that jump never sweeps the first heading through the band. Because the page scrolls, the router's app-wide `scrollPositionRestoration: 'top'` would jump it up on every pill, search or page change, all of which write the query string. The shell puts the scroll position back after any navigation that changes only the query string, or restates the current URL (skipped, yet still scrolled), so a tab switch still lands at the top; a section jump made while that router scroll is still due is replayed after it. A section that starts a read keeps its height until every read rendering in it has painted (a read in a section keyed differently passes that section's key too), so the loading state never shortens the page under the reader.
 
 ## 🎨 Component Development Pattern
 
@@ -502,18 +505,18 @@ AppComponent
     └── MainLayoutComponent (authGuard protected, provides header + sidebar + content area)
         ├── /                    → DashboardComponent (role-based dashboard)
         ├── /projects            → HomeComponent (project listing)
-        ├── /meetings            → MeetingsEntryComponent (lazy loaded; renders MeetingsDashboardComponent or, behind `meetings-redesign` in the Me lens, MeetingsRedesignComponent)
-        ├── /groups              → CommitteeDashboardComponent (lazy loaded)
+        ├── /meetings            → MeetingsEntryComponent (lazy loaded; renders MeetingsDashboardComponent or, behind `meetings-redesign` in the Me lens, MeetingsRedesignComponent; `/project/meetings` and `/foundation/meetings` do the same in their lens)
+        ├── /groups              → GroupsEntryComponent (lazy loaded; renders CommitteeDashboardComponent or, behind `groups-redesign` in the Me lens, GroupsRedesignComponent)
         ├── /mailing-lists       → MailingListDashboardComponent (lazy loaded)
         ├── /votes               → VotesDashboardComponent (lazy loaded)
-        ├── /votes/:id           → VotePermalinkComponent (shareable permalink, Me lens, in-place 404)
+        ├── /votes/:id           → VoteDetailComponent (vote detail page, keeps the current lens, in-place 404)
         ├── /surveys             → SurveysDashboardComponent (lazy loaded)
         ├── /settings            → redirects by lens (settingsLensRedirectGuard): Me → /profile/settings; foundation/project → lens-prefixed settings; other lenses (e.g. org) fall through to SettingsDashboardComponent
         └── /profile             → ProfileLayoutComponent (lazy loaded; tabs incl. settings → AccountSettingsComponent, transactions)
 
     Standalone routes (outside MainLayoutComponent):
-    ├── /meetings/not-found      → MeetingNotFoundComponent
-    └── /meetings/:id            → MeetingJoinComponent (public meeting join)
+    ├── /meetings/not-found      → MeetingPageNotFoundComponent behind meetingPageRedesignGuard, else MeetingNotFoundComponent
+    └── /meetings/:id            → MeetingPageComponent behind meetingPageRedesignGuard, else MeetingJoinComponent (public meeting join)
 ```
 
 ## 🎯 Usage Guidelines

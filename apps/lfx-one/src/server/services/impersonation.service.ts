@@ -3,6 +3,8 @@
 
 import {
   ACCOUNT_COOKIE_KEY,
+  IMPERSONATION_SEARCH_FAILED_MESSAGE,
+  IMPERSONATION_SEARCH_NATS_ERROR_CODE,
   LENS_COOKIE_KEY,
   NATS_CONFIG,
   NAV_LENS_COOKIE_KEY,
@@ -11,8 +13,15 @@ import {
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
-import { ImpersonationStatusResponse, ImpersonationUser, Impersonator, LfxAccessTokenClaims, M2MTokenResponse, PersonaType } from '@lfx-one/shared/interfaces';
-import { classifyImpersonationExchangeFailure } from '@lfx-one/shared/utils/impersonation.utils';
+import {
+  ImpersonationStatusResponse,
+  ImpersonationUser,
+  ImpersonationUserSearchResult,
+  Impersonator,
+  LfxAccessTokenClaims,
+  M2MTokenResponse,
+} from '@lfx-one/shared/interfaces';
+import { classifyImpersonationExchangeFailure, classifyImpersonationSearchFailure } from '@lfx-one/shared/utils/impersonation.utils';
 import { Request, Response } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -96,6 +105,49 @@ export class ImpersonationService {
     }
   }
 
+  /**
+   * Searches users for the impersonation picker through auth-service. `subjectToken` must be the signed-in admin's own
+   * token (see `resolveImpersonatorToken`): auth-service verifies it and its `can_impersonate` claim before it searches.
+   * The query is never logged — it is free text that can hold a person's name or email.
+   */
+  public async searchUsers(req: Request, query: string, subjectToken: string, limit: number): Promise<ImpersonationUserSearchResult[]> {
+    logger.debug(req, 'impersonation_user_search', 'Searching users through auth-service', { query_length: query.length, limit });
+
+    const codec = this.natsService.getCodec();
+    const payload = JSON.stringify({ subject_token: subjectToken, query, limit });
+
+    try {
+      const response = await this.natsService.request(NatsSubjects.USER_SEARCH, codec.encode(payload), {
+        timeout: NATS_CONFIG.REQUEST_TIMEOUT,
+      });
+
+      const result = JSON.parse(codec.decode(response.data));
+
+      if (!result.success) {
+        const upstreamError = result.error || 'User search failed';
+        const classified = classifyImpersonationSearchFailure(upstreamError);
+        throw new MicroserviceError(classified.message, classified.statusCode, classified.code, {
+          operation: 'impersonation_user_search',
+          service: 'auth-service',
+          errorBody: { upstreamError },
+        });
+      }
+
+      return Array.isArray(result.users) ? result.users : [];
+    } catch (error) {
+      if (error instanceof MicroserviceError) {
+        throw error;
+      }
+
+      // Fixed message: the transport error stays in the log-only errorBody and is never returned to the browser.
+      throw new MicroserviceError(IMPERSONATION_SEARCH_FAILED_MESSAGE, 502, IMPERSONATION_SEARCH_NATS_ERROR_CODE, {
+        operation: 'impersonation_user_search',
+        service: 'auth-service',
+        errorBody: { transportError: error instanceof Error ? error.message : 'Unknown error' },
+      });
+    }
+  }
+
   public async fetchTargetUserProfile(req: Request, userId: string): Promise<{ name?: string; picture?: string }> {
     try {
       logger.debug(req, 'fetch_target_user_profile', 'Fetching target user metadata via NATS', { user_id: userId });
@@ -134,8 +186,7 @@ export class ImpersonationService {
     res: Response,
     tokenResponse: M2MTokenResponse,
     targetClaims: LfxAccessTokenClaims,
-    profile?: { name?: string; picture?: string },
-    personaContext?: PersonaType
+    profile?: { name?: string; picture?: string }
   ): void {
     if (!req.appSession) {
       req.appSession = {};
@@ -165,12 +216,6 @@ export class ImpersonationService {
     req.appSession['impersonationUser'] = targetUser;
     req.appSession['impersonator'] = impersonator;
 
-    if (personaContext) {
-      req.appSession['impersonationPersonaContext'] = personaContext;
-    } else {
-      delete req.appSession['impersonationPersonaContext'];
-    }
-
     // Clear impersonator's persona/lens/nav-lens/account/project/foundation cookies so the impersonated session re-detects cleanly on reload.
     res.clearCookie(PERSONA_COOKIE_KEY, { path: '/' });
     res.clearCookie(LENS_COOKIE_KEY, { path: '/' });
@@ -185,7 +230,6 @@ export class ImpersonationService {
       target_sub: targetUser.sub,
       target_email: targetUser.email,
       previous_target_sub: previousTargetSub,
-      persona_context: personaContext ?? null,
     });
   }
 

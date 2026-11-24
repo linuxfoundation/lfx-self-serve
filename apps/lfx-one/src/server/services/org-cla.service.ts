@@ -9,7 +9,7 @@ import {
   ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX,
   ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
   ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
-  ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
   SALESFORCE_ID_PATTERN,
@@ -18,6 +18,7 @@ import {
   classifyOrgClaDesigneeRefusal,
   classifyOrgClaManagerRefusal,
   isHttpsUrl,
+  hyphenatedClaGroupId,
   isOrgClaDesigneeLfLoginRequired,
   isSameClaGroup,
   legacyOrgEasyclaReturnPath,
@@ -77,6 +78,7 @@ import type {
   EasyClaEvent,
   EasyClaEventList,
   EasyClaSearchList,
+  EasyClaSearchResult,
   EasyClaSelfServeCorporateSignatureInput,
   EasyClaSelfServeCorporateSignatureOutput,
   EasyClaSignatureApprovalLists,
@@ -432,7 +434,7 @@ function asEasyClaRoleMissing(error: unknown): unknown {
   if (!(error instanceof MicroserviceError) || error.statusCode !== 403 || error.transportFailure) return error;
 
   return new MicroserviceError(
-    'Failed to fetch organization CLA groups: the viewer holds no EasyCLA role at this organization',
+    'Failed to fetch company CLA groups: the viewer holds no EasyCLA role at this company',
     403,
     ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
     {
@@ -469,7 +471,7 @@ export class OrgClaService {
         {
           operation: 'org_cla_list_cla_groups',
           service: SERVICE,
-          errorMessage: 'Failed to fetch organization CLA groups',
+          errorMessage: 'Failed to fetch company CLA groups',
           errorCode: 'UPSTREAM_ERROR',
           // This response carries CLA managers by id and LF username. The mapper drops them, but
           // that boundary only covers the browser: on a non-OK status or unparseable body the
@@ -491,7 +493,7 @@ export class OrgClaService {
     // through to an empty list and be rendered as "this organization has signed nothing" —
     // precisely the false claim the paragraph above refuses to make for a failed request.
     if (!upstream || !Array.isArray(upstream.list)) {
-      throw new MicroserviceError('Failed to fetch organization CLA groups: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      throw new MicroserviceError('Failed to fetch company CLA groups: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'org_cla_list_cla_groups',
         service: SERVICE,
       });
@@ -502,7 +504,7 @@ export class OrgClaService {
     // makes every such row share one key, which lets the view reuse one card's DOM for another
     // agreement — a worse outcome than the load failure this raises instead.
     if (!upstream.list.every((entry): entry is EasyClaCompanyClaGroup & { signatureID: string } => !!entry?.signatureID)) {
-      throw new MicroserviceError('Failed to fetch organization CLA groups: upstream row is missing its signature id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      throw new MicroserviceError('Failed to fetch company CLA groups: upstream row is missing its signature id', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'org_cla_list_cla_groups',
         service: SERVICE,
       });
@@ -614,6 +616,55 @@ export class OrgClaService {
   }
 
   /**
+   * One CLA Group from the same unscoped catalogue as sign-options (#2293).
+   *
+   * Returns null on upstream 404, including a gateway 404 when the producer route is not
+   * deployed yet, so the page can show its not-found empty state instead of a load error.
+   * Any other upstream failure is rethrown.
+   *
+   * The id is sent in the lower-case hyphenated spelling, because the producer matches it
+   * literally and the controller accepts every spelling `CLA_GROUP_ID_PATTERN` does. A 200 must
+   * echo the requested group: an omitted or different `claGroupID` is a 502, the same rule the
+   * corporate signing hand-off applies, so the page never names a group the address did not.
+   *
+   * `projectSfid` is appended the same way `getSignOptions` appends it, from the field the
+   * catalogue already resolved. Absence means the group cannot be signed from here.
+   */
+  public async getClaGroupCatalogue(req: Request, claGroupId: string): Promise<ClaGroupOption | null> {
+    const requestedId = hyphenatedClaGroupId(claGroupId);
+    let result: EasyClaSearchResult | null;
+    try {
+      result = await gatewayFetch<EasyClaSearchResult>(req, `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(requestedId)}/catalogue`, {
+        operation: 'org_cla_group_catalogue',
+        service: SERVICE,
+        errorMessage: 'Failed to fetch CLA group',
+        errorCode: 'UPSTREAM_ERROR',
+      });
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        return null;
+      }
+      throw error;
+    }
+
+    const echoed = result?.claGroupID?.trim();
+    if (!result || !echoed || !isSameClaGroup(echoed, requestedId)) {
+      logger.warning(req, 'org_cla_group_catalogue', 'upstream answered for a different or unnamed CLA Group', {
+        requested_cla_group_id: requestedId,
+        returned_cla_group_id: echoed || null,
+      });
+      throw new MicroserviceError('Upstream answered the catalogue read for a different CLA Group', 502, 'CLA_GROUP_CATALOGUE_MISMATCH', {
+        operation: 'org_cla_group_catalogue',
+        service: SERVICE,
+      });
+    }
+
+    const option = toClaGroupOption(result);
+    const projectSfid = result.projectSFID?.trim();
+    return projectSfid ? { ...option, projectSfid } : option;
+  }
+
+  /**
    * Streams the CLA Group's current corporate template, watermarked not for execution (#2317).
    *
    * Not the signed-document path: that list-checks the organization's signed rows, and an
@@ -653,8 +704,7 @@ export class OrgClaService {
    * Runs on the default gateway token with no impersonation branch, same as the Me-lens search:
    * the CLA Group catalogue is not organization-scoped upstream, so there is no ownership check
    * for a token swap to satisfy. The gate on this route is `requireOrgLensAccess` alone; nothing
-   * about the caller's company reaches the query. The dark-launch flag is not part of it — that
-   * flag is an Angular route guard, so it hides the page without closing this endpoint.
+   * about the caller's company reaches the query.
    */
   public async getSignOptions(req: Request, searchTerm: string): Promise<ClaGroupSearchResponse> {
     // No `startOperation` here, for the reason `getPdfUrl` above gives: the HTTP lifecycle is the
@@ -768,7 +818,7 @@ export class OrgClaService {
         return_url: isServerFeatureEnabled(ServerFeatureFlag.OrgEasyclaReturnInPath)
           ? claReturnUrl(req, orgEasyclaReturnPath(orgUid, request.claGroupId), { [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE })
           : claReturnUrl(req, legacyOrgEasyclaReturnPath(request.claGroupId), {
-              [ORG_EASYCLA_RETURN_ORG_PARAM]: orgUid,
+              [ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM]: orgUid,
               [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE,
             }),
         authority_acked: request.authorityAcked,
@@ -1649,7 +1699,7 @@ export class OrgClaService {
       {
         operation: 'org_cla_list_cla_groups',
         service: SERVICE,
-        errorMessage: 'Failed to fetch organization CLA groups',
+        errorMessage: 'Failed to fetch company CLA groups',
         errorCode: 'UPSTREAM_ERROR',
         // This response carries CLA managers by id and LF username. The mapper drops them, but
         // that boundary only covers the browser: on a non-OK status or unparseable body the
@@ -1668,7 +1718,7 @@ export class OrgClaService {
     // through to an empty list and be rendered as "this organization has signed nothing" —
     // precisely the false claim the paragraph above refuses to make for a failed request.
     if (!upstream || !Array.isArray(upstream.list)) {
-      throw new MicroserviceError('Failed to fetch organization CLA groups: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      throw new MicroserviceError('Failed to fetch company CLA groups: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'org_cla_list_cla_groups',
         service: SERVICE,
       });
@@ -1679,7 +1729,7 @@ export class OrgClaService {
     // makes every such row share one key, which lets the view reuse one card's DOM for another
     // agreement — a worse outcome than the load failure this raises instead.
     if (!upstream.list.every((entry): entry is EasyClaCompanyClaGroup & { signatureID: string } => !!entry?.signatureID)) {
-      throw new MicroserviceError('Failed to fetch organization CLA groups: upstream row is missing its signature id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      throw new MicroserviceError('Failed to fetch company CLA groups: upstream row is missing its signature id', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'org_cla_list_cla_groups',
         service: SERVICE,
       });
@@ -1699,17 +1749,17 @@ export class OrgClaService {
       company = await gatewayFetch<EasyClaCompany>(req, `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(orgUid)}`, {
         operation,
         service: SERVICE,
-        errorMessage: 'Failed to resolve the organization in EasyCLA',
+        errorMessage: 'Failed to resolve the company in EasyCLA',
         errorCode: 'UPSTREAM_ERROR',
         redactResponseBody: true,
       });
     } catch (error) {
-      throw asDesigneeRefusal(error, operation, 'Failed to resolve the organization in EasyCLA');
+      throw asDesigneeRefusal(error, operation, 'Failed to resolve the company in EasyCLA');
     }
 
     const companyId = upstreamTrimmedString(company?.companyID);
     if (!companyId) {
-      throw new MicroserviceError('Failed to resolve the organization in EasyCLA: upstream returned no company id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      throw new MicroserviceError('Failed to resolve the company in EasyCLA: upstream returned no company id', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation,
         service: SERVICE,
         errorBody: { error: 'unknown' },

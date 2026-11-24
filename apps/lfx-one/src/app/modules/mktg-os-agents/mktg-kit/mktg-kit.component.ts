@@ -8,7 +8,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { distinctUntilChanged, EMPTY, map, switchMap } from 'rxjs';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { ButtonComponent } from '@components/button/button.component';
-import { MKTG_KIT_FILTERS, MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import { MKTG_KIT_FILTERS, MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_KIT_SHOW_COMING_SOON, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgKitFilter } from '@lfx-one/shared/interfaces';
 import { resolveMktgFamilyActions, resolveMktgFamilyNextStep, resolveMktgFamilyRun } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
@@ -32,7 +32,8 @@ export class MktgKitComponent {
   private readonly platform = inject(PLATFORM_ID);
   protected readonly kit = inject(MktgKitService);
   protected readonly filters = MKTG_KIT_FILTERS;
-  protected readonly familyCount = MKTG_KIT_FAMILIES.length;
+  protected readonly showComingSoon = MKTG_KIT_SHOW_COMING_SOON;
+  protected readonly familyCount = computed(() => (this.showComingSoon ? MKTG_KIT_FAMILIES.length : this.kit.families().length));
   protected readonly selectedFilter = this.initSelectedFilter();
   protected readonly cards = this.initCards();
   protected readonly nextStep = this.initNextStep();

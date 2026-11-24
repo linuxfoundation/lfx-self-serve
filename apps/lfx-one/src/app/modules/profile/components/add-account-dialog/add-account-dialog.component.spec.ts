@@ -4,19 +4,32 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
+import { environment } from '@environments/environment';
+import { environment as devEnvironment } from '@environments/environment.dev';
+import { environment as productionEnvironment } from '@environments/environment.prod';
+import { environment as stagingEnvironment } from '@environments/environment.staging';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
   EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CODE_NOT_RECEIVED_HINT,
+  EMAIL_CODE_NOT_RECEIVED_TITLE,
+  EMAIL_RESEND_FAILED_MESSAGE,
+  EMAIL_RESEND_SUPPORT_MESSAGE,
+  EMAIL_RESEND_SUPPORT_TITLE,
+  EMAIL_VERIFICATION_SENT_MESSAGE,
   IDENTITY_PROVIDER_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { SendEmailVerificationResponse, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
+import { buildLinkedEmailSupportMessage } from '@lfx-one/shared/utils';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { Observable, of, throwError } from 'rxjs';
+import { Tooltip } from 'primeng/tooltip';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AddAccountDialogComponent } from './add-account-dialog.component';
@@ -31,7 +44,7 @@ import { AddAccountDialogComponent } from './add-account-dialog.component';
  */
 describe('AddAccountDialogComponent — email verification outcome (#4253, #4328)', () => {
   const email = 'owned@example.test';
-  const conflictCopy = 'This email is already linked to an LFX account. If you believe this is an error, contact support.';
+  const conflictCopy = EMAIL_ALREADY_LINKED_MESSAGE;
   let fixture: ComponentFixture<AddAccountDialogComponent>;
 
   function setup(
@@ -222,17 +235,32 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
     expect(otpError(root)).toBeNull();
   });
 
-  it('opens the support messenger from the error-local support button', async () => {
+  it('opens a support chat pre-filled with the verified address from the error-local support button (#5511)', async () => {
     const { component, close, add, openMessenger, root } = setup(deliveries[0].respond(EMAIL_ALREADY_LINKED_MESSAGE));
     TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
 
     component.onVerify();
     await fixture.whenStable();
-    (otpError(root)?.querySelector('[lfxOpenIntercom]') as HTMLButtonElement | null)?.click();
+    const supportButton = otpError(root)?.querySelector('[data-testid="add-account-linked-support-button"]') as HTMLButtonElement | null;
+    expect(supportButton).not.toBeNull();
+    supportButton?.click();
 
-    expect(openMessenger).toHaveBeenCalledExactlyOnceWith('test-app-id', expect.any(Function));
+    expect(openMessenger).toHaveBeenCalledExactlyOnceWith('test-app-id', expect.any(Function), buildLinkedEmailSupportMessage(email));
     expect(add).not.toHaveBeenCalled();
     expect(close).not.toHaveBeenCalled();
+  });
+
+  it('offers no pre-filled support button for a wrong or expired code (#5511)', async () => {
+    const { component, root } = setup(() =>
+      throwError(
+        () => new HttpErrorResponse({ status: 400, error: { success: false, error: 'verification_failed', message: 'Verification failed. Please try again.' } })
+      )
+    );
+
+    component.onVerify();
+    await fixture.whenStable();
+
+    expect(root.querySelector('[data-testid="add-account-linked-support-button"]')).toBeNull();
   });
 
   it('shows a wrong or expired code as a retryable error without the support link', () => {
@@ -276,5 +304,371 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
     expect(root.querySelector('[data-testid="add-account-otp-error"]')).toBeNull();
     expect(close).not.toHaveBeenCalled();
     expect(add).not.toHaveBeenCalled();
+  });
+
+  describe('resend escalation', () => {
+    const resendButton = (root: HTMLElement): Element | null => root.querySelector('[data-testid="add-account-resend"]');
+    const supportAction = (root: HTMLElement): Element | null => root.querySelector('[data-testid="add-account-resend-support"]');
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('replaces Resend with Contact support after the first successful resend', () => {
+      vi.useFakeTimers();
+      const { component, root } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      expect(component.showResendSupport()).toBe(false);
+      expect(resendButton(root)).not.toBeNull();
+      expect(supportAction(root)).toBeNull();
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      fixture.detectChanges();
+
+      expect(component.resendCount()).toBe(1);
+      expect(component.showResendSupport()).toBe(true);
+      expect(resendButton(root)).toBeNull();
+      expect(normalizedText(supportAction(root))).toBe('Contact support');
+      expect(supportAction(root)?.hasAttribute('lfxOpenIntercom')).toBe(true);
+      const callout = root.querySelector('[data-testid="add-account-resend-support-callout"]');
+      expect(normalizedText(callout)).toContain(EMAIL_RESEND_SUPPORT_TITLE);
+      expect(normalizedText(callout)).toContain(EMAIL_RESEND_SUPPORT_MESSAGE);
+      expect(callout?.getAttribute('role')).toBe('status');
+      expect(root.querySelector('[data-testid="add-account-otp-hint"]')).toBeNull();
+      expect(root.querySelector('[data-testid="add-account-otp"]')).not.toBeNull();
+      expect(normalizedText(root)).not.toContain('a few minutes');
+    });
+
+    it('blocks overlapping resends and further requests after escalation', () => {
+      vi.useFakeTimers();
+      const { component, root, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      const response$ = new Subject<SendEmailVerificationResponse>();
+      userServiceMock.sendEmailVerificationCode.mockReturnValue(response$);
+      expect(normalizedText(resendButton(root))).toBe('Resend code in 60s');
+      expect(normalizedText(root.querySelector('[data-testid="add-account-otp-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_TITLE);
+
+      vi.advanceTimersByTime(60_000);
+      fixture.detectChanges();
+      const button = resendButton(root) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+
+      button.click();
+      component.onResendCode(); // A second event before change detection must also be ignored.
+      fixture.detectChanges();
+      expect(button.disabled).toBe(true);
+      expect(normalizedText(button)).toBe('Requesting code…');
+      expect(root.querySelector<HTMLButtonElement>('[data-testid="add-account-change-email"] button')?.disabled).toBe(true);
+      component.onChangeEmail();
+      expect(component.codeSent()).toBe(true);
+      expect(component.form.getRawValue().email).toBe('owned@example.test');
+      button.click();
+      expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(2);
+      expect(component.resendCount()).toBe(0);
+
+      response$.next({ success: true });
+      response$.complete();
+      fixture.detectChanges();
+
+      expect(component.isConnecting()).toBe(false);
+      expect(component.resendCount()).toBe(1);
+      expect(resendButton(root)).toBeNull();
+      expect(supportAction(root)).not.toBeNull();
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([false, true])('allows retry after a pending resend fails (HTTP error: %s)', (httpError) => {
+      vi.useFakeTimers();
+      const { component, root, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      const response$ = new Subject<SendEmailVerificationResponse>();
+      userServiceMock.sendEmailVerificationCode.mockReturnValue(response$);
+
+      vi.advanceTimersByTime(60_000);
+      fixture.detectChanges();
+      (resendButton(root) as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect((resendButton(root) as HTMLButtonElement).disabled).toBe(true);
+
+      if (httpError) {
+        response$.error(new HttpErrorResponse({ status: 500, error: { message: 'Failed to resend code' } }));
+      } else {
+        response$.next({ success: false, message: 'Failed to resend code' });
+        response$.complete();
+      }
+
+      expect(component.isConnecting()).toBe(false);
+      expect(component.resendCount()).toBe(0);
+      fixture.detectChanges();
+      expect(component.verificationError()).toBe(EMAIL_RESEND_FAILED_MESSAGE);
+      expect(normalizedText(root.querySelector('[data-testid="add-account-otp-error"]'))).toBe(EMAIL_RESEND_FAILED_MESSAGE);
+      vi.advanceTimersByTime(60_000);
+      fixture.detectChanges();
+      expect((resendButton(root) as HTMLButtonElement).disabled).toBe(false);
+      expect(supportAction(root)).toBeNull();
+
+      userServiceMock.sendEmailVerificationCode.mockReturnValue(of<SendEmailVerificationResponse>({ success: true }));
+      (resendButton(root) as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(3);
+      expect(component.resendCount()).toBe(1);
+      expect(supportAction(root)).not.toBeNull();
+    });
+
+    it('does not count a failed resend toward the threshold', () => {
+      vi.useFakeTimers();
+      const { component, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      userServiceMock.sendEmailVerificationCode.mockReturnValue(of<SendEmailVerificationResponse>({ success: false, message: 'nope' }));
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+
+      expect(component.resendCount()).toBe(0);
+    });
+
+    it('resets the count on cancel', () => {
+      vi.useFakeTimers();
+      const { component } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      expect(component.resendCount()).toBe(1);
+
+      component.onCancel();
+
+      expect(component.resendCount()).toBe(0);
+    });
+
+    it('lets users change the address after escalation without closing the dialog', () => {
+      vi.useFakeTimers();
+      const { component, root, close, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      component.verificationCode.set('123456');
+      component.verificationError.set('Previous attempt failed');
+      fixture.detectChanges();
+
+      (root.querySelector('[data-testid="add-account-change-email"] button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(component.codeSent()).toBe(false);
+      expect(component.form.controls.email.enabled).toBe(true);
+      expect(component.form.getRawValue().email).toBe('');
+      expect(component.verificationCode()).toBe('');
+      expect(component.verificationError()).toBe('');
+      expect(component.resendCount()).toBe(0);
+      expect(root.querySelector('[data-testid="add-account-otp"]')).toBeNull();
+      expect(root.querySelector('[data-testid="add-account-resend-support-callout"]')).toBeNull();
+      expect(close).not.toHaveBeenCalled();
+
+      component.form.controls.email.setValue('corrected@example.test');
+      component.onSendCode();
+      fixture.detectChanges();
+      expect(userServiceMock.sendEmailVerificationCode).toHaveBeenLastCalledWith('corrected@example.test');
+      expect(component.codeSent()).toBe(true);
+      expect(component.showResendSupport()).toBe(false);
+      expect(component.resendCooldown()).toBe(60);
+    });
+
+    it('keeps the address fixed while verification is pending', () => {
+      const response$ = new Subject<VerifyAndLinkEmailResponse>();
+      const { component, root } = setup(() => response$);
+      component.onVerify();
+      fixture.detectChanges();
+
+      expect(root.querySelector<HTMLButtonElement>('[data-testid="add-account-change-email"] button')?.disabled).toBe(true);
+      component.onChangeEmail();
+      expect(component.codeSent()).toBe(true);
+      expect(component.form.getRawValue().email).toBe('owned@example.test');
+      response$.next({ success: false, message: 'Verification failed' });
+      response$.complete();
+    });
+
+    it('opens support from the secondary initial action and the primary escalation action', () => {
+      vi.useFakeTimers();
+      const { component, root, openMessenger } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+      (root.querySelector('[data-testid="add-account-otp-support-button"]') as HTMLButtonElement).click();
+      expect(openMessenger).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      fixture.detectChanges();
+      (root.querySelector('[data-testid="add-account-resend-support"] button') as HTMLButtonElement).click();
+      expect(openMessenger).toHaveBeenCalledTimes(2);
+      expect(openMessenger).toHaveBeenLastCalledWith('test-app-id', expect.any(Function));
+    });
+
+    it('distinguishes inbox ownership from account linking before and after a generic successful send (#5793)', () => {
+      const response$ = new Subject<SendEmailVerificationResponse>();
+      const { component, root } = setup(
+        () => of<VerifyAndLinkEmailResponse>({ success: true }),
+        () => response$
+      );
+
+      expect(component.codeSent()).toBe(false);
+      expect(normalizedText(root)).toContain('Enter your email address to confirm you own it before we check whether it can be linked to your account.');
+      expect(normalizedText(root)).toContain('Verifying your email doesn’t guarantee it can be linked to your account.');
+      expect(normalizedText(root)).not.toContain('automatically link');
+      expect(normalizedText(root)).not.toContain('already linked');
+
+      response$.next({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
+      response$.complete();
+      fixture.detectChanges();
+
+      expect(component.codeSent()).toBe(true);
+      expect(root.querySelector('[data-testid="add-account-otp"]')).not.toBeNull();
+      expect(normalizedText(root)).toContain(
+        'Check owned@example.test for a 6-digit verification code. Enter it to confirm you own this address. We’ll then check whether it can be linked to your account.'
+      );
+      expect(normalizedText(root)).not.toContain('Enter your email address to confirm you own it');
+      expect(normalizedText(root)).not.toContain('already linked');
+      const hint = normalizedText(root.querySelector('[data-testid="add-account-otp-hint"]'));
+      expect(hint).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
+      expect(hint).not.toContain('already linked');
+    });
+  });
+});
+
+/**
+ * Guards #4042/#4190: dev can link GitLab; staging and production retain Coming soon.
+ */
+describe.each([
+  { name: 'dev', config: devEnvironment, expectedDisabled: false },
+  { name: 'staging', config: stagingEnvironment, expectedDisabled: true },
+  { name: 'production', config: productionEnvironment, expectedDisabled: true },
+])('AddAccountDialogComponent — provider list ($name)', ({ config, expectedDisabled }) => {
+  let fixture: ComponentFixture<AddAccountDialogComponent>;
+  const originalProduction = environment.production;
+
+  function setup(data: Record<string, unknown> = { existingProviders: [] }) {
+    environment.production = config.production;
+    TestBed.configureTestingModule({
+      imports: [AddAccountDialogComponent],
+      providers: [
+        { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
+        { provide: DynamicDialogConfig, useValue: { data } },
+        { provide: UserService, useValue: {} },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(AddAccountDialogComponent);
+    return fixture.componentInstance;
+  }
+
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+    environment.production = originalProduction;
+  });
+
+  it('lists GitLab with its icon and excludes LF ID', () => {
+    const component = setup();
+
+    expect(component.providers.find((provider) => provider.id === 'gitlab')).toEqual(expect.objectContaining({ name: 'GitLab', icon: 'fa-brands fa-gitlab' }));
+    expect(component.providers.some((provider) => provider.id === 'lfid')).toBe(false);
+  });
+
+  if (!expectedDisabled) {
+    it.each(['/profile/identities', '/profile/clas'])('enables GitLab and starts social linking with return path %s', async (returnTo) => {
+      setup();
+      await fixture.whenStable();
+      const root = fixture.nativeElement as HTMLElement;
+      const button = root.querySelector<HTMLButtonElement>('[data-testid="provider-action-gitlab"] button');
+      const location = { pathname: returnTo, search: '?ignored=true', hash: '#ignored', href: '' };
+
+      expect(button).not.toBeNull();
+      expect(button?.disabled).toBe(false);
+      expect(button?.textContent).toContain('Continue with GitLab');
+      expect(root.querySelector('[data-testid="provider-gitlab-coming-soon"]')).toBeNull();
+      expect(root.querySelector('[data-testid="provider-action-hint-gitlab"]')).toBeNull();
+
+      // Run the real click handler, replacing only the navigation sink so OAuth cannot leave jsdom.
+      vi.stubGlobal(
+        'window',
+        new Proxy(window, {
+          get: (target, property) => {
+            if (property === 'location') return location;
+            const value = Reflect.get(target, property);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        })
+      );
+      try {
+        button?.click();
+
+        expect(location.href).toBe(`/api/profile/identities/social/connect?provider=gitlab&returnTo=${encodeURIComponent(returnTo)}`);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+  } else {
+    it('disables the GitLab button and does not start linking when clicked', async () => {
+      const component = setup();
+      await fixture.whenStable();
+      const selectProvider = vi.spyOn(component, 'onSelectProvider');
+      const root = fixture.nativeElement as HTMLElement;
+      const button = root.querySelector<HTMLButtonElement>('[data-testid="provider-action-gitlab"] button');
+
+      expect(button).not.toBeNull();
+      expect(button?.disabled).toBe(true);
+      button?.click();
+      root.querySelector<HTMLElement>('[data-testid="provider-action-hint-gitlab"]')?.click();
+
+      expect(selectProvider).not.toHaveBeenCalled();
+      expect(root.querySelector('[data-testid="provider-gitlab-coming-soon"]')?.textContent).toBe('Coming soon');
+    });
+
+    it.each([
+      { showEvent: 'focus', hideEvent: 'blur' },
+      { showEvent: 'mouseenter', hideEvent: 'mouseleave' },
+    ])('shows the GitLab tooltip on $showEvent and hides it on $hideEvent', async ({ showEvent, hideEvent }) => {
+      setup();
+      await fixture.whenStable();
+      const hint = fixture.debugElement.query(By.css('[data-testid="provider-action-hint-gitlab"]'));
+      const target = hint.nativeElement as HTMLElement;
+
+      expect(target.getAttribute('tabindex')).toBe('0');
+      expect(target.getAttribute('aria-label')).toBe('GitLab account linking: Coming soon');
+      expect(target.querySelector('.p-component')).toBeNull();
+      expect(hint.injector.get(Tooltip).tooltipEvent).toBe('both');
+      expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+
+      // Dispatch to the actual focus/hover target, not directly to the directive's show method.
+      target.dispatchEvent(new Event(showEvent));
+      const tooltip = document.body.querySelector<HTMLElement>('[role="tooltip"]');
+      expect(tooltip?.textContent).toBe('Coming soon');
+      expect(tooltip?.style.display).toBe('inline-block');
+
+      target.dispatchEvent(new Event(hideEvent));
+      expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+    });
+  }
+
+  it('keeps the existing providers enabled and the email flow usable', async () => {
+    const component = setup();
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+
+    for (const provider of ['github', 'linkedin', 'google', 'email']) {
+      const button = root.querySelector<HTMLButtonElement>(`[data-testid="provider-action-${provider}"] button`);
+      expect(button).not.toBeNull();
+      expect(button?.disabled).toBe(false);
+      expect(root.querySelector(`[data-testid="provider-action-hint-${provider}"]`)).toBeNull();
+    }
+
+    root.querySelector<HTMLButtonElement>('[data-testid="provider-action-email"] button')?.click();
+    await fixture.whenStable();
+
+    expect(component.step()).toBe('connect');
+    expect(root.querySelector('[data-testid="add-account-email"]')).not.toBeNull();
+  });
+
+  it('leaves GitLab out when the caller restricts the providers', () => {
+    const component = setup({ existingProviders: [], allowedProviders: ['github', 'linkedin'] });
+
+    expect(component.providers.map((provider) => provider.id)).toEqual(['github', 'linkedin']);
   });
 });

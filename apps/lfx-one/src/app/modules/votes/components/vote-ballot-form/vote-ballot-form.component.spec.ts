@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { VoteBallotSubmission, VoteLinkBallot, VoteLinkBallotState } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -84,13 +85,13 @@ describe('VoteBallotFormComponent (#4363)', () => {
     await render(baseBallot({ poll_type: 'majority' }));
 
     expect(el().querySelector('[cdkDropList]')).toBeNull();
-    expect(el().querySelectorAll('lfx-radio-button')).toHaveLength(3);
+    expect(el().querySelectorAll('p-radiobutton, p-radioButton')).toHaveLength(3);
   });
 
   it('renders a ranked ballot with up/down buttons of at least 44px, and emits ranked_choices in order', async () => {
     await render(baseBallot({ poll_type: 'instant_runoff_vote' }));
 
-    expect(el().querySelectorAll('lfx-radio-button')).toHaveLength(0);
+    expect(el().querySelectorAll('p-radiobutton, p-radioButton')).toHaveLength(0);
     for (const choice of CHOICES) {
       for (const dir of ['up', 'down']) {
         const button = byId(`vote-link-rank-${dir}-${choice.choice_id}`)!;
@@ -198,6 +199,196 @@ describe('VoteBallotFormComponent (#4363)', () => {
       expect(emitted[0].userVoteContent?.[0].ranked_choices?.map((c) => c.choice_id)).toEqual(['c-c', 'c-a', 'c-b']);
     });
 
+    it.each([[], undefined])('falls back to saved user_choice ranks when ranked_user_choice is %s', async (rankedUserChoice) => {
+      await render(
+        baseBallot({ poll_type: 'instant_runoff_vote' }),
+        votedState({
+          poll_answers: [
+            {
+              question_id: 'q1',
+              prompt: 'Who?',
+              type: 'single_choice',
+              ranked_user_choice: rankedUserChoice,
+              user_choice: [
+                { choice_id: 'c-a', choice_text: 'Alice', choice_rank: 2 },
+                { choice_id: 'c-c', choice_text: 'Carol', choice_rank: 1 },
+              ],
+            },
+          ],
+        })
+      );
+      (fixture.componentInstance.commentForm.get('p1') as unknown as FormControl<string>).setValue('Comment correction');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['c-c', 'c-a']);
+      expect(byId('vote-link-rank-c-b')).toBeNull();
+      expect(byId('vote-link-submit-button')?.querySelector('button')?.disabled).toBe(false);
+      submit();
+      expect(emitted[0]).toMatchObject({
+        userVoteContent: [
+          {
+            question_id: 'q1',
+            ranked_choices: [
+              { choice_id: 'c-c', choice_rank: 1 },
+              { choice_id: 'c-a', choice_rank: 2 },
+            ],
+          },
+        ],
+        commentResponses: [{ prompt_id: 'p1', comment_text: 'Comment correction' }],
+      });
+    });
+
+    it('preserves saved user_choice order when recorded ranks are omitted', async () => {
+      await render(
+        baseBallot({ poll_type: 'instant_runoff_vote' }),
+        votedState({
+          poll_answers: [
+            {
+              question_id: 'q1',
+              prompt: 'Who?',
+              type: 'single_choice',
+              ranked_user_choice: [],
+              user_choice: [
+                { choice_id: 'c-c', choice_text: 'Carol' },
+                { choice_id: 'c-a', choice_text: 'Alice' },
+              ],
+            },
+          ],
+        })
+      );
+      submit();
+
+      expect(emitted[0].userVoteContent?.[0].ranked_choices).toEqual([
+        { choice_id: 'c-c', choice_rank: 1 },
+        { choice_id: 'c-a', choice_rank: 2 },
+      ]);
+    });
+
+    it.each(['comment only', 'reorder', 'add', 'remove', 'empty then add', 'abstain round trip'] as const)(
+      'preserves a named partial ranked ballot with explicit edits only: %s',
+      async (scenario) => {
+        await render(
+          baseBallot({
+            poll_type: 'instant_runoff_vote',
+            poll_questions: [{ question_id: 'q1', prompt: 'Rank options', type: 'multiple_choice', choices: CHOICES }],
+          }),
+          votedState({
+            poll_answers: [
+              {
+                question_id: 'q1',
+                prompt: 'Rank options',
+                type: 'multiple_choice',
+                ranked_user_choice: [
+                  { choice_id: 'c-c', choice_text: 'Carol', choice_rank: 1 },
+                  { choice_id: 'c-a', choice_text: 'Alice', choice_rank: 2 },
+                ],
+              },
+            ],
+          })
+        );
+        const component = fixture.componentInstance;
+        let expected = ['c-c', 'c-a'];
+        expect(component.form.get('q1')?.value).toEqual(expected);
+        expect(byId('vote-link-rank-c-b')).toBeNull();
+        expect((byId('vote-link-rank-down-c-a') as HTMLButtonElement).disabled).toBe(true);
+
+        if (scenario === 'reorder') {
+          click('vote-link-rank-up-c-a');
+          expected = ['c-a', 'c-c'];
+        } else if (scenario === 'add') {
+          byId('vote-link-rank-add-c-b')!.querySelector('button')!.click();
+          expected = ['c-c', 'c-a', 'c-b'];
+        } else if (scenario === 'remove') {
+          click('vote-link-rank-remove-c-c');
+          expected = ['c-a'];
+        } else if (scenario === 'empty then add') {
+          click('vote-link-rank-remove-c-c');
+          click('vote-link-rank-remove-c-a');
+          expect(component.form.get('q1')?.value).toEqual([]);
+          expect(byId('vote-link-rank-c-a')).toBeNull();
+          expect(byId('vote-link-submit-button')!.querySelector('button')!.disabled).toBe(true);
+          byId('vote-link-rank-add-c-b')!.querySelector('button')!.click();
+          expected = ['c-b'];
+        } else if (scenario === 'abstain round trip') {
+          component.abstainControl.setValue(true);
+          component['toggleRankedChoice']('q1', 'c-b');
+          expect(component.form.get('q1')?.value).toEqual(expected);
+          component.abstainControl.setValue(false);
+        }
+        (component.commentForm.get('p1') as unknown as FormControl<string>).setValue('Comment correction');
+        await fixture.whenStable();
+        fixture.detectChanges();
+        submit();
+        expect(emitted).toEqual([
+          {
+            abstain: false,
+            userVoteContent: [{ question_id: 'q1', ranked_choices: expected.map((choiceId, index) => ({ choice_id: choiceId, choice_rank: index + 1 })) }],
+            commentResponses: [{ prompt_id: 'p1', comment_text: 'Comment correction' }],
+          },
+        ]);
+      }
+    );
+
+    it.each(['single_choice', 'multiple_choice'] as const)(
+      'can explicitly replace a named ranked %s abstention without inferring ranks on comment edits',
+      async (type) => {
+        await render(
+          baseBallot({
+            poll_type: 'instant_runoff_vote',
+            poll_questions: [{ question_id: 'q1', prompt: 'Rank options', type, choices: CHOICES }],
+          }),
+          votedState({ abstained: true, poll_answers: [] })
+        );
+        const component = fixture.componentInstance;
+        (component.commentForm.get('p1') as unknown as FormControl<string>).setValue('Comment correction');
+        fixture.detectChanges();
+        submit();
+        expect(component.form.get('q1')?.value).toEqual([]);
+        expect(emitted[0]).toMatchObject({ abstain: true, userVoteContent: undefined });
+
+        component.abstainControl.setValue(false);
+        fixture.detectChanges();
+        expect(byId('vote-link-submit-button')!.querySelector('button')!.disabled).toBe(true);
+        const actionId = type === 'single_choice' ? 'vote-link-rank-all-q1' : 'vote-link-rank-add-c-b';
+        byId(actionId)!.querySelector('button')!.click();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        submit();
+        const expected = type === 'single_choice' ? ['c-a', 'c-b', 'c-c'] : ['c-b'];
+        expect(emitted[1].userVoteContent).toEqual([
+          {
+            question_id: 'q1',
+            ranked_choices: expected.map((choiceId, index) => ({ choice_id: choiceId, choice_rank: index + 1 })),
+          },
+        ]);
+      }
+    );
+
+    it.each([true, undefined])('retains ranked non-prefill privacy when pseudo_anonymity is %s', async (privacy) => {
+      await render(
+        baseBallot({
+          pseudo_anonymity: privacy,
+          poll_type: 'instant_runoff_vote',
+          poll_questions: [{ question_id: 'q1', prompt: 'Rank options', type: 'multiple_choice', choices: CHOICES }],
+        }),
+        votedState({
+          abstained: true,
+          poll_answers: [
+            {
+              question_id: 'q1',
+              prompt: 'Rank options',
+              type: 'multiple_choice',
+              ranked_user_choice: [{ choice_id: 'c-c', choice_text: 'Carol', choice_rank: 1 }],
+            },
+          ],
+        })
+      );
+      expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['c-a', 'c-b', 'c-c']);
+      expect(fixture.componentInstance.abstainControl.value).toBe(false);
+      expect(byId('vote-link-unranked-q1')).toBeNull();
+      expect(byId('vote-link-rank-remove-c-a')).toBeNull();
+    });
     it('never prefills a pseudo-anonymous vote, even if a payload carries answers', async () => {
       await render(baseBallot({ pseudo_anonymity: true }), votedState({ abstained: true }));
 
@@ -229,6 +420,107 @@ describe('VoteBallotFormComponent (#4363)', () => {
       submit();
 
       expect(emitted[0].commentResponses).toBeUndefined();
+    });
+  });
+
+  describe('phone polish (#4692)', () => {
+    it('reads each question prompt at 18px or larger', async () => {
+      await render(baseBallot());
+
+      expect(byId('vote-link-question-prompt')?.className).toContain('text-[18px]');
+    });
+
+    it('renders every choice as a full-row card of at least 44px and marks the selected one', async () => {
+      await render(baseBallot());
+      const card = (id: string) => byId(id)!.querySelector('[data-selected]') as HTMLElement;
+      expect(card('vote-link-choice-c-a').className).toContain('min-h-[44px]');
+      expect(card('vote-link-choice-c-a').getAttribute('data-selected')).toBe('false');
+
+      (el().querySelector('#vote-link-choice-c-a') as HTMLInputElement).click();
+      fixture.detectChanges();
+
+      expect(card('vote-link-choice-c-a').getAttribute('data-selected')).toBe('true');
+      expect(card('vote-link-choice-c-a').className).toContain('border-blue-600');
+      expect(card('vote-link-choice-c-b').getAttribute('data-selected')).toBe('false');
+    });
+
+    it('shows "Select one answer" and disables Submit until a choice is made', async () => {
+      await render(baseBallot());
+      expect(byId('vote-link-submit-helper')?.textContent).toContain('Select one answer');
+      expect(byId('vote-link-submit-button')?.querySelector('button')?.disabled).toBe(true);
+
+      (el().querySelector('#vote-link-choice-c-b') as HTMLInputElement).click();
+      fixture.detectChanges();
+
+      expect(byId('vote-link-submit-helper')).toBeNull();
+      expect(byId('vote-link-submit-button')?.querySelector('button')?.disabled).toBe(false);
+    });
+
+    it('words the helper for the question shape: multiple choice, then several questions', async () => {
+      const multi = baseBallot({ poll_questions: [{ question_id: 'q1', prompt: 'Which?', type: 'multiple_choice', choices: CHOICES }] });
+      await render(multi);
+      expect(byId('vote-link-submit-helper')?.textContent).toContain('Select at least one answer');
+
+      const two = baseBallot({
+        poll_questions: [
+          { question_id: 'q1', prompt: 'First?', type: 'single_choice', choices: CHOICES },
+          { question_id: 'q2', prompt: 'Second?', type: 'single_choice', choices: CHOICES },
+        ],
+      });
+      await render(two);
+      expect(byId('vote-link-submit-helper')?.textContent).toContain('Answer every question to submit');
+    });
+
+    it('needs no selection to abstain', async () => {
+      await render(baseBallot());
+      (el().querySelector('#vote-link-abstain') as HTMLInputElement).click();
+      fixture.detectChanges();
+
+      expect(byId('vote-link-submit-helper')).toBeNull();
+    });
+
+    it('pins Submit above the home-indicator safe area', async () => {
+      await render(baseBallot());
+
+      expect(byId('vote-link-footer')?.className).toContain('env(safe-area-inset-bottom)');
+    });
+
+    it('keeps comment prompts collapsed behind "Add a comment" until opened', async () => {
+      await render(baseBallot());
+      expect(byId('vote-link-add-comment-p1')?.textContent).toContain('Add a comment');
+      expect(el().querySelector('textarea')).toBeNull();
+
+      click('vote-link-add-comment-p1');
+
+      expect(el().querySelector('textarea')).not.toBeNull();
+      expect(byId('vote-link-add-comment-p1')).toBeNull();
+    });
+
+    it('opens a prompt that already has a prefilled comment', async () => {
+      await render(baseBallot(), votedState());
+
+      expect(byId('vote-link-add-comment-p1')).toBeNull();
+      expect(el().querySelector('textarea')).not.toBeNull();
+    });
+  });
+
+  describe('final notice (#4723)', () => {
+    it('renders no notice by default', async () => {
+      await render(baseBallot());
+
+      expect(byId('vote-link-final-notice')).toBeNull();
+    });
+
+    it('renders the notice in the pinned footer when set', async () => {
+      fixture = TestBed.createComponent(VoteBallotFormComponent);
+      fixture.componentRef.setInput('ballot', baseBallot());
+      fixture.componentRef.setInput('finalNotice', "Once you submit, your vote can't be changed.");
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      const notice = byId('vote-link-footer')?.querySelector('[data-testid="vote-link-final-notice"]');
+      expect(notice?.textContent?.trim()).toBe("Once you submit, your vote can't be changed.");
+      expect(notice?.getAttribute('role')).toBe('note');
     });
   });
 });

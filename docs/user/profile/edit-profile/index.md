@@ -3,8 +3,8 @@ title: Edit Your Profile
 description: How to update your personal information, photo, location, and contact details in LFX Self Serve, including the About Me character limit.
 audience: [all]
 product_area: Profile
-tags: [profile, edit, about-me, bio, photo, location]
-last_updated: 2026-10-20
+tags: [profile, edit, about-me, bio, photo, location, lfid, username]
+last_updated: 2026-11-23
 intercom_collection: Profile
 ---
 
@@ -24,6 +24,8 @@ Your personal details are edited in the **Edit Profile** drawer, not directly on
 4. Update the fields you want to change (see the tables below).
 5. Select **Save Changes**. The button stays disabled until you have made a change.
 
+If you have an LFX Mentorship mentor or mentee profile, a new name or picture is also copied onto it, so your public mentorship pages show it too. Your mentorship photo changes only when you upload a new picture, so a photo you added in Mentorship stays until then.
+
 > **Two changes apply immediately, not on Save:** uploading a **profile picture** and selecting a **primary email address** each save on their own as soon as you make them. Closing the drawer with **Cancel** does not undo those two — it only discards unsaved text fields (About Me, name, job title, location, and so on).
 
 ### Profile picture
@@ -35,14 +37,18 @@ Select the pencil button on your avatar to upload a new image. The upload happen
 
 ### Personal information
 
-| Field            | Required | Limit / notes                                                           |
-| ---------------- | -------- | ----------------------------------------------------------------------- |
-| **About Me**     | Optional | Up to **2,000 characters** (see below)                                  |
-| **First Name**   | Optional | Up to 50 characters                                                     |
-| **Last Name**    | Optional | Up to 50 characters                                                     |
-| **Username**     | —        | Read-only — you cannot change it here                                   |
-| **Job Title**    | Optional | Up to 100 characters                                                    |
-| **Organization** | Optional | Chosen from your work experience; add a work experience first to set it |
+| Field          | Required | Limit / notes                                                           |
+| -------------- | -------- | ----------------------------------------------------------------------- |
+| **About Me**   | Optional | Up to **2,000 characters** (see below)                                  |
+| **First Name** | Optional | Up to 50 characters                                                     |
+| **Last Name**  | Optional | Up to 50 characters                                                     |
+| **Username**   | —        | Your LFID. Read-only — you cannot change it here                        |
+| **Job Title**  | Optional | Up to 100 characters                                                    |
+| **Company**    | Optional | Chosen from your work experience; add a work experience first to set it |
+
+### Find your LFID (username)
+
+Your LFID (Linux Foundation ID) is the same as your **Username**. When a form or a Linux Foundation team asks for your LFID, give them this username, not your email address. It is shown in the **Username (read-only)** field of the **Edit Profile** drawer, in the profile panel under your name, and in your account menu in the sidebar. You can't change it.
 
 ### Primary email address
 
@@ -69,9 +75,9 @@ The **About Me** field holds up to **2,000 characters**. A live counter below th
 
 Most characters — including a simple emoji — count as one, even though an emoji takes more space to store. A few elaborate emoji (such as flags or combined "family" glyphs) are built from several joined characters and count as more than one. This matches the limit the Linux Foundation applies when your profile is saved.
 
-## Set your organization
+## Set your company
 
-The **Organization** field in the drawer is chosen from your work experience. To add or change a work experience entry, open the **Work history & Affiliations** tab (`/profile/attributions`) in the [Account](../../account/) section — your work experience populates the **Organization** choices here.
+The **Company** field in the drawer is chosen from your work experience. To add or change a work experience entry, open the **Work history & Affiliations** tab (`/profile/attributions`) in the [Account](../../account/) section — your work experience populates the **Company** choices here.
 
 ## Email, password, and API token
 

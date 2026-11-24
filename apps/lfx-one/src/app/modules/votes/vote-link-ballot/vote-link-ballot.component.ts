@@ -4,30 +4,64 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, OnDestroy, OnInit, PLATFORM_ID, signal } from '@angular/core';
+import { VoteDescriptionPipe } from '../pipes/vote-description.pipe';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Meta } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
 import { PollStatus } from '@lfx-one/shared/enums';
-import { VOTE_LINK_NOT_AWAITING_RESPONSE, VOTE_LINK_NOT_RESPONDED, VOTE_LINK_TOKEN_FRAGMENT_PARAM } from '@lfx-one/shared/constants';
-import { VoteBallotSubmission, VoteLinkBallot, VoteLinkResponseRequest, VoteLinkState } from '@lfx-one/shared/interfaces';
-import { normalizePollStatus } from '@lfx-one/shared/utils';
+import {
+  VOTE_BALLOT_FINAL_NOTICE,
+  VOTE_BALLOT_FINAL_STATE,
+  VOTE_CHANGE_NOT_ALLOWED,
+  VOTE_LAST_VOTER_CONFIRMATION,
+  VOTE_LINK_NOT_AWAITING_RESPONSE,
+  VOTE_LINK_NOT_RESPONDED,
+  VOTE_LINK_RATE_LIMITED_READ_MESSAGE,
+  VOTE_LINK_TOKEN_FRAGMENT_PARAM,
+  VOTE_RATE_LIMITED_MESSAGE,
+  VOTE_UPSTREAM_ENDED,
+  VOTE_UPSTREAM_REMOVED,
+} from '@lfx-one/shared/constants';
+import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot, VoteLinkResponseRequest, VoteLinkState } from '@lfx-one/shared/interfaces';
+import { buildVoteAnswerSummary, canChangeSubmittedBallot, isVoteChangeAllowed, normalizePollStatus } from '@lfx-one/shared/utils';
+import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
 import { VoteService } from '@services/vote.service';
+import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { fromEvent, Subject, takeUntil } from 'rxjs';
 import { VoteBallotFormComponent } from '../components/vote-ballot-form/vote-ballot-form.component';
+import { VoteLinkHeaderComponent } from '../components/vote-link-header/vote-link-header.component';
+import { VoteLinkMarkComponent } from '../components/vote-link-mark/vote-link-mark.component';
+import { VoteLinkThankYouComponent } from '../components/vote-link-thank-you/vote-link-thank-you.component';
 
 /**
  * Login-free ballot page (#4363). The vote link token lives only in this component's `token` signal: it is read once
  * from the URL fragment in the browser, dropped from the address bar with `history.replaceState`, and sent only in
  * request bodies. It is never written to storage, a service, analytics, error reporting or logs. The page shows the
- * vote title, description and questions only: no navbar, no user menu, nothing about the recipient.
+ * vote title, description and questions only: no navbar, no user menu, nothing about the recipient. When the ballot
+ * names a project, its public branding (name and logo) is fetched anonymously; a miss just leaves the page unbranded.
  */
 @Component({
   selector: 'lfx-vote-link-ballot',
-  imports: [ButtonComponent, VoteBallotFormComponent],
+  imports: [
+    ButtonComponent,
+    ConfirmDialogModule,
+    ExternalLinksDirective,
+    LinkifyHtmlPipe,
+    VoteDescriptionPipe,
+    VoteBallotFormComponent,
+    VoteLinkHeaderComponent,
+    VoteLinkMarkComponent,
+    VoteLinkThankYouComponent,
+  ],
+  // Scoped instance for the last-voter dialog (#4726).
+  providers: [ConfirmationService],
   templateUrl: './vote-link-ballot.component.html',
 })
 export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   private readonly voteService = inject(VoteService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly meta = inject(Meta);
@@ -46,8 +80,58 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   /** Submit with PUT (the ballot exists) or POST (first submission). */
   protected readonly updateMode = signal<boolean>(false);
   protected readonly abstainedLast = signal<boolean>(false);
+  /** Set when a rejected submission confirms the ballot is final, whatever the loaded ballot said (#4723). */
+  private readonly changeBlocked = signal<boolean>(false);
+  /** Public branding for the ballot's project; null while loading, when the ballot names no project, or on any miss. */
+  protected readonly project = signal<PublicProjectSummary | null>(null);
+  /** What the voter just submitted, kept in memory only to recap it on the thank-you screen. */
+  private readonly lastSubmission = signal<VoteBallotSubmission | null>(null);
+  /** The voter confirmed that this first submission ends the vote (#4726). */
+  private readonly endsVote = signal<boolean>(false);
+  /** The confirmed last-voter submission succeeded, so the vote has ended and the thank-you screen offers no change (#4726). */
+  protected readonly endedVoteOnSubmit = signal<boolean>(false);
 
-  protected readonly showUpdatePrompt = computed(() => this.state() === 'ready' && !!this.ballot()?.ballot.already_voted && !this.editing());
+  protected readonly answerLines = computed(() => {
+    const submission = this.lastSubmission();
+    return submission ? buildVoteAnswerSummary(this.ballot()?.poll_questions ?? [], submission) : [];
+  });
+  /** The page shows the project header only while a ballot is on screen; every other state is a centred message. */
+  protected readonly showHeader = computed(() => this.state() === 'ready' || this.state() === 'not-open');
+  protected readonly showStandaloneMark = computed(() => !this.showHeader() && this.state() !== 'submitted' && this.state() !== 'updated');
+  protected readonly statusLabel = computed(() => (this.state() === 'ready' ? 'Open' : ''));
+
+  protected readonly finalStateText = VOTE_BALLOT_FINAL_STATE;
+  /** Vote-setting fallback for first submissions and POST→PUT recovery; a finality rejection always blocks changes (#4723). */
+  protected readonly changeAllowed = computed(() => isVoteChangeAllowed(this.ballot()) && !this.changeBlocked());
+  /** Whether the submitted ballot can change: ITX's answer when reported, otherwise derived from the vote and observed submission (#4723). */
+  protected readonly canChange = computed(() => {
+    const ballot = this.ballot();
+    if (!ballot || this.changeBlocked()) return false;
+    return canChangeSubmittedBallot({
+      canChangeVote: ballot.ballot?.can_change_vote,
+      allowVoteChange: ballot.allow_vote_change,
+      status: ballot.status,
+      submitted: !!ballot.ballot?.already_voted || this.state() === 'submitted' || this.state() === 'updated',
+      voterRemoved: !!ballot.ballot?.voter_removed,
+    });
+  });
+  protected readonly showUpdatePrompt = computed(
+    () => this.state() === 'ready' && !!this.ballot()?.ballot.already_voted && !this.editing() && this.canChange()
+  );
+  /** A submitted ballot that can no longer be changed renders as final, in place of the update prompt and the form. */
+  protected readonly showFinal = computed(
+    () => this.state() === 'ready' && (this.changeBlocked() || (!!this.ballot()?.ballot.already_voted && !this.canChange()))
+  );
+  /** Pre-submit notice on a first submission when the vote makes submitted ballots final. */
+  protected readonly finalNotice = computed(() => {
+    const ballot = this.ballot();
+    return ballot && !ballot.ballot?.already_voted && !this.changeAllowed() ? VOTE_BALLOT_FINAL_NOTICE : null;
+  });
+  /** The final box already says the ballot is final; don't repeat that sentence as an inline error above it. */
+  protected readonly inlineError = computed(() => {
+    const message = this.errorMessage();
+    return this.showFinal() && message === VOTE_BALLOT_FINAL_STATE ? null : message;
+  });
 
   public ngOnInit(): void {
     // The page is token-mode only; the referrer must never carry this URL anywhere.
@@ -78,7 +162,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
 
   protected onSubmit(submission: VoteBallotSubmission): void {
     const token = this.token();
-    if (!token || this.submitting()) return;
+    if (!token || this.submitting() || this.changeBlocked()) return;
 
     const body: VoteLinkResponseRequest = {
       vote_token: token,
@@ -88,7 +172,43 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
     };
 
     this.submitting.set(true);
-    this.send(body, this.updateMode(), true);
+    this.lastSubmission.set(submission);
+    this.endsVote.set(false);
+
+    if (this.updateMode()) {
+      this.send(body, true, true);
+      return;
+    }
+    this.confirmFirstSubmission(body, true);
+  }
+
+  /** Every first-ballot POST, including a PUT-to-POST recovery, re-checks the advisory signal (#4726). */
+  private confirmFirstSubmission(body: VoteLinkResponseRequest, mayRetry: boolean): void {
+    const token = body.vote_token;
+
+    this.voteService
+      .getLinkWouldEndVote(token)
+      .pipe(takeUntil(this.cancel$), takeUntilDestroyed(this.destroyRef))
+      .subscribe((wouldEndVote) => {
+        if (this.destroyRef.destroyed || this.token() !== token) return;
+        if (!wouldEndVote) {
+          this.send(body, false, mayRetry);
+          return;
+        }
+        this.confirmationService.confirm({
+          ...VOTE_LAST_VOTER_CONFIRMATION,
+          // A dialog left open across a token switch must never submit the previous link's ballot.
+          accept: () => {
+            if (this.destroyRef.destroyed || this.token() !== token) return;
+            this.endsVote.set(true);
+            this.send(body, false, mayRetry);
+          },
+          reject: () => {
+            if (this.destroyRef.destroyed || this.token() !== token) return;
+            this.submitting.set(false);
+          },
+        });
+      });
   }
 
   /** Sends the ballot; a state mismatch (POST on an already-voted ballot, or PUT on an unvoted one) flips the verb once and retries. */
@@ -100,19 +220,28 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
         next: () => {
           this.submitting.set(false);
           this.abstainedLast.set(body.abstain);
+          this.endedVoteOnSubmit.set(!update && this.endsVote());
           this.state.set(update ? 'updated' : 'submitted');
         },
         error: (err: unknown) => {
           const message = this.errorText(err);
           if (mayRetry && err instanceof HttpErrorResponse && err.status === 400) {
             if (!update && message.includes(VOTE_LINK_NOT_AWAITING_RESPONSE)) {
+              // The ballot was already submitted elsewhere. Only a vote that allows changes may turn this into an
+              // update; otherwise lock immediately and reload the submitted ballot (#4723).
+              if (!this.changeAllowed()) {
+                this.changeBlocked.set(true);
+                this.submitting.set(false);
+                this.reloadBallot();
+                return;
+              }
               this.updateMode.set(true);
               this.send(body, true, false);
               return;
             }
             if (update && message.includes(VOTE_LINK_NOT_RESPONDED)) {
               this.updateMode.set(false);
-              this.send(body, false, false);
+              this.confirmFirstSubmission(body, false);
               return;
             }
           }
@@ -129,6 +258,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (ballot) => {
           this.ballot.set(ballot);
+          this.loadProject(ballot);
           this.updateMode.set(!!ballot.ballot?.already_voted);
           if (ballot.ballot?.voter_removed) {
             this.state.set('removed');
@@ -144,16 +274,39 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
       });
   }
 
+  /** Branding is best effort: no project key, a hidden or unknown project, or any failure (the service maps them to null) leaves the page unbranded. */
+  private loadProject(ballot: VoteLinkBallot): void {
+    const identifier = ballot.project_uid || ballot.project_slug;
+    if (!identifier) return;
+    this.voteService
+      .getPublicProjectSummary(identifier)
+      .pipe(takeUntil(this.cancel$), takeUntilDestroyed(this.destroyRef))
+      .subscribe((project) => this.project.set(project));
+  }
+
   private handleError(err: unknown, message: string): void {
     if (!(err instanceof HttpErrorResponse)) {
       this.state.set('error');
       return;
     }
+    if (err.status === 429) {
+      // The initial read consumed the URL token, so retrying requires reopening the link; a submit keeps the form.
+      const loading = this.state() === 'loading';
+      this.errorMessage.set(loading ? VOTE_LINK_RATE_LIMITED_READ_MESSAGE : VOTE_RATE_LIMITED_MESSAGE);
+      this.state.set(loading ? 'error' : 'ready');
+      return;
+    }
     if (err.status === 404) {
       this.state.set('invalid');
-    } else if (err.status === 400 && message.includes('ended')) {
+    } else if (err.status === 409 && message.includes(VOTE_CHANGE_NOT_ALLOWED)) {
+      // The vote makes submitted ballots final: drop the edit, say so, and reload into the final state (#4723).
+      this.changeBlocked.set(true);
+      this.editing.set(false);
+      this.errorMessage.set(VOTE_BALLOT_FINAL_STATE);
+      this.reloadBallot();
+    } else if (err.status === 400 && message.includes(VOTE_UPSTREAM_ENDED)) {
       this.state.set('ended');
-    } else if (err.status === 400 && message.includes('removed')) {
+    } else if (err.status === 400 && message.includes(VOTE_UPSTREAM_REMOVED)) {
       this.state.set('removed');
     } else if (err.status === 400 && message) {
       // Surface the upstream reason; the form stays so the voter can correct it.
@@ -165,6 +318,12 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
     }
   }
 
+  /** Re-reads the ballot for the current token without resetting the page. */
+  private reloadBallot(): void {
+    const token = this.token();
+    if (token) this.loadBallot(token);
+  }
+
   private errorText(err: unknown): string {
     const body = err instanceof HttpErrorResponse ? (err.error as { error?: unknown } | null) : null;
     return typeof body?.error === 'string' ? body.error.toLowerCase() : '';
@@ -173,12 +332,18 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   /** Consumes the fragment token and (re)starts the page for it, discarding any previous token, ballot and in-flight request. */
   private startFromFragment(): void {
     this.cancel$.next();
+    this.confirmationService.close();
     this.ballot.set(null);
+    this.project.set(null);
+    this.lastSubmission.set(null);
     this.editing.set(false);
     this.updateMode.set(false);
     this.submitting.set(false);
     this.errorMessage.set(null);
     this.abstainedLast.set(false);
+    this.changeBlocked.set(false);
+    this.endsVote.set(false);
+    this.endedVoteOnSubmit.set(false);
     this.token.set(null);
 
     const token = this.consumeFragmentToken();

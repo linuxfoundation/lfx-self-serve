@@ -43,7 +43,7 @@ describe('LensService — menu lens preview', () => {
     };
     const navigate = vi.fn();
     const events = new Subject<RouterEvent>();
-    const orgLensLandingLink = vi.fn(() => ['/org', 'acme', 'overview']);
+    const orgLensLandingLink = vi.fn(() => ['/company', 'acme', 'overview']);
     TestBed.configureTestingModule({
       providers: [
         LensService,
@@ -76,7 +76,7 @@ describe('LensService — menu lens preview', () => {
 
     lens.switchLens('org');
     expect(lens.activeLens()).toBe('org');
-    expect(navigate).toHaveBeenCalledWith(['/org', 'acme', 'overview']);
+    expect(navigate).toHaveBeenCalledWith(['/company', 'acme', 'overview']);
   });
 
   it("lands a switch to any other lens on that lens's default route", () => {
@@ -84,6 +84,41 @@ describe('LensService — menu lens preview', () => {
 
     lens.switchLens('project');
     expect(navigate).toHaveBeenCalledWith(['/project/overview']);
+  });
+
+  it('puts the page lens back when a lens switch never leaves the page (a declined unsaved-changes prompt)', () => {
+    const { lens, events } = setup('me');
+
+    lens.switchLens('project');
+    expect(lens.activeLens()).toBe('project');
+    events.next(new NavigationStart(9, '/project/overview'));
+    events.next(new NavigationCancel(9, '/project/overview', 'declined', NavigationCancellationCode.GuardRejected));
+
+    expect(lens.activeLens()).toBe('me');
+    expect(lens.previewingMenuLens()).toBe(false);
+  });
+
+  it('puts back the page lens, not an earlier pending switch, when a quick second switch fails', () => {
+    const { lens, events } = setup('org');
+
+    lens.switchLens('project');
+    events.next(new NavigationStart(11, '/project/overview'));
+    lens.switchLens('me');
+    events.next(new NavigationCancel(11, '/project/overview', 'superseded', NavigationCancellationCode.SupersededByNewNavigation));
+    events.next(new NavigationStart(12, '/me'));
+    events.next(new NavigationCancel(12, '/me', 'declined', NavigationCancellationCode.GuardRejected));
+
+    expect(lens.activeLens()).toBe('org');
+  });
+
+  it('keeps the new lens once the switch lands', () => {
+    const { lens, events } = setup('me');
+
+    lens.switchLens('project');
+    events.next(new NavigationStart(10, '/project/overview'));
+    events.next(new NavigationEnd(10, '/project/overview', '/project/overview'));
+
+    expect(lens.activeLens()).toBe('project');
   });
 
   it('previews a lens menu without moving the active lens, persisting it or navigating', () => {
@@ -296,7 +331,7 @@ describe('LensService — menu lens preview', () => {
       lens.previewMenuLens('org');
       lens.commitMenuLens('org', secondRestore);
       events.next(cancel(7, NavigationCancellationCode.SupersededByNewNavigation));
-      events.next(new NavigationStart(8, '/org/acme/overview'));
+      events.next(new NavigationStart(8, '/company/acme/overview'));
       events.next(cancel(8));
 
       expect(lens.activeLens()).toBe('me');

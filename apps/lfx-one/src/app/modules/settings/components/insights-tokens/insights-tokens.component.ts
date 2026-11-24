@@ -143,17 +143,30 @@ export class InsightsTokensComponent {
     });
   }
 
+  /** An expired token no longer works, so removing it needs no confirmation. It is the same DELETE as revoke. */
+  protected remove(token: InsightsToken): void {
+    if (this.impersonating()) {
+      return;
+    }
+    this.delete(token, 'Token removed.', { summary: 'Remove failed', detail: "We couldn't remove the token. Please try again." });
+  }
+
   private initItems(): Signal<InsightsTokenListItem[]> {
     return computed(() =>
       this.tokens().map((token) => ({
         token,
         maskedValue: `${INSIGHTS_TOKEN_PREFIX}${token.lookupId}${'*'.repeat(8)}`,
         lastUsedLabel: token.lastUsedAt ? `Last used ${formatRelativeTime(new Date(token.lastUsedAt))}` : 'Never used',
+        expired: token.expiresAt !== null && new Date(token.expiresAt).getTime() <= Date.now(),
       }))
     );
   }
 
   private revoke(token: InsightsToken): void {
+    this.delete(token, 'Token revoked.', { summary: 'Revoke failed', detail: "We couldn't revoke the token. Please try again." });
+  }
+
+  private delete(token: InsightsToken, success: string, failure: { summary: string; detail: string }): void {
     this.revokingUid.set(token.uid);
 
     this.insightsTokensService
@@ -161,7 +174,7 @@ export class InsightsTokensComponent {
       .pipe(
         map(() => true),
         catchError((error) => {
-          console.error('Failed to revoke LFX Insights API token:', error);
+          console.error('Failed to delete LFX Insights API token:', error);
           return of(false);
         }),
         finalize(() => this.revokingUid.set(null)),
@@ -170,10 +183,10 @@ export class InsightsTokensComponent {
       .subscribe((revoked) => {
         if (revoked) {
           this.tokens.update((tokens) => tokens.filter((t) => t.uid !== token.uid));
-          this.messageService.add({ severity: 'success', summary: 'Token revoked.' });
+          this.messageService.add({ severity: 'success', summary: success });
           return;
         }
-        this.messageService.add({ severity: 'error', summary: 'Revoke failed', detail: "We couldn't revoke the token. Please try again." });
+        this.messageService.add({ severity: 'error', ...failure });
       });
   }
 

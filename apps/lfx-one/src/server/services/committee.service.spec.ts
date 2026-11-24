@@ -24,6 +24,7 @@ const {
   checkAccessStrict,
   fetchWithETag,
   updateWithETag,
+  deleteWithETag,
   resolveAuditUserDisplayName,
   isImpersonating,
   enrichWithProjectData,
@@ -43,6 +44,7 @@ const {
   ),
   fetchWithETag: vi.fn(),
   updateWithETag: vi.fn(),
+  deleteWithETag: vi.fn(),
   resolveAuditUserDisplayName: vi.fn(),
   isImpersonating: vi.fn(() => false),
   // Default: pass items through unchanged — most tests don't exercise includeProjectMetadata.
@@ -63,10 +65,23 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const pending = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/pending-action.constants')>(
     '../../../../../packages/shared/src/constants/pending-action.constants'
   );
+  const apiConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/api.constants')>(
+    '../../../../../packages/shared/src/constants/api.constants'
+  );
+  const documentConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/documents.constants')>(
+    '../../../../../packages/shared/src/constants/documents.constants'
+  );
   return {
+    COMMITTEE_DOCUMENT_DELETE_TYPES: documentConstants.COMMITTEE_DOCUMENT_DELETE_TYPES,
+    DOCUMENT_UPSTREAM_PATH_SEGMENTS: documentConstants.DOCUMENT_UPSTREAM_PATH_SEGMENTS,
     SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
     CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
+    // Mirrors packages/shared/src/constants/member-import.constants.ts; that module pulls in the mocked enums barrel.
+    MEMBER_IMPORT_BULK_TIMEOUT_MS: 60_000,
     ACCESS_CHECK_BATCH_SIZE: 100,
+    // The real fetchAllQueryResources paginator reads its page cap from this barrel (#4964).
+    QUERY_SERVICE_MAX_PAGES: apiConstants.QUERY_SERVICE_MAX_PAGES,
+    QUERY_SERVICE_MAX_PAGE_SIZE: apiConstants.QUERY_SERVICE_MAX_PAGE_SIZE,
     PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS: pending.PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
     UUID_REGEX: regex.UUID_REGEX,
   };
@@ -88,6 +103,7 @@ vi.mock('./etag.service', () => ({
   ETagService: class {
     public fetchWithETag = fetchWithETag;
     public updateWithETag = updateWithETag;
+    public deleteWithETag = deleteWithETag;
   },
 }));
 vi.mock('./project.service', () => ({
@@ -153,6 +169,18 @@ describe('CommitteeService.getMyCommitteeUids', () => {
     vi.mocked(getUsernameFromAuth).mockResolvedValue(null);
     expect(await new CommitteeService().getMyCommitteeUids(req, undefined, { failOnPartial: true })).toEqual(new Set());
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('CommitteeService.withdrawApplication', () => {
+  beforeEach(() => proxyRequest.mockReset());
+
+  it('posts to the upstream withdraw route with the user token and no body', async () => {
+    const withdrawn = { uid: 'application-a', committee_uid: 'committee-a', status: 'withdrawn' } as CommitteeJoinApplication;
+    proxyRequest.mockResolvedValueOnce(withdrawn);
+
+    expect(await new CommitteeService().withdrawApplication(req, 'committee-a', 'application-a')).toBe(withdrawn);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/committee-a/applications/application-a/withdraw', 'POST');
   });
 });
 
@@ -366,6 +394,46 @@ describe('CommitteeService — getCommitteeDocuments', () => {
     expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Ada Lovelace' }, undefined);
     expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Bob Builder' }, undefined);
     expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Carol Danvers' }, 'legacyuser');
+  });
+});
+
+describe('CommitteeService — deleteCommitteeDocument', () => {
+  let service: CommitteeService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    fetchWithETag.mockReset();
+    deleteWithETag.mockReset();
+    vi.mocked(fetchAllQueryResources).mockReset();
+    fetchWithETag.mockResolvedValue({ data: {}, etag: 'etag-1' });
+    deleteWithETag.mockResolvedValue(undefined);
+    service = new CommitteeService();
+  });
+
+  it.each([
+    ['link', '/committees/committee-1/links/doc-1'],
+    ['file', '/committees/committee-1/documents/doc-1'],
+  ] as const)('deletes a %s through its own upstream path with the fetched ETag', async (type, path) => {
+    await service.deleteCommitteeDocument(req, 'committee-1', 'doc-1', type);
+
+    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'delete_committee_document');
+    expect(deleteWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'etag-1', 'delete_committee_document');
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(fetchAllQueryResources).not.toHaveBeenCalled();
+  });
+
+  it('rejects a folder before any upstream call: group folder delete is not available until the upstream guard is deployed', async () => {
+    await expect(service.deleteCommitteeDocument(req, 'committee-1', 'folder-1', 'folder')).rejects.toMatchObject({ statusCode: 400 });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(deleteWithETag).not.toHaveBeenCalled();
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(fetchAllQueryResources).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown document type before any upstream call', async () => {
+    await expect(service.deleteCommitteeDocument(req, 'committee-1', 'doc-1', 'meeting' as never)).rejects.toMatchObject({ statusCode: 400 });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(deleteWithETag).not.toHaveBeenCalled();
   });
 });
 
@@ -1319,6 +1387,33 @@ describe('CommitteeService.getMyPendingInvitations — inviter/expiry mapping', 
 
     expect(rows.map((r) => r.uid).sort()).toEqual(['legacy-no-expiry', 'unparseable-expiry']);
   });
+
+  it('maps project_name and project_logo_url from the batched project enrichment', async () => {
+    mockInvites([baseInvite({})]);
+    (service as unknown as { getCommitteesByIds: unknown }).getCommitteesByIds = vi
+      .fn()
+      .mockResolvedValue(new Map([['committee-1', { uid: 'committee-1', name: 'TSC', project_uid: 'project-1' }]]));
+    enrichWithProjectData.mockResolvedValueOnce([
+      { uid: 'committee-1', project_uid: 'project-1', project_name: 'Example Project', project_logo_url: 'https://cdn.example.com/logo.svg' },
+    ]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.project_name).toBe('Example Project');
+    expect(row.project_logo_url).toBe('https://cdn.example.com/logo.svg');
+  });
+
+  it('maps project_logo_url to null when the project lookup returned no logo', async () => {
+    mockInvites([baseInvite({})]);
+    (service as unknown as { getCommitteesByIds: unknown }).getCommitteesByIds = vi
+      .fn()
+      .mockResolvedValue(new Map([['committee-1', { uid: 'committee-1', name: 'TSC', project_uid: 'project-1' }]]));
+    enrichWithProjectData.mockResolvedValueOnce([{ uid: 'committee-1', project_uid: 'project-1', project_name: '', project_logo_url: '' }]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.project_logo_url).toBeNull();
+  });
 });
 
 describe.each(['getCommitteeMembers', 'getCommitteeInvites'] as const)('CommitteeService.%s — complete import snapshots', (method) => {
@@ -1336,11 +1431,17 @@ describe.each(['getCommitteeMembers', 'getCommitteeInvites'] as const)('Committe
 
     expect(await new CommitteeService()[method](req, 'committee-1', query)).toEqual([first, second]);
     expect(proxyRequest.mock.calls.map((call) => call[4])).toEqual([
-      { type: method === 'getCommitteeMembers' ? 'committee_member' : 'committee_invite', tags: 'committee_uid:committee-1', name: 'Example' },
       {
         type: method === 'getCommitteeMembers' ? 'committee_member' : 'committee_invite',
         tags: 'committee_uid:committee-1',
         name: 'Example',
+        ...(method === 'getCommitteeMembers' && { page_size: 1000 }),
+      },
+      {
+        type: method === 'getCommitteeMembers' ? 'committee_member' : 'committee_invite',
+        tags: 'committee_uid:committee-1',
+        name: 'Example',
+        ...(method === 'getCommitteeMembers' && { page_size: 1000 }),
         page_token: 'next-page',
       },
     ]);
@@ -1378,6 +1479,39 @@ describe('CommitteeService.getCommitteeMembers — internal strict pagination', 
     proxyRequest.mockResolvedValueOnce({ resources: [], page_token: 'next-page' }).mockRejectedValueOnce(failure);
 
     await expect(new CommitteeService().getCommitteeMembers(req, 'committee-1', { require_complete: 'false' }, { failOnPartial: true })).rejects.toBe(failure);
+  });
+  it('loads a complete roster exceeding 5,000 records using supported page sizes', async () => {
+    proxyRequest.mockReset();
+    const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+    vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
+    proxyRequest.mockImplementation(async (_req, _service, _path, _method, params) => {
+      const page = Number(params.page_token ?? 0);
+      return {
+        resources: Array.from({ length: 1000 }, (_, index) => ({ data: { uid: `member-${page * 1000 + index}` } })),
+        ...(page < 5 && { page_token: String(page + 1) }),
+      };
+    });
+    const rows = await new CommitteeService().getCommitteeMembers(req, 'committee-1', { require_complete: 'true', page_size: '1' });
+    expect(rows).toHaveLength(6000);
+    expect(rows.at(-1)?.uid).toBe('member-5999');
+    expect(proxyRequest).toHaveBeenCalledTimes(6);
+    expect(proxyRequest.mock.calls.every((call) => call[4].page_size === 1000)).toBe(true);
+  });
+
+  it('still rejects a continuing strict roster at the 100-page cap', async () => {
+    proxyRequest.mockReset();
+    const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+    vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
+    proxyRequest.mockImplementation(async (_req, _service, _path, _method, params) => ({
+      resources: [{ data: { uid: `member-${params.page_token ?? 'first'}` } }],
+      page_token: String(Number(params.page_token ?? 0) + 1),
+    }));
+    await expect(new CommitteeService().getCommitteeMembers(req, 'committee-1', { require_complete: 'true' })).rejects.toMatchObject({
+      code: 'QUERY_SERVICE_PAGINATION_LIMIT',
+      statusCode: 502,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(100);
+    expect(proxyRequest.mock.calls.every((call) => call[4].page_size === 1000)).toBe(true);
   });
 });
 
@@ -1477,6 +1611,61 @@ describe('CommitteeService.getMyApplication', () => {
       .mockRejectedValueOnce(new Error('upstream failure'));
 
     await expect(service.getMyApplication(req, COMMITTEE_UID)).rejects.toThrow('upstream failure');
+  });
+});
+
+describe('CommitteeService.getMyApplications — project enrichment', () => {
+  let service: CommitteeService;
+  let getCommitteeById: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    vi.mocked(fetchAllQueryResources).mockReset();
+    vi.mocked(getEffectiveEmail).mockReturnValue('user@example.com');
+    service = new CommitteeService();
+    getCommitteeById = vi.fn();
+    (service as unknown as { getCommitteeById: unknown }).getCommitteeById = getCommitteeById;
+  });
+
+  const mockApplications = (applications: Partial<CommitteeJoinApplication>[]): void => {
+    vi.mocked(fetchAllQueryResources).mockResolvedValueOnce(applications as CommitteeJoinApplication[]);
+  };
+
+  it('carries project_name and project_logo_url from the enriched committee', async () => {
+    mockApplications([{ uid: 'app-1', committee_uid: 'committee-1', status: 'pending', created_at: '2025-01-01T00:00:00Z' }]);
+    getCommitteeById.mockResolvedValueOnce({
+      name: 'TSC',
+      is_foundation: true,
+      project_slug: 'example',
+      project_name: 'Example Foundation',
+      project_logo_url: 'https://cdn.example.com/logo.svg',
+    });
+
+    const [row] = await service.getMyApplications(req);
+
+    expect(getCommitteeById).toHaveBeenCalledWith(req, 'committee-1', { includeProjectMetadata: true });
+    expect(row).toMatchObject({ committee_name: 'TSC', project_name: 'Example Foundation', project_logo_url: 'https://cdn.example.com/logo.svg' });
+  });
+
+  it('leaves project fields absent when enrichment returned empty strings or the lookup failed', async () => {
+    mockApplications([
+      { uid: 'app-1', committee_uid: 'committee-1', status: 'pending', created_at: '2025-01-01T00:00:00Z' },
+      { uid: 'app-2', committee_uid: 'committee-2', status: 'pending', created_at: '2025-01-01T00:00:00Z' },
+    ]);
+    getCommitteeById.mockImplementation(async (_req: Request, uid: string) => {
+      if (uid === 'committee-2') {
+        throw new Error('forbidden');
+      }
+      return { name: 'TSC', project_name: '', project_logo_url: '' };
+    });
+
+    const rows = await service.getMyApplications(req);
+
+    for (const row of rows) {
+      expect(row.project_name).toBeUndefined();
+      expect(row.project_logo_url).toBeUndefined();
+    }
+    expect(rows.find((r) => r.uid === 'app-2')?.committee_name).toBe('committee-2');
   });
 });
 
@@ -1903,5 +2092,61 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     } finally {
       clock.mockRestore();
     }
+  });
+});
+
+describe('CommitteeService.bulkCreateCommitteeMembers', () => {
+  let service: CommitteeService;
+  const COMMITTEE_UID = 'committee-1';
+  const members = [{ email: 'ada@example.com' }, { email: 'grace@example.com' }];
+  const result = {
+    results: [
+      { index: 0, email: 'ada@example.com', status: 'added', retryable: false, member_uid: 'm-1' },
+      { index: 1, email: 'grace@example.com', status: 'skipped', reason: 'already_member', retryable: false, member_uid: 'm-2' },
+    ],
+    added: 1,
+    skipped: 1,
+    failed: 0,
+  };
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new CommitteeService();
+  });
+
+  it('proxies the rows to the upstream bulk route with the caller token and a longer timeout', async () => {
+    proxyRequest.mockResolvedValueOnce(result);
+
+    await expect(service.bulkCreateCommitteeMembers(req, COMMITTEE_UID, members)).resolves.toEqual(result);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/committees/${COMMITTEE_UID}/members/bulk`, 'POST', {}, { members }, undefined, {
+      timeoutMs: 60_000,
+    });
+    // No bearerToken override: the user's own token authorizes the write.
+    expect(proxyRequest.mock.calls[0][7]).not.toHaveProperty('bearerToken');
+  });
+
+  it('sends X-Skip-Notification when notifications are off', async () => {
+    proxyRequest.mockResolvedValueOnce(result);
+
+    await service.bulkCreateCommitteeMembers(req, COMMITTEE_UID, members, true);
+
+    expect(proxyRequest.mock.calls[0][6]).toEqual({ 'X-Skip-Notification': 'true' });
+  });
+
+  it('logs counts without row data', async () => {
+    proxyRequest.mockResolvedValueOnce(result);
+
+    await service.bulkCreateCommitteeMembers(req, COMMITTEE_UID, members);
+
+    const metadata = vi.mocked(logger.debug).mock.calls.find(([, operation]) => operation === 'bulk_create_committee_members')?.[3];
+    expect(metadata).toEqual({ committee_uid: COMMITTEE_UID, row_count: 2, added: 1, skipped: 1, failed: 0, skip_notification: false });
+    expect(JSON.stringify(metadata)).not.toContain('@example.com');
+  });
+
+  it('propagates an upstream error status', async () => {
+    proxyRequest.mockRejectedValueOnce(new MicroserviceError('Committee not found', 404, 'NOT_FOUND'));
+
+    await expect(service.bulkCreateCommitteeMembers(req, COMMITTEE_UID, members)).rejects.toMatchObject({ statusCode: 404 });
   });
 });

@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isPastMeetingSummaryReadOnly } from './past-meeting-summary.utils';
+import type { PastMeetingSummary } from '../interfaces';
+import { getPastMeetingSummaryContent, isPastMeetingSummaryReadOnly } from './past-meeting-summary.utils';
 
 describe('isPastMeetingSummaryReadOnly', () => {
   // Every combination of the organizer flag (true / false / absent) with the summary's uid
@@ -29,5 +30,41 @@ describe('isPastMeetingSummaryReadOnly', () => {
 
   it('fails closed when the summary is undefined rather than null', () => {
     expect(isPastMeetingSummaryReadOnly({ organizer: true }, undefined)).toBe(true);
+  });
+});
+
+describe('getPastMeetingSummaryContent', () => {
+  const summary = (flags: Partial<PastMeetingSummary>, content = 'Generated', edited = ''): PastMeetingSummary => ({
+    uid: '',
+    meeting_id: '',
+    past_meeting_id: '',
+    platform: '',
+    approved: true,
+    requires_approval: true,
+    email_sent: false,
+    password: '',
+    summary_data: { title: '', content, edited_content: edited, doc_url: '', start_time: '', end_time: '' },
+    created_at: '',
+    updated_at: '',
+    ...flags,
+  });
+
+  it('prefers the edited text', () => {
+    expect(getPastMeetingSummaryContent({}, summary({}, 'Generated', 'Edited'))).toBe('Edited');
+    expect(getPastMeetingSummaryContent({}, summary({}))).toBe('Generated');
+  });
+
+  it.each([
+    { label: 'approved, invitee', flags: { approved: true }, organizer: undefined, expected: 'Generated' },
+    { label: 'approval not required, invitee', flags: { approved: false, requires_approval: false }, organizer: false, expected: 'Generated' },
+    { label: 'awaiting approval, invitee', flags: { approved: false }, organizer: false, expected: null },
+    { label: 'awaiting approval, organizer', flags: { approved: false }, organizer: true, expected: 'Generated' },
+  ])('$label', ({ flags, organizer, expected }) => {
+    expect(getPastMeetingSummaryContent({ organizer }, summary(flags))).toBe(expected);
+  });
+
+  it('returns null for a blank or missing summary', () => {
+    expect(getPastMeetingSummaryContent({ organizer: true }, summary({}, '  '))).toBeNull();
+    expect(getPastMeetingSummaryContent({ organizer: true }, null)).toBeNull();
   });
 });

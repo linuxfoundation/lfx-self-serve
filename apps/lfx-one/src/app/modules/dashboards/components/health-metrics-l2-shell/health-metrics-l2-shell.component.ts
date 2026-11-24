@@ -33,7 +33,15 @@ import {
   UrlTree,
 } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS, HEALTH_METRICS_L2_SCROLL_KEYS } from '@lfx-one/shared/constants';
+import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
+import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
+import {
+  HEALTH_METRICS_L2_JUMP_REAIM_MS,
+  HEALTH_METRICS_L2_OFFSET_SETTLE_MS,
+  HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS,
+  HEALTH_METRICS_L2_SCROLL_KEYS,
+  HEALTH_METRICS_PROVISIONAL_BADGE,
+} from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsL2BlankView,
   buildHealthMetricsL2EmptyCopy,
@@ -48,6 +56,7 @@ import { HealthMetricsChromeService } from '../../health-metrics-gate/health-met
 import { HealthMetricsBlankCardComponent } from '../health-metrics-blank-card/health-metrics-blank-card.component';
 import { HealthMetricsFootnoteComponent } from '../health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsL2SubNavComponent } from '../health-metrics-l2-sub-nav/health-metrics-l2-sub-nav.component';
+import { HealthMetricsL2SectionControlsDirective } from './health-metrics-l2-section-controls.directive';
 import { HealthMetricsL2SectionDirective } from './health-metrics-l2-section.directive';
 
 import type {
@@ -74,7 +83,15 @@ import type {
  */
 @Component({
   selector: 'lfx-health-metrics-l2-shell',
-  imports: [EmptyStateComponent, HealthMetricsBlankCardComponent, HealthMetricsFootnoteComponent, HealthMetricsL2SubNavComponent, NgTemplateOutlet],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsBlankCardComponent,
+    HealthMetricsFootnoteComponent,
+    HealthMetricsL2SubNavComponent,
+    NgTemplateOutlet,
+    UiBadgeComponent,
+    UiTooltipDirective,
+  ],
   templateUrl: './health-metrics-l2-shell.component.html',
 })
 export class HealthMetricsL2ShellComponent implements OnInit {
@@ -106,6 +123,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private readonly startSentinel = viewChild<ElementRef<HTMLElement>>('startSentinel');
   private readonly endSentinel = viewChild<ElementRef<HTMLElement>>('endSentinel');
   private readonly bodies = contentChildren(HealthMetricsL2SectionDirective);
+  private readonly controls = contentChildren(HealthMetricsL2SectionControlsDirective);
 
   // Held until the sections exist, then again until every async section has settled: a deep link
   // re-scrolls once per read that lands, because each one moves the anchors below it.
@@ -117,6 +135,10 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   // Ids resolved once per input rather than per render — the template only reads fields.
   protected readonly sectionViews = computed<HealthMetricsL2SectionView[]>(() => buildHealthMetricsL2SectionViews(this.sections(), this.idPrefix()));
   protected readonly bodyByKey = computed(() => new Map<string, TemplateRef<unknown>>(this.bodies().map((body) => [body.key(), body.template])));
+  protected readonly controlsByKey = computed(
+    () => new Map<string, TemplateRef<unknown>>(this.controls().map((controls) => [controls.key(), controls.template]))
+  );
+  protected readonly provisionalBadge = HEALTH_METRICS_PROVISIONAL_BADGE;
 
   /** Read key → whether its last settle found nothing for the period; `null` gives no verdict. Absent while reading. */
   private readonly readEmpty = signal<ReadonlyMap<string, boolean | null>>(new Map());
@@ -124,10 +146,10 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   /** Section key → its empty state, for each section whose every read settled empty. */
   protected readonly emptySections: Signal<ReadonlyMap<string, HealthMetricsL2EmptyCopy>> = this.initEmptySections();
   protected readonly blankView: Signal<HealthMetricsL2BlankView | null> = this.initBlankView();
-  /** An empty section's badge would count nothing, so it drops along with the section's own counts. */
+  /** An empty section has nothing to warn about, so the rail drops its note. */
   protected readonly visibleSubNavItems = computed<HealthMetricsL2SubNavItem[]>(() => {
     const empty = this.emptySections();
-    return this.subNavItems().map((item) => (empty.has(item.key) ? { ...item, count: null, note: '' } : item));
+    return this.subNavItems().map((item) => (empty.has(item.key) ? { ...item, note: '' } : item));
   });
 
   /**
@@ -146,10 +168,14 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private scrollSpyObserver?: IntersectionObserver;
   private scrollEndObserver?: IntersectionObserver;
   private scrollStartObserver?: IntersectionObserver;
-  // Two of the observers' inputs, so a content change that leaves both alone costs nothing. The sticky
-  // offset is a third, rebuilt from its own subscription rather than compared here.
+  // The observers' inputs. A resize compares the first two, and the debounced offset subscription the third,
+  // so a change that leaves them alone costs nothing.
   private spyEndBelowFold?: boolean;
   private spyViewportHeight?: number;
+  private spyOffsetPx?: number;
+  /** The last section jump, when it started and the offset it aimed at, so a header that compacts mid-jump can re-aim it. */
+  private jumpInFlight: { key: string; startedAt: number; offsetPx: number } | null = null;
+  private jumpTimer?: ReturnType<typeof setTimeout>;
   /** Navigation id → where the page stood when a query-only navigation began, put back after the router's scroll. */
   private readonly heldScrolls = new Map<number, [number, number]>();
   /** A section jumped to while a router scroll was still due, replayed after it since that scroll cuts it short. */
@@ -159,6 +185,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     this.destroyRef.onDestroy(() => {
       this.teardownScrollSpy();
       clearTimeout(this.pendingSectionTimer);
+      clearTimeout(this.jumpTimer);
       // The destroy hook lives here, not in `observeReaderIntent`: the listeners register per arm,
       // and one hook per arm would pile up over the page's life.
       this.removeIntentListeners?.();
@@ -174,12 +201,13 @@ export class HealthMetricsL2ShellComponent implements OnInit {
       // With nothing left to settle there is no later reflow, so this replay is the only one needed.
       if (this.unsettledSections.size === 0) this.clearPendingSection();
     });
-    // The activation band hangs off the sticky header, which the gate measures after first paint —
-    // rebuild the observer whenever that height settles rather than hard-coding a pixel offset.
+    // The activation band hangs off the sticky header, measured after first paint and animated as it compacts on
+    // scroll, so the observer is rebuilt once that height settles rather than on every frame.
     toObservable(this.chrome.stickyTopPx)
-      .pipe(takeUntilDestroyed())
+      .pipe(debounceTime(HEALTH_METRICS_L2_OFFSET_SETTLE_MS), takeUntilDestroyed())
       .subscribe((offset) => {
-        if (!this.scrollSpyObserver) return;
+        this.reaimJump(offset);
+        if (!this.scrollSpyObserver || offset === this.spyOffsetPx) return;
         this.setupScrollSpy(offset);
       });
 
@@ -251,6 +279,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   public scrollToSection(key: string): void {
     this.clearPendingSection();
     this.scrollTo(key);
+    // Focus follows the jump, so a keyboard reader carries on from the picked section.
+    if (isPlatformBrowser(this.platformId)) this.sectionElement(key)?.focus({ preventScroll: true });
   }
 
   private updateReadEmpty(key: string, isEmpty: boolean | null | undefined): void {
@@ -301,6 +331,29 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     if (this.heldScrolls.size > 0) this.jumpAfterRouterScroll = key;
     // The section's `scroll-margin-top` keeps it clear of the sticky page header.
     section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    this.jumpInFlight = { key, startedAt: performance.now(), offsetPx: this.chrome.stickyTopPx() };
+    this.observeReaderIntent();
+    // A header that never compacts leaves nothing to re-aim, so the jump ends with its window.
+    clearTimeout(this.jumpTimer);
+    this.jumpTimer = setTimeout(() => this.endJump(), HEALTH_METRICS_L2_JUMP_REAIM_MS);
+  }
+
+  /** A jump from the top compacts the header on its way and lands short of it; aiming again lands it under the new height. */
+  private reaimJump(offsetPx: number): void {
+    const jump = this.jumpInFlight;
+    if (!jump) return;
+    const expired = performance.now() - jump.startedAt > HEALTH_METRICS_L2_JUMP_REAIM_MS;
+    // Until the header has compacted, the jump keeps waiting for it.
+    if (!expired && offsetPx >= jump.offsetPx) return;
+    this.endJump();
+    if (!expired) this.sectionElement(jump.key)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /** Forgets the jump, and the reader-intent listeners with it unless a deep link still needs them. */
+  private endJump(): void {
+    this.jumpInFlight = null;
+    clearTimeout(this.jumpTimer);
+    if (!this.pendingSection()) this.removeIntentListeners?.();
   }
 
   private initQueryScrollKeeping(): void {
@@ -382,9 +435,9 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   }
 
   /**
-   * A deep link waiting on data would scroll back over wherever the reader has moved to, and a failed
-   * read leaves it waiting indefinitely — so their own first scroll or keypress supersedes it.
-   * Idempotent: every arm calls this, and only the first one that finds no listeners registers them.
+   * A deep link waiting on data, or a jump waiting to be re-aimed, would scroll back over wherever the reader has
+   * moved to — so their own first scroll or keypress supersedes both. A failed read leaves a deep link waiting
+   * indefinitely. Idempotent: every arm and jump calls this, and only the first that finds no listeners registers them.
    */
   private observeReaderIntent(): void {
     if (!isPlatformBrowser(this.platformId) || this.removeIntentListeners) return;
@@ -396,14 +449,16 @@ export class HealthMetricsL2ShellComponent implements OnInit {
       // runs — that key opened a drawer, it did not move the page.
       if (event.defaultPrevented) return;
       if (event.type === 'keydown' && !this.isScrollIntent(event as KeyboardEvent)) return;
+      this.jumpInFlight = null;
+      clearTimeout(this.jumpTimer);
       this.clearPendingSection();
     };
     // Bound to the window, where page scrolling is dispatched. A scrollbar drag fires none of these,
     // which is what the TTL is for.
     const events = ['wheel', 'touchmove', 'keydown'];
     for (const event of events) window.addEventListener(event, onIntent, { passive: true });
-    // Dead weight on the browser's hottest event streams once no key is armed; the next arm
-    // registers them again.
+    // Dead weight on the browser's hottest event streams once no key is armed and no jump is in flight;
+    // the next arm or jump registers them again.
     this.removeIntentListeners = () => {
       for (const event of events) window.removeEventListener(event, onIntent);
       this.removeIntentListeners = null;
@@ -437,7 +492,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private clearPendingSection(): void {
     this.pendingSection.set(null);
     clearTimeout(this.pendingSectionTimer);
-    this.removeIntentListeners?.();
+    // A jump still waiting to be re-aimed keeps them, so the reader can still take it over.
+    if (!this.jumpInFlight) this.removeIntentListeners?.();
   }
 
   /**
@@ -479,6 +535,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     if (!isPlatformBrowser(this.platformId) || typeof IntersectionObserver === 'undefined') return;
 
     this.teardownScrollSpy();
+    this.spyOffsetPx = offsetPx;
 
     const views = this.sectionViews();
     const keys = views.map((section) => section.key);

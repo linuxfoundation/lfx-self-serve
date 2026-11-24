@@ -3,6 +3,7 @@
 
 import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MENTORSHIP_LF_PROJECT_PAGE_SIZE } from '@lfx-one/shared/constants';
 import {
   MentorshipApplicantTask,
@@ -11,13 +12,14 @@ import {
   MentorshipLfxProfileFields,
   MentorshipNameAvailability,
   MentorshipProgramDecisionRequest,
+  MentorshipProgramDecisionResult,
   MentorshipProgramReview,
   MentorshipProgramReviewDecision,
   MentorshipTaskCreateRequest,
   MentorshipTaskCreateResponse,
   MentorshipTaskUpdate,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, take, throwError } from 'rxjs';
+import { catchError, concatMap, EMPTY, Observable, of, Subject, take, throwError } from 'rxjs';
 
 import { strictHttpParams } from '../utils/http-params.utils';
 
@@ -34,6 +36,26 @@ import { strictHttpParams } from '../utils/http-params.utils';
 export class MentorshipService {
   private readonly http = inject(HttpClient);
 
+  // Profile & Account's copies onto the mentorship profiles, sent one at a time in save order (see `queueLfxProfileSync`).
+  private readonly lfxProfileCopies = new Subject<MentorshipLfxProfileFields>();
+
+  public constructor() {
+    this.lfxProfileCopies
+      .pipe(
+        concatMap((fields) =>
+          this.syncLfxProfileFields(fields).pipe(
+            catchError((error: unknown) => {
+              console.error('[MentorshipService] copying the LFX profile onto the mentorship profiles failed', error);
+              return EMPTY;
+            })
+          )
+        ),
+        // The root injector's teardown, so the queue outlives every page but not the app (or a server render).
+        takeUntilDestroyed()
+      )
+      .subscribe();
+  }
+
   /** `excludeProgramId` leaves that program out, so the edit wizard does not report a program's own name as taken. */
   public isProgramNameAvailable(name: string, excludeProgramId = ''): Observable<MentorshipNameAvailability> {
     let params = strictHttpParams().set('name', name);
@@ -41,12 +63,16 @@ export class MentorshipService {
     return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params }).pipe(take(1));
   }
 
-  /** One lazy-load page of LF projects; pass the previous page's `page_token` as `pageToken` for the next one. Errors propagate. */
-  public getLfProjects(params?: { search?: string; pageToken?: string | null; limit?: number }): Observable<MentorshipLfProjectsResponse> {
+  /**
+   * One lazy-load page of LF projects; pass the previous page's `page_token` as `pageToken` for the next one. With
+   * `parentUid`, only that project's direct sub-projects (the Foundation lens wizard). Errors propagate.
+   */
+  public getLfProjects(params?: { search?: string; pageToken?: string | null; limit?: number; parentUid?: string }): Observable<MentorshipLfProjectsResponse> {
     // Strict codec: a `+` in a typed search (`C++`) or in the opaque cursor would otherwise reach Express as a space.
     let httpParams = strictHttpParams();
     if (params?.search) httpParams = httpParams.set('search', params.search);
     if (params?.pageToken) httpParams = httpParams.set('page_token', params.pageToken);
+    if (params?.parentUid) httpParams = httpParams.set('parentUid', params.parentUid);
     httpParams = httpParams.set('page_size', String(params?.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
 
     return this.http
@@ -54,7 +80,7 @@ export class MentorshipService {
       .pipe(take(1), catchError(this.rethrowError('getLfProjects')));
   }
 
-  /** The program an approve/reject email link points at. Rethrows so the page can branch on the status code. */
+  /** The program a review email link points at, with its details. Rethrows so the page can branch on the status code. */
   public getProgramReview(programId: string): Observable<MentorshipProgramReview> {
     return this.http
       .get<MentorshipProgramReview>(`/api/mentorship/program-review/${encodeURIComponent(programId)}`)
@@ -65,17 +91,28 @@ export class MentorshipService {
    * Records an approver's decision. Not caught here: 403 (not an approver) and 409 (already
    * decided) are expected outcomes the review page renders, not failures to log.
    */
-  public submitProgramDecision(programId: string, decision: MentorshipProgramReviewDecision): Observable<MentorshipProgramReview> {
+  public submitProgramDecision(programId: string, decision: MentorshipProgramReviewDecision): Observable<MentorshipProgramDecisionResult> {
     const body: MentorshipProgramDecisionRequest = { decision };
-    return this.http.post<MentorshipProgramReview>(`/api/mentorship/program-review/${encodeURIComponent(programId)}/decision`, body).pipe(take(1));
+    return this.http.post<MentorshipProgramDecisionResult>(`/api/mentorship/program-review/${encodeURIComponent(programId)}/decision`, body).pipe(take(1));
   }
 
   /**
    * Copies the LFX profile's name, email, logo and GitHub link onto the caller's mentor and mentee
    * profiles; the BFF resolves the email and the link. Not caught here: the profile card logs the failure and tells the user.
+   * Profile & Account goes through `queueLfxProfileSync` instead.
    */
   public syncLfxProfileFields(fields: MentorshipLfxProfileFields): Observable<void> {
     return this.http.patch<void>('/api/mentorship/me/lfx-profile', fields).pipe(take(1));
+  }
+
+  /**
+   * `syncLfxProfileFields` for Profile & Account, where saves can follow each other faster than the copies finish. Copies are
+   * sent one at a time in the order queued, so an older copy can never land after a newer one and leave Mentorship on the
+   * previous name or picture. The queue lives with this root service, so a copy still runs after the user leaves the page. A
+   * failed copy is logged and does not stop the next one.
+   */
+  public queueLfxProfileSync(fields: MentorshipLfxProfileFields): void {
+    this.lfxProfileCopies.next(fields);
   }
 
   /**

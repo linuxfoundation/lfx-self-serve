@@ -71,3 +71,45 @@ export enum MailingListMemberModStatus {
   MODERATOR = 'moderator',
   OWNER = 'owner',
 }
+
+/**
+ * Committee-to-mailing-list membership sync direction
+ * @description Controls automatic membership synchronization between a mailing list and its linked committee. Only meaningful when a committee_uid is set; ITX is the system of record for this value (proxied through on the wire, not persisted locally).
+ */
+export enum MailingListSyncMode {
+  MANUAL = 'manual',
+  AUTO_COMMITTEE_TO_MAILING_LIST = 'auto_c_to_ml',
+  AUTO_MAILING_LIST_TO_COMMITTEE = 'auto_ml_to_c',
+}
+
+/**
+ * Explicit sync direction override for a manual/unset-`sync_mode` mailing list's sync-diff/sync-apply.
+ * @description Rejected with 400 upstream if supplied for an `auto_c_to_ml`/`auto_ml_to_c` list, which
+ * always uses its own configured direction. Required for a `manual`/unset list, since it has no
+ * direction of its own to fall back on.
+ */
+export enum MailingListSyncDirection {
+  COMMITTEE_TO_MAILING_LIST = 'c_to_ml',
+  MAILING_LIST_TO_COMMITTEE = 'ml_to_c',
+}
+
+/**
+ * Sync-diff/sync-apply member type (committee ↔ mailing list sync)
+ * @description Indicates which side of the sync a member originates from
+ */
+export enum SyncMemberType {
+  COMMITTEE_MEMBER = 'committee_member',
+  MAILING_LIST_MEMBER = 'mailing_list_member',
+}
+
+/**
+ * Sync-apply per-row outcome
+ * @description Result of applying a single add/remove row during sync-apply
+ */
+export enum SyncApplyOutcome {
+  ADDED = 'added',
+  INVITED = 'invited',
+  REMOVED = 'removed',
+  SKIPPED_CROSS_LIST = 'skipped_cross_list',
+  FAILED = 'failed',
+}

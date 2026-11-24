@@ -17,6 +17,7 @@ const {
   getEventOrganizations,
   getAffiliatedProjectSlugs,
   generateVisaLetter,
+  resolveEventRegistrant,
   logger,
 } = vi.hoisted(() => ({
   getEffectiveEmail: vi.fn(() => 'user@example.com'),
@@ -28,6 +29,7 @@ const {
   getEventOrganizations: vi.fn(),
   getAffiliatedProjectSlugs: vi.fn(),
   generateVisaLetter: vi.fn(),
+  resolveEventRegistrant: vi.fn(async (_req: unknown, _userService: unknown, email: string) => ({ email, userId: 'sfid-1' })),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
@@ -56,6 +58,8 @@ vi.mock('../services/persona-detection.service', () => ({
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
+vi.mock('../services/user.service', () => ({ UserService: class {} }));
+vi.mock('../helpers/event-registrant.helper', () => ({ resolveEventRegistrant }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail, getEffectiveName: () => 'User' }));
 
 import { EventsController } from './events.controller';
@@ -203,7 +207,7 @@ describe('EventsController My Events affiliation scope', () => {
     expect(next).not.toHaveBeenCalled();
     expect(getMyEvents).toHaveBeenCalledWith(
       req,
-      'user@example.com',
+      { email: 'user@example.com', userId: 'sfid-1' },
       expect.objectContaining({
         isPast: false,
         registeredOnly: true,
@@ -314,5 +318,45 @@ describe('EventsController.getVisaLetter', () => {
     await controller.getVisaLetter(buildReq({ eventId: 'evt-1' }), buildRes(), next);
 
     expect(next).toHaveBeenCalledWith(error);
+  });
+});
+
+describe('EventsController registrant identity', () => {
+  const controller = new EventsController();
+  const registrant = { email: 'user@example.com', userId: 'sfid-1' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getEventOrganizations.mockResolvedValue({ data: [] });
+    getVisaRequests.mockResolvedValue({ data: [], total: 0 });
+    getTravelFundRequests.mockResolvedValue({ data: [], total: 0 });
+  });
+
+  it('matches Past foundations on the resolved Salesforce ID and email', async () => {
+    const req = buildReq({ isPast: 'true' });
+
+    await controller.getEventOrganizations(req, buildRes(), vi.fn());
+
+    expect(resolveEventRegistrant).toHaveBeenCalledWith(req, expect.anything(), 'user@example.com');
+    expect(getEventOrganizations.mock.calls[0][1]).toEqual(registrant);
+  });
+
+  it.each([
+    ['getVisaRequests', getVisaRequests],
+    ['getTravelFundRequests', getTravelFundRequests],
+  ] as const)('%s matches on the resolved Salesforce ID and email', async (method, serviceMethod) => {
+    await controller[method](buildReq({}), buildRes(), vi.fn());
+
+    expect(serviceMethod.mock.calls[0][1]).toEqual(registrant);
+  });
+
+  it('does not resolve an identity without an authenticated email', async () => {
+    getEffectiveEmail.mockReturnValueOnce(null as unknown as string);
+    const next = vi.fn();
+
+    await controller.getEventOrganizations(buildReq({ isPast: 'true' }), buildRes(), next);
+
+    expect(resolveEventRegistrant).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 401 }));
   });
 });

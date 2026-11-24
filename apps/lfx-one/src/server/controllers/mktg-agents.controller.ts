@@ -17,6 +17,8 @@ import {
   MKTG_RUN_QUESTIONS_ID_REGEX,
   MKTG_ARTIFACT_PARTITION_REGEX,
   MKTG_CHAT_MESSAGE_MAX_CHARS,
+  MKTG_HISTORY_SUBJECT_PATTERN,
+  MEMBER_360_CONTRACT_ID,
 } from '@lfx-one/shared/constants';
 import {
   BoilerplatesAnswersRequest,
@@ -77,6 +79,7 @@ import {
   validateFoundationMessageIntakeAnswers,
   validateIcpIntakeAnswers,
 } from '@lfx-one/shared/utils';
+import { createMember360Redactor, extractMktgEnvelopeCandidates, member360CandidateContacts } from '@lfx-one/shared/server';
 import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE, BOILERPLATES_INTAKE, FAQ_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
 import { findMktgRunIntake } from '@lfx-one/shared/utils/mktg-document-store.utils';
 import { MKTG_STARTED_RUN_ID_REGEX } from '@lfx-one/shared/constants/mktg-document-store.constants';
@@ -306,8 +309,20 @@ export class MktgAgentsController {
 
     try {
       const messages = await this.guildService.getHistory(req, validSessionId);
+      const payloads = await this.guildService.getRawEventPayloads(req, validSessionId);
+      const contacts = payloads.flatMap((payload) => extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID).flatMap(member360CandidateContacts));
+      // Contact masks and the caller's raw subject are server-only inputs.
+      // Project only the chat DTO: no upstream identity/contact records or extras.
+      const redact = createMember360Redactor([...contacts, userId], MKTG_HISTORY_SUBJECT_PATTERN);
+      const response: MktgHistoryResponse = {
+        messages: messages.map(({ id, sender, text, timestamp }) => ({
+          id,
+          sender,
+          text: redact(text),
+          timestamp,
+        })),
+      };
       logger.success(req, 'mktg_agents_history', startTime, { message_count: messages.length });
-      const response: MktgHistoryResponse = { messages };
       res.json(response);
     } catch (error) {
       next(error);

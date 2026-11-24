@@ -7,17 +7,23 @@ import type {
   CampaignServiceConnection,
   CampaignServiceHubSpotEmailMonitor,
 } from '@lfx-one/shared/interfaces';
+import { ERROR_CODES } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import {
+  isSystemAccountRefusal,
   toAccountMonitorClientError,
+  toGoogleMonitorResponse,
   toHubSpotEmailMonitorResponse,
   toLinkedInMonitorResponse,
   toMetaMonitorResponse,
   toMonitorConnectionAccount,
+  toMonitorConnectionError,
   toRedditMonitorResponse,
   toReportBackedMonitorResponse,
+  toSystemAccountRead,
+  toSystemAccountRefusedError,
 } from './campaign-monitor-mapper';
 
 const PULLED_AT = '2026-10-13T00:00:00.000Z';
@@ -207,7 +213,7 @@ describe('toAccountMonitorClientError', () => {
     return MicroserviceError.fromMicroserviceResponse(status, 'upstream', body, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/connection-meta-ads/account-monitor');
   }
 
-  it.each([400, 404, 409, 500, 503])('keeps status %i and replaces the upstream message', (status) => {
+  it.each([400, 403, 404, 409, 500, 503])('keeps status %i and replaces the upstream message', (status) => {
     const original = upstream(status, { message: 'connection row 7f3e decrypt failed: ErrCredentialDecryptionFailed' });
 
     const mapped = toAccountMonitorClientError(original, 'Meta Ads', 'meta_monitor') as MicroserviceError;
@@ -217,6 +223,16 @@ describe('toAccountMonitorClientError', () => {
     expect(JSON.stringify(mapped.toResponse())).not.toContain('decrypt');
     expect(mapped.toResponse()['originalMessage']).toBeUndefined();
     expect(mapped.originalError).toBe(original);
+  });
+
+  /** campaign-service authorizes these reads with the project's `campaign_manager` relation (#4837): a standing refusal, not an outage. */
+  it("names the missing project role on campaign-service's 403, without inviting a retry", () => {
+    const mapped = toAccountMonitorClientError(upstream(403, { message: 'openfga check failed' }), 'Google Ads', 'campaign_monitor') as MicroserviceError;
+    expect(mapped.statusCode).toBe(403);
+    expect(mapped.toResponse()['error']).toBe(
+      'campaign-service refused to read this Google Ads account for this project. Your account needs the campaign manager role on this project.'
+    );
+    expect(mapped.toResponse()['error']).not.toMatch(/try again/i);
   });
 
   it("names the missing own connection, and marks it 'connection_not_found', on campaign-service's typed 404", () => {
@@ -276,6 +292,291 @@ describe('toAccountMonitorClientError', () => {
 
     expect(toAccountMonitorClientError(transport, 'Meta Ads', 'meta_monitor')).toBe(transport);
     expect(toAccountMonitorClientError(plain, 'Meta Ads', 'meta_monitor')).toBe(plain);
+  });
+});
+
+describe('toGoogleMonitorResponse', () => {
+  const GOOGLE_NAME = 'Events | KubeCon NA 2026 | NA | Conversions | Intent | Search | CNCF | MoFU | 2026-09-01';
+
+  function googleRow(overrides: Partial<CampaignServiceAccountMonitorCampaign> = {}): CampaignServiceAccountMonitorCampaign {
+    return row({
+      platform_campaign_id: '24183781329',
+      name: GOOGLE_NAME,
+      status: 'ENABLED',
+      spend: 1890,
+      impressions: 48_200,
+      clicks: 3110,
+      ctr: 6.45,
+      conversions: 12.5,
+      budget_day: 150,
+      total_budget: 0,
+      start_date: '',
+      end_date: '',
+      is_search_channel: true,
+      pacing_pct: 41.6,
+      pacing_label: 'underspending',
+      campaign_url: 'https://ads.google.com/aw/campaigns?campaignId=24183781329',
+      ...overrides,
+    });
+  }
+
+  function googlePayload(overrides: Partial<CampaignServiceAccountMonitor> = {}): CampaignServiceAccountMonitor {
+    return payload({
+      account_id: '8666746580',
+      days: 30,
+      campaigns: [googleRow()],
+      action_items: [{ campaign_id: '24183781329', campaign_name: GOOGLE_NAME, priority: 'MED', issue: 'Only spending 42%', action: 'Broaden targeting' }],
+      totals: { spend: 1890, impressions: 48_200, clicks: 3110, conversions: 12.5, campaign_count: 1 },
+      ...overrides,
+    });
+  }
+
+  it('maps a row onto the legacy Google fields, deriving the name parts as the legacy read did', () => {
+    const result = toGoogleMonitorResponse(googlePayload(), PULLED_AT);
+
+    expect(result.pulledAt).toBe(PULLED_AT);
+    expect(result.dateRange).toEqual({ mode: 'last_30_days' });
+    expect(result.campaigns).toEqual([
+      {
+        name: GOOGLE_NAME,
+        shortName: 'KubeCon NA 2026',
+        eventName: 'KubeCon NA 2026',
+        adFormat: 'Search',
+        targeting: 'Intent',
+        status: 'enabled',
+        // The 30-day read window ending on the day of PULLED_AT (2026-10-13), inclusive.
+        startDate: '2026-09-14',
+        endDate: '2026-10-13',
+        budgetDay: 150,
+        totalBudget: 4500,
+        spend: 1890,
+        impressions: 48_200,
+        clicks: 3110,
+        ctr: 6.45,
+        avgCpc: 1890 / 3110,
+        conversions: 12.5,
+        pacingPct: 42,
+        pacingLabel: 'underspending',
+        campaignId: '24183781329',
+        googleAdsUrl: 'https://ads.google.com/aw/campaigns?campaignId=24183781329',
+        pacingUnknown: false,
+        fetchFailed: false,
+        conversionsMeasured: true,
+      },
+    ]);
+    expect(result.accountTotals).toEqual({ budgetDay: 150, spend: 1890, impressions: 48_200, clicks: 3110, conversions: 12.5, conversionsMeasured: true });
+    // campaign-service names no currency for Google, so the amounts are the connected account's own.
+    expect(result.amountsInAccountCurrency).toBe(true);
+  });
+
+  it('falls back to the whole name for a name outside the convention, and to unknown for an unrecognised status', () => {
+    const [campaign] = toGoogleMonitorResponse(
+      googlePayload({ campaigns: [googleRow({ name: 'Brand campaign', status: 'SOMETHING_NEW', campaign_url: undefined })] }),
+      PULLED_AT
+    ).campaigns;
+
+    expect(campaign.shortName).toBe('Brand campaign');
+    expect(campaign.eventName).toBe('');
+    expect(campaign.status).toBe('unknown');
+    // No format in the name, so campaign-service's own Search flag decides it.
+    expect(campaign.adFormat).toBe('Search');
+    expect(campaign.googleAdsUrl).toBe('');
+  });
+
+  it('leaves the ad format empty for a name outside the convention that is not a Search campaign', () => {
+    const [campaign] = toGoogleMonitorResponse(
+      googlePayload({ campaigns: [googleRow({ name: 'Brand display', is_search_channel: false })] }),
+      PULLED_AT
+    ).campaigns;
+    expect(campaign.adFormat).toBe('');
+  });
+
+  it("keeps the name's own ad format over campaign-service's Search flag", () => {
+    const [campaign] = toGoogleMonitorResponse(
+      googlePayload({ campaigns: [googleRow({ name: GOOGLE_NAME.replace('| Search |', '| Display |') })] }),
+      PULLED_AT
+    ).campaigns;
+    expect(campaign.adFormat).toBe('Display');
+  });
+
+  it('reports an average CPC of 0, not a division by zero, for a row with no clicks', () => {
+    const [campaign] = toGoogleMonitorResponse(googlePayload({ campaigns: [googleRow({ clicks: 0, spend: 0 })] }), PULLED_AT).campaigns;
+    expect(campaign.avgCpc).toBe(0);
+  });
+
+  it.each([
+    ['could not pace', { pacing_unknown: true }, 'pacingUnknown'],
+    ['could not read', { fetch_failed: true }, 'fetchFailed'],
+  ] as const)('zeroes pacing for a row campaign-service %s, and keeps the flag for the panel', (_label, overrides, flagName) => {
+    const [campaign] = toGoogleMonitorResponse(googlePayload({ campaigns: [googleRow({ ...overrides, pacing_label: 'overspending' })] }), PULLED_AT).campaigns;
+
+    expect(campaign.pacingPct).toBe(0);
+    expect(campaign.pacingLabel).toBe('normal');
+    expect(campaign[flagName]).toBe(true);
+  });
+
+  it('marks unmeasured conversions as a placeholder on the row and on the totals', () => {
+    const result = toGoogleMonitorResponse(
+      googlePayload({ campaigns: [googleRow({ conversions: undefined })], totals: { spend: 1890, impressions: 48_200, clicks: 3110, campaign_count: 1 } }),
+      PULLED_AT
+    );
+
+    expect(result.campaigns[0].conversions).toBe(0);
+    expect(result.campaigns[0].conversionsMeasured).toBe(false);
+    expect(result.accountTotals.conversions).toBe(0);
+    expect(result.accountTotals.conversionsMeasured).toBe(false);
+  });
+
+  it("gives an action item its campaign's event, link and figures", () => {
+    const [item] = toGoogleMonitorResponse(googlePayload(), PULLED_AT).actionItems;
+
+    expect(item).toEqual({
+      eventName: 'KubeCon NA 2026',
+      campaigns: ['KubeCon NA 2026'],
+      campaignUrls: { 'KubeCon NA 2026': 'https://ads.google.com/aw/campaigns?campaignId=24183781329' },
+      priority: 'MED',
+      issue: 'Only spending 42%',
+      action: 'Broaden targeting',
+      metrics: { spend: 1890, budget: 150, pacingPct: 42, impressions: 48_200, clicks: 3110, conversions: 12.5, pacingUnknown: false },
+    });
+  });
+
+  /** Upstream still raises items for a campaign it could not pace (a $0 daily budget), so the item says its pacing is a placeholder. */
+  it.each([
+    ['could not pace', { pacing_unknown: true }],
+    ['could not read', { fetch_failed: true }],
+  ] as const)('marks the pacing of an item whose campaign campaign-service %s as unknown', (_label, overrides) => {
+    const [item] = toGoogleMonitorResponse(googlePayload({ campaigns: [googleRow({ ...overrides, budget_day: 0 })] }), PULLED_AT).actionItems;
+    expect(item.metrics.pacingPct).toBe(0);
+    expect(item.metrics.pacingUnknown).toBe(true);
+  });
+
+  it('gives an account-wide action item no campaign and zero figures, and tolerates absent arrays', () => {
+    const accountWide = toGoogleMonitorResponse(
+      googlePayload({ action_items: [{ priority: 'LOW', issue: 'No conversions tracked', action: 'Add a conversion action' }] }),
+      PULLED_AT
+    );
+    expect(accountWide.actionItems[0]).toEqual({
+      eventName: '',
+      campaigns: [],
+      campaignUrls: {},
+      priority: 'LOW',
+      issue: 'No conversions tracked',
+      action: 'Add a conversion action',
+      metrics: { spend: 0, budget: 0, pacingPct: 0, impressions: 0, clicks: 0, conversions: 0, pacingUnknown: true },
+    });
+
+    const empty = toGoogleMonitorResponse(
+      googlePayload({
+        campaigns: null as unknown as CampaignServiceAccountMonitorCampaign[],
+        action_items: null as unknown as CampaignServiceAccountMonitor['action_items'],
+        totals: { spend: 0, impressions: 0, clicks: 0, conversions: 0, campaign_count: 0 },
+      }),
+      PULLED_AT
+    );
+    expect(empty.campaigns).toEqual([]);
+    expect(empty.actionItems).toEqual([]);
+    expect(empty.accountTotals.budgetDay).toBe(0);
+  });
+
+  it('names a campaign the item points at but the rows do not carry, by its own name', () => {
+    const [item] = toGoogleMonitorResponse(
+      googlePayload({
+        action_items: [{ campaign_id: '999', campaign_name: GOOGLE_NAME.replace('KubeCon NA 2026', 'OSS EU 2026'), priority: 'HIGH', issue: 'x', action: 'y' }],
+      }),
+      PULLED_AT
+    ).actionItems;
+
+    expect(item.eventName).toBe('OSS EU 2026');
+    expect(item.campaignUrls).toEqual({});
+  });
+});
+
+describe('toMonitorConnectionError', () => {
+  it('answers a project with no Google Ads connection as the typed 404 a missing connection gets upstream', () => {
+    const error = toMonitorConnectionError('no_connection', 'Google Ads', 'campaign_monitor');
+    expect(error.statusCode).toBe(404);
+    expect(error.toResponse()['error']).toBe('This project has no Google Ads connection of its own to read the account with.');
+    expect(error.toResponse()['upstreamCode']).toBe('connection_not_found');
+  });
+
+  it('answers a connection with no bound account as a 409 naming the remedy', () => {
+    const error = toMonitorConnectionError('no_account', 'Google Ads', 'campaign_monitor');
+    expect(error.statusCode).toBe(409);
+    expect(error.toResponse()['error']).toContain('no ad account bound to it');
+    expect(error.toResponse()['upstreamCode']).toBeUndefined();
+  });
+
+  it('answers a refused connection read as a 403 naming the missing role, without inviting a retry', () => {
+    const error = toMonitorConnectionError('forbidden', 'Google Ads', 'campaign_monitor');
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()['error']).toBe(
+      "campaign-service refused to read this project's Google Ads connection. Your account needs the campaign manager role on this project."
+    );
+  });
+
+  it('answers an unreadable connection as a 503 advisory, so the panel shows its text', () => {
+    const error = toMonitorConnectionError('unavailable', 'Google Ads', 'campaign_monitor');
+    expect(error.statusCode).toBe(503);
+    expect(error.code).toBe(ERROR_CODES.SERVICE_ADVISORY);
+    expect(error.toResponse()['error']).toBe("This project's Google Ads connection could not be read just now. Please try again shortly.");
+  });
+});
+
+describe('toMonitorConnectionError for the system-account reads (#5889)', () => {
+  it.each(['LinkedIn Ads', 'Reddit Ads', 'Meta Ads'])('names %s in every state', (platform) => {
+    expect(toMonitorConnectionError('no_connection', platform, 'op').toResponse()['error']).toBe(
+      `This project has no ${platform} connection of its own to read the account with.`
+    );
+    expect(toMonitorConnectionError('no_account', platform, 'op').toResponse()['error']).toContain(`This project's ${platform} connection has no ad account`);
+    expect(toMonitorConnectionError('forbidden', platform, 'op').toResponse()['error']).toContain(`this project's ${platform} connection`);
+    expect(toMonitorConnectionError('unavailable', platform, 'op').toResponse()['error']).toContain(`This project's ${platform} connection could not be read`);
+  });
+});
+
+describe('toSystemAccountRead (#5889)', () => {
+  it('names the account campaign-service read, trimmed, with an empty state that claims nothing about what is recorded', () => {
+    expect(toSystemAccountRead(payload({ account_id: ' t2_lfsystem ' }), 'Reddit Ads')).toEqual({
+      accountId: 't2_lfsystem',
+      emptyMessage: 'No active or paused Reddit Ads campaigns for this project were found in the LF system account for this period.',
+    });
+  });
+
+  it('says nothing is recorded only when campaign-service named no account', () => {
+    expect(toSystemAccountRead(payload({ account_id: '' }), 'LinkedIn Ads').emptyMessage).toBe(
+      'No LinkedIn Ads campaigns are recorded for this project yet. Campaigns created for it through the LF system account will show here.'
+    );
+  });
+
+  it.each([
+    ['empty', ''],
+    ['blank', '   '],
+    ['absent', undefined],
+  ])('reads an %s account_id as no account, never an empty string', (_label, accountId) => {
+    expect(toSystemAccountRead(payload({ account_id: accountId as string }), 'LinkedIn Ads').accountId).toBeNull();
+  });
+});
+
+describe('isSystemAccountRefusal / toSystemAccountRefusedError (#5889)', () => {
+  const upstream = (status: number, body: unknown): MicroserviceError =>
+    MicroserviceError.fromMicroserviceResponse(status, 'x', body, 'LFX_V2_CAMPAIGN_SERVICE', '/p');
+
+  it.each([
+    ['a typed 404', upstream(404, { code: '404', message: 'not found' }), true],
+    ['a 400 missing_field', upstream(400, { name: 'missing_field', message: 'x' }), true],
+    ['a bare gateway 404', upstream(404, 'Not Found'), false],
+    ['another 400', upstream(400, { name: 'invalid_pattern', message: 'x' }), false],
+    ['a 409', upstream(409, { reason: 'campaign_account_mismatch' }), false],
+    ['a non-microservice error', new Error('boom'), false],
+  ])('treats %s as a refusal: %s', (_label, error, expected) => {
+    expect(isSystemAccountRefusal(error)).toBe(expected);
+  });
+
+  it('answers a 404 with the refusal code and no upstream text', () => {
+    const error = toSystemAccountRefusedError(upstream(404, { code: '404', message: 'row 7f3e' }), 'Meta Ads', 'meta_monitor');
+    expect(error.statusCode).toBe(404);
+    expect(error.toResponse()['upstreamCode']).toBe('system_account_refused');
+    expect(JSON.stringify(error.toResponse())).not.toContain('7f3e');
   });
 });
 

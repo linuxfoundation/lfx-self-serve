@@ -26,6 +26,8 @@ import {
   MEMBER_360_TRACKER_EXTENSION_REGEX,
   MEMBER_360_RUN_CEILING_MS,
   MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS,
+  MEMBER_360_OWNED_RUN_UNCONFIRMED,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   MKTG_DOCUMENT_ID_REGEX,
   MKTG_LIVING_DOCUMENT_ID,
@@ -58,7 +60,7 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { getHttpErrorDetail, isTransientHttpError } from '@shared/utils/http-error.utils';
 import { catchError, distinctUntilChanged, firstValueFrom, map, of, switchMap, tap, EMPTY, timer, finalize, take, Observable, startWith, filter } from 'rxjs';
 
 @Component({
@@ -110,8 +112,13 @@ export class Member360RunComponent {
   protected readonly latest = signal<Member360Envelope | null>(null);
   protected readonly history = signal<MktgDocumentListItem[]>([]);
   protected readonly historyLoading = signal(true);
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly historyError = signal('');
+  /** The run-history read is failing transiently and the poller retries it: one quiet line, no alert. */
+  protected readonly historyRetrying = signal(false);
   protected readonly error = signal('');
+  /** The owned run's check is failing transiently and the poller retries it: one quiet line, no alert. */
+  protected readonly retrying = signal(false);
   protected readonly answersNotice = signal('');
   protected readonly uploading = signal(false);
   protected readonly submitting = signal(false);
@@ -119,7 +126,10 @@ export class Member360RunComponent {
   private readonly confirmedScope = signal('');
   private readonly checkedHistoryScope = signal('');
   private readonly deniedScope = signal('');
-  private readonly loadingIssue = signal<[string, string]>(['', '']);
+  /** [scope, runId]: an owned run whose read was refused or not found; the roster does not restore it again in this scope. */
+  private refusedRun: [string, string] = ['', ''];
+  /** [scope, message, kind]: the screen-state line; `retrying` is the poller's transient retry, `status` a self-updating wait, `error` a final failure. */
+  private readonly loadingIssue = signal<[string, string, 'error' | 'retrying' | 'status']>(['', '', 'error']);
   private readonly accepted = signal<[string, MktgPendingGeneration | null]>(['', null]);
   private readonly ownedContext = signal<[string, MktgDocumentRunProgress | null]>(['', null]);
   private readonly ownedRun = computed(() => (this.ownedContext()[0] === this.screenScope() ? this.ownedContext()[1] : null));
@@ -139,7 +149,10 @@ export class Member360RunComponent {
     if (this.serverDenied() || (this.context.activeContextUid() && this.context.activeProject() && !this.context.canWrite())) return false;
     return this.confirmedScope() !== this.screenScope();
   });
-  protected readonly loadingError = computed(() => (this.loadingIssue()[0] === this.screenScope() ? this.loadingIssue()[1] : ''));
+  private readonly loadingState = computed(() => (this.loadingIssue()[0] === this.screenScope() ? this.loadingIssue() : null));
+  protected readonly loadingError = computed(() => (this.loadingState()?.[2] === 'error' ? this.loadingState()?.[1] : '') ?? '');
+  protected readonly loadingNote = computed(() => (this.loadingState()?.[2] === 'status' ? this.loadingState()?.[1] : '') ?? '');
+  protected readonly loadingRetrying = computed(() => this.loadingState()?.[2] === 'retrying');
   protected readonly pending = computed(() => {
     const [subject, pending] = this.accepted();
     return this.context.canWrite() && subject === this.users.user()?.sub && pending?.request.projectUid === this.context.activeContextUid() ? pending : null;
@@ -165,6 +178,8 @@ export class Member360RunComponent {
     return project ? { project } : {};
   });
   private lastScope = '';
+  private trackerProject = '';
+  private readonly submittingTrackers = new Set<string>();
   private scopeVersion = 0;
   private lastHistoryRevision = '';
   private uploadSequence = 0;
@@ -175,15 +190,15 @@ export class Member360RunComponent {
   );
 
   public constructor() {
-    this.destroyRef.onDestroy(() => this.uploadSequence++);
+    this.destroyRef.onDestroy(() => {
+      this.uploadSequence++;
+      this.releaseUnconsumed();
+      this.submittingTrackers.clear();
+    });
     if (isPlatformBrowser(this.platformId)) {
       this.watchRun();
       this.watchHistory();
     }
-  }
-
-  protected retryHistory(): void {
-    this.historyRetry.update((value) => value + 1);
   }
 
   protected run(): void {
@@ -198,10 +213,10 @@ export class Member360RunComponent {
       this.error.set('Wait for run history to finish loading, then create Member 360.');
       return;
     }
-    if (this.form.controls.compare.value && (this.historyError() || !this.latest())) {
+    if (this.form.controls.compare.value && (this.historyError() || this.historyRetrying() || !this.latest())) {
       this.error.set(
-        this.historyError()
-          ? 'The previous run could not be read. Choose No comparison or retry history.'
+        this.historyError() || this.historyRetrying()
+          ? 'The previous run could not be read yet. Choose No comparison, or wait for history to load.'
           : 'There is no previous run to compare with. Choose No comparison to create Member 360.'
       );
       return;
@@ -212,11 +227,29 @@ export class Member360RunComponent {
       project,
       window: this.form.controls.window.value,
       compare: this.form.controls.compare.value,
-      trackers: this.trackers().map((upload) => upload.tracker),
+      trackerIds: this.trackers().map((upload) => upload.tracker.trackerId),
     };
     const version = this.scopeVersion;
     const current = () =>
       version === this.scopeVersion && !this.destroyRef.destroyed && project === this.context.activeContextUid() && user === this.users.user()?.sub;
+    // Do not race an accepted Generate by deleting its receipts on departure.
+    // Success transfers cleanup to the server; a late failure erases abandoned ids.
+    const generate = (discard?: string) => {
+      const ids = body.trackerIds ?? [];
+      ids.forEach((id) => this.submittingTrackers.add(this.receiptKey(project, id)));
+      return this.api.generate(discard ? { ...body, discard } : body).pipe(
+        tap({
+          next: () => {
+            ids.forEach((id) => this.submittingTrackers.delete(this.receiptKey(project, id)));
+            if (current()) this.form.controls.trackers.setValue(this.form.controls.trackers.value.filter((upload) => !ids.includes(upload.tracker.trackerId)));
+          },
+          error: () => {
+            ids.forEach((id) => this.submittingTrackers.delete(this.receiptKey(project, id)));
+            if (!current()) this.releaseIds(project, ids);
+          },
+        })
+      );
+    };
     const onSession = (session: Member360Session) => {
       if (!current()) return;
       const pending = this.attempts.load(project, 'member-360', session.documentId);
@@ -229,8 +262,7 @@ export class Member360RunComponent {
     const start = (discard?: string) => {
       if (!current()) return;
       this.submitting.set(true);
-      this.api
-        .generate(discard ? { ...body, discard } : body)
+      generate(discard)
         .pipe(take(1))
         .subscribe({
           next: onSession,
@@ -244,7 +276,7 @@ export class Member360RunComponent {
                 {
                   conflict,
                   current,
-                  recheck: () => this.api.generate(body),
+                  recheck: () => generate(),
                   classify: (failure) =>
                     failure instanceof HttpErrorResponse && failure.status === 409 ? readMktgActiveRunConflict(failure.error, 'member-360') : null,
                   onValue: onSession,
@@ -265,6 +297,7 @@ export class Member360RunComponent {
               return;
             }
             let message = 'The run could not be started. Your trackers are still here; try again.';
+            if (error.status === 400 && error.error?.code === 'VALIDATION_ERROR') message = getHttpErrorDetail(error, message);
             if (error.status === 403) message = 'You need write access to this project to run Member 360.';
             if (error.error?.code === MEMBER_360_COMPARISON_UNAVAILABLE) message = 'The previous run could not be read. Turn off comparison or retry.';
             this.error.set(message);
@@ -290,10 +323,11 @@ export class Member360RunComponent {
     const attempt = ++this.uploadSequence;
     this.uploading.set(true);
     this.error.set('');
+    const project = this.context.activeContextUid();
+    const parsed: Member360TrackerUpload[] = [];
+    let committed = false;
     try {
       if (files.length + this.trackers().length > MEMBER_360_MAX_TRACKERS) throw new Error(`Upload at most ${MEMBER_360_MAX_TRACKERS} tracker files.`);
-      const project = this.context.activeContextUid();
-      const parsed: Member360TrackerUpload[] = [];
       for (const file of files) {
         if (attempt !== this.uploadSequence) return;
         if (file.size > MEMBER_360_MAX_BYTES) throw new Error('Each tracker must be smaller than 5 MB.');
@@ -301,16 +335,19 @@ export class Member360RunComponent {
         parsed.push({
           id: ++this.nextTrackerId,
           tracker,
+          filename: file.name,
           format: /\.xlsx$/i.test(file.name) ? 'XLSX' : 'CSV',
-          summary: Object.keys(tracker.rows[0] ?? {})
-            .slice(0, 3)
-            .join(', '),
+          summary: `${tracker.columnCount} columns`,
         });
+        if (attempt !== this.uploadSequence || this.destroyRef.destroyed) return;
       }
       const combined = [...this.trackers(), ...parsed];
-      if (new TextEncoder().encode(JSON.stringify(combined.map((upload) => upload.tracker))).length > MEMBER_360_MAX_BYTES)
+      if (combined.reduce((bytes, upload) => bytes + upload.tracker.byteCount, 0) > MEMBER_360_MAX_BYTES)
         throw new Error('The parsed trackers together must be smaller than 5 MB.');
-      if (attempt === this.uploadSequence) this.form.controls.trackers.setValue(combined);
+      if (attempt === this.uploadSequence) {
+        this.form.controls.trackers.setValue(combined);
+        committed = true;
+      }
     } catch (error) {
       let message = 'The tracker could not be parsed.';
       if (error instanceof Error) message = error.message;
@@ -318,6 +355,11 @@ export class Member360RunComponent {
         message = getHttpErrorDetail(error, 'The tracker could not be parsed. Check its format and limits, and try again.');
       if (attempt === this.uploadSequence) this.error.set(message);
     } finally {
+      if (!committed)
+        this.releaseIds(
+          project,
+          parsed.map((upload) => upload.tracker.trackerId)
+        );
       if (attempt === this.uploadSequence) {
         this.uploading.set(false);
         this.chooser()?.clear(true);
@@ -326,8 +368,20 @@ export class Member360RunComponent {
   }
 
   protected remove(id: number): void {
-    this.form.controls.trackers.setValue(this.trackers().filter((upload) => upload.id !== id));
+    const upload = this.form.controls.trackers.value.find((candidate) => candidate.id === id);
+    if (!upload) return;
+    const version = this.scopeVersion;
+    this.api.deleteTracker(this.trackerProject, upload.tracker.trackerId).subscribe({
+      next: () => {
+        if (!this.destroyRef.destroyed && version === this.scopeVersion)
+          this.form.controls.trackers.setValue(this.form.controls.trackers.value.filter((candidate) => candidate.id !== id));
+      },
+      error: () => {
+        if (!this.destroyRef.destroyed && version === this.scopeVersion) this.error.set('Tracker removal could not be confirmed. Try again.');
+      },
+    });
   }
+
   protected onAnswers(answers: MktgRunAnswer[]): void {
     const pending = this.pending();
     const questionsId = this.result()?.questionsId;
@@ -367,10 +421,34 @@ export class Member360RunComponent {
       });
   }
 
+  private releaseUnconsumed(): void {
+    this.releaseIds(
+      this.trackerProject,
+      this.form.controls.trackers.value
+        .map((upload) => upload.tracker.trackerId)
+        .filter((id) => !this.submittingTrackers.has(this.receiptKey(this.trackerProject, id)))
+    );
+  }
+
+  private receiptKey(project: string, id: string): string {
+    return JSON.stringify([project, id]);
+  }
+
+  private releaseIds(project: string, ids: string[]): void {
+    if (!project || !isPlatformBrowser(this.platformId)) return;
+    for (const id of new Set(ids)) this.api.deleteTracker(project, id).subscribe({ error: () => undefined });
+  }
+
   /** The filtered server roster chooses a run; local proof can only enrich that choice. */
   private restoreServerRun(key: string, project: string, user: string, response: MktgDocumentsResponse): void {
+    // A run whose own read was refused stays out for the scope: restoring it would send the refused read again, in a loop.
+    const refused = this.refusedRun[0] === key ? this.refusedRun[1] : '';
     const active = response.runs?.find(
-      (row) => row.project === project && row.agentKey === 'member-360' && (row.state === 'writing' || row.state === 'questions' || row.state === 'storing')
+      (row) =>
+        row.project === project &&
+        row.agentKey === 'member-360' &&
+        row.runId !== refused &&
+        (row.state === 'writing' || row.state === 'questions' || row.state === 'storing')
     );
     const previous = this.ownedRun();
     const pending = this.pending();
@@ -426,21 +504,27 @@ export class Member360RunComponent {
     this.scope$
       .pipe(
         distinctUntilChanged((a, b) => a.key === b.key && a.retry === b.retry),
-        tap(({ key, user }) => {
+        tap(({ key, user, project }) => {
           if (key !== this.lastScope) {
             this.scopeVersion++;
             this.confirmation.close();
             this.confirmedScope.set('');
             this.checkedHistoryScope.set('');
             this.deniedScope.set('');
-            this.loadingIssue.set(['', '']);
+            this.refusedRun = ['', ''];
+            this.loadingIssue.set(['', '', 'error']);
+            this.retrying.set(false);
+            this.historyRetrying.set(false);
             this.history.set([]);
             this.latest.set(null);
             this.lastHistoryRevision = '';
             this.accepted.set([user, null]);
             this.ownedContext.set([key, null]);
             this.startedAt.set(0); // Local timestamps do not decide the server's run budget.
+            this.releaseUnconsumed();
+            this.submittingTrackers.clear();
             this.form.controls.trackers.setValue([]);
+            this.trackerProject = project;
             this.chooser()?.clear();
             this.error.set('');
             this.answersNotice.set('');
@@ -453,22 +537,35 @@ export class Member360RunComponent {
           this.lastScope = key;
           this.historyLoading.set(true);
           this.historyError.set('');
+          this.historyRetrying.set(false);
           this.form.controls.compare.disable({ emitEvent: false });
         }),
         switchMap(({ key, project, user, retry }) => {
           const current = () => key === this.screenScope() && retry === this.historyRetry();
           let background = false;
+          // State of the last read, decided where the read happens: a partial roster read is a transient condition.
+          let partialRead = false;
           const fetch = (): Observable<MktgDocumentListItem[]> => {
+            partialRead = false;
             if (!project || !user || !this.context.canWrite()) return of([]);
+            // A refused scope is latched (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the operator's
+            // choice, since a session-expiry 401 needs a sign-in, not a poll): no scheduled poll or wake sends the same
+            // credentials again.
+            if (this.deniedScope() === key) return EMPTY;
             const poll = background;
             background = true;
             return this.documents.listDocuments(project, poll, true).pipe(
               tap((response) => {
                 if (current()) {
-                  if (response.project !== project || response.progressUnavailable) throw new Error('Owned run state is not confirmed.');
+                  if (response.project !== project) throw new Error('Owned run state belongs to another project.');
+                  // A partial read is a transient condition: the poller retries it behind the one connection line.
+                  if (response.progressUnavailable) {
+                    partialRead = true;
+                    throw new Error(MEMBER_360_OWNED_RUN_UNCONFIRMED);
+                  }
                   this.restoreServerRun(key, project, user, response);
                   this.checkedHistoryScope.set(key);
-                  this.deniedScope.set('');
+                  // The denial latch is left alone: only a scope change clears it, never a read that was already in flight.
                   this.historyError.set('');
                 }
               }),
@@ -488,7 +585,7 @@ export class Member360RunComponent {
                     if (current()) {
                       this.latest.set(view.member360 ?? null);
                       this.lastHistoryRevision = view.member360 ? last.latestRevisionId : '';
-                      if (!view.member360) this.historyError.set('Previous run details could not be loaded. Retry before comparing.');
+                      if (!view.member360) this.historyError.set('Previous run details could not be loaded yet.');
                     }
                     return group.documents;
                   })
@@ -501,19 +598,26 @@ export class Member360RunComponent {
             backoffBaseMs: MKTG_RUN_POLL.intervalMs,
             backoffMaxMs: MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS,
             shouldContinue: () => !!project && !!user && this.context.canWrite(),
-          }).pipe(filter(current));
+          }).pipe(
+            filter(current),
+            map((event) => ({ event, partialRead }))
+          );
         }),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((event) => {
+      .subscribe(({ event, partialRead }) => {
         const key = this.screenScope();
         this.historyLoading.set(false);
         this.form.controls.compare.enable({ emitEvent: false });
         if (event.kind === 'error') {
-          this.historyError.set('Run history could not be loaded. Retry before comparing with the previous run.');
-          this.loadingIssue.set([key, 'The run state could not be checked. Refresh to try again.']);
+          // A transient failure shows the one connection line while the poller retries; the rest is a plain failed line.
+          const transient = partialRead || isTransientHttpError(event.error);
+          this.historyRetrying.set(transient);
+          this.historyError.set(transient ? '' : 'Run history could not be loaded.');
+          this.loadingIssue.set([key, transient ? '' : 'The run state could not be checked.', transient ? 'retrying' : 'error']);
           if (event.error instanceof HttpErrorResponse && (event.error.status === 401 || event.error.status === 403)) this.deniedScope.set(key);
         } else {
+          this.historyRetrying.set(false);
           this.history.set(event.value);
           if (!this.latest() && !this.historyError()) this.form.controls.compare.setValue(false, { emitEvent: false });
         }
@@ -522,8 +626,8 @@ export class Member360RunComponent {
       });
   }
 
-  /** A creator result is displayed only after the recorded run confirms its phase. */
-  private readVerifiedRun(pending: MktgPendingGeneration, runId: string): Observable<Member360Result | null> {
+  /** A creator result is displayed only after the recorded run confirms its phase; `markPartial` flags a read the server could not complete. */
+  private readVerifiedRun(pending: MktgPendingGeneration, runId: string, markPartial: () => void): Observable<Member360Result | null> {
     const documentId = pending.request.documentId;
     if (!documentId) return of(null);
     const result = this.ownedRun()?.runId === runId ? this.api.questions(pending, runId) : this.api.questions(pending);
@@ -540,13 +644,12 @@ export class Member360RunComponent {
           return of({ ...result, documentId: canonical });
         return this.documents.getDocument(pending.request.projectUid, 'member-360', documentId, false, undefined, true, runId).pipe(
           map((detail): Member360Result | null => {
-            if (
-              detail.project !== pending.request.projectUid ||
-              detail.type.agentKey !== 'member-360' ||
-              detail.documentId !== documentId ||
-              detail.progressUnavailable
-            )
-              throw new Error('Run progress is not confirmed.');
+            if (detail.project !== pending.request.projectUid || detail.type.agentKey !== 'member-360' || detail.documentId !== documentId)
+              throw new Error('Run progress belongs to another document.');
+            if (detail.progressUnavailable) {
+              markPartial();
+              throw new Error(MEMBER_360_OWNED_RUN_UNCONFIRMED);
+            }
             if (pending === this.pending()) this.progressContext.set([pending, detail]);
             if (detail.revisions.length) return { ...result, status: 'ready', stored: true, documentId: detail.documentId };
             const run = detail.runs?.find((value) => value.runId === runId && value.agentKey === 'member-360' && value.documentId === documentId);
@@ -600,11 +703,19 @@ export class Member360RunComponent {
         switchMap(({ pending, runId, state: recordedState }) => {
           if (this.resultContext()[0] !== pending) this.resultContext.set([null, null]);
           this.stillRunning.set(false);
+          this.retrying.set(false);
           if (!pending || !runId) return EMPTY;
+          // A partial progress read (the server could not confirm the run's phase) is its own condition, set by the read
+          // and classified as transient below; a mismatched project or document stays a final failure.
+          let partialRead = false;
+          const read = () => {
+            partialRead = false;
+            return this.readVerifiedRun(pending, runId, () => (partialRead = true));
+          };
           return slow$.pipe(
             switchMap((slow) => {
               this.stillRunning.set(slow);
-              return createVisibilityPoll(this.doc, () => this.readVerifiedRun(pending, runId), {
+              return createVisibilityPoll(this.doc, read, {
                 intervalMs: slow ? MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS : MKTG_RUN_POLL.intervalMs,
                 backoffBaseMs: MKTG_RUN_POLL.intervalMs,
                 backoffMaxMs: MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS,
@@ -619,17 +730,30 @@ export class Member360RunComponent {
               if (pending !== this.pending() || (this.ownedRun() && (runId !== this.ownedRun()?.runId || recordedState !== this.ownedRun()?.state))) return;
               const key = this.screenScope();
               if (event.kind === 'error') {
-                this.loadingIssue.set([key, 'The run state could not be checked. Refresh to try again.']);
-                this.error.set('The run could not be checked. Try again; no new run is started.');
+                const transient = partialRead || isTransientHttpError(event.error);
+                this.retrying.set(transient);
+                this.loadingIssue.set([key, transient ? '' : 'The run state could not be checked.', transient ? 'retrying' : 'error']);
+                // A transient re-read leaves `error` alone: a failed submission's message is terminal and actionable and
+                // must not be cleared, or hidden, by the connection line.
+                // A 400/404 abandons the run and opens the create form below: no "No new run is started." line beside that form.
+                const abandoned = event.error instanceof HttpErrorResponse && [400, 404].includes(event.error.status);
+                if (!transient) this.error.set(abandoned ? '' : 'The run could not be checked. No new run is started.');
                 if (event.error instanceof HttpErrorResponse && [400, 401, 403, 404].includes(event.error.status)) {
+                  // Latch before the attempt is cleared: the roster may still list this run, and restoring it would repeat
+                  // the refused read with no backoff. A 401/403 also latches the scope (the plain access state), and the
+                  // roster is not read again with the same credentials.
+                  this.refusedRun = [key, runId];
+                  const denied = event.error.status === 401 || event.error.status === 403;
+                  if (denied) this.deniedScope.set(key);
                   this.confirmedScope.set('');
                   this.checkedHistoryScope.set('');
                   this.forgetAttempt(pending);
-                  this.historyRetry.update((value) => value + 1);
+                  if (!denied) this.historyRetry.update((value) => value + 1);
                 }
                 return;
               }
-              this.loadingIssue.set(['', '']);
+              this.loadingIssue.set(['', '', 'error']);
+              this.retrying.set(false);
               this.error.set('');
               const result = event.value;
               if (!result) {
@@ -650,7 +774,8 @@ export class Member360RunComponent {
               this.resultContext.set([pending, value]);
               if (value.status === 'needs_input') this.answersNotice.set('');
               if (value.status === 'needs_input' && (!value.questionsId || !value.questions?.length) && this.confirmedScope() !== key) {
-                this.loadingIssue.set([key, 'The questions are not available yet. Checking the same run again.']);
+                // A self-updating wait is a plain status line, never an alert.
+                this.loadingIssue.set([key, 'The questions are not available yet. Checking the same run again.', 'status']);
                 return;
               }
               this.confirmedScope.set(key);
@@ -697,7 +822,8 @@ export class Member360RunComponent {
     return computed(() => {
       const latest = this.latest();
       let label = 'No previous run yet';
-      if (this.historyLoading()) label = 'Loading previous run…';
+      // A transient re-read in progress is still a load: the option never claims "no previous run" during an outage.
+      if (this.historyLoading() || this.historyRetrying()) label = 'Loading previous run…';
       if (this.historyError()) label = 'Previous run details unavailable';
       if (latest) label = `Previous run: ${this.latestPeriod()} (${formatDate(latest.generated_at, 'd MMM', 'en-US', 'UTC')}) — trend arrows`;
       return [

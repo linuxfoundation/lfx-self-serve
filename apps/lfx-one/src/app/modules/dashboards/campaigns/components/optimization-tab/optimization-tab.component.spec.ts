@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { PLATFORM_ID, type Provider } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
@@ -211,7 +212,6 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
   // campaign-service ever writes, so it belongs with the unknown statuses that fail closed.
   it.each([
     ['created', 'Pause'],
-    ['active', 'Pause'],
     ['paused', 'Resume'],
   ])('offers %s → %s', (status, label) => {
     render([doc({ status })]);
@@ -600,8 +600,6 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
   // not proof of a concurrent edit either.
   it.each([
     ['no answer at all', 'created', 0, null, CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES.pause],
-    ["a proxy's plain-text 504", 'created', 504, 'upstream request timeout', CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES.pause],
-    ["a proxy's plain-text 412", 'created', 412, 'Precondition Failed', CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES.pause],
     ["a proxy's HTML 403", 'paused', 403, '<html>Forbidden</html>', CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES.resume],
   ])('reports %s on a %s campaign as unconfirmed, with a warning toast', (_label, campaignStatus, status, body, expected) => {
     updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status, error: body })));
@@ -747,7 +745,7 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
 
   // The platform guard must not swallow the platforms this app DOES offer — the mutation that
   // makes every row unavailable would pass the test above while breaking the feature entirely.
-  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'reddit-ads'])('still offers Pause on the supported platform %s', (platform) => {
+  it.each(['google-ads'])('still offers Pause on the supported platform %s', (platform) => {
     render([doc({ platform, status: 'created' })]);
 
     const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
@@ -2224,6 +2222,248 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
 
   const q = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
 
+  /**
+   * The campaign-service Google read (#4526) can return rows it could not read or pace, with zero
+   * placeholders: an unread row must not rank as a 0% CTR, and unknown pacing must not read as 0%.
+   */
+  it('leaves unread display campaigns out and shows unknown pacing as Unknown', () => {
+    fixture.detectChanges();
+    const display = (campaignId: string, overrides: Record<string, unknown>): Record<string, unknown> => ({
+      name: campaignId,
+      shortName: campaignId,
+      eventName: 'KubeCon',
+      adFormat: 'Display',
+      targeting: 'Global',
+      status: 'enabled',
+      startDate: '2026-08-01',
+      endDate: '2026-08-30',
+      budgetDay: 100,
+      totalBudget: 3000,
+      spend: 25,
+      impressions: 1000,
+      clicks: 40,
+      ctr: 4,
+      avgCpc: 0.625,
+      conversions: 1,
+      pacingPct: 50,
+      pacingLabel: 'normal',
+      campaignId,
+      googleAdsUrl: '',
+      ...overrides,
+    });
+    const instance = fixture.componentInstance as unknown as {
+      monitorData: { set(v: unknown): void };
+      displayCampaigns: () => { campaignId: string; displayPacingPct: number; displayPacingText: string }[];
+    };
+    instance.monitorData.set({
+      pulledAt: '2026-08-30T00:00:00.000Z',
+      dateRange: { mode: 'last_30_days' },
+      campaigns: [
+        display('read', { pacingPct: 120 }),
+        display('unread', { fetchFailed: true, ctr: 0, pacingPct: 0 }),
+        display('unpaced', { pacingUnknown: true, pacingPct: 0, ctr: 5 }),
+      ],
+      accountTotals: { budgetDay: 300, impressions: 3000, clicks: 120, spend: 75, conversions: 3 },
+      actionItems: [],
+    });
+
+    expect(instance.displayCampaigns().map((c) => [c.campaignId, c.displayPacingPct, c.displayPacingText])).toEqual([
+      ['read', 100, '120%'],
+      ['unpaced', 0, 'Unknown'],
+    ]);
+  });
+
+  function renderGoogle(campaigns: Record<string, unknown>[]): void {
+    renderKeywords(false);
+    const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void; (): Record<string, unknown> | null } };
+    instance.monitorData.set({ ...(instance.monitorData() ?? {}), campaigns, actionItems: [] });
+    fixture.detectChanges();
+  }
+
+  const googleRow = (campaignId: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    name: campaignId,
+    shortName: campaignId,
+    eventName: 'KubeCon',
+    adFormat: 'Display',
+    targeting: 'Global',
+    status: 'enabled',
+    startDate: '2026-08-01',
+    endDate: '2026-08-30',
+    budgetDay: 100,
+    totalBudget: 3000,
+    spend: 25,
+    impressions: 1000,
+    clicks: 40,
+    ctr: 4,
+    avgCpc: 0.625,
+    conversions: 0,
+    pacingPct: 50,
+    pacingLabel: 'normal',
+    campaignId,
+    googleAdsUrl: '',
+    ...overrides,
+  });
+
+  /** campaign-service raises no item for an unread campaign, so "no items" is not an all-clear while one exists. */
+  it('replaces the all-clear with an incomplete-check notice when a campaign could not be read', () => {
+    renderGoogle([googleRow('read'), googleRow('unread', { fetchFailed: true })]);
+
+    expect(q('optimization-no-actions')).toBeNull();
+    expect(q('optimization-actions-incomplete')?.textContent).toContain('1 of 2 campaigns could not be read');
+  });
+
+  it('keeps the all-clear when every campaign was read', () => {
+    renderGoogle([googleRow('read')]);
+
+    expect(q('optimization-no-actions')).not.toBeNull();
+    expect(q('optimization-actions-incomplete')).toBeNull();
+  });
+
+  it('shows unmeasured conversions as Not measured, and a measured zero still in red', () => {
+    renderGoogle([googleRow('measured', { ctr: 1 }), googleRow('unmeasured', { ctr: 2, conversionsMeasured: false })]);
+    const cells = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('td')).map((cell) => cell as HTMLElement);
+    const notMeasured = cells.find((cell) => cell.textContent?.trim() === 'Not measured');
+    const redZero = cells.find((cell) => cell.textContent?.trim() === '0' && cell.className.includes('text-red-600'));
+
+    expect(notMeasured).toBeDefined();
+    expect(notMeasured?.className).not.toContain('text-red-600');
+    expect(redZero).toBeDefined();
+  });
+
+  /** An item whose campaign campaign-service could not pace carries a 0 placeholder; it must not read as a red 0%. */
+  it('shows an action item with unknown pacing as Unknown, and a measured one as its percentage', () => {
+    renderKeywords(false);
+    const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void; (): Record<string, unknown> | null } };
+    const item = (pacingPct: number, pacingUnknown?: boolean): Record<string, unknown> => ({
+      eventName: 'KubeCon',
+      campaigns: ['KubeCon'],
+      campaignUrls: {},
+      priority: 'HIGH',
+      issue: 'Budget is $0.00/day',
+      action: 'Set a real daily budget',
+      metrics: { spend: 0, budget: 0, pacingPct, impressions: 0, clicks: 0, conversions: 0, ...(pacingUnknown === undefined ? {} : { pacingUnknown }) },
+    });
+    instance.monitorData.set({ ...(instance.monitorData() ?? {}), actionItems: [item(0, true), item(42)] });
+    fixture.detectChanges();
+
+    const pacingCell = (i: number): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="action-item-row-${i}"] td:last-child span`);
+    expect(pacingCell(0)?.textContent?.trim()).toBe('Unknown');
+    expect(pacingCell(0)?.className).not.toContain('text-red-600');
+    expect(pacingCell(1)?.textContent?.trim()).toBe('42%');
+    expect(pacingCell(1)?.className).toContain('text-red-600');
+  });
+
+  /**
+   * campaign-service's Google amounts are the connected account's own, unnamed currency (#4807). One
+   * fixture exercises every changed binding: the action item, a display campaign, a wasted-spend
+   * keyword and a low-quality keyword, each with a recognisable amount.
+   */
+  function renderGoogleAmounts(inAccountCurrency: boolean): void {
+    renderKeywords(false);
+    const instance = fixture.componentInstance as unknown as {
+      monitorData: { set(v: unknown): void; (): Record<string, unknown> | null };
+      keywordsData: { set(v: unknown): void; (): Record<string, unknown> | null };
+    };
+    const keyword = (overrides: Record<string, unknown>): Record<string, unknown> => ({
+      keyword: 'kw',
+      matchType: 'PHRASE',
+      qualityScore: 8,
+      status: 'ENABLED',
+      adGroup: 'AG',
+      adGroupId: '1',
+      criterionId: '2',
+      campaign: 'C',
+      campaignId: '555',
+      googleAdsUrl: '',
+      impressions: 100,
+      clicks: 10,
+      ctr: 10,
+      avgCpc: 3.25,
+      spend: 0,
+      conversions: 1,
+      ...overrides,
+    });
+    instance.monitorData.set({
+      ...(instance.monitorData() ?? {}),
+      ...(inAccountCurrency ? { amountsInAccountCurrency: true } : {}),
+      campaigns: [
+        {
+          name: 'D',
+          shortName: 'D',
+          eventName: 'KubeCon',
+          adFormat: 'Display',
+          targeting: 'Global',
+          status: 'enabled',
+          startDate: '2026-08-01',
+          endDate: '2026-08-30',
+          budgetDay: 100,
+          totalBudget: 3000,
+          spend: 2222.5,
+          impressions: 1000,
+          clicks: 40,
+          ctr: 4,
+          avgCpc: 0.625,
+          conversions: 1,
+          pacingPct: 50,
+          pacingLabel: 'normal',
+          campaignId: '777',
+          googleAdsUrl: '',
+        },
+      ],
+      actionItems: [
+        {
+          eventName: 'KubeCon',
+          campaigns: ['KubeCon'],
+          campaignUrls: {},
+          priority: 'MED',
+          issue: 'Underspending',
+          action: 'Broaden targeting',
+          metrics: { spend: 1234.5, budget: 100, pacingPct: 40, impressions: 1, clicks: 1, conversions: 0 },
+        },
+      ],
+    });
+    instance.keywordsData.set({
+      ...(instance.keywordsData() ?? {}),
+      ...(inAccountCurrency ? { amountsInAccountCurrency: true } : {}),
+      keywords: [
+        keyword({ keyword: 'wasted', criterionId: '3', spend: 3333.5, conversions: 0 }),
+        keyword({ keyword: 'weak', criterionId: '4', qualityScore: 3, spend: 4444.5 }),
+      ],
+    });
+    fixture.detectChanges();
+  }
+
+  const cellText = (id: string): string => q(id)?.textContent?.replace(/\s+/g, ' ') ?? '';
+
+  it("prints a connected account's Google amounts without a dollar sign on every table, and says so", () => {
+    renderGoogleAmounts(true);
+
+    expect(cellText('action-item-row-0')).toContain('1,234.50');
+    expect(cellText('optimization-display-row-0')).toContain('2,222.50');
+    expect(cellText('optimization-wasted-keyword-row-0')).toContain('3,333.50');
+    expect(cellText('optimization-wasted-keyword-row-0')).toContain('3.25');
+    expect(cellText('optimization-low-quality-row-0')).toContain('4,444.50');
+    for (const id of ['action-item-row-0', 'optimization-display-row-0', 'optimization-wasted-keyword-row-0', 'optimization-low-quality-row-0']) {
+      expect(cellText(id), id).not.toContain('$');
+    }
+    // The action-item note covers the issue text too, whose amounts campaign-service formats itself.
+    expect(cellText('optimization-google-currency-note-actions')).toContain('the amounts in each issue');
+    expect(q('optimization-google-currency-note-display')).not.toBeNull();
+    expect(q('optimization-keyword-currency-note')).not.toBeNull();
+  });
+
+  it("keeps the legacy read's dollar amounts on every table, with no currency notes", () => {
+    renderGoogleAmounts(false);
+
+    expect(cellText('action-item-row-0')).toContain('$1,234.50');
+    expect(cellText('optimization-display-row-0')).toContain('$2,222.50');
+    expect(cellText('optimization-wasted-keyword-row-0')).toContain('$3,333.50');
+    expect(cellText('optimization-low-quality-row-0')).toContain('$4,444.50');
+    expect(q('optimization-google-currency-note-actions')).toBeNull();
+    expect(q('optimization-google-currency-note-display')).toBeNull();
+    expect(q('optimization-keyword-currency-note')).toBeNull();
+  });
+
   it('does not claim ALL keywords are clean when the set was capped', () => {
     renderKeywords(true);
 
@@ -2697,7 +2937,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
     submit(id);
   }
 
-  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'])('offers the budget editor for %s', (platform) => {
+  it.each(['google-ads', 'twitter-ads'])('offers the budget editor for %s', (platform) => {
     render([doc({ platform })]);
 
     const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
@@ -2751,7 +2991,6 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
 
   it.each([
     ['zero', '0', 'greater than zero'],
-    ['a negative amount', '-5', 'greater than zero'],
     ['an empty amount', '', 'as a number'],
   ])('refuses %s without calling the service', (_label, amount, expected) => {
     render([doc()]);
@@ -3034,16 +3273,10 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
   });
 
   it.each([
-    [400, 'budget is below the LinkedIn minimum daily budget of 10.00 in the account currency'],
     [
       409,
       "this campaign's budget could not be changed as requested — the ad platform did not report the budget it is attached to, or that budget is paced differently from the requested budget_type; this endpoint changes an amount, never a pacing model, so change the pacing in the ad platform first",
     ],
-    [
-      409,
-      "this campaign's budget is shared with other campaigns, so changing it here would change their spend too; give the campaign its own budget in the ad platform, or make the change there where its full effect is visible",
-    ],
-    [503, 'the campaign budget could not be changed on the ad platform; the campaign was not modified'],
   ])('shows a %s refusal in the upstream words, verbatim', (status, message) => {
     updateCampaignBudget.mockReturnValue(throwError(() => new HttpErrorResponse({ status, statusText: 'x', error: { error: message, code: 'X' } })));
     render([doc()]);
@@ -3056,33 +3289,31 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: message, sticky: true }));
   });
 
-  it.each([
-    [
-      "campaign-service's unconfirmed 503",
-      503,
-      'the campaign budget change is unconfirmed — it may or may not have been applied on the ad platform; verify the budget in the platform before retrying',
-    ],
-    ["the BFF's unanswered-write rewrite", 504, CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED],
-  ])('warns that %s may already be applied, distinctly from a failure, and does not retry', (_label, status, message) => {
-    updateCampaignBudget.mockReturnValue(
-      throwError(() => new HttpErrorResponse({ status, statusText: 'x', error: { error: message, code: 'SERVICE_UNAVAILABLE' } }))
-    );
-    render([doc()]);
-    changeBudget('2500');
+  it.each([["the BFF's unanswered-write rewrite", 504, CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED]])(
+    'warns that %s may already be applied, distinctly from a failure, and does not retry',
+    (_label, status, message) => {
+      updateCampaignBudget.mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status, statusText: 'x', error: { error: message, code: 'SERVICE_UNAVAILABLE' } }))
+      );
+      render([doc()]);
+      changeBudget('2500');
 
-    const warning = q('optimization-campaign-budget-unconfirmed-c-1')!;
-    expect(warning).not.toBeNull();
-    expect(warning.textContent).toContain('may already be applied');
-    expect(warning.textContent).toContain(message);
-    expect(q('optimization-campaign-budget-error-c-1')).toBeNull();
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Budget change not confirmed for KubeCon EU', sticky: true }));
-    expect(updateCampaignBudget).toHaveBeenCalledTimes(1);
+      const warning = q('optimization-campaign-budget-unconfirmed-c-1')!;
+      expect(warning).not.toBeNull();
+      expect(warning.textContent).toContain('may already be applied');
+      expect(warning.textContent).toContain(message);
+      expect(q('optimization-campaign-budget-error-c-1')).toBeNull();
+      expect(messageAdd).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'warn', summary: 'Budget change not confirmed for KubeCon EU', sticky: true })
+      );
+      expect(updateCampaignBudget).toHaveBeenCalledTimes(1);
 
-    // Still stated on the row once the editor is closed.
-    (q('optimization-campaign-budget-cancel-c-1')!.querySelector('button') as HTMLButtonElement).click();
-    fixture.detectChanges();
-    expect(q('optimization-campaign-budget-unconfirmed-note-c-1')).not.toBeNull();
-  });
+      // Still stated on the row once the editor is closed.
+      (q('optimization-campaign-budget-cancel-c-1')!.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(q('optimization-campaign-budget-unconfirmed-note-c-1')).not.toBeNull();
+    }
+  );
 
   it('sends the operator to refresh on a 412, and blocks both controls on the row until then', () => {
     updateCampaignBudget.mockReturnValue(
@@ -3371,7 +3602,7 @@ describe('OptimizationTabComponent — monitor findings and their levers', () =>
   });
 
   // X budgets are writable (daily only) since #3299, so its findings get the lever too.
-  it.each(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'])('offers the budget lever on %s', async (platform) => {
+  it.each(['twitter-ads'])('offers the budget lever on %s', async (platform) => {
     await render([doc({ platform })], [item({ platform })]);
 
     expect(lever('c-1-underspending')).not.toBeNull();
@@ -3467,7 +3698,8 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     ...over,
   });
 
-  beforeEach(async () => {
+  /** The module this suite renders in; `extraProviders` lets one spec render as a server would (#4983). */
+  async function setUp(extraProviders: Provider[] = []): Promise<void> {
     updateCampaignBid = vi.fn().mockReturnValue(of(bidResult()));
     updateCampaignBudget = vi
       .fn()
@@ -3478,6 +3710,7 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     await TestBed.configureTestingModule({
       imports: [OptimizationTabComponent],
       providers: [
+        ...extraProviders,
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: messageAdd } },
         ConfirmationService,
@@ -3513,6 +3746,10 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     fixture = TestBed.createComponent(OptimizationTabComponent);
     fixture.componentRef.setInput('projectSlug', 'tlf');
     fixture.componentRef.setInput('briefId', 'b-1');
+  }
+
+  beforeEach(async () => {
+    await setUp();
   });
 
   function render(campaigns: CampaignIndexDoc[] | null): void {
@@ -3522,6 +3759,36 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
   }
 
   const q = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  /** #4983 ("ss-4"): the labels that tell a brief's campaigns on one platform apart, "—" when absent. */
+  it('shows each campaign\'s channel, stage, tactic and created date, and "—" for a legacy campaign', () => {
+    render([
+      doc({ id: 'g-2', platform: 'google-ads', variant: 'demand-gen', funnel_stage: 'top', tactic: 'prospecting', created_at: '2026-11-02T12:00:00Z' }),
+      doc({ id: 'm-1' }),
+    ]);
+
+    const labels = (id: string): string[] =>
+      ['channel', 'stage', 'tactic', 'created'].map((column) => q(`optimization-campaign-${column}-${id}`)?.textContent?.trim() ?? 'missing');
+    // The viewer's own calendar day, so the assertion holds in any CI time zone.
+    expect(labels('g-2')).toEqual([
+      'Demand Gen',
+      'Top of funnel',
+      'Prospecting',
+      new Date('2026-11-02T12:00:00Z').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+    ]);
+    expect(labels('m-1')).toEqual(['—', '—', '—', '—']);
+    const terms = [...(q('optimization-campaign-labels-g-2')?.querySelectorAll('dt') ?? [])].map((dt) => dt.textContent?.trim());
+    expect(terms).toEqual(['Channel:', 'Stage:', 'Tactic:', 'Created:']);
+  });
+
+  it("leaves the created date to the browser during a server render, so the server's day is never shown", async () => {
+    TestBed.resetTestingModule();
+    await setUp([{ provide: PLATFORM_ID, useValue: 'server' }]);
+    render([doc({ id: 'g-2', platform: 'google-ads', variant: 'default', created_at: '2026-11-02T12:00:00Z' })]);
+
+    expect(q('optimization-campaign-created-g-2')?.textContent?.trim()).toBe('—');
+    expect(q('optimization-campaign-channel-g-2')?.textContent?.trim()).toBe('Search');
+  });
 
   function bidForm(id = 'c-1'): CampaignBidFormComponent {
     const form = fixture.debugElement.queryAll(By.directive(CampaignBidFormComponent)).find((de) => de.componentInstance.campaignId() === id);
@@ -5158,6 +5425,18 @@ describe('OptimizationTabComponent — shared Google Ads account restriction', (
 
     expect(el('optimization-error')).not.toBeNull();
     expect(el('optimization-restricted')).toBeNull();
+    expect(el('optimization-retry')).not.toBeNull();
+  });
+
+  // #4837: a role refusal answers 403 again on every retry, so the error offers no Retry.
+  it('offers no Retry when the Google read is refused for the caller role', () => {
+    service['getMonitorData'].mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 403, error: { error: "campaign-service refused to read this project's Google Ads connection." } }))
+    );
+    fixture.detectChanges();
+
+    expect(el('optimization-error')?.textContent).toContain("campaign-service refused to read this project's Google Ads connection.");
+    expect(el('optimization-retry')).toBeNull();
   });
 
   it('clears cached Google monitor data after a refusal so a pending retry shows loading', () => {

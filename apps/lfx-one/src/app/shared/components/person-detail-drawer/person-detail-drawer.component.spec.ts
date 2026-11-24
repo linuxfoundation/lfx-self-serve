@@ -6,8 +6,21 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ORG_COMMITS_DEFINITION } from '@lfx-one/shared/constants';
-import type { OrgAllEmployeeDetail, OrgKeyContactAssignment, OrgPersonCompanyEmailsResponse, PersonDrawerContext } from '@lfx-one/shared/interfaces';
+import {
+  ORG_CODE_MEASURE_DEFINITION,
+  ORG_CODE_METRIC_LABEL,
+  ORG_CODE_METRIC_UNIT,
+  ORG_COMMITS_DEFINITION,
+  PERSON_DETAIL_TRAINING_WINDOW_NOTE,
+} from '@lfx-one/shared/constants';
+import type {
+  OrgAllEmployeeDetail,
+  OrgKeyContactAssignment,
+  OrgPersonCodeView,
+  OrgPersonCompanyEmailsResponse,
+  PersonDrawerContext,
+} from '@lfx-one/shared/interfaces';
+import { describeOrgPersonCodeView } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { Tooltip } from 'primeng/tooltip';
@@ -25,7 +38,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
   let drawer: PersonDetailDrawerService;
   let responses: Map<string, Subject<unknown>>;
   let httpGet: Mock<(url: string) => Observable<unknown>>;
-  const selectedAccount = signal({ uid: 'org-1' });
+  const selectedAccount = signal<{ uid: string; accountName?: string }>({ uid: 'org-1' });
   const person: PersonDrawerContext = { name: 'First person', username: 'first-person' };
   const detail = (personKey = 'first-person'): OrgAllEmployeeDetail => ({
     personKey,
@@ -152,9 +165,9 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
 
   it.each([
     { status: 'failed', state: 'failed' },
-    { status: 'unavailable', state: 'not-available' },
+    { status: 'unavailable', state: 'unconfirmed' },
     { status: undefined, state: 'failed' },
-  ])('does not turn a $status result into addresses or none on record, or retain it for another person', async ({ status, state }) => {
+  ])('does not turn a $status result into addresses or none on file, or retain it for another person', async ({ status, state }) => {
     drawer.open(person);
     await render();
     reply(`${BY_USERNAME}/company-emails`).next({ companyEmails: ['old@example.org'], companyEmailsStatus: status });
@@ -165,7 +178,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
 
     drawer.open({ name: 'Second person', username: 'second-person' });
     expect(drawer.emailError()).toBe(false);
-    expect(drawer.identityUnavailable()).toBe(false);
+    expect(drawer.companyEmailsUnavailableReason()).toBeNull();
     expect(drawer.companyEmailsResolved()).toBe(false);
     await render();
     expect(emailState(state)).toBeNull();
@@ -277,7 +290,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     drawer.open({ name: 'Name only' });
     await render();
     expect(httpGet).not.toHaveBeenCalled();
-    expect(emailState('not-available')).not.toBeNull();
+    expect(emailState('no-identity')).not.toBeNull();
     expect(emailState('none')).toBeNull();
 
     drawer.open({ name: 'First person', personKey: 'first-person' });
@@ -319,6 +332,25 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(drawer.loading()).toBe(true);
     await render();
     expect(emailState('none')).toBeNull();
+  });
+
+  it.each([
+    { label: 'no courses', training: [], listed: false },
+    {
+      label: 'one course',
+      training: [{ courseId: 'course-1', courseName: 'Course One', status: 'Enrolled' as const, certificationsCount: 0, coursesCount: 1 }],
+      listed: true,
+    },
+  ])('states the enrollment window on the Training tab with $label', async ({ training, listed }) => {
+    drawer.open(person);
+    await render();
+    reply(`${BY_USERNAME}/detail`).next({ ...detail(), training });
+    drawer.setTab('training');
+    await render();
+
+    expect(byTestId('person-detail-drawer-training-window')?.textContent?.trim()).toBe(PERSON_DETAIL_TRAINING_WINDOW_NOTE);
+    expect(byTestId('person-detail-drawer-training-empty') === null).toBe(listed);
+    expect(document.body.textContent?.includes('Course One')).toBe(listed);
   });
 
   it('renders the key contact roles the person holds, foundation-labelled and sorted', async () => {
@@ -484,6 +516,8 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(byTestId('person-detail-drawer-code-commits-label')?.textContent?.trim()).toBe('Commits');
     const info = fixture.debugElement.query(By.css('[data-testid="person-detail-drawer-code-commits-info"]'));
     expect(info.injector.get(Tooltip).content).toBe(ORG_COMMITS_DEFINITION);
+    // Without an opener view the tab keeps today's trailing-year commits and names no view.
+    expect(byTestId('person-detail-drawer-code-view')).toBeNull();
   });
 
   it("shows a mirrored commit in each project's count and once in the Commits total", async () => {
@@ -588,6 +622,18 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
 
     expect(emailState('0')?.getAttribute('href')).toBe('mailto:first@example.org');
     expect(byTestId('person-detail-drawer-email-primary')).toBeNull();
+  });
+
+  it('shows one decorative envelope icon per email row', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['first@example.org', 'second@example.org']));
+    await render();
+
+    for (const index of [0, 1]) {
+      expect(byTestId(`person-detail-drawer-email-icon-${index}`)?.getAttribute('aria-hidden')).toBe('true');
+    }
+    expect(byTestId('person-detail-drawer-email-icon-2')).toBeNull();
   });
 
   it('copies an address and confirms it, without confirming the others', async () => {
@@ -707,14 +753,112 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(emailState('0')?.getAttribute('href')).toBe('mailto:first@example.org');
   });
 
-  it('says none on record rather than nothing when the lookup resolves empty', async () => {
+  it('says no verified company email is associated with the LF profile, rather than nothing, when the lookup resolves empty', async () => {
+    selectedAccount.set({ uid: 'org-1', accountName: 'Acme Corp' });
     drawer.open({ name: 'First person', personKey: 'first-person' });
     await render();
     reply(`${BY_PERSON_KEY}/company-emails`).next(emails());
     await render();
 
-    expect(emailState('none')).not.toBeNull();
+    expect(emailState('none')?.textContent?.trim()).toBe('No verified company email associated with this LF profile');
     expect(emailState('0')).toBeNull();
+  });
+
+  it.each(['unconfirmed', undefined])('says it cannot tell, naming the organization, for an unavailable %s answer', async (reason) => {
+    selectedAccount.set({ uid: 'org-1', accountName: 'Acme Corp' });
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next({ companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable', companyEmailsReason: reason });
+    await render();
+
+    expect(emailState('unconfirmed')?.textContent?.trim()).toBe("We can't tell whether this person has an email at Acme Corp");
+    expect(emailState('unlinked')).toBeNull();
+    expect(emailState('none')).toBeNull();
+  });
+
+  it('says a profile with no LF account cannot be checked, rather than none on file', async () => {
+    selectedAccount.set({ uid: 'org-1', accountName: 'Acme Corp' });
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next({
+      companyEmails: [],
+      primaryEmail: null,
+      companyEmailsStatus: 'unavailable',
+      companyEmailsReason: 'unlinked_identity',
+    });
+    await render();
+
+    expect(emailState('unlinked')?.textContent?.trim()).toBe("This profile isn't linked to an LF profile - no company email on file");
+    expect(emailState('unconfirmed')).toBeNull();
+    expect(emailState('none')).toBeNull();
+  });
+
+  it('says emails are not shown on this page when the opener supplied nothing to look up', async () => {
+    drawer.open({ name: 'Name only' });
+    await render();
+
+    expect(httpGet).not.toHaveBeenCalled();
+    expect(drawer.companyEmailsUnavailableReason()).toBe('no_identity');
+    expect(emailState('no-identity')?.textContent?.trim()).toBe("Emails aren't shown on this page");
+  });
+
+  it('hints an address known only from a key contact record', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next({
+      ...emails(['first@example.org', 'record@example.org'], 'first@example.org'),
+      keyContactRecordEmails: ['record@example.org'],
+    });
+    await render();
+
+    const hints = document.querySelectorAll('[data-testid="person-detail-drawer-email-record-hint"]');
+    expect(hints).toHaveLength(1);
+    expect(hints[0]?.parentElement?.textContent).toContain('record@example.org');
+    expect(hints[0]?.textContent?.trim()).toBe('from key contact record');
+  });
+
+  it('re-issues only the address request from the failed state', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/detail`).next(detail());
+    reply(`${BY_PERSON_KEY}/company-emails`).error(new HttpErrorResponse({ status: 500 }));
+    await render();
+    expect(emailState('failed')?.textContent).toContain("Couldn't load emails.");
+    responses.delete(`${BY_PERSON_KEY}/company-emails`);
+    httpGet.mockClear();
+
+    (byTestId('person-detail-drawer-email-retry') as HTMLButtonElement).click();
+    await render();
+
+    expect(requested()).toEqual([`${BY_PERSON_KEY}/company-emails`]);
+    expect(emailState('loading')).not.toBeNull();
+    expect(document.body.textContent).toContain('Member Summit');
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['first@example.org']));
+    await render();
+    expect(emailState('0')?.textContent?.trim()).toBe('first@example.org');
+  });
+
+  it("reads a key contact's record addresses, never sending the username, while activity stays on the username", async () => {
+    const ids = ['a0F000000000001AAA', 'a0F000000000002AAA'];
+    drawer.open({ name: 'First person', username: 'first-person', keyContactIds: [...ids, ids[0], 'not-an-id'] });
+    await render();
+
+    const keyContactUrl = `${PEOPLE}/by-key-contact/company-emails`;
+    expect(requested().sort()).toEqual([keyContactUrl, `${BY_USERNAME}/detail`]);
+    expect((httpGet.mock.calls as unknown[][]).find(([url]) => url === keyContactUrl)?.[1]).toEqual({
+      params: { ids: ids.join(',') },
+    });
+    reply(keyContactUrl).next(emails(['record@example.org']));
+    await render();
+    expect(emailState('0')?.textContent?.trim()).toBe('record@example.org');
+  });
+
+  it('reads by person key, not the key-contact records, when the opener has both', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', keyContactIds: ['a0F000000000001AAA'] });
+    await render();
+
+    expect(requested()).toContain(`${BY_PERSON_KEY}/company-emails`);
+    expect(requested()).not.toContain(`${PEOPLE}/by-key-contact/company-emails`);
   });
 
   it("sends the opener's range with the activity read only, and no range when the opener has none (lfx-self-serve#4482)", async () => {
@@ -730,5 +874,72 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     drawer.open({ name: 'First person', username: 'first-person' });
     await render();
     expect(optionsFor(`${BY_USERNAME}/detail`)).toEqual({ params: {} });
+  });
+
+  it("sends the opener's code filters with its range on the activity read (lfx-self-serve#4404)", async () => {
+    const optionsFor = (url: string): unknown => (httpGet.mock.calls as unknown[][]).find(([requestedUrl]) => requestedUrl === url)?.[1];
+
+    drawer.open({
+      name: 'First person',
+      personKey: 'first-person',
+      range: '730d',
+      codeFilters: { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' },
+    });
+    await render();
+
+    expect(optionsFor(`${BY_PERSON_KEY}/detail`)).toEqual({ params: { range: '730d', projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' } });
+  });
+
+  describe("Code tab in the opener's view (lfx-self-serve#4404)", () => {
+    const view: OrgPersonCodeView = { range: '90d', projectScope: 'lf', commitScope: 'all', metric: 'code' };
+    const project = (projectId: string, commits: number): OrgAllEmployeeDetail['code'][number] => ({
+      projectId,
+      projectName: projectId,
+      foundationId: 'foundation-1',
+      foundationName: 'Foundation One',
+      commits,
+      lastActivityDate: null,
+      isMaintainer: false,
+    });
+
+    it('names the range, project type and code count, and labels the total and rows with that count', async () => {
+      drawer.open({ ...person, range: view.range, codeFilters: view });
+      await render();
+      reply(`${BY_USERNAME}/detail`).next({ ...detail(), code: [project('project-1', 5), project('project-2', 1)], totalCommits: 6, codeView: view });
+      drawer.setTab('code');
+      await render();
+
+      expect(byTestId('person-detail-drawer-code-view')?.textContent?.trim()).toBe(describeOrgPersonCodeView(view));
+      expect(byTestId('person-detail-drawer-code-commits')?.textContent?.trim()).toBe('6');
+      expect(byTestId('person-detail-drawer-code-commits-label')?.textContent?.trim()).toBe(ORG_CODE_METRIC_LABEL.code);
+      const info = fixture.debugElement.query(By.css('[data-testid="person-detail-drawer-code-commits-info"]'));
+      expect(info.injector.get(Tooltip).content).toBe(ORG_CODE_MEASURE_DEFINITION.code);
+      const count = (projectId: string): string => byTestId(`person-detail-drawer-code-project-${projectId}-commits`)?.textContent?.trim() ?? '';
+      expect([count('project-1'), count('project-2')]).toEqual([`5 ${ORG_CODE_METRIC_UNIT.code.other}`, `1 ${ORG_CODE_METRIC_UNIT.code.one}`]);
+    });
+
+    it('tells main-branch commits apart from all commits in the tooltip', async () => {
+      const merged: OrgPersonCodeView = { ...view, commitScope: 'merged', metric: 'commits' };
+      drawer.open({ ...person, range: merged.range, codeFilters: merged });
+      await render();
+      reply(`${BY_USERNAME}/detail`).next({ ...detail(), code: [project('project-1', 2)], totalCommits: 2, codeView: merged });
+      drawer.setTab('code');
+      await render();
+
+      expect(byTestId('person-detail-drawer-code-commits-label')?.textContent?.trim()).toBe(ORG_CODE_METRIC_LABEL.commits);
+      const info = fixture.debugElement.query(By.css('[data-testid="person-detail-drawer-code-commits-info"]'));
+      expect(info.injector.get(Tooltip).content).toBe(ORG_CODE_MEASURE_DEFINITION.merged);
+    });
+
+    it('still names the view when the person has no code in it', async () => {
+      drawer.open({ ...person, range: view.range, codeFilters: view });
+      await render();
+      reply(`${BY_USERNAME}/detail`).next({ ...detail(), codeView: view });
+      drawer.setTab('code');
+      await render();
+
+      expect(byTestId('person-detail-drawer-code-empty')).not.toBeNull();
+      expect(byTestId('person-detail-drawer-code-view')?.textContent?.trim()).toBe(describeOrgPersonCodeView(view));
+    });
   });
 });

@@ -74,6 +74,13 @@ test.describe('Org Lens EasyCLA list — content', () => {
     await expect(page.getByTestId('org-easycla-card-title').first()).toHaveText('Nimbus Foundation CLA');
   });
 
+  test('lists EasyCLA in the Organization lens sidebar', async ({ page }) => {
+    await gotoEasyclaList(page, stubList(nineClaGroups()));
+
+    await expect(page.getByTestId('org-easycla-title')).toContainText(MOCK_ACCOUNT_NAME, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('sidebar').getByRole('link', { name: 'EasyCLA', exact: true })).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  });
+
   test('states each agreement\u2019s status in the words the design uses', async ({ page }) => {
     await gotoEasyclaList(page, stubList(nineClaGroups()));
 
@@ -177,7 +184,7 @@ test.describe('Org Lens EasyCLA list — content', () => {
     const projects = page.getByTestId('org-easycla-coverage-project');
     await expect(projects).toHaveCount(2, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-coverage-title')).toHaveText('Projects covered by Nimbus Foundation CLA');
-    expect(page.url()).toMatch(/\/org\/(?:[^/]+\/)?easycla/);
+    expect(page.url()).toMatch(/\/company\/(?:[^/]+\/)?easycla/);
     expect(page.url()).not.toContain('/easycla/sig-1');
 
     await page.getByTestId('org-easycla-coverage-close').click();

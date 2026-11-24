@@ -24,20 +24,9 @@ describe('Routed kit tabs', () => {
     expect(root.querySelector('nav')?.classList.contains('overflow-x-auto')).toBe(true);
     expect(root.querySelector('nav')?.classList.contains('flex-wrap')).toBe(false);
     expect(root.querySelectorAll('a')[1].textContent?.trim()).toBe('Documents');
-    const originalUrl = router.url;
-    for (const path of ['requests', 'access']) {
-      const tab = root.querySelector<HTMLElement>(`[data-testid="mktg-kit-tab-${path}"]`);
-      expect(tab?.tagName).toBe('SPAN');
-      expect(tab?.hasAttribute('href')).toBe(false);
-      expect(tab?.hasAttribute('tabindex')).toBe(false);
-      expect(tab?.getAttribute('aria-disabled')).toBe('true');
-      expect(tab?.getAttribute('title')).toBe('Coming soon');
-      expect(tab?.classList.contains('text-gray-400')).toBe(true);
-      expect(tab?.querySelector('[data-testid="mktg-kit-tab-soon"]')?.textContent?.trim()).toBe('Soon');
-      tab?.click();
-      await fixture.whenStable();
-      expect(router.url).toBe(originalUrl);
-    }
+    expect(root.querySelectorAll('nav > *')).toHaveLength(2);
+    expect(root.querySelector('[data-testid="mktg-kit-tab-soon"]')).toBeNull();
+    for (const path of ['requests', 'access']) expect(root.querySelector(`[data-testid="mktg-kit-tab-${path}"]`)).toBeNull();
     expect(root.querySelector('[data-testid="mktg-kit-tab-documents"]')?.getAttribute('href')).toBe('/foundation/mktg-os-agents/documents?project=synthetic');
     expect(root.querySelector('[aria-current="page"]')?.textContent?.trim()).toBe('Documents');
     expect(root.querySelector('[data-testid="mktg-kit-tab-kit"]')?.getAttribute('href')).toBe('/foundation/mktg-os-agents?project=synthetic');

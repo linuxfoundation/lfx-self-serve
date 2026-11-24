@@ -19,6 +19,8 @@ export class AppFooterComponent {
 
   protected readonly links = FOOTER_LEGAL_LINKS;
   protected readonly year = new Date().getFullYear();
+  /** False inside an iframe, where Transcend's consent manager cannot open; the "Cookie settings" clause is hidden. */
+  protected readonly cookieSettingsAvailable = this.transcendService.preferencesAvailable;
 
   /** Opens the Transcend consent manager. */
   protected openCookieSettings(): void {

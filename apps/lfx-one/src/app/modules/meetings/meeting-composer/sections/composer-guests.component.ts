@@ -17,17 +17,19 @@ import type {
   ManualGuestDialogResult,
   MeetingCommittee,
   MeetingRegistrantWithState,
+  MeetingSelfGuest,
 } from '@lfx-one/shared/interfaces';
 import {
   avatarInitials,
   getSavedAttendeeVisibility,
   getShowMeetingAttendeesLockedNote,
   isMeetingInviteResponsesEnabled,
-  isShowMeetingAttendeesLocked,
+  isMeetingSelfGuestListed,
   isSameOccurrenceId,
 } from '@lfx-one/shared/utils';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
+import { UserService } from '@services/user.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
 import { updateTruncatedKeys } from '@shared/utils/truncation.util';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -64,6 +66,7 @@ export class ComposerGuestsComponent {
   private readonly injector = inject(Injector);
   protected readonly formService = inject(MeetingComposerFormService);
   protected readonly inviteResend = inject(MeetingInviteResendService);
+  private readonly userService = inject(UserService);
 
   public readonly form = input.required<FormGroup>();
 
@@ -84,22 +87,16 @@ export class ComposerGuestsComponent {
   protected readonly showAttendeesToggleNote: Signal<string | null> = computed(() =>
     getShowMeetingAttendeesLockedNote(this.meetingTypeValue(), this.restrictedValue(), COMPOSER_ATTENDEE_LOCK)
   );
-  /** The organizer's saved sharing decision, for the group picker; `null` on a create. */
   /**
    * The loaded meeting's sharing decision for the group picker; `null` when there is none to report.
-   * @description Read through the default (pre-v2) lock, like hydration. A board meeting still reports no
-   * decision, as everywhere else. A restricted meeting — locked before the composer allowed sharing — reads
-   * as decided *off* instead, so a linked group's default can't switch sharing on for an existing meeting
-   * just because it was opened here.
+   * @description Read through the composer lock, like hydration, so the picker and the toggle agree. A
+   * restricted meeting reports its stored choice (a missing flag reads as decided *off*), so a linked
+   * group's default can't switch sharing on for an existing meeting just because it was opened here. A
+   * board meeting reports no decision, as everywhere else; `null` on a create.
    */
-  protected readonly savedAttendeeVisibility: Signal<boolean | null> = computed(() => {
-    const meeting = this.formService.meeting();
-    const saved = getSavedAttendeeVisibility(meeting);
-    if (saved !== null || !meeting) {
-      return saved;
-    }
-    return isShowMeetingAttendeesLocked(meeting.meeting_type, meeting.restricted, COMPOSER_ATTENDEE_LOCK) ? null : false;
-  });
+  protected readonly savedAttendeeVisibility: Signal<boolean | null> = computed(() =>
+    getSavedAttendeeVisibility(this.formService.meeting(), COMPOSER_ATTENDEE_LOCK)
+  );
 
   /**
    * The committees currently on the form, for the group manager to render as selected.
@@ -225,6 +222,27 @@ export class ComposerGuestsComponent {
       )
   );
 
+  /** The signed-in user as a guest, for "Add myself"; `null` until the lookup resolves, and on the server. */
+  protected readonly selfGuest: Signal<MeetingSelfGuest | null> = toSignal(this.userService.getMeetingSelfGuest(), { initialValue: null });
+
+  /**
+   * Whether to offer "Add myself".
+   * @description Hidden while the list is loading or failed to load, since it may be incomplete, and when
+   * the user is already invited under one of their known emails or their LFID, so they can't get a second
+   * invite at another address. Checked against every live guest, like the duplicate guard in `addDirectGuest`.
+   */
+  protected readonly canAddSelf: Signal<boolean> = computed(() => {
+    const self = this.selfGuest();
+    if (!self || this.formService.guestsLoading() || this.formService.guestsLoadFailed()) {
+      return false;
+    }
+
+    return !isMeetingSelfGuestListed(
+      self,
+      this.formService.guests().filter((guest) => guest.state !== 'deleted')
+    );
+  });
+
   /**
    * The removals Undo can still put back; `null` once the list has changed in any other way.
    * @description Undo restores the list as it was before the first removal, which is only right while
@@ -273,6 +291,28 @@ export class ComposerGuestsComponent {
     this.openManualDialog(null);
   }
 
+  /**
+   * Adds the signed-in user as a regular guest, with their profile details.
+   * @description The add payload requires both names, so a profile missing one opens the manual dialog
+   * prefilled instead, as a search pick does. The guest added that way is an ordinary one: the LFID and
+   * avatar are only sent for a guest whose identity came straight from the user's own profile.
+   */
+  protected onAddSelf(): void {
+    const self = this.selfGuest();
+    if (!self) return;
+
+    const details = { email: self.email, first_name: self.first_name, last_name: self.last_name, job_title: self.job_title, org_name: self.org_name };
+    if (!self.first_name || !self.last_name) {
+      this.openManualDialog(details);
+      return;
+    }
+
+    const added = this.addDirectGuest({ ...details, host: false, username: self.username, avatar_url: self.avatar_url, selfAdded: true });
+    if (added?.tempId) {
+      this.focusGuestRemoveButton(added.tempId);
+    }
+  }
+
   /** Puts back every guest removed since the last add or dismiss, exactly as the list was before them. */
   protected onUndoRemove(): void {
     const batch = this.undoBatch();
@@ -305,6 +345,38 @@ export class ComposerGuestsComponent {
     if (meetingId) {
       this.inviteResend.confirmAndResend(this.confirmationService, meetingId, guest);
     }
+  }
+
+  /**
+   * Flips a guest's Meeting Host flag in place.
+   * @description A saved guest becomes `'modified'`, which `setGuests` turns into an update on save; a guest
+   * that was never saved stays `'new'` and carries the flag into its create. Matched by the same
+   * `uid`/`tempId` identity the remove handler uses, so a keyless row can't flip another keyless row.
+   */
+  protected onToggleHost(guest: MeetingRegistrantWithState): void {
+    const key = guest.uid || guest.tempId || null;
+    const host = !guest.host;
+
+    this.formService.updateGuests((current) =>
+      current.map((candidate) => {
+        const isTarget = key === null ? candidate === guest : (candidate.uid || candidate.tempId) === key;
+
+        if (!isTarget) {
+          return candidate;
+        }
+
+        return { ...candidate, host, state: candidate.state === 'new' ? 'new' : 'modified' };
+      })
+    );
+
+    // Undo restores the list as it was before the removals, so it would take this host change back with it.
+    // `guestListSignature` leaves `host` out, so the batch would still look current.
+    this.removalBatch.set(null);
+
+    void this.liveAnnouncer.announce(
+      `${this.guestLabel(guest)} ${host ? 'is now a meeting host' : 'is no longer a meeting host'}. Save the meeting to apply.`,
+      'polite'
+    );
   }
 
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {
@@ -438,6 +510,10 @@ export class ComposerGuestsComponent {
           // user to count rows to find out which guest they are about to drop — the email is what
           // identifies the row on screen in that case, so it identifies the button too.
           removeLabel: `Remove ${displayName || guest.email || 'guest'}`,
+          hostLabel: guest.host
+            ? `Remove ${displayName || guest.email || 'guest'} as meeting host`
+            : `Make ${displayName || guest.email || 'guest'} a meeting host`,
+          hostTooltip: guest.host ? 'Remove host' : 'Make host',
           scopeLabel: this.scopeLabel(guest),
           // Editing one occurrence, only guests invited to it alone can go: upstream can't drop a series
           // guest from a single occurrence, so those rows are read-only.
@@ -480,14 +556,14 @@ export class ComposerGuestsComponent {
     });
   }
 
-  private addDirectGuest(formValue: Record<string, unknown>): void {
+  private addDirectGuest(formValue: Record<string, unknown>): MeetingRegistrantWithState | null {
     const email = (formValue['email'] as string | null) ?? '';
 
     if (email && this.invitedEmails().has(email.toLowerCase())) {
       const onScreen = this.visibleGuests().some((guest) => guest.email?.toLowerCase() === email.toLowerCase());
       const detail = onScreen ? `${email} is already on the guest list.` : `${email} is already invited to another occurrence of this meeting.`;
       this.messageService.add({ severity: 'warn', summary: 'Already invited', detail });
-      return;
+      return null;
     }
 
     const guest: MeetingRegistrantWithState = {
@@ -498,13 +574,17 @@ export class ComposerGuestsComponent {
       job_title: (formValue['job_title'] as string | null) || null,
       org_name: (formValue['org_name'] as string | null) || null,
       host: (formValue['host'] as boolean | null) ?? false,
+      avatar_url: (formValue['avatar_url'] as string | null) || null,
+      username: (formValue['username'] as string | null) || null,
       type: 'direct',
+      ...(formValue['selfAdded'] === true ? { selfAdded: true } : {}),
     };
 
     this.formService.updateGuests((current) => [guest, ...current]);
     // Undo restores the list as it was before the removals, so it would drop this guest again.
     this.removalBatch.set(null);
     void this.liveAnnouncer.announce(`${this.guestLabel(guest)} added to the guest list.`, 'polite');
+    return guest;
   }
 
   /** Whether the list is still exactly as the batch's latest removal left it, under the same groups. */

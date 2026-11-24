@@ -8,7 +8,9 @@ import {
   CreateVoteResponseRequest,
   EnableVoteRequest,
   ExtendVoteRequest,
+  MyVoteWouldEndVote,
   SendVoteReminderRequest,
+  UpdateMyVoteResponseRequest,
   UpdateVoteRequest,
 } from '@lfx-one/shared/interfaces';
 import { VOTE_COMMENT_PROMPT_MAX_COUNT, VOTE_COMMENT_PROMPT_MAX_LENGTH, VOTE_CREATE_COMPLETED_AT_HEADER } from '@lfx-one/shared/constants';
@@ -18,7 +20,7 @@ import { NextFunction, Request, Response } from 'express';
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { validateArrayParameter, validateRequestBody, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { buildValidatedCommentResponses, buildValidatedVoteAnswers } from '../helpers/vote-response-validation.helper';
-import { assertVoteWrite } from '../helpers/vote-write-access.helper';
+import { assertVoteWrite, hasVoteWrite } from '../helpers/vote-write-access.helper';
 import { logger } from '../services/logger.service';
 import { VoteService } from '../services/vote.service';
 
@@ -308,6 +310,29 @@ export class VoteController {
   }
 
   /**
+   * POST /votes/:uid/end — ends an active vote now (vote#writer only). Logs the vote uid only; the gateway records the
+   * principal upstream, and the OIDC subject is a username here, so it is never logged.
+   */
+  public async endVote(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'end_vote', { vote_uid: uid });
+
+    try {
+      if (!validateUidParameter(uid, req, next, { operation: 'end_vote', service: 'vote_controller' })) {
+        return;
+      }
+
+      const vote = await this.voteService.endVote(req, uid);
+
+      logger.success(req, 'end_vote', startTime, { vote_uid: uid });
+
+      res.json(vote);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * DELETE /votes/:uid
    */
   public async deleteVote(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -341,6 +366,7 @@ export class VoteController {
 
   /**
    * GET /votes/:uid/results
+   * Vote writers get today's results; everyone else goes through the service's non-writer gate (#4330).
    */
   public async getVoteResults(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -358,12 +384,15 @@ export class VoteController {
         return;
       }
 
-      const results = await this.voteService.getVoteResults(req, uid);
+      const canWrite = await hasVoteWrite(req, uid, 'get_vote_results');
+      const results = await this.voteService.getVoteResults(req, uid, { canWrite });
 
       logger.success(req, 'get_vote_results', startTime, {
         vote_uid: uid,
+        can_write: canWrite,
         num_poll_results: results?.poll_results?.length ?? 0,
         num_votes_cast: results?.num_votes_cast,
+        results_held: results?.results_held === true,
       });
 
       res.json(results);
@@ -481,6 +510,111 @@ export class VoteController {
   }
 
   /**
+   * PUT /votes/:uid/my-response — changes the caller's own submitted ballot (#4723).
+   * @description Validated like `createVoteResponse`; the ballot is resolved server-side from the caller's own row, so the
+   * body never names a response uid. `comment_responses` is forwarded as sent, so an empty array clears stored comments.
+   */
+  public async updateMyVoteResponse(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const payload: UpdateMyVoteResponseRequest = req.body;
+    const startTime = logger.startOperation(req, 'update_my_vote_response', { vote_uid: uid, abstain: payload?.abstain });
+
+    try {
+      const validationContext = { operation: 'update_my_vote_response', service: 'vote_controller' } as const;
+
+      if (!validateUidParameter(uid, req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateRequestBody(payload, req, next, validationContext)) {
+        return;
+      }
+
+      if (typeof payload.abstain !== 'boolean') {
+        throw ServiceValidationError.forField('abstain', 'abstain is required and must be a boolean', validationContext);
+      }
+
+      // Rebuilt from allowlisted fields so unexpected client properties never cross the BFF boundary.
+      const validatedCommentResponses: CommentResponseInput[] | undefined =
+        payload.comment_responses === undefined ? undefined : buildValidatedCommentResponses(payload.comment_responses, validationContext);
+
+      const upstreamPayload: UpdateMyVoteResponseRequest = payload.abstain
+        ? { abstain: true, comment_responses: validatedCommentResponses }
+        : {
+            abstain: false,
+            user_vote_content: buildValidatedVoteAnswers(payload.user_vote_content, validationContext),
+            comment_responses: validatedCommentResponses,
+          };
+
+      await this.voteService.updateMyVoteResponse(req, uid, upstreamPayload);
+
+      logger.success(req, 'update_my_vote_response', startTime, { vote_uid: uid, abstain: upstreamPayload.abstain, status_code: 204 });
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /votes/:uid/my-ballot — the caller's own submitted ballot for Me-lens Review (editable when allowed) and "Your ballot" (#4331, #4723). */
+  public async getMyVoteBallot(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_my_vote_ballot', { vote_uid: uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_my_vote_ballot',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      const ballot = await this.voteService.getMyVoteBallot(req, uid);
+
+      if (!ballot) {
+        return next(
+          new ResourceNotFoundError('Vote ballot', uid, {
+            operation: 'get_my_vote_ballot',
+            service: 'vote_controller',
+            path: `/votes/${uid}/my-ballot`,
+          })
+        );
+      }
+
+      logger.success(req, 'get_my_vote_ballot', startTime, { vote_uid: uid, found: true });
+      res.json(ballot);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /votes/:uid/my-response/would-end-vote — whether the caller's first submission would end the vote (#4726). */
+  public async getMyWouldEndVote(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_my_would_end_vote', { vote_uid: uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_my_would_end_vote',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      const wouldEndVote = await this.voteService.getMyWouldEndVote(req, uid);
+
+      logger.success(req, 'get_my_would_end_vote', startTime, { vote_uid: uid, would_end_vote: wouldEndVote });
+      res.json({ would_end_vote: wouldEndVote } satisfies MyVoteWouldEndVote);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * PUT /votes/:uid/enable
    */
   public async enableVote(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -553,9 +687,48 @@ export class VoteController {
   }
 
   /**
-   * GET /votes/:uid/voters — every invited voter with their status and current ballot (#3911).
+   * GET /votes/:uid/summary-recipients — who the on-demand close summary would reach (#4830).
+   * Gated on `vote#writer` before any read, like `reminder-recipients`; the service refuses a vote
+   * that has not ended. Returns names and addresses, so only counts are logged.
+   */
+  public async getVoteSummaryPreview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_vote_summary_preview', {
+      vote_uid: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_vote_summary_preview',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertVoteWrite(req, uid, 'get_vote_summary_preview');
+
+      const preview = await this.voteService.getVoteSummaryPreview(req, uid);
+
+      logger.success(req, 'get_vote_summary_preview', startTime, {
+        vote_uid: uid,
+        ready_count: preview.ready.length,
+        missing_email_count: preview.missing_email.length,
+        unique_email_count: preview.unique_email_count,
+      });
+
+      res.json(preview);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /votes/:uid/voters — every invited voter with their status, plus their current ballot on a
+   * named vote (#3911) or participation only on a pseudo-anonymous vote (#3916).
    * Gated on `vote#writer` before any read: every vote auditor can read the underlying
-   * `vote_response` rows. The service refuses drafts and pseudo-anonymous votes before reading them.
+   * `vote_response` rows. The service refuses drafts before reading them.
    */
   public async getVoteVoters(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -689,6 +862,8 @@ export class VoteController {
         vote_uid: uid,
         recipient_count: result.recipient_count,
         failed_count: result.failed_count,
+        skipped_count: result.skipped_count,
+        uncertain_count: result.uncertain_count,
       });
 
       res.json(result);

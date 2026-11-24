@@ -82,11 +82,15 @@ import {
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementNewsletterPerformance,
+  HealthMetricsEngagementNewsletterQuery,
+  HealthMetricsEngagementNewsletterRecipients,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementNonMemberQuery,
   HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementOrgQuery,
   HealthMetricsEngagementParticipationQuery,
+  HealthMetricsEngagementRecipientQuery,
   HealthMetricsEngagementRepQuery,
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEventsAtAGlance,
@@ -96,6 +100,8 @@ import {
   HealthMetricsEventsGeographyQuery,
   HealthMetricsEventsForecastCurve,
   HealthMetricsEventsForecastCurveQuery,
+  HealthMetricsEventsSnapshot,
+  HealthMetricsEventsSnapshotQuery,
   HealthMetricsEventsForecastQuery,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastQuery,
@@ -103,21 +109,21 @@ import {
   HealthMetricsEventsRegistrationsGrowthQuery,
   HealthMetricsEventsRevenue,
   HealthMetricsEventsRevenueQuery,
+  HealthMetricsEventsSpeakerProposals,
+  HealthMetricsEventsSpeakerProposalsQuery,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsOrganizations,
   HealthMetricsEventsOrganizationsQuery,
   HealthMetricsEventsSpeakersQuery,
   HealthMetricsEventsSponsorship,
   HealthMetricsEventsSponsorshipQuery,
-  HealthMetricsMembersBridge,
-  HealthMetricsMembersBridgeQuery,
   HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskQuery,
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryQuery,
   HealthMetricsMembersDirectoryTiers,
-  HealthMetricsMembersMovements,
-  HealthMetricsMembersMovementsQuery,
+  HealthMetricsMembersGrowth,
+  HealthMetricsMembersGrowthQuery,
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardAttendanceQuery,
   HealthMetricsMembersChurn,
@@ -142,6 +148,7 @@ import {
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewChurn,
   HealthMetricsOverviewCode,
+  HealthMetricsOverviewNewsletters,
   HealthMetricsOverviewEvents,
   HealthMetricsOverviewNps,
   HealthMetricsOverviewOutstandingBalance,
@@ -1016,6 +1023,10 @@ export class AnalyticsService {
       page: String(query.page),
       size: String(query.size),
     };
+    if (query.sort) {
+      params['sortKey'] = query.sort.key;
+      params['sortDir'] = query.sort.direction;
+    }
 
     // Errors propagate: the section's empty state asserts this foundation has no matching groups, so
     // a swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.
@@ -1103,6 +1114,40 @@ export class AnalyticsService {
   }
 
   /**
+   * Get the Health Metrics Engagement "Newsletter performance" section
+   * @param query - Foundation scope; the period pill resolves client-side
+   * @returns Observable of every period's newsletter summary and every newsletter sent, latest first
+   */
+  public getEngagementNewsletterPerformance(query: HealthMetricsEngagementNewsletterQuery): Observable<HealthMetricsEngagementNewsletterPerformance> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty section renders "nothing sent", so a swallowed failure would state that as fact.
+    return this.http.get<HealthMetricsEngagementNewsletterPerformance>('/api/analytics/engagement-newsletter-performance', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-newsletter-performance failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Get the Health Metrics Engagement "Newsletter recipient engagement" table
+   * @param query - Foundation scope; search and the segment cut resolve client-side
+   * @returns Observable of the latest newsletter and every one of its recipients, most engaged first
+   */
+  public getEngagementNewsletterRecipients(query: HealthMetricsEngagementRecipientQuery): Observable<HealthMetricsEngagementNewsletterRecipients> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty table reads as "no newsletter sent", so a swallowed failure would state that as fact.
+    return this.http.get<HealthMetricsEngagementNewsletterRecipients>('/api/analytics/engagement-newsletter-recipients', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-newsletter-recipients failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
    * Get the Health Metrics Engagement "Representatives" table
    * @param query - Foundation scope; the period pill, the filter cut and search all resolve client-side
    * @returns Observable of every representative with all four periods and the per-period caption counts
@@ -1154,6 +1199,19 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEventsForecastCurve>('/api/analytics/events-registration-history', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] events-registration-history failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** One event's registration weeks and sponsorship packages, for the event dialog's Snapshot tab. */
+  public getEventsSnapshot(query: HealthMetricsEventsSnapshotQuery): Observable<HealthMetricsEventsSnapshot> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug, eventId: query.eventId };
+
+    // Errors propagate so the tab says it failed instead of showing every change as none.
+    return this.http.get<HealthMetricsEventsSnapshot>('/api/analytics/events-snapshot', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-snapshot failed', { query, error });
         return throwError(() => error);
       })
     );
@@ -1257,12 +1315,52 @@ export class AnalyticsService {
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
     if (query.search) params = params.set('search', query.search);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
     return this.http.get<HealthMetricsEventsOrganizations>('/api/analytics/events-organizations', { params }).pipe(
       catchError((error: unknown) => {
         const status = error instanceof HttpErrorResponse ? error.status : undefined;
         console.error('[analytics] events-organizations failed', { foundationSlug: query.foundationSlug, range: query.range, segment: query.segment, status });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** One page of a period's proposals for the All speaker proposals drawer, and the period's events when asked. */
+  public getEventsSpeakerProposals(query: HealthMetricsEventsSpeakerProposalsQuery): Observable<HealthMetricsEventsSpeakerProposals> {
+    let params = strictHttpParams()
+      .set('foundationSlug', query.foundationSlug)
+      .set('range', query.range)
+      .set('offset', String(query.offset))
+      .set('pageSize', String(query.pageSize));
+    if (query.eventId) params = params.set('eventId', query.eventId);
+    if (query.status) params = params.set('status', query.status);
+    if (query.includeEvents) params = params.set('includeEvents', 'true');
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
+
+    // Errors propagate so the drawer shows its error state, not "no proposals".
+    return this.http.get<HealthMetricsEventsSpeakerProposals>('/api/analytics/events-speaker-proposals', { params }).pipe(
+      catchError((error: unknown) => {
+        const status = error instanceof HttpErrorResponse ? error.status : undefined;
+        console.error('[analytics] events-speaker-proposals failed', {
+          foundationSlug: query.foundationSlug,
+          range: query.range,
+          offset: query.offset,
+          status,
+        });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getMembersGrowth(query: HealthMetricsMembersGrowthQuery): Observable<HealthMetricsMembersGrowth> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate so the section shows its error state, not a foundation with no new members.
+    return this.http.get<HealthMetricsMembersGrowth>('/api/analytics/members-growth', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] members-growth failed', { query, error });
         return throwError(() => error);
       })
     );
@@ -1280,36 +1378,6 @@ export class AnalyticsService {
     );
   }
 
-  public getMembersBridge(query: HealthMetricsMembersBridgeQuery): Observable<HealthMetricsMembersBridge> {
-    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
-
-    // Errors propagate so the section shows its error state, not a year with no movement.
-    return this.http.get<HealthMetricsMembersBridge>('/api/analytics/members-bridge', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] members-bridge failed', { query, error });
-        return throwError(() => error);
-      })
-    );
-  }
-
-  public getMembersMovements(query: HealthMetricsMembersMovementsQuery): Observable<HealthMetricsMembersMovements> {
-    const params: Record<string, string> = {
-      foundationSlug: query.foundationSlug,
-      year: String(query.year),
-      movementType: query.movementType,
-      offset: String(query.offset),
-      pageSize: String(query.pageSize),
-    };
-
-    // Errors propagate so the drawer shows its error state, not a bar with no organizations behind it.
-    return this.http.get<HealthMetricsMembersMovements>('/api/analytics/members-movements', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] members-movements failed', { query, error });
-        return throwError(() => error);
-      })
-    );
-  }
-
   public getMembersDirectory(query: HealthMetricsMembersDirectoryQuery): Observable<HealthMetricsMembersDirectory> {
     // Strict encoding keeps a typed `+` from reaching Express as a space.
     let params = strictHttpParams()
@@ -1320,6 +1388,7 @@ export class AnalyticsService {
     if (query.tier) params = params.set('tier', query.tier);
     if (query.nps) params = params.set('nps', query.nps);
     if (query.search) params = params.set('search', query.search);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
     return this.http.get<HealthMetricsMembersDirectory>('/api/analytics/members-directory', { params }).pipe(
@@ -1344,6 +1413,7 @@ export class AnalyticsService {
   public getMembersAtRisk(query: HealthMetricsMembersAtRiskQuery): Observable<HealthMetricsMembersAtRisk> {
     let params = strictHttpParams().set('foundationSlug', query.foundationSlug).set('offset', String(query.offset)).set('pageSize', String(query.pageSize));
     if (query.bucket !== 'all') params = params.set('bucket', query.bucket);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state rather than an empty one.
     return this.http.get<HealthMetricsMembersAtRisk>('/api/analytics/members-at-risk', { params }).pipe(
@@ -1355,11 +1425,12 @@ export class AnalyticsService {
   }
 
   public getMembersRenewals(query: HealthMetricsMembersRenewalsQuery): Observable<HealthMetricsMembersRenewals> {
-    const params = strictHttpParams()
+    let params = strictHttpParams()
       .set('foundationSlug', query.foundationSlug)
       .set('window', query.window)
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state rather than an empty one.
     return this.http.get<HealthMetricsMembersRenewals>('/api/analytics/members-renewals', { params }).pipe(
@@ -1371,12 +1442,13 @@ export class AnalyticsService {
   }
 
   public getMembersBoardAttendance(query: HealthMetricsMembersBoardAttendanceQuery): Observable<HealthMetricsMembersBoardAttendance> {
-    const params = strictHttpParams()
+    let params = strictHttpParams()
       .set('foundationSlug', query.foundationSlug)
       .set('range', query.range)
       .set('cohort', query.cohort)
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state rather than an empty one.
     return this.http.get<HealthMetricsMembersBoardAttendance>('/api/analytics/members-board-attendance', { params }).pipe(
@@ -1413,11 +1485,12 @@ export class AnalyticsService {
   }
 
   public getMembersChurnDepartures(query: HealthMetricsMembersChurnDeparturesQuery): Observable<HealthMetricsMembersChurnDepartures> {
-    const params = strictHttpParams()
+    let params = strictHttpParams()
       .set('foundationSlug', query.foundationSlug)
       .set('year', String(query.year))
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the table shows its error state rather than an empty list of departures.
     return this.http.get<HealthMetricsMembersChurnDepartures>('/api/analytics/members-churn-departures', { params }).pipe(
@@ -1437,6 +1510,7 @@ export class AnalyticsService {
       .set('pageSize', String(query.pageSize));
     if (query.filter !== 'all') params = params.set('filter', query.filter);
     if (query.search) params = params.set('search', query.search);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
     return this.http.get<HealthMetricsNonMembersOrgs>('/api/analytics/non-members-orgs', { params }).pipe(
@@ -1456,6 +1530,7 @@ export class AnalyticsService {
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
     if (query.search) params = params.set('search', query.search);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
     return this.http.get<HealthMetricsNonMembersPeople>('/api/analytics/non-members-people', { params }).pipe(
@@ -1502,6 +1577,7 @@ export class AnalyticsService {
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
     if (query.search) params = params.set('search', query.search);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
     return this.http.get<HealthMetricsTrainingCourses>('/api/analytics/training-courses', { params }).pipe(
@@ -1539,6 +1615,10 @@ export class AnalyticsService {
 
   public getOverviewCode(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewCode> {
     return this.getOverviewCard<HealthMetricsOverviewCode>('overview-code', query);
+  }
+
+  public getOverviewNewsletters(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewNewsletters> {
+    return this.getOverviewCard<HealthMetricsOverviewNewsletters>('overview-newsletters', query);
   }
 
   /**

@@ -6,7 +6,6 @@ import { Component, computed, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ORG_LENS_EMPTY_STATE_COPY } from '@lfx-one/shared/constants';
 import { OrgLensEmptyStateAction, OrgLensEmptyStateName, OrgLensEmptyStateValues } from '@lfx-one/shared/interfaces';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -28,11 +27,11 @@ const UNHELD_ORG_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['no-acces
  * FR-002/FR-008 need a secondary action and an organization list.
  *
  * `testId` keeps the scenario hooks of the blocks it replaces — `{testId}-state`, `-title`,
- * `-description`, `-contact-support`, `-retry`, `-org-list`.
+ * `-description`, `-retry`, `-org-list`.
  */
 @Component({
   selector: 'lfx-org-lens-empty-state',
-  imports: [NgTemplateOutlet, RouterLink, ButtonComponent, CardComponent, OpenIntercomDirective],
+  imports: [NgTemplateOutlet, RouterLink, ButtonComponent, CardComponent],
   templateUrl: './org-lens-empty-state.component.html',
 })
 export class OrgLensEmptyStateComponent {
@@ -44,6 +43,12 @@ export class OrgLensEmptyStateComponent {
   public readonly testId = input.required<string>();
   /** True while the Retry this state offers is in flight — the control shows a spinner and cannot be re-fired. */
   public readonly retrying = input(false);
+  /**
+   * Router commands that replace a route primary's registry route, for a destination only the caller can
+   * address — the current selection's own page, which the environment-agnostic registry cannot name.
+   * Ignored when the primary is not a route.
+   */
+  public readonly primaryRoute = input<string[] | undefined>(undefined);
 
   public readonly retry = output<void>();
   public readonly resetFilters = output<void>();
@@ -118,7 +123,7 @@ export class OrgLensEmptyStateComponent {
   private interpolate(template: string): string {
     const values = this.values();
     // FR-017: an unheld organization is never named, whatever the caller passed.
-    const orgName = UNHELD_ORG_STATES.has(this.state()) ? 'This organization' : values.orgName?.trim() || 'This organization';
+    const orgName = UNHELD_ORG_STATES.has(this.state()) ? 'This company' : values.orgName?.trim() || 'This company';
     return template
       .replace(/\{orgName\}/g, orgName)
       .replace(/\{noun\}/g, values.noun ?? 'records')

@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgCommitFilters } from './org-commit-filters.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 import type { OrgKeyContactAssignment } from './org-people-key-contacts.interface';
-import type { OrgAllEmployeeCommitteeMembership, OrgPeopleDirectoryView } from './org-people.interface';
+import type { OrgAllEmployeeCommitteeMembership, OrgPeopleDirectoryView, OrgScopeFilter, OrgTeamMembersFilter } from './org-people.interface';
 
 /** The five content tabs of the shared person-detail drawer (LFXV2-2195). */
 export type PersonDrawerTab = 'events' | 'training' | 'code' | 'governance' | 'key-contacts';
@@ -27,6 +28,11 @@ export interface PersonDrawerContext {
   avatarColorClass?: string;
   /** LF username for openers without a personKey: resolved server-side to one roster person for activity, falling back to the company-address lookup. Never an email address. */
   username?: string | null;
+  /**
+   * Salesforce key-contact record ids (`OrgKeyContactAssignment.contactUid`) of the person's key contact roles. Without a
+   * personKey, the company-address lookup reads the company addresses on these records (plus `username`'s, when given).
+   */
+  keyContactIds?: readonly string[];
   profileUrl?: string | null;
   sourceIconClass?: string | null;
   defaultTab?: PersonDrawerTab;
@@ -34,14 +40,26 @@ export interface PersonDrawerContext {
   isFormer?: boolean;
   /** The live directory the opener listed the person in; a live-only person's company-email lookup reads that (warm) directory first. */
   directoryView?: OrgPeopleDirectoryView;
-  /** The range the opener lists the person in; the Code tab's Maintainer pills follow it (past 365 days when omitted). */
+  /** The range the opener lists the person in; the Code tab's Maintainer pills follow it (the Org Lens default range when omitted). */
   range?: OrgLensTimeRange;
+  /**
+   * The opener's project type and code count (Code Contributions, People → Contributors, People → All Employees;
+   * lfx-self-serve#4404). With it, the Code tab counts in `range` exactly what the opener's row counts; without it,
+   * the Code tab shows every commit of the trailing 12 months.
+   */
+  codeFilters?: OrgCommitFilters;
+  /** The opener's Team members pick, sent with `codeFilters` (lfx-self-serve#4685): under exclude a CDP team member's Code tab is empty. */
+  teamMembers?: OrgTeamMembersFilter;
+  /** The opener's Organization scope pick, sent with `codeFilters` (lfx-self-serve-ops#1219): the Code tab counts the same organizations' code. */
+  orgScope?: OrgScopeFilter;
 }
 
 /** One rendered address line in the drawer header. */
 export interface PersonDrawerEmail {
   email: string;
   isPrimary: boolean;
+  /** Known only from a corporate key-contact record, not from a verified LF-account address; the drawer hints it. */
+  fromKeyContactRecord: boolean;
   /**
    * Precomputed `mailto:` target, or `null` when the address carries URI delimiters that would turn one
    * recipient into several (or into a header field). Such an address still renders — as plain text, and

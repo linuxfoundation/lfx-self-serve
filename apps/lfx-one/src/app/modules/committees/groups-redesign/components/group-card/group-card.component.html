@@ -1,0 +1,55 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. The name link stretches over the card; other controls sit above it. -->
+<article
+  class="relative flex h-full flex-col gap-[12px] rounded-[16px] bg-white p-[16px] shadow-small transition-shadow duration-150 hover:shadow-medium motion-reduce:transition-none"
+  data-testid="groups-home-card">
+  <!-- Accent stripe in the type's colour, 10px from the card edges -->
+  <span class="-mx-[6px] -mt-[6px] h-[3px] flex-none rounded-full bg-current" [class]="classDisplay().color" aria-hidden="true"></span>
+
+  <div class="-mb-[6px] flex min-h-[16px] items-center justify-between gap-[8px]">
+    <span class="flex min-w-0 items-center gap-[6px] text-[12px] leading-[16px]" [class]="classDisplay().color" data-testid="groups-home-card-type">
+      <i class="flex-none text-[11px]" [class]="classDisplay().icon" aria-hidden="true"></i>
+      <span class="truncate">{{ typeLabel() }}</span>
+    </span>
+    <span class="relative z-[1] -my-[6px] -mr-[6px] flex-none empty:hidden"><ng-content select="[group-card-menu]" /></span>
+  </div>
+
+  <h3 #name class="min-w-0 truncate text-[16px] font-semibold leading-[24px] text-gray-900">
+    <a
+      class="rounded-[4px] text-gray-900 no-underline after:absolute after:inset-0 after:rounded-[16px] after:content-[''] hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+      [routerLink]="commands()"
+      [queryParams]="queryParams()"
+      [state]="linkState"
+      [lfxUiTooltip]="group().name"
+      [lfxUiTooltipDisabled]="!nameTruncated()"
+      data-testid="groups-home-card-name"
+      >{{ group().name }}</a
+    >
+  </h3>
+
+  <lfx-group-scope-link class="-mt-[6px] self-start" logo [group]="group()" />
+
+  <p class="line-clamp-2 min-h-[36px] text-[12px] leading-[1.5] text-gray-500" data-testid="groups-home-card-description">{{ group().description }}</p>
+
+  <div class="mt-auto flex flex-wrap items-center gap-[8px] border-t border-gray-100 pt-[12px]">
+    <lfx-group-visibility [isPublic]="!!group().public" />
+    <lfx-ui-badge variant="outline" data-testid="groups-home-card-members">
+      <i slot="icon" class="fa-light fa-user-group" aria-hidden="true"></i>
+      {{ group().total_members }}<span class="sr-only"> members</span>
+    </lfx-ui-badge>
+    <lfx-group-channels [group]="group()" />
+    @if (group().enable_voting) {
+      <span class="ml-auto flex items-center gap-[6px] text-[12px] font-medium leading-[16px] text-gray-700" data-testid="groups-home-card-voting">
+        <i class="fa-light fa-check-to-slot text-[14px] text-emerald-700" aria-hidden="true"></i>
+        Voting
+      </span>
+    } @else {
+      <span class="ml-auto flex items-center gap-[6px] text-[12px] font-medium leading-[16px] text-gray-500" data-testid="groups-home-card-voting">
+        <i class="fa-light fa-xmark-to-slot text-[14px]" aria-hidden="true"></i>
+        No voting
+      </span>
+    }
+  </div>
+</article>

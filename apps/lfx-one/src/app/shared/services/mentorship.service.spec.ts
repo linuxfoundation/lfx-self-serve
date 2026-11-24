@@ -48,6 +48,14 @@ describe('MentorshipService — lookup error mapping', () => {
     expect(projects).toContain('page_token=ab%2Bcd%2Fef%3D');
   });
 
+  it('asks for one project’s sub-projects only when given a parent, and leaves the parent off otherwise', () => {
+    service.getLfProjects({ parentUid: 'parent-1' }).subscribe();
+    expect(http.expectOne((req) => req.url === '/api/mentorship/lf-projects').request.params.get('parentUid')).toBe('parent-1');
+
+    service.getLfProjects().subscribe();
+    expect(http.expectOne((req) => req.url === '/api/mentorship/lf-projects').request.params.has('parentUid')).toBe(false);
+  });
+
   it('maps a missing CII project to null and lets other CII failures propagate', () => {
     let missing: unknown = 'unset';
     service.getCiiBadge('1842').subscribe((badge) => {
@@ -134,6 +142,31 @@ describe('MentorshipService — LFX profile sync', () => {
     req.flush({ error: 'forbidden' }, { status: 403, statusText: 'Forbidden' });
 
     expect(status).toBe(403);
+  });
+
+  it('sends queued copies one at a time, in the order queued', () => {
+    service.queueLfxProfileSync({ logoUrl: 'https://cdn.example.com/first.png' });
+    service.queueLfxProfileSync({ logoUrl: 'https://cdn.example.com/second.png' });
+
+    const first = http.expectOne('/api/mentorship/me/lfx-profile');
+    expect(first.request.body).toEqual({ logoUrl: 'https://cdn.example.com/first.png' });
+    // The second copy waits for the first, so it can never land before it.
+    http.expectNone('/api/mentorship/me/lfx-profile');
+    first.flush(null, { status: 204, statusText: 'No Content' });
+
+    expect(http.expectOne('/api/mentorship/me/lfx-profile').request.body).toEqual({ logoUrl: 'https://cdn.example.com/second.png' });
+  });
+
+  it('logs a failed queued copy and still sends the next one', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    service.queueLfxProfileSync({ firstName: 'First' });
+    service.queueLfxProfileSync({ firstName: 'Second' });
+
+    http.expectOne('/api/mentorship/me/lfx-profile').flush({ error: 'down' }, { status: 503, statusText: 'Service Unavailable' });
+
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('mentorship'), expect.objectContaining({ status: 503 }));
+    expect(http.expectOne('/api/mentorship/me/lfx-profile').request.body).toEqual({ firstName: 'Second' });
+    consoleError.mockRestore();
   });
 });
 

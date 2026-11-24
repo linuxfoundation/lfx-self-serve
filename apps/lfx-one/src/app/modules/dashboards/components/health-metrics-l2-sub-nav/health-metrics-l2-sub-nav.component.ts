@@ -8,7 +8,7 @@ import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
  * Section nav for a Health Metrics Level 2 tab (the design's `.hmn`), right of the sections. Purely
- * presentational — the shell owns scroll-spy and scrolling; this emits the picked section and renders the badges.
+ * presentational — the shell owns scroll-spy and scrolling; this emits the picked section and renders the notes.
  */
 @Component({
   selector: 'lfx-health-metrics-l2-sub-nav',
@@ -22,10 +22,12 @@ import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
     '[attr.data-testid]': "testIdPrefix() + '-sub-nav'",
     '[class.hmn-closed]': 'closed()',
     '[style.--hmn-top]': "topPx() + 'px'",
+    '(mouseenter)': 'closed.set(false)',
     '(mouseleave)': 'closed.set(false)',
     '(focusin)': 'closed.set(false)',
     '(click)': 'openFromRail($event)',
-    '(keydown.escape)': 'dismiss()',
+    // On the document, so Escape also shuts a panel that hover opened while focus was elsewhere.
+    '(document:keydown.escape)': 'onEscape()',
   },
 })
 export class HealthMetricsL2SubNavComponent {
@@ -41,7 +43,7 @@ export class HealthMetricsL2SubNavComponent {
 
   public readonly sectionPicked = output<string>();
 
-  /** Keeps the collapsed panel shut after a pick until the pointer leaves, as hover would reopen it at once. */
+  /** Keeps the panel shut after a pick or Escape until the pointer next enters, as hover would reopen it at once. */
   protected readonly closed = signal(false);
 
   protected pick(key: string, event: Event): void {
@@ -56,16 +58,15 @@ export class HealthMetricsL2SubNavComponent {
     this.elementRef.nativeElement.querySelector<HTMLElement>('.hmn-item[aria-current]')?.focus();
   }
 
-  /** Shuts the collapsed panel; the wide column has nothing to close, so it keeps the reader's focus. */
-  protected dismiss(focused: HTMLElement | null = this.elementRef.nativeElement.querySelector<HTMLElement>('.hmn-item:focus')): void {
-    if (!this.isCollapsed()) return;
-    this.closed.set(true);
-    focused?.blur();
+  /** Escape shuts the panel only while it is open, by hover or by focus inside it. */
+  protected onEscape(): void {
+    const host = this.elementRef.nativeElement;
+    if (host.matches(':hover') || host.contains(document.activeElement)) this.dismiss();
   }
 
-  /** The rail only shows while the page is narrow enough to collapse the nav. */
-  private isCollapsed(): boolean {
-    const rail = this.elementRef.nativeElement.querySelector<HTMLElement>('.hmn-rail');
-    return !!rail && getComputedStyle(rail).display !== 'none';
+  /** Shuts the panel and lets go of the focused item, which would otherwise hold it open. */
+  protected dismiss(focused: HTMLElement | null = this.elementRef.nativeElement.querySelector<HTMLElement>('.hmn-item:focus')): void {
+    this.closed.set(true);
+    focused?.blur();
   }
 }

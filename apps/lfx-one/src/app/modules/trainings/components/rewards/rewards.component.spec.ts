@@ -4,8 +4,9 @@
 import { Clipboard } from '@angular/cdk/clipboard';
 import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import type { RewardPromotion, RewardsSummaryResponse } from '@lfx-one/shared/interfaces';
 import { RewardsService } from '@shared/services/rewards.service';
 import { UserService } from '@shared/services/user.service';
@@ -105,6 +106,36 @@ describe('RewardsComponent subject transitions', () => {
     secondSummary.next(rewardsSummary(900));
     fixture.detectChanges();
     expect(fixture.componentInstance.summary()?.points).toBe(900);
+  });
+
+  it.each([null, '2026-12-31T12:00:00.000Z'])('opens transaction history in the same tab with program expiry %s', async (programExpiryDate) => {
+    getSummary.mockReturnValue(of({ ...rewardsSummary(100), programExpiryDate }));
+    fixture = TestBed.createComponent(RewardsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const link = fixture.debugElement.query(By.css('[data-testid="rewards-view-transactions-link"]'));
+    expect(link).not.toBeNull();
+    const anchor = link.nativeElement as HTMLAnchorElement;
+    expect(anchor.textContent).toContain('View transactions');
+    expect(anchor.getAttribute('href')).toBe('/profile/transactions');
+    expect(anchor.getAttribute('target')).toBeNull();
+    expect(link.parent?.nativeElement.getAttribute('data-testid')).toBe('rewards-summary-footer');
+
+    const expiry = fixture.debugElement.query(By.css('[data-testid="rewards-program-expiry"]'));
+    if (programExpiryDate) {
+      expect(expiry.nativeElement.textContent).toContain('Program year ends');
+    } else {
+      expect(expiry).toBeNull();
+    }
+
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+    anchor.click();
+    expect(navigate).toHaveBeenCalledExactlyOnceWith(
+      router.createUrlTree(['/profile/transactions']),
+      expect.objectContaining({ skipLocationChange: false, replaceUrl: false })
+    );
   });
 
   it('does not open redemption confirmation when reward points are insufficient', () => {

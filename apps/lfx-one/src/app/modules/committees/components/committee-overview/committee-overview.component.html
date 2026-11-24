@@ -23,7 +23,7 @@
           @if (canViewRoster()) {
             <div class="flex items-center gap-3 px-4 py-3" data-testid="committee-overview-organizations">
               <i class="fa-light fa-building text-gray-400 w-4 text-center flex-shrink-0"></i>
-              <span class="text-sm text-gray-700 flex-1">Organizations</span>
+              <span class="text-sm text-gray-700 flex-1">Companies</span>
               @if (membersLoading()) {
                 <p-skeleton width="24px" height="1rem" />
               } @else {
@@ -229,8 +229,12 @@
           <lfx-weekly-brief-card
             [committee]="committee()"
             [canEdit]="canEdit()"
+            [canShareWeeklyBriefByEmail]="canShareWeeklyBriefByEmail()"
+            [shareAccessLoading]="shareAccessLoading()"
+            [shareAccessError]="shareAccessError()"
+            (shareAccessRetryRequested)="shareAccessRetryRequested.emit()"
             (tabNavigated)="navigateToTab($event)"
-            (voteDrawerRequested)="openVoteDrawer($event)"
+            (voteRequested)="openVote($event)"
             data-testid="committee-overview-weekly-brief-card" />
         }
 
@@ -362,17 +366,6 @@
     </div>
   </div>
 </div>
-
-<!-- Vote Results Drawer -->
-<!-- allowCastFromDrawer=false: the default-'creator'-audience inline "Cast Vote" CTA gates on
-     vote.response_status, which only getMyVotes() (Me-lens) decorates — this screen feeds the drawer
-     from getVotesByCommittee/getVote, so response_status is always undefined and the CTA could never
-     legitimately render here anyway. Explicit rather than relying on that data gap to keep it hidden. -->
-<lfx-vote-results-drawer
-  [(visible)]="voteDrawerVisible"
-  [voteId]="selectedVoteId()"
-  [listVote]="selectedVote()"
-  [allowCastFromDrawer]="false"></lfx-vote-results-drawer>
 
 <!-- Survey Results Drawer -->
 <!-- hasPMOAccess also gates the per-recipient Responses tab (not just the admin menu), so it's

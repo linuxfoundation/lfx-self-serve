@@ -414,6 +414,22 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
     expect(fixture.componentInstance.selectedResponse()).toBe('maybe');
   });
 
+  it('toasts and emits the invited-only copy when the save answers 404', async () => {
+    const single = { ...MEETING, recurrence: null, occurrences: [] } as Meeting;
+    const fixture = await mount(single);
+    http.expectOne((request) => request.url === `/api/meetings/${MEETING.id}/rsvp/me`).flush(null);
+    const failed = vi.fn();
+    fixture.componentInstance.rsvpFailed.subscribe(failed);
+
+    fixture.componentInstance.handleRsvpClick('accepted');
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush({ error: 'Not found' }, { status: 404, statusText: 'Not Found' });
+
+    const copy = 'Only invited users are allowed to RSVP to this meeting.';
+    expect(failed).toHaveBeenCalledWith(copy);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'RSVP Failed', detail: copy }));
+    expect(fixture.componentInstance.isLoading()).toBe(false);
+  });
+
   it.each(['single', 'this_and_following'] as const)('does not submit a %s modal response after the displayed date changed', async (scope) => {
     const fixture = await mount();
     flushRead(null);

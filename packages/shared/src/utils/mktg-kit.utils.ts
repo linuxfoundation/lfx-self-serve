@@ -8,6 +8,7 @@ import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_REVISION_ID_REGEX } from '../constants/mktg-document-store.constants';
 import {
   MKTG_KIT_FAMILIES,
+  MKTG_KIT_SHOW_COMING_SOON,
   MKTG_KIT_POSITIONING_FAMILY_ID,
   MKTG_KIT_STATE_LABELS,
   MKTG_KIT_EXCLUDED_DOCUMENT_KEYS,
@@ -110,14 +111,17 @@ export function isMktgKitFamilyLive(family: MktgKitFamily): boolean {
   return family.assets.some((asset) => !!kitDocumentType(asset));
 }
 
-export function resolveMktgKit(listing: MktgDocumentsResponse, now = new Date()): MktgKitFamilyView[] {
-  return MKTG_KIT_FAMILIES.map((family) => ({
+export function resolveMktgKit(listing: MktgDocumentsResponse, now = new Date(), showComingSoon: boolean = MKTG_KIT_SHOW_COMING_SOON): MktgKitFamilyView[] {
+  return MKTG_KIT_FAMILIES.filter((family) => showComingSoon || isMktgKitFamilyLive(family)).map((family) => ({
     family,
     live: isMktgKitFamilyLive(family),
     rows: family.assets
       .filter((asset) => !asset.agentKey || !MKTG_KIT_EXCLUDED_DOCUMENT_KEYS.includes(asset.agentKey))
-      .map((asset) => resolveMktgKitAsset(asset, listing, now)),
-    agents: family.agentIds.filter((id) => !MKTG_KIT_EXCLUDED_AGENT_IDS.includes(id)).flatMap((id) => MKTG_AGENTS.filter((agent) => agent.id === id)),
+      .map((asset) => resolveMktgKitAsset(asset, listing, now))
+      .filter((row) => showComingSoon || row.state !== 'coming-soon'),
+    agents: family.agentIds
+      .filter((id) => !MKTG_KIT_EXCLUDED_AGENT_IDS.includes(id))
+      .flatMap((id) => MKTG_AGENTS.filter((agent) => agent.id === id && (showComingSoon || agent.status === 'active'))),
   }));
 }
 

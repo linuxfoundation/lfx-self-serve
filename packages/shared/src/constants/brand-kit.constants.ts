@@ -16,6 +16,16 @@
 
 import { FOUNDATION_MESSAGE_ANSWER_MAX_CHARS } from './foundation-message.constants';
 import { MKTG_ARTIFACT_MAX_DOCUMENT_BYTES, MKTG_ARTIFACT_PARTITION_REGEX, MKTG_ARTIFACT_SHA256_REGEX, MKTG_ARTIFACT_SPECS } from './mktg-artifact.constants';
+import {
+  MKTG_REPORT_ASSET_LABELS,
+  MKTG_REPORT_BARE_URL_REGEX,
+  MKTG_REPORT_FINDINGS_EMPTY_LINES,
+  MKTG_REPORT_FINDINGS_TITLES,
+  MKTG_REPORT_LIST_MAX,
+  MKTG_REPORT_MISSING_FIX_PREFIX,
+  MKTG_REPORT_TEXT_MAX_CHARS,
+  MKTG_REPORT_V2,
+} from './mktg-asset.constants';
 
 /** Contract discriminator the BFF accepts; unknown majors are rejected. */
 export const BRAND_KIT_CONTRACT_ID = 'brand-kit-output/v2';
@@ -137,6 +147,18 @@ export const BRAND_KIT_MAX_LOGO_FILES = 12;
 export const BRAND_KIT_MAX_LOGO_FILE_CHARS = 2_000_000;
 
 /**
+ * A ZIP of logo files, in bytes as picked: the form's footnote says "Keep a
+ * ZIP small: SVG files only, under 150 KB" (the agent's intake), and this is
+ * that number, so the form refuses a bigger package at pick time and the
+ * validator refuses it in the request. The full logo package linked on a
+ * brand page is usually far over it; it goes by link.
+ */
+export const BRAND_KIT_MAX_LOGO_ZIP_BYTES = 150 * 1024;
+
+/** The same cap on the wire: base64 is exactly four characters per three bytes. */
+export const BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS = Math.ceil(BRAND_KIT_MAX_LOGO_ZIP_BYTES / 3) * 4;
+
+/**
  * All logo files of one form together, in UTF-8 bytes: the generate request
  * is one JSON body, and the BFF's body parser takes 15 MB of bytes — the form
  * says so before the request is refused on the way out. The 3 MB left over
@@ -248,8 +270,16 @@ export const BRAND_KIT_TYPE_STEPS = ['display', 'h2', 'h3', 'eyebrow', 'body', '
 /** The WCAG grades the contrast table prints, best first. */
 export const BRAND_KIT_CONTRAST_GRADES = ['AAA', 'AA', 'Large text only', 'Fails'] as const;
 
+/**
+ * WCAG 1.4.3's contrast thresholds, the one AA figure for every text-on-colour rule in the kit (a swatch's label on
+ * its swatch, the accent as text on paper, the symbol page's white-on-accent clause) and the grades' steps beside it.
+ */
+export const BRAND_KIT_CONTRAST_AAA = 7;
+export const BRAND_KIT_CONTRAST_AA = 4.5;
+export const BRAND_KIT_CONTRAST_LARGE_TEXT = 3;
+
 /** The contrast a swatch's label must reach on its swatch: WCAG AA for normal text, since the labels are small. */
-export const BRAND_KIT_LABEL_MIN_CONTRAST = 4.5;
+export const BRAND_KIT_LABEL_MIN_CONTRAST = BRAND_KIT_CONTRAST_AA;
 
 /** Where a palette value was found. */
 export const BRAND_KIT_FOUND_IN_KINDS = ['logo', 'site_css', 'brand_page', 'page', 'unsourced'] as const;
@@ -265,6 +295,74 @@ export const BRAND_KIT_FOUND_IN_LABELS: Record<(typeof BRAND_KIT_FOUND_IN_KINDS)
 
 /** The four logo slots the kit assigns the real files to. */
 export const BRAND_KIT_LOGO_SLOTS = ['primary', 'stacked', 'symbol', 'reversed'] as const;
+
+// ---------------------------------------------------------------------------
+// Report v2 (brand-kit ≥ 2.2.0): the findings groups, the colour conflicts and the rules' basis, all optional in the envelope
+// ---------------------------------------------------------------------------
+
+/** The report version that carries the findings; absent means the v1 report (the family's, {@link MKTG_REPORT_V2}). */
+export const BRAND_KIT_REPORT_V2 = MKTG_REPORT_V2;
+/** What a failed source was: a provenance kind, or one of the other inputs the agent reads. */
+export const BRAND_KIT_REPORT_SOURCE_KINDS = [...BRAND_KIT_FOUND_IN_KINDS, 'logo_file', 'logo_package', 'lfx_record', 'framework'] as const;
+/** The assets the agent looks for and may report missing. */
+export const BRAND_KIT_REPORT_ASSETS = [
+  'logo_primary',
+  'logo_stacked',
+  'logo_symbol',
+  'logo_reversed',
+  'brand_page',
+  'font_weights',
+  'palette_accent',
+  'framework',
+] as const;
+/** The warnings the agent can raise about what it read. */
+export const BRAND_KIT_REPORT_WARNING_CODES = [
+  'color_conflict',
+  'font_unverified',
+  'live_type_wordmark',
+  'palette_from_page_text',
+  'site_colour_not_in_logo',
+  'brand_page_guessed',
+] as const;
+/** Where a rule the chapters render comes from: the project's own sources, or the LF reference kit. */
+export const BRAND_KIT_REPORT_RULE_BASES = ['project', 'lf-reference'] as const;
+/**
+ * What the validator checks of a v2 report, each field only when present: `findings` carries its three groups
+ * (sources_failed, missing_assets, warnings) with closed `kind`, `asset` and `code` enums; every reason, text and fix
+ * is a trimmed sentence of 1–300 characters and not a bare URL (URLs travel in `source`); `detail` and a conflict's
+ * `name` are non-empty text with no cap; every hex is uppercase `#RRGGBB`; the findings groups, the colour conflicts
+ * and a rule's `uses` hold at most 50 entries, the rules at most 200; a conflict lists 2–4 values.
+ */
+export const BRAND_KIT_REPORT_TEXT_MAX_CHARS = MKTG_REPORT_TEXT_MAX_CHARS;
+/** A sentence that is nothing but an address, in any case: it belongs in `source`, not in a reason, text or fix. */
+export const BRAND_KIT_REPORT_BARE_URL_REGEX = MKTG_REPORT_BARE_URL_REGEX;
+/** No findings group, conflict list or `uses` list grows past this. */
+export const BRAND_KIT_REPORT_LIST_MAX = MKTG_REPORT_LIST_MAX;
+/** The rules list is longer than the others: one entry per rendered rule across the six chapters. */
+export const BRAND_KIT_REPORT_RULES_MAX = 200;
+/** A colour conflict lists the values seen: at least two (or it is no conflict), at most four. */
+export const BRAND_KIT_REPORT_CONFLICT_VALUES = { min: 2, max: 4 } as const;
+/** The Sources tab's groups, in reading order. */
+export const BRAND_KIT_SOURCES_GROUPS = ['failed', 'missing', 'warnings', 'conflicts'] as const;
+/** The Failed sources title of a logo package the agent could not read from a link, before its host. */
+export const BRAND_KIT_LOGO_PACKAGE_TITLE = 'Logo package (ZIP)';
+
+/** What each group is called on the tab: the family's three findings titles, then the kit's own conflicts. */
+export const BRAND_KIT_SOURCES_GROUP_TITLES = {
+  ...MKTG_REPORT_FINDINGS_TITLES,
+  conflicts: 'Colour conflicts',
+} as const satisfies Record<(typeof BRAND_KIT_SOURCES_GROUPS)[number], string>;
+/** What each group says when it has nothing to list. */
+export const BRAND_KIT_SOURCES_EMPTY_LINES = {
+  ...MKTG_REPORT_FINDINGS_EMPTY_LINES,
+  conflicts: 'No colour conflicts.',
+} as const satisfies Record<(typeof BRAND_KIT_SOURCES_GROUPS)[number], string>;
+/** How the tab names each asset the agent may report missing: the family map, which holds the kit's eight. */
+export const BRAND_KIT_REPORT_ASSET_LABELS = MKTG_REPORT_ASSET_LABELS satisfies Record<(typeof BRAND_KIT_REPORT_ASSETS)[number], string>;
+/** Before a conflict's chosen hex: the value the kit keeps. */
+export const BRAND_KIT_CONFLICT_KEPT_WORD = 'kept';
+/** Before a missing asset's fix, when the agent names one. */
+export const BRAND_KIT_MISSING_FIX_PREFIX = MKTG_REPORT_MISSING_FIX_PREFIX;
 
 /** The exact lengths the chapters' fixed lists have (the agent's envelope schema). */
 export const BRAND_KIT_CHAPTER_COUNTS = {
@@ -322,18 +420,6 @@ export const BRAND_KIT_BOOK_PAGES = [
   { id: 'back-cover', chapter: null, title: 'Back cover' },
 ] as const;
 
-/** The eight illustrative icons of the iconography page, with the Font Awesome class each is drawn with. */
-export const BRAND_KIT_ICON_SAMPLES = [
-  { label: 'Documents', icon: 'fa-light fa-file-lines' },
-  { label: 'Community', icon: 'fa-light fa-people-group' },
-  { label: 'Global', icon: 'fa-light fa-globe' },
-  { label: 'Code', icon: 'fa-light fa-code' },
-  { label: 'Events', icon: 'fa-light fa-calendar-days' },
-  { label: 'Metrics', icon: 'fa-light fa-chart-line' },
-  { label: 'Verified', icon: 'fa-light fa-badge-check' },
-  { label: 'Newsletter', icon: 'fa-light fa-envelope-open-text' },
-] as const;
-
 /** The alphabet line the typography page sets in the typeface. */
 export const BRAND_KIT_TYPE_SPECIMEN = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz 0123456789';
 
@@ -361,6 +447,15 @@ export const BRAND_KIT_PRINT_BODY_CLASS = 'lfx-print-brand-kit';
 
 /** The class of the book's wrapper on screen: never shown there, shown only while the book prints (see styles.scss). */
 export const BRAND_KIT_PRINT_ONLY_CLASS = 'lfx-brand-kit-print-only';
+
+/**
+ * The class of the kit's portrait print document (`lfx-mktg-brand-kit-print`,
+ * on the shared `mktg-framework` page), as against the legacy landscape book:
+ * `body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait)` switches the page
+ * setup in mktg-family-print.scss, and the print frame picks its `@page` rule
+ * by the same test. The template and the stylesheets carry the literal.
+ */
+export const BRAND_KIT_PORTRAIT_PRINT_CLASS = 'lfx-brand-kit-portrait';
 
 /**
  * A logo file's stem (its name without the extension and a `-838x203` size
@@ -417,3 +512,24 @@ export const BRAND_KIT_PROJECT_UID_REGEX = MKTG_ARTIFACT_PARTITION_REGEX;
 
 /** Lowercase hex SHA-256 pattern — alias of the shared {@link MKTG_ARTIFACT_SHA256_REGEX}. */
 export const BRAND_KIT_SHA256_REGEX = MKTG_ARTIFACT_SHA256_REGEX;
+
+// ---------------------------------------------------------------------------
+// The kit-only words of the approve dialog and the overview's basis pills
+// (report v2, brand-kit ≥ 2.2.0): the colour-conflict and LF-reference-rule
+// sections and the chapter basis labels, which only a Brand Kit report has.
+// The dialog's headers, its findings group titles and the fix prefix are the
+// family's (MKTG_APPROVE_HEADER*, MKTG_REPORT_FINDINGS_TITLES,
+// MKTG_REPORT_MISSING_FIX_PREFIX in mktg-asset.constants.ts), shared with
+// every agent's report; the Sources tab aliases them above.
+// ---------------------------------------------------------------------------
+
+/** The approve dialog's section of colour conflicts. */
+export const BRAND_KIT_APPROVE_CONFLICTS_TITLE = 'Colour conflicts';
+/** Before the hex the kit keeps: `kept #FF702D`. */
+export const BRAND_KIT_APPROVE_CONFLICT_KEPT_PREFIX = 'kept ';
+/** The approve dialog's section of rules the LF reference supplied; each line is `{Chapter}: {n} of {m} rules` (brandKitLfReferenceRuleLines). */
+export const BRAND_KIT_APPROVE_RULES_TITLE = 'Rules from the LF reference, not the project';
+/** A chapter whose rules all come from the project's own sources. */
+export const BRAND_KIT_CHAPTER_BASIS_PROJECT = 'From the project';
+/** A chapter whose rules all come from the LF reference kit; mixed chapters read `LF reference default for {n} of {m} rules` (brandKitChapterBasisLabel). */
+export const BRAND_KIT_CHAPTER_BASIS_LF = 'LF reference default';

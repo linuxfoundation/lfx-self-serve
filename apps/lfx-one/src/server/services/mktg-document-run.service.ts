@@ -51,7 +51,7 @@ import {
   MktgActiveRunStartOptions,
   MktgMember360QuestionsClaim,
 } from '@lfx-one/shared/interfaces';
-import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_CLOSED } from '@lfx-one/shared/constants/mktg-run.constants';
+import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_CLOSED, MKTG_RUN_NOT_FAILED } from '@lfx-one/shared/constants/mktg-run.constants';
 import { createMember360Redactor } from '@lfx-one/shared/server';
 import { isMktgRunPendingQuestions, mktgRunClaimAnswers } from '@lfx-one/shared/utils/mktg-document-store.utils';
 import {
@@ -98,7 +98,14 @@ import { MktgDocumentAuthorService } from './mktg-document-author.service';
 
 /** Private session-keyed starts and question turns; answer/state transitions use conditional object versions. */
 export class MktgDocumentRunService {
-  private static readonly terminalCache = new Map<string, { stamp: number; progress: MktgDocumentRunProgress | null }>();
+  private static readonly terminalCache = new Map<
+    string,
+    {
+      stamp: number;
+      progress: MktgDocumentRunProgress | null;
+      failure?: Pick<MktgStartedRunRecord, 'creatorSubject' | 'failureText'>;
+    }
+  >();
   private readonly store = new ObjectStoreService();
   private readonly projects = new ProjectService();
   private readonly guild = new GuildService();
@@ -421,7 +428,7 @@ export class MktgDocumentRunService {
           let stored: MktgStoredStartedRun | null = null;
           let knownUnfinished = false;
           try {
-            const cached = this.cached(entry.key);
+            const cached = this.cached(entry.key, getEffectiveSub(req));
             if (cached?.stamp === stamp) {
               return matchesMktgRunProgress(cached.progress, agentKey, documentId);
             }
@@ -459,14 +466,14 @@ export class MktgDocumentRunService {
               activity = record.creatorSubject && getEffectiveSub(req) === record.creatorSubject ? result.activity : undefined;
             }
             if (isMktgRunTerminal(record.state)) {
-              this.remember(entry, mktgRunProgress(record));
+              this.remember(entry, mktgRunProgress(record), record);
             }
-            return this.publicProgress(req, record, record.state === 'failed' ? fullReply : undefined, activity);
+            return this.publicProgress(req, record, record.state === 'failed' ? fullReply : undefined, activity, coverage);
           } catch (error) {
             logger.warning(req, 'mktg_run_reconcile', 'One run could not be checked; retaining its last known state', { project, key: entry.key, err: error });
             this.skip(entry, coverage, knownUnfinished);
             if (coverage) coverage.lookupFailed = true;
-            return stored ? this.publicProgress(req, stored.record) : null;
+            return stored ? this.publicProgress(req, stored.record, undefined, undefined, coverage) : null;
           }
         })
       );
@@ -491,9 +498,11 @@ export class MktgDocumentRunService {
       throw ServiceValidationError.forField('refreshRun', 'Refresh must name one run on an explicit detail read.');
     }
     const snapshot: MktgDocumentRunSnapshot = { runs: [...progress.runs], ...(progress.progressUnavailable && { progressUnavailable: true }) };
+    // Selected reads share the list's partial-coverage rule: an unverified questions reader marks the detail unavailable.
+    const coverage: MktgDocumentRunCoverage = { uncheckedCount: 0, retainedRunIds: [] };
     if (refreshRunId) {
       try {
-        const refreshed = await this.refreshFailure(req, project, type.agentKey, documentId, refreshRunId);
+        const refreshed = await this.refreshFailure(req, project, type.agentKey, documentId, refreshRunId, coverage);
         snapshot.runs = snapshot.runs.filter((run) => run.runId !== refreshRunId);
         if (refreshed) snapshot.runs.unshift(refreshed);
       } catch (err) {
@@ -519,7 +528,8 @@ export class MktgDocumentRunService {
           type.agentKey,
           documentId,
           selectedRunId,
-          snapshot.runs.find((run) => run.runId === selectedRunId)
+          snapshot.runs.find((run) => run.runId === selectedRunId),
+          coverage
         );
         snapshot.runs = snapshot.runs.filter((run) => run.runId !== selectedRunId);
         if (selected) {
@@ -540,6 +550,7 @@ export class MktgDocumentRunService {
       }
     }
     const detail = typeof readDetail === 'function' ? await readDetail() : readDetail;
+    if (coverage.lookupFailed) snapshot.progressUnavailable = true;
     if (!detail && !snapshot.runs.length && !poll && !snapshot.progressUnavailable) return null;
     return { ...(detail ?? { project, type, documentId, revisions: [], approvedCurrent: null }), ...snapshot };
   }
@@ -563,7 +574,7 @@ export class MktgDocumentRunService {
           if (rows.has(id)) return;
           try {
             const key = `${this.prefix(project)}${id}.json`;
-            const cached = this.cached(key);
+            const cached = this.cached(key, getEffectiveSub(req));
             if (cached) {
               const row = matchesMktgRunProgress(cached.progress, agentKey, documentId);
               if (row) {
@@ -573,7 +584,7 @@ export class MktgDocumentRunService {
               return;
             }
             const stored = await this.read(req, project, key);
-            const row = stored && matchesMktgRunProgress(await this.publicProgress(req, stored.record), agentKey, documentId);
+            const row = stored && matchesMktgRunProgress(await this.publicProgress(req, stored.record, undefined, undefined, coverage), agentKey, documentId);
             if (row && stored) {
               rows.set(id, row);
               staleWindow ||=
@@ -656,14 +667,21 @@ export class MktgDocumentRunService {
   }
 
   /** The Documents transport invokes this once for a selected failed run on detail navigation, never a timer/list read. */
-  public async refreshFailure(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<MktgDocumentRunProgress | null> {
+  public async refreshFailure(
+    req: Request,
+    project: string,
+    agentKey: string,
+    documentId: string,
+    runId: string,
+    coverage?: MktgDocumentRunCoverage
+  ): Promise<MktgDocumentRunProgress | null> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
     if (stored.record.state !== 'failed') {
-      return this.publicProgress(req, stored.record);
+      return this.publicProgress(req, stored.record, undefined, undefined, coverage);
     }
     const result = await this.result(req, stored.record);
     const record = await this.advanceResult(req, stored, result);
-    return this.publicProgress(req, record, result.failureText ?? result.reply);
+    return this.publicProgress(req, record, result.failureText ?? result.reply, undefined, coverage);
   }
 
   /** Server-only creator ACK repair; confirmed absence is uncertain, never permission to create again. */
@@ -699,6 +717,23 @@ export class MktgDocumentRunService {
       });
       await this.mark(req, stored, 'writing', mktgRunRenewAt(stored.record, Date.now()), undefined, stored.record.answeredQuestionsId, 0);
     }
+  }
+
+  /** Closes a failed run as discarded so it leaves Started runs for everyone; no document or revision is written. */
+  public async dismiss(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<void> {
+    const stored = await this.selected(req, project, agentKey, documentId, runId);
+    // Already off every list: no write and no audit.
+    if (isMktgRunClosed(stored.record.state)) return;
+    if (stored.record.state !== 'failed') throw this.notFailedConflict(stored.record);
+    await this.settleRedraft(
+      req,
+      stored.record,
+      { status: 'failed', failureText: 'This run was dismissed.' },
+      await this.redrafts.forSession(req, stored.record.sessionId)
+    );
+    const closed = await this.mark(req, stored, 'discarded');
+    // A concurrent retry moved the run before this write landed.
+    if (!isMktgRunClosed(closed.state)) throw this.notFailedConflict(closed);
   }
 
   /** Caller resolves writer access and validates the creator token; only the returned CAS winner may send. */
@@ -883,6 +918,16 @@ export class MktgDocumentRunService {
     });
   }
 
+  /** Details carry only the opaque run id; the client re-reads Started runs for the current state. */
+  private notFailedConflict(run: MktgStartedRunRecord): ConflictError {
+    return new ConflictError('Only a failed run can be dismissed.', MKTG_RUN_NOT_FAILED, {
+      operation: 'mktg_run_dismiss',
+      service: 'object_store',
+      clientMessage: 'This run is no longer failed. Refresh to see where it stands.',
+      details: { runId: run.runId },
+    });
+  }
+
   private async displayName(req: Request, subject?: string): Promise<string | null> {
     if (!subject) return null;
     const name = (await this.authors.resolveAuthor(req, subject))?.name?.trim();
@@ -894,15 +939,23 @@ export class MktgDocumentRunService {
     req: Request,
     run: MktgStartedRunRecord,
     reply = run.failureText,
-    activity?: MktgRunActivity[]
+    activity?: MktgRunActivity[],
+    coverage?: MktgDocumentRunCoverage
   ): Promise<MktgDocumentRunProgress | null> {
     let writer = false;
     if (run.state === 'questions' && run.pendingQuestions && MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === run.agentKey && type.kind === 'living')) {
       try {
-        const project = await this.projects.getProjectById(req, run.project, true);
+        // strictWriter: a failed access check reaches the catch below instead of degrading to a false denial.
+        const project = await this.projects.getProjectById(req, run.project, true, false, false, true);
         writer = project.writer === true && project.uid === run.project;
       } catch (err) {
-        logger.warning(req, 'mktg_run_questions_access', 'Questions omitted because writer access could not be verified', { project: run.project, err });
+        // An unverified reader is not a non-writer: the read is partial, so the client keeps the questions it already holds.
+        if (coverage) coverage.lookupFailed = true;
+        logger.warning(req, 'mktg_run_questions_access', 'Questions omitted and progress marked unavailable; writer access could not be verified', {
+          project: run.project,
+          run: run.runId,
+          err,
+        });
       }
     }
     return mktgRunProgress(run, reply, activity, getEffectiveSub(req) ?? undefined, writer);
@@ -1156,16 +1209,23 @@ export class MktgDocumentRunService {
     if (written && isMktgRunTerminal(state)) {
       logger.info(req, 'mktg_run_mark', 'Recorded terminal run state', { project: run.project, run: run.runId, state });
       if (state === 'discarded') {
-        logger.info(req, 'mktg_run_discard', 'Active run discarded before a new start', {
-          project: run.project,
-          runId: run.runId,
-          documentId: run.documentId,
-          agentKey: run.agentKey,
-          discardedBySubject,
-          creatorSubject: run.creatorSubject ?? null,
-          self: !!discardedBySubject && discardedBySubject === run.creatorSubject,
-          at: closedAt,
-        });
+        // Start discards only target active runs; a failed run is closed only by an explicit dismiss.
+        const dismissed = run.state === 'failed';
+        logger.info(
+          req,
+          dismissed ? 'mktg_run_dismiss_audit' : 'mktg_run_discard',
+          dismissed ? 'Failed run dismissed from Started runs' : 'Active run discarded before a new start',
+          {
+            project: run.project,
+            runId: run.runId,
+            documentId: run.documentId,
+            agentKey: run.agentKey,
+            discardedBySubject,
+            creatorSubject: run.creatorSubject ?? null,
+            self: !!discardedBySubject && discardedBySubject === run.creatorSubject,
+            at: closedAt,
+          }
+        );
       }
     }
     const current = await this.read(req, run.project, stored.key);
@@ -1277,7 +1337,7 @@ export class MktgDocumentRunService {
       coverage.retainedRunIds.push(id);
     }
   }
-  private cached(key: string) {
+  private cached(key: string, readerSubject?: string | null) {
     const cache = MktgDocumentRunService.terminalCache;
     const entry = cache.get(key);
     if (entry?.progress?.agentKey === 'linkedin-post') {
@@ -1288,10 +1348,15 @@ export class MktgDocumentRunService {
       cache.delete(key);
       cache.set(key, entry);
     }
+    if (entry?.progress?.state === 'failed' && entry.failure?.creatorSubject && entry.failure.creatorSubject === readerSubject) {
+      // Cache only the bounded persisted snapshot, never a full provider reply or
+      // session capability. The public cached projection remains generic.
+      return { ...entry, progress: { ...entry.progress, failureText: entry.failure.failureText ?? entry.progress.failureText } };
+    }
     return entry;
   }
 
-  private remember(entry: ObjectStoreListEntry, progress: MktgDocumentRunProgress | null): void {
+  private remember(entry: ObjectStoreListEntry, progress: MktgDocumentRunProgress | null, record?: MktgStartedRunRecord): void {
     // Creator-only LinkedIn replies must be projected per reader, never from the shared terminal cache.
     if (progress?.agentKey === 'linkedin-post') {
       MktgDocumentRunService.terminalCache.delete(entry.key);
@@ -1304,7 +1369,17 @@ export class MktgDocumentRunService {
     }
     const cache = MktgDocumentRunService.terminalCache;
     cache.delete(entry.key);
-    cache.set(entry.key, { stamp, progress });
+    cache.set(entry.key, {
+      stamp,
+      progress,
+      ...(progress?.state === 'failed' &&
+        record && {
+          failure: {
+            creatorSubject: record.creatorSubject,
+            failureText: record.failureText === undefined ? undefined : Buffer.from(this.snapshot(record.failureText), 'base64').toString('utf8'),
+          },
+        }),
+    });
     while (cache.size > MKTG_STARTED_RUN_TERMINAL_CACHE_LIMIT) {
       const oldest = cache.keys().next().value;
       if (oldest !== undefined) {
@@ -1455,14 +1530,15 @@ export class MktgDocumentRunService {
     agentKey: string,
     documentId: string,
     runId: string,
-    known?: MktgDocumentRunProgress
+    known?: MktgDocumentRunProgress,
+    coverage?: MktgDocumentRunCoverage
   ): Promise<MktgDocumentRunProgress | null> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
     const closed = await this.closedProgress(req, stored.record);
     if (closed) return closed;
     if (stored.record.state === 'completed') return null;
     if (known) return known;
-    if (stored.record.state === 'failed') return this.publicProgress(req, stored.record);
+    if (stored.record.state === 'failed') return this.publicProgress(req, stored.record, undefined, undefined, coverage);
     const result = await this.result(req, stored.record);
     const record = await this.advanceResult(req, stored, result);
     const concurrentlyClosed = await this.closedProgress(req, record);
@@ -1471,7 +1547,7 @@ export class MktgDocumentRunService {
     const closedDuringResult = await this.closedProgress(req, latest.record);
     if (closedDuringResult) return closedDuringResult;
     const activity = record.creatorSubject && record.creatorSubject === getEffectiveSub(req) ? result.activity : undefined;
-    return this.publicProgress(req, record, record.state === 'failed' ? (result.failureText ?? result.reply) : undefined, activity);
+    return this.publicProgress(req, record, record.state === 'failed' ? (result.failureText ?? result.reply) : undefined, activity, coverage);
   }
 
   private closedMarker(record: MktgStartedRunRecord): MktgDocumentRunProgress | null {

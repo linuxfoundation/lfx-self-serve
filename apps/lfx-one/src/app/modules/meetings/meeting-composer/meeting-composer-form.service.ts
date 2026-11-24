@@ -64,8 +64,11 @@ import {
   generateRecurrenceObject,
   generateTempId,
   getActiveOccurrences,
+  getUpcomingMeetingStartTime,
   getUserTimezone,
+  getMeetingCommitteeSelectionKey,
   isRecurrenceNeverEndSentinel,
+  isSameMinute,
   isSameOccurrenceId,
   mapRecurrenceToFormValue,
   markMeetingFormForValidation,
@@ -86,6 +89,7 @@ import { MessageService } from 'primeng/api';
 import {
   catchError,
   concat,
+  distinctUntilChanged,
   EMPTY,
   finalize,
   forkJoin,
@@ -95,6 +99,7 @@ import {
   mergeMap,
   Observable,
   of,
+  startWith,
   Subject,
   Subscription,
   switchMap,
@@ -217,7 +222,8 @@ export class MeetingComposerFormService {
    * contents would disable Save and claim a group was waiting when none was.
    */
   public readonly hasUnreconciledGroupSelection = computed<boolean>(() => {
-    if ((this.deferredCommitteeMembers()?.length ?? 0) > 0) {
+    this.revision();
+    if (this.committeeMembersPending() || (this.deferredCommitteeMembers()?.length ?? 0) > 0) {
       return true;
     }
 
@@ -234,7 +240,11 @@ export class MeetingComposerFormService {
     // has members still to fetch. A group the report names that the form no longer carries is the
     // mirror image: dropping a group refetches the remainder, and until that lands `registrantUpdates`
     // still holds the dropped group's people, so a save in the gap unlinks the group and keeps them.
-    return selected.some((uid) => !resolved.includes(uid)) || resolved.some((uid) => !selected.includes(uid));
+    return (
+      selected.some((uid) => !resolved.includes(uid)) ||
+      resolved.some((uid) => !selected.includes(uid)) ||
+      this.resolvedCommitteeSelectionKey() !== getMeetingCommitteeSelectionKey(this.form().getRawValue().committees)
+    );
   });
 
   /**
@@ -271,6 +281,25 @@ export class MeetingComposerFormService {
    */
   public readonly committeeContextUnresolved = computed<boolean>(() => this.committeeContextLoading() || this.committeeContextFailed());
   public readonly originalStartTime = signal<string | null>(null);
+  // The same start date hydration patches into the startDate control, kept alongside it so
+  // composer-date-schedule's minDate() can let a past-dated meeting's own start date stay
+  // selectable (GH-4944) without re-deriving it from the raw timestamp.
+  public readonly originalStartDate = signal<Date | null>(null);
+  // The series' own raw start_time (edit mode only), distinct from originalStartTime once that
+  // defaults to the next occurrence (GH-4944): the whole-series save resends this verbatim instead
+  // of the displayed next-occurrence stand-in when the organizer never touched Start date/time, so
+  // an untouched save never moves the series anchor or risks the upstream "time changed" update
+  // path an edited-and-unchanged next-occurrence value could trigger (an override's moved time, or
+  // one inside the no-buffer window right after an occurrence ends, does not equal the pattern's
+  // own next slot upstream compares against).
+  private readonly seriesOriginStartTime = signal<string | null>(null);
+  // The timezone the displayed next-occurrence default was computed in (edit mode only). The
+  // "untouched Start date" substitution must not apply once this no longer matches the form's
+  // current timezone -- otherwise a timezone-only change can leave the displayed local time
+  // looking unchanged (same UTC instant under the old zone) while the resent origin, computed
+  // under the *old* zone, is paired with the *new* one and means a different local time than the
+  // organizer picked.
+  private readonly originalTimezone = signal<string | null>(null);
 
   /**
    * Owner hydrated from the loaded meeting, and the baseline the save diffs the picker against.
@@ -365,7 +394,8 @@ export class MeetingComposerFormService {
   /**
    * The group uids whose members have actually reached the form; `null` until anything has.
    * @description Reported by the picker, which writes the selection to the form synchronously and
-   * fetches its members afterwards, and never emits at all when that fetch fails. Both surfaces feed
+   * fetches its members afterwards. Pending reports invalidate coverage; failed fetches never report
+   * successful coverage. Both surfaces feed
    * it here rather than each gating on their own copy, so the rail, the section state and the save
    * button answer from one place.
    *
@@ -377,6 +407,8 @@ export class MeetingComposerFormService {
    * the form instead, so an unreported selection is unresolved by construction.
    */
   private readonly resolvedCommitteeUids = signal<string[] | null>(null);
+  private readonly resolvedCommitteeSelectionKey = signal<string | null>(null);
+  private readonly committeeMembersPending = signal(false);
 
   /** The group this open was scoped to, kept so a failed context lookup can be retried. */
   private readonly committeeContextUid = signal<string | null>(null);
@@ -407,6 +439,9 @@ export class MeetingComposerFormService {
     this.savedSnapshot.set(null);
     this.meeting.set(null);
     this.originalStartTime.set(null);
+    this.originalStartDate.set(null);
+    this.seriesOriginStartTime.set(null);
+    this.originalTimezone.set(null);
     this.attachments.set([]);
     this.pendingAttachmentDeletions.set([]);
     this.registrantUpdates.set({ toAdd: [], toUpdate: [], toDelete: [] });
@@ -417,6 +452,8 @@ export class MeetingComposerFormService {
     this.suppressedGuestEmails.set(new Set());
     this.deferredCommitteeMembers.set(null);
     this.resolvedCommitteeUids.set(null);
+    this.resolvedCommitteeSelectionKey.set(null);
+    this.committeeMembersPending.set(false);
     this.committeeContext.set(null);
     this.committeeContextLoading.set(false);
     this.committeeContextFailed.set(false);
@@ -461,9 +498,8 @@ export class MeetingComposerFormService {
 
   /**
    * Replaces the guest list and re-derives the pending registrant changes from it.
-   * @description Single write path, so `registrantUpdates` can never drift from `guests`. `toUpdate` is
-   * always empty today — the composer has no guest-edit affordance, so nothing produces a `'modified'`
-   * guest; it stays wired so adding that affordance is a change to the Guests section alone.
+   * @description Single write path, so `registrantUpdates` can never drift from `guests`. `toUpdate` holds
+   * the saved guests flagged `'modified'`, which today is only a Meeting Host toggle from the Guests section.
    */
   public setGuests(next: MeetingRegistrantWithState[]): void {
     this.guests.set(next);
@@ -471,7 +507,7 @@ export class MeetingComposerFormService {
     const meetingUid = this.meetingId() ?? '';
 
     this.registrantUpdates.set({
-      // `occurrence_id` is added here rather than by the shared mapper, which the pre-v2 guest screens use
+      // `occurrence_id` is added here rather than by the shared mapper, which the meeting card's guest list uses
       // too: only the occurrence edit ever sets it on a new guest (see `newGuestDefaults`).
       toAdd: next
         .filter((guest) => guest.state === 'new')
@@ -726,9 +762,15 @@ export class MeetingComposerFormService {
     this.loadCommitteeContext(committeeUid);
   }
 
-  /** Records which groups the picker's latest member emission covered, opening the save gate for them. */
-  public setResolvedCommitteeUids(uids: string[]): void {
+  /** A null report invalidates in-flight coverage; a successful roster records its full group/filter selection. */
+  public setResolvedCommitteeUids(uids: string[] | null): void {
+    if (uids === null) {
+      this.committeeMembersPending.set(true);
+      return;
+    }
     this.resolvedCommitteeUids.set(uids);
+    this.resolvedCommitteeSelectionKey.set(getMeetingCommitteeSelectionKey(this.form().getRawValue().committees));
+    this.committeeMembersPending.set(false);
   }
 
   /** Marks the whole form touched so validation messages surface; returns whether submit may proceed. */
@@ -1086,10 +1128,15 @@ export class MeetingComposerFormService {
           // attribution locally would only make the "via <group>" chip claim a move that never reaches
           // the API and disappears on the next load. Re-attributing a saved guest means removing and
           // re-adding them.
+          // A restored guest keeps a host change made before they were queued for deletion, so it has to
+          // stay `modified` for `setGuests` to queue the update; `originalData` is the saved copy.
+          const hostChanged = !!guest.originalData && !!guest.host !== !!guest.originalData.host;
+          const restoredState = hostChanged ? ('modified' as const) : ('existing' as const);
+
           kept.push({
             ...guest,
             ...(guest.state === 'new' ? this.groupAttribution(member) : {}),
-            ...(restore ? { state: 'existing' as const } : {}),
+            ...(restore ? { state: restoredState } : {}),
           });
           return kept;
         }
@@ -1160,8 +1207,8 @@ export class MeetingComposerFormService {
     return new FormGroup(
       {
         meeting_type: new FormControl('', [Validators.required]),
-        visibility: new FormControl(MeetingVisibility.PUBLIC),
-        restricted: new FormControl(false),
+        visibility: new FormControl(MeetingVisibility.PRIVATE),
+        restricted: new FormControl(true),
 
         title: new FormControl('', [Validators.required]),
         // Optional meeting organizer (owner). No profile_picture control — `UserSearchResult` carries no
@@ -1253,6 +1300,18 @@ export class MeetingComposerFormService {
 
     this.formSubscriptions.add(form.valueChanges.subscribe(() => this.revision.update((value) => value + 1)));
     this.formSubscriptions.add(form.statusChanges.subscribe(() => this.revision.update((value) => value + 1)));
+    const committeesControl = form.get('committees');
+    if (committeesControl) {
+      this.formSubscriptions.add(
+        committeesControl.valueChanges
+          .pipe(
+            startWith(committeesControl.value),
+            map((committees) => getMeetingCommitteeSelectionKey(committees)),
+            distinctUntilChanged()
+          )
+          .subscribe(() => this.resolvedCommitteeSelectionKey.set(null))
+      );
+    }
 
     // Watch youtube_upload_enabled and enforce title length limit when enabled.
     // This fires correctly on patchValue during edit-mode hydration because the form initialises
@@ -1302,10 +1361,12 @@ export class MeetingComposerFormService {
       );
     }
 
-    // When Board meeting type is selected, default to private + restricted access.
-    // When switching away from Board, reset to public + unrestricted defaults so the
-    // user isn't left with Board-level settings silently applied to a non-Board meeting.
-    // The user can freely override visibility and restriction after the default is applied.
+    // Selecting Board, or switching away from it, reaffirms the form's own private + restricted
+    // default — the resting state is private/restricted either way, so there's nothing left to
+    // "undo" on leaving Board. Kept as its own patch (rather than relying on the form's initial
+    // value alone) so a user who manually loosened access while on Board gets it reset on leaving,
+    // same as before this default changed. The user can freely override visibility and restriction
+    // after the default is applied.
     //
     // Both create surfaces, so a board meeting is private whichever one the organizer used. Not edit
     // mode: hydration writes `meeting_type` like any other field, so the subscription would fire
@@ -1315,10 +1376,8 @@ export class MeetingComposerFormService {
       let previousType = meetingTypeControl.value as string;
       this.formSubscriptions.add(
         meetingTypeControl.valueChanges.subscribe((currentType: string) => {
-          if (currentType === MeetingType.BOARD) {
+          if (currentType === MeetingType.BOARD || previousType === MeetingType.BOARD) {
             form.patchValue({ visibility: MeetingVisibility.PRIVATE, restricted: true });
-          } else if (previousType === MeetingType.BOARD) {
-            form.patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false });
           }
           previousType = currentType;
         })
@@ -1774,13 +1833,15 @@ export class MeetingComposerFormService {
 
     this.occurrence.set(occurrence);
     this.originalStartTime.set(occurrence.start_time);
+    // A carrier, not `toZonedTime`: the latter can normalize the wall time when it falls in the browser
+    // zone's own DST gap, reopening the untouched form on the wrong calendar day.
+    const occurrenceStartDate = toZonedDateCarrier(start, timezone);
+    this.originalStartDate.set(occurrenceStartDate);
 
     form.patchValue({
       title: occurrence.title || meeting.title,
       description,
-      // A carrier, not `toZonedTime`: the latter can normalize the wall time when it falls in the browser
-      // zone's own DST gap, reopening the untouched form on the wrong calendar day.
-      startDate: toZonedDateCarrier(start, timezone),
+      startDate: occurrenceStartDate,
       startTime: formatTo12HourInTimezone(start, timezone),
     });
     this.setDuration(this.occurrenceBaselineDuration(occurrence, meeting));
@@ -1805,7 +1866,32 @@ export class MeetingComposerFormService {
     // Use getRawValue() to include disabled controls (e.g., locked committees from group context)
     const formValue = this.form().getRawValue();
     const duration = formValue.duration === 'custom' ? Number(formValue.customDuration) : Number(formValue.duration);
-    const startDateTime = combineDateTime(formValue.startDate, formValue.startTime, formValue.timezone);
+    const combinedStartDateTime = combineDateTime(formValue.startDate, formValue.startTime, formValue.timezone);
+    // Editing the entire series hydrates Start date/time from the next occurrence (GH-4944), not
+    // the series' own start_time, so an organizer who never touches those fields must still resend
+    // the true, unmodified origin -- not the displayed next-occurrence stand-in. Submitting the
+    // next occurrence's date unconditionally would move the series anchor on every save, and when
+    // that date came from an individually-rescheduled occurrence (or one just past the no-buffer
+    // reconciliation window) it no longer equals the pattern slot upstream's change-detection
+    // compares against, so the save would be misread as a deliberate time change and re-email every
+    // registrant. Comparing against originalStartTime (the same next-occurrence default actually
+    // displayed), not seriesOriginStartTime itself, correctly treats a deliberate edit back to the
+    // original date as a real, intentional change.
+    // The substitution must also stand down once the meeting stops being recurring (turning off
+    // "Recurring Meeting" makes this a one-time meeting on the displayed date, not the historical
+    // series) and once the timezone the organizer is saving under no longer matches the one the
+    // displayed default was computed in (otherwise the origin, computed under the old zone, could
+    // be paired with the new one and mean a different local time than what's shown on screen).
+    const original = this.originalStartTime();
+    const seriesOrigin = this.seriesOriginStartTime();
+    const startUnchanged =
+      this.isEditMode() &&
+      !!formValue.isRecurring &&
+      !!combinedStartDateTime &&
+      !!original &&
+      formValue.timezone === this.originalTimezone() &&
+      isSameMinute(combinedStartDateTime, original);
+    const startDateTime = startUnchanged && seriesOrigin ? seriesOrigin : combinedStartDateTime;
     const recurrenceObject = this.buildRecurrencePayload(formValue);
 
     return {
@@ -1938,17 +2024,27 @@ export class MeetingComposerFormService {
     // below read as a choice. Cleared before the patch rather than after, because the patch is
     // loud and the picker decides as it arrives.
     form.get('show_meeting_attendees')?.markAsPristine();
-    this.originalStartTime.set(meeting.start_time);
+    // Editing the entire series shows the next upcoming occurrence, not the series' original
+    // start_time -- for an ongoing weekly series that can be edited months or years after it
+    // first started, so defaulting to the origin meant Start date routinely landed deep in the
+    // past (GH-4944). Falls back to start_time itself once no future occurrence remains. Mirrors
+    // PCC and the same precedent already used for the join-page host-key window and dashboard
+    // cards (see getUpcomingMeetingStartTime()).
+    const effectiveStartTime = getUpcomingMeetingStartTime(meeting);
+    this.originalStartTime.set(effectiveStartTime);
+    this.seriesOriginStartTime.set(meeting.start_time ?? null);
 
-    // Parse start_time into the meeting's own timezone so the date and time pickers show
-    // the values the organizer chose, not the viewer's local equivalents.
+    // Parse the effective start time into the meeting's own timezone so the date and time
+    // pickers show the values the organizer chose, not the viewer's local equivalents.
     let startDate: Date | null = null;
     let startTime = '';
 
-    if (meeting.start_time) {
-      const utcDate = new Date(meeting.start_time);
+    if (effectiveStartTime) {
+      const utcDate = new Date(effectiveStartTime);
       const meetingTimezone = meeting.timezone || getUserTimezone();
       startDate = toZonedTime(utcDate, meetingTimezone);
+      this.originalStartDate.set(startDate);
+      this.originalTimezone.set(meetingTimezone);
       startTime = formatTo12HourInTimezone(utcDate, meetingTimezone);
     }
 
@@ -2001,10 +2097,9 @@ export class MeetingComposerFormService {
       recording_enabled: meeting.recording_enabled || false,
       transcript_enabled: meeting.transcript_enabled || false,
       youtube_upload_enabled: meeting.youtube_upload_enabled || false,
-      // Read through the default (pre-v2) lock, not the composer's: a restricted meeting saved before the
-      // composer existed opens with sharing off, so a stale stored `true` is never re-saved as a choice.
-      // A v2 opt-in on a restricted meeting reads the same way and has to be switched on again per edit.
-      show_meeting_attendees: getSavedAttendeeVisibility(meeting) ?? false,
+      // Read through the composer lock, the rule this form writes with: a restricted (invite-only) meeting
+      // reopens with the organizer's stored choice, and only a Board meeting reads as undecided (off).
+      show_meeting_attendees: getSavedAttendeeVisibility(meeting, COMPOSER_ATTENDEE_LOCK) ?? false,
       zoom_ai_enabled: meeting.ai_summary_enabled || false,
       require_ai_summary_approval: meeting.require_ai_summary_approval ?? false,
       artifact_visibility: meeting.artifact_visibility ?? DEFAULT_ARTIFACT_VISIBILITY,
@@ -2021,6 +2116,7 @@ export class MeetingComposerFormService {
     // without this an edit that never opens Guests, which "Save changes" does not require, would find
     // its own groups unaccounted for and refuse to save an unrelated change.
     this.resolvedCommitteeUids.set(sanitizeMeetingCommittees(meeting.committees).map((committee) => committee.uid));
+    this.resolvedCommitteeSelectionKey.set(getMeetingCommitteeSelectionKey(meeting.committees));
 
     // Duration is set through `setDuration()` rather than patched, because it lives in two controls.
     // Patching `duration` alone left an off-chip stored value (20 or 75 minutes) selecting no chip at
@@ -2139,7 +2235,7 @@ export class MeetingComposerFormService {
    * Rejects an occurrence start that falls in the series zone's spring-forward gap.
    * @description `combineDateTime` silently normalizes such a time (2:30 AM on a spring-forward day becomes
    * 3:30 AM), so it would pass the future check and move the occurrence to an instant the organizer never
-   * picked. The same guard the pre-v2 reschedule dialog applies; occurrence mode only, since the occurrence
+   * picked. The same guard the reschedule-occurrence dialog applies; occurrence mode only, since the occurrence
    * endpoint always reads the time in the series zone.
    */
   private occurrenceWallTimeValidator(): ValidatorFn {

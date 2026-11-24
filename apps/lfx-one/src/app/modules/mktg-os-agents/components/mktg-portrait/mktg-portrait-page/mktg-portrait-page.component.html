@@ -1,0 +1,20 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (showBand()) {
+  <div class="pp-band" aria-hidden="true" data-testid="mktg-portrait-page-band"></div>
+}
+@if (!bare()) {
+  <header class="pp-head" [class.pp-head--band]="showBand()" data-testid="mktg-portrait-page-head">
+    <span class="pp-lab pp-head-section" data-testid="mktg-portrait-page-section">{{ section() }}</span>
+    <span class="pp-lab pp-head-doc" data-testid="mktg-portrait-page-doc">{{ book().headRight }}</span>
+  </header>
+  <h1 class="pp-title" data-testid="mktg-portrait-page-title">{{ title() }}</h1>
+}
+<ng-content />
+@if (!bare()) {
+  <footer class="pp-foot" data-testid="mktg-portrait-page-foot">
+    <span>{{ book().footLeft }}</span>
+    <span data-testid="mktg-portrait-page-number">{{ pageNumber() }}</span>
+  </footer>
+}

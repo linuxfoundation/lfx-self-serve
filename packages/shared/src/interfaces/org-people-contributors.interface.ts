@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
+import type { OrgAllEmployeeCodeContribution } from './org-people.interface';
 
 /** Role badge — Maintainer when the person holds a maintainer role overlapping the range (lfx-self-serve#4482); on the parent row any project, on the expansion that project. */
 export type OrgContributorRole = 'Maintainer' | 'Contributor';
@@ -93,6 +94,8 @@ export interface OrgContributorStatsBaseline {
 
 /** Bundled GET response for `/api/orgs/:orgUid/lens/people/contributors?timeRange=…`. */
 export interface OrgContributorsResponse {
+  /** Set when Exclude team members was asked but the team-member flag could not be read: the counts include team members. */
+  teamMembersUnavailable?: true;
   accountId: string;
   /** Echo of the time window the BFF aggregated over — clients use this to ignore late responses from a previous request when the user clicked through windows quickly. */
   timeRange: OrgLensTimeRange;
@@ -162,3 +165,21 @@ export interface ContributorPersonProjectRow {
 
 /** The count columns of {@link ContributorPersonProjectRow} the commit filters pick between. */
 export type ContributorCountColumn = 'COMMITS' | 'MERGED_COMMITS' | 'CODE_ACTIVITIES';
+
+/**
+ * One project of one person's code in a window and project scope, read for the person drawer (lfx-self-serve#4404):
+ * the columns of that person's {@link ContributorPersonProjectRow}s, so the drawer counts what the row counts.
+ */
+export type OrgPersonCodeProjectRow = Pick<
+  ContributorPersonProjectRow,
+  'PROJECT_ID' | 'PROJECT_NAME' | 'FOUNDATION_ID' | 'FOUNDATION_NAME' | 'COMMITS' | 'MERGED_COMMITS' | 'CODE_ACTIVITIES' | 'LAST_ACTIVE_DATE'
+>;
+
+/** A person's Code project (drawer, All Employees expanded row) before its Maintainer pill is set. */
+export type OrgPersonCodeProjectCount = Omit<OrgAllEmployeeCodeContribution, 'isMaintainer'>;
+
+/** A person's Code projects and the total they are shown with. */
+export interface OrgPersonCodeContributions {
+  projects: OrgPersonCodeProjectCount[];
+  total: number;
+}

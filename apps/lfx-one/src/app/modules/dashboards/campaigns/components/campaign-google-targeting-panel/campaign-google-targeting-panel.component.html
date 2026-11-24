@@ -1,0 +1,201 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!--
+  The two errors, announced. Always mounted while the panel is, and only their text changes: a live
+  region inserted with its text already present is not reliably announced. The visible errors below
+  stay the sections' aria-describedby targets.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-targeting-live">
+  {{ adSchedulesError() ?? '' }} {{ devicesError() ?? '' }}
+</div>
+
+<div class="flex flex-col gap-4" data-testid="implementation-google-targeting-panel">
+  @if (showAdSchedules()) {
+    <fieldset
+      class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5"
+      [attr.aria-describedby]="scheduleDescribedBy()"
+      data-testid="implementation-google-ad-schedule">
+      <legend class="float-left mb-1 text-xs font-medium text-gray-700">Ad schedule ({{ adSchedules().length }}/{{ maxAdSchedules }})</legend>
+      <!--
+        A schedule adjustment runs from -90% (bid modifier 0.1) to +900%: Google refuses 0 on an ad schedule, where it is only a
+        device exclusion, so a time is switched off by leaving it out. Under Smart Bidding Google ignores the adjustment, so the box
+        is offered only under Manual CPC and Maximize Clicks, and never on Demand Gen, which takes a window only without one; the
+        tab's reason says which rule is in force.
+      -->
+      <p id="google-ad-schedule-hint" class="text-xs text-gray-500" data-testid="implementation-google-ad-schedule-hint">
+        Times are in the Google Ads account's time zone. With no windows the campaign serves all day, every day; with windows, only in them.
+        @if (scheduleAdjustBlockedReason(); as reason) {
+          {{ reason }}
+        } @else {
+          A bid adjustment runs from {{ adjustmentRange }}; leave it blank for none.
+        }
+        Errors give Google's bid modifier, where -20% is 0.8.
+      </p>
+
+      @for (row of scheduleRows(); track $index; let i = $index) {
+        <div class="flex flex-wrap items-end gap-2" [attr.data-testid]="'implementation-google-ad-schedule-row-' + i">
+          <lfx-ui-select
+            class="w-32"
+            label="Day"
+            size="small"
+            [value]="row.dayOfWeek"
+            (valueChange)="onScheduleDay(i, $event)"
+            [attr.data-testid]="'implementation-google-ad-schedule-day-' + i">
+            @for (day of dayOptions; track day.value) {
+              <lfx-ui-option [value]="day.value" [label]="day.label" />
+            }
+          </lfx-ui-select>
+          <lfx-ui-select
+            class="w-24"
+            label="From"
+            size="small"
+            [value]="row.start.toString()"
+            (valueChange)="onScheduleTime(i, 'start', $event)"
+            [attr.data-testid]="'implementation-google-ad-schedule-start-' + i">
+            @for (time of startTimeOptions; track time.value) {
+              <lfx-ui-option [value]="time.value" [label]="time.label" />
+            }
+          </lfx-ui-select>
+          <lfx-ui-select
+            class="w-24"
+            label="To"
+            size="small"
+            [value]="row.end.toString()"
+            (valueChange)="onScheduleTime(i, 'end', $event)"
+            [attr.data-testid]="'implementation-google-ad-schedule-end-' + i">
+            @for (time of endTimeOptions; track time.value) {
+              <lfx-ui-option [value]="time.value" [label]="time.label" />
+            }
+          </lfx-ui-select>
+          <!--
+            Raw <input type="number"> by exception to docs/reviews/frontend-checklist.md §14.1, for this box
+            and the device one below. lfx-ui-input has no number type (UiInputType is text, email, url, tel,
+            password or search), and its numeric/decimal inputmode keypads have no minus key on iOS, which
+            a mostly negative bid adjustment needs. It also emits valueChange on every keystroke and has no
+            change or blur output, so the typed percentage could not be rounded and written back once, on
+            commit, without rewriting the box under the cursor. lfx-input-text binds a FormGroup, which this
+            list-driven panel deliberately does not hold (see the class JSDoc).
+          -->
+          @if (scheduleAdjustBlockedReason() === null || row.held) {
+            <!-- A held adjustment stays readable (read-only, still focusable and announced) until it is cleared. -->
+            <div class="flex flex-col gap-1">
+              <label class="text-xs text-gray-700" [for]="'google-ad-schedule-adjustment-' + i">Bid adjustment (%)</label>
+              <input
+                type="number"
+                step="1"
+                [min]="minAdjustment"
+                [max]="maxAdjustment"
+                [id]="'google-ad-schedule-adjustment-' + i"
+                [value]="row.adjustment ?? ''"
+                [readOnly]="row.held"
+                [attr.aria-readonly]="row.held || null"
+                (change)="onScheduleAdjustment(i, $event)"
+                placeholder="None"
+                class="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 read-only:bg-gray-50 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                [attr.data-testid]="'implementation-google-ad-schedule-adjustment-' + i" />
+            </div>
+            @if (row.held) {
+              <lfx-button
+                label="Clear adjustment"
+                size="small"
+                severity="secondary"
+                [text]="true"
+                [ariaLabel]="'Clear adjustment on ad schedule window ' + (i + 1)"
+                (onClick)="clearScheduleAdjustment(i)"
+                [attr.data-testid]="'implementation-google-ad-schedule-clear-' + i" />
+            }
+          }
+          <lfx-button
+            icon="fa-light fa-trash"
+            size="small"
+            severity="secondary"
+            [text]="true"
+            [ariaLabel]="'Remove ad schedule window ' + (i + 1)"
+            (onClick)="removeAdSchedule(i)"
+            [attr.data-testid]="'implementation-google-ad-schedule-remove-' + i" />
+        </div>
+      }
+
+      <div class="flex flex-col gap-1">
+        <div>
+          <lfx-button
+            label="Add window"
+            icon="fa-light fa-plus"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="addBlockedReason() !== null"
+            [ariaDescribedBy]="addBlockedReason() === null ? undefined : 'google-ad-schedule-add-reason'"
+            (onClick)="addAdSchedule()"
+            data-testid="implementation-google-ad-schedule-add" />
+        </div>
+        @if (addBlockedReason(); as reason) {
+          <p id="google-ad-schedule-add-reason" class="text-xs text-gray-500" data-testid="implementation-google-ad-schedule-add-reason">{{ reason }}</p>
+        }
+      </div>
+      @if (adSchedulesError(); as message) {
+        <p id="google-ad-schedule-error" class="text-xs text-red-600" data-testid="implementation-google-ad-schedule-error">{{ message }}</p>
+      }
+    </fieldset>
+  }
+
+  @if (showDevices()) {
+    <fieldset
+      class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5"
+      [attr.aria-describedby]="devicesDescribedBy()"
+      data-testid="implementation-google-devices">
+      <legend class="float-left mb-1 text-xs font-medium text-gray-700">Devices</legend>
+      <!--
+        Adjust bid is offered only under Manual CPC, and never on Demand Gen or Performance Max: campaign-service refuses a
+        non-zero device bid modifier under any other strategy, and on those two under every one, while an exclusion (a modifier
+        of 0) is accepted everywhere. The tab's reason says which rule is in force and, on Search, how to get Manual CPC back.
+        The rows are the channel's devices, from the tab: Demand Gen and Performance Max add TV screens.
+      -->
+      <p id="google-devices-hint" class="text-xs text-gray-500" data-testid="implementation-google-devices-hint">
+        @if (deviceAdjustBlockedReason(); as reason) {
+          {{ reason }} Excluding a device stops the campaign serving there.
+        } @else {
+          Adjust the bid on a device from {{ adjustmentRange }}, or exclude it to stop serving there.
+        }
+        Errors give Google's bid modifier, where -20% is 0.8.
+      </p>
+      @for (row of deviceRows(); track row.device) {
+        <div class="flex flex-wrap items-end gap-2" [attr.data-testid]="'implementation-google-device-' + row.device">
+          <lfx-ui-select
+            class="w-36"
+            size="small"
+            [label]="row.label"
+            [value]="row.mode"
+            (valueChange)="onDeviceMode(row.device, $event)"
+            [attr.data-testid]="'implementation-google-device-mode-' + row.device">
+            @for (mode of row.modeOptions; track mode.value) {
+              <lfx-ui-option [value]="mode.value" [label]="mode.label" [disabled]="mode.disabled" />
+            }
+          </lfx-ui-select>
+          @if (row.mode === 'adjust') {
+            <!-- Raw <input type="number">: the §14.1 exception explained on the ad-schedule adjustment box above. -->
+            <div class="flex flex-col gap-1">
+              <label class="text-xs text-gray-700" [for]="'google-device-adjustment-' + row.device">{{ row.label }} bid adjustment (%)</label>
+              <input
+                type="number"
+                step="1"
+                [min]="minAdjustment"
+                [max]="maxAdjustment"
+                [id]="'google-device-adjustment-' + row.device"
+                [value]="row.adjustment ?? 0"
+                [readOnly]="row.held"
+                [attr.aria-readonly]="row.held || null"
+                (change)="onDeviceAdjustment(row.device, $event)"
+                class="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 read-only:bg-gray-50 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                [attr.data-testid]="'implementation-google-device-adjustment-' + row.device" />
+            </div>
+          }
+        </div>
+      }
+      @if (devicesError(); as message) {
+        <p id="google-devices-error" class="text-xs text-red-600" data-testid="implementation-google-devices-error">{{ message }}</p>
+      }
+    </fieldset>
+  }
+</div>

@@ -70,6 +70,7 @@ async function render(
           user: signal(null),
           authenticated: signal(false),
           viewerUsername: signal(null),
+          impersonating: signal(false),
           meetingRegistrationGeneration: vi.fn(() => 0),
           recordConfirmedMeetingRsvp: vi.fn(),
           isMeetingRsvpCurrent: vi.fn(() => true),
@@ -575,6 +576,31 @@ describe('PendingActionsComponent — vote dispatch by poll_type (#4076 review)'
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('lfx-vote-ballot-inline')).toBeTruthy();
+  });
+
+  it('renders the inline ballot read-only during impersonation without submitting or dismissing the action', async () => {
+    hiddenActions.hideAction.mockClear();
+    hiddenActions.dismissAction.mockClear();
+    const getVote = vi.fn().mockReturnValue(of(singleQuestionVote({ poll_type: PollType.MAJORITY })));
+    const submitMyResponse = vi.fn();
+    const fixture = await render([voteRow('vote-1')], true, { getVote, submitMyResponse });
+    TestBed.inject(UserService).impersonating.set(true);
+
+    clickVoteButton(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-readonly')?.textContent).toContain('Ballots are read-only');
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-submit')).toBeNull();
+    byTestId(fixture, 'dashboard-pending-actions-vote-readonly-close')!.querySelector<HTMLButtonElement>('button')!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-ballot')).toBeNull();
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-button')).not.toBeNull();
+    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+    expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
   });
 
   it('falls back to the cast drawer for a ranked-choice vote', async () => {

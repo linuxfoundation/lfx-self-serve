@@ -3,51 +3,65 @@
 
 import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_SORT_COLUMNS,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_SORT_COLUMNS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS,
   HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_AT_RISK_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
   HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
-  HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
-  HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_SORT_COLUMNS,
+  HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
+  HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_SORT_COLUMNS,
+  HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS,
   HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_SORT_COLUMNS,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_SORT_COLUMNS,
   HEALTH_METRICS_PROJECT_SLUG_PATTERN,
+  HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES,
   HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
   HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSES_SORT_COLUMNS,
   HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS,
   SALESFORCE_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
+// Deep import, as across the server: the `utils` barrel loads `@angular/forms`, which throws in the Node spec runtime.
+import { parseHealthMetricsTableSort } from '@lfx-one/shared/utils/health-metrics-table.utils';
 import type {
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEventsOrganizationsSegment,
+  HealthMetricsEventsSpeakersStatusGroup,
   HealthMetricsMembersAtRiskFilter,
   HealthMetricsMembersBoardCohort,
-  HealthMetricsMembersMovementListType,
   HealthMetricsMembersNpsCategory,
   HealthMetricsMembersRenewalsWindow,
   HealthMetricsNonMembersOrgsFilter,
@@ -90,10 +104,10 @@ const ENGAGEMENT_GROUP_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_ENGAG
 
 /** Membership segments the Events organizations table accepts. */
 const EVENTS_ORGANIZATIONS_SEGMENTS: ReadonlySet<string> = new Set(HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.map((option) => option.id));
-const TRAINING_COURSES_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS.map((option) => option.id));
 
-/** Bridge bars whose organizations the Members movements list serves. */
-const MEMBERS_MOVEMENT_LIST_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES);
+/** Status groups the All speaker proposals drawer filters by. */
+const EVENTS_SPEAKER_PROPOSAL_STATUSES: ReadonlySet<string> = new Set(Object.keys(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS));
+const TRAINING_COURSES_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS.map((option) => option.id));
 
 /** NPS categories the Members directory filter accepts. */
 const MEMBERS_DIRECTORY_NPS_CATEGORIES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES);
@@ -1968,7 +1982,8 @@ export class AnalyticsController {
   /**
    * GET /api/analytics/org-involvement-contributors-monthly
    * Get cross-foundation active contributors monthly for an organization
-   * Query params: accountId (required)
+   * Query params: accountId (required). Always the default organization scope, the Overview having no scope picker
+   * (lfx-self-serve-ops#1219).
    */
   public async orgContributorsMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_org_involvement_contributors_monthly');
@@ -1992,7 +2007,7 @@ export class AnalyticsController {
 
   /**
    * GET /api/analytics/org-involvement-maintainers-monthly
-   * The organization's maintainer roles in LF projects: past-12-month headline and monthly trend
+   * The organization's maintainer roles in all projects: headline over the Org Lens default range and monthly trend
    * Query params: accountId (required)
    */
   public async orgMaintainersMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -2033,57 +2048,6 @@ export class AnalyticsController {
         total_attended: response.totalAttended,
         total_speakers: response.totalSpeakers,
         monthly_data_points: response.monthlyLabels.length,
-      });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /api/analytics/org-involvement-certified-employees-monthly
-   * Get cross-foundation certified employees monthly for an organization
-   * Query params: accountId (required)
-   */
-  public async orgCertifiedEmployeesMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_org_involvement_certified_employees_monthly');
-
-    try {
-      const accountId = this.parseAccountIdParam(req, 'get_org_involvement_certified_employees_monthly');
-
-      const response = await this.orgInvolvementService.getCertifiedEmployeesMonthly(accountId);
-
-      logger.success(req, 'get_org_involvement_certified_employees_monthly', startTime, {
-        account_id: accountId,
-        total_certifications: response.totalCertifications,
-        total_certified_employees: response.totalCertifiedEmployees,
-        monthly_data_points: response.monthlyData.length,
-      });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /api/analytics/org-involvement-training-enrollments
-   * Get cross-foundation training enrollments YTD for an organization
-   * Query params: accountId (required)
-   */
-  public async orgTrainingEnrollments(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_org_involvement_training_enrollments');
-
-    try {
-      const accountId = this.parseAccountIdParam(req, 'get_org_involvement_training_enrollments');
-
-      const response = await this.orgInvolvementService.getTrainingEnrollments(accountId);
-
-      logger.success(req, 'get_org_involvement_training_enrollments', startTime, {
-        account_id: accountId,
-        total_enrollments: response.totalEnrollments,
-        daily_data_points: response.dailyData.length,
       });
 
       res.json(response);
@@ -3277,6 +3241,12 @@ export class AnalyticsController {
         range,
         page: Number(getStringQueryParam(req, 'page')) || 1,
         size: Number(getStringQueryParam(req, 'size')) || HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
+        // Only an allowed column and a known direction pass; anything else is the view's own rank.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_ENGAGEMENT_GROUP_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       logger.success(req, 'get_engagement_group_attendance', startTime, {
@@ -3442,6 +3412,75 @@ export class AnalyticsController {
   }
 
   /**
+   * `GET /api/analytics/engagement-newsletter-performance` — every period's newsletter summary and every newsletter
+   * sent, one read. The period pill resolves client-side.
+   */
+  public async getEngagementNewsletterPerformance(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_newsletter_performance');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_newsletter_performance',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_newsletter_performance',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getNewsletterPerformance(req, { foundationSlug });
+
+      logger.success(req, 'get_engagement_newsletter_performance', startTime, {
+        foundation_slug: foundationSlug,
+        measured: response.measured,
+        newsletter_count: response.newsletters.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/engagement-newsletter-recipients` — every recipient of the foundation's latest newsletter.
+   * Search and the segment cut resolve client-side.
+   */
+  public async getEngagementNewsletterRecipients(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_newsletter_recipients');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_newsletter_recipients',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_newsletter_recipients',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getNewsletterRecipients(req, { foundationSlug });
+
+      // Counts only: recipient names never reach the logs.
+      logger.success(req, 'get_engagement_newsletter_recipients', startTime, {
+        foundation_slug: foundationSlug,
+        has_newsletter: response.newsletter !== null,
+        recipient_count: response.recipients.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * `GET /api/analytics/engagement-representatives` — every representative, every period. Search,
    * the filter cut and the period all resolve client-side, so none of them reaches the wire.
    */
@@ -3563,6 +3602,43 @@ export class AnalyticsController {
         foundation_slug: foundationSlug,
         event_id: eventId,
         format_count: response.formats.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/events-snapshot` — one event's registration weeks and sponsorship packages for the event dialog.
+   * The foundation is required alongside the event so an id alone cannot read another foundation's.
+   */
+  public async getEventsSnapshot(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_snapshot');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_snapshot');
+
+      const eventId = getStringQueryParam(req, 'eventId');
+      if (!eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId query parameter is required', {
+          operation: 'get_events_snapshot',
+        });
+      }
+      if (!EVENT_ID_PATTERN.test(eventId)) {
+        throw ServiceValidationError.forField('eventId', 'Invalid eventId format', {
+          operation: 'get_events_snapshot',
+        });
+      }
+
+      const response = await this.healthMetricsEventsService.getSnapshot(req, { foundationSlug, eventId });
+
+      logger.success(req, 'get_events_snapshot', startTime, {
+        foundation_slug: foundationSlug,
+        event_id: eventId,
+        week_count: response.weeks.length,
+        package_count: response.packages.length,
       });
 
       res.json(response);
@@ -3712,7 +3788,24 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/members-tiers` — every year's members, new members and revenue per tier, and the foundation's revenue per period. */
+  /** `GET /api/analytics/members-growth` — every month's running total of new members. */
+  public async getMembersGrowth(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_growth');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_growth');
+
+      const response = await this.healthMetricsMembersService.getGrowth(req, { foundationSlug });
+
+      logger.success(req, 'get_members_growth', startTime, { foundation_slug: foundationSlug, month_count: response.months.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-tiers` — every year's members and revenue per tier. */
   public async getMembersTiers(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_members_tiers');
 
@@ -3722,70 +3815,6 @@ export class AnalyticsController {
       const response = await this.healthMetricsMembersService.getTiers(req, { foundationSlug });
 
       logger.success(req, 'get_members_tiers', startTime, { foundation_slug: foundationSlug, row_count: response.rows.length });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /** `GET /api/analytics/members-bridge` — every year's start total, movements and closing total. */
-  public async getMembersBridge(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_members_bridge');
-
-    try {
-      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_bridge');
-
-      const response = await this.healthMetricsMembersService.getBridge(req, { foundationSlug });
-
-      logger.success(req, 'get_members_bridge', startTime, { foundation_slug: foundationSlug, step_count: response.steps.length });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /** `GET /api/analytics/members-movements` — one page of the organizations behind a bridge bar. */
-  public async getMembersMovements(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_members_movements');
-
-    try {
-      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_movements');
-
-      const rawYear = getStringQueryParam(req, 'year') ?? '';
-      if (!YEAR_PATTERN.test(rawYear)) {
-        throw ServiceValidationError.forField('year', 'year must be a four-digit year', { operation: 'get_members_movements' });
-      }
-
-      const movementType = getStringQueryParam(req, 'movementType') ?? '';
-      if (!MEMBERS_MOVEMENT_LIST_TYPES.has(movementType)) {
-        throw ServiceValidationError.forField('movementType', `Invalid movementType value. Allowed: ${[...MEMBERS_MOVEMENT_LIST_TYPES].join(', ')}`, {
-          operation: 'get_members_movements',
-        });
-      }
-
-      const { pageSize, offset } = parseOffsetPagination(req, {
-        defaultPageSize: HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
-        maxPageSize: HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
-      });
-
-      const year = Number(rawYear);
-      const response = await this.healthMetricsMembersService.getMovements(req, {
-        foundationSlug,
-        year,
-        movementType: movementType as HealthMetricsMembersMovementListType,
-        offset,
-        pageSize,
-      });
-
-      logger.success(req, 'get_members_movements', startTime, {
-        foundation_slug: foundationSlug,
-        year,
-        movement_type: movementType,
-        row_count: response.rows.length,
-        total_records: response.totalRecords,
-      });
 
       res.json(response);
     } catch (error) {
@@ -3832,6 +3861,12 @@ export class AnalyticsController {
         search,
         offset,
         pageSize,
+        // Only an allowed column and a known direction pass; anything else is the view's own rank.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_MEMBERS_DIRECTORY_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       // The search text stays out of this metadata; it can only match member names, which the request URL also logs.
@@ -3891,6 +3926,12 @@ export class AnalyticsController {
         bucket: bucket as HealthMetricsMembersAtRiskFilter,
         offset,
         pageSize,
+        // Only an allowed column and a known direction pass; anything else is the view's own rank.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_MEMBERS_AT_RISK_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       logger.success(req, 'get_members_at_risk', startTime, {
@@ -3930,13 +3971,18 @@ export class AnalyticsController {
         window: window as HealthMetricsMembersRenewalsWindow,
         offset,
         pageSize,
+        // Only an allowed column and a known direction pass; anything else is the highest dues first.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_MEMBERS_RENEWALS_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       logger.success(req, 'get_members_renewals', startTime, {
         foundation_slug: foundationSlug,
         window,
         total_records: response.totalRecords,
-        without_dues_count: response.summary.withoutDuesCount,
       });
 
       res.json(response);
@@ -3975,6 +4021,12 @@ export class AnalyticsController {
         cohort: cohort as HealthMetricsMembersBoardCohort,
         offset,
         pageSize,
+        // Only an allowed column and a known direction pass; anything else is the newest meeting first.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_MEMBERS_BOARD_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       logger.success(req, 'get_members_board_attendance', startTime, {
@@ -4059,7 +4111,18 @@ export class AnalyticsController {
       });
 
       const year = Number(rawYear);
-      const response = await this.healthMetricsMembersService.getChurnDepartures(req, { foundationSlug, year, offset, pageSize });
+      const response = await this.healthMetricsMembersService.getChurnDepartures(req, {
+        foundationSlug,
+        year,
+        offset,
+        pageSize,
+        // Only an allowed column and a known direction pass; anything else is the view's own rank.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_SORT_COLUMNS.map((column) => column.key)
+        ),
+      });
 
       logger.success(req, 'get_members_churn_departures', startTime, {
         foundation_slug: foundationSlug,
@@ -4083,7 +4146,7 @@ export class AnalyticsController {
 
       const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_events_organizations');
       if (!isSupportedEventsRange(range)) {
-        throw ServiceValidationError.forField('range', 'Organizations at events have no data for this range', { operation: 'get_events_organizations' });
+        throw ServiceValidationError.forField('range', 'Companies at events have no data for this range', { operation: 'get_events_organizations' });
       }
 
       const segment = getStringQueryParam(req, 'segment') || 'all';
@@ -4106,6 +4169,12 @@ export class AnalyticsController {
         search,
         offset,
         pageSize,
+        // Only an allowed column and a known direction pass; anything else is the view's own rank.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_EVENTS_ORGANIZATIONS_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       // The search text stays out of this metadata; it can only match organization names, which the request URL also logs.
@@ -4116,6 +4185,66 @@ export class AnalyticsController {
         has_search: search.length > 0,
         total_records: response.totalRecords,
         scope_total: response.scopeTotal,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/events-speaker-proposals` — one page of a period's proposals, cut by event and status. */
+  public async getEventsSpeakerProposals(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_speaker_proposals');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_speaker_proposals');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_events_speaker_proposals');
+      if (!isSupportedEventsRange(range)) {
+        throw ServiceValidationError.forField('range', 'Speaker proposals have no data for this range', { operation: 'get_events_speaker_proposals' });
+      }
+
+      const eventId = getStringQueryParam(req, 'eventId') ?? '';
+      if (eventId && !EVENT_ID_PATTERN.test(eventId)) {
+        throw ServiceValidationError.forField('eventId', 'Invalid eventId format', { operation: 'get_events_speaker_proposals' });
+      }
+
+      const status = getStringQueryParam(req, 'status') ?? '';
+      if (status && !EVENTS_SPEAKER_PROPOSAL_STATUSES.has(status)) {
+        throw ServiceValidationError.forField('status', `Invalid status value. Allowed: ${[...EVENTS_SPEAKER_PROPOSAL_STATUSES].join(', ')}`, {
+          operation: 'get_events_speaker_proposals',
+        });
+      }
+
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsEventsService.getSpeakerProposalsPage(req, {
+        foundationSlug,
+        range,
+        eventId,
+        status: status ? (status as HealthMetricsEventsSpeakersStatusGroup) : null,
+        offset,
+        pageSize,
+        includeEvents: getStringQueryParam(req, 'includeEvents') === 'true',
+        // Only an allowed column and a known direction pass; anything else is the most recent first.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_SORT_COLUMNS.map((column) => column.key)
+        ),
+      });
+
+      logger.success(req, 'get_events_speaker_proposals', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        event_id: eventId || undefined,
+        status: status || undefined,
+        offset,
+        total_records: response.totalRecords,
       });
 
       res.json(response);
@@ -4156,6 +4285,11 @@ export class AnalyticsController {
         search,
         offset,
         pageSize,
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_NON_MEMBERS_ORGS_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       // The search text stays out of this metadata; it can only match organization names, which the request URL also logs.
@@ -4192,7 +4326,18 @@ export class AnalyticsController {
         maxPageSize: HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
       });
 
-      const response = await this.healthMetricsNonMembersService.getPeople(req, { foundationSlug, range, search, offset, pageSize });
+      const response = await this.healthMetricsNonMembersService.getPeople(req, {
+        foundationSlug,
+        range,
+        search,
+        offset,
+        pageSize,
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_NON_MEMBERS_PEOPLE_SORT_COLUMNS.map((column) => column.key)
+        ),
+      });
 
       // Counts only: the search text can name a person, so it stays out of this metadata.
       logger.success(req, 'get_non_members_people', startTime, {
@@ -4209,7 +4354,7 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/non-members-conversion` — the period's pipeline estimate and its warmest high-fit organizations. */
+  /** `GET /api/analytics/non-members-conversion` — the period's pipeline estimate, high-fit and new counts, and its warmest companies (any fit band). */
   public async getNonMembersConversion(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_non_members_conversion');
 
@@ -4271,7 +4416,11 @@ export class AnalyticsController {
         throw ServiceValidationError.forField('range', 'Training courses have no data for this range', { operation: 'get_training_courses' });
       }
 
-      const type = getStringQueryParam(req, 'type') || 'all';
+      // An older client's value still means its cut, so a tab open across a deploy keeps working.
+      const requestedType = getStringQueryParam(req, 'type') || 'all';
+      const type = Object.hasOwn(HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES, requestedType)
+        ? HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES[requestedType]
+        : requestedType;
       if (!TRAINING_COURSES_TYPES.has(type)) {
         throw ServiceValidationError.forField('type', `Invalid type value. Allowed: ${[...TRAINING_COURSES_TYPES].join(', ')}`, {
           operation: 'get_training_courses',
@@ -4291,6 +4440,11 @@ export class AnalyticsController {
         search,
         offset,
         pageSize,
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_TRAINING_COURSES_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       // The search text stays out of this metadata; it can only match course names, which the request URL also logs.
@@ -4301,6 +4455,7 @@ export class AnalyticsController {
         has_search: search.length > 0,
         total_records: response.totalRecords,
         scope_total: response.scopeTotal,
+        active_total: response.activeTotal,
       });
 
       res.json(response);
@@ -4352,7 +4507,7 @@ export class AnalyticsController {
     );
   }
 
-  /** `GET /api/analytics/overview-outstanding-balance` — overdue membership invoices today. */
+  /** `GET /api/analytics/overview-outstanding-balance` — every period's overdue membership invoices, split by risk. */
   public async getOverviewOutstandingBalance(req: Request, res: Response, next: NextFunction): Promise<void> {
     await this.readOverviewCard(
       req,
@@ -4406,6 +4561,21 @@ export class AnalyticsController {
       (query) => this.healthMetricsOverviewService.getCode(req, query),
       (response) => ({
         measured: response.measured,
+      })
+    );
+  }
+
+  /** `GET /api/analytics/overview-newsletters` — the newsletter summary in every period and each newsletter sent. */
+  public async getOverviewNewsletters(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.readOverviewCard(
+      req,
+      res,
+      next,
+      'get_overview_newsletters',
+      (query) => this.healthMetricsOverviewService.getNewsletters(req, query),
+      (response) => ({
+        measured: response.measured,
+        newsletter_count: response.newsletters.length,
       })
     );
   }

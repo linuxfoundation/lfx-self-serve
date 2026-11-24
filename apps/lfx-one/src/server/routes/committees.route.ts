@@ -30,6 +30,7 @@ router.delete('/:id', (req, res, next) => committeeController.deleteCommittee(re
 router.get('/:id/members', (req, res, next) => committeeController.getCommitteeMembers(req, res, next));
 router.get('/:id/members/:memberId', (req, res, next) => committeeController.getCommitteeMemberById(req, res, next));
 router.post('/:id/members', (req, res, next) => committeeController.createCommitteeMember(req, res, next));
+router.post('/:id/members/bulk', (req, res, next) => committeeController.bulkCreateCommitteeMembers(req, res, next));
 router.put('/:id/members/:memberId', (req, res, next) => committeeController.updateCommitteeMember(req, res, next));
 router.delete('/:id/members/:memberId', (req, res, next) => committeeController.deleteCommitteeMember(req, res, next));
 
@@ -68,5 +69,6 @@ router.get('/:id/applications', (req, res, next) => committeeController.getCommi
 router.get('/:id/my-applications', (req, res, next) => committeeController.getMyApplication(req, res, next));
 router.post('/:id/applications/:applicationId/approve', (req, res, next) => committeeController.approveApplication(req, res, next));
 router.post('/:id/applications/:applicationId/reject', (req, res, next) => committeeController.rejectApplication(req, res, next));
+router.post('/:id/applications/:applicationId/withdraw', (req, res, next) => committeeController.withdrawApplication(req, res, next));
 
 export default router;

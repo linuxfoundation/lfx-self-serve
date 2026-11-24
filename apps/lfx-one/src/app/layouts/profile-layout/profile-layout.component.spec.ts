@@ -1,27 +1,41 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
+import { computed, NO_ERRORS_SCHEMA, PLATFORM_ID, signal, TransferState, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { Toast, ToastModule } from 'primeng/toast';
+import { LinkedEmailSupportToastComponent } from '@components/linked-email-support-toast/linked-email-support-toast.component';
+import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@shared/providers/runtime-config.provider';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
+  EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_CALLBACK_RETRY_MESSAGE,
+  EMAIL_LINKED_SUPPORT_TITLE,
+  EMAIL_LINKED_SUPPORT_TOAST_KEY,
   IDENTITY_ALREADY_CONNECTED_STATUS,
   OPEN_PROFILE_BANNER_LINK_CLICKED,
   PENDING_PROFILE_SAVE_KEY,
 } from '@lfx-one/shared/constants';
-import { CombinedProfile, EnrichedIdentity, User } from '@lfx-one/shared/interfaces';
+import { CombinedProfile, EnrichedIdentity, LinkedEmailSupportDraft, User } from '@lfx-one/shared/interfaces';
+import { buildLinkedEmailSupportMessage } from '@lfx-one/shared/utils';
 import { DataDogRumService } from '@services/datadog-rum.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
+import { MentorshipService } from '@services/mentorship.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { EMPTY, Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProfileLayoutComponent } from './profile-layout.component';
+
+// MentorshipService reaches HttpClient, which no setup here provides.
+function mentorshipServiceStub() {
+  return { provide: MentorshipService, useValue: { queueLfxProfileSync: vi.fn() } };
+}
 
 /**
  * Guards the Flow C (management-token re-auth) cold-return read-your-writes fix (LFXV2-3267):
@@ -72,11 +86,11 @@ describe('ProfileLayoutComponent — Flow C cold-return read-your-writes (LFXV2-
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -169,11 +183,11 @@ describe('ProfileLayoutComponent — member-since wiring (#2837)', () => {
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -230,11 +244,11 @@ describe('ProfileLayoutComponent — Flow C error message ownership (#1935)', ()
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of({ error }) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add } },
       ],
     });
@@ -324,11 +338,11 @@ describe('ProfileLayoutComponent — clearAuthQueryParams preserves the fragment
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
         { provide: Router, useValue: { url, navigateByUrl } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -372,6 +386,7 @@ describe('ProfileLayoutComponent — profile help link click tracking (#2986)', 
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
@@ -387,7 +402,6 @@ describe('ProfileLayoutComponent — profile help link click tracking (#2986)', 
             getIdentities: vi.fn(() => of([])),
           },
         },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: DataDogRumService, useValue: { addAction } },
       ],
@@ -420,6 +434,7 @@ describe('ProfileLayoutComponent — Intercom launcher re-scan on mount (#2986)'
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
@@ -435,7 +450,6 @@ describe('ProfileLayoutComponent — Intercom launcher re-scan on mount (#2986)'
             getIdentities: vi.fn(() => of([])),
           },
         },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: IntercomService, useValue: { update } },
       ],
@@ -490,11 +504,11 @@ describe('ProfileLayoutComponent — primary email and identity notifications (#
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: platformId },
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -570,9 +584,9 @@ describe('ProfileLayoutComponent — primary email and identity notifications (#
 });
 
 /**
- * Guards #4253: the Flow C callback reports a replayed pending email verification as
- * `email_status=already_connected|retry_required` next to `success=profile_token_obtained`. The
- * layout owns that notice so it shows once on whichever /profile/* tab the return lands.
+ * Guards #4253 and #5459: the Flow C callback reports a replayed pending email verification as
+ * `email_status=already_connected|already_linked|retry_required` next to `success=profile_token_obtained`.
+ * The layout owns that notice so it shows once on whichever /profile/* tab the return lands.
  */
 describe('ProfileLayoutComponent — pending email outcome on Flow C return (#4253)', () => {
   async function setup(
@@ -593,17 +607,18 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
       updateUserProfile: vi.fn(() => of({})),
       getIdentities: vi.fn(() => of([])),
       refreshUserIdentities,
+      consumeLinkedEmailSupportContext: vi.fn(() => of({})),
     };
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: platform },
         { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
         { provide: Router, useValue: { url, navigateByUrl } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add } },
       ],
     });
@@ -642,6 +657,32 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
     expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith('/profile/settings', { replaceUrl: true });
   });
 
+  it.each([
+    ['/profile/settings?success=profile_token_obtained&email_status=already_linked#email-settings', '/profile/settings#email-settings'],
+    ['/profile/identities?success=profile_token_obtained&email_status=already_linked', '/profile/identities'],
+  ])('shows one fixed already-linked notice on %s without claiming success or touching identity state', async (url, cleanUrl) => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup(url, {
+      success: 'profile_token_obtained',
+      email_status: 'already_linked',
+    });
+
+    // #5511: a sticky toast on the layout's own key, carrying an address-free support-chat pre-fill.
+    expect(add).toHaveBeenCalledExactlyOnceWith({
+      key: EMAIL_LINKED_SUPPORT_TOAST_KEY,
+      severity: 'warn',
+      summary: EMAIL_LINKED_SUPPORT_TITLE,
+      detail: EMAIL_ALREADY_LINKED_MESSAGE,
+      sticky: true,
+      data: { supportMessage: buildLinkedEmailSupportMessage() },
+    });
+    expect(EMAIL_ALREADY_LINKED_MESSAGE).toBe(
+      'You’ve verified this email address, but it’s already linked to an LFX account. Contact support for help with next steps.'
+    );
+    expect(EMAIL_ALREADY_LINKED_MESSAGE).not.toMatch(/new (verification )?code/i);
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith(cleanUrl, { replaceUrl: true });
+  });
+
   it('infers no email outcome from an ordinary authorization return', async () => {
     const { add, navigateByUrl, refreshUserIdentities } = await setup('/profile/settings?success=profile_token_obtained', {
       success: 'profile_token_obtained',
@@ -663,9 +704,9 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
     expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith('/profile/identities', { replaceUrl: true });
   });
 
-  it('ignores an email_status that arrives without the authorization-success flag', async () => {
-    const { add, navigateByUrl, refreshUserIdentities } = await setup('/profile/settings?email_status=already_connected', {
-      email_status: 'already_connected',
+  it.each(['already_connected', 'already_linked'])('ignores email_status=%s when it arrives without the authorization-success flag', async (status) => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup(`/profile/settings?email_status=${status}`, {
+      email_status: status,
     });
 
     expect(add).not.toHaveBeenCalled();
@@ -687,7 +728,22 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
     expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBeNull();
   });
 
-  it.each(['already_connected', 'retry_required'])('preserves callback markers and pending saves during SSR for %s', async (status) => {
+  it('still replays a pending profile save alongside the already-linked notice', async () => {
+    sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), avatarPending: true }));
+
+    const { add, refreshUserIdentities } = await setup('/profile/settings?success=profile_token_obtained&email_status=already_linked', {
+      success: 'profile_token_obtained',
+      email_status: 'already_linked',
+    });
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Authorization complete' }));
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ key: EMAIL_LINKED_SUPPORT_TOAST_KEY, summary: EMAIL_LINKED_SUPPORT_TITLE, sticky: true }));
+    expect(add).toHaveBeenCalledTimes(2);
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBeNull();
+  });
+
+  it.each(['already_connected', 'already_linked', 'retry_required'])('preserves callback markers and pending saves during SSR for %s', async (status) => {
     const pendingSave = JSON.stringify({ savedAt: Date.now(), avatarPending: true });
     sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, pendingSave);
 
@@ -764,11 +820,11 @@ describe('ProfileLayoutComponent — nav name sync after a profile save', () => 
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -838,5 +894,238 @@ describe('ProfileLayoutComponent — nav name sync after a profile save', () => 
 
     expect(user()?.name).toBe('Ada Lovelace');
     expect(applyDisplayName).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileLayoutComponent — rendered linked-email callback support (#5511)', () => {
+  async function setup(url: string, context$: Observable<LinkedEmailSupportDraft> = of({ email: 'linked@example.test' })) {
+    TestBed.resetTestingModule();
+    const user = signal({ sub: 'synthetic-user' } as User);
+    const consume = vi.fn(() => context$);
+    const navigateByUrl = vi.fn();
+    const openMessenger = vi.fn();
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent, ToastModule],
+      providers: [
+        mentorshipServiceStub(),
+        MessageService,
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        {
+          provide: ActivatedRoute,
+          useValue: { queryParams: of({ success: 'profile_token_obtained', email_status: 'already_linked', email_support_context: 'a'.repeat(64) }) },
+        },
+        { provide: Router, useValue: { url, navigateByUrl } },
+        { provide: IntercomService, useValue: { update: vi.fn(), openMessenger } },
+        {
+          provide: UserService,
+          useValue: {
+            user,
+            impersonating: signal(false),
+            uploadedAvatarUrl: signal(null),
+            effectiveAvatarUrl: computed(() => ''),
+            identitiesRefresh$: EMPTY,
+            getCurrentUserProfile: () => of({ user: {}, profile: null }),
+            getIdentities: () => of([]),
+            consumeLinkedEmailSupportContext: consume,
+          },
+        },
+      ],
+    });
+    // Keep the actual layout template, real Toast, wrapper, directive and MessageService.
+    // Only unrelated page/panel/drawer/router children are inert custom elements.
+    TestBed.overrideComponent(ProfileLayoutComponent, {
+      set: {
+        imports: [LinkedEmailSupportToastComponent],
+        schemas: [NO_ERRORS_SCHEMA],
+      },
+    });
+    TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+    const globalToast = TestBed.createComponent(Toast);
+    globalToast.detectChanges();
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    // Synchronous initial query params must not emit to an unmounted consumer.
+    expect(consume).not.toHaveBeenCalled();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return { fixture, globalToast, consume, navigateByUrl, openMessenger, user };
+  }
+
+  it.each([
+    [
+      '/profile/settings?success=profile_token_obtained&email_status=already_linked&email_support_context=opaque#email-settings',
+      '/profile/settings#email-settings',
+    ],
+    ['/profile/identities?success=profile_token_obtained&email_status=already_linked&email_support_context=opaque', '/profile/identities'],
+  ])('renders one sticky, dismissible, actionable notice from initial params on %s', async (url, cleanUrl) => {
+    const { fixture, globalToast, consume, navigateByUrl, openMessenger } = await setup(url);
+    const toast = fixture.debugElement.query(By.directive(Toast)).componentInstance as Toast;
+    expect(consume).toHaveBeenCalledExactlyOnceWith('a'.repeat(64));
+    expect(toast.messages).toHaveLength(1);
+    expect(toast.messages?.[0].sticky).toBe(true);
+    expect(globalToast.componentInstance.messages ?? []).toHaveLength(0);
+    expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith(cleanUrl, { replaceUrl: true });
+    const root = fixture.nativeElement as HTMLElement;
+    const action = root.querySelector<HTMLButtonElement>('[data-testid="profile-linked-support-toast-button"]');
+    expect(action).not.toBeNull();
+    expect(root.querySelectorAll('[data-testid="profile-linked-support-toast-button"]')).toHaveLength(1);
+    action!.click();
+    expect(openMessenger).toHaveBeenCalledExactlyOnceWith('test-app-id', expect.any(Function), buildLinkedEmailSupportMessage('linked@example.test'));
+    const close = root.querySelector<HTMLButtonElement>('.p-toast-close-button');
+    expect(close).not.toBeNull();
+    close!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(toast.messages ?? []).toHaveLength(0);
+    expect(root.querySelector('[data-testid="profile-linked-support-toast-button"]')).toBeNull();
+  });
+
+  it('keeps concurrent global notices and the sticky support action in distinct corners', async () => {
+    const response$ = new Subject<LinkedEmailSupportDraft>();
+    const { fixture, globalToast } = await setup('/profile/settings?success=profile_token_obtained&email_status=already_linked', response$);
+    TestBed.inject(MessageService).add({ severity: 'info', summary: 'Authorization complete', detail: 'Please re-select your image to upload it.' });
+    response$.next({ email: 'linked@example.test' });
+    fixture.detectChanges();
+    globalToast.detectChanges();
+    await fixture.whenStable();
+    const supportToast = fixture.debugElement.query(By.directive(Toast)).componentInstance as Toast;
+    expect(supportToast.position).toBe('bottom-left');
+    expect(globalToast.componentInstance.position).toBe('top-right');
+    expect(supportToast.messages).toHaveLength(1);
+    expect(globalToast.componentInstance.messages).toHaveLength(1);
+    expect(globalToast.componentInstance.messages?.[0].summary).toBe('Authorization complete');
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.p-toast-bottom-left [data-testid="profile-linked-support-toast-button"]')).not.toBeNull();
+    expect(globalToast.nativeElement.classList.contains('p-toast-top-right')).toBe(true);
+    root.querySelector<HTMLButtonElement>('.p-toast-close-button')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(supportToast.messages ?? []).toHaveLength(0);
+    expect(globalToast.componentInstance.messages).toHaveLength(1);
+  });
+
+  it('keeps the notice and generic draft when the private context is unavailable', async () => {
+    const { fixture, openMessenger } = await setup('/profile/settings?success=profile_token_obtained&email_status=already_linked', of({}));
+    fixture.nativeElement.querySelector('[data-testid="profile-linked-support-toast-button"]').click();
+    expect(openMessenger).toHaveBeenCalledWith('test-app-id', expect.any(Function), buildLinkedEmailSupportMessage());
+  });
+
+  it('does not publish an old user draft after the identity changes during consumption', async () => {
+    const response$ = new Subject<LinkedEmailSupportDraft>();
+    const { fixture, user } = await setup('/profile/identities?success=profile_token_obtained&email_status=already_linked', response$);
+    user.set({ sub: 'different-synthetic-user' } as User);
+    response$.next({ email: 'linked@example.test' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="profile-linked-support-toast-button"]')).toBeNull();
+  });
+
+  it('cancels the private-context request when the layout is destroyed', async () => {
+    const response$ = new Subject<LinkedEmailSupportDraft>();
+    const { fixture } = await setup('/profile/identities?success=profile_token_obtained&email_status=already_linked', response$);
+    expect(response$.observed).toBe(true);
+    fixture.destroy();
+    expect(response$.observed).toBe(false);
+  });
+});
+
+/**
+ * Guards linuxfoundation/lfx-mentorship#466: Mentorship shows its own copy of the picture and name, so a new picture or name
+ * saved on Profile & Account is copied onto the mentor and mentee profiles. An unchanged picture is never sent, so a photo
+ * kept in Mentorship is not replaced by the avatar shown here.
+ */
+describe('ProfileLayoutComponent — copy to Mentorship (lfx-mentorship#466)', () => {
+  const PICTURE = 'https://cdn.example.com/avatars/new.png';
+
+  async function setup(options: { impersonating?: boolean; queryParams?: Record<string, string> } = {}) {
+    const profile = {
+      user: { first_name: 'Ada', last_name: 'Lovelace', username: 'ada', email: 'ada@example.com' },
+      profile: { bio: 'OLD BIO' },
+    } as unknown as CombinedProfile;
+    const queueLfxProfileSync = vi.fn();
+
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { queryParams: of(options.queryParams ?? {}) } },
+        { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
+        {
+          provide: UserService,
+          useValue: {
+            user: signal({ user_id: 'u1', name: 'Ada Lovelace' } as unknown as User),
+            impersonating: signal(options.impersonating ?? false),
+            uploadedAvatarUrl: signal<string | null>(null),
+            effectiveAvatarUrl: computed(() => ''),
+            identitiesRefresh$: EMPTY,
+            getCurrentUserProfile: vi.fn(() => of(profile)),
+            updateUserProfile: vi.fn(() => of({})),
+            getIdentities: vi.fn(() => of([])),
+            applyDisplayName: vi.fn(),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MentorshipService, useValue: { queueLfxProfileSync } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return { fixture, queueLfxProfileSync };
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  it('copies an uploaded picture, and nothing else', async () => {
+    const { fixture, queueLfxProfileSync } = await setup();
+
+    fixture.componentInstance.onProfileSaved({ picture: PICTURE });
+
+    expect(queueLfxProfileSync).toHaveBeenCalledExactlyOnceWith({ logoUrl: PICTURE });
+  });
+
+  it('sends nothing for a save that changes neither the picture nor the name', async () => {
+    const { fixture, queueLfxProfileSync } = await setup();
+
+    fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Lovelace', bio: 'NEW BIO' });
+
+    expect(queueLfxProfileSync).not.toHaveBeenCalled();
+  });
+
+  it('copies only the part of the name that changed, without a picture', async () => {
+    const { fixture, queueLfxProfileSync } = await setup();
+
+    fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron', bio: 'NEW BIO' });
+
+    expect(queueLfxProfileSync).toHaveBeenCalledExactlyOnceWith({ lastName: 'Byron' });
+  });
+
+  it('compares a later save with the name saved before it, not the name first loaded', async () => {
+    const { fixture, queueLfxProfileSync } = await setup();
+
+    fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron' });
+    fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron', bio: 'NEW BIO' });
+
+    expect(queueLfxProfileSync).toHaveBeenCalledOnce();
+  });
+
+  it('sends nothing while impersonating', async () => {
+    const { fixture, queueLfxProfileSync } = await setup({ impersonating: true });
+
+    fixture.componentInstance.onProfileSaved({ picture: PICTURE });
+
+    expect(queueLfxProfileSync).not.toHaveBeenCalled();
+  });
+
+  // The replay runs before the first profile GET lands, so there is no saved name to compare with: the name goes as saved.
+  it('copies the name of a save replayed after the Flow C authorization', async () => {
+    sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), userMetadata: { given_name: 'Augusta', family_name: 'Lovelace' } }));
+    const { queueLfxProfileSync } = await setup({ queryParams: { success: 'profile_token_obtained' } });
+
+    expect(queueLfxProfileSync).toHaveBeenCalledExactlyOnceWith({ firstName: 'Augusta', lastName: 'Lovelace' });
   });
 });

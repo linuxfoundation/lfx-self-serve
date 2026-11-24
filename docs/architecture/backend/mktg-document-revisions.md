@@ -114,7 +114,16 @@ writer's lock. S3 passes the original ETag through `If-Match`.
 The optional `approvals` map on the same current record stores each revision's
 `approvedAt` and opaque effective-sub `approvedBy`; it is never part of hashed
 revision bytes. Missing or malformed optional annotations mean no approvals,
-not a corrupt critical pointer. Approve uses the existing `writeCurrent` CAS to
+not a corrupt critical pointer. Since the brand kit's report v2, a brand kit
+approval also records `accepted` beside them: the stable keys of what the
+revision's sidecar report showed at that moment (`mktgAcceptedSnapshotOf`:
+failed sources by `source`, or the v1 `name`; missing assets by `asset`;
+warnings by `code|text`; gaps by their exact text; colour conflicts by
+`name`), empty lists when the sidecar has no report. Other documents'
+approvals are unchanged: no `accepted` is written or returned for them. The
+read is tolerant (`readMktgRevisionAccepted`): a malformed snapshot is dropped
+and the approval kept, as for approvals made before it existed, and the view
+then derives what it can. Approve uses the existing `writeCurrent` CAS to
 add an annotation and select that revision atomically. Already approved and
 current is a no-op; selecting an earlier approval preserves its original
 approval time and actor. Make current only moves selection: it never approves
@@ -173,9 +182,10 @@ The Family page eagerly checks last export independently of its document-list re
 A failed check disables export rather than guessing Create. Download PDF composes
 the approved-current framework, brand kit, boilerplates and FAQ in exporter order,
 with one family cover and contents. The family print body class selects a shared
-portrait layout. Family and standalone kit PDFs use the same five-chapter native
-portrait component, not scaled landscape artwork; the existing kit JSON/book view
-model supplies its text and embedded logo assets without new API fields.
+portrait layout. Family and standalone kit PDFs use the same portrait-book component
+(fixed portrait frames; see [the brand kit's portrait book](../frontend/marketing-kit.md#the-brand-kits-portrait-book-download-pdf)),
+not scaled landscape artwork; the existing kit JSON/book view model supplies its
+text and embedded logo assets without new API fields.
 Slides exports the same supported approved assets.
 Neither export changes the on-screen asset rendering or grants Google Drive access.
 
@@ -241,10 +251,32 @@ emails are persisted as attribution in these objects, and no personal attributio
 is embedded in immutable revision bytes.
 Names are resolved at read time through `UserService.getUserInfo` and the existing
 NATS `USER_METADATA_READ` directory lookup, which accepts Auth0 subjects. Lookups
-are memoized per request and bounded like revision reads. A stored author whose
-name is empty or whose lookup failed renders “name unavailable”; only an absent
-author record renders the historical no-name label. Failures warn once per ID
-and never fail a document read. There is no username fallback.
+are memoized per request and bounded like revision reads. On top of that memo,
+`MktgDocumentAuthorService` keeps one process-wide map of the last display name
+the directory returned per subject, shared by every consumer in the process
+(revisions, comments, runs, redrafts), so the revision GET and the poll cycle a
+client interleaves agree about an approver instead of flipping between a name and
+none. The map is stale-if-error (RFC 5861 §4): only a successful lookup writes it,
+and a failed lookup — one that throws (a timeout, a 503, an invalid body) or one
+the directory answers with `success: false`, which lfx-v2-auth-service does for
+any upstream error (an M2M token failure, an Auth0 rate limit or 5xx), not only a
+miss — serves the subject's last known name while that name is within
+`MKTG_DOCUMENT_AUTHOR_CACHE_TTL_MS` (one hour) of its last success, logging
+`served_stale: true`, never the name. It holds at most
+`MKTG_DOCUMENT_AUTHOR_CACHE_LIMIT` (500) subjects, the least recently resolved
+dropped first, and sweeps expired entries whenever it writes. A successful answer
+with an empty display name clears the entry and renders no name; the one-hour
+window is the privacy bound for a user removed from the directory, whose name
+lingers at most that long. A failure is never remembered. The cache is per
+process, so each BFF replica, an evicted subject or an expired entry answers with
+no name until a lookup succeeds; a shared cache, or the revision storing the
+approver's display name at approval time, is the follow-up, as is a typed
+not-found code from lfx-v2-auth-service so a removed user clears at once (error
+strings are never matched).
+A stored author whose name is empty, or whose lookup failed with no name to serve,
+renders “name unavailable”; only an absent author record renders the historical
+no-name label. Failures warn once per ID and request and never fail a document
+read. There is no username fallback.
 
 Detail, revision, and Make current responses expose `revisionId`, `changedAt` and
 name-only `changedBy` as `current`; neither stored user IDs nor the internal
@@ -331,7 +363,10 @@ current `{ questionsId, questions: MktgRunQuestion[], askedAt }` turn, including
 the existing schema and acquire the field on their next observed question turn. Question-body writes
 retain the existing transition predicate and use the same conditional record replacement as result transitions.
 Any typed one-off turn supplied by its domain adapter shares this private capture, including turns
-with an empty basis; only living-kit writer progress exposes the payload. One-offs retain their dedicated creator path.
+with an empty basis; only living-kit writer progress exposes the payload. That writer check is strict: when it cannot
+be completed (project or access-check outage), the row is returned without the block and the read is marked
+`progressUnavailable`, logged as `mktg_run_questions_access`, so clients keep the questions they already hold rather
+than reading "no questions"; only a verified non-writer gets a complete answer without the block. One-offs retain their dedicated creator path.
 The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
 rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
 Public progress is an explicit projection: opaque run id, project/agent/document,
@@ -397,6 +432,8 @@ The full-list preflight uses bounded read batches and the terminal cache, not an
 Refusal uses stored state without reconciling deadlines; Discard is the escape for an unreconciled dead run. Discard commits before createSession: if creation fails, the old run stays closed and the person starts again (no orphan session).
 Retry of a failed run uses the same slot pre-check before returning to writing (no discard on Retry); another active run yields 409. Explicit null creators remain in the unknown-creator slot, never the retrying writer's slot. Catalog chat follow-ups check the stored session before sending: discarded/superseded sessions return `MKTG_RUN_CLOSED` (409), and a different active run in the slot returns `MKTG_RUN_ACTIVE`. Only the verified continuing session is exempt from its own slot check. The same pre-send check now protects Brand Kit, Framework, Boilerplates, FAQ and LinkedIn answers in this PR alone, with required project authorization; omitting project cannot skip it. The shared check recognizes creator-scoped tracked one-offs as well as living documents. The companion #4592 exact-turn answer claim remains the stronger conditional-write belt. Turn tracking also rejects retired records and excludes retired metadata from its write predicate, so a late follow-up cannot reopen them. This does not add a cross-writer atomic reservation to the existing HEAD/check/PUT store. Excluded follow-up: comments-redraft sends are not pre-checked and may supersede Generate.
 
+`POST /api/mktg-agents/documents/:agentKey/:documentId/runs/:runId/dismiss` with `{ project }` takes a failed run off Started runs for everyone. Any canonical project writer may dismiss any writer's failed run (as with Retry); the route is blocked while impersonating, so the recorded closer is never the impersonated user. Only a `failed` record can be dismissed: any other open state, including a retry that wins between the read and the write, returns 409 `MKTG_RUN_NOT_FAILED` with response-only `{ runId }`. A run that is already closed (`completed`, `superseded` or `discarded`) answers 204 again with no write and no audit. Dismiss settles any comment send as failed ("This run was dismissed."), then reuses the `discarded` state with the same private `closed-by`/`closed-at` metadata, so no new state exists and every listing already omits it; no document, revision or Guild session is touched. A successful dismiss writes an INFO `mktg_run_dismiss_audit` (instead of `mktg_run_discard`) with the same opaque-subject payload. The 204 has no body. A direct `?run=` link to a dismissed run then shows the ordinary closed marker, "This run was discarded by … at …". The Documents page offers Dismiss on failed Started runs rows only, removes the row locally before re-reading the list, and hides the control while impersonating.
+
 A validated Generate 409 opens a scoped confirmation: living intakes name the starter; dedicated LinkedIn and Member 360 intakes say "Your … run is in progress". "Open it" navigates to the returned document/run; "Discard and start over" resends the exact submitted body with only `discard: activeRunId` added. Catalog bodies and conflict handoffs are same-visit memory only, never persisted as future discard permission or uploaded bytes. If that body cannot be replayed safely after reload, the intake asks for review/reattachment and another explicit Create. Context or identity changes invalidate the old dialog's actions. The shared guard re-sends the retained start without `discard` on open, visible timer checks and focus: a fresh 409 updates the same dialog's ownership/time and choices; an accepted start closes it, announces “The earlier run has finished — yours started.” and follows the normal start flow. Choices stay disabled while checking; focus never overlaps or cancels an in-flight start POST, and an uncertain non-409 ACK stops automatic retries rather than risking a second start.
 
 Document and run-page detail reads forward the optional validated `run` selector to read that record's closed marker without a Guild lookup, on navigation and timer reads. Only selected details project `discarded`/`superseded`, with `closedAt` from closure metadata when recorded. A selected `completed` run with a valid matching stored receipt instead projects `producedRevisionId`, taken from the tracker's `revision-id` metadata, so a public follower can identify the exact produced revision rather than infer it from the document's current selection. Completion markers contain no identity enrichment, activity, questions or failure prose; ordinary listings still omit them. No destination is projected before completion or without a matching stored receipt. Both surfaces use one closure-message component. `closedBy` is a cheaply resolved display name or null, never the private subject/email; legacy unknown actors remain null. The raw scoped closure-marker helper remains attribution-free; only selected HTTP progress enriches its display-name field. `replacedBy` is supplied only when the already-read progress contains a newer run of the same type and document, without extra listing/Guild work or a guessed replacement. The document link opens that exact replacement when supplied; otherwise it says “View started runs” and opens the project's Documents/Started runs list. Closed views have no polling, feed, stepper or retry; the run page does not infer completion from a discarded row. Listings continue to omit closed records. A selected closed marker also cancels the document receiver's matching prepared/recovery stream and prevents late questions or result events from navigating away from that closed view. Both the shared living reader and the direct one-off receiver process closure metadata before attempting a revision-body read, so a body 503 cannot restore the previous active snapshot.
@@ -450,8 +487,8 @@ rows leave the BFF, never coverage IDs/counts or private sessions. A real lookup
 failure adds `progressUnavailable` so clients can warn/retry even with no row;
 intentional window coverage alone never manufactures active work or endless retries.
 Window-skipped unfinished writing/storing snapshots are last-known, not fresh
-liveness: poll reads mark them unavailable, so the client's existing bounded
-availability budget stops automatic checks. Closed-history coverage is not flagged.
+liveness: poll reads mark them unavailable, so the client keeps checking on its
+capped jittered backoff (floored at its base interval) behind one connection-state line. Closed-history coverage is not flagged.
 Explicit detail navigation may pass `refreshRun` to refresh ONE scoped failed run;
 timer reads reject that selector. A stale/foreign selector or transient tracking
 error retains the stored document/known rows with an availability warning, never
@@ -460,23 +497,25 @@ is visible. Retry POSTs recheck the stored session, never submit Generate or mov
 the approved-current pointer. Overview polls cancel on project/effective-subject
 changes and destruction. Same-scope reloads and polls retain last loaded documents
 on transient errors; 401/403 clears inaccessible data. Consecutive unavailable
-reads back off to eight intervals and stop after the normal poll timeout, leaving
-a warning/manual refresh; healthy reads reset the budget. Questions-only rows do
-not start automatic polling. Unavailable tracking retains missing same-scope
+reads never stop: they retry on the capped jittered backoff (cap
+`MKTG_POLL_MAX_BACKOFF_MS`, floored at the base interval) behind the one
+connection-state line, with no manual refresh; a healthy read resets the backoff
+and clears the line. The overview polls whatever its rows' states, questions-only
+rows included. Unavailable tracking retains missing same-scope
 run rows and suppresses absence claims, without hiding a known stored-current badge.
 
 Document navigation keeps `?generation=` (single-use in-memory prepared intake)
 separate from `?run=` (durable selected run). Only a fresh prepared proof can
 submit Generate; restored intake needs explicit action. Metadata/body failures
-share one bounded read budget and manual refresh, without hiding an acknowledged
-current-pointer write. Structured views come from the document/intake registry;
+share that one capped backoff and connection-state line and are retried
+automatically, without hiding an acknowledged current-pointer write. Structured views come from the document/intake registry;
 malformed structured assets are unsupported, never Markdown fallback. ICP is unchanged.
 
 Persistence receipts carry the exact `document_location` with `agent_key`,
 `document_id`, `revision_id`; it is not a lookup of whichever revision is current.
 UI models normalize this to their camel-case location. JSON content, sidecars,
 CAS publication, current selection and attribution stay on the shared writer.
-`getRawEventPayloads` reads up to four offset pages of 500 raw events, stopping on a short page or `has_more=false`. It de-duplicates event IDs and sorts chronologically, then replaces user/trigger content with `mktg_session_turn_started`. Only a four-page read that still has more events appends `mktg_session_events_truncated`; a full final page does not. These content-free markers prevent an old
+`getRawEventPayloads` reads offset pages of 500 raw events, sized from the API's `pagination.total_count` under the absolute cap `MKTG_RAW_EVENTS_MAX_PAGES` (20 pages, 10,000 events); when the total is absent it stops on a short page or `has_more=false`. It de-duplicates event IDs and sorts chronologically, then replaces user/trigger content with `mktg_session_turn_started`. Only a read that reaches the cap with more events left appends `mktg_session_events_truncated`. Concurrent polls of one session share one in-flight read (single-flight, per process). These content-free markers prevent an old
 completion or finalize replay from ending a queued/truncated turn. Reasoning
 MIME is filtered before any text, questions, envelope or reply extraction.
 
@@ -522,10 +561,14 @@ Only the effective opaque subject is stored for authorship; an impersonated
 target without a subject remains unattributed. Display names are resolved on
 reads through `MktgDocumentAuthorService`, which also owns revision attribution.
 The comments service shares that helper instance with its revision reader, so
-both use one per-request name cache, with bounded fan-out. Lookup failures resolve
-to `{ name: null }` without failing the comments read; thrown errors retain
-structured `err` metadata, and unsuccessful directory responses warn without
-inventing an error. Explicit public projection excludes subjects, request IDs
+both use one per-request name memo and the process-wide last-known-name map
+described under revision attribution (500 subjects, one hour since the last
+success, success-only writes), with bounded fan-out. A failed lookup — thrown, or
+answered `success: false` — serves the author's last known name within that
+window, logging `served_stale: true`, and otherwise resolves to `{ name: null }`
+without failing the comments read; thrown errors retain structured `err`
+metadata, and an unsuccessful directory response warns without inventing an
+error. Explicit public projection excludes subjects, request IDs
 and the private send ledger. Bodies
 and attribution are not logged. Direct asset editing and revision overwrite are
 never allowed; redrafts append ordinary Drafts through the existing writer.

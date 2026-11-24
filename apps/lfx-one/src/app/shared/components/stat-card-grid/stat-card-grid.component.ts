@@ -3,6 +3,7 @@
 
 import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
+import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import {
   DELTA_DIRECTION_ICON,
@@ -15,7 +16,7 @@ import { StatCardGridColumns, StatCardItem } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-stat-card-grid',
-  imports: [CardComponent, NgTemplateOutlet],
+  imports: [ButtonComponent, CardComponent, NgTemplateOutlet],
   templateUrl: './stat-card-grid.component.html',
   styleUrl: './stat-card-grid.component.scss',
 })

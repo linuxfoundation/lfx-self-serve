@@ -278,6 +278,29 @@ export function getMimeTypeDisplayName(mimeType: string, fileName?: string): str
 }
 
 /**
+ * Strips leading and trailing periods and whitespace (the same `\s` class the regex form used).
+ *
+ * Index scan rather than `/^[.\s]+|[.\s]+$/`: the end-anchored `+` class trips CodeQL's
+ * "polynomial regular expression used on uncontrolled data" rule and is quadratic on a long
+ * run that is not at the end of the string. The scan visits each char at most once, so the
+ * trim is strictly linear (same approach as `trimTrailingPunctuation` in url.utils.ts).
+ */
+export function trimDotsAndWhitespace(value: string): string {
+  const isTrimmable = (char: string): boolean => char === '.' || /\s/.test(char);
+
+  let start = 0;
+  let end = value.length;
+  while (start < end && isTrimmable(value.charAt(start))) {
+    start++;
+  }
+  while (end > start && isTrimmable(value.charAt(end - 1))) {
+    end--;
+  }
+
+  return value.slice(start, end);
+}
+
+/**
  * Comprehensive filename sanitization to prevent security issues
  * and ensure cross-platform compatibility
  */
@@ -308,7 +331,7 @@ export function sanitizeFilename(filename: string, maxLength: number = 255): str
   extension = extension.replace(/\s+/g, '_');
 
   // Remove leading/trailing periods and spaces from name
-  name = name.replace(/^[.\s]+|[.\s]+$/g, '');
+  name = trimDotsAndWhitespace(name);
 
   // Handle Windows reserved names (case-insensitive)
   const windowsReserved = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;

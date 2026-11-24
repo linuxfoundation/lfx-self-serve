@@ -9,10 +9,17 @@ import {
   apiRateLimiter,
   emailSendCodeTargetRateLimiter,
   emailSendCodeUserRateLimiter,
+  impersonationSearchRateLimiter,
+  newsletterTestSendRateLimiter,
+  publicApiRateLimiter,
   selfResendInviteRateLimiter,
+  voteLinkRateLimiter,
 } from './rate-limit.middleware';
+import { IMPERSONATION_SEARCH_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/impersonation.constants';
 import { SELF_RESEND_INVITE_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/meeting-registrant.constants';
+import { NEWSLETTER_TEST_SEND_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/newsletter.constants';
 import { EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX, EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/profile.constants';
+import { VOTE_LINK_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/vote.constants';
 
 // `aiRateLimiter` counts in the default in-process MemoryStore, so the counter is shared across
 // every test in this file. express-rate-limit exposes no reset, so each test has to use its own key
@@ -54,9 +61,11 @@ function testIpv6Prefix(): string {
 }
 
 // Minimal Express stand-ins include headers for the default IP-key validations.
-function buildReq(opts: { sub?: string; ip?: string; email?: unknown }): Request {
+function buildReq(opts: { sub?: string; ip?: string; email?: unknown; path?: string; method?: string }): Request {
   return {
     ip: opts.ip ?? '203.0.113.10',
+    path: opts.path ?? '/',
+    method: opts.method ?? 'POST',
     headers: {},
     app: { get: () => undefined },
     body: { email: opts.email },
@@ -94,7 +103,7 @@ function buildRes(): Response & { statusCode?: number; headers: Record<string, s
 
 /** Drives the limiter once and reports whether the request was allowed through. */
 async function request(
-  opts: { sub?: string; ip?: string; email?: unknown; downstreamStatus?: number } = {},
+  opts: { sub?: string; ip?: string; email?: unknown; path?: string; method?: string; downstreamStatus?: number } = {},
   limiter: typeof aiRateLimiter = aiRateLimiter
 ): Promise<{
   allowed: boolean;
@@ -297,5 +306,101 @@ describe('selfResendInviteRateLimiter', () => {
     for (let attempt = 0; attempt < SELF_RESEND_INVITE_RATE_LIMIT_MAX + 3; attempt++) {
       expect((await request({ sub, downstreamStatus }, selfResendInviteRateLimiter)).allowed, `failed request ${attempt}`).toBe(true);
     }
+  });
+});
+
+describe('newsletterTestSendRateLimiter', () => {
+  it.each([200, 400, 503])('counts every test send, even when downstream answers %s, per user', async (downstreamStatus) => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < NEWSLETTER_TEST_SEND_RATE_LIMIT_MAX; attempt++) {
+      expect((await request({ sub, downstreamStatus }, newsletterTestSendRateLimiter)).allowed, `attempt ${attempt}`).toBe(true);
+    }
+    const rejected = await request({ sub }, newsletterTestSendRateLimiter);
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect((await request({ sub: `${sub}-another-user` }, newsletterTestSendRateLimiter)).allowed).toBe(true);
+  });
+});
+
+describe('impersonationSearchRateLimiter', () => {
+  it('allows the per-window budget of searches per admin, then rejects with the 429 envelope', async () => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < IMPERSONATION_SEARCH_RATE_LIMIT_MAX; attempt++) {
+      expect((await request({ sub }, impersonationSearchRateLimiter)).allowed, `search ${attempt}`).toBe(true);
+    }
+
+    const rejected = await request({ sub }, impersonationSearchRateLimiter);
+
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect(rejected.body).toEqual({ error: 'Too many searches. Please wait a moment and try again.', code: 'RATE_LIMITED' });
+  });
+
+  it("keys on the admin's sub, so another admin behind the same IP keeps their own budget", async () => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < IMPERSONATION_SEARCH_RATE_LIMIT_MAX; attempt++) {
+      await request({ sub }, impersonationSearchRateLimiter);
+    }
+
+    expect((await request({ sub }, impersonationSearchRateLimiter)).allowed).toBe(false);
+    expect((await request({ sub: `${sub}-another-admin` }, impersonationSearchRateLimiter)).allowed).toBe(true);
+  });
+});
+
+describe('voteLinkRateLimiter (#5964)', () => {
+  it('allows the per-window budget per IP, then rejects with the 429 envelope', async () => {
+    const ip = `${testIpv6Prefix()}:0001:0:0:0:1`;
+    for (let attempt = 0; attempt < VOTE_LINK_RATE_LIMIT_MAX; attempt++) {
+      expect((await request({ ip, path: '/link-ballot' }, voteLinkRateLimiter)).allowed, `vote-link call ${attempt}`).toBe(true);
+    }
+
+    const rejected = await request({ ip, path: '/link-ballot' }, voteLinkRateLimiter);
+
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect(rejected.headers['RateLimit-Limit']).toBe(String(VOTE_LINK_RATE_LIMIT_MAX));
+    expect(rejected.body).toEqual({ error: 'Too many requests, please try again later.', code: 'RATE_LIMITED' });
+  });
+});
+
+describe('publicApiRateLimiter skip (#5964)', () => {
+  const PUBLIC_API_LIMIT = 100;
+
+  it.each([
+    ['POST', '/votes/link-ballot'],
+    ['POST', '/votes/link-responses'],
+    ['PUT', '/votes/link-responses'],
+  ])('does not count %s %s, which voteLinkRateLimiter meters', async (method, path) => {
+    const ip = `${testIpv6Prefix()}:0001:0:0:0:1`;
+    for (let attempt = 0; attempt <= PUBLIC_API_LIMIT; attempt++) {
+      expect((await request({ ip, path, method }, publicApiRateLimiter)).allowed, `vote-link call ${attempt}`).toBe(true);
+    }
+  });
+
+  it.each([
+    ...['GET', 'HEAD', 'DELETE', 'PATCH', 'OPTIONS'].flatMap((method) => ['/votes/link-ballot', '/votes/link-responses'].map((path) => [method, path])),
+    ['PUT', '/votes/link-ballot'],
+  ])('still counts unsupported %s %s requests', async (method, path) => {
+    const ip = `${testIpv6Prefix()}:0001:0:0:0:1`;
+    for (let attempt = 0; attempt < PUBLIC_API_LIMIT; attempt++) {
+      expect((await request({ ip, path, method }, publicApiRateLimiter)).allowed, `public call ${attempt}`).toBe(true);
+    }
+
+    const rejected = await request({ ip, path, method }, publicApiRateLimiter);
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+  });
+
+  it('still counts other public routes, such as the project-summary branding lookup', async () => {
+    const ip = `${testIpv6Prefix()}:0001:0:0:0:1`;
+    const path = '/projects/x/summary';
+    for (let attempt = 0; attempt < PUBLIC_API_LIMIT; attempt++) {
+      expect((await request({ ip, path }, publicApiRateLimiter)).allowed, `public call ${attempt}`).toBe(true);
+    }
+
+    const rejected = await request({ ip, path }, publicApiRateLimiter);
+
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
   });
 });

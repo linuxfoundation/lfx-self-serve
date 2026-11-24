@@ -180,6 +180,10 @@ export interface ResolvedClaIdentity {
   githubUsernames: string[];
   /** True when the session has at least one linked GitHub identity. */
   githubLinked: boolean;
+  /** Numeric GitLab user ids from identities linked through the GitLab Auth0 connection (#4191). */
+  gitlabIds: string[];
+  /** GitLab usernames (from Auth0 profileData.nickname) of those same linked identities. */
+  gitlabUsernames: string[];
 }
 
 /** One manager from `GET /v4/my-clas/{signatureID}/cla-managers` (`#/definitions/my-cla-manager`). */

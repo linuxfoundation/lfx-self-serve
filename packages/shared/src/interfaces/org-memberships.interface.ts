@@ -3,6 +3,11 @@
 
 import type { OrgLensFoundationProject } from './org-lens.interface';
 
+export interface OrgLensRowOrganization {
+  accountId: string;
+  name: string;
+}
+
 export interface OrgMembershipsSummary {
   activeMemberships: number;
   renewingWithin90Days: number;
@@ -24,12 +29,14 @@ export interface OrgActiveMembership {
   boardMembers: number;
   committeeMembers: number;
   orgProjects: number;
+  organization?: OrgLensRowOrganization;
 }
 
 export interface OrgActiveMembershipsResponse {
   accountId: string;
   summary: OrgMembershipsSummary;
   memberships: OrgActiveMembership[];
+  organizations?: OrgLensRowOrganization[];
 }
 
 /**
@@ -59,11 +66,15 @@ export interface OrgExpiredMembership {
   tierEndDate: string | null;
   expirationDate: string | null;
   actionType: 'renew' | 'contact';
+  organization?: OrgLensRowOrganization;
+  /** Roll-up only: the other organizations in the family that hold an active membership at this foundation. */
+  activeSiblings?: OrgLensRowOrganization[];
 }
 
 export interface OrgExpiredMembershipsResponse {
   accountId: string;
   memberships: OrgExpiredMembership[];
+  organizations?: OrgLensRowOrganization[];
 }
 
 export interface OrgDiscoverOpportunity {
@@ -115,7 +126,7 @@ export interface OrgMembershipKeyContactPerson {
   avatarUrl?: string | null;
   /**
    * LF username, the only key the drawer may look company addresses up on; `email` is display-only.
-   * Null means "not available from this view", not "no company address".
+   * Null means the drawer has nothing to look an address up on, not "no company address".
    */
   username?: string | null;
 }
@@ -152,9 +163,11 @@ export interface KeyContactEmployee {
   avatarUrl?: string | null;
   /**
    * LF username from the key_contact document, the drawer's only address-lookup key for these rows.
-   * Null means "not available from this view", not "no company address".
+   * Null means the drawer has nothing to look an address up on, not "no company address".
    */
   lfUsername?: string | null;
+  /** Distinct active key-contact roles this person holds across the org's memberships, sorted. Empty for a person surfaced by a non-key-contact source. */
+  roles: string[];
 }
 
 /** Response envelope for `GET /api/orgs/:orgUid/lens/key-contacts/employees`. */
@@ -420,6 +433,8 @@ export interface ActiveMembershipRow extends OrgActiveMembership {
   initials: string;
   tierRange: string;
   memberSinceFormatted: string;
+  membershipLink: string[] | null;
+  companyLinkLabel: string | null;
 }
 
 export interface ExpiredMembershipRow extends OrgExpiredMembership {
@@ -429,6 +444,9 @@ export interface ExpiredMembershipRow extends OrgExpiredMembership {
   tierStartFormatted: string;
   tierEndFormatted: string;
   renewUrl: string;
+  activeSiblingsLabel: string | null;
+  /** Roll-up only: pre-fills the Contact Us chat with the row's company and foundation. */
+  supportMessage: string | undefined;
 }
 
 export interface DiscoverOpportunityRow extends OrgDiscoverOpportunity {

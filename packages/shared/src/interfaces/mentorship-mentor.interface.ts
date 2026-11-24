@@ -226,20 +226,32 @@ export interface MentorshipUpstreamTaskCreate {
 /** A mentor's decision on a submitted task: `complete` approves it, `incomplete` sends it back for changes. */
 export type MentorshipMentorTaskReviewDecision = 'complete' | 'incomplete';
 
-/** Body of `PATCH /api/mentorship/mentor/tasks/:taskId/review`. Upstream has no field for a comment. */
+/**
+ * Body of `PATCH /api/mentorship/mentor/tasks/:taskId/review`. `reason` is required with `incomplete` and refused with
+ * `complete`: it says what to change, and upstream emails it to the mentee without storing it.
+ */
 export interface MentorshipMentorTaskReviewUpdate {
   status: MentorshipMentorTaskReviewDecision;
+  reason?: string;
 }
 
-/** Body of `PATCH /mentorship/v1/tasks/{id}/review`. */
+/** Body of `PATCH /mentorship/v1/tasks/{id}/review`. Upstream emails `reason` to an accepted mentee and does not store it. */
 export interface MentorshipUpstreamTaskReviewUpdate {
   status: MentorshipMentorTaskReviewDecision;
+  reason?: string;
 }
 
-/** What the mentor Tasks tab emits when a mentor approves a task or requests changes on it. */
+/** What the mentor Tasks tab emits when a mentor approves a task, or requests changes on it with a reason. */
 export interface MentorshipMentorTaskReviewRequest {
   taskId: string;
   status: MentorshipMentorTaskReviewDecision;
+  reason?: string;
+}
+
+/** Data for the Request Changes dialog: who and what the reason is about. */
+export interface MentorshipTaskChangesDialogData {
+  menteeName: string;
+  taskName: string;
 }
 
 /** What an invited mentor does with the invitation, on `/mentorship/mentor/invites` or in the profile edit drawer. */
@@ -270,7 +282,7 @@ export interface MentorshipMentorProgramStats {
   applicants: number;
 }
 
-/** A mentor's program status: `completed` once every term is closed, otherwise `open`. */
+/** A mentor's program status: a published program's `MentorshipProgramStatus`, which upstream reads from its terms. */
 export type MentorshipMentorProgramStatus = (typeof MENTORSHIP_MENTOR_PROGRAM_STATUSES)[number];
 
 /** Program row on the mentor My Programs list and the program-detail header. The counts cover all the program's terms. */
@@ -447,6 +459,11 @@ export interface MentorshipUpstreamUser {
   avatar_url?: string;
   created_on: string;
   updated_on: string;
+}
+
+/** A claim on one login's mentorship user refresh (`PUT /mentorship/v1/me`); `complete` records the refresh as done for the rest of the login. */
+export interface MentorshipSyncClaim {
+  complete(): Promise<void>;
 }
 
 /** One non-deleted term of a program on `GET /mentorship/v1/mentors/{id}`. Dates are RFC 3339 instants. */

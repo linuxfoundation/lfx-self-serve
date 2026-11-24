@@ -35,7 +35,9 @@ const DOCS_TAXONOMY_ORDER = [
   'badges',
   'profile',
   'account',
-  'organization',
+  'permissions',
+  'company',
+  'roi',
   'crowdfunding',
   'social-listening',
 ];

@@ -9,7 +9,7 @@ import { MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slid
 import { MKTG_FAMILY_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-family-export.constants';
 import { MKTG_LAST_INTAKE_API, MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants/mktg-last-intake.constants';
 import type { MktgArtifactStoredResponse } from '@lfx-one/shared/interfaces/mktg-artifact.interface';
-import type { MktgDocumentRunProgress } from '@lfx-one/shared/interfaces/mktg-document-run.interface';
+import type { MktgDocumentRunProgress, MktgRunPendingQuestions } from '@lfx-one/shared/interfaces/mktg-document-run.interface';
 import type { MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces/mktg-document-store.interface';
 import type { MktgRunResultResponse, MktgRunSessionResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';
 import { buildMktgRunActivity } from '@lfx-one/shared/utils/mktg-run-activity.utils';
@@ -102,7 +102,8 @@ export async function setupNoQuestionsHandoff(page: Page) {
   await page.route('**' + MKTG_FAMILY_EXPORT_API_PATH + '/last?*', (route) =>
     fulfillDocumentJson(route, { last: null, currentMembers: [], skippedMembers: [], stale: false })
   );
-  let stage: 'research' | 'between-rounds' | 'writing' | 'checking' | 'early-ready' | 'storing' | 'ready' | 'unconfirmed' = 'research';
+  let stage: 'research' | 'between-rounds' | 'questions' | 'writing' | 'checking' | 'early-ready' | 'storing' | 'ready' | 'unconfirmed' = 'research';
+  let pendingQuestions: MktgRunPendingQuestions | null = null;
   const posts: string[] = [];
   page.on('request', (request) => {
     const path = new URL(request.url()).pathname;
@@ -112,6 +113,8 @@ export async function setupNoQuestionsHandoff(page: Page) {
   await page.route('**' + intake.endpoints.generate, (route) => fulfillDocumentJson(route, ack));
   await page.route('**' + intake.endpoints.result, (route) => {
     if (stage === 'unconfirmed') return fulfillDocumentJson(route, { error: 'Synthetic invalid check' }, 400);
+    if (stage === 'questions' && pendingQuestions)
+      return fulfillDocumentJson(route, { status: 'questions', questionsId: pendingQuestions.questionsId, questions: pendingQuestions.questions });
     let activityStage: 'research' | 'between-rounds' | 'writing' | 'checked' = 'writing';
     if (stage === 'research' || stage === 'between-rounds') activityStage = stage;
     if (stage === 'checking') activityStage = 'checked';
@@ -137,12 +140,16 @@ export async function setupNoQuestionsHandoff(page: Page) {
   await page.route(new RegExp('/documents/' + type.agentKey + '/living(?:\\?|$)'), (route) => {
     const runs: MktgDocumentRunProgress[] = [];
     if (stage !== 'ready') {
+      let state: MktgDocumentRunProgress['state'] = 'writing';
+      if (stage === 'questions') state = 'questions';
+      else if (stage === 'storing') state = 'storing';
       runs.push({
         project: DOCUMENT_PROJECT.uid,
         agentKey: type.agentKey,
         documentId: 'living',
         runId: 'b'.repeat(64),
-        state: stage === 'storing' ? 'storing' : 'writing',
+        state,
+        ...(stage === 'questions' && pendingQuestions && { pendingQuestions }),
         startedAt: '2026-10-20T10:00:05Z',
       });
     }
@@ -156,6 +163,12 @@ export async function setupNoQuestionsHandoff(page: Page) {
   if (!firstReading || !lastReading) throw new Error('Missing real producer research rows');
   return {
     posts,
+    documentUrl: `/project/mktg-os-agents/documents/${type.agentKey}/living?project=${DOCUMENT_PROJECT.slug}`,
+    // Rule 1/#4592: advance private and canonical projections together, never a cache-only question state.
+    askQuestions: (questions: MktgRunPendingQuestions) => {
+      pendingQuestions = questions;
+      stage = 'questions';
+    },
     firstReadingId: firstReading.id,
     lastReadingId: lastReading.id,
     revision: summary,

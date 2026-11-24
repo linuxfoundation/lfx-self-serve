@@ -20,7 +20,7 @@ import {
   WritableSignal,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 
 import {
   MeetingDeleteConfirmationComponent,
@@ -51,19 +51,20 @@ import {
   getPastMeetingTranscriptUrl,
   getUpcomingMeetingStartTime,
   isPastMeetingSummaryAwaitingApproval,
+  GroupLinkState,
   isPastMeetingSummaryVisible,
   Meeting,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
   MeetingDeleteTypeResult,
+  MeetingGroupLink,
   MeetingOccurrence,
+  MeetingRegistrant,
   MeetingRsvp,
+  MeetingSelfRegistrationRemovalEvent,
   MeetingRecurrence,
-  MeetingRescheduleOccurrenceResult,
   RecurringMeetingEditScopeResult,
   MEETING_TYPE_CONFIGS,
-  MEETING_V2_ENABLED_DEFAULT,
-  MEETING_V2_ENABLED_FLAG,
   MeetingHostCandidate,
   PastMeeting,
   PastMeetingAttachment,
@@ -77,6 +78,7 @@ import {
   applyAttachmentScopeOverrides,
   applyMeetingAttachmentChanges,
   canScopeAttachmentToOccurrence,
+  escapeHtml,
   filterAttachmentsForOccurrence,
   getAttachmentScope,
   getMeetingSelfRemovalMessage,
@@ -91,12 +93,12 @@ import { SummaryModalComponent } from '@components/summary-modal/summary-modal.c
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
+import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
-import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -127,7 +129,6 @@ import { MeetingMaterialsDrawerComponent } from '../meeting-materials-drawer/mee
 import { MeetingRsvpDetailsComponent } from '../../components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { PublicRegistrationModalComponent } from '../../components/public-registration-modal/public-registration-modal.component';
 import { RecurringMeetingEditOptionsComponent } from '../../components/recurring-meeting-edit-options/recurring-meeting-edit-options.component';
-import { RescheduleOccurrenceDialogComponent } from '../../components/reschedule-occurrence-dialog/reschedule-occurrence-dialog.component';
 
 @Component({
   selector: 'lfx-meeting-card',
@@ -162,6 +163,8 @@ export class MeetingCardComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
   private readonly inviteResend = inject(MeetingInviteResendService);
+  private readonly selfRemoval = inject(MeetingSelfRemovalService);
+  private readonly selfInvite = inject(MeetingSelfInviteService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -169,8 +172,6 @@ export class MeetingCardComponent implements OnInit {
   private readonly clipboard = inject(Clipboard);
   private readonly userService = inject(UserService);
   private readonly composer = inject(MeetingComposerService);
-  private readonly featureFlagService = inject(FeatureFlagService);
-  private readonly router = inject(Router);
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly refreshAttachments$ = new BehaviorSubject<void>(undefined);
@@ -180,6 +181,13 @@ export class MeetingCardComponent implements OnInit {
   public readonly pastMeeting = input<boolean>(false);
   public readonly loading = input<boolean>(false);
   public readonly showBorder = input<boolean>(false);
+  // Navigation state for the group links, so the group page returns to the list the card is on. Without it the page defaults to Groups.
+  public readonly groupLinkState = input<GroupLinkState | null>(null);
+  // The group whose page the card is already on (its own Meetings tab); that group shows as plain text instead of a link to itself.
+  public readonly currentGroupUid = input<string>('');
+  // The project whose meetings list the card is on. A meeting from another project (a sub-project rolled
+  // up into a foundation's list) is labelled with its own project name; empty means no label.
+  public readonly contextProjectUid = input<string>('');
 
   public showRegistrants: WritableSignal<boolean> = signal(false);
   /** Set when the drawer is opened from "Invite people", so it opens on the Add Guest form. */
@@ -190,6 +198,13 @@ export class MeetingCardComponent implements OnInit {
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
+  /** Confirmed card writes are separate from the drawer's own count delta. */
+  public readonly confirmedSelfCountDelta = signal(0);
+  public readonly confirmedSelfRegistrants = signal<MeetingRegistrant[]>([]);
+  public readonly confirmedRemovedRegistrantIds = signal<string[]>([]);
+  public readonly selfIdentityPending = signal(false);
+  /** Reuse the drawer's reconciled roster after it has loaded, rather than counting its writes twice. */
+  public readonly drawerRegistrants = signal<MeetingRegistrant[] | null>(null);
   public readonly confirmedRsvps = signal<MeetingRsvp[]>([]);
   /**
    * What the registrants drawer counted, or `null` while it has not counted yet.
@@ -214,6 +229,8 @@ export class MeetingCardComponent implements OnInit {
   /** Set while the pre-open write-access probe is in flight, so the edit button cannot be double-fired. */
   public checkingEditAccess: WritableSignal<boolean> = signal(false);
   public readonly leavingMeeting: WritableSignal<boolean> = signal(false);
+  public readonly addingMyself: WritableSignal<boolean> = signal(false);
+  public readonly selfInvitePending = computed(() => this.addingMyself() || this.selfInvite.isPending(this.meeting().id));
   public readonly resendingInvite: Signal<boolean> = computed(() => this.inviteResend.isResendingOwn(this.meeting().id));
 
   // Computed values for template
@@ -254,6 +271,12 @@ export class MeetingCardComponent implements OnInit {
   // when present (cadence changed at/after it — LFXV2-2112), otherwise the series rule.
   public readonly displayRecurrence: Signal<MeetingRecurrence | null> = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
   public readonly meetingStartTime: Signal<string | null> = this.initMeetingStartTime();
+  public readonly subProjectName: Signal<string | null> = computed(() => {
+    const contextUid = this.contextProjectUid();
+    const meeting = this.meeting();
+    if (!contextUid || !meeting.project_uid || meeting.project_uid === contextUid) return null;
+    return meeting.project_name?.trim() || null;
+  });
   public readonly meetingDuration: Signal<number> = computed(() => this.occurrence()?.duration || this.meeting().duration);
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
   public readonly joinUrl: Signal<string | null>;
@@ -263,8 +286,8 @@ export class MeetingCardComponent implements OnInit {
   // The tier-prefixed admin details route (and its flat fallback) both run projectQueryParamGuard,
   // which seeds active project/foundation context from `?project=<slug>` and fails open otherwise
   // (project-query-param.guard.ts:36-37) — without it, Manage-role viewers opening a past meeting
-  // from a non-project lens get the right meeting but stale/default surrounding nav context. Mirrors
-  // editQueryParams above; only the admin (organizer) branch of meetingDetailUrl needs it.
+  // from a non-project lens get the right meeting but stale/default surrounding nav context. Only the
+  // admin (organizer) branch of meetingDetailUrl needs it.
   public readonly meetingDetailQueryParams: Signal<Record<string, string>> = computed(() => {
     const meeting = this.meetingInput();
     const params: Record<string, string> = {};
@@ -295,11 +318,19 @@ export class MeetingCardComponent implements OnInit {
   // `invited` comes from the registrant lookup. It is read from the input, not the local snapshot, which is only
   // seeded once, so a feed refresh that adds or drops the viewer's registration is picked up.
   private readonly hasOwnRegistration: Signal<boolean> = computed(() => {
+    // An acknowledged registration is authoritative while indexed registration IDs are still stale.
+    if (this.optimisticInvited()) return true;
     const registrantIds = this.meetingInput().my_registrant_ids;
     return registrantIds ? registrantIds.length > 0 : this.effectivelyInvited();
   });
   // Whoever is shown as registered can remove that registration, so the badge and the action share one rule.
   public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee());
+  // The other half of that toggle, for the organizers who can manage guests. The feed's `invited` flag also reads "not
+  // invited" when its registrant lookup failed, so this only decides whether to offer the add; the service confirms the
+  // complete roster before posting.
+  public readonly canAddMyself: Signal<boolean> = computed(
+    () => this.authenticated() && !!this.meeting().organizer && !this.pastMeeting() && !this.isRegisteredAttendee() && !this.leavingMeeting()
+  );
   // Resending goes to the viewer's own registrant row, so it needs one that really exists. `isRegisteredAttendee` is not
   // enough for a non-organizer: `invited` is derived from access grants and can be true while the feed's
   // `my_registrant_ids` is `[]` (no active registration), which would offer a resend that 404s. So a supplied list is
@@ -315,7 +346,11 @@ export class MeetingCardComponent implements OnInit {
   public readonly guestCount: Signal<number> = this.initGuestCount();
 
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
-  public readonly groupNames: Signal<string[]> = this.initGroupNames();
+  public readonly groupLinks: Signal<MeetingGroupLink[]> = this.initGroupLinks();
+  public readonly groupQueryParams: Signal<{ project: string } | null> = computed(() => {
+    const slug = this.meeting().project_slug;
+    return slug ? { project: slug } : null;
+  });
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
   public readonly hasAiCompanion: Signal<boolean> = this.initHasAiCompanion();
   public readonly hasTranscript: Signal<boolean> = this.initHasTranscript();
@@ -328,34 +363,6 @@ export class MeetingCardComponent implements OnInit {
   public readonly showAiSummaryBadge: Signal<boolean> = computed(() => (this.pastMeeting() ? this.hasSummary() : this.hasAiCompanion()));
   public readonly joinQueryParams: Signal<Record<string, string>> = this.initJoinQueryParams();
   protected readonly pastMeetingResourceId: Signal<string> = computed(() => getPastMeetingResourceId(this.meeting()));
-
-  /**
-   * Whether meetings v2 is the edit surface for this user.
-   * @description Read as a signal so the card settles on its own once LaunchDarkly resolves, and
-   * defaulted to `false` so a slow or unreachable provider sends the edit button to the pre-v2
-   * full-page editor rather than a composer this user isn't targeted for. See
-   * `MEETING_V2_ENABLED_FLAG`.
-   */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
-
-  // The two signals below are the flag-off edit target. They carry the same URL and query params
-  // the edit button held before v2; the difference is that `onEditMeeting()` now navigates with
-  // them after the permission probe resolves, instead of the template binding them as a
-  // `routerLink`. Query params matter: `writerGuard` resolves write access from `?project=`, and
-  // the pre-v2 editor reads `?committee_uid=` for committee-scoped meetings.
-  public readonly editQueryParams: Signal<Record<string, string>> = computed(() => {
-    const meeting = this.meeting();
-    const params: Record<string, string> = {};
-    if (meeting.project_slug) params['project'] = meeting.project_slug;
-    const committeeUid = meeting.committees?.[0]?.uid;
-    if (committeeUid) params['committee_uid'] = committeeUid;
-    return params;
-  });
-  // Canonical edit URL derives from the MEETING's project tier (is_foundation), not the viewer's
-  // active lens; falls back to the flat path (lensRedirectGuard) when the tier is unenriched.
-  public readonly editCommands: Signal<string[]> = computed(
-    () => getEntityCommands('meetings', this.meeting().id, this.meeting().is_foundation, 'edit') ?? ['/meetings', this.meeting().id, 'edit']
-  );
 
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
@@ -426,6 +433,13 @@ export class MeetingCardComponent implements OnInit {
       .subscribe(() => {
         this.optimisticInvited.set(false);
         this.confirmedRsvps.set([]);
+        this.confirmedSelfCountDelta.set(0);
+        this.confirmedSelfRegistrants.set([]);
+        this.confirmedRemovedRegistrantIds.set([]);
+        this.selfIdentityPending.set(false);
+        this.drawerRegistrants.set(null);
+        this.additionalRegistrantsCount.set(0);
+        this.drawerGuestCount.set(null);
       });
   }
 
@@ -581,10 +595,43 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
+  /** The guest drawer already updates counts; synchronize only the viewer's invitation state here. */
+  public onSelfAdded(meetingId: string, registrant?: MeetingRegistrant): void {
+    if (this.meeting().id !== meetingId) return;
+    this.optimisticInvited.set(true);
+    this.meetingService.clearRemovedRegistration(meetingId);
+    this.userService.refreshUserMeetings(false);
+    this.rememberSelfRegistrant(registrant);
+    this.meeting.update((meeting) => ({ ...meeting, invited: true }));
+  }
+
+  public onSelfRemoved(result: MeetingSelfRegistrationRemovalEvent): void {
+    const meetingId = result.meeting_id;
+    if (this.meeting().id !== meetingId) return;
+    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+    this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
+    this.confirmedRsvps.update((responses) => responses.filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id)));
+    const stillInvited = result.remaining_registrant_ids.length > 0;
+    this.optimisticInvited.set(stillInvited);
+    if (stillInvited) this.meetingService.rememberRemovedRegistrants(meetingId, result.removed_registrant_ids);
+    else this.meetingService.markRegistrationRemoved(meetingId, result.removed_registrant_ids);
+    this.userService.refreshUserMeetings(false);
+    this.recordConfirmedRemoval(result.removed_registrant_ids, false);
+    if (!stillInvited) {
+      this.confirmedSelfRegistrants.set([]);
+      this.selfIdentityPending.set(false);
+    }
+    this.meeting.update((meeting) => ({ ...meeting, invited: stillInvited, my_rsvp: stillInvited ? meeting.my_rsvp : null }));
+  }
+
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: getMeetingSelfRemovalMessage(this.meetingTitle(), { viaCommittee: this.meeting().invited_via_committee, organizer: this.meeting().organizer }),
+      // PrimeNG renders a confirmation message as HTML, so the title is escaped.
+      message: getMeetingSelfRemovalMessage(escapeHtml(this.meetingTitle()), {
+        viaCommittee: this.meeting().invited_via_committee,
+        organizer: this.meeting().organizer,
+      }),
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
@@ -593,10 +640,81 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  public resendInvite(): void {
+  /**
+   * Adds the viewer to this meeting's guests, for every occurrence, from the card's own-actions row.
+   * @description A saved invite updates the card locally so a stale detail refetch cannot undo the guest count. When
+   * the roster already lists the viewer the card refetches to catch up, unless confirmed removals require retaining
+   * the original count baseline and incorporating the newly discovered re-invitation instead. When the service cannot resolve the viewer as a guest
+   * (no email, no first and last name, or a failed meeting-invite email lookup), the Guests drawer opens on its Add
+   * Guest form instead.
+   */
+  public addMyself(): void {
+    if (this.selfInvitePending() || !this.canAddMyself()) return;
+    const meetingId = this.meeting().id;
+    this.addingMyself.set(true);
+
+    this.selfInvite
+      .add$(meetingId)
+      .pipe(
+        take(1),
+        finalize(() => this.addingMyself.set(false))
+      )
+      .subscribe({
+        next: (result) => {
+          if (this.meeting().id !== meetingId) return;
+          if (result.status === 'unavailable') {
+            this.messageService.add({
+              severity: 'info',
+              summary: 'Add Yourself',
+              detail: "We couldn't add you automatically. Use Add Guest to invite yourself.",
+            });
+            this.onInvitePeople();
+            return;
+          }
+          this.optimisticInvited.set(true);
+          if (result.status === 'added') {
+            this.confirmedSelfCountDelta.update((count) => count + 1);
+            this.rememberSelfRegistrant(result.registrant);
+            this.drawerGuestCount.set(null);
+            // Keep the confirmed count instead of replacing it with cached, pre-add details.
+            this.meeting.update((meeting) => ({ ...meeting, invited: true }));
+            this.messageService.add({ severity: 'success', summary: 'Added', detail: "You've been added to this meeting." });
+          } else {
+            this.messageService.add({ severity: 'info', summary: 'Already Invited', detail: "You're already a guest of this meeting." });
+            if (this.confirmedRemovedRegistrantIds().length > 0 && result.registrants) {
+              // Retain the original baseline: a new snapshot may already include our earlier deletion.
+              const known = new Set([...this.confirmedRemovedRegistrantIds(), ...this.confirmedSelfRegistrants().map((row) => row.uid)]);
+              const reinvited = result.registrants.filter((row) => {
+                if (known.has(row.uid)) return false;
+                known.add(row.uid);
+                return true;
+              });
+              this.confirmedSelfCountDelta.update((count) => count + reinvited.length);
+              for (const registrant of reinvited) this.rememberSelfRegistrant(registrant);
+              this.drawerGuestCount.set(null);
+              this.meeting.update((meeting) => ({ ...meeting, invited: true }));
+            } else {
+              this.refreshMeeting();
+            }
+          }
+          this.userService.refreshUserMeetings(false);
+        },
+        error: (error: unknown) => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: this.selfInvite.describeFailure(error) });
+        },
+      });
+  }
+
+  /** Asks before resending, the same way Remove Myself asks before removing; nothing is sent unless the user confirms. */
+  public confirmResendInvite(): void {
     // The occurrence being shown, not the series' current one: an explicit `occurrenceInput` (the meeting modal pins one) wins
     // over the next occurrence, and the registration to resend has to fit what the card displays.
-    this.inviteResend.resendOwn(this.meeting().id, (this.occurrence() ?? this.currentOccurrence())?.occurrence_id);
+    this.inviteResend.confirmAndResendOwn(
+      this.confirmationService,
+      this.meeting().id,
+      (this.occurrence() ?? this.currentOccurrence())?.occurrence_id,
+      this.meetingTitle()
+    );
   }
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {
@@ -775,14 +893,6 @@ export class MeetingCardComponent implements OnInit {
   }
 
   private openSeriesEditor(meeting: Meeting): void {
-    // The probe runs on both sides of `MEETING_V2_ENABLED_FLAG` — it is a permission re-check,
-    // not a v2 feature — so only the surface it opens differs. Flag off goes to the pre-v2
-    // full-page editor through the router, which is what this button did before v2.
-    if (!this.meetingsV2Enabled()) {
-      void this.router.navigate(this.editCommands(), { queryParams: this.editQueryParams() });
-      return;
-    }
-
     this.composer.open({
       mode: 'edit',
       meetingUid: meeting.id,
@@ -846,50 +956,13 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  /**
-   * Opens the editor for one occurrence of a recurring meeting.
-   * @description Same `MEETING_V2_ENABLED_FLAG` split as {@link openSeriesEditor}: flag on opens the
-   * composer drawer narrowed to that occurrence, flag off keeps the pre-v2 reschedule dialog.
-   */
+  /** Opens the composer drawer narrowed to one occurrence of a recurring meeting. */
   private openOccurrenceEditor(meeting: Meeting, occurrence: MeetingOccurrence): void {
-    if (!this.meetingsV2Enabled()) {
-      this.showRescheduleOccurrenceModal(meeting, occurrence);
-      return;
-    }
-
     this.composer.open({
       mode: 'edit',
       meetingUid: meeting.id,
       projectUid: meeting.project_uid,
       occurrenceId: occurrence.occurrence_id,
-    });
-  }
-
-  private showRescheduleOccurrenceModal(meeting: Meeting, occurrence: MeetingOccurrence): void {
-    const dialogRef = this.dialogService.open(RescheduleOccurrenceDialogComponent, {
-      header: 'Edit Occurrence',
-      width: '520px',
-      modal: true,
-      closable: true,
-      dismissableMask: false,
-      data: { meeting, occurrence },
-    }) as DynamicDialogRef;
-
-    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
-      if (!result?.confirmed) {
-        return;
-      }
-
-      this.messageService.add({
-        severity: 'success',
-        summary: 'Occurrence updated',
-        detail: 'Only this occurrence was changed. The rest of the series is unchanged.',
-      });
-      // Not every host binds `meetingDeleted` (the committee meetings list doesn't), so the card
-      // re-reads the series itself to show the occurrence under its new start time (also its new id).
-      // The emit still lets a listening parent re-sort its list.
-      this.refreshMeeting();
-      this.meetingDeleted.emit();
     });
   }
 
@@ -914,20 +987,22 @@ export class MeetingCardComponent implements OnInit {
 
   private leaveMeeting(): void {
     const meetingId = this.meeting().id;
-    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+    const savedUid = this.confirmedSelfRegistrants()
+      .map((registrant) => registrant.uid?.trim())
+      .filter((uid) => uid && !uid.startsWith('optimistic-'))
+      .at(-1);
     this.leavingMeeting.set(true);
 
-    this.meetingService
-      .removeMyMeetingRegistration(meetingId, 'meeting-card')
+    this.selfRemoval
+      .remove$(meetingId, 'meeting-card', savedUid)
       .pipe(
         take(1),
         finalize(() => this.leavingMeeting.set(false))
       )
       .subscribe({
         next: (result) => {
-          this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
-          const currentSubject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
-          if (this.meeting().id !== meetingId || currentSubject !== subject) return;
+          if (this.meeting().id !== meetingId) return;
+          this.recordConfirmedRemoval(result.removed_registrant_ids);
           if (result.remaining_registrant_ids.length > 0) {
             this.confirmedRsvps.update((responses) => responses.filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id)));
             this.optimisticInvited.set(true);
@@ -936,30 +1011,49 @@ export class MeetingCardComponent implements OnInit {
               summary: 'Removal incomplete',
               detail: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
             });
-            this.userService.refreshUserMeetings(false);
-            this.refreshMeeting();
             return;
           }
           this.confirmedRsvps.set([]);
           this.optimisticInvited.set(false);
-          this.meetingService.markRegistrationRemoved(meetingId);
+          // Keep the confirmed deletion across stale detail reads and drawer opens.
           this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
           this.messageService.add({
             severity: 'success',
             summary: 'Removed',
             detail: 'You have been removed from this meeting.',
           });
-          this.meetingDeleted.emit();
+          this.confirmedSelfRegistrants.set([]);
+          this.selfIdentityPending.set(false);
+          // The dashboard already hides removed invitees reactively; a deletion event would destroy this confirmed count.
+          this.userService.refreshUserMeetings(false);
         },
         error: (error: unknown) => {
-          const fallback = 'Unable to remove you from this meeting. Please try again.';
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: isBffValidationError(error) ? extractErrorMessage(error, fallback) : fallback,
-          });
+          if (this.selfIdentityPending() && error instanceof HttpErrorResponse && error.status === 404) {
+            this.messageService.add({
+              severity: 'info',
+              summary: 'Invitation syncing',
+              detail: 'Your invitation is saved but is still syncing. Try Remove Myself again shortly.',
+            });
+            return;
+          }
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: this.selfRemoval.describeFailure(error) });
         },
       });
+  }
+
+  private rememberSelfRegistrant(registrant?: MeetingRegistrant): void {
+    if (registrant) this.confirmedSelfRegistrants.update((rows) => [...rows.filter((row) => row.uid !== registrant.uid), registrant]);
+    const uid = registrant?.uid?.trim();
+    this.selfIdentityPending.set(!uid || uid.startsWith('optimistic-'));
+  }
+
+  private recordConfirmedRemoval(ids: string[], adjustCount = true): void {
+    const known = new Set(this.confirmedRemovedRegistrantIds());
+    const newIds = [...new Set(ids)].filter((id) => !known.has(id));
+    if (adjustCount) this.confirmedSelfCountDelta.update((count) => count - newIds.length);
+    this.confirmedRemovedRegistrantIds.set([...known, ...newIds]);
+    this.confirmedSelfRegistrants.update((rows) => rows.filter((row) => !ids.includes(row.uid)));
+    this.drawerGuestCount.set(null);
   }
 
   private refreshMeeting(): void {
@@ -970,6 +1064,7 @@ export class MeetingCardComponent implements OnInit {
         tap((meeting) => {
           this.additionalRegistrantsCount.set(0);
           this.drawerGuestCount.set(null);
+          this.drawerRegistrants.set(null);
           this.meeting.set(meeting);
         })
       )
@@ -1265,9 +1360,22 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  /** Names of the groups (committees) the meeting belongs to; a group with no resolved name is left out rather than shown blank. */
-  private initGroupNames(): Signal<string[]> {
-    return computed(() => (this.meeting().committees ?? []).map((committee) => committee.name?.trim()).filter((name): name is string => !!name));
+  /**
+   * The groups (committees) the meeting belongs to, each with its group-details link; a group with no resolved name is
+   * left out rather than shown blank, and the group the card is already on gets no link.
+   */
+  private initGroupLinks(): Signal<MeetingGroupLink[]> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const currentGroupUid = this.currentGroupUid();
+      return (meeting.committees ?? []).flatMap((committee) => {
+        const name = committee.name?.trim();
+        if (!name) return [];
+        const uid = committee.uid?.trim();
+        const commands = uid && uid !== currentGroupUid ? (getEntityCommands('groups', uid, meeting.is_foundation) ?? ['/groups', uid]) : null;
+        return [{ uid: committee.uid, name, commands }];
+      });
+    });
   }
 
   private denyEdit(): void {
@@ -1333,7 +1441,7 @@ export class MeetingCardComponent implements OnInit {
     return computed(() => {
       const meeting = this.meeting();
       const meetingBaseCount = resolveMeetingBaseCount(meeting) ?? 0;
-      const meetingTotalCount = meetingBaseCount + this.additionalRegistrantsCount();
+      const meetingTotalCount = meetingBaseCount + this.additionalRegistrantsCount() + this.confirmedSelfCountDelta();
       return Math.max(meetingTotalCount, this.drawerGuestCount() ?? 0);
     });
   }

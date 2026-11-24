@@ -10,7 +10,8 @@
       [text]="true"
       size="small"
       styleClass="!text-blue-600 !px-0 self-start mt-3"
-      routerLink="/mentorship/admin"
+      [routerLink]="basePath"
+      [queryParams]="lensQueryParams()"
       data-testid="mentorship-program-detail-back" />
 
     @if (isLoading()) {
@@ -18,6 +19,7 @@
     } @else if (page(); as programPage) {
       <lfx-mentorship-program-detail-header
         [program]="programPage.program"
+        [submitter]="programPage.submitter"
         [tabCounts]="tabCounts()"
         [activeTab]="activeTab()"
         (tabChange)="onTabChange($event)"
@@ -54,7 +56,7 @@
         [title]="noAccessTitle"
         [subtitle]="noAccessMessage"
         ctaLabel="Back to programs"
-        [ctaRoute]="['/mentorship/admin']"
+        [ctaRoute]="[basePath]"
         data-testid="mentorship-admin-program-no-access" />
     } @else if (pageError() === 'failed') {
       <div class="flex flex-wrap items-center gap-3" role="alert" data-testid="mentorship-admin-program-load-error">
@@ -67,7 +69,7 @@
         title="Program not found"
         subtitle="This program is unavailable or the link is incorrect."
         ctaLabel="Back to programs"
-        [ctaRoute]="['/mentorship/admin']"
+        [ctaRoute]="[basePath]"
         data-testid="mentorship-admin-program-not-found" />
     }
   </div>

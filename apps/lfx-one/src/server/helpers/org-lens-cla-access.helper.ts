@@ -13,9 +13,10 @@ import { assertOrgLensRead, type OrgLensReadQualification } from './org-lens-rea
 const claManagerScopes = new OrgClaManagerScopesService();
 
 /**
- * How a caller cleared the CLA gate. `cla-manager-scope` is an ACS `cla-manager` scope on this
- * organization's company, held by a caller the Org Lens read gate does not admit. It is never
- * `org-grant`, so no caller sharing a resolved result across requesters serves it the shared copy.
+ * How a caller cleared the CLA gate. `cla-manager-scope` is an ACS `cla-manager` or
+ * `cla-manager-designee` scope on this organization's company, held by a caller the Org Lens read
+ * gate does not admit. It is never `org-grant`, so no caller sharing a resolved result across
+ * requesters serves it the shared copy.
  */
 export type OrgLensClaQualification = OrgLensReadQualification | 'cla-manager-scope';
 
@@ -25,8 +26,8 @@ export type OrgLensClaQualification = OrgLensReadQualification | 'cla-manager-sc
  *
  * The Org Lens read gate decides first and its admission is final, so a caller it admits never
  * reaches user-service. When it refuses — 403, or 503 because it could not check — the caller's own
- * `cla-manager` scopes are asked, and admit only when they name this organization's SFID: holding
- * the role somewhere is not enough.
+ * `cla-manager` and `cla-manager-designee` scopes are asked, and admit only when they name this
+ * organization's SFID: holding the role somewhere is not enough.
  *
  * Neither upstream's failure overrides the other's answer, as in `assertOrgLensRead`: a roster
  * outage does not withhold access ACS confirms, and an ACS outage turns a 403 into a 503 rather than

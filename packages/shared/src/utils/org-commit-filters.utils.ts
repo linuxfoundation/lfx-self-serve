@@ -4,13 +4,27 @@
 import {
   DEFAULT_ORG_CODE_MEASURE,
   DEFAULT_ORG_COMMIT_FILTERS,
+  ORG_CODE_MEASURE_DEFINITION,
   ORG_CODE_MEASURE_FILTERS,
   ORG_CODE_MEASURE_OPTIONS,
+  ORG_CODE_METRIC_LABEL,
   ORG_CODE_METRIC_OPTIONS,
+  ORG_CODE_METRIC_UNIT,
   ORG_COMMIT_SCOPE_OPTIONS,
+  ORG_COMMITS_DEFINITION,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '../constants/org-commit-filters.constants';
-import type { OrgCodeFilterValues, OrgCodeMeasure, OrgCodeMetric, OrgCommitFilters, OrgCommitScope, OrgProjectScope } from '../interfaces';
+import { ORG_LENS_TIME_RANGE_OPTIONS } from '../constants/org-lens-time-range.constants';
+import type {
+  OrgCodeFilterValues,
+  OrgCodeMeasure,
+  OrgCodeMetric,
+  OrgCommitFilters,
+  OrgCommitScope,
+  OrgPersonCodeCount,
+  OrgPersonCodeView,
+  OrgProjectScope,
+} from '../interfaces';
 
 type OrgCommitFilterParamReader = (name: keyof OrgCommitFilters) => string | null | undefined;
 
@@ -91,4 +105,38 @@ export function orgCommitFiltersKey(filters: OrgCommitFilters): string {
 /** Equality on the three filters (for `distinctUntilChanged`). */
 export function sameOrgCommitFilters(a: OrgCommitFilters, b: OrgCommitFilters): boolean {
   return a.projectScope === b.projectScope && a.commitScope === b.commitScope && a.metric === b.metric;
+}
+
+/**
+ * The person drawer's line naming the view its Code counts follow (lfx-self-serve#4404) in the opener's dropdown labels:
+ * "Past 90 days · LF projects · Only main branch commits".
+ */
+export function describeOrgPersonCodeView(view: OrgPersonCodeView): string {
+  const measure = orgCodeFilterValues(view).metric;
+  return [
+    ORG_LENS_TIME_RANGE_OPTIONS.find((option) => option.value === view.range)?.label,
+    ORG_PROJECT_SCOPE_OPTIONS.find((option) => option.value === view.projectScope)?.label,
+    ORG_CODE_MEASURE_OPTIONS.find((option) => option.value === measure)?.label,
+  ]
+    .filter((label): label is string => !!label)
+    .join(' · ');
+}
+
+/**
+ * How a person's Code rows (the drawer, the All Employees expanded row) name their counts: after the detail's code view
+ * (lfx-self-serve#4404), else as every commit of the trailing 12 months.
+ */
+export function orgPersonCodeCount(view: OrgPersonCodeView | undefined): OrgPersonCodeCount {
+  const label = ORG_CODE_METRIC_LABEL[view?.metric ?? 'commits'];
+  const ariaLabel = `How ${label.toLowerCase()} are counted`;
+  if (!view) {
+    return { label, ariaLabel, definition: ORG_COMMITS_DEFINITION, unit: ORG_CODE_METRIC_UNIT.commits, viewLabel: null };
+  }
+  return {
+    label,
+    ariaLabel,
+    definition: ORG_CODE_MEASURE_DEFINITION[orgCodeFilterValues(view).metric],
+    unit: ORG_CODE_METRIC_UNIT[view.metric],
+    viewLabel: describeOrgPersonCodeView(view),
+  };
 }

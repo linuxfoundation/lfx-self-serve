@@ -11,7 +11,7 @@ import { resolveMktgKit, summarizeMktgKit } from '@lfx-one/shared/utils';
 import { MktgDocumentsResponse, MktgKitFamilyView } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { of } from 'rxjs';
-import { MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import { MKTG_AGENTS, MKTG_KIT_FAMILIES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgKitComponent } from './mktg-kit.component';
 
 describe('Marketing kit home', () => {
@@ -63,6 +63,15 @@ describe('Marketing kit home', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it('describes the framework asset and catalog entry by their visible content', () => {
+    const asset = MKTG_KIT_FAMILIES.flatMap((family) => family.assets).find((row) => row.agentKey === 'foundation-message');
+    expect(asset?.description).toBe('Vision, mission, positioning, tagline, goals, say and avoid · with the messaging framework and key numbers');
+    const agent = MKTG_AGENTS.find((entry) => entry.id === 'foundation-setup');
+    expect(agent?.description).toBe(
+      'Vision, mission, positioning, tagline, goal columns, the messaging framework and key numbers. Reads your website, links and documents and researches on its own, then asks only what they leave open. Needs no other document.'
+    );
   });
 
   it('re-reads immediately and on visible/focus, updates in place, and stops on destroy', async () => {
@@ -217,23 +226,28 @@ describe('Marketing kit home', () => {
     );
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-kit-in-kit"]')?.textContent).toContain('1 assets');
   });
-  it('shows all nine cards, real empty states, lead and placeholder request count', async () => {
+  it('shows only four live cards and hides unbuilt assets, tabs and the request tile', async () => {
     const fixture = TestBed.createComponent(MktgKitComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
-    expect(root.querySelectorAll('article')).toHaveLength(9);
+    expect(root.querySelectorAll('article')).toHaveLength(4);
     expect(root.textContent).toContain('Not run yet');
-    expect(root.textContent).toContain('Coming soon');
-    expect(root.textContent).toContain('Lead: HUB lifecycle');
+    expect(root.textContent).not.toContain('Coming soon');
+    expect(root.textContent).not.toContain('Open requests');
+    expect(root.querySelectorAll('[data-testid="mktg-kit-summary"] > div')).toHaveLength(3);
+    expect(root.querySelector('[data-testid="mktg-kit-asset-pitch-deck"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-kit-asset-one-pager"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-kit-tab-requests"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-kit-tab-access"]')).toBeNull();
     expect(root.textContent).toContain('Messaging Framework, Boilerplates, FAQ, Brand Kit');
     expect(root.querySelector('[data-testid="mktg-kit-asset-quarterly-plan"]')).toBeNull();
     expect(root.querySelector('[data-testid="mktg-kit-asset-icp"]')).toBeNull();
     expect(root.querySelector('[data-testid="mktg-kit-in-kit"]')?.textContent).toContain('0 assets');
-    expect(root.querySelector('[data-testid="mktg-kit-core-floor"]')?.textContent).toContain('0 of 9');
+    expect(root.querySelector('[data-testid="mktg-kit-core-floor"]')?.textContent).toContain('0 of 4');
     expect(root.querySelector('[data-testid="mktg-kit-level"]')?.textContent).toBe('—');
     expect(root.querySelector('[data-testid="mktg-kit-level-empty"]')?.textContent).toContain('No approved assets yet');
   });
-  it('keeps every card neutral at rest, Coming soon cards plain, and the selected filter quiet', async () => {
+  it('keeps every visible card neutral at rest and the selected filter quiet', async () => {
     const fixture = TestBed.createComponent(MktgKitComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
@@ -332,7 +346,7 @@ describe('Marketing kit home', () => {
     expect(root.querySelector('[data-testid="mktg-kit-family-needs-rebuild-positioning-brand"]')?.textContent).toContain('Needs rebuild');
     root.querySelector<HTMLButtonElement>('[data-testid="filter-pill-approved"]')?.click();
     await fixture.whenStable();
-    expect(root.querySelectorAll('article')).toHaveLength(9);
+    expect(root.querySelectorAll('article')).toHaveLength(4);
     expect(root.querySelector('[data-testid="mktg-kit-asset-brand-kit"]')).toBeNull();
     expect(root.querySelector('[data-testid="mktg-kit-family-availability-positioning-brand"]')?.textContent).toContain('Core');
     expect(root.querySelector('[data-testid="mktg-kit-family-needs-rebuild-positioning-brand"]')?.textContent).toContain('Needs rebuild');

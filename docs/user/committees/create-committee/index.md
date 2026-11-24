@@ -4,7 +4,7 @@ description: How to create a group (committee) in LFX Self Serve with the four-s
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, create, wizard, join-mode, governance]
-last_updated: 2026-10-28
+last_updated: 2026-11-23
 intercom_collection: Committees
 ---
 
@@ -25,6 +25,8 @@ Switch to the **Foundation** or **Project** lens that should own the group. **Cr
 
 Choose the type that best describes the group, such as Technical Steering Committee, Working Group, Special Interest Group, or Other. The list depends on your role; maintainers see a shorter list than executive directors (for example, Board and Maintainers aren't offered). The type organizes and identifies the group within the project. You can change it later in [Group Settings](../group-settings/). The step bar labels this step **Category**.
 
+Choose **Newsletter** for a group that receives a newsletter. A newsletter can only be sent to a group of this type, and its members are the recipients. See [Newsletters](../../mailing-lists/newsletters/).
+
 ### Step 2: Basic Information
 
 - **Group Name** (required)
@@ -43,15 +45,17 @@ Choose the type that best describes the group, such as Technical Steering Commit
   - **Enable Audit**: tracks and logs group activity for compliance.
   - **Make Group Public** (recommended): makes the group visible to all users.
   - **Enable SSO Group**: syncs membership with a Single Sign-On provider.
-  - **Show Meeting Attendees**: lets guests see who else is invited to the group's meetings. Board and restricted meetings never share their guest list.
+  - **Show Meeting Attendees**: lets guests see who else is invited to the group's meetings. Board meetings never share their guest list.
 
-  With **Business Email Required** or **Enable Voting** on, members joining the group must give an organization name and URL.
+  With **Business Email Required** or **Enable Voting** on, members joining the group must give a company name and URL.
 
 Select **Create Group**. The group is saved at this point, before you add members.
 
 ### Step 4: Add Members
 
 Add the first members, or skip this step. You can invite by email, add people with details, or import a CSV. See [Import members from a CSV](../manage-committees/#import-members-from-a-csv). Nothing you stage here is saved until you select **Done**.
+
+**Add with details** and CSV imports require a first and last name for each new member; empty or whitespace-only names are not accepted. CSV files must include the `first_name` and `last_name` columns. **Invite by email** does not require names because it stages invitations rather than creating members immediately.
 
 - **Done** saves the staged members and takes you back to the Groups page.
 - **Skip For Now** leaves without adding anyone. The group already exists, and you can add members later.

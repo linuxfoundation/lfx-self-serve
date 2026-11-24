@@ -61,7 +61,6 @@ function upstreamApplication(overrides: Partial<MentorshipUpstreamApplication> =
     role: 'mentee',
     status: 'pending',
     tasks_submitted: false,
-    admin_notified: false,
     created_on: '2026-06-28T10:00:00Z',
     updated_on: '2026-06-29T10:00:00Z',
     program: { id: 'prog-1', name: 'Test Program', slug: 'test-program' },
@@ -191,7 +190,7 @@ describe('MentorshipMenteeService.registerMenteeProfile', () => {
 
     await service.registerMenteeProfile(signedInReq(), request);
 
-    expect(listIdentitiesSafe).toHaveBeenCalledWith(expect.anything(), 'auth0|test-user-1');
+    expect(listIdentitiesSafe).toHaveBeenCalledWith(expect.anything());
     expect(proxyRequest.mock.calls[1][5]).toMatchObject({ profile_links: { githubProfileLink: 'https://github.com/test-user' } });
   });
 
@@ -377,7 +376,6 @@ describe('MentorshipMenteeService profile reads', () => {
         introduction: 'Test mentee introduction.',
         skill_set: { skills: ['Go'], improvementSkills: ['Code Review'] },
         terms_and_conditions: true,
-        number_of_projects: 0,
         created_on: '2026-01-01T00:00:00Z',
         updated_on: '2026-01-01T00:00:00Z',
       }),
@@ -627,7 +625,6 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
     socioeconomics: { income: 'workingClass', educationLevel: 'college' },
     profile_links: { resumeLink: 'https://example.com/files/test-resume.pdf' },
     terms_and_conditions: true,
-    number_of_projects: 0,
     created_on: '2026-01-01T00:00:00Z',
     updated_on: '2026-01-02T00:00:00Z',
   };

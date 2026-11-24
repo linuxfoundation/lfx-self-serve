@@ -139,14 +139,16 @@
         } @else if (googleAccountsError()) {
           <div class="flex items-center gap-3" role="alert" data-testid="monitoring-google-accounts-error">
             <p class="text-xs text-red-600">{{ googleAccountsError() }}</p>
-            <button
-              type="button"
-              (click)="retryPanelRead()"
-              class="rounded-md border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-              aria-label="Retry loading Google Ads accounts"
-              data-testid="monitoring-google-accounts-retry">
-              Retry
-            </button>
+            @if (!refusedReads().has('google-accounts')) {
+              <button
+                type="button"
+                (click)="retryPanelRead()"
+                class="rounded-md border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                aria-label="Retry loading Google Ads accounts"
+                data-testid="monitoring-google-accounts-retry">
+                Retry
+              </button>
+            }
           </div>
         } @else if (googleAccountOptions()?.length === 0) {
           <p class="text-xs text-gray-500" data-testid="monitoring-google-accounts-empty">This connection reaches no Google Ads accounts.</p>
@@ -182,6 +184,13 @@
         </p>
       </div>
       <ng-container [ngTemplateOutlet]="googleInsights" />
+    } @else if (googleRoleRefusal()) {
+      <!-- Refused for the caller's project role (#4837): a notice, not a load failure, and no Retry, since reading again cannot grant the role. -->
+      <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="monitoring-role-refused">
+        <i class="fa-light fa-lock text-3xl text-gray-400" aria-hidden="true"></i>
+        <p class="text-sm font-medium text-gray-700" data-testid="monitoring-role-refused-title">Google Ads monitoring needs the campaign manager role</p>
+        <p class="max-w-lg text-center text-xs text-gray-500" data-testid="monitoring-role-refused-message">{{ googleRoleRefusal() }}</p>
+      </div>
     } @else if (error()) {
       <div class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="monitoring-error">
         <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
@@ -200,7 +209,7 @@
         class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12"
         data-testid="monitoring-empty">
         <i class="fa-light fa-chart-mixed text-3xl text-gray-400" aria-hidden="true"></i>
-        <p class="text-sm text-gray-500">No active campaigns found for the selected date range.</p>
+        <p class="text-sm text-gray-500" data-testid="monitoring-empty-message">{{ googleEmptyMessage() }}</p>
       </div>
     } @else {
       <!-- KPI Strip -->
@@ -239,6 +248,16 @@
             <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-conversions">{{ kpis.conversions }}</p>
           </div>
         </div>
+        @if (googleTotalsNote(); as note) {
+          <p class="text-xs text-gray-500" data-testid="google-totals-note">{{ note }}</p>
+        }
+        @if (googleRecordedAccountNote(); as accountNote) {
+          <p class="text-xs text-gray-500" data-testid="google-recorded-account-note">{{ accountNote }}</p>
+        }
+        @if (googleCurrencyNote()) {
+          <!-- campaign-service reported the connected account's Google amounts unconverted and named no currency. -->
+          <p class="text-xs text-gray-500" data-testid="google-currency-note">Spend, budgets and CPC are in the ad account's own currency.</p>
+        }
       } @else {
         <div class="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8 text-center" data-testid="monitoring-kpis-unavailable">
           <p class="text-sm text-gray-500">Account totals are not available for this period.</p>
@@ -313,8 +332,11 @@
     <div class="flex flex-col gap-4" data-testid="linkedin-monitor-panel">
       <!-- Account selector + controls -->
       <div class="flex items-center justify-between">
-        <!-- With the monitor cutover on, the picker offers the project's connection's account; with none, the notice below says why. -->
-        @if (!panelNotices().linkedin || linkedInAccountOptions().length > 0) {
+        <!--
+          With the monitor cutover on, the picker offers the project's connection's account; with none, the notice below says why.
+          A panel read through the LF system account has no account to pick, so it shows no picker.
+        -->
+        @if ((!panelNotices().linkedin && !systemAccountPlatforms().has('linkedin')) || linkedInAccountOptions().length > 0) {
           <select
             [value]="selectedLinkedInAccountKey()"
             (change)="onLinkedInAccountChange($event)"
@@ -358,21 +380,26 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load LinkedIn data</p>
           <p class="text-xs text-red-500">{{ linkedInError() }}</p>
-          <button
-            type="button"
-            (click)="retryPanelRead()"
-            [attr.aria-label]="paidRetryLabels.linkedin"
-            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-            data-testid="linkedin-retry">
-            Retry
-          </button>
+          @if (!refusedReads().has('linkedin')) {
+            <button
+              type="button"
+              (click)="retryPanelRead()"
+              [attr.aria-label]="paidRetryLabels.linkedin"
+              class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+              data-testid="linkedin-retry">
+              Retry
+            </button>
+          }
         </div>
       } @else if (linkedInData() && linkedInCampaigns().length === 0) {
         <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="linkedin-empty">
           <i class="fa-brands fa-linkedin text-3xl text-gray-400" aria-hidden="true"></i>
-          <p class="text-sm text-gray-500">No active LinkedIn campaigns found for this account.</p>
+          <p class="text-sm text-gray-500">{{ linkedInEmptyMessage() }}</p>
         </div>
       } @else if (linkedInView(); as view) {
+        @if (linkedInSystemAccountNote(); as accountNote) {
+          <p class="text-xs text-gray-500" data-testid="linkedin-system-account-note">{{ accountNote }}</p>
+        }
         @if (linkedInCurrencyNote()) {
           <!--
             campaign-service named no currency for a connection's LinkedIn amounts. A pod predating its local-currency
@@ -392,8 +419,11 @@
     <div class="flex flex-col gap-4" data-testid="reddit-monitor-panel">
       <!-- Account selector + controls -->
       <div class="flex items-center justify-between">
-        <!-- With the monitor cutover on, the picker offers the project's connection's account; with none, the notice below says why. -->
-        @if (!panelNotices().reddit || redditAccountOptions().length > 0) {
+        <!--
+          With the monitor cutover on, the picker offers the project's connection's account; with none, the notice below says why.
+          A panel read through the LF system account has no account to pick, so it shows no picker.
+        -->
+        @if ((!panelNotices().reddit && !systemAccountPlatforms().has('reddit')) || redditAccountOptions().length > 0) {
           <select
             [value]="selectedRedditAccountKey()"
             (change)="onRedditAccountChange($event)"
@@ -437,21 +467,26 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load Reddit data</p>
           <p class="text-xs text-red-500">{{ redditError() }}</p>
-          <button
-            type="button"
-            (click)="retryPanelRead()"
-            [attr.aria-label]="paidRetryLabels.reddit"
-            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-            data-testid="reddit-retry">
-            Retry
-          </button>
+          @if (!refusedReads().has('reddit')) {
+            <button
+              type="button"
+              (click)="retryPanelRead()"
+              [attr.aria-label]="paidRetryLabels.reddit"
+              class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+              data-testid="reddit-retry">
+              Retry
+            </button>
+          }
         </div>
       } @else if (redditData() && redditCampaigns().length === 0) {
         <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="reddit-empty">
           <i class="fa-brands fa-reddit text-3xl text-gray-400" aria-hidden="true"></i>
-          <p class="text-sm text-gray-500">No active Reddit campaigns found for this account.</p>
+          <p class="text-sm text-gray-500">{{ redditEmptyMessage() }}</p>
         </div>
       } @else if (redditView(); as view) {
+        @if (redditSystemAccountNote(); as accountNote) {
+          <p class="text-xs text-gray-500" data-testid="reddit-system-account-note">{{ accountNote }}</p>
+        }
         <ng-container
           [ngTemplateOutlet]="accountPanel"
           [ngTemplateOutletContext]="{ $implicit: view, panel: 'reddit', actPlatform: 'reddit-ads', note: redditTotalsNote() }" />
@@ -462,8 +497,11 @@
     <div class="flex flex-col gap-4" data-testid="meta-monitor-panel">
       <!-- Account selector + controls -->
       <div class="flex items-center justify-between">
-        <!-- With the monitor cutover on, the picker offers the project's connection's account; with none, the notice below says why. -->
-        @if (!panelNotices().meta || metaAccountOptions().length > 0) {
+        <!--
+          With the monitor cutover on, the picker offers the project's connection's account; with none, the notice below says why.
+          A panel read through the LF system account has no account to pick, so it shows no picker.
+        -->
+        @if ((!panelNotices().meta && !systemAccountPlatforms().has('meta')) || metaAccountOptions().length > 0) {
           <select
             [value]="selectedMetaAccountKey()"
             (change)="onMetaAccountChange($event)"
@@ -507,21 +545,26 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load Meta data</p>
           <p class="text-xs text-red-500">{{ metaError() }}</p>
-          <button
-            type="button"
-            (click)="retryPanelRead()"
-            [attr.aria-label]="paidRetryLabels.meta"
-            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-            data-testid="meta-retry">
-            Retry
-          </button>
+          @if (!refusedReads().has('meta')) {
+            <button
+              type="button"
+              (click)="retryPanelRead()"
+              [attr.aria-label]="paidRetryLabels.meta"
+              class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+              data-testid="meta-retry">
+              Retry
+            </button>
+          }
         </div>
       } @else if (metaData() && metaCampaigns().length === 0) {
         <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="meta-empty">
           <i class="fa-brands fa-meta text-3xl text-gray-400" aria-hidden="true"></i>
-          <p class="text-sm text-gray-500">No active Meta campaigns found for this account.</p>
+          <p class="text-sm text-gray-500">{{ metaEmptyMessage() }}</p>
         </div>
       } @else if (metaView(); as view) {
+        @if (metaSystemAccountNote(); as accountNote) {
+          <p class="text-xs text-gray-500" data-testid="meta-system-account-note">{{ accountNote }}</p>
+        }
         @if (metaCurrencyNote()) {
           <!-- campaign-service reported a connection's Meta amounts unconverted and did not say in which currency. -->
           <p class="text-xs text-gray-500" data-testid="meta-currency-note">Spend and budgets are in the ad account's own currency.</p>
@@ -579,14 +622,16 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load {{ reportBackedLabel() }} data</p>
           <p class="text-xs text-red-500">{{ reportBackedError() }}</p>
-          <button
-            type="button"
-            (click)="retryPanelRead()"
-            [attr.aria-label]="reportBackedRetryLabel()"
-            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-            [attr.data-testid]="reportBackedPanel() + '-retry'">
-            Retry
-          </button>
+          @if (!refusedReads().has('report-backed')) {
+            <button
+              type="button"
+              (click)="retryPanelRead()"
+              [attr.aria-label]="reportBackedRetryLabel()"
+              class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+              [attr.data-testid]="reportBackedPanel() + '-retry'">
+              Retry
+            </button>
+          }
         </div>
       } @else if (reportBackedView(); as view) {
         @if (reportBackedFreshness(); as freshness) {
@@ -654,9 +699,15 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load HubSpot email data</p>
           <p class="text-xs text-red-500">{{ hubSpotError() }}</p>
-          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
-            Retry
-          </button>
+          @if (!refusedReads().has('hubspot')) {
+            <button
+              type="button"
+              (click)="retryPanelRead()"
+              class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+              data-testid="hubspot-retry">
+              Retry
+            </button>
+          }
         </div>
       } @else if (hubSpotView(); as view) {
         @if (hubSpotFreshness(); as freshness) {
@@ -970,6 +1021,9 @@
               Totals cover the {{ keywords().length }} keywords returned by the ad account, which may include other foundations' campaigns.
             </p>
           }
+          @if (keywordCurrencyNote()) {
+            <p class="mb-2 text-xs text-gray-500" data-testid="keyword-currency-note">Keyword spend and CPC are in the ad account's own currency.</p>
+          }
           <div class="grid grid-cols-2 gap-3 md:grid-cols-5" data-testid="keyword-totals">
             <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
               <p class="text-xs text-gray-500">
@@ -1132,13 +1186,16 @@
       <i class="fa-light fa-plug-circle-exclamation text-3xl text-gray-400" aria-hidden="true"></i>
       <p class="text-sm font-medium text-gray-700" [attr.data-testid]="panel + '-connection-notice-title'">{{ notice.title }}</p>
       <p class="max-w-lg text-center text-xs text-gray-500" [attr.data-testid]="panel + '-connection-notice-message'">{{ notice.message }}</p>
-      <button
-        type="button"
-        (click)="retryPanel(panel)"
-        class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-        [attr.data-testid]="panel + '-connection-notice-retry'">
-        Refresh
-      </button>
+      <!-- No Refresh for a refusal (#4837): reading again cannot grant the missing project role. -->
+      @if (notice.state !== 'forbidden') {
+        <button
+          type="button"
+          (click)="retryPanel(panel)"
+          class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+          [attr.data-testid]="panel + '-connection-notice-retry'">
+          Refresh
+        </button>
+      }
     </div>
   </ng-template>
 </div>

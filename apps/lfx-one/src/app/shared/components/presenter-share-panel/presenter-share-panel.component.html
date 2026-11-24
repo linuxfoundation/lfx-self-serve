@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card
+  styleClass="!border-0 !bg-white !text-gray-900 !shadow-none !rounded-3xl hover:!border-0 w-full lg:w-[560px] shrink-0 [&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+  <div class="flex flex-col items-center gap-7 p-10" data-testid="vote-presenter-share">
+    <p class="m-0 text-[26px] font-bold text-blue-700 break-all text-center select-all" data-testid="vote-presenter-link">{{ link() }}</p>
+    <lfx-button
+      [label]="copied() ? copiedLabel() : copyLabel()"
+      [icon]="copied() ? 'fa-light fa-check' : 'fa-light fa-copy'"
+      severity="primary"
+      size="large"
+      styleClass="min-h-[44px]"
+      (onClick)="copyLink()"
+      data-testid="vote-presenter-copy-link" />
+    <span class="sr-only" aria-live="polite" data-testid="vote-presenter-copy-status">
+      @if (copied()) {
+        Link copied to clipboard
+      }
+    </span>
+    @if (copyFailed()) {
+      <p class="m-0 text-center text-base text-gray-600" role="status">Couldn't copy. Select the link and press Ctrl/⌘+C.</p>
+    }
+    <ng-content select="[shareActions]" />
+    <lfx-qr-code [value]="link()" [label]="qrLabel()" class="w-full max-w-[360px]" />
+    <p class="m-0 text-center text-base text-gray-400">{{ footnote() }}</p>
+  </div>
+</lfx-card>

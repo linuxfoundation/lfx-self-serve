@@ -9,20 +9,28 @@ import { provideRouter, Router } from '@angular/router';
 import {
   DEFAULT_ORG_COMMIT_FILTERS,
   EMPTY_ORG_ALL_EMPLOYEE_STATS,
-  ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE,
+  ORG_ALL_EMPLOYEE_CODE_NOTE,
+  ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE,
   ORG_CODE_CONTRIBUTIONS_DEFINITION,
   ORG_COMMITS_DEFINITION,
   ORG_MAIN_BRANCH_COMMITS_DEFINITION,
+  ORG_SCOPE_CAPTION_PHRASE,
 } from '@lfx-one/shared/constants';
 import type {
+  OrgAllEmployeeCompanyEmailFilter,
   OrgAllEmployeeEmploymentFilter,
+  OrgAllEmployeeKeyContactFilter,
   OrgAllEmployeeRow,
   OrgAllEmployeesResponse,
   OrgCodeFilterValues,
   OrgCommitFilters,
+  OrgLensOrgScope,
   OrgLensTimeRange,
+  OrgScopeFilter,
+  OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { Tooltip } from 'primeng/tooltip';
@@ -53,6 +61,7 @@ function row(personKey: string, name: string, over: Partial<OrgAllEmployeeRow> =
     seatsCount: 0,
     boardSeatsCount: 0,
     committeeSeatsCount: 0,
+    keyContactRoles: [],
     commitsCount: 0,
     // Any picked code count is also a code activity unless a test says otherwise.
     codeActivitiesCount: over.commitsCount ?? 0,
@@ -71,18 +80,44 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
   let snowflake$: Subject<OrgAllEmployeesResponse>;
   let live$: Subject<OrgAllEmployeesResponse>;
   let fixture: ComponentFixture<AllEmployeesComponent>;
-  let getDirectory: Mock<(orgUid: string, range: OrgLensTimeRange, filters: OrgCommitFilters) => Observable<OrgAllEmployeesResponse>>;
-  let getAllEmployees: Mock<(orgUid: string, range: OrgLensTimeRange, filters: OrgCommitFilters) => Subject<OrgAllEmployeesResponse>>;
+  let getDirectory: Mock<
+    (
+      orgUid: string,
+      range: OrgLensTimeRange,
+      filters: OrgCommitFilters,
+      teamMembers: OrgTeamMembersFilter,
+      orgScope: OrgScopeFilter
+    ) => Observable<OrgAllEmployeesResponse>
+  >;
+  let getAllEmployees: Mock<
+    (
+      orgUid: string,
+      range: OrgLensTimeRange,
+      filters: OrgCommitFilters,
+      teamMembers: OrgTeamMembersFilter,
+      orgScope: OrgScopeFilter
+    ) => Subject<OrgAllEmployeesResponse>
+  >;
   let former$: Subject<OrgAllEmployeesResponse>;
-  let getFormerEmployees: Mock<(orgUid: string, range: OrgLensTimeRange, filters: OrgCommitFilters) => Observable<OrgAllEmployeesResponse>>;
+  let getFormerEmployees: Mock<
+    (
+      orgUid: string,
+      range: OrgLensTimeRange,
+      filters: OrgCommitFilters,
+      teamMembers: OrgTeamMembersFilter,
+      orgScope: OrgScopeFilter
+    ) => Observable<OrgAllEmployeesResponse>
+  >;
   let selectedAccount: WritableSignal<{ uid: string; accountName: string }>;
+  let orgScopeInfo: WritableSignal<OrgLensOrgScope | null>;
 
   const el = (): HTMLElement => fixture.nativeElement;
   const rowKeys = (): string[] =>
     [...el().querySelectorAll<HTMLElement>('[data-testid^="org-people-all-employees-row-"]')]
       .map((r) => r.dataset['testid'] ?? '')
-      .filter((id) => !id.endsWith('-name') && !id.endsWith('-detail-row') && !id.endsWith('-former'));
+      .filter((id) => !id.endsWith('-name') && !id.endsWith('-detail-row') && !id.endsWith('-former') && !id.endsWith('-unclassified'));
   const formerTags = (): string[] => [...el().querySelectorAll<HTMLElement>('[data-testid$="-former"]')].map((tag) => tag.dataset['testid'] ?? '');
+  const unclassifiedTags = (): string[] => [...el().querySelectorAll<HTMLElement>('[data-testid$="-unclassified"]')].map((tag) => tag.dataset['testid'] ?? '');
   const activeStat = (): string => el().querySelector('[data-testid="org-people-all-employees-stat-active"]')?.textContent ?? '';
 
   async function settle(): Promise<void> {
@@ -100,6 +135,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         { provide: AllEmployeesService, useValue: { getAllEmployees, getFormerEmployees, getEmployeeDetail: vi.fn() } },
         { provide: OrgPeopleDirectoryStateService, useValue: { getDirectory, invalidate: vi.fn() } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
+        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo, retryFailedRead: () => undefined } },
       ],
     }).compileComponents();
 
@@ -116,6 +152,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     former$ = new Subject();
     getFormerEmployees = vi.fn(() => former$);
     selectedAccount = signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME });
+    orgScopeInfo = signal<OrgLensOrgScope | null>(null);
     // Failure paths log before falling back; keep the expected noise out of the test output.
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
@@ -148,7 +185,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('requests the live merge without waiting for the Snowflake roster', () => {
-      expect(getDirectory).toHaveBeenCalledWith(ORG, '365d', FILTERS);
+      expect(getDirectory).toHaveBeenCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
       expect(live$.observed).toBe(true);
     });
 
@@ -325,6 +362,73 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
   });
 
+  // The Company email filter reads the status the server stamps on every row; a row without one shows only under "All".
+  describe('in the browser, with the company email filter', () => {
+    const answer = async (): Promise<void> => {
+      snowflake$.next(
+        response(
+          [
+            row('p-has', 'Ada Lovelace', { commitsCount: 1, companyEmailStatus: 'has' }),
+            row('p-none', 'Alan Turing', { commitsCount: 1, companyEmailStatus: 'none' }),
+            row('p-unknown', 'Barbara Liskov', { commitsCount: 1 }),
+          ],
+          3
+        )
+      );
+      snowflake$.complete();
+      former$.next(response([row('p-left', 'Grace Hopper', { isFormer: true, commitsCount: 4, companyEmailStatus: 'unconfirmed' })], 1));
+      former$.complete();
+      await settle();
+    };
+    const companyEmailControl = (): FormControl<OrgAllEmployeeCompanyEmailFilter> =>
+      (fixture.componentInstance as unknown as { filterForm: FormGroup<{ companyEmail: FormControl<OrgAllEmployeeCompanyEmailFilter> }> }).filterForm.controls
+        .companyEmail;
+
+    it('lists every row under "All email statuses", and only the matching rows under each status', async () => {
+      await mount('browser', '/?employment=all');
+      await answer();
+      expect(rowKeys().sort()).toEqual([
+        'org-people-all-employees-row-p-has',
+        'org-people-all-employees-row-p-left',
+        'org-people-all-employees-row-p-none',
+        'org-people-all-employees-row-p-unknown',
+      ]);
+
+      for (const [status, expected] of [
+        ['has', 'p-has'],
+        ['none', 'p-none'],
+        ['unconfirmed', 'p-left'],
+      ] as const) {
+        companyEmailControl().setValue(status);
+        await settle();
+        expect(rowKeys()).toEqual([`org-people-all-employees-row-${expected}`]);
+      }
+    });
+
+    it('writes ?companyEmail= on change, drops the default, reads it on load, and clears it with the other filters', async () => {
+      await mount('browser', '/?employment=all&companyEmail=none');
+      await answer();
+      expect(companyEmailControl().value).toBe('none');
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-none']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-more-filters-toggle"]')?.textContent).toContain('1');
+
+      companyEmailControl().setValue('has');
+      await settle();
+      expect(TestBed.inject(Router).url).toContain('companyEmail=has');
+
+      companyEmailControl().setValue('all');
+      await settle();
+      expect(TestBed.inject(Router).url).not.toContain('companyEmail');
+
+      companyEmailControl().setValue('unconfirmed');
+      await settle();
+      (fixture.componentInstance as unknown as { clearFilters(): void }).clearFilters();
+      await settle();
+      expect(TestBed.inject(Router).url).not.toContain('companyEmail');
+      expect(companyEmailControl().value).toBe('all');
+    });
+  });
+
   // lfx-self-serve#4311 — former employees are a separate read, listed only when a view that includes them is picked.
   describe('in the browser, with the employment filter', () => {
     const answerCurrent = async (): Promise<void> => {
@@ -339,10 +443,10 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     };
 
     it('reads former employees under "Current employees" too, for reconciliation, but lists none, and waits for that read', async () => {
-      await mount('browser');
+      await mount('browser', '/?employment=current');
       await answerCurrent();
 
-      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS);
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
       expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
 
       await answerFormer();
@@ -352,8 +456,8 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(activeStat()).toContain('1');
     });
 
-    it('notes on the code tile that former employees are left out, only under "Current employees"', async () => {
-      await mount('browser');
+    it('notes on the code tile who it counts under "Current employees" and "All employees", and only the organization scope under "Former"', async () => {
+      await mount('browser', '/?employment=current');
       await answerCurrent();
       await answerFormer();
       const infoSelector = '[data-testid="org-people-all-employees-stat-code-info"]';
@@ -362,15 +466,211 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(info()).not.toBeNull();
       // The note opens on keyboard focus as well as hover, with the current-only explanation.
       const tooltip = fixture.debugElement.query(By.css(infoSelector)).injector.get(Tooltip);
-      expect(tooltip.content).toBe(ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE);
+      expect(tooltip.content).toBe(`${ORG_ALL_EMPLOYEE_CODE_NOTE.current} ${ORG_SCOPE_CAPTION_PHRASE.insights}`);
       expect(tooltip.tooltipEvent).toBe('both');
 
       const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
-      for (const view of ['all', 'former'] as const) {
+      component.filterForm.controls.employment.setValue('all');
+      await settle();
+      expect(fixture.debugElement.query(By.css(infoSelector)).injector.get(Tooltip).content).toBe(
+        `${ORG_ALL_EMPLOYEE_CODE_NOTE.all} ${ORG_SCOPE_CAPTION_PHRASE.insights}`
+      );
+
+      component.filterForm.controls.employment.setValue('former');
+      await settle();
+      expect(fixture.debugElement.query(By.css(infoSelector)).injector.get(Tooltip).content).toBe(ORG_SCOPE_CAPTION_PHRASE.insights);
+    });
+
+    // lfx-self-serve#4730 — people with code but no employment row ride on the off-roster read, tagged `isUnclassified`.
+    it('lists people with code but no employment record only under "All employees", with a hint, in the code tile', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      former$.next(
+        response(
+          [row('p-9', 'Grace Hopper', { isFormer: true, commitsCount: 4 }), row('cdp:p-7', 'Ada Lovelace', { isUnclassified: true, commitsCount: 3 })],
+          2
+        )
+      );
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-cdp:p-7', 'org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
+      expect(unclassifiedTags()).toEqual(['org-people-all-employees-row-cdp:p-7-unclassified']);
+      expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-stat-code"]')?.textContent).toContain('3');
+
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      component.filterForm.controls.employment.setValue('former');
+      await settle();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-9']);
+      expect(unclassifiedTags()).toEqual([]);
+
+      component.filterForm.controls.employment.setValue('current');
+      await settle();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+      expect(unclassifiedTags()).toEqual([]);
+    });
+
+    it('lists someone with only Org Lens access and no employment record once, with the badge, only under "All employees"', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-alan', 'Alan Turing', { lfUsername: 'Alan', sources: ['access'], accessBadge: 'viewer' }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      former$.next(response([row('cdp:p-7', 'Alan Turing', { lfUsername: 'alan', isUnclassified: true, commitsCount: 3 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-cdp:p-7', 'org-people-all-employees-row-p-1']);
+      expect(unclassifiedTags()).toEqual(['org-people-all-employees-row-cdp:p-7-unclassified']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-access-cdp:p-7"]')?.textContent).toContain('Viewer');
+
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      component.filterForm.controls.employment.setValue('current');
+      await settle();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+
+      component.filterForm.controls.employment.setValue('former');
+      await settle();
+      expect(rowKeys()).toEqual([]);
+    });
+
+    it('never lists the Org Lens access row of someone with no employment record whose row Exclude team members removed', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-alan', 'Alan Turing', { lfUsername: 'Alan', sources: ['access'], accessBadge: 'viewer' }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      // A team member with nothing but code: Exclude removed their row, the read still names them.
+      former$.next({ ...response([], 0), unclassifiedUsernames: ['alan'] });
+      former$.complete();
+      await settle();
+
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      for (const view of ['all', 'current'] as const) {
         component.filterForm.controls.employment.setValue(view);
         await settle();
-        expect(info()).toBeNull();
+        expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
       }
+    });
+
+    it('folds the access row of someone with no employment record whatever case the read names them in', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-alan', 'Alan Turing', { lfUsername: 'alan', sources: ['access'], accessBadge: 'viewer' }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      former$.next({ ...response([], 0), unclassifiedUsernames: [' Alan '] });
+      former$.complete();
+      await settle();
+
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      for (const view of ['all', 'current'] as const) {
+        component.filterForm.controls.employment.setValue(view);
+        await settle();
+        expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+      }
+    });
+
+    it('lists once, as former with the access badge, someone the read kept as former in place of their unclassified row', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-alan', 'Alan Turing', { lfUsername: 'alan', sources: ['access'], accessBadge: 'viewer' }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      // The two warehouse reads came from different builds: the server kept the former row, with the username only the
+      // unclassified row had.
+      former$.next({ ...response([row('p-9', 'Alan Turing', { lfUsername: 'alan', isFormer: true, commitsCount: 4 })], 1), unclassifiedUsernames: ['alan'] });
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
+      expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Viewer');
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      component.filterForm.controls.employment.setValue('current');
+      await settle();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+    });
+
+    it('lists someone with a live seat and no employment record as one current row keeping their code, under "Current" and "All"', async () => {
+      // The merged row's count is checked as commits.
+      await mount('browser', '/?employment=current&metric=commits');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-alan', 'Alan Turing', { lfUsername: 'alan', sources: ['committee'], seatsCount: 1, committeeSeatsCount: 1 }),
+          ],
+          2
+        )
+      );
+      live$.complete();
+      former$.next(response([row('cdp:p-7', 'Alan Turing', { lfUsername: 'alan', isUnclassified: true, commitsCount: 3 })], 1));
+      former$.complete();
+      await settle();
+
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      for (const view of ['current', 'all'] as const) {
+        component.filterForm.controls.employment.setValue(view);
+        await settle();
+        expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-cdp:p-7', 'org-people-all-employees-row-p-1']);
+        expect(unclassifiedTags()).toEqual([]);
+        expect(el().querySelector('[data-testid="org-people-all-employees-row-cdp:p-7"]')?.textContent).toContain('3 commits');
+        expect(el().querySelector('[data-testid="org-people-all-employees-stat-code"]')?.textContent).toContain('2');
+        expect(el().querySelector('[data-testid="org-people-all-employees-stat-governance"]')?.textContent).toContain('1');
+      }
+    });
+
+    it("opens the no-employment-record note on keyboard focus of that row's name, which it describes", async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      former$.next(response([row('cdp:p-7', 'Alan Turing', { isUnclassified: true, commitsCount: 3 })], 1));
+      former$.complete();
+      await settle();
+
+      const name = (key: string) => fixture.debugElement.query(By.css(`[data-testid="org-people-all-employees-row-${key}-name"]`));
+      const tooltip = name('cdp:p-7').injector.get(Tooltip);
+      expect(tooltip.content).toBe(ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE);
+      expect(tooltip.tooltipEvent).toBe('focus');
+      expect(tooltip.disabled).toBe(false);
+      const describedBy = (name('cdp:p-7').nativeElement as HTMLElement).getAttribute('aria-describedby');
+      const note = el().querySelector<HTMLElement>(`#${describedBy}`);
+      expect(note?.textContent?.trim()).toBe(ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE);
+      // Only read as the buttons' description, never on its own in the page.
+      expect(note?.hidden).toBe(true);
+
+      expect(name('p-1').injector.get(Tooltip).disabled).toBe(true);
+      expect((name('p-1').nativeElement as HTMLElement).hasAttribute('aria-describedby')).toBe(false);
     });
 
     it('shows only former employees, tagged, with their own tiles, under "Former employees"', async () => {
@@ -384,7 +684,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await answerFormer();
 
       expect(getFormerEmployees).toHaveBeenCalledTimes(1);
-      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS);
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-9']);
       expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
       expect(activeStat()).toContain('1');
@@ -401,7 +701,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(activeStat()).toContain('2');
     });
     it('follows ?employment= when the URL changes after load', async () => {
-      await mount('browser');
+      await mount('browser', '/?employment=current');
       await answerCurrent();
 
       await TestBed.inject(Router).navigateByUrl('/?employment=former');
@@ -441,8 +741,37 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Viewer');
     });
 
+    // Only a board/committee/access-created row rejoins, so the case is someone holding a seat AND a
+    // key-contact role. The live row carries the roles; the surviving former row comes from the
+    // warehouse, which never has them, so dropping them on the fold reads as '—' and sorts as zero.
+    it('keeps the live key-contact roles when a live row folds into a former employee', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace'),
+            row('live-grace', 'Grace Hopper', {
+              lfUsername: 'grace',
+              sources: ['committee', 'keyContact'],
+              seatsCount: 1,
+              committeeSeatsCount: 1,
+              keyContactRoles: ['Legal Contact'],
+            }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      former$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(el().querySelector('[data-testid="org-people-all-employees-key-contact-p-9"]')?.textContent?.trim()).toBe('Legal Contact');
+    });
+
     it('never lists a former employee the server tagged as holding only Org Lens access under "Current employees"', async () => {
-      await mount('browser');
+      await mount('browser', '/?employment=current');
       await answerCurrent();
       live$.next(
         response(
@@ -464,7 +793,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
     it('folds the stored activity of someone with a live seat into their current row, tiles included, under "Current employees"', async () => {
       // The merged row's count is checked as commits.
-      await mount('browser', '/?metric=commits');
+      await mount('browser', '/?employment=current&metric=commits');
       await answerCurrent();
       live$.next(
         response(
@@ -548,7 +877,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(error()).not.toBeNull();
       expect(warning()).toBeNull();
 
-      await TestBed.inject(Router).navigateByUrl('/');
+      await TestBed.inject(Router).navigateByUrl('/?employment=current');
       await settle();
 
       expect(error()).toBeNull();
@@ -661,6 +990,171 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       (fixture.componentInstance as unknown as { searchTerm: WritableSignal<string> }).searchTerm.set('hopper');
       await settle();
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-9']);
+    });
+
+    describe('searching', () => {
+      const search = async (term: string): Promise<string[]> => {
+        (fixture.componentInstance as unknown as { searchTerm: WritableSignal<string> }).searchTerm.set(term);
+        await settle();
+        return rowKeys().sort();
+      };
+
+      beforeEach(async () => {
+        await mount('browser', '/?tab=employees');
+        snowflake$.next(
+          response(
+            [
+              // A CJK compatibility ideograph (U+F92E) that renders like 冷 (U+51B7).
+              row('p-compat', '王小\uF92E', { commitsCount: 1 }),
+              row('p-ideo-space', '王小\u3000冷', { commitsCount: 1 }),
+              row('p-accent', 'José Ramírez', { commitsCount: 1 }),
+              row('p-username', 'Ada Lovelace', { lfUsername: 'gracehopper', commitsCount: 1 }),
+              row('p-other', 'Alan Turing', { commitsCount: 1 }),
+            ],
+            5
+          )
+        );
+        snowflake$.complete();
+        former$.next(response([], 0));
+        former$.complete();
+        await settle();
+      });
+
+      it('finds a name stored with lookalike characters or an ideographic space, with or without a space in the query', async () => {
+        const cjkRows = ['org-people-all-employees-row-p-compat', 'org-people-all-employees-row-p-ideo-space'];
+
+        expect(await search('王小冷')).toEqual(cjkRows);
+        expect(await search('王小 冷')).toEqual(cjkRows);
+      });
+
+      it('ignores accents and case', async () => {
+        expect(await search('JOSE')).toEqual(['org-people-all-employees-row-p-accent']);
+      });
+
+      it('matches the LF username, which the row does not show', async () => {
+        expect(await search('gracehopper')).toEqual(['org-people-all-employees-row-p-username']);
+      });
+
+      it('lists everyone and hides Clear filters for effective-empty queries', async () => {
+        const clear = (): Element | null => el().querySelector('[data-testid="org-people-all-employees-clear-filters"]');
+        expect(await search('JOSE')).toEqual(['org-people-all-employees-row-p-accent']);
+        expect(clear()).not.toBeNull();
+
+        for (const term of ['', '   ', '\u3000', '\u200B', ' \u200B ', '\u0085', '\u00AD', '\u0301']) {
+          expect(await search(term)).toHaveLength(5);
+          expect(clear()).toBeNull();
+        }
+      });
+
+      it('retains the active-filter state when another filter accompanies an effective-empty query', async () => {
+        fixture.componentInstance['filterForm'].controls.activity.setValue('events');
+
+        expect(await search(' \u200B ')).toEqual([]);
+        expect(el().querySelector('[data-testid="org-people-all-employees-empty"]')?.textContent).toContain('No employees match the current filters.');
+        expect(el().querySelector('[data-testid="org-people-all-employees-clear-filters"]')).not.toBeNull();
+      });
+    });
+
+    it('keeps the organization-empty wording for effective-empty queries', async () => {
+      await mount('browser', '/?tab=employees');
+      snowflake$.next(response([], 0));
+      snowflake$.complete();
+      live$.next(response([], 0));
+      live$.complete();
+      former$.next(response([], 0));
+      former$.complete();
+      await settle();
+
+      const search = async (term: string): Promise<void> => {
+        fixture.componentInstance['filterForm'].controls.search.setValue(term);
+        await settle();
+      };
+      const empty = (): string | null | undefined => el().querySelector('[data-testid="org-people-all-employees-empty"]')?.textContent;
+
+      await search('no matching person');
+      expect(empty()).toContain('No employees match the current filters.');
+
+      for (const term of ['', '\u200B', ' \u200B ', '\u0085', '\u00AD', '\u0301']) {
+        await search(term);
+        expect(rowKeys()).toEqual([]);
+        expect(empty()).toContain('No employees found for this company.');
+        expect(el().querySelector('[data-testid="org-people-all-employees-clear-filters"]')).toBeNull();
+      }
+    });
+
+    describe('searching by name order and LF username (lfx-self-serve#5687)', () => {
+      const search = async (term: string): Promise<string[]> => {
+        const input = el().querySelector<HTMLInputElement>('[data-test="org-people-all-employees-search-input"]');
+        if (!input) throw new Error('All Employees search input is missing');
+        input.value = term;
+        input.dispatchEvent(new Event('input'));
+        await settle();
+        return rowKeys().sort();
+      };
+
+      beforeEach(async () => {
+        await mount('browser', '/?employment=current');
+        snowflake$.next(
+          response(
+            [
+              // Given name first, family name last, as the warehouse stores it.
+              row('p-cjk', '\u660E\u534E \u674E', { commitsCount: 1 }),
+              row('p-three-part', 'Juan Carlos P\u00E9rez', { commitsCount: 1 }),
+              row('p-stored-parts', 'Mei', { firstName: 'Mei', lastName: 'Chen', commitsCount: 1 }),
+              row('p-greek', 'ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', { firstName: 'ΝΙΚΟΣ', lastName: 'ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', commitsCount: 1 }),
+              row('p-greek-mixed', 'ΑΝΔΡΕΑΣ\u200BΝΙΚΟΛΑΟΣ ΓΕΩΡΓΙΟΣ', { commitsCount: 1 }),
+              // Ignore legacy GitHub metadata from an older server; only the person's existing searchable fields match.
+              Object.assign(row('p-github', 'Mary Somerville', { lfUsername: 'msomerville', commitsCount: 0, eventsCount: 1 }), {
+                githubUsernames: ['example-gh-user'],
+              }),
+              row('p-other', 'Alan Turing', { commitsCount: 1 }),
+            ],
+            7
+          )
+        );
+        snowflake$.complete();
+        former$.next(response([], 0));
+        former$.complete();
+        await settle();
+      });
+
+      it('finds a name searched family name first, with or without a space', async () => {
+        expect(await search('\u674E\u660E\u534E')).toEqual(['org-people-all-employees-row-p-cjk']);
+        expect(await search('\u674E \u660E\u534E')).toEqual(['org-people-all-employees-row-p-cjk']);
+      });
+
+      it('finds a three-part name from any starting part, ignoring accents and spaces', async () => {
+        expect(await search('p\u00E9rez juan carlos')).toEqual(['org-people-all-employees-row-p-three-part']);
+        expect(await search('perezjuancarlos')).toEqual(['org-people-all-employees-row-p-three-part']);
+      });
+
+      it('finds both stored-name orders when the display name contains only the given name', async () => {
+        for (const query of ['Mei Chen', 'meichen', 'Chen Mei', 'chenmei']) {
+          expect(await search(query)).toEqual(['org-people-all-employees-row-p-stored-parts']);
+        }
+      });
+
+      it('finds spaced and compact Greek names in original and rotated order', async () => {
+        for (const query of ['ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', 'ΝΙΚΟΣΝΙΚΟΛΑΟΣΠΑΠΑΣ', 'ΠΑΠΑΣ ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ', 'ΠΑΠΑΣΝΙΚΟΣΝΙΚΟΛΑΟΣ']) {
+          expect(await search(query)).toEqual(['org-people-all-employees-row-p-greek']);
+        }
+      });
+
+      it('finds an exact Greek display name with mixed separators and no stored name parts', async () => {
+        expect(await search('ΑΝΔΡΕΑΣ\u200BΝΙΚΟΛΑΟΣ ΓΕΩΡΓΙΟΣ')).toEqual(['org-people-all-employees-row-p-greek-mixed']);
+      });
+
+      it('does not search GitHub usernames even when a legacy response includes them', async () => {
+        expect(await search('example-gh-user')).toEqual([]);
+        expect(await search('EXAMPLE-GH')).toEqual([]);
+        expect(await search('msomerville')).toEqual(['org-people-all-employees-row-p-github']);
+      });
+
+      it('still applies the other filters to an LF username match', async () => {
+        fixture.componentInstance['filterForm'].controls.activity.setValue('code');
+
+        expect(await search('msomerville')).toEqual([]);
+      });
     });
 
     it('never joins a key contact on username: the key-contact row and the former row both stay, under "All"', async () => {
@@ -817,7 +1311,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       former$.complete();
       await settle();
 
-      expect(getFormerEmployees).toHaveBeenLastCalledWith(OTHER_ORG, '365d', FILTERS);
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(OTHER_ORG, '730d', FILTERS, 'exclude', 'insights');
       // The table waits for the next account's current roster; the reconciled rows never take the previous account's.
       expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
       const roster = (fixture.componentInstance as unknown as { rosterRows: () => OrgAllEmployeeRow[] }).rosterRows();
@@ -892,16 +1386,16 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     it('reads ?range= on load and requests the stored, live and former rosters for it', async () => {
       await mount('browser', '/?range=30d&employment=all');
 
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '30d', FILTERS);
-      expect(getDirectory).toHaveBeenCalledWith(ORG, '30d', FILTERS);
-      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '30d', FILTERS);
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '30d', FILTERS, 'exclude', 'insights');
+      expect(getDirectory).toHaveBeenCalledWith(ORG, '30d', FILTERS, 'exclude', 'insights');
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '30d', FILTERS, 'exclude', 'insights');
     });
 
     it('ignores an unknown ?range= and reads the default range', async () => {
       await mount('browser', '/?range=3y');
 
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS);
-      expect(getDirectory).toHaveBeenCalledWith(ORG, '365d', FILTERS);
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
+      expect(getDirectory).toHaveBeenCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
     });
 
     it('refetches current and former employees on a range change and writes ?range=, dropping the default', async () => {
@@ -917,17 +1411,17 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await answer(snowflake$, response([row('p-1', 'Ada Lovelace', { commitsCount: 9 }), row('p-2', 'Alan Turing', { commitsCount: 3 })], 2));
       await answer(former$, response([row('p-9', 'Grace Hopper', { isFormer: true, commitsCount: 4 })], 1));
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, 'all', FILTERS);
-      expect(getDirectory).toHaveBeenLastCalledWith(ORG, 'all', FILTERS);
-      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, 'all', FILTERS);
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, 'all', FILTERS, 'exclude', 'insights');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, 'all', FILTERS, 'exclude', 'insights');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, 'all', FILTERS, 'exclude', 'insights');
       expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-2', 'org-people-all-employees-row-p-9']);
       expect(activeStat()).toContain('3');
       expect(TestBed.inject(Router).url).toContain('range=all');
 
-      component().onRangeChange('365d');
+      component().onRangeChange('730d');
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS);
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
       expect(TestBed.inject(Router).url).not.toContain('range=');
       expect(TestBed.inject(Router).url).toContain('employment=all');
     });
@@ -938,8 +1432,8 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await TestBed.inject(Router).navigateByUrl('/?range=90d');
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '90d', FILTERS);
-      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '90d', FILTERS);
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '90d', FILTERS, 'exclude', 'insights');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '90d', FILTERS, 'exclude', 'insights');
     });
 
     it('drops a picked foundation the new range no longer lists, once that range has loaded, from the select too', async () => {
@@ -1034,54 +1528,54 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     const component = (): { onFiltersChange(change: Partial<OrgCodeFilterValues>): void; metricOptions: { label: string }[] } =>
       fixture.componentInstance as unknown as { onFiltersChange(change: Partial<OrgCodeFilterValues>): void; metricOptions: { label: string }[] };
     const text = (testId: string): string => el().querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? '';
-    const picked: OrgCommitFilters = { projectScope: 'all', commitScope: 'all', metric: 'code' };
+    const picked: OrgCommitFilters = { projectScope: 'lf', commitScope: 'all', metric: 'code' };
 
     // lfx-self-serve#4559 — All code contributions is the default code count.
-    it('offers one code-count dropdown, All code contributions first and by default, and LF projects first and by default', async () => {
+    it('offers one code-count dropdown, All code contributions first and by default, and LF and non-LF projects first and by default', async () => {
       await mount('browser');
 
       expect(component().metricOptions.map((option) => option.label)).toEqual(['All code contributions', 'All commits', 'Only main branch commits']);
       expect(fixture.componentInstance['projectScopeOptions'].map((option) => option.label)).toEqual([
-        'LF projects',
         'LF and non-LF projects',
+        'LF projects',
         'Non-LF projects',
       ]);
       expect(fixture.componentInstance['projectScopeLabel']).toBe('Project type');
       expect(el().querySelector('[data-testid="org-people-all-employees-commit-scope-filter"]')).toBeNull();
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'code' });
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'all', metric: 'code' }, 'exclude', 'insights');
     });
 
     it('keeps an explicit ?metric=commits in the URL and drops it again for All code contributions', async () => {
       await mount('browser', '/?employment=all&metric=commits');
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'commits' });
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'all', metric: 'commits' }, 'exclude', 'insights');
       expect(TestBed.inject(Router).url).toBe('/?employment=all&metric=commits');
 
       component().onFiltersChange({ metric: 'code' });
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS);
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
       expect(TestBed.inject(Router).url).toBe('/?employment=all');
     });
 
     it('reads the filters on load and requests the stored, live and former rosters with them', async () => {
-      await mount('browser', '/?employment=all&projectScope=all&metric=code');
+      await mount('browser', '/?employment=all&projectScope=lf&metric=code');
 
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', picked);
-      expect(getDirectory).toHaveBeenCalledWith(ORG, '365d', picked);
-      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '365d', picked);
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '730d', picked, 'exclude', 'insights');
+      expect(getDirectory).toHaveBeenCalledWith(ORG, '730d', picked, 'exclude', 'insights');
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '730d', picked, 'exclude', 'insights');
     });
 
     it('reads an unknown value as its default', async () => {
       await mount('browser', '/?projectScope=LF&commitScope=main&metric=prs');
 
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS);
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
     });
 
     it('opens a legacy commitScope=merged link as Only main branch commits and rewrites it to metric=merged', async () => {
       await mount('browser', '/?employment=all&commitScope=merged');
 
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'merged', metric: 'commits' });
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'merged', metric: 'commits' }, 'exclude', 'insights');
       const url = TestBed.inject(Router).url;
       expect(url).toContain('metric=merged');
       expect(url).not.toContain('commitScope=');
@@ -1097,9 +1591,9 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       component().onFiltersChange({ metric });
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, ...params });
-      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, ...params });
-      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, ...params });
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, ...params }, 'exclude', 'insights');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, ...params }, 'exclude', 'insights');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, ...params }, 'exclude', 'insights');
       const url = TestBed.inject(Router).url;
       expect(url).toContain(`metric=${metric}`);
       expect(url).not.toContain('commitScope=');
@@ -1111,22 +1605,22 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       component().onFiltersChange({ projectScope: 'non_lf' });
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, projectScope: 'non_lf' });
-      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, projectScope: 'non_lf' });
-      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, projectScope: 'non_lf' });
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, projectScope: 'non_lf' }, 'exclude', 'insights');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, projectScope: 'non_lf' }, 'exclude', 'insights');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, projectScope: 'non_lf' }, 'exclude', 'insights');
       const url = TestBed.inject(Router).url;
       expect(url).toContain('projectScope=non_lf');
       expect(url).not.toContain('commitScope=');
       expect(url).not.toContain('metric=');
       expect(url).toContain('employment=all');
 
-      component().onFiltersChange({ projectScope: 'all' });
+      component().onFiltersChange({ projectScope: 'lf' });
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, projectScope: 'all' });
-      expect(TestBed.inject(Router).url).toContain('projectScope=all');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, projectScope: 'lf' }, 'exclude', 'insights');
+      expect(TestBed.inject(Router).url).toContain('projectScope=lf');
 
-      component().onFiltersChange({ projectScope: 'lf' });
+      component().onFiltersChange({ projectScope: 'all' });
       await settle();
 
       expect(TestBed.inject(Router).url).not.toContain('projectScope=');
@@ -1138,12 +1632,29 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await TestBed.inject(Router).navigateByUrl('/?metric=merged');
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'merged', metric: 'commits' });
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'merged', metric: 'commits' }, 'exclude', 'insights');
 
       await TestBed.inject(Router).navigateByUrl('/?metric=commits');
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, metric: 'commits' });
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, metric: 'commits' }, 'exclude', 'insights');
+    });
+
+    it("opens the person drawer with the page's range, project type and code count, so its Code tab counts this row (lfx-self-serve#4404)", async () => {
+      await mount('browser', '/?range=90d&projectScope=all&metric=merged');
+      const open = (TestBed.inject(PersonDetailDrawerService) as unknown as { open: Mock }).open;
+
+      (fixture.componentInstance as unknown as { onPersonClick(row: object): void }).onPersonClick({ personKey: 'person-one', name: 'Ada', initials: 'A' });
+
+      expect(open).toHaveBeenCalledWith(
+        expect.objectContaining({
+          personKey: 'person-one',
+          range: '90d',
+          codeFilters: { projectScope: 'all', commitScope: 'merged', metric: 'commits' },
+          teamMembers: 'exclude',
+          orgScope: 'insights',
+        })
+      );
     });
 
     it('shows Clear filters only while a filter is non-default, the code-count option included', async () => {
@@ -1160,7 +1671,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
     it('clears every filter to its default in one roster read and drops their URL params, keeping the tab', async () => {
       const clear = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-people-all-employees-clear-filters"]');
-      await mount('browser', '/?tab=employees&employment=all&range=90d&projectScope=all&metric=commits');
+      await mount('browser', '/?tab=employees&employment=current&companyEmail=has&range=90d&projectScope=lf&metric=commits&teamMembers=include&orgScope=all');
       const state = fixture.componentInstance as unknown as {
         filterForm: FormGroup<{ search: FormControl<string>; activity: FormControl<string> }>;
         searchTerm(): string;
@@ -1182,21 +1693,25 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         '',
         '',
         'all',
-        'current',
-        '365d',
+        'all',
+        '730d',
       ]);
       expect(state.filterForm.getRawValue()).toEqual({
         search: '',
         foundation: '',
         activity: 'all',
-        employment: 'current',
-        range: '365d',
+        employment: 'all',
+        companyEmail: 'all',
+        keyContact: 'all',
+        range: '730d',
         projectScope: FILTERS.projectScope,
         metric: FILTERS.metric,
+        teamMembers: 'exclude',
+        orgScope: 'insights',
       });
       // The range and the commit filters change together, so no read starts for a half-cleared combination.
-      expect(getDirectory.mock.calls.slice(reads)).toEqual([[ORG, '365d', FILTERS]]);
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS);
+      expect(getDirectory.mock.calls.slice(reads)).toEqual([[ORG, '730d', FILTERS, 'exclude', 'insights']]);
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
       expect(TestBed.inject(Router).url).toBe('/?tab=employees');
       expect(clear()).toBeNull();
     });
@@ -1280,6 +1795,263 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
   });
 
+  // lfx-self-serve#4598 — the tile is the People -> Event Attendees tab's Attendees number for the range, not the listed-employee count.
+  describe('in the browser, with the Event Attendees tile', () => {
+    const tile = (): string => el().querySelector('[data-testid="org-people-all-employees-stat-events"] div')?.textContent?.trim() ?? '';
+    const listed = (): OrgAllEmployeeRow[] => [row('p-1', 'Ada Lovelace', { eventsCount: 2 }), row('p-2', 'Grace Hopper', { eventsCount: 0 })];
+
+    async function answer(current: OrgAllEmployeesResponse, former: OrgAllEmployeesResponse = response([], 0)): Promise<void> {
+      snowflake$.next(current);
+      snowflake$.complete();
+      live$.next(current);
+      live$.complete();
+      former$.next(former);
+      former$.complete();
+      await settle();
+    }
+
+    it('shows the server summary number, whatever the listed employees', async () => {
+      await mount('browser');
+      await answer({ ...response(listed(), 1), eventAttendeesTotal: 486 });
+
+      expect(tile()).toBe('486');
+    });
+
+    it('keeps the summary number under the Former and All employment views', async () => {
+      await mount('browser', '/?employment=all');
+      await answer({ ...response(listed(), 1), eventAttendeesTotal: 486 }, response([row('p-9', 'Alan Turing', { isFormer: true, eventsCount: 1 })], 1));
+
+      expect(tile()).toBe('486');
+    });
+
+    it('counts the listed employees with an event under the Non-LF project scope, which has no events summary', async () => {
+      await mount('browser', '/?projectScope=non_lf');
+      await answer(response(listed(), 1));
+
+      expect(tile()).toBe('1');
+    });
+
+    it('says the number is unavailable, and does not count the listed employees, when the server could not read the summary', async () => {
+      await mount('browser');
+      await answer({ ...response(listed(), 1), eventAttendeesTotal: null });
+
+      expect(tile()).toBe('—');
+    });
+
+    it('ignores a number that belongs to another account', async () => {
+      await mount('browser');
+      await answer({ ...response(listed(), 1, OTHER_ORG), eventAttendeesTotal: 486 });
+
+      expect(tile()).not.toBe('486');
+    });
+  });
+
+  // lfx-self-serve#4685
+  describe('in the browser, with the team members filter', () => {
+    const teamMembersControl = (): FormControl<string> =>
+      (fixture.componentInstance as unknown as { filterForm: FormGroup<{ teamMembers: FormControl<string> }> }).filterForm.controls.teamMembers;
+
+    it('excludes team members by default from the stored, live and former rosters, as LFX Insights', async () => {
+      await mount('browser', '/?tab=employees');
+
+      const labelled = el().querySelector('[data-test="org-people-all-employees-team-members-select"] [aria-label="Team members"]');
+      expect(labelled?.textContent?.trim()).toBe('Exclude team members');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
+      expect(el().querySelector('[data-testid="org-people-all-employees-clear-filters"]')).toBeNull();
+    });
+
+    it('rereads every roster on Include and writes it to the URL, dropping it again at Exclude', async () => {
+      await mount('browser', '/?tab=employees');
+
+      teamMembersControl().setValue('include');
+      await settle();
+
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'include', 'insights');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'include', 'insights');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'include', 'insights');
+      expect(TestBed.inject(Router).url).toBe('/?tab=employees&teamMembers=include');
+      expect(el().querySelector('[data-testid="org-people-all-employees-clear-filters"]')?.textContent?.trim()).toBe('Clear filters');
+
+      teamMembersControl().setValue('exclude');
+      await settle();
+
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
+      expect(TestBed.inject(Router).url).toBe('/?tab=employees');
+    });
+
+    it('notes that team members are counted while the team-member data is unavailable', async () => {
+      getFormerEmployees.mockImplementation(() => of({ ...response([], 0), teamMembersUnavailable: true as const }));
+      await mount('browser', '/?tab=employees');
+
+      expect(el().querySelector('[data-testid="org-people-all-employees-team-members-unavailable"]')?.textContent).toContain(
+        'Team-member data is unavailable; counts include team members.'
+      );
+    });
+
+    it('reads ?teamMembers=include from a shared link into the picker and every roster read', async () => {
+      await mount('browser', '/?tab=employees&teamMembers=include');
+
+      expect(teamMembersControl().value).toBe('include');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'include', 'insights');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'include', 'insights');
+    });
+  });
+
+  describe('in the browser, with the organization scope filter (lfx-self-serve-ops#1219)', () => {
+    const orgScopeControl = (): FormControl<string> =>
+      (fixture.componentInstance as unknown as { filterForm: FormGroup<{ orgScope: FormControl<string> }> }).filterForm.controls.orgScope;
+    const clear = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-people-all-employees-clear-filters"]');
+    const codeNote = (): unknown => fixture.debugElement.query(By.css('[data-testid="org-people-all-employees-stat-code-info"]')).injector.get(Tooltip).content;
+    const answer = async (): Promise<void> => {
+      snowflake$.next(response([row('p-1', 'Ada Lovelace', { commitsCount: 1 })], 1));
+      snowflake$.complete();
+      former$.next(response([], 0));
+      former$.complete();
+      await settle();
+    };
+
+    it('reads the Insights organization by default for the stored, live and former rosters', async () => {
+      await mount('browser', '/?tab=employees');
+
+      const labelled = el().querySelector('[data-test="org-people-all-employees-org-scope-filter"] [aria-label="Company scope"]');
+      expect(labelled?.textContent?.trim()).toBe('Insights company');
+      expect(orgScopeControl().value).toBe('insights');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
+      expect(clear()).toBeNull();
+    });
+
+    it('reads ?orgScope=all from a shared link into the picker and every roster read', async () => {
+      await mount('browser', '/?tab=employees&orgScope=all');
+
+      expect(orgScopeControl().value).toBe('all');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'all');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'all');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'all');
+      expect(clear()?.textContent?.trim()).toBe('Clear filters');
+    });
+
+    it('rereads every roster on All related organizations and writes it to the URL, dropping it again at the Insights organization', async () => {
+      await mount('browser', '/?tab=employees');
+
+      orgScopeControl().setValue('all');
+      await settle();
+
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'all');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'all');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'all');
+      expect(TestBed.inject(Router).url).toBe('/?tab=employees&orgScope=all');
+
+      orgScopeControl().setValue('insights');
+      await settle();
+
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
+      expect(TestBed.inject(Router).url).toBe('/?tab=employees');
+    });
+
+    it('Clear filters resets the organization scope to the Insights organization in one roster read and drops the param', async () => {
+      await mount('browser', '/?tab=employees&orgScope=all');
+      const reads = getDirectory.mock.calls.length;
+
+      clear()?.click();
+      await settle();
+
+      expect(orgScopeControl().value).toBe('insights');
+      expect(getDirectory.mock.calls.slice(reads)).toEqual([[ORG, '730d', FILTERS, 'exclude', 'insights']]);
+      expect(TestBed.inject(Router).url).toBe('/?tab=employees');
+    });
+
+    it('says on the code tile which organizations it counts', async () => {
+      await mount('browser', '/?tab=employees&employment=current');
+      await answer();
+
+      expect(codeNote()).toBe(`${ORG_ALL_EMPLOYEE_CODE_NOTE.current} ${ORG_SCOPE_CAPTION_PHRASE.insights}`);
+
+      snowflake$ = new Subject();
+      former$ = new Subject();
+      orgScopeControl().setValue('all');
+      await settle();
+      await answer();
+
+      expect(codeNote()).toBe(`${ORG_ALL_EMPLOYEE_CODE_NOTE.current} ${ORG_SCOPE_CAPTION_PHRASE.all}`);
+    });
+
+    it('says every related organization on the code tile when the account has no Insights organization, even under insights', async () => {
+      orgScopeInfo.set({ accountId: ORG, hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null, relatedOrgCount: 2 });
+      await mount('browser', '/?tab=employees&employment=current');
+      await answer();
+
+      expect(orgScopeControl().value).toBe('insights');
+      expect(codeNote()).toContain('Every company related to this one');
+    });
+  });
+
+  // lfx-self-serve#4735: the secondary filters sit behind "More filters".
+  describe('in the browser, with the secondary filters behind More filters', () => {
+    const toggle = (): HTMLButtonElement => el().querySelector('[data-testid="org-people-all-employees-more-filters-toggle"]')!;
+    const panel = (): HTMLElement => el().querySelector('#org-people-all-employees-more-filters')!;
+    const inRow = (testid: string, row: HTMLElement): boolean => !!row.querySelector(`[data-testid="${testid}"], [data-test="${testid}"]`);
+
+    it('keeps code count, employment, team members and organization scope collapsed by default, the rest visible', async () => {
+      await mount('browser', '/?tab=employees');
+
+      const bar = el().querySelector<HTMLElement>('[data-testid="org-people-all-employees-filter-bar"]')!;
+      expect(panel().classList).toContain('hidden');
+      expect(toggle().textContent?.trim()).toBe('More filters');
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      expect(toggle().getAttribute('aria-controls')).toBe('org-people-all-employees-more-filters');
+      for (const testid of [
+        'org-people-all-employees-search-input',
+        'org-people-all-employees-foundation-filter',
+        'org-people-all-employees-range-filter',
+        'org-people-all-employees-project-scope-filter',
+      ]) {
+        expect(inRow(testid, bar)).toBe(true);
+      }
+      for (const testid of [
+        'org-people-all-employees-employment-filter',
+        'org-people-all-employees-metric-filter',
+        'org-people-all-employees-team-members-filter',
+        'org-people-all-employees-org-scope-filter',
+      ]) {
+        expect(inRow(testid, panel())).toBe(true);
+        expect(inRow(testid, bar)).toBe(false);
+      }
+    });
+
+    it('counts the hidden filters a shared link sets, and shows and hides them on the toggle', async () => {
+      await mount('browser', '/?tab=employees&employment=current&metric=commits&teamMembers=include&orgScope=all');
+
+      expect(toggle().textContent?.trim()).toBe('More filters (4)');
+      expect(panel().classList).toContain('hidden');
+
+      toggle().click();
+      await settle();
+      expect(panel().classList).not.toContain('hidden');
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+      expect(toggle().textContent?.trim()).toBe('Fewer filters');
+
+      toggle().click();
+      await settle();
+      expect(panel().classList).toContain('hidden');
+      expect(toggle().textContent?.trim()).toBe('More filters (4)');
+    });
+
+    it('resets the hidden filters too on Clear filters, so the count disappears', async () => {
+      await mount('browser', '/?tab=employees&metric=commits&orgScope=all');
+      expect(toggle().textContent?.trim()).toBe('More filters (2)');
+
+      el().querySelector<HTMLButtonElement>('[data-testid="org-people-all-employees-clear-filters"]')!.click();
+      await settle();
+
+      expect(toggle().textContent?.trim()).toBe('More filters');
+      expect(TestBed.inject(Router).url).toBe('/?tab=employees');
+    });
+  });
+
   describe('on the server, with ?employment=former', () => {
     it('keeps the skeleton and requests nothing, so the browser render replaces it', async () => {
       await mount('server', '/?employment=former');
@@ -1288,23 +2060,175 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
     });
   });
+  // The Key Contact column borrows the Key Contacts tab's role pills for a single role, and collapses
+  // several onto one count chip so a person holding five roles can't stretch the row.
+  describe('in the browser, with key-contact roles on the roster', () => {
+    const keyContactCell = (personKey: string): HTMLElement | null =>
+      el().querySelector<HTMLElement>(`[data-testid="org-people-all-employees-key-contact-${personKey}"]`);
 
-  describe('expanded row Maintainer pills (lfx-self-serve#4482)', () => {
+    beforeEach(async () => {
+      getFormerEmployees.mockImplementation(() => of(response([], 0)));
+      await mount('browser');
+      snowflake$.next(
+        response(
+          [
+            row('p-none', 'Ada Lovelace'),
+            row('p-one', 'Alan Turing', { keyContactRoles: ['Technical Contact'] }),
+            row('p-many', 'Grace Hopper', { keyContactRoles: ['Authorized Signatory', 'Representative/Voting Contact'] }),
+          ],
+          3
+        )
+      );
+      snowflake$.complete();
+      await settle();
+    });
+
+    it('renders an em dash when the employee holds no key-contact role', () => {
+      expect(keyContactCell('p-none')?.textContent?.trim()).toBe('\u2014');
+    });
+
+    it('renders the role pill, in the Key Contacts tab colour, for a single role', () => {
+      const cell = keyContactCell('p-one');
+      expect(cell?.textContent?.trim()).toBe('Technical Contact');
+      expect(cell?.querySelector('span')?.className).toContain('text-sky-700');
+    });
+
+    it('collapses several roles onto a single count chip', () => {
+      expect(el().querySelector('[data-testid="org-people-all-employees-key-contact-count-p-many"]')?.textContent?.trim()).toBe('2 roles');
+    });
+
+    // The count is the only visible text, so a screen reader has to get the names some other way.
+    it('spells the roles out for assistive tech, and lets a keyboard reach the tooltip', () => {
+      const names = el().querySelector('[data-testid="org-people-all-employees-key-contact-roles-p-many"]');
+      expect(names?.className).toContain('sr-only');
+      expect(names?.textContent?.trim()).toBe('2 key contact roles: Authorized Signatory, Representative/Voting Contact');
+
+      const chip = keyContactCell('p-many');
+      expect(chip?.getAttribute('tabindex')).toBe('0');
+    });
+
+    it('sorts by role count, most roles first, on the first click of the column header', async () => {
+      const header = [...el().querySelectorAll<HTMLButtonElement>('thead button')].find((b) => b.textContent?.includes('Key Contact'));
+      header?.click();
+      await settle();
+
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-many', 'org-people-all-employees-row-p-one', 'org-people-all-employees-row-p-none']);
+    });
+  });
+  // lfx-self-serve#5628 — the Key Contact filter reads the roles already on each row; nothing is fetched.
+  describe('in the browser, with the key contact filter', () => {
+    const answer = async (): Promise<void> => {
+      snowflake$.next(
+        response(
+          [
+            row('p-none', 'Ada Lovelace'),
+            row('p-bill', 'Alan Turing', { keyContactRoles: ['Billing Contact'] }),
+            row('p-many', 'Grace Hopper', { keyContactRoles: ['Billing Contact', 'Legal Contact'] }),
+            row('p-odd', 'Barbara Liskov', { keyContactRoles: ['Procurement Contact'] }),
+          ],
+          4
+        )
+      );
+      snowflake$.complete();
+      await settle();
+    };
+    const keyContactControl = (): FormControl<OrgAllEmployeeKeyContactFilter> =>
+      (fixture.componentInstance as unknown as { filterForm: FormGroup<{ keyContact: FormControl<OrgAllEmployeeKeyContactFilter> }> }).filterForm.controls
+        .keyContact;
+    const ids = (): string[] =>
+      rowKeys()
+        .map((key) => key.replace('org-people-all-employees-row-', ''))
+        .sort();
+
+    beforeEach(() => getFormerEmployees.mockImplementation(() => of(response([], 0))));
+
+    it('lists everyone by default, and narrows by any, none and each role', async () => {
+      await mount('browser');
+      await answer();
+      expect(ids()).toEqual(['p-bill', 'p-many', 'p-none', 'p-odd']);
+
+      for (const [value, expected] of [
+        ['any', ['p-bill', 'p-many', 'p-odd']],
+        ['none', ['p-none']],
+        ['Billing Contact', ['p-bill', 'p-many']],
+        ['Legal Contact', ['p-many']],
+        ['Technical Contact', []],
+      ] as const) {
+        keyContactControl().setValue(value);
+        await settle();
+        expect(ids()).toEqual([...expected]);
+      }
+    });
+
+    it('writes ?keyContact= on change, drops the default, reads it on load, and clears it with the other filters', async () => {
+      await mount('browser', '/?keyContact=Legal%20Contact');
+      await answer();
+      expect(keyContactControl().value).toBe('Legal Contact');
+      expect(ids()).toEqual(['p-many']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-more-filters-toggle"]')?.textContent).toContain('1');
+
+      keyContactControl().setValue('Billing Contact');
+      await settle();
+      expect(TestBed.inject(Router).url).toContain('keyContact=Billing%20Contact');
+
+      keyContactControl().setValue('all');
+      await settle();
+      expect(TestBed.inject(Router).url).not.toContain('keyContact');
+
+      keyContactControl().setValue('none');
+      await settle();
+      (fixture.componentInstance as unknown as { clearFilters(): void }).clearFilters();
+      await settle();
+      expect(TestBed.inject(Router).url).not.toContain('keyContact');
+      expect(keyContactControl().value).toBe('all');
+    });
+
+    it('falls back to every row for an unknown ?keyContact= value', async () => {
+      await mount('browser', '/?keyContact=Janitor');
+      await answer();
+      expect(keyContactControl().value).toBe('all');
+      expect(ids()).toHaveLength(4);
+    });
+  });
+  // A rolling deploy serves this bundle against pods that predate the field, and requests are not
+  // sticky (charts/lfx-self-serve/values.yaml) — so a row can arrive without keyContactRoles at all.
+  // Reading `.length` off that would take the whole table down, not just the cell, for every rollout.
+  describe('in the browser, against a server that does not send keyContactRoles yet', () => {
+    beforeEach(async () => {
+      getFormerEmployees.mockImplementation(() => of(response([], 0)));
+      await mount('browser');
+    });
+
+    it('still renders the roster, with the cell empty', async () => {
+      const legacy = row('p-legacy', 'Ada Lovelace');
+      delete (legacy as Partial<OrgAllEmployeeRow>).keyContactRoles;
+
+      snowflake$.next(response([legacy], 1));
+      snowflake$.complete();
+      await settle();
+
+      expect(rowKeys()).toContain('org-people-all-employees-row-p-legacy');
+      expect(el().querySelector('[data-testid="org-people-all-employees-key-contact-p-legacy"]')?.textContent?.trim()).toBe('\u2014');
+    });
+  });
+
+  describe('expanded row (lfx-self-serve#4482, #4404)', () => {
     interface DetailHarness {
       toggleRow(row: { personKey: string }): void;
       onRangeChange(range: string): void;
+      onFiltersChange(change: object): void;
       expansion(): Record<string, boolean>;
       detailMap(): Record<string, unknown>;
     }
 
-    it('reads an expanded row for the page range and drops every loaded row when the range changes', async () => {
+    it('reads an expanded row for the page range and filters and drops every loaded row when the range changes', async () => {
       await mount('browser');
       const service = TestBed.inject(AllEmployeesService) as unknown as { getEmployeeDetail: Mock };
       service.getEmployeeDetail.mockReturnValue(of({ personKey: 'person-one' }));
       const component = fixture.componentInstance as unknown as DetailHarness;
 
       component.toggleRow({ personKey: 'person-one' });
-      expect(service.getEmployeeDetail).toHaveBeenCalledWith(ORG, 'person-one', '365d');
+      expect(service.getEmployeeDetail).toHaveBeenCalledWith(ORG, 'person-one', '730d', FILTERS, 'exclude', 'insights');
       expect(component.expansion()).toEqual({ 'person-one': true });
       expect(Object.keys(component.detailMap())).toHaveLength(1);
 
@@ -1314,7 +2238,39 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(component.detailMap()).toEqual({});
 
       component.toggleRow({ personKey: 'person-one' });
-      expect(service.getEmployeeDetail).toHaveBeenLastCalledWith(ORG, 'person-one', '90d');
+      expect(service.getEmployeeDetail).toHaveBeenLastCalledWith(ORG, 'person-one', '90d', FILTERS, 'exclude', 'insights');
+    });
+
+    it('reads the code rows in the project type and code count the row shows, and reloads them when either changes', async () => {
+      await mount('browser', '/?projectScope=non_lf&metric=merged');
+      const service = TestBed.inject(AllEmployeesService) as unknown as { getEmployeeDetail: Mock };
+      service.getEmployeeDetail.mockReturnValue(of({ personKey: 'person-one' }));
+      const component = fixture.componentInstance as unknown as DetailHarness;
+
+      component.toggleRow({ personKey: 'person-one' });
+      expect(service.getEmployeeDetail).toHaveBeenCalledWith(
+        ORG,
+        'person-one',
+        '730d',
+        { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' },
+        'exclude',
+        'insights'
+      );
+
+      component.onFiltersChange({ metric: 'code' });
+      await settle();
+      expect(component.expansion()).toEqual({});
+      expect(component.detailMap()).toEqual({});
+
+      component.toggleRow({ personKey: 'person-one' });
+      expect(service.getEmployeeDetail).toHaveBeenLastCalledWith(
+        ORG,
+        'person-one',
+        '730d',
+        { projectScope: 'non_lf', commitScope: 'all', metric: 'code' },
+        'exclude',
+        'insights'
+      );
     });
   });
 });

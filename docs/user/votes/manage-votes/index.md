@@ -1,10 +1,10 @@
 ---
 title: Manage Votes
-description: How to find, edit, delete, vote on, and send reminders for votes in LFX Self Serve.
+description: How to find, edit, delete, cancel, vote on, and send reminders for votes in LFX Self Serve.
 audience: [all]
 product_area: Votes
-tags: [votes, manage, drafts, cast, reminders, mailing-list, copy-link]
-last_updated: 2026-10-28
+tags: [votes, manage, drafts, cancel, cast, results, reminders, mailing-list, copy-link]
+last_updated: 2026-11-23
 intercom_collection: Votes
 ---
 
@@ -17,6 +17,8 @@ This article is for people who manage votes for a project, foundation, or group,
 3. The dashboard opens on the **Active** tab. Select **All**, **Draft**, or **Ended** to see votes with other statuses.
 4. Use the search box and the group filter to narrow the list.
 
+In the **Group** column, select a group's name to open its details page. A vote with no group shows a dash. On a group's own **Votes** tab the name is plain text, since you are already on that group's page.
+
 ## What each row offers
 
 The buttons on a row depend on the vote's status and on whether you can manage votes there. On the Project and Foundation dashboards, and on a group's **Votes** tab, people who can manage votes see the buttons below. Anyone else sees **Vote** or **Review** on active votes and **Results** on ended votes, with no buttons on drafts.
@@ -24,53 +26,100 @@ The buttons on a row depend on the vote's status and on whether you can manage v
 | Status     | Buttons on the row   | What they do                                                         |
 | ---------- | -------------------- | -------------------------------------------------------------------- |
 | **Draft**  | **Edit**, **Delete** | Edit the draft, or delete it. Drafts have no **⋮** menu.             |
-| **Active** | **View**             | Opens the [Results drawer](../vote-results/) with live results.      |
-| **Ended**  | **Results**          | Opens the [Results drawer](../vote-results/) with the final results. |
+| **Active** | **View**             | Opens the vote's page with live results.                             |
+| **Ended**  | **Results**          | Opens the vote's page on the **Results** tab with the final results. |
 
-Active and ended votes also have a **⋮** (**More actions**) menu. Selecting a row's name opens the same drawer as the main button.
+Active and ended votes also have a **⋮** (**More actions**) menu. Selecting a row's name does the same as the main button.
 
 ### The ⋮ menu
 
-| Item                              | Who sees it                                                       | When                   |
-| --------------------------------- | ----------------------------------------------------------------- | ---------------------- |
-| **Copy link**                     | Anyone who can see the row                                        | Active and ended votes |
-| **Present**                       | People who can manage the vote                                    | Active and ended votes |
-| **Extend**                        | People who can manage the vote                                    | Active votes           |
-| **Send reminder**                 | People who can manage the vote                                    | Active votes           |
-| **Send reminder to mailing list** | People who can manage the vote                                    | Active votes           |
-| **Send summary**                  | People who can manage the vote                                    | Ended votes            |
-| **Clone**                         | People who can manage votes for the project, foundation, or group | Active and ended votes |
+| Item                              | Who sees it                                                                                                                | When                   |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| **Copy link**                     | Anyone who can see the row                                                                                                 | Active and ended votes |
+| **Present**                       | People who can manage the vote                                                                                             | Active and ended votes |
+| **Extend**                        | People who can manage the vote                                                                                             | Active votes           |
+| **Send reminder**                 | People who can manage the vote                                                                                             | Active votes           |
+| **Send reminder to mailing list** | People who can manage the vote                                                                                             | Active votes           |
+| **Close vote**                    | People who can manage the vote                                                                                             | Active votes           |
+| **Cancel vote**                   | People who can manage the vote, on the Project and Foundation dashboards and a group's **Votes** tab (not the **Me** lens) | Active votes           |
+| **Send summary**                  | People who can manage the vote                                                                                             | Ended votes            |
+| **Clone**                         | People who can manage votes for the project, foundation, or group                                                          | Active and ended votes |
 
-**Present**, **Extend**, **Send summary**, and **Clone** are covered in [Present, Extend, Clone, and Send a Summary](../present-extend-clone/). Reminders and **Copy link** are below.
+**Present**, **Extend**, **Close vote**, **Send summary**, and **Clone** are covered in [Present, Extend, Clone, and Send a Summary](../present-extend-clone/). **Cancel vote**, reminders and **Copy link** are below.
 
 ## Edit or delete a draft
 
-Only drafts can be edited. An active vote can't be edited, and there is no action to close a vote early. If an active vote has a mistake, [clone it](../present-extend-clone/#clone-a-vote) into a corrected vote.
+Only drafts can be edited. An active vote can't be edited. To end it early and keep its results, use [**Close vote**](../present-extend-clone/#close-the-vote-early). To delete it, use [**Cancel vote**](#cancel-an-active-vote). If an active vote has a mistake, [clone it](../present-extend-clone/#clone-a-vote) into a corrected vote.
 
 1. Open the **Draft** tab.
-2. Select **Edit** on the draft. The create form opens with your saved answers, and you can jump between steps freely.
+2. Select **Edit** on the draft. The create form opens with your saved answers, and you can jump between steps freely. The voting method can't be changed.
 3. Change what you need, then select **Save as Draft** to keep it as a draft or **Open Vote** on the last step to open it.
 
 To delete a draft, select **Delete** on its row and confirm. Deleting can't be undone.
 
 See [Create a Vote](../create-vote/) for what each field means.
 
+## Cancel an active vote
+
+Cancelling deletes an open vote, for example one that was opened by mistake. People who can manage the vote see **Cancel vote** in its **⋮** menu on the Project and Foundation **Votes** dashboards and on a group's **Votes** tab. It isn't offered in the **Me** lens. You can cancel a vote even after some members have voted.
+
+1. Find the active vote and select the **More** (⋮) menu on its row.
+2. Select **Cancel vote**. LFX names the vote and warns that it will be deleted.
+3. Select **Cancel vote** to confirm, or **Keep vote** (or press **Esc**) to back out without changing anything.
+
+After you confirm, a **Vote cancelled** message appears and the vote disappears from the list. Cancelling:
+
+- permanently deletes the vote and every response submitted so far,
+- can't be undone,
+- emails the invited voters that the vote was cancelled.
+
+Once a vote has ended, whether it was closed early, ended because everyone voted, or reached its deadline, it can't be cancelled and **Cancel vote** isn't shown. If the vote ends while you are confirming, LFX tells you it has already ended and refreshes the list. If cancelling fails for another reason, LFX shows an error and the vote stays as it was.
+
+| Action          | Applies to   | What happens                                                                                                                   |
+| --------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Delete**      | Drafts       | Deletes a draft that was never opened.                                                                                         |
+| **Close vote**  | Active votes | Ends voting now. The vote and its results are kept. See [Close the vote early](../present-extend-clone/#close-the-vote-early). |
+| **Cancel vote** | Active votes | Deletes the vote and all its responses, and notifies the invited voters.                                                       |
+
 ## Cast your vote
 
-You vote from the **Me** lens, where **Votes** lists the votes you are invited to.
+You vote from the **Me** lens, where **Votes** lists the votes you are invited to. You can also open a vote's page, for example from a reminder email, and select **Cast vote**.
 
-1. Find the active vote. Its button reads **Vote** if you haven't voted yet.
-2. Select **Vote**. A drawer opens with the vote's details and questions.
-3. Answer each question. Single-selection questions use radio buttons to pick one option. Multiple-selection questions use checkboxes, so select all that apply. For ranked-choice questions, drag the options or use the arrow buttons to put them in your preferred order, with your first choice at the top.
-4. If the vote has comment questions, optionally answer them under **Additional Comments (Optional)**. Each comment can be up to 5,000 characters.
-5. If the vote allows abstaining, you can select **Abstain from this vote** instead. An abstention is recorded as a non-vote and overrides your choices, though any comments are still submitted.
-6. Select **Submit Vote**.
+1. Find the active vote. Its button reads **Vote** if you haven't voted yet. Select **Vote**, or select the vote's name. A drawer opens with the vote's details and questions. The description keeps its paragraphs, line breaks, and lists, subject to the [description formatting rules](../create-vote/#description-formatting) for mixed placeholders and HTML. On a small screen a long description scrolls inside its own box so the ballot stays in view.
+2. Answer each question. Single-selection questions use radio buttons to pick one option. Multiple-selection questions use checkboxes, so select all that apply. For ranked-choice questions, drag the options or use the arrow buttons to put them in your preferred order, with your first choice at the top.
+3. If the vote has comment questions, optionally answer them under **Additional Comments (Optional)**. Each comment can be up to 5,000 characters.
+4. If the vote allows abstaining, you can select **Abstain from this vote** instead. An abstention is recorded as a non-vote and overrides your choices, though any comments are still submitted.
+5. Select **Submit Vote** at the bottom of the drawer. If the vote doesn't allow changes, a notice at the top of the ballot, before the vote's description, says **Once you submit, your vote can't be changed.** The **Submit Vote** button stays pinned to the bottom of the drawer.
 
-After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. **Review** opens a confirmation that your vote was recorded. You can't change a ballot after submitting it, and results stay hidden until the vote closes.
+The same notice appears when you vote elsewhere. In Pending Actions on your dashboard it sits above the **Submit** button and, when the vote allows abstaining, the **Abstain** checkbox. On a personalized ballot link it sits above **Submit Vote** at the bottom of the page.
+
+If you are the last invited member who hasn't responded, submitting ends the vote. Before your first ballot is recorded, a **Submitting will end this vote** dialog asks you to confirm. Select **Submit and end vote** to submit your ballot and end the vote, or **Go back** to return to your ballot without submitting. You can't change your choices, comments or abstention afterward. The dialog appears whether or not the vote allows changes. It works the same in the ballot drawer, in Pending Actions on your dashboard, and on a personalized ballot link. Changing a ballot you already submitted never shows it. If the check can't be completed, your ballot is submitted without the dialog.
+
+After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. In the **Me** lens, **Review** opens the same drawer with your recorded choices, rankings, abstention and comments. When changes are allowed, edit your response and select **Update Vote** to resubmit it, or use your personalized ballot link. When changes are not allowed, the drawer stays read-only and says **Your vote is final and can't be changed.** The **Your ballot** section on the voter view of the vote's page shows what is recorded without offering ballot changes. Results stay hidden until the vote closes. If the vote has ended or you've been removed from it, LFX Self Serve tells you so and your ballot can't be changed. If too many ballots arrive from your network at once, you're asked to wait a moment and try again.
+
+The creator's management page has no ballot-changing controls. If you also manage the vote and are an invited voter, switch to **Me → Votes → Review** to change your own ballot when allowed. Managing a vote never lets you change anyone else's response.
+
+When changing a ranked multiple-selection ballot in the Me-lens **Review** drawer, only your recorded choices are ranked. Editing a comment does not rank any additional option. Use **Add to ranking** next to an option under **Not ranked** to include it, or the option's remove button to leave it unranked. Drag or use the arrow buttons to reorder your selected options. Keep at least one ranked option unless you abstain, then select **Update Vote**.
+
+Personalized links preserve recorded rankings on named votes too, with the same explicit add/remove controls for ranked multiple-selection questions. Pseudo-anonymous links do not display or prefill your previous choices; when changing a private ballot, enter your intended answers again.
+
+To replace a recorded abstention with ranked answers, clear **Abstain from this vote** first. For ranked single-selection questions, select **Rank all options**, then reorder them. For ranked multiple-selection questions, use **Add to ranking** to select your options. Until you explicitly select ranks, editing a comment while keeping Abstain selected does not add preferences.
+
+### While impersonating another user
+
+In **Admin Mode**, you cannot cast or change another user's ballot. You may inspect a named ballot read-only when your existing access permits it. Pseudo-anonymous ballots, and ballots whose privacy setting cannot be verified, hide the target voter's choices, abstention and ballot comments. My Votes, the vote page and Pending Actions explain the restriction. These limits apply only while impersonating; they do not change your own voting or normal vote-management permissions.
 
 ## Share a link
 
 Select **⋮ → Copy link** to copy a direct link to the vote. See [Sharing a link to a vote](../#sharing-a-link-to-a-vote) for who can open it.
+
+## View results
+
+Select a vote's name, or **View** on an active vote or **Results** on an ended vote, to open its page. Managers see live results while the vote is open. Voters see only their own response until the vote closes. See [Vote Results](../vote-results/) for what each tab shows.
+
+On a pseudo-anonymous vote, totals, abstentions and comments stay hidden until the vote closes and its results are finalized. Managers can see who has responded on the **Voters** tab, but not how anyone voted, both while the vote is open and after it closes. Comments appear without names or dates once results are released.
+
+When a vote closes, invited voters see the final totals and comments. Voters see comments without names. On named votes, only users who can manage the vote see who wrote each comment; pseudo-anonymous comments remain unattributed for everyone. For people who weren't invited to a vote, or were removed from it, the vote's page shows only its title, status and a message that they aren't a voter. The server blocks their access to results and comments.
 
 ## Send a reminder
 

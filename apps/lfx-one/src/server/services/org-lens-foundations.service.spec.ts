@@ -17,6 +17,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
 }));
 vi.mock('./valkey.service', () => ({ withOrgCache }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
+vi.mock('./logger.service', () => ({ logger: { warning: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() } }));
 
 const { OrgLensFoundationsService } = await import('./org-lens-foundations.service');
 
@@ -44,7 +45,7 @@ describe('OrgLensFoundationsService maintainer roles (lfx-self-serve#4482)', () 
     withOrgCache.mockClear();
   });
 
-  it('reads LF roles over the past 365 days on their own, binding the account then 365 days', async () => {
+  it('reads LF roles over the last 2 years on their own, binding the account then 730 days', async () => {
     execute.mockImplementation(async (sql: string) =>
       sql.includes('ORG_MAINTAINER_ROLES')
         ? {
@@ -64,7 +65,7 @@ describe('OrgLensFoundationsService maintainer roles (lfx-self-serve#4482)', () 
     ]);
     const [rolesSql, rolesBinds] = execute.mock.calls.find(([sql]) => String(sql).includes('ORG_MAINTAINER_ROLES'))!;
     expect(rolesSql).toContain('IS_LF_PROJECT = TRUE');
-    expect(rolesBinds).toEqual(['acc-1', 365]);
+    expect(rolesBinds).toEqual(['acc-1', 730]);
     const [mainSql, mainBinds] = execute.mock.calls.find(([sql]) => String(sql).includes('ORG_LENS_FOUNDATIONS_AND_PROJECTS'))!;
     expect(mainSql).not.toContain('ORG_MAINTAINER_ROLES');
     expect(mainBinds).toEqual(['acc-1']);
@@ -84,6 +85,33 @@ describe('OrgLensFoundationsService maintainer roles (lfx-self-serve#4482)', () 
     ]);
     const storable = withOrgCache.mock.calls[0]?.[5];
     expect(storable?.(response)).toBe(false);
+  });
+
+  // lfx-self-serve#4685: the company's per-project roles leave team members out, as the Overview's Maintainer roles card.
+  it("leaves CDP team members' roles out of the per-project counts, under a new cache key", async () => {
+    execute.mockImplementation(async (sql: string) =>
+      sql.includes('ORG_MAINTAINER_ROLES') ? { rows: [{ PROJECT_ID: 'lf-project', MAINTAINER_ROLES: 2 }] } : { rows: [projectRow('lf-project', true)] }
+    );
+
+    await new OrgLensFoundationsService().getFoundationsAndProjects('acc-1');
+
+    const [rolesSql, , options] = execute.mock.calls.find(([sql]) => String(sql).includes('ORG_MAINTAINER_ROLES'))!;
+    expect(rolesSql).toContain('AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)');
+    expect(options).toMatchObject({ expectMissingObject: 'ORG_MAINTAINER_ROLES', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
+    expect(withOrgCache.mock.calls[0]?.[1]).toBe('foundations:v4');
+  });
+
+  it('counts team members, and never stores the section, while the roles table has no team-member flag yet', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('IS_CDP_TEAM_MEMBER'))
+        throw Object.assign(new Error("SQL compilation error:\ninvalid identifier 'IS_CDP_TEAM_MEMBER'"), { code: '000904' });
+      return sql.includes('ORG_MAINTAINER_ROLES') ? { rows: [{ PROJECT_ID: 'lf-project', MAINTAINER_ROLES: 5 }] } : { rows: [projectRow('lf-project', true)] };
+    });
+
+    const response = await new OrgLensFoundationsService().getFoundationsAndProjects('acc-1');
+
+    expect(response.rows[0]?.projects.map((project) => project.maintainers)).toEqual([5]);
+    expect(withOrgCache.mock.calls[0]?.[5]?.(response)).toBe(false);
   });
 
   it('still fails on any other error from the roles read', async () => {

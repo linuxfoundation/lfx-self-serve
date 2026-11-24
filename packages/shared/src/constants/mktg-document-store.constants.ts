@@ -10,9 +10,9 @@ import type { MktgArtifactIntakeMode } from '../interfaces/mktg-artifact.interfa
 import type { MktgDocumentType } from '../interfaces/mktg-document-store.interface';
 import type { MktgStoredDocumentRunState } from '../interfaces/mktg-document-run.interface';
 import { MKTG_AGENTS } from './mktg-os-agents.constants';
-import { MKTG_AGENT_INTAKES, MKTG_RUN_POLL } from './mktg-run.constants';
+import { MKTG_AGENT_INTAKES, MKTG_POLL_MAX_BACKOFF_MS, MKTG_RUN_POLL } from './mktg-run.constants';
 
-/** Documents API: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`, `POST …/runs/:runId/retry`. */
+/** Documents API: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`, `POST …/runs/:runId/retry`, `POST …/runs/:runId/dismiss`. */
 export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
 
 /** A human selection moved since the writer's read; refresh metadata, never replay the write. */
@@ -49,7 +49,7 @@ export const MKTG_STARTED_RUN_ATTEMPT_HISTORY_BYTES = 384;
 /** Schema tag stamped on every MktgStartedRunRecord in the private document store. */
 export const MKTG_STARTED_RUN_SCHEMA = 'mktg-started-run/v1';
 /** Automatic progress reads back off on availability failures, not on human questions pauses. */
-export const MKTG_DOCUMENT_PROGRESS_POLL = { maxBackoffMs: 8 * MKTG_RUN_POLL.intervalMs } as const;
+export const MKTG_DOCUMENT_PROGRESS_POLL = { maxBackoffMs: MKTG_POLL_MAX_BACKOFF_MS } as const;
 export const MKTG_STARTED_RUN_ID_REGEX = /^[0-9a-f]{64}$/;
 export const MKTG_STARTED_RUN_ATTEMPT_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
 /** Metadata within one attempt advances only; explicit retries have a newer retry-at. */
@@ -97,6 +97,9 @@ export const MKTG_REVISION_ID_REGEX = /^((?!000000)[0-9]{6}-[0-9a-f]{64}|legacy-
 export const MKTG_DOCUMENT_READ_CONCURRENCY = 4;
 export const MKTG_DOCUMENT_WRITE_ATTEMPTS = 8;
 export const MKTG_DOCUMENT_CURRENT_KEY = 'current.json';
+/** The last successfully resolved display name per subject, served when a directory lookup fails: at most this many subjects, each for this long after its last success. */
+export const MKTG_DOCUMENT_AUTHOR_CACHE_LIMIT = 500;
+export const MKTG_DOCUMENT_AUTHOR_CACHE_TTL_MS = 60 * 60 * 1000;
 
 /** The catalog's display name for an agent, so a rename in MKTG_AGENTS reaches the Documents area. */
 function catalogAgentName(catalogAgentId: string): string {

@@ -6,8 +6,18 @@ import { Component, signal } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
-import { MktgFaqAsset, MktgDocumentComment, MktgDocumentCommentScope, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
+import { MktgFaqAsset, MktgDocumentComment, MktgDocumentCommentScope, MktgRevisionApproval, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
 import { provideMktgCommentsStub, mktgCommentScopeFixture, mktgCommentFixture } from '@shared/testing/mktg-comments-test-service';
+import { faqReportV2Envelope } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
+import {
+  FAQ_INJECTED_ANSWER,
+  FAQ_LIST_ANSWER,
+  FAQ_LIST_ITEMS,
+  FAQ_LIST_LEAD_IN,
+  FAQ_PLAIN_ANSWER,
+  FAQ_PRICE_ANSWER,
+  faqAnswersContent,
+} from '@shared/testing/mktg-faq-answers-test-data';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgFaqViewComponent } from './mktg-faq-view.component';
@@ -23,6 +33,7 @@ class HostComponent {
   public readonly showMetadata = signal(true);
   public readonly commentsEnabled = signal(false);
   public readonly revisions = signal<MktgRevisionSummary[]>([]);
+  public readonly approval = signal<MktgRevisionApproval | null>(null);
 }
 
 const ASSET: MktgFaqAsset = {
@@ -326,7 +337,41 @@ describe('MktgFaqViewComponent', () => {
     expect(text('mktg-faq-view-sources-read')).toContain('https://testorbit.example.org');
     expect(text('mktg-faq-view-sources-failed')).toContain('404');
     expect(text('mktg-faq-view-gaps')).toContain('How much does membership cost?');
+    expect(query('mktg-faq-view-gaps-accepted')).toBeNull();
     expect(query('mktg-faq-view-checks-empty')).not.toBeNull();
+  });
+
+  it('shows the agent’s real v2 report on the Sources tab as the Brand Kit does: no source failed, the open question with its fix on the Missing assets card, and its two warnings as text without a link', async () => {
+    host.asset.set({ ...ASSET, report: faqReportV2Envelope().report });
+    query('mktg-faq-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(query('mktg-faq-view-sources-failed')).toBeNull();
+    expect(text('mktg-faq-view-sources-failed-empty')).toBe('No source failed.');
+    expect(query('mktg-faq-view-sources-failed-detail')).toBeNull();
+    expect(text('mktg-report-findings-missing-item')).toContain('Open question');
+    expect(text('mktg-report-findings-missing-reason')).toBe('How do I propose a new project to AAIF?');
+    expect(text('mktg-report-findings-missing-fix')).toBe('Fix: Answer it in a comment on this question and redraft, or remove the question.');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="mktg-report-findings-warnings-item"]')).toHaveLength(2);
+    expect(text('mktg-report-findings-warnings-text')).toContain('Is AAIF controlled by one AI company?');
+    expect(query('mktg-report-findings-warnings-source-link')).toBeNull();
+    expect(query('mktg-report-findings-warnings-empty')).toBeNull();
+  });
+
+  it('adds no findings card for a v1 report, whose failed sources list as before', async () => {
+    query('mktg-faq-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-sources-failed')).toContain('404');
+    expect(query('mktg-faq-view-sources-failed-detail')).toBeNull();
+    expect(query('mktg-report-findings-missing')).toBeNull();
+    expect(query('mktg-report-findings-warnings')).toBeNull();
+  });
+
+  it('says under an approved revision’s gaps that they were accepted at that approval and are still open', async () => {
+    host.approval.set({ approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } });
+    query('mktg-faq-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-gaps')).toContain('How much does membership cost?');
+    expect(text('mktg-faq-view-gaps-accepted')).toBe('Accepted when v3 was approved; still open.');
   });
 
   it('moves along the tabs with the arrow keys', async () => {
@@ -337,5 +382,69 @@ describe('MktgFaqViewComponent', () => {
     tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     await fixture.whenStable();
     expect(query('mktg-faq-view-panel-faq')).not.toBeNull();
+  });
+
+  describe('answers as restricted Markdown', () => {
+    const answer = (q: number): HTMLElement => {
+      const rendered = query(`mktg-faq-view-answer-0-${q}`);
+      if (!rendered) throw new Error(`No answer rendered for question ${q}`);
+      return rendered;
+    };
+
+    beforeEach(async () => {
+      host.asset.set({ ...ASSET, content: faqAnswersContent(), checks: { findings: [], unanswered: [] } });
+      await fixture.whenStable();
+    });
+
+    it('renders a plain answer as one paragraph with its exact text, beside its source', () => {
+      const paragraphs = answer(0).querySelectorAll('p');
+      expect(paragraphs).toHaveLength(1);
+      expect(paragraphs[0].textContent).toBe(FAQ_PLAIN_ANSWER);
+      expect(answer(0).querySelector('ul')).toBeNull();
+      expect(text('mktg-faq-view-source-0-0')).toBe('Website');
+    });
+
+    it('renders a lead-in and its "- " lines as a paragraph followed by a list of the items in order', () => {
+      const lead = answer(1).querySelector('p');
+      const list = answer(1).querySelector('ul');
+      expect(lead?.textContent).toBe(FAQ_LIST_LEAD_IN);
+      expect(list).not.toBeNull();
+      expect(lead?.nextElementSibling).toBe(list);
+      expect(Array.from(answer(1).querySelectorAll('ul > li'), (item) => item.textContent)).toEqual([...FAQ_LIST_ITEMS]);
+      expect(answer(1).textContent).not.toContain('- ');
+    });
+
+    // The blank-line variant opens an empty line between the lead-in and the first item only: a blank line between
+    // every item would be a loose list, a different shape.
+    const [leadIn, ...items] = FAQ_LIST_ANSWER.split('\n');
+    const blankLineBeforeList = [leadIn, '', ...items].join('\n');
+
+    it.each([
+      ['a blank line before the first item', blankLineBeforeList],
+      ['CRLF line ends', FAQ_LIST_ANSWER.replace(/\n/g, '\r\n')],
+    ])('renders the same paragraph and list with %s', async (_shape, stored) => {
+      const content = faqAnswersContent();
+      content.faq[0][1][1][1] = stored;
+      host.asset.set({ ...ASSET, content, checks: { findings: [], unanswered: [] } });
+      await fixture.whenStable();
+      expect(answer(1).querySelector('p')?.textContent).toBe(FAQ_LIST_LEAD_IN);
+      expect(Array.from(answer(1).querySelectorAll('ul > li'), (item) => item.textContent)).toEqual([...FAQ_LIST_ITEMS]);
+    });
+
+    it('keeps thousands separators verbatim', () => {
+      expect(answer(2).querySelectorAll('p')).toHaveLength(1);
+      expect(answer(2).querySelector('p')?.textContent).toBe(FAQ_PRICE_ANSWER);
+      expect(answer(2).textContent).toContain('$5,000 to $75,000');
+    });
+
+    it('lets no injected image, script, handler or javascript: link reach the DOM', () => {
+      expect(FAQ_INJECTED_ANSWER).toContain('<script>');
+      expect(answer(3).querySelector('img')).toBeNull();
+      expect(answer(3).querySelector('script')).toBeNull();
+      expect(answer(3).querySelector('[onerror]')).toBeNull();
+      expect(answer(3).querySelector('a')).toBeNull();
+      expect(answer(3).innerHTML).not.toContain('javascript:');
+      expect(answer(3).textContent).toContain('the docs');
+    });
   });
 });

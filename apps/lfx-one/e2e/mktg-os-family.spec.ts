@@ -29,6 +29,9 @@ test.describe('Marketing family content', () => {
     ];
     await setupKit(page, { listing });
     await openKit(page, '/families/positioning-brand');
+    await expect(page.getByTestId('mktg-family-asset-messaging-framework')).toContainText(
+      'Vision, mission, positioning, tagline, goals, say and avoid · with the messaging framework and key numbers'
+    );
     await expect(page.getByTestId('mktg-family-run-status-row')).toContainText('Writing…');
     await expect(page.getByTestId('mktg-family-run-status')).toContainText('Messaging framework · Writing…');
     await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveText('Create messaging framework');
@@ -105,12 +108,10 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-sources')).toContainText('2 sources failed: README: Timed out; Analyst note: Login required.');
     await page.getByTestId('mktg-family-sources-toggle').getByRole('button', { name: 'Hide' }).click();
     await expect(sources).toBeHidden();
-    await expect(page.getByTestId('mktg-family-approve').getByRole('heading')).toContainText('Sign-off · roadmap: two-role sign-off arrives in November');
-    await expect(page.locator('#mktg-family-sign-off-text')).toBeHidden();
-    await page.getByTestId('mktg-family-sign-off-toggle').getByRole('button', { name: 'Show' }).click();
-    await expect(page.locator('#mktg-family-sign-off-text')).toBeVisible();
-    await page.getByTestId('mktg-family-sign-off-toggle').getByRole('button', { name: 'Hide' }).click();
-    await expect(page.locator('#mktg-family-sign-off-text')).toBeHidden();
+    await expect(page.getByTestId('mktg-family-approve')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-family-sign-off-toggle')).toHaveCount(0);
+    await expect(page.locator('#mktg-family-sign-off-text')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-family-details')).not.toContainText('November');
     for (const id of ['family-export-pdf', 'family-export-slides']) {
       await expect(page.getByTestId(id).getByRole('button')).toBeDisabled();
     }
@@ -281,7 +282,7 @@ test.describe('Marketing family content', () => {
     await setupKit(page, { loaded: true, report: false, revisionHold });
     await openKit(page, '/families/positioning-brand');
     await expect(page.getByTestId('mktg-family-sources-loading')).toBeVisible();
-    await expect(page.getByTestId('mktg-family-approve')).toBeVisible();
+    await expect(page.getByTestId('mktg-family-approve')).toHaveCount(0);
     release();
     await expect(page.getByTestId('mktg-family-sources-loading')).toBeEmpty();
     await expect(page.getByTestId('mktg-family-sources')).toHaveCount(0);
@@ -316,11 +317,12 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-current-linkedin-post')).not.toContainText('v1');
     await expect(page.getByTestId('mktg-family-asset-linkedin-post')).toContainText('1 this month');
   });
-  test('names the available one-off Create steps without offering a rebuild', async ({ page }) => {
+  test('shows available Create steps without unbuilt rows or pending coming-soon copy', async ({ page }) => {
     await setupKit(page);
     await openKit(page, '/families/website-web');
     await expect(page.getByTestId('mktg-family-state-aeo-geo')).toContainText('Not run yet');
     await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveAccessibleName('Create AEO/GEO scorecard');
+    await expect(page.getByTestId('mktg-family-run-aeo-geo').getByRole('link')).toHaveAccessibleName('Create AEO/GEO scorecard');
     await expect(page.getByTestId('mktg-family-run-aeo-geo').getByRole('link')).toHaveText('Create AEO/GEO scorecard');
     await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
     await openKit(page, '/families/member-sponsor');
@@ -329,6 +331,9 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-run-coming-soon')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-asset-member-360')).toBeVisible();
+    await expect(page.getByTestId('mktg-family-asset-pitch-deck')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-family-page')).not.toContainText('Coming soon');
+    await page.screenshot({ path: test.info().outputPath('family-live-only.png'), fullPage: true });
   });
   for (const [familyId, agentId, label] of [
     ['social-community', 'linkedin-post', 'LinkedIn post'],

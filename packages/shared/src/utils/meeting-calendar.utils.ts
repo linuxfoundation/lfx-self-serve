@@ -31,8 +31,12 @@ import { getPastMeetingResourceId, getPastMeetingStartTimeMs, isPastMeetingCalen
 /**
  * Builds FullCalendar event inputs for a meeting or past-meeting row.
  * Shared by committee and dashboard calendar surfaces.
+ *
+ * @param contextProjectUid - The project whose calendar this is. A meeting from any other project
+ *   (a sub-project rolled up into a foundation's calendar) gets its project name as a title prefix.
  */
-export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): MeetingCalendarEventInput[] {
+export function meetingToCalendarEvents(meeting: Meeting | PastMeeting, contextProjectUid?: string): MeetingCalendarEventInput[] {
+  const projectPrefix = getCalendarProjectPrefix(meeting, contextProjectUid);
   if (meeting.occurrences && meeting.occurrences.length > 0) {
     return meeting.occurrences.map((occ) => {
       const occurrenceDuration = occ.duration ?? meeting.duration;
@@ -47,7 +51,7 @@ export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): Meeting
       }
       return {
         id: `${meeting.id}-${occ.occurrence_id}`,
-        title: occ.title || meeting.title,
+        title: projectPrefix + (occ.title || meeting.title),
         start: occ.start_time,
         end: addMinutesToDate(occ.start_time, occ.duration ?? meeting.duration).toISOString(),
         backgroundColor: colors.bg,
@@ -81,7 +85,7 @@ export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): Meeting
   return [
     {
       id: pastResourceId ?? meeting.id,
-      title: meeting.title,
+      title: projectPrefix + meeting.title,
       start: startTime,
       end: addMinutesToDate(startTime, meeting.duration).toISOString(),
       backgroundColor: colors.bg,
@@ -319,4 +323,11 @@ export function surveyToCalendarEvent(
     classNames,
     extendedProps: { type: 'survey', surveyId: survey.uid },
   };
+}
+
+/** `"<project> · "` for a meeting outside the calendar's own project, else an empty string. */
+function getCalendarProjectPrefix(meeting: Pick<Meeting, 'project_uid' | 'project_name'>, contextProjectUid?: string): string {
+  const projectName = meeting.project_name?.trim();
+  if (!contextProjectUid || !projectName || meeting.project_uid === contextProjectUid) return '';
+  return `${projectName} · `;
 }

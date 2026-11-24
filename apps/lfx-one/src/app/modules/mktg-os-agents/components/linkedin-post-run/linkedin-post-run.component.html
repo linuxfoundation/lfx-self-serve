@@ -2,44 +2,69 @@
 <!-- SPDX-License-Identifier: MIT -->
 <p-confirmdialog [key]="conflictKey" defaultFocus="reject" data-testid="mktg-linkedin-active-run-confirm" />
 
+@if (recordedRequest() && recordedDocumentId()) {
+  <lfx-mktg-run-progress
+    [project]="context.activeContextUid()"
+    [agentKey]="intake().agentId"
+    [documentId]="recordedDocumentId()"
+    [runId]="recordedRunId()"
+    [runPage]="true"
+    [headless]="true"
+    [watchQuestions]="questions().length > 0"
+    (observed)="onRecordedProgress($event)"
+    (readError)="onRecordedReadError()" />
+}
+
 <!-- Pixel spacing follows the approved page-8 boards at the app's 14px root size. -->
 <div class="min-h-full bg-gray-50 text-gray-900" data-testid="mktg-linkedin-page">
   <header class="flex flex-wrap items-center gap-4 border-b border-gray-200 bg-white px-[32px] py-[14px]">
     <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: intake().agentId, label: intakeLabel }" data-testid="mktg-linkedin-breadcrumb" />
     <div class="grow"></div>
-    @if (writingAs()) {
-      <div class="text-sm text-gray-500" data-testid="mktg-linkedin-identity">
-        Writing as {{ writingAs() }} ·
-        <button
-          type="button"
-          class="text-blue-600 hover:underline disabled:opacity-50"
-          [disabled]="busy() || editing() || questions().length > 0"
-          (click)="onEdit()"
-          data-testid="mktg-linkedin-edit-profile">
-          Edit profile
-        </button>
-      </div>
-    } @else {
-      <span class="text-sm text-gray-500">First run · the profile is yours, not the project's</span>
-    }
+    <div class="flex h-12 w-72 max-w-full items-center justify-end text-right text-sm text-gray-500" data-testid="mktg-linkedin-identity-slot">
+      @if (loading() || checkingPending()) {
+        <lfx-mktg-skeleton variant="header" label="Checking the run…" class="w-full" data-testid="mktg-linkedin-header-loading" />
+      } @else if (profileResolved() && writingAs()) {
+        <div class="flex min-w-0 items-center gap-1" data-testid="mktg-linkedin-identity">
+          <span class="truncate">Writing as {{ writingAs() }}</span>
+          <span aria-hidden="true">·</span>
+          <button
+            type="button"
+            class="shrink-0 text-blue-600 hover:underline disabled:opacity-50"
+            [disabled]="busy() || editing() || questions().length > 0"
+            (click)="onEdit()"
+            data-testid="mktg-linkedin-edit-profile">
+            Edit profile
+          </button>
+        </div>
+      } @else if (profileResolved() && !serverRun()) {
+        <span data-testid="mktg-linkedin-first-run">First run · the profile is yours, not the project's</span>
+      }
+    </div>
   </header>
   <section aria-label="LinkedIn drafting" class="flex flex-col gap-5 p-4 sm:px-[32px] sm:py-[24px]">
-    @if (loading()) {
-      <p role="status" data-testid="mktg-linkedin-loading">Loading your profile…</p>
+    @if (loading() || checkingPending()) {
+      <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-linkedin-loading" />
     } @else {
-      @if (writer()) {
-        <p role="status" class="text-sm text-gray-500" [class.sr-only]="!lastIntakeLoading() && !lastIntakeNote()" data-testid="mktg-linkedin-intake-note">
-          {{ lastIntakeLoading() ? 'Loading last run inputs…' : lastIntakeNote() }}
-        </p>
-      }
-      @if (error() && !(writer() && !editing() && !questions().length && (saved() || setup()))) {
+      <div class="h-10 overflow-y-auto" data-testid="mktg-linkedin-note-slot">
+        @if (writer()) {
+          <p role="status" class="text-sm text-gray-500" [class.sr-only]="!intakeNote()" data-testid="mktg-linkedin-intake-note">
+            {{ intakeNote() }}
+          </p>
+        }
+      </div>
+      @if (error() && (runLookupFailed() || serverRun() || !(writer() && !editing() && !questions().length && (saved() || setup())))) {
         <div
           role="alert"
           class="flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700"
           data-testid="mktg-linkedin-error">
           <p>{{ error() }}</p>
-          @if (!writer() || (!saved() && !editing() && !setup())) {
+          @if (runLookupFailed() || !writer() || (!saved() && !editing() && !setup())) {
             <lfx-button label="Try again" size="small" (onClick)="reload.set(reload() + 1)" data-testid="mktg-linkedin-retry-load" />
+            <lfx-button
+              label="Open Documents"
+              [routerLink]="documentsLink()"
+              [queryParams]="{ project: context.activeContext()?.slug ?? '' }"
+              data-testid="mktg-linkedin-open-documents" />
           }
         </div>
       }
@@ -76,11 +101,11 @@
             [questions]="questions()"
             [projectName]="projectName()"
             [previousAnswers]="previousAnswers()"
-            [busy]="answering()"
+            [busy]="answering() || runLookupFailed()"
             [allowNoneFor]="noneAllowedQuestionIds"
             (answered)="onAnswers($event)" />
         </div>
-      } @else if (writer() && editing()) {
+      } @else if (writer() && !runLookupFailed() && !serverRun() && editing()) {
         <form
           class="mx-auto flex w-full max-w-[820px] flex-col gap-5"
           [formGroup]="profileForm"
@@ -164,7 +189,7 @@
             </div>
           </div>
         </form>
-      } @else if (writer() && (saved() || setup())) {
+      } @else if (writer() && !runLookupFailed() && !serverRun() && !acceptedRequest() && (saved() || setup())) {
         <form
           class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white px-6 py-5"
           [formGroup]="contentForm"

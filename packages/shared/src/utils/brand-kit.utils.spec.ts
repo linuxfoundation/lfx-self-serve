@@ -19,27 +19,35 @@ import {
   BRAND_KIT_CONTRACT_ID,
   BRAND_KIT_DRAFT_HEADER,
   BRAND_KIT_MAX_LOGO_FILE_CHARS,
+  BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS,
   BRAND_KIT_QUESTIONS_CONTRACT_ID,
   BRAND_KIT_QUESTIONS_HEADER,
   BRAND_KIT_REQUIRED_HEADINGS,
 } from '../constants/brand-kit.constants';
 import { BrandKitChapters, BrandKitEnvelope, BrandKitRedraftFormPayload, BrandKitTokens } from '../interfaces/brand-kit.interface';
 import { brandKitBuiltFrom } from './brand-kit-book.utils';
+import { brandKitReportV2Envelope, brandKitReportV2Fixture } from './__fixtures__/brand-kit-report-v2.fixture';
+import { BRAND_KIT_FIXTURE_LOCKUP_SVG } from './__fixtures__/brand-kit-revision.fixture';
 import {
   brandKitBookPages,
   brandKitFontStack,
   brandKitGoogleFontsUrl,
   brandKitLogoFileKind,
+  brandKitLogoImage,
   brandKitQuestionsId,
   brandKitRevisionOf,
   brandKitSvgDataUrl,
+  brandKitSvgIsMonochrome,
   brandKitSvgWithViewBox,
+  brandKitSvgAspect,
+  brandKitSvgViewBox,
   brandKitSymbolImage,
   brandKitVoiceOfFramework,
   brandKitWebsiteHost,
   buildBrandKitFormPayload,
   extractBrandKitQuestions,
   extractBrandKitRefusal,
+  findBrandKitReportErrors,
   findMissingBrandKitHeadings,
   parseBrandKitFramework,
   readBrandKitQuestions,
@@ -405,6 +413,28 @@ describe('validateBrandKitLogoFiles', () => {
     const result = validateBrandKitLogoFiles([{ name: 'big.png', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_FILE_CHARS + 1) }]);
     expect(result.valid).toBe(false);
     expect(result.errors.join(' ')).toContain('link');
+  });
+
+  it('refuses a ZIP over 150 KB of bytes where the request is trusted, and only a ZIP', () => {
+    expect(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS).toBe(204_800);
+    const over = validateBrandKitLogoFiles([{ name: 'package.zip', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS + 1) }]);
+    expect(over).toEqual({
+      valid: false,
+      errors: ['logoFiles[0].base64: a ZIP must stay under 150 KB (SVG files only); the full logo package linked on a brand page is usually too large to send'],
+    });
+    expect(validateBrandKitLogoFiles([{ name: 'package.zip', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS) }])).toEqual({ valid: true, errors: [] });
+    expect(validateBrandKitLogoFiles([{ name: 'logo.png', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS + 1) }])).toEqual({ valid: true, errors: [] });
+  });
+
+  it('reads the ZIP name as the rest of the check does — trimmed, any case — and refuses a ZIP sent as text outright', () => {
+    const sentence = 'a ZIP must stay under 150 KB (SVG files only); the full logo package linked on a brand page is usually too large to send';
+    const over = 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS + 1);
+    expect(validateBrandKitLogoFiles([{ name: 'package.zip ', base64: over }])).toEqual({ valid: false, errors: [`logoFiles[0].base64: ${sentence}`] });
+    expect(validateBrandKitLogoFiles([{ name: 'PACKAGE.ZIP', base64: over }])).toEqual({ valid: false, errors: [`logoFiles[0].base64: ${sentence}`] });
+    // A package is bytes: as text its length says nothing about the cap, so any length is refused.
+    for (const text of ['PK', 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS), over]) {
+      expect(validateBrandKitLogoFiles([{ name: 'package.zip', text }])).toEqual({ valid: false, errors: ['logoFiles[0].text: a ZIP goes as base64'] });
+    }
   });
 
   it('takes no files as valid', () => {
@@ -776,6 +806,185 @@ describe('validateBrandKitEnvelope', () => {
   });
 });
 
+describe('the report’s v2 fields (brand-kit ≥ 2.2.0)', () => {
+  const v2 = () => brandKitReportV2Fixture();
+
+  it('accepts a v1 report as it always did, and a full v2 report', () => {
+    expect(findBrandKitReportErrors(buildEnvelope().report)).toEqual([]);
+    expect(findBrandKitReportErrors(v2())).toEqual([]);
+    expect(validateBrandKitEnvelope(buildEnvelope({ report: v2() })).valid).toBe(true);
+  });
+
+  it('accepts the agent lane’s own v2 envelope whole, as an upload and as a stored sidecar, with the counts it was written with', () => {
+    const envelope = brandKitReportV2Envelope();
+    // The agent writes `check` and `revision` beside the contract's keys; an unknown top-level key never fails the envelope.
+    expect(Object.keys(envelope)).toEqual(expect.arrayContaining(['check', 'revision']));
+    expect(validateBrandKitEnvelope(envelope)).toEqual({ valid: true, errors: [] });
+    const { document_markdown, ...sidecar } = envelope;
+    void document_markdown;
+    const revision = readBrandKitRevision(sidecar);
+    expect(revision?.report).toEqual(envelope.report);
+    expect(revision?.agentVersion).toBe('2.2.2');
+    const report = envelope.report;
+    expect(report.version).toBe(2);
+    expect(report.findings?.sources_failed.map((entry) => entry.kind)).toEqual(['brand_page', 'logo_package']);
+    expect(report.findings?.sources_failed[0]).toMatchObject({ detail: 'HTTP 404' });
+    expect(report.findings?.missing_assets.map((entry) => entry.asset)).toEqual(['logo_primary', 'logo_stacked', 'logo_symbol', 'logo_reversed']);
+    expect(report.findings?.missing_assets.every((entry) => !!entry.fix)).toBe(true);
+    expect(report.findings?.warnings.map((entry) => entry.code)).toEqual(['color_conflict', 'palette_from_page_text', 'brand_page_guessed']);
+    expect(report.color_conflicts?.map((entry) => [entry.name, entry.chosen])).toEqual([['Coral', '#FF702D']]);
+    expect(report.color_conflicts?.flatMap((entry) => entry.values.map((value) => value.hex))).toEqual(['#FF702D', '#FF7D2D']);
+    expect(report.rules).toHaveLength(56);
+    // Every hex in the envelope is uppercase; no identifier but the synthetic one.
+    expect(
+      JSON.stringify(envelope)
+        .match(/#[0-9a-f]{6}\b/g)
+        ?.filter((hex) => hex !== hex.toUpperCase()) ?? []
+    ).toEqual([]);
+    expect(JSON.stringify(envelope)).toContain('a0900000000SYNTHAAA');
+    expect(report.rules?.every((rule) => rule.path.startsWith('chapters.'))).toBe(true);
+    expect(JSON.stringify(envelope)).not.toMatch(/@/); // no email address
+  });
+
+  it('accepts any one v2 field on its own, since every one is optional', () => {
+    const full = v2();
+    for (const key of ['version', 'findings', 'color_conflicts', 'rules'] as const) {
+      expect(findBrandKitReportErrors({ ...buildEnvelope().report, [key]: full[key] })).toEqual([]);
+    }
+  });
+
+  it('rejects a version other than 2', () => {
+    expect(findBrandKitReportErrors({ ...v2(), version: 3 }).join(' ')).toContain('report.version');
+    expect(findBrandKitReportErrors({ ...v2(), version: '2' }).join(' ')).toContain('report.version');
+  });
+
+  it.each([
+    ['not an object', 'not findings'],
+    ['an extra key', { ...v2().findings, extra: [] }],
+    ['a group missing', { sources_failed: [], missing_assets: [] }],
+  ])('rejects findings that is %s', (_case, findings) => {
+    expect(findBrandKitReportErrors({ ...v2(), findings }).join(' ')).toContain('report.findings');
+  });
+
+  it('rejects a failed source with an unknown kind, an empty reason, an extra key, or a reason past 300 characters', () => {
+    const good = v2().findings?.sources_failed[0];
+    if (!good) throw new Error('fixture');
+    for (const bad of [
+      { ...good, kind: 'guess' },
+      { ...good, reason: '' },
+      { ...good, extra: true },
+      { ...good, reason: 'x'.repeat(301) },
+      { ...good, detail: '' },
+      { ...good, detail: 42 },
+    ]) {
+      const report = v2();
+      expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, sources_failed: [bad] } }).join(' ')).toContain(
+        'report.findings.sources_failed'
+      );
+    }
+  });
+
+  it('leaves the machine detail uncapped: it is the agent’s own reason, not a sentence for the reviewer', () => {
+    const report = v2();
+    const good = report.findings?.sources_failed[0];
+    if (!good) throw new Error('fixture');
+    const detail = `HTTP 404 ${'x'.repeat(400)}`;
+    expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, sources_failed: [{ ...good, detail }] } })).toEqual([]);
+  });
+
+  it('wants every reason, text and fix trimmed and not a bare URL; a URL inside a sentence is fine', () => {
+    const report = v2();
+    const failed = report.findings?.sources_failed[0];
+    const missing = report.findings?.missing_assets[0];
+    const warning = report.findings?.warnings[0];
+    if (!failed || !missing || !warning) throw new Error('fixture');
+    const errors = (findings: object) => findBrandKitReportErrors({ ...report, findings: { ...report.findings, ...findings } }).join(' ');
+    expect(errors({ sources_failed: [{ ...failed, reason: ' Leading space.' }] })).toContain('report.findings.sources_failed');
+    expect(errors({ sources_failed: [{ ...failed, reason: 'Trailing space. ' }] })).toContain('report.findings.sources_failed');
+    expect(errors({ sources_failed: [{ ...failed, reason: 'https://synthetic.example/brand' }] })).toContain('report.findings.sources_failed');
+    expect(errors({ missing_assets: [{ ...missing, fix: 'HTTP://SYNTHETIC.EXAMPLE/logo.svg' }] })).toContain('report.findings.missing_assets');
+    expect(errors({ warnings: [{ ...warning, text: 'http://synthetic.example/ ' }] })).toContain('report.findings.warnings');
+    expect(errors({ warnings: [{ ...warning, text: 'See https://synthetic.example/brand for the printed values.' }] })).toBe('');
+    expect(errors({ missing_assets: [{ ...missing, fix: 'Upload it at https://synthetic.example/form.' }] })).toBe('');
+  });
+
+  it('rejects a missing asset outside the closed list, or one without a reason', () => {
+    const good = v2().findings?.missing_assets[0];
+    if (!good) throw new Error('fixture');
+    for (const bad of [{ ...good, asset: 'favicon' }, { asset: 'logo_stacked' }, { ...good, fix: 42 }]) {
+      const report = v2();
+      expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, missing_assets: [bad] } }).join(' ')).toContain(
+        'report.findings.missing_assets'
+      );
+    }
+  });
+
+  it('rejects a warning with an unknown code, no text, or a non-string source', () => {
+    const good = v2().findings?.warnings[0];
+    if (!good) throw new Error('fixture');
+    for (const bad of [{ ...good, code: 'hunch' }, { code: 'font_unverified' }, { ...good, source: ['x'] }]) {
+      const report = v2();
+      expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, warnings: [bad] } }).join(' ')).toContain('report.findings.warnings');
+    }
+  });
+
+  it('rejects a colour conflict with a lowercase hex, a value without its source, a missing chosen, or an empty name', () => {
+    const good = v2().color_conflicts?.[0];
+    if (!good) throw new Error('fixture');
+    const value = (hex: string) => ({ hex, source: 'synthetic' });
+    for (const bad of [
+      { ...good, chosen: '#ff702d' },
+      { ...good, values: [value('#FF702D'), { hex: '#FF7D2D' }] },
+      { name: good.name, values: good.values },
+      { ...good, values: [value('#FF702D'), value('coral')] },
+      { ...good, name: '' },
+      // The kept value must be one of the values seen.
+      { ...good, chosen: '#FF7D2E' },
+    ]) {
+      expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [bad] }).join(' ')).toContain('report.color_conflicts');
+    }
+  });
+
+  it('wants a colour conflict to list two to four values: one is no conflict, five is too many', () => {
+    const good = v2().color_conflicts?.[0];
+    if (!good) throw new Error('fixture');
+    const values = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({ hex: `#FF70${(20 + index).toString(16).toUpperCase().padStart(2, '0')}`, source: `synthetic ${index}` }));
+    const seen = (count: number) => ({ ...good, values: values(count), chosen: values(count)[0].hex });
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [seen(1)] }).join(' ')).toContain('report.color_conflicts');
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [seen(5)] }).join(' ')).toContain('report.color_conflicts');
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [seen(2)] })).toEqual([]);
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [seen(4)] })).toEqual([]);
+    // The kept value is one of the values seen, whichever of them it is.
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...seen(3), chosen: values(3)[2].hex }] })).toEqual([]);
+    // A conflict's name is text with no cap, unlike the sentences.
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, name: 'x'.repeat(400) }] })).toEqual([]);
+  });
+
+  it('rejects a rule with a basis outside project | lf-reference, no path, or uses that is not a list of strings', () => {
+    for (const bad of [{ path: 'chapters.voice', basis: 'guess' }, { basis: 'project' }, { path: 'chapters.voice', basis: 'project', uses: 'found_in' }]) {
+      expect(findBrandKitReportErrors({ ...v2(), rules: [bad] }).join(' ')).toContain('report.rules');
+    }
+  });
+
+  it('rejects a findings group or a conflict list past 50 entries, and a rules list past 200', () => {
+    const rules = (count: number) => Array.from({ length: count }, (_, index) => ({ path: `chapters.rule[${index}]`, basis: 'project' as const }));
+    expect(findBrandKitReportErrors({ ...v2(), rules: rules(200) })).toEqual([]);
+    expect(findBrandKitReportErrors({ ...v2(), rules: rules(201) }).join(' ')).toContain('report.rules');
+    const report = v2();
+    const warnings = Array.from({ length: 51 }, () => ({ code: 'font_unverified' as const, text: 'The font could not be verified.' }));
+    expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, warnings } }).join(' ')).toContain('report.findings.warnings');
+    const conflict = report.color_conflicts?.[0];
+    if (!conflict) throw new Error('fixture');
+    expect(findBrandKitReportErrors({ ...report, color_conflicts: Array.from({ length: 51 }, () => conflict) }).join(' ')).toContain('report.color_conflicts');
+  });
+
+  it('names every bad field at once, so one malformed report explains itself', () => {
+    const errors = findBrandKitReportErrors({ ...v2(), version: 1, rules: 'none', color_conflicts: {} });
+    expect(errors).toHaveLength(3);
+  });
+});
+
 describe('the kit of a revision', () => {
   it('takes the tokens, the chapters, the report and the provenance out of a validated envelope', () => {
     const revision = brandKitRevisionOf(buildEnvelope());
@@ -799,6 +1008,15 @@ describe('the kit of a revision', () => {
   });
 });
 
+/** A synthetic lockup with a design tool's export structure (as the Agentic AI Foundation's primary is written). */
+const BRAND_KIT_EXPORTED_LOCKUP_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 838 203" height="203" width="838">' +
+  '<g clip-path="url(#clip0_synthetic)">' +
+  '<path fill="black" d="M91 55C91 35 75 19 55 19C35 19 19 35 19 55C19 75 35 91 55 91C75 91 91 75 91 55Z"></path>' +
+  '<path fill="black" d="M91 147C91 127 75 111 55 111C35 111 19 127 19 147C19 167 35 183 55 183C75 183 91 167 91 147Z"></path>' +
+  '<path fill="black" d="M140 60H190V140H140Z"></path>' +
+  '</g><defs><clipPath id="clip0_synthetic"><rect fill="white" height="203" width="838"></rect></clipPath></defs></svg>';
+
 describe('the book', () => {
   it('lays out 16 pages: the cover, the contents, the chapter pages and the back cover, with running heads', () => {
     const pages = brandKitBookPages();
@@ -820,7 +1038,101 @@ describe('the book', () => {
     const symbol = brandKitSymbolImage({ primary: { ref: 'logo.svg', svg: SVG }, stacked: null, symbol: null, reversed: null }, '0 0 60 60');
     expect(symbol?.ref).toBe('logo.svg');
     expect(symbol?.src).toContain(encodeURIComponent('viewBox="0 0 60 60"'));
+    // The crop's aspect is the viewBox's; a file's is its root viewBox's; a PNG's or a viewBox-less SVG's is unknown.
+    expect(symbol?.aspect).toBe(1);
+    expect(brandKitLogoImage({ ref: 'logo.svg', svg: SVG })?.aspect).toBe(200 / 60);
+    expect(brandKitLogoImage({ ref: 'logo.png', svg: null })?.aspect).toBeNull();
+    expect(brandKitLogoImage({ ref: 'bare.svg', svg: '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h1"/></svg>' })?.aspect).toBeNull();
+    expect(brandKitSvgViewBox('<svg viewBox=" 0,0 120 , 36 "/>')).toEqual({ width: 120, height: 36 });
+    expect(brandKitSvgViewBox('<svg viewBox="0 0 0 36"/>')).toBeNull();
+    expect(brandKitSvgAspect('0 0 60 60')).toBe(1);
+    expect(brandKitSvgAspect('nonsense')).toBeNull();
     expect(brandKitSymbolImage({ primary: { ref: 'logo.png', svg: null }, stacked: null, symbol: null, reversed: null }, '0 0 60 60')).toBeNull();
+  });
+
+  it('derives only from one resolvable ink with no background: default black and rendered white count, backgrounds, gradients, sheets and two inks are not derivable', () => {
+    const cases: [string, boolean][] = [
+      // One explicit fill.
+      ['<svg viewBox="0 0 10 10"><path fill="#4D4E4E" d="M0 0h10v10z"/></svg>', true],
+      // Default black only: an unpainted shape is black.
+      ['<svg viewBox="0 0 10 10"><path d="M0 0h10v10z"/><circle cx="5" cy="5" r="2"/></svg>', true],
+      // Default black beside one colour = two inks.
+      ['<svg viewBox="0 0 10 10"><path d="M0 0h5v10z"/><rect fill="#F37625" x="5" width="5" height="10"/></svg>', false],
+      // A white background rect under a black mark: inverting would set the mark in a white box.
+      ['<svg viewBox="0 0 10 10"><rect fill="#fff" width="10" height="10"/><path d="M2 2h6v6z"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><rect fill="white" width="100%" height="100%"/><path fill="#000" d="M2 2h6v6z"/></svg>', false],
+      // Rendered white is an ink like any other (the editor's rule): a dark tile with a white glyph or knock-out, in either
+      // order, is two inks, since reversing it would turn the tile white and lose the glyph; so is a white stroke on a dark path.
+      ['<svg viewBox="0 0 10 10"><rect fill="#000" rx="2" width="8" height="8" x="1" y="1"/><path fill="#FFF" d="M4 4h2v2z"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><circle fill="#4D4E4E" cx="5" cy="5" r="5"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path fill="#000" stroke="white" stroke-width="1" d="M1 1h8v8z"/></svg>', false],
+      // A white mark alone is one ink.
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><path fill="white" d="M0 0h2v2z"/></svg>', true],
+      // A rendered full-canvas rect in the mark's own ink is a background too: a second ink; alone, it is one ink.
+      ['<svg viewBox="0 0 10 10"><rect fill="#4D4E4E" width="10" height="10"/><path fill="#4D4E4E" d="M2 2h6v6z"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path fill="#4D4E4E" d="M2 2h6v6z"/><rect fill="#fff" width="10" height="10"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><rect fill="#4D4E4E" width="10" height="10"/></svg>', true],
+      // An exporter's lockup as Figma writes it: the root's fill="none" inherited, the marks black, a <g clip-path>
+      // and the clip's white full-canvas rect in <defs> (not drawn): one ink, derivable.
+      [BRAND_KIT_EXPORTED_LOCKUP_SVG, true],
+      // Stroke only.
+      ['<svg viewBox="0 0 10 10"><path fill="none" stroke="#4D4E4E" stroke-width="2" d="M0 0h10"/></svg>', true],
+      // A gradient, a pattern, currentColor: unresolvable.
+      ['<svg viewBox="0 0 10 10"><defs><linearGradient id="g"/></defs><rect fill="url(#g)" width="10" height="10"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path fill="currentColor" d="M0 0h10"/></svg>', false],
+      // A <style> sheet or a class attribute: the paint cannot be read from the markup.
+      ['<svg viewBox="0 0 10 10"><style>.a{fill:#4D4E4E}</style><path class="a" d="M0 0h10v10z"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path class="mark" d="M0 0h10v10z"/></svg>', false],
+      // Inherited paint: one ink through a group; a group ink beside an own ink is two.
+      ['<svg viewBox="0 0 10 10"><g fill="#4D4E4E"><path d="M0 0h5v5z"/><rect x="5" width="5" height="5"/></g></svg>', true],
+      ['<svg viewBox="0 0 10 10"><g fill="#4D4E4E"><path d="M0 0h5v5z"/><rect fill="#767576" x="5" width="5" height="5"/></g></svg>', false],
+      // Inline style paints read like attributes; none draws nothing.
+      ['<svg viewBox="0 0 10 10"><path style="fill: #4d4e4e; stroke: none" d="M0 0h10"/><rect style="fill:#4D4E4E" width="2" height="2"/></svg>', true],
+      // A <use> or an image cannot be resolved; a mask or a filter on a shape neither.
+      ['<svg viewBox="0 0 10 10"><defs><path id="p" d="M0 0h10"/></defs><use href="#p"/></svg>', false],
+      [
+        '<svg viewBox="0 0 10 10"><defs><mask id="m"><rect fill="#fff" width="10" height="10"/></mask></defs><path fill="#4D4E4E" mask="url(#m)" d="M0 0h10v10z"/></svg>',
+        false,
+      ],
+      // An exporter's clip path (a white rectangle the size of the viewBox inside <clipPath>) is not drawn: not a background,
+      // and its paint is not the artwork's.
+      [
+        '<svg viewBox="0 0 120 36"><g clip-path="url(#c)"><path fill="#000" d="M4 4h40v28z"/></g><defs><clipPath id="c"><rect width="120" height="36" fill="white"/></clipPath></defs></svg>',
+        true,
+      ],
+      [
+        '<svg viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#F37625"/></linearGradient></defs><path fill="#4D4E4E" d="M0 0h10v10z"/></svg>',
+        true,
+      ],
+      // The shared fixture lockup draws three inks.
+      [BRAND_KIT_FIXTURE_LOCKUP_SVG, false],
+      // One ink spelled four ways is one ink; a short hex white is the same ink as a long one, and a second beside the dark.
+      [
+        '<svg viewBox="0 0 10 10"><path fill="black" d="M0 0h10"/><path fill="#000" d="M0 2h10"/><path fill="#000000" d="M0 4h10"/><path fill="rgb(0, 0, 0)" d="M0 6h10"/></svg>',
+        true,
+      ],
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><path fill="#ffffff" d="M0 0h2v2z"/></svg>', true],
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><path fill="#4d4e4e" d="M0 0h10"/><path fill="#4D4E4E" d="M0 5h10"/></svg>', false],
+      // Nothing drawn: nothing a filter could flatten.
+      ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"/>', true],
+    ];
+    for (const [svg, expected] of cases) expect(brandKitSvgIsMonochrome(svg), svg).toBe(expected);
+    expect(brandKitSvgIsMonochrome(SVG)).toBe(true);
+  });
+
+  it('reads a hostile document in one pass: an unclosed tag of 100k dashes, comments and a quoted ">" cost their length', () => {
+    // A 200 kB "<A" followed by dashes (CodeQL's polynomial-regex case) must return well under the budget.
+    const hostile = `<svg viewBox="0 0 10 10"><A${'-'.repeat(100_000)}${' '.repeat(100_000)}`;
+    const start = performance.now();
+    expect(brandKitSvgIsMonochrome(hostile)).toBe(true);
+    expect(performance.now() - start).toBeLessThan(50);
+    // Comments, the xml declaration and a ">" inside an attribute value are stepped over, not read as tags.
+    expect(
+      brandKitSvgIsMonochrome(
+        '<?xml version="1.0"?><!-- <rect fill="#F37625" width="10" height="10"/> --><svg viewBox="0 0 10 10"><path aria-label="a > b" fill="#4D4E4E" d="M0 0h10"/></svg>'
+      )
+    ).toBe(true);
+    expect(brandKitSvgIsMonochrome('<svg viewBox="0 0 10 10"><path fill="#4D4E4E" d="M0 0h10"/><path fill="#F37625" d="M0 5h10"/></svg>')).toBe(false);
   });
 
   it('builds the Google Fonts link for the typeface and its weights, and the CSS stack with the site’s fallback', () => {

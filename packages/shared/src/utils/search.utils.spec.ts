@@ -7,6 +7,7 @@ import { UserSearchRelevance } from '../enums';
 import { UserSearchResult } from '../interfaces';
 import {
   dedupeUserSearchResults,
+  excludeUserSearchIdentities,
   filterUserSearchCandidates,
   hasLfAccount,
   matchesUserSearchQuery,
@@ -216,5 +217,29 @@ describe('dedupeUserSearchResults', () => {
     const rows = [user({ uid: 'x', username: null, email: '' }), user({ uid: 'y', username: null, email: '' })];
 
     expect(dedupeUserSearchResults(rows).map((row) => row.uid)).toEqual(['x', 'y']);
+  });
+});
+
+describe('excludeUserSearchIdentities', () => {
+  const rows = [
+    { email: 'me@example.com', username: 'me' },
+    { email: 'Other@Example.com', username: 'other' },
+    { email: 'third@example.com', username: null },
+  ];
+
+  it('drops a row whose username matches, ignoring case', () => {
+    expect(excludeUserSearchIdentities(rows, [{ username: 'ME' }]).map((r) => r.username)).toEqual(['other', null]);
+  });
+
+  it('drops a row whose email matches, ignoring case and padding', () => {
+    expect(excludeUserSearchIdentities(rows, [{ email: ' other@example.COM ' }]).map((r) => r.username)).toEqual(['me', null]);
+  });
+
+  it('drops the rows of every identity given', () => {
+    expect(excludeUserSearchIdentities(rows, [{ username: 'me' }, { email: 'third@example.com' }])).toEqual([rows[1]]);
+  });
+
+  it('keeps every row when an identity carries nothing to match', () => {
+    expect(excludeUserSearchIdentities(rows, [{}, { username: null, email: '' }])).toEqual(rows);
   });
 });

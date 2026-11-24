@@ -3,6 +3,7 @@
 
 import { ORG_KEY_CONTACT_REQUIRED_ROLES, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
+  KeyContactEmployee,
   KeyContactIndexedDoc,
   OrgKeyContactAssignment,
   OrgKeyContactsResponse,
@@ -12,10 +13,12 @@ import type {
   ProjectMembershipIndexedDoc,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
+import { agreedUsername } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { coalescePerUserOrgFetch } from '../utils/single-flight';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { withPerUserCache } from './valkey.service';
 
@@ -87,13 +90,21 @@ export class OrgPeopleKeyContactsService {
   /** Bundled GET — joins active key_contact rows to their project_membership and computes the filter-independent stat strip. Caller passes b2b_org UUID directly because the upstream b2b_org index has no indexed sfid field. Served through the per-caller shared cache; only successful reads are cached. */
   public async getKeyContacts(req: Request, orgUid: string): Promise<OrgKeyContactsResponse> {
     const username = getEffectiveUsername(req) ?? '';
-    return withPerUserCache(
-      VALKEY_CACHE.ORG_PEOPLE_KC_NAMESPACE,
-      username,
-      orgUid,
-      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-      () => this.computeKeyContacts(req, orgUid),
-      isKeyContactsResponse
+    // Coalesced and fenced so a key-contact write can supersede a read already in flight. The All Employees
+    // directory reads through this entry, and OrgLensKeyContactsService evicts it after a write; without a
+    // registered flight that eviction has nothing to unregister, and a read that started before the write
+    // would still persist its pre-write assignments over the delete. `isCurrent` turns false once evicted,
+    // so such a fill is served to its own callers but never stored.
+    return coalescePerUserOrgFetch(VALKEY_CACHE.ORG_PEOPLE_KC_NAMESPACE, username, orgUid, (isCurrent) =>
+      withPerUserCache(
+        VALKEY_CACHE.ORG_PEOPLE_KC_NAMESPACE,
+        username,
+        orgUid,
+        VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+        () => this.computeKeyContacts(req, orgUid),
+        isKeyContactsResponse,
+        isCurrent
+      )
     );
   }
 
@@ -121,10 +132,50 @@ export class OrgPeopleKeyContactsService {
 
     const { assignments } = await this.getKeyContacts(req, orgUid);
     const matched = assignments.filter((assignment) => assignmentBelongsToPerson(assignment, username, emails));
-    if (matched.length === 0 && identity.emailsStatus !== 'resolved') {
+    // "Holds no roles" needs addresses to rule out the assignments recorded without a username: a resolved lookup that
+    // found none (an LF account with no company email here) cannot, so an unmatched result stays unidentified.
+    if (matched.length === 0 && (identity.emailsStatus !== 'resolved' || emails.size === 0)) {
       return unmatched;
     }
     return { assignments: matched, status: 'resolved' };
+  }
+
+  /**
+   * The org's key contacts as people, for the All Employees roster: the assignments this tab lists (active key-contact
+   * roles on active or purchased memberships), grouped by address. A role on an expired or cancelled membership does not
+   * list anyone, matching this tab and the warehouse roster. Reads through the tab's per-caller cache. The LF username is
+   * set only when every assignment at the address carries the same one (`agreedUsername`), as the tab's drawer does.
+   */
+  public async getActiveEmployees(req: Request, orgUid: string): Promise<KeyContactEmployee[]> {
+    const { assignments } = await this.getKeyContacts(req, orgUid);
+    const byEmail = new Map<string, OrgKeyContactAssignment[]>();
+    for (const assignment of assignments) {
+      const email = assignment.email.trim().toLowerCase();
+      const group = byEmail.get(email);
+      if (group) {
+        group.push(assignment);
+      } else {
+        byEmail.set(email, [assignment]);
+      }
+    }
+    return [...byEmail].map(([email, group]) => {
+      const { firstName, lastName, displayName, title, avatarUrl } = group[0];
+      return {
+        email,
+        firstName,
+        lastName,
+        fullName: displayName,
+        jobTitle: title?.trim() || null,
+        initials: `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || '?',
+        avatarUrl: avatarUrl ?? null,
+        lfUsername: agreedUsername(group.map((assignment) => assignment.username)),
+        // The All Employees Key Contact column (#4401) renders these. `assignments` is already filtered to
+        // active contacts on active or purchased memberships, so every role here is one the person holds
+        // right now, and the tab shows the same set. One assignment per (membership, role), so the same
+        // role on two foundation memberships arrives twice — dedupe to the person-level set the column renders.
+        roles: [...new Set(group.map((assignment) => assignment.role.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+      };
+    });
   }
 
   private async computeKeyContacts(req: Request, orgUid: string): Promise<OrgKeyContactsResponse> {

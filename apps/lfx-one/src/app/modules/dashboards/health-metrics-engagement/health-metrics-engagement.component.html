@@ -18,8 +18,22 @@
       (settled)="shell.sectionSettled('participation', $event)" />
   </ng-template>
 
+  <ng-template lfxHealthMetricsL2SectionControls="committees">
+    <lfx-ui-select
+      size="small"
+      ariaLabel="Group type"
+      [value]="groupType()"
+      (valueChange)="onGroupTypeChange($event)"
+      data-testid="engagement-group-attendance-type">
+      @for (type of groupTypes; track type.key) {
+        <lfx-ui-option [value]="type.key" [label]="type.label" />
+      }
+    </lfx-ui-select>
+  </ng-template>
+
   <ng-template lfxHealthMetricsL2Section="committees">
     <lfx-engagement-group-attendance
+      [(groupType)]="groupType"
       (countsChange)="groupCounts.set($event)"
       (reading)="shell.sectionReading('committees')"
       (settled)="shell.sectionSettled('committees', $event)" />
@@ -29,24 +43,57 @@
     <lfx-engagement-attendance-trend (reading)="shell.sectionReading('trend')" (settled)="shell.sectionSettled('trend', $event)" />
   </ng-template>
 
+  <ng-template lfxHealthMetricsL2SectionControls="orgs">
+    <lfx-ui-switch
+      size="small"
+      ariaLabel="View"
+      [value]="orgFilter()"
+      (valueChange)="onOrgFilterChange($event)"
+      data-testid="engagement-org-participation-filter">
+      @for (filter of orgFilters; track filter.key) {
+        <lfx-ui-switch-option [value]="filter.key" [label]="filter.label" [attr.data-testid]="'engagement-org-participation-filter-' + filter.key" />
+      }
+    </lfx-ui-switch>
+  </ng-template>
+
   <ng-template lfxHealthMetricsL2Section="orgs">
     <lfx-engagement-org-participation
+      [(filter)]="orgFilter"
       (countsChange)="orgCounts.set($event)"
       (reading)="shell.sectionReading('orgs')"
       (settled)="shell.sectionSettled('orgs', $event)" />
   </ng-template>
 
+  <ng-template lfxHealthMetricsL2SectionControls="reps">
+    <lfx-ui-switch
+      size="small"
+      ariaLabel="View"
+      [value]="repFilter()"
+      (valueChange)="onRepFilterChange($event)"
+      data-testid="engagement-representatives-filter">
+      @for (filter of repFilters; track filter.key) {
+        <lfx-ui-switch-option [value]="filter.key" [label]="filter.label" [attr.data-testid]="'engagement-representatives-filter-' + filter.key" />
+      }
+    </lfx-ui-switch>
+  </ng-template>
+
   <ng-template lfxHealthMetricsL2Section="reps">
     <lfx-engagement-representatives
+      [(filter)]="repFilter"
       (countsChange)="repCounts.set($event)"
       (reading)="shell.sectionReading('reps')"
       (settled)="shell.sectionSettled('reps', $event)" />
   </ng-template>
 
   <ng-template lfxHealthMetricsL2Section="nonmem">
-    <lfx-engagement-non-member-participation
-      (countsChange)="nonMemberCounts.set($event)"
-      (reading)="shell.sectionReading('nonmem')"
-      (settled)="shell.sectionSettled('nonmem', $event)" />
+    <lfx-engagement-non-member-participation (reading)="shell.sectionReading('nonmem')" (settled)="shell.sectionSettled('nonmem', $event)" />
+  </ng-template>
+
+  <ng-template lfxHealthMetricsL2Section="newsletters">
+    <lfx-engagement-newsletter-performance (reading)="shell.sectionReading('newsletters')" (settled)="shell.sectionSettled('newsletters', $event)" />
+  </ng-template>
+
+  <ng-template lfxHealthMetricsL2Section="recipients">
+    <lfx-engagement-newsletter-recipients (reading)="shell.sectionReading('recipients')" (settled)="shell.sectionSettled('recipients', $event)" />
   </ng-template>
 </lfx-health-metrics-l2-shell>

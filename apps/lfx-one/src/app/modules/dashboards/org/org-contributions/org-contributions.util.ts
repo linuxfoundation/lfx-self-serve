@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CONTRIBUTIONS_PROJECT_SCOPE_PHRASE, ORG_LENS_TIME_RANGE_DAYS } from '@lfx-one/shared/constants';
+import { CONTRIBUTIONS_PROJECT_SCOPE_PHRASE, ORG_LENS_TIME_RANGE_DAYS, ORG_SCOPE_CAPTION_PHRASE } from '@lfx-one/shared/constants';
 import type {
   ContributionSource,
   OrgCommitFilters,
@@ -12,6 +12,7 @@ import type {
   OrgEmploymentFilter,
   OrgLensTimeRange,
   OrgProjectScope,
+  OrgScopeFilter,
 } from '@lfx-one/shared/interfaces';
 
 import { avatarColorClass } from '@lfx-one/shared/utils';
@@ -102,22 +103,30 @@ export function describeContributionsWindow(range: OrgLensTimeRange, now: Date =
 
 /**
  * Counting rule under the KPI strip for the active filters, ending with the exact window from
- * {@link describeContributionsWindow}, so the figures can be matched to source data.
+ * {@link describeContributionsWindow}, so the figures can be matched to source data, and the organization scope.
  */
-export function describeContributionsCaption(filters: OrgCommitFilters, companyName: string, window: string): string {
+export function describeContributionsCaption(filters: OrgCommitFilters & { orgScope: OrgScopeFilter }, companyName: string, window: string): string {
   const scope = CONTRIBUTIONS_PROJECT_SCOPE_PHRASE[filters.projectScope];
+  const orgScope = ORG_SCOPE_CAPTION_PHRASE[filters.orgScope];
   if (filters.metric === 'code') {
-    return `Code contributions (commits, pull requests, reviews and comments) by contributors affiliated with ${companyName}${scope}, ${window}. Bots excluded.`;
+    return `Code contributions (commits, pull requests, reviews and comments) by contributors affiliated with ${companyName}${scope}, ${window}. ${orgScope} Bots excluded.`;
   }
   const branch = filters.commitScope === 'merged' ? 'only commits on the main branch' : 'on any branch (including pull-request commits not yet merged)';
-  return `Commits authored by contributors affiliated with ${companyName}, ${branch}${scope}, counted once each, ${window}. Bots excluded.`;
+  return `Commits authored by contributors affiliated with ${companyName}, ${branch}${scope}, counted once each, ${window}. ${orgScope} Bots excluded.`;
 }
 
 /**
  * Who the People -> Contributors tab counts, worded like {@link describeContributionsCaption}. The Employment filter
- * (lfx-self-serve#4627) narrows it to the people who still work at the company or to those who have left.
+ * (lfx-self-serve#4627) narrows it to the people who still work at the company or to those who have left; the
+ * organization scope (lfx-self-serve-ops#1219) to the Insights organization's code.
  */
-export function describeContributorsTooltip(projectScope: OrgProjectScope, companyName: string, window: string, employment: OrgEmploymentFilter): string {
+export function describeContributorsTooltip(
+  projectScope: OrgProjectScope,
+  companyName: string,
+  window: string,
+  employment: OrgEmploymentFilter,
+  orgScope: OrgScopeFilter
+): string {
   const employmentRule: Record<OrgEmploymentFilter, string> = {
     all: 'so people who have since left are included.',
     current: `and only people who still work at ${companyName} are counted.`,
@@ -127,6 +136,6 @@ export function describeContributorsTooltip(projectScope: OrgProjectScope, compa
     `People with at least one code contribution (commit, pull request, review or comment) credited to ${companyName}` +
     `${CONTRIBUTIONS_PROJECT_SCOPE_PHRASE[projectScope]}, ${window}. ` +
     `Each contribution is credited to the employer the person had at the time, ${employmentRule[employment]} ` +
-    'Maintainers with code are counted here too. Bots excluded.'
+    `${ORG_SCOPE_CAPTION_PHRASE[orgScope]} Maintainers with code are counted here too. Bots excluded.`
   );
 }

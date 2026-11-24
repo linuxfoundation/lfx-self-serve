@@ -67,9 +67,9 @@ function mentorshipCountry(): ValidatorFn {
 
 /**
  * Right-side mentee profile edit drawer, opened from the "Edit Mentee Profile" button
- * on the standalone mentee profile page. Fields map to `user_profiles`: About Me ←
+ * on the standalone mentee profile page. Fields map to `user_profiles`: Introduction ←
  * `introduction`, skills ← `skill_set.skills` / `improvementSkills`, additional notes
- * ← `skill_set.comments`, country ← `address.country`. About Me uses the register form's rich editor and rule, so the stored HTML
+ * ← `skill_set.comments`, country ← `address.country`. Introduction uses the register form's rich editor and rule, so the stored HTML
  * round-trips unchanged.
  *
  * Save sends only the groups the mentee changed (see `buildMentorshipMenteeProfileUpdate`) and

@@ -8,6 +8,7 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { readMentorshipLfxProfileFields } from '../helpers/mentorship-lfx-profile.helper';
 import { parseIntQuery, parseTrimmedString } from '../helpers/mentorship-params.helper';
+import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
 import { isMentorshipProgramReviewDecision, MentorshipService } from '../services/mentorship.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
@@ -56,13 +57,21 @@ export class MentorshipController {
         throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_lf_projects' });
       }
 
+      // The Foundation lens wizard lists the foundation's direct sub-projects here (lfx-mentorship#398).
+      // A repeated parentUid is a 400, so a scoping filter never silently drops to every project.
+      const parentUid = parseTrimmedString(getStrictStringQueryParam(req, 'parentUid', 'get_mentorship_lf_projects'));
+      if (parentUid !== undefined && !isUuid(parentUid)) {
+        throw ServiceValidationError.forField('parentUid', 'parentUid must be a UUID.', { operation: 'get_mentorship_lf_projects' });
+      }
+
       const projects = await this.mentorshipService.getLfProjects(req, {
         search: parseTrimmedString(req.query['search']),
         pageToken: parseTrimmedString(req.query['page_token']),
         limit: parseIntQuery(req.query['page_size']),
+        ...(parentUid && { parentUid }),
       });
 
-      logger.success(req, 'get_mentorship_lf_projects', startTime, { result_count: projects.data.length });
+      logger.success(req, 'get_mentorship_lf_projects', startTime, { result_count: projects.data.length, parentUid });
       res.json(projects);
     } catch (error) {
       next(error);
@@ -114,9 +123,10 @@ export class MentorshipController {
 
   // PATCH /api/mentorship/me/lfx-profile
   // Auth: logged-in user required (401 otherwise); refused while impersonating by the route. The
-  // body is the name and logo the profile card shows after an Edit LFX Profile save, or empty after
-  // a Connect, checked with the rules the browser applies (400 with per-field errors); any email or
-  // link in it is ignored. Copies them, with the caller's verified primary email and connected
+  // body is the name and logo the profile card shows after an Edit LFX Profile save, empty after a
+  // Connect, or, from Profile & Account, only the name parts or picture that save changed. It is
+  // checked with the rules the browser applies (400 with per-field errors); any email or link in
+  // it is ignored. Copies them, with the caller's verified primary email and connected
   // GitHub link, onto every mentor and mentee profile the caller holds; 204 whether or not there
   // were any.
   public async syncLfxProfile(req: Request, res: Response, next: NextFunction): Promise<void> {

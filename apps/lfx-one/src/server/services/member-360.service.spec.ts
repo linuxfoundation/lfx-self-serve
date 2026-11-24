@@ -34,6 +34,9 @@ const mocks = vi.hoisted(() => ({
   listDocuments: vi.fn(),
   getRevision: vi.fn(),
   recordGeneration: vi.fn(),
+  loadTrackers: vi.fn(),
+  deleteTrackers: vi.fn(),
+  sweepTrackers: vi.fn(),
   available: true,
 }));
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -53,6 +56,13 @@ vi.mock('@lfx-one/shared/constants', async () => {
     ),
   };
 });
+vi.mock('./member-360-tracker-store.service', () => ({
+  Member360TrackerStoreService: class {
+    load = mocks.loadTrackers;
+    deleteConsumed = mocks.deleteTrackers;
+    sweepExpired = mocks.sweepTrackers;
+  },
+}));
 vi.mock('./guild.service', () => ({
   GuildService: class {
     createSession = mocks.createSession;
@@ -318,6 +328,44 @@ describe('Member 360 entitlement and generation', () => {
     vi.setSystemTime(new Date(`${end}T12:00:00Z`));
     await new Member360Service().start(req, { project: 'sample-project', window });
     expect(mocks.createSession.mock.calls[0][1].message).toContain(`ANALYSIS WINDOW: ${start} to ${end} (inclusive)`);
+  });
+  it('loads private tracker ids after writer entitlement and renders server rows only', async () => {
+    mocks.loadTrackers.mockResolvedValue([{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member', email: 'synthetic@example.test' }] }]);
+    await new Member360Service().start(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] });
+    expect(mocks.loadTrackers).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
+    expect(mocks.getProjectById.mock.invocationCallOrder[0]).toBeLessThan(mocks.loadTrackers.mock.invocationCallOrder[0]);
+    expect(mocks.createSession.mock.calls[0][1].message).toContain('synthetic@example.test');
+    expect(mocks.deleteTrackers).not.toHaveBeenCalled();
+    expect(mocks.sweepTrackers).toHaveBeenCalledWith(req, 'sample-project');
+    mocks.createSession.mockClear();
+    mocks.loadTrackers.mockRejectedValue(new Error('Expired tracker'));
+    await expect(new Member360Service().start(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] })).rejects.toThrow('Expired tracker');
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+  it('reuses tracker rows prepared before the discard without loading them twice', async () => {
+    const service = new Member360Service();
+    const body = { project: 'sample-project', trackerIds: ['a'.repeat(64)] };
+    mocks.loadTrackers.mockResolvedValue([{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }]);
+    const prepared = await service.prepareTrackers(req, body);
+    await service.start(req, body, prepared);
+    expect(mocks.loadTrackers).toHaveBeenCalledOnce();
+    expect(mocks.createSession).toHaveBeenCalledOnce();
+    expect(mocks.deleteTrackers).not.toHaveBeenCalled();
+    expect(mocks.sweepTrackers).toHaveBeenCalledOnce();
+  });
+  it('only deletes consumed rows when the durable-registration caller requests cleanup', async () => {
+    await new Member360Service().deleteConsumedTrackers(req, 'sample-project', ['a'.repeat(64)]);
+    expect(mocks.deleteTrackers).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
+  });
+  it('sweeps the project on Generate even when no tracker ids were submitted', async () => {
+    await new Member360Service().start(req, { project: 'sample-project' });
+    expect(mocks.sweepTrackers).toHaveBeenCalledWith(req, 'sample-project');
+  });
+  it('does not consume tracker rows if the Guild start fails', async () => {
+    mocks.loadTrackers.mockResolvedValue([{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }]);
+    mocks.createSession.mockRejectedValue(new Error('Synthetic start unavailable'));
+    await expect(new Member360Service().start(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] })).rejects.toThrow('Synthetic start unavailable');
+    expect(mocks.deleteTrackers).not.toHaveBeenCalled();
   });
   it('loads the previous stored ranking for trends, not caller-supplied scores', async () => {
     mocks.listDocuments.mockResolvedValue({
@@ -669,12 +717,12 @@ describe('Member 360 entitlement and generation', () => {
   });
   it('reports shared web and LFX activity while the envelope is pending without leaking tool output', async () => {
     mocks.getRawEventPayloads.mockResolvedValue(
-      ['web_search_web_search', 'lfx_mcp_search_members'].map((tool, index) =>
+      ['web_search_web_search', 'lfx_mcp_search_members', 'experimental_fetch_fetch'].map((tool, index) =>
         JSON.stringify({
           type: 'runtime_start',
           created_at: '2026-10-19T10:00:00.000Z',
           task: { id: `tool-${index}`, entity_type: 'EntTaskTool', tool_name: tool, status: 'RUNNING', created_at: '2026-10-19T10:00:00.000Z' },
-          content: { query: 'Sample Foundation speaking', result: 'private-tool-output' },
+          content: { query: 'Sample Foundation speaking', url: 'https://github.com/synthetic-private-user', result: 'private-tool-output' },
         })
       )
     );
@@ -683,7 +731,11 @@ describe('Member 360 entitlement and generation', () => {
     expect(result.activity).toEqual([
       expect.objectContaining({ kind: 'search', label: 'Searching the web', status: 'running' }),
       expect.objectContaining({ kind: 'lfx', label: 'Checking LFX', status: 'running' }),
+      expect.objectContaining({ kind: 'reading', label: 'Reading sources', status: 'running' }),
     ]);
+    expect(JSON.stringify(result)).not.toContain('Sample Foundation speaking');
+    expect(JSON.stringify(result)).not.toContain('synthetic-private-user');
+    expect(result.activity?.every((step) => !('detail' in step))).toBe(true);
     expect(JSON.stringify(result)).not.toContain('private-tool-output');
     expect(JSON.stringify(result)).not.toContain('lfx_mcp_search_members');
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
@@ -710,9 +762,35 @@ describe('Member 360 entitlement and generation', () => {
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
 
-  it('maps needs-input to questions without a failure or private question text', () => {
+  it('redacts known contact identity and email from creator questions', async () => {
+    const privateText = 'opaque-private-contact owner@example.test';
+    const text = questionsText
+      .replace('Which window should this tracker cover?', privateText)
+      .replace('The date is missing.', privateText)
+      .replace('Use the current window.', privateText);
+    mocks.getRawEventPayloads.mockResolvedValue([
+      JSON.stringify({ contract: 'member-360-output/v1', tabs: { member_ranking: [{ key_contact: 'opaque-private-contact' }] } }),
+      JSON.stringify({ type: 'agent_notification_message', content: text }),
+    ]);
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result.questions?.[0]).toMatchObject({
+      question: '[contact redacted] [contact redacted]',
+      why: '[contact redacted] [contact redacted]',
+      suggestedAnswer: '[contact redacted] [contact redacted]',
+    });
+    expect(JSON.stringify(result.questions)).not.toContain('opaque-private-contact');
+    expect(JSON.stringify(result.questions)).not.toContain('owner@example.test');
+  });
+
+  it('maps a needs-input result without questions without echoing its message', () => {
+    // This fixture has no structured questions; creator-gated question results
+    // may include questions/questionsId when the questions feature is present.
     const mapped = Member360Service.toRunResult({ status: 'needs_input', message: 'Private question text', activity: [] });
-    expect(mapped).toEqual({ status: 'questions', activity: [], persistence: undefined, failureText: undefined, failureReason: undefined });
+    expect(mapped).toMatchObject({ status: 'questions', activity: [] });
+    expect(mapped.questions).toBeUndefined();
+    expect(mapped.questionsId).toBeUndefined();
+    expect(mapped.failureText).toBeUndefined();
+    expect(mapped).not.toHaveProperty('message');
     expect(JSON.stringify(mapped)).not.toContain('Private question text');
   });
 

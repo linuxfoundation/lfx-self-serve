@@ -1,0 +1,49 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<section
+  class="flex flex-col gap-[8px] rounded-[6px] bg-gray-50 p-[12px]"
+  aria-labelledby="meeting-details-host-key-heading"
+  data-testid="meeting-details-host-key">
+  <h3 id="meeting-details-host-key-heading" class="m-0 flex items-center gap-[8px] text-[13px] font-semibold text-gray-900">
+    <i class="fa-light fa-shield-keyhole text-gray-500" aria-hidden="true"></i>Host controls
+  </h3>
+  <!-- The revealed key claims Zoom host privileges, so Session Replay masks it; action names stay readable. -->
+  <span class="flex items-center gap-[6px]" data-dd-privacy="mask">
+    <lfx-ui-button
+      variant="secondary"
+      size="small"
+      icon="fa-light fa-key"
+      [ariaPressed]="revealed()"
+      ariaLabel="Host key"
+      [ariaDescribedBy]="helpId"
+      (click)="toggle()"
+      data-dd-action-name="Host key toggle"
+      data-testid="meeting-details-host-key-toggle"
+      >{{ revealed() ? 'Host Key: ' + hostKey() : 'Host Key' }}</lfx-ui-button
+    >
+    <span class="sr-only" aria-live="polite" data-testid="meeting-details-host-key-announce">{{ revealed() ? 'Host key ' + hostKey() : '' }}</span>
+    @if (revealed()) {
+      <lfx-ui-button
+        variant="tertiary"
+        size="small"
+        icon="fa-light fa-copy"
+        iconOnly
+        ariaLabel="Copy host key"
+        lfxUiTooltip="Copy host key"
+        (click)="copy()"
+        data-dd-action-name="Copy host key"
+        data-testid="meeting-details-host-key-copy" />
+    }
+  </span>
+  <p [id]="helpId" class="m-0 text-[12px] leading-[18px] text-gray-600">Enter this key in Zoom to claim host privileges.</p>
+  <div class="text-[12px] leading-[18px] text-gray-600" data-testid="meeting-details-host-key-steps">
+    <p class="m-0">To stop recording or the AI Companion:</p>
+    <ol class="m-0 flex list-decimal flex-col gap-[2px] pl-[18px]">
+      <li>Join the meeting.</li>
+      <li>In Zoom, open <span class="font-medium">Participants → Claim Host</span>.</li>
+      <li>Enter this key.</li>
+    </ol>
+  </div>
+</section>

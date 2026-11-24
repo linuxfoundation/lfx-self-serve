@@ -14,6 +14,10 @@ import { RecurringDonation } from '@lfx-one/shared/interfaces';
 })
 export class RecurringDonationSubscriptionSummaryComponent {
   public readonly donation = input.required<RecurringDonation>();
+  /** True while a name-visibility change is being saved. */
+  public readonly anonymitySaving = input<boolean>(false);
 
   public readonly cancelDonation = output<void>();
+  /** The donor asked to hide or show their name on every charge of this subscription (lfx-crowdfunding#466). */
+  public readonly toggleAnonymity = output<void>();
 }

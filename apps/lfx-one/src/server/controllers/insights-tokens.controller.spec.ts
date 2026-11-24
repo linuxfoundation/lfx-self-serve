@@ -105,7 +105,7 @@ describe('InsightsTokensController', () => {
 
       await controller.createToken(mockReq({ body: { name } }), mockRes(), next);
 
-      expect(createToken).toHaveBeenCalledWith(expect.anything(), name);
+      expect(createToken).toHaveBeenCalledWith(expect.anything(), name, undefined);
       expect(next).not.toHaveBeenCalled();
     });
 
@@ -122,10 +122,30 @@ describe('InsightsTokensController', () => {
 
       await controller.createToken(mockReq({ body: { name: '  ci-pipeline  ' } }), res, next);
 
-      expect(createToken).toHaveBeenCalledWith(expect.anything(), 'ci-pipeline');
+      expect(createToken).toHaveBeenCalledWith(expect.anything(), 'ci-pipeline', undefined);
       expect(res.set).toHaveBeenCalledWith(expect.objectContaining({ ['Cache-Control']: 'no-store, no-cache, must-revalidate, private' }));
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith({ token, secret: 'lfi_Ab3kZ9QmT2xLsecret' });
+    });
+
+    it.each(['30d', '60d', '90d', '1y', 'none'])('forwards expiration %s to the service', async (expiration) => {
+      createToken.mockResolvedValueOnce({ token, secret: 'lfi_Ab3kZ9QmT2xLsecret' });
+
+      await controller.createToken(mockReq({ body: { name: 'ci-pipeline', expiration } }), mockRes(), next);
+
+      expect(createToken).toHaveBeenCalledWith(expect.anything(), 'ci-pipeline', expiration);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['unknown', '7d'],
+      ['non-string', 30],
+      ['null', null],
+    ])('rejects a %s expiration without calling upstream', async (_label, expiration) => {
+      await controller.createToken(mockReq({ body: { name: 'ci-pipeline', expiration } }), mockRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(createToken).not.toHaveBeenCalled();
     });
 
     it('passes service refusals (403, 503, upstream 409s) through to next', async () => {

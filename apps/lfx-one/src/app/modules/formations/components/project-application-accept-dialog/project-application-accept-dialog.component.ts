@@ -18,7 +18,8 @@ import { of, Subject, switchMap } from 'rxjs';
 /**
  * Accept step for a project application (#3037), opened via `DialogService.open()`. Accepting also creates
  * the project (#1995), so the formation team picks the parent project it is created under and its slug
- * (prefilled from the proposed name). The dialog closes with `{ parent, slug }`, or with nothing when cancelled.
+ * (prefilled from the proposed name). When the drawer resolved the foundation the applicant started from, it
+ * prefills the parent (#5187) — a hint the team can replace. The dialog closes with `{ parent, slug }`, or with nothing when cancelled.
  */
 @Component({
   selector: 'lfx-project-application-accept-dialog',
@@ -37,7 +38,8 @@ export class ProjectApplicationAcceptDialogComponent {
 
   // === Forms ===
   public readonly form = new FormGroup({
-    parent: new FormControl<Project | string | null>(null),
+    // Prefilled with the foundation the applicant started from (#5187) when the drawer resolved it; the reviewer can change it.
+    parent: new FormControl<Project | string | null>(this.data?.suggestedParent?.uid ? this.data.suggestedParent : null),
     slug: new FormControl<string>(this.data?.projectSlug || projectSlugFromName(this.data?.projectName), {
       nonNullable: true,
       validators: [Validators.required, projectSlugValidator()],
@@ -46,7 +48,7 @@ export class ProjectApplicationAcceptDialogComponent {
 
   // === Writable Signals ===
   protected readonly suggestions = signal<Project[]>([]);
-  protected readonly selectedParent = signal<Project | null>(null);
+  protected readonly selectedParent = signal<Project | null>(this.data?.suggestedParent?.uid ? this.data.suggestedParent : null);
   protected readonly slugValid = signal(this.form.controls.slug.valid);
   /** Shown only once the slug has been edited, so a prefill the team hasn't touched isn't flagged as an error. */
   protected readonly slugError = signal(false);

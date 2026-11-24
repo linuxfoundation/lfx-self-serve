@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, output, signal } from '@angular/core';
+import { Component, model, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { HEALTH_METRICS_TRAINING_BLANK, HEALTH_METRICS_TRAINING_SECTIONS } from '@lfx-one/shared/constants';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -19,6 +19,7 @@ import { HealthMetricsTrainingComponent } from './health-metrics-training.compon
 /** Stands in for Enrollment & revenue, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-training-enroll', template: '<div data-testid="training-enroll-stub"></div>' })
 class EnrollStubComponent {
+  public readonly metric = model<string>('enrollments');
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -26,7 +27,7 @@ class EnrollStubComponent {
 /** Stands in for Courses, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-training-courses', template: '<div data-testid="training-courses-stub"></div>' })
 class CoursesStubComponent {
-  public readonly countChange = output<number | null>();
+  public readonly type = model<string>('all');
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -37,14 +38,20 @@ describe('HealthMetricsTrainingComponent', () => {
   let fixture: ComponentFixture<HealthMetricsTrainingComponent>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
 
-  async function setup(initialFragment: string | null = null): Promise<void> {
+  async function setup(initialFragment: string | null = null, queryParams: Record<string, string> = {}): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [HealthMetricsTrainingComponent],
       providers: [
         HealthMetricsChromeService,
         { provide: ProjectContextService, useValue: { selectedFoundation } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
-        { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            fragment: new BehaviorSubject<string | null>(initialFragment).asObservable(),
+            snapshot: { queryParamMap: convertToParamMap(queryParams) },
+          },
+        },
       ],
     })
       .overrideComponent(HealthMetricsTrainingComponent, {
@@ -98,28 +105,52 @@ describe('HealthMetricsTrainingComponent', () => {
     expect(testId('health-metrics-training-page')?.textContent).not.toContain('Awaiting data');
   });
 
-  it('lists every section in the sub-nav, with no badge before a read', async () => {
+  it("puts Enrollment & revenue's Enrollments / Revenue switch in its card header, Enrollments first, and hands the pick down", async () => {
+    await setup();
+    const controls = testId('training-controls-enroll') as HTMLElement;
+    const labels = [...controls.querySelectorAll('[data-testid^="training-enroll-metric-"]')].map((option) => option.textContent?.trim());
+
+    expect(labels).toEqual(['Enrollments', 'Revenue']);
+    expect(stub(EnrollStubComponent).metric()).toBe('enrollments');
+
+    fixture.componentInstance['onEnrollMetricChange']('revenue');
+    fixture.detectChanges();
+    expect(stub(EnrollStubComponent).metric()).toBe('revenue');
+
+    fixture.componentInstance['onEnrollMetricChange']('bogus');
+    fixture.detectChanges();
+    expect(stub(EnrollStubComponent).metric()).toBe('revenue');
+  });
+
+  it("puts the Course type select in Courses' card header, All types by default, and hands the pick down", async () => {
+    await setup();
+
+    expect(testId('training-controls-courses')?.querySelector('[data-testid="training-courses-type"]')).not.toBeNull();
+    expect(stub(CoursesStubComponent).type()).toBe('all');
+
+    fixture.componentInstance['onCoursesTypeChange']('instructor-led');
+    fixture.detectChanges();
+    expect(stub(CoursesStubComponent).type()).toBe('instructor-led');
+
+    fixture.componentInstance['onCoursesTypeChange']('bogus');
+    fixture.detectChanges();
+    expect(stub(CoursesStubComponent).type()).toBe('all');
+  });
+
+  it("starts Courses on the URL's type, reading an older link's value as its new cut", async () => {
+    await setup(null, { trnType: 'certifications' });
+
+    expect(stub(CoursesStubComponent).type()).toBe('certification');
+  });
+
+  it('lists every section in the sub-nav, with no note', async () => {
     await setup();
     const nav = testId('training-sub-nav') as HTMLElement;
 
     for (const section of HEALTH_METRICS_TRAINING_SECTIONS) {
       expect(testId(`training-sub-nav-${section.key}`)?.textContent).toContain(section.label);
     }
-    expect(nav.textContent).not.toMatch(/\d/);
-  });
-
-  it('badges Courses with the in-scope count it reports, and clears it while a read is pending', async () => {
-    await setup();
-    const courses = stub(CoursesStubComponent);
-
-    courses.countChange.emit(340);
-    await flush();
-    expect(testId('training-sub-nav-courses')?.textContent).toContain('340');
-    expect(testId('training-sub-nav-enroll')?.textContent).not.toMatch(/\d/);
-
-    courses.countChange.emit(null);
-    await flush();
-    expect(testId('training-sub-nav-courses')?.textContent).not.toMatch(/\d/);
+    expect(nav.querySelector('[role="tooltip"]')).toBeNull();
   });
 
   it('re-lands a held deep link as each data section settles, releasing it once both have', async () => {

@@ -11,7 +11,11 @@ import type {
   MonitorConnectionAccount,
   ReportBackedMonitorResponse,
 } from '@lfx-one/shared/interfaces';
-import { CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE, MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE,
+  MONITOR_GOOGLE_ROLE_REFUSAL_FALLBACK_MESSAGE,
+  MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
+} from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -166,6 +170,25 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
     fixture.detectChanges();
   }
 
+  /** campaign-service reports keyword cost unconverted in the account's own currency and names none (#4807). */
+  it("prints a connected account's keyword amounts without a dollar sign, and says so", () => {
+    render(keywordsResponse({ amountsInAccountCurrency: true }));
+    const row = (fixture.nativeElement.querySelector('[data-testid="keyword-row-0"]') as HTMLElement).textContent ?? '';
+
+    expect(row).toContain('25.00');
+    expect(row).not.toContain('$');
+    expect(fixture.nativeElement.querySelector('[data-testid="keyword-totals"]')?.textContent).not.toContain('$');
+    expect(fixture.nativeElement.querySelector('[data-testid="keyword-currency-note"]')?.textContent?.trim()).toBe(
+      "Keyword spend and CPC are in the ad account's own currency."
+    );
+  });
+
+  it("keeps the legacy read's dollar amounts and no currency note", () => {
+    render(keywordsResponse());
+    expect((fixture.nativeElement.querySelector('[data-testid="keyword-row-0"]') as HTMLElement).textContent).toContain('$25.00');
+    expect(fixture.nativeElement.querySelector('[data-testid="keyword-currency-note"]')).toBeNull();
+  });
+
   function partialCaption(): HTMLElement | null {
     return fixture.nativeElement.querySelector('[data-testid="keyword-totals-partial"]');
   }
@@ -236,6 +259,181 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
     // Paired positive: the replacement state must be present, so this cannot pass merely
     // because the tab failed to render at all.
     expect(fixture.nativeElement.querySelector('[data-testid="monitoring-kpis-unavailable"]')).not.toBeNull();
+  });
+
+  /**
+   * The campaign-service Google read (#4526) can return a row it could not read or pace, with zero
+   * placeholders. Those render as the other panels render them, never as a measured 0 or a red 0% bar.
+   */
+  describe('Google rows from the campaign-service path', () => {
+    const base = {
+      name: 'C',
+      shortName: 'C',
+      eventName: 'KubeCon',
+      adFormat: 'Search',
+      targeting: 'Global',
+      status: 'enabled',
+      startDate: '2026-08-01',
+      endDate: '2026-08-30',
+      budgetDay: 100,
+      totalBudget: 3000,
+      spend: 25,
+      impressions: 1000,
+      clicks: 40,
+      ctr: 4,
+      avgCpc: 0.625,
+      conversions: 12.5,
+      pacingPct: 50,
+      pacingLabel: 'normal',
+      campaignId: '555',
+      googleAdsUrl: '',
+    };
+
+    function renderRow(overrides: Record<string, unknown>, totals: Record<string, unknown> = {}): string[] {
+      fixture.detectChanges();
+      const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void } };
+      instance.monitorData.set({
+        pulledAt: '2026-08-30T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns: [{ ...base, ...overrides }],
+        accountTotals: { budgetDay: 100, impressions: 1000, clicks: 40, spend: 25, conversions: 12.5, ...totals },
+        actionItems: [],
+      });
+      fixture.detectChanges();
+      const row: HTMLElement = fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-row-0"]');
+      return Array.from(row.querySelectorAll('td')).map((cell) => (cell as HTMLElement).textContent?.replace(/\s+/g, ' ').trim() ?? '');
+    }
+
+    const kpiConversions = (): string => fixture.nativeElement.querySelector('[data-testid="monitoring-kpi-conversions"]')?.textContent?.trim() ?? '';
+
+    it('keeps a measured row exactly as the legacy read renders it', () => {
+      const cells = renderRow({ fetchFailed: false, pacingUnknown: false, conversionsMeasured: true });
+      expect(cells.slice(2)).toEqual(['$3,000.00', '$25.00', '1,000', '40', '4.0%', '$0.63', '12.5', '50%']);
+    });
+
+    it('renders every figure of an unread row as a dash', () => {
+      const cells = renderRow({ fetchFailed: true, pacingPct: 0, spend: 0, impressions: 0, clicks: 0, ctr: 0, avgCpc: 0, conversions: 0 });
+      expect(cells.slice(2)).toEqual(['—', '—', '—', '—', '—', '—', '—', '—']);
+    });
+
+    it('renders unknown pacing as Unknown with an empty grey bar, not a red 0%', () => {
+      renderRow({ pacingUnknown: true, pacingPct: 0 });
+      const bar: HTMLElement = fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-row-0"] .rounded-full .h-full');
+      const text = fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-row-0"] td:last-child span')?.textContent?.trim();
+      expect(text).toBe('Unknown');
+      expect(bar.className).toContain('bg-gray-300');
+      expect(bar.className).not.toContain('bg-red-500');
+      expect(bar.style.width).toBe('0%');
+    });
+
+    const totalsNote = (): string | null => fixture.nativeElement.querySelector('[data-testid="google-totals-note"]')?.textContent?.trim() ?? null;
+
+    it('says what the totals leave out when a row was not read or did not measure conversions, as the other panels do', () => {
+      fixture.detectChanges();
+      const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void } };
+      instance.monitorData.set({
+        pulledAt: '2026-08-30T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns: [
+          { ...base, campaignId: '1', fetchFailed: false, conversionsMeasured: true },
+          { ...base, campaignId: '2', fetchFailed: false, conversionsMeasured: false },
+          { ...base, campaignId: '3', fetchFailed: true, conversionsMeasured: false },
+        ],
+        accountTotals: { budgetDay: 300, impressions: 2000, clicks: 80, spend: 50, conversions: 12.5, conversionsMeasured: true },
+        actionItems: [],
+      });
+      fixture.detectChanges();
+
+      expect(totalsNote()).toBe('Totals may understate: 1 of 3 campaigns could not be fully read; conversions are measured for 1 of 3 campaigns.');
+    });
+
+    it('shows no totals note when every row was read and measured', () => {
+      renderRow({ fetchFailed: false, conversionsMeasured: true });
+      expect(totalsNote()).toBeNull();
+      // Paired positive: the strip itself rendered, so the absent note is not an absent panel.
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-kpis"]')).not.toBeNull();
+    });
+
+    it("prints the connected account's amounts without a dollar sign, and says so", () => {
+      fixture.detectChanges();
+      const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void } };
+      instance.monitorData.set({
+        pulledAt: '2026-08-30T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns: [{ ...base, fetchFailed: false, pacingUnknown: false, conversionsMeasured: true }],
+        accountTotals: { budgetDay: 100, impressions: 1000, clicks: 40, spend: 25, conversions: 12.5, conversionsMeasured: true },
+        actionItems: [],
+        amountsInAccountCurrency: true,
+      });
+      fixture.detectChanges();
+      const row: HTMLElement = fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-row-0"]');
+      const cells = Array.from(row.querySelectorAll('td')).map((cell) => (cell as HTMLElement).textContent?.trim() ?? '');
+
+      expect(cells.slice(2, 4)).toEqual(['3,000.00', '25.00']);
+      expect(cells[7]).toBe('0.63');
+      expect(fixture.nativeElement.querySelector('[data-testid="google-currency-note"]')?.textContent?.trim()).toBe(
+        "Spend, budgets and CPC are in the ad account's own currency."
+      );
+    });
+
+    const setMonitor = (extra: Record<string, unknown>, campaigns: unknown[] = [{ ...base, fetchFailed: false, conversionsMeasured: true }]): void => {
+      fixture.detectChanges();
+      const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void } };
+      instance.monitorData.set({
+        pulledAt: '2026-08-30T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns,
+        accountTotals: { budgetDay: 100, impressions: 1000, clicks: 40, spend: 25, conversions: 12.5, conversionsMeasured: true },
+        actionItems: [],
+        ...extra,
+      });
+      fixture.detectChanges();
+    };
+    const accountNote = (): string | null => fixture.nativeElement.querySelector('[data-testid="google-recorded-account-note"]')?.textContent?.trim() ?? null;
+
+    it('names the account campaign-service read when the project has no connection of its own (#5622)', () => {
+      setMonitor({ accountId: '8666746580', googleAccountOrigin: 'recorded_campaigns' });
+      expect(accountNote()).toBe(
+        "Read from Google Ads account 8666746580, the account this project's campaigns were created under. This project has no Google Ads account bound of its own."
+      );
+    });
+
+    it("shows no account note when the account is the project's own connection", () => {
+      setMonitor({ accountId: '8666746580', googleAccountOrigin: 'connection' });
+      expect(accountNote()).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-kpis"]')).not.toBeNull();
+    });
+
+    it("shows the read's own explanation in the empty state when it gave one (#5622)", () => {
+      setMonitor(
+        {
+          googleAccountOrigin: 'recorded_campaigns',
+          message: 'This project has no Google Ads account bound of its own and no campaigns recorded yet, so there is no account to read.',
+        },
+        []
+      );
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-empty-message"]')?.textContent?.trim()).toBe(
+        'This project has no Google Ads account bound of its own and no campaigns recorded yet, so there is no account to read.'
+      );
+    });
+
+    it('keeps the default empty-state text when the read gave no explanation', () => {
+      setMonitor({}, []);
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-empty-message"]')?.textContent?.trim()).toBe(
+        'No active campaigns found for the selected date range.'
+      );
+    });
+
+    it('keeps the dollar sign and no currency note on the legacy read', () => {
+      renderRow({});
+      expect(fixture.nativeElement.querySelector('[data-testid="google-currency-note"]')).toBeNull();
+    });
+
+    it('renders unmeasured conversions as Not measured on the row and in the KPI strip', () => {
+      const cells = renderRow({ conversionsMeasured: false, conversions: 0 }, { conversions: 0, conversionsMeasured: false });
+      expect(cells[cells.length - 2]).toBe('Not measured');
+      expect(kpiConversions()).toBe('Not measured');
+    });
   });
 
   it('renders an em dash for CTR when nothing was served', () => {
@@ -443,7 +641,7 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
     expect(text(`${platform}-campaign-fetch-failed`)).toBe("Couldn't read");
     expect(text(`${platform}-campaign-conversions`)).toBe('—');
     expect(text(`${platform}-campaign-pacing`)).toBe('—');
-    expect(text(`${platform}-totals-note`)).toBe('Totals cover 1 of 2 campaigns.');
+    expect(text(`${platform}-totals-note`)).toBe('Totals may understate: 1 of 2 campaigns could not be fully read.');
   });
 
   it('notes a conversions total that covers only some campaigns', () => {
@@ -451,7 +649,7 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
       conversionsMeasured: true,
     });
 
-    expect(text(`${platform}-totals-note`)).toBe('conversions cover 1 of 2 campaigns.');
+    expect(text(`${platform}-totals-note`)).toBe('Conversions are measured for 1 of 2 campaigns.');
   });
 });
 
@@ -727,6 +925,20 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(service['getMetaMonitorData']).not.toHaveBeenCalled();
     });
 
+    /** campaign-service refused the read for lack of the project's `campaign_manager` role (#4837): no "refresh" advice. */
+    it('names the missing project role when campaign-service refused the connection read', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, linkedin: none('forbidden') } });
+      select('linkedin');
+
+      expect(el('linkedin-connection-notice')?.getAttribute('data-state')).toBe('forbidden');
+      expect(text('linkedin-connection-notice-title')).toBe('LinkedIn Ads monitoring needs the campaign manager role');
+      expect(text('linkedin-connection-notice-message')).toContain('Your account needs the campaign manager role on this project');
+      expect(text('linkedin-connection-notice-message')).not.toMatch(/refresh/i);
+      // Reading again cannot grant the role, so the notice offers no Refresh.
+      expect(el('linkedin-connection-notice-retry')).toBeNull();
+      expect(service['getLinkedInMonitorData']).not.toHaveBeenCalled();
+    });
+
     it('re-reads the connections from the notice', async () => {
       await setup({ ...allConnected, platforms: { ...allConnected.platforms, linkedin: none('unavailable') } });
       select('linkedin');
@@ -763,6 +975,37 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(el('microsoft-connection-notice')).toBeNull();
       expect(text('microsoft-error')).toContain('connection is not bound to this account');
+    });
+
+    // #4837: a role refusal answers 403 again on every retry, so no panel offers Retry for one; any
+    // other failure keeps it.
+    const panelReads = [
+      ['linkedin', 'getLinkedInMonitorData'],
+      ['reddit', 'getRedditMonitorData'],
+      ['meta', 'getMetaMonitorData'],
+      ['microsoft', 'getMicrosoftMonitorData'],
+      ['twitter', 'getTwitterMonitorData'],
+      ['hubspot', 'getHubSpotMonitorData'],
+    ] as const;
+
+    it.each(panelReads)('offers no Retry on the %s panel when its read is refused for the caller role', async (panel, read) => {
+      await setup(allConnected);
+      service[read].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'campaign-service refused to read this account.' } }))
+      );
+      select(panel);
+
+      expect(text(`${panel}-error`)).toContain('campaign-service refused to read this account.');
+      expect(el(`${panel}-retry`)).toBeNull();
+    });
+
+    it.each(panelReads)('still offers Retry on the %s panel for any other failure', async (panel, read) => {
+      await setup(allConnected);
+      service[read].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'upstream unavailable' } })));
+      select(panel);
+
+      expect(el(`${panel}-error`)).not.toBeNull();
+      expect(el(`${panel}-retry`)).not.toBeNull();
     });
 
     it('marks the monitor read as coming from the connection', async () => {
@@ -918,6 +1161,18 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(service['getGoogleAdsAccounts']).toHaveBeenCalledTimes(reads);
       expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
+    it('offers no Retry when the account list is refused for the caller role (#4837)', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'campaign-service refused to read this account.' } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(text('monitoring-google-accounts-error')).toContain('campaign-service refused to read this account.');
+      expect(el('monitoring-google-accounts-retry')).toBeNull();
     });
 
     it('shows nothing, not an error, when the read is refused as a shared-account read', async () => {
@@ -1202,7 +1457,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('microsoft-freshness')).toContain('The first report for this account is building');
       expect(text('microsoft-campaign-fetch-failed')).toBe("Couldn't read");
       expect(text('microsoft-campaign-pacing')).toBe('—');
-      expect(text('microsoft-totals-note')).toBe('Totals cover 0 of 1 campaigns.');
+      expect(text('microsoft-totals-note')).toBe('Totals may understate: 1 of 1 campaigns could not be fully read.');
     });
 
     it("shows a dash, not 0.00, for a failed row's unreadable budget", async () => {
@@ -1582,7 +1837,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       );
       select('microsoft');
 
-      expect(live()).toBe('Microsoft Ads: 2 campaigns shown. Totals cover 1 of 2 campaigns.');
+      expect(live()).toBe('Microsoft Ads: 2 campaigns shown. Totals may understate: 1 of 2 campaigns could not be fully read.');
     });
 
     it('says when the account has no campaigns', async () => {
@@ -1653,6 +1908,120 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(el('reddit-error')?.getAttribute('role')).toBe('alert');
       expect(live()).toBe('');
+    });
+  });
+
+  /**
+   * A project with no connection of its own on LinkedIn, Reddit or Meta (#5889): the BFF reports the
+   * panel as read through the LF system account, the tab reads it with no account, and the panel shows
+   * the account campaign-service read, or that nothing is recorded yet, never "ask an administrator".
+   */
+  describe('reads through the LF system account (#5889)', () => {
+    const systemPanel = (campaigns: Record<string, unknown>[], accountId: string | null, platform: string): Record<string, unknown> => ({
+      accountLabel: 'LF',
+      pulledAt: '2026-10-13T00:00:00.000Z',
+      dateRange: { mode: 'last_30_days' },
+      campaigns,
+      accountTotals: { spend: 10, impressions: 100, clicks: 5, conversions: 1, campaignCount: campaigns.length },
+      actionItems: [],
+      systemAccountRead: {
+        accountId,
+        emptyMessage: `No ${platform} campaigns are recorded for this project yet. Campaigns created for it through the LF system account will show here.`,
+      },
+    });
+    const row = {
+      campaignId: '1',
+      campaignName: 'NA | KubeCon | Feed',
+      eventName: 'KubeCon',
+      creatives: [],
+      status: 'ACTIVE',
+      totalBudget: 1000,
+      dailyBudget: 0,
+      spend: 10,
+      impressions: 100,
+      clicks: 5,
+      ctr: 5,
+      conversions: 1,
+      pacingPct: 50,
+      pacingLabel: 'normal',
+      startDate: '2026-09-01',
+      endDate: '',
+    };
+    const systemAccount: MonitorConnectionAccount = { state: 'system_account', accountId: null, label: null, fallbackFrom: 'no_connection' };
+    const refused = (): HttpErrorResponse => new HttpErrorResponse({ status: 404, error: { error: 'refused', upstreamCode: 'system_account_refused' } });
+
+    it.each([
+      ['linkedin', 'getLinkedInMonitorData', 'LinkedIn Ads', '512345678'],
+      ['reddit', 'getRedditMonitorData', 'Reddit Ads', 't2_lfsystem'],
+      ['meta', 'getMetaMonitorData', 'Meta Ads', 'act_100000000000001'],
+    ])('reads the %s panel with no account and names the account campaign-service read', async (platform, method, label, accountId) => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, [platform]: systemAccount } });
+      service[method].mockReturnValue(of(systemPanel([row], accountId, label)));
+      select(platform);
+
+      expect(service[method]).toHaveBeenCalledWith('cncf', null, 30, 'connection');
+      expect(el(`${platform}-connection-notice`)).toBeNull();
+      expect(el(`${platform}-account-select`)).toBeNull();
+      expect(text(`${platform}-system-account-note`)).toBe(
+        `Read from ${label} account ${accountId} through the LF system account. This project has no ${label} account bound of its own, so only the campaigns created for it are shown.`
+      );
+    });
+
+    it('shows that no campaigns are recorded yet, with no account to name, instead of asking an administrator', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, linkedin: systemAccount } });
+      service['getLinkedInMonitorData'].mockReturnValue(of(systemPanel([], null, 'LinkedIn Ads')));
+      select('linkedin');
+
+      expect(text('linkedin-empty')).toBe(
+        'No LinkedIn Ads campaigns are recorded for this project yet. Campaigns created for it through the LF system account will show here.'
+      );
+      expect(el('linkedin-system-account-note')).toBeNull();
+      expect(el('linkedin-connection-notice')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('Ask an LFX administrator');
+    });
+
+    it("keeps the usual empty state and no note on a read through the project's own connection", async () => {
+      await setup(allConnected);
+      service['getRedditMonitorData'].mockReturnValue(of({ ...systemPanel([], null, 'Reddit Ads'), systemAccountRead: undefined }));
+      select('reddit');
+
+      expect(text('reddit-empty')).toBe('No active Reddit campaigns found for this account.');
+      expect(el('reddit-system-account-note')).toBeNull();
+    });
+
+    /** campaign-service could not read through the system account: the notice the project's own state calls for stands. */
+    it('shows the "no connection" notice when campaign-service refuses the system-account read', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, meta: systemAccount } });
+      service['getMetaMonitorData'].mockReturnValue(throwError(refused));
+      select('meta');
+
+      expect(el('meta-connection-notice')?.getAttribute('data-state')).toBe('no_connection');
+      expect(el('meta-error')).toBeNull();
+
+      // A later read that succeeds clears it.
+      service['getMetaMonitorData'].mockReturnValue(of(systemPanel([row], 'act_100000000000001', 'Meta Ads')));
+      (el('meta-refresh') as HTMLButtonElement | null)?.click();
+      fixture.detectChanges();
+      expect(el('meta-connection-notice')).toBeNull();
+    });
+
+    it('shows the "choose the ad account" notice for a refused read on a connection with no account bound', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, linkedin: { ...systemAccount, fallbackFrom: 'no_account' } } });
+      service['getLinkedInMonitorData'].mockReturnValue(throwError(refused));
+      select('linkedin');
+
+      expect(el('linkedin-connection-notice')?.getAttribute('data-state')).toBe('no_account');
+      expect(text('linkedin-connection-notice-message')).toContain('choose the ad account on the connection');
+      expect(el('linkedin-error')).toBeNull();
+    });
+
+    it('shows any other failure as the retryable error', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, reddit: systemAccount } });
+      service['getRedditMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'down' } })));
+      select('reddit');
+
+      expect(el('reddit-error')).not.toBeNull();
+      expect(el('reddit-connection-notice')).toBeNull();
     });
   });
 
@@ -2275,9 +2644,10 @@ describe('MonitoringTabComponent — campaign-service audience by platform', () 
 });
 
 /**
- * lfx-self-serve-ops#54: the BFF refuses a non-root caller the Google, Reddit, Meta and X monitors
- * (and LinkedIn's legacy arm), because those ad accounts are shared by every foundation. The tab
- * shows that as a notice, not an error, and keeps Google's project-scoped keyword section.
+ * lfx-self-serve-ops#54: the BFF refuses a non-root caller the Reddit, Meta and X monitors, Google's
+ * legacy account-wide arm and LinkedIn's legacy arm, because those ad accounts are shared by every
+ * foundation. The tab shows that as a notice, not an error, and keeps Google's project-scoped keyword
+ * section. Google's campaign-service arm serves a project campaign manager instead (#4837).
  */
 describe('MonitoringTabComponent — shared-account restriction', () => {
   let fixture: ComponentFixture<MonitoringTabComponent>;
@@ -2350,16 +2720,79 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
 
     expect(el('monitoring-error')).not.toBeNull();
     expect(el('monitoring-restricted')).toBeNull();
+    expect(el('monitoring-retry')).not.toBeNull();
   });
 
-  // #4526: the detail line names the status, so a guard's 403, a Google Ads 5xx and a dropped
+  // #4837: a role refusal answers 403 again on every retry, so it is a notice naming the role, with no
+  // Retry, and never the "Failed to load campaign data" error.
+  it.each([
+    [
+      "campaign-service's refusal, mapped by the BFF",
+      "campaign-service refused to read this project's Google Ads connection. Your account needs the campaign manager role on this project.",
+      undefined,
+    ],
+    ["the route guard's refusal", 'campaign_manager access required for this resource', 'MARKETING_ACCESS_REQUIRED'],
+  ] as const)('shows the role notice, not the error or the root-only lock, for %s', async (_case, message, code) => {
+    await setup(flagOn);
+    service['getMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: message, code } })));
+    fixture.detectChanges();
+
+    expect(el('monitoring-role-refused-title')?.textContent).toContain('Google Ads monitoring needs the campaign manager role');
+    expect(el('monitoring-role-refused-message')?.textContent).toContain(message);
+    expect(el('monitoring-error')).toBeNull();
+    expect(el('monitoring-restricted')).toBeNull();
+    expect(el('monitoring-retry')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Failed to load campaign data');
+    expect(fixture.nativeElement.textContent).not.toContain('limited to LF administrators');
+  });
+
+  it('names the role in a fallback when the 403 carries no reason', async () => {
+    await setup(flagOn);
+    service['getMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: null })));
+    fixture.detectChanges();
+
+    expect(el('monitoring-role-refused-message')?.textContent).toContain(MONITOR_GOOGLE_ROLE_REFUSAL_FALLBACK_MESSAGE);
+  });
+
+  it('shows an admitted project campaign manager the data on the campaign-service path, with no lock notice', async () => {
+    await setup(flagOn);
+    service['getMonitorData'].mockReturnValue(
+      of({
+        campaigns: [],
+        accountTotals: { budgetDay: 0, spend: 0, impressions: 0, clicks: 0, conversions: 0, conversionsMeasured: false },
+        actionItems: [],
+        dateRange: { mode: 'last_30_days' },
+        pulledAt: '2026-11-11T00:00:00Z',
+      })
+    );
+    fixture.detectChanges();
+
+    expect(el('monitoring-restricted')).toBeNull();
+    expect(el('monitoring-role-refused')).toBeNull();
+    expect(el('monitoring-error')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('limited to LF administrators');
+  });
+
+  it('clears the role notice when a later read succeeds', async () => {
+    await setup(flagOn);
+    service['getMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'refused' } })));
+    fixture.detectChanges();
+    expect(el('monitoring-role-refused')).not.toBeNull();
+
+    service['getMonitorData'].mockReturnValue(of(null));
+    (fixture.componentInstance as unknown as { refresh(): void }).refresh();
+    fixture.detectChanges();
+    expect(el('monitoring-role-refused')).toBeNull();
+  });
+
+  // #4526: the detail line names the status, so a Google Ads 5xx, another 4xx and a dropped
   // connection no longer all read as the same generic "Failed to load campaign data".
   it.each([
     ['a 5xx, whose body is not read', failed, 'Failed to load campaign data (HTTP 500)'],
     [
-      "a guard's 403, with the server's reason",
-      () => new HttpErrorResponse({ status: 403, error: { error: 'campaign_manager access required for this resource', code: 'MARKETING_ACCESS_REQUIRED' } }),
-      'campaign_manager access required for this resource (HTTP 403)',
+      'a 4xx, with the server reason',
+      () => new HttpErrorResponse({ status: 409, error: { error: "This project's Google Ads connection has no ad account bound to it.", code: 'CONFLICT' } }),
+      "This project's Google Ads connection has no ad account bound to it. (HTTP 409)",
     ],
     [
       'an authored Google Ads advisory',
@@ -2376,6 +2809,7 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
     fixture.detectChanges();
 
     expect(el('monitoring-error')?.textContent).toContain(detail);
+    expect(el('monitoring-retry')).not.toBeNull();
   });
 
   it.each([

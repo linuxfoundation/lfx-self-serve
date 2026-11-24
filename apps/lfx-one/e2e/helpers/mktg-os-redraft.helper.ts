@@ -30,18 +30,18 @@ export async function redraftFixture(page: Page) {
   base.revision.draftVersion = 1;
   base.revision.approval = { approvedAt: '2026-10-21T10:00:00Z', approvedBy: { name: 'Project writer' } };
   const revised = { ...base.revision, id: nextId, number: 2, draftVersion: 2, latest: false, approval: null, origin: 'revised' as const };
+  // The server marks the comments sent once it accepts a redraft; the panel re-reads them while the send is under way.
+  const threadsFor = (revision: string | null): MktgDocumentComment[] => {
+    if (revision === nextId)
+      return fixture.state.rows.map((row) => ({ ...row, status: 'resolved', resultRevisionId: nextId, resolution: 'Updated synthetically.' }));
+    if (state.sends.length && !state.fail) return fixture.state.rows.map((row) => ({ ...row, status: 'sent', sentInRun: 'c'.repeat(64) }));
+    return fixture.state.rows;
+  };
   await page.route('**/api/mktg-agents/documents/*/living**', async (route) => {
     const url = new URL(route.request().url());
     let status = 200;
     let response: unknown;
-    if (url.pathname.endsWith('/comments'))
-      response = {
-        revisionId: url.searchParams.get('revision'),
-        threads:
-          url.searchParams.get('revision') === nextId
-            ? fixture.state.rows.map((row) => ({ ...row, status: 'resolved', resultRevisionId: nextId, resolution: 'Updated synthetically.' }))
-            : fixture.state.rows,
-      };
+    if (url.pathname.endsWith('/comments')) response = { revisionId: url.searchParams.get('revision'), threads: threadsFor(url.searchParams.get('revision')) };
     else if (url.pathname.endsWith('/release')) {
       status = state.releaseBusy ? 409 : 200;
       response = state.releaseBusy ? { code: 'MKTG_REDRAFT_COMMENTS_BUSY' } : { success: true };

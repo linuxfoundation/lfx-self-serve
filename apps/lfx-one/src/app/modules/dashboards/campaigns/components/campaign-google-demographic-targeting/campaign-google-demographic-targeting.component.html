@@ -1,0 +1,20 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<fieldset class="flex flex-col gap-2" [attr.aria-describedby]="describedBy()" [attr.data-testid]="testId()">
+  <legend class="mb-1 text-xs text-gray-700">{{ legend() }}</legend>
+  @for (group of groups(); track group.key) {
+    <fieldset class="flex flex-col gap-1" [attr.data-testid]="optionTestIdPrefix() + group.key">
+      <legend class="text-xs text-gray-500">{{ group.legend }}</legend>
+      <div class="flex flex-wrap gap-x-4 gap-y-2">
+        @for (row of group.rows; track row.value) {
+          <lfx-ui-checkbox
+            [label]="row.label"
+            [checked]="row.checked"
+            (checkedChange)="onTarget(group.key, row.value, $event)"
+            [attr.data-testid]="optionTestIdPrefix() + group.key + '-' + row.value" />
+        }
+      </div>
+    </fieldset>
+  }
+</fieldset>

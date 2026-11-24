@@ -4,7 +4,7 @@ description: How to edit, cancel, and delete project meetings in LFX Self Serve.
 audience: [all]
 product_area: Meetings
 tags: [meetings, manage, edit, cancel, delete, recurring, occurrence]
-last_updated: 2026-10-28
+last_updated: 2026-11-05
 intercom_collection: Meetings
 ---
 

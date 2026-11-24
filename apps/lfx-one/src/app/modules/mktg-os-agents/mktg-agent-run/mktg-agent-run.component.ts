@@ -12,7 +12,8 @@ import { FileUploadComponent } from '@components/file-upload/file-upload.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 
 import { MessageComponent } from '@components/message/message.component';
-import { ConfirmationService, ConfirmEventType } from 'primeng/api';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
+import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
@@ -25,9 +26,12 @@ import {
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_INTAKE_ONE_LINE_ERROR,
   MKTG_LIVING_DOCUMENT_ID,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_NEW_MODE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_RUN_FAILURE_REASON,
+  MKTG_REVISION_ID_REGEX,
+  MKTG_RUN_POLL,
   MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
 import {
@@ -41,6 +45,7 @@ import {
   MktgAttachmentChip,
   MktgDependencyDocument,
   MktgDocumentRunProgress,
+  MktgDocumentReadCycle,
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgPendingGeneration,
@@ -55,8 +60,11 @@ import {
   MktgMissingDependencyLink,
   MktgResolvedFieldGroup,
   MktgRunAnswer,
+  MktgRunAnsweredNotice,
   MktgRunActivity,
+  MktgRunKeptDraft,
   MktgRunPhase,
+  MktgRunQuestionDraft,
   MktgRunQuestionsPending,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
@@ -66,22 +74,29 @@ import {
   mktgJsonAttachmentUsable,
   mktgSentenceCaseLabel,
   mktgKitAssetLabel,
+  mktgRunAnsweredBy,
+  mktgRunHoldsQuestions,
+  mktgRunMovedPast,
+  mktgRunRouteFor,
+  readMktgRetiredRunHint,
   mktgLinkWarnings,
 } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 
 import type { FileSelectEvent } from 'primeng/fileupload';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap, take, tap, timeout } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
+import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { mktgRunAnsweredElsewhereNotice } from '@shared/utils/mktg-run-answered-notice.utils';
 
 import { AeoGeoRunComponent } from '../components/aeo-geo-run/aeo-geo-run.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
@@ -114,6 +129,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
     InputTextComponent,
     TextareaComponent,
     MessageComponent,
+    MktgSkeletonComponent,
     AeoGeoRunComponent,
     MktgIntakeDocumentsComponent,
     MktgIntakeLogoFilesComponent,
@@ -140,6 +156,7 @@ export class MktgAgentRunComponent {
   private readonly runAttempts = inject(MktgRunAttemptService);
   private readonly userService = inject(UserService);
   private readonly confirmation = inject(ConfirmationService);
+  private readonly messages = inject(MessageService);
   private readonly activeRunGuard = inject(MktgActiveRunGuardService);
 
   // toObservable needs the injection context — created here, subscribed (browser
@@ -156,6 +173,13 @@ export class MktgAgentRunComponent {
   private consumedFreshSubject: string | null = null;
   /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
   private generationSub: Subscription | null = null;
+  private readonly concurrentAnswers = inject(MktgRunAnswersService);
+  private guardReadSub: Subscription | null = null;
+  private privateReceiptRunId = '';
+  private receiptRecoveryRunId = '';
+  private completedRun: MktgDocumentRunProgress | null = null;
+  protected readonly checkingGuard = signal(false);
+  protected readonly answeredNotice = signal<MktgRunAnsweredNotice | null>(null);
   /**
    * In-flight "Try again" dependency check. Only one may run, and it is
    * cancelled when the active project changes: a late result (or a late
@@ -167,6 +191,7 @@ export class MktgAgentRunComponent {
   private readonly documentsSection = viewChild(MktgIntakeDocumentsComponent);
   /** The logo-files section, when the intake has one and the form is on screen: its file reads are cancelled the same way. */
   private readonly logoFilesSection = viewChild(MktgIntakeLogoFilesComponent);
+  private readonly publicProgressView = viewChild(MktgRunProgressComponent);
   /** The generate request of the run in flight — what an answers round continues. */
   private activeRequest: MktgGenerateRequest | null = null;
 
@@ -223,12 +248,18 @@ export class MktgAgentRunComponent {
 
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
+  protected readonly checkingRun = signal(true);
+  protected readonly publicRefreshKey = signal('');
   protected readonly publicReceiver = signal(!!this.route.snapshot.queryParamMap.get('run'));
-  protected readonly publicRunId = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), {
+  private readonly discoveredRunId = signal('');
+  private publicReadFailed = false;
+  private readonly routeRunId = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), {
     initialValue: this.route.snapshot.queryParamMap.get('run') ?? '',
   });
+  protected readonly publicRunId = computed(() => this.routeRunId() || this.discoveredRunId());
   protected readonly publicAgentKey = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? '');
   protected readonly publicProject = computed(() => this.projectContext.activeContextUid());
+  protected readonly publicDocumentLink = computed(() => [mktgKitRootPath(this.router.url), 'documents', this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID]);
   protected readonly publicIdentityPending = computed(
     () => this.publicReceiver() && (!this.userService.user()?.sub || (this.navigation() !== null && !this.navigation()?.subject))
   );
@@ -255,6 +286,11 @@ export class MktgAgentRunComponent {
   private readonly priorDocumentCount = signal(0);
   private readonly priorLogoCount = signal(0);
   protected readonly errorText = signal('');
+  /** A waiting state of the public receiver (the produced revision is not confirmed yet): a quiet status line, not an error. */
+  protected readonly publicWaitingText = signal('');
+  /** The headless progress reader's retrying state while the run is checked: one quiet line, never the error box. */
+  protected readonly publicRetrying = signal(false);
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly runFailed = signal(false);
   protected readonly navigation = signal<MktgRunNavigation | null>(null);
   protected readonly navigating = signal(false);
@@ -335,6 +371,24 @@ export class MktgAgentRunComponent {
   protected readonly lastAnswers = signal<Record<string, string>>({});
   /** True while the answers are on their way to the agent. */
   protected readonly answersSending = signal(false);
+  /** The private form's live draft, keyed by its block: only a typed one hears that someone else answered. */
+  private readonly privateDraft = signal<Omit<MktgRunKeptDraft, 'questions'> | null>(null);
+  /** True once someone else answered the held block: it stays on screen read-only under the notice. */
+  private readonly questionsLocked = signal(false);
+  /** When the public progress reader renders nothing of its own; the kept block below it follows the same rule. */
+  protected readonly progressHeadless = computed(
+    () =>
+      this.publicIdentityPending() ||
+      this.checkingRun() ||
+      this.phase() === 'questions' ||
+      !!this.publicWaitingText() ||
+      (!!this.errorText() && !this.navigation())
+  );
+  /** The block kept read-only under the answered notice; the progress reader draws it, with the draft, from that notice. */
+  private readonly keptQuestions = computed(() => {
+    const kept = this.questionsPending();
+    return this.questionsLocked() && kept && this.answeredNotice()?.questionsId === kept.questionsId ? kept : null;
+  });
   /** The row ids of every `url-list` field, in display order, keyed by field key. */
   protected readonly linkRows = signal<Record<string, string[]>>({});
   /** Ever-increasing counter behind the row ids, so a removed row's id is never reused. */
@@ -619,7 +673,9 @@ export class MktgAgentRunComponent {
               return EMPTY;
             }
             const destination = this.navigation();
+            let identityOwned: MktgPendingGeneration | null = null;
             if (
+              context &&
               this.publicReceiver() &&
               user?.sub &&
               runId &&
@@ -629,14 +685,25 @@ export class MktgAgentRunComponent {
               destination.agentKey === this.publicAgentKey() &&
               !destination.subject
             ) {
-              // First identity fill must not discard an already observed public outcome.
               this.pendingPublicRunId = '';
-              this.navigation.set({ ...destination, subject: user.sub });
-              this.onRetryHandoff();
-              return EMPTY;
+              const owned = this.runAttempts.load(context.uid, this.agent?.id ?? '');
+              if (owned?.attempt?.runId === runId && (owned.state === 'writing' || (owned.state === 'questions' && !!owned.pendingQuestions))) {
+                // 144-A/#4636: late identity may reveal this browser's accepted private run.
+                // Do not resume a revision-less public destination instead of its exact receipt.
+                identityOwned = owned;
+              } else {
+                this.navigation.set({ ...destination, subject: user.sub });
+                this.onRetryHandoff();
+                return EMPTY;
+              }
             }
             this.resetForContext(context, fresh);
-            if (!context || this.publicReceiver()) return EMPTY;
+            if (!context || !user?.sub) return EMPTY;
+            if (identityOwned) this.resumeAcceptedAttempt(identityOwned, context.uid);
+            if (this.publicReceiver()) {
+              this.publicProgressView()?.reobserve(context.uid);
+              return EMPTY;
+            }
             const history =
               fresh && user?.sub
                 ? this.runService.lastIntake(context.uid, this.agent?.id ?? '').pipe(
@@ -667,6 +734,7 @@ export class MktgAgentRunComponent {
           takeUntilDestroyed(this.destroyRef)
         )
         .subscribe(({ context, project, dependencies, lastIntake, versionExists, fresh }) => {
+          this.checkingRun.set(false);
           this.hasVersion.set(versionExists ?? !!lastIntake);
           this.dependencyDocs.set(dependencies);
           if (fresh) {
@@ -705,21 +773,210 @@ export class MktgAgentRunComponent {
     const projectUid = this.projectContext.activeContextUid();
     const agentKey = this.publicAgentKey();
     if (!this.publicReceiver() || !projectUid || !agentKey) return;
-    // Public completion has no exact-revision receipt: open the current document, without revision=.
+    this.checkingRun.set(false);
+    const destination = this.navigation();
+    if (!failed && destination?.projectUid === projectUid && destination.agentKey === agentKey && destination.revisionId) return;
+    const runId = this.publicRunId();
+    const owned = this.runAttempts.load(projectUid, this.agent?.id ?? '');
+    const ownsRun =
+      !!runId &&
+      owned?.attempt?.runId === runId &&
+      owned.request.projectUid === projectUid &&
+      owned.request.agentId === this.agent?.id &&
+      (owned.state === 'writing' || (owned.state === 'questions' && !!owned.pendingQuestions));
+    const privateReceiptPending =
+      !!runId && this.privateReceiptRunId === runId && this.activeRequest?.projectUid === projectUid && this.activeRequest.agentId === this.agent?.id;
+    if (!failed && (ownsRun || privateReceiptPending)) {
+      // 144-A: a metadata completion can arrive before the creator's document_location.
+      // Keep that private read alive; an approved/current revision is never its substitute.
+      this.writingStretch.set(true);
+      if (owned && ownsRun && (!this.generationSub || this.generationSub.closed) && this.receiptRecoveryRunId !== runId) {
+        this.receiptRecoveryRunId = runId;
+        this.resumeAcceptedAttempt({ ...owned, state: 'writing', pendingQuestions: undefined }, projectUid);
+      } else if ((!this.generationSub || this.generationSub.closed) && !this.navigation()?.revisionId) {
+        // The plain waiting state (not an error, no instruction to refresh). Only a retired run, a final read error, a
+        // context reset or a new start clears this line; a continuous read that lets it leave on its own is follow-up work
+        // (#5058). The document link below is the way on.
+        this.publicWaitingText.set('The produced revision is not confirmed yet.');
+      }
+      return;
+    }
+    this.publicWaitingText.set('');
+    const completed = this.publicProgressView()?.selectedRun() ?? this.completedRun;
+    const produced =
+      !failed &&
+      completed?.state === 'completed' &&
+      completed.project === projectUid &&
+      completed.agentKey === agentKey &&
+      completed.runId === runId &&
+      completed.documentId === MKTG_LIVING_DOCUMENT_ID &&
+      completed.producedRevisionId &&
+      MKTG_REVISION_ID_REGEX.test(completed.producedRevisionId)
+        ? completed.producedRevisionId
+        : undefined;
+    // Missing public pointers retain the legacy document route; never substitute latest/current for an exact receipt.
     const subject = this.userService.user()?.sub ?? '';
-    this.navigation.set({ projectUid, subject, agentKey, ...(failed && { runId: this.publicRunId() }) });
+    this.navigation.set({ projectUid, subject, agentKey, ...(produced && { revisionId: produced }), ...(failed && { runId: this.publicRunId() }) });
     this.pendingPublicRunId = subject ? '' : this.publicRunId();
+    // The conflict notice stays with writing progress; stored runs still land normally (144-E).
     if (subject) this.onRetryHandoff();
   }
 
-  protected onPublicQuestions(): void {
-    if (this.publicIdentityPending()) return;
+  protected onAlreadyAnswered(notice: MktgRunAnsweredNotice): void {
+    if (notice.runId !== this.publicRunId()) return;
+    // The reader echoes a notice this page gave it without the kept block; the block heard first stays.
+    const current = this.answeredNotice();
+    const scoped = current?.questionsId === notice.questionsId && current.kept && !notice.kept ? { ...notice, kept: current.kept } : notice;
+    this.answeredNotice.set(scoped);
+    // Remembered so the document the run lands on shows the same line, with the draft, beside the produced revision. This
+    // run is the one followed now: an older run's memory for the same asset gives way to it, and nothing typed is lost.
+    const projectUid = this.publicProject();
+    if (!projectUid) return;
+    this.concurrentAnswers.observeRun(projectUid, this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID, scoped.runId);
+    this.concurrentAnswers.remember(projectUid, this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID, scoped);
+  }
+
+  protected onRetryPublicLanding(): void {
+    const destination = this.navigation();
+    if (destination?.subject && destination.subject === this.userService.user()?.sub && destination.projectUid === this.publicProject()) this.onRetryHandoff();
+    else this.onPublicLanding(!!destination?.runId);
+  }
+
+  protected onPublicObserved(cycle: MktgDocumentReadCycle): void {
+    if (cycle.detail.project !== this.publicProject() || this.publicIdentityPending()) return;
+    const run = cycle.detail.runs?.find((entry) => entry.runId === this.publicRunId());
     const pending = this.runAttempts.load(this.publicProject(), this.agent?.id ?? '');
-    if (!pending?.pendingQuestions || pending.attempt?.runId !== this.publicRunId()) return;
-    this.activeRequest = pending.request;
-    this.hasAcknowledgement.set(true);
-    this.showQuestions(pending.pendingQuestions);
-    this.publicReceiver.set(false);
+    const owned = (pending?.attempt?.runId ?? pending?.pendingQuestions?.attempt.runId) === this.publicRunId() ? pending : null;
+    // A partial read whose row still waits on the block this browser holds confirms it; any other partial read keeps the last
+    // state — and a partial FIRST read is still a check in progress: the quiet line, not the error box (the reader retries it).
+    if (cycle.detail.progressUnavailable && !(owned?.pendingQuestions && mktgRunHoldsQuestions(run, owned.pendingQuestions.questionsId))) {
+      if (this.checkingRun()) this.publicRetrying.set(true);
+      return;
+    }
+    this.publicRetrying.set(false);
+    this.checkingRun.set(false);
+    if (this.publicReadFailed) {
+      this.publicReadFailed = false;
+      this.errorText.set('');
+      this.publicWaitingText.set('');
+    }
+    if (
+      run?.state === 'completed' &&
+      run.project === this.publicProject() &&
+      run.agentKey === this.publicAgentKey() &&
+      run.documentId === MKTG_LIVING_DOCUMENT_ID &&
+      run.producedRevisionId &&
+      MKTG_REVISION_ID_REGEX.test(run.producedRevisionId)
+    )
+      this.completedRun = run;
+    const notice = this.answeredNotice();
+    if (
+      notice &&
+      (readMktgRetiredRunHint(run) || run?.state === 'failed' || (run?.pendingQuestions && run.pendingQuestions.questionsId !== notice.questionsId))
+    )
+      this.answeredNotice.set(null);
+    if (readMktgRetiredRunHint(run)) {
+      this.generationSub?.unsubscribe();
+      this.generationSub = null;
+      this.answersSending.set(false);
+      this.clearQuestions();
+      this.phase.set('running');
+      this.errorText.set('');
+      this.publicWaitingText.set('');
+      if (owned) this.runAttempts.save({ ...owned, state: 'failed', pendingQuestions: undefined });
+      return;
+    }
+    if (run?.state === 'failed') {
+      this.waitingRun.set(null);
+      this.waitingQuestions.set(false);
+      this.generationSub?.unsubscribe();
+      this.generationSub = null;
+      this.answersSending.set(false);
+      this.clearQuestions();
+      this.phase.set('running');
+      if (owned) this.runAttempts.save({ ...owned, state: 'failed', pendingQuestions: undefined });
+      return;
+    }
+    // Read before any save below: `owned` is this window's memory copy, and a save rewrites the shared record, so the
+    // sibling window's answered marker is looked up in storage first and carried into the retiring save. The block heard
+    // below is the one this page shows (questionsPending), so its id decides the notice string.
+    const heldId = this.questionsPending()?.questionsId ?? owned?.pendingQuestions?.questionsId;
+    const projectUid = cycle.detail.project;
+    const agentId = this.agent?.id ?? '';
+    const answeredInAnotherWindow = !!heldId && this.runAttempts.answeredInAnotherWindow(projectUid, agentId, heldId);
+    if (owned?.pendingQuestions && !this.answersSending()) {
+      const retired = {
+        ...owned,
+        ...this.runAttempts.storedAnswered(projectUid, agentId, owned.pendingQuestions.questionsId),
+        pendingQuestions: undefined,
+        state: 'writing' as const,
+      };
+      if (!run) {
+        // Completion retires the question block, not the creator capability needed for its exact receipt.
+        this.runAttempts.save(retired);
+      } else if (!mktgRunHoldsQuestions(run, owned.pendingQuestions.questionsId)) {
+        // Only a visible newer round or another state retires the held block; a poll that omits it does not.
+        this.runAttempts.save(retired);
+      }
+    }
+    if (this.answersSending() && run?.state === 'questions') return;
+    if (run?.state === 'questions') {
+      const privateQuestions = owned?.pendingQuestions;
+      if (owned && privateQuestions && mktgRunHoldsQuestions(run, privateQuestions.questionsId)) {
+        if (this.questionsPending()?.questionsId !== privateQuestions.questionsId || this.phase() !== 'questions') {
+          const token = this.route.snapshot.queryParamMap.get('questions');
+          if (token && !this.freshMode()) this.runAttempts.consume(token, this.publicProject(), this.agent?.id ?? '');
+          this.activeRequest = owned.request;
+          this.restoreInputs(owned.request, 'returned');
+          this.hasAcknowledgement.set(true);
+          this.showQuestions(privateQuestions, true);
+        }
+        return;
+      }
+    }
+    // The read-time half of the answers conflict: the held block moved past its questions (or its run landed) without this
+    // window's answer. A typed draft hears it as the send-time 409 does; an untouched form moves on quietly below.
+    const held = this.questionsPending();
+    if (held && !this.questionsLocked() && !this.answersSending() && this.privateDraftTyped(held.questionsId) && (run ? mktgRunMovedPast(run) : true)) {
+      const landed = !run || run.state === 'completed';
+      this.hearAnswered(
+        held,
+        held.attempt.runId || this.publicRunId(),
+        projectUid,
+        agentId,
+        mktgRunAnsweredElsewhereNotice(null, answeredInAnotherWindow, landed)
+      );
+      return;
+    }
+    // A kept block stays until a newer round or another run; the run's later states change nothing below it.
+    if (this.keptQuestions()) return;
+    // Server writing/storing/landed (or a new questions block) beats a stale local questions draft — unless this window's
+    // own send is open: the server claims the block before it replies, so the reply, or its 409, settles the block.
+    if ((this.phase() === 'questions' || this.questionsPending()) && !this.answersSending()) {
+      this.generationSub?.unsubscribe();
+      this.generationSub = null;
+      this.clearQuestions();
+      this.phase.set('running');
+    }
+    if ((run?.state === 'writing' || run?.state === 'storing') && owned?.attempt && !this.answersSending()) {
+      if (!this.generationSub || this.generationSub.closed) {
+        this.resumeAcceptedAttempt({ ...owned, state: 'writing', pendingQuestions: undefined }, this.publicProject());
+      }
+      this.phase.set('running');
+    }
+  }
+
+  protected onPublicReadError(error?: HttpErrorResponse): void {
+    this.checkingRun.set(false);
+    this.publicRetrying.set(false);
+    // The error box carries its own document link: the waiting line (and its link) goes.
+    this.publicWaitingText.set('');
+    this.publicReadFailed = true;
+    this.clearQuestions();
+    this.phase.set('running');
+    if (error?.status === 401) this.errorText.set('Sign in before checking this run.');
+    else if (error?.status === 403) this.errorText.set('You need write access to this project to check its run.');
+    else this.errorText.set('The recorded run could not be checked. Open the document to check its current state.');
   }
 
   /** Navigation recovery retries only this saved destination, never Generate or the accepted answers POST. */
@@ -821,6 +1078,12 @@ export class MktgAgentRunComponent {
   }
 
   protected onContinueWaiting(): void {
+    const runId = this.existingRun()?.runId ?? this.waitingRun()?.runId;
+    const agentKey = this.assetType?.agentKey;
+    if (agentKey && runId && MKTG_STARTED_RUN_ID_REGEX.test(runId)) {
+      this.openActiveRun(agentKey, runId, this.waitingQuestions());
+      return;
+    }
     if (this.waitingQuestions()) {
       // Removing entry-only mode uses the same restoration path as a plain run URL.
       this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
@@ -838,6 +1101,7 @@ export class MktgAgentRunComponent {
   }
 
   protected onSubmit(): void {
+    if (this.checkingGuard()) return;
     if (this.submitDisabled()) {
       this.intakeForm.markAllAsTouched();
       this.errorText.set(this.submitReason());
@@ -892,20 +1156,26 @@ export class MktgAgentRunComponent {
     this.documentsSection()?.addFiles(Array.from(event.files), field.uploadTag);
   }
 
+  /** The private form's live draft: whether it was typed decides if a poll past the questions is heard. */
+  protected onQuestionDraft(draft: MktgRunQuestionDraft): void {
+    const questionsId = this.questionsPending()?.questionsId;
+    this.privateDraft.set(questionsId ? { questionsId, draft } : null);
+  }
+
   /** Sends answers once, keeps the run-page feed, and lands only after the exact revision is stored. */
   protected onAnswerQuestions(answers: MktgRunAnswer[]): void {
     const pending = this.questionsPending();
     const request = this.activeRequest;
-    if (!pending || !request || this.answersSending()) {
+    if (!pending || !request || this.answersSending() || this.checkingRun() || this.phase() !== 'questions') {
       return;
     }
+    const owner = this.userService.user()?.sub;
     this.lastAnswers.set(Object.fromEntries(answers.map((answer) => [answer.key, answer.text])));
     this.errorText.set('');
     this.answersSending.set(true);
     this.hasAcknowledgement.set(false);
     this.writingStretch.set(true);
     this.activityStartedAt.set(Date.now());
-    this.phase.set('running');
     this.generationSub?.unsubscribe();
     let accepted = false;
     this.generationSub = this.runService
@@ -916,10 +1186,28 @@ export class MktgAgentRunComponent {
           if (progress.type === 'submitted') {
             accepted = true;
             this.answersSending.set(false);
+            this.clearQuestions();
+            this.phase.set('running');
+            this.publicProgressView()?.acknowledgeAnswers(pending.questionsId, '', pending.attempt.runId || this.publicRunId());
           }
           this.onProgress(progress, request.projectUid);
         },
-        error: () => {
+        error: (error: unknown) => {
+          if (request.projectUid !== this.projectContext.activeContextUid() || owner !== this.userService.user()?.sub) return;
+          const runId = pending.attempt.runId || this.publicRunId();
+          const answeredBy = error instanceof HttpErrorResponse && error.status === 409 ? mktgRunAnsweredBy(error.error, runId, pending.questionsId) : null;
+          if (answeredBy) {
+            this.hearAnswered(pending, runId, request.projectUid, request.agentId, mktgRunAnsweredElsewhereNotice(answeredBy));
+            return;
+          }
+          if (error instanceof HttpErrorResponse && (error.status === 409 || error.status === 412) && this.publicProgressView()) {
+            this.answersSending.set(false);
+            this.phase.set('running');
+            this.checkingRun.set(true);
+            this.errorText.set('');
+            this.publicProgressView()?.recheck();
+            return;
+          }
           if (accepted) {
             // No Retry here: the accepted run may still finish server-side; a Generate would duplicate it.
             this.discardPendingNavigation();
@@ -933,7 +1221,14 @@ export class MktgAgentRunComponent {
             this.errorText.set('The recorded run could not be confirmed. Your intake is kept — check Documents before trying again.');
             return;
           }
-          // Before the ACK, the answers come back on the questions step, as given: not square one.
+          const recorded = this.publicProgressView();
+          if (recorded && !mktgRunHoldsQuestions(recorded.selectedRun(), pending.questionsId)) {
+            this.answersSending.set(false);
+            this.clearQuestions();
+            this.phase.set('running');
+            return;
+          }
+          // Before the ACK, retry only the same still-paused server questions block.
           this.answersSending.set(false);
           this.writingStretch.set(false);
           this.errorText.set('The agent could not take your answers. They are kept — try again.');
@@ -950,7 +1245,86 @@ export class MktgAgentRunComponent {
       });
   }
 
+  /** 144-D: cached activity can request a check, never authorize a discard dialog. */
   private confirmDiscard(action: () => void): void {
+    if (this.checkingGuard()) return;
+    const project = this.projectContext.activeContextUid();
+    const saved = this.runAttempts.load(project, this.agent?.id ?? '');
+    const cached = this.waitingRun()?.runId ?? this.existingRun()?.runId ?? saved?.attempt?.runId ?? saved?.pendingQuestions?.attempt.runId;
+    if (!this.assetType || (!this.hasWaitingNotice() && !this.existingRun() && !saved?.attempt)) {
+      this.confirmFreshDiscard(action);
+      return;
+    }
+    this.readRunAtClick(cached, (active) => {
+      this.waitingQuestions.set(false);
+      this.waitingRun.set(active);
+      this.existingRun.set(active);
+      if (active && cached && active.runId !== cached) this.runAttempts.clear(project, this.agent?.id ?? '');
+      if (!active) {
+        this.runAttempts.clear(project, this.agent?.id ?? '');
+        this.discardConfirmed = false;
+        this.discardedRunId = null;
+        this.conflictDiscardId = null;
+        action();
+        return;
+      }
+      this.confirmFreshDiscard(action);
+    });
+  }
+
+  /** A fresh selected-run read bypasses listing/reader caches and includes recorded closure metadata. */
+  private readRunAtClick(runId: string | undefined, onRead: (active: MktgDocumentRunProgress | null) => void): void {
+    const type = this.assetType;
+    const project = this.projectContext.activeContextUid();
+    const subject = this.userService.user()?.sub;
+    if (!type || !project || !subject || this.checkingGuard()) return;
+    const selector = runId && MKTG_STARTED_RUN_ID_REGEX.test(runId) ? runId : undefined;
+    const watch = new Subscription();
+    this.guardReadSub?.unsubscribe();
+    this.guardReadSub = watch;
+    this.checkingGuard.set(true);
+    const current = () => !this.destroyRef.destroyed && project === this.projectContext.activeContextUid() && subject === this.userService.user()?.sub;
+    const finish = () => {
+      if (this.guardReadSub === watch) {
+        this.guardReadSub = null;
+        this.checkingGuard.set(false);
+      }
+    };
+    const unavailable = () => {
+      finish();
+      if (current()) {
+        this.phase.set('form');
+        this.writingStretch.set(false);
+        this.errorText.set('The latest run could not be checked. Your inputs are kept — try again before starting over.');
+      }
+    };
+    watch.add(
+      this.documentStore
+        .getDocument(project, type.agentKey, MKTG_LIVING_DOCUMENT_ID, false, selector, false, selector)
+        .pipe(take(1), timeout(MKTG_RUN_POLL.timeoutMs), takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (detail) => {
+            if (!current()) return;
+            if (detail.progressUnavailable || detail.project !== project) {
+              unavailable();
+              return;
+            }
+            const active = detail.runs?.find(
+              (row) =>
+                row.project === project &&
+                row.agentKey === type.agentKey &&
+                row.documentId === MKTG_LIVING_DOCUMENT_ID &&
+                (row.state === 'writing' || row.state === 'questions' || row.state === 'storing')
+            );
+            finish();
+            onRead(active ?? null);
+          },
+          error: unavailable,
+        })
+    );
+  }
+
+  private confirmFreshDiscard(action: () => void): void {
     const project = this.projectContext.activeContextUid();
     const draft = this.runAttempts.load(project, this.agent?.id ?? '');
     const activeDraft = !!draft?.attempt && (draft.state === 'writing' || draft.state === 'questions');
@@ -1012,7 +1386,45 @@ export class MktgAgentRunComponent {
     if (!this.hasWaitingNotice() && this.existingRun()) this.waitingRun.set(this.existingRun());
   }
 
-  private showActiveConflict(conflict: MktgActiveRunConflict, request: MktgGenerateRequest, rejectedDiscard = false): void {
+  /** Never open a modal from a stale POST conflict without a fresh run-record read. */
+  private showActiveConflict(conflict: MktgActiveRunConflict, request: MktgGenerateRequest, rejectedDiscard = false, replayed = false): void {
+    const subject = this.userService.user()?.sub;
+    this.activeRequest = request; // A returned conflict handoff must bind its request before the asynchronous live read/replay.
+    this.readRunAtClick(conflict.activeRunId, (active) => {
+      if (active?.runId === conflict.activeRunId && (active.state === 'writing' || active.state === 'questions' || active.state === 'storing')) {
+        this.showConfirmedActiveConflict({ ...conflict, state: active.state, startedAt: active.startedAt }, request, rejectedDiscard);
+        return;
+      }
+      if (replayed || !this.runService.canRetryActiveConflict(request)) {
+        this.phase.set('form');
+        this.errorText.set('The start response disagrees with the latest run record. Your inputs are kept — check again before starting over.');
+        return;
+      }
+      this.waitingRun.set(null);
+      this.existingRun.set(null);
+      this.phase.set('running');
+      this.generationSub = this.runService
+        .recheckActiveConflict(request)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (progress) => {
+            if (request.projectUid === this.projectContext.activeContextUid() && subject === this.userService.user()?.sub)
+              this.onProgress(progress, request.projectUid);
+          },
+          error: (error: unknown) => {
+            if (request.projectUid !== this.projectContext.activeContextUid() || subject !== this.userService.user()?.sub) return;
+            const fresh = this.runService.activeRunConflict(error, request);
+            if (fresh) this.showActiveConflict(fresh, request, rejectedDiscard, true);
+            else {
+              this.phase.set('form');
+              this.errorText.set('The run could not be started. Your inputs are kept — try again.');
+            }
+          },
+        });
+    });
+  }
+
+  private showConfirmedActiveConflict(conflict: MktgActiveRunConflict, request: MktgGenerateRequest, rejectedDiscard = false): void {
     if (conflict.state !== 'writing' && conflict.state !== 'storing' && conflict.state !== 'questions') return;
     if (request.projectUid !== this.projectContext.activeContextUid() || request.agentId !== this.agent?.id) return;
     this.activeRequest = request;
@@ -1060,11 +1472,7 @@ export class MktgAgentRunComponent {
           conflict = fresh;
           discard();
         },
-        onOpen: (fresh) => {
-          void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', fresh.agentKey, fresh.documentId], {
-            queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, mode: null, type: null, run: fresh.activeRunId },
-          });
-        },
+        onOpen: (fresh) => this.openActiveRun(fresh.agentKey, fresh.activeRunId),
         onError: () => {
           this.discardPendingNavigation();
           this.navigating.set(false);
@@ -1084,6 +1492,19 @@ export class MktgAgentRunComponent {
     );
   }
 
+  /** 146-G: Keep/Open targets the server's active run, never the reader's current document. */
+  private openActiveRun(agentKey: MktgDocumentRunProgress['agentKey'], runId: string, replaceUrl = false): void {
+    const commands = mktgRunRouteFor(agentKey, mktgKitRootPath(this.router.url));
+    if (!commands || !MKTG_STARTED_RUN_ID_REGEX.test(runId)) {
+      this.errorText.set('The active run could not be opened. Check its entry in Documents.');
+      return;
+    }
+    void this.router.navigate(commands, {
+      queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, mode: null, type: null, run: runId },
+      ...(replaceUrl && { replaceUrl: true }),
+    });
+  }
+
   /** The same persisted revision summary used by Kit/family and Documents, not browser run history. */
   private readHasVersion(project: string, fresh: boolean): Observable<boolean | null> {
     return this.documentStore.listDocuments(project).pipe(
@@ -1097,7 +1518,35 @@ export class MktgAgentRunComponent {
             (entry.state === 'writing' || entry.state === 'storing' || entry.state === 'questions')
         );
         this.existingRun.set(run ?? null);
+        if (!fresh && run && !this.startedOverWaiting()) {
+          this.discoveredRunId.set(run.runId);
+          this.publicReceiver.set(true);
+        }
         const saved = this.runAttempts.load(project, this.agent?.id ?? '');
+        const sameQuestions =
+          !!saved?.pendingQuestions &&
+          run?.runId === (saved.attempt?.runId ?? saved.pendingQuestions.attempt.runId) &&
+          mktgRunHoldsQuestions(run, saved.pendingQuestions.questionsId);
+        const hasStoredDocument = documents.groups.some(
+          (group) => group.type.catalogAgentId === this.agent?.id && group.documents.some((item) => item.revisionCount > 0)
+        );
+        if (saved?.pendingQuestions && !sameQuestions && (this.assetType || run || hasStoredDocument || saved.attempt?.runId)) {
+          this.waitingQuestions.set(false);
+          this.clearQuestions();
+          if (this.phase() === 'questions') this.phase.set(run ? 'running' : 'form');
+          if (!run) this.runAttempts.clear(project, this.agent?.id ?? '');
+          else
+            this.runAttempts.save({
+              ...saved,
+              ...this.runAttempts.storedAnswered(project, this.agent?.id ?? '', saved.pendingQuestions.questionsId),
+              pendingQuestions: undefined,
+              state: run.state === 'questions' ? 'questions' : 'writing',
+            });
+        }
+        if (fresh && !this.startedOverWaiting()) {
+          this.waitingRun.set(run ?? null);
+          if (!run && hasStoredDocument) this.waitingQuestions.set(false);
+        }
         if (
           !fresh &&
           run?.state === 'questions' &&
@@ -1599,6 +2048,13 @@ export class MktgAgentRunComponent {
     this.discardedRunId = null;
     this.discardEpoch++;
     this.conflictDiscardId = null;
+    this.privateReceiptRunId = '';
+    this.receiptRecoveryRunId = '';
+    this.completedRun = null;
+    this.guardReadSub?.unsubscribe();
+    this.guardReadSub = null;
+    this.checkingGuard.set(false);
+    this.answeredNotice.set(null);
     this.confirmation.close();
     this.waitingSince.set('');
     this.startedOverWaiting.set(false);
@@ -1616,9 +2072,11 @@ export class MktgAgentRunComponent {
     this.activity.set([]);
     this.activityStartedAt.set(0);
     this.phase.set('form');
+    this.checkingRun.set(true);
     this.recheckingAttempt.set(false);
     this.runFailed.set(false);
     this.errorText.set('');
+    this.publicWaitingText.set('');
     this.fromLfxApplied.set({});
     this.lfxMissing.set({});
     this.fromPriorRunApplied.set({});
@@ -1647,14 +2105,19 @@ export class MktgAgentRunComponent {
     this.priorDocumentCount.set(0);
     this.priorLogoCount.set(0);
     const publicId = this.route.snapshot.queryParamMap.get('run') ?? '';
+    this.discoveredRunId.set('');
+    this.publicRefreshKey.set('');
+    this.publicReadFailed = false;
     this.publicReceiver.set(!!publicId);
     this.pendingPublicRunId = '';
     if (!context) return;
-    if (publicId) {
-      if (!this.userService.user()?.sub) return;
-      const owned = this.runAttempts.load(context.uid, this.agent.id);
-      if (owned?.attempt?.runId !== publicId || (owned.state !== 'writing' && !(owned.state === 'questions' && owned.pendingQuestions))) return;
-      this.publicReceiver.set(false);
+    const recorded = this.runAttempts.load(context.uid, this.agent.id);
+    const recordedId =
+      !fresh && (recorded?.state === 'writing' || recorded?.state === 'questions') ? (recorded.attempt?.runId ?? recorded.pendingQuestions?.attempt.runId) : '';
+    if (publicId || recordedId) {
+      this.discoveredRunId.set(recordedId ?? '');
+      this.publicReceiver.set(true);
+      return; // Always measure the server before restoring a private questions draft.
     }
     if (fresh) {
       this.readWaitingDraft(context.uid);
@@ -1673,7 +2136,7 @@ export class MktgAgentRunComponent {
       this.restoreInputs(draft.request, 'restored');
       if (draft.pendingQuestions && draft.state !== 'failed') {
         this.activeRequest = draft.request;
-        this.showQuestions(draft.pendingQuestions);
+        if (!this.assetType) this.showQuestions(draft.pendingQuestions);
       } else if (draft.requiresReattachment && draft.state !== 'writing') {
         this.errorText.set('Your saved intake was restored. Reattach the source files, then press Generate explicitly.');
       }
@@ -1705,11 +2168,15 @@ export class MktgAgentRunComponent {
     } else if (returned?.pending.pendingQuestions) {
       this.activeRequest = returned.pending.request;
       this.restoreInputs(returned.pending.request, 'returned');
-      this.showQuestions(returned.pending.pendingQuestions);
+      if (!this.assetType || returned.pending.pendingQuestions.attempt.runId) this.showQuestions(returned.pending.pendingQuestions);
     } else if (returned?.pending.attempt) {
-      this.resumeAcceptedAttempt(returned.pending, context.uid);
-    } else if (draft?.state === 'writing' && draft.attempt) {
-      // Consumed entry URLs also restore an accepted run before its first questions.
+      if (!this.assetType) this.resumeAcceptedAttempt(returned.pending, context.uid);
+      else if (returned.pending.attempt.runId) {
+        this.discoveredRunId.set(returned.pending.attempt.runId);
+        this.publicReceiver.set(true);
+      }
+    } else if (draft?.state === 'writing' && draft.attempt && !this.assetType) {
+      // Capability-only generic agents have no document-run contract; registered documents use public state.
       this.resumeAcceptedAttempt(draft, context.uid);
     }
 
@@ -1722,6 +2189,7 @@ export class MktgAgentRunComponent {
   }
 
   private resumeAcceptedAttempt(pending: MktgPendingGeneration, projectUid: string): void {
+    this.privateReceiptRunId = pending.attempt?.runId ?? '';
     this.activeRequest = pending.request;
     this.restoreInputs(pending.request, 'returned');
     this.hasAcknowledgement.set(true);
@@ -1866,6 +2334,12 @@ export class MktgAgentRunComponent {
 
     this.runFailed.set(false);
     this.errorText.set('');
+    this.publicWaitingText.set('');
+    // Consent/start supersedes the old UI snapshot, not the retained accepted capability.
+    // An explicit retry still performs the live-record check through confirmDiscard.
+    this.waitingRun.set(null);
+    this.existingRun.set(null);
+    this.waitingQuestions.set(false);
     this.clearQuestions();
     this.activity.set([]);
     this.recheckingAttempt.set(false);
@@ -1948,6 +2422,11 @@ export class MktgAgentRunComponent {
   /** One handler for the generate stream and the answers stream: they emit the same events. */
   private onProgress(progress: MktgGenerateProgress, projectUid: string): void {
     if (progress.type === 'submitted') {
+      const accepted = this.runAttempts.load(projectUid, this.agent?.id ?? '');
+      if (accepted?.attempt?.runId) {
+        this.privateReceiptRunId = accepted.attempt.runId;
+        this.concurrentAnswers.observeRun(projectUid, this.assetType?.agentKey ?? '', MKTG_LIVING_DOCUMENT_ID, accepted.attempt.runId);
+      }
       this.conflictDiscardId = null;
       this.hasAcknowledgement.set(true);
       this.consumeFreshEntry(projectUid);
@@ -1986,6 +2465,8 @@ export class MktgAgentRunComponent {
       return;
     }
     if (progress.type === 'failed' || progress.type === 'refused') {
+      this.privateReceiptRunId = '';
+      this.receiptRecoveryRunId = '';
       this.discardPendingNavigation();
       this.navigating.set(false);
       this.recheckingAttempt.set(false);
@@ -2018,7 +2499,7 @@ export class MktgAgentRunComponent {
       if (projectUid !== this.projectContext.activeContextUid() || (request && (request.projectUid !== projectUid || request.agentId !== this.agent?.id)))
         return;
       this.dependencyService.notifyDocumentsChanged(projectUid);
-      if (this.navigation()) return;
+      if (this.navigation()?.revisionId) return;
       const run = progress.run;
       const attempt = progress.attempt;
       if (!request || !run || !attempt) {
@@ -2065,14 +2546,73 @@ export class MktgAgentRunComponent {
   }
 
   /** Puts the agent's questions on the page; the stepper asks them one at a time. */
-  private showQuestions(pending: MktgRunQuestionsPending): void {
+  private showQuestions(pending: MktgRunQuestionsPending, confirmed = false): void {
+    if (pending.attempt.runId) {
+      this.privateReceiptRunId = pending.attempt.runId;
+      this.discoveredRunId.set(pending.attempt.runId);
+      this.publicReceiver.set(true);
+      if (!confirmed) {
+        this.checkingRun.set(true);
+        this.questionsPending.set(pending);
+        this.phase.set('running');
+        this.publicRefreshKey.update((value) => value + '1');
+        return;
+      }
+    }
     this.recheckingAttempt.set(false);
-    this.lastAnswers.set({});
+    if (this.questionsPending()?.questionsId !== pending.questionsId) this.lastAnswers.set({});
     this.questionsPending.set(pending);
+    this.questionsLocked.set(false);
     this.phase.set('questions');
   }
 
   private clearQuestions(): void {
     this.questionsPending.set(null);
+    this.questionsLocked.set(false);
+  }
+
+  /** Whether the live private draft for this block differs from what its form opened with. */
+  private privateDraftTyped(questionsId: string): boolean {
+    const kept = this.privateDraft();
+    return kept?.questionsId === questionsId && kept.draft.dirty === true;
+  }
+
+  /**
+   * Someone else answered the held block — learnt from a send's 409 or from a poll past the questions. The block stays
+   * read-only under the notice, the attempt follows the run as writing, and the public observer of that run says it too.
+   */
+  private hearAnswered(pending: MktgRunQuestionsPending, runId: string, projectUid: string, agentId: string, notice: string): void {
+    this.answersSending.set(false);
+    this.hasAcknowledgement.set(true);
+    // A poll may have cleared the block while the send was open; the block heard about is the one kept.
+    this.questionsPending.set(pending);
+    this.questionsLocked.set(true);
+    this.phase.set('running');
+    this.checkingRun.set(false);
+    this.writingStretch.set(true);
+    this.errorText.set('');
+    const saved = this.runAttempts.load(projectUid, agentId);
+    if (saved?.attempt?.runId === runId)
+      this.runAttempts.save({
+        ...saved,
+        ...this.runAttempts.storedAnswered(projectUid, agentId, pending.questionsId),
+        state: 'writing',
+        pendingQuestions: undefined,
+        answeredQuestionsId: pending.questionsId,
+      });
+    const draft = this.privateDraft();
+    const kept: MktgRunKeptDraft = {
+      questionsId: pending.questionsId,
+      questions: pending.questions,
+      draft: draft?.questionsId === pending.questionsId ? draft.draft : { index: 0, answers: {} },
+    };
+    const scopedNotice: MktgRunAnsweredNotice = { runId, questionsId: pending.questionsId, message: notice, kept };
+    this.answeredNotice.set(scopedNotice);
+    this.concurrentAnswers.remember(projectUid, this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID, scopedNotice);
+    this.discoveredRunId.set(runId);
+    this.publicReceiver.set(true);
+    const observer = this.publicProgressView();
+    if (observer && observer.runId() === runId) observer.acknowledgeAnswers(pending.questionsId, notice, runId);
+    else this.publicRefreshKey.update((value) => value + '1');
   }
 }

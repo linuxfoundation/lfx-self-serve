@@ -38,6 +38,14 @@ describe('isBackfillEventSource', () => {
   it.each([[null], [undefined]])('rejects %p without throwing', (source) => {
     expect(isBackfillEventSource(source)).toBe(false);
   });
+
+  // A long whitespace run before a non-whitespace character made the old anchored regex backtrack
+  // quadratically (CodeQL js/polynomial-redos).
+  it('handles long whitespace runs in linear time', () => {
+    const run = ' \t'.repeat(50_000);
+    expect(isBackfillEventSource(`${run}backfill${run}`)).toBe(true);
+    expect(isBackfillEventSource(`${run}x${run}`)).toBe(false);
+  });
 });
 
 describe('buildCertificateFileName', () => {

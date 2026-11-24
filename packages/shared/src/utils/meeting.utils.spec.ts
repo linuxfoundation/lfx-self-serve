@@ -40,9 +40,13 @@ import {
   buildMeetingOccurrenceRoute,
   buildOccurrenceNavTimeline,
   formatMeetingOccurrenceLabel,
+  getMeetingOwnResendQuestion,
   getMeetingSelfRemovalMessage,
+  getMeetingSelfRemovalNotes,
+  getMeetingSelfRemovalQuestion,
   getMeetingSeriesUid,
   buildMeetingOrganizerChip,
+  buildMeetingOrganizerKeys,
   buildMeetingOrganizerMailto,
   buildImportSummary,
   buildRecurrenceNeverEndDate,
@@ -55,6 +59,7 @@ import {
   filterUnlistedEmails,
   fromMeetingApiVotingStatuses,
   getMeetingOrganizerDisplayName,
+  getMeetingCommitteeSelectionKey,
   isCalendarDeadlinePast,
   isMeetingAccepted,
   isMeetingDeclinedForAllOccurrences,
@@ -68,10 +73,12 @@ import {
   isBatchRegistrantOperationResponse,
   isVoteCalendarEventPast,
   mergeBatchRegistrantResponses,
+  organizerDisplayName,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   normalizeMeetingApiVotingStatuses,
   reconcileOptimisticPad,
+  resolveMeetingGuestRole,
   resolveMeetingOrganizer,
   resolveMeetingOwner,
   resolveMeetingCalendarColors,
@@ -1116,6 +1123,36 @@ describe('isUnresolvableParticipantName', () => {
   });
 });
 
+describe('resolveMeetingGuestRole', () => {
+  const organizerKeys = buildMeetingOrganizerKeys([' Organizer-One@acme-motors.example ', 'organizer-two', '']);
+
+  it('reports a listed organizer by email, ignoring case and spacing', () => {
+    expect(resolveMeetingGuestRole({ email: 'ORGANIZER-ONE@acme-motors.example' }, organizerKeys)).toBe('organizer');
+  });
+
+  it('reports a listed organizer by username', () => {
+    expect(resolveMeetingGuestRole({ email: 'someone@acme-motors.example', username: 'Organizer-Two' }, organizerKeys)).toBe('organizer');
+  });
+
+  it('never reports a listed organizer as a host, whatever their host flag says', () => {
+    expect(resolveMeetingGuestRole({ email: 'organizer-one@acme-motors.example', host: true }, organizerKeys)).toBe('organizer');
+    expect(resolveMeetingGuestRole({ email: 'organizer-one@acme-motors.example', host: false }, organizerKeys)).toBe('organizer');
+  });
+
+  it('reports a host-flagged guest who is not an organizer as a host', () => {
+    expect(resolveMeetingGuestRole({ email: 'guest-a@acme-motors.example', host: true }, organizerKeys)).toBe('host');
+  });
+
+  it('reports no role for an ordinary guest', () => {
+    expect(resolveMeetingGuestRole({ email: 'guest-a@acme-motors.example', host: false }, organizerKeys)).toBeNull();
+  });
+
+  it('treats a missing or blank organizers list as nobody being an organizer', () => {
+    expect(buildMeetingOrganizerKeys(undefined).size).toBe(0);
+    expect(buildMeetingOrganizerKeys(['', '  ']).size).toBe(0);
+  });
+});
+
 describe('compareMeetingPeopleByHostThenName', () => {
   it('floats hosts to the top, sinks unresolvable rows to the bottom, sorts by first name within a tier', () => {
     const people = [
@@ -2034,5 +2071,81 @@ describe('getMeetingSelfRemovalMessage', () => {
 
     expect(message).toContain('still be an organizer');
     expect(message).toContain("it won't invite you to this meeting again");
+  });
+});
+
+describe('getMeetingSelfRemovalQuestion and getMeetingSelfRemovalNotes', () => {
+  it('asks with curly quotes and lists only the notes that apply, organizer first', () => {
+    expect(getMeetingSelfRemovalQuestion('Weekly sync')).toBe(
+      'Remove yourself from “Weekly sync”? You will no longer be invited to any occurrence and will lose your RSVP.'
+    );
+    expect(getMeetingSelfRemovalNotes()).toEqual([]);
+    expect(getMeetingSelfRemovalNotes({ organizer: true, viaCommittee: true })).toEqual([
+      'You will still be an organizer of this meeting.',
+      "You stay in the committee, but it won't invite you to this meeting again.",
+    ]);
+  });
+});
+
+describe('getMeetingOwnResendQuestion', () => {
+  it('asks with curly quotes before resending the invite to the caller', () => {
+    expect(getMeetingOwnResendQuestion('Weekly sync')).toBe("Resend your invitation to “Weekly sync”? We'll email it to your own address again.");
+  });
+});
+
+describe('organizerDisplayName', () => {
+  it('prefers the owner name', () => {
+    expect(
+      organizerDisplayName({ owner: { name: 'Test Organizer', username: 'test-organizer' }, created_by: { name: 'Other Person', username: 'op', email: '' } })
+    ).toBe('Test Organizer');
+  });
+
+  it('falls back to created_by name when the owner is empty', () => {
+    expect(organizerDisplayName({ owner: {}, created_by: { name: 'Pat Creator', username: 'pc', email: 'pc@example.com' } })).toBe('Pat Creator');
+  });
+
+  it('falls back to created_by name when the owner has no name', () => {
+    expect(organizerDisplayName({ owner: { username: 'someone' }, created_by: { name: 'Pat Creator', username: 'pc', email: '' } })).toBe('Pat Creator');
+  });
+
+  it('falls back to the owner email local part when no name exists', () => {
+    expect(organizerDisplayName({ owner: { email: 'jane.doe@acme-motors.example' } })).toBe('jane.doe');
+  });
+
+  it('falls back to Linux Foundation when nothing identifies a person', () => {
+    expect(organizerDisplayName({ owner: {} })).toBe('Linux Foundation');
+    expect(organizerDisplayName({})).toBe('Linux Foundation');
+    expect(organizerDisplayName(null)).toBe('Linux Foundation');
+  });
+
+  it('never surfaces a service account as the organizer', () => {
+    expect(organizerDisplayName({ owner: { username: 'zoom.webhooks', email: 'zoom.webhooks@example.com' } })).toBe('Linux Foundation');
+    expect(organizerDisplayName({ created_by: { name: 'zoom.webhooks', username: 'zoom.webhooks', email: '' } })).toBe('Linux Foundation');
+  });
+
+  it('trims whitespace-only names', () => {
+    expect(organizerDisplayName({ owner: { name: '   ', email: 'sam@acme-motors.example' } })).toBe('sam');
+  });
+});
+
+describe('getMeetingCommitteeSelectionKey', () => {
+  it('ignores group order, labels, duplicate statuses, and legacy status spellings', () => {
+    const legacy: MeetingCommittee = { uid: 'group-a', name: 'Old label' };
+    // Model the untyped wire value stored before the voting-status migration.
+    Reflect.set(legacy, 'allowed_voting_statuses', ['Voting Rep', 'Observer', 'Voting Rep']);
+    expect(getMeetingCommitteeSelectionKey([{ uid: 'group-b' }, legacy])).toBe(
+      getMeetingCommitteeSelectionKey([
+        { uid: 'group-a', name: 'New label', allowed_voting_statuses: ['observer', 'voting_rep'] },
+        { uid: 'group-b', allowed_voting_statuses: [] },
+      ])
+    );
+    expect(getMeetingCommitteeSelectionKey([null, undefined])).toBe(getMeetingCommitteeSelectionKey([]));
+  });
+
+  it('distinguishes group changes and voting-filter changes', () => {
+    const original = getMeetingCommitteeSelectionKey([{ uid: 'group-a', allowed_voting_statuses: ['voting_rep'] }]);
+    expect(original).not.toBe(getMeetingCommitteeSelectionKey([{ uid: 'group-b', allowed_voting_statuses: ['voting_rep'] }]));
+    expect(original).not.toBe(getMeetingCommitteeSelectionKey([{ uid: 'group-a', allowed_voting_statuses: ['observer'] }]));
+    expect(original).not.toBe(getMeetingCommitteeSelectionKey([{ uid: 'group-a' }]));
   });
 });

@@ -31,6 +31,10 @@ import {
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
@@ -48,7 +52,7 @@ import type { Request } from 'express';
 import type { HealthMetricsEngagementGroupQuery } from '@lfx-one/shared/interfaces';
 
 function query(overrides: Partial<HealthMetricsEngagementGroupQuery> = {}): HealthMetricsEngagementGroupQuery {
-  return { foundationSlug: 'acme', projectSlug: null, groupType: 'all', range: 'YTD', page: 1, size: 25, ...overrides };
+  return { foundationSlug: 'acme', projectSlug: null, groupType: 'all', range: 'YTD', page: 1, size: 25, sort: null, ...overrides };
 }
 
 /** The logger only reads request metadata off this, so a bare cast is enough for the service call. */
@@ -62,7 +66,8 @@ function warehouseRow(overrides: Record<string, unknown> = {}) {
     PROJECT_ID: 'p-1',
     PROJECT_SLUG: 'acme-core',
     PROJECT_NAME: 'Acme Core',
-    GROUP_TYPE_LABEL: 'Technical Steering Committee',
+    GROUP_TYPE_LABEL: 'Governance',
+    MEETING_TYPE_GROUP: 'Board',
     LAST_MET_DATE: new Date('2026-08-14T00:00:00.000Z'),
     SCOPE_GROUPS: 34,
     TOTAL_RECORDS: 34,
@@ -121,13 +126,16 @@ describe('HealthMetricsEngagementService', () => {
     loggerError.mockReset();
   });
 
-  it('maps every period onto the row, oldest first, so the sparkline needs no second read', async () => {
+  it('maps every period onto the row, oldest first', async () => {
     const response = await service.getGroupAttendance(req, query());
 
     expect(response.rows).toHaveLength(1);
     expect(response.rows[0]?.committeeId).toBe('c-1');
     expect(response.rows[0]?.projectId).toBe('p-1');
     expect(response.rows[0]?.lastMetDate).toBe('2026-08-14');
+    // The board split under Governance reads the view's meeting type group.
+    expect(response.rows[0]).toMatchObject({ groupTypeLabel: 'Governance', meetingTypeGroup: 'Board' });
+    expect(lastSql()).toContain('group_type_label, meeting_type_group,');
     expect(response.rows[0]?.periods.map((period) => period.range)).toEqual(['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD']);
     expect(response.rows[0]?.periods.map((period) => period.attendancePct)).toEqual([0.54, 0.58, 0.59, 0.62]);
     expect(response.rows[0]?.periods[3]).toMatchObject({ meetingsHeld: 8, invitedCount: 80, attendedCount: 50, dormant: false });
@@ -228,6 +236,22 @@ describe('HealthMetricsEngagementService', () => {
     expect(response.totalRecords).toBe(34);
   });
 
+  it("sorts every page by the reader's column, empty values last, then the view's rank, and keeps that order after the join", async () => {
+    await service.getGroupAttendance(req, query({ sort: { key: 'attendance', direction: 'desc' } }));
+
+    const sql = lastSql();
+    const rank =
+      'sort_rank_ytd ASC NULLS LAST, committee_name ASC NULLS LAST, committee_id ASC NULLS LAST, project_slug ASC NULLS LAST, group_type_label ASC NULLS LAST';
+    // Dormant below every rate; a group with too few meetings to rate is empty, as its "—" cell shows.
+    const attendance = `CASE WHEN COALESCE(is_dormant_ytd, FALSE) THEN -1 WHEN meetings_count_ytd >= ${HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE} THEN attendance_pct_ytd END`;
+    expect(sql).toContain(`ORDER BY ${attendance} DESC NULLS LAST, ${rank} LIMIT`);
+    expect(sql).toContain(`ROW_NUMBER() OVER (ORDER BY ${attendance} DESC NULLS LAST, ${rank}) AS page_position`);
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+
+    await service.getGroupAttendance(req, query({ sort: { key: 'meetings', direction: 'asc' } }));
+    expect(lastSql()).toContain(`ORDER BY NULLIF(meetings_count_ytd, 0) ASC NULLS LAST, ${rank}`);
+  });
+
   it('selects, ranks and aggregates on the requested period suffix', async () => {
     await service.getGroupAttendance(req, query({ range: 'COMPLETED_YEAR_2' }));
 
@@ -247,7 +271,7 @@ describe('HealthMetricsEngagementService', () => {
     expect(sql).toContain('LEFT JOIN page ON TRUE');
     expect(sql).toContain('TRUE AS is_page_row');
     expect(sql).not.toContain('OVER()');
-    // Every period's columns ship regardless of the selected one — the sparkline spans all four.
+    // Every period's columns ship regardless of the selected one, so the row carries all four.
     expect(sql).toContain('attendance_pct_ytd');
     expect(sql).toContain('attendance_pct_3rd_last_completed_year');
   });
@@ -609,6 +633,7 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
       LAST_ENGAGED_DATE: new Date('2026-08-14T00:00:00.000Z'),
       DAYS_SINCE_LAST_ENGAGED: 39,
       IS_LAPSED_180D: false,
+      LOGO_URL: 'https://logo.example/acme.png',
       SCOPE_ORGS_COUNT: 136,
       SCOPE_LAPSED_ORGS_COUNT: 54,
       SCOPE_MEETINGS_HELD_COUNT_YTD: 30,
@@ -643,9 +668,21 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
     const response = await service.getOrgParticipation(req, { foundationSlug: 'acme', projectSlug: null });
 
     expect(lastBinds()).toEqual(['acme', null, null]);
-    expect(lastSql()).toContain('WHERE foundation_slug = ? AND ((? IS NULL AND is_all_projects = TRUE) OR project_slug = ?)');
+    expect(lastSql()).toContain('WHERE v.foundation_slug = ? AND ((? IS NULL AND is_all_projects = TRUE) OR project_slug = ?)');
     expect(response.rows[0]?.periods.map((period) => period.range)).toEqual(['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD']);
     expect(response.rows[0]?.periods[3]).toMatchObject({ meetingsTotal: 27, attendedCount: 21, attendancePct: 0.78, avgReps: 1.75, sortRank: 1 });
+  });
+
+  // The mapping has one row per account, so the left join adds the logo without adding or dropping orgs.
+  it('joins each company to its logo, and reads no logo as empty', async () => {
+    const response = await service.getOrgParticipation(req, { foundationSlug: 'acme', projectSlug: null });
+
+    expect(lastSql()).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = v.account_id');
+    expect(lastSql()).toContain('v.account_id, v.account_name, v.membership_tier, v.is_member,');
+    expect(response.rows[0]?.logoUrl).toBe('https://logo.example/acme.png');
+
+    execute.mockResolvedValue({ rows: [orgWarehouseRow({ LOGO_URL: null })] });
+    expect((await service.getOrgParticipation(req, { foundationSlug: 'acme', projectSlug: null })).rows[0]?.logoUrl).toBe('');
   });
 
   it('keeps the view tier as-is, because this view is not member-only', async () => {
@@ -705,7 +742,7 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
     expect(lastSql()).toContain('ORDER BY LEAST(');
     expect(lastSql()).toContain('IFNULL(sort_rank_ytd, 2147483647)');
     // Two accounts can share a name, and a tie at the cap boundary would drop a different org per read.
-    expect(lastSql()).toContain('account_name ASC NULLS LAST, account_id ASC NULLS LAST');
+    expect(lastSql()).toContain('v.account_name ASC NULLS LAST, v.account_id ASC NULLS LAST');
   });
 
   it('truncates to the cap and says so out loud when the scope overruns it', async () => {
@@ -751,7 +788,7 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
       .getOrgParticipation(req, { foundationSlug: 'acme', projectSlug: null })
       .catch((thrown: unknown) => thrown)) as MicroserviceError;
 
-    expect(error.toResponse()['error']).toBe('Organization participation is unavailable right now.');
+    expect(error.toResponse()['error']).toBe('Company participation is unavailable right now.');
   });
 
   it('rethrows any other Snowflake failure', async () => {
@@ -769,7 +806,7 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
     return {
       ACCOUNT_ID: 'a-1',
       ACCOUNT_NAME: 'Acme Motors',
-      MEMBERSHIP_STATUS: 'Non-member',
+      LOGO_URL: 'https://logo.example/acme.png',
       SCOPE_ORGS_COUNT_3RD_LAST_COMPLETED_YEAR: 41,
       SCOPE_ORGS_COUNT_PREV_COMPLETED_YEAR: 37,
       SCOPE_ORGS_COUNT_LAST_COMPLETED_YEAR: 33,
@@ -813,14 +850,6 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
 
     expect(lastSql()).not.toContain('project_slug');
     expect(lastSql()).not.toContain('is_all_projects');
-  });
-
-  it('renders the view status as-is rather than re-deriving membership', async () => {
-    execute.mockResolvedValue({ rows: [nonMemberWarehouseRow({ MEMBERSHIP_STATUS: 'Prospect' })] });
-
-    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
-
-    expect(response.rows[0]?.membershipStatus).toBe('Prospect');
   });
 
   // The unsuffixed count is all time; a `COUNT(*)` here would count rows, not active organizations.
@@ -872,7 +901,19 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
     expect(lastSql()).toContain('ORDER BY LEAST(');
     expect(lastSql()).toContain('IFNULL(sort_rank_ytd, 2147483647)');
     // Two accounts can share a name, and a tie at the cap boundary would drop a different org per read.
-    expect(lastSql()).toContain('account_name ASC NULLS LAST, account_id ASC NULLS LAST');
+    expect(lastSql()).toContain('v.account_name ASC NULLS LAST, v.account_id ASC NULLS LAST');
+  });
+
+  it('joins each company to its logo, and reads no logo as empty', async () => {
+    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    expect(lastSql()).toContain(
+      'LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = v.account_id WHERE v.foundation_slug = ?'
+    );
+    expect(response.rows[0]?.logoUrl).toBe('https://logo.example/acme.png');
+
+    execute.mockResolvedValue({ rows: [nonMemberWarehouseRow({ LOGO_URL: null })] });
+    expect((await service.getNonMemberParticipation(req, { foundationSlug: 'acme' })).rows[0]?.logoUrl).toBe('');
   });
 
   it('truncates to the cap and says so out loud when the scope overruns it', async () => {
@@ -953,7 +994,7 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
       PERSON_DISPLAY_NAME: 'Dana Fields',
       IS_IDENTITY_UNRESOLVED: false,
       ACCOUNT_NAME: 'Acme Motors',
-      MEMBERSHIP_TIER: 'Gold',
+      PERSON_JOB_TITLE: 'Head of OSPO',
       COMMITTEE_NAME: 'Technical Steering Committee',
       LAST_ATTENDED_DATE: new Date('2026-08-14T00:00:00.000Z'),
       ...periods,
@@ -982,10 +1023,11 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
       personName: 'Dana Fields',
       identityUnresolved: false,
       accountName: 'Acme Motors',
-      membershipTier: 'Gold',
+      jobTitle: 'Head of OSPO',
       committeeName: 'Technical Steering Committee',
       lastAttendedDate: '2026-08-14',
     });
+    expect(lastSql()).toContain('account_name, person_job_title, committee_name,');
     expect(response.rows[0]?.periods[3]).toEqual({ range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false, sortRank: 1 });
   });
 
@@ -1231,6 +1273,234 @@ describe('HealthMetricsEngagementService.getAttendanceTrend', () => {
       .catch((thrown: unknown) => thrown)) as MicroserviceError;
 
     expect(error.toResponse()['error']).toBe('Attendance trend is unavailable right now.');
+  });
+});
+
+describe('HealthMetricsEngagementService.getNewsletterPerformance', () => {
+  const service = new HealthMetricsEngagementService();
+  const summaryRow = {
+    SUBSCRIBERS_COUNT_YTD: '1490.0000000000',
+    SUBSCRIBERS_GROWTH_PCT_YTD: '0.2074554295',
+    SUBSCRIBERS_GROWTH_BASELINE_DATE_YTD: '2026-08-10',
+    NEWSLETTERS_SENT_COUNT_YTD: 11,
+    AVG_OPEN_RATE_YTD: '0.446491661709',
+    AVG_CLICK_RATE_YTD: '0.056694394491',
+    AVG_CLICK_TO_OPEN_RATE_YTD: '0.127973100791',
+    AVG_DELIVERY_RATE_YTD: '0.964348951627',
+    NEWSLETTERS_SENT_COUNT_COMPLETED_YEAR: 0,
+  };
+  const newsletterRow = {
+    NEWSLETTER_KEY: 'lfx_v2_n1',
+    NEWSLETTER_NAME: 'Monthly: Latest',
+    SENT_DATE: '2026-10-26',
+    HAS_ENGAGEMENT_DATA: true,
+    AUDIENCE_COUNT: '1490.0000000000',
+    FAILED_COUNT: 61,
+    UNIQUE_OPENS_COUNT: 647,
+    TOTAL_OPENS_COUNT: 997,
+    UNIQUE_CLICKS_COUNT: 76,
+    TOTAL_CLICKS_COUNT: 1462,
+    OPEN_RATE: '0.4342281879',
+    CLICK_RATE: '0.0510067114',
+    CLICK_TO_OPEN_RATE: '0.1174652241',
+  };
+
+  /** Answers each of the two reads by the view it names. */
+  function respond(summary: unknown[], newsletters: unknown[]): void {
+    execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('NEWSLETTER_ENGAGEMENT_SUMMARY') ? summary : newsletters }));
+  }
+
+  function sqlFor(view: string): string {
+    return String(execute.mock.calls.find((call) => String(call[0]).includes(view))?.[0]).replace(/\s+/g, ' ');
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+    respond([summaryRow], [newsletterRow]);
+    isMissingObjectError.mockReset();
+    isMissingObjectError.mockReturnValue(false);
+    warning.mockReset();
+  });
+
+  it('reads every period of the summary and every newsletter, latest first, scoped to the foundation', async () => {
+    const response = await service.getNewsletterPerformance(req, { foundationSlug: 'acme' });
+
+    expect(execute.mock.calls.map((call) => call[1])).toEqual([['acme'], ['acme']]);
+    expect(sqlFor('NEWSLETTER_ENGAGEMENT_SUMMARY')).toContain('avg_delivery_rate_3rd_last_completed_year AS avg_delivery_rate_COMPLETED_YEAR_3');
+    expect(sqlFor('NEWSLETTER_ENGAGEMENT_BY_NEWSLETTER')).toContain(
+      `ORDER BY sort_rank ASC NULLS LAST, newsletter_key ASC LIMIT ${HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP + 1}`
+    );
+    expect(response.measured).toBe(true);
+    expect(response.periods.YTD).toEqual({
+      subscribers: 1490,
+      subscribersGrowth: 0.2074554295,
+      growthBaselineDate: '2026-08-10',
+      newslettersSent: 11,
+      avgOpenRate: 0.446491661709,
+      avgClickRate: 0.056694394491,
+      avgClickToOpenRate: 0.127973100791,
+      avgDeliveryRate: 0.964348951627,
+    });
+    expect(response.periods.COMPLETED_YEAR).toMatchObject({ newslettersSent: 0, subscribers: null });
+    expect(response.newsletters).toEqual([
+      {
+        key: 'lfx_v2_n1',
+        name: 'Monthly: Latest',
+        sentDate: '2026-10-26',
+        hasEngagementData: true,
+        recipients: 1490,
+        failed: 61,
+        uniqueOpens: 647,
+        totalOpens: 997,
+        uniqueClicks: 76,
+        totalClicks: 1462,
+        openRate: 0.4342281879,
+        clickRate: 0.0510067114,
+        clickToOpenRate: 0.1174652241,
+      },
+    ]);
+  });
+
+  it('drops a newsletter without a key, names an unnamed one, and keeps nulls where there is no engagement data', async () => {
+    respond(
+      [summaryRow],
+      [
+        { ...newsletterRow, NEWSLETTER_KEY: ' ' },
+        { NEWSLETTER_KEY: 'n2', NEWSLETTER_NAME: null, SENT_DATE: '2026-09-01', HAS_ENGAGEMENT_DATA: false, AUDIENCE_COUNT: 900, OPEN_RATE: null },
+      ]
+    );
+
+    const response = await service.getNewsletterPerformance(req, { foundationSlug: 'acme' });
+
+    expect(response.newsletters).toHaveLength(1);
+    expect(response.newsletters[0]).toMatchObject({
+      key: 'n2',
+      name: 'Untitled newsletter',
+      hasEngagementData: false,
+      recipients: 900,
+      openRate: null,
+      failed: null,
+    });
+  });
+
+  it('answers unmeasured for a foundation without a summary row', async () => {
+    respond([], [newsletterRow]);
+
+    await expect(service.getNewsletterPerformance(req, { foundationSlug: 'acme' })).resolves.toEqual(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED);
+  });
+
+  it('keeps the latest newsletters and warns when the read hits its cap', async () => {
+    respond(
+      [summaryRow],
+      Array.from({ length: HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP + 1 }, (_, index) => ({ ...newsletterRow, NEWSLETTER_KEY: `n${index}` }))
+    );
+
+    const response = await service.getNewsletterPerformance(req, { foundationSlug: 'acme' });
+
+    expect(response.newsletters).toHaveLength(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP);
+    expect(response.newsletters[0]?.key).toBe('n0');
+    expect(warning).toHaveBeenCalledWith(req, 'get_engagement_newsletter_performance', 'Newsletter rows hit the read cap', expect.anything());
+  });
+
+  it('names the section when a view is missing', async () => {
+    execute.mockRejectedValue(
+      new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_SUMMARY' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
+        operation: 'snowflake_execute',
+        service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
+      })
+    );
+    isMissingObjectError.mockReturnValue(true);
+
+    const error = (await service.getNewsletterPerformance(req, { foundationSlug: 'acme' }).catch((thrown: unknown) => thrown)) as MicroserviceError;
+
+    expect(error.toResponse()['error']).toBe('Newsletter performance is unavailable right now.');
+  });
+});
+
+describe('HealthMetricsEngagementService.getNewsletterRecipients', () => {
+  const service = new HealthMetricsEngagementService();
+  // Synthetic recipients: the names are placeholders and the organizations come from the synthetic-org fixtures.
+  const recipientRow = (overrides: Record<string, unknown> = {}) => ({
+    NEWSLETTER_KEY: 'lfx_v2_n1',
+    NEWSLETTER_NAME: 'Monthly: Latest',
+    SENT_AT: '2026-10-26T16:31:37Z',
+    ENGAGEMENT_RANK: 1,
+    RECIPIENT_NAME: 'Recipient Alpha',
+    ORGANIZATION_NAME: 'Acme Motors',
+    DELIVERY_STATUS: 'Delivered',
+    ENGAGEMENT_SEGMENT: 'opened',
+    IS_CLICKED: true,
+    OPEN_COUNT: 1,
+    LAST_OPENED_AT: '2026-10-26T16:31:41Z',
+    CLICK_COUNT: '545',
+    LAST_CLICKED_AT: '2026-10-26T16:35:58Z',
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [recipientRow()] });
+    isMissingObjectError.mockReset();
+    isMissingObjectError.mockReturnValue(false);
+    warning.mockReset();
+  });
+
+  it('reads the latest newsletter’s recipients, most engaged first, scoped to the foundation and without their email', async () => {
+    const response = await service.getNewsletterRecipients(req, { foundationSlug: 'acme' });
+
+    expect(lastBinds()).toEqual(['acme']);
+    expect(lastSql()).toContain('AND newsletter_sort_rank = 1');
+    expect(lastSql()).toContain(`ORDER BY engagement_rank ASC NULLS LAST, _key ASC LIMIT ${HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP + 1}`);
+    // Neither the email nor the row key is selected; the key only breaks ties in the order.
+    const selectList = lastSql().slice(0, lastSql().indexOf(' FROM '));
+    expect(selectList).not.toMatch(/email|\b_key\b/i);
+    expect(lastSql()).not.toMatch(/email/i);
+    expect(response).toEqual({
+      newsletter: { key: 'lfx_v2_n1', name: 'Monthly: Latest', sentDate: '2026-10-26' },
+      recipients: [
+        {
+          rank: 1,
+          name: 'Recipient Alpha',
+          organization: 'Acme Motors',
+          deliveryStatus: 'Delivered',
+          segment: 'opened',
+          clicked: true,
+          opens: 1,
+          lastOpenedAt: '2026-10-26T16:31:41Z',
+          clicks: 545,
+          lastClickedAt: '2026-10-26T16:35:58Z',
+        },
+      ],
+      truncated: false,
+    });
+  });
+
+  it('keeps a recipient without a name or organization, and drops one without a rank', async () => {
+    execute.mockResolvedValue({ rows: [recipientRow({ RECIPIENT_NAME: ' ', ORGANIZATION_NAME: null }), recipientRow({ ENGAGEMENT_RANK: null })] });
+
+    const response = await service.getNewsletterRecipients(req, { foundationSlug: 'acme' });
+
+    expect(response.recipients).toHaveLength(1);
+    expect(response.recipients[0]).toMatchObject({ name: null, organization: null });
+  });
+
+  it('answers with no newsletter for a foundation that has sent none', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await expect(service.getNewsletterRecipients(req, { foundationSlug: 'acme' })).resolves.toEqual(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED);
+  });
+
+  it('keeps the most engaged recipients and warns when the read hits its cap', async () => {
+    execute.mockResolvedValue({
+      rows: Array.from({ length: HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP + 1 }, (_, index) => recipientRow({ ENGAGEMENT_RANK: index + 1 })),
+    });
+
+    const response = await service.getNewsletterRecipients(req, { foundationSlug: 'acme' });
+
+    expect(response.recipients).toHaveLength(HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP);
+    expect(response.truncated).toBe(true);
+    expect(warning).toHaveBeenCalledWith(req, 'get_engagement_newsletter_recipients', 'Newsletter recipient rows hit the read cap', expect.anything());
   });
 });
 

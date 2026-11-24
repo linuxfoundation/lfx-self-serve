@@ -1,0 +1,36 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<svg
+  viewBox="0 0 100 100"
+  class="gauge-ring absolute inset-0 h-full w-full"
+  [class.gauge-spin]="indeterminate()"
+  aria-hidden="true"
+  data-testid="ui-gauge-ring">
+  <circle class="fill-none stroke-ui-neutral-alpha-200" cx="50" cy="50" [attr.r]="geometry().radius" [attr.stroke-width]="geometry().stroke" />
+  @if (empty()) {
+    <!-- A full ring in the page background, 3 units narrower than the track, leaves only the track's two edges: an outline. -->
+    <circle
+      class="fill-none stroke-ui-background-100"
+      cx="50"
+      cy="50"
+      [attr.r]="geometry().radius"
+      [attr.stroke-width]="geometry().stroke - 3"
+      data-testid="ui-gauge-empty" />
+  } @else if (indeterminate() || clampedValue() > 0) {
+    <!-- Round caps would draw a dot at 0, so the arc only renders with a value or while indeterminate. -->
+    <circle
+      [class]="arcClasses()"
+      cx="50"
+      cy="50"
+      [attr.r]="geometry().radius"
+      [attr.stroke-width]="geometry().stroke"
+      [attr.stroke-linecap]="geometry().linecap"
+      [attr.stroke-dasharray]="geometry().circumference"
+      [attr.stroke-dashoffset]="dashOffset()"
+      data-testid="ui-gauge-arc" />
+  }
+</svg>
+@if (valueVisible()) {
+  <span class="relative text-[length:calc(var(--size)*0.26)] font-medium text-ui-neutral-900" data-testid="ui-gauge-value">{{ clampedValue() }}</span>
+}

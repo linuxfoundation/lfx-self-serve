@@ -14,6 +14,7 @@ import {
   MKTG_REBUILD_NAVIGATION_STATE_KEY,
   MKTG_AGENT_INTAKES,
   MKTG_KIT_FAMILIES,
+  MKTG_KIT_POSITIONING_FAMILY_ID,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
 import { MktgDocumentsResponse, MktgRevisionRef } from '@lfx-one/shared/interfaces';
@@ -49,8 +50,7 @@ describe('Marketing family page', () => {
   const writer = signal(false);
   const lastExport = vi.fn(() => of(null));
   beforeEach(() => {
-    const agents = originalAgents.map((agent) => (agent.id === 'member-360' ? { ...agent, status: 'coming-soon' as const } : agent));
-    MKTG_AGENTS.splice(0, MKTG_AGENTS.length, ...agents);
+    MKTG_AGENTS.splice(0, MKTG_AGENTS.length, ...originalAgents);
     writer.set(true);
     lastExport.mockClear();
     projectSlug.set('synthetic');
@@ -328,9 +328,10 @@ describe('Marketing family page', () => {
     expect(list?.tagName).toBe('UL');
     expect(list?.getAttribute('role')).toBe('list');
     expect(root?.querySelector('table')).toBeNull();
-    const family = MKTG_KIT_FAMILIES.find((entry) => entry.id === 'positioning-brand');
-    expect(family).toBeDefined();
-    for (const asset of family?.assets ?? []) {
+    const family = families().find((entry) => entry.family.id === 'positioning-brand');
+    expect(family?.rows).toHaveLength(4);
+    expect(list?.querySelector('[data-testid="mktg-family-asset-one-pager"]')).toBeNull();
+    for (const { asset } of family?.rows ?? []) {
       const row = list?.querySelector(`[data-testid="mktg-family-asset-${asset.id}"]`);
       expect(row?.tagName).toBe('LI');
       expect(row?.classList.contains('relative')).toBe(true);
@@ -549,6 +550,19 @@ describe('Marketing family page', () => {
     expect(current?.textContent).not.toContain('v1');
   });
 
+  it('reads the catalog intro in the header, naming both exports, and a family without one its description', async () => {
+    const positioning = MKTG_KIT_FAMILIES.find((family) => family.id === MKTG_KIT_POSITIONING_FAMILY_ID);
+    if (!positioning?.intro) throw new Error('The positioning family carries an intro');
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl(`/project/mktg-os-agents/families/${MKTG_KIT_POSITIONING_FAMILY_ID}`, MktgFamilyComponent);
+    const intro = () => harness.routeNativeElement?.querySelector('[data-testid="mktg-family-intro"]')?.textContent?.trim();
+    expect(intro()).toBe(positioning.intro);
+    expect(intro()).toContain('PDF or Google Slides');
+    await harness.navigateByUrl('/project/mktg-os-agents/families/events', MktgFamilyComponent);
+    const events = MKTG_KIT_FAMILIES.find((family) => family.id === 'events');
+    expect(intro()).toBe(events?.intro ?? events?.description);
+  });
+
   it('handles coming-soon and unknown family ids on the same route', async () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/project/mktg-os-agents/families/events', MktgFamilyComponent);
@@ -584,14 +598,15 @@ describe('Marketing family page', () => {
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-open-aeo-geo"]')?.getAttribute('href')).toBe(
       '/project/mktg-os-agents/documents/aeo-geo/run-synthetic-audit?project=synthetic'
     );
-    await harness.navigateByUrl('/project/mktg-os-agents/families/member-sponsor', MktgFamilyComponent);
-    const run = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
-    expect(run).toBeNull();
     const pending = MKTG_AGENTS.find((agent) => agent.id === 'member-360');
-    expect(pending?.status).toBe('coming-soon');
-    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-state-member-360"]')?.textContent).toContain('Coming soon');
+    if (!pending) throw new Error('Missing synthetic Member agent');
+    MKTG_AGENTS.splice(MKTG_AGENTS.indexOf(pending), 1, { ...pending, status: 'coming-soon' });
+    families.set(resolveMktgKit({ project: 'synthetic', groups: [] }));
+    await harness.navigateByUrl('/project/mktg-os-agents/families/member-sponsor', MktgFamilyComponent);
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run"]')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-state-member-360"]')).toBeNull();
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-coming-soon"]')).toBeNull();
-    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-asset-member-360"]')).not.toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-asset-member-360"]')).toBeNull();
   });
   it('never creates a disabled header from pending catalog copy', async () => {
     const family = MKTG_KIT_FAMILIES.find((candidate) => candidate.id === 'member-sponsor');
@@ -603,6 +618,9 @@ describe('Marketing family page', () => {
       await harness.navigateByUrl('/project/mktg-os-agents/families/member-sponsor', MktgFamilyComponent);
       const run = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
       expect(run).toBeNull();
+      expect(harness.routeNativeElement?.textContent).not.toContain('Synthetic pending product');
+      expect(harness.routeNativeElement?.textContent).not.toContain('Coming soon');
+      expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-asset-pitch-deck"]')).toBeNull();
     } finally {
       if (original === undefined) delete family.pendingAgentName;
       else family.pendingAgentName = original;
@@ -613,10 +631,15 @@ describe('Marketing family page', () => {
     const index = MKTG_AGENTS.findIndex((agent) => agent.id === 'member-360');
     const originalAgent = MKTG_AGENTS[index];
     if (!originalAgent) throw new Error('Expected the pending Member 360 test catalog entry');
-    MKTG_AGENTS[index] = { ...originalAgent, status: 'active', name: 'Synthetic Member Agent', guildAgentHandle: 'member-360' };
+    MKTG_AGENTS[index] = { ...originalAgent, status: 'coming-soon' };
+    families.set(resolveMktgKit({ project: 'synthetic', groups: [] }));
     try {
       const harness = await RouterTestingHarness.create();
       await harness.navigateByUrl('/project/mktg-os-agents/families/member-sponsor?project=synthetic', MktgFamilyComponent);
+      expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-asset-member-360"]')).toBeNull();
+      MKTG_AGENTS[index] = { ...originalAgent, status: 'active', name: 'Synthetic Member Agent', guildAgentHandle: 'member-360' };
+      families.set(resolveMktgKit({ project: 'synthetic', groups: [] }));
+      await harness.fixture.whenStable();
       const run = harness.routeNativeElement?.querySelector<HTMLAnchorElement>('[data-testid="mktg-family-run"] a');
       expect(run?.textContent).toContain('Create Member 360');
       expect(run?.getAttribute('href')).toBe('/project/mktg-os-agents/member-360?project=synthetic');

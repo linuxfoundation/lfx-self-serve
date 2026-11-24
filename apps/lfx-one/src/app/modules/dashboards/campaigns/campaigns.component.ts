@@ -1,19 +1,28 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, NgTemplateOutlet, isPlatformBrowser } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
+import { DecimalPipe, Location, NgTemplateOutlet, isPlatformBrowser } from '@angular/common';
 import { MetricLowPercentPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup, FormRecord, ReactiveFormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 
 import {
   CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_EVENT_URL_QUERY_PARAM,
   CAMPAIGN_EMAIL_SEGMENT_LABELS,
+  CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_TABS,
   CAMPAIGN_EMAIL_TYPES,
+  CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS,
+  CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX,
+  CAMPAIGN_SURVEY_TYPES,
+  DEFAULT_CAMPAIGN_SURVEY_TYPE_ID,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
+  CAMPAIGN_PAID_UNOWNED_BRIEF_MESSAGE,
   CAMPAIGN_PROGRAM_TYPES,
   CAMPAIGN_TABS,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
@@ -38,6 +47,8 @@ import type {
   BriefMetricsRow,
   CampaignAudience,
   CampaignBriefApproveResult,
+  CampaignBriefEditRequest,
+  CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignTwitterDraft,
   CampaignCapabilityReadState,
@@ -46,14 +57,26 @@ import type {
   CampaignCreateRequest,
   CampaignDeliveryType,
   CampaignEmailSegment,
+  CampaignEmailTypeOption,
+  CampaignSendWorkflowResult,
+  CampaignSequenceSend,
+  CampaignSequenceSendRow,
+  CampaignSurveySendWorkflowState,
+  CampaignSurveySequenceGenerateState,
+  CampaignSurveySequenceStagingState,
+  CampaignSurveyStage,
   CampaignEmailStage,
+  CampaignSendStage,
+  CampaignSurveyTypeOption,
   CampaignEmailTab,
   CampaignEventSponsor,
   CampaignImplementationDraft,
   CampaignIndexDoc,
   CampaignJobOutcome,
+  CampaignListResult,
   CampaignPaidTab,
   CampaignProgramType,
+  CampaignSavedBriefOffer,
   CampaignServiceEmailMetrics,
   CampaignSitelink,
   CampaignTabOption,
@@ -63,6 +86,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   canonicalHttpUrl,
+  emailLinkDestinations,
   escapeHtml,
   hasVisibleHtmlText,
   normalizeSponsors,
@@ -82,10 +106,11 @@ import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { finalize, firstValueFrom, skip, Subscription, take } from 'rxjs';
+import { filter, finalize, firstValueFrom, from, skip, Subscription, switchMap, take } from 'rxjs';
 
 import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
+import { readCampaignWriteErrorMessage } from '../../../shared/utils/campaign-write-error.utils';
 import { SelectComponent } from '../../../shared/components/select/select.component';
 import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
@@ -135,6 +160,56 @@ function withUnlinkedCta(body: string, unlinkedLabel: string): string {
   return alreadyFolded ? body : `${body}${fragment}`;
 }
 
+/**
+ * Where a generated button may point: the generated `ctaUrl`, but only when it is the brief's own
+ * registration URL; otherwise '' and no button is staged.
+ *
+ * MUST EQUAL the brief's registration URL. The generator is told "a button's url must be that
+ * URL, copied exactly ... never invented", so anything else is a model that did not follow its
+ * instructions -- and accepting it would ship a button pointing somewhere the brief never
+ * contained. Checking only that the URL is public-looking is not enough: a hallucinated
+ * `https://evil.example.com/phish` passes that check.
+ *
+ * Compared with the trailing slash normalized away on the PATHNAME ONLY. `canonicalHttpUrl` does
+ * NOT equalise it -- `.../kubecon-eu-2026` and `.../kubecon-eu-2026/` stay distinct. A model
+ * copying the URL and adding or dropping a slash addresses the SAME page, so refusing it would
+ * silently drop the button for a generation that followed its instructions.
+ *
+ * Stripping it from the whole serialized URL was the over-correction in the other direction: it
+ * also mutates the query and fragment, so a generated `?token=abc/` compared EQUAL to the brief's
+ * `?token=abc` and a different destination passed. Only the path may be normalized; `search` and
+ * `hash` must match exactly, because a trailing slash there is part of the value rather than a
+ * path separator.
+ *
+ * A module function rather than a computed so the single send and every send of a survey series
+ * judge their button by the same rule.
+ */
+function ctaDestinationFor(ctaUrl: string | undefined, registrationUrl: string | undefined): string {
+  const generated = canonicalHttpUrl(ctaUrl);
+  if (generated === '') return '';
+  const fromBrief = canonicalHttpUrl(registrationUrl);
+  const sameTarget = (url: string): string => {
+    try {
+      const parsed = new URL(url);
+      parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+      return parsed.toString();
+    } catch {
+      // Not parseable: compare verbatim rather than guessing.
+      //
+      // REACHED ROUTINELY, not a defensive dead branch: `canonicalHttpUrl` returns '' for a brief
+      // with no usable registrationUrl, and `new URL('')` throws, so every such brief lands here
+      // while the generator has supplied a url.
+      //
+      // Returning the input verbatim is the right answer for that case: '' can then only equal
+      // '', so a generated url never matches an absent brief url and no button is staged -- which
+      // is what "the brief has no registration destination" should mean. Falling back to the old
+      // whole-string strip here would reintroduce the query/fragment gap.
+      return url;
+    }
+  };
+  return sameTarget(generated) === sameTarget(fromBrief) ? generated : '';
+}
+
 @Component({
   selector: 'lfx-campaigns',
   imports: [
@@ -162,6 +237,8 @@ function withUnlinkedCta(body: string, unlinkedLabel: string): string {
 })
 export class CampaignsComponent {
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly campaignService = inject(CampaignService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
@@ -241,6 +318,14 @@ export class CampaignsComponent {
   protected readonly selectedEmailTab = signal<Exclude<CampaignEmailTab, 'optimization'>>('planning');
   protected readonly selectedProgramType = signal<CampaignProgramType>('events');
   protected readonly selectedDeliveryType = signal<CampaignDeliveryType>('paid-marketing');
+
+  /**
+   * The SEND surface the email container is working on: the last of Email or Survey the operator
+   * chose. Unlike `selectedDeliveryType` it does not move to paid, so a trip through Paid Marketing
+   * hands the hidden planner no `paid-marketing` (which resets it) and keeps the selected type,
+   * brief and copy for the return.
+   */
+  protected readonly sendSurface = signal<'email' | 'survey'>('email');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
   protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(this.idlePersistence);
 
@@ -342,10 +427,11 @@ export class CampaignsComponent {
    * content at all, and "Brief saved." is the one thing this banner must never say falsely.
    */
   private readonly conflictMessages: Record<NonNullable<CampaignBriefPersistResult['conflict']>, string> = {
-    // "Reload" alone is not enough and the saved banner already says so: the Planning url control
-    // initializes empty and `loadBrief` runs only once a url is entered, so a reloaded page shows
-    // nothing until the user pastes the event url again. Advice that stops at "reload" leaves
-    // them on a blank Planning tab wondering where the brief went.
+    // "Reload" alone is not enough: the stored brief comes back only as Planning's Restore offer, and
+    // only once Planning has the event URL. The PAID planner keeps that URL in `?event=` and
+    // prefills it after a reload (#4756); the email planner does not, so there it must be entered
+    // again. These messages are shared by both surfaces, so they name the Plan tab and make the
+    // URL conditional rather than telling a paid user to retype a URL that is already there.
     //
     // It no longer PROMISES that re-entering the URL surfaces the stored brief, because the brief
     // this refusal names may not be one this session can open. Under the widened key
@@ -366,7 +452,7 @@ export class CampaignsComponent {
     // users to use a control their surface does not have. The email-only step is appended by
     // `emailSaveFailureMessage`, which is the one caller that knows the stage matters.
     'unowned-brief-exists':
-      'This event already has a saved brief for this send that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to open it.',
+      'This event already has a saved brief for this send that was not opened here, so this one was not saved over it. Reload, then open it from the Plan tab (enter the event URL there if it is not already filled in).',
     // Does NOT advise a reload, even though this branch adds the read path that would make one
     // work. Here it would be actively destructive: a stale-brief refusal PROMOTES this session to
     // explicit overwrite permission (see the conflict handler), so the very next Proceed saves
@@ -376,8 +462,9 @@ export class CampaignsComponent {
     // An earlier revision said "Reload and re-enter the event URL to see their changes" — added
     // while restoring reload advice this branch had dropped, without noticing it contradicts the
     // promotion added on the base. `unowned-brief-exists` above is the conflict that genuinely
-    // needs reload advice: there the session may NOT replace, so the stored brief has to be
-    // loaded before anything can proceed.
+    // needs reload advice: there the session may not replace by proceeding, so the stored brief has
+    // to be loaded first — by a reload and Restore, or by the paid surface's Replace saved brief,
+    // which reads it and then replaces it (#4731).
     'stale-brief':
       'Someone else changed this brief while you were working, so this version was not saved over theirs. Proceed again to save your version over theirs.',
     // Names the consequence, like the other two. It did not need to while this conflict granted
@@ -426,7 +513,7 @@ export class CampaignsComponent {
     // and the licence granted here is the same one, so this sentence says the same thing: a
     // permission the user was never told about is not a permission they granted.
     'stale-brief':
-      'This saved brief changed while you were working, so it was not approved. Reload and re-enter the event URL to open the version that is stored now, or proceed again from Planning to save your version over theirs.',
+      'This saved brief changed while you were working, so it was not approved. Reload and open the version that is stored now from the Plan tab (enter the event URL there if it is not already filled in), or proceed again from Planning to save your version over theirs.',
     // The row is gone, so there is nothing to approve and nothing to reload. Proceeding from the
     // Planning tab writes a new brief, which is the remedy — and the one this message names.
     'brief-not-found': 'This saved brief no longer exists, so it could not be approved. Go back to Planning and proceed again to save a new one.',
@@ -441,11 +528,12 @@ export class CampaignsComponent {
     // there: no `absence: 'overwrite'` is granted on this conflict, so there is no second action
     // to disclose and offering one would promise a licence this refusal never hands out.
     'unverified-validator':
-      'This saved brief could not be confirmed as the version on your screen, so it was not approved. Reload and re-enter the event URL to open the version that is stored now.',
+      'This saved brief could not be confirmed as the version on your screen, so it was not approved. Reload and open the version that is stored now from the Plan tab (enter the event URL there if it is not already filled in).',
     // Deliberately says "could not be confirmed", not "failed": the approval may well have
     // landed and only its answer was lost. Re-restoring re-reads the stored status, which is the
     // only way to find out, and costs nothing if it did land.
-    unknown: 'This saved brief could not be confirmed as approved. Reload and re-enter the event URL to try again.',
+    unknown:
+      'This saved brief could not be confirmed as approved. Reload and try again from the Plan tab (enter the event URL there if it is not already filled in).',
   };
 
   /**
@@ -563,6 +651,16 @@ export class CampaignsComponent {
   private readonly knownBriefIdsVersion = signal(0);
 
   /**
+   * The ids of the stored briefs this session owns, for the Plan tab (#5492). Its review step says a
+   * generated brief can't be saved over an offered one only when the offer is NOT among these: the
+   * save refuses a brief this session does not own and updates one it does.
+   */
+  protected readonly ownedBriefIds = computed<ReadonlySet<string>>(() => {
+    this.knownBriefIdsVersion();
+    return new Set([...this.knownBriefIds.values()].map((record) => record.id));
+  });
+
+  /**
    * Bumped whenever THIS component has changed a stored brief row, to invalidate Planning's cache.
    *
    * `lfx-planning-tab` looks a brief up once per `(slug, project, delivery, stage)` and caches the
@@ -582,6 +680,42 @@ export class CampaignsComponent {
    * unchanged key — which is exactly how the stale answer survived.
    */
   protected readonly savedBriefRefreshToken = signal(0);
+
+  /**
+   * What the PAID planner should open in its editor (#4983) — see `PlanningTabComponent.editRequest`.
+   *
+   * Cleared whenever the brief on screen is discarded or replaced by a restore, so a planner re-created
+   * by a later program change cannot re-open a brief the user has moved on from.
+   */
+  protected readonly planningEditRequest = signal<CampaignBriefEditRequest | null>(null);
+
+  /** Makes each `planningEditRequest` distinct, so asking again for the same brief re-opens it. */
+  private planningEditRequestSeq = 0;
+
+  /**
+   * Bumped whenever Planning moves on — a discard (New Brief, Cancel, a fresh Generate) or another open —
+   * and when a create job starts on Implement, so an Open to edit still waiting on its re-read
+   * (`readAndOpenSavedBrief`) can tell it is stale and drop its answer instead of replacing whatever
+   * Planning holds now, or switching away from a running job (#4983).
+   */
+  private planningOpenGeneration = 0;
+
+  /**
+   * The ownership epoch of the brief handed to Implement, taken at the handover (#4983).
+   *
+   * An epoch bump means another account of the row arrived (an Open to edit or a re-read), whose
+   * validator may name newer bytes than the ones Implement holds. Edit brief compares against it: when
+   * the epoch has moved, it re-reads the row instead of reopening Implement's copy under that newer
+   * validator, which would replace the newer content without any conflict. A save of Implement's own
+   * brief (Replace saved brief included) refreshes it, since the row then holds exactly those bytes.
+   */
+  private briefOutputEpoch: number | null = null;
+
+  /**
+   * Why Edit brief could not open the brief, shown beside the button (#4983), or `null`. Set when its
+   * re-read failed or found the row unreadable; cleared by the next Edit brief and by any handover.
+   */
+  protected readonly editBriefError = signal<string | null>(null);
 
   /**
    * True while `onRestoreSavedBrief` is adopting a restored brief's own program.
@@ -669,6 +803,20 @@ export class CampaignsComponent {
    * this, so the create is abandoned rather than issued against a context nobody is looking at.
    */
   private emailStagingGeneration = 0;
+
+  /**
+   * Guards the survey sequence's generate, stage and workflow-build loops. Each awaits several
+   * upstream calls in a row, so a brief reset, an asset switch or a count change landing between
+   * them would otherwise have the loop write the PREVIOUS series back onto the page -- or, while
+   * staging, keep cloning drafts for a series nobody is looking at.
+   */
+  private surveySequenceGeneration = 0;
+
+  /** Start-over counts for this page's lifetime, used when sessionStorage is unavailable. */
+  private readonly seriesRestartFallback = new Map<string, number>();
+
+  /** Bumped on every start-over, so the computeds that read the restart count re-read it. */
+  private readonly seriesRestartVersion = signal(0);
 
   /**
    * Guards a late variant-B copy response against a stage the operator has since changed.
@@ -894,6 +1042,14 @@ export class CampaignsComponent {
   protected readonly briefCampaignsUnavailable = signal(false);
 
   /**
+   * Whether a campaign-list read is in flight (#4983). `briefCampaigns` is `null` both before the
+   * first read and while a re-read runs, so without this the Implement tab could not tell "checking"
+   * from "nothing to say" — and it is exactly after a create, when the list is re-read, that the
+   * "Already created for this event" panel matters most.
+   */
+  protected readonly briefCampaignsLoading = signal(false);
+
+  /**
    * Whether this DEPLOYMENT can service a pause/resume, as reported by the server with the list.
    *
    * Defaults to `false` — the safe direction. The list read is ungated while the toggle route is
@@ -960,6 +1116,12 @@ export class CampaignsComponent {
   protected readonly briefCampaignsGoogleAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers an image upload — `CampaignListResult.linkedInAssetUploadEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsLinkedInAssetUploadEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers removing targeting entries — `CampaignListResult.linkedInTargetingEditEnabled` (#5546), read and cleared like the capabilities above. */
+  protected readonly briefCampaignsLinkedInTargetingEditEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section reads and may choose the create's ad account — `CampaignListResult.linkedInAccountSelectionEnabled` (#5809), read and cleared like the capabilities above. */
+  protected readonly briefCampaignsLinkedInAccountSelectionEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers a daily cap — `CampaignListResult.linkedInDailyCapEnabled` (#5774), read and cleared like the capabilities above. */
+  protected readonly briefCampaignsLinkedInDailyCapEnabled = signal<boolean | null>(null);
   /** Whether the Microsoft section offers an image upload — `CampaignListResult.microsoftAssetUploadEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMicrosoftAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the create flow offers the Bidding control (#3299) — `CampaignListResult.biddingEnabled`, read and cleared like the capabilities above. */
@@ -970,13 +1132,50 @@ export class CampaignsComponent {
   protected readonly briefCampaignsTwitterCreateEnabled = signal<boolean | null>(null);
   /** Whether a Meta create carries the Instagram id and EU DSA disclosures — `CampaignListResult.metaInstagramDsaEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaInstagramDsaEnabled = signal<boolean | null>(null);
+  /** Meta audience targeting (#5905) — `CampaignListResult.metaAudienceTargetingEnabled`, and whether THIS caller may pick custom audiences (`metaCustomAudiencesEnabled`), read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMetaAudienceTargetingEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaCustomAudiencesEnabled = signal<boolean | null>(null);
+  /** The Meta call to action, conversion event and optimization goal (#5934), one capability each, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMetaCallToActionEnabled = signal<boolean | null>(null);
+  /** Meta lead forms (#5940) — `CampaignListResult.metaLeadFormsEnabled`: whether THIS caller may create a lead ad. */
+  protected readonly briefCampaignsMetaLeadFormsEnabled = signal<boolean | null>(null);
+  /** Meta interests, and behaviors with job titles (#5904 row 4): deployment-wide answers, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMetaInterestTargetingEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaBehaviorTargetingEnabled = signal<boolean | null>(null);
+  /** The Meta ad schedule and frequency cap (#5904 row 5): deployment-wide answers, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMetaAdScheduleEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaFrequencyCapEnabled = signal<boolean | null>(null);
+  /** Whether this deployment sends Meta devices and operating systems (#5904 row 6), one flag each; `null` while unanswered. */
+  protected readonly briefCampaignsMetaDeviceTargetingEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaOsTargetingEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaConversionEventEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaOptimizationGoalEnabled = signal<boolean | null>(null);
   /** Whether the Implement tab searches Google's geo target table — `CampaignListResult.googleGeoSearchEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsGoogleGeoSearchEnabled = signal<boolean | null>(null);
+
+  /**
+   * `CampaignListResult.multiCampaignPlatforms` (#4983, "ss-3"): where "create another campaign" is
+   * offered. Read and cleared like the capabilities above; absent from an older BFF reads as `[]`.
+   */
+  protected readonly briefCampaignsMultiCampaignPlatforms = signal<string[] | null>(null);
   /**
    * Whether THIS caller may send Google audience segments — `CampaignListResult.googleAudienceSegmentsEnabled`,
-   * read and cleared like the capabilities above. Per caller, not per deployment: root only.
+   * read and cleared like the capabilities above. Per caller, not per deployment: `global_marketing_ops` on the project.
    */
   protected readonly briefCampaignsGoogleAudienceSegmentsEnabled = signal<boolean | null>(null);
+  /**
+   * Whether THIS caller may read the conversion-action picker's list —
+   * `CampaignListResult.googleConversionActionsEnabled`, read and cleared like the capabilities
+   * above. Per caller, not per deployment: `global_marketing_ops` on the project. Absent from an older
+   * BFF reads as `null`.
+   */
+  protected readonly briefCampaignsGoogleConversionActionsEnabled = signal<boolean | null>(null);
+  /** `CampaignListResult.googleDemandGenAudienceEnabled` (#5244), read and cleared like the conversion-action answer above. */
+  protected readonly briefCampaignsGoogleDemandGenAudienceEnabled = signal<boolean | null>(null);
+  /** `CampaignListResult.googleDisplayAudiencesEnabled` (#5262), read and cleared like the Demand Gen audience answer above. */
+  protected readonly briefCampaignsGoogleDisplayAudiencesEnabled = signal<boolean | null>(null);
+  /** `CampaignListResult.googlePerformanceMaxAudienceSignalEnabled` (#5262), read and cleared like the Demand Gen audience answer above. */
+  protected readonly briefCampaignsGooglePerformanceMaxAudienceSignalEnabled = signal<boolean | null>(null);
   /**
    * Where `loadCreateCapabilitiesFor`'s read stands, so the Implementation tab can tell "still
    * checking" from "the check failed" while any capability it set is still `null`. ONE read fills
@@ -1152,23 +1351,13 @@ export class CampaignsComponent {
   /**
    * The template auto-derived from HubSpot for this event, if one was confident enough to offer.
    *
-   * A SUGGESTION the operator can change, never a decision. Empty means no template scored above
+   * A SUGGESTION, never a selection (#2057). The row is marked "Suggested" in the picker and
+   * nothing more: `selectedEmailTemplateId` is written only by an operator's click, so staging stays
+   * blocked until someone has chosen. Empty means no template scored above
    * `EVENT_TEMPLATE_SUGGESTION_MIN_SCORE` and the picker behaves exactly as it did before -- which
-   * is the honest outcome for a portal whose templates do not name their event. Withholding a weak
-   * guess matters more than offering one: a pre-selection looks decided, so nobody re-reads it,
-   * and cloning the wrong template puts another event's branding into a real HubSpot draft.
+   * is the honest outcome for a portal whose templates do not name their event.
    */
   protected readonly emailTemplateSuggestionId = signal<string>('');
-
-  /**
-   * Whether the CURRENT selection was made by the suggestion rather than by the operator.
-   *
-   * ID equality cannot answer this. After suggestion A, an operator can pick B and then
-   * deliberately pick A again -- the ids coincide, so an equality check would treat their explicit
-   * choice as system-owned and silently release it on the next search. Provenance is a fact about
-   * how the value was set, and only the setter knows it.
-   */
-  protected readonly emailTemplateSelectionIsSuggested = signal<boolean>(false);
 
   /**
    * The selected template's ROW, retained so it can be rendered even when the current search does
@@ -1193,18 +1382,18 @@ export class CampaignsComponent {
   protected readonly emailTemplateSuggestionTermsLabel = computed<string>(() => this.emailTemplateSuggestionTerms().join(', '));
 
   /**
-   * Screen-reader announcement for the auto-selection.
+   * Screen-reader announcement for the suggestion.
    *
    * The banner is a plain `<p>` inserted when the suggestion lands, and a newly inserted element
-   * is not reliably announced -- so a screen-reader user could miss that a template was chosen for
-   * them, and that it is the one staging will use. Routed through the picker's existing live
-   * region, which is already mounted and only has its CONTENTS change.
+   * is not reliably announced -- so a screen-reader user could miss that one row is recommended.
+   * Routed through the picker's existing live region, which is already mounted and only has its
+   * CONTENTS change.
    */
   /**
    * The live region's whole text, joined with a separating space.
    *
    * Concatenating the two computeds directly in the template ran them together --
-   * "…37 found.Template selected for this event: …" -- which a screen reader announces as one
+   * "…37 found.Suggested template for this event: …" -- which a screen reader announces as one
    * word. Joined here rather than by adding a space to either source, so neither ends with a
    * dangling space when it is the only one present.
    */
@@ -1213,23 +1402,22 @@ export class CampaignsComponent {
   );
 
   protected readonly emailTemplateSuggestionAnnouncement = computed<string>(() => {
-    // PROVENANCE, matching the banner: `id === selectedId` also holds when an operator overrode
-    // the suggestion and then deliberately re-picked that same row, and announcing "Template
-    // selected for this event" over their own choice is the same false claim in the one place a
-    // screen-reader user cannot see the highlight that would contradict it.
+    // Silent once the operator has chosen, matching the banner. A recommendation is help BEFORE a
+    // decision; repeating it afterwards argues with a choice already made, and for a screen-reader
+    // user the live region is the only voice in the room.
     const id = this.emailTemplateSuggestionId();
-    if (id === '' || !this.emailTemplateSelectionIsSuggested()) {
+    if (id === '' || this.selectedEmailTemplateId() !== '') {
       return '';
     }
     // A template can carry a subject and no name -- it is matched on either -- and announcing an
-    // empty string reads as "Template selected for this event: . Choose another", which tells a
-    // screen-reader user nothing about what was chosen. Fall back to the subject, then to a
+    // empty string reads as "Suggested template for this event: . Select", which tells a
+    // screen-reader user nothing about what is recommended. Fall back to the subject, then to a
     // neutral phrase rather than a blank.
     const template = this.emailTemplates()?.find((t) => t.id === id);
     const name = (template?.name ?? '').trim() || (template?.subject ?? '').trim() || 'an untitled template';
     const terms = this.emailTemplateSuggestionTermsLabel();
     const matched = terms === '' ? '' : `, matched on ${terms}`;
-    return `Template selected for this event: ${name}${matched}. Choose another to override it.`;
+    return `Suggested template for this event: ${name}${matched}. Nothing is selected until you choose a template.`;
   });
 
   /**
@@ -1250,57 +1438,49 @@ export class CampaignsComponent {
     // reorder what survived -- a matching template past the cap would be cut before it could rise,
     // which is exactly the template the operator was looking for.
     const ranked = this.rankTemplatesForSelectedType(templates);
-
-    // A selection MISSING from the results is a different case from one pushed past the cap, and
-    // the splice below only covered the second. A narrowed search can return a set that does not
-    // contain the operator's choice at all -- then `ranked` is short, this returned early, and the
-    // selection stayed live but off screen while `canStageEmail` (which reads the id, not the
-    // list) kept staging enabled. The retained row is appended so the choice stays visible and
-    // changeable; it is not re-ranked, because it did not match this search.
-    const missingId = this.selectedEmailTemplateId();
-    const retained = this.selectedEmailTemplateRow();
-    if (missingId !== '' && retained !== null && !ranked.some((t) => t.id === missingId)) {
-      return [...ranked.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT - 1), retained];
-    }
-
-    if (ranked.length <= HUBSPOT_TEMPLATE_RENDER_LIMIT) {
-      return ranked;
-    }
     const drawn = ranked.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT);
 
-    // The SELECTED row is always drawn, even when ranking pushes it past the cap.
+    // Two rows are always DRAWN, whatever the ranking or the cap does to them:
     //
-    // TWO routes reach that state, and the guard covers both:
+    //   - The SELECTED row. A type change reranks the list under a choice the operator already
+    //     made, and a narrowed search can return a set that does not contain it at all (then the
+    //     retained row is the only copy). Either way `canStageEmail` reads the id, not the list, so
+    //     a hidden selection is still stageable -- the operator would clone a template they can no
+    //     longer see or change.
+    //   - The SUGGESTED row. Ranking and the suggestion agree on the event half but not the type
+    //     half, and a tie falls to the server's original order, so the suggestion can rank past the
+    //     cap (reproduced with 150 rows matching three GENERIC event words, which rank but never
+    //     justify a suggestion, against the one row carrying the decisive term). The banner
+    //     points the operator at a "Suggested" badge; a badge on a row nobody can see is a
+    //     recommendation that cannot be accepted.
     //
-    //   - A TYPE CHANGE reranks the list under a selection the operator already made, so with
-    //     enough matches for the new type the selected row drops below the cap and vanishes.
-    //   - A SUGGESTED template can be cut even as it is pre-selected: ranking and the suggestion
-    //     agree on the event half but not the type half, and a tie falls to the server's original
-    //     order. Reproduced with a 7-keyword type against 300 rows matching six of them.
-    //
-    // Either way nothing else notices — `canStageEmail` stays enabled and `onStageEmailSend` still
-    // clones the now-invisible template, so the operator stages a clone of something they can no
-    // longer see or change, and in the second case the banner announces a pre-selection no visible
-    // row carries. Hiding the current choice is the one thing a ranking heuristic must never do.
-    //
-    // Spliced into the LAST drawn slot rather than re-ranked: it is the row the operator chose
-    // (or was chosen for them), so it must stay reachable, but it has not earned the top. The cap
-    // holds — this replaces a row rather than adding one. See the comment on the splice itself
-    // for why not index 0.
+    // A missing row is APPENDED, not promoted to index 0: the first row is meant to be the best
+    // match, and a pinned row has not earned the top. The cap holds -- unpinned rows are dropped
+    // from the end to make room, and the retained selection is not re-ranked because it did not
+    // match this search. The selection goes last so it keeps the slot it has always had.
+    const pinned: HubSpotMarketingEmail[] = [];
     const selectedId = this.selectedEmailTemplateId();
-    if (selectedId !== '' && !drawn.some((t) => t.id === selectedId)) {
-      const selected = ranked.find((t) => t.id === selectedId) ?? this.selectedEmailTemplateRow() ?? undefined;
-      if (selected) {
-        // APPENDED, not promoted to index 0. Prepending kept the row visible but put a
-        // zero-scoring template above every matching one, which contradicts the ranking
-        // invariant this feature rests on -- the first row is meant to be the best suggestion.
-        // The last slot keeps the operator's current choice reachable without claiming it ranks
-        // highest, and the cap is still honoured because this replaces a row rather than adding
-        // one.
-        return [...drawn.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT - 1), selected];
-      }
+    const suggestedId = this.emailTemplateSuggestionId();
+    if (suggestedId !== '' && suggestedId !== selectedId) {
+      const suggested = ranked.find((t) => t.id === suggestedId);
+      if (suggested) pinned.push(suggested);
     }
-    return drawn;
+    if (selectedId !== '') {
+      const selected = ranked.find((t) => t.id === selectedId) ?? this.selectedEmailTemplateRow();
+      if (selected) pinned.push(selected);
+    }
+    const missing = pinned.filter((row) => !drawn.some((t) => t.id === row.id));
+    if (missing.length === 0) {
+      return drawn;
+    }
+    const pinnedIds = new Set(pinned.map((row) => row.id));
+    let unpinnedRoom = HUBSPOT_TEMPLATE_RENDER_LIMIT - pinned.length;
+    const kept = drawn.filter((t) => {
+      if (pinnedIds.has(t.id)) return true;
+      unpinnedRoom--;
+      return unpinnedRoom >= 0;
+    });
+    return [...kept, ...missing];
   });
 
   /** How many rows the search returned, as opposed to how many are drawn. */
@@ -1494,10 +1674,49 @@ export class CampaignsComponent {
    */
   protected readonly selectedEmailTypeId = signal<string>(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID);
 
-  /** The stage that type generates from — what campaign-service actually takes. */
-  protected readonly selectedEmailStage = computed<CampaignEmailStage | undefined>(
-    () => CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.stage
+  /**
+   * The type list for the ACTIVE send surface.
+   *
+   * One picker, two vocabularies. Upstream keys a brief on `(project, slug, delivery, stage)` and
+   * refuses a cross-surface pair, so offering the event stages on the survey surface would offer a
+   * choice the server rejects.
+   */
+  protected readonly sendTypes = computed<readonly CampaignEmailTypeOption[] | readonly CampaignSurveyTypeOption[]>(() =>
+    this.isSurvey() ? this.surveyAssetTypes() : CAMPAIGN_EMAIL_TYPES
   );
+
+  /**
+   * What the survey picker offers: the ASSET being promoted, not each send of it.
+   *
+   * The reminder and closing stages exist upstream and are what the series' briefs are keyed on,
+   * but they are not choices -- a reminder is not a different thing to promote, it is the second
+   * email about the same survey. Offering all four made the operator plan each send as a separate
+   * campaign, which is the repetition this surface exists to avoid; the count below decides how
+   * many sends the one asset gets.
+   */
+  private readonly surveyAssetTypes = computed<readonly CampaignSurveyTypeOption[]>(() =>
+    CAMPAIGN_SURVEY_TYPES.filter((type) => type.stage === 'Survey Promo' || type.stage === 'Report Promo')
+  );
+
+  /**
+   * A mutable COPY for the template, for the reason `emailTypes` below is one: `lfx-select` types
+   * `options` as `any[]` and will not take a readonly array.
+   */
+  protected readonly sendTypeOptions = computed(() => [...this.sendTypes()]);
+
+  /** The stage that type generates from — what campaign-service actually takes. */
+  protected readonly selectedEmailStage = computed<CampaignSendStage | undefined>(
+    () => this.sendTypes().find((t) => t.id === this.selectedEmailTypeId())?.stage
+  );
+
+  /**
+   * The stage audience QA runs under. QA's `stage` takes only the event email stages, so a survey
+   * or report stage is sent as no stage at all rather than refused.
+   */
+  protected readonly audienceQaStage = computed<CampaignEmailStage | ''>(() => {
+    const stage = this.selectedEmailStage();
+    return stage !== undefined && (CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stage) ? (stage as CampaignEmailStage) : '';
+  });
 
   /**
    * The chosen type's label, for the read-only line on Implement.
@@ -1508,7 +1727,7 @@ export class CampaignsComponent {
    * `onGenerateEmailCopy()` then sent the new stage against the old brief's id. The picker lives
    * above the planner, where the lookup can answer it.
    */
-  protected readonly selectedEmailTypeLabel = computed<string>(() => CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.label ?? '');
+  protected readonly selectedEmailTypeLabel = computed<string>(() => this.sendTypes().find((t) => t.id === this.selectedEmailTypeId())?.label ?? '');
 
   /** The full type list, for the selector. */
   // A mutable COPY for the template. `lfx-select` types `options` as `any[]`, and a readonly
@@ -1530,9 +1749,14 @@ export class CampaignsComponent {
    * Narrowed by LOOKUP against the shared list rather than cast, so an id that is no longer a
    * member (a segment retired from `CAMPAIGN_EMAIL_SEGMENTS` while one was selected) degrades to
    * generic copy instead of travelling upstream as a value the service does not know.
+   *
+   * Always `undefined` on the survey surface. The picker is not shown there -- the segment blocks
+   * are written for events (sessions, past editions, "has attended before") and describe nothing
+   * about a survey's reader -- so a segment chosen earlier on the email surface must not ride
+   * along with a survey generate. The raw id is kept, so returning to email shows the choice again.
    */
   protected readonly selectedEmailSegment = computed<CampaignEmailSegment | undefined>(() =>
-    CAMPAIGN_EMAIL_SEGMENTS.find((segment) => segment === this.selectedEmailSegmentId())
+    this.isSurvey() ? undefined : CAMPAIGN_EMAIL_SEGMENTS.find((segment) => segment === this.selectedEmailSegmentId())
   );
 
   /**
@@ -1552,6 +1776,21 @@ export class CampaignsComponent {
 
   /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
   protected readonly selectedEmailTemplateId = signal<string>('');
+
+  /** The chosen template's name, for the line that says which one is being cloned. */
+  protected readonly selectedEmailTemplateName = computed<string>(() => {
+    const id = this.selectedEmailTemplateId();
+    if (id === '') {
+      return '';
+    }
+    // The id when HubSpot gave the template no name: the survey surface hides the picker, so this
+    // line is the only place the operator can see which template is cloned.
+    return (
+      this.emailTemplates()
+        ?.find((template) => template.id === id)
+        ?.name?.trim() || `template ${id}`
+    );
+  });
 
   /**
    * Generated email copy for the brief on screen — LFXV2-3198's `email-copy`.
@@ -1573,7 +1812,11 @@ export class CampaignsComponent {
    * Whether copy can be generated: a brief must exist, because the prompt is instructed to use
    * ONLY supplied event facts and has nothing to work from otherwise.
    */
-  protected readonly canGenerateEmailCopy = computed(() => this.emailBriefOutput() !== null && this.emailCopyState() !== 'generating');
+  protected readonly canGenerateEmailCopy = computed(
+    // Not over a staged or held survey send: staging the brief again returns its existing draft,
+    // so new copy here would never reach HubSpot. Start the series over writes on new briefs.
+    () => this.emailBriefOutput() !== null && this.emailCopyState() !== 'generating' && !this.surveySingleSendStaged()
+  );
 
   /**
    * Whether the operator wants a native HubSpot A/B test on this send. Off by default — most
@@ -1645,8 +1888,24 @@ export class CampaignsComponent {
     // public-looking, which `https://evil.example/phish` also is -- and staging forwards
     // `emailCtaDestination`, so the weaker list kept links in the preview that the draft drops.
     // One validator, not two: `emailCtaDestination` is lazily read, so declaration order is fine.
-    const destination = this.emailCtaDestination();
-    return destination === '' ? [] : [destination];
+    //
+    // Plus the links the event page itself published (CFP, agenda, venue, sponsorship) when they are on
+    // the call-to-action's host or an LF-owned domain (#3306). The controller judges the staged body
+    // with the same helper over the same list (`emailExtractedLinks`, sent with the stage request), so
+    // the preview still cannot show a link the draft drops.
+    return emailLinkDestinations(this.emailCtaDestination(), this.emailExtractedLinks());
+  });
+
+  /**
+   * The secondary links the event page published, as the scrape verified them (`verifyPageLink`): the
+   * candidates `generatedDestinations` may vouch for, and what the stage request sends as
+   * `secondaryLinkUrls` so the controller can judge the body the same way (#3306).
+   */
+  protected readonly emailExtractedLinks = computed<string[]>(() => {
+    const details = this.emailBriefOutput()?.eventDetails;
+    return [details?.cfpUrl, details?.agendaUrl, details?.venueUrl, details?.sponsorshipUrl]
+      .map((link) => canonicalHttpUrl(link))
+      .filter((link) => link !== '');
   });
 
   /**
@@ -1662,7 +1921,9 @@ export class CampaignsComponent {
    * filter here with the validated list closes the gap and makes A's preview agree with what the
    * controller stages -- exactly as `abTestBodyHtmlBPreview` does for B.
    */
-  protected readonly emailBodyHtmlPreview = computed<string>(() => stripResourceLoadingHtml(this.emailCopy()?.body ?? '', this.generatedDestinations()));
+  protected readonly emailBodyHtmlPreview = computed<string>(() =>
+    stripResourceLoadingHtml(this.emailCopy()?.body ?? '', this.generatedDestinations(), this.emailCtaDestination())
+  );
 
   /**
    * Variant B's body with resource-loading markup removed, before the refused-CTA fold-back.
@@ -1685,7 +1946,9 @@ export class CampaignsComponent {
    * `abTestIsStageable` does read it directly, and deliberately -- see that signal for why the
    * gate judges the PRE-fold body.
    */
-  protected readonly abTestBodyHtmlBPreview = computed<string>(() => stripResourceLoadingHtml(this.abTestBodyHtmlB(), this.generatedDestinations()));
+  protected readonly abTestBodyHtmlBPreview = computed<string>(() =>
+    stripResourceLoadingHtml(this.abTestBodyHtmlB(), this.generatedDestinations(), this.emailCtaDestination())
+  );
 
   /** Variant B generation lifecycle, separate from `emailCopyState` so the two can run independently. */
   protected readonly abTestCopyState = signal<'idle' | 'generating' | 'error'>('idle');
@@ -1970,48 +2233,9 @@ export class CampaignsComponent {
    * field -- never invent one -- so an absent url is a deliberate "registration is not the right
    * destination for this stage", not a gap for the UI to fill.
    */
-  protected readonly emailCtaDestination = computed<string>(() => {
-    const generated = canonicalHttpUrl(this.emailCopy()?.ctaUrl);
-    if (generated === '') return '';
-    // MUST EQUAL the brief's registration URL. The generator is told "a button's url must be
-    // that URL, copied exactly ... never invented", so anything else is a model that did not
-    // follow its instructions -- and accepting it would ship a button pointing somewhere the
-    // brief never contained. Checking only that the URL is public-looking is not enough: a
-    // hallucinated `https://evil.example.com/phish` passes that check.
-    //
-    // Compared with the trailing slash normalized away on the PATHNAME ONLY. `canonicalHttpUrl`
-    // does NOT equalise it -- `.../kubecon-eu-2026` and `.../kubecon-eu-2026/` stay distinct,
-    // A model copying the URL and adding or dropping a slash addresses the SAME page, so
-    // refusing it would silently drop the button for a generation that followed its
-    // instructions.
-    //
-    // Stripping it from the whole serialized URL was the over-correction in the other
-    // direction: it also mutates the query and fragment, so a generated `?token=abc/` compared
-    // EQUAL to the brief's `?token=abc` and a different destination passed. Only the path may
-    // be normalized; `search` and `hash` must match exactly, because a trailing slash there is
-    // part of the value rather than a path separator.
-    const fromBrief = canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl);
-    const sameTarget = (url: string): string => {
-      try {
-        const parsed = new URL(url);
-        parsed.pathname = parsed.pathname.replace(/\/+$/, '');
-        return parsed.toString();
-      } catch {
-        // Not parseable: compare verbatim rather than guessing.
-        //
-        // REACHED ROUTINELY, not a defensive dead branch: `canonicalHttpUrl` returns '' for a
-        // brief with no usable registrationUrl, and `new URL('')` throws, so every such brief
-        // lands here while the generator has supplied a url.
-        //
-        // Returning the input verbatim is the right answer for that case: '' can then only equal
-        // '', so a generated url never matches an absent brief url and no button is staged --
-        // which is what "the brief has no registration destination" should mean. Falling back to
-        // the old whole-string strip here would reintroduce the query/fragment gap.
-        return url;
-      }
-    };
-    return sameTarget(generated) === sameTarget(fromBrief) ? generated : '';
-  });
+  protected readonly emailCtaDestination = computed<string>(() =>
+    ctaDestinationFor(this.emailCopy()?.ctaUrl, this.emailBriefOutput()?.eventDetails?.registrationUrl)
+  );
 
   /**
    * Whether variant B copy can be (re)generated: same brief precondition as variant A, gated on
@@ -2034,6 +2258,26 @@ export class CampaignsComponent {
    * ("connect HubSpot", "pick a template") and the one they cannot are both surfaced here.
    */
   protected readonly emailStaging = signal<'idle' | 'staging' | 'done' | 'error'>('idle');
+  /** Every scope the single Stage button created a draft under; survives the display reset. */
+  private readonly singleSendStagedScopes = signal<ReadonlySet<string>>(new Set());
+  /**
+   * Approved survey briefs restored from an earlier session. Their draft may exist, and staging
+   * again would hand it back unchanged, so they are treated as staged until started over.
+   */
+  private readonly restoredSendScopes = signal<ReadonlySet<string>>(new Set());
+  /**
+   * Set when Write all met a send brief saved in an earlier page session, which this page cannot
+   * own. Start the series over is then the way on: it writes on new briefs instead of adopting
+   * ones whose drafts this page knows nothing about.
+   */
+  protected readonly sequenceNeedsRestart = signal<boolean>(false);
+  /**
+   * Set when a workflow build may have created the workflow without confirming it, so Build stays
+   * off rather than inviting a second, duplicate workflow.
+   */
+  protected readonly sendWorkflowUnconfirmed = signal<boolean>(false);
+  /** The survey the current series was written for, so a brief reset can retire its briefs. */
+  private seriesBase: { projectSlug: string; baseSlug: string } | null = null;
   /**
    * A stage ended WITHOUT a terminal answer, so a HubSpot draft may still be created against this
    * brief's audience: the poll lost track of the job or timed out, the create was accepted with no
@@ -2073,12 +2317,290 @@ export class CampaignsComponent {
   /** A stage is in flight OR unresolved: what every lock that protects a stage keys on. */
   protected readonly emailStagingHeld = computed(() => this.emailStaging() === 'staging' || this.emailStagingUnresolved());
 
+  /**
+   * Whether the Audience tab must not replace the audience: a single send OR a survey series is
+   * being staged (or has a send held), and a replacement mid-way would leave drafts built against
+   * different audiences -- which the series' workflow then refuses.
+   */
+  protected readonly audienceLockedByStaging = computed(() => (!this.surveySeriesRestarted() && this.emailStagingHeld()) || this.surveySeriesStarted());
+
   /** Terminal message for the staging attempt — empty while idle or in flight. */
   protected readonly emailStagingMessage = signal<string>('');
   /** HubSpot link to the staged draft; '' when the service sent none or it is not an http(s) URL. */
   protected readonly emailStagingDraftUrl = signal<string>('');
   /** Notes about best-effort steps of the staged draft that did not apply (e.g. a hero image that could not be added). */
   protected readonly emailStagingWarnings = signal<readonly string[]>([]);
+
+  /**
+   * How many emails this survey is promoted by: one, or the full three-send series (see
+   * `CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS`; there is no two-send option).
+   *
+   * Asked ONCE, before generation, because it changes what gets written rather than how it is
+   * presented: each send is its own brief with its own stage, and the stage is what gives the
+   * reminder its "still open" framing and the closing its deadline framing.
+   */
+  protected readonly surveyEmailCount = signal<number>(1);
+
+  /**
+   * The counts on offer, with what each one means.
+   *
+   * Read from `CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS`: one email, or the full three-send series, the
+   * one length the configured workflow can send.
+   */
+  protected readonly surveyEmailCountOptions = CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS;
+
+  /** Report promotion is a single asset: a published report has no reminder and does not close. */
+  protected readonly surveySupportsSeries = computed(() => this.isSurvey() && this.selectedEmailStage() === 'Survey Promo');
+
+  /**
+   * The stages this campaign's sends occupy, in send order.
+   *
+   * One send, or three: an opening, a reminder while the survey is in field, and a closing that
+   * carries the deadline -- the shape of the configured workflow every series is copied from.
+   */
+  protected readonly surveySequenceStages = computed<readonly CampaignSurveyStage[]>(() => {
+    if (!this.surveySupportsSeries()) {
+      // Report promotion, or a survey stage reached some other way: a single send, named by
+      // whatever the picker currently addresses.
+      const stage = this.selectedEmailStage();
+      return stage === undefined ? [] : [stage as CampaignSurveyStage];
+    }
+    // Read from the shared options, so a count and its stages cannot be edited apart.
+    return CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS.find((option) => option.count === this.surveyEmailCount())?.stages ?? ['Survey Promo'];
+  });
+
+  /** Staging progress for the whole sequence: which send is being created, and what failed. */
+  protected readonly sequenceStagingState = signal<CampaignSurveySequenceStagingState>('idle');
+  protected readonly sequenceStagingMessage = signal<string>('');
+  /** The sends that now have a HubSpot draft, by brief id, so the panel can show which are ready. */
+  protected readonly sequenceStagedBriefIds = signal<readonly string[]>([]);
+  /**
+   * Sends whose create was accepted but never reported back (a lost or timed-out job, or an
+   * indeterminate refusal): a draft may exist. Staging is held until the operator checks HubSpot,
+   * because staging them again could clone a second draft. Writing the series again clears it.
+   */
+  protected readonly sequenceUnresolvedBriefIds = signal<readonly string[]>([]);
+  /**
+   * A problem sharing the audience with the later sends. Shown whatever the generate or staging
+   * state, because sharing is best effort: the series is written either way, and only this line
+   * explains why a later send then has no audience.
+   */
+  protected readonly surveySequenceWarning = signal<string>('');
+
+  /** The sends this campaign has generated: one entry per stage, in send order. */
+  protected readonly surveySequenceSends = signal<readonly CampaignSequenceSend[]>([]);
+  protected readonly surveySequenceState = signal<CampaignSurveySequenceGenerateState>('idle');
+  protected readonly surveySequenceError = signal<string>('');
+  /** Which send is being written right now, for a progress line that says more than a spinner. */
+  protected readonly surveySequenceProgress = signal<string>('');
+
+  /**
+   * Whether every send can be staged right now.
+   *
+   * ONE statement of the rule, read by the button's disabled state, its explanation chain and the
+   * handler's own re-check -- the handler re-reads it after its awaits rather than trusting the
+   * click, since a template or audience can change while three creates are in flight.
+   *
+   * The audience is part of it, unlike the per-send Stage button's own guard: dispatch refuses a
+   * send with no audience, and this path creates several in a row, so letting it start would fail
+   * partway and leave some sends staged and others not.
+   */
+  protected readonly canStageSequence = computed(
+    () =>
+      this.sequenceStagingState() !== 'staging' &&
+      // Not while later sends are still being written: staging snapshots the list, so it would
+      // stage the sends written so far and report the series done.
+      this.surveySequenceState() !== 'generating' &&
+      // Nor while the audience is being replaced: `emailAudience()` still holds the old row.
+      !this.emailAudienceWriteInFlight() &&
+      // Nor over the single Stage button's own in-flight or unconfirmed create: send 1 is the same
+      // brief, so a series create beside it could clone a second draft. A restarted series is
+      // written on NEW briefs, so a hold left on the original brief no longer applies to it (its
+      // acknowledgment lives in the single-send controls a restart hides).
+      (this.surveySeriesRestarted() || !this.emailStagingHeld()) &&
+      // The WHOLE planned series: after a write that failed partway, the sends that did land stay
+      // on screen for review, but staging them would ship a series without its later emails.
+      this.surveySequenceComplete() &&
+      !this.sequenceHasHeldSend() &&
+      this.emailBriefOutput() !== null &&
+      this.activeFoundationSlug() !== '' &&
+      this.selectedEmailTemplateId() !== '' &&
+      this.emailAudience()?.status === 'built'
+  );
+
+  /**
+   * Whether this survey series has started reaching HubSpot: a send staged, staging, held, or a
+   * workflow building. From then on the audience is LOCKED (and the email count with it): every
+   * draft and the workflow were built against it, and nothing can re-point them, so changing it
+   * would leave HubSpot sending to lists the page no longer shows. Starting over is the way out.
+   */
+  protected readonly surveySeriesStarted = computed(
+    () =>
+      this.sequenceStagedBriefIds().length > 0 ||
+      this.sequenceStagingState() === 'staging' ||
+      this.sequenceHasHeldSend() ||
+      this.surveySingleSendStaged() ||
+      this.sendWorkflowState() === 'building'
+  );
+
+  /**
+   * Whether the single Stage button put THIS brief's draft in HubSpot, or may be about to (in
+   * flight or unconfirmed). A series opens on the same brief, whose existing draft campaign-service
+   * would hand back unchanged, so a new count or rewrite would show copy HubSpot never sends. A
+   * restart moves the series to new briefs.
+   */
+  protected readonly surveySingleSendStaged = computed(
+    () =>
+      this.isSurvey() &&
+      !this.surveySeriesRestarted() &&
+      (this.emailStagingHeld() || this.singleSendStagedScopes().has(this.currentStageScope()) || this.surveySingleSendRestored())
+  );
+
+  /** Whether this survey send was restored from an earlier session, so its draft may already exist. */
+  protected readonly surveySingleSendRestored = computed(
+    () => this.isSurvey() && !this.surveySeriesRestarted() && this.restoredSendScopes().has(this.currentStageScope())
+  );
+
+  /** A survey written as a SERIES: Write all and Stage all own its copy, so the single path hides. */
+  protected readonly surveySeriesMode = computed(() => (this.surveySupportsSeries() && this.surveyEmailCount() > 1) || this.surveySeriesRestarted());
+
+  /**
+   * Whether this survey's series was started over. Its emails then live on NEW briefs (`-rN`),
+   * so even a one-email survey or report stages through the series path: the single Stage button
+   * addresses the page's ORIGINAL brief, whose draft campaign-service would hand back unchanged.
+   */
+  protected readonly surveySeriesRestarted = computed(() => {
+    this.seriesRestartVersion();
+    const brief = this.emailBriefOutput();
+    return this.isSurvey() && brief !== null && this.readSeriesRestart(this.activeFoundationSlug(), brief.eventDetails?.slug ?? '') > 0;
+  });
+
+  /** Whether a survey series is staging, or holds a send, so the single Stage button must wait. */
+  protected readonly sequenceLocksSingleSend = computed(() => this.sequenceStagingState() === 'staging' || this.sequenceHasHeldSend());
+
+  /** Whether every send the operator planned has been written -- not just some of them. */
+  protected readonly surveySequenceComplete = computed(() => {
+    const sends = this.surveySequenceSends();
+    return sends.length > 0 && sends.length === this.surveySequenceStages().length;
+  });
+
+  /**
+   * Whether the whole series can be written right now.
+   *
+   * The brief is required because every send is a copy of it under a different stage; the
+   * foundation because a brief is stored under one.
+   */
+  protected readonly canGenerateSurveySequence = computed(
+    () =>
+      // Not once a send is staged: campaign-service hands back a brief's existing draft on a
+      // second create, so a rewrite would show new copy while HubSpot kept sending the old.
+      this.sequenceStagedBriefIds().length === 0 &&
+      // Nor over a send held unconfirmed: its draft may exist, and rewriting would clear the hold
+      // and reuse the same brief. Start the series over, which writes on new briefs.
+      !this.sequenceHasHeldSend() &&
+      !this.surveySingleSendStaged() &&
+      !this.sequenceNeedsRestart() &&
+      this.surveySequenceState() !== 'generating' &&
+      this.sequenceStagingState() !== 'staging' &&
+      this.sendWorkflowState() !== 'building' &&
+      this.emailBriefOutput() !== null &&
+      this.activeFoundationSlug() !== ''
+  );
+
+  /**
+   * Whether the workflow can be built: two sends or more, every one of them staged. Upstream
+   * refuses a send with no draft anyway; checking here keeps the button from inviting a request
+   * that can only fail, and the hint beside it says what is missing.
+   */
+  protected readonly canBuildSequenceWorkflow = computed(() => {
+    const sends = this.surveySequenceSends();
+    const staged = this.sequenceStagedBriefIds();
+    return (
+      this.sendWorkflowState() !== 'building' &&
+      // Once per series: the create is not idempotent, so a second click builds a second workflow.
+      this.sendWorkflowResult() === null &&
+      !this.sendWorkflowUnconfirmed() &&
+      this.sequenceStagingState() !== 'staging' &&
+      // Not during an audience write: the workflow enrols the lists campaign-service reads now.
+      !this.emailAudienceWriteInFlight() &&
+      this.activeFoundationSlug() !== '' &&
+      sends.length > 1 &&
+      this.surveySequenceComplete() &&
+      sends.every((send) => staged.includes(send.briefId)) &&
+      this.sequenceDatesComplete()
+    );
+  });
+
+  /**
+   * Each send's body as it will be STAGED, keyed by brief id, so the review panel shows the same
+   * cleaned HTML the draft receives rather than the raw generated markup.
+   */
+  /** One row per written send, joined here so the template reads values rather than calling lookups. */
+  protected readonly surveySequenceRows = computed<CampaignSequenceSendRow[]>(() => {
+    const bodies = this.surveySequenceBodies();
+    const buttons = this.surveySequenceButtons();
+    const staged = this.sequenceStagedBriefIds();
+    return this.surveySequenceSends().map((send) => ({
+      send,
+      bodyHtml: bodies.get(send.briefId) ?? '',
+      button: buttons.get(send.briefId) ?? null,
+      staged: staged.includes(send.briefId),
+    }));
+  });
+
+  protected readonly surveySequenceBodies = computed<ReadonlyMap<string, string>>(() => {
+    const brief = this.emailBriefOutput();
+    return new Map(this.surveySequenceSends().map((send) => [send.briefId, this.sequenceSendContent(brief, send).bodyHtml]));
+  });
+
+  /**
+   * Each send's call-to-action button as it will be STAGED ('' when none is), keyed by brief id.
+   * Staged separately from the body, so the review panel shows it separately too -- otherwise the
+   * operator approves a draft whose button they never saw.
+   */
+  protected readonly surveySequenceButtons = computed<ReadonlyMap<string, { text: string; url: string }>>(() => {
+    const brief = this.emailBriefOutput();
+    return new Map(
+      this.surveySequenceSends().map((send) => {
+        const content = this.sequenceSendContent(brief, send);
+        return [send.briefId, { text: content.buttonText, url: content.buttonUrl }];
+      })
+    );
+  });
+
+  // --- The send workflow: one HubSpot workflow that sends a staged SERIES -------------------
+  //
+  // A single email is staged, scheduled and sent on its own. A series is not: its sends happen in
+  // order, days apart, to one enrolled audience, and that schedule is a HubSpot concept. So the
+  // series is handed to HubSpot as a workflow rather than three drafts an operator schedules by
+  // hand and keeps in step.
+
+  /** Name for the new workflow. Left empty, the build names it after the campaign: `<name> - Workflow`. */
+  protected readonly sendWorkflowForm = new FormGroup({
+    name: new FormControl<string>('', { nonNullable: true }),
+  });
+
+  /**
+   * One send date per written send, keyed `date-<index>` in send order. Rebuilt whenever a series
+   * is written, since its length is the series'.
+   */
+  protected readonly sequenceDatesForm = new FormRecord<FormControl<string>>({});
+
+  /** The dates as typed, as a signal so Build's enabled state follows them. */
+  private readonly sequenceDateValues = toSignal(this.sequenceDatesForm.valueChanges, { initialValue: {} as Partial<Record<string, string>> });
+
+  /**
+   * Whether every send has its date. campaign-service needs one per wait-until-date step of the
+   * workflow it copies -- the source's own dates belong to another campaign -- and refuses a
+   * missing one with a 409, so Build waits for all of them.
+   */
+  protected readonly sequenceDatesComplete = computed(() => {
+    const values = this.sequenceDateValues();
+    return this.surveySequenceSends().every((_send, index) => (values[`date-${index}`] ?? '').trim() !== '');
+  });
+  protected readonly sendWorkflowState = signal<CampaignSurveySendWorkflowState>('idle');
+  protected readonly sendWorkflowError = signal<string>('');
+  protected readonly sendWorkflowResult = signal<CampaignSendWorkflowResult | null>(null);
 
   /**
    * Whether a send can be staged right now.
@@ -2115,7 +2637,12 @@ export class CampaignsComponent {
       // That draft reads as plausible and is simply the wrong content, which is the failure mode
       // this panel keeps having to close.
       this.emailCopyState() !== 'generating' &&
-      this.abTestCopyState() !== 'generating'
+      this.abTestCopyState() !== 'generating' &&
+      // A survey series' first send IS this brief: while the series is staging, or holds a send
+      // whose draft may exist, a single-send create could clone a second draft for it.
+      !this.sequenceLocksSingleSend() &&
+      // Email may stage the template as it is; a survey email has to carry its generated copy.
+      (!this.isSurvey() || this.emailCopy() !== null)
   );
 
   /**
@@ -2158,6 +2685,32 @@ export class CampaignsComponent {
       : 'Connect HubSpot for this foundation to stage an email.';
   });
 
+  /**
+   * Why the survey surface has no template, when that is a terminal state rather than a load in
+   * progress: not connected, a failed read, or a portal with no marketing emails. '' otherwise.
+   * The survey surface hides the picker, so without this those states read as an endless search.
+   */
+  protected readonly surveyTemplateProblem = computed<string>(() => {
+    if (this.emailTemplatesLoading() || this.selectedEmailTemplateId() !== '') {
+      return '';
+    }
+    if (this.emailChannelEnabled() === false) {
+      return this.emailNotConnectedMessage();
+    }
+    const error = this.emailTemplatesError();
+    if (error) {
+      return error;
+    }
+    const templates = this.emailTemplates();
+    return templates !== null && templates.length === 0 ? 'This HubSpot portal has no marketing emails to clone. Add one in HubSpot, then try again.' : '';
+  });
+
+  /** The survey surface's template line: its problem, or that the search is still running. */
+  protected readonly surveyTemplateHint = computed<string>(() => this.surveyTemplateProblem() || 'Finding a template in this portal to clone.');
+
+  /** Whether a send of the series on screen is held because its draft never confirmed. */
+  protected readonly sequenceHasHeldSend = computed(() => this.surveySequenceSends().some((send) => this.sequenceUnresolvedBriefIds().includes(send.briefId)));
+
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
   protected readonly activeDeliveryTypeConfig = computed(() => this.deliveryTypes.find((dt) => dt.id === this.selectedDeliveryType()) ?? this.deliveryTypes[0]);
 
@@ -2169,6 +2722,23 @@ export class CampaignsComponent {
    * would hide. `isEmail()` / `!isEmail()` reads as the opposition it is.
    */
   protected readonly isEmail = computed(() => this.selectedDeliveryType() === 'email');
+
+  /** Survey & Report — the surface whose brief is written from a pasted document, not a scraped event. */
+  protected readonly isSurvey = computed(() => this.sendSurface() === 'survey');
+
+  /**
+   * Both SEND surfaces: email and survey.
+   *
+   * They share one container because they share the pipeline -- the same tabs, the same audience
+   * builder, the same HubSpot staging, the same draft link. What differs is where the facts come
+   * from (a scraped event page vs a pasted source document) and which stage vocabulary the picker
+   * offers, and each of those is handled where it differs rather than by a second container.
+   *
+   * Written as "not paid" rather than "email or survey" deliberately: paid is the surface with a
+   * genuinely different page, so a fourth send surface should join this one automatically rather
+   * than silently render nothing.
+   */
+  protected readonly isEmailLike = computed(() => this.selectedDeliveryType() !== 'paid-marketing');
 
   /**
    * The Email side's tab set — a plain field, NOT a computed over the active delivery type.
@@ -2442,6 +3012,10 @@ export class CampaignsComponent {
         this.removedKeywordsService.setScope(projectSlug);
       });
     this.destroyRef.onDestroy(() => {
+      // Leaving the page abandons a series being written or staged: the loops re-check the
+      // generation after every await, so none of them creates another HubSpot draft for a page
+      // that no longer exists.
+      this.surveySequenceGeneration++;
       this.negativeKeywordsService.releaseScope();
       this.keywordTargetingService.releaseScope();
       this.removedKeywordsService.releaseScope();
@@ -2528,6 +3102,9 @@ export class CampaignsComponent {
         this.briefCampaignsGeneration++;
         this.briefCampaigns.set(null);
         this.briefCampaignsStale.set(false);
+        // The bump above invalidates any list read still out, so its answer can no longer clear this
+        // flag; left set, the Implement panel would say "Checking…" for good (#4983).
+        this.briefCampaignsLoading.set(false);
         this.briefCampaignsToggleEnabled.set(false);
         this.briefCampaignsDemandGenEnabled.set(null);
         this.briefCampaignsGoogleChannelsEnabled.set(null);
@@ -2539,13 +3116,33 @@ export class CampaignsComponent {
         this.briefCampaignsMetaAssetUploadEnabled.set(null);
         this.briefCampaignsGoogleAssetUploadEnabled.set(null);
         this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
+        this.briefCampaignsLinkedInTargetingEditEnabled.set(null);
+        this.briefCampaignsLinkedInAccountSelectionEnabled.set(null);
+        this.briefCampaignsLinkedInDailyCapEnabled.set(null);
         this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
         this.briefCampaignsMicrosoftScheduleEnabled.set(null);
         this.briefCampaignsTwitterCreateEnabled.set(null);
         this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+        this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
+        this.briefCampaignsMetaCallToActionEnabled.set(null);
+        this.briefCampaignsMetaLeadFormsEnabled.set(null);
+        this.briefCampaignsMetaInterestTargetingEnabled.set(null);
+        this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+        this.briefCampaignsMetaAdScheduleEnabled.set(null);
+        this.briefCampaignsMetaFrequencyCapEnabled.set(null);
+        this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
+        this.briefCampaignsMetaOsTargetingEnabled.set(null);
+        this.briefCampaignsMetaConversionEventEnabled.set(null);
+        this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
+        this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
         this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+        this.briefCampaignsGoogleConversionActionsEnabled.set(null);
+        this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
+        this.briefCampaignsGoogleDisplayAudiencesEnabled.set(null);
+        this.briefCampaignsGooglePerformanceMaxAudienceSignalEnabled.set(null);
         this.briefCampaignsGoogleGeoSearchEnabled.set(null);
+        this.briefCampaignsMultiCampaignPlatforms.set(null);
         this.briefCampaignsCapabilityRead.set('unknown');
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
@@ -2557,7 +3154,7 @@ export class CampaignsComponent {
         // re-evaluates it after a switch, so the picker stayed empty until they navigated
         // away and back. Guarded, so a switch into a foundation whose channel is off still
         // renders that answer rather than looping on it.
-        if (this.selectedDeliveryType() === 'email' && this.selectedEmailTab() === 'implementation') {
+        if (this.isEmailLike() && this.selectedEmailTab() === 'implementation') {
           this.loadEmailTemplatesIfNeverAnswered();
         }
 
@@ -2574,7 +3171,7 @@ export class CampaignsComponent {
         // resolvable: the panel repopulates instead of sitting empty until the operator
         // navigates away and back. `loadEmailMetrics` re-reads its own context and handles the
         // no-brief case, so it is safe to call unconditionally either way.
-        if (this.selectedDeliveryType() === 'email' && this.selectedEmailTab() === 'insights') {
+        if (this.isEmailLike() && this.selectedEmailTab() === 'insights') {
           this.loadEmailMetrics();
         }
 
@@ -2600,6 +3197,10 @@ export class CampaignsComponent {
       if (this.adoptingRestoredProgram) {
         return;
       }
+      // Before the planner is recreated under the new program: it would otherwise prefill the old
+      // program's event URL from `?event=` and offer that brief here (#4756), the carry-over the
+      // recreation exists to prevent.
+      this.clearEventUrlParam();
       this.resetToPlanning();
     });
 
@@ -2663,6 +3264,37 @@ export class CampaignsComponent {
       }
       this.selectedDeliveryType.set(value);
 
+      // The two send surfaces have DISJOINT type lists, so the id selected on one names nothing on
+      // the other. Left alone, `selectedEmailStage` resolves to undefined and the brief lookup
+      // addresses no row -- the planner then looks permanently empty with no error to explain it.
+      // Reset to the surface's own default, which is what a fresh selection on it would show.
+      //
+      // The CONTROL is reset with the signal, not just the signal: the dropdown renders the
+      // `emailType` control, and the signal only feeds the planner. Resetting one alone left the
+      // dropdown showing the previous surface's id -- which names no option in this surface's list,
+      // so it read as unselected while the planner quietly worked on the default. `emitEvent: false`
+      // because the signal is already set; the control's own stream would only re-enter
+      // `onSelectEmailType` to find nothing to do.
+      //
+      // Routed through `onSelectEmailType` rather than setting the signal, because the surfaces
+      // are separate brief identities upstream: the type handler is what drops the brief id, the
+      // brief and the audience of the stage being left. Set directly, the survey surface kept
+      // the email brief on screen and generated and staged against that row.
+      //
+      // Only when the SURFACE changes. Returning to the surface last used -- the round trip
+      // through Paid Marketing -- keeps its selection: its type is valid there, and resetting it
+      // discarded a chosen stage's brief, audience and copy.
+      if ((value === 'survey' || value === 'email') && value !== this.sendSurface()) {
+        this.sendSurface.set(value);
+        // Survey has no A/B control, so a variant B left armed on Email would stage invisibly.
+        if (value === 'survey' && this.abTestForm.controls.enabled.value) {
+          this.abTestForm.controls.enabled.setValue(false);
+        }
+        const defaultTypeId = value === 'survey' ? DEFAULT_CAMPAIGN_SURVEY_TYPE_ID : DEFAULT_CAMPAIGN_EMAIL_TYPE_ID;
+        this.onSelectEmailType(defaultTypeId);
+        this.selectorForm.controls.emailType.setValue(defaultTypeId, { emitEvent: false });
+      }
+
       // Re-evaluate the picker on RETURN to email, for the reason the foundation-switch handler
       // documents one condition over: resetting a guard's inputs does nothing if nothing runs it.
       // The switch handler's reload is gated on `selectedDeliveryType()` AS IT READS AT THAT
@@ -2673,7 +3305,7 @@ export class CampaignsComponent {
       //
       // The same never-answered guard, so a channel-off or failed answer is not retried on every
       // round-trip and a healthy list is not re-fetched.
-      if (value === 'email' && this.selectedEmailTab() === 'implementation') {
+      if (value !== 'paid-marketing' && this.selectedEmailTab() === 'implementation') {
         this.loadEmailTemplatesIfNeverAnswered();
       }
 
@@ -2683,7 +3315,7 @@ export class CampaignsComponent {
       // whatever was on screen before. Unlike the picker this is not merely stale-looking: these
       // numbers change when a human presses send in HubSpot, entirely outside this app, which is
       // the whole reason the tab is re-read on every entry rather than cached.
-      if (value === 'email' && this.selectedEmailTab() === 'insights') {
+      if (value !== 'paid-marketing' && this.selectedEmailTab() === 'insights') {
         this.loadEmailMetrics();
       }
     });
@@ -2753,8 +3385,15 @@ export class CampaignsComponent {
       // effect and `loadBriefCampaigns`' own pre-request clear both reset it to `null`, and a
       // failed read leaves it `null` — so the read still re-fires on every occasion where the
       // answer is genuinely unknown, including a retry after failure.
+      //
+      // The campaign LIST, unlike the capability, is re-read on every entry, as Optimize does: the
+      // Implement tab names the campaigns already created for this event (#4983), and one created or
+      // deleted since the last look must show. One request either way: the capability read carries
+      // the list when it runs, and the list-only read is used when the capability is known.
       if (this.briefCampaignsDemandGenEnabled() === null) {
-        this.loadCreateCapabilities();
+        this.loadCreateCapabilities(true);
+      } else {
+        this.loadBriefCampaigns(false);
       }
     }
   }
@@ -2769,7 +3408,8 @@ export class CampaignsComponent {
    * tablist passing index 2 against a four-length list would select Optimize and focus nothing.
    */
   protected onTabKeydown(event: KeyboardEvent, currentIndex: number, owner: CampaignDeliveryType): void {
-    const tabs = owner === 'email' ? this.emailTabs : this.tabs;
+    // Both send surfaces share the email tab set; only paid has its own (it alone has Optimize).
+    const tabs = owner === 'paid-marketing' ? this.tabs : this.emailTabs;
     let newIndex: number | null = null;
 
     if (event.key === 'ArrowRight') {
@@ -2800,6 +3440,125 @@ export class CampaignsComponent {
   protected onPlanningBriefDiscarded(): void {
     this.carriedTwitterDraft.set(null);
     this.twitterCarryDiscarded = true;
+    this.planningEditRequest.set(null);
+    this.planningOpenGeneration++;
+  }
+
+  /**
+   * Open the saved brief on Planning's offer in its editor (#4983).
+   *
+   * Ownership is recorded FIRST, as `onRestoreSavedBrief` records it, because the edited brief is then
+   * saved through the ordinary Proceed path: `persistBrief` sends the recorded id and validator, so
+   * the save is an If-Match replace of this row (which resets it to `draft`) followed by the approval
+   * `saveBrief` already performs. Without the record the save would be refused as
+   * `unowned-brief-exists`, which is the dead end this action exists to remove.
+   *
+   * When the offer may be older than what this session last wrote (see `recordEditOwnership`), the
+   * row is read again instead and THAT is opened, so nobody edits bytes this session already replaced.
+   */
+  protected onOpenSavedBriefToEdit(offer: CampaignSavedBriefOffer): void {
+    this.adoptBriefProgram(offer.brief);
+    // The X fields typed on Implement belong to the brief that was there, not to the stored one.
+    this.twitterCarryDiscarded = true;
+    const key = this.ownershipKey(this.activeFoundationSlug(), offer.brief);
+    if (key !== null && !this.recordEditOwnership(key, offer)) {
+      // Nothing to open from a fresh read, or the read could not run: let Planning re-read so its offer
+      // shows what is stored.
+      const refreshOffer = (): void => this.savedBriefRefreshToken.update((token) => token + 1);
+      this.readAndOpenSavedBrief(offer.brief, refreshOffer, refreshOffer);
+      return;
+    }
+    this.openInPlanningEditor(offer.brief);
+  }
+
+  /**
+   * A create job started on the Implement tab (#4983): drop any Open to edit / Edit brief re-read still
+   * waiting, whose answer would otherwise switch to Planning and tear down the tab polling that job.
+   */
+  protected onCreateStarted(): void {
+    this.planningOpenGeneration++;
+  }
+
+  /**
+   * Edit brief, from the Implement tab (#4983): reopen the brief on that tab in Planning's editor.
+   *
+   * Two paths, decided by `briefOutputEpoch`:
+   * - The ownership epoch is unchanged since the handover: Implement's copy is reopened and nothing is
+   *   recorded. It already has whatever ownership this page holds — the restore that loaded it, or the
+   *   save that created it — and the next Proceed resolves it from `knownBriefIds` as any second
+   *   Proceed does.
+   * - Another account of the row arrived since: the row is re-read, ownership is recorded from that
+   *   read, and the READ brief is opened, so Implement's older bytes are never paired with the newer
+   *   validator. If the row is gone the brief on Implement opens (the next save creates); if the read
+   *   fails or the row cannot be shown, nothing opens and `editBriefError` says why.
+   */
+  protected onEditBriefFromImplement(): void {
+    const brief = this.briefOutput();
+    if (brief === null) return;
+    this.editBriefError.set(null);
+    const key = this.ownershipKey(this.activeFoundationSlug(), brief);
+    if (key !== null && this.briefOutputEpoch !== null && (this.ownershipEpochs.get(key) ?? 0) !== this.briefOutputEpoch) {
+      // Another account of the row arrived after this brief was handed over (see `briefOutputEpoch`).
+      this.readAndOpenSavedBrief(
+        brief,
+        (status) => {
+          if (status === 'none') {
+            this.openInPlanningEditor(brief);
+            return;
+          }
+          this.editBriefError.set('The saved brief could not be opened here, so nothing was opened. Reload the page and open it from the Plan tab.');
+        },
+        () => this.editBriefError.set('The saved brief could not be read, so nothing was opened. Try Edit brief again.')
+      );
+      return;
+    }
+    this.openInPlanningEditor(brief);
+  }
+
+  /**
+   * Open to edit, from the `unowned-brief-exists` refusal on the Implement tab (#4983).
+   *
+   * The refusal withholds the stored row's id by design, so the row is READ, exactly as
+   * `onReplaceSavedBrief` does, and the stored brief is opened in Planning's editor. The brief this
+   * page generated is left as it is: proceeding from the editor replaces it, and Replace saved brief
+   * stays on offer until then.
+   */
+  protected onOpenSavedBriefFromImplement(): void {
+    const brief = this.briefOutput();
+    // Unreachable while the button is shown: the refusal it answers needed a brief.
+    if (brief === null) return;
+    this.twitterCarryDiscarded = true;
+    this.readAndOpenSavedBrief(
+      brief,
+      (status) => {
+        // Persistence went dark since the refusal: nothing can be opened or saved.
+        if (status === 'off') {
+          this.briefPersistence.set(this.idlePersistence);
+          return;
+        }
+        // `none`: the row went away, so there is nothing to open and the next Proceed simply
+        // creates. `unreadable`: it exists but cannot be shown, so replacing it is the only way on.
+        // Both keep Create blocked with `briefId: ''`, as the refusal did.
+        this.briefPersistence.set({
+          status: 'error',
+          briefId: '',
+          message:
+            status === 'none'
+              ? 'The saved brief no longer exists, so there is nothing to open. Go back to Planning and proceed again to save this brief.'
+              : 'The saved brief could not be opened. Replace it with this one instead.',
+          approved: false,
+          ...(status === 'none' ? {} : { conflict: 'unowned-brief-exists' as const }),
+        });
+      },
+      () =>
+        this.briefPersistence.set({
+          status: 'error',
+          briefId: '',
+          message: 'The saved brief could not be read, so it was not opened. Try Open to edit again, or replace the saved brief with this one.',
+          approved: false,
+          conflict: 'unowned-brief-exists',
+        })
+    );
   }
 
   /**
@@ -2852,6 +3611,9 @@ export class CampaignsComponent {
     this.twitterCarryDiscarded = false;
     this.implementationDraft.set(null);
     this.briefOutput.set(handedOver);
+    const handedKey = this.ownershipKey(this.activeFoundationSlug(), handedOver);
+    this.briefOutputEpoch = handedKey === null ? null : (this.ownershipEpochs.get(handedKey) ?? 0);
+    this.editBriefError.set(null);
     this.selectedTab.set('implementation');
     if (alreadyPersisted) {
       // Bump the generation even though nothing is being saved. `persistBrief` normally does
@@ -2889,7 +3651,8 @@ export class CampaignsComponent {
       // so the capability must be asked for here — but the restored brief's id is written by the
       // branch above, and asking first read the PREVIOUS id and guarded out. A restored brief
       // then reached Implementation with the capability permanently unknown.
-      this.loadCreateCapabilities();
+      // With the campaigns already created from it, for the Implement tab's panel (#4983).
+      this.loadCreateCapabilities(true);
       // A restored brief that upstream holds as `draft` is approved HERE, and this is the whole
       // remedy for the dead end the restore offer used to lead to. campaign-service writes every
       // brief as `draft` and resets an existing one to `draft` on every PUT, so a stored brief
@@ -2916,6 +3679,11 @@ export class CampaignsComponent {
     // The create path has no id yet — `persistBrief` mints one — so the read is triggered from
     // its success arm rather than here. See `loadCreateCapabilitiesFor`.
     this.persistBrief(handedOver);
+    // But the PREVIOUS brief's campaign list goes now (#4983): `persistBrief` has just set the id to
+    // `null`, so this clears the list and invalidates any read still out, without a request. Left
+    // alone, the Implement tab would show another brief's campaigns until — or, on a refused or failed
+    // save, instead of — this brief's own read.
+    this.loadBriefCampaigns(false);
   }
 
   /** A brief restored from campaign-service: hand it over WITHOUT writing it back. */
@@ -2969,7 +3737,15 @@ export class CampaignsComponent {
     // usually wants a recent one, and an empty box with no options reads as a broken channel.
     // Started here rather than on Implement's entry precisely BECAUSE the audience step now sits
     // in between: the round trip finishes while the operator is composing.
-    this.searchEmailTemplates('');
+    //
+    // Not when that very search is already on the wire: the reset above starts it on Survey when
+    // the selection came from a filtered list, and a second one would walk the portal again only
+    // for the generation check to discard the first.
+    const unfilteredSearchPending =
+      this.emailTemplatesLoading() && this.emailTemplateSubmittedQuery() === '' && this.emailSearchProjectSlug() === this.activeFoundationSlug();
+    if (!unfilteredSearchPending) {
+      this.searchEmailTemplates('');
+    }
   }
 
   /**
@@ -3085,6 +3861,11 @@ export class CampaignsComponent {
     // ownership is recorded above, so that save is an edit of the row just opened rather than an
     // attempt to mint a second one.
     this.onEmailProceedFromPlanning(brief, approved ? briefId : undefined);
+    // Only an approved brief can have been staged: campaign-service refuses to create from any other.
+    if (approved && this.isSurvey()) {
+      const scope = this.stageScopeKey(this.activeFoundationSlug(), briefId);
+      this.restoredSendScopes.update((scopes) => new Set(scopes).add(scope));
+    }
 
     // Read back the saved audience with the id this restore was HANDED, not with `emailBriefId`.
     // The signal is left empty for an unapproved brief on purpose (see just above), so reading it
@@ -3267,17 +4048,23 @@ export class CampaignsComponent {
 
     // Re-derive, because the type is the tie-break. Several of one event's templates score
     // identically on the event, and the type is what chooses between them -- so a suggestion made
-    // under Registration Push is the wrong answer once the operator switches to CFP Launch. Left
-    // alone, the stale template stayed selected and would have been the one staged.
+    // under Registration Push is the wrong answer once the operator switches to CFP Launch.
     //
-    // Only when the current selection IS the suggestion: a hand-picked template is the operator's
-    // and a type change is not permission to replace it.
+    // The SUGGESTION only. Nothing is ever selected on the operator's behalf (#2057), so the
+    // selection is theirs and a type change is not permission to touch it.
+    //
+    // Not while a search is on the wire: `emailTemplates` still holds the rows that search is
+    // replacing, so a suggestion derived from them would be announced for a row the loading state
+    // hides. The search's success arm derives it from the new rows under the new type anyway.
     const templates = this.emailTemplates();
-    if (templates !== null && this.emailTemplateSelectionIsSuggested()) {
-      this.selectedEmailTemplateId.set('');
-      this.selectedEmailTemplateRow.set(null);
+    if (templates !== null && !this.emailTemplatesLoading()) {
       this.applyEventTemplateSuggestion(templates);
     }
+    this.ensureSurveyTemplateSelected();
+    // The series was written for the previous asset; its sends are that asset's briefs. Retired
+    // first, so returning to the asset writes on new briefs rather than its staged ones.
+    this.retireStagedSeries();
+    this.resetSurveySequence();
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
@@ -3303,7 +4090,7 @@ export class CampaignsComponent {
     // The BRIEF identity only -- deliberately NOT `resetEmailBriefDerivedState()`. That helper also
     // clears `selectedEmailTemplateId`/`selectedEmailTemplateRow`, and the template is the
     // operator's own choice: the block above has just re-derived a suggestion for the new type, and
-    // wiping it here would undo that and discard a hand-picked template too. Four existing specs
+    // wiping it here would undo that and discard the operator's chosen template too. Four existing specs
     // pin exactly that behavior.
     //
     // The generation counters are bumped for the same reason the helper bumps them: clearing a
@@ -3364,7 +4151,7 @@ export class CampaignsComponent {
   protected async onGenerateEmailCopy(): Promise<void> {
     const brief = this.emailBriefOutput();
     const projectSlug = this.activeFoundationSlug();
-    if (brief === null || projectSlug === '') {
+    if (brief === null || projectSlug === '' || this.surveySingleSendStaged()) {
       return;
     }
 
@@ -3396,7 +4183,14 @@ export class CampaignsComponent {
       // Variant A always requests the urgency-fomo draft -- variant B (`onGenerateAbTestCopy`
       // below) stays on ordinary stage-based copy so the two drafts differ in more than wording.
       const result = await firstValueFrom(
-        this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), 'urgency-fomo', this.selectedEmailSegment())
+        // Not for a survey or report: campaign-service writes that variant as an event invite.
+        this.campaignService.generateEmailCopy(
+          projectSlug,
+          briefId,
+          this.selectedEmailStage(),
+          this.isSurvey() ? undefined : 'urgency-fomo',
+          this.selectedEmailSegment()
+        )
       );
       // The stage may have changed while this was in flight. Writing now would put the PREVIOUS
       // stage's copy on screen under the new stage's label — copy that reads plausibly and is
@@ -3524,6 +4318,385 @@ export class CampaignsComponent {
   }
 
   /**
+   * Abandon this series and its staging state, so the page can write and stage a new one. The
+   * drafts already created stay in HubSpot (the page says so): this cannot change or delete them.
+   */
+  protected onStartSeriesOver(): void {
+    if (this.sequenceStagingState() === 'staging' || this.sendWorkflowState() === 'building' || this.emailStaging() === 'staging') {
+      return;
+    }
+    // Drafts exist for this series, so the next one is written under NEW briefs (see
+    // `readSeriesRestart`). A series that never reached HubSpot keeps its briefs.
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    if ((this.surveySeriesStarted() || this.sequenceNeedsRestart()) && brief !== null && projectSlug !== '') {
+      const baseSlug = brief.eventDetails?.slug ?? '';
+      this.writeSeriesRestart(projectSlug, baseSlug, this.readSeriesRestart(projectSlug, baseSlug) + 1);
+    }
+    this.resetSurveySequence();
+  }
+
+  /** Read the portal's templates again after a failed or empty answer on the survey surface. */
+  protected onRetrySurveyTemplates(): void {
+    this.searchEmailTemplates('');
+  }
+
+  /** Change how many emails the survey is promoted by. */
+  protected onSurveyEmailCountChange(count: number): void {
+    // Locked with the audience once the series has drafts: a new count would rewrite briefs that
+    // HubSpot already holds drafts for, and those drafts would not change.
+    if (count === this.surveyEmailCount() || this.surveySeriesStarted()) {
+      return;
+    }
+    this.surveyEmailCount.set(count);
+    // The generated series belongs to the PREVIOUS count: dropping from three sends to one would
+    // otherwise leave a closing email on screen that this campaign no longer has, and the build
+    // would send a brief the operator can no longer see.
+    this.resetSurveySequence();
+  }
+
+  /**
+   * Write every send of this survey, in one pass.
+   *
+   * Each send is its own brief upstream -- keyed on `(project, slug, survey, stage)` -- so this
+   * persists the planned brief once per stage and generates that stage's copy against it. The
+   * stage is what differs: the opening asks the reader whether the survey is for them, the
+   * reminder frames it as still open, and the closing carries the deadline.
+   *
+   * Sequential rather than parallel. Three concurrent saves of the same event would race for the
+   * ownership record this page keeps per brief identity, and the loser would be refused as a
+   * duplicate create -- the failure `ensureEmailBriefId` already guards for one brief at a time.
+   */
+  protected async onGenerateSurveySequence(): Promise<void> {
+    if (!this.canGenerateSurveySequence()) {
+      return;
+    }
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    if (brief === null || projectSlug === '') {
+      return;
+    }
+    const stages = this.surveySequenceStages();
+
+    // A rewrite replaces every send's copy, so drafts staged from the previous copy -- and a
+    // workflow pointed at them -- no longer describe what is on screen. They are dropped, and the
+    // sends are staged again from the new copy.
+    this.resetSequenceStaging();
+    const generation = ++this.surveySequenceGeneration;
+    const isCurrent = (): boolean => generation === this.surveySequenceGeneration;
+    this.surveySequenceState.set('generating');
+    this.surveySequenceError.set('');
+    this.surveySequenceWarning.set('');
+    this.surveySequenceSends.set([]);
+    this.clearSequenceDates();
+
+    const baseSlug = brief.eventDetails?.slug ?? '';
+    this.seriesBase = { projectSlug, baseSlug };
+    const restart = this.readSeriesRestart(projectSlug, baseSlug);
+    const seriesSlug = restart > 0 ? `${baseSlug}-r${restart + 1}` : baseSlug;
+
+    const written: CampaignSequenceSend[] = [];
+    try {
+      for (const stage of stages) {
+        this.surveySequenceProgress.set(`Writing the ${this.surveyStageLabel(stage)}...`);
+
+        // A COPY of the planned brief under this send's own stage. The brief carries its stage as
+        // part of its identity, so the same pasted source becomes a separate row per send rather
+        // than one row the sends overwrite in turn.
+        const staged: CampaignBriefOutput = {
+          ...brief,
+          deliveryType: 'survey',
+          emailStage: stage,
+          // After a start-over, a NEW identity: campaign-service hands back a brief's existing
+          // draft on a second create, so writing the original briefs again would show new copy
+          // while HubSpot kept the old drafts.
+          eventDetails: { ...brief.eventDetails, slug: seriesSlug },
+        };
+        const briefId = await this.persistSequenceBrief(staged, projectSlug, isCurrent);
+        if (!isCurrent()) {
+          return;
+        }
+        if (briefId === '') {
+          throw new Error(`The ${this.surveyStageLabel(stage)} could not be saved.`);
+        }
+
+        const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, stage));
+        if (!isCurrent()) {
+          return;
+        }
+        if (!result.enabled || !result.copy) {
+          throw new Error(result.error ?? `The ${this.surveyStageLabel(stage)} could not be generated.`);
+        }
+        written.push({ stage, label: this.surveyStageLabel(stage), briefId, copy: result.copy });
+        // The row's date control BEFORE the row is published: the template binds `date-<n>` as
+        // soon as two rows exist, and a control created only after the loop was missing while
+        // later sends were still being written -- and for good if one of them failed.
+        this.sequenceDatesForm.addControl(`date-${written.length - 1}`, new FormControl<string>('', { nonNullable: true }));
+        // Published as each send lands, so a failure part-way leaves the sends that DID get
+        // written on screen rather than discarding work the operator can still use.
+        this.surveySequenceSends.set([...written]);
+      }
+      const shareProblem = await this.shareAudienceAcrossSequence(written, projectSlug, isCurrent);
+      if (!isCurrent()) {
+        return;
+      }
+      this.surveySequenceWarning.set(shareProblem);
+      this.surveySequenceState.set('done');
+    } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
+      this.surveySequenceError.set(this.sendWorkflowErrorText(error, 'The emails could not be written.'));
+      this.surveySequenceState.set('error');
+    } finally {
+      if (isCurrent()) {
+        this.surveySequenceProgress.set('');
+      }
+    }
+  }
+
+  /**
+   * Create a HubSpot draft for every send in the sequence.
+   *
+   * The ordinary Stage button addresses the ONE brief the page is holding, which is the first
+   * send. The other sends are separate briefs that the survey picker deliberately no longer
+   * offers -- so without this they could never be staged, and the workflow build refused on the
+   * first one that had no draft.
+   *
+   * Sequential, and it stops at the first failure. Each send is an upstream create, and carrying
+   * on past a failure would leave a part-built sequence whose gaps are only discovered later, by
+   * the workflow build, in a message about a different send than the one that actually broke.
+   */
+  protected async onStageSequenceSends(): Promise<void> {
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    const sourceEmailId = this.selectedEmailTemplateId();
+    const sends = this.surveySequenceSends();
+    // The same rule the button is disabled by, re-read here: a click is not a promise that the
+    // conditions still hold. The narrowing below is what TypeScript needs regardless.
+    if (!this.canStageSequence() || brief === null || projectSlug === '' || sourceEmailId === '') {
+      return;
+    }
+
+    const generation = this.surveySequenceGeneration;
+    const isCurrent = (): boolean => generation === this.surveySequenceGeneration;
+    this.sequenceStagingState.set('staging');
+    this.sequenceStagingMessage.set('');
+
+    // Share the audience HERE, not only at generate time. Dispatch refuses a send with no
+    // audience ("no audience found for this brief"), and the audience is usually composed AFTER
+    // the emails are written -- so sharing only at generation left sends 2 and 3 without one
+    // whenever the operator worked in that order, which is the order the tabs suggest.
+    //
+    // Idempotent: sends that already carry the audience are skipped, so running this again after
+    // a failed staging attempt costs one read per send and changes nothing else.
+    this.sequenceStagingMessage.set('Attaching the audience to every send...');
+    const shareProblem = await this.shareAudienceAcrossSequence(sends, projectSlug, isCurrent);
+    if (!isCurrent()) {
+      return;
+    }
+    // Stopped HERE rather than left to staging: a later send without the audience would be
+    // refused as "no audience found for this brief", which explains nothing about why.
+    this.surveySequenceWarning.set(shareProblem);
+    if (shareProblem !== '') {
+      this.sequenceStagingMessage.set(shareProblem);
+      this.sequenceStagingState.set('error');
+      return;
+    }
+    // Re-checked after the await, as the single-send path does: the audience may have been
+    // replaced while it was being shared.
+    if (this.emailAudienceWriteInFlight() || this.emailAudience()?.status !== 'built') {
+      this.sequenceStagingMessage.set('The send audience changed while staging. Stage again once it has finished updating.');
+      this.sequenceStagingState.set('error');
+      return;
+    }
+    const staged: string[] = [...this.sequenceStagedBriefIds()];
+
+    for (const send of sends) {
+      if (staged.includes(send.briefId)) {
+        continue;
+      }
+      // Re-checked per send, not only at the click: a reset between two creates must stop the
+      // loop before it clones a draft for a series nobody is looking at.
+      if (!isCurrent()) {
+        return;
+      }
+      this.sequenceStagingMessage.set(`Creating the ${send.label} draft in HubSpot...`);
+      try {
+        let outcome: { jobId: string; error?: string; indeterminate?: boolean };
+        try {
+          outcome = await firstValueFrom(this.campaignService.createCampaign(this.sequenceStageRequest(brief, send, sourceEmailId), projectSlug, send.briefId));
+        } catch (error) {
+          // The request was SENT and no answer arrived -- a dropped connection, a gateway 5xx --
+          // so the draft may exist, as the single-send path assumes. Held, not retried. Only an
+          // explicit 4xx is a refusal that created nothing and stays retryable; a 408 or 429 says
+          // the request timed out or was throttled, which does not prove nothing was created.
+          const refused = error instanceof HttpErrorResponse && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
+          if (!refused && isCurrent()) {
+            this.holdUnresolvedSend(send.briefId);
+          }
+          throw refused ? error : new Error(`HubSpot did not confirm the ${send.label} draft. Check HubSpot for it before staging again.`);
+        }
+        // The refusal's own words, as the single-send path shows them. An INDETERMINATE one is
+        // a create that may have happened, so it says to look before staging again rather than
+        // inviting a retry that could clone a second draft.
+        if (outcome.error) {
+          if (outcome.indeterminate) {
+            // Only for the series still on screen: a reset since then cleared the holds, and an
+            // old brief id written back would block staging of the new series with no reason.
+            if (isCurrent()) {
+              this.holdUnresolvedSend(send.briefId);
+            }
+            throw new Error(`${outcome.error} Check HubSpot for this draft before staging again.`);
+          }
+          throw new Error(outcome.error);
+        }
+        if (!outcome.jobId) {
+          // Accepted with nothing to track, which the single-send path holds: the draft may still
+          // be created, so a retry could clone a second one.
+          if (isCurrent()) {
+            this.holdUnresolvedSend(send.briefId);
+          }
+          throw new Error(`Staging the ${send.label} was accepted but returned nothing to track. Check HubSpot for it before staging again.`);
+        }
+
+        // WAIT for the job, rather than treating a job id as a draft. The create is accepted
+        // asynchronously and can still fail upstream -- "no audience found for this brief" is the
+        // one that bit here -- so reporting success on the id alone told the operator all three
+        // drafts existed while two of them had already failed, and only the workflow build
+        // disagreed, about a different send than the one that broke.
+        let result: CampaignJobOutcome;
+        try {
+          result = await firstValueFrom(
+            this.campaignService.getCreateResult(outcome.jobId, projectSlug).pipe(
+              filter((job): job is CampaignJobOutcome => job !== null),
+              take(1),
+              // Stops the poll on leaving the page, as the single-send poll does.
+              takeUntilDestroyed(this.destroyRef)
+            )
+          );
+        } catch {
+          // The create was ACCEPTED and then never reported back -- a lost or timed-out job. The
+          // draft may well exist, so this is not a failure to retry: staging again could clone a
+          // second one. Held until the operator has looked, with a message that names HubSpot
+          // (the poller's own timeout text is written for the ad platforms).
+          if (isCurrent()) {
+            this.holdUnresolvedSend(send.briefId);
+          }
+          throw new Error(`HubSpot did not confirm the ${send.label} draft. Check HubSpot for it before staging again.`);
+        }
+        if (!isCurrent()) {
+          return;
+        }
+        const hubspotOutcome = (result.platformResults ?? []).find((platform) => platform.platform === 'hubspot');
+        // A FAILED job can still carry the draft HubSpot created (recording it was what failed).
+        // Keep where it landed and hold the send: staging it again would clone a second one.
+        if ((result.errors.length > 0 || (hubspotOutcome !== undefined && !hubspotOutcome.ok)) && (hubspotOutcome?.campaignId ?? '') !== '') {
+          const draftUrl = this.hubspotDraftUrl(hubspotOutcome?.hubspotUrl);
+          const draftId = hubspotOutcome?.campaignId ?? '';
+          this.surveySequenceSends.update((rows) => rows.map((row) => (row.briefId === send.briefId ? { ...row, draftUrl, draftId } : row)));
+          this.holdUnresolvedSend(send.briefId);
+          throw new Error(`HubSpot created the ${send.label} draft but staging did not finish. Check the draft in HubSpot before staging again.`);
+        }
+        // The HubSpot row's own refusal ("no audience found for this brief") before the job's
+        // generic failure text, which is all `errors[0]` holds when the job itself set no error.
+        if (hubspotOutcome !== undefined && !hubspotOutcome.ok && (hubspotOutcome.error ?? '') !== '') {
+          throw new Error(hubspotOutcome.error);
+        }
+        if (result.errors.length > 0) {
+          throw new Error(result.errors[0]);
+        }
+
+        // Record WHERE the draft landed. Without it the operator has to find three emails by name
+        // among the hundreds the portal holds -- the template picker's own copy says "Showing 100
+        // of 500". The link is built upstream from the connection's portal id, so it opens the
+        // right portal rather than whichever one the reader happens to be signed into; the id is
+        // kept too, because the link is absent when that portal id is unknown.
+        const hubspotResult = (result.platformResults ?? []).find((platform) => platform.platform === 'hubspot');
+        // A finished job can still report the HubSpot create as failed, with its reason on the row.
+        if (hubspotResult !== undefined && !hubspotResult.ok) {
+          throw new Error(hubspotResult.error || `HubSpot did not create the ${send.label}.`);
+        }
+        const draftUrl = this.hubspotDraftUrl(hubspotResult?.hubspotUrl);
+        const draftId = hubspotResult?.campaignId ?? '';
+        this.surveySequenceSends.update((rows) => rows.map((row) => (row.briefId === send.briefId ? { ...row, draftUrl, draftId } : row)));
+
+        staged.push(send.briefId);
+        this.sequenceStagedBriefIds.set([...staged]);
+      } catch (error) {
+        if (!isCurrent()) {
+          return;
+        }
+        this.sequenceStagingMessage.set(`${this.sendWorkflowErrorText(error, 'The draft could not be created.')} (${send.label})`);
+        this.sequenceStagingState.set('error');
+        return;
+      }
+    }
+
+    this.sequenceStagingMessage.set(`All ${sends.length} drafts were created in HubSpot. The workflow can be built now.`);
+    this.sequenceStagingState.set('done');
+  }
+
+  /**
+   * Build the workflow from the generated series, with the operator's dates.
+   *
+   * Only for two sends or more. One email is scheduled and sent on its own, so there is nothing
+   * for a workflow to sequence -- the audience is attached to that draft when it is staged.
+   */
+  protected async onBuildSequenceWorkflow(): Promise<void> {
+    const projectSlug = this.activeFoundationSlug();
+    const sends = this.surveySequenceSends();
+    if (!this.canBuildSequenceWorkflow()) {
+      return;
+    }
+    const generation = this.surveySequenceGeneration;
+    const isCurrent = (): boolean => generation === this.surveySequenceGeneration;
+    const typedName = this.sendWorkflowForm.controls.name.value.trim();
+    const name = typedName === '' ? `${this.emailBriefOutput()?.eventDetails?.name ?? 'Survey'} - Workflow` : typedName;
+    // Every date, always: Build is enabled only once each send has one (`sequenceDatesComplete`),
+    // because campaign-service re-dates every wait step of the copied workflow from them.
+    const dates = sends.map((_send, index) => (this.sequenceDatesForm.controls[`date-${index}`]?.value ?? '').trim());
+
+    this.sendWorkflowState.set('building');
+    this.sendWorkflowError.set('');
+    this.sendWorkflowResult.set(null);
+
+    try {
+      const created = await firstValueFrom(
+        this.campaignService.createSendWorkflow(projectSlug, {
+          // No source workflow: campaign-service uses the configured one, which is the workflow
+          // this flow is meant to clone.
+          name,
+          briefIds: sends.map((send) => send.briefId),
+          sendDates: dates,
+        })
+      );
+      if (!isCurrent()) {
+        return;
+      }
+      // Pinned like the drafts' links: an https link on HubSpot's app host, or no link at all.
+      this.sendWorkflowResult.set({ ...created, editUrl: this.hubspotDraftUrl(created.editUrl) });
+      this.sendWorkflowState.set('done');
+    } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
+      // Only a 4xx other than 408/429 created nothing, as `onStageSequenceSends` reads it. Anything
+      // else may have built the workflow, so Build stays off until the operator has looked.
+      const refused = error instanceof HttpErrorResponse && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
+      if (!refused) {
+        this.sendWorkflowUnconfirmed.set(true);
+      }
+      this.sendWorkflowError.set(
+        refused
+          ? this.sendWorkflowErrorText(error)
+          : 'HubSpot did not confirm the workflow. Check HubSpot for it before building again, then start the series over if it is missing.'
+      );
+      this.sendWorkflowState.set('error');
+    }
+  }
+
+  /**
    * Stage the email send — LFXV2-3201's create trigger.
    *
    * TWO upstream calls, in order, because creation is brief-scoped: the route is
@@ -3593,7 +4766,14 @@ export class CampaignsComponent {
       this.emailAudience()?.status !== 'built' ||
       this.emailAudienceWriteInFlight() ||
       this.emailStaging() === 'staging' ||
-      this.emailStagingUnresolved()
+      this.emailStagingUnresolved() ||
+      this.sequenceLocksSingleSend() ||
+      // Hidden in series mode; refused here too, so nothing can stage a restarted survey's
+      // ORIGINAL brief.
+      this.surveySeriesMode() ||
+      // A survey email is its generated copy: with none, the draft would keep the template's own
+      // content instead of promoting the survey.
+      (this.isSurvey() && copy === null)
     ) {
       return;
     }
@@ -3687,6 +4867,9 @@ export class CampaignsComponent {
           // substituting registrationUrl there sent "Submit Your Proposal" to the registration
           // page. When it omitted one, ctaLabel is '' and no button is sent at all.
           ...(ctaLabel !== '' ? { buttonText: ctaLabel, buttonUrl: ctaDestination } : {}),
+          // The event-page links the body may keep (#3306). Judged, not trusted: the controller keeps
+          // only those on the button's host or an LF-owned domain, and never forwards the list upstream.
+          ...(this.emailExtractedLinks().length > 0 ? { secondaryLinkUrls: this.emailExtractedLinks() } : {}),
           // Gated on a non-blank BODY (via `emailHeroImageUrl`, which reads
           // `emailBodyIsStageable`), not merely on `copy` being non-null -- a present-but-empty
           // body is the reachable case, and this one is DATA LOSS rather than a cosmetic gap:
@@ -3854,7 +5037,7 @@ export class CampaignsComponent {
       // The page is reachable by an ED of any foundation and templates are per-project, so a
       // missing slug must not fall back to some other portal's templates.
       this.emailTemplates.set(null);
-      this.releaseSuggestedSelection();
+      this.dropEmailTemplateList();
       // Same reason as the reset below: a stale `false` would render "Connect HubSpot" instead of
       // this message, because the template checks the channel flag first.
       this.emailChannelEnabled.set(null);
@@ -3882,18 +5065,10 @@ export class CampaignsComponent {
     // `emailTemplateQuery` already shows the later search. The foundation-switch handler clears
     // these signals but cannot stop an in-flight response from refilling them — under the NEW
     // foundation — which is the cross-portal leak that handler exists to prevent.
-    // Released at DISPATCH, not only in the terminal arms below.
-    //
-    // Every arm that clears the list also releases a system-owned selection, but all of them run
-    // AFTER the response lands. In the window between them the loading branch hides the template
-    // list while `canStageEmail` stays enabled -- it reads `selectedEmailTemplateId`, not the
-    // loading flag -- and `onStageEmailSend` snapshots that id before its first await. So an
-    // operator could stage a suggestion that the in-flight search was about to remove or reject,
-    // with the row that justified it already off screen. Releasing here closes the window.
-    //
-    // Only a SYSTEM-owned selection, same as every other call: a hand-picked template is the
-    // operator's and survives the search that is being dispatched.
-    this.releaseSuggestedSelection();
+    // The suggestion is cleared at DISPATCH, not only in the terminal arms below: it describes the
+    // rows being replaced, and the success arm re-derives it against the new ones. The operator's
+    // selection is theirs and survives the search -- nothing here ever selects on their behalf.
+    this.clearEventTemplateSuggestion();
 
     const generation = ++this.emailSearchGeneration;
     const isCurrent = (): boolean => generation === this.emailSearchGeneration;
@@ -3912,14 +5087,14 @@ export class CampaignsComponent {
             // Not an error: HubSpot simply is not connected for this project, which is the steady
             // state everywhere the channel is not set up.
             this.emailTemplates.set(null);
-            this.releaseSuggestedSelection();
+            this.dropEmailTemplateList();
             return;
           }
           if (result.error) {
             // The service reached HubSpot and HubSpot refused. Leave the list NULL rather than
             // empty — an empty list would claim the portal has no templates.
             this.emailTemplates.set(null);
-            this.releaseSuggestedSelection();
+            this.dropEmailTemplateList();
             this.emailTemplatesError.set(result.error);
             return;
           }
@@ -3936,13 +5111,14 @@ export class CampaignsComponent {
             // NULL rather than [], for the same reason the error arms use null: only a search
             // that genuinely came back with nothing can support the empty-portal claim.
             this.emailTemplates.set(null);
-            this.releaseSuggestedSelection();
+            this.dropEmailTemplateList();
             this.emailTemplatesError.set('Could not load templates. Try again.');
             return;
           }
           this.emailTemplates.set(selectable);
           this.emailTemplatesTruncated.set(result.possiblyTruncated);
           this.applyEventTemplateSuggestion(selectable);
+          this.autoSelectSurveyTemplate(selectable);
         },
         error: () => {
           if (!isCurrent()) {
@@ -3951,7 +5127,7 @@ export class CampaignsComponent {
           this.emailTemplatesLoading.set(false);
           // NULL, not []. A failed search says nothing about what the portal holds.
           this.emailTemplates.set(null);
-          this.releaseSuggestedSelection();
+          this.dropEmailTemplateList();
           this.emailTemplatesError.set('Could not load templates. Try again.');
         },
       });
@@ -3991,9 +5167,8 @@ export class CampaignsComponent {
     this.searchEmailTemplates(this.emailTemplateQuery());
   }
 
+  /** The ONLY writer of a non-empty selection: an operator's click on a row (#2057). */
   protected onSelectEmailTemplate(id: string): void {
-    // A hand-pick is the operator's, even when it happens to be the same row the suggestion chose.
-    this.emailTemplateSelectionIsSuggested.set(false);
     this.selectedEmailTemplateId.set(id);
     // Keep the ROW, not just the id. A later narrowed search can return a result set that does
     // not contain it, and `emailTemplatesRendered` can only splice a row it can still find -- so
@@ -4005,6 +5180,14 @@ export class CampaignsComponent {
   /** Retry a failed campaign list — the action the failure state exists to offer. */
   protected retryBriefCampaigns(): void {
     this.loadBriefCampaigns();
+  }
+
+  /**
+   * Re-read the campaigns already created for this event, for the Implement tab's panel (#4983):
+   * its Retry, and after a create job settles. List only — see `loadBriefCampaigns`.
+   */
+  protected refreshImplementCampaigns(): void {
+    this.loadBriefCampaigns(false);
   }
 
   /**
@@ -4032,16 +5215,10 @@ export class CampaignsComponent {
     // Driven through the CONTROL, not the signal: the subscription mirrors the control into
     // `selectedProgramType`, so writing the signal alone would leave the visible selector showing
     // the old program.
-    if (brief.programType !== undefined && brief.programType !== this.selectedProgramType()) {
-      this.adoptingRestoredProgram = true;
-      try {
-        this.selectorForm.controls.programType.setValue(brief.programType);
-      } finally {
-        // `finally`, so a throw inside the subscription cannot leave the flag set and turn every
-        // later program switch into a silent no-reset.
-        this.adoptingRestoredProgram = false;
-      }
-    }
+    this.adoptBriefProgram(brief);
+    // A restore replaces whatever Planning was asked to edit; a planner re-created by the adoption
+    // above must not re-open that brief over the one being restored (#4983).
+    this.planningEditRequest.set(null);
 
     // Recorded BEFORE the handoff, so the suppressed-save branch below can put it on the
     // resting state in one place.
@@ -4162,6 +5339,106 @@ export class CampaignsComponent {
       return;
     }
     this.onProceedToImplementation(brief, true, approved);
+  }
+
+  /**
+   * Save the brief on screen OVER the stored one, after an `unowned-brief-exists` refusal (#4731).
+   *
+   * That refusal is the LFXV2-3200 guard, and it is right: a generated brief must not silently
+   * replace a row nobody here opened. But its only escape was Restore, which discards the brief on
+   * screen — so a regenerated brief, and the callouts and sitelinks generated with it, could never be
+   * saved, and the extension capability check (which needs a saved id) never ran.
+   *
+   * This is the explicit, warned version of the overwrite the guard withholds. It does not widen the
+   * guard: anyone shown this refusal can already Restore the stored brief and then save over it.
+   *
+   * The id comes from a fresh READ, because the refusal withholds it by design (see
+   * `CampaignBriefPersistResult.conflict`). The read's ETag is recorded as the last-seen validator, so
+   * the save is a real `If-Match`: a writer who moves the row between this read and the save gets
+   * the existing `stale-brief` warning, not a silent overwrite. With no ETag the record takes
+   * `absence: 'overwrite'`, as a restore does — the user chose this replace, which is the decision
+   * that marker records.
+   *
+   * The ownership EPOCH is bumped like a restore's, so a save already queued for this event cannot
+   * pick up an id it was not sent with. `persistBrief` then snapshots the new epoch and sends it.
+   *
+   * The record is stamped `contentChanged` and Planning is refreshed. This read may have seen a
+   * version newer than the Restore offer Planning cached, and if the replacing save then fails, a
+   * Restore would otherwise pair that offer's older content and approval with this newer ETag and
+   * enable Create against content the screen never showed. The stamp makes such an offer read as
+   * superseded, exactly as a conflict promotion does — and, like that promotion, the record carries
+   * no `approved`, so the next Restore takes the re-read row's own answer.
+   */
+  protected onReplaceSavedBrief(): void {
+    const brief = this.briefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    const key = brief === null ? null : this.ownershipKey(projectSlug, brief);
+    // Unreachable while the button is shown: the refusal it answers needed a brief, a project and
+    // an event slug to happen at all. Guarded rather than asserted, because a click is an event.
+    if (brief === null || projectSlug === '' || key === null) return;
+
+    // A discard or a newer save while the read is out makes its answer stale: the brief it would
+    // re-save is no longer the one on screen, or a newer outcome already owns the banner. The slug is
+    // checked as well, as `loadCreateCapabilitiesFor` does: a foundation switch bumps the display
+    // counter (and never the ownership one) only once the `activeFoundationSlug` subscription runs,
+    // and a read answered in between would otherwise reach `persistBrief`, which files the brief
+    // under the NEW foundation.
+    const generation = this.briefPersistenceGeneration;
+    const ownershipAtSend = this.ownershipGeneration;
+    const mayAdopt = (): boolean =>
+      generation === this.briefPersistenceGeneration && ownershipAtSend === this.ownershipGeneration && projectSlug === this.activeFoundationSlug();
+    this.briefPersistence.set({ status: 'saving', briefId: null, message: null, approved: false });
+
+    this.campaignService
+      .loadBrief(brief.eventDetails.slug, projectSlug, brief.deliveryType ?? 'paid-marketing', brief.emailStage ?? '')
+      // Cancelled with the page: a read answered after navigation would reach `persistBrief`, which
+      // reads the foundation selected THEN and could file this brief under another project.
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          if (!mayAdopt()) return;
+          // Persistence went dark since the refusal: nothing can be saved or replaced, which is what
+          // `persistBrief` reports for `enabled: false` too — the idle state, not an error.
+          if (result.status === 'off') {
+            this.briefPersistence.set(this.idlePersistence);
+            return;
+          }
+          // `unreadable` is replaceable too: the row exists and was observed, it just cannot be
+          // mapped back — and it can never be restored, so replacing it is the only way forward.
+          // `none` means the row went away since the refusal; the save below then simply creates.
+          if (result.briefId !== null) {
+            // Normalised first, as `onRestoreSavedBrief` does: an older pod mid-rolling-deploy omits
+            // the field, JSON yields `undefined`, and treating that as a validator would withhold
+            // the overwrite licence and refuse this very save as `unverified-validator`.
+            const validator = result.etag ?? null;
+            this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
+            this.rememberBriefId(key, {
+              id: result.briefId,
+              etag: validator,
+              contentChanged: true,
+              ...(validator === null ? { absence: 'overwrite' as const } : {}),
+            });
+            this.savedBriefRefreshToken.update((token) => token + 1);
+          }
+          this.persistBrief(brief);
+        },
+        error: (err: unknown) => {
+          console.error('[campaigns] Failed to read the saved brief to replace it', err);
+          if (!mayAdopt()) return;
+          this.briefPersistence.set({
+            status: 'error',
+            // '' as the refusal carries it, NOT null: `canSubmit` blocks an error only while the id is
+            // non-null, and null would re-enable Create for a brief that is still unsaved.
+            briefId: '',
+            // Names both ways forward, as the refusal it stands in for did: the note under it speaks of
+            // opening the saved brief, which this sentence must not leave unexplained.
+            message:
+              'The saved brief could not be read, so it was not replaced. Try Replace saved brief again, or reload and open the saved brief from the Plan tab (enter the event URL there if it is not already filled in).',
+            approved: false,
+            conflict: 'unowned-brief-exists',
+          });
+        },
+      });
   }
 
   /**
@@ -4484,6 +5761,11 @@ export class CampaignsComponent {
     return `${projectSlug}|${briefId}`;
   }
 
+  /** The stage scope of the brief on screen now. */
+  private currentStageScope(): string {
+    return this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId());
+  }
+
   /** Clears the dispatch marker only if it is still THIS dispatch, never a successor's. */
   private settleDispatch(dispatched: { projectSlug: string; briefId: string } | null): void {
     if (dispatched !== null && this.dispatchedStage === dispatched) {
@@ -4595,8 +5877,10 @@ export class CampaignsComponent {
    * Read the create-time capabilities the Implementation tab gates controls on.
    *
    * Separate from `loadBriefCampaigns` deliberately, even though both read the same response
-   * today. That one is an Optimize concern: it needs a persisted `briefId`, it re-fetches on
-   * every entry because a status can go stale, and it clears its rows first. None of that is
+   * today. That one serves the campaign LIST (Optimize, and Implement's "Already created" panel):
+   * it needs a persisted `briefId`, it re-fetches on every entry because a status can go stale, and
+   * it clears its rows first. With `withList` this reader files the list too, from the same response,
+   * so the Implement tab's entry does not send the same request twice (#4983). None of that is
    * true here — the capability is a deployment fact, it is needed BEFORE a campaign exists, and
    * on the first-create path there may be no brief id at all.
    *
@@ -4604,8 +5888,8 @@ export class CampaignsComponent {
    * capability as `null` and withholds the control without touching the user's draft. That is
    * the correct reading of "not known", and it is why this is safe to skip.
    */
-  private loadCreateCapabilities(): void {
-    this.loadCreateCapabilitiesFor(this.briefPersistence().briefId);
+  private loadCreateCapabilities(withList = false): void {
+    this.loadCreateCapabilitiesFor(this.briefPersistence().briefId, withList);
   }
 
   /**
@@ -4622,9 +5906,18 @@ export class CampaignsComponent {
    * entry to receive an error, land in the arm below, and set the capability to `null` — the
    * control stays hidden either way, with a spurious 400 added.
    */
-  private loadCreateCapabilitiesFor(briefId: string | null): void {
+  private loadCreateCapabilitiesFor(briefId: string | null, withList = false): void {
     const projectSlug = this.activeFoundationSlug();
-    if (projectSlug === '' || !briefId) return;
+    // `withList` also answers the Implement tab's campaign list from the same response (#4983), so
+    // entering the tab, a restore and a save each cost one request rather than two identical ones.
+    const listIsCurrent = withList ? this.beginBriefCampaignsRead() : null;
+    if (projectSlug === '' || !briefId) {
+      this.briefCampaignsLoading.set(false);
+      return;
+    }
+    if (listIsCurrent !== null) {
+      this.briefCampaignsLoading.set(true);
+    }
 
     // Ordered by the SHARED capability generation — see `capabilityGeneration` — and checked
     // against the foundation too. The counter orders this against every other capability writer,
@@ -4638,10 +5931,13 @@ export class CampaignsComponent {
       .listBriefCampaigns(projectSlug, briefId)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        // ONLY the capability. This must not touch `briefCampaigns` or the staleness flag —
-        // those belong to Optimize's own read, and writing them from here would render a list
-        // the operator did not ask for and cannot see.
+        // The list is filed only when the caller asked for it (`withList`) and only under the list's
+        // own generation, so a read the list has since moved past cannot overwrite a newer answer.
+        // Without `withList` this stays capability-only, as before.
         next: (result) => {
+          if (listIsCurrent?.()) {
+            this.applyBriefCampaignsResult(result);
+          }
           if (!mayWrite()) return;
           this.capabilityGeneration++;
           this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
@@ -4654,13 +5950,33 @@ export class CampaignsComponent {
           this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
           this.briefCampaignsGoogleAssetUploadEnabled.set(result.googleAssetUploadEnabled);
           this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
+          this.briefCampaignsLinkedInTargetingEditEnabled.set(result.linkedInTargetingEditEnabled);
+          this.briefCampaignsLinkedInAccountSelectionEnabled.set(result.linkedInAccountSelectionEnabled ?? null);
+          this.briefCampaignsLinkedInDailyCapEnabled.set(result.linkedInDailyCapEnabled);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
           this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
           this.briefCampaignsTwitterCreateEnabled.set(result.twitterCreateEnabled);
           this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
+          this.briefCampaignsMetaAudienceTargetingEnabled.set(result.metaAudienceTargetingEnabled ?? null);
+          this.briefCampaignsMetaCallToActionEnabled.set(result.metaCallToActionEnabled ?? null);
+          this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
+          this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
+          this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
+          this.briefCampaignsMetaAdScheduleEnabled.set(result.metaAdScheduleEnabled ?? null);
+          this.briefCampaignsMetaFrequencyCapEnabled.set(result.metaFrequencyCapEnabled ?? null);
+          this.briefCampaignsMetaDeviceTargetingEnabled.set(result.metaDeviceTargetingEnabled ?? null);
+          this.briefCampaignsMetaOsTargetingEnabled.set(result.metaOsTargetingEnabled ?? null);
+          this.briefCampaignsMetaConversionEventEnabled.set(result.metaConversionEventEnabled ?? null);
+          this.briefCampaignsMetaOptimizationGoalEnabled.set(result.metaOptimizationGoalEnabled ?? null);
+          this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
+          this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
+          this.briefCampaignsGoogleDemandGenAudienceEnabled.set(result.googleDemandGenAudienceEnabled ?? null);
+          this.briefCampaignsGoogleDisplayAudiencesEnabled.set(result.googleDisplayAudiencesEnabled ?? null);
+          this.briefCampaignsGooglePerformanceMaxAudienceSignalEnabled.set(result.googlePerformanceMaxAudienceSignalEnabled ?? null);
           this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
+          this.briefCampaignsMultiCampaignPlatforms.set(result.multiCampaignPlatforms ?? []);
           this.briefCampaignsCapabilityRead.set('ready');
         },
         // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
@@ -4670,6 +5986,9 @@ export class CampaignsComponent {
         // take the success ordering with it: two reads dispatched together, the first failing,
         // would otherwise advance the token and make the second's valid answer fail `mayWrite`.
         error: () => {
+          if (listIsCurrent?.()) {
+            this.applyBriefCampaignsFailure();
+          }
           if (!mayWrite()) return;
           this.briefCampaignsDemandGenEnabled.set(null);
           this.briefCampaignsGoogleChannelsEnabled.set(null);
@@ -4681,20 +6000,46 @@ export class CampaignsComponent {
           this.briefCampaignsMetaAssetUploadEnabled.set(null);
           this.briefCampaignsGoogleAssetUploadEnabled.set(null);
           this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
+          this.briefCampaignsLinkedInTargetingEditEnabled.set(null);
+          this.briefCampaignsLinkedInAccountSelectionEnabled.set(null);
+          this.briefCampaignsLinkedInDailyCapEnabled.set(null);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
           this.briefCampaignsMicrosoftScheduleEnabled.set(null);
           this.briefCampaignsTwitterCreateEnabled.set(null);
           this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+          this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
+          this.briefCampaignsMetaCallToActionEnabled.set(null);
+          this.briefCampaignsMetaLeadFormsEnabled.set(null);
+          this.briefCampaignsMetaInterestTargetingEnabled.set(null);
+          this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+          this.briefCampaignsMetaAdScheduleEnabled.set(null);
+          this.briefCampaignsMetaFrequencyCapEnabled.set(null);
+          this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
+          this.briefCampaignsMetaOsTargetingEnabled.set(null);
+          this.briefCampaignsMetaConversionEventEnabled.set(null);
+          this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
+          this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+          this.briefCampaignsGoogleConversionActionsEnabled.set(null);
+          this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
+          this.briefCampaignsGoogleDisplayAudiencesEnabled.set(null);
+          this.briefCampaignsGooglePerformanceMaxAudienceSignalEnabled.set(null);
           this.briefCampaignsGoogleGeoSearchEnabled.set(null);
+          this.briefCampaignsMultiCampaignPlatforms.set(null);
           this.briefCampaignsCapabilityRead.set('failed');
         },
       });
   }
 
   /**
-   * Fetch the campaigns this brief created, for the Optimize tab's per-campaign controls.
+   * Fetch the campaigns this brief created: for the Optimize tab's per-campaign controls, and for
+   * the Implement tab's "Already created for this event" panel (#4983).
+   *
+   * `withCapabilities: false` is the Implement tab's list-only read: the same list, without clearing
+   * and re-reading the create capabilities that tab gates its controls on. Those are a deployment fact
+   * `loadCreateCapabilities` answers, and blanking them on every entry would withhold controls for a
+   * round trip for nothing.
    *
    * A failed read is REPORTED, not swallowed. An earlier revision left `briefCampaigns` at `null`
    * on failure, reasoning that an error banner would fire on the ordinary empty case too — but
@@ -4709,21 +6054,20 @@ export class CampaignsComponent {
    * the list under whichever foundation the user has since moved to — campaigns from one
    * foundation's brief, rendered as another's.
    */
-  private loadBriefCampaigns(): void {
+  private loadBriefCampaigns(withCapabilities = true): void {
     const projectSlug = this.activeFoundationSlug();
     const briefId = this.briefPersistence().briefId;
 
     // Bumped BEFORE the early return as well as before the request. The early return is itself a
     // context change ("this context has no brief"), and leaving the counter alone there would let
     // a request dispatched under the previous brief land afterwards and still pass `isCurrent()`.
-    const generation = ++this.briefCampaignsGeneration;
-    const isCurrent = (): boolean => generation === this.briefCampaignsGeneration;
+    const isCurrent = this.beginBriefCampaignsRead();
     // The capability is written from here too, under the SHARED answer ordering — see
     // `capabilityGeneration`. Without it an older list read failing after a newer capability read
     // succeeded would still pass `isCurrent` above (its own list generation is untouched by that
     // reader) and reset a live answer to `null`.
     const capabilityDispatchedAt = this.capabilityGeneration;
-    const mayWriteCapability = (): boolean => capabilityDispatchedAt === this.capabilityGeneration;
+    const mayWriteCapability = (): boolean => withCapabilities && capabilityDispatchedAt === this.capabilityGeneration;
 
     // Cleared on EVERY entry, before dispatch — not only on the early return below.
     //
@@ -4740,38 +6084,60 @@ export class CampaignsComponent {
     // by design (see `selectTab`), so there was never a cached render to preserve; what changes is
     // that the interim shows "not loaded" instead of the previous answer. Showing another brief's
     // clickable rows is not a trade worth a flicker.
-    this.briefCampaigns.set(null);
-    this.briefCampaignsStale.set(false);
-    this.briefCampaignsUnavailable.set(false);
-    this.briefCampaignsToggleEnabled.set(false);
-    this.briefCampaignsDemandGenEnabled.set(null);
-    this.briefCampaignsGoogleChannelsEnabled.set(null);
-    this.briefCampaignsGoogleCreativeEnabled.set(null);
-    this.briefCampaignsRedditCreativeEnabled.set(null);
-    this.briefCampaignsRedditAssetUploadEnabled.set(null);
-    this.briefCampaignsMetaCreativeEnabled.set(null);
-    this.briefCampaignsRedditConversionPixelEnabled.set(null);
-    this.briefCampaignsMetaAssetUploadEnabled.set(null);
-    this.briefCampaignsGoogleAssetUploadEnabled.set(null);
-    this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
-    this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
-    this.briefCampaignsBiddingEnabled.set(null);
-    this.briefCampaignsMicrosoftScheduleEnabled.set(null);
-    this.briefCampaignsTwitterCreateEnabled.set(null);
-    this.briefCampaignsMetaInstagramDsaEnabled.set(null);
-    this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
-    this.briefCampaignsGoogleGeoSearchEnabled.set(null);
-    // `unknown` until a read is actually dispatched below — the early return starts none.
-    this.briefCampaignsCapabilityRead.set('unknown');
+    if (withCapabilities) {
+      this.briefCampaignsDemandGenEnabled.set(null);
+      this.briefCampaignsGoogleChannelsEnabled.set(null);
+      this.briefCampaignsGoogleCreativeEnabled.set(null);
+      this.briefCampaignsRedditCreativeEnabled.set(null);
+      this.briefCampaignsRedditAssetUploadEnabled.set(null);
+      this.briefCampaignsMetaCreativeEnabled.set(null);
+      this.briefCampaignsRedditConversionPixelEnabled.set(null);
+      this.briefCampaignsMetaAssetUploadEnabled.set(null);
+      this.briefCampaignsGoogleAssetUploadEnabled.set(null);
+      this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
+      this.briefCampaignsLinkedInTargetingEditEnabled.set(null);
+      this.briefCampaignsLinkedInAccountSelectionEnabled.set(null);
+      this.briefCampaignsLinkedInDailyCapEnabled.set(null);
+      this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
+      this.briefCampaignsBiddingEnabled.set(null);
+      this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+      this.briefCampaignsTwitterCreateEnabled.set(null);
+      this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+      this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
+      this.briefCampaignsMetaCallToActionEnabled.set(null);
+      this.briefCampaignsMetaLeadFormsEnabled.set(null);
+      this.briefCampaignsMetaInterestTargetingEnabled.set(null);
+      this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+      this.briefCampaignsMetaAdScheduleEnabled.set(null);
+      this.briefCampaignsMetaFrequencyCapEnabled.set(null);
+      this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
+      this.briefCampaignsMetaOsTargetingEnabled.set(null);
+      this.briefCampaignsMetaConversionEventEnabled.set(null);
+      this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
+      this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
+      this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+      this.briefCampaignsGoogleConversionActionsEnabled.set(null);
+      this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
+      this.briefCampaignsGoogleDisplayAudiencesEnabled.set(null);
+      this.briefCampaignsGooglePerformanceMaxAudienceSignalEnabled.set(null);
+      this.briefCampaignsGoogleGeoSearchEnabled.set(null);
+      this.briefCampaignsMultiCampaignPlatforms.set(null);
+      // `unknown` until a read is actually dispatched below — the early return starts none.
+      this.briefCampaignsCapabilityRead.set('unknown');
+    }
 
     if (projectSlug === '' || briefId === null || briefId === '') {
       // No brief id means nothing was persisted this session and no restore supplied one, so
       // there is nothing to list. Left as `null` — not `[]` — so the tab says "not loaded"
       // instead of asserting the brief has no campaigns. The clear above is what leaves it that
       // way; this arm only stops here.
+      this.briefCampaignsLoading.set(false);
       return;
     }
-    this.briefCampaignsCapabilityRead.set('pending');
+    this.briefCampaignsLoading.set(true);
+    if (withCapabilities) {
+      this.briefCampaignsCapabilityRead.set('pending');
+    }
 
     this.campaignService
       .listBriefCampaigns(projectSlug, briefId)
@@ -4781,10 +6147,7 @@ export class CampaignsComponent {
           if (!isCurrent()) {
             return;
           }
-          this.briefCampaigns.set(result.campaigns);
-          this.briefCampaignsStale.set(result.possiblyStale);
-          this.briefCampaignsUnavailable.set(false);
-          this.briefCampaignsToggleEnabled.set(result.statusToggleEnabled);
+          this.applyBriefCampaignsResult(result);
           if (mayWriteCapability()) {
             this.capabilityGeneration++;
             this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
@@ -4797,13 +6160,33 @@ export class CampaignsComponent {
             this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
             this.briefCampaignsGoogleAssetUploadEnabled.set(result.googleAssetUploadEnabled);
             this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
+            this.briefCampaignsLinkedInTargetingEditEnabled.set(result.linkedInTargetingEditEnabled);
+            this.briefCampaignsLinkedInAccountSelectionEnabled.set(result.linkedInAccountSelectionEnabled ?? null);
+            this.briefCampaignsLinkedInDailyCapEnabled.set(result.linkedInDailyCapEnabled);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
             this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
             this.briefCampaignsTwitterCreateEnabled.set(result.twitterCreateEnabled);
             this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
+            this.briefCampaignsMetaAudienceTargetingEnabled.set(result.metaAudienceTargetingEnabled ?? null);
+            this.briefCampaignsMetaCallToActionEnabled.set(result.metaCallToActionEnabled ?? null);
+            this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
+            this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
+            this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
+            this.briefCampaignsMetaAdScheduleEnabled.set(result.metaAdScheduleEnabled ?? null);
+            this.briefCampaignsMetaFrequencyCapEnabled.set(result.metaFrequencyCapEnabled ?? null);
+            this.briefCampaignsMetaDeviceTargetingEnabled.set(result.metaDeviceTargetingEnabled ?? null);
+            this.briefCampaignsMetaOsTargetingEnabled.set(result.metaOsTargetingEnabled ?? null);
+            this.briefCampaignsMetaConversionEventEnabled.set(result.metaConversionEventEnabled ?? null);
+            this.briefCampaignsMetaOptimizationGoalEnabled.set(result.metaOptimizationGoalEnabled ?? null);
+            this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
+            this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
+            this.briefCampaignsGoogleDemandGenAudienceEnabled.set(result.googleDemandGenAudienceEnabled ?? null);
+            this.briefCampaignsGoogleDisplayAudiencesEnabled.set(result.googleDisplayAudiencesEnabled ?? null);
+            this.briefCampaignsGooglePerformanceMaxAudienceSignalEnabled.set(result.googlePerformanceMaxAudienceSignalEnabled ?? null);
             this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
+            this.briefCampaignsMultiCampaignPlatforms.set(result.multiCampaignPlatforms ?? []);
             this.briefCampaignsCapabilityRead.set('ready');
           }
         },
@@ -4811,12 +6194,7 @@ export class CampaignsComponent {
           if (!isCurrent()) {
             return;
           }
-          // `null` AND the flag. The list must not keep showing rows the read could not confirm,
-          // and the flag is what stops that `null` reading as "not loaded yet".
-          this.briefCampaigns.set(null);
-          this.briefCampaignsStale.set(false);
-          this.briefCampaignsUnavailable.set(true);
-          this.briefCampaignsToggleEnabled.set(false);
+          this.applyBriefCampaignsFailure();
           // Cleared WITHOUT stamping, for the reason the sibling reader's error arm gives: a
           // failure has established nothing and must not suppress an in-flight success.
           if (mayWriteCapability()) {
@@ -4830,17 +6208,73 @@ export class CampaignsComponent {
             this.briefCampaignsMetaAssetUploadEnabled.set(null);
             this.briefCampaignsGoogleAssetUploadEnabled.set(null);
             this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
+            this.briefCampaignsLinkedInTargetingEditEnabled.set(null);
+            this.briefCampaignsLinkedInAccountSelectionEnabled.set(null);
+            this.briefCampaignsLinkedInDailyCapEnabled.set(null);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
             this.briefCampaignsMicrosoftScheduleEnabled.set(null);
             this.briefCampaignsTwitterCreateEnabled.set(null);
             this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+            this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
+            this.briefCampaignsMetaCallToActionEnabled.set(null);
+            this.briefCampaignsMetaLeadFormsEnabled.set(null);
+            this.briefCampaignsMetaInterestTargetingEnabled.set(null);
+            this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+            this.briefCampaignsMetaAdScheduleEnabled.set(null);
+            this.briefCampaignsMetaFrequencyCapEnabled.set(null);
+            this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
+            this.briefCampaignsMetaOsTargetingEnabled.set(null);
+            this.briefCampaignsMetaConversionEventEnabled.set(null);
+            this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
+            this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+            this.briefCampaignsGoogleConversionActionsEnabled.set(null);
+            this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
+            this.briefCampaignsGoogleDisplayAudiencesEnabled.set(null);
+            this.briefCampaignsGooglePerformanceMaxAudienceSignalEnabled.set(null);
             this.briefCampaignsGoogleGeoSearchEnabled.set(null);
+            this.briefCampaignsMultiCampaignPlatforms.set(null);
             this.briefCampaignsCapabilityRead.set('failed');
           }
         },
       });
+  }
+
+  /**
+   * Start a campaign-list read: invalidate any read still out and clear the previous answer before
+   * dispatch, so a late response cannot land and no other brief's rows show meanwhile (see the clear
+   * in `loadBriefCampaigns`). Returns the read's own currency check. Shared by both readers of the
+   * list, `loadBriefCampaigns` and `loadCreateCapabilitiesFor(…, true)` (#4983).
+   */
+  private beginBriefCampaignsRead(): () => boolean {
+    const generation = ++this.briefCampaignsGeneration;
+    this.briefCampaigns.set(null);
+    this.briefCampaignsStale.set(false);
+    this.briefCampaignsUnavailable.set(false);
+    this.briefCampaignsToggleEnabled.set(false);
+    return (): boolean => generation === this.briefCampaignsGeneration;
+  }
+
+  /** File a current list answer. */
+  private applyBriefCampaignsResult(result: CampaignListResult): void {
+    this.briefCampaigns.set(result.campaigns);
+    this.briefCampaignsStale.set(result.possiblyStale);
+    this.briefCampaignsUnavailable.set(false);
+    this.briefCampaignsToggleEnabled.set(result.statusToggleEnabled);
+    this.briefCampaignsLoading.set(false);
+  }
+
+  /**
+   * File a current list failure: `null` AND the flag. The list must not keep showing rows the read
+   * could not confirm, and the flag is what stops that `null` reading as "not loaded yet".
+   */
+  private applyBriefCampaignsFailure(): void {
+    this.briefCampaigns.set(null);
+    this.briefCampaignsStale.set(false);
+    this.briefCampaignsUnavailable.set(true);
+    this.briefCampaignsToggleEnabled.set(false);
+    this.briefCampaignsLoading.set(false);
   }
 
   /**
@@ -4907,6 +6341,7 @@ export class CampaignsComponent {
           // the contract, and an older service that omits it entirely would otherwise report every
           // successful staging as an error. Only an explicit `ok: false` is a failure.
           this.emailStaging.set('done');
+          this.singleSendStagedScopes.update((scopes) => new Set(scopes).add(this.stageScopeKey(projectSlug, briefId)));
           // The id is INCLUDED, because without it this message sends the user to hunt for one
           // draft among the hundreds the portal lists — the picker above says "Showing 100 of 500".
           //
@@ -4957,7 +6392,7 @@ export class CampaignsComponent {
    * what the picker showed before ranking existed.
    */
   private rankTemplatesForSelectedType(templates: HubSpotMarketingEmail[]): HubSpotMarketingEmail[] {
-    const keywords = CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
+    const keywords = this.sendTypes().find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
     const eventTerms = this.eventTemplateTerms();
     const hasEventTerms = eventTerms.decisive.length > 0 || eventTerms.ranking.length > 0 || eventTerms.year !== '';
     if (keywords.length === 0 && !hasEventTerms) {
@@ -4999,25 +6434,35 @@ export class CampaignsComponent {
   }
 
   /**
-   * Release a selection this feature made, and forget the suggestion.
+   * Forget the suggestion, leaving the operator's selection alone.
    *
-   * Called from BOTH the success path and every failure arm. `applyEventTemplateSuggestion` runs
-   * only after a successful listing, so the `enabled: false`, HubSpot-error, unusable-rows and
-   * transport-error arms all set `emailTemplates` to null while leaving a system-owned selection
-   * in place -- invisible, since there is no list to show it in, and still stageable.
+   * Called at dispatch, where the list is being REPLACED: the suggestion describes the rows going
+   * away and the success arm re-derives it, while the operator's selection is theirs and survives.
+   * `applyEventTemplateSuggestion` runs only after a successful listing, so the terminal arms go
+   * through `dropEmailTemplateList` instead, which clears this too.
    */
-  private releaseSuggestedSelection(): void {
-    if (this.emailTemplateSelectionIsSuggested()) {
-      this.selectedEmailTemplateId.set('');
-      this.selectedEmailTemplateRow.set(null);
-      this.emailTemplateSelectionIsSuggested.set(false);
-    }
+  private clearEventTemplateSuggestion(): void {
     this.emailTemplateSuggestionId.set('');
     this.emailTemplateSuggestionTerms.set([]);
   }
 
   /**
-   * Offer the template this portal already uses for this event, if one is identifiable.
+   * The list is GONE, not replaced: no foundation, the channel off, HubSpot refusing, unusable rows,
+   * or a transport failure. The suggestion goes, and so does the selection, hand-picked or not.
+   *
+   * #2057 asks for exactly this split. A surviving id here is invisible (there is no list to render
+   * it in) and still stageable, because `canStageEmail` reads the id rather than the list, so
+   * Stage Email Draft would clone a template the operator can no longer see. A search on the wire
+   * only replaces the list, and keeps the selection; see `clearEventTemplateSuggestion`.
+   */
+  private dropEmailTemplateList(): void {
+    this.clearEventTemplateSuggestion();
+    this.selectedEmailTemplateId.set('');
+    this.selectedEmailTemplateRow.set(null);
+  }
+
+  /**
+   * Recommend the template this portal already uses for this event, if one is identifiable.
    *
    * This is the answer to "how is it done for that event": rather than holding a per-event mapping
    * of our own, it reads the event off the brief and finds the template whose NAME says it belongs
@@ -5025,28 +6470,16 @@ export class CampaignsComponent {
    *
    * Three properties, each load-bearing:
    *
-   *   - It only ever pre-fills an EMPTY selection, so an operator who has already chosen keeps
-   *     their choice across a re-search or an email-type change -- a suggestion that reinstates
-   *     itself over a hand-pick is not a suggestion.
-   *   - It withholds below `EVENT_TEMPLATE_SUGGESTION_MIN_SCORE`. A pre-selection reads as decided,
-   *     so a wrong one is unlikely to be re-examined, and cloning the wrong template puts another
-   *     event's branding into a real HubSpot draft.
+   *   - It RECOMMENDS and never selects (#2057). The row is badged "Suggested"; only an operator's
+   *     click writes `selectedEmailTemplateId`, which is what becomes `sourceEmailId` on stage.
+   *   - It withholds below `EVENT_TEMPLATE_SUGGESTION_MIN_SCORE`, so a weak guess is not offered.
    *   - It records WHICH terms matched, so the operator can judge the suggestion rather than trust
    *     it. A suggestion whose reasoning is invisible cannot be checked.
    */
   private applyEventTemplateSuggestion(templates: HubSpotMarketingEmail[]): void {
-    // Release a selection this feature made, before re-deriving against the new result set.
-    //
-    // The type-change path already did this; a SEARCH did not, and only the suggestion id was
-    // cleared. So after a narrowed search dropped the auto-selected row, that id stayed selected
-    // while the banner hid (it renders only while the suggestion IS the selection) and staging
-    // would still clone the now-invisible template -- the same silent-wrong-clone this feature
-    // exists to prevent, reached from the other direction.
-    //
-    // Only a SYSTEM-owned selection is released. A hand-picked template is the operator's and
-    // survives every search, which is why this compares against the outgoing suggestion id rather
-    // than clearing unconditionally.
-    this.releaseSuggestedSelection();
+    // Forget the previous suggestion before re-deriving against the new result set, so a row the
+    // new results no longer support is never still badged.
+    this.clearEventTemplateSuggestion();
 
     const eventTerms = this.eventTemplateTerms();
     // DECISIVE terms only. With no name or slug tokens there is nothing that identifies the event,
@@ -5113,7 +6546,7 @@ export class CampaignsComponent {
     // counts generic words, because among templates the event has already identified a generic
     // word usefully separates them. It cannot be what justifies offering a suggestion: two
     // generic terms sum to exactly EVENT_TEMPLATE_SUGGESTION_MIN_SCORE, so "Community Training
-    // Workshop" would auto-select "Community training newsletter" on vocabulary that describes
+    // Workshop" would suggest "Community training newsletter" on vocabulary that describes
     // neither event.
     if (best === null) {
       return;
@@ -5128,18 +6561,16 @@ export class CampaignsComponent {
     // suggestion the word could never have earned overstates the evidence.
     this.emailTemplateSuggestionTerms.set(this.matchedEventTerms(best, eventTerms.decisive).filter((t) => !EVENT_TERM_GENERIC.has(t)));
 
-    // Pre-fill ONLY an untouched selection. `selectedEmailTemplateId` is the operator's, and a
-    // suggestion that overwrites a deliberate choice is a bug wearing a feature's clothes.
+    // RECOMMEND, never select (#2057). `selectedEmailTemplateId` is deliberately not written.
     //
-    // The empty check is the WHOLE guard, deliberately. A separate "was it overridden" flag was
-    // written first and removed: the only path that clears the selection is the foundation switch,
-    // which resets the brief-derived state in the same pass, so the flag could never be the reason
-    // a re-selection was refused. It was unfalsifiable — no mutation of it changed any test — and
-    // an unfalsifiable guard reads as protection that is not there.
-    if (this.selectedEmailTemplateId() === '') {
-      this.selectedEmailTemplateId.set(best.id);
-      this.emailTemplateSelectionIsSuggested.set(true);
-    }
+    // The evidence cannot carry a selection. A lone unlisted term of six-plus characters clears the
+    // threshold, and the selected id becomes `hubspotConfig.sourceEmailId` on stage -- so
+    // "Developer Conference" chose an unrelated "Developer newsletter", and that branded draft would
+    // have been cloned with nobody having picked it. Real events yield exactly ONE decisive term
+    // ("KubeCon Europe 2026" -> kubecon, "PyTorch Conference 2026" -> pytorch), identical in shape to
+    // `developer`, so no threshold separates a conference brand from a job title. The row is always
+    // drawn (pinned past the render cap if it has to be), badged, and explains its match; accepting
+    // it is one click, and that click is what turns a guess into the operator's decision.
   }
 
   /**
@@ -5175,7 +6606,7 @@ export class CampaignsComponent {
   }
 
   /**
-   * The part of the match score that may JUSTIFY a pre-selection, as opposed to merely rank one.
+   * The part of the match score that may JUSTIFY a suggestion, as opposed to merely rank one.
    *
    * Excluding generic terms from the double weight was not enough. They still scored
    * `EVENT_TERM_WEIGHT` apiece, so TWO of them reached `EVENT_TEMPLATE_SUGGESTION_MIN_SCORE`
@@ -5191,9 +6622,9 @@ export class CampaignsComponent {
    */
   //
   // KNOWN LIMIT, measured rather than assumed: a single unlisted term of six-plus characters
-  // clears the threshold alone, and the selected id becomes `hubspotConfig.sourceEmailId` when
-  // the operator stages. So "Developer Conference" pre-selects an unrelated "Developer
-  // newsletter" until `developer` is added to the deny-list.
+  // clears the threshold alone, so "Developer Conference" SUGGESTS an unrelated "Developer
+  // newsletter" until `developer` is added to the deny-list. It is only a suggestion: since #2057
+  // nothing is selected, and so nothing is staged, until the operator clicks a row.
   //
   // Corroboration (require a second non-generic term) was the obvious fix and is WRONG here:
   // real events yield exactly ONE decisive term. "KubeCon Europe 2026" -> [kubecon],
@@ -5204,7 +6635,8 @@ export class CampaignsComponent {
   //
   // Distinguishing them needs a source of event identity this component does not have (an
   // allow-list, a brand mapping, or an upstream confidence signal). That is a design change, so
-  // the limit is pinned by a test rather than papered over here.
+  // the limit is pinned by a test rather than papered over here -- and why the suggestion
+  // recommends instead of selecting.
   private eventSuggestionScore(template: HubSpotMarketingEmail, terms: EventTemplateTerms): number {
     return this.matchedEventTerms(template, terms.decisive)
       .filter((term) => !EVENT_TERM_GENERIC.has(term))
@@ -5258,7 +6690,7 @@ export class CampaignsComponent {
    *
    * Matched on WORD BOUNDARIES, not `includes`. A bare substring test lets a distinctive term match
    * inside a longer word — "KubeConference recap" would score as a KubeCon template and, because a
-   * distinctive term suggests on its own, would be pre-selected outright. The boundary is any
+   * distinctive term suggests on its own, would be suggested outright. The boundary is any
    * non-alphanumeric, which keeps every real naming pattern working: `KubeCon + CloudNativeCon`,
    * `KubeCon+CloudNativeCon` with no spaces, `KubeCon: registration`, and `Nairobi, Kenya` all
    * still match. Verified byte-identical against the live portal's templates.
@@ -5996,6 +7428,11 @@ export class CampaignsComponent {
           }
 
           if (generation !== this.briefPersistenceGeneration) return;
+          // The row now holds exactly the bytes on Implement (Replace saved brief included), so the
+          // epoch an earlier read or replace bumped no longer means "newer than Implement" (#4983).
+          if (result.enabled && wroteTheRow && ownershipKey !== null && this.briefOutput() === brief) {
+            this.briefOutputEpoch = this.ownershipEpochs.get(ownershipKey) ?? 0;
+          }
           if (!result.enabled) {
             this.briefPersistence.set(this.idlePersistence);
             return;
@@ -6093,8 +7530,11 @@ export class CampaignsComponent {
             this.briefPersistence.set({
               status: 'error',
               briefId: result.briefId,
-              message: this.conflictMessageFor(result.conflict),
+              // The paid wording for `unowned-brief-exists` names the two buttons the Implement tab
+              // shows right under it, Open to edit and Replace saved brief (#4983).
+              message: result.conflict === 'unowned-brief-exists' ? CAMPAIGN_PAID_UNOWNED_BRIEF_MESSAGE : this.conflictMessageFor(result.conflict),
               approved: false,
+              conflict: result.conflict,
             });
             return;
           }
@@ -6112,7 +7552,7 @@ export class CampaignsComponent {
           // The capability read needs a brief id, and THIS is where a first create gets one: the
           // Implementation tab opened before the persist resolved, so the entry-time attempt
           // guarded itself out. Without this the create path never learns the capability.
-          this.loadCreateCapabilitiesFor(result.briefId);
+          this.loadCreateCapabilitiesFor(result.briefId, true);
           // The row on the server is now different from whatever Planning last looked up — it may
           // not even have existed then. Reached only past the conflict and `!enabled` returns
           // above, so it fires exactly when a write actually landed.
@@ -6367,7 +7807,7 @@ export class CampaignsComponent {
             status: 'error',
             briefId: known.id,
             message:
-              'This saved brief could not be approved because the request reached a server that is still being updated. Reload and re-enter the event URL to try again.',
+              'This saved brief could not be approved because the request reached a server that is still being updated. Reload and try again from the Plan tab (enter the event URL there if it is not already filled in).',
             approved: false,
           });
           return;
@@ -6484,6 +7924,155 @@ export class CampaignsComponent {
   }
 
   /**
+   * Drop `?event=` from the page address on a program switch (#4756). The paid planner owns the
+   * parameter, but it is destroyed and recreated by that switch, so the page clears it here, before
+   * the new planner reads it. `replaceState` as the planner writes it: no navigation, no history.
+   */
+  private clearEventUrlParam(): void {
+    if (!isPlatformBrowser(this.platformId) || this.router.getCurrentNavigation()) return;
+    const tree = this.router.parseUrl(this.location.path(true));
+    if (!(CAMPAIGN_EVENT_URL_QUERY_PARAM in tree.queryParams)) return;
+    delete tree.queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM];
+    this.location.replaceState(this.router.serializeUrl(tree));
+  }
+
+  /**
+   * Switch the program selector to the brief's own program — see `onRestoreSavedBrief` for why this
+   * must happen here and under `adoptingRestoredProgram`. Shared by the restore and both Open to edit
+   * paths (#4983), which bring a stored brief onto the page the same way.
+   */
+  private adoptBriefProgram(brief: CampaignBriefOutput): void {
+    if (brief.programType !== undefined && brief.programType !== this.selectedProgramType()) {
+      this.adoptingRestoredProgram = true;
+      try {
+        this.selectorForm.controls.programType.setValue(brief.programType);
+      } finally {
+        // `finally`, so a throw inside the subscription cannot leave the flag set and turn every
+        // later program switch into a silent no-reset.
+        this.adoptingRestoredProgram = false;
+      }
+    }
+  }
+
+  /**
+   * Record ownership of an offered brief that is about to be EDITED (#4983), or report that the offer
+   * cannot be trusted for that.
+   *
+   * Like `onRestoreSavedBrief`'s record, with one rule changed because the next write replaces the
+   * content on screen: the recorded validator must name the version whose bytes the user is editing.
+   *
+   * - Same row and same content as the held record (the offer was read no later than the record and
+   *   no earlier than its last content change): the held record stays as it is. Its validator may be
+   *   newer — an approval moves the ETag, not the bytes — and it is still a precondition on exactly
+   *   what is being edited. No epoch bump either: nothing new arrived, and a bump would discard an
+   *   approval of this same row still in flight (`approveRestoredBrief` files its ETag only while the
+   *   epoch is unchanged).
+   * - Same row, but the content changed after the offer was read, or a save of this session is still
+   *   running: the offer may hold bytes this session already replaced. Returns `false`, and the caller
+   *   re-reads the row instead of opening the offer.
+   * - Otherwise: the offer's own read is recorded, with the epoch bumped as a restore bumps it so a
+   *   save queued before this cannot inherit the id.
+   */
+  private recordEditOwnership(key: string, offer: CampaignSavedBriefOffer): boolean {
+    const held = this.knownBriefIds.get(key);
+    const sameRow = held !== undefined && held.id === offer.briefId;
+    if (this.briefSaveInFlight() || (sameRow && offer.readAt < held.contentAt)) {
+      return false;
+    }
+    if (sameRow && offer.readAt <= held.readAt) {
+      return true;
+    }
+    this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
+    // Normalised as in `onRestoreSavedBrief`: an older pod omits the field and JSON yields `undefined`.
+    const validator = offer.etag ?? null;
+    this.rememberBriefId(key, {
+      id: offer.briefId,
+      etag: validator,
+      readAt: offer.readAt,
+      contentAt: offer.readAt,
+      ...(validator === null ? { absence: 'overwrite' as const } : {}),
+    });
+    return true;
+  }
+
+  /**
+   * Read the stored brief for `seed`'s event and open THAT in Planning's editor (#4983), recording
+   * ownership from the read.
+   *
+   * Runs after every queued save has settled, so the read sees this session's own last write rather
+   * than racing it. Recorded with `contentChanged` and Planning refreshed, for `onReplaceSavedBrief`'s
+   * reason: this read may be newer than the offer Planning cached, and a later Restore of that offer
+   * must read as superseded rather than pair its older content with this newer validator.
+   *
+   * A discard or a foundation switch while the read is out makes its answer stale, as in
+   * `onReplaceSavedBrief`, and it is then dropped.
+   */
+  private readAndOpenSavedBrief(
+    seed: CampaignBriefOutput,
+    onUnavailable: (status: CampaignBriefLoadResult['status']) => void,
+    onError: () => void = (): void => undefined
+  ): void {
+    const projectSlug = this.activeFoundationSlug();
+    // Nothing to read without a foundation or an event. That is a FAILED open, not an answer about
+    // the row, so it goes through `onError`: every caller then says why nothing opened, and none of
+    // them mistakes it for persistence going dark (`'off'`), which on the Implement path would clear
+    // the unowned-brief refusal and re-enable Create while a stored brief still exists.
+    if (projectSlug === '' || this.ownershipKey(projectSlug, seed) === null) {
+      onError();
+      return;
+    }
+    const generation = this.briefPersistenceGeneration;
+    const ownershipAtSend = this.ownershipGeneration;
+    const openGeneration = ++this.planningOpenGeneration;
+    const mayAdopt = (): boolean =>
+      generation === this.briefPersistenceGeneration &&
+      ownershipAtSend === this.ownershipGeneration &&
+      openGeneration === this.planningOpenGeneration &&
+      projectSlug === this.activeFoundationSlug();
+
+    from(this.persistChain)
+      .pipe(
+        switchMap(() => this.campaignService.loadBrief(seed.eventDetails.slug, projectSlug, seed.deliveryType ?? 'paid-marketing', seed.emailStage ?? '')),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (result) => {
+          if (!mayAdopt()) return;
+          const storedKey = result.brief === null ? null : this.ownershipKey(projectSlug, result.brief);
+          if (result.status !== 'loaded' || result.brief === null || result.briefId === null || storedKey === null) {
+            onUnavailable(result.status);
+            return;
+          }
+          const validator = result.etag ?? null;
+          this.adoptBriefProgram(result.brief);
+          this.ownershipEpochs.set(storedKey, (this.ownershipEpochs.get(storedKey) ?? 0) + 1);
+          this.rememberBriefId(storedKey, {
+            id: result.briefId,
+            etag: validator,
+            contentChanged: true,
+            ...(validator === null ? { absence: 'overwrite' as const } : {}),
+          });
+          this.savedBriefRefreshToken.update((token) => token + 1);
+          this.openInPlanningEditor(result.brief);
+        },
+        error: (err: unknown) => {
+          console.error('[campaigns] Failed to read the saved brief to open it', err);
+          if (!mayAdopt()) return;
+          onError();
+        },
+      });
+  }
+
+  /** Hand a brief to the paid planner's editor and show the Plan tab (#4983). */
+  private openInPlanningEditor(brief: CampaignBriefOutput): void {
+    this.planningOpenGeneration++;
+    this.planningEditRequestSeq += 1;
+    this.planningEditRequest.set({ brief, requestId: this.planningEditRequestSeq });
+    this.selectedTab.set('planning');
+  }
+
+  /**
    * The four parts the server keys a brief on -- `(project, event_slug, delivery_type, stage)` --
    * as one map key. It was the `(foundation, event)` pair until LFXV2-3198 widened the upstream
    * key; see the body for why all four are load-bearing.
@@ -6562,6 +8151,8 @@ export class CampaignsComponent {
     // that no longer exist. Clearing the draft alone would already stop the carry; clearing both
     // keeps the pair honest for whoever reads this next.
     this.generatorExtensions = null;
+    // The brief Planning was asked to edit is discarded with everything else (#4983).
+    this.planningEditRequest.set(null);
     this.selectedTab.set('planning');
     this.emailBriefOutput.set(null);
     this.resetEmailBriefDerivedState();
@@ -6647,26 +8238,476 @@ export class CampaignsComponent {
     this.emailMetricsState.set('idle');
     this.emailMetricsError.set('');
     // The chosen template belongs to the brief that chose it. Left set, it survives into the next
-    // event in the same foundation, where it is both WRONG (a template for the previous event) and
-    // silently suppresses the new suggestion, since the derivation only ever fills an empty
-    // selection. That is the feature failing exactly where it is most useful -- the second event.
+    // event in the same foundation, where it is WRONG (a template for the previous event) and still
+    // stageable, and it hides the new event's suggestion banner, which shows only while nothing is
+    // selected.
     this.selectedEmailTemplateId.set('');
     this.selectedEmailTemplateRow.set(null);
-    // Cleared WITH the id it describes: the flag means "the CURRENT selection is system-owned",
-    // and there is no current selection once the line above runs.
-    //
-    // No bug reachable today -- the only writers of a non-empty selection are
-    // `onSelectEmailTemplate`, which sets the flag false, and the suggestion itself, which sets it
-    // true, so a stale `true` can at worst re-clear an already-empty id. It is cleared anyway
-    // because the invariant is what the rest of the class reads: `releaseSuggestedSelection` and
-    // the type-change path both branch on this flag to decide whether a selection is the
-    // operator's, and leaving it describing a discarded brief is one new writer away from
-    // discarding a hand-picked template.
-    this.emailTemplateSelectionIsSuggested.set(false);
     // The suggestion is derived from THIS brief's event, so its id and the terms it matched on
     // both belong to the brief and go with it. Only these two signals are reset here.
     this.emailTemplateSuggestionId.set('');
     this.emailTemplateSuggestionTerms.set([]);
+    // The survey series is this brief's too: its sends are copies of it under each stage.
+    this.retireStagedSeries();
+    this.resetSurveySequence();
+    // The survey surface hides the picker, so the selection cleared above would otherwise stay
+    // empty -- Stage disabled behind "Finding a template" -- until the list was fetched again.
+    this.ensureSurveyTemplateSelected();
+  }
+
+  /**
+   * Choose the survey surface's template, since it does not ask.
+   *
+   * The picker is hidden there -- every survey send clones the same portal template, so browsing
+   * for it per send is a question with one answer. That makes a selection MANDATORY here rather
+   * than merely helpful: `canStageEmail` requires a template id, so a hidden picker and an empty
+   * selection would leave Stage disabled with its reason pointing at a control that is not on
+   * screen.
+   *
+   * Runs AFTER `applyEventTemplateSuggestion` and only fills an empty selection, so an operator's
+   * own choice is never replaced.
+   */
+  private autoSelectSurveyTemplate(templates: HubSpotMarketingEmail[]): void {
+    // Never from a filtered list: an Email search typed before the switch narrowed these rows,
+    // and the pick would stick -- this only fills an empty selection, and Survey has no picker.
+    // Nor while a search is on the wire: the rows are still the ones it replaces, and the
+    // submitted query already names the new search, not them. Its success arm picks instead.
+    if (
+      !this.isSurvey() ||
+      this.selectedEmailTemplateId() !== '' ||
+      templates.length === 0 ||
+      this.emailTemplateSubmittedQuery() !== '' ||
+      this.emailTemplatesLoading()
+    ) {
+      return;
+    }
+    // The ranked order, not the raw listing: `rankTemplatesForSelectedType` puts the templates
+    // whose names match this send's keywords first, so the fallback is still the best available
+    // guess rather than whichever email HubSpot happened to return first.
+    const best = this.rankTemplatesForSelectedType(templates)[0] ?? templates[0];
+    // Selected, not merely suggested as the event picker does (#2057): this surface has no picker
+    // to choose from, and the Template note above Stage names the one taken.
+    this.selectedEmailTemplateId.set(best.id);
+  }
+
+  /** A send's operator-facing name, read off the shared type list so the two cannot disagree. */
+  private surveyStageLabel(stage: CampaignSurveyStage): string {
+    return CAMPAIGN_SURVEY_TYPES.find((type) => type.stage === stage)?.label ?? stage;
+  }
+
+  /**
+   * The operator-facing text of a failed workflow build.
+   *
+   * Upstream's own message is preferred over anything written here, because it is the only part
+   * that is actionable: it names the send that is not staged, or both step counts when the chosen
+   * workflow's shape does not match. Same extraction order as the repo's other API error readers
+   * (`document-form.component.ts`) -- the BFF's envelope puts it under `error`, Goa's under
+   * `message`.
+   */
+  private sendWorkflowErrorText(error: unknown, fallback = 'The workflow could not be built.'): string {
+    // The shared reader, which takes a VALIDATION_ERROR's reason from `errors[]` rather than its
+    // "Validation failed for name" prefix.
+    const fromResponse = error instanceof HttpErrorResponse ? readCampaignWriteErrorMessage(error.error) : undefined;
+    if (fromResponse) {
+      return fromResponse;
+    }
+    // A plain Error carries its own message, and this path throws them: a failed staging job's
+    // upstream reason arrives that way. Reading only the HTTP envelope replaced those with the
+    // fallback below, so the operator was told "the workflow could not be built" when the real
+    // answer was "no audience found for this brief".
+    if (error instanceof Error && error.message.trim() !== '') {
+      return error.message;
+    }
+    return fallback;
+  }
+
+  /**
+   * Save ONE send of a sequence, under its own stage.
+   *
+   * Not `persistEmailBrief`, which returns `emailBriefId()` when the page already holds one. That
+   * is right for the single brief on screen and wrong here: in a loop it would hand the second and
+   * third sends the FIRST send's id, so their rows would never be created and every step of the
+   * workflow would point at one draft -- which upstream then refuses as a repeated brief, after
+   * the operator has watched three emails being written.
+   *
+   * Ownership is keyed on the brief's full identity, stage included, so re-running the generator
+   * REPLACES each send's row rather than being refused as a duplicate create.
+   */
+  private async persistSequenceBrief(brief: CampaignBriefOutput, projectSlug: string, isCurrent: () => boolean): Promise<string> {
+    // The FIRST send is the page's own brief, which `warmEmailBriefId` may be saving right now.
+    // Joined through `ensureEmailBriefId` rather than saved again beside it: two creates of one
+    // identity race, and the loser is refused as a duplicate, aborting the series.
+    const primary = this.emailBriefOutput();
+    if (primary !== null && (primary.emailStage ?? '') === (brief.emailStage ?? '') && primary.eventDetails?.slug === brief.eventDetails?.slug) {
+      const primaryId = await this.ensureEmailBriefId(primary, projectSlug);
+      if (primaryId === '') {
+        throw new Error(this.emailSaveFailureMessage('so the emails were not written.'));
+      }
+      return primaryId;
+    }
+
+    const ownershipKey = this.ownershipKey(projectSlug, brief);
+    const owned = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
+
+    const persisted = await firstValueFrom(
+      this.campaignService.persistBrief(brief, projectSlug, owned?.id ?? null, owned?.etag ?? null, owned?.absence === 'overwrite')
+    );
+    const briefId = persisted.briefId ?? '';
+    // A REFUSED save (another editor changed the brief, or this page's version cannot be trusted)
+    // still answers with the stored row's id. Generating from that row and recording ownership of
+    // it -- with an overwrite licence, since a refusal carries no ETag -- let the next rewrite
+    // replace the other editor's brief without the conflict ever being shown. Stop and say why,
+    // keeping whatever ownership was held before, as `persistEmailBrief` does.
+    if (persisted.conflict !== undefined) {
+      // Not the single-brief conflict text: that promises an acknowledge-and-overwrite step this
+      // path does not have. The honest recovery is to reload the brief and write again.
+      // Unowned: a send saved in an earlier page session. Restore reaches only the page's own
+      // stage, so reloading could never clear this; new briefs can, and they never adopt a row
+      // whose draft this page knows nothing about.
+      if (persisted.conflict === 'unowned-brief-exists') {
+        // Only for the series still on screen: a late answer must not lock a series a reset replaced.
+        if (isCurrent()) {
+          this.sequenceNeedsRestart.set(true);
+        }
+        throw new Error(
+          'This survey already has emails saved from an earlier session. Check HubSpot for their drafts, then start the series over to write new ones.'
+        );
+      }
+      throw new Error(
+        'This survey was changed elsewhere since this page loaded it, so the emails were not written. Reload the page, restore the brief, then write the emails again.'
+      );
+    }
+    // Saved but not approved: campaign-service will not stage from it, so writing its copy would
+    // only lead to a refusal at staging.
+    if (briefId !== '' && !persisted.approved) {
+      // The row WAS saved; only its approval failed. Its ownership is kept -- with the validator
+      // the write returned, and never an overwrite licence -- so writing again updates and
+      // re-approves this row instead of being refused as an unowned duplicate.
+      if (ownershipKey !== null) {
+        this.rememberBriefId(ownershipKey, { id: briefId, etag: persisted.etag ?? null });
+      }
+      throw new Error('The campaign was saved but not approved, so the emails were not written. Write them again to retry the approval.');
+    }
+    if (briefId === '' || ownershipKey === null) {
+      return briefId;
+    }
+
+    // Same shape the single-brief save records: a null validator is UNKNOWN rather than
+    // permission, so the overwrite licence is granted only where the write returned none at all.
+    const validator = persisted.etag ?? null;
+    this.rememberBriefId(ownershipKey, {
+      id: briefId,
+      etag: validator,
+      ...(validator === null ? { absence: 'overwrite' as const } : {}),
+    });
+    return briefId;
+  }
+
+  /**
+   * One send's staging request.
+   *
+   * The same shape `onStageEmailSend` builds: `CampaignCreateRequest` is the PAID contract, so
+   * the paid-only fields are sent empty because the contract requires them present, not because
+   * HubSpot reads them. What differs per send is the copy -- each send's own subject, preheader
+   * and body, taken from what was generated for its stage rather than from the page's single
+   * `emailCopy`, which only ever holds one of them.
+   *
+   * No A/B variant and no hero: the survey surface does not offer a split test, and the hero
+   * image path belongs to the event scrape this surface does not run.
+   */
+  private sequenceStageRequest(brief: CampaignBriefOutput, send: CampaignSequenceSend, sourceEmailId: string): CampaignCreateRequest {
+    const details = brief.eventDetails;
+    const content = this.sequenceSendContent(brief, send);
+    return {
+      eventName: details.name,
+      eventSlug: details.slug,
+      countryCode: details.countryCode,
+      registrationUrl: details.registrationUrl,
+      campaignTypes: [],
+      budgetUsd: 0,
+      searchBudgetPct: 0,
+      startDate: '',
+      endDate: '',
+      keywords: [],
+      headlines: [],
+      descriptions: [],
+      geoTargets: [],
+      platforms: ['hubspot'],
+      hubspotConfig: {
+        sourceEmailId,
+        subject: send.copy.subject,
+        bodyHtml: content.bodyHtml,
+        preheader: send.copy.preheader,
+        ...(content.buttonText !== '' ? { buttonText: content.buttonText, buttonUrl: content.buttonUrl } : {}),
+      },
+    };
+  }
+
+  /**
+   * One send's body and button, cleaned by the SAME rules the single send applies
+   * (`emailBodyHtmlForSend`, `emailCtaLabel`, `emailCtaDestination`), so a series cannot stage
+   * markup the single path would have refused.
+   *
+   * The body loses resource-loading HTML (a tracking pixel or remote stylesheet in generated copy
+   * would otherwise reach every reader); the button is staged only when it points at the brief's
+   * own promoted URL, and a refused button's label is folded into the body so the call to action
+   * does not vanish from the draft.
+   */
+  private sequenceSendContent(brief: CampaignBriefOutput | null, send: CampaignSequenceSend): { bodyHtml: string; buttonText: string; buttonUrl: string } {
+    const destination = ctaDestinationFor(send.copy.ctaUrl, brief?.eventDetails?.registrationUrl);
+    const body = stripResourceLoadingHtml(send.copy.body ?? '', destination === '' ? [] : [destination]);
+    const bodyIsStageable = hasVisibleHtmlText(body);
+    const label = sanitizeDisplayText(send.copy.cta ?? '');
+    const buttonText = destination !== '' && bodyIsStageable ? label : '';
+    const unlinkedLabel = destination === '' && bodyIsStageable && send.copy.ctaUrl ? label : '';
+    return { bodyHtml: withUnlinkedCta(body, unlinkedLabel), buttonText, buttonUrl: buttonText === '' ? '' : destination };
+  }
+
+  /**
+   * Point every send at the audience the first one already has.
+   *
+   * BEST EFFORT. The sends and their copy are already written and saved by this point, so failing
+   * the whole generation because a later send could not be pointed at the list would throw away
+   * work the operator can still use. Returns the problem, if any, in a sentence for the page --
+   * '' when every later send has the audience or there was nothing to share yet.
+   *
+   * Does nothing when the first send has no built audience yet, which is the ordinary order of
+   * work: plan, write, then compose the audience. Staging runs this again, so composing it
+   * afterwards still reaches every send.
+   */
+  private async shareAudienceAcrossSequence(
+    sends: readonly CampaignSequenceSend[],
+    projectSlug: string,
+    isCurrent: () => boolean = () => true
+  ): Promise<string> {
+    // The audience was composed for the page's own brief. In the original series that is send 1;
+    // after a start-over the sends are new briefs, so every one of them takes it from the page's.
+    const pageBriefId = this.emailBriefId();
+    const sourceBriefId = pageBriefId !== '' && !sends.some((send) => send.briefId === pageBriefId) ? pageBriefId : sends[0]?.briefId;
+    const targets = sends.filter((send) => send.briefId !== sourceBriefId);
+    if (sourceBriefId === undefined || targets.length === 0) {
+      return '';
+    }
+    // Read the STORED row rather than the one the page is holding. The object a compose returns
+    // (`toRecordedAudience`) carries the master list but not the suppression lists, so gating on
+    // what the page has meant this returned before issuing a single request -- silently, every
+    // time. `listAudiences` returns what was actually recorded.
+    const first = await this.builtAudienceFor(projectSlug, sourceBriefId);
+    // Checked after every read and before every attach: a series reset meanwhile must not attach
+    // the old lists to a brief the new series reuses.
+    if (!isCurrent()) {
+      return '';
+    }
+    if (first.state === 'unknown') {
+      return `The ${sends[0].label}'s audience could not be read, so it was not shared with the other sends. Try again in a moment.`;
+    }
+    if (first.state === 'none') {
+      return '';
+    }
+    const source = first.audience;
+    // The SAME send lists, in the shape they were recorded: a master list, or several include
+    // lists attached directly. Re-attaching only the first include list as a master would give
+    // the later sends a narrower audience, and the workflow build refuses briefs whose audiences
+    // differ -- a workflow enrols ONE audience.
+    const includeListIds = source.includeListIds ?? [];
+    const masterListId = source.platformMasterListId ?? '';
+    const sendLists = includeListIds.length > 0 ? { includeListIds } : { masterListId };
+    // Suppression travels WITH the include list, never dropped: these are the opt-out, GDPR and
+    // exclusion lists the first send was composed against, and a later send that kept the
+    // audience but lost its suppression would mail people the campaign already excluded.
+    // Upstream requires at least one, so an audience recorded without any cannot be shared.
+    const suppressionListIds = source.suppressionListIds ?? [];
+    if (suppressionListIds.length === 0) {
+      return 'The audience has no suppression lists recorded, so it cannot be shared with the other sends. Attach it to each send on the Audience tab.';
+    }
+
+    for (const send of targets) {
+      const existing = await this.builtAudienceFor(projectSlug, send.briefId);
+      if (!isCurrent()) {
+        return '';
+      }
+      // Already has THIS audience: a re-run must not mint a second row for it. A built audience
+      // with DIFFERENT lists -- the first send was re-composed since -- is attached over, since
+      // the newest row is the one staging uses and the workflow refuses briefs whose audiences
+      // differ. An UNREADABLE answer is not "none" either -- attaching then could duplicate one
+      // an outage hid -- so it stops here and says so.
+      if (existing.state === 'built' && this.sameAudienceLists(existing.audience, source)) {
+        continue;
+      }
+      if (existing.state === 'unknown') {
+        return `The ${send.label}'s audience could not be read, so it was not attached. Try again in a moment.`;
+      }
+      this.surveySequenceProgress.set(`Attaching the audience to the ${send.label}...`);
+      try {
+        await firstValueFrom(
+          this.campaignService.attachExistingAudience(projectSlug, {
+            briefId: send.briefId,
+            ...sendLists,
+            suppressionListIds,
+            inclusionSummary: `Shared with the ${this.surveyStageLabel(sends[0].stage)} of this survey.`,
+          })
+        );
+      } catch (error) {
+        // Reported with the upstream reason: staging would otherwise refuse this send with "no
+        // audience found for this brief", which explains nothing about why there is none.
+        return `The audience could not be attached to the ${send.label}: ${this.sendWorkflowErrorText(error, 'the request failed.')}`;
+      }
+    }
+    return '';
+  }
+
+  /**
+   * The stored, BUILT HubSpot audience under a brief -- or `none`, or `unknown` when the read
+   * failed or was not answered.
+   *
+   * campaign-service lists a brief's audiences NEWEST FIRST, so the first built HubSpot row is the
+   * current one, as the restore path reads it. A failed read is kept apart from "none" for the
+   * reason the restore path records `emailAudienceReadFailed`: an outage that hid an existing
+   * audience would otherwise attach a second one.
+   */
+  private async builtAudienceFor(
+    projectSlug: string,
+    briefId: string
+  ): Promise<{ state: 'built'; audience: CampaignAudience } | { state: 'none' } | { state: 'unknown' }> {
+    try {
+      const result = await firstValueFrom(this.campaignService.listAudiences(projectSlug, briefId));
+      if (!result.enabled || result.error) {
+        return { state: 'unknown' };
+      }
+      // The NEWEST HubSpot row decides, as campaign-service's staging does: a newer row that is
+      // still building or failed is the brief's audience, and falling back past it to an older
+      // built one would share lists staging will not use.
+      const newest = (result.audiences ?? []).find((row) => row.platform === 'hubspot');
+      const usable =
+        newest !== undefined && newest.status === 'built' && ((newest.platformMasterListId ?? '') !== '' || (newest.includeListIds ?? []).length > 0);
+      return usable ? { state: 'built', audience: newest } : { state: 'none' };
+    } catch {
+      return { state: 'unknown' };
+    }
+  }
+
+  /**
+   * Before a brief reset drops the series' staging records: if any send reached HubSpot, move the
+   * next write of that survey to NEW briefs, as Start the series over does. Otherwise returning to
+   * Planning and writing again reuses the briefs, and staging hands back the old drafts.
+   */
+  private retireStagedSeries(): void {
+    const base = this.seriesBase;
+    this.seriesBase = null;
+    const reachedHubSpot =
+      this.sequenceStagedBriefIds().length > 0 ||
+      this.sequenceUnresolvedBriefIds().length > 0 ||
+      this.sequenceStagingState() === 'staging' ||
+      this.sendWorkflowResult() !== null;
+    if (base !== null && reachedHubSpot) {
+      this.writeSeriesRestart(base.projectSlug, base.baseSlug, this.readSeriesRestart(base.projectSlug, base.baseSlug) + 1);
+    }
+  }
+
+  /**
+   * Drop the survey series: its sends, their staging and the workflow built from them.
+   *
+   * Every send is a copy of the brief on screen under one stage, so the series belongs to that
+   * brief, that asset and that count -- a change to any of them leaves sends that describe
+   * something the page no longer holds. The generation bump stops a loop still awaiting upstream
+   * from writing the previous series back.
+   */
+  private resetSurveySequence(): void {
+    this.surveySequenceGeneration++;
+    this.surveySequenceSends.set([]);
+    this.surveySequenceState.set('idle');
+    this.surveySequenceError.set('');
+    this.surveySequenceProgress.set('');
+    this.surveySequenceWarning.set('');
+    this.clearSequenceDates();
+    this.resetSequenceStaging();
+  }
+
+  /**
+   * Whether two recorded audiences send to the same lists with the same suppression -- what the
+   * workflow build compares across a series. Order-insensitive: the lists are sets.
+   */
+  private sameAudienceLists(a: CampaignAudience, b: CampaignAudience): boolean {
+    const sendLists = (audience: CampaignAudience): string[] =>
+      [...((audience.includeListIds ?? []).length > 0 ? (audience.includeListIds ?? []) : [audience.platformMasterListId ?? ''])].sort();
+    const suppression = (audience: CampaignAudience): string[] => [...(audience.suppressionListIds ?? [])].sort();
+    const same = (x: string[], y: string[]): boolean => x.length === y.length && x.every((value, index) => value === y[index]);
+    return same(sendLists(a), sendLists(b)) && same(suppression(a), suppression(b));
+  }
+
+  /**
+   * How many times this survey's series was started over on this browser tab, so a reload does not
+   * write the original briefs (whose drafts already exist) again. 0 when unknown or on the server.
+   */
+  private readSeriesRestart(projectSlug: string, baseSlug: string): number {
+    if (baseSlug === '') {
+      return 0;
+    }
+    if (!isPlatformBrowser(this.platformId)) {
+      return this.seriesRestartFallback.get(`${projectSlug}:${baseSlug}`) ?? 0;
+    }
+    try {
+      const stored = Number(sessionStorage.getItem(`${CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX}${projectSlug}:${baseSlug}`) ?? '0');
+      const fallback = this.seriesRestartFallback.get(`${projectSlug}:${baseSlug}`) ?? 0;
+      return Math.max(Number.isInteger(stored) && stored > 0 ? stored : 0, fallback);
+    } catch {
+      return this.seriesRestartFallback.get(`${projectSlug}:${baseSlug}`) ?? 0;
+    }
+  }
+
+  private writeSeriesRestart(projectSlug: string, baseSlug: string, restart: number): void {
+    if (baseSlug === '') {
+      return;
+    }
+    this.seriesRestartFallback.set(`${projectSlug}:${baseSlug}`, restart);
+    this.seriesRestartVersion.update((n) => n + 1);
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    try {
+      sessionStorage.setItem(`${CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX}${projectSlug}:${baseSlug}`, String(restart));
+    } catch {
+      // Storage refused (private mode, quota): the page-level record above still holds it.
+    }
+  }
+
+  /** Drop every send's date control; each is added back as its send is written. */
+  private clearSequenceDates(): void {
+    for (const key of Object.keys(this.sequenceDatesForm.controls)) {
+      this.sequenceDatesForm.removeControl(key);
+    }
+  }
+
+  /** Hold a send whose draft may exist; see `sequenceUnresolvedBriefIds`. */
+  private holdUnresolvedSend(briefId: string): void {
+    this.sequenceUnresolvedBriefIds.update((ids) => (ids.includes(briefId) ? ids : [...ids, briefId]));
+  }
+
+  /** Drop what was staged and built from the series, keeping the written sends themselves. */
+  private resetSequenceStaging(): void {
+    this.sequenceNeedsRestart.set(false);
+    this.sendWorkflowUnconfirmed.set(false);
+    this.sequenceStagingState.set('idle');
+    this.sequenceStagingMessage.set('');
+    this.sequenceStagedBriefIds.set([]);
+    this.sequenceUnresolvedBriefIds.set([]);
+    this.sendWorkflowState.set('idle');
+    this.sendWorkflowError.set('');
+    this.sendWorkflowResult.set(null);
+  }
+
+  /** Pick the survey template from the list already loaded, when the selection is empty. */
+  private ensureSurveyTemplateSelected(): void {
+    // A list filtered by an Email search is not the portal's: fetch the unfiltered one, whose
+    // success arm makes the pick.
+    if (this.isSurvey() && this.selectedEmailTemplateId() === '' && this.emailTemplateSubmittedQuery() !== '') {
+      this.searchEmailTemplates('');
+      return;
+    }
+    const templates = this.emailTemplates();
+    if (templates !== null) {
+      this.autoSelectSurveyTemplate(templates);
+    }
   }
 
   /**

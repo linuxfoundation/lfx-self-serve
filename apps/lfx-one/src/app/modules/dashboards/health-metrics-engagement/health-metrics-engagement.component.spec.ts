@@ -1,25 +1,29 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, output, OutputEmitterRef, signal } from '@angular/core';
+import { Component, model, output, OutputEmitterRef, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS, HEALTH_METRICS_ENGAGEMENT_SECTIONS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
+import { UiOptionComponent } from '@shared/uikit/select/option.component';
+import { UiSelectComponent } from '@shared/uikit/select/select.component';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { HealthMetricsL2SectionControlsDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section-controls.directive';
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
 import { HealthMetricsEngagementComponent } from './health-metrics-engagement.component';
 
 import type {
-  HealthMetricsEngagementGroupCounts,
-  HealthMetricsEngagementNonMemberPeriodCounts,
-  HealthMetricsEngagementOrgCounts,
-  HealthMetricsEngagementRepPeriodCounts,
+  HealthMetricsEngagementGroupNoteCounts,
+  HealthMetricsEngagementOrgNoteCounts,
+  HealthMetricsEngagementRepNoteCounts,
   HealthMetricsEngagementSectionKey,
 } from '@lfx-one/shared/interfaces';
 
@@ -27,7 +31,8 @@ import type {
 // in HttpClient and the analytics read.
 @Component({ selector: 'lfx-engagement-group-attendance', template: '' })
 class GroupAttendanceStubComponent {
-  public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
+  public readonly groupType = model<string>('all');
+  public readonly countsChange = output<HealthMetricsEngagementGroupNoteCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<boolean | null>();
 }
@@ -50,7 +55,8 @@ class AttendanceTrendStubComponent {
 // Same stand-in for Organization participation.
 @Component({ selector: 'lfx-engagement-org-participation', template: '' })
 class OrgParticipationStubComponent {
-  public readonly countsChange = output<HealthMetricsEngagementOrgCounts | null>();
+  public readonly filter = model<string>('all');
+  public readonly countsChange = output<HealthMetricsEngagementOrgNoteCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<boolean | null>();
 }
@@ -58,7 +64,8 @@ class OrgParticipationStubComponent {
 // Same stand-in for Representatives.
 @Component({ selector: 'lfx-engagement-representatives', template: '' })
 class RepresentativesStubComponent {
-  public readonly countsChange = output<HealthMetricsEngagementRepPeriodCounts | null>();
+  public readonly filter = model<string>('all');
+  public readonly countsChange = output<HealthMetricsEngagementRepNoteCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<boolean | null>();
 }
@@ -66,12 +73,25 @@ class RepresentativesStubComponent {
 // Same stand-in for Non-member participation.
 @Component({ selector: 'lfx-engagement-non-member-participation', template: '' })
 class NonMemberParticipationStubComponent {
-  public readonly countsChange = output<HealthMetricsEngagementNonMemberPeriodCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<boolean | null>();
 }
 
-// Covers only what Engagement wires into the shell: its copy, badges and section relays. The
+// Same stand-in for Newsletter performance.
+@Component({ selector: 'lfx-engagement-newsletter-performance', template: '' })
+class NewsletterPerformanceStubComponent {
+  public readonly reading = output<void>();
+  public readonly settled = output<boolean | null>();
+}
+
+// Same stand-in for Newsletter recipient engagement.
+@Component({ selector: 'lfx-engagement-newsletter-recipients', template: '' })
+class NewsletterRecipientsStubComponent {
+  public readonly reading = output<void>();
+  public readonly settled = output<boolean | null>();
+}
+
+// Covers only what Engagement wires into the shell: its copy, notes and section relays. The
 // scroll-spy and deep-link behaviour is the shell's own spec.
 describe('HealthMetricsEngagementComponent', () => {
   const originalScrollIntoView = Element.prototype.scrollIntoView;
@@ -94,6 +114,14 @@ describe('HealthMetricsEngagementComponent', () => {
     return fixture.debugElement.query(By.directive(NonMemberParticipationStubComponent)).componentInstance as NonMemberParticipationStubComponent;
   }
 
+  function newsletterChild(): NewsletterPerformanceStubComponent {
+    return fixture.debugElement.query(By.directive(NewsletterPerformanceStubComponent)).componentInstance as NewsletterPerformanceStubComponent;
+  }
+
+  function recipientsChild(): NewsletterRecipientsStubComponent {
+    return fixture.debugElement.query(By.directive(NewsletterRecipientsStubComponent)).componentInstance as NewsletterRecipientsStubComponent;
+  }
+
   function repChild(): RepresentativesStubComponent {
     return fixture.debugElement.query(By.directive(RepresentativesStubComponent)).componentInstance as RepresentativesStubComponent;
   }
@@ -113,10 +141,12 @@ describe('HealthMetricsEngagementComponent', () => {
     orgs: orgChild,
     reps: repChild,
     nonmem: nonMemberChild,
+    newsletters: newsletterChild,
+    recipients: recipientsChild,
   };
 
-  /** One settled group read: the badge counts, then the settle the deep link actually waits on. */
-  function groupSettles(counts: HealthMetricsEngagementGroupCounts | null = { groups: 34, dormantGroups: 3, lowAttendanceGroups: 2 }): void {
+  /** One settled group read: the note counts, then the settle the deep link actually waits on. */
+  function groupSettles(counts: HealthMetricsEngagementGroupNoteCounts | null = { dormantGroups: 3, lowAttendanceGroups: 2 }): void {
     stubChild().countsChange.emit(counts);
     stubChild().settled.emit(false);
   }
@@ -135,7 +165,7 @@ describe('HealthMetricsEngagementComponent', () => {
       providers: [
         HealthMetricsChromeService,
         { provide: UserService, useValue: { impersonating: signal(false) } },
-        { provide: ActivatedRoute, useValue: { fragment: fragment.asObservable() } },
+        { provide: ActivatedRoute, useValue: { fragment: fragment.asObservable(), snapshot: { queryParamMap: convertToParamMap({ repFilter: 'never' }) } } },
       ],
     })
       .overrideComponent(HealthMetricsEngagementComponent, {
@@ -143,12 +173,19 @@ describe('HealthMetricsEngagementComponent', () => {
           imports: [
             AttendanceTrendStubComponent,
             GroupAttendanceStubComponent,
+            HealthMetricsL2SectionControlsDirective,
             HealthMetricsL2SectionDirective,
             HealthMetricsL2ShellComponent,
             MeetingParticipationStubComponent,
+            NewsletterPerformanceStubComponent,
+            NewsletterRecipientsStubComponent,
             NonMemberParticipationStubComponent,
             OrgParticipationStubComponent,
             RepresentativesStubComponent,
+            UiOptionComponent,
+            UiSelectComponent,
+            UiSwitchComponent,
+            UiSwitchOptionComponent,
           ],
         },
       })
@@ -174,34 +211,72 @@ describe('HealthMetricsEngagementComponent', () => {
     }
   });
 
-  it('marks the caution footnote on the non-member section only', () => {
-    const cautioned = HEALTH_METRICS_ENGAGEMENT_SECTIONS.filter((section) => section.footnoteCaution).map((section) => section.key);
+  it('puts the Group type select in the Group attendance header and binds its type into the section', async () => {
+    const controls = fixture.nativeElement.querySelector('[data-testid="engagement-controls-committees"]');
+    const select = controls?.querySelector('[data-testid="engagement-group-attendance-type"]');
+    expect(select).not.toBeNull();
+    expect(select.querySelector('[role="combobox"]')?.getAttribute('aria-label')).toBe('Group type');
 
-    expect(cautioned).toEqual(['nonmem']);
-    expect(fixture.nativeElement.querySelectorAll('.fa-triangle-exclamation')).toHaveLength(1);
+    const page = fixture.componentInstance as unknown as { onGroupTypeChange: (value: string | null) => void };
+    const stub = fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
+    page.onGroupTypeChange('wg');
+    fixture.detectChanges();
+    expect(stub.groupType()).toBe('wg');
+
+    // The section's Reset filters writes back through the two-way binding.
+    stub.groupType.set('all');
+    fixture.detectChanges();
+    expect(fixture.componentInstance['groupType']()).toBe('all');
   });
 
-  it('starts with the first section active and no unresolved count badged', () => {
+  // The design drops every footnote; the non-member caution moves above its table, inside that section.
+  it('carries no section note', () => {
+    expect(HEALTH_METRICS_ENGAGEMENT_SECTIONS.filter((section) => 'note' in section)).toEqual([]);
+  });
+
+  it('puts the activity and representative switches in their section headers, bound into each section', () => {
+    const orgSwitch = fixture.nativeElement.querySelector('[data-testid="engagement-controls-orgs"] [data-testid="engagement-org-participation-filter"]');
+    const repSwitch = fixture.nativeElement.querySelector('[data-testid="engagement-controls-reps"] [data-testid="engagement-representatives-filter"]');
+    expect(orgSwitch?.textContent).toContain('No activity in 180 days');
+    expect(repSwitch?.textContent).toContain('Never attended');
+    expect(repSwitch?.textContent).toContain('Lapsed');
+
+    const org = fixture.debugElement.query(By.directive(OrgParticipationStubComponent)).componentInstance as OrgParticipationStubComponent;
+    const reps = fixture.debugElement.query(By.directive(RepresentativesStubComponent)).componentInstance as RepresentativesStubComponent;
+    // The page reads the URL's cut on arrival and binds it in.
+    expect(reps.filter()).toBe('never');
+    expect(org.filter()).toBe('all');
+
+    const page = fixture.componentInstance as unknown as { onOrgFilterChange: (value: string | null) => void };
+    page.onOrgFilterChange('lapsed');
+    fixture.detectChanges();
+    expect(org.filter()).toBe('lapsed');
+
+    // A section's Reset filters writes back through the two-way binding.
+    reps.filter.set('all');
+    fixture.detectChanges();
+    expect(fixture.componentInstance['repFilter']()).toBe('all');
+  });
+
+  it('starts with the first section active and no note before any section reports', () => {
     expect(activeKey()).toBe(HEALTH_METRICS_ENGAGEMENT_SECTIONS[0].key);
-    // Only Group attendance reports in PR 1, and it has not emitted yet, so no rail count is shown.
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav"]').textContent).not.toMatch(/\d/);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav"] [role="tooltip"]')).toBeNull();
   });
 
-  it('badges Group attendance from the counts that section reports', () => {
+  it('notes Group attendance from the counts that section reports', () => {
     const child = fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
 
-    child.countsChange.emit({ groups: 34, dormantGroups: 3, lowAttendanceGroups: 5 });
+    child.countsChange.emit({ dormantGroups: 3, lowAttendanceGroups: 5 });
     fixture.detectChanges();
 
     const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees"]');
-    expect(item.textContent).toContain('34');
     expect(item.textContent).toContain('3 dormant · 5 below 50%');
   });
 
   it('drops the below-50% part of the Group attendance note at zero', () => {
     const child = fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
 
-    child.countsChange.emit({ groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 });
+    child.countsChange.emit({ dormantGroups: 3, lowAttendanceGroups: 0 });
     fixture.detectChanges();
 
     const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees"]');
@@ -209,30 +284,18 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(item.textContent).not.toContain('below 50%');
   });
 
-  it('badges Organization participation from the counts that section reports', () => {
-    orgChild().countsChange.emit({ orgs: 136, lapsedOrgs: 54 });
+  it('notes Organization participation from the counts that section reports', () => {
+    orgChild().countsChange.emit({ lapsedOrgs: 54 });
     fixture.detectChanges();
 
-    const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs"]');
-    expect(item.textContent).toContain('136');
-    expect(item.textContent).toContain('54 inactive');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs"]').textContent).toContain('54 inactive');
   });
 
-  it('badges Representatives from the counts that section reports', () => {
-    repChild().countsChange.emit({ range: 'YTD', reps: 486, neverAttendedReps: 112 });
+  it('notes Representatives from the counts that section reports', () => {
+    repChild().countsChange.emit({ neverAttendedReps: 112 });
     fixture.detectChanges();
 
-    const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-reps"]');
-    expect(item.textContent).toContain('486');
-    expect(item.textContent).toContain('112 never attended');
-  });
-
-  it('badges Non-member participation from the counts that section reports', () => {
-    nonMemberChild().countsChange.emit({ range: 'YTD', orgs: 63 });
-    fixture.detectChanges();
-
-    const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-nonmem"]');
-    expect(item.textContent).toContain('63');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-reps"]').textContent).toContain('112 never attended');
   });
 
   it('scrolls to the section a participation cross-link emits, and drops the pending deep link', async () => {
@@ -264,6 +327,8 @@ describe('HealthMetricsEngagementComponent', () => {
       orgs: () => orgChild().settled.emit(false),
       reps: () => repChild().settled.emit(false),
       nonmem: () => nonMemberChild().settled.emit(false),
+      newsletters: () => newsletterChild().settled.emit(false),
+      recipients: () => recipientsChild().settled.emit(false),
     } as Record<HealthMetricsEngagementSectionKey, (() => void) | undefined>;
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     fragment.next('reps');

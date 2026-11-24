@@ -37,6 +37,14 @@
       <button
         type="button"
         class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+        [attr.data-testid]="'mentee-tasks-view-file-' + task().id"
+        [attr.aria-label]="viewActionLabel + ' submission for ' + task().title"
+        (click)="onViewFile()">
+        <i class="fa-light fa-eye text-sm" aria-hidden="true"></i>
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
         [attr.data-testid]="'mentee-tasks-download-file-' + task().id"
         [attr.aria-label]="'Download submission for ' + task().title"
         (click)="onDownloadFile()">

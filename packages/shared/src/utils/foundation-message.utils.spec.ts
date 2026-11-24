@@ -11,8 +11,10 @@ import {
   extractFoundationMessageQuestions,
   findFoundationMessageContentErrors,
   foundationMessageAnswerOrigin,
+  foundationMessageAsset,
   foundationMessageAssetOfRevision,
   foundationMessageBasisLinks,
+  foundationMessageDateRead,
   foundationMessageGoalViews,
   foundationMessageIcpViews,
   foundationMessageQuestionLabel,
@@ -31,6 +33,7 @@ import {
   validateFoundationMessageIntakeAnswers,
 } from './foundation-message.utils';
 import { extractMktgAgentTexts } from './mktg-session-event.utils';
+import { frameworkReportV2Envelope } from './__fixtures__/mktg-report-v2.fixture';
 
 /**
  * Forms as the agent's OWN renderFormMessage (marketing-os-agents
@@ -638,6 +641,19 @@ describe('validateFoundationMessageEnvelope', () => {
     expect(validateFoundationMessageEnvelope(buildEnvelope())).toEqual({ valid: true, errors: [] });
   });
 
+  it('accepts the agent’s real v2 report (version and findings) and rejects a malformed present findings field with the kit’s message shape', () => {
+    const v2 = frameworkReportV2Envelope();
+    expect(validateFoundationMessageEnvelope(v2)).toEqual({ valid: true, errors: [] });
+    const findings = v2.report.findings;
+    expect(validateFoundationMessageEnvelope({ ...v2, report: { ...v2.report, version: 1 } }).errors).toEqual(['report.version must be 2 when present']);
+    expect(validateFoundationMessageEnvelope({ ...v2, report: { ...v2.report, findings: { ...findings, warnings: 'none' } } }).errors).toEqual([
+      'report.findings.warnings must be a list of { code, text, source? }',
+    ]);
+    // The asset reads the findings through untouched.
+    const { content, ...sidecar } = v2;
+    expect(foundationMessageAssetOfRevision(JSON.stringify(content), sidecar)?.report?.findings).toEqual(findings);
+  });
+
   it('rejects the previous contract outright', () => {
     const result = validateFoundationMessageEnvelope(buildEnvelope({ contract: 'messaging-document-output/v1', kind: 'messaging-document' }));
     expect(result.valid).toBe(false);
@@ -708,18 +724,34 @@ describe('validateFoundationMessageEnvelope', () => {
 });
 
 describe('the stored revision and the view models', () => {
-  it('reads a stored JSON revision back as the run’s asset, with the sidecar’s report, checks and mode', () => {
+  it('reads a stored JSON revision back as the run’s asset, with the sidecar’s report, checks, mode and the day the sources were read', () => {
     const envelope = buildEnvelope({ mode: 'check', checks: { findings: ['nums has 2 numbers; 3–4'] } });
     const { content, ...rest } = envelope;
     const sidecar: Record<string, unknown> = { ...rest };
     const asset = foundationMessageAssetOfRevision(JSON.stringify(content), sidecar);
-    expect(asset).toEqual({ kind: 'messaging-framework', content, report: envelope.report, checks: envelope.checks, mode: 'check' });
-    // A migrated or hand-copied record without a sidecar still renders, with an empty report.
+    expect(asset).toEqual({
+      kind: 'messaging-framework',
+      content,
+      report: envelope.report,
+      checks: envelope.checks,
+      mode: 'check',
+      dateRead: envelope.inputs_record.date_read,
+    });
+    expect(foundationMessageAsset(envelope).dateRead).toBe(envelope.inputs_record.date_read);
+    // A migrated or hand-copied record without a sidecar still renders, with NO report (none is made up) and no read date.
     expect(foundationMessageAssetOfRevision(JSON.stringify(content), null)).toMatchObject({
-      report: { sources_read: [], gaps: [] },
+      report: null,
       checks: { findings: [] },
       mode: 'draft',
+      dateRead: null,
     });
+    // A sidecar whose report is not one reads the same way.
+    expect(foundationMessageAssetOfRevision(JSON.stringify(content), { report: { sources_read: 'web' } })?.report).toBeNull();
+    // The read date is the record's `YYYY-MM-DD` alone: anything else reads as none.
+    expect(foundationMessageDateRead({ date_read: '2026-11-04' })).toBe('2026-11-04');
+    expect(foundationMessageDateRead({ date_read: '4 Nov 2026' })).toBeNull();
+    expect(foundationMessageDateRead({})).toBeNull();
+    expect(foundationMessageDateRead(null)).toBeNull();
     expect(readFoundationMessageContent('# Not JSON')).toBeNull();
     expect(readFoundationMessageContent(JSON.stringify({ mf: {} }))).toBeNull();
   });

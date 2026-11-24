@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_ROLE_AUTHORITY_ORDER } from '../constants';
-import type { OrgRoleGrantSets, OrgRolePersona } from '../interfaces';
+import type { OrgItem, OrgRoleGrantSets, OrgRolePersona } from '../interfaces';
 
 /** Filter-grammar safety allowlist for usernames — accepts every char OIDC username/nickname claims actually use AND excludes the query-service separators `:` and `,`. Not a strict OIDC-claim format check. */
 const FILTER_SAFE_USERNAME = /^[A-Za-z0-9._+\-@|]+$/;
@@ -31,6 +31,26 @@ const ORG_MEMBERSHIP_STATUS_ACTIVE = 'active';
 /** True when the indexed membership status reads as currently active; false for absent, null or any other value. */
 export function isActiveStatus(status: string | null | undefined): boolean {
   return status?.trim().toLowerCase() === ORG_MEMBERSHIP_STATUS_ACTIVE;
+}
+
+/** Switcher rows whose name contains the search term, case-insensitively; every row for a blank term. Shared by the BFF and the client so both halves of the list filter alike. */
+export function filterOrgItemsByName(items: OrgItem[], name: string | undefined): OrgItem[] {
+  const trimmed = name?.trim().toLowerCase();
+  if (!trimmed) return items;
+  return items.filter((item) => item.name.toLowerCase().includes(trimmed));
+}
+
+/** `best_match` when searching (prefix-rank first, then alphabetical), alphabetical otherwise. Returns a new array. */
+export function sortOrgItemsByName(items: OrgItem[], name: string | undefined): OrgItem[] {
+  const trimmed = name?.trim().toLowerCase();
+  if (trimmed) {
+    return [...items].sort((a, b) => {
+      const aStarts = a.name.toLowerCase().startsWith(trimmed) ? 0 : 1;
+      const bStarts = b.name.toLowerCase().startsWith(trimmed) ? 0 : 1;
+      return aStarts - bStarts || a.name.localeCompare(b.name);
+    });
+  }
+  return [...items].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** The highest-authority persona the viewer holds on `uid`, or null with no grant at all. */

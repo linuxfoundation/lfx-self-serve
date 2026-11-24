@@ -1,11 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpParams } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { VOTE_INVITATION_COUNT_REFRESH_MS } from '@lfx-one/shared/constants';
+import { PollStatus } from '@lfx-one/shared/enums';
 import type { Committee, CommitteeMember, CommitteeTab, Meeting, Vote } from '@lfx-one/shared/interfaces';
 import { getGroupCommands } from '@lfx-one/shared/utils';
 import { CommitteeJoinApplicationSessionService } from '@services/committee-join-application-session.service';
@@ -41,6 +43,7 @@ describe('CommitteeViewComponent', () => {
   let getCommittee: ReturnType<typeof vi.fn>;
   let routeParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
   let queryParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
+  let cancellationCompleted: Subject<void>;
 
   const committee = { uid: 'committee-1', name: 'Technical Steering', my_role: 'member' } as unknown as Committee;
   const meeting = { uid: 'meeting-1', title: 'Weekly sync' } as unknown as Meeting;
@@ -57,6 +60,7 @@ describe('CommitteeViewComponent', () => {
     getCommittee = vi.fn(() => of(currentCommittee));
     routeParams = new BehaviorSubject(convertToParamMap({ id: committee.uid }));
     queryParams = new BehaviorSubject(convertToParamMap({}));
+    cancellationCompleted = new Subject<void>();
 
     TestBed.configureTestingModule({
       providers: [
@@ -97,6 +101,7 @@ describe('CommitteeViewComponent', () => {
         {
           provide: VoteService,
           useValue: {
+            voteCancellationCompleted$: cancellationCompleted,
             getVotesByCommittee: vi.fn(() => of([])),
             mergeRecentlyOpenedVotes: vi.fn((v: unknown[]) => v),
             mergeRecentlyCreatedVotes: vi.fn((v: unknown[]) => v),
@@ -186,6 +191,43 @@ describe('CommitteeViewComponent', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('refreshes the parent-owned votes after cancellation completes while another group tab is selected', () => {
+    currentCommittee = { ...committee, enable_voting: true } as unknown as Committee;
+    const getVotes = vi.mocked(TestBed.inject(VoteService).getVotesByCommittee);
+    getVotes.mockReturnValue(of([{ uid: 'vote-1', status: PollStatus.ACTIVE } as Vote]));
+    const component = createComponent();
+    flush();
+    expect(component.votes()).toHaveLength(1);
+    component.activeTab.set('votes');
+    flush();
+    component.activeTab.set('about');
+    flush();
+    getVotes.mockReturnValue(of([]));
+    cancellationCompleted.next();
+    flush();
+    expect(getVotes).toHaveBeenCalledTimes(2);
+    expect(component.votes()).toEqual([]);
+    component.activeTab.set('votes');
+    flush();
+    expect(component.votes()).toEqual([]);
+    expect(getVotes).toHaveBeenCalledTimes(2);
+  });
+
+  it('holds a row-menu close in parent state, so the vote stays ended after the Votes tab is rebuilt (#4744)', () => {
+    currentCommittee = { ...committee, enable_voting: true } as unknown as Committee;
+    const voteService = TestBed.inject(VoteService);
+    vi.mocked(voteService.getVotesByCommittee).mockReturnValue(of([{ uid: 'vote-1', status: PollStatus.ACTIVE } as unknown as Vote]));
+
+    const component = createComponent();
+    flush();
+    expect(component.votes()[0].status).toBe(PollStatus.ACTIVE);
+
+    component.onVoteClosed({ uid: 'vote-1', status: PollStatus.ENDED, early_end_time: '2026-10-29T10:00:00Z' } as unknown as Vote);
+    flush();
+    // committee-votes is destroyed and recreated on a tab switch; it reads votes() again, which must still say ended.
+    expect(component.votes()[0]).toMatchObject({ status: PollStatus.ENDED, early_end_time: '2026-10-29T10:00:00Z' });
   });
 
   it('keeps the votes, badge and silence when a background poll fails, then retries (GH-4078)', () => {
@@ -287,6 +329,86 @@ describe('CommitteeViewComponent', () => {
     });
   });
 
+  describe('complete roster recovery', () => {
+    it.each([{ rows: [] }, { rows: [{ uid: 'member-recovered' }] }])('distinguishes a failed roster from complete retry data %j', ({ rows }) => {
+      currentCommittee = { ...committee, writer: true, member_visibility: 'basic_profile' } as Committee;
+      getCommitteeMembers.mockReturnValue(throwError(() => new Error('Pagination stopped')));
+      const component = createComponent();
+      flush();
+      expect(component.membersError()).toBe(true);
+      expect(component.membersReady()).toBe(false);
+      expect(component.tabConfig.find((tab) => tab.key === 'members')?.badge?.()).toBeNull();
+      getCommitteeMembers.mockReturnValue(of(rows));
+      component.retryMembers();
+      expect(component.membersReady()).toBe(false);
+      flush();
+      expect(component.membersError()).toBe(false);
+      expect(component.membersReady()).toBe(true);
+      expect(component.members()).toEqual(rows);
+      expect(component.tabConfig.find((tab) => tab.key === 'members')?.badge?.()).toBe(rows.length);
+      expect(getCommitteeMembers.mock.calls.every((call) => call[1].get('require_complete') === 'true')).toBe(true);
+    });
+
+    it.each([
+      { routeId: 'docs-working-group', rows: [] },
+      { routeId: 'DOCS-WORKING-GROUP', rows: [{ uid: 'member-1' }] },
+    ])('enables member actions after a complete roster loads through vanity URL $routeId', ({ routeId, rows }) => {
+      currentCommittee = { ...committee, sso_group_name: 'docs-working-group', writer: true, member_visibility: 'basic_profile' } as Committee;
+      routeParams.next(convertToParamMap({ id: routeId }));
+      getCommitteeMembers.mockReturnValue(of(rows));
+      const component = createComponent();
+      flush();
+      expect(component.membersError()).toBe(false);
+      expect(component.members()).toEqual(rows);
+      expect(component.membersReady()).toBe(true);
+    });
+
+    it('does not reuse a vanity-route roster after navigating to another group slug', () => {
+      currentCommittee = { ...committee, sso_group_name: 'first-group', writer: true, member_visibility: 'basic_profile' } as Committee;
+      routeParams.next(convertToParamMap({ id: 'first-group' }));
+      const component = createComponent();
+      flush();
+      expect(component.membersReady()).toBe(true);
+      const pending = new Subject<CommitteeMember[]>();
+      getCommitteeMembers.mockReturnValue(pending);
+      currentCommittee = { ...currentCommittee, uid: 'committee-2', sso_group_name: 'second-group' };
+      routeParams.next(convertToParamMap({ id: 'second-group' }));
+      expect(component.membersReady()).toBe(false);
+      flush();
+      expect(component.membersReady()).toBe(false);
+      pending.next([]);
+      pending.complete();
+      flush();
+      expect(component.membersReady()).toBe(true);
+    });
+
+    it('invalidates readiness synchronously during refresh and route changes; an old request cannot restore it', () => {
+      currentCommittee = { ...committee, writer: true, member_visibility: 'basic_profile' } as Committee;
+      const component = createComponent();
+      flush();
+      expect(component.membersReady()).toBe(true);
+      const stale = new Subject<CommitteeMember[]>();
+      getCommitteeMembers.mockReturnValue(stale);
+      component.retryMembers();
+      expect(component.membersReady()).toBe(false);
+      flush();
+      const fresh = new Subject<CommitteeMember[]>();
+      getCommitteeMembers.mockReturnValue(fresh);
+      currentCommittee = { ...currentCommittee, uid: 'committee-2' };
+      routeParams.next(convertToParamMap({ id: 'committee-2' }));
+      expect(component.membersReady()).toBe(false);
+      flush();
+      stale.next([{ uid: 'stale' } as CommitteeMember]);
+      stale.complete();
+      expect(component.membersReady()).toBe(false);
+      fresh.next([]);
+      fresh.complete();
+      flush();
+      expect(component.membersReady()).toBe(true);
+      expect(component.members()).toEqual([]);
+    });
+  });
+
   describe('member_visibility gating', () => {
     const tabKeys = (component: CommitteeViewComponent): string[] => component.visibleTabs().map((tab) => tab.key);
 
@@ -297,7 +419,8 @@ describe('CommitteeViewComponent', () => {
       flush();
 
       expect(tabKeys(component)).toContain('members');
-      expect(getCommitteeMembers).toHaveBeenCalledWith('committee-1');
+      expect(getCommitteeMembers).toHaveBeenCalledWith('committee-1', expect.any(HttpParams));
+      expect(getCommitteeMembers.mock.calls.at(-1)?.[1].get('require_complete')).toBe('true');
     });
 
     it('hides the Members tab and skips the roster fetch for a member when the roster is hidden', () => {
@@ -317,7 +440,7 @@ describe('CommitteeViewComponent', () => {
       flush();
 
       expect(tabKeys(component)).toContain('members');
-      expect(getCommitteeMembers).toHaveBeenCalledWith('committee-1');
+      expect(getCommitteeMembers).toHaveBeenCalledWith('committee-1', expect.any(HttpParams));
     });
   });
 
@@ -521,6 +644,66 @@ describe('CommitteeViewComponent', () => {
     });
   });
 
+  describe('back navigation', () => {
+    const openedWithState = (state: Record<string, unknown>): CommitteeViewComponent => {
+      (TestBed.inject(Router).getCurrentNavigation as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ extras: { state } });
+      return createComponent();
+    };
+
+    it('returns to the Groups list by default', () => {
+      const component = createComponent();
+
+      component.goBack();
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/groups']);
+      expect(TestBed.inject(LensService).setLens).not.toHaveBeenCalled();
+    });
+
+    it('returns to the list the user came from and restores Me when opened from the Me lens surveys list', () => {
+      const component = openedWithState({ backLabel: 'Surveys', backPath: '/surveys', fromMeLens: true });
+
+      component.goBack();
+
+      expect(component.backLabel()).toBe('Surveys');
+      expect(TestBed.inject(LensService).setLens).toHaveBeenCalledWith('me');
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/surveys']);
+    });
+
+    it('restores the foundation a rolled-up meetings list was scoped to', () => {
+      const component = openedWithState({ backLabel: 'Meetings', backPath: '/meetings', fromMeLens: false, backProject: 'finos', backLens: 'foundation' });
+
+      component.goBack();
+
+      expect(TestBed.inject(LensService).setLens).toHaveBeenCalledWith('foundation');
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/meetings'], { queryParams: { project: 'finos' } });
+    });
+
+    it('ignores a back project that is not a slug', () => {
+      const component = openedWithState({ backPath: '/meetings', backProject: 'a/b?c', backLens: 'foundation' });
+
+      component.goBack();
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/meetings']);
+    });
+
+    it('ignores a back project without a known lens', () => {
+      const component = openedWithState({ backPath: '/meetings', backProject: 'finos', backLens: 'org' });
+
+      component.goBack();
+
+      expect(TestBed.inject(LensService).setLens).not.toHaveBeenCalled();
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/meetings']);
+    });
+
+    it('falls back to the Groups list for a back path outside the allowed list routes', () => {
+      const component = openedWithState({ backPath: '/somewhere-else' });
+
+      component.goBack();
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/groups']);
+    });
+  });
+
   describe('Edit Group link and settings-saved navigation', () => {
     const getProject = (): ReturnType<typeof vi.fn> => TestBed.inject(ProjectService).getProject as unknown as ReturnType<typeof vi.fn>;
     const asWriter = (overrides: Partial<Committee> = {}): void => {
@@ -535,6 +718,7 @@ describe('CommitteeViewComponent', () => {
       flush();
 
       expect(component.editLink()).toEqual({ commands: getGroupCommands(currentCommittee, 'edit'), queryParams: { project: 'proj' } });
+      expect(getProject()).toHaveBeenCalledWith('proj', false, { strictWriter: true });
     });
 
     it('hides the link from a committee-only writer, since writerGuard would redirect them with an access-denied notice', () => {
@@ -555,6 +739,65 @@ describe('CommitteeViewComponent', () => {
 
       expect(component.editLink()).toBeNull();
       expect(getProject()).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, ''])('settles sharing access without a retryable failure when project keys are %s', (key) => {
+      asWriter({ project_slug: key, project_uid: key });
+      const component = createComponent();
+      flush();
+
+      expect(component.editLink()).toBeNull();
+      expect(component.canShareWeeklyBriefByEmail()).toBe(false);
+      expect(component.shareAccessLoading()).toBe(false);
+      expect(component.shareAccessError()).toBe(false);
+      expect(getProject()).not.toHaveBeenCalled();
+    });
+
+    it.each(['null', 'error'])('distinguishes a %s project lookup failure from a permission denial', (failure) => {
+      asWriter();
+      getProject().mockReturnValue(failure === 'null' ? of(null) : throwError(() => new Error('temporarily unavailable')));
+      const component = createComponent();
+      flush();
+
+      expect(component.canShareWeeklyBriefByEmail()).toBe(false);
+      expect(component.shareAccessLoading()).toBe(false);
+      expect(component.shareAccessError()).toBe(true);
+    });
+
+    it('retries failed sharing access for the same committee and restores an authorized writer', () => {
+      asWriter();
+      const pending = new Subject<{ writer: boolean }>();
+      getProject().mockReturnValueOnce(of(null)).mockReturnValueOnce(pending);
+      const component = createComponent();
+      flush();
+      expect(component.shareAccessError()).toBe(true);
+
+      component.retryShareAccessCheck();
+      expect(component.shareAccessLoading()).toBe(true);
+      expect(component.shareAccessError()).toBe(false);
+      expect(component.canShareWeeklyBriefByEmail()).toBe(false);
+      flush();
+      expect(getProject()).toHaveBeenCalledTimes(2);
+      expect(getProject()).toHaveBeenNthCalledWith(1, 'proj', false, { strictWriter: true });
+      expect(getProject()).toHaveBeenNthCalledWith(2, 'proj', false, { strictWriter: true });
+
+      pending.next({ writer: true });
+      pending.complete();
+      flush();
+      expect(component.shareAccessLoading()).toBe(false);
+      expect(component.shareAccessError()).toBe(false);
+      expect(component.canShareWeeklyBriefByEmail()).toBe(true);
+    });
+
+    it('keeps a confirmed project-writer denial distinct from a failed lookup', () => {
+      asWriter();
+      getProject().mockReturnValue(of({ writer: false }));
+      const component = createComponent();
+      flush();
+
+      expect(component.canShareWeeklyBriefByEmail()).toBe(false);
+      expect(component.shareAccessError()).toBe(false);
+      expect(component.shareAccessLoading()).toBe(false);
     });
 
     it('refreshes in place after a settings save when the page was opened by UID', () => {

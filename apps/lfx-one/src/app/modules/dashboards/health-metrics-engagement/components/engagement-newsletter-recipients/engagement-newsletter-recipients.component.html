@@ -1,0 +1,132 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[16px]" data-testid="engagement-newsletter-recipients">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      variant="compact"
+      icon="fa-light fa-triangle-exclamation"
+      title="Newsletter recipient engagement unavailable"
+      subtitle="We could not load newsletter recipients for this foundation. Refresh the page to try again."
+      data-testid="engagement-newsletter-recipients-error" />
+  } @else if (loading()) {
+    <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="engagement-newsletter-recipients-loading" aria-hidden="true" />
+  } @else if (!empty()) {
+    <lfx-health-metrics-metrics-row [items]="metrics()" testId="engagement-newsletter-recipients-metrics" />
+
+    <!-- The search fills the row from 240px beside the status select; on phones each takes the full width. -->
+    <div class="flex flex-wrap items-center gap-[10px]">
+      <lfx-ui-search-input
+        class="min-w-[240px] flex-[1_1_240px] max-[640px]:min-w-0 max-[640px]:basis-full"
+        placeholder="Search recipients or companies..."
+        ariaLabel="Search recipients or companies"
+        [(value)]="searchText"
+        data-testid="engagement-newsletter-recipients-search" />
+      <lfx-ui-select
+        class="max-[640px]:basis-full"
+        size="small"
+        ariaLabel="Status"
+        [value]="filter()"
+        (valueChange)="onFilterChange($event)"
+        data-testid="engagement-newsletter-recipients-status">
+        @for (option of filters; track option.key) {
+          <lfx-ui-option [value]="option.key" [label]="option.label" />
+        }
+      </lfx-ui-select>
+    </div>
+
+    @if (response().truncated) {
+      <lfx-ui-note variant="warning" size="small" data-testid="engagement-newsletter-recipients-truncated">
+        Showing the {{ loadedCount() }} most engaged recipients. The rest are not loaded, so the counts above cover only these.
+      </lfx-ui-note>
+    }
+
+    @if (totalRecords() === 0) {
+      <lfx-empty-state
+        variant="compact"
+        icon="fa-light fa-magnifying-glass"
+        title="No recipients match this view"
+        subtitle="No recipient of the latest newsletter matches the current search and filter."
+        [resettable]="true"
+        (resetFilters)="onResetFilters()"
+        data-testid="engagement-newsletter-recipients-no-match" />
+    } @else {
+      <!-- The design's 700px minimum; a narrower card scrolls the table sideways. -->
+      <lfx-table
+        styleClass="hm-table"
+        [rowHover]="false"
+        [value]="pageRows()"
+        [paginator]="false"
+        [tableStyle]="{ 'min-width': '700px' }"
+        data-testid="engagement-newsletter-recipients-table">
+        <ng-template #header>
+          <tr>
+            <th scope="col" [attr.aria-sort]="sorting.headers().recipient.ariaSort">
+              <lfx-health-metrics-th
+                label="Recipient"
+                [sort]="sorting.headers().recipient.state"
+                (sorted)="sorting.toggle('recipient')"
+                data-testid="engagement-newsletter-recipients-sort-recipient" />
+            </th>
+            <!-- Exact %: the design's 0.7 / 0.8 / 0.9 / 0.9 shares of the columns after Recipient. -->
+            <th scope="col" class="w-[13%]" [attr.aria-sort]="sorting.headers().delivery.ariaSort">
+              <lfx-health-metrics-th
+                label="Delivery"
+                [sort]="sorting.headers().delivery.state"
+                (sorted)="sorting.toggle('delivery')"
+                data-testid="engagement-newsletter-recipients-sort-delivery" />
+            </th>
+            <th scope="col" class="w-[15%]" [attr.aria-sort]="sorting.headers().engagement.ariaSort">
+              <lfx-health-metrics-th
+                label="Engagement"
+                [sort]="sorting.headers().engagement.state"
+                (sorted)="sorting.toggle('engagement')"
+                data-testid="engagement-newsletter-recipients-sort-engagement" />
+            </th>
+            <th scope="col" class="w-[17%] text-right" [attr.aria-sort]="sorting.headers().opens.ariaSort">
+              <lfx-health-metrics-th
+                label="Opens"
+                [sort]="sorting.headers().opens.state"
+                (sorted)="sorting.toggle('opens')"
+                data-testid="engagement-newsletter-recipients-sort-opens" />
+            </th>
+            <th scope="col" class="w-[17%] text-right" [attr.aria-sort]="sorting.headers().clicks.ariaSort">
+              <lfx-health-metrics-th
+                label="Clicks"
+                [sort]="sorting.headers().clicks.state"
+                (sorted)="sorting.toggle('clicks')"
+                data-testid="engagement-newsletter-recipients-sort-clicks" />
+            </th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-row>
+          <tr [attr.data-testid]="'engagement-newsletter-recipients-row-' + row.rank">
+            <td>
+              <lfx-health-metrics-cell [text]="row.nameLabel" [lead]="{ kind: 'person', name: row.avatarName, photoUrl: '' }" [description]="row.description" />
+            </td>
+            <td>
+              <lfx-ui-badge [tone]="row.deliveryTone" [attr.data-testid]="'engagement-newsletter-recipients-row-' + row.rank + '-delivery'">{{
+                row.deliveryLabel
+              }}</lfx-ui-badge>
+            </td>
+            <td>
+              @if (row.engagementLabel) {
+                <lfx-ui-badge [tone]="row.engagementTone" [attr.data-testid]="'engagement-newsletter-recipients-row-' + row.rank + '-engagement'">{{
+                  row.engagementLabel
+                }}</lfx-ui-badge>
+              } @else {
+                <lfx-health-metrics-cell text="—" />
+              }
+            </td>
+            <td><lfx-health-metrics-cell class="items-end" [text]="row.opensLabel" [description]="row.opensDescription" /></td>
+            <td><lfx-health-metrics-cell class="items-end" [text]="row.clicksLabel" [description]="row.clicksDescription" /></td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+
+      <lfx-ui-pagination [total]="totalRecords()" [pageSize]="size" [(page)]="page" />
+    }
+  }
+</div>

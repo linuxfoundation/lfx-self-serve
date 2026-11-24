@@ -5,8 +5,8 @@ import { DatePipe } from '@angular/common';
 import { Component, computed, input, output, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { SURVEY_AUTO_REMINDER_FREQUENCY_OPTIONS, SURVEY_EMAIL_PREVIEW_SAMPLE_DATA, SURVEY_TEMPLATE_OPTIONS } from '@lfx-one/shared/constants';
-import { CommitteeReference, SurveyDistributionMethod, SurveyReminderType, SurveyReviewFormValue } from '@lfx-one/shared/interfaces';
+import { SURVEY_AUTO_REMINDER_FREQUENCY_OPTIONS, SURVEY_EMAIL_PREVIEW_SAMPLE_DATA } from '@lfx-one/shared/constants';
+import { CommitteeReference, SurveyDistributionMethod, SurveyReminderType, SurveyReviewFormValue, SurveyTemplateOption } from '@lfx-one/shared/interfaces';
 import { map, startWith, switchMap } from 'rxjs';
 
 @Component({
@@ -18,6 +18,7 @@ export class SurveyReviewComponent {
   // Inputs
   public readonly form = input.required<FormGroup>();
   public readonly isEditMode = input<boolean>(false);
+  public readonly templateOptions = input<SurveyTemplateOption[]>([]);
 
   // Outputs
   public readonly editStep = output<number>();
@@ -95,8 +96,8 @@ export class SurveyReviewComponent {
   private initSurveyTemplateLabel(): Signal<string> {
     return computed(() => {
       const templateValue = this.reviewData().surveyTemplate;
-      const template = SURVEY_TEMPLATE_OPTIONS.find((t) => t.value === templateValue);
-      return template?.label || templateValue || 'Not selected';
+      // A template retired between loads falls back to its raw SurveyMonkey ID.
+      return this.templateOptions().find((t) => t.value === templateValue)?.label || templateValue || 'Not selected';
     });
   }
 

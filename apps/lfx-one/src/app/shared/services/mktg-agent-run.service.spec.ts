@@ -843,6 +843,27 @@ describe('MktgAgentRunService', () => {
     expect(events[1].type).toBe('document');
   });
 
+  it('pauses private result reads while hidden and rechecks the same accepted session on focus', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    resultResponses = [{ status: 'pending' }, { status: 'ready', documentMarkdown: '# Synthetic current draft', version: 1 }];
+    const events: MktgGenerateProgress[] = [];
+    const subscription = service.generate(generateRequest()).subscribe((event) => events.push(event));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.result)).toHaveLength(1);
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 4);
+    expect(httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.result)).toHaveLength(1);
+    visibility.mockReturnValue('visible');
+    window.dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.result)).toHaveLength(2);
+    expect(httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.generate)).toHaveLength(1);
+    expect(events.some((event) => event.type === 'document')).toBe(true);
+    subscription.unsubscribe();
+    visibility.mockRestore();
+  });
+
   it('fails a poll fast on a non-transient response — a 403 means the owner token stopped verifying, not a blip', async () => {
     resultResponses = [new HttpErrorResponse({ status: 403, statusText: 'Forbidden' })];
 
@@ -1112,6 +1133,33 @@ describe('MktgAgentRunService', () => {
       // No receipt ever arrived, so nothing claims the server copy exists.
       expect(events.some((event) => event.type === 'persisted')).toBe(false);
     });
+
+    it.each([401, 403])(
+      'latches a refused retry poll (%s): the document stays, no further poll or wake sends the same credentials, nothing claims a server copy',
+      async (status) => {
+        resultResponses = [READY_NO_RECEIPT, new HttpErrorResponse({ status, statusText: 'Refused' }), READY_WITH_RECEIPT];
+        const events: MktgGenerateProgress[] = [];
+        let error: unknown;
+        let completed = false;
+        service
+          .generate(generateRequest())
+          .subscribe({ next: (event) => events.push(event), error: (err) => (error = err), complete: () => (completed = true) });
+
+        await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+        expect(events).toHaveLength(2);
+        await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+        expect(resultCalls()).toHaveLength(2);
+
+        // RFC 9110 §15.5.4: the same credentials are refused again, so neither a tick nor a focus wake retries.
+        window.dispatchEvent(new Event('focus'));
+        await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
+        expect(resultCalls()).toHaveLength(2);
+        expect(error).toBeUndefined();
+        expect(events.some((event) => event.type === 'persisted')).toBe(false);
+        // The watch ends on the refusal instead of idling for ever: the run page's generation subscription closes.
+        expect(completed).toBe(true);
+      }
+    );
 
     it('never fails a run that already produced its document when a retry poll errors — the attempt is spent, the next one retries', async () => {
       resultResponses = [READY_NO_RECEIPT, new HttpErrorResponse({ status: 500, statusText: 'Server Error' }), READY_WITH_RECEIPT];

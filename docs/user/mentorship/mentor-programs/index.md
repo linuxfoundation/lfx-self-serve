@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentor, programs, request, withdraw, status]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-10-30
 intercom_collection: Mentorship
 ---
 
@@ -18,7 +18,7 @@ Sign in at [app.lfx.dev](https://app.lfx.dev) and go to **Mentorship → Mentor 
 ## See the programs you mentor
 
 1. Open [app.lfx.dev/mentorship/mentor/programs](https://app.lfx.dev/mentorship/mentor/programs).
-2. Select a program card to open its detail page, with **Applicants**, **Mentees** and **Tasks** tabs.
+2. Select a program card to open its detail page, with **Tasks**, **Mentees** and **Applicants** tabs. **Tasks** is selected first.
 
 Only approved programs appear here. A request still waiting on a Program Admin does not, which is why the tab can look empty just after you ask: "Request to join a program from your mentor profile to get started."
 
@@ -38,18 +38,19 @@ In the same section, the table lists your programs with their status. A request 
 
 ## Request status
 
-| Status        | What it means                                                                            |
-| ------------- | ---------------------------------------------------------------------------------------- |
-| **Pending**   | Raised and awaiting the Program Admin's decision — whether you asked or they invited you |
-| **Approved**  | You mentor the program; it now appears under My Programs                                 |
-| **Declined**  | The Program Admin did not approve it                                                     |
-| **Withdrawn** | You pulled the request; you can ask again                                                |
+| Status        | What it means                                                                 |
+| ------------- | ----------------------------------------------------------------------------- |
+| **Pending**   | You raised it, and it is awaiting the Program Admin's decision                |
+| **Invited**   | A Program Admin invited you; answer with **Accept** or **Decline** on its row |
+| **Approved**  | You mentor the program; it now appears under My Programs                      |
+| **Declined**  | The Program Admin did not approve it                                          |
+| **Withdrawn** | You pulled the request; you can ask again                                     |
 
 An invitation a Program Admin sent you appears in the same table, with **Accept** and **Decline** actions. Accepting an invitation puts you straight onto the program — unlike a request you raise yourself, which waits for a Program Admin to approve it.
 
 ## After completing
 
-An approved program opens on its detail page, with **Applicants**, **Mentees** and **Tasks** tabs.
+An approved program opens on its detail page, with **Tasks**, **Mentees** and **Applicants** tabs. **Tasks** is selected first.
 
 ## Related
 

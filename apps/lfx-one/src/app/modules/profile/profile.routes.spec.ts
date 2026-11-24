@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { provideRouter, Route } from '@angular/router';
+import { ActivatedRouteSnapshot, CanActivateFn, provideRouter, Route, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
+import { PROFILE_ROUTE_SEGMENTS } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
+import { profileRedesignRedirectGuard } from '../../shared/guards/profile-redesign.guard';
 import { PROFILE_ROUTES } from './profile.routes';
 
 /**
@@ -44,5 +46,48 @@ describe('PROFILE_ROUTES — legacy page redirects (#2177)', () => {
     const tree = redirect('emails', { error: 'no_code' }) as { queryParams: Record<string, string>; fragment: string | null };
     expect(tree.fragment).toBe('email-settings');
     expect(tree.queryParams).toEqual({ error: 'no_code' });
+  });
+});
+
+/**
+ * The openprofile redirect (ID-1147) sends `/profile/<segment>` to `/u/<segment>` unless the segment is in
+ * PROFILE_ROUTE_SEGMENTS, so a new profile child route must be added there or it would be redirected away.
+ */
+describe('PROFILE_ROUTES — openprofile reserved segments', () => {
+  it('lists every profile child path in PROFILE_ROUTE_SEGMENTS', () => {
+    const childPaths = PROFILE_ROUTES[0].children!.map((r) => r.path).filter((path): path is string => !!path);
+    expect(childPaths.filter((path) => !PROFILE_ROUTE_SEGMENTS.has(path))).toEqual([]);
+  });
+});
+
+describe('PROFILE_ROUTES — developer-settings alias (ID-1147)', () => {
+  it('redirects /profile/developer-settings to /profile/settings#developer-settings, and still carries query params', () => {
+    const route = PROFILE_ROUTES[0].children!.find((r) => r.path === 'developer-settings')!;
+    TestBed.configureTestingModule({ providers: [provideRouter([])] });
+    const tree = TestBed.runInInjectionContext(() =>
+      (route.redirectTo as (data: { queryParams: Record<string, string> }) => unknown)({ queryParams: { from: 'openprofile' } })
+    ) as { queryParams: Record<string, string>; fragment: string | null; toString(): string };
+    expect(tree.fragment).toBe('developer-settings');
+    expect(tree.toString()).toContain('/profile/settings');
+    expect(tree.queryParams).toEqual({ from: 'openprofile' });
+  });
+});
+
+describe('PROFILE_ROUTES — linux-email', () => {
+  it('opens Identities after the redesign guard, keeping a Flow C query', () => {
+    const route = PROFILE_ROUTES[0].children!.find((r) => r.path === 'linux-email')!;
+    const [redesignGuard, toIdentities] = route.canActivate as CanActivateFn[];
+    expect(redesignGuard).toBe(profileRedesignRedirectGuard);
+
+    TestBed.configureTestingModule({ providers: [provideRouter([])] });
+    const tree = TestBed.runInInjectionContext(() =>
+      toIdentities({ queryParams: { success: 'profile_token_obtained' } } as unknown as ActivatedRouteSnapshot, {} as RouterStateSnapshot)
+    );
+    expect(TestBed.inject(Router).serializeUrl(tree as UrlTree)).toBe('/profile/identities?success=profile_token_obtained');
+  });
+
+  it('guards each tab that moves to Account & Settings, and not the ones that stay', () => {
+    const guarded = PROFILE_ROUTES[0].children!.filter((r) => r.canActivate?.includes(profileRedesignRedirectGuard)).map((r) => r.path);
+    expect(guarded).toEqual(['identities', 'individual-enrollment', 'clas', 'transactions', 'settings', 'linux-email']);
   });
 });

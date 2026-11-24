@@ -3,7 +3,7 @@
 
 import type { Observable } from 'rxjs';
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
-import type { MktgRunActivity, MktgRunAnswer, MktgRunQuestion } from './mktg-run.interface';
+import type { MktgRunActivity, MktgRunAnswer, MktgRunKeptDraft, MktgRunQuestion } from './mktg-run.interface';
 import type { Member360FailureReason } from './member-360.interface';
 import type { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED } from '../constants/mktg-run.constants';
 
@@ -116,6 +116,15 @@ export interface MktgRunPendingQuestions {
   askedAt: string;
 }
 
+/** Scoped client presentation of a server-confirmed concurrent-answer conflict; never an API payload. */
+export interface MktgRunAnsweredNotice {
+  runId: string;
+  questionsId: string;
+  message: string;
+  /** The block this browser was answering, with its typed draft, kept read-only under the notice wherever it shows. */
+  kept?: MktgRunKeptDraft;
+}
+
 /** Answers scoped to the opaque public run id in the route. */
 export interface MktgRunAnswersRequest {
   project: string;
@@ -127,6 +136,16 @@ export interface MktgRunAnswersRequest {
 export interface MktgPublicRunAnswersResponse {
   runId: string;
   state: 'writing';
+}
+
+/** Optional navigation-only retired-row hint; never a private run record or capability. */
+export interface MktgRetiredRunHint {
+  runId: string;
+  state: 'discarded' | 'superseded';
+  replacedBy: string | null;
+  /** Safe display name only; no email, subject or member data. */
+  closedBy: string | null;
+  closedAt: string | null;
 }
 
 /** Stored states include completion; closed markers appear only on selected details. */
@@ -258,5 +277,10 @@ export interface MktgDocumentRunCoverage {
 
 /** The Documents transport's retry body, scoped by its document/run route; no generation is started. */
 export interface MktgRetryDocumentRunRequest {
+  project: string;
+}
+
+/** The Documents transport's dismiss body: closes a failed run as discarded, never touching a document or revision. */
+export interface MktgDismissDocumentRunRequest {
   project: string;
 }

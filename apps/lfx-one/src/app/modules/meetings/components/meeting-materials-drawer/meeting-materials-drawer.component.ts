@@ -77,8 +77,8 @@ export class MeetingMaterialsDrawerComponent {
   public pendingDeletions = signal<Set<string>>(new Set());
   public newLinkTitle = signal('');
   public newLinkUrl = signal('');
-  /** Scope applied to the files and links added in this session. Defaults to the whole series, which is what an attachment was before scoping existed. */
-  public newItemScope = signal<AttachmentScope>('series');
+  /** Scope applied to the files and links added in this session. Defaults to this occurrence (#5912); organizers can still choose the whole series. */
+  public newItemScope = signal<AttachmentScope>('occurrence');
   /** Scope changes staged on existing attachments, keyed by uid; applied on save like deletions. Only holds entries that differ from the saved scope. */
   public pendingScopes = signal<Map<string, AttachmentScope>>(new Map());
 
@@ -159,7 +159,7 @@ export class MeetingMaterialsDrawerComponent {
       this.pendingAttachments.set([]);
       this.pendingDeletions.set(new Set());
       this.pendingScopes.set(new Map());
-      this.newItemScope.set('series');
+      this.newItemScope.set('occurrence');
       this.newLinkTitle.set('');
       this.newLinkUrl.set('');
     })

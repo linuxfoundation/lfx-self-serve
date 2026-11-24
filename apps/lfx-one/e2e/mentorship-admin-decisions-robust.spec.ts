@@ -13,10 +13,11 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
+import { MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import { ADMIN_PROGRAM_URL, adminApplicationId, stubAdminMentees, stubAdminProgramPage, stubAdminTasks } from './helpers/mentorship-admin-program.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
@@ -30,7 +31,6 @@ const PENDING_ID = adminApplicationId(1);
 const ACCEPTED_ID = adminApplicationId(3);
 
 async function open(page: Page): Promise<void> {
-  await enableMentorshipFlag(page);
   await stubAdminProgramPage(page);
   await stubAdminMentees(page, { mentees: [], tasks: [] });
   await stubAdminTasks(page, { mentees: [], tasks: [] });
@@ -46,12 +46,12 @@ test.describe('Admin Current Mentees decisions — structure', () => {
   test('offers the decision items that fit a pending and an accepted row', async ({ page }) => {
     const pending = page.getByTestId(`mentorship-current-mentee-actions-${PENDING_ID}`);
     await pending.click({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
-    await expect(page.getByRole('menuitem')).toHaveCount(3);
+    await expect(page.getByRole('menuitem')).toHaveCount(MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS.pending.length);
     await pending.click();
     await expect(page.getByRole('menuitem')).toHaveCount(0);
 
     await page.getByTestId(`mentorship-current-mentee-actions-${ACCEPTED_ID}`).click();
-    await expect(page.getByRole('menuitem')).toHaveCount(4);
+    await expect(page.getByRole('menuitem')).toHaveCount(MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS.accepted.length);
   });
 
   test('renders the Decline by Term trigger in the Current Mentees toolbar', async ({ page }) => {
@@ -60,7 +60,8 @@ test.describe('Admin Current Mentees decisions — structure', () => {
 
   test('opens the accept dialog with its attendance select and both buttons', async ({ page }) => {
     await page.getByTestId(`mentorship-current-mentee-actions-${PENDING_ID}`).click();
-    await page.getByRole('menuitem').first().click();
+    // By name: the first item is Contact Mentee, a mailto link.
+    await page.getByRole('menuitem', { name: 'Accept', exact: true }).click();
 
     const dialog = page.getByTestId('mentorship-admin-accept-dialog');
     await expect(dialog).toBeVisible();
@@ -79,7 +80,8 @@ test.describe('Admin Current Mentees decisions — structure', () => {
 
       const confirmation = page.locator('.p-confirmdialog');
       await expect(confirmation).toBeVisible();
-      await expect(confirmation.getByRole('button')).toHaveCount(2);
+      // The dialog also renders its own close button, so count the footer's buttons only.
+      await expect(confirmation.locator('.p-dialog-footer').getByRole('button')).toHaveCount(2);
 
       await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
       await expect(confirmation).toHaveCount(0);

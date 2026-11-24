@@ -7,7 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { VOTE_SEND_BALLOTS_COOLDOWN_MS } from '@lfx-one/shared/constants';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteSendBallotsComponent } from './vote-send-ballots.component';
@@ -61,6 +61,23 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     expect(success()).toBeNull();
   });
 
+  it('keeps the large presenter button by default', () => {
+    const host = el().querySelector('[data-testid="vote-send-ballots-button"] button') as HTMLButtonElement;
+
+    expect(host.className).toContain('min-h-[44px]');
+    expect(host.className).not.toContain('p-button-sm');
+    expect(host.className).not.toContain('p-button-outlined');
+  });
+
+  it('renders the small outlined button for the compact variant', () => {
+    fixture.componentRef.setInput('variant', 'compact');
+    fixture.detectChanges();
+
+    expect(button().className).toContain('p-button-sm');
+    expect(button().className).toContain('p-button-outlined');
+    expect(button().className).not.toContain('min-h-[44px]');
+  });
+
   it('asks for confirmation naming the number of members who have not voted, and sends nothing yet', () => {
     const confirmation = clickAndCapture();
 
@@ -83,7 +100,91 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     expect(success()).toBeNull();
   });
 
-  it('skips the dialog and tells the writer when everyone has voted', () => {
+  it('ignores Send if the vote changed while the dialog was open (#4691)', () => {
+    const captured = clickAndCapture();
+
+    fixture.componentRef.setInput('voteUid', 'v-2');
+    fixture.detectChanges();
+    captured?.accept?.();
+
+    expect(sendBallots).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('opens no dialog if the vote changed before the voter list answered (#4691)', () => {
+    const answer = new Subject<{ uid: string }[]>();
+    getReminderRecipients.mockReturnValue(answer);
+    const confirmSpy = vi.spyOn(confirmation, 'confirm');
+    button().click();
+
+    fixture.componentRef.setInput('voteUid', 'v-2');
+    fixture.detectChanges();
+    answer.next(recipients(3));
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it('is confirming while the dialog is up and a tick after it hides, so the parent leaves Esc to it (#4691)', async () => {
+    expect(fixture.componentInstance.confirming()).toBe(false);
+
+    clickAndCapture();
+    expect(fixture.componentInstance.confirming()).toBe(true);
+
+    (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
+    expect(fixture.componentInstance.confirming()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fixture.componentInstance.confirming()).toBe(false);
+  });
+
+  it('returns focus to the Send ballots button after Cancel, though the button disables while the voter list loads (#4691)', async () => {
+    const answer = new Subject<{ uid: string }[]>();
+    getReminderRecipients.mockReturnValue(answer);
+    const confirmSpy = vi.spyOn(confirmation, 'confirm');
+    button().focus();
+    button().click();
+    fixture.detectChanges();
+    button().blur();
+    answer.next(recipients(3));
+    answer.complete();
+    fixture.detectChanges();
+    expect(confirmSpy).toHaveBeenCalledOnce();
+
+    (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(document.activeElement).toBe(button());
+  });
+
+  it('abandons a pending voter-list request: no dialog opens when the answer arrives and the button is usable again (#4691)', () => {
+    const answer = new Subject<{ uid: string }[]>();
+    getReminderRecipients.mockReturnValue(answer);
+    const confirmSpy = vi.spyOn(confirmation, 'confirm');
+    button().click();
+    fixture.detectChanges();
+    expect(button().disabled).toBe(true);
+
+    fixture.componentInstance.abandon();
+    fixture.detectChanges();
+    answer.next(recipients(3));
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(button().disabled).toBe(false);
+  });
+
+  it('opens no dialog when the parent has another one open by the time the answer arrives (#4691)', () => {
+    const answer = new Subject<{ uid: string }[]>();
+    getReminderRecipients.mockReturnValue(answer);
+    const confirmSpy = vi.spyOn(confirmation, 'confirm');
+    button().click();
+
+    fixture.componentRef.setInput('blocked', true);
+    fixture.detectChanges();
+    answer.next(recipients(3));
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it('toasts only for the race: the list was non-empty at load and empty when clicked', () => {
     getReminderRecipients.mockReturnValue(of([]));
     const confirmSpy = vi.spyOn(confirmation, 'confirm');
     button().click();
@@ -108,6 +209,38 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     vi.advanceTimersByTime(1);
     fixture.detectChanges();
     expect(button().disabled).toBe(false);
+  });
+
+  it('compact variant shows no visible status line, announces it in a live region and toasts success', () => {
+    fixture.componentRef.setInput('variant', 'compact');
+    fixture.detectChanges();
+    clickAndCapture()?.accept?.();
+    fixture.detectChanges();
+
+    const live = el().querySelector('[data-testid="vote-send-ballots-live"]') as HTMLElement;
+    expect(success()).toBeNull();
+    expect(live.classList).toContain('sr-only');
+    expect(live.getAttribute('role')).toBe('status');
+    expect(live.textContent?.trim()).toBe('Ballots sent to 3 members');
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: 'Ballots sent', detail: 'to 3 members' });
+  });
+
+  it('compact variant toast uses the singular for one member', () => {
+    sendBallots.mockReturnValue(of({ sent: 1, skipped: 0 }));
+    fixture.componentRef.setInput('variant', 'compact');
+    fixture.detectChanges();
+    clickAndCapture()?.accept?.();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'to 1 member' }));
+  });
+
+  it('presenter variant keeps the visible line and shows no success toast', () => {
+    clickAndCapture()?.accept?.();
+    fixture.detectChanges();
+
+    expect(success()).not.toBeNull();
+    expect(el().querySelector('[data-testid="vote-send-ballots-live"]')).toBeNull();
+    expect(add).not.toHaveBeenCalled();
   });
 
   it('uses a two-minute cooldown', () => {
@@ -158,11 +291,158 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     expect(button().disabled).toBe(false);
   });
 
-  it('shows a plain error that nothing was sent when the voter list cannot be loaded', () => {
-    getReminderRecipients.mockReturnValue(throwError(() => new Error('query down')));
-    button().click();
+  describe('voter list known to be empty (#4740)', () => {
+    beforeEach(() => {
+      fixture.destroy();
+      getReminderRecipients.mockReset();
+      getReminderRecipients.mockReturnValue(of([]));
+      fixture = TestBed.createComponent(VoteSendBallotsComponent);
+      fixture.componentRef.setInput('voteUid', 'v-1');
+      fixture.componentRef.setInput('responded', 4);
+      fixture.componentRef.setInput('invited', 4);
+      fixture.detectChanges();
+      confirmation = fixture.debugElement.injector.get(ConfirmationService);
+    });
 
-    expect(add.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: expect.stringContaining('Nothing was sent') });
+    it('disables the button and says why, without a toast or a second read', () => {
+      expect(getReminderRecipients).toHaveBeenCalledTimes(1);
+      expect(button().disabled).toBe(true);
+      expect(el().textContent).toContain('Everyone has voted');
+
+      button().click();
+      expect(getReminderRecipients).toHaveBeenCalledTimes(1);
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    it('re-reads the list when the vote changes and enables the button for a vote with voters left', () => {
+      getReminderRecipients.mockReturnValue(of(recipients(2)));
+      fixture.componentRef.setInput('voteUid', 'v-2');
+      fixture.detectChanges();
+
+      expect(getReminderRecipients).toHaveBeenLastCalledWith('v-2');
+      expect(button().disabled).toBe(false);
+    });
+  });
+
+  describe('empty prefetch without confirmed completion (#4759)', () => {
+    function create(counts: { responded?: number | null; invited?: number | null }, list: { uid: string }[] = []) {
+      fixture.destroy();
+      getReminderRecipients.mockReset();
+      getReminderRecipients.mockReturnValue(of(list));
+      fixture = TestBed.createComponent(VoteSendBallotsComponent);
+      fixture.componentRef.setInput('voteUid', 'v-1');
+      for (const [key, value] of Object.entries(counts)) fixture.componentRef.setInput(key, value);
+      fixture.detectChanges();
+      confirmation = fixture.debugElement.injector.get(ConfirmationService);
+    }
+
+    it.each([
+      ['0 of 4 responded', { responded: 0, invited: 4 }],
+      ['no counts given', {}],
+      ['0 of 0', { responded: 0, invited: 0 }],
+    ])('keeps the button enabled for an empty list with %s', (_label, counts) => {
+      create(counts);
+
+      expect(button().disabled).toBe(false);
+      expect(el().textContent).not.toContain('Everyone has voted');
+    });
+
+    it('lets the click-time read decide: a now-populated list opens the confirmation', () => {
+      create({ responded: 0, invited: 4 });
+      getReminderRecipients.mockReturnValue(of(recipients(2)));
+
+      expect(clickAndCapture()?.message).toBe("Email a personal ballot link to the 2 members who haven't voted?");
+    });
+
+    it('toasts when the click-time read is still empty', () => {
+      create({ responded: 0, invited: 4 });
+      button().click();
+      fixture.detectChanges();
+
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info' }));
+      expect(button().disabled).toBe(false);
+    });
+
+    it('disables for an empty list when N of N have responded', () => {
+      create({ responded: 4, invited: 4 });
+
+      expect(button().disabled).toBe(true);
+    });
+
+    it('stays enabled when the list is empty at first and populated after a vote change', () => {
+      create({ responded: 0, invited: 4 });
+      getReminderRecipients.mockReturnValue(of(recipients(2)));
+      fixture.componentRef.setInput('voteUid', 'v-2');
+      fixture.detectChanges();
+
+      expect(button().disabled).toBe(false);
+    });
+
+    it('drops a click-time failure that arrives after the component is destroyed', () => {
+      const pending = new Subject<{ uid: string }[]>();
+      getReminderRecipients.mockReturnValue(pending);
+      button().click();
+      fixture.destroy();
+      pending.error(new Error('late'));
+
+      expect(add).not.toHaveBeenCalled();
+    });
+  });
+
+  it('keeps the button disabled when the prefetch answers after a click found nobody left (#4744)', () => {
+    fixture.destroy();
+    const prefetch = new Subject<{ uid: string }[]>();
+    getReminderRecipients.mockReset();
+    getReminderRecipients.mockReturnValueOnce(prefetch).mockReturnValue(of([]));
+    fixture = TestBed.createComponent(VoteSendBallotsComponent);
+    fixture.componentRef.setInput('voteUid', 'v-1');
+    fixture.componentRef.setInput('responded', 4);
+    fixture.componentRef.setInput('invited', 4);
+    fixture.detectChanges();
+
+    button().click();
+    fixture.detectChanges();
+    expect(button().disabled).toBe(true);
+
+    prefetch.next(recipients(3));
+    prefetch.complete();
+    fixture.detectChanges();
+
+    expect(button().disabled).toBe(true);
+  });
+
+  it('leaves the button enabled when the list cannot be read up front', () => {
+    fixture.destroy();
+    getReminderRecipients.mockReturnValue(throwError(() => new Error('query down')));
+    fixture = TestBed.createComponent(VoteSendBallotsComponent);
+    fixture.componentRef.setInput('voteUid', 'v-1');
+    fixture.detectChanges();
+
+    expect(button().disabled).toBe(false);
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  describe('voter list fails on click (#4740)', () => {
+    it('clears loading, re-enables the button, restores focus, toasts and opens no dialog', () => {
+      const answer = new Subject<{ uid: string }[]>();
+      getReminderRecipients.mockReturnValue(answer);
+      const confirmSpy = vi.spyOn(confirmation, 'confirm');
+      button().focus();
+      button().click();
+      fixture.detectChanges();
+      expect(button().disabled).toBe(true);
+      // A disabled button gives up focus in a real browser; jsdom keeps it, so release it by hand.
+      button().blur();
+
+      answer.error(new Error('query down'));
+      fixture.detectChanges();
+
+      expect(button().disabled).toBe(false);
+      expect(el().querySelector('[data-testid="vote-send-ballots-button"] .p-button-loading-icon, .pi-spinner')).toBeNull();
+      expect(document.activeElement).toBe(button());
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: "Couldn't load the voter list. Try again." }));
+      expect(confirmSpy).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps the action enabled with no success line after a failed send', () => {

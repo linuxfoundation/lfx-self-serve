@@ -10,18 +10,21 @@ import {
 import {
   MentorshipCiiBadge,
   MentorshipLfProject,
+  MentorshipLfProjectsQuery,
   MentorshipLfProjectsResponse,
   MentorshipNameAvailability,
+  MentorshipProgramDecisionResult,
   MentorshipProgramReview,
   MentorshipProgramReviewDecision,
   MentorshipLfxProfileFields,
   MentorshipUpstreamProgram,
+  MentorshipUpstreamProgramCatalog,
   MentorshipUpstreamProgramDecisionRequest,
   MentorshipUpstreamUserProfile,
   Project,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
-import { isMentorshipCiiProjectId, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { isMentorshipCiiProjectId, normalizeToUrl, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import {
@@ -32,13 +35,19 @@ import {
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { listAllMentorshipPages, proxyMentorshipRequest, withoutQueryInErrorPath } from '../helpers/mentorship-api.helper';
+import {
+  isMentorshipNotProvisionedError,
+  listMentorshipPagesWithoutProvisioning,
+  proxyMentorshipRequest,
+  withoutQueryInErrorPath,
+} from '../helpers/mentorship-api.helper';
 import {
   buildMentorshipUpstreamLfxProfileFields,
   buildMentorshipUpstreamProfileLinks,
   resolveMentorshipGithubProfileLink,
   resolveMentorshipPrimaryEmail,
 } from '../helpers/mentorship-lfx-profile.helper';
+import { readMentorshipProgramSubmitter } from '../helpers/mentorship-program-submitter.helper';
 
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
@@ -86,13 +95,20 @@ export class MentorshipService {
    * stopped at, so a short page can still carry a cursor. A cursor that comes back unchanged ends the list (no `page_token`): following it
    * would only replay the page just read and duplicate its projects. Each read asks only for the slots still open, so the page never holds more
    * than `limit` (the cursor carries the sort position, not the page size). `limit` is held to 1–`MENTORSHIP_LF_PROJECT_MAX_LIMIT` and `search` is cut to
-   * `MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH`.
+   * `MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH`. With `parentUid`, only that project's direct sub-projects: the Foundation lens
+   * wizard (lfx-mentorship#398) offers its foundation, which it already has, and these sub-projects.
    */
-  public async getLfProjects(req: Request, options: { search?: string; pageToken?: string; limit?: number } = {}): Promise<MentorshipLfProjectsResponse> {
+  public async getLfProjects(req: Request, options: MentorshipLfProjectsQuery = {}): Promise<MentorshipLfProjectsResponse> {
     const search = truncateToUtf16Units(options.search?.trim() ?? '', MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH);
     const limit = Math.min(MENTORSHIP_LF_PROJECT_MAX_LIMIT, Math.max(1, options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
     let pageToken = options.pageToken || undefined;
-    logger.debug(req, 'mentorship_get_lf_projects', 'Listing LF projects', { has_search: search.length > 0, has_page_token: !!pageToken, limit });
+    const parentUid = options.parentUid;
+    logger.debug(req, 'mentorship_get_lf_projects', 'Listing LF projects', {
+      has_search: search.length > 0,
+      has_page_token: !!pageToken,
+      limit,
+      parentUid,
+    });
 
     const projects: Project[] = [];
     let reads = 0;
@@ -100,6 +116,7 @@ export class MentorshipService {
       const requestedToken = pageToken;
       const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type: 'project',
+        ...(parentUid && { parent: `project:${parentUid}` }),
         ...(search ? { name: search, sort: 'best_match' } : { sort: 'name_asc' }),
         page_size: limit - projects.length,
         ...(pageToken && { page_token: pageToken }),
@@ -185,18 +202,31 @@ export class MentorshipService {
   }
 
   /**
-   * The program an approve/reject email link points at. Proxied to the mentorship service
-   * with the caller's own token, so its `viewer` check decides who can see the program.
+   * The program a review email link points at, as its public page shows it. Read with the caller's
+   * own token, so upstream's `viewer` check decides who sees it: approvers pass it through `auditor`.
+   *
+   * The catalog serves only pending and published programs and answers 404 for the rest, so on a 404
+   * the plain program read (same `viewer` guard) tells a decided program from a missing one. A
+   * rejected or hidden program comes back with its status and no details, which is all the page
+   * shows once a program is no longer pending; a missing one still ends in 404. The submitter is read alongside, and
+   * shown in both cases; when that read fails the page shows no submitter.
    */
   public async getProgramReview(req: Request, programId: string): Promise<MentorshipProgramReview> {
+    const path = `/mentorship/v1/programs/${encodeURIComponent(programId)}`;
     logger.debug(req, 'mentorship_get_program_review', 'Fetching program for review', { programId });
-    const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgram>(
-      req,
-      'LFX_V2_SERVICE',
-      `/mentorship/v1/programs/${encodeURIComponent(programId)}`,
-      'GET'
-    );
-    return toProgramReview(program);
+    // Never rejects: a failed read leaves the page without its submitter.
+    const submitterRead = readMentorshipProgramSubmitter(this.microserviceProxy, req, programId, 'mentorship_get_program_review');
+    let review: MentorshipProgramReview;
+    try {
+      const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgramCatalog>(req, 'LFX_V2_SERVICE', `${path}/catalog`, 'GET');
+      review = toProgramReview(program);
+    } catch (error) {
+      if (!(error instanceof MicroserviceError && error.statusCode === 404)) throw error;
+      logger.debug(req, 'mentorship_get_program_review', 'Program not in the catalog, reading its status', { programId });
+      const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgram>(req, 'LFX_V2_SERVICE', path, 'GET');
+      review = toDecidedProgramReview(program);
+    }
+    return { ...review, submitter: await submitterRead };
   }
 
   /**
@@ -204,7 +234,7 @@ export class MentorshipService {
    * mentorship approver team (403 otherwise) and only from `pending` (409 otherwise); both
    * statuses pass through to the page unchanged.
    */
-  public async submitProgramDecision(req: Request, programId: string, decision: MentorshipProgramReviewDecision): Promise<MentorshipProgramReview> {
+  public async submitProgramDecision(req: Request, programId: string, decision: MentorshipProgramReviewDecision): Promise<MentorshipProgramDecisionResult> {
     const body: MentorshipUpstreamProgramDecisionRequest = { status: MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS[decision] };
     logger.debug(req, 'mentorship_submit_program_decision', 'Submitting program review decision', { programId, status: body.status });
     const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgram>(
@@ -215,7 +245,7 @@ export class MentorshipService {
       undefined,
       body
     );
-    return toProgramReview(program);
+    return { id: program.id, name: program.name, status: program.status };
   }
 
   /**
@@ -228,9 +258,20 @@ export class MentorshipService {
    * the caller's. Only the keys that have a value are sent, so with no rows, or nothing to send, no
    * row is patched. A failed row propagates and leaves the rows after it unpatched; the card asks
    * the user to save again, which rewrites them all.
+   *
+   * The Profile & Account page calls this after every picture or name change, for people who never used Mentorship
+   * too, so the profiles are read without provisioning: a caller with no mentorship record holds no profile, and gets
+   * none of the records a provisioning read would create.
    */
   public async syncLfxProfileFields(req: Request, fields: MentorshipLfxProfileFields): Promise<number> {
-    const profiles = await listAllMentorshipPages<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_PROFILES_PATH);
+    let profiles: MentorshipUpstreamUserProfile[];
+    try {
+      profiles = await listMentorshipPagesWithoutProvisioning<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_PROFILES_PATH);
+    } catch (error) {
+      if (!isMentorshipNotProvisionedError(error)) throw error;
+      logger.debug(req, 'mentorship_sync_lfx_profile', 'Caller has no mentorship record, nothing to copy');
+      return 0;
+    }
     const targets = profiles.filter((profile) => profile.profile_type === 'mentor' || profile.profile_type === 'mentee');
     if (targets.length === 0) return 0;
 
@@ -266,7 +307,49 @@ export function isMentorshipProgramReviewDecision(value: unknown): value is Ment
   return typeof value === 'string' && (MENTORSHIP_PROGRAM_REVIEW_DECISIONS as readonly string[]).includes(value);
 }
 
-/** Only what the review page shows; the full upstream program is not forwarded. */
-function toProgramReview(program: MentorshipUpstreamProgram): MentorshipProgramReview {
-  return { id: program.id, name: program.name, status: program.status };
+/**
+ * Only what the review page shows; terms, mentors and the rest of the catalog item are not
+ * forwarded. The submitter is read separately and set by the caller. Links that are not http(s) URLs and a non-numeric CII id become `null`, so the page
+ * never binds an unsafe or broken value.
+ */
+function toProgramReview(program: MentorshipUpstreamProgramCatalog): MentorshipProgramReview {
+  const ciiProjectId = program.cii_project_id?.trim() ?? '';
+  return {
+    id: program.id,
+    name: program.name,
+    status: program.status,
+    projectName: program.project_name?.trim() || null,
+    description: program.description?.trim() || null,
+    logoUrl: toHttpUrl(program.logo_url),
+    repoUrl: toHttpUrl(program.repo_link),
+    codeOfConductUrl: toHttpUrl(program.code_of_conduct),
+    ciiProjectId: isMentorshipCiiProjectId(ciiProjectId) ? ciiProjectId : null,
+    skills: (program.skills ?? []).map((skill) => skill.trim()).filter((skill) => skill.length > 0),
+    createdOn: program.created_on ?? null,
+    submitter: null,
+    hasDetails: true,
+  };
+}
+
+/** A program the catalog does not serve (rejected or hidden): its status and submission date, without details. */
+function toDecidedProgramReview(program: MentorshipUpstreamProgram): MentorshipProgramReview {
+  return {
+    id: program.id,
+    name: program.name,
+    status: program.status,
+    projectName: program.project_name?.trim() || null,
+    description: null,
+    logoUrl: null,
+    repoUrl: null,
+    codeOfConductUrl: null,
+    ciiProjectId: null,
+    skills: [],
+    createdOn: program.created_on ?? null,
+    submitter: null,
+    hasDetails: false,
+  };
+}
+
+function toHttpUrl(value: string | undefined): string | null {
+  return value ? normalizeToUrl(value) : null;
 }

@@ -2,11 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
   FOUNDATION_MESSAGE_INTAKE,
   LENS_COOKIE_KEY,
   MKTG_DOCUMENT_TYPES,
-  MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_SLIDES_EXPORT_API_PATH,
   PERSONA_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
@@ -16,6 +14,7 @@ import { expect, Page, Route } from '@playwright/test';
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
 import { ApiMockHelper } from './api-mock.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
+import { pinMktgOsFlags } from './mktg-os-flags.helper';
 
 export const DATA_LOAD_TIMEOUT = 20_000;
 export const ASSET_PROJECT = { uid: 'p0000000-0000-0000-0000-000000000719', slug: 'synthetic-orbit', name: 'Synthetic Orbit' };
@@ -119,10 +118,7 @@ export async function setupAsset(
     description: 'Synthetic project',
   } as Project;
   await ApiMockHelper.setupProjectSlugMock(page, { writer });
-  await page.addInitScript(
-    ([key, flag]) => localStorage.setItem(key, JSON.stringify({ [flag]: true })),
-    [FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MKTG_OS_AGENTS_ENABLED_FLAG]
-  );
+  await pinMktgOsFlags(page);
   const seed = async () =>
     page.context().addCookies(
       [

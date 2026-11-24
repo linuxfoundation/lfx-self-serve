@@ -1,14 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { PollType } from '@lfx-one/shared/enums';
 import { Committee, Vote } from '@lfx-one/shared/interfaces';
 import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
+import { VoteCreateMenuComponent } from '@app/modules/votes/components/vote-create-menu/vote-create-menu.component';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
-import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { MessageService } from 'primeng/api';
@@ -16,7 +17,7 @@ import { finalize } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-votes',
-  imports: [ButtonComponent, CardComponent, VotesTableComponent, VoteResultsDrawerComponent],
+  imports: [ButtonComponent, CardComponent, VoteCreateMenuComponent, VotesTableComponent],
   templateUrl: './committee-votes.component.html',
   styleUrl: './committee-votes.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -42,27 +43,25 @@ export class CommitteeVotesComponent {
    *  every tab switch, which previously dropped the confirmed deadline (per @audigregorie, GH-3823
    *  review). */
   public readonly voteExtended = output<Vote>();
+  /** Relays votes-table's voteClosed output to committee-view for the same reason as voteExtended. */
+  public readonly voteClosed = output<Vote>();
 
   // State
   public creating = signal(false);
-  public resultsDrawerVisible = model<boolean>(false);
-  public selectedVoteId = signal<string | null>(null);
 
   // Data
   public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
   // Edit-link fallback: every row here belongs to this committee, so its committee_uid admits
   // committee writers through writerGuard even when the indexed row omits the field (GH-1568).
   public editVoteQueryParams: Signal<Record<string, string>> = this.createVoteQueryParams;
-  // Keeps the open drawer's listVote fed with the latest row data (e.g. an extended deadline) —
-  // derived from id + votes() so it naturally re-evaluates on every votes() update (including
-  // committee-view's extendedVoteOverrides overlay, applied synchronously on voteExtended) and falls
-  // back to null once the id is cleared or the row leaves the list, instead of the one-time snapshot an
-  // effect()-driven write would leave stale (per @cursor).
-  public selectedVote: Signal<Vote | null> = this.initSelectedVote();
+
+  /** Mirrors the votes dashboard: a vote opens on its page, whose breadcrumb leads back. */
+  public viewVote(voteUid: string): void {
+    void this.router.navigate(['/votes', voteUid]);
+  }
 
   public viewVoteResults(voteUid: string): void {
-    this.selectedVoteId.set(voteUid);
-    this.resultsDrawerVisible.set(true);
+    void this.router.navigate(['/votes', voteUid], { queryParams: { tab: 'results' } });
   }
 
   /** votes-table's refresh output, fired after a successful delete — propagates to parent. */
@@ -70,7 +69,7 @@ export class CommitteeVotesComponent {
     this.refresh.emit();
   }
 
-  /** votes-table's voteExtended output — carries the confirmed vote so the open drawer updates immediately
+  /** votes-table's voteExtended output — carries the confirmed vote so the row's deadline updates immediately
    *  instead of waiting on refresh()'s eventually-consistent search-index refetch (per @greptile-apps).
    *  Relayed to committee-view rather than held locally so the override survives this component being
    *  destroyed/recreated on tab switches (per @audigregorie, GH-3823 review). */
@@ -78,7 +77,13 @@ export class CommitteeVotesComponent {
     this.voteExtended.emit(vote);
   }
 
-  protected onCreateVote(): void {
+  /** votes-table's voteClosed output, relayed so the ended status survives tab switches. */
+  protected onVoteClosed(vote: Vote): void {
+    this.voteClosed.emit(vote);
+  }
+
+  /** The Create Vote dropdown's chosen method — re-checks write access, then opens the create form for this group with that method preselected. */
+  protected onCreateVote(pollType: PollType): void {
     const committee = this.committee();
     const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
     const denyParams: Record<string, string> = { _notice: 'votes' };
@@ -95,7 +100,7 @@ export class CommitteeVotesComponent {
             deny();
             return;
           }
-          void this.router.navigate(['/votes', 'create'], { queryParams: this.createVoteQueryParams() });
+          void this.router.navigate(['/votes', 'create'], { queryParams: { ...this.createVoteQueryParams(), poll_type: pollType } });
         },
         error: () => deny(),
       });
@@ -104,13 +109,5 @@ export class CommitteeVotesComponent {
   // Private initializer functions
   private initCreateVoteQueryParams(): Signal<Record<string, string>> {
     return computed(() => buildCommitteeCreateQueryParams(this.committee()));
-  }
-
-  private initSelectedVote(): Signal<Vote | null> {
-    return computed(() => {
-      const id = this.selectedVoteId();
-      if (!id) return null;
-      return this.votes().find((v) => v.uid === id) || null;
-    });
   }
 }

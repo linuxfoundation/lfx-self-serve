@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgLeaderboardDetailCategory, OrgLeaderboardDetailMethodology } from '../interfaces/org-leaderboard-detail-drawer.interface';
+import { ORG_MAINTAINER_ROLES_LABEL } from './org-maintainer-roles.constants';
 
 /**
  * Display metadata for the leaderboard-row score-breakdown drawer: which categories each dimension
@@ -16,7 +17,8 @@ import type { OrgLeaderboardDetailCategory, OrgLeaderboardDetailMethodology } fr
 
 /** Technical-influence categories — the only four that earn points. */
 export const ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES: OrgLeaderboardDetailCategory[] = [
-  { key: 'maintainer', name: 'Maintainers' },
+  // The count beside it is maintainer roles (lfx-self-serve#4605); the points are the influence score's.
+  { key: 'maintainer', name: ORG_MAINTAINER_ROLES_LABEL },
   { key: 'contributors', name: 'Contributors' },
   { key: 'commits', name: 'Commits' },
   { key: 'prs', name: 'PRs Opened' },
@@ -60,19 +62,19 @@ export const ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_KEYS: readonly string[] = 
  * the server withholds without its own copy.
  */
 export const ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS: Record<string, string> = {
-  meeting: 'Meeting attendance comes from private LFX Meetings attendance records, so these figures are only shown for your own organization.',
-  event: 'Event attendance comes from private event registration records, so these figures are only shown for your own organization.',
-  meetup: 'Meetup attendance comes from private registration records, so these figures are only shown for your own organization.',
-  certified: 'Certification records identify individuals, so these figures are only shown for your own organization.',
+  meeting: 'Meeting attendance comes from private LFX Meetings attendance records, so these figures are only shown for your own company.',
+  event: 'Event attendance comes from private event registration records, so these figures are only shown for your own company.',
+  meetup: 'Meetup attendance comes from private registration records, so these figures are only shown for your own company.',
+  certified: 'Certification records identify individuals, so these figures are only shown for your own company.',
 };
 
 /** Tooltip copy for a withheld category with no specific entry in `ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS`. */
 export const ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK =
-  'This category is based on data that is not publicly available, so these figures are only shown for your own organization.';
+  'This category is based on data that is not publicly available, so these figures are only shown for your own company.';
 
 /** Categories scored without a count — a point award, not a share of project activity. */
 export const ORG_LEADERBOARD_DETAIL_UNCOUNTED_CATEGORY_TOOLTIPS: Record<string, string> = {
-  tier: "Points come from the organization's LF membership tier, so there is no activity count behind this row.",
+  tier: "Points come from the company's LF membership tier, so there is no activity count behind this row.",
 };
 
 /** Condensed "Company influence metrics" methodology copy shown in the drawer, per dimension. */
@@ -81,7 +83,10 @@ export const ORG_LEADERBOARD_DETAIL_METHODOLOGY: Record<'technical' | 'ecosystem
     intro:
       'Only four categories earn technical-influence points. Each earns points independently — there are no preset weights per category. Points from all categories are added together to get the total score.',
     bullets: [
-      { label: 'Maintainers', text: '— 10 pts if the company has 1+ project maintainers, else 0.' },
+      {
+        label: ORG_MAINTAINER_ROLES_LABEL,
+        text: "— 10 pts from the influence score when the company has maintainers on the project in the selected range; the score only covers companies with code contributions in that range. The count shown is the maintainer roles the company holds, CDP team members left out, against every company's roles on the project; it is counted separately, so a company can hold roles and still earn 0 points.",
+      },
       {
         label: 'Contributors, PRs Opened',
         text: '— each 0.1% share of the project total earns 0.1 pt, plus a +1 bonus for any share above 0%.',

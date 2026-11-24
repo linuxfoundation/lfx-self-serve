@@ -24,6 +24,7 @@ import {
   CLA_GROUPS_ROUTE,
   fulfillJson,
   gotoEasyclaDetail,
+  stubCatalogueNotFound,
   PAGE_LOAD_TIMEOUT,
   skipWithoutCredentials,
 } from './helpers/org-easycla.helper';
@@ -120,15 +121,18 @@ test.describe('Org Lens EasyCLA detail — structure', () => {
   // An address naming a CLA Group this organization holds nothing for. Since #2364 that is the
   // cannot-preview state rather than not-found: the group may well exist and be signable, and the
   // page stays on the address instead of redirecting to the list.
-  test('shows the cannot-preview state alone, with no overview and no error beside it', async ({ page }) => {
-    await gotoEasyclaDetail(page, ABSENT_GROUP_ID, stubList());
+  test('shows the group-not-found state alone, with no overview and no error beside it', async ({ page }) => {
+    await gotoEasyclaDetail(page, ABSENT_GROUP_ID, async (p) => {
+      await stubList()(p);
+      await stubCatalogueNotFound(p);
+    });
 
-    await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-detail-group-not-found-state')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-detail-not-found-state')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-overview')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-tabs')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-error-state')).toHaveCount(0);
-    await expect(page).toHaveURL(new RegExp(`/org/(?:[^/]+/)?easycla/${ABSENT_GROUP_ID}$`));
+    await expect(page).toHaveURL(new RegExp(`/company/(?:[^/]+/)?easycla/${ABSENT_GROUP_ID}$`));
   });
 
   test('shows the error state alone, with no overview and no not-found beside it', async ({ page }) => {

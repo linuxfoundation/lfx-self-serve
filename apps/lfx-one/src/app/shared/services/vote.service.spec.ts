@@ -5,11 +5,12 @@ import { HttpClient, HttpErrorResponse, HttpHeaders, HttpResponse } from '@angul
 import { TestBed } from '@angular/core/testing';
 import {
   RECENTLY_OPENED_VOTE_TTL_MS,
+  VOTE_DELETE_ENDED,
   VOTE_CREATE_COMPLETED_AT_HEADER,
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
 } from '@lfx-one/shared/constants';
-import { PollStatus } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
 import { defer, finalize, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -657,6 +658,184 @@ describe('VoteService', () => {
     });
   });
 
+  describe('cancelVote lifecycle', () => {
+    it('keeps the write and duplicate guard after the initiating observer unsubscribes', () => {
+      const pending = new Subject<void>();
+      http.delete.mockReturnValue(pending);
+      const completed = vi.fn();
+      service.voteCancellationCompleted$.subscribe(completed);
+      const observer = service.cancelVote('new-vote').subscribe();
+      observer.unsubscribe();
+      service.cancelVote('new-vote').subscribe();
+      expect(http.delete).toHaveBeenCalledTimes(1);
+      expect(service.cancellingVoteUids().has('new-vote')).toBe(true);
+
+      pending.next();
+      pending.complete();
+      expect(completed).toHaveBeenCalledTimes(1);
+      expect(service.cancellingVoteUids().has('new-vote')).toBe(false);
+    });
+
+    it.each([404, 409, 500])('reconciles only stale-state cancellation errors before notifying hosts (%s)', (status) => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created, true);
+      service.markVoteOpened('new-vote');
+      const failure = new HttpErrorResponse({ status, error: { code: VOTE_DELETE_ENDED } });
+      http.delete.mockReturnValue(throwError(() => failure));
+      const errors = vi.fn();
+      const activeAtRefresh: Vote[][] = [];
+      service.voteCancellationCompleted$.subscribe(() => activeAtRefresh.push(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ACTIVE })));
+      service.cancelVote('new-vote').subscribe({ error: errors });
+      expect(errors).toHaveBeenCalledWith(failure);
+      expect(service.cancellingVoteUids().has('new-vote')).toBe(false);
+      if (status === 500) {
+        expect(activeAtRefresh).toEqual([]);
+        expect(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ACTIVE })).toHaveLength(1);
+      } else {
+        expect(activeAtRefresh).toEqual([[]]);
+        expect(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ACTIVE })).toEqual([]);
+      }
+      if (status === 409) {
+        expect(service.mergeRecentlyCreatedVotes([])).toEqual([expect.objectContaining({ uid: 'new-vote', status: PollStatus.ENDED })]);
+        expect(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ENDED })).toHaveLength(1);
+        expect(service.mergeRecentlyOpenedVotes([created])[0].status).toBe(PollStatus.ENDED);
+      }
+      if (status === 404) {
+        expect(service.mergeRecentlyCreatedVotes([])).toEqual([]);
+        expect(service.getLiveRecentlyOpenedVotes().has('new-vote')).toBe(false);
+      }
+    });
+
+    it('leaves carriers and hosts untouched for an unrelated 409', () => {
+      service.markVoteCreated(buildVote({ uid: 'new-vote' }), true);
+      http.delete.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'OTHER_CONFLICT' } })));
+      const completed = vi.fn();
+      service.voteCancellationCompleted$.subscribe(completed);
+      service.cancelVote('new-vote').subscribe({ error: vi.fn() });
+      expect(completed).not.toHaveBeenCalled();
+      expect(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ACTIVE })).toHaveLength(1);
+    });
+
+    it.each([404, 409])('invalidates cached detail before notifying hosts of definitive cancellation state (%s)', (status) => {
+      const active = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE });
+      http.get.mockReturnValue(of(active));
+      service.fetchVote('new-vote').subscribe();
+      expect(http.get).toHaveBeenCalledTimes(1);
+      const failure = new HttpErrorResponse({ status, error: { code: VOTE_DELETE_ENDED } });
+      http.delete.mockReturnValue(throwError(() => failure));
+      const next = vi.fn();
+      const detailError = vi.fn();
+      service.voteCancellationCompleted$.subscribe(() => {
+        http.get.mockReturnValue(status === 404 ? throwError(() => new HttpErrorResponse({ status: 404 })) : of({ ...active, status: PollStatus.ENDED }));
+        service.fetchVote('new-vote').subscribe({ next, error: detailError });
+      });
+      const cancelError = vi.fn();
+      service.cancelVote('new-vote').subscribe({ error: cancelError });
+
+      expect(cancelError).toHaveBeenCalledWith(failure);
+      expect(http.get).toHaveBeenCalledTimes(2);
+      if (status === 404) {
+        expect(next).not.toHaveBeenCalled();
+        expect(detailError).toHaveBeenCalledWith(expect.objectContaining({ status: 404 }));
+      } else {
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: PollStatus.ENDED }));
+        expect(detailError).not.toHaveBeenCalled();
+      }
+    });
+
+    it.each([403, 409, 500])('keeps cached detail after an unrelated cancellation failure (%s)', (status) => {
+      const active = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE });
+      http.get.mockReturnValue(of(active));
+      service.fetchVote('new-vote').subscribe();
+      http.delete.mockReturnValue(throwError(() => new HttpErrorResponse({ status, error: { code: 'OTHER_ERROR' } })));
+      service.cancelVote('new-vote').subscribe({ error: vi.fn() });
+      http.get.mockReturnValue(of({ ...active, status: PollStatus.ENDED }));
+      const read = vi.fn();
+      service.fetchVote('new-vote').subscribe(read);
+      expect(http.get).toHaveBeenCalledTimes(1);
+      expect(read).toHaveBeenCalledWith(active);
+    });
+
+    it('invalidates cached detail when a local confirmation already knows the vote ended', () => {
+      const active = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE });
+      http.get.mockReturnValue(of(active));
+      service.fetchVote('new-vote').subscribe();
+      service.markVoteEnded('new-vote');
+      http.get.mockReturnValue(of({ ...active, status: PollStatus.ENDED }));
+      const read = vi.fn();
+      service.fetchVote('new-vote').subscribe(read);
+      expect(http.get).toHaveBeenCalledTimes(2);
+      expect(read).toHaveBeenCalledWith(expect.objectContaining({ status: PollStatus.ENDED }));
+    });
+
+    it.each([false, true])('preserves confirmed-ended state through stale ACTIVE refreshes (recent carrier: %s)', (recent) => {
+      const active = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 });
+      if (recent) {
+        service.markVoteCreated(active, true);
+        service.markVoteOpened('new-vote');
+      }
+      http.delete.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: VOTE_DELETE_ENDED } })));
+      service.cancelVote('new-vote').subscribe({ error: vi.fn() });
+      // The composed All-tab pipeline must not mistake its own overlay for index convergence.
+      const all = service.mergeRecentlyOpenedVotes(service.mergeRecentlyCreatedVotes([active]));
+      expect(all[0].status).toBe(PollStatus.ENDED);
+      expect(service.mergeRecentlyCreatedVotes([active], { statusFilter: PollStatus.ACTIVE })).toEqual([]);
+      expect(service.mergeRecentlyCreatedVotes([active], { statusFilter: PollStatus.ENDED })[0].status).toBe(PollStatus.ENDED);
+      expect(service.mergeRecentlyOpenedVotes([active])[0].status).toBe(PollStatus.ENDED);
+      // A real indexed ENDED row retires the override; later reads use the server's actual state.
+      service.mergeRecentlyOpenedVotes(service.mergeRecentlyCreatedVotes([{ ...active, status: PollStatus.ENDED }]));
+      expect(service.mergeRecentlyCreatedVotes([active])[0].status).toBe(PollStatus.ACTIVE);
+    });
+
+    it.each([false, true])('preserves a locally ended carrier after an empty composed refresh (recently opened: %s)', (opened) => {
+      const active = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE, total_voting_request_invitations: 0 });
+      service.markVoteCreated(active, true);
+      if (opened) service.markVoteOpened('new-vote');
+      http.delete.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: VOTE_DELETE_ENDED } })));
+      service.cancelVote('new-vote').subscribe({ error: vi.fn() });
+
+      const emptyRefresh = service.mergeRecentlyOpenedVotes(service.mergeRecentlyCreatedVotes([]));
+      expect(emptyRefresh).toEqual([expect.objectContaining({ uid: 'new-vote', status: PollStatus.ENDED })]);
+      expect(service.mergeRecentlyCreatedVotes([active], { statusFilter: PollStatus.ACTIVE })).toEqual([]);
+      expect(service.mergeRecentlyOpenedVotes(service.mergeRecentlyCreatedVotes([active]))[0].status).toBe(PollStatus.ENDED);
+
+      const indexedEnded = { ...active, status: PollStatus.ENDED, total_voting_request_invitations: 4 };
+      service.mergeRecentlyOpenedVotes(service.mergeRecentlyCreatedVotes([indexedEnded]));
+      expect(service.mergeRecentlyCreatedVotes([active])[0].status).toBe(PollStatus.ACTIVE);
+    });
+
+    it('retains confirmed-ended state after the optimistic windows expire', () => {
+      vi.useFakeTimers();
+      try {
+        const active = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE });
+        service.markVoteCreated(active, true);
+        service.markVoteOpened('new-vote');
+        service.markVoteEnded('new-vote');
+        vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS + 1);
+        expect(service.mergeRecentlyCreatedVotes([active], { statusFilter: PollStatus.ACTIVE })).toEqual([]);
+        expect(service.mergeRecentlyOpenedVotes([active])[0].status).toBe(PollStatus.ENDED);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('records ended state without restarting either carrier TTL', () => {
+      vi.useFakeTimers();
+      try {
+        service.markVoteCreated(buildVote({ uid: 'new-vote' }), true);
+        service.markVoteOpened('new-vote');
+        vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS - 1);
+        service.markVoteEnded('new-vote');
+        expect(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ENDED })).toHaveLength(1);
+        vi.advanceTimersByTime(2);
+        expect(service.mergeRecentlyCreatedVotes([])).toEqual([]);
+        expect(service.getLiveRecentlyOpenedVotes().size).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   describe('deleteVote', () => {
     it('evicts the recently-created carrier so a deleted synthesized draft cannot reappear in the list', () => {
       const created = buildVote({ uid: 'new-vote' });
@@ -710,15 +889,168 @@ describe('VoteService', () => {
     });
   });
 
+  describe('own ballot (#4331)', () => {
+    const answers = [{ question_id: 'q-1', choice_ids: ['c-yes'] }];
+
+    it('getMyVoteBallot GETs the encoded my-ballot URL', () => {
+      const ballot = { vote_response_uid: 'vr-1', vote_uid: 'vote/1', abstained: false, poll_answers: [], comment_responses: [] };
+      http.get.mockReturnValue(of(ballot));
+      const next = vi.fn();
+
+      service.getMyVoteBallot('vote/1').subscribe(next);
+
+      expect(http.get).toHaveBeenCalledWith('/api/votes/vote%2F1/my-ballot');
+      expect(next).toHaveBeenCalledWith(ballot);
+    });
+
+    it('returns the accepted ballot when a bounded 404 retry observes index convergence', async () => {
+      vi.useFakeTimers();
+      try {
+        const ballot = { vote_response_uid: 'vr-1', vote_uid: 'vote-1', abstained: false, poll_answers: [], comment_responses: [] };
+        const read = vi
+          .fn()
+          .mockImplementationOnce(() => {
+            throw new HttpErrorResponse({ status: 404 });
+          })
+          .mockImplementationOnce(() => {
+            throw new HttpErrorResponse({ status: 404 });
+          })
+          .mockImplementationOnce(() => {
+            throw new HttpErrorResponse({ status: 404 });
+          })
+          .mockReturnValue(ballot);
+        http.get.mockReturnValue(defer(() => of(read())));
+        const next = vi.fn();
+        service.getMyVoteBallot('vote-1').subscribe(next);
+
+        await vi.advanceTimersByTimeAsync(999);
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(next).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(2001);
+        expect(read).toHaveBeenCalledTimes(4);
+        expect(next).toHaveBeenCalledExactlyOnceWith(ballot);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(read).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('maps a persistent 404 to null after exactly three additional attempts', async () => {
+      vi.useFakeTimers();
+      try {
+        const read = vi.fn(() => {
+          throw new HttpErrorResponse({ status: 404 });
+        });
+        http.get.mockReturnValue(defer(() => of(read())));
+        const next = vi.fn();
+        service.getMyVoteBallot('vote-1').subscribe(next);
+
+        await vi.advanceTimersByTimeAsync(2999);
+        expect(next).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(next).toHaveBeenCalledExactlyOnceWith(null);
+        expect(read).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('cancels pending ballot retries on unsubscribe', async () => {
+      vi.useFakeTimers();
+      try {
+        const read = vi.fn(() => {
+          throw new HttpErrorResponse({ status: 404 });
+        });
+        http.get.mockReturnValue(defer(() => of(read())));
+        const next = vi.fn();
+        const subscription = service.getMyVoteBallot('vote-1').subscribe(next);
+        subscription.unsubscribe();
+        await vi.advanceTimersByTimeAsync(3000);
+
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(next).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it.each([0, 401, 403, 500])('getMyVoteBallot immediately rethrows non-404 status %s', (status) => {
+      const failure = new HttpErrorResponse({ status });
+      http.get.mockReturnValue(throwError(() => failure));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const error = vi.fn();
+
+      service.getMyVoteBallot('vote-1').subscribe({ error });
+
+      expect(error).toHaveBeenCalledWith(failure);
+    });
+
+    it('never silently replaces a recorded ballot when submitting from a stale first-vote form', () => {
+      http.get.mockReturnValue(of({ uid: 'vr-1', vote_uid: 'vote-1', vote_status: IndexedVoteResponseStatus.RESPONDED }));
+      http.post.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409 })));
+      http.put.mockReturnValue(of(undefined));
+      const error = vi.fn();
+
+      service.submitMyResponse('vote-1', { abstain: false, userVoteContent: answers }).subscribe({ error });
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/responses', expect.objectContaining({ vote_response_uid: 'vr-1' }));
+      expect(http.put).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.objectContaining({ status: 409 }));
+    });
+
+    it('submitMyResponse creates the ballot for a row still awaiting a response', () => {
+      http.get.mockReturnValue(of({ uid: 'vr-1', vote_uid: 'vote-1', vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE }));
+      http.post.mockReturnValue(of(undefined));
+
+      service.submitMyResponse('vote-1', { abstain: false, userVoteContent: answers }).subscribe();
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/responses', {
+        vote_response_uid: 'vr-1',
+        vote_uid: 'vote-1',
+        abstain: false,
+        user_vote_content: answers,
+        comment_responses: undefined,
+      });
+      expect(http.put).not.toHaveBeenCalled();
+    });
+
+    it('updateMyResponse PUTs the encoded my-response URL with the body as given (#4723)', () => {
+      http.put.mockReturnValue(of(undefined));
+      const body = { abstain: false, user_vote_content: answers, comment_responses: [] };
+
+      service.updateMyResponse('vote/1', body).subscribe();
+
+      expect(http.put).toHaveBeenCalledExactlyOnceWith('/api/votes/vote%2F1/my-response', body);
+      expect(http.post).not.toHaveBeenCalled();
+    });
+  });
+
   describe('vote summary (#3662)', () => {
     it('sendVoteSummary POSTs an empty body to the encoded summary URL and passes through the response', () => {
-      http.post.mockReturnValue(of({ recipient_count: 3, failed_count: 0 }));
+      http.post.mockReturnValue(of({ recipient_count: 3, failed_count: 0, skipped_count: 1, uncertain_count: 2 }));
       const next = vi.fn();
 
       service.sendVoteSummary('vote/1').subscribe(next);
 
       expect(http.post).toHaveBeenCalledWith('/api/votes/vote%2F1/summary', {});
-      expect(next).toHaveBeenCalledWith({ recipient_count: 3, failed_count: 0 });
+      expect(next).toHaveBeenCalledWith({ recipient_count: 3, failed_count: 0, skipped_count: 1, uncertain_count: 2 });
+    });
+
+    it('getVoteSummaryPreview GETs the encoded summary-recipients URL and passes through the preview (#4830)', () => {
+      const preview = {
+        ready: [{ uid: 'r-1', user_email: 'avery@acme-motors.example' }],
+        missing_email: [],
+        unique_email_count: 1,
+        shared_email_voter_count: 0,
+      };
+      http.get.mockReturnValue(of(preview));
+      const next = vi.fn();
+
+      service.getVoteSummaryPreview('vote/1').subscribe(next);
+
+      expect(http.get).toHaveBeenCalledWith('/api/votes/vote%2F1/summary-recipients');
+      expect(next).toHaveBeenCalledWith(preview);
     });
   });
 
@@ -1016,6 +1348,99 @@ describe('VoteService', () => {
       // …and the service-side subscription still ran the enable to completion and marked the vote.
       expect(service.getLiveRecentlyOpenedVotes().has('vote-1')).toBe(true);
       expect(service.hasPendingSpeculativeCreate()).toBe(false);
+    });
+  });
+
+  describe('getPublicProjectSummary (#4692)', () => {
+    const summary = { name: 'Synthetic Project', slug: 'synthetic', logo_url: null, is_foundation: false };
+
+    it('requests the encoded identifier from the public summary route', () => {
+      http.get.mockReturnValue(of(summary));
+      let result: unknown;
+      service.getPublicProjectSummary('a/b').subscribe((value) => (result = value));
+
+      expect(http.get).toHaveBeenCalledWith('/public/api/projects/a%2Fb/summary');
+      expect(result).toEqual(summary);
+    });
+
+    it('maps a 404 (hidden or unknown project) to null without a warning', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      http.get.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      let result: unknown = 'unset';
+      service.getPublicProjectSummary('p-1').subscribe((value) => (result = value));
+
+      expect(result).toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('maps any other failure to null and logs only the status', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      http.get.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      let result: unknown = 'unset';
+      service.getPublicProjectSummary('p-1').subscribe((value) => (result = value));
+
+      expect(result).toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.any(String), 503);
+      warn.mockRestore();
+    });
+  });
+
+  describe('last-voter check (#4726)', () => {
+    describe('getMyWouldEndVote', () => {
+      it.each([
+        [{ would_end_vote: true }, true],
+        [{ would_end_vote: false }, false],
+        [{}, false],
+        [null, false],
+      ])('reads the encoded would-end-vote route and maps %j to %s', (body, expected) => {
+        http.get.mockReturnValue(of(body));
+        let result: boolean | undefined;
+        service.getMyWouldEndVote('a/b').subscribe((value) => (result = value));
+
+        expect(http.get).toHaveBeenCalledWith('/api/votes/a%2Fb/my-response/would-end-vote');
+        expect(result).toBe(expected);
+      });
+
+      it('fails open: emits false and logs only the status when the check fails', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        http.get.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+        let result: boolean | undefined;
+        service.getMyWouldEndVote('vote-1').subscribe((value) => (result = value));
+
+        expect(result).toBe(false);
+        expect(warn).toHaveBeenCalledWith(expect.any(String), 500);
+        warn.mockRestore();
+      });
+    });
+
+    describe('getLinkWouldEndVote', () => {
+      const TOKEN = 'synthetic-vote-token';
+
+      it.each([
+        [{ vote_uid: 'vote-1', ballot: { vote_status: 'awaiting_response', already_voted: false, voter_removed: false, would_end_vote: true } }, true],
+        [{ vote_uid: 'vote-1', ballot: { vote_status: 'awaiting_response', already_voted: false, voter_removed: false } }, false],
+      ])('re-reads the link ballot with the token only in the body and maps %j to %s', (ballot, expected) => {
+        http.post.mockReturnValue(of(ballot));
+        let result: boolean | undefined;
+        service.getLinkWouldEndVote(TOKEN).subscribe((value) => (result = value));
+
+        expect(http.post).toHaveBeenCalledWith('/public/api/votes/link-ballot', { vote_token: TOKEN });
+        expect(http.post.mock.calls[0][0]).not.toContain(TOKEN);
+        expect(result).toBe(expected);
+      });
+
+      it('fails open: emits false and logs only the status, never the token', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        http.post.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+        let result: boolean | undefined;
+        service.getLinkWouldEndVote(TOKEN).subscribe((value) => (result = value));
+
+        expect(result).toBe(false);
+        expect(warn).toHaveBeenCalledWith(expect.any(String), 502);
+        expect(JSON.stringify(warn.mock.calls)).not.toContain(TOKEN);
+        warn.mockRestore();
+      });
     });
   });
 });

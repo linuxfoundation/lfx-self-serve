@@ -43,22 +43,24 @@
       </div>
     </section>
   }
-  <section class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-5" data-testid="mktg-family-approve">
-    <div class="flex items-center justify-between gap-3">
-      <h2 class="text-sm text-gray-500"><span class="font-bold text-gray-900">Sign-off</span> · roadmap: two-role sign-off arrives in November</h2>
-      <lfx-button
-        [label]="signOffExpanded() ? 'Hide' : 'Show'"
-        [text]="true"
-        size="small"
-        styleClass="p-0 text-sm"
-        [ariaExpanded]="signOffExpanded()"
-        ariaControls="mktg-family-sign-off-text"
-        data-testid="mktg-family-sign-off-toggle"
-        (onClick)="signOffExpanded.set(!signOffExpanded())" />
-    </div>
-    <p id="mktg-family-sign-off-text" class="text-sm text-gray-500" [class.hidden]="!signOffExpanded()">
-      Any project writer approves an asset in October. The two-role sign-off (marketing lead sends; executive director and TOC chair approve) is a November
-      option per project.
-    </p>
-  </section>
+  @if (showComingSoon) {
+    <section class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-5" data-testid="mktg-family-approve">
+      <div class="flex items-center justify-between gap-3">
+        <h2 class="text-sm text-gray-500"><span class="font-bold text-gray-900">Sign-off</span> · roadmap: two-role sign-off arrives in November</h2>
+        <lfx-button
+          [label]="signOffExpanded() ? 'Hide' : 'Show'"
+          [text]="true"
+          size="small"
+          styleClass="p-0 text-sm"
+          [ariaExpanded]="signOffExpanded()"
+          ariaControls="mktg-family-sign-off-text"
+          data-testid="mktg-family-sign-off-toggle"
+          (onClick)="signOffExpanded.set(!signOffExpanded())" />
+      </div>
+      <p id="mktg-family-sign-off-text" class="text-sm text-gray-500" [class.hidden]="!signOffExpanded()">
+        Any project writer approves an asset in October. The two-role sign-off (marketing lead sends; executive director and TOC chair approve) is a November
+        option per project.
+      </p>
+    </section>
+  }
 </div>

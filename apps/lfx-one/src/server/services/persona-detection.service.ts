@@ -8,7 +8,6 @@ import {
   PERSONA_PRIORITY,
   PERSONAS_CACHE_TTL_MS,
   ROOT_PROJECT_SLUG,
-  VALID_PERSONAS,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
@@ -160,13 +159,6 @@ export class PersonaDetectionService {
       personas = this.applyForcedPersona(personas, 'executive-director');
     }
 
-    // Only honor the impersonation override when the target user actually has the forced persona.
-    // Root-writer promotion above is the only path that may inject a persona the user doesn't natively hold.
-    const forcedPersona = req.appSession?.['impersonationPersonaContext'];
-    if (typeof forcedPersona === 'string' && VALID_PERSONAS.has(forcedPersona) && personas.includes(forcedPersona as PersonaType)) {
-      personas = this.applyForcedPersona(personas, forcedPersona as PersonaType);
-    }
-
     // A `true` grant is verified by the check that granted it; only a `false` alongside a failed check is unverified.
     const marketingAuditorUnverified = !isMarketingAuditor && this.marketingGrantCheckFailed(req, 'marketing_auditor');
     const campaignManagerUnverified = !isCampaignManager && this.marketingGrantCheckFailed(req, 'campaign_manager');
@@ -218,6 +210,23 @@ export class PersonaDetectionService {
    */
   public async checkProjectWriter(req: Request, projectSlug: string): Promise<boolean> {
     return this.checkProjectAccess(req, projectSlug, 'writer_guard', 'check_project_writer');
+  }
+
+  /**
+   * `global_marketing_ops` on `projectSlug` itself — the relation campaign-service checks
+   * (`project:{uid}#global_marketing_ops` on the path project) before it sends account-level Google
+   * Ads inputs such as audiences to the shared LF customer. Narrower than `campaign_manager`, which
+   * also admits the project's `executive_director`. An unknown slug is `false`.
+   *
+   * STRICT, unlike the other checks here: a failed slug lookup or access check THROWS rather than
+   * answering `false`, so a caller can tell "not granted" (403) from "could not be verified" (503).
+   * Not request-cached; each caller asks once per request.
+   */
+  public async checkProjectGlobalMarketingOpsStrict(req: Request, projectSlug: string): Promise<boolean> {
+    if (!projectSlug) return false;
+    const { uid, exists } = await this.resolveProjectSlug(req, projectSlug);
+    if (!exists) return false;
+    return this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'global_marketing_ops' });
   }
 
   /**

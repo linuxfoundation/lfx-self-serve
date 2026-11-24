@@ -66,6 +66,7 @@ describe('mentorship router — write endpoints removed (GH-2717)', () => {
 describe('mentorship router — admin endpoints', () => {
   it.each([
     '/admin/programs',
+    '/admin/projects/7c9e6679-7425-40de-944b-e07fc1f90ae7/programs',
     '/admin/programs/mp_test',
     '/admin/programs/3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b/mentees?type=current',
     '/admin/applications/3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b/tasks',

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
@@ -17,6 +17,9 @@ import {
   MKTG_FAMILY_PRINT_ONLY_CLASS,
   MKTG_FAMILY_SLIDES_NOTE,
   MKTG_KIT_FAMILIES,
+  MKTG_POLL_MAX_BACKOFF_MS,
+  MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_POLL,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
 } from '@lfx-one/shared/constants';
@@ -29,28 +32,34 @@ import {
   MktgSlidesExportMode,
   MktgSlidesExportPhase,
 } from '@lfx-one/shared/interfaces';
-import { mktgFamilyExportAgentKeys } from '@lfx-one/shared/utils';
+import { mktgFamilyExportAgentKeys, mktgPrintDocumentTitle } from '@lfx-one/shared/utils';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, distinctUntilChanged, from, map, of, Subject, Subscription, startWith, switchMap } from 'rxjs';
-import { MktgBrandKitPrintComponent } from '../../mktg-brand-kit-print/mktg-brand-kit-print.component';
-import { MktgBoilerplatesPrintComponent } from '../../mktg-boilerplates-print/mktg-boilerplates-print.component';
-import { MktgFaqPrintComponent } from '../../mktg-faq-print/mktg-faq-print.component';
-import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-framework-print.component';
+import {
+  catchError,
+  combineLatest,
+  distinctUntilChanged,
+  EMPTY,
+  filter,
+  from,
+  map,
+  of,
+  Subject,
+  Subscription,
+  startWith,
+  switchMap,
+  tap,
+  throwError,
+} from 'rxjs';
+import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
+import { MktgFamilyPrintComponent } from '../mktg-family-print/mktg-family-print/mktg-family-print.component';
 
 /** The Family page's named slot; document export controls are independent. */
 @Component({
   selector: 'lfx-mktg-family-export-actions',
-  imports: [
-    DatePipe,
-    ButtonComponent,
-    MessageComponent,
-    MktgBrandKitPrintComponent,
-    MktgFrameworkPrintComponent,
-    MktgBoilerplatesPrintComponent,
-    MktgFaqPrintComponent,
-  ],
+  imports: [DatePipe, ButtonComponent, MessageComponent, MktgFamilyPrintComponent],
   templateUrl: './mktg-family-export-actions.component.html',
   styleUrl: './mktg-family-export-actions.component.scss',
   host: { class: 'block', '[attr.data-family-id]': 'familyId()' },
@@ -62,6 +71,7 @@ export class MktgFamilyExportActionsComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
 
   public readonly familyId = input.required<string>();
   protected readonly slidesNote = MKTG_FAMILY_SLIDES_NOTE;
@@ -78,6 +88,9 @@ export class MktgFamilyExportActionsComponent {
   protected readonly lookup = signal<MktgFamilyExportLastResponse | null>(null);
   protected readonly checking = signal(true);
   protected readonly lookupError = signal('');
+  /** True while the last-export lookup is failing transiently and the shared poller retries it; one quiet line, no button. */
+  protected readonly lookupRetrying = signal(false);
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly phase = signal<MktgSlidesExportPhase>('idle');
   protected readonly message = signal('');
   protected readonly partialLink = signal<string | null>(null);
@@ -88,8 +101,9 @@ export class MktgFamilyExportActionsComponent {
   private run: Subscription | null = null;
   private readonly pdfRetry = new Subject<void>();
   protected readonly pdfReady = signal(false);
-  protected readonly previewRequested = signal(false);
-  private pdfPending = false;
+  protected readonly pdfPreparedScope = signal('');
+  /** True from the lookup's end until the PDF is prepared and mounted (or failed): the card's checking line stays and Download PDF stays disabled meanwhile. */
+  protected readonly pdfPending = signal(false);
   private pdfScope = '';
 
   protected readonly writer = computed(() => this.context.canWrite());
@@ -103,7 +117,7 @@ export class MktgFamilyExportActionsComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      combineLatest([toObservable(this.focusRequested), toObservable(this.checking), toObservable(this.canPrint)])
+      combineLatest([toObservable(this.focusRequested), toObservable(this.checking), toObservable(this.canPrint), toObservable(this.canExport)])
         .pipe(takeUntilDestroyed())
         .subscribe(([requested]) => {
           if (!requested || !this.focusRequested()) return;
@@ -116,7 +130,7 @@ export class MktgFamilyExportActionsComponent {
               { injector: this.injector }
             );
             this.focusRequested.set(false);
-          } else if (!this.checking()) this.focusRequested.set(false);
+          } else if (!this.checking() && !this.canExport()) this.focusRequested.set(false);
         });
       this.initLookup();
       this.initPdf();
@@ -124,7 +138,7 @@ export class MktgFamilyExportActionsComponent {
     this.destroyRef.onDestroy(() => {
       this.run?.unsubscribe();
       clearTimeout(this.highlightTimer);
-      this.print.clear(MKTG_FAMILY_PRINT_BODY_CLASS);
+      this.print.clear();
     });
   }
 
@@ -165,22 +179,18 @@ export class MktgFamilyExportActionsComponent {
   protected cancel(): void {
     this.phase.set('idle');
   }
-  protected checkAgain(): void {
-    this.retry.next(true);
-  }
-
   protected downloadPdf(): void {
     const target = this.target();
     const members = this.lookup()?.currentMembers;
     if (!target || !members || !this.canPrint()) return;
-    if (this.pdfReady() && this.printView() && this.pdfScope === JSON.stringify([target, members])) {
-      this.print.printNow(MKTG_FAMILY_PRINT_BODY_CLASS);
+    // A completed preparation may precede its render callback; keep this print in the click task.
+    if (this.markPdfReady() && this.pdfScope === JSON.stringify([target, members])) {
+      this.print.printNow(MKTG_FAMILY_PRINT_BODY_CLASS, this.pdfTitle());
       return;
     }
-    this.previewRequested.set(true);
     this.printing.set(true);
     this.message.set('');
-    if (!this.pdfPending) this.pdfRetry.next();
+    this.pdfRetry.next();
   }
 
   /** Prepare independently of busy(): finishing a fetch must never trigger another fetch or print. */
@@ -192,16 +202,18 @@ export class MktgFamilyExportActionsComponent {
         switchMap(({ target, writer, lookup, checking }) => {
           this.printView.set(null);
           this.pdfReady.set(false);
-          this.pdfPending = false;
+          this.pdfPending.set(false);
           this.pdfScope = '';
+          this.pdfPreparedScope.set('');
           this.printing.set(false);
-          this.previewRequested.set(false);
           if (!target || !writer || checking || !lookup?.currentMembers.length) return of(null);
           const key = JSON.stringify([target, lookup.currentMembers]);
           return this.pdfRetry.pipe(
             startWith(undefined),
             switchMap(() => {
-              this.pdfPending = true;
+              this.pdfPending.set(true);
+              this.pdfReady.set(false);
+              this.pdfPreparedScope.set('');
               return this.api.printView(target, lookup.currentMembers, this.context.activeContext()?.name ?? 'Project').pipe(
                 switchMap((view) => {
                   this.printView.set(view);
@@ -222,24 +234,17 @@ export class MktgFamilyExportActionsComponent {
       )
       .subscribe((prepared) => {
         if (!prepared) {
-          this.pdfPending = false;
+          this.pdfPending.set(false);
           this.printing.set(false);
           return;
         }
-        // Mount the print-only document before offering the synchronous click.
+        if (this.printView() !== prepared.view) return;
+        // This template-bound signal schedules the mount in a zoneless app if it has not rendered yet.
+        this.pdfPreparedScope.set(prepared.key);
+        if (this.markPdfReady()) return;
         afterNextRender(
           () => {
-            if (
-              this.destroyRef.destroyed ||
-              !this.writer() ||
-              this.printView() !== prepared.view ||
-              JSON.stringify([this.target(), this.lookup()?.currentMembers]) !== prepared.key
-            )
-              return;
-            this.pdfScope = prepared.key;
-            this.pdfReady.set(true);
-            this.pdfPending = false;
-            this.printing.set(false);
+            if (this.printView() === prepared.view && this.pdfPreparedScope() === prepared.key) this.markPdfReady();
           },
           { injector: this.injector }
         );
@@ -255,12 +260,20 @@ export class MktgFamilyExportActionsComponent {
 
   private initCanExport(): Signal<boolean> {
     return computed(
-      () => !!this.target() && this.writer() && !this.checking() && !this.lookupError() && !!this.lookup()?.currentMembers.length && !this.busy()
+      () =>
+        !!this.target() &&
+        this.writer() &&
+        !this.checking() &&
+        !this.lookupError() &&
+        // A failed first read leaves no lookup, so Export is held; a transient re-read of a loaded lookup keeps it (law 5:
+        // the last loaded content stays and stays usable), as the Slides panel does.
+        !!this.lookup()?.currentMembers.length &&
+        !this.busy()
     );
   }
 
   private initCanPrint(): Signal<boolean> {
-    return computed(() => this.canExport());
+    return computed(() => this.canExport() && !this.pdfPending() && (this.pdfReady() || !!this.message()));
   }
 
   private initMemberVersions(): Signal<string> {
@@ -290,7 +303,7 @@ export class MktgFamilyExportActionsComponent {
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
         switchMap(({ target, writer }) => {
           this.run?.unsubscribe();
-          this.print.clear(MKTG_FAMILY_PRINT_BODY_CLASS);
+          this.print.clear();
           this.printView.set(null);
           this.printing.set(false);
           this.lookup.set(null);
@@ -299,6 +312,7 @@ export class MktgFamilyExportActionsComponent {
           this.partialLink.set(null);
           this.message.set('');
           this.lookupError.set('');
+          this.lookupRetrying.set(false);
           if (!target || !writer) {
             this.checking.set(false);
             return of(null);
@@ -308,13 +322,49 @@ export class MktgFamilyExportActionsComponent {
           return this.retry.pipe(
             startWith(true),
             switchMap((refresh) => {
-              this.checking.set(true);
-              this.lookupError.set('');
-              return this.api.last(target, refresh).pipe(
-                catchError(() => {
-                  this.lookupError.set('Could not check for an earlier deck. Export waits until this check succeeds, so no second deck is made by mistake.');
-                  return of(null);
-                })
+              // A transient failure is read again by the shared poller (capped backoff; at once on tab return, focus or
+              // reconnect) behind one plain line; a final failure keeps its message. No button re-reads.
+              let first = true;
+              let denied = false;
+              const read = () => {
+                // A refused lookup is latched for this target (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401
+                // too is the operator's choice, since a session-expiry 401 needs a sign-in, not a poll): no wake re-reads it.
+                if (denied) return EMPTY;
+                // Only a first read with nothing loaded shows the checking line: a retry keeps the plain line until it
+                // succeeds (no flicker), and a re-read after an export keeps the loaded lookup usable (law 5) instead of
+                // entering a checking state that a filtered transient failure could never leave.
+                if (first) {
+                  if (!this.lookup()) this.checking.set(true);
+                  this.lookupError.set('');
+                }
+                const fresh = refresh || !first;
+                first = false;
+                return this.api.last(target, fresh).pipe(
+                  tap(() => {
+                    this.lookupError.set('');
+                    this.lookupRetrying.set(false);
+                  }),
+                  catchError((error: unknown) => {
+                    if (isTransientHttpError(error)) return throwError(() => error);
+                    denied = error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403);
+                    this.lookupRetrying.set(false);
+                    this.lookupError.set('Could not check for an earlier deck. Export is unavailable here, so no second deck is made by mistake.');
+                    return of(null);
+                  })
+                );
+              };
+              return createVisibilityPoll(this.document, read, {
+                intervalMs: 0,
+                backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+                backoffMaxMs: MKTG_POLL_MAX_BACKOFF_MS,
+                shouldContinue: () => false,
+              }).pipe(
+                tap((event) => {
+                  if (event.kind === 'error') this.lookupRetrying.set(true);
+                }),
+                // A transient wake re-read never clears a loaded lookup (the last loaded content stays): only a result replaces it.
+                filter((event) => event.kind === 'ok' || !this.lookup()),
+                map((event) => (event.kind === 'ok' ? event.value : null))
               );
             })
           );
@@ -325,6 +375,42 @@ export class MktgFamilyExportActionsComponent {
         this.lookup.set(lookup);
         this.checking.set(false);
       });
+  }
+
+  /**
+   * The saved PDF's name, like the deck's title: the project, the family and the newest member revision's
+   * date, so the same set of members always gives the same name. The family binds several revisions, so
+   * it carries no version.
+   */
+  private pdfTitle(): string {
+    const view = this.printView();
+    return mktgPrintDocumentTitle(
+      view?.projectName ?? this.context.activeContext()?.name ?? 'Project',
+      this.familyName(),
+      null,
+      view?.newestRevisionAt ?? null
+    );
+  }
+
+  /** Readiness requires both completed font preparation and the current mounted document. Never prints asynchronously. */
+  private markPdfReady(): boolean {
+    const key = this.pdfPreparedScope();
+    if (
+      !isPlatformBrowser(this.platformId) ||
+      this.destroyRef.destroyed ||
+      !this.writer() ||
+      this.checking() ||
+      !key ||
+      !this.printView() ||
+      JSON.stringify([this.target(), this.lookup()?.currentMembers]) !== key ||
+      !this.host.nativeElement.querySelector('[data-testid="family-export-print-document"] > *')
+    )
+      return false;
+    this.pdfScope = key;
+    this.pdfReady.set(true);
+    this.pdfPending.set(false);
+    this.printing.set(false);
+    return true;
   }
 
   private watch(run: ReturnType<MktgFamilyExportService['run']>): void {

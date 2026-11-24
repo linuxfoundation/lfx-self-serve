@@ -571,6 +571,55 @@ describe('mktgRunActivityPhases', () => {
       ['Checking', 'pending'],
     ]);
   });
+
+  it('keeps the furthest phase under way between its waves, so a read in batches never flickers done and back', () => {
+    const betweenWaves = mktgRunActivityPhases([
+      { id: 'step-1', kind: 'reading', label: 'Reading aaif.io', status: 'done', startedAt: '2026-10-29T08:00:00Z', endedAt: '2026-10-29T08:00:03Z' },
+      { id: 'step-2', kind: 'reading', label: 'Reading aaif.io/about', status: 'done', startedAt: '2026-10-29T08:00:01Z', endedAt: '2026-10-29T08:00:04Z' },
+    ]);
+    expect(betweenWaves.map((phase) => phase.state)).toEqual(['active', 'pending', 'pending', 'pending', 'pending']);
+    const nextWave = mktgRunActivityPhases([
+      { id: 'step-1', kind: 'reading', label: 'Reading aaif.io', status: 'done', startedAt: '2026-10-29T08:00:00Z', endedAt: '2026-10-29T08:00:03Z' },
+      { id: 'step-3', kind: 'reading', label: 'Reading aaif.io/members', status: 'running', startedAt: '2026-10-29T08:00:09Z' },
+    ]);
+    expect(nextWave[0].state).toBe('active');
+    // A later phase starting is what closes it, and a late page read does not reopen it.
+    const later = mktgRunActivityPhases([
+      { id: 'step-1', kind: 'reading', label: 'Reading aaif.io', status: 'done', startedAt: '2026-10-29T08:00:00Z', endedAt: '2026-10-29T08:00:03Z' },
+      {
+        id: 'step-4',
+        kind: 'lfx',
+        label: 'Reading the LFX project record',
+        status: 'done',
+        startedAt: '2026-10-29T08:00:10Z',
+        endedAt: '2026-10-29T08:00:12Z',
+      },
+      { id: 'step-5', kind: 'reading', label: 'Reading aaif.io/events', status: 'running', startedAt: '2026-10-29T08:00:13Z' },
+    ]);
+    expect(later.map((phase) => phase.state)).toEqual(['done', 'active', 'pending', 'pending', 'pending']);
+    // A failed page read is a step, not the end of the run: the phase stays under way between waves.
+    const failedRead = [
+      {
+        id: 'step-1',
+        kind: 'reading' as const,
+        label: 'Reading aaif.io',
+        status: 'done' as const,
+        startedAt: '2026-10-29T08:00:00Z',
+        endedAt: '2026-10-29T08:00:03Z',
+      },
+      {
+        id: 'step-6',
+        kind: 'reading' as const,
+        label: 'Reading aaif.io/old',
+        status: 'failed' as const,
+        startedAt: '2026-10-29T08:00:04Z',
+        endedAt: '2026-10-29T08:00:05Z',
+      },
+    ];
+    expect(mktgRunActivityPhases(failedRead)[0].state).toBe('active');
+    // Only the caller knows the run ended (a terminal failure, say): `ended` closes the furthest phase.
+    expect(mktgRunActivityPhases(failedRead, true)[0].state).toBe('done');
+  });
 });
 
 describe('AEO/GEO session activity', () => {

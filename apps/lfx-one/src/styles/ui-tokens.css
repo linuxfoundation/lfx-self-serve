@@ -91,6 +91,7 @@
   --ui-radius-lg: 20px;
   --ui-radius-full: 9999px;
   --ui-height-tiny: 24px;
+  --ui-height-xsmall: 28px;
   --ui-height-small: 32px;
   --ui-height-medium: 40px;
   --ui-height-large: 48px;
@@ -112,6 +113,11 @@
   --ui-breakpoint-md: 960px;
   --ui-breakpoint-lg: 1200px;
   --ui-opacity-disabled: 0.5;
+  --ui-duration-fast: 120ms;
+  --ui-duration-base: 150ms;
+  --ui-duration-slow: 250ms;
+  --ui-ease: cubic-bezier(0.175, 0.885, 0.32, 1.1);
+  --ui-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 :root,

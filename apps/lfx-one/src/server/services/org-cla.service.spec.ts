@@ -59,6 +59,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     isHttpsUrl: url.isHttpsUrl,
     isSameClaGroup: actual.isSameClaGroup,
     canonicalClaGroupId: actual.canonicalClaGroupId,
+    hyphenatedClaGroupId: actual.hyphenatedClaGroupId,
     sortOrgClaApprovalEntries: approval.sortOrgClaApprovalEntries,
     validateOrgClaApprovalValue: approval.validateOrgClaApprovalValue,
     classifyOrgClaManagerRefusal: managers.classifyOrgClaManagerRefusal,
@@ -282,7 +283,7 @@ describe('OrgClaService.listClaGroups — an EasyCLA refusal (#3631)', () => {
 
     expect(error).toBeInstanceOf(MicroserviceError);
     expect(error.errorBody).toBeUndefined();
-    expect(error.toResponse()).toMatchObject({ error: "You don't have an EasyCLA role at this organization.", code: 'EASYCLA_ROLE_MISSING' });
+    expect(error.toResponse()).toMatchObject({ error: "You don't have an EasyCLA role at this company.", code: 'EASYCLA_ROLE_MISSING' });
     expect(JSON.stringify(error.toResponse())).not.toContain('contributor@example.org');
   });
 
@@ -973,7 +974,7 @@ describe('OrgClaService.getSignOptions', () => {
 
 describe('OrgClaService.requestCorporateSignature', () => {
   // The return address is gated (spec 050 phase 2 rollout, #2743): this block runs with the gate ON —
-  // the target shape once every replica routes `/org/{org}/easycla`; the leftover shape is pinned
+  // the target shape once every replica routes `/company/{org}/easycla`; the leftover shape is pinned
   // separately below.
   beforeEach(() => {
     vi.stubEnv('ORG_EASYCLA_RETURN_IN_PATH', 'true');
@@ -4281,5 +4282,85 @@ describe('OrgClaService — CLA manager designee (#2780)', () => {
       expect(error.statusCode).toBe(409);
       expect(error.toResponse()['upstreamCode']).toBe('already-signed');
     });
+  });
+});
+
+describe('OrgClaService.getClaGroupCatalogue', () => {
+  it('returns the project the catalogue resolved, the same field the sign picker uses', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      claGroupID: CLA_GROUP_ID,
+      claGroupName: 'Nimbus Foundation CLA',
+      projectName: 'Cascade',
+      projectSFID: PROJECT_SFID,
+      cclaEnabled: true,
+    });
+
+    const option = await new OrgClaService().getClaGroupCatalogue(req(), CLA_GROUP_ID);
+
+    expect(option).toMatchObject({
+      claGroupId: CLA_GROUP_ID,
+      claGroupName: 'Nimbus Foundation CLA',
+      projectName: 'Cascade',
+      projectSfid: PROJECT_SFID,
+      cclaEnabled: true,
+    });
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      `https://gw.example.org/cla-service/v4/cla-group/${CLA_GROUP_ID}/catalogue`,
+      expect.objectContaining({ operation: 'org_cla_group_catalogue' })
+    );
+  });
+
+  // The producer matches the id literally, so every spelling the controller accepts has to reach
+  // it as the one it stores.
+  it.each([
+    ['compact', CLA_GROUP_ID.replaceAll('-', '')],
+    ['upper-case', CLA_GROUP_ID.toUpperCase()],
+    ['compact upper-case', CLA_GROUP_ID.replaceAll('-', '').toUpperCase()],
+  ])('asks upstream for a %s id in the stored spelling', async (_label, spelling) => {
+    gatewayFetch.mockResolvedValueOnce({ claGroupID: CLA_GROUP_ID, claGroupName: 'Nimbus Foundation CLA', projectSFID: PROJECT_SFID, cclaEnabled: true });
+
+    const option = await new OrgClaService().getClaGroupCatalogue(req(), spelling);
+
+    expect(option).toMatchObject({ claGroupId: CLA_GROUP_ID, projectSfid: PROJECT_SFID });
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      `https://gw.example.org/cla-service/v4/cla-group/${CLA_GROUP_ID}/catalogue`,
+      expect.anything()
+    );
+  });
+
+  it('accepts an echo in another spelling of the requested group', async () => {
+    gatewayFetch.mockResolvedValueOnce({ claGroupID: CLA_GROUP_ID.replaceAll('-', '').toUpperCase(), claGroupName: 'Nimbus Foundation CLA' });
+
+    await expect(new OrgClaService().getClaGroupCatalogue(req(), CLA_GROUP_ID)).resolves.toMatchObject({ claGroupName: 'Nimbus Foundation CLA' });
+  });
+
+  // Rendering the answer would name a group the address did not, so it is a failed read rather
+  // than a not-found — the signing hand-off refuses the same echo the same way.
+  it.each([
+    ['a different group', { claGroupID: '0b7e2d14-5c3a-4f19-9e86-1a2b3c4d5e6f', claGroupName: 'Other CLA' }],
+    ['no group', { claGroupName: 'Nimbus Foundation CLA' }],
+  ])('refuses a 200 that names %s', async (_label, body) => {
+    gatewayFetch.mockResolvedValueOnce(body);
+
+    await expect(new OrgClaService().getClaGroupCatalogue(req(), CLA_GROUP_ID)).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'CLA_GROUP_CATALOGUE_MISMATCH',
+    });
+  });
+
+  it('treats an upstream 404 as not found, including a producer route that is not deployed yet', async () => {
+    const { MicroserviceError } = await import('../errors');
+    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'cla_service' }));
+
+    await expect(new OrgClaService().getClaGroupCatalogue(req(), CLA_GROUP_ID)).resolves.toBeNull();
+  });
+
+  it('rethrows an upstream failure that is not a 404', async () => {
+    const { MicroserviceError } = await import('../errors');
+    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('down', 502, 'UPSTREAM_ERROR', { service: 'cla_service' }));
+
+    await expect(new OrgClaService().getClaGroupCatalogue(req(), CLA_GROUP_ID)).rejects.toMatchObject({ statusCode: 502 });
   });
 });

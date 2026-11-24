@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { USER_MEETINGS_INCLUDE_ATTENDANCE, USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } from '@lfx-one/shared/constants';
 import {
   AttachmentCategory,
   AttachmentDownloadUrlResponse,
@@ -21,8 +22,9 @@ import {
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, ServiceValidationError } from '../errors';
+import { attachPastMeetingAttendanceSummaries } from '../helpers/meeting-attendance.helper';
 import { enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
-import { validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
+import { getStringQueryParam, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { AttendanceReconciliationService } from '../services/attendance-reconciliation.service';
 import { logger } from '../services/logger.service';
@@ -52,6 +54,9 @@ export class PastMeetingController {
    * participant records. It stays undefined for anonymous callers or when the scan fails, so the list
    * still loads without the "Attended" label. The flag is opt-in because the scan is not scoped to the
    * page, so callers that never show the label (e.g. stats paging) must not pay for it.
+   *
+   * `include` (comma-separated, opt-in) adds the meetings home fields: `artifacts` sets `has_recording` /
+   * `recording_share_url` / `has_ai_summary`, `attendance` sets `attendance_summary` on the meetings the viewer organizes.
    */
   public async getPastMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_past_meetings', {
@@ -60,7 +65,9 @@ export class PastMeetingController {
 
     try {
       // Controller-only flag: keep it out of the params forwarded to the query service.
-      const { include_viewer_attendance: includeViewerAttendance, ...upstreamQuery } = req.query as Record<string, any>;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { include_viewer_attendance: includeViewerAttendance, include: _include, ...upstreamQuery } = req.query as Record<string, any>;
+      const include = (getStringQueryParam(req, 'include') ?? '').split(',').map((value) => value.trim());
 
       const { data: meetings, page_token } = (await this.meetingService.getMeetings(req, upstreamQuery, 'v1_past_meeting')) as {
         data: PastMeeting[];
@@ -69,7 +76,7 @@ export class PastMeetingController {
 
       // Past meetings are webhook-created (created_by = zoom.webhooks), so join back to the
       // live v1_meeting index by meeting_id to resolve the real organizer name.
-      const enriched = await enrichMeetingsWithCreatedBy(req, meetings, (m) => m.meeting_id);
+      let enriched = await enrichMeetingsWithCreatedBy(req, meetings, (m) => m.meeting_id);
 
       // Past meetings never surface the host key.
       enriched.forEach((meeting) => stripHostKey(meeting));
@@ -80,6 +87,12 @@ export class PastMeetingController {
       if (includeViewerAttendance === 'true') {
         await this.userService.enrichPastMeetingsWithUserAttendance(req, getEffectiveEmail(req) ?? '', enriched);
       }
+      // The home fields gate on `organizer`, which access checks grant on the occurrence key, not the row's uid.
+      if (include.includes(USER_PAST_MEETINGS_INCLUDE_ARTIFACTS) || include.includes(USER_MEETINGS_INCLUDE_ATTENDANCE)) {
+        enriched = await this.withOccurrenceOrganizer(req, enriched);
+      }
+      if (include.includes(USER_PAST_MEETINGS_INCLUDE_ARTIFACTS)) await this.userService.attachPastMeetingArtifacts(req, enriched, 'get_past_meetings');
+      if (include.includes(USER_MEETINGS_INCLUDE_ATTENDANCE)) enriched = await attachPastMeetingAttendanceSummaries(req, enriched);
 
       logger.success(req, 'get_past_meetings', startTime, {
         meeting_count: enriched.length,
@@ -1065,6 +1078,17 @@ export class PastMeetingController {
       });
       return false;
     }
+  }
+
+  /** Sets `organizer` from the occurrence key each row's access grants use, keeping the row's own `id`. */
+  private async withOccurrenceOrganizer(req: Request, meetings: PastMeeting[]): Promise<PastMeeting[]> {
+    const checked = await this.accessCheckService.addAccessToResources(
+      req,
+      meetings.map((meeting) => ({ ...meeting, id: meeting.meeting_and_occurrence_id ?? meeting.id })),
+      'v1_past_meeting',
+      'organizer'
+    );
+    return meetings.map((meeting, index) => ({ ...meeting, organizer: checked[index].organizer ?? false }));
   }
 
   /**

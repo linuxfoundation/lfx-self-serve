@@ -6,13 +6,25 @@
 import { describe, expect, it } from 'vitest';
 
 import { APPOINTED_BY_OPTIONS, MEMBER_FORM_VOTING_STATUSES, MEMBER_ROLES } from '../constants/committees.constants';
-import { MEMBER_IMPORT_MAX_RECORDS, MEMBER_IMPORT_VOTING_COLUMNS } from '../constants/member-import.constants';
-import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { MemberImportCells, MemberImportGroupRules } from '../interfaces/member-import.interface';
 import {
+  MEMBER_IMPORT_MAX_RECORDS,
+  MEMBER_IMPORT_PAUSE_DELAYS_MS,
+  MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS,
+  MEMBER_IMPORT_VOTING_COLUMNS,
+} from '../constants/member-import.constants';
+import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import type { CommitteeMemberBulkCreateRowResult } from '../interfaces/member.interface';
+import type { MemberImportCells, MemberImportGroupRules, MemberImportRow } from '../interfaces/member-import.interface';
+import { rowsToCsv } from './file.utils';
+import {
+  buildMemberImportInvalidRowsCsv,
   buildMemberImportPayload,
+  classifyMemberImportBulkResult,
+  decodeMemberImportFile,
   getMemberImportFieldGuide,
+  getMemberImportRetryDelayMs,
   getMemberImportTemplateHeaders,
+  isMemberImportRowRetryable,
   parseMemberImportCsv,
   prepareMemberImportRows,
   validateMemberImportRow,
@@ -22,15 +34,17 @@ const OPEN: MemberImportGroupRules = { requiresOrganization: false, votingEnable
 const BUSINESS_EMAIL: MemberImportGroupRules = { requiresOrganization: true, votingEnabled: false };
 const VOTING: MemberImportGroupRules = { requiresOrganization: true, votingEnabled: true };
 
-const VOTING_HEADER = 'email,organization_name,organization_website,role,voting_status';
-const VOTING_ROW = 'ada@example.com,Acme Motors,https://acme-motors.example,None,Voting Rep';
+const HEADER = 'email,first_name,last_name';
+const NAMES = { first_name: 'First', last_name: 'Last' };
+const VOTING_HEADER = `${HEADER},organization_name,organization_website,role,voting_status`;
+const VOTING_ROW = 'ada@example.com,First,Last,Acme Motors,https://acme-motors.example,None,Voting Rep';
 
 function messages(cells: MemberImportCells, rules: MemberImportGroupRules = OPEN): string[] {
-  return validateMemberImportRow(cells, rules).map((issue) => `${issue.column}: ${issue.message}`);
+  return validateMemberImportRow({ ...NAMES, ...cells }, rules).map((issue) => `${issue.column}: ${issue.message}`);
 }
 
 describe('getMemberImportTemplateHeaders / getMemberImportFieldGuide', () => {
-  it('leaves voting columns out of a non-voting template and requires only email for an open group', () => {
+  it('leaves voting columns out of a non-voting template and requires email and names for an open group', () => {
     const headers = getMemberImportTemplateHeaders(OPEN);
     expect(headers).not.toContain('voting_status');
     expect(headers).toContain('organization_name');
@@ -38,7 +52,7 @@ describe('getMemberImportTemplateHeaders / getMemberImportFieldGuide', () => {
       getMemberImportFieldGuide(OPEN)
         .filter((field) => field.required)
         .map((field) => field.column)
-    ).toEqual(['email']);
+    ).toEqual(['email', 'first_name', 'last_name']);
   });
 
   it('requires organization, role and voting status for a voting group', () => {
@@ -47,13 +61,13 @@ describe('getMemberImportTemplateHeaders / getMemberImportFieldGuide', () => {
       getMemberImportFieldGuide(VOTING)
         .filter((field) => field.required)
         .map((field) => field.column)
-    ).toEqual(['email', 'organization_name', 'organization_website', 'role', 'voting_status']);
+    ).toEqual(['email', 'first_name', 'last_name', 'organization_name', 'organization_website', 'role', 'voting_status']);
   });
 
   it('derives voting-only validation and guidance from the configured choices', () => {
     const labels = MEMBER_FORM_VOTING_STATUSES.map(({ label }) => label).join(', ');
     const guide = getMemberImportFieldGuide(VOTING).find(({ column }) => column === 'voting_status');
-    expect(guide?.description).toBe(`${labels}.`);
+    expect(guide?.description).toBe(`${labels}. Not case-sensitive.`);
     expect(messages({ email: 'ada@example.com', voting_status: 'unsupported' }, VOTING)).toContain(
       `voting_status: Voting status "unsupported" is not allowed. Use ${labels}.`
     );
@@ -65,9 +79,11 @@ describe('getMemberImportTemplateHeaders / getMemberImportFieldGuide', () => {
 
   it('lists every accepted role and appointment value from the configured options', () => {
     const guide = getMemberImportFieldGuide(OPEN);
-    expect(guide.find(({ column }) => column === 'role')?.description).toBe(`Allowed values: ${MEMBER_ROLES.map(({ value }) => value).join(', ')}.`);
+    expect(guide.find(({ column }) => column === 'role')?.description).toBe(
+      `Allowed values: ${MEMBER_ROLES.map(({ value }) => value).join(', ')}. Not case-sensitive.`
+    );
     expect(guide.find(({ column }) => column === 'appointed_by')?.description).toBe(
-      `Allowed values: ${APPOINTED_BY_OPTIONS.map(({ value }) => value).join(', ')}. Leave blank for the default.`
+      `Allowed values: ${APPOINTED_BY_OPTIONS.map(({ value }) => value).join(', ')}. Not case-sensitive. Leave blank for the default.`
     );
     for (const { value } of MEMBER_ROLES) {
       expect(messages({ email: 'ada@example.com', role: value })).toEqual([]);
@@ -85,32 +101,181 @@ describe('getMemberImportTemplateHeaders / getMemberImportFieldGuide', () => {
   });
 });
 
+describe('buildMemberImportInvalidRowsCsv', () => {
+  const rows = (csv: string, rules: MemberImportGroupRules) => prepareMemberImportRows(parseMemberImportCsv(csv, rules).records, rules, new Set());
+
+  it('uses the group template header plus reserved recovery metadata', () => {
+    expect(buildMemberImportInvalidRowsCsv([], OPEN)[0]).toEqual([...getMemberImportTemplateHeaders(OPEN), 'lfx_import_encoding', 'errors']);
+    expect(buildMemberImportInvalidRowsCsv([], VOTING)[0]).toEqual([...getMemberImportTemplateHeaders(VOTING), 'lfx_import_encoding', 'errors']);
+    expect(buildMemberImportInvalidRowsCsv([], OPEN)[0]).not.toContain('voting_status');
+  });
+
+  it('returns only the header when no row is invalid', () => {
+    expect(buildMemberImportInvalidRowsCsv(rows(`${HEADER}\nada@example.com,First,Last\nada@example.com,,`, OPEN), OPEN)).toEqual([
+      [...getMemberImportTemplateHeaders(OPEN), 'lfx_import_encoding', 'errors'],
+    ]);
+  });
+
+  it('exports only invalid rows, in template column order, with their values as written', () => {
+    const csv = buildMemberImportInvalidRowsCsv(
+      rows('role,email,first_name,last_name\nNone,ada@example.com,First,Last\nunsupported,grace@example.com,First,\nNone,bad,First,Last', OPEN),
+      OPEN
+    );
+    const headers = csv[0];
+    const records = csv.slice(1);
+    expect(records).toHaveLength(2);
+    expect(records.map((record) => record[headers.indexOf('email')])).toEqual(['grace@example.com', 'bad']);
+    expect(records[0][headers.indexOf('role')]).toBe('unsupported');
+    expect(records[0][headers.indexOf('first_name')]).toBe('First');
+    expect(records[0][headers.indexOf('last_name')]).toBe('');
+    expect(records[1][headers.indexOf('errors')]).toBe('Email is not a valid address.');
+    expect(records.every((record) => record.length === headers.length)).toBe(true);
+  });
+
+  it('joins every issue of a row into its errors column', () => {
+    const [row] = rows(`${HEADER}\n,${'x'.repeat(101)},`, OPEN);
+    const [, record] = buildMemberImportInvalidRowsCsv([row], OPEN);
+    expect(row.issues.length).toBeGreaterThan(1);
+    expect(record.at(-1)).toBe(row.issues.map((issue) => issue.message).join(' '));
+  });
+
+  it.each([OPEN, VOTING])('round-trips corrected downloads with diagnostics for group rules %j', (rules) => {
+    const csv = rules.votingEnabled ? `${VOTING_HEADER}\nbad,First,Last,Example Org,https://org.example,None,Observer` : `${HEADER}\nbad,First,Last`;
+    const exported = buildMemberImportInvalidRowsCsv(rows(csv, rules), rules);
+    exported[1][exported[0].indexOf('email')] = 'fixed@example.com';
+    const parsed = parseMemberImportCsv('\ufeff' + rowsToCsv(exported), rules);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.headers).not.toContain('errors');
+    expect(parsed.headers).not.toContain('lfx_import_encoding');
+    expect(parsed.records[0].cells).not.toHaveProperty('errors');
+    expect(parsed.records[0].cells).not.toHaveProperty('lfx_import_encoding');
+    const [ready] = prepareMemberImportRows(parsed.records, rules, new Set());
+    expect(ready.status).toBe('ready');
+    expect(ready.payload?.email).toBe('fixed@example.com');
+  });
+
+  it.each(['+person@example.com', '-person@example.com', '=person@example.com', "'person@example.com", "'+person@example.com"])(
+    'preserves the exact email identity %s after fixing another field',
+    (email) => {
+      const exported = buildMemberImportInvalidRowsCsv(rows(`${HEADER},role\n${email},First,Last,unsupported`, OPEN), OPEN);
+      exported[1][exported[0].indexOf('role')] = 'Chair';
+      const parsed = parseMemberImportCsv(rowsToCsv(exported), OPEN);
+      expect(parsed.errors).toEqual([]);
+      const [ready] = prepareMemberImportRows(parsed.records, OPEN, new Set());
+      expect(ready.status).toBe('ready');
+      expect(ready.payload?.email).toBe(email);
+      expect(ready.normalizedEmail).toBe(email.toLowerCase());
+      expect(prepareMemberImportRows(parsed.records, OPEN, new Set([email.toLowerCase()]))[0].status).toBe('skipped');
+    }
+  );
+
+  it.each(['=SUM(1,2)', '+formula', '-formula', '@formula', "'literal", 'lfx-text:+literal', 'lfx-text:lfx-text:literal', 'Name, "Quoted"\nNext line'])(
+    'keeps spreadsheet-safe recovery text reversible: %s',
+    (name) => {
+      const csv = rowsToCsv([
+        ['email', 'first_name', 'last_name'],
+        ['bad', name, 'Last'],
+      ]);
+      // Use the parsed, trimmed contract; the generic serializer deliberately prefixes formulas.
+      const invalid = rows(csv, OPEN);
+      invalid[0].cells.first_name = name;
+      const exported = buildMemberImportInvalidRowsCsv(invalid, OPEN);
+      const encoded = exported[1][exported[0].indexOf('first_name')];
+      expect(encoded).not.toMatch(/^[=+\-@\t\r]/);
+      if (/^[=+\-@]/.test(name) || name.startsWith('lfx-text:')) expect(encoded).toBe(`lfx-text:${name}`);
+      const serialized = rowsToCsv(exported);
+      const original = parseMemberImportCsv(serialized, OPEN);
+      expect(original.errors).toEqual([]);
+      expect(original.records[0].cells.first_name).toBe(name);
+      expect(buildMemberImportInvalidRowsCsv(prepareMemberImportRows(original.records, OPEN, new Set()), OPEN)).toEqual(exported);
+      exported[1][0] = 'fixed@example.com';
+      const corrected = parseMemberImportCsv(rowsToCsv(exported), OPEN);
+      const [ready] = prepareMemberImportRows(corrected.records, OPEN, new Set());
+      expect(ready.status).toBe('ready');
+      expect(ready.payload?.first_name).toBe(name);
+    }
+  );
+
+  it('retains all supplied offending voting columns for non-voting groups without changing the blank template', () => {
+    const invalid = rows(`${HEADER},voting_status,voting_start_date,voting_end_date\nperson@example.com,First,Last,Observer,2026-01-01,2026-12-31`, OPEN);
+    const exported = buildMemberImportInvalidRowsCsv(invalid, OPEN);
+    for (const column of MEMBER_IMPORT_VOTING_COLUMNS) {
+      expect(exported[0]).toContain(column);
+      expect(exported[1][exported[0].indexOf(column)]).toBe(invalid[0].cells[column]);
+      expect(getMemberImportTemplateHeaders(OPEN)).not.toContain(column);
+    }
+    expect(exported[1].at(-1)).toBe(invalid[0].issues.map((issue) => issue.message).join(' '));
+    const parsed = parseMemberImportCsv(rowsToCsv(exported), OPEN);
+    expect(parsed.errors).toEqual([]);
+    expect(prepareMemberImportRows(parsed.records, OPEN, new Set())[0].status).toBe('invalid');
+    for (const column of MEMBER_IMPORT_VOTING_COLUMNS) exported[1][exported[0].indexOf(column)] = '';
+    const corrected = parseMemberImportCsv(rowsToCsv(exported), OPEN);
+    expect(prepareMemberImportRows(corrected.records, OPEN, new Set())[0].status).toBe('ready');
+  });
+
+  it('does not decode ordinary CSV text or diagnostic-only recovery files', () => {
+    for (const csv of [
+      "email,first_name,last_name\n'+person@example.com,lfx-text:+Literal,Last",
+      "errors,first_name,email,last_name\nold problem,lfx-text:+Literal,'+person@example.com,Last",
+    ]) {
+      const parsed = parseMemberImportCsv(csv, OPEN);
+      expect(parsed.errors).toEqual([]);
+      expect(parsed.records[0].cells).toEqual({ email: "'+person@example.com", first_name: 'lfx-text:+Literal', last_name: 'Last' });
+    }
+  });
+
+  it('combines normalized recovery headers with ignored extra columns', () => {
+    const parsed = parseMemberImportCsv(
+      'E-mail,First Name,Last Name,LFX Import Encoding,Errors,permission\nlfx-text:+person@example.com,lfx-text:+Name,Last,text-v1,old problem,manage',
+      OPEN
+    );
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.headers).toEqual(['email', 'first_name', 'last_name']);
+    expect(parsed.ignoredColumns).toEqual(['permission']);
+    expect(parsed.records[0].cells).toEqual({ email: '+person@example.com', first_name: '+Name', last_name: 'Last' });
+    expect(prepareMemberImportRows(parsed.records, OPEN, new Set())[0].status).toBe('ready');
+  });
+
+  it.each([
+    [`${HEADER},errors,errors\nperson@example.com,First,Last,a,b`, 'appears more than once'],
+    [`${HEADER},lfx_import_encoding,lfx_import_encoding\nperson@example.com,First,Last,text-v1,text-v1`, 'appears more than once'],
+    [`${HEADER},LFX Import Encoding,lfx_import_encoding\nperson@example.com,First,Last,text-v1,text-v1`, 'appears more than once'],
+    [`${HEADER},lfx_import_encoding\nperson@example.com,First,Last,text-v2`, 'unsupported recovery encoding'],
+    [`${HEADER},lfx_import_encoding\nperson@example.com,First,Last,`, 'unsupported recovery encoding'],
+    [`${HEADER},errors\nperson@example.com,First,Last`, 'has 3 cells but the header has 4'],
+  ])('retains strict recovery-file structure checks %#', (csv, expected) => {
+    const parsed = parseMemberImportCsv(csv, OPEN);
+    expect(parsed.errors.join(' ')).toContain(expected);
+    expect(parsed.records).toEqual([]);
+  });
+});
+
 describe('parseMemberImportCsv', () => {
   it('handles a BOM, CRLF endings and a trailing newline', () => {
-    const result = parseMemberImportCsv('﻿email,first_name\r\nada@example.com,Ada\r\n', OPEN);
+    const result = parseMemberImportCsv(`\ufeff${HEADER}\r\nada@example.com,First,Last\r\n`, OPEN);
     expect(result.errors).toEqual([]);
-    expect(result.headers).toEqual(['email', 'first_name']);
-    expect(result.records).toEqual([{ rowNumber: 2, cells: { email: 'ada@example.com', first_name: 'Ada' } }]);
+    expect(result.headers).toEqual(['email', 'first_name', 'last_name']);
+    expect(result.records).toEqual([{ rowNumber: 2, cells: { email: 'ada@example.com', ...NAMES } }]);
   });
 
   it('accepts flexible header order, trims header and cell whitespace, and allows omitted optional columns', () => {
-    const result = parseMemberImportCsv(' last_name , email \nLovelace ,  ada@example.com', OPEN);
+    const result = parseMemberImportCsv(' last_name , email , first_name \n Last ,  ada@example.com , First ', OPEN);
     expect(result.errors).toEqual([]);
-    expect(result.records[0].cells).toEqual({ last_name: 'Lovelace', email: 'ada@example.com' });
+    expect(result.records[0].cells).toEqual({ ...NAMES, email: 'ada@example.com' });
   });
 
   it('keeps quoted commas, escaped quotes and embedded newlines inside one cell, numbering by record', () => {
-    const csv = 'email,job_title\n"ada@example.com","Engineer, ""Platform""\nTeam"\ngrace@example.com,Admiral';
+    const csv = `${HEADER},job_title\n"ada@example.com",First,Last,"Engineer, ""Platform""\nTeam"\ngrace@example.com,First,Last,Admiral`;
     const result = parseMemberImportCsv(csv, OPEN);
     expect(result.errors).toEqual([]);
     expect(result.records).toEqual([
-      { rowNumber: 2, cells: { email: 'ada@example.com', job_title: 'Engineer, "Platform"\nTeam' } },
-      { rowNumber: 3, cells: { email: 'grace@example.com', job_title: 'Admiral' } },
+      { rowNumber: 2, cells: { email: 'ada@example.com', ...NAMES, job_title: 'Engineer, "Platform"\nTeam' } },
+      { rowNumber: 3, cells: { email: 'grace@example.com', ...NAMES, job_title: 'Admiral' } },
     ]);
   });
 
   it('skips blank records but still counts them in row numbers', () => {
-    const result = parseMemberImportCsv('\nemail,first_name\n\n,\nada@example.com,Ada', OPEN);
+    const result = parseMemberImportCsv(`\n${HEADER}\n\n,,\nada@example.com,First,Last`, OPEN);
     expect(result.errors).toEqual([]);
     expect(result.records.map((record) => record.rowNumber)).toEqual([5]);
   });
@@ -123,7 +288,7 @@ describe('parseMemberImportCsv', () => {
   it.each([
     ['', 'The file is empty'],
     ['\n \n', 'The file is empty'],
-    ['email,first_name\n', 'no member rows'],
+    [`${HEADER}\n`, 'no member rows'],
   ])('rejects empty or header-only input %#', (csv, expected) => {
     const result = parseMemberImportCsv(csv, OPEN);
     expect(result.records).toEqual([]);
@@ -141,42 +306,91 @@ describe('parseMemberImportCsv', () => {
   });
 
   it('rejects rows whose cell count differs from the header instead of shifting columns', () => {
-    const result = parseMemberImportCsv('email,first_name\nada@example.com,Ada,Lovelace\ngrace@example.com', OPEN);
+    const result = parseMemberImportCsv(`${HEADER}\nada@example.com,First,Last,Extra\ngrace@example.com`, OPEN);
     expect(result.records).toEqual([]);
-    expect(result.errors).toEqual([expect.stringContaining('Row 2 has 3 cells but the header has 2'), expect.stringContaining('Row 3 has 1 cells')]);
+    expect(result.errors).toEqual([expect.stringContaining('Row 2 has 4 cells but the header has 3'), expect.stringContaining('Row 3 has 1 cells')]);
   });
 
-  it('rejects unknown, case-mismatched and unsupported permission/identity headers', () => {
-    const result = parseMemberImportCsv('Email,username,permission,organization_id,status\na,b,c,d,e', OPEN);
-    expect(result.records).toEqual([]);
-    expect(result.errors).toContain(
-      'Unknown columns: "Email", "username", "permission", "organization_id", "status". Use only the template\'s lowercase column names.'
-    );
-    expect(result.errors).toContain('Missing required columns for this group: "email".');
+  it('matches headers ignoring case, whitespace, hyphens and underscores', () => {
+    const result = parseMemberImportCsv('E-mail,First Name,last-name,JobTitle,LINKEDIN_PROFILE\nada@example.com,Ada,Lovelace,Engineer,', OPEN);
+    expect(result.errors).toEqual([]);
+    expect(result.headers).toEqual(['email', 'first_name', 'last_name', 'job_title', 'linkedin_profile']);
+    expect(result.ignoredColumns).toEqual([]);
+    expect(result.records[0].cells).toEqual({
+      email: 'ada@example.com',
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+      job_title: 'Engineer',
+      linkedin_profile: '',
+    });
+    expect(parseMemberImportCsv('EMAIL,FirstName,LastName\nada@example.com,First,Last', OPEN).records[0].cells).toEqual({ email: 'ada@example.com', ...NAMES });
   });
 
-  it('rejects repeated and empty headers', () => {
-    const result = parseMemberImportCsv('email,,email\na,b,c', OPEN);
-    expect(result.errors).toEqual(['Column 2 has no header.', 'The column "email" appears more than once.']);
+  it('ignores and lists unknown, alias and unsupported permission/identity columns without reading their values', () => {
+    const result = parseMemberImportCsv(`Email Address,${HEADER},username,permission,organization_id,status\nx,ada@example.com,First,Last,b,c,d,e`, OPEN);
+    expect(result.errors).toEqual([]);
+    expect(result.headers).toEqual(['email', 'first_name', 'last_name']);
+    expect(result.ignoredColumns).toEqual(['Email Address', 'username', 'permission', 'organization_id', 'status']);
+    expect(result.records).toEqual([{ rowNumber: 2, cells: { email: 'ada@example.com', ...NAMES } }]);
+  });
+
+  it('names unrecognized headers when a required column is missing', () => {
+    const result = parseMemberImportCsv('Email Address,,username,first_name,last_name\nada@example.com,,b,First,Last', OPEN);
+    expect(result.records).toEqual([]);
+    expect(result.ignoredColumns).toEqual([]);
+    expect(result.errors).toEqual(['Missing required columns for this group: "email". Columns not recognized: "Email Address", "username".']);
+  });
+
+  it('ignores columns without a header, listing only those that hold a value', () => {
+    const result = parseMemberImportCsv('email,,first_name,last_name,\nada@example.com,note,First,Last,\ngrace@example.com,,First,Last, ', OPEN);
+    expect(result.errors).toEqual([]);
+    expect(result.ignoredColumns).toEqual(['Column 2 (no header)']);
+    expect(result.records.map((record) => record.cells)).toEqual([
+      { email: 'ada@example.com', ...NAMES },
+      { email: 'grace@example.com', ...NAMES },
+    ]);
+  });
+
+  it("counts ignored columns when checking each row has the header's cell count", () => {
+    expect(parseMemberImportCsv(`${HEADER},notes\nada@example.com,First,Last,a,b`, OPEN).errors).toEqual([
+      'Row 2 has 5 cells but the header has 4. Put quotes around values that contain commas.',
+    ]);
+    expect(parseMemberImportCsv(`${HEADER},notes\nada@example.com`, OPEN).errors).toEqual([expect.stringContaining('Row 2 has 1 cells')]);
+  });
+
+  it('rejects headers that repeat after normalization', () => {
+    const result = parseMemberImportCsv('Email,,email,first_name,last_name\na,b,c,First,Last', OPEN);
+    expect(result.records).toEqual([]);
+    expect(result.ignoredColumns).toEqual([]);
+    expect(result.errors).toEqual(['The column "email" appears more than once.']);
   });
 
   it('requires organization columns for organization-required groups and role/voting columns for voting groups', () => {
-    expect(parseMemberImportCsv('email\nada@example.com', BUSINESS_EMAIL).errors).toEqual([
+    expect(parseMemberImportCsv(`${HEADER}\nada@example.com,First,Last`, BUSINESS_EMAIL).errors).toEqual([
       'Missing required columns for this group: "organization_name", "organization_website".',
     ]);
-    expect(parseMemberImportCsv('email,organization_name,organization_website\nada@example.com,A,https://a.example', VOTING).errors).toEqual([
+    expect(parseMemberImportCsv(`${HEADER},organization_name,organization_website\nada@example.com,First,Last,A,https://a.example`, VOTING).errors).toEqual([
       'Missing required columns for this group: "role", "voting_status".',
     ]);
     expect(parseMemberImportCsv(`${VOTING_HEADER}\n${VOTING_ROW}`, VOTING).errors).toEqual([]);
   });
 
+  it.each(['first_name', 'last_name'] as const)('rejects a missing %s header for every group', (missing) => {
+    for (const rules of [OPEN, BUSINESS_EMAIL, VOTING]) {
+      const headers = getMemberImportTemplateHeaders(rules).filter((column) => column !== missing);
+      const parsed = parseMemberImportCsv(`${headers.join(',')}\n${headers.map(() => 'value').join(',')}`, rules);
+      expect(parsed.records).toEqual([]);
+      expect(parsed.errors).toEqual([`Missing required columns for this group: "${missing}".`]);
+    }
+  });
+
   it('skips large runs of blank records while preserving logical row numbers and quoting errors', () => {
     const blanks = '\n'.repeat(100_000);
-    const result = parseMemberImportCsv(`${blanks}email,first_name\n${blanks}ada@example.com,"Ada\nExample"\n,\ngrace@example.com,Grace`, OPEN);
+    const result = parseMemberImportCsv(`${blanks}${HEADER}\n${blanks}ada@example.com,"First\nExample",Last\n,,\ngrace@example.com,First,Last`, OPEN);
     expect(result.errors).toEqual([]);
     expect(result.records).toEqual([
-      { rowNumber: 200_002, cells: { email: 'ada@example.com', first_name: 'Ada\nExample' } },
-      { rowNumber: 200_004, cells: { email: 'grace@example.com', first_name: 'Grace' } },
+      { rowNumber: 200_002, cells: { email: 'ada@example.com', first_name: 'First\nExample', last_name: 'Last' } },
+      { rowNumber: 200_004, cells: { email: 'grace@example.com', ...NAMES } },
     ]);
     expect(parseMemberImportCsv(`${blanks}email\n"unclosed`, OPEN).errors).toEqual(['Row 100002 has a quote that is never closed.']);
   });
@@ -189,18 +403,26 @@ describe('parseMemberImportCsv', () => {
   });
 
   it('accepts exactly the record limit and rejects one more without truncating', () => {
-    const rows = (count: number): string => Array.from({ length: count }, (_, i) => `person${i}@example.com`).join('\n');
-    expect(parseMemberImportCsv(`email\n${rows(500)}`, OPEN).records).toHaveLength(500);
+    const rows = (count: number): string => Array.from({ length: count }, (_, i) => `person${i}@example.com,First,Last`).join('\n');
+    expect(parseMemberImportCsv(`${HEADER}\n${rows(500)}`, OPEN).records).toHaveLength(500);
 
-    const over = parseMemberImportCsv(`email\n${rows(501)}`, OPEN);
+    const over = parseMemberImportCsv(`${HEADER}\n${rows(501)}`, OPEN);
     expect(over.records).toEqual([]);
     expect(over.errors[0]).toContain('up to 500');
   });
 });
 
 describe('validateMemberImportRow', () => {
-  it('accepts an email-only row for an open group — names are optional upstream', () => {
-    expect(messages({ email: 'ada@example.com' })).toEqual([]);
+  it('accepts a row with an email and both names for an open group', () => {
+    expect(validateMemberImportRow({ email: 'person@example.com', ...NAMES }, OPEN)).toEqual([]);
+  });
+
+  it.each([undefined, '', ' \t\n '])('requires both names for every group when the value is %j', (name) => {
+    for (const rules of [OPEN, BUSINESS_EMAIL, VOTING]) {
+      expect(messages({ email: 'person@example.com', first_name: name, last_name: name }, rules)).toEqual(
+        expect.arrayContaining(['first_name: First name is required.', 'last_name: Last name is required.'])
+      );
+    }
   });
 
   it('requires a valid email', () => {
@@ -228,6 +450,8 @@ describe('validateMemberImportRow', () => {
 
   it('counts name and title lengths in Unicode code points', () => {
     expect(messages({ email: 'ada@example.com', first_name: '😀'.repeat(100) })).toEqual([]);
+    expect(messages({ email: 'ada@example.com', last_name: '😀'.repeat(100) })).toEqual([]);
+    expect(messages({ email: 'ada@example.com', first_name: '😀'.repeat(101) })).toEqual(['first_name: First name must be 100 characters or fewer.']);
     expect(messages({ email: 'ada@example.com', last_name: 'x'.repeat(101), job_title: 'y'.repeat(201) })).toEqual([
       'last_name: Last name must be 100 characters or fewer.',
       'job_title: Job title must be 200 characters or fewer.',
@@ -243,17 +467,17 @@ describe('validateMemberImportRow', () => {
 
   it('requires the complete organization name + https website pair whenever either is given', () => {
     expect(messages({ email: 'ada@example.com', organization_name: 'Acme Motors' })).toEqual([
-      'organization_website: Organization website is required when a name is given.',
+      'organization_website: Company website is required when a name is given.',
     ]);
     expect(messages({ email: 'ada@example.com', organization_website: 'https://acme-motors.example' })).toEqual([
-      'organization_name: Organization name is required when a website is given.',
+      'organization_name: Company name is required when a website is given.',
     ]);
     expect(messages({ email: 'ada@example.com', organization_name: 'Acme Motors', organization_website: 'http://acme-motors.example' })).toEqual([
-      'organization_website: Organization website must be a full https:// address.',
+      'organization_website: Company website must be a full https:// address.',
     ]);
     expect(messages({ email: 'ada@example.com', organization_name: 'Acme Motors', organization_website: 'acme-motors.example' })).toHaveLength(1);
     expect(messages({ email: 'ada@example.com', organization_name: 'o'.repeat(201), organization_website: 'https://acme-motors.example' })).toEqual([
-      'organization_name: Organization name must be 200 characters or fewer.',
+      'organization_name: Company name must be 200 characters or fewer.',
     ]);
   });
 
@@ -261,7 +485,7 @@ describe('validateMemberImportRow', () => {
     'rejects an organization website whose spelling URL parsing repairs: %s',
     (website) => {
       expect(messages({ email: 'ada@example.com', organization_name: 'Example Org', organization_website: website }, BUSINESS_EMAIL)).toEqual([
-        'organization_website: Organization website must be a full https:// address.',
+        'organization_website: Company website must be a full https:// address.',
       ]);
     }
   );
@@ -274,14 +498,14 @@ describe('validateMemberImportRow', () => {
 
   it('requires an organization for business-email and voting groups', () => {
     expect(messages({ email: 'ada@example.com' }, BUSINESS_EMAIL)).toEqual([
-      'organization_name: Organization name is required for this group.',
-      'organization_website: Organization website is required for this group.',
+      'organization_name: Company name is required for this group.',
+      'organization_website: Company website is required for this group.',
     ]);
   });
 
   it('accepts only existing role values and dates that need a role', () => {
     expect(messages({ email: 'ada@example.com', role: 'Chair', role_start_date: '2026-01-01', role_end_date: '2026-12-31' })).toEqual([]);
-    expect(messages({ email: 'ada@example.com', role: 'chair' })).toEqual(['role: Role "chair" is not a recognized role.']);
+    expect(messages({ email: 'ada@example.com', role: 'Chairperson' })).toEqual(['role: Role "Chairperson" is not a recognized role.']);
     expect(messages({ email: 'ada@example.com', role_start_date: '2026-01-01' })).toEqual(['role_start_date: Dates need a role.']);
   });
 
@@ -310,6 +534,14 @@ describe('validateMemberImportRow', () => {
       'voting_end_date: This group does not use voting. Clear the voting columns.',
     ]);
     expect(messages({ email: 'ada@example.com', voting_status: '' })).toEqual([]);
+  });
+
+  it('matches role, voting status and appointed-by values ignoring case and extra whitespace', () => {
+    expect(messages({ email: 'ada@example.com', role: 'chair', appointed_by: 'community' })).toEqual([]);
+    expect(messages({ email: 'ada@example.com', role: ' vice   CHAIR ' })).toEqual([]);
+    const base = { email: 'ada@example.com', organization_name: 'Acme Motors', organization_website: 'https://acme-motors.example', role: 'none' };
+    expect(messages({ ...base, voting_status: ' voting  rep ' }, VOTING)).toEqual([]);
+    expect(messages({ ...base, voting_status: 'votingrep' }, VOTING)).toHaveLength(1);
   });
 
   it('accepts only existing appointed-by values and allows blank', () => {
@@ -376,13 +608,13 @@ describe('prepareMemberImportRows', () => {
     prepareMemberImportRows(parseMemberImportCsv(csv, rules).records, rules, new Set(existing));
 
   it('marks valid rows ready with a payload and invalid rows with their issues', () => {
-    const [ready, invalid] = rows('email,first_name\nada@example.com,Ada\nbad,Grace', OPEN);
-    expect(ready).toMatchObject({ rowNumber: 2, status: 'ready', payload: { email: 'ada@example.com', first_name: 'Ada' } });
+    const [ready, invalid] = rows(`${HEADER}\nada@example.com,First,Last\nbad,First,Last`, OPEN);
+    expect(ready).toMatchObject({ rowNumber: 2, status: 'ready', payload: { email: 'ada@example.com', ...NAMES } });
     expect(invalid).toMatchObject({ rowNumber: 3, status: 'invalid', payload: null, issues: [{ column: 'email' }] });
   });
 
   it('skips existing members and later duplicates using trimmed, case-insensitive email', () => {
-    const result = rows('email\n Ada@Example.com \nGRACE@example.com\ngrace@example.com\nada@example.com', OPEN, ['ada@example.com']);
+    const result = rows(`${HEADER}\n Ada@Example.com ,,\nGRACE@example.com,First,Last\ngrace@example.com,,\nada@example.com,,`, OPEN, ['ada@example.com']);
     expect(result.map((row) => [row.rowNumber, row.status, row.reason])).toEqual([
       [2, 'skipped', 'Already a member of this group.'],
       [3, 'ready', undefined],
@@ -392,19 +624,175 @@ describe('prepareMemberImportRows', () => {
   });
 
   it('keeps the first occurrence even when it is invalid and a later duplicate is valid', () => {
-    const result = rows(`${VOTING_HEADER}\nada@example.com,,,None,Voting Rep\n${VOTING_ROW}`, VOTING);
+    const result = rows(`${VOTING_HEADER}\nada@example.com,,,,,None,Voting Rep\n${VOTING_ROW}`, VOTING);
     expect(result.map((row) => row.status)).toEqual(['invalid', 'skipped']);
     expect(result[1].reason).toBe('Duplicate of row 2.');
   });
 
+  it('shows canonical values for ready rows, matching the payload, and keeps invalid rows as written', () => {
+    const header = `${VOTING_HEADER},appointed_by`;
+    const [ready, invalid] = rows(
+      `${header}\nada@example.com,First,Last,Acme Motors,https://acme-motors.example,vice  chair,VOTING REP,community\nbad,First,Last,Acme Motors,https://acme-motors.example,vice  chair,VOTING REP,community`,
+      VOTING
+    );
+    expect(ready.status).toBe('ready');
+    expect(ready.cells).toMatchObject({
+      role: CommitteeMemberRole.VICE_CHAIR,
+      voting_status: CommitteeMemberVotingStatus.VOTING_REP,
+      appointed_by: CommitteeMemberAppointedBy.COMMUNITY,
+    });
+    expect(ready.payload).toMatchObject({
+      role: { name: ready.cells.role },
+      voting: { status: ready.cells.voting_status },
+      appointed_by: ready.cells.appointed_by,
+    });
+    expect(invalid.status).toBe('invalid');
+    expect(invalid.cells).toMatchObject({ role: 'vice  chair', voting_status: 'VOTING REP', appointed_by: 'community' });
+  });
+
   it('builds a separate organization per row', () => {
     const result = rows(
-      'email,organization_name,organization_website\nada@example.com,Acme Motors,https://acme-motors.example\ngrace@example.com,Vendor Corp,https://vendor-corp.example',
+      `${HEADER},organization_name,organization_website\nada@example.com,First,Last,Acme Motors,https://acme-motors.example\ngrace@example.com,First,Last,Vendor Corp,https://vendor-corp.example`,
       BUSINESS_EMAIL
     );
     expect(result.map((row) => row.payload?.organization)).toEqual([
       { id: null, name: 'Acme Motors', website: 'https://acme-motors.example' },
       { id: null, name: 'Vendor Corp', website: 'https://vendor-corp.example' },
     ]);
+  });
+});
+
+describe('decodeMemberImportFile', () => {
+  it('reads valid UTF-8 as UTF-8 and keeps the BOM for the parser', () => {
+    const decoded = decodeMemberImportFile(new TextEncoder().encode(`\ufeff${HEADER}\nzoe@example.com,Zoë,Last`).buffer);
+    expect(decoded).toEqual({ text: `\ufeff${HEADER}\nzoe@example.com,Zoë,Last`, encoding: 'utf-8' });
+    expect(parseMemberImportCsv(decoded.text, OPEN).records[0].cells.first_name).toBe('Zoë');
+  });
+
+  it('falls back to Windows-1252 when the bytes are not valid UTF-8', () => {
+    expect(decodeMemberImportFile(new Uint8Array([0x4a, 0x6f, 0x73, 0xe9, 0x20, 0x80]).buffer)).toEqual({ text: 'José €', encoding: 'windows-1252' });
+  });
+});
+
+describe('classifyMemberImportBulkResult', () => {
+  const row: MemberImportRow = {
+    rowNumber: 1,
+    email: 'ada@example.com',
+    normalizedEmail: 'ada@example.com',
+    cells: { email: 'ada@example.com' },
+    status: 'importing',
+    issues: [],
+    payload: { email: 'ada@example.com' },
+  };
+  const result = (patch: Partial<CommitteeMemberBulkCreateRowResult>): CommitteeMemberBulkCreateRowResult => ({
+    index: 0,
+    email: 'ada@example.com',
+    status: 'added',
+    retryable: false,
+    ...patch,
+  });
+
+  it('marks an added row added', () => {
+    expect(classifyMemberImportBulkResult(result({ status: 'added' }), row)).toMatchObject({ status: 'added', uncertain: false });
+  });
+
+  it('skips an existing member as a conflict', () => {
+    expect(classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'already_member' }), row)).toMatchObject({
+      status: 'skipped',
+      conflict: true,
+      reason: 'Already a member of this group.',
+    });
+  });
+
+  it('does not attribute an existing membership to an uncertain attempt', () => {
+    const patch = classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'already_member', member_uid: 'other-membership' }), {
+      ...row,
+      uncertain: true,
+    });
+    expect(patch).toMatchObject({ status: 'skipped', conflict: true, uncertain: false });
+    expect(patch.reason).toContain('imported details may not have been applied');
+  });
+
+  it('skips a duplicate within the request', () => {
+    expect(classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'duplicate_in_request' }), row)).toMatchObject({ status: 'skipped' });
+  });
+
+  it('fails an invalid row for good with the upstream message', () => {
+    const patch = classifyMemberImportBulkResult(result({ status: 'failed', reason: 'invalid', message: 'organization website is not a valid URL' }), row);
+    expect(patch).toMatchObject({ status: 'failed', retryable: false });
+    expect(patch.reason).toBe('organization website is not a valid URL. Fix this row in the file and import it again.');
+  });
+
+  it('waits on a temporary failure and records the uncertain outcome', () => {
+    expect(classifyMemberImportBulkResult(result({ status: 'failed', reason: 'temporary', retryable: true }), row)).toMatchObject({
+      status: 'waiting',
+      uncertain: true,
+    });
+  });
+
+  it('waits on a not-attempted row without changing its uncertainty', () => {
+    const patch = classifyMemberImportBulkResult(result({ status: 'failed', reason: 'not_attempted', retryable: true }), { ...row, uncertain: true });
+    expect(patch.status).toBe('waiting');
+    expect(patch).not.toHaveProperty('uncertain');
+  });
+});
+
+describe('isMemberImportRowRetryable', () => {
+  const row = (patch: Partial<MemberImportRow>): MemberImportRow => ({
+    rowNumber: 1,
+    email: 'ada@example.com',
+    normalizedEmail: 'ada@example.com',
+    cells: { email: 'ada@example.com' },
+    status: 'ready',
+    issues: [],
+    payload: { email: 'ada@example.com' },
+    ...patch,
+  });
+
+  it('retries unsent rows and unresolved or retryable failures', () => {
+    expect(isMemberImportRowRetryable(row({ status: 'not_submitted' }))).toBe(true);
+    expect(isMemberImportRowRetryable(row({ status: 'unknown', uncertain: true }))).toBe(true);
+    expect(isMemberImportRowRetryable(row({ status: 'failed' }))).toBe(true);
+  });
+
+  it('never retries settled outcomes or rows that cannot succeed unchanged', () => {
+    for (const status of ['ready', 'invalid', 'skipped', 'importing', 'added', 'waiting'] as const) {
+      expect(isMemberImportRowRetryable(row({ status }))).toBe(false);
+    }
+    expect(isMemberImportRowRetryable(row({ status: 'failed', retryable: false }))).toBe(false);
+    expect(isMemberImportRowRetryable(row({ status: 'unknown', retryable: false }))).toBe(false);
+  });
+});
+
+describe('getMemberImportRetryDelayMs', () => {
+  const now = Date.UTC(2026, 10, 9, 12, 0, 0);
+
+  it('reads Retry-After seconds', () => {
+    expect(getMemberImportRetryDelayMs('30', 0, now)).toBe(30_000);
+  });
+
+  it('reads a Retry-After HTTP-date', () => {
+    expect(getMemberImportRetryDelayMs(new Date(now + 45_000).toUTCString(), 0, now)).toBe(45_000);
+  });
+
+  it('falls back to the default for an unreadable Retry-After', () => {
+    expect(getMemberImportRetryDelayMs('abc', 2, now)).toBe(MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS);
+  });
+
+  it.each(['999', '300'])('preserves long Retry-After seconds: %s', (header) => {
+    expect(getMemberImportRetryDelayMs(header, 0, now)).toBe(Number(header) * 1000);
+  });
+
+  it('preserves an HTTP-date beyond the automatic wait budget', () => {
+    expect(getMemberImportRetryDelayMs(new Date(now + 300_000).toUTCString(), 0, now)).toBe(300_000);
+  });
+
+  it('never pauses for less than a second', () => {
+    expect(getMemberImportRetryDelayMs('0', 0, now)).toBe(1_000);
+  });
+
+  it('backs off by pause number without a header', () => {
+    expect([0, 1, 2].map((pause) => getMemberImportRetryDelayMs(null, pause, now))).toEqual([...MEMBER_IMPORT_PAUSE_DELAYS_MS]);
+    expect(MEMBER_IMPORT_PAUSE_DELAYS_MS).toEqual([15_000, 30_000, 60_000]);
   });
 });

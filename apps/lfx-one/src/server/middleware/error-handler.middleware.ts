@@ -3,7 +3,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, BaseApiError, isBaseApiError, ServiceValidationError } from '../errors';
+import { AuthenticationError, BaseApiError, isBaseApiError, MicroserviceError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 
 /**
@@ -70,6 +70,11 @@ export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: 
       logger.warning(logRequest, operation, `API error: ${error.message}`, { ...logContext, err: error });
     } else {
       logger.debug(logRequest, operation, `API error: ${error.message}`, { ...logContext, err: error });
+    }
+
+    // Preserve only the validated cooldown on an upstream rate-limit response.
+    if (error instanceof MicroserviceError && error.statusCode === 429 && error.retryAfter) {
+      res.setHeader('Retry-After', error.retryAfter);
     }
 
     // Send structured response

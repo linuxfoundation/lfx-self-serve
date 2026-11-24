@@ -15,9 +15,16 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { of, throwError, NEVER, Subject } from 'rxjs';
+import type { Member360Session, Member360TrackerReceipt } from '@lfx-one/shared/interfaces';
 import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
-import { MKTG_AGENT_INTAKES, MKTG_RUN_POLL, MEMBER_360_RUN_CEILING_MS, MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS } from '@lfx-one/shared/constants';
+import {
+  MKTG_AGENT_INTAKES,
+  MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_POLL,
+  MEMBER_360_RUN_CEILING_MS,
+  MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS,
+} from '@lfx-one/shared/constants';
 import { MktgPendingGeneration, Member360Result, MktgDocumentDetailResponse } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -31,6 +38,7 @@ describe('Member360RunComponent', () => {
     activeProject: signal({ writer: true }),
     canWrite: signal(true),
   };
+  const user = signal({ sub: 'synthetic-subject' });
   function progress(state: 'writing' | 'storing' | 'questions' | 'failed' = 'writing'): MktgDocumentDetailResponse {
     return {
       project: 'sample-project',
@@ -79,7 +87,8 @@ describe('Member360RunComponent', () => {
     generate: vi.fn<Member360Service['generate']>(() =>
       of({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' })
     ),
-    parseTracker: vi.fn(() => of({ filename: 'repeat.csv', rows: [{ company: SYNTHETIC_ORG_NAME }] })),
+    parseTracker: vi.fn(() => of({ trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 100 })),
+    deleteTracker: vi.fn<Member360Service['deleteTracker']>(() => of(undefined)),
   };
   const confirmation = Object.assign(new ConfirmationService(), { confirm: vi.fn<ConfirmationService['confirm']>(), close: vi.fn() });
   async function render(): Promise<void> {
@@ -94,6 +103,9 @@ describe('Member360RunComponent', () => {
   beforeEach(async () => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
     context.canWrite.set(true);
+    user.set({ sub: 'synthetic-subject' });
+    run.deleteTracker.mockReset().mockReturnValue(of(undefined));
+    run.parseTracker.mockReset().mockReturnValue(of({ trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 100 }));
     context.activeContextUid.set('sample-project');
     context.activeContext.set({ uid: 'sample-project', name: 'Sample Foundation', slug: 'sample-foundation' });
     confirmation.confirm.mockClear();
@@ -119,7 +131,7 @@ describe('Member360RunComponent', () => {
         { provide: MktgRunAttemptService, useValue: attempts },
         { provide: MktgDocumentStoreService, useValue: documents },
         { provide: ProjectContextService, useValue: context },
-        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-subject' }) } },
+        { provide: UserService, useValue: { user } },
       ],
     }).compileComponents();
   });
@@ -333,9 +345,6 @@ describe('Member360RunComponent', () => {
     window.dispatchEvent(new Event('focus'));
     await fixture.whenStable();
     expect(documents.listDocuments).toHaveBeenLastCalledWith('sample-project', true, true);
-    fixture.componentInstance['retryHistory']();
-    await fixture.whenStable();
-    expect(documents.listDocuments).toHaveBeenLastCalledWith('sample-project', false, true);
   });
   it('verifies a selected long-running Member record without the polling window', async () => {
     attempts.latestPending.mockReturnValue({ documentId: capability().request.documentId, state: 'writing' });
@@ -418,7 +427,7 @@ describe('Member360RunComponent', () => {
     expect(button().disabled).toBe(false);
     button().click();
     fixture.detectChanges();
-    expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackers: [] });
+    expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackerIds: [] });
     expect(navigate).not.toHaveBeenCalled();
     expect(fixture.componentInstance.form.controls.trackers.value).toEqual([]);
   });
@@ -475,6 +484,9 @@ describe('Member360RunComponent', () => {
     expect(fixture.nativeElement.querySelector('lfx-file-upload')).toBe(chooser);
     expect(document.activeElement).toBe(chooser.querySelector('button'));
     const uploads = fixture.componentInstance.form.controls.trackers.value;
+    expect(uploads[0].filename).toBe('repeat.csv');
+    expect(uploads[0].tracker).not.toHaveProperty('rows');
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-tracker-summary"]').textContent).toContain('1 row · 1 columns');
     expect(new Set(uploads.map((upload) => upload.id)).size).toBe(3);
     const retained: HTMLButtonElement = fixture.nativeElement.querySelector(`[data-testid="member-360-remove-${uploads[2].id}"] button`);
     retained.focus();
@@ -486,6 +498,116 @@ describe('Member360RunComponent', () => {
     expect(retained.classList.contains('p-button-text')).toBe(true);
     expect(retained.classList.contains('p-button-outlined')).toBe(false);
   });
+  it('submits only tracker ids after upload, keeping no parsed cells in the form', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await render();
+    await fixture.componentInstance['upload']([new File(['email\nsynthetic@example.test'], 'tracker.csv')]);
+    fixture.detectChanges();
+    button().click();
+    await fixture.whenStable();
+    expect(run.generate).toHaveBeenCalledWith(expect.objectContaining({ trackerIds: ['a'.repeat(64)] }));
+    expect(JSON.stringify(run.generate.mock.calls)).not.toContain('"trackers"');
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('shows the safe expired-tracker validation reason so the user can re-upload', async () => {
+    await render();
+    await fixture.componentInstance['upload']([new File(['company\nSynthetic Member'], 'tracker.csv')]);
+    run.generate.mockReturnValueOnce(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Validation failed for trackerIds',
+              errors: [{ field: 'trackerIds', message: 'A tracker is unavailable or expired. Upload it again.' }],
+            },
+          })
+      )
+    );
+    fixture.detectChanges();
+    button().click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]').textContent).toContain('Upload it again.');
+    expect(fixture.componentInstance.form.controls.trackers.value).toHaveLength(1);
+  });
+
+  it('deletes a removed receipt and drops its row only after confirmation', async () => {
+    await render();
+    await fixture.componentInstance['upload']([new File(['company\nSynthetic Member'], 'tracker.csv')]);
+    const response = new Subject<void>();
+    run.deleteTracker.mockReturnValueOnce(response);
+    const upload = fixture.componentInstance.form.controls.trackers.value[0];
+    fixture.componentInstance['remove'](upload.id);
+    expect(run.deleteTracker).toHaveBeenCalledWith('sample-project', 'a'.repeat(64));
+    expect(fixture.componentInstance.form.controls.trackers.value).toHaveLength(1);
+    response.next();
+    response.complete();
+    expect(fixture.componentInstance.form.controls.trackers.value).toHaveLength(0);
+  });
+  it('retains the row when explicit removal fails so the user can retry', async () => {
+    await render();
+    await fixture.componentInstance['upload']([new File(['company\nSynthetic Member'], 'tracker.csv')]);
+    run.deleteTracker.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    fixture.componentInstance['remove'](fixture.componentInstance.form.controls.trackers.value[0].id);
+    expect(fixture.componentInstance.form.controls.trackers.value).toHaveLength(1);
+    expect(fixture.componentInstance['error']()).toContain('could not be confirmed');
+  });
+  it('deletes every unconsumed receipt on destroy', async () => {
+    await render();
+    run.parseTracker
+      .mockReturnValueOnce(of({ trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 10 }))
+      .mockReturnValueOnce(of({ trackerId: 'b'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 10 }));
+    await fixture.componentInstance['upload']([new File(['company'], 'one.csv'), new File(['company'], 'two.csv')]);
+    fixture.destroy();
+    expect(run.deleteTracker.mock.calls).toEqual([
+      ['sample-project', 'a'.repeat(64)],
+      ['sample-project', 'b'.repeat(64)],
+    ]);
+  });
+  it.each(['project', 'user'] as const)('deletes old-scope receipts on a %s reset without restoring them', async (scope) => {
+    await render();
+    await fixture.componentInstance['upload']([new File(['company'], 'tracker.csv')]);
+    if (scope === 'project') context.activeContextUid.set('other-project');
+    else user.set({ sub: 'synthetic-other' });
+    await fixture.whenStable();
+    expect(run.deleteTracker).toHaveBeenCalledWith('sample-project', 'a'.repeat(64));
+    expect(fixture.componentInstance.form.controls.trackers.value).toEqual([]);
+  });
+  it('does not erase durably consumed receipts again on destroy', async () => {
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await render();
+    await fixture.componentInstance['upload']([new File(['company'], 'tracker.csv')]);
+    button().click();
+    await fixture.whenStable();
+    fixture.destroy();
+    expect(run.deleteTracker).not.toHaveBeenCalled();
+  });
+  it('does not race an in-flight Generate on destroy, but cleans its receipts after a late failure', async () => {
+    await render();
+    await fixture.componentInstance['upload']([new File(['company'], 'tracker.csv')]);
+    const pending = new Subject<Member360Session>();
+    run.generate.mockReturnValueOnce(pending);
+    button().click();
+    fixture.destroy();
+    expect(run.deleteTracker).not.toHaveBeenCalled();
+    pending.error(new HttpErrorResponse({ status: 503 }));
+    expect(run.deleteTracker).toHaveBeenCalledWith('sample-project', 'a'.repeat(64));
+  });
+  it('cleans a late upload receipt acknowledged after destroy', async () => {
+    await render();
+    const pending = new Subject<Member360TrackerReceipt>();
+    run.parseTracker.mockReturnValueOnce(pending);
+    const upload = fixture.componentInstance['upload']([new File(['company'], 'tracker.csv')]);
+    fixture.destroy();
+    pending.next({ trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 10 });
+    pending.complete();
+    await upload;
+    expect(run.deleteTracker).toHaveBeenCalledWith('sample-project', 'a'.repeat(64));
+  });
+
   it('explains an unavailable comparison instead of a generic server error', async () => {
     documents.listDocuments.mockReturnValue(
       of({ project: 'sample-project', groups: [{ type: member360DocumentType(), documents: [MEMBER_360_STORED_DOCUMENT] }] })
@@ -502,7 +624,7 @@ describe('Member360RunComponent', () => {
     const api = TestBed.inject(Member360Service),
       http = TestBed.inject(HttpTestingController);
     const file = new File([`company\n${SYNTHETIC_ORG_NAME}`], 'tracker.csv', { type: 'text/csv' });
-    const tracker = { filename: file.name, rows: [{ company: SYNTHETIC_ORG_NAME }] };
+    const tracker = { trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 100 };
     let received: unknown;
     api.parseTracker('sample-project', file).subscribe((value) => {
       received = value;
@@ -579,7 +701,7 @@ describe('Member360RunComponent', () => {
     fixture.componentInstance.form.controls.compare.setValue(false);
     button().click();
     await fixture.whenStable();
-    expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackers: [] });
+    expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackerIds: [] });
     expect(navigate).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
     fixture.detectChanges();
@@ -724,6 +846,18 @@ describe('Member360RunComponent', () => {
         { key: 'window', text: 'Use the current analysis window.', origin: 'accepted' },
       ]);
       expect(!!fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).toBe(state === 'send-error');
+      if (state === 'send-error') {
+        // The kept form's background re-read fails transiently: the submission error stays in front of the connection line.
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]')?.textContent).toContain('Your answers could not be sent');
+        run.questions.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+        window.dispatchEvent(new Event('focus'));
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(fixture.componentInstance['retrying']()).toBe(true);
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]')?.textContent).toContain('Your answers could not be sent');
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-retrying"]')).toBeNull();
+        expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).not.toBeNull();
+      }
       if (state === 'already-answered') {
         expect(fixture.nativeElement.textContent).toContain('Synthetic writer already answered these — the agent is writing');
         expect(fixture.nativeElement.querySelector('[data-testid="member-360-generating"]')).not.toBeNull();
@@ -731,8 +865,17 @@ describe('Member360RunComponent', () => {
     } else {
       expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).toBeNull();
       if (state === 'failed') expect(navigate).toHaveBeenCalledWith(['../documents/member-360', capability().request.documentId], expect.anything());
-      if (state === 'empty') expect(fixture.nativeElement.textContent).toContain('The questions are not available yet.');
-      if (state === 'poll-error') expect(fixture.nativeElement.textContent).toContain('could not be checked');
+      if (state === 'empty') {
+        // A self-updating wait is a plain status line, never an error box.
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-generating"] [role="status"]')?.textContent).toContain(
+          'The questions are not available yet.'
+        );
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
+      }
+      if (state === 'poll-error') {
+        expect(fixture.nativeElement.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-check-again"]')).toBeNull();
+      }
     }
   });
   it('restores this tab capability and slows polling past the ceiling without failing the run', async () => {
@@ -762,18 +905,164 @@ describe('Member360RunComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('could not be started');
     expect(button().disabled).toBe(false);
   });
-  it('does not guess a form when the initial server snapshot fails, and offers a safe refresh', async () => {
+  it('shows the questions-not-yet wait of a run confirmed during the first load as a status line, not an error box', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    // A restored owned run whose first confirmation is needs_input with no questions yet: the page is still loading.
+    attempts.latestPending.mockReturnValue({ documentId: capability().request.documentId, state: 'questions' });
+    run.questions.mockReturnValue(of({ status: 'needs_input' }));
+    documents.getDocument.mockReturnValue(of(progress('questions')));
+    await render();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).not.toBeNull();
+    const note = fixture.nativeElement.querySelector('[data-testid="member-360-state-note"]');
+    expect(note?.getAttribute('role')).toBe('status');
+    expect(note?.textContent).toContain('The questions are not available yet.');
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-retrying"]')).toBeNull();
+    expect(run.generate).not.toHaveBeenCalled();
+  });
+  it('treats a partial progress read of the owned run as a check still going, and a mismatched document as final', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    run.questions.mockReturnValue(of({ status: 'pending' }));
+    documents.getDocument.mockReturnValue(of({ ...progress(), progressUnavailable: true }));
+    await render();
+    fixture.componentInstance.form.controls.compare.setValue(false);
+    button().click();
+    await fixture.whenStable();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    fixture.detectChanges();
+    // The server could not confirm the run's phase: the quiet connection line, no alert, the poller keeps checking.
+    expect(fixture.componentInstance['retrying']()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-retrying"]')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
+    documents.getDocument.mockReturnValue(of(progress()));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    fixture.detectChanges();
+    expect(fixture.componentInstance['retrying']()).toBe(false);
+    expect(fixture.componentInstance['result']()?.status).toBe('pending');
+    // A read that belongs to another document is not a connection problem: a final line, no further retry.
+    documents.getDocument.mockReturnValue(of({ ...progress(), project: 'other-project' }));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    fixture.detectChanges();
+    expect(fixture.componentInstance['retrying']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-retrying"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]')?.textContent).toContain(
+      'The run could not be checked. No new run is started.'
+    );
+  });
+  it('does not guess a form when the initial server snapshot fails, and reads again on its own with no Refresh button', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     documents.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     await render();
     expect(button()).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).not.toBeNull();
-    expect(fixture.nativeElement.textContent).toContain('The run state could not be checked.');
+    // One quiet status line, never an alert box, while the check keeps going.
+    const line = fixture.nativeElement.querySelector('[data-testid="member-360-state-retrying"]');
+    expect(line?.getAttribute('role')).toBe('status');
+    expect(line?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-refresh"]')).toBeNull();
+    // The retrying state is its own flag: no failure message is set while the poller is still trying.
+    expect(fixture.componentInstance['loadingRetrying']()).toBe(true);
+    expect(fixture.componentInstance['loadingError']()).toBe('');
+    expect(fixture.componentInstance['historyRetrying']()).toBe(true);
+    expect(fixture.componentInstance['historyError']()).toBe('');
     expect(run.generate).not.toHaveBeenCalled();
     documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [] }));
-    fixture.nativeElement.querySelector('[data-testid="member-360-state-refresh"] button').click();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-retrying"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
     expect(button().disabled).toBe(false);
+  });
+  it('never claims "no previous runs" while the first revision read of a listed report is failing transiently', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    documents.listDocuments.mockReturnValue(
+      of({ project: 'sample-project', groups: [{ type: member360DocumentType(), documents: [MEMBER_360_STORED_DOCUMENT] }] })
+    );
+    documents.getRevision.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await render();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(fixture.componentInstance['historyRetrying']()).toBe(true);
+    expect(fixture.componentInstance['historyError']()).toBe('');
+    expect(root.querySelector('[data-testid="member-360-history-retrying"]')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(root.querySelector('[data-testid="member-360-run-history"]')?.textContent).not.toContain('No Member 360 runs yet.');
+    expect(root.querySelector('[data-testid="member-360-compare"]')?.textContent).not.toContain('No previous run yet');
+    expect(root.querySelector('[data-testid="member-360-compare"]')?.textContent).toContain('Loading previous run…');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['historyRetrying']()).toBe(false);
+    expect(root.querySelector('[data-testid="member-360-history-retrying"]')).toBeNull();
+    expect(root.querySelector(`[data-testid="member-360-run-history-${MEMBER_360_STORED_DOCUMENT.documentId}"]`)).not.toBeNull();
+    expect(root.querySelector('[data-testid="member-360-compare"]')?.textContent).toContain('Previous run: Q3 2026 (1 Oct)');
+  });
+  it('treats a partial roster read (progressUnavailable) as a check still going, not a final failure', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], progressUnavailable: true }));
+    await render();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-retrying"]')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('could not be loaded');
+    const before = documents.listDocuments.mock.calls.length;
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [] }));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(documents.listDocuments.mock.calls.length).toBeGreaterThan(before);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-retrying"]')).toBeNull();
+    expect(button().disabled).toBe(false);
+  });
+  it.each([401, 403])('latches a refused roster read (%s): a plain access state, and no poll or wake sends the same credentials again', async (status) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    documents.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    await render();
+    expect(fixture.componentInstance['serverDenied']()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-retrying"]')).toBeNull();
+    const reads = documents.listDocuments.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(2 * MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(documents.listDocuments).toHaveBeenCalledTimes(reads);
+  });
+  it.each([401, 403])('latches a refused owned-run read (%s): the access state, and the roster does not restore the run to read it again', async (status) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: progress().runs }));
+    run.questions.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    await render();
+    expect(fixture.componentInstance['serverDenied']()).toBe(true);
+    expect(run.questions).toHaveBeenCalledTimes(1);
+    const reads = documents.listDocuments.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(2 * MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(documents.listDocuments).toHaveBeenCalledTimes(reads);
+    expect(run.questions).toHaveBeenCalledTimes(1);
+  });
+  it.each([400, 404])('does not restore an owned run whose read failed for good (%s), though the roster still lists it', async (status) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: progress().runs }));
+    run.questions.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    await render();
+    expect(run.questions).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance['serverDenied']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).not.toBeNull();
+    // The create form is offered, so no "No new run is started." line sits beside it.
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('No new run is started.');
+    await vi.advanceTimersByTimeAsync(2 * MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(run.questions).toHaveBeenCalledTimes(1);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).not.toBeNull();
   });
 });

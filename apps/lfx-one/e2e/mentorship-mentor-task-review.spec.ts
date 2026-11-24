@@ -3,7 +3,7 @@
 
 /**
  * Mentor task review — approve, request changes and a task no longer awaiting review on the program detail
- * page (linuxfoundation/lfx-mentorship#215).
+ * page (linuxfoundation/lfx-mentorship#215), and the reason Request Changes asks for (linuxfoundation/lfx-mentorship#381).
  *
  * The Tasks tab reviews a submitted task through `PATCH /api/mentorship/mentor/tasks/:taskId/review`, then
  * re-reads the detail so the task moves out of Awaiting Review. Each test stubs the detail read and that
@@ -11,7 +11,6 @@
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the detail read is made by the
  * browser and the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
- * The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -22,7 +21,7 @@ import { MentorshipApplicantTaskStatus, MentorshipMentorProgramDetail } from '@l
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -48,7 +47,7 @@ function detailWith(status: MentorshipApplicantTaskStatus): MentorshipMentorProg
       slug: 'test-program-review',
       name: 'Test Program Review',
       projectName: 'Test Project',
-      status: 'open',
+      status: 'accepting',
       stats: { mentees: 1, tasksToReview: awaiting, applicants: 0 },
     },
     tabCounts: { tasks: awaiting, mentees: 1, applicants: 0 },
@@ -104,10 +103,6 @@ async function openTasksTab(page: Page): Promise<void> {
 }
 
 test.describe('Mentor task review', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('approves a submitted task and moves it to Approved', async ({ page }) => {
     await stubDetail(page, detailWith('submitted'), detailWith('completed'));
     const sent = await stubReview(page, 204);
@@ -122,16 +117,39 @@ test.describe('Mentor task review', () => {
     await expect(page.getByTestId(`mentorship-mentor-task-card-${ROW_ID}`)).toBeVisible();
   });
 
-  test('requests changes on a submitted task, with no comment', async ({ page }) => {
+  test('requests changes on a submitted task, with the reason the mentor typed', async ({ page }) => {
     await stubDetail(page, detailWith('submitted'), detailWith('pending'));
     const sent = await stubReview(page, 204);
     await openTasksTab(page);
 
     await page.getByTestId(`mentorship-mentor-task-request-changes-${ROW_ID}`).click();
+    await expect(page.getByTestId('mentorship-task-changes-dialog')).toBeVisible();
+
+    // A blank reason is not sent.
+    await page.getByTestId('mentorship-task-changes-submit').click();
+    await expect(page.getByTestId('mentorship-task-changes-reason-error')).toBeVisible();
+    expect(sent).toEqual([]);
+
+    await page.locator('#mentorship-task-changes-reason').fill('  Add a section on testing.  ');
+    await page.getByTestId('mentorship-task-changes-submit').click();
 
     await expect(page.getByText('Changes requested')).toBeVisible();
-    expect(sent).toEqual([{ method: 'PATCH', body: { status: 'incomplete' } }]);
+    expect(sent).toEqual([{ method: 'PATCH', body: { status: 'incomplete', reason: 'Add a section on testing.' } }]);
     await expect(page.getByTestId(`mentorship-mentor-task-card-${ROW_ID}`)).toHaveCount(0);
+  });
+
+  test('sends nothing when the Request Changes dialog is cancelled', async ({ page }) => {
+    await stubDetail(page, detailWith('submitted'));
+    const sent = await stubReview(page, 204);
+    await openTasksTab(page);
+
+    await page.getByTestId(`mentorship-mentor-task-request-changes-${ROW_ID}`).click();
+    await page.locator('#mentorship-task-changes-reason').fill('Not sent.');
+    await page.getByTestId('mentorship-task-changes-cancel').click();
+
+    await expect(page.getByTestId('mentorship-task-changes-dialog')).toHaveCount(0);
+    expect(sent).toEqual([]);
+    await expect(page.getByTestId(`mentorship-mentor-task-card-${ROW_ID}`)).toBeVisible();
   });
 
   test('explains a task no longer awaiting review, and re-reads the list', async ({ page }) => {

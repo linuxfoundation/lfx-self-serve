@@ -73,7 +73,10 @@ export async function setupFreshSources(page: Page, options: { state?: 'loaded' 
         history.pushState({}, '', destination);
         dispatchEvent(new PopStateEvent('popstate'));
       }, `/${mount}/mktg-os-agents/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&mode=new`);
-      await expect(page.getByTestId('mktg-run-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      // Rule 5/119.2: a held history read intentionally has no Sources form yet.
+      // Let the test reach releaseHistory() instead of waiting for the UI that release unlocks.
+      const firstSurface = options.state === 'loading' ? 'mktg-agent-run-checking' : 'mktg-run-sources';
+      await expect(page.getByTestId(firstSurface)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     },
   };
 }

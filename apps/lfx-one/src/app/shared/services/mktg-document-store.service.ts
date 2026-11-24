@@ -7,6 +7,7 @@ import { LINKEDIN_API, MKTG_DOCUMENTS_API_PATH } from '@lfx-one/shared/constants
 import {
   LinkedinShareLinkResponse,
   MktgApproveRevisionRequest,
+  MktgDismissDocumentRunRequest,
   MktgDocumentDetailResponse,
   MktgDocumentsResponse,
   MktgRestoreRevisionRequest,
@@ -14,7 +15,7 @@ import {
   MktgRevisionResponse,
   MktgRetryDocumentRunRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, take, throwError } from 'rxjs';
+import { catchError, map, Observable, of, switchMap, take, throwError } from 'rxjs';
 
 /**
  * Client for the Marketing OS Documents area: every stored agent output of a
@@ -33,7 +34,8 @@ export class MktgDocumentStoreService {
 
   /** Every document of the project, grouped by type in the Documents area's order. */
   public listDocuments(projectUid: string, poll = false, ownRuns = false): Observable<MktgDocumentsResponse> {
-    const params = ownRuns ? this.projectParams(projectUid, poll).set('ownRuns', '1') : this.projectParams(projectUid, poll);
+    let params = this.projectParams(projectUid, poll);
+    if (ownRuns) params = params.set('ownRuns', '1');
     return this.http
       .get<MktgDocumentsResponse>(MKTG_DOCUMENTS_API_PATH, { params })
       .pipe(catchError((error) => this.logAndRethrow('Failed to load Marketing OS documents', error)));
@@ -73,25 +75,7 @@ export class MktgDocumentStoreService {
 
   /** Resolve approved bytes separately from the viewed draft; refuse a stale pointer response. */
   public getApprovedRevision(detail: MktgDocumentDetailResponse, viewed?: MktgRevisionResponse): Observable<MktgRevisionResponse | null> {
-    const current = detail.approvedCurrent;
-    if (detail.type.kind !== 'living' || !current) return of(null);
-    const revision$ =
-      viewed?.revision.id === current.revisionId ? of(viewed) : this.getRevision(detail.project, detail.type.agentKey, detail.documentId, current.revisionId);
-    return revision$.pipe(
-      map((revision) => {
-        if (
-          revision.project !== detail.project ||
-          revision.type.agentKey !== detail.type.agentKey ||
-          revision.documentId !== detail.documentId ||
-          revision.revision.id !== current.revisionId ||
-          !revision.revision.approval ||
-          revision.approvedCurrent?.revisionId !== current.revisionId
-        ) {
-          throw new Error('The approved current changed. Reload and try again.');
-        }
-        return revision;
-      })
-    );
+    return this.readApprovedRevision(detail, viewed, true);
   }
 
   /** Approve an existing revision; the response includes the approved current selection. */
@@ -134,8 +118,49 @@ export class MktgDocumentStoreService {
     return this.http.post<MktgDocumentDetailResponse>(`${this.documentPath(agentKey, documentId)}/runs/${encodeURIComponent(runId)}/retry`, body).pipe(take(1));
   }
 
+  /** Close a failed run so it leaves Started runs for everyone; the 204 carries no body. */
+  public dismissRun(projectUid: string, agentKey: string, documentId: string, runId: string): Observable<void> {
+    const body: MktgDismissDocumentRunRequest = { project: projectUid };
+    return this.http.post<void>(`${this.documentPath(agentKey, documentId)}/runs/${encodeURIComponent(runId)}/dismiss`, body).pipe(take(1));
+  }
+
+  private readApprovedRevision(
+    detail: MktgDocumentDetailResponse,
+    viewed: MktgRevisionResponse | undefined,
+    retry: boolean
+  ): Observable<MktgRevisionResponse | null> {
+    const current = detail.approvedCurrent;
+    if (detail.type.kind !== 'living' || !current) return of(null);
+    const revision$ =
+      viewed?.revision.id === current.revisionId ? of(viewed) : this.getRevision(detail.project, detail.type.agentKey, detail.documentId, current.revisionId);
+    return revision$.pipe(
+      map((revision) => {
+        if (revision.project !== detail.project || revision.type.agentKey !== detail.type.agentKey || revision.documentId !== detail.documentId) {
+          throw new Error('The approved current changed. Reload and try again.');
+        }
+        if (revision.revision.id !== current.revisionId || !revision.revision.approval || revision.approvedCurrent?.revisionId !== current.revisionId) {
+          throw new HttpErrorResponse({
+            status: 409,
+            error: {
+              code: 'MKTG_APPROVED_CURRENT_CHANGED',
+              message: 'The approved current changed. Reload and try again.',
+            },
+          });
+        }
+        return revision;
+      }),
+      catchError((error: unknown) => {
+        if (!retry || !(error instanceof HttpErrorResponse) || error.error?.code !== 'MKTG_APPROVED_CURRENT_CHANGED') return throwError(() => error);
+        return this.getDocument(detail.project, detail.type.agentKey, detail.documentId).pipe(
+          switchMap((fresh) => this.readApprovedRevision(fresh, undefined, false))
+        );
+      })
+    );
+  }
+
   private logAndRethrow(message: string, error: unknown): Observable<never> {
-    console.error(message, error);
+    const response = error instanceof HttpErrorResponse ? error : null;
+    console.error(message, { status: response?.status, code: typeof response?.error?.code === 'string' ? response.error.code : undefined });
     return throwError(() => error);
   }
 

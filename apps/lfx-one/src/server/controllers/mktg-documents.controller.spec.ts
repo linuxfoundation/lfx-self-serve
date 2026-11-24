@@ -8,6 +8,7 @@ const runMocks = vi.hoisted(() => ({
   ownProgress: vi.fn(),
   selectedProgress: vi.fn(),
   retry: vi.fn(),
+  dismiss: vi.fn(),
   refreshFailure: vi.fn(),
   resolveProject: vi.fn(),
 }));
@@ -62,6 +63,7 @@ vi.mock('../services/mktg-document-run.service', async () => {
       public ownProgress = runMocks.ownProgress;
       public resolveProject = runMocks.resolveProject;
       public retry = runMocks.retry;
+      public dismiss = runMocks.dismiss;
       public refreshFailure = runMocks.refreshFailure;
       // The real detail policy delegates selected-record reads to this domain seam.
       public selectedProgress = runMocks.selectedProgress;
@@ -86,13 +88,15 @@ vi.mock('../services/logger.service', () => ({ logger: loggerMocks }));
 
 import type { NextFunction, Request, Response } from 'express';
 import { findMktgDocumentType } from '@lfx-one/shared/utils';
-import type { MktgDocumentDetailResponse, MktgDocumentRunProgress } from '@lfx-one/shared/interfaces';
+import type { MktgDocumentDetailResponse, MktgDocumentRunCoverage, MktgDocumentRunProgress } from '@lfx-one/shared/interfaces';
 
-import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { MktgDocumentsController } from './mktg-documents.controller';
 
 const PROJECT = 'proj-uid-1';
 const REVISION_ID = `000002-${'a'.repeat(64)}`;
+/** The per-read coverage a detail read hands to its selected and refreshed run lookups (no lookup failed here). */
+const detailCoverage: MktgDocumentRunCoverage = { uncheckedCount: 0, retainedRunIds: [] };
 
 function runProgress(overrides: Partial<MktgDocumentRunProgress> = {}): MktgDocumentRunProgress {
   return {
@@ -110,8 +114,12 @@ function buildReq(params: Record<string, string> = {}, query: Record<string, unk
   return { path: '/api/mktg-agents/documents', params, query, body } as unknown as Request;
 }
 
-function buildRes(): Response & { json: ReturnType<typeof vi.fn> } {
-  return { json: vi.fn(), setHeader: vi.fn() } as unknown as Response & { json: ReturnType<typeof vi.fn> };
+function buildRes(): Response & { json: ReturnType<typeof vi.fn>; status: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> } {
+  return { json: vi.fn(), setHeader: vi.fn(), status: vi.fn().mockReturnThis(), end: vi.fn() } as unknown as Response & {
+    json: ReturnType<typeof vi.fn>;
+    status: ReturnType<typeof vi.fn>;
+    end: ReturnType<typeof vi.fn>;
+  };
 }
 
 describe('MktgDocumentsController', () => {
@@ -124,6 +132,7 @@ describe('MktgDocumentsController', () => {
     runMocks.resolveProject.mockResolvedValue(PROJECT);
     runMocks.readProgress.mockResolvedValue({ runs: [] });
     runMocks.retry.mockResolvedValue(undefined);
+    runMocks.dismiss.mockResolvedValue(undefined);
     runMocks.refreshFailure.mockResolvedValue(null);
     runMocks.selectedProgress.mockImplementation(async (_req, _project, _agent, _document, _run, known?: MktgDocumentRunProgress) => known ?? null);
     controller = new MktgDocumentsController();
@@ -496,7 +505,7 @@ describe('MktgDocumentsController', () => {
       next
     );
     expect(next).not.toHaveBeenCalled();
-    expect(runMocks.selectedProgress).toHaveBeenCalledWith(expect.anything(), PROJECT, 'brand-kit', 'living', closed.runId, undefined);
+    expect(runMocks.selectedProgress).toHaveBeenCalledWith(expect.anything(), PROJECT, 'brand-kit', 'living', closed.runId, undefined, detailCoverage);
     expect(runMocks.selectedProgress.mock.invocationCallOrder[0]).toBeLessThan(storeMocks.getDocument.mock.invocationCallOrder[0]);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ revisions: [], runs: [closed] }));
     expect(storeMocks.getRevision).not.toHaveBeenCalled();
@@ -517,7 +526,7 @@ describe('MktgDocumentsController', () => {
     runMocks.refreshFailure.mockResolvedValue(runProgress({ runId: id, state: 'failed', failureText: 'Synthetic plain reply' }));
     const res = buildRes();
     await controller.getDocument(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT, refreshRun: id }), res, next);
-    expect(runMocks.refreshFailure).toHaveBeenCalledWith(expect.anything(), PROJECT, 'brand-kit', 'living', id);
+    expect(runMocks.refreshFailure).toHaveBeenCalledWith(expect.anything(), PROJECT, 'brand-kit', 'living', id, detailCoverage);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ runs: [expect.objectContaining({ failureText: 'Synthetic plain reply' })] }));
     runMocks.refreshFailure.mockClear();
     await controller.getDocument(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT, poll: '1', refreshRun: id }), buildRes(), next);
@@ -541,7 +550,7 @@ describe('MktgDocumentsController', () => {
     runMocks.refreshFailure.mockRejectedValueOnce(failure);
     const res = buildRes();
     await controller.getDocument(buildReq({ agentKey: type.agentKey, documentId: 'living' }, { project: PROJECT, refreshRun: selector }), res, next);
-    expect(runMocks.refreshFailure).toHaveBeenCalledWith(expect.anything(), PROJECT, type.agentKey, 'living', selector);
+    expect(runMocks.refreshFailure).toHaveBeenCalledWith(expect.anything(), PROJECT, type.agentKey, 'living', selector, detailCoverage);
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ ...detail, runs: [runProgress({ state: 'failed' })], progressUnavailable: true });
   }
@@ -587,6 +596,53 @@ describe('MktgDocumentsController', () => {
     expect(projectMocks.getProjectById).not.toHaveBeenCalled();
     expect(runMocks.retry).not.toHaveBeenCalled();
     expect(runMocks.refreshFailure).not.toHaveBeenCalled();
+  });
+
+  it('dismisses a run under the SERVER-resolved writer project and answers 204 with no body', async () => {
+    const id = 'b'.repeat(64);
+    projectMocks.getProjectById.mockResolvedValue({ uid: 'proj-uid-canonical', writer: true });
+    const res = buildRes();
+    await controller.dismissRun(buildReq({ agentKey: 'brand-kit', documentId: 'living', runId: id }, {}, { project: PROJECT }), res, next);
+    expect(runMocks.dismiss).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'proj-uid-canonical', 'brand-kit', 'living', id);
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.end).toHaveBeenCalledWith();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(loggerMocks.success).toHaveBeenCalledWith(expect.anything(), 'mktg_run_dismiss', 0, { project: 'proj-uid-canonical' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('never dismisses for a caller without the writer grant', async () => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: false });
+    const res = buildRes();
+    await controller.dismissRun(buildReq({ agentKey: 'brand-kit', documentId: 'living', runId: 'b'.repeat(64) }, {}, { project: PROJECT }), res, next);
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    expect(runMocks.dismiss).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ agentKey: 'brand-kit', documentId: 'living', runId: '../run' }, { project: PROJECT }],
+    [{ agentKey: 'brand-kit', documentId: 'living', runId: 'B'.repeat(64) }, { project: PROJECT }],
+    [{ agentKey: 'not-an-agent', documentId: 'living', runId: 'b'.repeat(64) }, { project: PROJECT }],
+    [{ agentKey: 'brand-kit', documentId: '../living', runId: 'b'.repeat(64) }, { project: PROJECT }],
+    [{ agentKey: 'brand-kit', documentId: 'living', runId: 'b'.repeat(64) }, { project: '../other' }],
+    [{ agentKey: 'brand-kit', documentId: 'living', runId: 'b'.repeat(64) }, undefined],
+  ])('rejects dismiss params %j with body %j before project or storage lookup', async (params, body) => {
+    await controller.dismissRun(buildReq(params, {}, body), buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+    expect(runMocks.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('forwards a not-failed conflict without a controller error log', async () => {
+    const conflict = new ConflictError('Only a failed run can be dismissed.', 'MKTG_RUN_NOT_FAILED');
+    runMocks.dismiss.mockRejectedValue(conflict);
+    const res = buildRes();
+    await controller.dismissRun(buildReq({ agentKey: 'brand-kit', documentId: 'living', runId: 'b'.repeat(64) }, {}, { project: PROJECT }), res, next);
+    expect(next).toHaveBeenCalledWith(conflict);
+    expect(loggerMocks.error).not.toHaveBeenCalled();
+    expect(loggerMocks.success).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
   });
 
   it('answers 404 when the document has no such revision to restore', async () => {

@@ -124,10 +124,24 @@ export class ComposerDateScheduleComponent implements OnInit {
   // Both literals live here rather than in a class binding so Tailwind's `content` scan still sees them.
   protected readonly dateTimeGridClass = computed(() => (this.compact() ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-1 gap-3 sm:grid-cols-2'));
 
+  // Minimum date: yesterday, unless the meeting (or occurrence) being edited already started
+  // before that — its own saved start date must stay selectable, and not greyed out, even though
+  // it is in the past (GH-4944). Every day from that saved date through yesterday becomes
+  // selectable too, not only the saved one; editModeDateTimeValidator() still rejects any of
+  // those in-between days (within a minute of the saved value is the only past value it allows).
   protected readonly minDate = computed(() => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     yesterday.setHours(0, 0, 0, 0);
+
+    const original = this.formService.originalStartDate();
+    if (original) {
+      const originalDay = new Date(original.getFullYear(), original.getMonth(), original.getDate());
+      if (originalDay < yesterday) {
+        return originalDay;
+      }
+    }
+
     return yesterday;
   });
 

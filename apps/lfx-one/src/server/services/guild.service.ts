@@ -52,6 +52,12 @@ export class GuildService {
   // request. Never cache sessions across users or polls.
   private static readonly resultPayloads = new WeakMap<Request, { sessionId: string; payloads: string[] }>();
 
+  // Single-flight (request coalescing): concurrent polls of one session share
+  // ONE in-flight paged read instead of each pulling every page. The entry is
+  // deleted when the read settles, so a rejection is never cached. Per process
+  // only: pods do not share it, and nothing is kept once the read settles.
+  private static readonly inFlightRawReads = new Map<string, Promise<string[]>>();
+
   private get apiUrl(): string {
     // Strip trailing slashes so a configured `https://host/` doesn't produce `https://host//api/...`.
     return (process.env['GUILD_API_URL'] || GUILD_DEFAULT_API_URL).replace(/\/+$/, '');
@@ -233,53 +239,23 @@ export class GuildService {
    * so completion consumers cannot settle a turn from an incomplete history.
    * The authoritative envelope only ever rides
    * agent/system events (llm_start/llm_done bodies, notifications, runtime_done).
+   *
+   * Guild serves events OLDEST-first, so the receipt and the root envelope sit
+   * on the last page: the page loop is offset pagination bounded by the server's
+   * `pagination.total_count` under the explicit absolute cap
+   * `MKTG_RAW_EVENTS_MAX_PAGES` (never a fixed page count), with the `has_more`
+   * rule as the fallback when the total is absent. Concurrent calls for one
+   * session share one read (see `inFlightRawReads`).
    */
   public async getRawEventPayloads(req: Request, sessionId: string): Promise<string[]> {
     this.assertConfigured('guild_get_raw_events');
 
-    logger.debug(req, 'guild_get_raw_events', 'Fetching raw Guild session events', {});
-    const rawItems: Partial<GuildSessionEvent>[] = [];
-    const ids = new Set<string>();
-    let hasMore = false;
-    for (let page = 0; page < MKTG_RAW_EVENTS_MAX_PAGES; page++) {
-      const path = `/api/sessions/${encodeURIComponent(sessionId)}/events?limit=${GUILD_RAW_EVENTS_LIMIT}&offset=${page * GUILD_RAW_EVENTS_LIMIT}`;
-      const response = await this.fetchGuild(path, { method: 'GET' }, 'guild_get_raw_events');
-      await this.assertOk(response, 'guild_get_raw_events', path);
-      const data = (await response.json()) as GuildRawEventsPage;
-      const pageItems = data.items ?? [];
-      for (const item of pageItems) {
-        const id = item?.id;
-        if (typeof id === 'string' && id) {
-          if (ids.has(id)) continue;
-          ids.add(id);
-        }
-        rawItems.push(item);
-      }
-      // A full page without legacy pagination metadata is conservatively incomplete.
-      hasMore = pageItems.length >= GUILD_RAW_EVENTS_LIMIT && data.pagination?.has_more !== false;
-      if (!hasMore) break;
+    let read = GuildService.inFlightRawReads.get(sessionId);
+    if (!read) {
+      read = this.readRawEventPayloads(req, sessionId).finally(() => GuildService.inFlightRawReads.delete(sessionId));
+      GuildService.inFlightRawReads.set(sessionId, read);
     }
-    // Retain only the timing of queued turns, never their caller-controlled content.
-    const items = rawItems.map((item) =>
-      item?.type === 'user_message' || item?.type === 'trigger_message' ? { type: MKTG_SESSION_TURN_STARTED, created_at: item.created_at } : item
-    );
-
-    // Last-valid-wins selection downstream depends on chronological order —
-    // normalize it here instead of trusting the API's ordering.
-    const sorted = [...items].sort((a, b) => toEpoch(a?.created_at || '') - toEpoch(b?.created_at || ''));
-
-    if (hasMore) {
-      logger.warning(req, 'guild_get_raw_events', `Raw events truncated at ${MKTG_RAW_EVENTS_MAX_PAGES} pages`, {
-        count: rawItems.length,
-        limit: GUILD_RAW_EVENTS_LIMIT,
-        pages: MKTG_RAW_EVENTS_MAX_PAGES,
-      });
-    }
-
-    const payloads = sorted.map((item) => JSON.stringify(item));
-    if (hasMore) {
-      payloads.push(JSON.stringify({ type: MKTG_SESSION_EVENTS_TRUNCATED }));
-    }
+    const payloads = await read;
     GuildService.resultPayloads.set(req, { sessionId, payloads });
     return payloads;
   }
@@ -314,6 +290,62 @@ export class GuildService {
       logger.warning(req, 'mktg_run_failure_lookup', 'Could not check the Guild outcome; keeping the current result', { err: error });
       return result;
     }
+  }
+
+  /** The paged read behind `getRawEventPayloads`; one in flight per session. */
+  private async readRawEventPayloads(req: Request, sessionId: string): Promise<string[]> {
+    logger.debug(req, 'guild_get_raw_events', 'Fetching raw Guild session events', {});
+    const rawItems: Partial<GuildSessionEvent>[] = [];
+    const ids = new Set<string>();
+    let totalCount: number | undefined;
+    let hasMore = false;
+    for (let page = 0; page < MKTG_RAW_EVENTS_MAX_PAGES; page++) {
+      const offset = page * GUILD_RAW_EVENTS_LIMIT;
+      const path = `/api/sessions/${encodeURIComponent(sessionId)}/events?limit=${GUILD_RAW_EVENTS_LIMIT}&offset=${offset}`;
+      const response = await this.fetchGuild(path, { method: 'GET' }, 'guild_get_raw_events');
+      await this.assertOk(response, 'guild_get_raw_events', path);
+      const data = (await response.json()) as GuildRawEventsPage;
+      const pageItems = data.items ?? [];
+      for (const item of pageItems) {
+        const id = item?.id;
+        if (typeof id === 'string' && id) {
+          if (ids.has(id)) continue;
+          ids.add(id);
+        }
+        rawItems.push(item);
+      }
+      const total = data.pagination?.total_count;
+      if (page === 0 && typeof total === 'number' && Number.isFinite(total)) totalCount = total;
+      // Sized from the server's total when it is given; otherwise a full page
+      // without legacy pagination metadata is conservatively incomplete.
+      hasMore =
+        totalCount !== undefined
+          ? offset + GUILD_RAW_EVENTS_LIMIT < totalCount
+          : pageItems.length >= GUILD_RAW_EVENTS_LIMIT && data.pagination?.has_more !== false;
+      if (!hasMore) break;
+    }
+    // Retain only the timing of queued turns, never their caller-controlled content.
+    const items = rawItems.map((item) =>
+      item?.type === 'user_message' || item?.type === 'trigger_message' ? { type: MKTG_SESSION_TURN_STARTED, created_at: item.created_at } : item
+    );
+
+    // Last-valid-wins selection downstream depends on chronological order —
+    // normalize it here instead of trusting the API's ordering.
+    const sorted = [...items].sort((a, b) => toEpoch(a?.created_at || '') - toEpoch(b?.created_at || ''));
+
+    if (hasMore) {
+      logger.warning(req, 'guild_get_raw_events', `Raw events truncated at ${MKTG_RAW_EVENTS_MAX_PAGES} pages`, {
+        count: rawItems.length,
+        limit: GUILD_RAW_EVENTS_LIMIT,
+        pages: MKTG_RAW_EVENTS_MAX_PAGES,
+      });
+    }
+
+    const payloads = sorted.map((item) => JSON.stringify(item));
+    if (hasMore) {
+      payloads.push(JSON.stringify({ type: MKTG_SESSION_EVENTS_TRUNCATED }));
+    }
+    return payloads;
   }
 
   /**

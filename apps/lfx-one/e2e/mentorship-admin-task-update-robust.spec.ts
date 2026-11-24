@@ -17,7 +17,7 @@
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import {
   ADMIN_PROGRAM_URL,
   ADMIN_TASKS,
@@ -40,7 +40,6 @@ const TASK = ADMIN_TASKS[0];
 
 async function open(page: Page): Promise<void> {
   const requests = { mentees: [], tasks: [] };
-  await enableMentorshipFlag(page);
   await stubAdminProgramPage(page);
   await stubAdminMentees(page, requests);
   await stubAdminTasks(page, requests);

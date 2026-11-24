@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { INSIGHTS_TOKEN_NAME_CONTROL_CHARACTERS, INSIGHTS_TOKEN_NAME_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { INSIGHTS_TOKEN_EXPIRATIONS, INSIGHTS_TOKEN_NAME_CONTROL_CHARACTERS, INSIGHTS_TOKEN_NAME_MAX_LENGTH } from '@lfx-one/shared/constants';
+import type { InsightsTokenExpiration } from '@lfx-one/shared/interfaces';
 import { codePointLength, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -49,8 +50,8 @@ export class InsightsTokensController {
   }
 
   /**
-   * POST /api/profile/insights-tokens — validates the name; the service re-checks the access flag
-   * before asking the PAT service to issue the token.
+   * POST /api/profile/insights-tokens — validates the name and the optional expiration; the service re-checks the
+   * access flag before asking the PAT service to issue the token.
    */
   public async createToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'create_insights_token');
@@ -68,9 +69,21 @@ export class InsightsTokensController {
       );
     }
 
+    // Optional so a browser still on the previous bundle, which sends only a name, keeps creating tokens.
+    const expiration: unknown = req.body?.expiration;
+    if (expiration !== undefined && !isInsightsTokenExpiration(expiration)) {
+      return next(
+        ServiceValidationError.forField('expiration', `Expiration must be one of ${Object.values(INSIGHTS_TOKEN_EXPIRATIONS).join(', ')}`, {
+          operation: 'create_insights_token',
+          service: 'insights_tokens_controller',
+          path: req.path,
+        })
+      );
+    }
+
     try {
-      const created = await this.insightsTokensService.createToken(req, name);
-      logger.success(req, 'create_insights_token', startTime, { token_uid: created.token.uid });
+      const created = await this.insightsTokensService.createToken(req, name, expiration);
+      logger.success(req, 'create_insights_token', startTime, { token_uid: created.token.uid, expiration: expiration ?? 'none' });
       res.set({
         ['Cache-Control']: 'no-store, no-cache, must-revalidate, private',
         Pragma: 'no-cache',
@@ -105,4 +118,8 @@ export class InsightsTokensController {
       next(error);
     }
   }
+}
+
+function isInsightsTokenExpiration(value: unknown): value is InsightsTokenExpiration {
+  return (Object.values(INSIGHTS_TOKEN_EXPIRATIONS) as unknown[]).includes(value);
 }

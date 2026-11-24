@@ -8,26 +8,39 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
-import { CommentResponseFormData, PollCommentPrompt, PollQuestion, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
-import { buildCommentResponses, getCommentPromptsData, reconcileCommentFormControls } from '@lfx-one/shared/utils';
+import {
+  INVITATION_NOT_FOUND,
+  VOTE_BALLOT_FINAL_NOTICE,
+  VOTE_COMMENT_RESPONSE_MAX_LENGTH,
+  VOTE_IMPERSONATION_READ_ONLY_NOTICE,
+  VOTE_LAST_VOTER_CONFIRMATION,
+  VOTE_RATE_LIMITED_MESSAGE,
+} from '@lfx-one/shared/constants';
+import { CommentResponseFormData, CommentResponseInput, PollCommentPrompt, PollQuestion, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import { buildCommentResponses, getCommentPromptsData, isVoteChangeAllowed, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
+import { UserService } from '@services/user.service';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { CheckboxModule } from 'primeng/checkbox';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { finalize } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-ballot-inline',
-  imports: [ReactiveFormsModule, CheckboxModule, ButtonComponent, RadioButtonComponent, TextareaComponent, CodePointLengthPipe],
+  imports: [ReactiveFormsModule, CheckboxModule, ConfirmDialogModule, ButtonComponent, RadioButtonComponent, TextareaComponent, CodePointLengthPipe],
+  // Scoped so the last-voter dialog (#4726) never renders through Pending Actions' own <p-confirmDialog>.
+  providers: [ConfirmationService],
   templateUrl: './vote-ballot-inline.component.html',
   styleUrl: './vote-ballot-inline.component.scss',
 })
 export class VoteBallotInlineComponent {
   // === Injections ===
   private readonly voteService = inject(VoteService);
+  private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
 
   // === Inputs / Outputs ===
@@ -43,6 +56,8 @@ export class VoteBallotInlineComponent {
 
   // === Writable Signals ===
   protected readonly submitting = signal(false);
+  protected readonly impersonating = this.userService.impersonating;
+  protected readonly impersonationNotice = VOTE_IMPERSONATION_READ_ONLY_NOTICE;
   // Reactive dependency for submitDisabled — rebuildForm uses { emitEvent: false }, so statusChanges is silent.
   private readonly formVersion = signal(0);
 
@@ -50,6 +65,8 @@ export class VoteBallotInlineComponent {
   protected readonly question = computed(() => this.vote().poll_questions?.[0] ?? null);
   protected readonly isMultipleChoice = computed(() => this.question()?.type === 'multiple_choice');
   protected readonly allowAbstain = computed(() => !!this.vote().allow_abstain);
+  /** Pre-submit notice when the vote makes submitted ballots final (#4723); a missing setting means allowed. */
+  protected readonly finalNotice: Signal<string | null> = computed(() => (isVoteChangeAllowed(this.vote()) ? null : VOTE_BALLOT_FINAL_NOTICE));
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
   // Phone layout below the sm breakpoint; false through the first render so it matches the SSR shape, then swaps.
@@ -67,7 +84,7 @@ export class VoteBallotInlineComponent {
   // === Protected Methods ===
   protected onSubmit(): void {
     const vote = this.vote();
-    if (this.submitting()) return;
+    if (this.submitting() || this.impersonating()) return;
 
     const isAbstain = this.abstain();
     const question = this.question();
@@ -85,33 +102,20 @@ export class VoteBallotInlineComponent {
 
     this.submitting.set(true);
 
+    // Re-check at submit time whether this ballot would end the vote (#4726); the read fails open to false.
     this.voteService
-      .submitMyResponse(vote.uid, { abstain: isAbstain, userVoteContent, commentResponses })
-      .pipe(
-        takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.submitting.set(false))
-      )
-      .subscribe({
-        next: () => {
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Vote submitted',
-            detail: `Your ${isAbstain ? 'abstention' : 'ballot'} has been recorded.`,
-            life: 3000,
-          });
-          this.voteSubmitted.emit(vote.uid);
-        },
-        error: (err: unknown) => {
-          const isInvitationMissing = err instanceof Error && !(err instanceof HttpErrorResponse) && err.message === INVITATION_NOT_FOUND;
-          this.messageService.add({
-            severity: 'error',
-            summary: isInvitationMissing ? 'Unable to find your invitation' : 'Unable to submit vote',
-            detail: isInvitationMissing
-              ? 'We could not find your vote invitation for this ballot. Please refresh and try again.'
-              : 'Something went wrong submitting your ballot. Please try again.',
-            life: 5000,
-          });
-        },
+      .getMyWouldEndVote(vote.uid)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((wouldEndVote) => {
+        if (!wouldEndVote) {
+          this.submitBallot(vote, isAbstain, userVoteContent, commentResponses);
+          return;
+        }
+        this.confirmationService.confirm({
+          ...VOTE_LAST_VOTER_CONFIRMATION,
+          accept: () => this.submitBallot(vote, isAbstain, userVoteContent, commentResponses),
+          reject: () => this.submitting.set(false),
+        });
       });
   }
 
@@ -119,7 +123,7 @@ export class VoteBallotInlineComponent {
   private initSubmitDisabled(): Signal<boolean> {
     return computed(() => {
       this.formVersion(); // re-evaluate when controls are added/removed/disabled via { emitEvent: false }
-      if (this.submitting()) return true;
+      if (this.submitting() || this.impersonating()) return true;
       if (!this.commentForm.valid) return true;
       if (this.abstain()) return false;
       if (!this.question()) return true;
@@ -158,6 +162,47 @@ export class VoteBallotInlineComponent {
   }
 
   // === Private Helpers ===
+  /** Submits a first ballot (POST); called directly or once the voter confirms the last-voter dialog (#4726). */
+  private submitBallot(
+    vote: Vote,
+    isAbstain: boolean,
+    userVoteContent: VoteAnswerInput[] | undefined,
+    commentResponses: CommentResponseInput[] | undefined
+  ): void {
+    this.voteService
+      .submitMyResponse(vote.uid, { abstain: isAbstain, userVoteContent, commentResponses })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.submitting.set(false))
+      )
+      .subscribe({
+        next: () => {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Vote submitted',
+            detail: `Your ${isAbstain ? 'abstention' : 'ballot'} has been recorded.`,
+            life: 3000,
+          });
+          this.voteSubmitted.emit(vote.uid);
+        },
+        error: (err: unknown) => {
+          if (err instanceof HttpErrorResponse && err.status === 429) {
+            this.messageService.add({ severity: 'warn', summary: 'Too many requests', detail: VOTE_RATE_LIMITED_MESSAGE, life: 5000 });
+            return;
+          }
+          const isInvitationMissing = err instanceof Error && !(err instanceof HttpErrorResponse) && err.message === INVITATION_NOT_FOUND;
+          this.messageService.add({
+            severity: 'error',
+            summary: isInvitationMissing ? 'Unable to find your invitation' : 'Unable to submit vote',
+            detail: isInvitationMissing
+              ? 'We could not find your vote invitation for this ballot. Please refresh and try again.'
+              : 'Something went wrong submitting your ballot. Please try again.',
+            life: 5000,
+          });
+        },
+      });
+  }
+
   private rebuildForm(question: PollQuestion | null): void {
     for (const id of Object.keys(this.form.controls)) {
       if (!question || id !== question.question_id) {

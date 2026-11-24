@@ -106,7 +106,24 @@ describe('Member360Service dedicated transports', () => {
     expect(request.request.headers.get('Content-Type')).toBe('application/octet-stream');
     expect(request.request.body).toBeInstanceOf(File);
     expect(request.request.urlWithParams).not.toContain('filename');
-    request.flush({ filename, rows: [{ company: 'Sample Org' }] });
+    request.flush({ trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 100 });
+  });
+
+  it('sends only opaque tracker ids with Generate, never parsed rows', () => {
+    api.generate({ project: 'sample-project', trackerIds: ['a'.repeat(64)] }).subscribe();
+    const request = http.expectOne('/api/mktg-agents/member-360/generate');
+    expect(request.request.body).toEqual({ project: 'sample-project', trackerIds: ['a'.repeat(64)] });
+    expect(request.request.body).not.toHaveProperty('trackers');
+    request.flush({});
+  });
+
+  it('deletes only an opaque receipt with keepalive and accepts a bodyless204', () => {
+    api.deleteTracker('sample-project', 'a'.repeat(64)).subscribe();
+    const request = http.expectOne(`/api/mktg-agents/member-360/tracker/${'a'.repeat(64)}?project=sample-project`);
+    expect(request.request.method).toBe('DELETE');
+    expect(request.request.body).toBeNull();
+    expect(request.request.keepalive).toBe(true);
+    request.flush(null, { status: 204, statusText: 'No Content' });
   });
 
   it('downloads a stored document through the BFF without sending client tabs', () => {

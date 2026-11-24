@@ -4,7 +4,8 @@
 import { expect, test } from '@playwright/test';
 import { activeRunConfirmDialog } from './helpers/mktg-os-confirm-dialog.helper';
 import { createHash } from 'node:crypto';
-import { MEMBER_360_INPUT_TIMEOUT_MESSAGE } from '../../../packages/shared/src/constants/member-360.constants';
+import { MEMBER_360_INPUT_TIMEOUT_MESSAGE, MEMBER_360_RENEWAL_RED_DAYS } from '../../../packages/shared/src/constants/member-360.constants';
+import { MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 
 import {
   json,
@@ -19,6 +20,14 @@ import { member360Revision } from './fixtures/mock-data/member-360.mock';
 import { SYNTHETIC_ORG_NAME, SYNTHETIC_SECOND_ORG_LEGAL_NAME } from './fixtures/mock-data/synthetic-org.mock';
 
 test.use({ storageState: { cookies: [], origins: [] } });
+
+/**
+ * A failed read recovers on the poller's retry: the first retry's backoff is ≤ 10 s (5 s floor plus full jitter to 2×)
+ * and the second's ≤ 20 s (to 4×). Sized at the second retry's ceiling plus a margin, so a retry that raced the route
+ * switch and failed too cannot flake the wait.
+ */
+const POLL_RECOVERY_TIMEOUT = 25_000;
+
 test.describe.configure({ timeout: 60000 });
 test.beforeEach(({ page, isMobile }) => {
   if (isMobile) expect(page.viewportSize()?.width).toBeLessThan(640);
@@ -53,7 +62,7 @@ for (const choice of ['Open it', 'Discard and start over'])
     await openMember360(page);
     await selectMember360Option(page, 'member-360-compare', 'No comparison');
     await page.getByTestId('member-360-run').getByRole('button').click();
-    const dialog = activeRunConfirmDialog(page, 'member-360-active-run-confirm');
+    const dialog = activeRunConfirmDialog(page);
     await expect(dialog).toContainText('Your Member 360 run is in progress');
     await dialog.getByRole('button', { name: choice, exact: true }).click();
     if (choice === 'Open it') await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
@@ -136,7 +145,9 @@ for (const state of ['writing', 'questions', 'none'] as const)
     await page.screenshot({ path: info.outputPath(`member-owned-${state}-settled.png`), fullPage: true });
   });
 
-test('an unavailable initial roster stays neutral and Refresh loads the correct intake', async ({ page }, info) => {
+test('an unavailable initial roster stays neutral, shows the one plain line with no Refresh button, and loads the correct intake on its own', async ({
+  page,
+}, info) => {
   await setupMember360(page); // Includes suppressCookieBanner and synthetic writer/flag overrides.
   let available = false;
   await page.route('**/api/mktg-agents/documents?*', (route) =>
@@ -144,11 +155,16 @@ test('an unavailable initial roster stays neutral and Refresh loads the correct 
   );
   await openMember360(page);
   await expect(page.getByTestId('mktg-skeleton')).toBeVisible();
-  await expect(page.getByTestId('member-360-state-error')).toContainText('The run state could not be checked.');
+  await expect(page.getByTestId('member-360-state-retrying')).toContainText(MKTG_POLL_RETRYING_TEXT);
+  await expect(page.getByTestId('member-360-state-retrying')).toHaveAttribute('role', 'status');
+  await expect(page.getByTestId('member-360-state-error')).toHaveCount(0);
+  await expect(page.getByTestId('member-360-state-refresh')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Refresh' })).toHaveCount(0);
+  await expect(page.getByTestId('member-360-retry-history')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Retry history' })).toHaveCount(0);
   await expect(page.getByTestId('member-360-intake')).toHaveCount(0);
   available = true;
-  await page.getByTestId('member-360-state-refresh').getByRole('button').click();
-  await expect(page.getByTestId('member-360-intake')).toBeVisible();
+  await expect(page.getByTestId('member-360-intake')).toBeVisible({ timeout: POLL_RECOVERY_TIMEOUT });
   await expect(page.getByTestId('mktg-skeleton')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('member-roster-recovered.png'), fullPage: true });
 });
@@ -223,7 +239,10 @@ test('Sources and Method use plain-English connection labels for legacy envelope
   await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
   await expect(page.getByTestId('member-360-result')).toContainText('CRM (not connected yet), Web research');
   await page.getByTestId('member-360-method-toggle').click();
-  await expect(page.getByTestId('member-360-method')).toContainText('hubspot: not connected yet');
+  // Label and status are separate table cells; Angular drops the whitespace between them, so assert each cell.
+  const hubspot = page.getByTestId('member-360-source-hubspot').locator('td');
+  await expect(hubspot.nth(0)).toHaveText('hubspot:');
+  await expect(hubspot.nth(1)).toHaveText('not connected yet');
   await expect(page.getByTestId('member-360-method')).not.toContainText('not_wired');
   await page.screenshot({ path: info.outputPath('plain-source-labels.png'), fullPage: true });
 });
@@ -302,16 +321,18 @@ test('form-only intake fixes the project, parses/removes CSV, and has an empty h
       mimeType: 'text/csv',
       buffer: Buffer.from(`company,speaker,session\n${SYNTHETIC_ORG_NAME},Sample speaker,Sample session`),
     });
-  await expect(page.getByTestId('member-360-tracker')).toContainText('1 row · company, speaker, session');
+  await expect(page.getByTestId('member-360-tracker')).toContainText('1 row · 3 columns');
   await expect(page.getByTestId('member-360-tracker')).toContainText('CSV');
   await expect(page.getByRole('button', { name: 'Upload tracker', exact: true })).toBeFocused();
+  const deletion = page.waitForRequest((request) => request.method() === 'DELETE' && request.url().includes('/member-360/tracker/'));
   await page.getByRole('button', { name: 'Remove speaking.csv' }).click();
+  expect(new URL((await deletion).url()).pathname).toContain(`/tracker/${'a'.repeat(64)}`);
   await expect(page.getByTestId('member-360-tracker')).toHaveCount(0);
   const create = page.getByTestId('member-360-run').getByRole('button', { name: 'Create Member 360', exact: true });
   await expect(create).toBeEnabled();
   await expect(page.getByTestId('member-360-compare')).toContainText('No comparison');
   await page.route('**/api/mktg-agents/member-360/generate', async (route) => {
-    expect(route.request().postDataJSON()).toEqual({ project: 'sample-project', window: '12', compare: false, trackers: [] });
+    expect(route.request().postDataJSON()).toEqual({ project: 'sample-project', window: '12', compare: false, trackerIds: [] });
     await json(route, { sessionId: 'synthetic-first-run', ownerToken: 'synthetic-proof', documentId: MEMBER_360_DOCUMENT_ID, runId: 'b'.repeat(64) });
   });
   await stubMember360Progress(page, () => member360Progress('writing'));
@@ -321,12 +342,33 @@ test('form-only intake fixes the project, parses/removes CSV, and has an empty h
   await page.screenshot({ path: info.outputPath('first-run-no-comparison.png'), fullPage: true });
 });
 
+test('a parsed tracker sends only its opaque id when generating', async ({ page }, info) => {
+  await setupMember360(page);
+  await page.route('**/api/mktg-agents/member-360/generate', async (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.trackerIds).toEqual(['a'.repeat(64)]);
+    expect(body).not.toHaveProperty('trackers');
+    expect(JSON.stringify(body)).not.toContain('synthetic-contact');
+    await json(route, { sessionId: 'synthetic-tracker-run', ownerToken: 'synthetic-proof', documentId: MEMBER_360_DOCUMENT_ID, runId: 'b'.repeat(64) });
+  });
+  await stubMember360Progress(page, () => member360Progress('writing'));
+  await openMember360(page);
+  await page
+    .locator('lfx-file-upload input[type=file]')
+    .setInputFiles({ name: 'tracker.csv', mimeType: 'text/csv', buffer: Buffer.from('email\nsynthetic-contact@example.test') });
+  await expect(page.getByTestId('member-360-tracker')).toContainText('1 row · 3 columns');
+  await page.getByTestId('member-360-run').getByRole('button', { name: 'Create Member 360', exact: true }).click();
+  await expect(page.getByTestId('member-360-generating')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('opaque-tracker-run.png'), fullPage: true });
+});
+
 test('Generate stays on the run page until the creator poll confirms stored readiness', async ({ page }, info) => {
   await setupMember360(page, { stored: true });
   let stored = false;
   let intakeBody: unknown;
   await page.route('**/api/mktg-agents/member-360/generate', async (route) => {
     intakeBody = route.request().postDataJSON();
+    expect(intakeBody).toEqual({ project: 'sample-project', window: '12', compare: true, trackerIds: [] });
     await json(route, { sessionId: 'synthetic-session', ownerToken: 'synthetic-owner-token', documentId: MEMBER_360_DOCUMENT_ID, runId: 'b'.repeat(64) });
   });
   await stubMember360Progress(page, () => (stored ? member360Revision() : member360Progress('writing')));
@@ -342,7 +384,7 @@ test('Generate stays on the run page until the creator poll confirms stored read
   });
   await page.getByTestId('member-360-run').getByRole('button').click();
   await expect(page.getByTestId('member-360-generating')).toBeVisible();
-  await expect.poll(() => intakeBody).toEqual({ project: 'sample-project', window: '12', compare: true, trackers: [] });
+  await expect.poll(() => intakeBody).toEqual({ project: 'sample-project', window: '12', compare: true, trackerIds: [] });
   await expect(page).toHaveURL(/\/mktg-os-agents\/member-360\?/);
   await expect(page.getByTestId('mktg-run-activity-title')).toHaveText('Member 360 is working on your report.');
   await expect(page.getByTestId('mktg-run-activity-step-step-10')).toContainText('Searching the web', { timeout: 20000 });
@@ -500,7 +542,14 @@ for (const state of ['resume', 'send-error', 'already-answered', 'load-error', '
     await selectMember360Option(page, 'member-360-compare', 'No comparison');
     await page.getByTestId('member-360-run').getByRole('button').click();
     if (state === 'load-error') {
-      await expect(page.getByTestId('member-360-error')).toContainText('could not be checked', { timeout: 15000 });
+      // A 503 on the run check is transient: one quiet status line while the poller retries, no error box and no button.
+      await expect(page.getByTestId('member-360-retrying')).toContainText(MKTG_POLL_RETRYING_TEXT, { timeout: POLL_RECOVERY_TIMEOUT });
+      await expect(page.getByTestId('member-360-retrying')).toHaveAttribute('role', 'status');
+      await expect(page.getByTestId('member-360-error')).toHaveCount(0);
+      await expect(page.getByTestId('member-360-state-refresh')).toHaveCount(0);
+      await expect(page.getByTestId('member-360-check-again')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Check again' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Refresh' })).toHaveCount(0);
     } else if (state === 'empty') {
       await expect(page.getByTestId('member-360-generating')).toContainText('Member 360 is working on your report.', { timeout: 15000 });
       await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);
@@ -573,6 +622,30 @@ test('ranking sorts, filters, expands evidence and copies team actions', async (
 
   await page.screenshot({ path: info.outputPath('filtered-expanded-ranking.png'), fullPage: true });
 });
+
+for (const scenario of [
+  { name: 'all unknown', values: [null, null], note: 'No list-price value for these 2 renewals' },
+  { name: 'partly known', values: [25000, null], note: '$25,000 known at list price · 1 without a value' },
+  { name: 'all known', values: [25000, 15000], note: '$40,000 at list price' },
+  { name: 'no upcoming renewals', values: [], note: `No renewals within ${MEMBER_360_RENEWAL_RED_DAYS} days` },
+]) {
+  test(`renewal card distinguishes ${scenario.name} list-price coverage`, async ({ page }, info) => {
+    await setupMember360(page, { stored: true }); // Includes suppressCookieBanner(page).
+    const view = member360Revision();
+    const envelope = view.member360;
+    if (!envelope) throw new Error('Member 360 fixture is missing');
+    const row = envelope.tabs.member_ranking[0];
+    envelope.tabs.member_ranking = scenario.values.map((annualValue, index) => ({ ...row, annual_value: annualValue, days_to_renewal: index === 0 ? 0 : 120 }));
+    envelope.content_sha256 = createHash('sha256').update(JSON.stringify(envelope.tabs)).digest('hex');
+    await page.route(`**/api/mktg-agents/documents/member-360/${MEMBER_360_DOCUMENT_ID}**`, (route) => json(route, view));
+    await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
+    const card = page.getByTestId('member-360-summary-renewals');
+    await expect(card.getByTestId('member-360-summary-renewals-value')).toHaveText(String(scenario.values.length));
+    await expect(card.getByTestId('member-360-summary-renewals-note')).toHaveText(scenario.note);
+    await expect(card).not.toContainText('$0 at list price');
+    await page.screenshot({ path: info.outputPath(`renewals-${scenario.name.replaceAll(' ', '-')}.png`), fullPage: true });
+  });
+}
 
 test('a failed submission preserves the form and permits retry', async ({ page }, info) => {
   await setupMember360(page);

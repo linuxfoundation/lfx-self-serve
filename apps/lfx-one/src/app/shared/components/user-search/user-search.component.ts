@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, output, Signal } from '@angular/core';
+import { afterEveryRender, Component, computed, DestroyRef, ElementRef, inject, input, output, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { USER_SEARCH_EMPTY_MESSAGE } from '@lfx-one/shared/constants';
@@ -21,6 +21,7 @@ import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
 export class UserSearchComponent {
   private readonly searchService = inject(SearchService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   // Required input
   public form = input.required<FormGroup>();
@@ -66,6 +67,12 @@ export class UserSearchComponent {
   // `lfx-input-text` takes, so a form's error message can describe this field too.
   public describedBy = input<string | undefined>();
   public invalid = input<boolean>(false);
+  /**
+   * Marks the search box mandatory for assistive tech (`aria-required`). Opt-in and off by default, so
+   * existing consumers render no attribute. Applied after render because `lfx-autocomplete` has no way
+   * to forward it without adding `aria-required="false"` to every other consumer.
+   */
+  public required = input<boolean>(false);
   // When true, a pick without a resolvable LF account (`username` blank/whitespace) is rejected
   // before any bound control is touched — `onUserSelect` doesn't fire and `onRejectedSelection`
   // does instead. Consumers that don't require an LF account (e.g. meeting-details' organizer,
@@ -90,12 +97,6 @@ export class UserSearchComponent {
    * single letter already narrows a short list.
    */
   public readonly waitForSearchableQuery = input<boolean>(false);
-  /**
-   * Searches as the signed-in admin rather than the impersonation target. Only the impersonation dialog sets
-   * it: while impersonating, the default directory search runs with the target's token and would only find
-   * people the target can see. The server route behind it requires the admin's `can_impersonate` claim.
-   */
-  public readonly asImpersonator = input<boolean>(false);
   /**
    * Local mode: a caller-supplied list to search instead of the directory (#2594 — the formation
    * assignee picker offers the people on the project, the only population upstream will accept as
@@ -162,6 +163,16 @@ export class UserSearchComponent {
   protected suggestions: Signal<(UserSearchOption & { displayName: string; fullName: string })[]>;
 
   public constructor() {
+    afterEveryRender(() => {
+      if (!this.required()) {
+        return;
+      }
+      const input = this.host.nativeElement.querySelector('input');
+      if (input && input.getAttribute('aria-required') !== 'true') {
+        input.setAttribute('aria-required', 'true');
+      }
+    });
+
     // Initialize suggestions signal that reacts to search query changes
     const searchResults$ = this.searchQuery$.pipe(
       startWith(''),
@@ -192,7 +203,7 @@ export class UserSearchComponent {
 
         // Use the search type from input, then re-rank so name matches surface
         // first and incidental alias matches (upstream over-match) are demoted.
-        return this.searchService.searchUsers(trimmedTerm, searchType, this.asImpersonator()).pipe(map((users) => rankUserSearchResults(users, trimmedTerm)));
+        return this.searchService.searchUsers(trimmedTerm, searchType).pipe(map((users) => rankUserSearchResults(users, trimmedTerm)));
       }),
       map((users: UserSearchOption[]) => {
         // Add the display fields the autocomplete and the item template show

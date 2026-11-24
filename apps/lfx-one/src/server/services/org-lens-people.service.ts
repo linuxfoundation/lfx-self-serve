@@ -5,21 +5,30 @@ import {
   DEFAULT_ORG_COMMIT_FILTERS,
   ORG_PEOPLE_ALL_ROW_COLUMNS,
   ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS,
+  ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE,
   ORG_PEOPLE_UNKNOWN_MEMBER_NAME,
   ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
+  DEFAULT_ORG_SCOPE,
+  DEFAULT_ORG_TEAM_MEMBERS,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type {
   CompactOrgAllEmployeesRawCache,
+  ContributorPersonProjectRow,
   OrgAllEmployeesRaw,
   OrgCommitFilters,
-  OrgFormerEmployeeCheck,
+  OrgCompanyEmailKeys,
+  OrgCompanyEmailsUnavailableReason,
+  OrgPeopleCompanyEmailKeyRow,
   OrgPeopleAllRowRaw,
   OrgPeopleFoundationOptionRow,
-  OrgAllEmployeeCodeContribution,
+  OrgPeopleIdentityRow,
+  OrgPeopleLiveCode,
+  OrgPersonLiveCode,
   OrgAllEmployeeCommitteeMembership,
   OrgAllEmployeeDetail,
   OrgAllEmployeeEvent,
+  OrgAllEmployeeRow,
   OrgAllEmployeeRowInternal,
   OrgAllEmployeeTraining,
   OrgAllEmployeeTrainingStatus,
@@ -27,24 +36,47 @@ import type {
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
   OrgLensTimeRange,
+  OrgLfUsernameCompanyEmailStatuses,
+  OrgKeyContactAssignment,
   OrgPeopleDirectoryView,
+  OrgPersonCodeContributions,
+  OrgPersonCodeProjectCount,
+  OrgPersonCodeProjectRow,
+  OrgPersonCodeView,
   OrgPersonCompanyEmailRow,
   OrgProjectScope,
+  OrgScopeFilter,
   OrgPersonCompanyEmailsResponse,
+  OrgPersonKeyContactsIdentity,
   OrgPersonMaintainerRoleProjectRow,
   OrgPersonSource,
+  OrgTeamMemberKeys,
+  OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
 import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
 
 import { Request } from 'express';
 
+import {
+  orgContributorCountColumn,
+  orgContributorsActivityPredicate,
+  orgContributorsCommitColumns,
+  orgContributorsScopePredicate,
+} from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { readOrgFormerUsernames } from '../helpers/org-people-employment.helper';
+import { readOrgTeamMemberPersonKeys } from '../helpers/org-team-members.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
+import { resolveOrgScope } from '../helpers/org-scope.helper';
 import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
+import { isMissingObjectError } from '../helpers/snowflake-error.helper';
 import { logger } from './logger.service';
+import { OrgPeopleContributorsService } from './org-people-contributors.service';
+import { OrgLensAccessService } from './org-lens-access.service';
+import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
+import { OrgPeopleKeyContactsService } from './org-people-key-contacts.service';
 import { toWireResponse } from './org-people-wire.mapper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
@@ -87,118 +119,275 @@ interface EventRow {
   FOUNDATION_NAME: string | null;
 }
 
+/** One row per course, its status resolved in lf-dbt (ORG_PEOPLE_TRAINING_COURSE_STATUS). */
 interface TrainingRow {
-  ACCOUNT_ID: string;
-  PERSON_KEY: string;
-  COURSE_OR_CERT_ID: string;
+  COURSE_ID: string;
   STATUS: string | null;
-  COURSE_ID: string | null;
   COURSE_NAME: string | null;
 }
 
 interface EmployeeActivityRaw {
   committeeRows: CommitteeMembershipRow[];
-  codeRows: CodeContributionRow[];
   eventRows: EventRow[];
   trainingRows: TrainingRow[];
 }
 
-/** No unique identity is available — distinct from a resolved empty lookup. */
-const UNAVAILABLE_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable' };
+/** A `cdp:` person key: an identity not linked to an LF account in the warehouse, so there is nothing to read addresses by. */
+const UNLINKED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = {
+  companyEmails: [],
+  primaryEmail: null,
+  companyEmailsStatus: 'unavailable',
+  companyEmailsReason: 'unlinked_identity',
+};
+
+/** A username or key-contact lookup that found no qualifying address: it cannot tell a known person with none from an unknown one. */
+const UNCONFIRMED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = {
+  companyEmails: [],
+  primaryEmail: null,
+  companyEmailsStatus: 'unavailable',
+  companyEmailsReason: 'unconfirmed',
+};
 
 /** The lookup ran and errored. The rest of the detail response still renders. */
 const FAILED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
 
+/** The two LF-account views (any LF user) behind the username lookups; only these may be missing before their dbt deploy. */
+const LF_ACCOUNT_VIEWS: readonly string[] = ['ORG_PEOPLE_LF_USERNAMES', 'ORG_PEOPLE_LF_USER_COMPANY_EMAILS'];
+
+/** The extended view's ADDRESS_SOURCE for an address known only from a corporate key-contact record. */
+const KEY_CONTACT_RECORD_SOURCE = 'key_contact_record';
+
+/**
+ * The two populations off the current roster that the former-employees read lists: former employees (lfx-self-serve#4311)
+ * and the people with code credited to the account but no employment row (lfx-self-serve#4730). Only who they are is
+ * read here; their code is counted live (lfx-self-serve#4735). The unclassified table ships from lf-dbt, so it may not
+ * exist yet.
+ */
+const OFF_ROSTER_SOURCES = {
+  former: {
+    table: 'ORG_PEOPLE_ALL_RANGES',
+    filter: 'AND IS_FORMER = TRUE',
+    queryOptions: undefined,
+  },
+  unclassified: {
+    table: 'ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS',
+    filter: '',
+    queryOptions: { expectMissingObject: 'ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS' },
+  },
+} as const;
+
 /** Org Lens "People → All Employees" analytics — backed by the PLATINUM_LFX_ONE.ORG_PEOPLE_* tables. Empty rows produce an empty envelope, never a 404. */
 export class OrgLensPeopleService {
-  private snowflakeService: SnowflakeService;
+  private readonly snowflakeService: SnowflakeService;
+  private readonly contributorsService: OrgPeopleContributorsService;
   // Lazily constructed: OrgPeopleDirectoryService's own constructor builds an OrgLensPeopleService,
   // so eagerly instantiating it here would recurse infinitely between the two constructors.
   private directoryService: OrgPeopleDirectoryService | undefined;
+  // Lazily constructed too: only a client-supplied username lookup reads the governance sources that prove membership.
+  private keyContactsService: OrgPeopleKeyContactsService | undefined;
+  private boardCommitteeService: OrgLensBoardCommitteeService | undefined;
+  private accessService: OrgLensAccessService | undefined;
 
   public constructor() {
     this.snowflakeService = SnowflakeService.getInstance();
+    this.contributorsService = new OrgPeopleContributorsService();
   }
 
-  /** Bundled rows + stats + foundations payload for one time range and its commit filters (`null` range: the unranged roster, which the filters do not scope); the wire projection of the internal roster. */
-  public async getAllEmployees(accountId: string, range: OrgLensTimeRange | null, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
-    return toWireResponse(await this.getAllEmployeesInternal(accountId, range, filters.projectScope), filters);
+  /**
+   * Bundled rows + stats + foundations payload for one time range and its commit filters (`null` range: the unranged
+   * roster, which the filters do not scope); the wire projection of the internal roster. `exclude` removes CDP team
+   * members' code from a ranged roster (lfx-self-serve#4685, see `toWireResponse`); `orgScope` picks whose code a ranged
+   * roster counts (lfx-self-serve-ops#1219); the unranged roster lists everyone, like the commit filters it is not
+   * scoped by.
+   */
+  public async getAllEmployees(
+    accountId: string,
+    range: OrgLensTimeRange | null,
+    filters: OrgCommitFilters,
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS,
+    orgScope: OrgScopeFilter = DEFAULT_ORG_SCOPE
+  ): Promise<OrgAllEmployeesResponse> {
+    const scope = range ? await this.resolveOrgScope(accountId, orgScope) : 'all';
+    const [roster, teamMemberKeys] = await Promise.all([
+      this.getAllEmployeesInternal(accountId, range, filters.projectScope, scope),
+      this.getTeamMemberPersonKeys(accountId, range ? teamMembers : 'include'),
+    ]);
+    return toWireResponse(roster, filters, teamMemberKeys);
+  }
+
+  /** The scope a read serves for an `orgScope` pick: `insights` only for an account with an Insights organization (lfx-self-serve-ops#1219). */
+  public resolveOrgScope(accountId: string, orgScope: OrgScopeFilter): Promise<OrgScopeFilter> {
+    return resolveOrgScope(this.snowflakeService, accountId, orgScope);
   }
 
   /**
    * Internal roster with merge-only fields retained — the live directory's stored seed. A time range
-   * reads that range's current employees in the project scope, each row carrying all three code counts
-   * (authored commits, merged commits, code activities) for the wire projection to pick from; `null`
-   * reads the unranged ORG_PEOPLE_ALL roster the reassign pickers use. The cache holds raw warehouse rows
-   * and both accessors map after every read.
+   * reads that range's current employees in the project scope from ORG_PEOPLE_ALL_RANGES, and counts their code
+   * live (lfx-self-serve#4735): every code count (authored commits, merged commits, code activities, for the wire
+   * projection to pick from) is the person's People → Contributors row, read through the same cached read, so the
+   * tiles never drift from it after the dbt build's day. A current employee is listed with seats, events or courses in
+   * the range and scope, or with live code there — under `insights` ({@link resolveOrgScope}) the Insights
+   * organization's — and their engaged foundations are those of the seats, events and courses plus those of the live
+   * code. `null` reads the unranged ORG_PEOPLE_ALL roster the reassign pickers use, with its stored code count and
+   * foundations; it is not scoped. The cache holds raw warehouse rows and both accessors map after every read.
    */
   public async getAllEmployeesInternal(
     accountId: string,
     range: OrgLensTimeRange | null,
-    projectScope: OrgProjectScope
+    projectScope: OrgProjectScope,
+    orgScope: OrgScopeFilter = 'all'
   ): Promise<OrgAllEmployeesInternalResponse> {
-    // `people-all:v4:{range}:{projectScope}` | `people-all:v4:roster` (lfx-self-serve#4164): a ranged read is
-    // scoped by project and carries every code count, so one entry serves every commit scope and metric.
-    const raw = await withOrgCompactCache(
-      accountId,
-      `people-all:v4:${range ? `${range}:${projectScope}` : 'roster'}`,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchAllEmployeesRaw(accountId, range, projectScope),
-      {
-        encode: encodeAllEmployeesRaw,
-        decode: decodeAllEmployeesRaw,
-        accept: isCompactAllEmployeesRaw,
-      }
-    );
+    const [raw, liveCode] = await Promise.all([
+      this.readRosterRaw(accountId, range, projectScope),
+      range ? this.readLiveCode(accountId, range, projectScope, orgScope) : null,
+    ]);
 
+    const rows = raw.rowsRaw.map((row) => this.mapEmployeeRow(row));
     return {
       accountId,
-      rows: raw.rowsRaw.map((row) => this.mapEmployeeRow(row)),
+      rows: liveCode ? rows.flatMap((row) => withLiveCode(row, liveCode.people.get(row.personKey)) ?? []) : rows,
       foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })),
     };
   }
 
   /**
-   * Former employees at the account active in the time range and project scope (lfx-self-serve#4311), the
-   * `IS_FORMER` rows of ORG_PEOPLE_ALL_RANGES. Only this read opts in to them, so the shared people
-   * directory — and the reassign pickers that read it — never sees a former employee. Stats are
-   * computed over these rows for the request's commit filters, so the tiles match the rows the "Former
-   * employees" view shows. No address is sent for someone who left, and none stands in for a blank name.
+   * The people off the current roster at the account in the time range and project scope: former employees
+   * (lfx-self-serve#4311), the `IS_FORMER` rows of ORG_PEOPLE_ALL_RANGES tagged `isFormer`, and the people with code
+   * credited to the account but no employment row (lfx-self-serve#4730) — no ORG_PEOPLE_ALL_RANGES row in the range
+   * and scope — tagged `isUnclassified`, which the page lists only under "All employees". Their code is counted live
+   * (lfx-self-serve#4735) from the People → Contributors read: each is listed with their row there, and someone with
+   * none is not listed, so under "All employees" the code tile is that tab's Contributors tile. An unclassified
+   * person's name and photo come from ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS, or from their contributor rows while that
+   * table has no row for them (or is not built). Only this read opts in to them, so the shared people directory — and
+   * the reassign pickers that read it — never sees either. Stats are computed over these rows for the request's commit
+   * filters. No address is sent for them, and none stands in for a blank name. `exclude` removes CDP team members' code
+   * (lfx-self-serve#4685, see `toWireResponse`). The reads are cached separately, so someone on both populations (person
+   * key, CDP member or LF username) is listed once, as the former employee, taking the LF username or CDP member only
+   * the unclassified row has. `unclassifiedUsernames` names every person with no employment record in the range, those
+   * `exclude` drops included, and whatever the organization scope, so their live access row is never taken for a
+   * current employee. `orgScope` (lfx-self-serve-ops#1219): under `insights` both populations count the Insights
+   * organization's code only, and someone with none of it is not listed.
    */
-  public async getFormerEmployees(req: Request, accountId: string, range: OrgLensTimeRange, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
-    const raw = await this.getFormerEmployeesRaw(req, accountId, range, filters.projectScope);
-    const rows = raw.rowsRaw.map((row) => ({ ...this.mapEmployeeRow({ ...row, NAME: formerDisplayName(row), TITLE: null, EMAIL: null }), isFormer: true }));
-    return toWireResponse(
-      { accountId, rows, foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })) },
-      filters
-    );
+  public async getFormerEmployees(
+    accountId: string,
+    range: OrgLensTimeRange,
+    filters: OrgCommitFilters,
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS,
+    orgScope: OrgScopeFilter = DEFAULT_ORG_SCOPE
+  ): Promise<OrgAllEmployeesResponse> {
+    const scope = await this.resolveOrgScope(accountId, orgScope);
+    const [former, unclassified, roster, liveCode, teamMemberKeys] = await Promise.all([
+      this.getFormerIdentities(accountId, range, filters.projectScope),
+      this.getUnclassifiedIdentities(accountId, range, filters.projectScope),
+      this.readRosterRaw(accountId, range, filters.projectScope),
+      this.readLiveCode(accountId, range, filters.projectScope, scope),
+      this.getTeamMemberPersonKeys(accountId, teamMembers),
+    ]);
+    const offRosterRow = (identity: OrgPeopleIdentityRow, code: OrgPersonLiveCode): OrgAllEmployeeRowInternal =>
+      this.mapEmployeeRow({
+        ...identity,
+        ACCOUNT_ID: accountId,
+        NAME: offRosterDisplayName(identity),
+        TITLE: null,
+        EMAIL: null,
+        SEATS_COUNT: 0,
+        BOARD_SEATS_COUNT: 0,
+        COMMITTEE_SEATS_COUNT: 0,
+        COMMITS_COUNT: code.commitsCount,
+        MERGED_COMMITS_COUNT: code.mergedCommitsCount,
+        CODE_ACTIVITIES_COUNT: code.codeActivitiesCount,
+        EVENTS_COUNT: 0,
+        COURSES_COUNT: 0,
+        ENGAGED_FOUNDATION_IDS: code.foundationIds,
+      });
+    const formerRows = former.flatMap((identity) => {
+      const code = liveCode.people.get(identity.PERSON_KEY);
+      return code ? [{ ...offRosterRow(identity, code), isFormer: true }] : [];
+    });
+    const identities = (row: OrgAllEmployeeRowInternal): string[] => [
+      `key:${row.personKey}`,
+      ...(row.cdpMemberId ? [`member:${row.cdpMemberId}`] : []),
+      ...(row.lfUsername ? [`username:${row.lfUsername}`] : []),
+    ];
+    const formerByIdentity = new Map(formerRows.flatMap((row) => identities(row).map((identity) => [identity, row] as const)));
+    // On the roster: the current rows the page lists, from the same cached read, and the former rows read here, so
+    // whoever has live code is counted exactly once however far apart the warehouse reads were cached.
+    const onRoster = new Set([...roster.rowsRaw.map((row) => row.PERSON_KEY), ...former.map((row) => row.PERSON_KEY)]);
+    const unclassifiedByKey = new Map((unclassified ?? []).map((row) => [row.PERSON_KEY, row]));
+    const unclassifiedPeople = [...liveCode.people]
+      .filter(([personKey]) => !onRoster.has(personKey))
+      .map(([personKey, code]) => ({ ...offRosterRow(unclassifiedByKey.get(personKey) ?? contributorIdentity(code.identity), code), isUnclassified: true }))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.personKey.localeCompare(b.personKey));
+    const unclassifiedUsernames = [
+      ...new Set([
+        ...(unclassified ?? []).flatMap((row) => (row.LF_USERNAME ?? '').trim().toLowerCase() || []),
+        ...unclassifiedPeople.flatMap((row) => row.lfUsername?.trim().toLowerCase() || []),
+      ]),
+    ];
+    const unclassifiedRows: OrgAllEmployeeRowInternal[] = [];
+    for (const row of unclassifiedPeople) {
+      const kept = identities(row)
+        .map((identity) => formerByIdentity.get(identity))
+        .find((match) => match !== undefined);
+      if (!kept) {
+        unclassifiedRows.push(row);
+        continue;
+      }
+      // Listed once, as the former employee, which takes the identifiers only the newer row has: the page reconciles
+      // their live rows on the username.
+      kept.lfUsername ??= row.lfUsername;
+      kept.cdpMemberId ??= row.cdpMemberId;
+      for (const identity of identities(kept)) if (!formerByIdentity.has(identity)) formerByIdentity.set(identity, kept);
+    }
+    const rows = [...formerRows, ...unclassifiedRows];
+    const foundationIds = new Set(rows.flatMap((row) => row.engagedFoundationIds));
+    const foundations = [...liveCode.foundationNames]
+      .filter(([foundationId]) => foundationIds.has(foundationId))
+      .map(([foundationId, foundationName]) => ({ foundationId, foundationName }))
+      .sort((a, b) => a.foundationName.localeCompare(b.foundationName));
+    const response = toWireResponse({ accountId, rows, foundations }, filters, teamMemberKeys);
+    return unclassifiedUsernames.length ? { ...response, unclassifiedUsernames } : response;
   }
 
   /**
-   * Chevron-expansion detail for one person within an account: four activity queries in parallel, served
-   * through the shared per-org cache. Company addresses are a separate read (`getCompanyEmails`): they come
-   * from a live warehouse view that takes seconds, so callers render activity without waiting for it. A code
-   * project carries the Maintainer pill when the person holds a maintainer role on it overlapping
-   * `maintainerRange` (lfx-self-serve#4482) — the page range for the All Employees row, the opener's range or the
-   * past 365 days for the drawer. When the roles table is missing no project is pilled and the detail says so with
-   * `maintainerRolesUnavailable`.
+   * Chevron-expansion detail for one person within an account: activity queries in parallel, served through the
+   * shared per-org cache. Company addresses are a separate read (`getCompanyEmails`): they come from a live warehouse
+   * view that takes seconds, so callers render activity without waiting for it. A code project carries the Maintainer
+   * pill when the person holds a maintainer role on it overlapping `maintainerRange` (lfx-self-serve#4482) — the page
+   * range for the All Employees row, the opener's range or the Org Lens default range (last 2 years) for the drawer.
+   * When the roles table is missing no project is pilled and the detail says so with `maintainerRolesUnavailable`.
+   *
+   * `codeFilters` (lfx-self-serve#4404) are the caller's page's project type and code count (the drawer's opener, or the
+   * All Employees page for its expanded row): the Code projects and total are then that page's row for this person in
+   * `maintainerRange`, and the detail echoes them as `codeView`. Without them the Code rows are every commit of the
+   * trailing 12 months. `teamMembers` is that page's Team members pick (lfx-self-serve#4685): under `exclude` a CDP team
+   * member's code view is empty, as their row's code count is; an unavailable flag keeps their code. `orgScope` is that
+   * page's organization scope (lfx-self-serve-ops#1219): the code view counts the same organizations' code.
    */
   public async getEmployeeDetail(
     req: Request,
     accountId: string,
     personKey: string,
-    maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE
+    maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
+    codeFilters: OrgCommitFilters | null = null,
+    teamMembers: OrgTeamMembersFilter = 'include',
+    orgScope: OrgScopeFilter = 'all'
   ): Promise<OrgAllEmployeeDetail> {
+    const codeView: OrgPersonCodeView | null = codeFilters ? { range: maintainerRange, ...codeFilters } : null;
+    const codeViewField = codeView ? { codeView } : {};
     // Live-only (synthetic) keys have no ORG_PEOPLE_ALL row at all — every activity query is a guaranteed-empty
     // round trip for them, so answer the empty detail without touching Snowflake.
     if (personKey.startsWith('live-')) {
-      return { personKey, boardSeats: [], committeeSeats: [], code: [], totalCommits: 0, events: [], training: [] };
+      return { personKey, boardSeats: [], committeeSeats: [], code: [], totalCommits: 0, ...codeViewField, events: [], training: [] };
     }
 
-    const [{ committeeRows, codeRows, eventRows, trainingRows }, maintainerProjectIds] = await Promise.all([
+    const [{ committeeRows, eventRows, trainingRows }, viewCode, maintainerProjectIds, teamMemberKeys] = await Promise.all([
       this.fetchEmployeeActivityRaw(accountId, personKey),
+      codeView ? this.readCodeViewContributions(accountId, personKey, codeView, orgScope) : this.readTrailingYearCodeContributions(accountId, personKey),
       this.fetchMaintainerProjectIds(accountId, personKey, maintainerRange),
+      this.getTeamMemberPersonKeys(accountId, codeView ? teamMembers : 'include'),
     ]);
+    const code = teamMemberKeys.excluded?.has(personKey) ? { projects: [], total: 0 } : viewCode;
     const maintainerProjects = new Set(maintainerProjectIds ?? []);
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
@@ -209,15 +398,15 @@ export class OrgLensPeopleService {
     const eventsCount = eventRows.length;
     const events = eventRows.map((row) => this.mapEventRow(row, eventsCount));
 
-    const training = this.collapseTrainingRows(trainingRows);
+    const training = this.mapTrainingRows(trainingRows);
 
     return {
       personKey,
       boardSeats,
       committeeSeats,
-      code: codeRows.map((row) => this.mapCodeRow(row, maintainerProjects)),
-      // The per-project counts overlap on mirrored commits; the total sums the per-person credit instead.
-      totalCommits: codeRows.reduce((sum, row) => sum + (row.TOTAL_COMMITS ?? 0), 0),
+      code: code.projects.map((project) => ({ ...project, isMaintainer: maintainerProjects.has(project.projectId) })),
+      totalCommits: code.total,
+      ...codeViewField,
       events,
       training,
       ...(maintainerProjectIds === null ? { maintainerRolesUnavailable: true } : {}),
@@ -225,10 +414,14 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * Company-affiliated emails for a person identified by warehouse person key.
+   * Company-affiliated emails for a person identified by warehouse person key, former employees included.
    *
-   * A live-only (synthetic) key joins to nothing in the warehouse, so it reads on the live roster's LF
-   * username instead. No username → unavailable, never "no company address".
+   * A live-only (synthetic) key joins to nothing in the warehouse, so it reads on the live roster's LF username instead.
+   * Without one, the directory keyed the person on their address, and when key-contact assignments are at that address
+   * (the roles their row lists) their records are read as the Key Contacts tab's drawer reads them
+   * ({@link getCompanyEmailsByKeyContacts}), but never with a username those records carry: such a row is a key contact
+   * merged by address into a row without one, and the directory deliberately does not give it the key contact's username.
+   * Anyone else → `unavailable` (`unconfirmed`), never "no company address".
    */
   public async getCompanyEmails(
     req: Request,
@@ -237,40 +430,69 @@ export class OrgLensPeopleService {
     directoryView: OrgPeopleDirectoryView | null = null
   ): Promise<OrgPersonCompanyEmailsResponse> {
     if (personKey.startsWith('live-')) {
-      const username = await this.resolveLiveOnlyUsername(req, accountId, personKey, directoryView);
-      return username ? this.getCompanyEmailsByUsername(req, accountId, username) : UNAVAILABLE_COMPANY_EMAILS;
+      const row = await this.findLiveDirectoryRow(req, accountId, directoryView, (candidate) => candidate.personKey === personKey);
+      // The username comes from the org's own live directory, so the person is already proven to be in this org.
+      if (row?.lfUsername?.trim()) {
+        return this.getCompanyEmailsByUsername(req, accountId, row.lfUsername, { subjectInOrg: true });
+      }
+      const holder = await this.findLiveKeyContactHolder(req, accountId, row);
+      if (!holder) {
+        return UNCONFIRMED_COMPANY_EMAILS;
+      }
+      return this.getCompanyEmailsByKeyContacts(
+        req,
+        accountId,
+        [...new Set(holder.assignments.map((assignment) => assignment.contactUid))],
+        null,
+        new Set([holder.address]),
+        holder.assignments.every((assignment) => !assignment.username?.trim())
+      );
     }
     return this.getCompanyEmailsForPersonKey(req, accountId, personKey);
   }
 
   /**
-   * Company-affiliated emails for a person identified by LF username (governance surfaces).
+   * Company-affiliated emails for a person identified by LF username (governance surfaces), former employees included.
    *
    * A username that resolves to one roster person (the same person `getEmployeeDetailByUsername` shows) reads that
-   * person's addresses by person key, so an empty result is "none on record" and a NULL username on the address rows
-   * cannot hide them. Any other username falls back to the address view's own username column, which also covers
-   * people the roster's engagement gate excludes (most key contacts). Failures are never cached.
+   * person's addresses by person key, so an empty result is "none on file" and a NULL username on the address rows
+   * cannot hide them. Any other username resolves to its LF account (ORG_PEOPLE_LF_USERNAMES), which also covers people
+   * the roster's engagement gate excludes (most key contacts) and people off the roster altogether: that account's
+   * qualifying addresses at this organization, `resolved` and empty when it holds none. Only a username the warehouse
+   * does not know, or one naming more than one account, is `unavailable` (`unconfirmed`). Failures are never cached.
+   *
+   * The LF-account read answers any LF user, so it runs only for a person proven to be in this org: `subjectInOrg` from
+   * callers that derived the username server-side from the org's own data (the live directory, the org's key-contact
+   * assignments); otherwise (a client-supplied username) {@link proveUsernameInOrg} must find it in the org's authorized
+   * sources, before the cache. An unproven username answers `unconfirmed`, exactly as an unknown one does, so the read
+   * cannot be used to test whether an LF account exists; one not found while a source failed answers `failed`.
    */
-  public async getCompanyEmailsByUsername(req: Request, accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
+  public async getCompanyEmailsByUsername(
+    req: Request,
+    accountId: string,
+    username: string,
+    options: { subjectInOrg?: boolean } = {}
+  ): Promise<OrgPersonCompanyEmailsResponse> {
     const normalizedUsername = username.trim().toLowerCase();
     if (!normalizedUsername) {
-      return UNAVAILABLE_COMPANY_EMAILS;
+      return UNCONFIRMED_COMPANY_EMAILS;
     }
     try {
       const personKey = await this.resolvePersonKeyByUsername(accountId, normalizedUsername);
       if (personKey) {
         return await this.getCompanyEmailsForPersonKey(req, accountId, personKey);
       }
-      const formerCheck = await this.checkFormerEmployee(req, accountId, { username: normalizedUsername });
-      if (formerCheck.failed) {
-        return FAILED_COMPANY_EMAILS;
+      if (!options.subjectInOrg) {
+        const membership = await this.proveUsernameInOrg(req, accountId, normalizedUsername);
+        if (membership !== 'proven') {
+          // Not found with a source down is retryable, never "unconfirmed"; neither answer is cached.
+          return membership === 'failed' ? FAILED_COMPANY_EMAILS : UNCONFIRMED_COMPANY_EMAILS;
+        }
       }
-      if (formerCheck.isFormer) {
-        return UNAVAILABLE_COMPANY_EMAILS;
-      }
+      // `v3`: reads the username's LF account (any LF user), so a known account without an address is "none on file".
       return await withOrgCache(
         accountId,
-        `people-username:${usernameDigest(normalizedUsername)}:emails`,
+        `people-username-emails:v3:${keyDigest(normalizedUsername)}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchCompanyEmailsByUsername(accountId, normalizedUsername),
         isCompanyEmailsResponse,
@@ -285,23 +507,169 @@ export class OrgLensPeopleService {
   }
 
   /**
+   * Whether each LF username's account holds a qualifying address at this organization (`has`) or none (`none`), for the
+   * All Employees rows the company-email keys do not cover — live-only people off the warehouse roster — so the filter
+   * agrees with the drawer's {@link getCompanyEmailsByUsername}. `usernames` are normalized (`trim().toLowerCase()`); a
+   * username the warehouse does not know, or that names more than one account, is in neither list. Org-cached per
+   * username set; `null` when the read fails (logged; never cached), leaving those rows `unconfirmed`.
+   */
+  public async getLfUsernameCompanyEmailStatuses(
+    req: Request,
+    accountId: string,
+    usernames: readonly string[]
+  ): Promise<OrgLfUsernameCompanyEmailStatuses | null> {
+    // Normalized here too, so a caller passing raw usernames cannot fragment the cache key or miss the views' keys.
+    const sorted = [...new Set(usernames.map((username) => username.trim().toLowerCase()).filter(Boolean))].sort();
+    if (sorted.length === 0) {
+      return { usernames: [], noneUsernames: [] };
+    }
+    try {
+      return await withOrgCache(
+        accountId,
+        `people-lf-username-email-statuses:v1:${keyDigest(sorted.join('\n'))}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        () => this.fetchLfUsernameCompanyEmailStatuses(accountId, sorted),
+        isLfUsernameCompanyEmailStatuses
+      );
+    } catch (error) {
+      logger.warning(req, 'get_org_lens_people_lf_username_email_statuses', 'LF username company email read failed; leaving those rows unconfirmed', {
+        org_uid: accountId,
+        username_count: sorted.length,
+        err: error,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Which live-only key contacts without an LF username the drawer shows a company address for, for the All Employees
+   * filter, so it agrees with {@link getCompanyEmails}: a record of a key-contact assignment at the person's address
+   * carries a qualifying address that is still that address. `addresses` are those rows' addresses; the subset returned
+   * `has` one, and the drawer answers the rest `unlinked_identity` or `unconfirmed`. Cached per account and record set,
+   * holding digests rather than addresses; `null` when a read fails (logged; never cached), leaving every row `unconfirmed`.
+   */
+  public async getLiveKeyContactAddressesWithCompanyEmail(req: Request, accountId: string, addresses: readonly string[]): Promise<string[] | null> {
+    const wanted = new Set(addresses.map((address) => address.trim().toLowerCase()).filter(Boolean));
+    if (wanted.size === 0) {
+      return [];
+    }
+    try {
+      const { assignments } = await this.getKeyContactsService().getKeyContacts(req, accountId);
+      const idsByAddress = new Map<string, Set<string>>();
+      for (const assignment of assignments) {
+        const address = assignment.email.trim().toLowerCase();
+        if (wanted.has(address)) {
+          idsByAddress.set(address, (idsByAddress.get(address) ?? new Set()).add(assignment.contactUid));
+        }
+      }
+      const ids = [...new Set([...idsByAddress.values()].flatMap((held) => [...held]))].sort();
+      if (ids.length === 0) {
+        return [];
+      }
+      const recordAddresses = new Set(
+        await withOrgCache(
+          accountId,
+          `people-key-contact-record-addresses:v1:${keyDigest(ids.join(','))}`,
+          VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+          () => this.fetchKeyContactRecordAddressKeys(accountId, ids),
+          (value) => Array.isArray(value) && value.every((key) => typeof key === 'string')
+        )
+      );
+      return [...idsByAddress]
+        .filter(([address, held]) => [...held].some((id) => recordAddresses.has(recordAddressKey(id, address))))
+        .map(([address]) => address);
+    } catch (error) {
+      logger.warning(req, 'get_org_lens_people_key_contact_email_statuses', 'key contact record address read failed; leaving those rows unconfirmed', {
+        org_uid: accountId,
+        address_count: wanted.size,
+        err: error,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Company-affiliated emails for a key contact opened without a person key: the company addresses recorded on the
+   * person's corporate key-contact records (`keyContactIds`, Salesforce record ids), merged with the `username` lookup
+   * when the caller derived one from the org's assignments (an address also known from an LF account is not record-only).
+   * A record address is kept only while its lower-cased email is in `currentEmails`, the contact emails the org's
+   * assignments show for these records now: a record reassigned under the same id must not show its previous holder's
+   * address (the record read is cached by id). `currentEmails` only filters addresses already read; it is never a
+   * lookup input. `resolved` when any address is found or the username lookup resolved. Otherwise `unavailable`:
+   * `unlinked_identity` when `withoutLfAccount` (every record is held at the org and none names an LF username, so there
+   * is no LF account to read), else `unconfirmed`. A failed leg answers `failed` only when the other found no address;
+   * failures are never cached.
+   */
+  public async getCompanyEmailsByKeyContacts(
+    req: Request,
+    accountId: string,
+    keyContactIds: readonly string[],
+    username: string | null,
+    currentEmails: ReadonlySet<string>,
+    withoutLfAccount: boolean
+  ): Promise<OrgPersonCompanyEmailsResponse> {
+    const [records, byUsername] = await Promise.all([
+      this.readKeyContactRecordEmails(req, accountId, keyContactIds),
+      // Derived from the org's own key-contact assignments, so the person is already proven to be in this org.
+      username ? this.getCompanyEmailsByUsername(req, accountId, username, { subjectInOrg: true }) : null,
+    ]);
+    const currentRecordRows = responseRows(records).filter((row) => !!row.EMAIL && currentEmails.has(row.EMAIL.trim().toLowerCase()));
+    const merged = toCompanyEmails([...responseRows(byUsername), ...currentRecordRows]);
+    // One failed leg never hides the other's addresses; with nothing in hand a failed leg is a failure, not "none".
+    if (merged.companyEmails.length === 0 && (records.companyEmailsStatus === 'failed' || byUsername?.companyEmailsStatus === 'failed')) {
+      return FAILED_COMPANY_EMAILS;
+    }
+    if (merged.companyEmails.length === 0 && byUsername?.companyEmailsStatus !== 'resolved') {
+      return withoutLfAccount && !username ? UNLINKED_COMPANY_EMAILS : UNCONFIRMED_COMPANY_EMAILS;
+    }
+    return { ...merged, companyEmailsStatus: 'resolved' };
+  }
+
+  /**
+   * What the drawer's company-email lookup answers for each identity at the account (ORG_PEOPLE_COMPANY_EMAIL_KEYS), for
+   * the All Employees Company email filter: one keyed read per account, org-cached. `null` when the read fails (logged;
+   * never cached), so the roster is served without statuses rather than failing. `v3`: username keys are kept verbatim
+   * (see {@link fetchCompanyEmailKeys}); `v2` entries carry JavaScript-trimmed ones.
+   */
+  public async getCompanyEmailKeys(req: Request, accountId: string): Promise<OrgCompanyEmailKeys | null> {
+    try {
+      return await withOrgCache(
+        accountId,
+        'people-company-email-keys:v3',
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        () => this.fetchCompanyEmailKeys(accountId),
+        isCompanyEmailKeys
+      );
+    } catch (error) {
+      logger.warning(req, 'get_org_lens_people_company_email_keys', 'company email keys read failed; serving rows without a company email status', {
+        org_uid: accountId,
+        err: error,
+      });
+      return null;
+    }
+  }
+
+  /**
    * Detail for openers that carry only an LF username (Board/Committee/Key Contact/Access; lfx-self-serve-ops#894).
    * Resolves the username with a keyed read of the account's warehouse roster (ORG_PEOPLE_ALL, a table — not the
    * address view), cached per username digest. Fails closed: null when no roster row, or more than one person key,
-   * carries the username.
+   * carries the username. `maintainerRange`, `codeFilters`, `teamMembers` and `orgScope` as for {@link getEmployeeDetail}.
    */
   public async getEmployeeDetailByUsername(
     req: Request,
     accountId: string,
     username: string,
-    maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE
+    maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
+    codeFilters: OrgCommitFilters | null = null,
+    teamMembers: OrgTeamMembersFilter = 'include',
+    orgScope: OrgScopeFilter = 'all'
   ): Promise<OrgAllEmployeeDetail | null> {
     const normalizedUsername = username.trim().toLowerCase();
     if (!normalizedUsername) {
       return null;
     }
     const personKey = await this.resolvePersonKeyByUsername(accountId, normalizedUsername);
-    return personKey ? this.getEmployeeDetail(req, accountId, personKey, maintainerRange) : null;
+    return personKey ? this.getEmployeeDetail(req, accountId, personKey, maintainerRange, codeFilters, teamMembers, orgScope) : null;
   }
 
   /**
@@ -310,6 +678,11 @@ export class OrgLensPeopleService {
    */
   public async getFormerUsernames(accountId: string): Promise<string[]> {
     return readOrgFormerUsernames(this.snowflakeService, accountId);
+  }
+
+  /** The account's CDP team members under `exclude` (`include` reads nothing); unavailable while the flag is not in the warehouse. */
+  public async getTeamMemberPersonKeys(accountId: string, teamMembers: OrgTeamMembersFilter): Promise<OrgTeamMemberKeys> {
+    return readOrgTeamMemberPersonKeys(this.snowflakeService, accountId, teamMembers);
   }
 
   /**
@@ -332,6 +705,32 @@ export class OrgLensPeopleService {
     return username;
   }
 
+  /**
+   * Who the drawer's Key Contacts tab matches the org's assignments against for a person key: the roster's LF username,
+   * the stronger key, plus the addresses the header's lookup resolves. A live-only person without a username was keyed by
+   * the directory on their address, so that address is their whole identity there, and the assignments at it are the roles
+   * their row lists. Resolved server-side: a username passed in by the client would travel in the URL, which the request
+   * logger records.
+   */
+  public async getPersonKeyContactsIdentity(req: Request, accountId: string, personKey: string): Promise<OrgPersonKeyContactsIdentity> {
+    if (personKey.startsWith('live-')) {
+      const row = await this.findLiveDirectoryRow(req, accountId, null, (candidate) => candidate.personKey === personKey);
+      const holder = await this.findLiveKeyContactHolder(req, accountId, row);
+      if (holder) {
+        return { username: null, emails: [holder.address], emailsStatus: 'resolved' };
+      }
+    }
+    const [identity, username] = await Promise.all([
+      this.getCompanyEmails(req, accountId, personKey),
+      this.resolveUsernameByPersonKey(req, accountId, personKey),
+    ]);
+    return {
+      username,
+      emails: identity.companyEmailsStatus === 'resolved' ? identity.companyEmails : [],
+      emailsStatus: identity.companyEmailsStatus,
+    };
+  }
+
   /** The username on this account's roster row for a person key; null when the row carries none. */
   private async fetchUsernameByPersonKey(accountId: string, personKey: string): Promise<{ username: string | null }> {
     const query = `
@@ -349,7 +748,7 @@ export class OrgLensPeopleService {
   private async resolvePersonKeyByUsername(accountId: string, normalizedUsername: string): Promise<string | null> {
     const { personKey } = await withOrgCache(
       accountId,
-      `people-username:${usernameDigest(normalizedUsername)}:person-key`,
+      `people-username:${keyDigest(normalizedUsername)}:person-key`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchPersonKeyByUsername(accountId, normalizedUsername),
       isPersonKeyLookup
@@ -388,15 +787,116 @@ export class OrgLensPeopleService {
     if (!personKey.startsWith('live-')) {
       return null;
     }
+    const row = await this.findLiveDirectoryRow(req, accountId, directoryView, (candidate) => candidate.personKey === personKey && !!candidate.lfUsername);
+    return row?.lfUsername ?? null;
+  }
+
+  /**
+   * A live-only row the directory keyed on an address (no LF username), and the org's key-contact assignments at that
+   * address: the roles the row lists, grouped as {@link OrgPeopleKeyContactsService.getActiveEmployees} groups them.
+   * `null` for a row with a username or no address, or one holding no assignment.
+   */
+  private async findLiveKeyContactHolder(
+    req: Request,
+    accountId: string,
+    row: OrgAllEmployeeRow | null
+  ): Promise<{ address: string; assignments: OrgKeyContactAssignment[] } | null> {
+    const address = row && !row.lfUsername?.trim() ? (row.email ?? '').trim().toLowerCase() : '';
+    if (!address) {
+      return null;
+    }
+    const { assignments } = await this.getKeyContactsService().getKeyContacts(req, accountId);
+    const held = assignments.filter((assignment) => assignment.email.trim().toLowerCase() === address);
+    return held.length ? { address, assignments: held } : null;
+  }
+
+  /**
+   * The first row matching `matches` in the org's live directory: the view the drawer was opened from when given, then
+   * the `30d`/`lf` view, which lists every live-only person (see {@link resolveLiveOnlyUsername}). Everyone, team members
+   * included: this resolves a person already opened, whichever Team members pick listed them.
+   */
+  private async findLiveDirectoryRow(
+    req: Request,
+    accountId: string,
+    directoryView: OrgPeopleDirectoryView | null,
+    matches: (row: OrgAllEmployeeRow) => boolean
+  ): Promise<OrgAllEmployeeRow | null> {
     const views: OrgPeopleDirectoryView[] = [...(directoryView ? [directoryView] : []), { range: '30d', projectScope: 'lf' }];
     for (const { range, projectScope } of views) {
-      const { rows } = await this.getDirectoryService().getLive(req, accountId, range, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope });
-      const username = rows.find((row) => row.personKey === personKey)?.lfUsername;
-      if (username) {
-        return username;
+      const { rows } = await this.getDirectoryService().getLive(req, accountId, range, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope }, 'include');
+      const row = rows.find(matches);
+      if (row) {
+        return row;
       }
     }
     return null;
+  }
+
+  /**
+   * Whether a client-supplied (normalized) LF username belongs to this org, from its authorized sources, cheapest first
+   * and stopping at the first that carries it: the org's key-contact assignments, its board and committee seats and its
+   * Org Lens access principals (each the per-caller cached read its People tab uses), then the live directory as a last
+   * resort (a cold one merges every source). The directory alone is not enough: it merges a key contact into an
+   * existing row by email without taking the key contact's username. `failed` when no source carried it and any of
+   * them failed (logged): the caller cannot tell "not in the org" from "could not check".
+   */
+  private async proveUsernameInOrg(req: Request, accountId: string, normalizedUsername: string): Promise<'proven' | 'unproven' | 'failed'> {
+    const carries = (username: string | null | undefined): boolean => username?.trim().toLowerCase() === normalizedUsername;
+    const sources: { name: string; carriesUsername: () => Promise<boolean> }[] = [
+      {
+        name: 'key_contacts',
+        carriesUsername: async () => (await this.getKeyContactsService().getKeyContacts(req, accountId)).assignments.some((a) => carries(a.username)),
+      },
+      {
+        name: 'seats',
+        carriesUsername: async () => (await this.getBoardCommitteeService().fetchAllOrgSeats(req, accountId)).some((seat) => carries(seat.username)),
+      },
+      {
+        name: 'access_principals',
+        carriesUsername: async () => (await this.getAccessService().getAccessPrincipals(req, accountId)).some((principal) => carries(principal.username)),
+      },
+      {
+        name: 'live_directory',
+        carriesUsername: async () => (await this.findLiveDirectoryRow(req, accountId, null, (row) => carries(row.lfUsername))) !== null,
+      },
+    ];
+    let failed = false;
+    for (const source of sources) {
+      try {
+        if (await source.carriesUsername()) {
+          return 'proven';
+        }
+      } catch (error) {
+        failed = true;
+        logger.warning(req, 'get_org_lens_people_company_emails_by_username', 'org membership source failed', {
+          org_uid: accountId,
+          source: source.name,
+          err: error,
+        });
+      }
+    }
+    return failed ? 'failed' : 'unproven';
+  }
+
+  private getKeyContactsService(): OrgPeopleKeyContactsService {
+    if (!this.keyContactsService) {
+      this.keyContactsService = new OrgPeopleKeyContactsService();
+    }
+    return this.keyContactsService;
+  }
+
+  private getBoardCommitteeService(): OrgLensBoardCommitteeService {
+    if (!this.boardCommitteeService) {
+      this.boardCommitteeService = new OrgLensBoardCommitteeService();
+    }
+    return this.boardCommitteeService;
+  }
+
+  private getAccessService(): OrgLensAccessService {
+    if (!this.accessService) {
+      this.accessService = new OrgLensAccessService();
+    }
+    return this.accessService;
   }
 
   private getDirectoryService(): OrgPeopleDirectoryService {
@@ -406,141 +906,109 @@ export class OrgLensPeopleService {
     return this.directoryService;
   }
 
-  /** A read whose foundation labels failed is served but not stored, so the dropdown recovers on the next request. */
-  private getFormerEmployeesRaw(req: Request, accountId: string, range: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<OrgAllEmployeesRaw> {
-    let labelsFailed = false;
-    // `people-former:v3:{range}:{projectScope}` (lfx-self-serve#4164): scoped by project and carrying every
-    // code count, so a `v2` entry must miss and one entry serves every commit scope and metric.
-    return withOrgCache(
+  /**
+   * The live code of a range, project scope and resolved organization scope (lfx-self-serve#4735): the People →
+   * Contributors (person, project) rows, through that tab's own cached read, summed per person.
+   */
+  private async readLiveCode(accountId: string, range: OrgLensTimeRange, projectScope: OrgProjectScope, orgScope: OrgScopeFilter): Promise<OrgPeopleLiveCode> {
+    return sumLiveCode(await this.contributorsService.readPersonProjectRows(accountId, range, projectScope, orgScope));
+  }
+
+  /**
+   * The raw roster rows and foundation labels of a range and project scope, or of the unranged roster (`null`).
+   * `people-all:v8:{range}:{projectScope}` | `people-all:v8:roster` (lfx-self-serve#4164, lfx-self-serve#4735): a
+   * ranged entry carries no code count and no organization scope (`v5` was per scope, with an Insights listing gate),
+   * so one entry serves every commit scope, metric and organization scope, and the off-roster read classifies against
+   * the same entry the page lists. `v7` (lfx-self-serve#4287; the roster was `v4:roster`): training foundation labels
+   * come from people-list rows only. `v8`: the people-list column is `IS_ON_PEOPLE_LIST`.
+   */
+  private readRosterRaw(accountId: string, range: OrgLensTimeRange | null, projectScope: OrgProjectScope): Promise<OrgAllEmployeesRaw> {
+    return withOrgCompactCache(
       accountId,
-      `people-former:v3:${range}:${projectScope}`,
+      range ? `people-all:v8:${range}:${projectScope}` : 'people-all:v8:roster',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      async () => {
-        const result = await this.fetchFormerEmployeesRaw(req, accountId, range, projectScope);
-        labelsFailed = result.labelsFailed;
-        return result.raw;
-      },
-      isFormerEmployeesRaw,
-      () => !labelsFailed
+      () => this.fetchAllEmployeesRaw(accountId, range, projectScope),
+      {
+        encode: encodeAllEmployeesRaw,
+        decode: decodeAllEmployeesRaw,
+        accept: isCompactAllEmployeesRaw,
+      }
     );
   }
 
   /**
-   * Former employees' rows for the range and project scope (the EMAIL column is never selected) and the foundations
-   * of their code in that scope. The labels read the full-history daily code rows, the source of the rows'
-   * ENGAGED_FOUNDATION_IDS, so a foundation they only contributed to years ago still has one for `all`. A failed
-   * roster read fails the request; a failed label read only empties the dropdown (`labelsFailed`).
+   * Who the former employees of the range and project scope are, cached per (range, project scope)
+   * (`people-former:v4`; `v3` also held the build's code counts per organization scope).
    */
-  private async fetchFormerEmployeesRaw(
-    req: Request,
-    accountId: string,
-    range: OrgLensTimeRange,
-    projectScope: OrgProjectScope
-  ): Promise<{ raw: OrgAllEmployeesRaw; labelsFailed: boolean }> {
-    const rowsQuery = `
-      SELECT
-        ACCOUNT_ID,
-        PERSON_KEY,
-        LFID,
-        LF_USERNAME,
-        CDP_MEMBER_ID,
-        NAME,
-        NULL AS TITLE,
-        NULL AS EMAIL,
-        PHOTO,
-        SEATS_COUNT,
-        BOARD_SEATS_COUNT,
-        COMMITTEE_SEATS_COUNT,
-        COMMITS_COUNT,
-        MERGED_COMMITS_COUNT,
-        CODE_ACTIVITIES_COUNT,
-        EVENTS_COUNT,
-        COURSES_COUNT,
-        ENGAGED_FOUNDATION_IDS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES
-      WHERE ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ? AND IS_FORMER = TRUE
-      ORDER BY NAME ASC NULLS LAST
-    `;
-
-    const foundationQuery = `
-      SELECT DISTINCT c.FOUNDATION_ID, c.FOUNDATION_NAME
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY c
-      INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES f
-        ON f.ACCOUNT_ID = c.ACCOUNT_ID AND f.PERSON_KEY = c.PERSON_KEY
-      WHERE c.ACCOUNT_ID = ? AND f.TIME_RANGE = ? AND f.PROJECT_SCOPE = ? AND f.IS_FORMER = TRUE
-        AND c.FOUNDATION_ID IS NOT NULL AND c.FOUNDATION_NAME IS NOT NULL
-        ${orgProjectScopePredicate(projectScope, 'c.IS_LF_PROJECT')}
-      ORDER BY c.FOUNDATION_NAME ASC
-    `;
-
-    const [rowsResult, foundationResult] = await Promise.allSettled([
-      this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, [accountId, range, projectScope]),
-      this.snowflakeService.execute<OrgPeopleFoundationOptionRow>(foundationQuery, [accountId, range, projectScope]),
-    ]);
-    if (rowsResult.status === 'rejected') {
-      throw rowsResult.reason;
-    }
-    if (foundationResult.status === 'rejected') {
-      logger.warning(req, 'get_org_lens_people_former', 'former employee foundation labels failed; serving rows without labels', {
-        err: foundationResult.reason,
-      });
-      return { raw: { rowsRaw: rowsResult.value.rows, foundationRaw: [] }, labelsFailed: true };
-    }
-    return { raw: { rowsRaw: rowsResult.value.rows, foundationRaw: foundationResult.value.rows }, labelsFailed: false };
+  private getFormerIdentities(accountId: string, range: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<OrgPeopleIdentityRow[]> {
+    return withOrgCache(
+      accountId,
+      `people-former:v4:${range}:${projectScope}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchOffRosterIdentities(accountId, range, projectScope, 'former'),
+      isIdentityRows
+    );
   }
 
   /**
-   * A former employee's company addresses are never read: they left, and the address model covers the
-   * account's current people only. Checked against the widest former population (`TIME_RANGE = 'all'`,
-   * `PROJECT_SCOPE = 'all'`), whatever range and scope the caller is viewing. One keyed read per person,
-   * cached per person. A failed read answers `failed` so callers fail closed without reading any address,
-   * and is not cached, so a warehouse blip does not outlive the request.
+   * Who the people with code but no employment row are (lfx-self-serve#4730), cached per (range, project scope)
+   * (`people-unclassified:v2`; `v1` also held the build's code counts per organization scope), or `null` while lf-dbt
+   * has not built ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS — their contributor rows then name them. `null` is not stored.
    */
-  private async checkFormerEmployee(req: Request, accountId: string, identity: { personKey: string } | { username: string }): Promise<OrgFormerEmployeeCheck> {
-    const byPersonKey = 'personKey' in identity;
-    const fetcher = async (): Promise<OrgFormerEmployeeCheck> => {
-      try {
-        const result = await this.snowflakeService.execute<{ IS_FORMER: number }>(
-          `
-            SELECT 1 AS IS_FORMER
-            FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES
-            WHERE ACCOUNT_ID = ? AND TIME_RANGE = 'all' AND PROJECT_SCOPE = 'all' AND IS_FORMER = TRUE
-              AND ${byPersonKey ? 'PERSON_KEY = ?' : 'LOWER(TRIM(LF_USERNAME)) = ?'}
-            LIMIT 1
-          `,
-          [accountId, byPersonKey ? identity.personKey : identity.username]
-        );
-        return { isFormer: result.rows.length > 0, failed: false };
-      } catch (error) {
-        logger.warning(req, 'get_org_lens_people_former_lookup', 'former employee lookup failed', { err: error });
-        return { isFormer: false, failed: true };
-      }
-    };
-    if (byPersonKey && !isFilterSafeIdentifier(identity.personKey)) {
-      return fetcher();
-    }
-    // `v3` (lfx-self-serve#4164): ORG_PEOPLE_ALL_RANGES gained a PROJECT_SCOPE grain; the check reads the `all` scope.
-    const key = byPersonKey ? `people-former-check:v3:${identity.personKey}` : `people-former-check:v3:username:${usernameDigest(identity.username)}`;
-    return withOrgCache(accountId, key, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, fetcher, isFormerCheck, (check) => !check.failed);
+  private getUnclassifiedIdentities(accountId: string, range: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<OrgPeopleIdentityRow[] | null> {
+    return withOrgCache<OrgPeopleIdentityRow[] | null>(
+      accountId,
+      `people-unclassified:v2:${range}:${projectScope}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => {
+        try {
+          return await this.fetchOffRosterIdentities(accountId, range, projectScope, 'unclassified');
+        } catch (error) {
+          if (isMissingObjectError(error, OFF_ROSTER_SOURCES.unclassified.table)) return null;
+          throw error;
+        }
+      },
+      isIdentityRows,
+      (rows) => rows !== null
+    );
+  }
+
+  /** One off-roster population's identities for the range and project scope; the EMAIL and TITLE columns are never selected. */
+  private async fetchOffRosterIdentities(
+    accountId: string,
+    range: OrgLensTimeRange,
+    projectScope: OrgProjectScope,
+    population: keyof typeof OFF_ROSTER_SOURCES
+  ): Promise<OrgPeopleIdentityRow[]> {
+    const source = OFF_ROSTER_SOURCES[population];
+    const query = `
+      SELECT PERSON_KEY, LFID, LF_USERNAME, CDP_MEMBER_ID, NAME, PHOTO
+      FROM ANALYTICS.PLATINUM_LFX_ONE.${source.table}
+      WHERE ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ? ${source.filter}
+      ORDER BY NAME ASC NULLS LAST
+    `;
+    return (await this.snowflakeService.execute<OrgPeopleIdentityRow>(query, [accountId, range, projectScope], source.queryOptions)).rows;
   }
 
   /**
    * Two parallel Snowflake reads returning raw rows (the current employees, and the foundation pairs);
-   * mapping happens after the cache read. A range reads that range's current rows of
-   * ORG_PEOPLE_ALL_RANGES in the project scope, with all three code counts; `null` reads the unranged
-   * ORG_PEOPLE_ALL roster, whose one code count stands in for all three.
+   * mapping happens after the cache read. A range reads that range's current rows of ORG_PEOPLE_ALL_RANGES in the
+   * project scope without their code counts, which are counted live (lfx-self-serve#4735), with the foundations of
+   * their seats, events and courses, which no organization scope changes; who is listed is decided after the live
+   * code is known ({@link withLiveCode}). `null` reads the unranged ORG_PEOPLE_ALL roster, whose one code count stands
+   * in for all three.
    */
   private async fetchAllEmployeesRaw(accountId: string, range: OrgLensTimeRange | null, projectScope: OrgProjectScope): Promise<OrgAllEmployeesRaw> {
     const source = range
       ? {
           from: 'ORG_PEOPLE_ALL_RANGES',
-          counts: 'COMMITS_COUNT, MERGED_COMMITS_COUNT, CODE_ACTIVITIES_COUNT',
+          counts: 'NON_CODE_ENGAGED_FOUNDATION_IDS AS ENGAGED_FOUNDATION_IDS',
           where: 'ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ? AND IS_FORMER = FALSE',
           binds: [accountId, range, projectScope],
         }
       : {
           from: 'ORG_PEOPLE_ALL',
-          counts: 'COMMITS_COUNT, COMMITS_COUNT AS MERGED_COMMITS_COUNT, COMMITS_COUNT AS CODE_ACTIVITIES_COUNT',
+          counts: 'COMMITS_COUNT, COMMITS_COUNT AS MERGED_COMMITS_COUNT, COMMITS_COUNT AS CODE_ACTIVITIES_COUNT, ENGAGED_FOUNDATION_IDS',
           where: 'ACCOUNT_ID = ?',
           binds: [accountId],
         };
@@ -558,10 +1026,9 @@ export class OrgLensPeopleService {
         SEATS_COUNT,
         BOARD_SEATS_COUNT,
         COMMITTEE_SEATS_COUNT,
-        ${source.counts},
         EVENTS_COUNT,
         COURSES_COUNT,
-        ENGAGED_FOUNDATION_IDS
+        ${source.counts}
       FROM ANALYTICS.PLATINUM_LFX_ONE.${source.from}
       WHERE ${source.where}
       ORDER BY NAME ASC NULLS LAST
@@ -569,7 +1036,9 @@ export class OrgLensPeopleService {
 
     // Distinct (foundation_id, foundation_name) pairs across the four detail sources; keeps the BFF confined to PLATINUM_LFX_ONE.
     // Code labels read the full-history daily code rows (ENGAGED_FOUNDATION_IDS' code source), not the 12-month
-    // ORG_PEOPLE_CODE_CONTRIBUTIONS, so an `all` range keeps a label for code older than a year.
+    // ORG_PEOPLE_CODE_CONTRIBUTIONS, so an `all` range keeps a label for code older than a year. Training labels read
+    // people-list rows only: ORG_PEOPLE_TRAINING also holds learners outside the list (lfx-self-serve#4287), who are
+    // not on this roster, so their foundations would offer a filter that matches nobody listed.
     const foundationQuery = `
       WITH pairs AS (
         SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
@@ -586,7 +1055,7 @@ export class OrgLensPeopleService {
         UNION
         SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
-        WHERE ACCOUNT_ID = ? AND FOUNDATION_ID IS NOT NULL AND FOUNDATION_NAME IS NOT NULL
+        WHERE ACCOUNT_ID = ? AND IS_ON_PEOPLE_LIST AND FOUNDATION_ID IS NOT NULL AND FOUNDATION_NAME IS NOT NULL
       )
       SELECT FOUNDATION_ID, FOUNDATION_NAME
       FROM pairs
@@ -620,6 +1089,8 @@ export class OrgLensPeopleService {
       seatsCount: row.SEATS_COUNT ?? 0,
       boardSeatsCount: row.BOARD_SEATS_COUNT ?? 0,
       committeeSeatsCount: row.COMMITTEE_SEATS_COUNT ?? 0,
+      // Key-contact roles are live-only (member-service), never warehoused — the directory merge fills these in.
+      keyContactRoles: [],
       commitsCount: row.COMMITS_COUNT ?? 0,
       mergedCommitsCount: row.MERGED_COMMITS_COUNT ?? 0,
       codeActivitiesCount: row.CODE_ACTIVITIES_COUNT ?? 0,
@@ -630,30 +1101,111 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * A non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. `v4`: the code rows no
-   * longer carry the declared-maintainer flag (lfx-self-serve#4482), so a `v3` entry must miss.
+   * Committee, event and training rows. `v6`: the training rows are one per course, read from
+   * ORG_PEOPLE_TRAINING_COURSE_STATUS (lfx-self-serve#4439), so a `v5` entry (one row per training record) must miss. `v7`: the people-list column is `IS_ON_PEOPLE_LIST`.
    */
   private fetchEmployeeActivityRaw(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
-    if (!isFilterSafeIdentifier(personKey)) {
-      return this.runEmployeeActivityFetch(accountId, personKey);
-    }
-    return withOrgCache(
+    return this.withPersonCache(
       accountId,
-      `people-detail:v4:${personKey}`,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      personKey,
+      `people-detail:v7:${personKey}`,
       () => this.runEmployeeActivityFetch(accountId, personKey),
       isEmployeeActivityRaw
     );
   }
 
   private async runEmployeeActivityFetch(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
-    const [committeeRows, codeRows, eventRows, trainingRows] = await Promise.all([
+    const [committeeRows, eventRows, trainingRows] = await Promise.all([
       this.fetchCommitteeMembershipRows(accountId, personKey),
-      this.fetchCodeContributionRows(accountId, personKey),
       this.fetchEventRows(accountId, personKey),
       this.fetchTrainingRows(accountId, personKey),
     ]);
-    return { committeeRows, codeRows, eventRows, trainingRows };
+    return { committeeRows, eventRows, trainingRows };
+  }
+
+  /** The Code tab without opener filters: every commit of the trailing 12 months (ORG_PEOPLE_CODE_CONTRIBUTIONS). */
+  private async readTrailingYearCodeContributions(accountId: string, personKey: string): Promise<OrgPersonCodeContributions> {
+    const rows = await this.withPersonCache(
+      accountId,
+      personKey,
+      `people-detail-code:v1:${personKey}`,
+      () => this.fetchCodeContributionRows(accountId, personKey),
+      isCodeContributionRows
+    );
+    return {
+      projects: rows.map((row) => toCodeProjectCount(row, row.PROJECT_COMMITS, row.LAST_ACTIVITY_DATE)),
+      // The per-project counts overlap on mirrored commits; the total sums the per-person credit instead.
+      total: rows.reduce((sum, row) => sum + (row.TOTAL_COMMITS ?? 0), 0),
+    };
+  }
+
+  /**
+   * The Code tab in the opener's view: this person's People → Contributors project rows for the range, project scope and
+   * organization scope, each counting what the view's commit filters pick, sorted as that tab's expanded row is (count,
+   * then last activity, then name). Each row credits a commit to one project in the scope, so they sum to the person's
+   * row count — the Contributors and All Employees (ORG_PEOPLE_ALL_RANGES sums the same columns) row. One cache entry per
+   * range and scope carries every count, so it serves every code-count option.
+   */
+  private async readCodeViewContributions(
+    accountId: string,
+    personKey: string,
+    view: OrgPersonCodeView,
+    orgScope: OrgScopeFilter
+  ): Promise<OrgPersonCodeContributions> {
+    const scope = await this.resolveOrgScope(accountId, orgScope);
+    const rows = await this.withPersonCache(
+      accountId,
+      personKey,
+      `people-detail-code-view:v1:${personKey}:${view.range}:${view.projectScope}:${scope}`,
+      () => this.fetchCodeViewRows(accountId, personKey, view.range, view.projectScope, scope),
+      isCodeContributionRows
+    );
+    const column = orgContributorCountColumn(view);
+    const projects = rows
+      .map((row) => toCodeProjectCount(row, row[column], row.LAST_ACTIVE_DATE))
+      .sort(
+        (a, b) =>
+          b.commits - a.commits ||
+          (b.lastActivityDate ?? '').localeCompare(a.lastActivityDate ?? '') ||
+          a.projectName.localeCompare(b.projectName) ||
+          a.projectId.localeCompare(b.projectId)
+      );
+    return { projects, total: projects.reduce((sum, project) => sum + project.commits, 0) };
+  }
+
+  /** People → Contributors' per-(person, project) aggregate, for one person: same table, window, scope and columns. */
+  private async fetchCodeViewRows(
+    accountId: string,
+    personKey: string,
+    range: OrgLensTimeRange,
+    projectScope: OrgProjectScope,
+    orgScope: OrgScopeFilter
+  ): Promise<OrgPersonCodeProjectRow[]> {
+    const columns = orgContributorsCommitColumns(projectScope, orgScope);
+    const query = `
+      SELECT
+        project_id AS PROJECT_ID,
+        MAX(project_name) AS PROJECT_NAME,
+        MAX(foundation_id) AS FOUNDATION_ID,
+        MAX(foundation_name) AS FOUNDATION_NAME,
+        SUM(${columns.commits}) AS COMMITS,
+        SUM(${columns.mergedCommits}) AS MERGED_COMMITS,
+        SUM(${columns.codeActivities}) AS CODE_ACTIVITIES,
+        MAX(activity_date) AS LAST_ACTIVE_DATE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
+      WHERE account_id = ? AND person_key = ?
+        ${orgContributorsActivityPredicate(range)}
+        ${orgProjectScopePredicate(projectScope)}
+        ${orgContributorsScopePredicate(orgScope)}
+      GROUP BY project_id
+    `;
+    const result = await this.snowflakeService.execute<OrgPersonCodeProjectRow>(query, [accountId, personKey]);
+    return result.rows;
+  }
+
+  /** A non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
+  private withPersonCache<T>(accountId: string, personKey: string, key: string, fetcher: () => Promise<T>, accept: (value: unknown) => boolean): Promise<T> {
+    return isFilterSafeIdentifier(personKey) ? withOrgCache(accountId, key, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, fetcher, accept) : fetcher();
   }
 
   /**
@@ -691,22 +1243,15 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * A failure is answered as `failed` and is never cached.
+   * A failure is answered as `failed` and is never cached. A former employee's addresses are read like anyone's: the
+   * extended view carries the verified LF-account addresses on the company's domains of the people who left.
    *
-   * A `cdp:` person key (no Salesforce identity to join on) and a former employee of the account
-   * short-circuit to `unavailable` before the cache: not available, never "none on record". A failed
-   * former check answers `failed` before the cache too: no address is read for someone who may have left.
+   * A `cdp:` person key (an identity not linked to an LF account in the warehouse) short-circuits to `unavailable`
+   * (`unlinked_identity`) before the cache: not available, never "none on file".
    */
   private async getCompanyEmailsForPersonKey(req: Request, accountId: string, personKey: string): Promise<OrgPersonCompanyEmailsResponse> {
     if (personKey.startsWith('cdp:')) {
-      return UNAVAILABLE_COMPANY_EMAILS;
-    }
-    const formerCheck = await this.checkFormerEmployee(req, accountId, { personKey });
-    if (formerCheck.failed) {
-      return FAILED_COMPANY_EMAILS;
-    }
-    if (formerCheck.isFormer) {
-      return UNAVAILABLE_COMPANY_EMAILS;
+      return UNLINKED_COMPANY_EMAILS;
     }
     const fetcher = async (): Promise<OrgPersonCompanyEmailsResponse> => ({
       ...toCompanyEmails(await this.fetchCompanyEmails(accountId, personKey)),
@@ -716,9 +1261,10 @@ export class OrgLensPeopleService {
       if (!isFilterSafeIdentifier(personKey)) {
         return await fetcher();
       }
+      // `v2`: reads the extended view too (former employees, key-contact records) and carries `keyContactRecordEmails`.
       return await withOrgCache(
         accountId,
-        `people-company-emails:${personKey}`,
+        `people-company-emails:v2:${personKey}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         fetcher,
         isCompanyEmailsResponse,
@@ -734,54 +1280,193 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * The person's company-affiliated addresses at this account. Inclusion rules live in the warehouse
-   * model; this is a plain keyed read with no cap.
+   * The person's company-affiliated addresses at this account: the current people's (ORG_PEOPLE_COMPANY_EMAILS) and
+   * every source of the extended view. Inclusion rules live in the warehouse models; this is a plain keyed read with
+   * no cap, deduplicated and ordered by {@link toCompanyEmails}.
    *
    * Keyed on identity only. Resolving a person from an address is prohibited: that direction contains
    * false links and would attribute one person's addresses to another.
    */
   private async fetchCompanyEmails(accountId: string, personKey: string): Promise<OrgPersonCompanyEmailRow[]> {
     const query = `
-      SELECT EMAIL, IS_PRIMARY
+      SELECT EMAIL, IS_PRIMARY, 'current' AS ADDRESS_SOURCE
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
       WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
-      -- NULLS LAST is explicit: Snowflake sorts NULL above non-NULL on DESC, which would put an
-      -- unflagged address ahead of the primary and break the primary-first contract.
-      ORDER BY IS_PRIMARY DESC NULLS LAST, EMAIL ASC
+      UNION ALL
+      SELECT EMAIL, IS_PRIMARY, ADDRESS_SOURCE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_EXTENDED_COMPANY_EMAILS
+      WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
     `;
-    const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow>(query, [accountId, personKey]);
+    const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow>(query, [accountId, personKey, accountId, personKey]);
     return result.rows;
   }
 
   /**
-   * As above, keyed on LF username for the governance surfaces (Board, Committee, Key Contacts, Access).
-   *
-   * Reads only the materialized address table; identity is never re-resolved against the spine view at
-   * request time. The HAVING guard fails closed if two people collide after normalization. Zero rows is
-   * `unavailable`, never "none on record": this read cannot tell a known person without addresses from
-   * an unknown username.
+   * As above, keyed on LF username for the governance surfaces (Board, Committee, Key Contacts, Access) when no roster
+   * person carries it: resolves the username to its LF account (ORG_PEOPLE_LF_USERNAMES, every LF user, not only the
+   * account's people), then reads that account's qualifying addresses at this organization (ORG_PEOPLE_LF_USER_COMPANY_EMAILS).
+   * Identity → address only: an address is never a lookup key. The HAVING guard fails closed if the username names more
+   * than one account. No identity row is `unavailable` (`unconfirmed`); an identity row without an address is "none on
+   * file" (`resolved`, empty).
    */
   private async fetchCompanyEmailsByUsername(accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
     const query = `
-      WITH resolved_person AS (
-        SELECT ACCOUNT_ID, MIN(PERSON_KEY) AS PERSON_KEY
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
-        WHERE ACCOUNT_ID = ? AND LOWER(TRIM(LF_USERNAME)) = ?
-        GROUP BY ACCOUNT_ID
+      WITH lf_account AS (
+        SELECT MIN(PERSON_KEY) AS PERSON_KEY
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USERNAMES
+        WHERE LF_USERNAME = ?
+        GROUP BY LF_USERNAME
         HAVING COUNT(DISTINCT PERSON_KEY) = 1
       )
-      SELECT emails.EMAIL, emails.IS_PRIMARY
-      FROM resolved_person AS person
-      INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS AS emails
-        ON emails.ACCOUNT_ID = person.ACCOUNT_ID AND emails.PERSON_KEY = person.PERSON_KEY
-      ORDER BY emails.IS_PRIMARY DESC NULLS LAST, emails.EMAIL ASC
+      SELECT lf_account.PERSON_KEY, emails.EMAIL, emails.IS_PRIMARY, 'lf_account' AS ADDRESS_SOURCE
+      FROM lf_account
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USER_COMPANY_EMAILS AS emails
+        ON emails.PERSON_KEY = lf_account.PERSON_KEY AND emails.ACCOUNT_ID = ?
     `;
-    const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow>(query, [accountId, username]);
-    const resolved = toCompanyEmails(result.rows);
-    if (resolved.companyEmails.length === 0) {
-      return UNAVAILABLE_COMPANY_EMAILS;
+    // A view missing before its dbt deploy rejects (`failed`) without counting toward the pod-wide circuit breaker.
+    const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow & { PERSON_KEY: string }>(query, [username, accountId], {
+      expectMissingObject: LF_ACCOUNT_VIEWS,
+    });
+    if (result.rows.length === 0) {
+      return UNCONFIRMED_COMPANY_EMAILS;
     }
-    return { ...resolved, companyEmailsStatus: 'resolved' };
+    return { ...toCompanyEmails(result.rows), companyEmailsStatus: 'resolved' };
+  }
+
+  /**
+   * The batch form of {@link fetchCompanyEmailsByUsername} for the All Employees filter: per known username, whether its
+   * LF account holds a qualifying address here. Mirrors the drawer's order: a username naming exactly one roster person
+   * is answered by that person (the keys, or `unlinked_identity` for a `cdp:` key), so it is left out here rather than
+   * re-read by LF account. Chunks of {@link ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE} run one at a time, so a large page never takes more
+   * than one pooled connection. A username with no single account is absent from both lists. No address is returned.
+   */
+  private async fetchLfUsernameCompanyEmailStatuses(accountId: string, usernames: readonly string[]): Promise<OrgLfUsernameCompanyEmailStatuses> {
+    const statuses: OrgLfUsernameCompanyEmailStatuses = { usernames: [], noneUsernames: [] };
+    for (let start = 0; start < usernames.length; start += ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE) {
+      const chunk = usernames.slice(start, start + ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE);
+      const placeholders = chunk.map(() => '?').join(', ');
+      const { rows } = await this.snowflakeService.execute<{ LF_USERNAME: string; EMAIL_COUNT: number | string }>(
+        `
+          WITH roster_people AS (
+            SELECT LOWER(TRIM(LF_USERNAME)) AS LF_USERNAME
+            FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL
+            WHERE ACCOUNT_ID = ? AND LOWER(TRIM(LF_USERNAME)) IN (${placeholders})
+            GROUP BY LOWER(TRIM(LF_USERNAME))
+            HAVING COUNT(DISTINCT PERSON_KEY) = 1
+          ),
+          identities AS (
+            SELECT LF_USERNAME, MIN(PERSON_KEY) AS PERSON_KEY
+            FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USERNAMES
+            WHERE LF_USERNAME IN (${placeholders})
+              AND LF_USERNAME NOT IN (SELECT LF_USERNAME FROM roster_people)
+            GROUP BY LF_USERNAME
+            HAVING COUNT(DISTINCT PERSON_KEY) = 1
+          )
+          SELECT identities.LF_USERNAME, COUNT(NULLIF(TRIM(emails.EMAIL), '')) AS EMAIL_COUNT
+          FROM identities
+          LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USER_COMPANY_EMAILS AS emails
+            ON emails.PERSON_KEY = identities.PERSON_KEY AND emails.ACCOUNT_ID = ?
+          GROUP BY identities.LF_USERNAME
+        `,
+        [accountId, ...chunk, ...chunk, accountId],
+        // A view missing before its dbt deploy rejects (rows stay `unconfirmed`) without tripping the circuit breaker; a
+        // missing ORG_PEOPLE_ALL (core) still counts.
+        { expectMissingObject: LF_ACCOUNT_VIEWS }
+      );
+      for (const row of rows) {
+        (Number(row.EMAIL_COUNT) > 0 ? statuses.usernames : statuses.noneUsernames).push(row.LF_USERNAME);
+      }
+    }
+    return statuses;
+  }
+
+  /**
+   * The company addresses on the person's corporate key-contact records, cached per (sorted) id set. `resolved` with
+   * every address record-only; a failed read answers `failed` and is not cached.
+   */
+  private async readKeyContactRecordEmails(req: Request, accountId: string, keyContactIds: readonly string[]): Promise<OrgPersonCompanyEmailsResponse> {
+    const ids = [...new Set(keyContactIds)].sort();
+    try {
+      return await withOrgCache(
+        accountId,
+        `people-key-contact-emails:v1:${keyDigest(ids.join(','))}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        async (): Promise<OrgPersonCompanyEmailsResponse> => ({
+          ...toCompanyEmails(await this.fetchKeyContactRecordEmails(accountId, ids)),
+          companyEmailsStatus: 'resolved',
+        }),
+        isCompanyEmailsResponse,
+        isCacheableCompanyEmails
+      );
+    } catch (error) {
+      logger.warning(req, 'get_org_lens_people_company_emails_by_key_contact', 'key contact record email lookup failed', {
+        key_contact_count: ids.length,
+        err: error,
+      });
+      return FAILED_COMPANY_EMAILS;
+    }
+  }
+
+  /** The `key_contact_record` addresses of the extended view for these key-contact record ids (bound, never interpolated). */
+  private async fetchKeyContactRecordEmails(accountId: string, keyContactIds: readonly string[]): Promise<OrgPersonCompanyEmailRow[]> {
+    const query = `
+      SELECT EMAIL, IS_PRIMARY, ADDRESS_SOURCE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_EXTENDED_COMPANY_EMAILS
+      WHERE ACCOUNT_ID = ? AND ADDRESS_SOURCE = 'key_contact_record'
+        AND KEY_CONTACT_ID IN (${keyContactIds.map(() => '?').join(', ')})
+    `;
+    const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow>(query, [accountId, ...keyContactIds]);
+    return result.rows;
+  }
+
+  /**
+   * {@link recordAddressKey} for every `key_contact_record` address of the extended view on these record ids, so the
+   * filter can tell which records still carry their contact's address without an address leaving this read. Chunks of
+   * {@link ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE} ids run one at a time.
+   */
+  private async fetchKeyContactRecordAddressKeys(accountId: string, keyContactIds: readonly string[]): Promise<string[]> {
+    const keys: string[] = [];
+    for (let start = 0; start < keyContactIds.length; start += ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE) {
+      const chunk = keyContactIds.slice(start, start + ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE);
+      const { rows } = await this.snowflakeService.execute<{ KEY_CONTACT_ID: string; EMAIL: string | null }>(
+        `
+          SELECT KEY_CONTACT_ID, EMAIL
+          FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_EXTENDED_COMPANY_EMAILS
+          WHERE ACCOUNT_ID = ? AND ADDRESS_SOURCE = 'key_contact_record'
+            AND KEY_CONTACT_ID IN (${chunk.map(() => '?').join(', ')})
+        `,
+        [accountId, ...chunk]
+      );
+      for (const row of rows) {
+        const email = row.EMAIL?.trim().toLowerCase();
+        if (email) keys.push(recordAddressKey(row.KEY_CONTACT_ID, email));
+      }
+    }
+    return keys;
+  }
+
+  /**
+   * The account's ORG_PEOPLE_COMPANY_EMAIL_KEYS rows, split by key type. No address is read.
+   *
+   * Username keys are used verbatim: the warehouse already applied `LOWER(TRIM())`, the exact comparison the drawer's
+   * username SQL makes against a JavaScript-trimmed input. Trimming them again here would let a stored value padded with
+   * a tab or NBSP match a row the drawer cannot resolve, tagging it `has`/`none` where the drawer answers `unconfirmed`.
+   */
+  private async fetchCompanyEmailKeys(accountId: string): Promise<OrgCompanyEmailKeys> {
+    const query = `
+      SELECT KEY_TYPE, KEY_VALUE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAIL_KEYS
+      WHERE ACCOUNT_ID = ?
+    `;
+    const result = await this.snowflakeService.execute<OrgPeopleCompanyEmailKeyRow>(query, [accountId]);
+    const keys: OrgCompanyEmailKeys = { personKeys: [], usernames: [], noneUsernames: [] };
+    for (const row of result.rows) {
+      if (!row.KEY_VALUE) continue;
+      if (row.KEY_TYPE === 'person_key') keys.personKeys.push(row.KEY_VALUE);
+      else if (row.KEY_TYPE === 'lf_username') keys.usernames.push(row.KEY_VALUE);
+      else if (row.KEY_TYPE === 'lf_username_none') keys.noneUsernames.push(row.KEY_VALUE);
+    }
+    return keys;
   }
 
   private async fetchCommitteeMembershipRows(accountId: string, personKey: string): Promise<CommitteeMembershipRow[]> {
@@ -844,19 +1529,21 @@ export class OrgLensPeopleService {
     return result.rows;
   }
 
-  /** Certificates of any age, enrollments from the last 12 months only (the window the drawer has always shown). */
+  /**
+   * One row per course with its status resolved in lf-dbt (Certified wins over a re-enrollment): certificates of any
+   * age, in progress only when enrolled in the last 12 months (the window the drawer has always shown). People-list rows
+   * only: a learner linked to the account by their own enrollment (lfx-self-serve#4287) can share a former employee's
+   * key, and the drawer shows that person's activity as an employee.
+   */
   private async fetchTrainingRows(accountId: string, personKey: string): Promise<TrainingRow[]> {
     const query = `
       SELECT
-        ACCOUNT_ID,
-        PERSON_KEY,
-        COURSE_OR_CERT_ID,
-        STATUS,
         COURSE_ID,
+        STATUS,
         COURSE_NAME
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
-      WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
-        AND (STATUS = 'Certified' OR (${orgTrainingEnrolledWindowPredicate()}))
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSE_STATUS
+      WHERE ACCOUNT_ID = ? AND PERSON_KEY = ? AND IS_ON_PEOPLE_LIST
+        AND (STATUS = 'Certified' OR (${orgTrainingEnrolledWindowPredicate('LAST_ENROLLED_TS')}))
       ORDER BY STATUS ASC NULLS LAST, COURSE_NAME ASC NULLS LAST
     `;
     const result = await this.snowflakeService.execute<TrainingRow>(query, [accountId, personKey]);
@@ -875,18 +1562,6 @@ export class OrgLensPeopleService {
     };
   }
 
-  private mapCodeRow(row: CodeContributionRow, maintainerProjects: ReadonlySet<string>): OrgAllEmployeeCodeContribution {
-    return {
-      projectId: row.PROJECT_ID,
-      projectName: row.PROJECT_NAME ?? row.PROJECT_ID,
-      foundationId: row.FOUNDATION_ID ?? '',
-      foundationName: row.FOUNDATION_NAME ?? '',
-      commits: row.PROJECT_COMMITS ?? 0,
-      lastActivityDate: toDateString(row.LAST_ACTIVITY_DATE),
-      isMaintainer: maintainerProjects.has(row.PROJECT_ID),
-    };
-  }
-
   private mapEventRow(row: EventRow, eventsCount: number): OrgAllEmployeeEvent {
     return {
       eventId: row.EVENT_ID,
@@ -899,33 +1574,17 @@ export class OrgLensPeopleService {
     };
   }
 
-  /**
-   * One drawer row per course (`COURSE_ID`, else `COURSE_OR_CERT_ID`), Certified superseding Enrolled: since
-   * lf-dbt#3118 a person can carry a certificate row and a later re-enrollment row for the same course. Counts are
-   * over the collapsed rows, so they match what renders.
-   */
-  private collapseTrainingRows(trainingRows: TrainingRow[]): OrgAllEmployeeTraining[] {
-    const byCourse = new Map<string, TrainingRow>();
-    for (const row of trainingRows) {
-      const courseId = row.COURSE_ID ?? row.COURSE_OR_CERT_ID;
-      if (!courseId) {
-        continue;
-      }
-      const kept = byCourse.get(courseId);
-      if (!kept || (kept.STATUS !== 'Certified' && row.STATUS === 'Certified')) {
-        byCourse.set(courseId, row);
-      }
-    }
-    const rows = [...byCourse.values()];
-    const certificationsCount = rows.filter((row) => row.STATUS === 'Certified').length;
-    return rows.map((row) => this.mapTrainingRow(row, rows.length, certificationsCount));
+  /** Counts are over the rows shown, so they match what renders. */
+  private mapTrainingRows(trainingRows: TrainingRow[]): OrgAllEmployeeTraining[] {
+    const certificationsCount = trainingRows.filter((row) => row.STATUS === 'Certified').length;
+    return trainingRows.map((row) => this.mapTrainingRow(row, trainingRows.length, certificationsCount));
   }
 
   private mapTrainingRow(row: TrainingRow, coursesCount: number, certificationsCount: number): OrgAllEmployeeTraining {
     const status: OrgAllEmployeeTrainingStatus = row.STATUS === 'Certified' ? 'Certified' : 'Enrolled';
     return {
-      courseId: row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
-      courseName: row.COURSE_NAME ?? row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
+      courseId: row.COURSE_ID,
+      courseName: row.COURSE_NAME ?? row.COURSE_ID,
       status,
       certificationsCount,
       coursesCount,
@@ -950,12 +1609,62 @@ export class OrgLensPeopleService {
   }
 }
 
-/** A former employee's NAME can be an email address; never surface it, falling back to their LF username or the generic label. */
-function formerDisplayName(row: OrgPeopleAllRowRaw): string | null {
+/** An off-roster person's NAME can be an email address; never surface it, falling back to their LF username or the generic label. */
+function offRosterDisplayName(row: OrgPeopleIdentityRow): string | null {
   if (!row.NAME?.includes('@')) {
     return row.NAME;
   }
   return (row.LF_USERNAME ?? '').trim() || ORG_PEOPLE_UNKNOWN_MEMBER_NAME;
+}
+
+/**
+ * Sums People → Contributors (person, project) rows per person (lfx-self-serve#4735): each row credits a commit to one
+ * project in the scope, so the sums are that tab's row; the foundations are those of the projects, as its Foundations
+ * filter reads them.
+ */
+function sumLiveCode(rows: readonly ContributorPersonProjectRow[]): OrgPeopleLiveCode {
+  const people = new Map<string, OrgPersonLiveCode>();
+  const foundationNames = new Map<string, string>();
+  for (const row of rows) {
+    let person = people.get(row.PERSON_KEY);
+    if (!person) {
+      person = { identity: row, commitsCount: 0, mergedCommitsCount: 0, codeActivitiesCount: 0, foundationIds: [] };
+      people.set(row.PERSON_KEY, person);
+    }
+    person.commitsCount += row.COMMITS ?? 0;
+    person.mergedCommitsCount += row.MERGED_COMMITS ?? 0;
+    person.codeActivitiesCount += row.CODE_ACTIVITIES ?? 0;
+    if (row.FOUNDATION_ID) {
+      if (!person.foundationIds.includes(row.FOUNDATION_ID)) person.foundationIds.push(row.FOUNDATION_ID);
+      if (row.FOUNDATION_NAME) foundationNames.set(row.FOUNDATION_ID, row.FOUNDATION_NAME);
+    }
+  }
+  for (const person of people.values()) person.foundationIds.sort();
+  return { people, foundationNames };
+}
+
+/**
+ * A current employee's ranged row with its code counted live (lfx-self-serve#4735), or `null` when they have neither
+ * live code in the window and scopes nor a seat, event or course there. CERTIFICATIONS_COUNT needs no test: each
+ * certificate's course is in COURSES_COUNT. The engaged foundations are those of the seats, events and courses (the
+ * row's NON_CODE_ENGAGED_FOUNDATION_IDS) and those of the live code.
+ */
+function withLiveCode(row: OrgAllEmployeeRowInternal, code: OrgPersonLiveCode | undefined): OrgAllEmployeeRowInternal | null {
+  if (!code && row.seatsCount === 0 && row.eventsCount === 0 && row.coursesCount === 0) {
+    return null;
+  }
+  return {
+    ...row,
+    commitsCount: code?.commitsCount ?? 0,
+    mergedCommitsCount: code?.mergedCommitsCount ?? 0,
+    codeActivitiesCount: code?.codeActivitiesCount ?? 0,
+    engagedFoundationIds: [...new Set([...row.engagedFoundationIds, ...(code?.foundationIds ?? [])])].sort(),
+  };
+}
+
+/** Who someone with code but no unclassified row is, from their contributor rows; the rows carry no photo. */
+function contributorIdentity(row: ContributorPersonProjectRow): OrgPeopleIdentityRow {
+  return { PERSON_KEY: row.PERSON_KEY, LFID: row.LFID, LF_USERNAME: row.LF_USERNAME, CDP_MEMBER_ID: row.CDP_MEMBER_ID, NAME: row.DISPLAY_NAME, PHOTO: null };
 }
 
 /** Upstream occasionally carries bracketed placeholder names (e.g. "[[Unknown]] [[unknown]]") or a blank name; surface the email instead so the row stays identifiable, with a generic label only when no email exists. */
@@ -1033,16 +1742,33 @@ function isCompactAllEmployeesRaw(value: unknown): boolean {
 
 function isEmployeeActivityRaw(value: unknown): boolean {
   const v = value as Partial<Record<keyof EmployeeActivityRaw, unknown>> | null;
-  return !!v && Array.isArray(v.committeeRows) && Array.isArray(v.codeRows) && Array.isArray(v.eventRows) && Array.isArray(v.trainingRows);
+  return !!v && Array.isArray(v.committeeRows) && Array.isArray(v.eventRows) && Array.isArray(v.trainingRows);
 }
 
-function isFormerEmployeesRaw(value: unknown): boolean {
-  const v = value as { rowsRaw?: unknown; foundationRaw?: unknown } | null;
-  return !!v && Array.isArray(v.rowsRaw) && Array.isArray(v.foundationRaw);
+/** A stored code read: an array of project rows, each keyed by a project id. */
+function isCodeContributionRows(value: unknown): boolean {
+  return Array.isArray(value) && value.every((row: unknown) => !!row && typeof row === 'object' && 'PROJECT_ID' in row && typeof row.PROJECT_ID === 'string');
 }
 
-function isFormerCheck(value: unknown): boolean {
-  return !!value && typeof value === 'object' && 'isFormer' in value && typeof value.isFormer === 'boolean' && 'failed' in value && value.failed === false;
+/** One Code tab project from either code read, counting `count` (a missing count is 0). */
+function toCodeProjectCount(
+  row: Pick<CodeContributionRow, 'PROJECT_ID' | 'PROJECT_NAME' | 'FOUNDATION_ID' | 'FOUNDATION_NAME'>,
+  count: number | null,
+  lastActivityDate: Date | string | null
+): OrgPersonCodeProjectCount {
+  return {
+    projectId: row.PROJECT_ID,
+    projectName: row.PROJECT_NAME ?? row.PROJECT_ID,
+    foundationId: row.FOUNDATION_ID ?? '',
+    foundationName: row.FOUNDATION_NAME ?? '',
+    commits: count ?? 0,
+    lastActivityDate: toDateString(lastActivityDate),
+  };
+}
+
+/** A stored identity read: an array of rows, each keyed by a person key. */
+function isIdentityRows(value: unknown): boolean {
+  return Array.isArray(value) && value.every((row: unknown) => !!row && typeof row === 'object' && 'PERSON_KEY' in row && typeof row.PERSON_KEY === 'string');
 }
 
 /** Failed lookups are never cached: a transient warehouse error must not hide addresses for the full TTL. `unavailable` is a stable property and is cacheable. */
@@ -1062,34 +1788,93 @@ function isUsernameLookup(value: unknown): boolean {
   return !!lookup && (lookup.username === null || typeof lookup.username === 'string');
 }
 
-/** Hashed so a raw username is never a `:`-delimited cache-key segment. */
-function usernameDigest(normalizedUsername: string): string {
-  return createHash('sha256').update(normalizedUsername).digest('hex').slice(0, 16);
+/** Hashed so a raw username (or an id list) is never a `:`-delimited cache-key segment. */
+function keyDigest(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 16);
+}
+
+/** A key-contact record id paired with a digest of an address on it: comparable without holding the address. */
+function recordAddressKey(keyContactId: string, email: string): string {
+  return `${keyContactId}:${keyDigest(email)}`;
 }
 
 /**
- * Split the warehouse rows into the ordered address list plus the primary. `IS_PRIMARY` is advisory:
- * the list order already comes from the query, and a person with no primary flagged simply has none.
+ * Fold the warehouse address rows (both views, any source) into the ordered address list: one entry per lower-cased
+ * address, primary when any of its rows is flagged primary, the primary first and then alphabetical. An address whose
+ * only source is a key-contact record is listed in `keyContactRecordEmails` (absent when there are none).
  */
-function toCompanyEmails(rows: OrgPersonCompanyEmailRow[]): { companyEmails: string[]; primaryEmail: string | null } {
-  const named = rows.filter((row): row is OrgPersonCompanyEmailRow & { EMAIL: string } => !!row.EMAIL);
+function toCompanyEmails(
+  rows: readonly OrgPersonCompanyEmailRow[]
+): Pick<OrgPersonCompanyEmailsResponse, 'companyEmails' | 'primaryEmail' | 'keyContactRecordEmails'> {
+  const byAddress = new Map<string, { email: string; isPrimary: boolean; recordOnly: boolean }>();
+  for (const row of rows) {
+    const email = row.EMAIL?.trim();
+    if (!email) continue;
+    const key = email.toLowerCase();
+    const isPrimary = row.IS_PRIMARY === true || row.IS_PRIMARY === 1;
+    const recordOnly = row.ADDRESS_SOURCE === KEY_CONTACT_RECORD_SOURCE;
+    const seen = byAddress.get(key);
+    if (seen) {
+      seen.isPrimary ||= isPrimary;
+      seen.recordOnly &&= recordOnly;
+    } else {
+      byAddress.set(key, { email, isPrimary, recordOnly });
+    }
+  }
+  const addresses = [...byAddress.values()].sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary) || a.email.localeCompare(b.email));
+  const keyContactRecordEmails = addresses.filter((address) => address.recordOnly).map((address) => address.email);
   return {
-    companyEmails: named.map((row) => row.EMAIL),
-    primaryEmail: named.find((row) => row.IS_PRIMARY === true || row.IS_PRIMARY === 1)?.EMAIL ?? null,
+    companyEmails: addresses.map((address) => address.email),
+    primaryEmail: addresses.find((address) => address.isPrimary)?.email ?? null,
+    ...(keyContactRecordEmails.length ? { keyContactRecordEmails } : {}),
   };
 }
 
-/** Reject legacy/failed cache entries; unavailable identities cannot carry addresses. */
+/** A resolved response as address rows again, so two lookups merge through {@link toCompanyEmails}; nothing for any other status. */
+function responseRows(response: OrgPersonCompanyEmailsResponse | null): OrgPersonCompanyEmailRow[] {
+  if (response?.companyEmailsStatus !== 'resolved') return [];
+  const recordOnly = new Set(response.keyContactRecordEmails ?? []);
+  return response.companyEmails.map((email) => ({
+    EMAIL: email,
+    IS_PRIMARY: email === response.primaryEmail,
+    ADDRESS_SOURCE: recordOnly.has(email) ? KEY_CONTACT_RECORD_SOURCE : 'lf_account',
+  }));
+}
+
+const COMPANY_EMAILS_REASONS: readonly OrgCompanyEmailsUnavailableReason[] = ['no_identity', 'unlinked_identity', 'unconfirmed'];
+
+/** Reject legacy/failed cache entries; unavailable identities cannot carry addresses, and record-only addresses are listed ones. */
 function isCompanyEmailsResponse(value: unknown): boolean {
   const response = value as Partial<OrgPersonCompanyEmailsResponse> | null;
+  if (!response || !Array.isArray(response.companyEmails) || !response.companyEmails.every((email) => typeof email === 'string')) {
+    return false;
+  }
+  const listed = new Set(response.companyEmails);
   return (
-    !!response &&
-    Array.isArray(response.companyEmails) &&
-    response.companyEmails.every((email) => typeof email === 'string') &&
     // Written before `primaryEmail` existed → undefined, and read as "no primary on record".
     (response.primaryEmail === undefined || response.primaryEmail === null || typeof response.primaryEmail === 'string') &&
-    (response.companyEmailsStatus === 'resolved' || (response.companyEmailsStatus === 'unavailable' && response.companyEmails.length === 0))
+    (response.keyContactRecordEmails === undefined ||
+      (Array.isArray(response.keyContactRecordEmails) && response.keyContactRecordEmails.every((email) => listed.has(email)))) &&
+    ((response.companyEmailsStatus === 'resolved' && response.companyEmailsReason === undefined) ||
+      (response.companyEmailsStatus === 'unavailable' &&
+        response.companyEmails.length === 0 &&
+        response.companyEmailsReason !== undefined &&
+        COMPANY_EMAILS_REASONS.includes(response.companyEmailsReason)))
   );
+}
+
+/** A stored company-email keys read: three string arrays. */
+function isCompanyEmailKeys(value: unknown): boolean {
+  const keys = value as Partial<OrgCompanyEmailKeys> | null;
+  const isStrings = (list: unknown): boolean => Array.isArray(list) && list.every((item) => typeof item === 'string');
+  return !!keys && isStrings(keys.personKeys) && isStrings(keys.usernames) && isStrings(keys.noneUsernames);
+}
+
+/** A stored LF-username status read: two string arrays. */
+function isLfUsernameCompanyEmailStatuses(value: unknown): boolean {
+  const statuses = value as Partial<OrgLfUsernameCompanyEmailStatuses> | null;
+  const isStrings = (list: unknown): boolean => Array.isArray(list) && list.every((item) => typeof item === 'string');
+  return !!statuses && isStrings(statuses.usernames) && isStrings(statuses.noneUsernames);
 }
 
 /** Narrow upstream free-text voting status to the three badges; unknown values collapse to 'Non-voting'. */

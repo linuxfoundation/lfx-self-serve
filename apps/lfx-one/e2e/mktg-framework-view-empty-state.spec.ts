@@ -234,13 +234,13 @@ test.describe('Messaging Framework view empty states', () => {
     await expect(page.getByTestId('mktg-framework-view-avoid')).toHaveCount(0);
   });
 
-  test('F2: an empty report says nothing was read, every source was read, no gap was left and nothing is to check', async ({ page }) => {
+  test('F2: an empty report says nothing was read, no source failed, no gap was left and nothing is to check', async ({ page }) => {
     await gotoFrameworkDocument(page);
 
     await page.getByTestId('mktg-framework-view-tab-sources').click();
 
     await expect(page.getByTestId('mktg-framework-view-sources-read-empty')).toHaveText('Nothing was read.');
-    await expect(page.getByTestId('mktg-framework-view-sources-failed-empty')).toHaveText('Every source was read.');
+    await expect(page.getByTestId('mktg-framework-view-sources-failed-empty')).toHaveText('No source failed.');
     await expect(page.getByTestId('mktg-framework-view-gaps-empty')).toHaveText('The sources left no gap.');
     await expect(page.getByTestId('mktg-framework-view-checks-empty')).toHaveText('Nothing to check.');
     // No list is rendered where its fallback is shown.

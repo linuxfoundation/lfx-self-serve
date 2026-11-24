@@ -22,7 +22,7 @@ describe('FavoriteProjectsService', () => {
     upsertFavoriteProjectsPreference: Mock;
     deleteFavoriteProjectsPreference: Mock;
   };
-  let userService: { user: ReturnType<typeof signal<User | null>> };
+  let userService: { user: ReturnType<typeof signal<User | null>>; impersonating: ReturnType<typeof signal<boolean>> };
   let messageService: { add: Mock };
 
   beforeEach(() => {
@@ -34,7 +34,7 @@ describe('FavoriteProjectsService', () => {
       upsertFavoriteProjectsPreference: vi.fn().mockReturnValue(of(undefined)),
       deleteFavoriteProjectsPreference: vi.fn().mockReturnValue(of(undefined)),
     };
-    userService = { user: signal<User | null>(null) };
+    userService = { user: signal<User | null>(null), impersonating: signal(false) };
     messageService = { add: vi.fn() };
 
     const asPreferenceResponse = (value: string | null = null): PreferenceReadResponse => ({ name: 'favorite-projects', value });
@@ -177,6 +177,24 @@ describe('FavoriteProjectsService', () => {
     });
     expect(navigationService.upsertFavoriteProjectsPreference).not.toHaveBeenCalled();
     expect(service.state().data.has('new-project')).toBe(false);
+  });
+
+  it('ignores toggles while impersonating, without writing or toasting', async () => {
+    navigationService.getFavoriteProjectsPreference.mockReturnValue(of('["p1"]'));
+    userService.impersonating.set(true);
+    userService.user.set(user);
+    await flush();
+
+    expect(service.favoritesAvailable()).toBe(false);
+
+    service.toggleFavorite('p1');
+    service.toggleFavorite('p2');
+    await flush();
+
+    expect(navigationService.upsertFavoriteProjectsPreference).not.toHaveBeenCalled();
+    expect(navigationService.deleteFavoriteProjectsPreference).not.toHaveBeenCalled();
+    expect(messageService.add).not.toHaveBeenCalled();
+    expect([...service.state().data]).toEqual(['p1']);
   });
 
   it('no-ops a toggle before any user is signed in', async () => {

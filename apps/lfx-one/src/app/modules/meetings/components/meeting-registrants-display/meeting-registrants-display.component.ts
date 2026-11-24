@@ -2,12 +2,28 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, input, InputSignal, output, OutputEmitterRef, Signal, signal, WritableSignal } from '@angular/core';
+import {
+  afterRenderEffect,
+  Component,
+  computed,
+  DestroyRef,
+  effect,
+  ElementRef,
+  inject,
+  input,
+  InputSignal,
+  output,
+  OutputEmitterRef,
+  Signal,
+  signal,
+  WritableSignal,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
+import { MenuComponent } from '@components/menu/menu.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
@@ -15,40 +31,63 @@ import {
   EnrichedPastMeetingParticipant,
   GuestInviteScope,
   Meeting,
+  MeetingGuestRole,
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingRegistrant,
   MeetingRegistrantWithState,
+  MeetingSelfGuest,
+  MeetingSelfRegistrationRemovalEvent,
   PastMeeting,
   PastMeetingParticipant,
   PastParticipantAttendanceFilter,
   PastParticipantInvitationFilter,
+  RegistrantStatusLabel,
 } from '@lfx-one/shared/interfaces';
 import {
   avatarInitials,
+  buildMeetingOrganizerKeys,
   compareMeetingPeopleByHostThenName,
   filterPastMeetingParticipants,
+  filterUnindexedMeetingRegistrants,
   getRegistrantAttendanceStatus,
+  getRegistrantStatusLabel,
+  registrantDisplayName,
   getPastMeetingResourceId,
   isMeetingInviteResponsesEnabled,
+  isMeetingGuestViewer,
+  isMeetingSelfGuestListed,
   markFormControlsAsTouched,
   resolveMeetingBaseCount,
+  resolveMeetingGuestRole,
   resolveRsvpOccurrenceId,
   occurrenceIdToSeconds,
+  toMeetingSelfGuestRegistrant,
 } from '@lfx-one/shared/utils';
 import type { RegistrantAttendanceStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { MeetingService } from '@services/meeting.service';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { UserService } from '@services/user.service';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, filter, finalize, map, of, pairwise, startWith, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, defer, filter, finalize, map, of, pairwise, startWith, switchMap, take, tap } from 'rxjs';
 
 import { RegistrantFormComponent } from '../registrant-form/registrant-form.component';
 
-type RegistrantWithAttendance = MeetingRegistrant & { attendanceStatus: RegistrantAttendanceStatus };
+type RegistrantWithAttendance = MeetingRegistrant & {
+  attendanceStatus: RegistrantAttendanceStatus;
+  statusLabel: RegistrantStatusLabel;
+  statusClass: string;
+  displayName: string;
+  canResend: boolean;
+  canToggleHost: boolean;
+  canRemove: boolean;
+  hasActions: boolean;
+};
 
 @Component({
   selector: 'lfx-meeting-registrants-display',
@@ -57,6 +96,7 @@ type RegistrantWithAttendance = MeetingRegistrant & { attendanceStatus: Registra
     BadgeComponent,
     ButtonComponent,
     ConfirmDialogModule,
+    MenuComponent,
     TooltipModule,
     ReactiveFormsModule,
     RadioButtonComponent,
@@ -74,6 +114,9 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly userService = inject(UserService);
+  private readonly selfInvite = inject(MeetingSelfInviteService);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
   protected readonly inviteResend = inject(MeetingInviteResendService);
 
   public readonly meeting: InputSignal<Meeting | PastMeeting> = input.required<Meeting | PastMeeting>();
@@ -85,26 +128,76 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly myMeetingRegistrants: InputSignal<boolean> = input<boolean>(false);
   public readonly initialRegistrants: InputSignal<MeetingRegistrant[] | null> = input<MeetingRegistrant[] | null>(null);
   public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
+  /** The parent could not confirm a complete roster; suppress duplicate-sensitive self-adds. */
+  public readonly initialRegistrantsFailed: InputSignal<boolean> = input<boolean>(false);
+  /** The host already shows the viewer as a guest, for example right after adding them; hides "Add myself" while the roster catches up. */
+  public readonly selfInvited: InputSignal<boolean> = input<boolean>(false);
+  /** A card-level self-invite is still pending; prevent a second write from this drawer. */
+  public readonly selfInvitePending = input(false);
+  /** Confirmed parent writes, retained independently of the drawer's own mutations and lagging reads. */
+  public readonly confirmedRegistrants = input<MeetingRegistrant[]>([]);
+  public readonly confirmedRemovedRegistrantIds = input<string[]>([]);
+  public readonly confirmedCountAdjustment = input(0);
   /** The occurrence the host is showing; lets a guest be invited to that date only. */
   public readonly occurrence: InputSignal<MeetingOccurrence | null> = input<MeetingOccurrence | null>(null);
 
   public readonly registrantsCountChange: OutputEmitterRef<number> = output<number>();
+  /** The complete reconciled roster, so the card overview can reuse the same saved rows and deletions. */
+  public readonly registrantsChange = output<MeetingRegistrant[]>();
   public readonly refreshRequested: OutputEmitterRef<number> = output<number>();
+  /** A successful self-invite, so parents can expose RSVP and self-registration controls immediately. */
+  public readonly selfAdded: OutputEmitterRef<MeetingRegistrant> = output<MeetingRegistrant>();
+  public readonly selfRemoved: OutputEmitterRef<MeetingSelfRegistrationRemovalEvent> = output<MeetingSelfRegistrationRemovalEvent>();
   public readonly totalCountChange: OutputEmitterRef<number> = output<number>();
   // Emits the host-flagged people (the organizer set) whenever the list resolves, so a parent
   // can feed the same set to the shared "Organized by" chip — keeping chip and modal in agreement.
   public readonly resolvedHostsChange: OutputEmitterRef<MeetingHostCandidate[]> = output<MeetingHostCandidate[]>();
 
   private readonly internalLoading: WritableSignal<boolean> = signal(true);
+  // The last registrants fetch this component made failed, so the empty list shown may be incomplete.
+  private readonly internalLoadFailed: WritableSignal<boolean> = signal(false);
   private readonly refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
   private readonly optimisticRegistrants: WritableSignal<MeetingRegistrant[]> = signal<MeetingRegistrant[]>([]);
+  private readonly acknowledgedConfirmedRegistrants = signal<MeetingRegistrant[]>([]);
+  private readonly pendingSelfFocusContext = signal<string | null>(null);
   // UIDs removed by the organizer — filtered immediately from the displayed list so the guest
   // disappears without waiting for the async refetch to complete.
   private readonly deletedRegistrantUids = signal<Set<string>>(new Set());
+  // Host flags the organizer just changed — applied over the displayed list so the badge and sort order
+  // update at once. A refetch is also requested, but the list can lag the write, so the override is kept
+  // until the drawer closes rather than dropped when a fetch lands (a lagging fetch would flip the badge back).
+  private readonly hostOverrides = signal<Map<string, boolean>>(new Map());
+  private rowActionMenuUid: string | null = null;
+  protected readonly hostUpdatingUids = signal<Set<string>>(new Set());
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
+  private readonly registrantContextKey: Signal<string> = computed(() => JSON.stringify([this.meeting().id, this.pastMeeting()]));
+  private readonly selfFocusContextKey: Signal<string> = computed(() =>
+    JSON.stringify([this.registrantContextKey(), occurrenceIdToSeconds(this.occurrence()?.occurrence_id)])
+  );
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<EnrichedPastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
   public readonly registrants: Signal<MeetingRegistrant[]> = this.initRegistrants();
+  // Each guest's host-toggle accessible name, by uid, so the template reads a lookup instead of building a string per render.
+  protected readonly hostToggleLabels: Signal<Map<string, string>> = this.initHostToggleLabels();
+  protected readonly statusLabelClasses: Record<RegistrantAttendanceStatus, string> = {
+    accepted: 'text-emerald-600',
+    maybe: 'text-amber-600',
+    declined: 'text-red-600',
+    pending: 'text-gray-500',
+  };
+  protected rowActionMenuItems: MenuItem[] = [];
+  // Whether each guest is a listed organizer or just a Meeting Host, by uid. An organizer is a host already, so
+  // the two never overlap: the badge, the toggle and the role filter all read this instead of the raw host flag.
+  protected readonly guestRoles: Signal<Map<string, MeetingGuestRole>> = this.initGuestRoles();
+  // Rows the server hasn't confirmed yet — their uid is a placeholder, so there is nothing to update.
+  protected readonly unconfirmedGuestUids: Signal<Set<string>> = computed(
+    () =>
+      new Set(
+        this.optimisticRegistrants()
+          .filter((r) => r.uid?.startsWith('optimistic-'))
+          .map((r) => r.uid)
+      )
+  );
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => !this.pastMeeting() && isMeetingInviteResponsesEnabled(this.meeting()));
   public readonly registrantsLoading: Signal<boolean> = computed(() => {
     if (this.externallyManaged() && !this.pastMeeting()) {
@@ -123,6 +216,8 @@ export class MeetingRegistrantsDisplayComponent {
   // Staged guests — accumulate picked users; each can be independently added without clearing others.
   protected readonly stagedGuests = signal<{ id: string; data: Record<string, unknown> }[]>([]);
   private readonly submittingGuestIds = signal<Set<string>>(new Set());
+  // "Add myself" is tracked in `submittingGuestIds` under its own id, so it never resets the add form.
+  private readonly selfSubmitId = 'add-self';
 
   // Add registrant form
   public addRegistrantForm: FormGroup;
@@ -135,6 +230,12 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly scopeOccurrence: Signal<MeetingOccurrence | null> = computed(() =>
     !this.pastMeeting() && (this.meeting() as Meeting).recurrence ? this.occurrence() : null
   );
+
+  /** The signed-in user as a guest, for "Add myself"; looked up the first time the drawer opens with adding allowed. */
+  protected readonly selfGuest: Signal<MeetingSelfGuest | null> = this.initSelfGuest();
+  /** Offered once the list has loaded, while the user is not on it under a known email or their LFID. */
+  protected readonly canAddSelf: Signal<boolean> = this.initCanAddSelf();
+  protected readonly selfSubmitting: Signal<boolean> = computed(() => this.submittingGuestIds().has(this.selfSubmitId));
 
   // Search and filter controls
   public readonly searchControl: FormControl<string> = new FormControl<string>('', { nonNullable: true });
@@ -167,6 +268,7 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly organizerFilterOptions = [
     { label: 'All Roles', value: 'all' },
     { label: 'Organizers', value: 'organizer' },
+    { label: 'Hosts', value: 'host' },
   ];
 
   // Past-meeting attendance / invitation options (mirror the past-meeting-details filters)
@@ -231,12 +333,79 @@ export class MeetingRegistrantsDisplayComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((hosts) => this.resolvedHostsChange.emit(hosts));
 
+    toObservable(
+      computed(() => {
+        if (this.pastMeeting() || this.externallyManaged() || this.registrantsLoading() || this.internalLoadFailed()) return null;
+        const resolvedBase = resolveMeetingBaseCount(this.meeting());
+        const base = (resolvedBase ?? this.internalRegistrants().length) + this.confirmedCountAdjustment();
+        // The merged roster acknowledges saved UIDs and excludes confirmed deletions before counting.
+        const registrants = this.registrants();
+        const rosterDelta = registrants.length - base;
+        // With no backend count, each fetched roster is the new baseline, not an additional delta.
+        const additional = resolvedBase === undefined ? rosterDelta : Math.max(rosterDelta, this.additionalRegistrantsCount());
+        return { additional, total: Math.max(0, base + additional), registrants };
+      })
+    )
+      .pipe(
+        filter((counts) => counts !== null),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ additional, total, registrants }) => {
+        this.additionalRegistrantsCount.set(additional);
+        this.registrantsCountChange.emit(additional);
+        this.totalCountChange.emit(total);
+        this.registrantsChange.emit(registrants);
+      });
+
     toObservable(this.inviteResponsesEnabled)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((enabled) => {
         if (!enabled && this.rsvpFilterControl.value !== 'all') {
           this.rsvpFilterControl.setValue('all');
         }
+      });
+
+    // A series-wide invite survives date switches as well as drawer closes; another meeting must not inherit it.
+    toObservable(this.registrantContextKey)
+      .pipe(pairwise(), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.optimisticRegistrants.set([]);
+        this.deletedRegistrantUids.set(new Set());
+        this.acknowledgedConfirmedRegistrants.set([]);
+      });
+
+    toObservable(
+      computed(() => {
+        const self = this.selfGuest();
+        const removed = new Set([...this.deletedRegistrantUids(), ...this.confirmedRemovedRegistrantIds()]);
+        const fetched = this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.internalRegistrants();
+        return {
+          fetched: fetched.filter((row) => !removed.has(row.uid)),
+          confirmed: this.confirmedRegistrants(),
+          self,
+          selfRemoved: !!self && this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id),
+        };
+      })
+    )
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ fetched, confirmed, self, selfRemoved }) => {
+        const known = this.acknowledgedConfirmedRegistrants();
+        const candidates = this.unacknowledgedConfirmedRegistrants(confirmed);
+        const pending = filterUnindexedMeetingRegistrants(candidates, fetched);
+        const acknowledged = candidates.filter((row) => !pending.includes(row));
+        if (acknowledged.length) this.acknowledgedConfirmedRegistrants.set([...known, ...acknowledged]);
+        this.optimisticRegistrants.update((rows) => {
+          if (selfRemoved && self) {
+            const removedUids = [...fetched, ...rows].filter((row) => isMeetingSelfGuestListed(self, [row])).map((row) => row.uid);
+            this.deletedRegistrantUids.update((known) => {
+              const added = removedUids.filter((uid) => !known.has(uid));
+              return added.length ? new Set([...known, ...added]) : known;
+            });
+          }
+          const retained = rows.filter((row) => !(selfRemoved && self && isMeetingSelfGuestListed(self, [row])));
+          const indexed = fetched.filter((row) => !this.deletedRegistrantUids().has(row.uid));
+          return filterUnindexedMeetingRegistrants(retained, indexed);
+        });
       });
 
     effect(() => {
@@ -269,9 +438,20 @@ export class MeetingRegistrantsDisplayComponent {
         this.addRegistrantForm.reset();
         this.inviteScopeForm.reset();
         this.stagedGuests.set([]);
-        this.optimisticRegistrants.set([]);
-        this.deletedRegistrantUids.set(new Set());
+        this.hostOverrides.set(new Map());
       });
+
+    afterRenderEffect(() => {
+      const pending = this.pendingSelfFocusContext();
+      if (!pending) return;
+      if (!this.visible() || this.selfFocusContextKey() !== pending) {
+        this.pendingSelfFocusContext.set(null);
+        return;
+      }
+      if (this.registrantsLoading()) return;
+      this.host.nativeElement.querySelector<HTMLButtonElement>('[data-testid="add-registrant-toggle"]')?.focus();
+      this.pendingSelfFocusContext.set(null);
+    });
   }
 
   // === Public Methods ===
@@ -327,7 +507,26 @@ export class MeetingRegistrantsDisplayComponent {
     this.stagedGuests.update((list) => list.filter((g) => g.id !== id));
   }
 
+  /**
+   * Saves the signed-in user to the meeting as a regular guest, with their profile details.
+   * @description Saved straight away like every add from this drawer, to the dates the "Invite to"
+   * choice names (every occurrence unless the open add form says otherwise). The row joins the list
+   * at once even when the parent owns it, so the button cannot offer a second invite while that list
+   * reloads; once the button is gone, focus moves to the Add Guest toggle beside it.
+   */
+  public onAddSelf(): void {
+    const self = this.selfGuest();
+    if (!self || !this.canAddSelf() || this.selfSubmitting()) return;
+
+    const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
+    const focusContext = this.selfFocusContextKey();
+    this.submitGuest(toMeetingSelfGuestRegistrant(self), occurrenceId, this.selfSubmitId, () => {
+      if (!this.destroyRef.destroyed) this.pendingSelfFocusContext.set(focusContext);
+    });
+  }
+
   public onRequestRemoveGuest(registrant: MeetingRegistrant): void {
+    if (!this.canRemoveGuest(registrant)) return;
     const label = [registrant.first_name, registrant.last_name].filter(Boolean).join(' ') || registrant.email || 'this guest';
     this.confirmationService.confirm({
       header: 'Remove guest',
@@ -345,7 +544,125 @@ export class MeetingRegistrantsDisplayComponent {
     this.inviteResend.confirmAndResend(this.confirmationService, this.meeting().id, registrant);
   }
 
+  /** Saves a Meeting Host change for one guest straight away; there is no wider form to submit. */
+  public onToggleHost(registrant: MeetingRegistrant): void {
+    const uid = registrant.uid;
+    if (!uid || uid.startsWith('optimistic-') || this.hostUpdatingUids().has(uid)) return;
+
+    const host = !registrant.host;
+    const label = [registrant.first_name, registrant.last_name].filter(Boolean).join(' ') || registrant.email || 'The guest';
+    const setUpdating = (updating: boolean): void =>
+      this.hostUpdatingUids.update((uids) => {
+        const next = new Set(uids);
+        if (updating) {
+          next.add(uid);
+        } else {
+          next.delete(uid);
+        }
+        return next;
+      });
+
+    setUpdating(true);
+    this.meetingService
+      .updateMeetingRegistrants(this.meeting().id, [{ uid, changes: this.meetingService.getChangedFields({ ...registrant, host, state: 'modified' }) }])
+      .pipe(take(1))
+      .subscribe({
+        next: (response) => {
+          setUpdating(false);
+          if (response.summary.successful > 0) {
+            this.hostOverrides.update((map) => new Map(map).set(uid, host));
+            this.messageService.add({ severity: 'success', summary: 'Success', detail: `${label} is ${host ? 'now' : 'no longer'} a meeting host` });
+            // Ask whoever owns the list to reload it, so views built from it (the join page's "Organized by" chip) catch up.
+            if (this.externallyManaged()) {
+              this.refreshRequested.emit(0);
+            } else {
+              this.refresh$.next(true);
+            }
+          } else {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: response.failures[0]?.error?.message || 'Failed to update host' });
+          }
+        },
+        error: () => {
+          setUpdating(false);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update host. Please try again.' });
+        },
+      });
+  }
+
   // === Protected Methods (template helpers) ===
+  protected statusLabelClass(status: RegistrantAttendanceStatus): string {
+    return this.statusLabelClasses[status];
+  }
+  // Per-row action availability; shared by the desktop buttons and the mobile overflow menu so the two never drift.
+  protected canResendInvite(registrant: MeetingRegistrant): boolean {
+    return !this.pastMeeting() && this.showAddRegistrant() && this.inviteResend.canResend(registrant);
+  }
+  protected canToggleHost(registrant: MeetingRegistrant): boolean {
+    return (
+      !this.pastMeeting() &&
+      this.showAddRegistrant() &&
+      !this.unconfirmedGuestUids().has(registrant.uid) &&
+      this.guestRoles().get(registrant.uid) !== 'organizer'
+    );
+  }
+  protected canRemoveGuest(registrant: MeetingRegistrant): boolean {
+    return (
+      !this.pastMeeting() &&
+      this.showAddRegistrant() &&
+      registrant.type !== 'committee' &&
+      !!registrant.uid?.trim() &&
+      !registrant.uid.startsWith('optimistic-')
+    );
+  }
+  protected hasRowActions(registrant: MeetingRegistrant): boolean {
+    return this.canResendInvite(registrant) || this.canToggleHost(registrant) || this.canRemoveGuest(registrant);
+  }
+
+  // Mobile overflow menu: same actions, handlers and disabled rules as the desktop buttons.
+  protected toggleRowActionMenu(event: Event, registrant: MeetingRegistrant, menu: MenuComponent): void {
+    event.stopPropagation();
+    const sameRow = this.rowActionMenuUid === registrant.uid;
+    this.rowActionMenuUid = registrant.uid;
+    if (sameRow) {
+      this.rowActionMenuItems = this.buildRowActionMenuItems(registrant);
+      menu.toggle(event);
+      return;
+    }
+    // Another row's trigger: close the open menu first so the new row's items never swap in under it.
+    menu.hide();
+    this.rowActionMenuItems = this.buildRowActionMenuItems(registrant);
+    menu.show(event);
+  }
+  protected buildRowActionMenuItems(registrant: MeetingRegistrant): MenuItem[] {
+    const items: MenuItem[] = [];
+    if (this.canResendInvite(registrant)) {
+      items.push({
+        label: 'Resend invite',
+        icon: 'fa-light fa-paper-plane',
+        disabled: this.inviteResend.isResending(registrant.uid),
+        command: () => this.onRequestResendInvite(registrant),
+      });
+    }
+    if (this.canToggleHost(registrant)) {
+      items.push({
+        label: registrant.host ? 'Remove host' : 'Make host',
+        icon: 'fa-light fa-user-shield',
+        disabled: this.hostUpdatingUids().has(registrant.uid),
+        command: () => this.onToggleHost(registrant),
+      });
+    }
+    if (this.canRemoveGuest(registrant)) {
+      items.push({
+        label: 'Remove',
+        icon: 'fa-light fa-trash-can',
+        disabled: this.deleting(),
+        styleClass: 'text-red-600',
+        command: () => this.onRequestRemoveGuest(registrant),
+      });
+    }
+    return items;
+  }
+
   protected isGuestSubmitting(id: string): boolean {
     return this.submittingGuestIds().has(id);
   }
@@ -359,20 +676,29 @@ export class MeetingRegistrantsDisplayComponent {
     return [data['email'], data['org_name']].filter(Boolean).join(' · ');
   }
 
-  private submitGuest(formValue: Record<string, unknown>, occurrenceId: string | null, stagedGuestId?: string): void {
+  private submitGuest(
+    formValue: Record<string, unknown>,
+    occurrenceId: string | null,
+    stagedGuestId?: string,
+    onAdded?: (added: MeetingRegistrant) => void
+  ): void {
+    const addsSelf = this.isSelfRegistrant(formValue as unknown as MeetingRegistrant);
+    if (addsSelf && this.selfInvite.isPending(this.meeting().id)) return;
     if (stagedGuestId) {
       this.submittingGuestIds.update((ids) => new Set([...ids, stagedGuestId]));
     } else {
       if (this.submitting()) return;
       this.submitting.set(true);
     }
+    const meetingId = this.meeting().id;
+    const contextKey = this.registrantContextKey();
     const createData = {
-      ...this.meetingService.stripMetadata(this.meeting().id, formValue as unknown as MeetingRegistrantWithState),
+      ...this.meetingService.stripMetadata(meetingId, formValue as unknown as MeetingRegistrantWithState),
       ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
     };
 
-    this.meetingService
-      .addMeetingRegistrants(this.meeting().id, [createData])
+    const request = () => this.meetingService.addMeetingRegistrants(meetingId, [createData]);
+    defer(() => (addsSelf ? this.selfInvite.withPendingInvite$(meetingId, request) : request()))
       .pipe(take(1))
       .subscribe({
         next: (response) => {
@@ -385,6 +711,8 @@ export class MeetingRegistrantsDisplayComponent {
           } else {
             this.submitting.set(false);
           }
+          // Keep the write alive, but do not update a destroyed or repurposed drawer.
+          if (this.destroyRef.destroyed || this.registrantContextKey() !== contextKey) return;
           if (response.summary.successful > 0) {
             this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Guest added successfully' });
             if (stagedGuestId) {
@@ -392,34 +720,40 @@ export class MeetingRegistrantsDisplayComponent {
             } else {
               this.addRegistrantForm.reset();
             }
+            // Use the real UID from the API response so immediate removal calls the backend correctly.
+            // Retain submitted identity when the write response omits fields; returned fields win.
+            const returned: Partial<MeetingRegistrant> = response.successes[0] ?? {};
+            const optimistic: MeetingRegistrant = {
+              meeting_id: meetingId,
+              email: (formValue['email'] as string) ?? '',
+              first_name: (formValue['first_name'] as string) ?? '',
+              last_name: (formValue['last_name'] as string) ?? '',
+              host: (formValue['host'] as boolean) ?? false,
+              job_title: (formValue['job_title'] as string) || null,
+              org_name: (formValue['org_name'] as string) || null,
+              linkedin_profile: (formValue['linkedin_profile'] as string) || null,
+              occurrence_id: occurrenceId,
+              org_is_member: false,
+              org_is_project_member: false,
+              avatar_url: (formValue['avatar_url'] as string) || null,
+              username: (formValue['username'] as string) || null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              type: 'direct',
+              invite_accepted: null,
+              attended: null,
+              ...returned,
+              uid: returned.uid?.trim() || `optimistic-${crypto.randomUUID()}`,
+            };
+            const addsSelf = this.isSelfRegistrant(optimistic);
+            // A confirmed self-invite supersedes a prior removal, including normal Add Guest submissions.
+            if (addsSelf) this.meetingService.clearRemovedRegistration(meetingId);
             if (this.externallyManaged()) {
+              if (addsSelf) this.optimisticRegistrants.update((list) => [...list, optimistic]);
               this.refreshRequested.emit(response.summary.successful);
             } else {
-              // Use the real UID from the API response so immediate removal calls the backend correctly.
-              // Fall back to a locally-constructed row if the response has no successes detail.
-              const optimistic: MeetingRegistrant = response.successes[0] ?? {
-                uid: `optimistic-${crypto.randomUUID()}`,
-                meeting_id: this.meeting().id,
-                email: (formValue['email'] as string) ?? '',
-                first_name: (formValue['first_name'] as string) ?? '',
-                last_name: (formValue['last_name'] as string) ?? '',
-                host: (formValue['host'] as boolean) ?? false,
-                job_title: (formValue['job_title'] as string) || null,
-                org_name: (formValue['org_name'] as string) || null,
-                linkedin_profile: (formValue['linkedin_profile'] as string) || null,
-                occurrence_id: occurrenceId,
-                org_is_member: false,
-                org_is_project_member: false,
-                avatar_url: null,
-                username: null,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                type: 'direct',
-                invite_accepted: null,
-                attended: null,
-              };
               const meeting = this.meeting();
-              const baseCount = resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length;
+              const baseCount = (resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length) + this.confirmedCountAdjustment();
               const nextAdditionalCount = this.additionalRegistrantsCount() + response.summary.successful;
               this.optimisticRegistrants.update((list) => [...list, optimistic]);
               this.additionalRegistrantsCount.set(nextAdditionalCount);
@@ -427,6 +761,8 @@ export class MeetingRegistrantsDisplayComponent {
               this.totalCountChange.emit(baseCount + nextAdditionalCount);
               this.refresh$.next(true);
             }
+            if (addsSelf) this.selfAdded.emit(optimistic);
+            onAdded?.(optimistic);
           } else {
             this.messageService.add({
               severity: 'error',
@@ -457,28 +793,37 @@ export class MeetingRegistrantsDisplayComponent {
       this.optimisticRegistrants.update((list) => list.filter((r) => r.uid !== uid));
       return;
     }
+    const meetingId = this.meeting().id;
+    const contextKey = this.registrantContextKey();
     this.deleting.set(true);
     this.meetingService
-      .deleteMeetingRegistrants(this.meeting().id, [uid])
+      .deleteMeetingRegistrants(meetingId, [uid])
       .pipe(take(1))
       .subscribe({
         next: (response) => {
           this.deleting.set(false);
+          if (this.destroyRef.destroyed || this.registrantContextKey() !== contextKey) return;
           if (response.summary.successful > 0) {
             this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Guest removed successfully' });
             // Remove the guest from both signals immediately so the UI updates without
             // waiting for the async refetch (works for both managed and self-managed modes).
             this.deletedRegistrantUids.update((uids) => new Set([...uids, uid]));
             this.optimisticRegistrants.update((list) => list.filter((r) => r.uid !== uid));
+            if (this.isSelfRegistrant(registrant)) {
+              const remaining = this.registrants()
+                .filter((row) => this.isSelfRegistrant(row))
+                .map((row) => row.uid);
+              this.selfRemoved.emit({ meeting_id: meetingId, removed_registrant_ids: [uid], remaining_registrant_ids: remaining });
+            }
             if (this.externallyManaged()) {
               this.refreshRequested.emit(-response.summary.successful);
             } else {
               const meeting = this.meeting();
-              const baseCount = resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length;
+              const baseCount = (resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length) + this.confirmedCountAdjustment();
               // Capture the current total before decrementing additionalRegistrantsCount so we subtract
               // response.summary.successful exactly once from the emitted total, not twice.
               const currentTotal = baseCount + this.additionalRegistrantsCount();
-              const nextAdditionalCount = Math.max(0, this.additionalRegistrantsCount() - response.summary.successful);
+              const nextAdditionalCount = this.additionalRegistrantsCount() - response.summary.successful;
               this.additionalRegistrantsCount.set(nextAdditionalCount);
               this.registrantsCountChange.emit(nextAdditionalCount);
               this.totalCountChange.emit(Math.max(0, currentTotal - response.summary.successful));
@@ -506,6 +851,7 @@ export class MeetingRegistrantsDisplayComponent {
             filter((refresh) => refresh && !this.pastMeeting() && !this.externallyManaged()),
             switchMap(() => {
               this.internalLoading.set(true);
+              this.internalLoadFailed.set(false);
               // Resolve RSVPs against the occurrence the card / drawer is representing, so a
               // per-occurrence `single` RSVP doesn't shadow the series-wide `all` RSVP on
               // unrelated occurrences. Falls back to newest RSVP when no occurrence is
@@ -521,24 +867,14 @@ export class MeetingRegistrantsDisplayComponent {
               const allDatesOnly = includeRsvp && !!meeting.recurrence && !occurrenceId;
               const registrantsObservable = useMyEndpoint
                 ? this.meetingService.getMyMeetingRegistrants(meeting.id, includeRsvp, occurrenceId, false, allDatesOnly)
-                : this.meetingService.getMeetingRegistrants(meeting.id, includeRsvp, occurrenceId, false, undefined, true, allDatesOnly);
+                : this.meetingService.getMeetingRegistrants(meeting.id, includeRsvp, occurrenceId, this.showAddRegistrant(), undefined, true, allDatesOnly);
 
               return registrantsObservable.pipe(
-                catchError(() => of([])),
-                map((registrants) => registrants.sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]),
-                tap((registrants) => {
-                  // The fetch returned a fresh list — any pending deletions are now reflected.
-                  this.deletedRegistrantUids.set(new Set());
-                  const meeting = this.meeting();
-                  const resolvedBaseCount = resolveMeetingBaseCount(meeting);
-                  const hasBackendBaseCount = resolvedBaseCount !== undefined;
-                  const baseCount = hasBackendBaseCount ? resolvedBaseCount : (registrants?.length ?? 0);
-                  const fetchedAdditional = Math.max(0, (registrants?.length ?? 0) - baseCount);
-                  const additionalCount = hasBackendBaseCount ? Math.max(fetchedAdditional, this.additionalRegistrantsCount()) : fetchedAdditional;
-                  this.additionalRegistrantsCount.set(additionalCount);
-                  this.registrantsCountChange.emit(additionalCount);
-                  this.totalCountChange.emit(baseCount + additionalCount);
+                catchError(() => {
+                  this.internalLoadFailed.set(true);
+                  return of([]);
                 }),
+                map((registrants) => registrants.sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]),
                 finalize(() => this.internalLoading.set(false))
               );
             })
@@ -616,9 +952,22 @@ export class MeetingRegistrantsDisplayComponent {
     );
   }
 
+  /** Falls back to the email, then `guest`, for a registrant with no name. */
+  private initHostToggleLabels(): Signal<Map<string, string>> {
+    return computed(
+      () =>
+        new Map(
+          this.registrants().map((registrant) => {
+            const name = [registrant.first_name, registrant.last_name].filter(Boolean).join(' ') || registrant.email || 'guest';
+            return [registrant.uid, registrant.host ? `Remove ${name} as meeting host` : `Make ${name} a meeting host`] as const;
+          })
+        )
+    );
+  }
+
   private initRegistrants(): Signal<MeetingRegistrant[]> {
     return computed(() => {
-      const deletedUids = this.deletedRegistrantUids();
+      const deletedUids = new Set([...this.deletedRegistrantUids(), ...this.confirmedRemovedRegistrantIds()]);
       let list: MeetingRegistrant[];
       if (this.externallyManaged()) {
         const seed = this.initialRegistrants() ?? [];
@@ -626,19 +975,24 @@ export class MeetingRegistrantsDisplayComponent {
       } else {
         list = this.internalRegistrants().filter((r) => !deletedUids.has(r.uid));
       }
-      // Deduplicate optimistic rows against the fetched list. Use UID for real registrants (exact
-      // match regardless of email normalisation) and email as a fallback for optimistic-* rows
-      // where the API UID isn't known yet.
-      const fetchedUids = new Set<string>(list.map((r) => r.uid).filter((uid): uid is string => !!uid));
-      const fetchedEmails = new Set<string>(list.map((r) => r.email?.trim().toLowerCase()).filter((e): e is string => !!e));
-      const pending = this.optimisticRegistrants().filter((r) => {
-        if (r.uid && !r.uid.startsWith('optimistic-')) {
-          return !fetchedUids.has(r.uid);
-        }
-        const email = r.email?.trim().toLowerCase();
-        return !email || !fetchedEmails.has(email);
-      });
-      return pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
+      const self = this.selfGuest();
+      if (self && this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id)) {
+        list = list.filter((row) => !isMeetingSelfGuestListed(self, [row]));
+      }
+      // Real UIDs match exactly; UID-less hints reconcile only to the same email and invitation scope.
+      const optimistic = this.optimisticRegistrants().filter((row) => !deletedUids.has(row.uid));
+      const confirmed = this.unacknowledgedConfirmedRegistrants().filter((row) => !deletedUids.has(row.uid));
+      const pending = filterUnindexedMeetingRegistrants([...optimistic, ...filterUnindexedMeetingRegistrants(confirmed, optimistic)], list);
+      const merged = pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
+
+      const overrides = this.hostOverrides();
+      if (!overrides.size) {
+        return merged;
+      }
+
+      return merged
+        .map((r) => (overrides.has(r.uid) ? { ...r, host: overrides.get(r.uid) as boolean } : r))
+        .sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[];
     });
   }
 
@@ -672,15 +1026,25 @@ export class MeetingRegistrantsDisplayComponent {
       const query = this.searchQuery().toLowerCase().trim();
       const rsvp = this.rsvpFilter();
       const group = this.groupFilter();
-      const organizerOnly = this.organizerFilter() === 'organizer';
+      const roleFilter = this.organizerFilter();
+      const roles = this.guestRoles();
 
       return registrants
-        .map((registrant) => ({
-          ...registrant,
-          attendanceStatus: getRegistrantAttendanceStatus(registrant, {
-            inviteResponsesEnabled: this.inviteResponsesEnabled(),
-          }),
-        }))
+        .map((registrant) => {
+          const options = { inviteResponsesEnabled: this.inviteResponsesEnabled() };
+          const attendanceStatus = getRegistrantAttendanceStatus(registrant, options);
+          return {
+            ...registrant,
+            attendanceStatus,
+            statusLabel: getRegistrantStatusLabel(registrant, options),
+            statusClass: this.statusLabelClass(attendanceStatus),
+            displayName: registrantDisplayName(registrant),
+            canResend: this.canResendInvite(registrant),
+            canToggleHost: this.canToggleHost(registrant),
+            canRemove: this.canRemoveGuest(registrant),
+            hasActions: this.hasRowActions(registrant),
+          };
+        })
         .filter((registrant) => {
           // Search filter
           const matchesSearch =
@@ -708,9 +1072,10 @@ export class MeetingRegistrantsDisplayComponent {
           // Group (Committee) filter
           const matchesGroup = group === 'all' || registrant.committee_uid === group;
 
-          const matchesOrganizer = !organizerOnly || !!registrant.host;
+          // Role filter: `host` is hosts who are not organizers, as an organizer is a host already.
+          const matchesRole = roleFilter === 'all' || roles.get(registrant.uid) === roleFilter;
 
-          return matchesSearch && matchesRsvp && matchesGroup && matchesOrganizer;
+          return matchesSearch && matchesRsvp && matchesGroup && matchesRole;
         });
     });
   }
@@ -723,7 +1088,74 @@ export class MeetingRegistrantsDisplayComponent {
         invitation: this.invitationFilter(),
         group: this.groupFilter(),
       });
-      return this.organizerFilter() === 'organizer' ? filtered.filter((participant) => participant.host) : filtered;
+      const roleFilter = this.organizerFilter();
+      const roles = this.guestRoles();
+      return roleFilter === 'all' ? filtered : filtered.filter((participant) => roles.get(participant.uid) === roleFilter);
     });
+  }
+
+  /** One quiet lookup per drawer, made only once it is open and can add guests, so closed drawers on a list of cards make none. */
+  private initSelfGuest(): Signal<MeetingSelfGuest | null> {
+    return toSignal(
+      toObservable(computed(() => this.visible() && this.showAddRegistrant() && !this.pastMeeting())).pipe(
+        filter(Boolean),
+        take(1),
+        switchMap(() => this.userService.getMeetingSelfGuest())
+      ),
+      { initialValue: null }
+    );
+  }
+
+  /**
+   * Whether to offer "Add myself".
+   * @description Hidden while the list loads or after its fetch failed, since it may be incomplete, and
+   * once the user is on it under a known email or their LFID. Also hidden while the host shows the user
+   * as a guest ({@link selfInvited}), since the list can lag a save made outside this drawer. A profile
+   * without both names is never offered: the add payload requires them.
+   */
+  private initCanAddSelf(): Signal<boolean> {
+    return computed(() => {
+      const self = this.selfGuest();
+      if (
+        this.selfInvited() ||
+        this.selfInvitePending() ||
+        (this.selfInvite.isPending(this.meeting().id) && !this.selfSubmitting()) ||
+        !self?.first_name ||
+        !self.last_name ||
+        this.pastMeeting() ||
+        !this.showAddRegistrant() ||
+        this.registrantsLoading() ||
+        (this.externallyManaged() ? this.initialRegistrantsFailed() : this.internalLoadFailed())
+      ) {
+        return false;
+      }
+
+      return !isMeetingSelfGuestListed(self, this.registrants());
+    });
+  }
+
+  private initGuestRoles(): Signal<Map<string, MeetingGuestRole>> {
+    return computed(() => {
+      const organizerKeys = buildMeetingOrganizerKeys((this.meeting() as Meeting).organizers);
+      const people: (MeetingHostCandidate & { uid: string })[] = this.pastMeeting() ? this.pastMeetingParticipants() : this.registrants();
+
+      return new Map(people.map((person) => [person.uid, resolveMeetingGuestRole(person, organizerKeys)] as const));
+    });
+  }
+
+  /** Identity matching does not choose an invitation address, so known session identity stays usable after a preference lookup fails. */
+  private isSelfRegistrant(registrant: Pick<MeetingHostCandidate, 'email' | 'username'>): boolean {
+    const self = this.selfGuest();
+    if (self && isMeetingSelfGuestListed(self, [registrant])) return true;
+    return isMeetingGuestViewer(registrant, {
+      email: this.userService.user()?.email ?? null,
+      username: this.userService.viewerUsername(),
+    });
+  }
+
+  /** Real UIDs persist across row copies; a UID-less acknowledgement belongs only to that saved write. */
+  private unacknowledgedConfirmedRegistrants(rows = this.confirmedRegistrants()): MeetingRegistrant[] {
+    const known = this.acknowledgedConfirmedRegistrants();
+    return rows.filter((row) => !known.includes(row) && (!row.uid || row.uid.startsWith('optimistic-') || !known.some((saved) => saved.uid === row.uid)));
   }
 }

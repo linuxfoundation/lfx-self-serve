@@ -62,6 +62,7 @@ import {
   buildOrgCacheKey,
   buildPerUserOrgKey,
   ValkeyService,
+  withFoundationParticipatingOrgsCache,
 } from './valkey.service';
 
 import { logger } from './logger.service';
@@ -371,6 +372,43 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     expect(JSON.stringify(payload)).not.toContain(ORG_UID);
   });
 
+  it('stores the foundation participating-companies roster past the 1 MiB default, under its own namespace cap', async () => {
+    setMock.mockResolvedValue('OK');
+    getMock.mockResolvedValue(null);
+    const roster = { padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES + 1024) };
+
+    await withFoundationParticipatingOrgsCache(
+      'synthetic-foundation',
+      'roster',
+      ['12mo'],
+      async () => roster,
+      () => true
+    );
+
+    expect(setMock).toHaveBeenCalledTimes(1);
+    expect(setMock.mock.calls[0][0]).toContain(`${VALKEY_CACHE.FOUNDATION_PARTICIPATING_ORGS_NAMESPACE}:synthetic-foundation:roster:`);
+  });
+
+  it('reads a stored foundation roster between 1 and 4 MiB back as a hit, so the warehouse is not re-queried', async () => {
+    const roster = { padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES + 1024) };
+    setMock.mockResolvedValue('OK');
+    getMock.mockResolvedValueOnce(null);
+    await withFoundationParticipatingOrgsCache(
+      'synthetic-foundation',
+      'roster',
+      ['12mo'],
+      async () => roster,
+      () => true
+    );
+
+    getMock.mockResolvedValueOnce(setMock.mock.calls[0][1]);
+    const fetcher = vi.fn(async () => ({ padding: 'fresh' }));
+    const hit = await withFoundationParticipatingOrgsCache('synthetic-foundation', 'roster', ['12mo'], fetcher, () => true);
+
+    expect(hit).toEqual(roster);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   const cappedNamespaces = Object.keys(VALKEY_CACHE.MAX_VALUE_BYTES_BY_NAMESPACE);
 
   it.each(cappedNamespaces)('writes AND reads back a value over the global cap but under the %s namespace cap', async (namespace) => {
@@ -410,7 +448,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
   it('lets a per-sub-resource cap take precedence over a per-namespace cap for the same family', async () => {
     // No shipped namespace has both kinds of entry, so this installs a namespace cap for the
     // Snowflake family for this test only (restored in `finally`) — precedence can't be driven
-    // through the real tables. `people-all:v4` keeps its 6 MiB sub-resource cap; `projects:v7` has
+    // through the real tables. `people-all:v8` keeps its 6 MiB sub-resource cap; `projects:v7` has
     // none and falls through to the 8 MiB namespace cap.
     const tables = VALKEY_CACHE as { MAX_VALUE_BYTES_BY_NAMESPACE: Readonly<Record<string, number>> };
     const original = tables.MAX_VALUE_BYTES_BY_NAMESPACE;
@@ -419,7 +457,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
       const between = { padding: 'x'.repeat(7 * 1_048_576) };
       setMock.mockResolvedValue('OK');
 
-      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, 'people-all:v4:365d:all')!, between, 60)).resolves.toBe(false);
+      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, 'people-all:v8:365d:all')!, between, 60)).resolves.toBe(false);
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, UNCAPPED_SUB_RESOURCE)!, between, 60)).resolves.toBe(true);
     } finally {
       tables.MAX_VALUE_BYTES_BY_NAMESPACE = original;
@@ -433,7 +471,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     // a REAL table entry rather than one installed here: `MAX_VALUE_BYTES_BY_SUBRESOURCE` is a
     // release decision, not a runtime knob, and a test that overwrote it would be changing
     // production behaviour for every later test in the run.
-    const key = buildOrgCacheKey(ACCOUNT_ID, 'people-all:v4:all:all')!;
+    const key = buildOrgCacheKey(ACCOUNT_ID, 'people-all:v8:all:all')!;
     const serialized = JSON.stringify(oversized);
     expect(Buffer.byteLength(serialized, 'utf8')).toBeGreaterThan(VALKEY_CACHE.MAX_VALUE_BYTES);
     setMock.mockResolvedValue('OK');
@@ -467,27 +505,41 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     setMock.mockResolvedValue('OK');
 
     for (const subResource of [
-      'people-all:v4:365d:all',
-      'people-all:v4:roster',
+      'people-all:v8:365d:all',
+      'people-all:v8:roster',
       'people-contributors:v5:all:all',
-      'people-former:v3:all:all',
-      'people-event-attendees:v2',
-      'people-trainees:v4:all',
+      'people-former:v4:all:all',
+      'people-event-attendees:v7:730d:all',
+      'people-trainees:v10:all',
     ]) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(true);
     }
     for (const subResource of [
       UNCAPPED_SUB_RESOURCE,
       'people-all:v3:365d',
+      'people-all:v5:365d:all:all',
+      'people-all:v6:365d:all',
+      'people-all:v7:365d:all',
+      'people-all:v4:roster',
+      'people-former:v3:all:all:all',
+      'people-event-attendees:v3:730d:all:all',
+      'people-event-attendees:v4:730d:all:all',
+      'people-event-attendees:v5:730d:verified:all',
+      'people-event-attendees:v6:730d:verified:all',
+      'people-unclassified:v2:all:all',
       'people-contributors:v3:all:all',
       'people-contributors:v4:all:all',
-      'people-contributors-roles:v1:all:all',
+      'people-contributors-roles:v2:all:all:exclude',
       'people-detail-roles:v1:person-one:365d',
       'maintainer-roles:v1',
       'foundations:v2',
       'memberships-projects:v3:cncf',
       'people-trainees:v2',
       'people-trainees:v3:all',
+      'people-trainees:v4:all',
+      'people-trainees:v5:all',
+      'people-trainees:v6:all',
+      'people-trainees:v8:all',
     ]) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(false);
     }

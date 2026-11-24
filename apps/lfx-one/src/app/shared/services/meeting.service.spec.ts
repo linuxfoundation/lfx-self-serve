@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import type {
   BatchRegistrantOperationResponse,
@@ -121,6 +121,29 @@ describe('MeetingService registrant payload mapping', () => {
       expect(body).not.toHaveProperty('committee_uid');
     });
 
+    it('forwards the LFID and avatar of the guest added through "Add myself" (#5798)', () => {
+      const self = registrant({
+        type: 'direct',
+        committee_uid: null,
+        username: 'dreyes',
+        avatar_url: 'https://avatars.acme-motors.example/dreyes.png',
+        selfAdded: true,
+      });
+
+      const body = service.stripMetadata(MEETING_UID, self);
+
+      expect(body.username).toBe('dreyes');
+      expect(body.avatar_url).toBe('https://avatars.acme-motors.example/dreyes.png');
+      expect(body).not.toHaveProperty('selfAdded');
+    });
+
+    it('keeps the LFID and avatar off every other guest, including a group member with a username', () => {
+      const body = service.stripMetadata(MEETING_UID, registrant({ username: 'dreyes', avatar_url: 'https://avatars.acme-motors.example/dreyes.png' }));
+
+      expect(body).not.toHaveProperty('username');
+      expect(body).not.toHaveProperty('avatar_url');
+    });
+
     it('drops the response-only committee enrichment rather than echoing it back', () => {
       const body = service.stripMetadata(
         MEETING_UID,
@@ -155,6 +178,28 @@ describe('MeetingService registrant payload mapping', () => {
 
       expect(body.meeting_id).toBe(MEETING_UID);
       expect(body).not.toHaveProperty('committee_uid');
+    });
+
+    // Upstream treats `user_id` as immutable: leaving it out of an update reads as a change and fails with
+    // "user_id cannot be changed". The index record carries it, so it goes back as stored.
+    it('sends back the user_id a listed guest is linked to, and omits it when there is none', () => {
+      expect(service.getChangedFields(registrant({ state: 'modified', user_id: 'user-123' })).user_id).toBe('user-123');
+      expect(service.getChangedFields(registrant({ state: 'modified' }))).not.toHaveProperty('user_id');
+    });
+
+    // ITX rejects an update whose `username` differs from the stored one, and a blank counts as different when a
+    // username is stored. It is checked after `user_id`, so it matters once that is sent.
+    it('sends back the username a listed guest has, and omits it when there is none', () => {
+      expect(service.getChangedFields(registrant({ state: 'modified', username: 'guest-a' })).username).toBe('guest-a');
+      expect(service.getChangedFields(registrant({ state: 'modified' }))).not.toHaveProperty('username');
+      expect(service.getChangedFields(registrant({ state: 'modified', username: null }))).not.toHaveProperty('username');
+    });
+
+    // The avatar is derived from the linked user and ITX does not compare it.
+    it('never sends the avatar a listed guest carries', () => {
+      const body = service.getChangedFields(registrant({ state: 'modified', avatar_url: 'https://avatars.example/guest-a.png' }));
+
+      expect(body).not.toHaveProperty('avatar_url');
     });
   });
 });
@@ -215,6 +260,16 @@ describe('MeetingService.removeMyMeetingRegistration', () => {
 
     expect(del).toHaveBeenCalledTimes(1);
     expect(del.mock.calls[0][0]).toBe(`/api/meetings/${MEETING_UID}/registrants/self`);
+  });
+
+  it('sends the saved UID as an optional query on the body-less self DELETE', () => {
+    service.removeMyMeetingRegistration(MEETING_UID, 'meeting-card', 'saved/self&uid').subscribe();
+
+    const options = del.mock.calls[0][1];
+    expect(options.params.get('registrant_id')).toBe('saved/self&uid');
+    expect(options.params.toString()).toContain('saved/self%26uid');
+    expect(options.body).toBeUndefined();
+    expect(options.headers.get('x-lfx-removal-source')).toBe('meeting-card');
   });
 
   it.each(['meeting-card', 'meeting-join'] as const)('names the %s surface in the removal-source header', (source) => {
@@ -289,6 +344,41 @@ describe('MeetingService removed-registration state', () => {
 
     service.clearRemovedRegistration('mtg-1');
     expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(false);
+  });
+
+  it('keeps a removal while only the removed registrant is listed, and lifts it for a new one', () => {
+    service.markRegistrationRemoved('mtg-1', ['reg-old']);
+
+    service.clearRemovalIfReinvited('mtg-1', ['reg-old']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+
+    service.clearRemovalIfReinvited('mtg-1', ['reg-old', 'reg-new']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(false);
+  });
+
+  it('keeps the uids of an earlier partial removal when a retry finishes it', () => {
+    service.rememberRemovedRegistrants('mtg-1', ['reg-a']);
+    service.markRegistrationRemoved('mtg-1', ['reg-b']);
+
+    service.clearRemovalIfReinvited('mtg-1', ['reg-a', 'reg-b']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+  });
+
+  it('remembers the first removed registrant after a re-invite and a second removal', () => {
+    service.markRegistrationRemoved('mtg-1', ['reg-a']);
+    service.clearRemovalIfReinvited('mtg-1', ['reg-b']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(false);
+
+    service.markRegistrationRemoved('mtg-1', ['reg-b']);
+    service.clearRemovalIfReinvited('mtg-1', ['reg-a']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+  });
+
+  it('keeps a removal recorded without registrant uids', () => {
+    service.markRegistrationRemoved('mtg-1');
+
+    service.clearRemovalIfReinvited('mtg-1', ['reg-new']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
   });
 });
 
@@ -677,5 +767,221 @@ describe('MeetingService.getMeetingDetail propagation-lag retry (#501)', () => {
     // No retry schedule applied: a single subscription, failing immediately — a genuine denial
     // (or a stale/unrelated id) must not pay the propagation-lag retry delay.
     expect(attempts).toBe(1);
+  });
+});
+
+describe('MeetingService project-lens meeting fetchers (#4964)', () => {
+  let service: MeetingService;
+  let get: ReturnType<typeof vi.fn>;
+  let put: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    get = vi.fn();
+    put = vi.fn();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get, put } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('getUpcomingMeetingsByProject emits the page data scoped by project tag', async () => {
+    get.mockReturnValue(of({ data: [{ id: 'm-1' }], page_token: undefined }));
+
+    await expect(firstValueFrom(service.getUpcomingMeetingsByProject('project-1'))).resolves.toEqual([{ id: 'm-1' }]);
+    expect(get.mock.calls[0][0]).toBe('/api/meetings');
+    expect(get.mock.calls[0][1].params.get('tags')).toBe('project_uid:project-1');
+  });
+
+  it('getPastMeetingsByProject emits the page data scoped by project tag and sorted by name', async () => {
+    get.mockReturnValue(of({ data: [{ id: 'pm-1' }], page_token: undefined }));
+
+    await expect(firstValueFrom(service.getPastMeetingsByProject('project-1'))).resolves.toEqual([{ id: 'pm-1' }]);
+    expect(get.mock.calls[0][0]).toBe('/api/past-meetings');
+    expect(get.mock.calls[0][1].params.get('tags')).toBe('project_uid:project-1');
+    expect(get.mock.calls[0][1].params.get('sort')).toBe('name_desc');
+  });
+
+  it.each([
+    ['getUpcomingMeetingsByProject', '/api/meetings', 'Failed to load project meetings:'],
+    ['getPastMeetingsByProject', '/api/past-meetings', 'Failed to load past project meetings:'],
+  ] as const)('%s logs and propagates an HTTP failure instead of emitting an empty list', async (method, url, message) => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const failure = new HttpErrorResponse({ status: 502, url });
+    get.mockReturnValue(throwError(() => failure));
+
+    await expect(firstValueFrom(service[method]('project-1'))).rejects.toBe(failure);
+    expect(errorLog).toHaveBeenCalledExactlyOnceWith(message, failure);
+  });
+
+  describe('roll-up (GH-5566)', () => {
+    const params = (): HttpParams => get.mock.calls[0][1].params;
+
+    it('sends the roll-up root and only the filters that are set', async () => {
+      get.mockReturnValue(of({ data: [], page_token: undefined }));
+
+      await firstValueFrom(
+        service.getMeetingsByProjectPaginated('root', undefined, undefined, undefined, undefined, {
+          includeSubProjects: true,
+          projectUids: ['a', 'b'],
+          committeeUid: 'c',
+          groupType: 'Board',
+          pageSize: 1000,
+        })
+      );
+
+      expect(params().get('root_project_uid')).toBe('root');
+      expect(params().get('project_uids')).toBe('a,b');
+      expect(params().get('committee_uid')).toBe('c');
+      expect(params().get('group_type')).toBe('Board');
+      expect(params().get('page_size')).toBe('1000');
+      expect(params().has('tags')).toBe(false);
+    });
+
+    it('omits unset filters and keeps a single project scoped by tag without the roll-up', async () => {
+      get.mockReturnValue(of({ count: 0 }));
+
+      await firstValueFrom(service.getPastMeetingsCountByProject('root', { includeSubProjects: true }));
+      await firstValueFrom(service.getPastMeetingsCountByProject('project-1', { projectUids: ['ignored'] }));
+
+      const [rollup, single] = get.mock.calls.map((call) => call[1].params as HttpParams);
+      expect(rollup.keys()).toEqual(['root_project_uid']);
+      expect(single.keys()).toEqual(['tags']);
+      expect(single.get('tags')).toBe('project_uid:project-1');
+    });
+
+    it('sends the root as the only project for the default root-only view', async () => {
+      get.mockReturnValue(of({ data: [], page_token: undefined }));
+
+      await firstValueFrom(
+        service.getMeetingsByProjectPaginated('root', undefined, undefined, undefined, undefined, { includeSubProjects: true, rootOnly: true })
+      );
+
+      expect(params().get('project_uids')).toBe('root');
+    });
+
+    it('reads the saved project selection for a root, and treats a failed read as nothing saved', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      get.mockReturnValueOnce(of({ project_uids: ['a'] }));
+      get.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+
+      await expect(firstValueFrom(service.getRollupProjectsPreference('root'))).resolves.toEqual(['a']);
+      await expect(firstValueFrom(service.getRollupProjectsPreference('root'))).resolves.toBeNull();
+      expect(get.mock.calls[0][0]).toBe('/api/meetings/rollup-projects');
+      expect(params().get('root_project_uid')).toBe('root');
+    });
+
+    it('saves the project selection for a root, and reports a failed save without throwing', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      put.mockReturnValueOnce(of({ project_uids: [] }));
+      put.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+
+      await expect(firstValueFrom(service.saveRollupProjectsPreference('root', []))).resolves.toBe(true);
+      await expect(firstValueFrom(service.saveRollupProjectsPreference('root', ['a']))).resolves.toBe(false);
+      expect(put).toHaveBeenNthCalledWith(1, '/api/meetings/rollup-projects', { root_project_uid: 'root', project_uids: [] });
+    });
+
+    it('fetches the filter options for a root, and offers none when that fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      get.mockReturnValueOnce(of({ projects: [{ uid: 'p', name: 'P', slug: 'p' }], groups: [], complete: true }));
+      get.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+
+      await expect(firstValueFrom(service.getRollupFilterOptions('root'))).resolves.toEqual({
+        projects: [{ uid: 'p', name: 'P', slug: 'p' }],
+        groups: [],
+        complete: true,
+      });
+      await expect(firstValueFrom(service.getRollupFilterOptions('root'))).resolves.toEqual({ projects: [], groups: [], complete: false });
+      expect(get.mock.calls[0][0]).toBe('/api/meetings/rollup-filters');
+      expect(params().get('root_project_uid')).toBe('root');
+    });
+  });
+});
+
+describe('MeetingService project meetings home fetchers', () => {
+  let service: MeetingService;
+  let get: ReturnType<typeof vi.fn>;
+  const params = (call = 0): HttpParams => get.mock.calls[call][1].params;
+
+  beforeEach(() => {
+    get = vi.fn();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('reads every upcoming page at the max page size with the home fields', async () => {
+    get.mockReturnValueOnce(of({ data: [{ id: 'm-1' }], page_token: 'next' })).mockReturnValueOnce(of({ data: [{ id: 'm-2' }], page_token: undefined }));
+
+    await expect(firstValueFrom(service.getProjectMeetingsForHome('project-1'))).resolves.toEqual([{ id: 'm-1' }, { id: 'm-2' }]);
+    expect(get.mock.calls[0][0]).toBe('/api/meetings');
+    expect(params().get('tags')).toBe('project_uid:project-1');
+    expect(params().get('page_size')).toBe('1000');
+    expect(params().get('include')).toBe('viewer_rsvp,attendance');
+    expect(params(1).get('page_token')).toBe('next');
+  });
+
+  it('propagates a failed upcoming page so the page can show its error', async () => {
+    const failure = new HttpErrorResponse({ status: 502 });
+    get.mockReturnValue(throwError(() => failure));
+
+    await expect(firstValueFrom(service.getProjectMeetingsForHome('project-1'))).rejects.toBe(failure);
+  });
+
+  it('reads one past page with search, cursor and home fields, keyed by occurrence and without unkeyed rows', async () => {
+    get.mockReturnValue(
+      of({
+        data: [
+          { id: 'past-uid-1', meeting_and_occurrence_id: 'm-1:1' },
+          { id: 'past-uid-2', meeting_and_occurrence_id: undefined },
+        ],
+        page_token: 'next',
+      })
+    );
+
+    await expect(firstValueFrom(service.getProjectPastMeetingsForHome('project-1', 'weekly', 'cursor'))).resolves.toEqual({
+      meetings: [{ id: 'm-1:1', meeting_and_occurrence_id: 'm-1:1' }],
+      pageToken: 'next',
+    });
+    expect(get.mock.calls[0][0]).toBe('/api/past-meetings');
+    expect(params().get('sort')).toBe('name_desc');
+    expect(params().get('include')).toBe('artifacts,attendance');
+    expect(params().get('include_viewer_attendance')).toBe('true');
+    expect(params().get('name')).toBe('weekly');
+    expect(params().get('page_token')).toBe('cursor');
+    expect(params().get('page_size')).toBe('50');
+  });
+
+  it('leaves out search and cursor when there are none', async () => {
+    get.mockReturnValue(of({ data: [], page_token: undefined }));
+
+    await firstValueFrom(service.getProjectPastMeetingsForHome('project-1', ''));
+
+    expect(params().has('name')).toBe(false);
+    expect(params().has('page_token')).toBe(false);
+    expect(params().has('filters')).toBe(false);
+  });
+
+  it('sends the roll-up filters and query-service filters it is given', async () => {
+    get.mockReturnValue(of({ data: [], page_token: undefined }));
+
+    await firstValueFrom(
+      service.getProjectPastMeetingsForHome(
+        'project-1',
+        '',
+        undefined,
+        undefined,
+        { includeSubProjects: true, projectUids: ['project-2'], committeeUid: 'c-1', groupType: 'Working Group' },
+        ['meeting_type:Board']
+      )
+    );
+
+    expect(params().get('root_project_uid')).toBe('project-1');
+    expect(params().get('project_uids')).toBe('project-2');
+    expect(params().get('committee_uid')).toBe('c-1');
+    expect(params().get('group_type')).toBe('Working Group');
+    expect(params().getAll('filters')).toEqual(['meeting_type:Board']);
   });
 });

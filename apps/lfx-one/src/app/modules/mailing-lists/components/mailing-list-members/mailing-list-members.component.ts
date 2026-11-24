@@ -12,14 +12,14 @@ import { SelectChipComponent, SelectChipOption } from '@components/select-chip/s
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { FullNamePipe } from '@pipes/full-name.pipe';
-import { MAILING_LIST_MEMBER_LABEL } from '@lfx-one/shared/constants';
+import { GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS, MAILING_LIST_MEMBER_LABEL } from '@lfx-one/shared/constants';
 import { MailingListMemberDeliveryMode, MailingListMemberModStatus } from '@lfx-one/shared/enums';
 import { GroupsIOMailingList, MailingListMember, UpdateMailingListMemberRequest } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap, take } from 'rxjs';
 
 import { ManageMemberModalComponent } from '../manage-member-modal/manage-member-modal.component';
 
@@ -60,6 +60,7 @@ export class MailingListMembersComponent {
   public members = signal<MailingListMember[]>([]);
   public loading = signal<boolean>(true);
   public error = signal<boolean>(false);
+  public deletingUid = signal<string | null>(null);
 
   // Computed
   public memberCount = computed(() => this.members().length);
@@ -114,7 +115,7 @@ export class MailingListMembersComponent {
 
   public deleteMember(member: MailingListMember): void {
     const ml = this.mailingList();
-    if (!ml) return;
+    if (!ml || this.deletingUid() !== null) return;
 
     const memberName = this.fullNamePipe.transform(member);
     const listName = ml.title || ml.group_name;
@@ -127,26 +128,31 @@ export class MailingListMembersComponent {
       acceptButtonStyleClass: 'p-button-sm p-button-danger',
       rejectButtonStyleClass: 'p-button-sm p-button-secondary',
       accept: () => {
-        this.mailingListService.deleteMember(ml.uid, member.uid).subscribe({
-          next: () => {
-            // Remove from local state
-            const updatedMembers = this.members().filter((m) => m.uid !== member.uid);
-            this.members.set(updatedMembers);
-            this.messageService.add({
-              severity: 'success',
-              summary: 'Success',
-              detail: `${this.memberLabel.singular} removed successfully`,
-            });
-          },
-          error: (err) => {
-            console.error('Failed to delete member', err);
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Error',
-              detail: `Failed to remove ${this.memberLabel.singular.toLowerCase()}`,
-            });
-          },
-        });
+        this.deletingUid.set(member.uid);
+
+        this.mailingListService
+          .deleteMember(ml.uid, member.uid)
+          .pipe(finalize(() => this.deletingUid.set(null)))
+          .subscribe({
+            next: () => {
+              // Remove from local state
+              const updatedMembers = this.members().filter((m) => m.uid !== member.uid);
+              this.members.set(updatedMembers);
+              this.messageService.add({
+                severity: 'success',
+                summary: 'Success',
+                detail: `${this.memberLabel.singular} removed successfully`,
+              });
+            },
+            error: (err) => {
+              console.error('Failed to delete member', err);
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: `Failed to remove ${this.memberLabel.singular.toLowerCase()}`,
+              });
+            },
+          });
       },
     });
   }
@@ -214,6 +220,7 @@ export class MailingListMembersComponent {
           this.error.set(false);
 
           return this.mailingListService.getMembers(ml.uid).pipe(
+            map((members) => members.filter((m) => !GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS.includes(m.email?.toLowerCase() ?? ''))),
             catchError(() => {
               this.messageService.add({
                 severity: 'error',

@@ -22,7 +22,7 @@ import {
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab, stubMenteeApplications } from './helpers/mentee-profile.helper';
+import { MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab, stubMenteeApplications } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -99,10 +99,6 @@ async function fillRegistrationForm(page: Page): Promise<void> {
 }
 
 test.describe('Mentee registration — save', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('a valid form saves the profile, toasts success and goes to the Overview', async ({ page }) => {
     await stubMenteeApplications(page, 200, JSON.stringify({ data: [], total: 0 }));
     const saveBodies = await stubRegisterFlow(page, { saveStatus: 204 });

@@ -1,0 +1,60 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Soft frame over the modal shadow; in SCSS because Tailwind reads a list ending in a bare var() as a colour.
+:host {
+  box-shadow:
+    0 0 0 1px var(--ui-neutral-alpha-300),
+    0 0 3px 2px var(--ui-neutral-alpha-200),
+    0 0 10px 4px var(--ui-neutral-alpha-100),
+    0 0 16px 6px var(--ui-neutral-alpha-50),
+    var(--ui-shadow-modal);
+}
+
+// The sheet is on its way out: it takes no more clicks.
+:host(.is-leaving) {
+  pointer-events: none;
+}
+
+// Slides in from its edge and back out past it; none under reduced motion.
+@media (prefers-reduced-motion: no-preference) {
+  :host(.is-right) {
+    animation: drawer-in-right var(--ui-duration-slow) var(--ui-ease);
+  }
+
+  :host(.is-left) {
+    animation: drawer-in-left var(--ui-duration-slow) var(--ui-ease);
+  }
+
+  :host(.is-leaving.is-right) {
+    animation: drawer-out-right var(--ui-duration-base) var(--ui-ease-standard) forwards;
+  }
+
+  :host(.is-leaving.is-left) {
+    animation: drawer-out-left var(--ui-duration-base) var(--ui-ease-standard) forwards;
+  }
+}
+
+@keyframes drawer-in-right {
+  from {
+    transform: translateX(calc(100% + 24px));
+  }
+}
+
+@keyframes drawer-in-left {
+  from {
+    transform: translateX(calc(-100% - 24px));
+  }
+}
+
+@keyframes drawer-out-right {
+  to {
+    transform: translateX(calc(100% + 24px));
+  }
+}
+
+@keyframes drawer-out-left {
+  to {
+    transform: translateX(calc(-100% - 24px));
+  }
+}

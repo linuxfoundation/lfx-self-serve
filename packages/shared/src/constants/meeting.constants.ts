@@ -15,6 +15,9 @@ import { lfxColors } from './colors.constants';
 /** Every valid RSVP answer; used to reject an acknowledgement whose answer is missing or unrecognised. */
 export const RSVP_RESPONSES: readonly RsvpResponse[] = ['accepted', 'maybe', 'declined'];
 
+/** Gaps between bounded post-invite feed refreshes: 1s, 5s and 15s after a successful add or explicit retry. */
+export const MEETING_SELF_INVITE_RECONCILIATION_DELAYS_MS = [1000, 4000, 10000] as const;
+
 /**
  * Service-account usernames/emails that own `created_by` on system-created meetings
  * (e.g. Zoom webhook events). These are not real people and must never be shown as
@@ -419,7 +422,7 @@ export const MEETING_COMPOSER_OCCURRENCE_SECTIONS = ['details-access', 'date-sch
  * @description Sent with the self-removal request and logged by the BFF so removals can be broken
  * down by where they came from. A value outside this list is logged as `unknown`.
  */
-export const MEETING_REMOVAL_SOURCES = ['meeting-card', 'meeting-join', 'email-link'] as const;
+export const MEETING_REMOVAL_SOURCES = ['meeting-card', 'meeting-join', 'email-link', 'meetings-home'] as const;
 
 /**
  * Feature rows the composer preview lists, in display order.
@@ -438,19 +441,10 @@ export const MEETING_COMPOSER_PREVIEW_FEATURES: MeetingComposerPreviewFeature[] 
 ).map(({ control, label }) => ({ control, label, icon: MEETING_FEATURE_BY_KEY[control].icon }));
 
 /**
- * Toast key for the composer's post-save confirmation.
- * @description Its own key so the action-bearing create toast renders through the composer's template
- * rather than the app-wide `p-toast`.
- */
-export const MEETING_COMPOSER_TOAST_KEY = 'meeting-composer-toast';
-
-/**
- * Where the composer's post-create toast renders.
- * @description Not the app-wide top-right slot. Two independently positioned `p-toast` containers in the
- * same corner overlap rather than stack, and the composer's own partial-save warning is emitted unkeyed
- * — through the app-wide container — immediately before this success message, so the success toast could
- * cover the warning that matters more. Bottom-right also suits a sticky, action-bearing toast, which is
- * conventionally a snackbar slot.
+ * Where the composer's post-create uikit toast renders.
+ * @description Not the app-wide top-right `p-toast` slot, where the composer's own partial-save warning
+ * is emitted immediately before this success message, so the success toast could cover the warning that
+ * matters more. Bottom-right also suits an action-bearing toast, which is conventionally a snackbar slot.
  */
 export const MEETING_COMPOSER_TOAST_POSITION = 'bottom-right';
 
@@ -576,13 +570,6 @@ export const RECORDING_DEPENDENCY_NOTES = {
  * @description String format used by Zoom API: '2,3,4,5,6' where 1=Sunday, 2=Monday, etc.
  */
 export const WEEKDAY_CODES = '2,3,4,5,6';
-
-/**
- * Time rounding interval in minutes
- * @description Meeting start times are rounded to the nearest 15-minute interval
- * @example 2:37 PM becomes 2:45 PM, 3:50 PM becomes 4:00 PM
- */
-export const TIME_ROUNDING_MINUTES = 15;
 
 /**
  * Default meeting platform
@@ -870,18 +857,10 @@ export const PUBLIC_REGISTRATION_FIELD_LABELS = {
 export const MIN_CUSTOM_DURATION = 5;
 
 /**
- * Upper bound for a custom duration on the pre-v2 screens, in minutes (8 hours)
- * @description The reschedule-occurrence dialog's cap. Kept at 8 hours so flag-off screens don't
- * change while the meeting v2 composer, behind its feature flag, uses {@link MAX_MEETING_DURATION}.
- */
-export const MAX_CUSTOM_DURATION = 480;
-
-/**
  * Upper bound for a meeting duration, in minutes (10 hours)
  * @description Matches the meeting service's own `duration` maximum (`Maximum(600)` in
- * lfx-v2-meeting-service `design/itx_types.go`) and what PCC allows. Used by the meeting v2 composer
- * and by the BFF occurrence-update check, which the composer's single-occurrence edit also calls —
- * pre-v2 clients stop at {@link MAX_CUSTOM_DURATION} before reaching it.
+ * lfx-v2-meeting-service `design/itx_types.go`) and what PCC allows. Used by the meeting composer,
+ * the reschedule-occurrence dialog and the BFF occurrence-update check.
  */
 export const MAX_MEETING_DURATION = 600;
 
@@ -949,6 +928,24 @@ export const LATEST_PAST_MEETINGS_FETCH_SIZE = 10;
  * filter. Five is the row count surfaced by the dashboard Last Meeting / past-meetings card.
  */
 export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;
+
+/** Max concurrent query-service batches when flagging recordings or AI summaries on the Me-lens past feed. */
+export const PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY = 5;
+
+/** `include` value that makes GET /api/user/past-meetings and /api/past-meetings add `has_recording` / `recording_share_url` / `has_ai_summary`. */
+export const USER_PAST_MEETINGS_INCLUDE_ARTIFACTS = 'artifacts';
+
+/** `include` value that makes the user and project meeting lists (upcoming and past) add organizer attendance summaries. */
+export const USER_MEETINGS_INCLUDE_ATTENDANCE = 'attendance';
+
+/** `include` value that makes GET /api/meetings add the viewer's `my_rsvp` / `my_rsvps` / `my_registrant_ids`, as the user feed always does. */
+export const MEETINGS_INCLUDE_VIEWER_RSVP = 'viewer_rsvp';
+
+/** Meetings per query-service request when loading organizer attendance summaries. */
+export const MEETING_ATTENDANCE_BATCH_SIZE = 25;
+
+/** Max concurrent attendance batches per feed request. */
+export const MEETING_ATTENDANCE_CONCURRENCY = 4;
 
 /**
  * Max concurrent per-meeting recording fetches for dashboard "Recordings Available" counts.
@@ -1075,96 +1072,29 @@ export const RECONCILIATION_BOT_NAME_PATTERN =
  */
 export const NOTES_ATTACHMENT_CATEGORY: AttachmentCategory = 'Notes';
 
-// ============================================================================
-// Pre-v2 Meeting Wizard Constants
-// ============================================================================
-// Consumed only by the pre-v2 create/edit wizard (`meeting-manage` and its step components), which
-// renders when `MEETING_V2_ENABLED_FLAG` is off. Kept as one block so that retiring the pre-v2
-// wizard — once meetings v2 has been validated and the flag removed — is a single deletion rather
-// than a hunt through this file. Restored verbatim from pre-v2 `main`; do not "modernize" these to
-// match the v2 equivalents above, or the two paths stop behaving identically.
+/** How often the meeting page re-reads the wall clock so time-gated UI (join window, ended) updates without a reload. */
+export const MEETING_CLOCK_TICK_MS = 5_000;
+
+/** Router navigation state that sends a `/meetings/:id` visit to the legacy page when the redesigned one can't serve it. */
+export const MEETING_PAGE_LEGACY_STATE = 'meetingPageLegacy';
+
+/** Copy of the meeting page's cancelled notes, kept in one place so it can change without touching the page. `{date}` is the cancelled date. */
+export const MEETING_PAGE_CANCELLED_COPY = {
+  occurrence: 'This occurrence on {date} was cancelled',
+  series: 'All occurrences of this meeting were cancelled',
+} as const;
 
 /**
- * Available meeting features that can be enabled/disabled
- * @description Feature toggles for recording, transcripts, AI features, etc. The v2 composer reads
- * {@link MEETING_FEATURE_BY_KEY} instead, which is keyed so the live preview can look a feature up
- * by its form-control name; this flat array is the shape the pre-v2 step template iterates.
+ * How many upcoming meetings the dashboard meetings card lets a user page through, starting from the
+ * meeting it opens on. Fixed rather than a setting so there is nothing to store per user.
  */
-export const MEETING_FEATURES = [
-  {
-    key: 'recording_enabled',
-    icon: 'fa-light fa-video',
-    title: 'Enable Recording',
-    description: 'Record the meeting for those who cannot attend live',
-    recommended: true,
-    color: lfxColors.blue[500],
-  },
-  {
-    key: 'zoom_ai_enabled',
-    icon: 'fa-light fa-microchip-ai',
-    title: 'AI Meeting Summary',
-    description: 'Generate key takeaways and action items automatically',
-    recommended: true,
-    color: lfxColors.emerald[500],
-  },
-  {
-    key: 'transcript_enabled',
-    icon: 'fa-light fa-file-lines',
-    title: 'Generate Transcripts',
-    description: 'Automatically create searchable text transcripts',
-    recommended: false,
-    color: lfxColors.violet[500],
-  },
-  {
-    key: 'youtube_upload_enabled',
-    icon: 'fa-light fa-upload',
-    title: 'YouTube Auto-upload',
-    description: "Automatically publish recordings to your project's YouTube channel",
-    recommended: false,
-    color: lfxColors.red[500],
-  },
-];
+export const DASHBOARD_UPCOMING_MEETINGS_PAGE_LIMIT = 5;
 
-/**
- * Step titles for the meeting creation/edit stepper
- * @description Array of human-readable titles for each step in the meeting form
- */
-export const MEETING_STEP_TITLES = ['Meeting Type', 'Meeting Details', 'Platform & Features', 'Resources & Links', 'Invite Guests'];
+/** Height in px past which the meeting details drawer collapses the agenda behind Show more. */
+export const MEETING_DETAILS_AGENDA_COLLAPSED_PX = 200;
 
-/**
- * Total number of steps in the meeting form
- * @description Must match the length of MEETING_STEP_TITLES array
- * @example 5 steps: Meeting Type → Details → Platform → Resources → Guests
- */
-export const TOTAL_STEPS = MEETING_STEP_TITLES.length;
+/** Primary materials the meeting details drawer lists before Show more. */
+export const MEETING_DETAILS_VISIBLE_FILES = 5;
 
-/**
- * PrimeNG stepper panel value for the Meeting Details step (1-based)
- * @description Used when navigating back to Meeting Details from a later step
- */
-export const MEETING_DETAILS_STEP = 2;
-
-/**
- * Default meeting type when none is selected
- * @description Fallback value for meeting type field
- */
-export const DEFAULT_MEETING_TYPE = 'None';
-
-/**
- * Scroll offset in pixels for stepper navigation
- * @description Distance to offset when auto-scrolling to stepper component
- */
-export const STEPPER_SCROLL_OFFSET = 50;
-
-/**
- * Meeting duration options for dropdown
- * @description Standard duration options with custom option
- */
-export const MEETING_DURATION_OPTIONS = [
-  { label: '15 minutes', value: 15 },
-  { label: '30 minutes', value: 30 },
-  { label: '60 minutes', value: 60 },
-  { label: '90 minutes', value: 90 },
-  { label: '120 minutes', value: 120 },
-  { label: 'Custom...', value: 'custom' },
-];
+/** How recent an attachment change must be for the materials to show as Updated. */
+export const MEETING_MATERIALS_UPDATED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;

@@ -1,0 +1,18 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Enter-only fade and scale for dropdown, menu and tooltip panels, as in the library; gated on reduced motion.
+@mixin enter($selector) {
+  @media (prefers-reduced-motion: no-preference) {
+    #{$selector} {
+      animation: ui-pop var(--ui-duration-fast) var(--ui-ease-standard);
+    }
+  }
+
+  @keyframes ui-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+  }
+}

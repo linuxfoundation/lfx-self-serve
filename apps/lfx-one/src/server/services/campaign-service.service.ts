@@ -4,8 +4,15 @@
 import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
-  CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE,
+  CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_SEND_STAGES,
+  LF_OWNED_EMAIL_LINK_DOMAINS,
+  CAMPAIGN_FUNNEL_STAGE_OPTIONS,
+  CAMPAIGN_SERVICE_MULTI_CAMPAIGN_CAPABLE_PLATFORMS,
+  CAMPAIGN_TACTIC_OPTIONS,
   CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN,
+  CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN,
   CAMPAIGN_GOALS,
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
@@ -35,12 +42,13 @@ import {
   JOB_LOST_MESSAGE,
   MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+  LINKEDIN_AD_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
 import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
 import { withAdoptedMarker } from '@lfx-one/shared/utils/campaign-optimize.utils';
-import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
+import { emailLinkDestinations, escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -52,7 +60,6 @@ import type {
   CampaignBriefPersistResult,
   CampaignBudgetUpdateParams,
   CampaignDeliveryType,
-  CampaignEmailStage,
   CampaignEventDetails,
   CampaignGoal,
   CampaignIndexDoc,
@@ -65,6 +72,9 @@ import type {
   CampaignNegativeKeywordsResult,
   CampaignPlatform,
   CampaignPlatformResult,
+  CampaignCreateAnother,
+  CampaignFunnelStage,
+  CampaignTactic,
   CampaignProgramType,
   CampaignServiceAccountMonitor,
   CampaignServiceAudience,
@@ -72,9 +82,18 @@ import type {
   CampaignServiceCampaignMetrics,
   CampaignServiceCampaignResolution,
   CampaignServiceAccessibleAccounts,
+  CampaignServiceGoogleAdsConversionActions,
   CampaignServiceGoogleAdsGeoTargetSuggestions,
+  CampaignServiceGoogleAdsAudiences,
+  CampaignServiceGoogleAdsUserLists,
+  CampaignServiceMetaCustomAudiences,
+  CampaignServiceMetaLeadForms,
+  CampaignServiceLinkedInAdsCreateAccount,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
+  CampaignSendWorkflowRequest,
+  CampaignSendWorkflowResult,
+  CampaignServiceSendWorkflowResult,
   CampaignServiceCreativeAsset,
   CampaignServiceCreativeAssetList,
   CampaignServiceCreativeAssetPlan,
@@ -98,10 +117,12 @@ import type {
   CreativeSlotAssignment,
   CreativeSlotGap,
   GenerateEmailCopyResult,
+  GoogleAdsAudienceReadType,
   HubSpotEmailSearchResult,
   HubSpotMarketingEmail,
   KeywordActionPlatform,
   LinkedInBriefCopy,
+  LinkedInCreateAccountRead,
   ListAudiencesResult,
   LinkedInCreativeVariant,
   MetaAdVariant,
@@ -111,7 +132,10 @@ import type {
   RedditAdVariant,
   RedditBriefCopy,
   StoredCreativeAsset,
+  CampaignServiceMetaTargetingSearch,
+  MetaTargetingSearchType,
 } from '@lfx-one/shared/interfaces';
+import { MULTI_CAMPAIGN_PLATFORMS_ENV } from '../constants/campaign-multi.constants';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -155,6 +179,12 @@ interface CampaignServiceJobPollResponse {
     /** Best-effort steps of a successful create that did not apply (email channel: a hero that could not be added). */
     warnings?: string[];
     error?: string;
+    /** lfx-v2-campaign-service#453: an existing campaign came back instead of a new one. */
+    reused?: boolean;
+    slot_version?: number;
+    variant?: string;
+    funnel_stage?: CampaignFunnelStage;
+    tactic?: CampaignTactic;
   }[];
   error?: string;
 }
@@ -563,6 +593,51 @@ export function canCreateWithGoogleCriteria(): boolean {
 }
 
 /**
+ * The platforms "create another campaign" is offered on (#4983, "ss-3"): the deployment's
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS`, narrowed to the platforms campaign-service
+ * accepts `new_version` and the stage/tactic labels for. Empty while the create cutover is dark, since
+ * only that path can carry the request.
+ */
+export function multiCampaignPlatforms(): string[] {
+  if (!cutoverOwnsCreate()) return [];
+  const listed = (process.env[MULTI_CAMPAIGN_PLATFORMS_ENV] ?? '')
+    .split(',')
+    .map((platform) => platform.trim().toLowerCase())
+    .filter((platform) => platform !== '');
+  return CAMPAIGN_SERVICE_MULTI_CAMPAIGN_CAPABLE_PLATFORMS.filter((platform) => listed.includes(platform));
+}
+
+/**
+ * Why a "create another" request cannot go upstream as it stands, or `null` when it can (#4983).
+ *
+ * The BFF refuses it rather than forwarding, for the cases campaign-service would refuse with a 400 and
+ * one it would not: a platform outside the deployment's list. An overlapping create must carry ONLY
+ * platforms that are being created again, each with the slot version the operator saw.
+ */
+export function createAnotherRefusal(platforms: readonly string[], another: CampaignCreateAnother): string | null {
+  const allowed = multiCampaignPlatforms();
+  const unsupported = platforms.filter((platform) => !allowed.includes(platform));
+  if (unsupported.length > 0) {
+    return `Another campaign can't be created on ${unsupported.join(', ')} yet. Create it on its own, without the other platforms, or create it again later.`;
+  }
+  if (!CAMPAIGN_FUNNEL_STAGE_OPTIONS.some((option) => option.id === another.funnelStage)) {
+    return 'Choose a funnel stage for the new campaign.';
+  }
+  if (another.tactic !== undefined && !CAMPAIGN_TACTIC_OPTIONS.some((option) => option.id === another.tactic)) {
+    return 'Choose a tactic from the list for the new campaign.';
+  }
+  const expected = another.expectedSlotVersions ?? {};
+  const keys = Object.keys(expected);
+  const exactKeys = keys.length === platforms.length && platforms.every((platform) => keys.includes(platform));
+  // 0 is valid: "the caller saw none in the slot" (campaign-service `expected_slot_versions`).
+  const validVersions = Object.values(expected).every((version) => Number.isInteger(version) && version >= 0);
+  if (!exactKeys || !validVersions) {
+    return 'This page could not tell which campaigns already exist, so nothing was created. Reload and try again.';
+  }
+  return null;
+}
+
+/**
  * Whether a Microsoft create may carry `microsoftConfig.startDate` / `endDate`.
  *
  * Needs the campaign-service create path to serve the create AND the Microsoft-schedule flag.
@@ -586,10 +661,12 @@ export function canCreateMetaInstagramDsa(): boolean {
 }
 
 /**
- * Whether this deployment's create path can carry Google `audienceSegments` at all — the
- * deployment half of `CampaignListResult.googleAudienceSegmentsEnabled`, whose other half (a ROOT
- * caller) the controller decides. Only the campaign-service create path reads the key: the legacy
- * creator never does, and would create the campaign without the user lists while reporting success.
+ * Whether this deployment's create path can carry Google `audienceSegments` or
+ * `campaignAudienceSegments` at all — the deployment half of
+ * `CampaignListResult.googleAudienceSegmentsEnabled`, whose other half
+ * (`global_marketing_ops` on the project) the controller decides. Only the campaign-service
+ * create path reads the key: the legacy creator never does, and would create the campaign
+ * without the user lists while reporting success.
  */
 export function canCreateWithAudienceSegments(): boolean {
   return cutoverOwnsCreate();
@@ -678,6 +755,152 @@ export function canUseMetaCreativeAssets(): boolean {
  */
 export function canUseLinkedInCreativeAssets(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInAssets);
+}
+
+/**
+ * campaign-service's `get-linkedin-ads-create-account` answer (#581), checked and camel-cased. An unreadable
+ * default fails with 502 rather than naming an account the create does not use; a grant whose id is not the
+ * bare account number `adAccountId` takes, the default repeated, or a repeat is dropped rather than offered.
+ */
+export function toLinkedInCreateAccount(payload: CampaignServiceLinkedInAdsCreateAccount, operation: string): LinkedInCreateAccountRead {
+  if (typeof payload?.account_id !== 'string' || !LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(payload.account_id) || !Array.isArray(payload.selectable_accounts)) {
+    throw new MicroserviceError('campaign-service returned an unreadable LinkedIn create account.', 502, 'BAD_GATEWAY', {
+      operation,
+      service: 'campaign_service_client',
+    });
+  }
+  const label = (value: unknown, accountId: string): string => (typeof value === 'string' && value.trim() !== '' ? value : accountId);
+  const grants = payload.selectable_accounts
+    .filter(
+      (a, i, all) =>
+        typeof a?.account_id === 'string' &&
+        LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(a.account_id) &&
+        a.account_id !== payload.account_id &&
+        all.findIndex((other) => other?.account_id === a.account_id) === i
+    )
+    .map((a) => ({ accountId: a.account_id, orgId: typeof a.org_id === 'string' ? a.org_id : '', label: label(a.label, a.account_id), isDefault: false }));
+  return {
+    defaultAccount: {
+      accountId: payload.account_id,
+      orgId: typeof payload.org_id === 'string' ? payload.org_id : '',
+      label: label(payload.label, payload.account_id),
+      isDefault: true,
+    },
+    grants,
+    selectionEnabled: payload.account_selection_enabled === true,
+    source: payload.source === 'project' ? 'project' : 'system',
+  };
+}
+
+/**
+ * Whether a LinkedIn create may name its ad account in `linkedInConfig.adAccountId` (#5809), and
+ * whether `GET /api/campaigns/linkedin/create-account` answers.
+ *
+ * Needs the campaign-service create path AND the account-selection flag. The legacy creator reads
+ * the account from the mounted `linkedin.json`, which is unrelated to the project's connection, so
+ * with the cutover dark the field keeps being dropped. Whether a choice is actually offered also
+ * depends on campaign-service (`account_selection_enabled`) and on the caller holding
+ * `global_marketing_ops`; the controller decides those per request.
+ */
+export function canChooseLinkedInAdAccount(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInAccountSelection);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.targeting` (#5905), and whether
+ * `GET /api/campaigns/meta/custom-audiences` answers. Needs the campaign-service create path AND the
+ * audience-targeting flag: the legacy creator never reads the block. Whether the caller may name custom
+ * audiences (`global_marketing_ops`) the controller decides per request.
+ */
+export function canSetMetaAudienceTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaAudienceTargeting);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal` (#5934),
+ * one flag each, each also needing the campaign-service create path: the legacy creator never reads them.
+ */
+export function canSetMetaCallToAction(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaCallToAction);
+}
+export function canSetMetaConversionEvent(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaConversionEvent);
+}
+export function canSetMetaOptimizationGoal(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaOptimizationGoal);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.leadFormId`, and whether `GET /api/campaigns/meta/lead-forms`
+ * answers (#5940). Needs the campaign-service create path AND the lead-form flag: the legacy creator never
+ * reads the form. Whether the caller may use forms (`global_marketing_ops`) the controller decides per request.
+ */
+export function canSetMetaLeadForm(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaLeadForms);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.targeting.interests`, `behaviors` with `workPositions`, and
+ * `locales` (#5904 row 4), one flag each, each also needing the campaign-service create path.
+ */
+export function canSetMetaInterestTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaInterestTargeting);
+}
+export function canSetMetaBehaviorTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaBehaviorTargeting);
+}
+export function canSetMetaLocaleTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaLocaleTargeting);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.targeting.devicePlatforms` and `userOs` (#5904 row 6), one flag each,
+ * each also needing the campaign-service create path: the legacy creator never reads them.
+ */
+export function canSetMetaDeviceTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaDeviceTargeting);
+}
+export function canSetMetaOsTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaOsTargeting);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.adSchedule` and `frequencyCap` (#5904 row 5), one flag each, each also
+ * needing the campaign-service create path: the legacy creator never reads them.
+ */
+export function canSetMetaAdSchedule(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaAdSchedule);
+}
+export function canSetMetaFrequencyCap(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaFrequencyCap);
+}
+/** Whether `GET /api/campaigns/meta/targeting-search` answers: only while interests or behaviors can be sent. */
+export function canSearchMetaTargeting(): boolean {
+  return canSetMetaInterestTargeting() || canSetMetaBehaviorTargeting();
+}
+
+/**
+ * Whether a LinkedIn create may carry `linkedInConfig.targetingProfileEdit` (#5546): the selected
+ * targeting profile with entries removed.
+ *
+ * Needs only the campaign-service create path. campaign-service builds its LinkedIn runtime config
+ * from the `targetingProfiles` the request carries (`internal/dispatch/linkedin.go`), so the
+ * controller can hand it the edited profile. The LEGACY creator reads the mounted ConfigMap and
+ * never this key, so with the cutover dark an edit would be dropped while the create still reported
+ * success.
+ */
+export function canEditLinkedInTargeting(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
+ * Whether a LinkedIn create may carry `linkedInConfig.dailyCapUsd` (#5774), a daily cap beside a
+ * lifetime budget. `cutoverOwnsCreate()` and nothing else, like `canEditLinkedInTargeting`: only
+ * campaign-service sends the cap (linuxfoundation/lfx-v2-campaign-service#607), and the LEGACY
+ * creator would drop it and spend without the cap.
+ */
+export function canSetLinkedInDailyCap(): boolean {
+  return cutoverOwnsCreate();
 }
 
 /**
@@ -903,14 +1126,29 @@ export class CampaignServiceClient {
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
         linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
+        linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
+        linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
+        linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
         twitterCreateEnabled: canCreateTwitter(),
         metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
+        metaAudienceTargetingEnabled: canSetMetaAudienceTargeting(),
+        metaCallToActionEnabled: canSetMetaCallToAction(),
+        metaConversionEventEnabled: canSetMetaConversionEvent(),
+        metaOptimizationGoalEnabled: canSetMetaOptimizationGoal(),
+        metaInterestTargetingEnabled: canSetMetaInterestTargeting(),
+        metaBehaviorTargetingEnabled: canSetMetaBehaviorTargeting(),
+        metaLocaleTargetingEnabled: canSetMetaLocaleTargeting(),
+        metaDeviceTargetingEnabled: canSetMetaDeviceTargeting(),
+        metaOsTargetingEnabled: canSetMetaOsTargeting(),
+        metaAdScheduleEnabled: canSetMetaAdSchedule(),
+        metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
         googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
+        multiCampaignPlatforms: multiCampaignPlatforms(),
       };
     }
 
@@ -973,14 +1211,29 @@ export class CampaignServiceClient {
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
       linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
+      linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
+      linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
+      linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
       twitterCreateEnabled: canCreateTwitter(),
       metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
+      metaAudienceTargetingEnabled: canSetMetaAudienceTargeting(),
+      metaCallToActionEnabled: canSetMetaCallToAction(),
+      metaConversionEventEnabled: canSetMetaConversionEvent(),
+      metaOptimizationGoalEnabled: canSetMetaOptimizationGoal(),
+      metaInterestTargetingEnabled: canSetMetaInterestTargeting(),
+      metaBehaviorTargetingEnabled: canSetMetaBehaviorTargeting(),
+      metaLocaleTargetingEnabled: canSetMetaLocaleTargeting(),
+      metaDeviceTargetingEnabled: canSetMetaDeviceTargeting(),
+      metaOsTargetingEnabled: canSetMetaOsTargeting(),
+      metaAdScheduleEnabled: canSetMetaAdSchedule(),
+      metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
+      multiCampaignPlatforms: multiCampaignPlatforms(),
     };
   }
 
@@ -1278,7 +1531,7 @@ export class CampaignServiceClient {
 
     return brief === null
       ? { status: 'unreadable', briefId: found.brief.id, brief: null, etag: found.etag, approved }
-      : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved };
+      : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved, storedEventName: briefDispatchEventName(found.brief) };
   }
 
   /**
@@ -1321,7 +1574,14 @@ export class CampaignServiceClient {
     // answered at all.
     return brief === null
       ? { status: 'unreadable', briefId: response.data.id, brief: null, etag: readBriefValidator(response), approved }
-      : { status: 'loaded', briefId: response.data.id, brief, etag: readBriefValidator(response), approved };
+      : {
+          status: 'loaded',
+          briefId: response.data.id,
+          brief,
+          etag: readBriefValidator(response),
+          approved,
+          storedEventName: briefDispatchEventName(response.data),
+        };
   }
 
   /**
@@ -1552,7 +1812,16 @@ export class CampaignServiceClient {
       // and the controller re-filters again at the request boundary. If a server-side consumer is
       // ever added, it must not treat this output as vouched.
       const firstButtonUrl = sections.find((section) => section.type === 'button')?.url;
-      const generatedDestinations = typeof firstButtonUrl === 'string' && firstButtonUrl !== '' ? [firstButtonUrl] : [];
+      // The button's own destination, plus the LF-owned domains (#3306). This pass has only the brief
+      // id, not the event page's links, so it cannot tell an extracted CFP or agenda link from an
+      // invented one; it keeps any link on the button's host or an LF-owned domain, and the client
+      // preview and the stage request then narrow that to the event page's own links
+      // (`emailLinkDestinations` with `eventDetails`). A stripped href cannot be put back downstream,
+      // so this first pass must not be the narrower one.
+      const generatedDestinations = emailLinkDestinations(
+        typeof firstButtonUrl === 'string' ? firstButtonUrl : '',
+        LF_OWNED_EMAIL_LINK_DOMAINS.map((domain) => `https://${domain}/`)
+      );
 
       const body = sections
         .filter(
@@ -1591,7 +1860,8 @@ export class CampaignServiceClient {
           // applies no sanitizer of its own, so there is nothing upstream to rely on. An
           // earlier comment in this file claimed an upstream allow-list covered it; that
           // allow-list exists only on the wizard path, which this is not.
-          return stripResourceLoadingHtml(section.html, generatedDestinations);
+          // The button is the only base a relative href may resolve against (#3306).
+          return stripResourceLoadingHtml(section.html, generatedDestinations, typeof firstButtonUrl === 'string' ? firstButtonUrl : '');
         })
         .join('');
       const buttonSection = sections.find((section) => section.type === 'button');
@@ -1644,8 +1914,12 @@ export class CampaignServiceClient {
       // here vouches for nothing by construction and strips every link in a legacy body. The
       // flat shape carries its destination in `ctaUrl`, which is what this branch must judge
       // against, exactly as the sections branch judges against its button url.
-      const legacyDestinations = [legacyText(legacy.ctaUrl)].filter((url) => url !== '');
-      const legacyBody = isLegacyShape ? stripResourceLoadingHtml(legacyText(legacy.body), legacyDestinations) : '';
+      // Widened the same way as `generatedDestinations` above, for the same reason (#3306).
+      const legacyDestinations = emailLinkDestinations(
+        legacyText(legacy.ctaUrl),
+        LF_OWNED_EMAIL_LINK_DOMAINS.map((domain) => `https://${domain}/`)
+      );
+      const legacyBody = isLegacyShape ? stripResourceLoadingHtml(legacyText(legacy.body), legacyDestinations, legacyText(legacy.ctaUrl)) : '';
       const effectiveBody = isLegacyShape ? legacyBody : body;
       const effectiveCta = isLegacyShape ? sanitizeDisplayText(legacyText(legacy.cta)) : cta;
       const effectiveCtaUrl = isLegacyShape ? legacyText(legacy.ctaUrl) : ctaUrl;
@@ -1757,9 +2031,10 @@ export class CampaignServiceClient {
     // Named-optional rather than a sixth positional string[], which would sit next to `platforms`
     // and be silently swappable with it — both are string arrays, so a transposition would type-
     // check and only surface as a wrong refusal. Read only for the Demand Gen check below.
-    opts: { campaignTypes?: string[] } = {}
+    opts: { campaignTypes?: string[]; another?: CampaignCreateAnother } = {}
   ): Promise<CampaignServiceCreateResult> {
     const campaignTypes = opts.campaignTypes;
+    const another = opts.another;
     // CREATE has TWO prerequisites, and neither is an independent switch. Treating them as
     // independent is the difference between a dark cutover and a broken page, because a
     // half-set pair answers `enabled: true` — the one result the controller may NOT fall
@@ -1791,6 +2066,15 @@ export class CampaignServiceClient {
     }
     if (platforms.length === 0) {
       return { enabled: true, jobId: null, error: 'Select at least one platform before creating campaigns.' };
+    }
+
+    // A deliberate "create another" (#4983) is refused here, before anything leaves, when it cannot be
+    // served as asked; see `createAnotherRefusal`. Definite, so the user may simply try again.
+    if (another !== undefined) {
+      const refusal = createAnotherRefusal(platforms, another);
+      if (refusal !== null) {
+        return { enabled: true, jobId: null, error: refusal };
+      }
     }
 
     // A selected platform with no config in the envelope is refused, rather than dispatched.
@@ -1971,7 +2255,22 @@ export class CampaignServiceClient {
         path,
         'POST',
         undefined,
-        { input: { platforms, config } }
+        {
+          input: {
+            platforms,
+            config,
+            // Only on a confirmed "create another" (#4983). Without `new_version` campaign-service treats a
+            // repeat create as a retry and returns the existing campaign, which is the safe default.
+            ...(another === undefined
+              ? {}
+              : {
+                  new_version: true,
+                  expected_slot_versions: another.expectedSlotVersions,
+                  funnel_stage: another.funnelStage,
+                  ...(another.tactic === undefined ? {} : { tactic: another.tactic }),
+                }),
+          },
+        }
       );
       const jobId = response.data?.job_id ?? '';
       if (jobId === '') {
@@ -2024,6 +2323,18 @@ export class CampaignServiceClient {
       }
       const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
       if (definitelyRejected) {
+        // The brief moved since this page read it (#4983): edited and saved in another tab, which
+        // resets it to `draft` and bumps its version. "Please try again" would be wrong here, because
+        // a retry from this tab is refused identically; only a refresh brings back the stored brief.
+        // Matched on the service's own wording and on the two statuses it uses for it, so nothing
+        // else upstream sends is relabelled — see `CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN`.
+        if (
+          error instanceof MicroserviceError &&
+          (error.statusCode === 409 || error.statusCode === 400) &&
+          CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN.test(error.message)
+        ) {
+          return { enabled: true, jobId: null, error: CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE };
+        }
         // The one refusal worth naming: an invalid bid (#3299). Matched on the service's own wording,
         // so nothing else upstream sends is rendered — see `CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN`.
         const biddingRefusal =
@@ -2909,6 +3220,76 @@ export class CampaignServiceClient {
   }
 
   /**
+   * Build ONE HubSpot workflow that sends an already-staged series.
+   *
+   * Upstream does every check that matters -- each brief staged, none on the paid surface, no
+   * repeats, and the source workflow's step counts matching -- because only it can see the briefs
+   * and the workflow. This proxies rather than re-deciding, so the two cannot drift into
+   * disagreeing about what is buildable.
+   *
+   * The result is a NON-IDEMPOTENT create, so a 2xx carrying an unusable body is treated as a
+   * failure rather than reported as a workflow: an operator told it worked, with no link to open,
+   * would go looking in HubSpot for something that may not be there.
+   */
+  public async createSendWorkflow(req: Request, projectSlug: string, body: CampaignSendWorkflowRequest): Promise<CampaignSendWorkflowResult> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A send workflow requires the project.', {
+        operation: 'send_workflow_create',
+        service: 'campaign_service_client',
+      });
+    }
+    const created = await this.microserviceProxy.proxyRequest<CampaignServiceSendWorkflowResult>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/send-workflows`,
+      'POST',
+      undefined,
+      {
+        // WRAPPED in `input`, which is how Goa publishes this request: the design declares one
+        // `input` attribute carrying the whole shape, so a flat body is rejected with
+        // `"input" is missing from body` before any handler runs.
+        input: {
+          // Omitted rather than sent empty when the caller named none: upstream reads ABSENCE as
+          // "use the configured workflow", and an empty string is a value it would try to parse.
+          ...(body.sourceWorkflowUrl && body.sourceWorkflowUrl.trim() !== '' ? { source_workflow_url: body.sourceWorkflowUrl.trim() } : {}),
+          name: body.name,
+          brief_ids: body.briefIds,
+          ...(body.sendDates && body.sendDates.length > 0 ? { send_dates: body.sendDates } : {}),
+        },
+      }
+    );
+    // MAPPED from the wire, not cast to it. Upstream publishes snake_case (`flow_id`, `edit_url`),
+    // and reading camelCase off that body found undefined on every field -- so a workflow that had
+    // ALREADY been created in HubSpot was reported to the operator as a 500, with no link to the
+    // thing that now existed. The proxy types a body without checking it, which is what let the
+    // mismatch compile.
+    //
+    // VALIDATED too, for the reason createHubSpotCampaign below is: `edit_url` is what the
+    // operator needs most, since the workflow is created DISABLED and does nothing until they open
+    // it and turn it on, so a response without one is not a usable success.
+    if (typeof created?.flow_id !== 'string' || created.flow_id.trim() === '' || typeof created?.edit_url !== 'string' || created.edit_url.trim() === '') {
+      // 502: the upstream answered 2xx with a body this layer cannot use -- a gateway failure,
+      // not the caller's mistake and not an unexplained 500.
+      throw new MicroserviceError('The campaign service reported a workflow but returned no usable workflow link.', 502, 'BAD_GATEWAY', {
+        operation: 'send_workflow_create',
+        service: 'campaign_service_client',
+      });
+    }
+    return {
+      flowId: created.flow_id,
+      name: created.name ?? '',
+      editUrl: created.edit_url,
+      sourceFlowId: created.source_flow_id ?? '',
+      ...(created.source_flow_name ? { sourceFlowName: created.source_flow_name } : {}),
+      isEnabled: created.is_enabled ?? false,
+      sendEmailSteps: created.send_email_steps ?? 0,
+      datedSteps: created.dated_steps ?? 0,
+      enrollmentListIds: Array.isArray(created.enrollment_list_ids) ? created.enrollment_list_ids : [],
+      suppressionListIds: Array.isArray(created.suppression_list_ids) ? created.suppression_list_ids : [],
+    };
+  }
+
+  /**
    * Create a portal-wide HubSpot campaign, returning the token when the response carries one.
    *
    * Which portal is the project's connection's, not necessarily the LF's own — see
@@ -3065,30 +3446,76 @@ export class CampaignServiceClient {
   }
 
   /**
-   * The Meta Ads account monitor (`monitor-meta-ads-account`).
+   * The Google Ads account monitor (`monitor-google-ads-account`). Upstream returns only the campaigns
+   * campaign-service recorded for the project, and refuses with a 409 `campaign_account_mismatch` when
+   * one of them was created under a different customer than the one read.
    *
-   * ACCOUNT-scoped, unlike every other read here: `projectSlug` selects whose stored connection
-   * reads the account — the project's OWN only, never the LF system fallback, so a project without
-   * one gets a 404 — and campaign-service refuses an `accountId` that connection is not bound to.
-   * Every campaign the credential sees on the account comes back, not only this project's.
+   * `accountId` UNDEFINED omits `account_id` (#5622, campaign-service #592): upstream then reads the
+   * customer the project's campaigns were created under, through the project's own row when it is
+   * configured for that customer and otherwise the LF system account, and returns it as `account_id`
+   * (empty, with no campaigns, when the project has none). campaign-service before 1.0.36 requires
+   * `account_id` and answers its omission with a 400 `missing_field`.
    *
    * `days` is sent as given: upstream REJECTS a value outside 7–90 rather than clamping, so the
    * caller clamps (the controller does).
    */
-  public async getMetaAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+  public async getGoogleAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string | undefined,
+    days: number
+  ): Promise<CampaignServiceAccountMonitor> {
+    return this.getAccountMonitor(req, 'google-ads', projectSlug, accountId, days);
+  }
+
+  /**
+   * The Meta Ads account monitor (`monitor-meta-ads-account`).
+   *
+   * PROJECT-scoped: only the campaigns campaign-service recorded for the project come back, and a
+   * project with none gets an empty monitor. `accountId` is required upstream (an omitted one is
+   * refused here, before any request). It is read with the project's own connection when that is
+   * configured for it, and otherwise with the LF system credential, which reads only the account it
+   * is configured for (linuxfoundation/lfx-v2-campaign-service#616, from 1.0.37); any other account,
+   * for a project with no usable connection of its own, is a 404.
+   *
+   * `days` is sent as given: upstream REJECTS a value outside 7–90 rather than clamping, so the
+   * caller clamps (the controller does).
+   */
+  public async getMetaAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string | undefined,
+    days: number
+  ): Promise<CampaignServiceAccountMonitor> {
     return this.getAccountMonitor(req, 'meta-ads', projectSlug, accountId, days);
   }
 
   /**
-   * The LinkedIn Ads account monitor (`monitor-linkedin-ads-account`). Same scoping as
-   * `getMetaAdsAccountMonitor`. Its `pacing_pct` is deliberately unrounded upstream.
+   * The LinkedIn Ads account monitor (`monitor-linkedin-ads-account`). Its `pacing_pct` is
+   * deliberately unrounded upstream.
+   *
+   * PROJECT-scoped like Meta's. `accountId` is optional from campaign-service 1.0.37
+   * (linuxfoundation/lfx-v2-campaign-service#628, #5889): omitted, campaign-service reads the account
+   * the project's campaigns were created under, through the LF system credential when the project has
+   * no usable connection of its own, and names it as `account_id` (empty, with no campaigns, when the
+   * project has none recorded). An older campaign-service answers the omission with a 400 `missing_field`.
    */
-  public async getLinkedInAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+  public async getLinkedInAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string | undefined,
+    days: number
+  ): Promise<CampaignServiceAccountMonitor> {
     return this.getAccountMonitor(req, 'linkedin-ads', projectSlug, accountId, days);
   }
 
-  /** The Reddit Ads account monitor (`monitor-reddit-ads-account`). Same scoping as `getMetaAdsAccountMonitor`. */
-  public async getRedditAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+  /** The Reddit Ads account monitor (`monitor-reddit-ads-account`). Same scoping and account rules as `getMetaAdsAccountMonitor`. */
+  public async getRedditAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string | undefined,
+    days: number
+  ): Promise<CampaignServiceAccountMonitor> {
     return this.getAccountMonitor(req, 'reddit-ads', projectSlug, accountId, days);
   }
 
@@ -3188,6 +3615,172 @@ export class CampaignServiceClient {
   }
 
   /**
+   * The enabled conversion actions on the Google Ads account a create for this project uses
+   * (`list-google-ads-conversion-actions`), for the Implement tab's picker (#4991). Upstream answers
+   * only a caller holding `global_marketing_ops` on the path project (lfx-v2-campaign-service#486); a
+   * 503 there includes an account holding more than 500 enabled actions.
+   * Failures are left to the caller, which falls back to the free-text box.
+   */
+  public async listGoogleAdsConversionActions(req: Request, projectSlug: string): Promise<CampaignServiceGoogleAdsConversionActions> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A conversion action read requires the project it belongs to.', {
+        operation: 'list_google_ads_conversion_actions',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceGoogleAdsConversionActions>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/conversion-actions`,
+      'GET'
+    );
+  }
+
+  /**
+   * The LinkedIn ad account a create for this project uses, and the accounts `linkedInConfig.adAccountId`
+   * may name (`get-linkedin-ads-create-account`, linuxfoundation/lfx-v2-campaign-service#581). A database
+   * read on campaign-service: nothing is sent to LinkedIn. Answered on `campaign_manager`. Failures are left
+   * to the caller.
+   */
+  public async getLinkedInAdsCreateAccount(req: Request, projectSlug: string): Promise<CampaignServiceLinkedInAdsCreateAccount> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A LinkedIn ad account read requires the project it belongs to.', {
+        operation: 'get_linkedin_ads_create_account',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInAdsCreateAccount>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/create-account`,
+      'GET'
+    );
+  }
+
+  /**
+   * The user lists on the Google Ads account a create for this project uses (`list-google-ads-user-lists`,
+   * linuxfoundation/lfx-v2-campaign-service#508), for the Implement tab's audience segment picker (#5244).
+   * Upstream answers it on `global_marketing_ops` of the path project, the relation the BFF checks first;
+   * it returns up to 500 lists sorted by name, with `truncated` set when the account holds more.
+   * Failures are left to the caller, which falls back to the typed box.
+   */
+  public async listGoogleAdsUserLists(req: Request, projectSlug: string): Promise<CampaignServiceGoogleAdsUserLists> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A user list read requires the project it belongs to.', {
+        operation: 'list_google_ads_user_lists',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceGoogleAdsUserLists>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/user-lists`,
+      'GET'
+    );
+  }
+
+  /**
+   * The custom audiences (lookalikes included) of the Meta ad account a create for this project uses
+   * (`list-meta-custom-audiences`, linuxfoundation/lfx-v2-campaign-service#550), for the Implement tab's
+   * Meta audience picker (#5905). `q`, when given, keeps names containing it, ignoring case. Upstream answers
+   * it on `global_marketing_ops` of the path project, the relation the BFF checks first; at most 500 sorted by
+   * name, with `truncated`. Failures are left to the caller, which falls back to typed ids.
+   */
+  public async listMetaCustomAudiences(req: Request, projectSlug: string, q?: string): Promise<CampaignServiceMetaCustomAudiences> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A custom audience read requires the project it belongs to.', {
+        operation: 'list_meta_custom_audiences',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceMetaCustomAudiences>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/meta-ads/custom-audiences`,
+      'GET',
+      q === undefined ? undefined : { q }
+    );
+  }
+
+  /**
+   * The Instant Forms of the Facebook Page a Meta create for this project uses (`list-meta-lead-forms`,
+   * linuxfoundation/lfx-v2-campaign-service#550), for the Implement tab's lead form picker (#5940). Every
+   * status is listed, sorted by name. Upstream answers it on `global_marketing_ops` of the path project, the
+   * relation the BFF checks first. Failures are left to the caller.
+   */
+  public async listMetaLeadForms(req: Request, projectSlug: string): Promise<CampaignServiceMetaLeadForms> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A lead form read requires the project it belongs to.', {
+        operation: 'list_meta_lead_forms',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceMetaLeadForms>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/meta-ads/lead-forms`,
+      'GET'
+    );
+  }
+
+  /**
+   * One page of Meta's targeting taxonomy for the Implement tab's detailed-targeting picker (#5904 row 4):
+   * `search-meta-targeting-options` (linuxfoundation/lfx-v2-campaign-service#612), at most 50 options, cached
+   * upstream for an hour per query. Upstream answers it on `campaign_manager` of the path project, with the same
+   * credentials a create uses. A Meta throttle answers 503 and is not retried. Failures are left to the caller.
+   */
+  public async searchMetaTargetingOptions(
+    req: Request,
+    projectSlug: string,
+    type: MetaTargetingSearchType,
+    query: string
+  ): Promise<CampaignServiceMetaTargetingSearch> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A targeting search requires the project it is made for.', {
+        operation: 'search_meta_targeting_options',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceMetaTargetingSearch>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/meta-ads/targeting-search`,
+      'GET',
+      { type, query }
+    );
+  }
+
+  /**
+   * One kind of audience resource on the account a create for this project uses (`list-google-ads-audiences`,
+   * linuxfoundation/lfx-v2-campaign-service#504, #517): Audiences (`type=audience`) for the Implement tab's
+   * Demand Gen audience and Performance Max audience signal pickers (#5244, #5262), or custom audiences,
+   * custom affinity segments or user interests for its Display audience pickers (#5262). `q`, when given,
+   * keeps entries whose name contains it, ignoring case. Upstream answers it on `global_marketing_ops` of the
+   * path project, the relation the BFF checks first; it returns up to 500 usable entries sorted by name, with
+   * `truncated` set when more matched. Failures are left to the caller.
+   */
+  public async listGoogleAdsAudiences(
+    req: Request,
+    projectSlug: string,
+    type: GoogleAdsAudienceReadType = 'audience',
+    q?: string
+  ): Promise<CampaignServiceGoogleAdsAudiences> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'An Audience read requires the project it belongs to.', {
+        operation: 'list_google_ads_audiences',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceGoogleAdsAudiences>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/audiences`,
+      'GET',
+      q === undefined ? { type } : { type, q }
+    );
+  }
+
+  /**
    * The X Ads accounts the project's connection credential can reach (`list-twitter-ads-accounts`,
    * LFXV2-3319) — `listGoogleAdsAccounts`'s X sibling, on the same resolution: a project with no X
    * connection of its own is answered from the LF system credential upstream (`creds.resolve`), so
@@ -3249,10 +3842,11 @@ export class CampaignServiceClient {
     req: Request,
     provider: CampaignServiceMonitorProvider,
     projectSlug: string,
-    accountId: string,
+    accountId: string | undefined,
     days: number
   ): Promise<CampaignServiceAccountMonitor> {
-    if (projectSlug === '' || accountId === '') {
+    // Only Google Ads (#5622) and LinkedIn (#5889) may omit the account; every other monitor reads a named account.
+    if (projectSlug === '' || accountId === '' || (accountId === undefined && provider !== 'google-ads' && provider !== 'linkedin-ads')) {
       throw ServiceValidationError.forField(
         projectSlug === '' ? 'project' : 'accountKey',
         'An account monitor read requires both the project and the account it reads.',
@@ -3265,7 +3859,7 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/connection-${provider}/account-monitor`,
       'GET',
-      { account_id: accountId, days }
+      accountId === undefined ? { days } : { account_id: accountId, days }
     );
   }
 
@@ -4224,6 +4818,46 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
 }
 
 /**
+ * The event name campaign-service composes a create's names from, read off a stored brief the way
+ * `decodeBriefFields` (`internal/dispatch/reddit.go`, v1.0.31) reads it: `event_details`, then `copy`;
+ * in each, the trimmed `eventName`, else the trimmed `name`, else the raw `name`, each only while
+ * nothing earlier has set a value. A blob that is not an object, or whose `eventName`, `name`,
+ * `registrationUrl` or `hsToken` is neither a string nor null, fails Go's decode and is skipped
+ * whole. Keys match ignoring case, as `encoding/json` matches them, and a later key wins.
+ *
+ * Returned untrimmed, as Go keeps it, which differs from trimmed only for a whitespace-only `name`,
+ * a brief upstream then refuses outright. `fromBriefResponse` reads `event_details.name` only, so its
+ * name can differ from this one, and this one is what the Google ad group names are built on.
+ */
+export function briefDispatchEventName(found: Pick<CampaignServiceBrief, 'event_details' | 'copy'>): string {
+  let eventName = '';
+  for (const blob of [found.event_details, found.copy]) {
+    if (blob === undefined) continue;
+    const fields = goBriefFields(blob);
+    if (fields === null) continue;
+    if (eventName === '') eventName = googleAdsTrimSpace(fields.eventName);
+    if (eventName === '') eventName = googleAdsTrimSpace(fields.name);
+    if (googleAdsTrimSpace(eventName) === '') eventName = fields.name;
+  }
+  return eventName;
+}
+
+/** The two name fields of `briefFields` as `json.Unmarshal` fills them, or `null` where it errors. */
+function goBriefFields(blob: unknown): { eventName: string; name: string } | null {
+  const fields = { eventName: '', name: '' };
+  if (blob === null) return fields;
+  if (typeof blob !== 'object' || Array.isArray(blob)) return null;
+  for (const [key, value] of Object.entries(blob as Record<string, unknown>)) {
+    const field = ['eventname', 'name', 'registrationurl', 'hstoken'].find((tag) => tag === key.toLowerCase());
+    if (field === undefined || value === null) continue;
+    if (typeof value !== 'string') return null;
+    if (field === 'eventname') fields.eventName = value;
+    if (field === 'name') fields.name = value;
+  }
+  return fields;
+}
+
+/**
  * Rebuild the UI's brief from a stored one — the exact inverse of `toBriefInput`.
  *
  * Returns `null` for a row this build cannot represent, which the caller reports as
@@ -4337,14 +4971,15 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     // `campaignGoal` above is: this value decides which surface may open the row, so an
     // unrecognised string must read as "no delivery type recorded" (paid, per the field's
     // contract) rather than as a surface matching nothing. Rows predating the field land here too.
-    deliveryType: found.delivery_type === 'email' || found.delivery_type === 'paid-marketing' ? found.delivery_type : undefined,
+    deliveryType: CAMPAIGN_DELIVERY_TYPES.find((d) => d.id === found.delivery_type)?.id,
     // Same shape as the line above, deliberately: `typeof` first, then membership. Relying on
     // `includes` alone to reject `undefined` works, but only by accident of `Array.includes`
     // returning false for it — and this is the presence-vs-value boundary this feature already got
     // wrong once. An absent stage and the empty string are different things upstream (`''` is the
     // PAID brief's real stage), so the check that distinguishes them should be explicit.
-    emailStage:
-      typeof found.stage === 'string' && CAMPAIGN_EMAIL_STAGES.includes(found.stage as CampaignEmailStage) ? (found.stage as CampaignEmailStage) : undefined,
+    // Either send surface's vocabulary: a survey brief's stage names its asset, and dropping it
+    // here restored the row with no stage -- the identity it is stored under.
+    emailStage: typeof found.stage === 'string' ? CAMPAIGN_SEND_STAGES.find((stage) => stage === found.stage) : undefined,
   };
 }
 
@@ -4846,6 +5481,12 @@ export function adaptJobPollResponse(response: CampaignServiceJobPollResponse): 
       hubspotUrl: r.hubspot_url,
       ...(warnings.length > 0 ? { warnings } : {}),
       error: r.error,
+      // lfx-v2-campaign-service#453. Copied only when sent, so an older service's result is unchanged.
+      ...(r.reused === true ? { reused: true } : {}),
+      ...(typeof r.slot_version === 'number' ? { slotVersion: r.slot_version } : {}),
+      ...(typeof r.variant === 'string' && r.variant !== '' ? { variant: r.variant } : {}),
+      ...(r.funnel_stage ? { funnelStage: r.funnel_stage } : {}),
+      ...(r.tactic ? { tactic: r.tactic } : {}),
     };
   });
 

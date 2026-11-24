@@ -16,6 +16,7 @@ import {
 import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminDeclinePendingResponse,
+  MentorshipAdminProgramListOptions,
   MentorshipAdminMenteesExport,
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
@@ -70,6 +71,7 @@ import {
   MENTORSHIP_APPLICATIONS_PATH,
   MENTORSHIP_ME_PROGRAMS_PATH,
   MENTORSHIP_PROGRAMS_PATH,
+  MENTORSHIP_PROJECTS_PATH,
 } from '../constants';
 import { ConflictError, MicroserviceError } from '../errors';
 import {
@@ -95,6 +97,7 @@ import {
 } from '../helpers/mentorship-enroll.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
 import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask, toMentorshipAdminMenteesExportRow } from '../helpers/mentorship-program-application.helper';
+import { readMentorshipProgramSubmitter } from '../helpers/mentorship-program-submitter.helper';
 
 import { logger } from './logger.service';
 import { MentorshipService } from './mentorship.service';
@@ -111,26 +114,11 @@ export class MentorshipAdminService {
    * (`PUT /me`) and retries, as on the mentor and mentee pages. A caller still not provisioned after that, or one
    * not provisioned while impersonating (which never provisions), has no programs.
    */
-  public async getPrograms(
-    req: Request,
-    options: { search?: string; status?: MentorshipProgramStatus; offset: number; limit: number }
-  ): Promise<MentorshipProgramsResponse> {
+  public async getPrograms(req: Request, options: MentorshipAdminProgramListOptions): Promise<MentorshipProgramsResponse> {
     logger.debug(req, 'mentorship_admin_get_programs', 'Loading administered mentorship programs', { status: options.status });
 
-    let upstream: MentorshipUpstreamListResponse<MentorshipUpstreamAdministeredProgram>;
     try {
-      upstream = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamAdministeredProgram>>(
-        this.microserviceProxy,
-        req,
-        MENTORSHIP_ME_PROGRAMS_PATH,
-        'GET',
-        {
-          search: escapeMentorshipSearch(options.search),
-          status: options.status?.replace('-', '_'),
-          limit: options.limit,
-          offset: options.offset,
-        }
-      );
+      return await this.readProgramList(req, 'mentorship_admin_get_programs', MENTORSHIP_ME_PROGRAMS_PATH, options);
     } catch (error) {
       if (isMentorshipNotProvisionedError(error)) {
         logger.warning(req, 'mentorship_admin_get_programs', 'Caller has no mentorship record; returning an empty program list', {});
@@ -138,36 +126,47 @@ export class MentorshipAdminService {
       }
       throw error;
     }
+  }
 
-    const data = (upstream.data ?? []).map((item) => {
-      const { program, unknownStatus } = mapMentorshipAdminProgram(item);
-      if (unknownStatus) {
-        logger.warning(req, 'mentorship_admin_get_programs', 'Unknown upstream admin status; showing it as pending review', {
-          programId: item.id,
-          adminStatus: item.admin_status,
-        });
-      }
-      return program;
+  /**
+   * Every program of one project, in any status, for the Project lens (lfx-mentorship#398): the same rows, filters and
+   * order as {@link getPrograms}, whoever administers each program. With `includeSubprojects` (the Foundation lens), upstream
+   * also lists the programs of the project's sub-projects. The gateway answers 403 to a caller without
+   * `mentorship_program_creator` on the project (its writers, or its mentorship program admins), and that passes on, as
+   * does any other upstream error.
+   */
+  public async getProjectPrograms(req: Request, projectUid: string, options: MentorshipAdminProgramListOptions): Promise<MentorshipProgramsResponse> {
+    logger.debug(req, 'mentorship_admin_get_project_programs', 'Loading a project’s mentorship programs', {
+      projectUid,
+      status: options.status,
+      include_subprojects: !!options.includeSubprojects,
     });
-    const total = upstream.meta?.total ?? data.length;
-    logger.debug(req, 'mentorship_admin_get_programs', 'Mentorship programs page built', { count: data.length, total });
 
-    return { data, total };
+    return this.readProgramList(
+      req,
+      'mentorship_admin_get_project_programs',
+      `${MENTORSHIP_PROJECTS_PATH}/${encodeURIComponent(projectUid)}/programs`,
+      options
+    );
   }
 
   /**
    * One program page: the header, the four tab counts and the term options, from five parallel reads. The header is
    * required, so its error (404 for an unknown program) passes on. Upstream lets any viewer read the header, so a 403 on
-   * a manager-only read (the summary, the applications or the members) passes on too: the caller may not manage the
-   * program. Any other failure of those reads leaves its count `null`, and a failed terms read leaves the terms `[]`.
-   * The summary also settles whether a published program reads `open` or `completed`, so a program whose summary
-   * failed reads `open`.
+   * a management read passes on too: the caller may not administer the program. The summary and the applications need
+   * a program manager (writer or mentor), and the members a program writer, since they carry every mentor's email and
+   * LFID. Any other failure of those reads leaves its count `null`, and a failed terms read leaves the terms `[]`.
+   * A published program's status comes from its terms (`mentorshipPublishedProgramStatus`); when the terms read fails,
+   * the summary settles `completed` and `upcoming`, and anything else reads `in-progress`.
+   * The submitter is read alongside; when that read fails the header shows no submitter.
    */
   public async getProgramPage(req: Request, programId: string): Promise<MentorshipAdminProgramPage> {
     logger.debug(req, 'mentorship_admin_get_program', 'Loading mentorship program page', { programId });
 
     const base = `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}`;
     const read = <T>(path: string, query?: Record<string, unknown>) => proxyMentorshipRequest<T>(this.microserviceProxy, req, `${base}${path}`, 'GET', query);
+    // Never rejects: a failed read leaves the header without its submitter.
+    const submitterRead = readMentorshipProgramSubmitter(this.microserviceProxy, req, programId, 'mentorship_admin_get_program');
     const [header, summary, applications, members, terms] = await Promise.allSettled([
       read<MentorshipUpstreamProgramHeader>('/header'),
       read<MentorshipUpstreamProgramManagementSummary>('/management-summary'),
@@ -193,7 +192,7 @@ export class MentorshipAdminService {
     }
 
     const summaryData = summary.status === 'fulfilled' ? summary.value : undefined;
-    const { program, unknownStatus } = mapMentorshipAdminHeaderProgram(header.value, summaryData);
+    const { program, unknownStatus } = mapMentorshipAdminHeaderProgram(header.value, summaryData, terms.status === 'fulfilled' ? terms.value : undefined);
     if (unknownStatus) {
       logger.warning(req, 'mentorship_admin_get_program', 'Unknown upstream program status; showing it as pending review', {
         programId,
@@ -214,8 +213,15 @@ export class MentorshipAdminService {
             .map((term) => ({ id: term.id, name: term.name, status: term.status }))
         : [];
 
-    logger.debug(req, 'mentorship_admin_get_program', 'Mentorship program page built', { programId, tabCounts, terms: termOptions.length });
-    return { program, tabCounts, terms: termOptions };
+    const submitter = await submitterRead;
+
+    logger.debug(req, 'mentorship_admin_get_program', 'Mentorship program page built', {
+      programId,
+      tabCounts,
+      terms: termOptions.length,
+      has_submitter: submitter !== null,
+    });
+    return { program, tabCounts, terms: termOptions, submitter };
   }
 
   /**
@@ -444,7 +450,11 @@ export class MentorshipAdminService {
     return tasks.map(mapMentorshipProgramTask);
   }
 
-  /** Accepts, declines or graduates one application. `attendanceType` rides along only with an accept. Upstream's 409 and 422 pass through. */
+  /**
+   * Accepts, declines or graduates one application, undoes a graduation (an accept with no `attendanceType`, so
+   * upstream keeps the stored one), or re-opens a declined or withdrawn one (`pending`). `attendanceType` rides along
+   * only with an accept. Upstream's 409 and 422 pass through.
+   */
   public async updateApplicationStatus(req: Request, applicationId: string, body: MentorshipAdminApplicationStatusUpdate): Promise<void> {
     logger.debug(req, 'mentorship_admin_update_application_status', 'Updating application status', { applicationId, status: body.status });
 
@@ -454,7 +464,7 @@ export class MentorshipAdminService {
       `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/status`,
       'PATCH',
       undefined,
-      { status: body.status, ...(body.status === 'accepted' ? { attendance_type: body.attendanceType } : {}) }
+      { status: body.status, ...(body.status === 'accepted' && body.attendanceType ? { attendance_type: body.attendanceType } : {}) }
     );
   }
 
@@ -490,20 +500,23 @@ export class MentorshipAdminService {
   }
 
   /**
-   * Invites the LF account behind `lfid` as a mentor of the program and returns the new member's id. Upstream creates
-   * the Mentorship user when there is none and emails the invite to the account's primary email. Its 400, 403, 409
-   * (already invited or a mentor), 422 (no LF account) and 503 (account lookup down) pass through.
+   * Invites a mentor to the program and returns the new member's id. By `lfid`, upstream creates the Mentorship user
+   * when there is none and emails the invite to the account's primary email. By `email`, an address with an LF account
+   * is invited as that account; one with none gets an email invitation that only an LF account using the address can
+   * accept. Its 400, 403, 409 (already invited or a mentor), 422 (no LF account for the LFID, or its primary email
+   * already on another Mentorship user) and 503 (account lookup down) pass through.
    */
   public async inviteProgramMentor(req: Request, programId: string, body: MentorshipAdminMentorInviteRequest): Promise<string | undefined> {
-    logger.debug(req, 'mentorship_admin_invite_program_mentor', 'Inviting program mentor', { programId });
+    logger.debug(req, 'mentorship_admin_invite_program_mentor', 'Inviting program mentor', { programId, byEmail: !!body.email });
 
+    const invitee = body.email ? { email: body.email } : { lfid: body.lfid };
     const member = await proxyMentorshipRequest<{ id?: string }>(
       this.microserviceProxy,
       req,
       `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/members`,
       'POST',
       undefined,
-      { lfid: body.lfid, member_type: 'mentor' }
+      { ...invitee, member_type: 'mentor' }
     );
     return member?.id;
   }
@@ -683,6 +696,46 @@ export class MentorshipAdminService {
   public async deleteTerm(req: Request, programId: string, termId: string): Promise<void> {
     logger.debug(req, 'mentorship_admin_delete_term', 'Deleting program term', { programId, termId });
     await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, this.termPath(programId, termId), 'DELETE');
+  }
+
+  /**
+   * One upstream page of an admin program list (`/me/programs` or a project's `/programs`): upstream searches, filters by
+   * the status shown, sorts by name and pages; each row is mapped for the card.
+   */
+  private async readProgramList(
+    req: Request,
+    operation: string,
+    path: string,
+    options: MentorshipAdminProgramListOptions
+  ): Promise<MentorshipProgramsResponse> {
+    const upstream = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamAdministeredProgram>>(
+      this.microserviceProxy,
+      req,
+      path,
+      'GET',
+      {
+        search: escapeMentorshipSearch(options.search),
+        status: options.status?.replace('-', '_'),
+        limit: options.limit,
+        offset: options.offset,
+        ...(options.includeSubprojects && { include_subprojects: true }),
+      }
+    );
+
+    const data = (upstream.data ?? []).map((item) => {
+      const { program, unknownStatus } = mapMentorshipAdminProgram(item);
+      if (unknownStatus) {
+        logger.warning(req, operation, 'Unknown upstream admin status; showing it as pending review', {
+          programId: item.id,
+          adminStatus: item.admin_status,
+        });
+      }
+      return program;
+    });
+    const total = upstream.meta?.total ?? data.length;
+    logger.debug(req, operation, 'Mentorship programs page built', { count: data.length, total });
+
+    return { data, total };
   }
 
   private termPath(programId: string, termId: string): string {

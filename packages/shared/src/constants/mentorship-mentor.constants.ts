@@ -28,10 +28,10 @@ export const MENTORSHIP_MENTOR_PAGE_TABS = [
 ];
 
 /**
- * Statuses of a mentor's program on upstream `GET /me/mentor-programs`, which the card shows with the admin card's
+ * Statuses of a mentor's program, mapped from upstream `GET /me/mentor-programs` (`_` written as `-`), which the card shows with the admin card's
  * `MENTORSHIP_PROGRAM_STATUS_LABELS` and `MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES`.
  */
-export const MENTORSHIP_MENTOR_PROGRAM_STATUSES = ['open', 'completed'] as const;
+export const MENTORSHIP_MENTOR_PROGRAM_STATUSES = ['accepting', 'in-progress', 'upcoming', 'completed'] as const;
 
 export const EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE: MentorshipMentorProgramsResponse = {
   data: [],
@@ -72,11 +72,23 @@ export const MENTORSHIP_MENTOR_TASK_APPROVED_LABEL = 'Approved';
 export const MENTORSHIP_MENTOR_TASK_APPROVE_LABEL = 'Approve';
 export const MENTORSHIP_MENTOR_TASK_REQUEST_CHANGES_LABEL = 'Request Changes';
 export const MENTORSHIP_MENTOR_TASK_OPEN_SUBMISSION_LABEL = 'Download Submission';
+export const MENTORSHIP_MENTOR_TASK_VIEW_SUBMISSION_LABEL = 'View Submission';
 export const MENTORSHIP_MENTOR_TASK_SUBMITTED_VERB = 'submitted';
 export const MENTORSHIP_MENTOR_TASK_COMPLETED_VERB = 'completed';
 export const MENTORSHIP_MENTOR_TASKS_EMPTY_AWAITING = 'No tasks awaiting review.';
 export const MENTORSHIP_MENTOR_TASKS_EMPTY_APPROVED = 'No approved tasks.';
 export const MENTORSHIP_MENTOR_TASKS_EMPTY_ALL = 'No tasks to review.';
+
+/**
+ * Request Changes dialog on the mentor Tasks tab. The reason is required, and capped at upstream's limit; upstream
+ * emails it to the mentee and does not store it.
+ */
+export const MENTORSHIP_MENTOR_TASK_CHANGES_DIALOG_HEADER = 'Request Changes';
+export const MENTORSHIP_MENTOR_TASK_CHANGES_REASON_MAX = 2000;
+export const MENTORSHIP_MENTOR_TASK_CHANGES_REASON_LABEL = 'Reason';
+export const MENTORSHIP_MENTOR_TASK_CHANGES_REASON_PLACEHOLDER = 'Tell the mentee what to change before they submit the task again.';
+export const MENTORSHIP_MENTOR_TASK_CHANGES_REASON_HINT = 'The task goes back to their To Do list, and they are emailed this reason.';
+export const MENTORSHIP_MENTOR_TASK_CHANGES_REASON_REQUIRED = 'Enter a reason for the changes.';
 
 export const MENTORSHIP_MENTOR_TASK_FILTER_PILLS: { value: MentorshipMentorTaskReviewStatus | undefined; label: string }[] = [
   { value: 'submitted', label: MENTORSHIP_MENTOR_TASK_AWAITING_REVIEW_LABEL },
@@ -124,7 +136,7 @@ export const MENTORSHIP_MENTOR_REGISTER_FAILURE_OPTIONS: MentorshipRegisterFailu
 };
 
 export const MENTORSHIP_MENTOR_INTRODUCTION_INTRO =
-  'This information is displayed on your mentor profile page. Your name, email and avatar come from your LFX account.';
+  'This information is displayed on your mentor profile page. Your name, email and avatar come from your LFX profile.';
 export const MENTORSHIP_MENTOR_INTRODUCTION_PLACEHOLDER = `What is your current contributor status (i.e., experience in contributing to or maintaining open source projects, open source contributions)?
 
 Why are you interested in volunteering as a mentor?
@@ -301,7 +313,7 @@ export function createEmptyMentorshipMentorForm(): MentorshipMentorRegisterForm 
  */
 export const MENTORSHIP_MENTOR_PROFILE_DETAILS_TITLE = 'Mentor Profile';
 export const MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL = 'Edit Mentor Profile';
-export const MENTORSHIP_MENTOR_PROFILE_ABOUT_LABEL = 'About Me';
+export const MENTORSHIP_MENTOR_PROFILE_ABOUT_LABEL = 'Introduction';
 export const MENTORSHIP_MENTOR_PROFILE_SKILLS_LABEL = 'Skills';
 export const MENTORSHIP_MENTOR_PROFILE_ABOUT_EMPTY = 'No introduction added yet.';
 export const MENTORSHIP_MENTOR_PROFILE_SKILLS_EMPTY = 'No skills added yet.';

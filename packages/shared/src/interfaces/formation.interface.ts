@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } from '../enums/formation.enum';
+import type { Observable } from 'rxjs';
+
 import type { TagSeverity } from './components.interface';
-import { Project } from './project.interface';
+import { Project, UpdateFormationRecordRequest } from './project.interface';
 
 /**
  * Formation domain types (GH-2163, epic #1965). Mirrors the object shapes planned for
@@ -24,8 +26,8 @@ import { Project } from './project.interface';
  * flight only. No `proposed`/`withdrawn` here: those were Accept/Decline-era states (Epic 2,
  * #1962). No `activating` member: activating is derived readiness (see {@link Formation.is_activating}),
  * rendered as a separate "Gates cleared" badge (#1958) — never in the Stage column, which would
- * wrongly imply the project is about to flip (Active is set by the formation team in the admin
- * tool, normally on the announcement date).
+ * wrongly imply the project is about to flip (Active is set by the formation team,
+ * normally on the announcement date).
  */
 export type FormationSubStage = 'exploratory' | 'engaged' | 'on_hold';
 
@@ -513,6 +515,13 @@ export interface FormationChecklistResponse {
    * 403s. Advisory only — the gateway still enforces; the BFF adds no write guard of its own.
    */
   can_set_status: boolean;
+  /**
+   * Whether the caller may edit the project's stage and legal entity from the formation card
+   * (#5134) — the same pair {@link can_set_status} mirrors: `writer_guard` on the project AND
+   * `member` on `team:formation`, fail-closed. Advisory for the UI; the BFF re-checks both before
+   * any upstream read on `PUT /api/projects/:uid/formation-record`.
+   */
+  can_edit_record: boolean;
 }
 
 /**
@@ -931,4 +940,18 @@ export interface DecoratedMyFormation extends MyFormationSummary {
   /** `getFormationQueueStageDisplay(sub_stage, sub_stage_raw)`'s label — mirrors `FormationTableRow.stageLabel` (GH-1956, same #2370/#2373 gap fixed here). */
   stageLabel: string;
   stageSeverity: TagSeverity;
+}
+
+/** Data handed to the formation record edit drawer through `UiDrawerService` (#5134). */
+export interface FormationRecordEditDrawerData {
+  /** The project whose stage and legal entity are edited. */
+  projectUid: string;
+  /** Gating ("required for Active") items still open on the checklist — named in the confirmation step. */
+  openRequiredCount: number;
+  /**
+   * Sends the changes. The card owns the write — the request, cache eviction, toasts and host refreshes all run
+   * to completion even if the drawer is dismissed or destroyed mid-PUT — and the returned stream only reports
+   * the outcome (a replayed next/complete, or the HTTP error) to whoever is still listening.
+   */
+  save: (changes: UpdateFormationRecordRequest) => Observable<void>;
 }

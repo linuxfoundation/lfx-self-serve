@@ -7,14 +7,20 @@ import {
   MAILING_LIST_LABEL,
   MKTG_OS_AGENTS_LABEL,
   MKTG_OS_AGENTS_ROUTE_SEGMENT,
+  ORG_LENS_ROLL_UP_HOME_PAGE,
+  ORG_LENS_ROLL_UP_PAGES,
+  ORG_LENS_URL_ROOT,
   ORG_SEGMENT_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
+import { isOrgRollUpSegment, normalizeOrgSegment } from '@lfx-one/shared/utils';
+import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
 import { authenticatedMatchGuard } from './shared/guards/authenticated-match.guard';
+import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
@@ -30,44 +36,49 @@ import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
+import { legacyOrgLensMatcher, legacyOrgLensRedirect } from './shared/utils/legacy-org-lens-redirect.utils';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
+import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
+import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavailable-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
-import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enabled.guard';
-import { orgLensRoiEnabledGuard } from './shared/guards/org-lens-roi-enabled.guard';
+import { cfOrgDonationsGuard } from './shared/guards/org-lens-flag.guard';
+import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
-import { mentorshipEnabledGuard } from './shared/guards/mentorship-enabled.guard';
-import { crowdfundingAttributionEnabledGuard } from './shared/guards/crowdfunding-attribution-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
+import { openprofileMeLensGuard } from './shared/guards/openprofile-me-lens.guard';
+import { profileRedesignEnabledGuard } from './shared/guards/profile-redesign.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
 import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
 import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
+import { meetingPageRedesignGuard } from './shared/guards/meeting-page-redesign.guard';
+import { AccountContextService } from './shared/services/account-context.service';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
+const loadOrgRollUpUnavailablePage = () =>
+  import('./modules/dashboards/org/org-rollup-unavailable/org-rollup-unavailable.component').then((m) => m.OrgRollUpUnavailableComponent);
 
 /**
  * Org Lens page routes, EasyCLA included (its DR-004 exemption ended with lfx-self-serve#2743: the
- * legacy `/org/easycla*` mount stays one release for in-flight signing returns). Built by a
+ * legacy `/company/easycla*` mount stays one release for in-flight signing returns). Built by a
  * function so the same definitions can be mounted twice without sharing route objects: once under
- * `/org/{page}` (legacy form; Phase 5 adds the redirect guard) and once under
- * `/org/:orgSegment/{page}` (spec 050 address scheme).
+ * `/company/{page}` (legacy form; Phase 5 adds the redirect guard) and once under
+ * `/company/:orgSegment/{page}` (spec 050 address scheme).
  */
 function orgLensPageRoutes(): Routes {
-  return [
+  return withRollUpUnavailablePages([
     {
-      // Componentless parent, so the dark-launch guard is declared once and later M3
-      // children (list, sign, managers, …) inherit it. A looser copy would be a way
-      // into the unfinished feature while `org-lens-cla-m3-enabled` is off.
       path: 'easycla',
-      canMatch: [orgLensClaM3EnabledGuard],
+      // A corporate CLA belongs to one company, so the roll-up redirects to its own home page (#4415, #4133).
+      canActivate: [orgRollUpSingleOrgPageGuard],
       data: {
         lens: 'org',
         title: 'EasyCLA',
-        description: 'Corporate CLAs your organization has signed.',
+        description: 'Corporate CLAs your company has signed.',
         icon: 'fa-light fa-file-signature',
       },
       children: [
@@ -86,7 +97,7 @@ function orgLensPageRoutes(): Routes {
           // a reserved word segment, because it is the same screen: a reserved segment would
           // have to be declared ahead of this one and is a second address for one page.
           path: ':claGroupId',
-          data: { title: 'CLA Group', description: "Corporate CLA for one of your organization's CLA Groups." },
+          data: { title: 'CLA Group', description: "Corporate CLA for one of your company's CLA Groups." },
           loadComponent: () =>
             import('./modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component').then((m) => m.OrgEasyclaDetailComponent),
         },
@@ -94,10 +105,11 @@ function orgLensPageRoutes(): Routes {
     },
     {
       // Initiatives attributed to the organization (#348): the My Initiatives page and detail scoped by `data.lens`.
-      // Componentless parent so the dark-launch guard covers both children.
+      // Componentless parent so both children share its data.
       path: 'initiatives',
-      canMatch: [crowdfundingAttributionEnabledGuard],
-      data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your organization.', icon: 'fa-light fa-box-dollar' },
+      data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your company.', icon: 'fa-light fa-box-dollar' },
+      // The crowdfunding list and stats take one `orgUid`, so the roll-up redirects (#4415).
+      canActivate: [orgRollUpSingleOrgPageGuard],
       children: [
         {
           path: '',
@@ -111,11 +123,25 @@ function orgLensPageRoutes(): Routes {
       ],
     },
     {
+      // Crowdfunding donations matched to the organization (#415), dark-launched behind `cf-org-donations`.
+      path: 'donations',
+      canMatch: [cfOrgDonationsGuard],
+      // `/api/crowdfunding/org-donations` takes one organization, so the roll-up redirects (#4415).
+      canActivate: [orgRollUpSingleOrgPageGuard],
+      data: {
+        lens: 'org',
+        title: 'Donations',
+        description: 'Crowdfunding donations made on behalf of your company.',
+        icon: 'fa-light fa-hand-holding-heart',
+      },
+      loadComponent: () => import('./modules/crowdfunding/org-donations/org-donations.component').then((m) => m.OrgDonationsComponent),
+    },
+    {
       path: 'overview',
       data: {
         lens: 'org',
-        title: 'Org Overview',
-        description: 'A summary of your organization across the Linux Foundation.',
+        title: 'Company Overview',
+        description: 'A summary of your company across the Linux Foundation.',
         icon: 'fa-light fa-grid-2',
         showDevelopmentNotice: true,
       },
@@ -138,7 +164,7 @@ function orgLensPageRoutes(): Routes {
     },
     {
       path: 'projects',
-      data: { lens: 'org', title: 'Projects', description: 'Projects your organization participates in.', icon: 'fa-light fa-folder' },
+      data: { lens: 'org', title: 'Projects', description: 'Projects your company participates in.', icon: 'fa-light fa-folder' },
       loadComponent: () => import('./modules/dashboards/org/org-projects/org-projects.component').then((m) => m.OrgProjectsComponent),
     },
     {
@@ -146,21 +172,20 @@ function orgLensPageRoutes(): Routes {
       data: {
         lens: 'org',
         title: 'Project Detail',
-        description: "Your organization's involvement and competitive standing on a project.",
+        description: "Your company's involvement and competitive standing on a project.",
         icon: 'fa-light fa-folder',
       },
       loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
     },
     {
-      // Componentless parent, so the dark-launch guard is declared once and the project
-      // detail child is matched by it rather than by a second guard of its own. A looser
-      // copy would be a way into the unfinished feature while the flag is off.
+      // Componentless parent, so the LF-staff-only guard is declared once and the project detail child is matched by it
+      // rather than by a second guard of its own. A looser copy would be a way into the page for callers who are not staff.
       path: 'roi',
-      canMatch: [orgLensRoiEnabledGuard],
+      canMatch: [orgLensLfStaffOnlyGuard],
       data: {
         lens: 'org',
         title: 'ROI Metrics',
-        description: "Modelled return on your organization's open source investment.",
+        description: "Modelled return on your company's open source investment.",
         icon: 'fa-light fa-chart-mixed-up-circle-dollar',
       },
       children: [
@@ -170,7 +195,7 @@ function orgLensPageRoutes(): Routes {
         },
         {
           path: 'projects/:projectSlug',
-          data: { title: 'Project ROI Detail', description: "Modelled return on your organization's investment in one project." },
+          data: { title: 'Project ROI Detail', description: "Modelled return on your company's investment in one project." },
           loadComponent: () =>
             import('./modules/dashboards/org/org-roi/org-roi-project-detail/org-roi-project-detail.component').then((m) => m.OrgRoiProjectDetailComponent),
         },
@@ -185,7 +210,7 @@ function orgLensPageRoutes(): Routes {
     },
     {
       path: 'people',
-      data: { lens: 'org', title: 'People', description: 'Employees and contributors associated with your organization.', icon: 'fa-light fa-users' },
+      data: { lens: 'org', title: 'People', description: 'Employees and contributors associated with your company.', icon: 'fa-light fa-users' },
       loadComponent: () => import('./modules/dashboards/org/org-people/org-people.component').then((m) => m.OrgPeopleComponent),
     },
     {
@@ -193,14 +218,14 @@ function orgLensPageRoutes(): Routes {
       data: {
         lens: 'org',
         title: 'Code Contributions',
-        description: "Open-source contributions from your organization's contributors.",
+        description: "Open-source contributions from your company's contributors.",
         icon: 'fa-light fa-code',
       },
       loadComponent: () => import('./modules/dashboards/org/org-contributions/org-contributions.component').then((m) => m.OrgContributionsComponent),
     },
     {
       path: 'events',
-      data: { lens: 'org', title: 'Events', description: 'Events your organization is sponsoring or attending.', icon: 'fa-light fa-calendar' },
+      data: { lens: 'org', title: 'Events', description: 'Events your company is sponsoring or attending.', icon: 'fa-light fa-calendar' },
       loadComponent: () => import('./modules/events/org-events-dashboard/org-events-dashboard.component').then((m) => m.OrgEventsDashboardComponent),
     },
     {
@@ -208,7 +233,7 @@ function orgLensPageRoutes(): Routes {
       data: {
         lens: 'org',
         title: 'Training & Certification',
-        description: 'Training enrollments and certifications across your organization.',
+        description: 'Training enrollments and certifications across your company.',
         icon: 'fa-light fa-graduation-cap',
       },
       loadComponent: () => import('./modules/dashboards/org/org-training/org-training.component').then((m) => m.OrgTrainingComponent),
@@ -218,7 +243,7 @@ function orgLensPageRoutes(): Routes {
       data: {
         lens: 'org',
         title: 'Meetings',
-        description: "How your organization's employees engage across Linux Foundation projects.",
+        description: "How your company's employees engage across Linux Foundation projects.",
         icon: 'fa-light fa-video',
       },
       loadComponent: () => import('./modules/dashboards/org/org-meetings/org-meetings.component').then((m) => m.OrgMeetingsComponent),
@@ -228,17 +253,43 @@ function orgLensPageRoutes(): Routes {
       data: {
         lens: 'org',
         title: 'Groups',
-        description: "Working groups and committees your organization's employees participate in.",
+        description: "Working groups and committees your company's employees participate in.",
         icon: 'fa-light fa-users-rectangle',
       },
       loadComponent: () => import('./modules/dashboards/org/org-groups/org-groups.component').then((m) => m.OrgGroupsComponent),
     },
     {
       path: 'profile',
-      data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your organization.', icon: 'fa-light fa-file' },
+      data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your company.', icon: 'fa-light fa-file' },
+      // Single-organization by definition, so the roll-up redirects to its own home page (#4415, #4133).
+      canActivate: [orgRollUpSingleOrgPageGuard],
       loadComponent: loadOrgProfilePage,
     },
-  ];
+  ]);
+}
+
+/**
+ * Declares the roll-up-unavailable page ahead of every page route that cannot render a family roll-up
+ * yet, so on a roll-up that page never loads (#4133). Skips the roll-up pages (`ORG_LENS_ROLL_UP_PAGES`),
+ * the single-organization pages, which send a roll-up home through `orgRollUpSingleOrgPageGuard`, and
+ * redirects, which render nothing.
+ */
+function withRollUpUnavailablePages(pages: Routes): Routes {
+  return pages.flatMap((page) =>
+    !page.path || page.redirectTo || ORG_LENS_ROLL_UP_PAGES[page.path] === true || page.canActivate?.includes(orgRollUpSingleOrgPageGuard)
+      ? [page]
+      : [
+          {
+            path: page.path,
+            // The page's own match guards first: a page this caller may not match (`roi` is staff-only) must not
+            // be revealed by its roll-up stand-in.
+            canMatch: [...(page.canMatch ?? []), orgRollUpUnavailablePageGuard],
+            data: page.data,
+            children: [{ path: '**', loadComponent: loadOrgRollUpUnavailablePage }],
+          },
+          page,
+        ]
+  );
 }
 
 export const routes: Routes = [
@@ -258,6 +309,25 @@ export const routes: Routes = [
     pathMatch: 'full',
     canMatch: [voteAnonymousSsrMatchGuard],
     loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
+  },
+  // Newsletter invite / subscription-confirmation landing (#5235): chrome-less, no authGuard. Signed out,
+  // the guest modal reads the signed token from the URL fragment; signed in, the page hands over to the
+  // `/newsletters/my/:foundationSlug?invite=` confirm card. Declared ahead of the shell.
+  {
+    path: 'newsletters/invite',
+    pathMatch: 'full',
+    loadComponent: () =>
+      import('./modules/newsletters/newsletter-invite-guest/newsletter-invite-guest.component').then((m) => m.NewsletterInviteGuestComponent),
+  },
+  // Signed-out newsletter permalink: a chrome-less page. On the server its Open Graph tags carry the issue
+  // subject, so a link-preview crawler (LinkedIn, X) never unfurls the login page (#4940); in the browser a
+  // signed-out reader gets the member-benefit email prompt (#5235). Signed-in visitors fall through to the shell.
+  {
+    path: 'newsletters/:projectSlug/:id',
+    pathMatch: 'full',
+    canMatch: [newsletterAnonymousSsrMatchGuard],
+    loadComponent: () =>
+      import('./modules/newsletters/newsletter-share-preview/newsletter-share-preview.component').then((m) => m.NewsletterSharePreviewComponent),
   },
   {
     path: '',
@@ -354,6 +424,17 @@ export const routes: Routes = [
         canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/social-listening/social-listening.component').then((m) => m.SocialListeningComponent),
       },
+      // Foundation Lens — Participating Companies page (ED + LF Staff, same policy as Health Metrics; #5697)
+      {
+        path: 'foundation/participating-orgs',
+        title: 'Participating Companies',
+        data: { lens: 'foundation' },
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
+        loadComponent: () =>
+          import('./modules/dashboards/foundation-participating-orgs/foundation-participating-orgs.component').then(
+            (m) => m.FoundationParticipatingOrgsComponent
+          ),
+      },
       // Foundation Lens — Projects page
       {
         path: 'foundation/projects',
@@ -392,42 +473,55 @@ export const routes: Routes = [
         loadComponent: () => import('./modules/dashboards/formation/formation-page/formation-page.component').then((m) => m.FormationPageComponent),
       },
       // Participating Organizations (#2091) — companies contributing code to the project, split by parent-foundation
-      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). The BFF enforces
-      // project `viewer` on every read.
+      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). Executive directors
+      // and LF staff only (as Health Metrics). The guard checks the role only; the sidebar entry is hidden unless the
+      // ED's scope covers the active project, and the BFF scopes an ED to projects under a foundation they direct
+      // (a direct URL outside that scope gets a 403 and the no-access state) and requires project `viewer`.
       {
         path: 'project/participating-orgs',
-        title: 'Participating Organizations',
-        data: { lens: 'project' },
+        title: 'Participating Companies',
+        data: { lens: 'project', accessDeniedRedirect: '/project/overview' },
         // As on project/overview: a `?project=` change on this same route must re-run
         // projectQueryParamGuard, which seeds the project context the page reads its slug from.
         runGuardsAndResolvers: 'paramsOrQueryParamsChange',
-        canActivate: [projectQueryParamGuard],
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/participating-orgs/participating-orgs.component').then((m) => m.ParticipatingOrgsComponent),
       },
-      // Org Lens dead end (spec 050 US4/US5, FR-022). Declared BEFORE the `org` node, as a sibling
-      // outside the `org/:orgSegment` subtree: `orgPathParamGuard` (CanActivate on that subtree)
+      // Pre-rename addresses (#5064): every `/org/…` form — `/org`, `/org/not-found`, `/org/{slug|SFID}/{page}`,
+      // the legacy `/org/{page}` — redirects to the same address under `/company`, query and fragment kept.
+      // The Express layer answers full page loads with a 301 before this runs; this covers in-app and
+      // client-side navigations. Declared before the `company` nodes so nothing there can claim `org`.
+      {
+        matcher: legacyOrgLensMatcher,
+        redirectTo: legacyOrgLensRedirect,
+      },
+      // Company Lens dead end (spec 050 US4/US5, FR-022). Declared BEFORE the `company` node, as a sibling
+      // outside the `company/:orgSegment` subtree: `orgPathParamGuard` (CanActivate on that subtree)
       // redirects here, so the address must resolve without re-entering the guard that sent the
       // viewer to it (no loop).
       {
-        path: 'org/not-found',
-        title: 'Organization Not Found',
+        path: `${ORG_LENS_URL_ROOT}/not-found`,
+        title: 'Company Not Found',
         data: { lens: 'org' },
         loadComponent: () => import('./modules/dashboards/org/org-not-found/org-not-found.component').then((m) => m.OrgNotFoundComponent),
       },
-      // Org Lens (GA) — unresolvable /org/* addresses land on the dead end above via `orgPathParamGuard`.
+      // Org Lens (GA), addressed `/company/…` — unresolvable addresses land on the dead end above via `orgPathParamGuard`.
       {
-        path: 'org',
+        path: ORG_LENS_URL_ROOT,
         data: { lens: 'org' },
         children: [
           {
+            // Bare `/org` names no organization, so the restored selection picks the home page: a roll-up's
+            // is Memberships. Decided here because the unavailable-page guard reads the URL being recognized,
+            // which after this redirect is still `/org`, not `/org/overview` (#4133).
             path: '',
             pathMatch: 'full',
-            redirectTo: 'overview',
+            redirectTo: () => (inject(AccountContextService).isRollUp() ? ORG_LENS_ROLL_UP_HOME_PAGE : 'overview'),
           },
-          // Legacy `/org/{page}` addresses (spec 050 Phase 5 adds the default-organization redirect guard).
+          // Legacy `/company/{page}` addresses (no organization named) (spec 050 Phase 5 adds the default-organization redirect guard).
           ...orgLensPageRoutes(),
           {
-            // Spec 050 — `/org/{orgSegment}/{page}`: the organization is named in the address (slug, or
+            // Spec 050 — `/company/{orgSegment}/{page}`: the organization is named in the address (slug, or
             // 18-char SFID when it has none). Declared after every static page so a page name can never
             // be taken for an organization; the matcher rejects those values as belt-and-braces and the
             // guard resolves the segment through the access-filtered BFF before any child renders.
@@ -441,7 +535,8 @@ export const routes: Routes = [
               {
                 path: '',
                 pathMatch: 'full',
-                redirectTo: 'overview',
+                redirectTo: ({ params }) =>
+                  isOrgRollUpSegment(normalizeOrgSegment(params[ORG_SEGMENT_PARAM] ?? '')) ? ORG_LENS_ROLL_UP_HOME_PAGE : 'overview',
               },
               ...orgLensPageRoutes(),
             ],
@@ -489,7 +584,6 @@ export const routes: Routes = [
         path: 'foundation/initiatives',
         title: 'Foundation Initiatives',
         data: { lens: 'foundation' },
-        canMatch: [crowdfundingAttributionEnabledGuard],
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
       },
@@ -497,9 +591,19 @@ export const routes: Routes = [
         path: 'foundation/initiatives/:slug',
         title: 'Initiative',
         data: { lens: 'foundation' },
-        canMatch: [crowdfundingAttributionEnabledGuard],
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
+      },
+      // Every mentorship program of the lens foundation and its sub-projects (lfx-mentorship#398), scoped by `data.lens`.
+      {
+        path: 'foundation/mentorship',
+        title: 'Mentorship Programs',
+        data: { lens: 'foundation' },
+        // The list, program and wizard share this parent, so a `?project=` change between them (Back/Forward to an older
+        // selection) must re-run projectQueryParamGuard, as on project/participating-orgs.
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
+        canActivate: [projectQueryParamGuard],
+        loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_LENS_ROUTES),
       },
       // Formations queue (GH-1958) — dark-launched behind `formation-enabled` (CanMatch), auditor-only
       // (CanActivate). As of GH-2367 the queue scopes to the selected foundation's formations via
@@ -530,7 +634,7 @@ export const routes: Routes = [
       // `?item=<template_item_key>` opens that item's panel on arrival here too (#2732).
       {
         path: 'foundation/formations/:projectSlug',
-        title: 'Formation Checklist',
+        title: 'Formation',
         data: { lens: 'foundation' },
         canMatch: [formationEnabledGuard],
         canActivate: [formationsQueueAuditorGuard, projectQueryParamGuard],
@@ -623,7 +727,6 @@ export const routes: Routes = [
         path: 'project/initiatives',
         title: 'Project Initiatives',
         data: { lens: 'project' },
-        canMatch: [crowdfundingAttributionEnabledGuard],
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
       },
@@ -631,9 +734,18 @@ export const routes: Routes = [
         path: 'project/initiatives/:slug',
         title: 'Initiative',
         data: { lens: 'project' },
-        canMatch: [crowdfundingAttributionEnabledGuard],
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
+      },
+      // Every mentorship program of the lens project (lfx-mentorship#398) — the Mentorship Admin pages, scoped by `data.lens`.
+      {
+        path: 'project/mentorship',
+        title: 'Mentorship Programs',
+        data: { lens: 'project' },
+        // As on foundation/mentorship: a `?project=` change between the list, program and wizard re-runs the guard.
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
+        canActivate: [projectQueryParamGuard],
+        loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_LENS_ROUTES),
       },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
       {
@@ -691,7 +803,7 @@ export const routes: Routes = [
       {
         path: 'meetings',
         title: 'Meetings',
-        canActivate: [lensRedirectGuard, projectQueryParamGuard],
+        canActivate: [openprofileMeLensGuard, lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
@@ -714,20 +826,20 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
       {
-        // Canonical shareable vote permalink (#3659), also the target of vote reminder emails.
-        // Mounted ahead of the lens-redirected `votes` mount below so the URL never rewrites to
-        // /foundation/... or /project/..., where the cast drawer never opens. `data.lens: 'me'`
-        // switches every way in to the Me lens. Access is decided in the component: a vote the
-        // user can't view renders the shared not-found page in place (HTTP 404 under SSR).
-        // `pathMatch: 'full'` leaves `votes/:id/edit` on the mount below; the match guard does
-        // the same for `votes/create`.
+        // Vote detail page (#3913), the canonical shareable vote permalink (#3659) and the target of
+        // vote reminder emails. Mounted ahead of the lens-redirected `votes` mount below so the URL never
+        // rewrites to /foundation/... or /project/.... No `data.lens` and no `lensRedirectGuard`: opening
+        // a vote keeps the lens the user came from while the URL stays /votes/:id. Access is decided in
+        // the component: a vote the user can't view renders the shared not-found page in place (HTTP 404
+        // under SSR). `pathMatch: 'full'` leaves `votes/:id/edit` on the mount below; the match guard
+        // does the same for `votes/create`.
         path: 'votes/:id',
         pathMatch: 'full',
         title: VOTE_LABEL.singular,
-        data: { lens: 'me', preload: false },
+        data: { preload: false },
         canMatch: [votePermalinkMatchGuard],
         canActivate: [authGuard],
-        loadComponent: () => import('./modules/votes/vote-permalink/vote-permalink.component').then((m) => m.VotePermalinkComponent),
+        loadComponent: () => import('./modules/votes/vote-detail/vote-detail.component').then((m) => m.VoteDetailComponent),
       },
       {
         path: 'votes',
@@ -805,6 +917,14 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/profile/profile.routes').then((m) => m.PROFILE_ROUTES),
       },
       {
+        // Account & Settings (#6067): the hub's account tabs behind the profile redesign flag, a Me page like /profile.
+        path: 'account',
+        title: 'Account & Settings',
+        data: { lens: 'me' },
+        canMatch: [profileRedesignEnabledGuard],
+        loadChildren: () => import('./modules/account/account.routes').then((m) => m.ACCOUNT_ROUTES),
+      },
+      {
         path: 'me/training',
         title: 'Training & Certifications',
         loadChildren: () => import('./modules/trainings/trainings.routes').then((m) => m.TRAINING_ROUTES),
@@ -823,7 +943,7 @@ export const routes: Routes = [
       {
         path: 'events',
         title: 'Events',
-        canActivate: [myEventsRequestLensGuard, lensRedirectGuard, projectQueryParamGuard],
+        canActivate: [openprofileMeLensGuard, myEventsRequestLensGuard, lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
       {
@@ -836,7 +956,6 @@ export const routes: Routes = [
         path: 'mentorship',
         title: 'Mentorship',
         data: { lens: 'me' },
-        canMatch: [mentorshipEnabledGuard],
         loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_ROUTES),
       },
       {
@@ -912,10 +1031,25 @@ export const routes: Routes = [
     data: { preload: false },
     loadComponent: () => import('./modules/votes/vote-presenter/vote-presenter.component').then((m) => m.VotePresenterComponent),
   },
+  // Paired like `meetings/:id` below: the redesigned not-found page when `meetingPageRedesignGuard` matches, else the legacy one.
+  {
+    path: 'meetings/not-found',
+    title: 'Meeting Not Found',
+    canMatch: [meetingPageRedesignGuard],
+    loadComponent: () => import('./modules/meetings/meeting-page/not-found/meeting-page-not-found.component').then((m) => m.MeetingPageNotFoundComponent),
+  },
   {
     path: 'meetings/not-found',
     title: 'Meeting Not Found',
     loadComponent: () => import('./modules/meetings/meeting-not-found/meeting-not-found.component').then((m) => m.MeetingNotFoundComponent),
+  },
+  // Paired by path: the redesigned page when `meetingPageRedesignGuard` matches, else the legacy page below.
+  // Fallback rule: whatever the redesigned page doesn't serve yet (see `MeetingPageComponent`) renders the legacy page.
+  {
+    path: 'meetings/:id',
+    title: 'Meeting',
+    canMatch: [meetingPageRedesignGuard],
+    loadComponent: () => import('./modules/meetings/meeting-page/meeting-page.component').then((m) => m.MeetingPageComponent),
   },
   {
     path: 'meetings/:id',

@@ -1,0 +1,123 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="mentorship-mentors-invite-dialog">
+  <p class="text-sm text-gray-500">{{ subtitle }}</p>
+
+  <div class="relative">
+    <label for="mentorship-mentors-invite-search" class="sr-only">Search for a person to invite as a mentor</label>
+    <lfx-input-text
+      [form]="form"
+      control="search"
+      inputId="mentorship-mentors-invite-search"
+      icon="fa-light fa-magnifying-glass"
+      [placeholder]="placeholder"
+      autocomplete="off"
+      styleClass="w-full pr-9"
+      dataTest="mentorship-mentors-invite-search"
+      (keydown.enter)="onSearchEnter($event)" />
+    @if (query()) {
+      <button
+        type="button"
+        class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-600"
+        aria-label="Clear search"
+        (click)="onClearSearch()"
+        data-testid="mentorship-mentors-invite-search-clear">
+        <i class="fa-light fa-xmark" aria-hidden="true"></i>
+      </button>
+    }
+  </div>
+
+  <div class="flex min-h-[9rem] flex-col gap-2" aria-live="polite">
+    @if (showPrompt()) {
+      <div class="flex flex-col items-center justify-center gap-3 py-6 text-center" data-testid="mentorship-mentors-invite-prompt">
+        <span class="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+          <i class="fa-light fa-user-plus" aria-hidden="true"></i>
+        </span>
+        <p class="text-sm text-gray-500">{{ prompt }}</p>
+      </div>
+    } @else if (searching()) {
+      <p class="flex items-center gap-2 py-6 text-sm text-gray-500" data-testid="mentorship-mentors-invite-searching">
+        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        Searching…
+      </p>
+    } @else if (emailInvitee(); as email) {
+      <p class="flex items-center gap-1.5 text-xs text-gray-600" data-testid="mentorship-mentors-candidates-empty">
+        <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+        {{ emailInviteMessage }}
+      </p>
+      <div class="flex items-start gap-3 rounded-lg border border-blue-300 bg-blue-50 p-4" data-testid="mentorship-mentors-email-invite">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-white text-blue-600">
+          <i class="fa-light fa-envelope" aria-hidden="true"></i>
+        </span>
+        <div class="flex min-w-0 flex-col gap-1">
+          <p class="text-sm text-gray-900">
+            Invite <span class="break-all font-semibold">{{ email }}</span> by email
+          </p>
+          <p id="mentorship-mentors-email-invite-steps-intro" class="text-xs text-gray-600" data-testid="mentorship-mentors-email-invite-steps-intro">
+            {{ emailInviteStepsIntro }}
+          </p>
+          <ol
+            class="flex list-inside list-decimal flex-col gap-0.5 text-xs text-gray-700"
+            aria-labelledby="mentorship-mentors-email-invite-steps-intro"
+            data-testid="mentorship-mentors-email-invite-steps">
+            @for (step of emailInviteSteps; track step) {
+              <li>{{ step }}</li>
+            }
+          </ol>
+        </div>
+      </div>
+    } @else if (emptyMessage(); as message) {
+      <p class="py-6 text-sm text-gray-500" data-testid="mentorship-mentors-candidates-empty">{{ message }}</p>
+    } @else {
+      <ul class="flex max-h-72 flex-col gap-1 overflow-y-auto" aria-label="Matching LF users">
+        @for (option of candidateOptions(); track option.lfid) {
+          <li>
+            <button
+              type="button"
+              class="flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors"
+              [class]="selected()?.lfid === option.lfid ? 'border-blue-300 bg-blue-50' : 'border-transparent hover:bg-gray-50'"
+              [attr.aria-pressed]="selected()?.lfid === option.lfid"
+              (click)="onSelect(option)"
+              [attr.data-testid]="'mentorship-mentors-candidate-' + option.lfid">
+              <lfx-avatar
+                [image]="option.avatarUrl ?? ''"
+                [label]="option.initials"
+                shape="circle"
+                size="normal"
+                [styleClass]="option.avatarStyleClass"
+                [ariaLabel]="option.name" />
+              <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span class="break-words text-sm font-medium text-gray-900">{{ option.name }}</span>
+                <span class="break-all text-xs text-gray-500">{{ option.lfid }}</span>
+              </span>
+              @if (selected()?.lfid === option.lfid) {
+                <i class="fa-solid fa-circle-check text-blue-600" aria-hidden="true"></i>
+              }
+            </button>
+          </li>
+        }
+      </ul>
+    }
+  </div>
+
+  <div class="flex items-center justify-end gap-2 border-t border-gray-200 pt-4">
+    <lfx-button
+      label="Cancel"
+      severity="secondary"
+      size="small"
+      [outlined]="true"
+      [disabled]="sending()"
+      (onClick)="onCancel()"
+      data-testid="mentorship-mentors-invite-cancel" />
+    <lfx-button
+      [label]="sendLabel()"
+      [icon]="sendIcon()"
+      iconPos="left"
+      severity="primary"
+      size="small"
+      [disabled]="!canSend()"
+      (onClick)="onSend()"
+      data-testid="mentorship-mentors-invite-send" />
+  </div>
+</div>

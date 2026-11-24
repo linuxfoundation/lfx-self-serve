@@ -1,0 +1,149 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[16px]" data-testid="engagement-newsletter-performance">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      variant="compact"
+      icon="fa-light fa-triangle-exclamation"
+      title="Newsletter performance unavailable"
+      subtitle="We could not load newsletter performance for this foundation. Refresh the page to try again."
+      data-testid="engagement-newsletter-performance-error" />
+  } @else if (loading()) {
+    <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="engagement-newsletter-performance-loading" aria-hidden="true" />
+  } @else if (!empty()) {
+    <lfx-health-metrics-metrics-row [items]="view().metrics" testId="engagement-newsletter-performance-metrics" />
+
+    <!-- The switch drives the chart alone, so it sits just above it, left-aligned. -->
+    <div class="flex">
+      <lfx-ui-switch size="small" ariaLabel="View" [value]="mode()" (valueChange)="onModeChange($event)" data-testid="engagement-newsletter-performance-modes">
+        @for (option of modes; track option.key) {
+          <lfx-ui-switch-option [value]="option.key" [label]="option.label" [attr.data-testid]="'engagement-newsletter-performance-mode-' + option.key" />
+        }
+      </lfx-ui-switch>
+    </div>
+
+    @if (points().length) {
+      <div class="flex flex-col gap-[12px]">
+        <lfx-health-metrics-line-chart [chart]="chart().chart" testId="engagement-newsletter-performance-chart" />
+        <div class="flex flex-wrap justify-center gap-x-[16px] gap-y-[6px]" aria-hidden="true" data-testid="engagement-newsletter-performance-legend">
+          @for (item of chart().legend; track item.key) {
+            <span
+              class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+              [attr.data-testid]="'engagement-newsletter-performance-legend-' + item.key">
+              <!-- A dashed series gets the event trend's dashed Predicted swatch. -->
+              @if (item.dashed) {
+                <span
+                  class="h-0 w-[14px] border-t-2 border-dashed"
+                  [style.border-top-color]="item.color"
+                  data-testid="engagement-newsletter-performance-legend-swatch-dashed"></span>
+              } @else {
+                <span
+                  class="h-[3px] w-[14px] rounded-full"
+                  [style.background]="item.color"
+                  data-testid="engagement-newsletter-performance-legend-swatch"></span>
+              }
+              {{ item.label }}
+            </span>
+          }
+        </div>
+      </div>
+    } @else {
+      <p class="text-[13px] text-gray-500" data-testid="engagement-newsletter-performance-chart-empty">
+        No opens or clicks are recorded yet for the newsletters sent in this period.
+      </p>
+    }
+
+    <!-- The design's 700px minimum; a narrower card scrolls the table sideways. Every column after the first is right-aligned. -->
+    <lfx-table
+      styleClass="hm-table"
+      [rowHover]="false"
+      [value]="pageRows()"
+      [paginator]="false"
+      [tableStyle]="{ 'min-width': '700px' }"
+      data-testid="engagement-newsletter-performance-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col" [attr.aria-sort]="sorting.headers().newsletter.ariaSort">
+            <lfx-health-metrics-th
+              label="Newsletter"
+              [sort]="sorting.headers().newsletter.state"
+              (sorted)="sorting.toggle('newsletter')"
+              data-testid="engagement-newsletter-performance-sort-newsletter" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().recipients.ariaSort">
+            <lfx-health-metrics-th
+              label="Recipients"
+              [sort]="sorting.headers().recipients.state"
+              (sorted)="sorting.toggle('recipients')"
+              data-testid="engagement-newsletter-performance-sort-recipients" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().opens.ariaSort">
+            <lfx-health-metrics-th
+              label="Unique opens"
+              [sort]="sorting.headers().opens.state"
+              (sorted)="sorting.toggle('opens')"
+              data-testid="engagement-newsletter-performance-sort-opens" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().openRate.ariaSort">
+            <lfx-health-metrics-th
+              label="Open rate"
+              [sort]="sorting.headers().openRate.state"
+              (sorted)="sorting.toggle('openRate')"
+              data-testid="engagement-newsletter-performance-sort-openRate" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().clicks.ariaSort">
+            <lfx-health-metrics-th
+              label="Unique clicks"
+              [sort]="sorting.headers().clicks.state"
+              (sorted)="sorting.toggle('clicks')"
+              data-testid="engagement-newsletter-performance-sort-clicks" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().clickRate.ariaSort">
+            <lfx-health-metrics-th
+              label="Click rate"
+              [sort]="sorting.headers().clickRate.state"
+              (sorted)="sorting.toggle('clickRate')"
+              data-testid="engagement-newsletter-performance-sort-clickRate" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().clickToOpen.ariaSort">
+            <lfx-health-metrics-th
+              label="Click-to-open"
+              [sort]="sorting.headers().clickToOpen.state"
+              (sorted)="sorting.toggle('clickToOpen')"
+              data-testid="engagement-newsletter-performance-sort-clickToOpen" />
+          </th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-row>
+        <tr [attr.data-testid]="'engagement-newsletter-performance-row-' + row.key">
+          <td>
+            <lfx-health-metrics-cell [text]="row.name" [description]="row.sentLabel" />
+          </td>
+          <td><lfx-health-metrics-cell class="items-end" [text]="row.recipientsLabel" [description]="row.failedLabel" /></td>
+          <td><lfx-health-metrics-cell class="items-end" [text]="row.uniqueOpensLabel" [description]="row.totalOpensLabel" /></td>
+          <td>
+            @if (row.openRatePct === null) {
+              <lfx-health-metrics-cell class="items-end" [text]="row.openRateLabel" />
+            } @else {
+              <!-- The design's rate over a 6px bar, at most 56px wide, both right-aligned. -->
+              <div class="flex flex-col items-end gap-[4px]" [attr.data-testid]="'engagement-newsletter-performance-row-' + row.key + '-open-rate'">
+                <span class="text-[14px] text-gray-900">{{ row.openRateLabel }}</span>
+                <span class="block h-[6px] w-full max-w-[56px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true"
+                  ><span class="block h-full rounded-full bg-blue-500" [style.width.%]="row.openRatePct"></span
+                ></span>
+              </div>
+            }
+          </td>
+          <td><lfx-health-metrics-cell class="items-end" [text]="row.uniqueClicksLabel" [description]="row.totalClicksLabel" /></td>
+          <td><lfx-health-metrics-cell class="items-end" [text]="row.clickRateLabel" /></td>
+          <td><lfx-health-metrics-cell class="items-end" [text]="row.clickToOpenLabel" /></td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+
+    <lfx-ui-pagination [total]="rows().length" [pageSize]="size" [(page)]="page" />
+  }
+</div>

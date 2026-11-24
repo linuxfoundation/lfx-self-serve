@@ -62,7 +62,7 @@ for (const entry of [
   });
 }
 
-test('Family polling keeps expanded Sources and Sign-off without repeating the revision read', async ({ page }, info) => {
+test('Family polling keeps Sources expanded and Sign-off absent without repeating the revision read', async ({ page }, info) => {
   await suppressCookieBanner(page);
   let revisionReads = 0;
   page.on('request', (request) => {
@@ -73,9 +73,10 @@ test('Family polling keeps expanded Sources and Sign-off without repeating the r
   const sources = page.getByTestId('mktg-family-sources-list');
   const signOff = page.locator('#mktg-family-sign-off-text');
   await page.getByTestId('mktg-family-sources-toggle').getByRole('button', { name: 'Show' }).click();
-  await page.getByTestId('mktg-family-sign-off-toggle').getByRole('button', { name: 'Show' }).click();
   await expect(sources).toBeVisible();
-  await expect(signOff).toBeVisible();
+  await expect(page.getByTestId('mktg-family-approve')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-family-sign-off-toggle')).toHaveCount(0);
+  await expect(signOff).toHaveCount(0);
   expect(revisionReads).toBe(1);
   for (let refresh = 0; refresh < 2; refresh++) {
     await page.waitForResponse((response) => {
@@ -83,7 +84,10 @@ test('Family polling keeps expanded Sources and Sign-off without repeating the r
       return url.pathname === MKTG_DOCUMENTS_API_PATH && url.searchParams.get('poll') === '1';
     });
     await expect(sources).toBeVisible();
-    await expect(signOff).toBeVisible();
+    await expect(page.getByTestId('mktg-family-sources-toggle').getByRole('button')).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByTestId('mktg-family-approve')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-family-sign-off-toggle')).toHaveCount(0);
+    await expect(signOff).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-sources-loading')).toBeEmpty();
     expect(revisionReads).toBe(1);
   }

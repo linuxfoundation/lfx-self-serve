@@ -4,3 +4,66 @@
 :host {
   display: block;
 }
+
+// The design's header on scroll, 0.25s ease. From 768px the top padding, the gap to the tabs and the title tighten;
+// narrower, only the title shrinks. The description fades and collapses, and the divider shows, at every width.
+.hm-head {
+  gap: 14px;
+  padding-top: 28px;
+  transition:
+    gap 0.25s ease,
+    padding-top 0.25s ease;
+}
+
+.hm-head-title {
+  font-size: 24px;
+  transition: font-size 0.25s ease;
+}
+
+// Collapses through its grid row, so the description's own height never has to be known.
+.hm-head-desc {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 0.25s ease,
+    opacity 0.25s ease;
+}
+
+.hm-head-divider {
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.hm-head-compact {
+  .hm-head-title {
+    font-size: 22px;
+  }
+
+  .hm-head-desc {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+
+  .hm-head-divider {
+    opacity: 1;
+  }
+
+  @media (min-width: 768px) {
+    gap: 4px;
+    padding-top: 20px;
+
+    .hm-head-title {
+      font-size: 20px;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hm-head,
+  .hm-head-title,
+  .hm-head-desc,
+  .hm-head-divider {
+    transition: none;
+  }
+}

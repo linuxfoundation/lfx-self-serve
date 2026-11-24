@@ -20,11 +20,11 @@ export class Auth0Service {
 
   /**
    * Get the linked identities for an Auth0 user via NATS auth-service.
-   * Sends the user's Auth0 sub (e.g., "auth0|fghiasy") which the auth-service
-   * resolves via canonical lookup without JWT validation.
+   * auth-service resolves the user from the request's verified bearer token, so `auth0Sub` only
+   * gates whether there is a signed-in user to look up; it is not sent.
    *
-   * @param req - Express request for logging context
-   * @param auth0Sub - The user's Auth0 sub claim (e.g., "auth0|fghiasy")
+   * @param req - Express request carrying the effective user's bearer token
+   * @param auth0Sub - The effective user's Auth0 sub claim (e.g., "auth0|fghiasy")
    * @returns Array of Auth0 linked identities
    */
   public async getUserIdentities(req: Request, auth0Sub: string): Promise<Auth0Identity[]> {
@@ -35,6 +35,6 @@ export class Auth0Service {
 
     logger.debug(req, 'get_auth0_identities', 'Fetching Auth0 user identities via NATS', { auth0_sub: auth0Sub });
 
-    return this.emailVerificationService.listIdentities(req, auth0Sub);
+    return this.emailVerificationService.listIdentities(req);
   }
 }

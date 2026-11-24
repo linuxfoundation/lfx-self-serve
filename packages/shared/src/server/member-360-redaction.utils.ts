@@ -37,7 +37,7 @@ function markEmailSpans(text: string, ends: Uint32Array): void {
 }
 
 /** Exact known contacts only, never guessed names or fragments inside other words. */
-export function createMember360Redactor(contacts: (string | null)[]): (text: string) => string {
+export function createMember360Redactor(contacts: (string | null)[], subjects?: RegExp): (text: string) => string {
   const patterns = [...new Set(contacts.filter((value): value is string => value !== null).map((value) => value.trim()))]
     .filter((value) => value.length >= 3 && !MEMBER_360_CONTACT_PLACEHOLDERS.some((placeholder) => placeholder === value.toLowerCase()))
     .map((value) => new RegExp(`(?<![\\p{L}\\p{N}_])${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}_])`, 'gu'));
@@ -46,7 +46,9 @@ export function createMember360Redactor(contacts: (string | null)[]): (text: str
     // without sorting or allowing one replacement to hide another contact/email.
     const ends = new Uint32Array(text.length);
     markEmailSpans(text, ends);
-    for (const pattern of patterns) {
+    // Match contacts first, then optional provider subjects, all against original
+    // bytes. Unioning spans prevents either replacement from hiding the other.
+    for (const pattern of [...patterns, ...(subjects ? [subjects] : [])]) {
       for (const match of text.matchAll(pattern)) ends[match.index] = Math.max(ends[match.index], match.index + match[0].length);
     }
     const chunks: string[] = [];

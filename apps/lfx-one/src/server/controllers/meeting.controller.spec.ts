@@ -18,8 +18,20 @@ const V1_COMMITTEE_SFID = 'a09v1SFIDaaaa';
 const USER_TOKEN = 'user-bearer-token';
 const M2M_TOKEN = 'm2m-bearer-token';
 
-const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, resolveCommitteeV2UidMappingsMock, generateM2MTokenMock } = vi.hoisted(() => ({
+const {
+  meetingSvc,
+  aiSvc,
+  committeeSvc,
+  userSvc,
+  attachRsvpSummariesMock,
+  resolveCommitteeV2UidsToV1IdsMock,
+  resolveCommitteeV2UidMappingsMock,
+  generateM2MTokenMock,
+} = vi.hoisted(() => ({
+  userSvc: { getUserMeetingRegistrations: vi.fn(), attachViewerRsvps: vi.fn() },
+  attachRsvpSummariesMock: vi.fn(),
   meetingSvc: {
+    getMeetings: vi.fn(),
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
     assertCommitteeAttributionAllowed: vi.fn(),
@@ -76,9 +88,11 @@ vi.mock('@lfx-one/shared/constants', () => ({
   MEETING_REGISTRANT_BATCH_MAX: 100,
   MEETING_REGISTRANT_BATCH_CONCURRENCY: 5,
   MEETING_REMOVAL_SOURCE_HEADER: 'x-lfx-removal-source',
-  MEETING_REMOVAL_SOURCES: ['meeting-card', 'meeting-join'],
+  MEETING_REMOVAL_SOURCES: ['meeting-card', 'meeting-join', 'meetings-home'],
   MIN_CUSTOM_DURATION: 5,
   MAX_MEETING_DURATION: 600,
+  MEETINGS_INCLUDE_VIEWER_RSVP: 'viewer_rsvp',
+  USER_MEETINGS_INCLUDE_ATTENDANCE: 'attendance',
 }));
 // `truncateToUtf16Units` is the real implementation: the truncation assertions below are about what
 // the controller sends upstream, so stubbing it would test the stub. `string.utils` has no imports of
@@ -134,9 +148,10 @@ vi.mock('../services/nats.service', () => ({
 }));
 vi.mock('../services/user.service', () => ({
   UserService: vi.fn(function () {
-    return {};
+    return userSvc;
   }),
 }));
+vi.mock('../helpers/meeting-attendance.helper', () => ({ attachMeetingRsvpSummaries: attachRsvpSummariesMock }));
 vi.mock('../services/access-check.service', () => ({
   AccessCheckService: vi.fn(function () {
     return {};
@@ -374,19 +389,25 @@ describe('MeetingController', () => {
       meetingSvc.getMeetingById.mockResolvedValue({ committees: [{ uid: V2_COMMITTEE_UID }] });
     });
 
-    // GH-1463: upstream stores a v1 SFID and derives type: 'committee' from it. Forwarding the v2
-    // UID the picker works in would persist a bogus committee reference.
-    it('rewrites a group guest committee_uid from the v2 UID to the v1 SFID', async () => {
+    // lfx-self-serve-ops#1514: lfx-v2-meeting-service owns the v2→v1 translation for this field
+    // internally (CreateRegistrant/UpdateRegistrant call mapCommitteeFieldV2ToV1 on whatever
+    // committee_uid they receive, and translate the response back to v2). Substituting the v1 SFID
+    // here too, as this used to, was a double translation: upstream's own resolver then tried to
+    // translate the already-v1 SFID as if it were still v2, which can never succeed, and surfaced
+    // in production as "invalid ID: mapping not found for committee.uid.<v1_sfid>". The resolution
+    // lookup itself still runs (and still gates a committee with no v1 counterpart) — only the
+    // substitution of its resolved value is gone.
+    it('forwards a group guest committee_uid as the v2 UID once it resolves, instead of substituting the v1 SFID', async () => {
       resolveCommitteeV2UidMappingsMock.mockResolvedValue({ resolved: new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]), confirmedUnresolved: new Set() });
       const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: V2_COMMITTEE_UID }] });
 
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
-      expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ committee_uid: V1_COMMITTEE_SFID }));
+      expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ committee_uid: V2_COMMITTEE_UID }));
     });
 
     // A caller can attribute a guest to any committee UID it likes; only the ones the meeting is
-    // actually scoped to may be resolved, or the v1 lookup becomes an unauthorized cross-project read.
+    // actually scoped to may be resolved, or the lookup becomes an unauthorized cross-project read.
     it('strips a committee_uid the meeting is not scoped to without looking it up', async () => {
       const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: 'cmte-v2-someone-elses' }] });
 
@@ -973,12 +994,35 @@ describe('MeetingController', () => {
       generateM2MTokenMock.mockResolvedValue(M2M_TOKEN);
     });
 
-    it('enriches committee metadata for a registrant of the meeting', async () => {
+    it('enriches committee metadata for an organizer of the meeting', async () => {
       const res = buildRes();
 
       await controller.getMyMeetingRegistrants(buildReq(), res, next);
 
       expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ committee_name: 'TAC', committee_uid: V2_COMMITTEE_UID })]);
+    });
+
+    // Group attribution is committee membership (role, voting status, appointment), not the guest list,
+    // so a guest of a meeting that shares its list gets the plain roster, as on `getMeetingRegistrants`.
+    it.each([
+      ['an open meeting', {}],
+      ['an invite-only meeting', { restricted: true }],
+    ])('returns the plain roster without committee lookups to a guest of %s that shares its list', async (_label, access) => {
+      meetingSvc.getMeetingById.mockResolvedValue({
+        uid: MEETING_ID,
+        organizer: false,
+        show_meeting_attendees: true,
+        committees: [{ uid: V2_COMMITTEE_UID }],
+        ...access,
+      });
+      const res = buildRes();
+
+      await controller.getMyMeetingRegistrants(buildReq(), res, next);
+
+      expect(res.json).toHaveBeenCalledWith([registrant]);
+      expect(resolveCommitteeV2UidsToV1IdsMock).not.toHaveBeenCalled();
+      expect(committeeSvc.getCommitteeBase).not.toHaveBeenCalled();
+      expect(committeeSvc.getCommitteeMembers).not.toHaveBeenCalled();
     });
 
     // Card avatar previews only draw a few faces, so they skip the committee fan-out and accept a
@@ -1028,17 +1072,24 @@ describe('MeetingController', () => {
         expect(res.json).toHaveBeenCalledWith([registrant]);
       });
 
-      it.each([
-        ['a Board meeting', { meeting_type: 'Board' }],
-        ['a restricted meeting', { restricted: true }],
-      ])('returns no roster to an invitee of %s that still carries a legacy opt-in', async (_label, lock) => {
-        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, show_meeting_attendees: true, committees: [], ...lock });
+      it('returns no roster to an invitee of a Board meeting that still carries a legacy opt-in', async () => {
+        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, show_meeting_attendees: true, committees: [], meeting_type: 'Board' });
         const res = buildRes();
 
         await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
 
         expect(res.json).toHaveBeenCalledWith([]);
         expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+      });
+
+      // #5438: an invite-only meeting can opt in from the composer, so the roster honours it.
+      it('returns the roster to an invitee of a restricted meeting that shares its attendees', async () => {
+        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, show_meeting_attendees: true, committees: [], restricted: true });
+        const res = buildRes();
+
+        await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
+
+        expect(res.json).toHaveBeenCalledWith([registrant]);
       });
 
       it('returns the roster to an organizer even when the meeting hides its attendees', async () => {
@@ -1334,7 +1385,7 @@ describe('MeetingController', () => {
       meetingSvc.removeMeetingRegistrantSelf.mockResolvedValue({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: [] });
     });
 
-    it('ignores client-supplied identity and IDs and answers 200 with the removed registration IDs', async () => {
+    it('uses session identity while forwarding the optional saved UID for upstream ownership validation', async () => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce('alice');
       const req = buildReq({
         body: { email: 'other@example.com', username: 'other', registrant_id: 'reg-other' },
@@ -1345,22 +1396,43 @@ describe('MeetingController', () => {
       await controller.removeMyMeetingRegistration(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
-      expect(meetingSvc.removeMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'alice', M2M_TOKEN);
+      expect(meetingSvc.removeMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'alice', M2M_TOKEN, 'reg-other');
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: [] });
     });
 
-    it('logs the UI surface named in the removal-source header on start and success', async () => {
-      const req = buildReq({}, { 'x-lfx-removal-source': 'meeting-card' });
+    it.each([{ value: '' }, { value: '   ' }, { value: ['reg-a', 'reg-b'] }, { value: { nested: 'reg-a' } }, { value: null }, { value: 123 }])(
+      'rejects malformed present registrant IDs: %j',
+      async ({ value: registrantUid }) => {
+        const req = buildReq({ query: { registrant_id: registrantUid } } as unknown as Partial<Request>);
+        await controller.removeMyMeetingRegistration(req, buildRes(), next);
+        expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
+        expect(meetingSvc.removeMeetingRegistrantSelf).not.toHaveBeenCalled();
+        expect(generateM2MTokenMock).not.toHaveBeenCalled();
+      }
+    );
+
+    it('trims a saved UID and omits the hint when absent', async () => {
+      const req = buildReq({ query: { registrant_id: ' saved-self ' } });
+      await controller.removeMyMeetingRegistration(req, buildRes(), next);
+      expect(meetingSvc.removeMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', undefined, M2M_TOKEN, 'saved-self');
+      meetingSvc.removeMeetingRegistrantSelf.mockClear();
+      const withoutHint = buildReq();
+      await controller.removeMyMeetingRegistration(withoutHint, buildRes(), next);
+      expect(meetingSvc.removeMeetingRegistrantSelf).toHaveBeenCalledWith(withoutHint, MEETING_ID, 'user@example.com', undefined, M2M_TOKEN, undefined);
+    });
+
+    it.each(['meeting-card', 'meetings-home'])('logs the UI surface named in the removal-source header (%s) on start and success', async (source) => {
+      const req = buildReq({}, { 'x-lfx-removal-source': source });
 
       await controller.removeMyMeetingRegistration(req, buildRes(), next);
 
-      expect(logger.startOperation).toHaveBeenCalledWith(req, 'remove_my_meeting_registration', expect.objectContaining({ source: 'meeting-card' }));
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'remove_my_meeting_registration', expect.objectContaining({ source }));
       expect(logger.success).toHaveBeenCalledWith(
         req,
         'remove_my_meeting_registration',
         expect.anything(),
-        expect.objectContaining({ source: 'meeting-card', removed_count: 1, remaining_count: 0 })
+        expect.objectContaining({ source, removed_count: 1, remaining_count: 0 })
       );
     });
 
@@ -1550,6 +1622,40 @@ describe('MeetingController', () => {
       await controller.uploadMeetingAttachment(buildUploadReq(), buildRes(), next);
 
       expect(meetingSvc.uploadMeetingAttachment.mock.calls[0][3]).not.toHaveProperty('occurrence_id');
+    });
+  });
+
+  describe('getMeetings — meetings home include', () => {
+    const listed = [{ id: 'meeting-a', organizer: true }];
+    const summarized = [{ id: 'meeting-a', organizer: true, invited: true, invited_via_committee: false, rsvp_summary: { yes: 1 } }];
+
+    beforeEach(() => {
+      meetingSvc.getMeetings.mockResolvedValue({ data: listed, page_token: 'next' });
+      userSvc.getUserMeetingRegistrations.mockResolvedValue(new Map([['meeting-a', false]]));
+      userSvc.attachViewerRsvps.mockResolvedValue(new Set());
+      attachRsvpSummariesMock.mockResolvedValue(summarized);
+    });
+
+    it('adds the viewer RSVP and organizer summaries when included, without forwarding include upstream', async () => {
+      const res = buildRes();
+
+      await controller.getMeetings(buildReq({ query: { include: 'viewer_rsvp, attendance', project_uid: 'p1' } }), res, next);
+
+      expect(meetingSvc.getMeetings).toHaveBeenCalledWith(expect.anything(), { project_uid: 'p1' }, 'v1_meeting', true);
+      const rows = [{ id: 'meeting-a', organizer: true, invited: true, invited_via_committee: false }];
+      expect(userSvc.attachViewerRsvps).toHaveBeenCalledWith(expect.anything(), rows, 'get_meetings');
+      expect(attachRsvpSummariesMock).toHaveBeenCalledWith(expect.anything(), rows);
+      expect(res.json).toHaveBeenCalledWith({ data: summarized, page_token: 'next' });
+    });
+
+    it('runs neither lookup without include', async () => {
+      const res = buildRes();
+
+      await controller.getMeetings(buildReq({ query: {} }), res, next);
+
+      expect(userSvc.attachViewerRsvps).not.toHaveBeenCalled();
+      expect(attachRsvpSummariesMock).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ data: [{ id: 'meeting-a', organizer: true, invited: true, invited_via_committee: false }], page_token: 'next' });
     });
   });
 });

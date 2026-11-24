@@ -3,7 +3,7 @@
 
 /**
  * Admin programs list — the real list, status badges, search, the status filter, load more, the failed-load state and Retry
- * (linuxfoundation/lfx-mentorship#232), and the "Logo missing" hint with its "Add logo" upload (linuxfoundation/lfx-mentorship#261).
+ * (linuxfoundation/lfx-mentorship#232), the In Progress and Upcoming statuses (#426), and the "Logo missing" hint with its "Add logo" upload (#261).
  *
  * The page reads `/api/mentorship/admin/programs`, which the BFF serves from upstream `GET /me/programs`.
  * Each test stubs that read via `page.route` with a synthetic payload, so the suite never
@@ -12,8 +12,7 @@
  * nothing is ever sent to a real bucket.
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the read is made by the browser and
- * the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs. The module is
- * behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
+ * the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -25,7 +24,7 @@ import { MentorshipProgram, MentorshipProgramsResponse } from '@lfx-one/shared/i
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -55,7 +54,7 @@ const program = (id: string, name: string, status: MentorshipProgram['status']):
 
 const POPULATED: MentorshipProgramsResponse = {
   data: [
-    program(OPEN_ID, 'Test Program Open', 'open'),
+    program(OPEN_ID, 'Test Program Open', 'accepting'),
     program(PENDING_ID, 'Test Program Pending', 'pending-review'),
     program(REJECTED_ID, 'Test Program Rejected', 'rejected'),
     program(HIDDEN_ID, 'Test Program Hidden', 'hidden'),
@@ -71,7 +70,6 @@ async function stubPrograms(page: Page, body: MentorshipProgramsResponse): Promi
 
 test.describe('Admin programs list — real programs', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, POPULATED);
     await openMentorPage(page, ADMIN_URL);
   });
@@ -89,7 +87,7 @@ test.describe('Admin programs list — real programs', () => {
     await expect(page.getByTestId(`mentorship-program-card-${PENDING_ID}`)).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
 
     const badge = (id: string) => page.getByTestId(`mentorship-program-card-${id}`).getByTestId('mentorship-program-card-status');
-    await expect(badge(OPEN_ID)).toHaveText('Open');
+    await expect(badge(OPEN_ID)).toHaveText('Accepting');
     await expect(badge(PENDING_ID)).toHaveText('Pending Review');
     await expect(badge(REJECTED_ID)).toHaveText('Rejected');
     await expect(badge(HIDDEN_ID)).toHaveText('Hidden');
@@ -109,7 +107,6 @@ test.describe('Admin programs list — search, status filter and load more', () 
   const card = (page: Page, id: string) => page.getByTestId(`mentorship-program-card-${id}`);
 
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route(PROGRAMS_ROUTE, (route) => {
       const params = new URL(route.request().url()).searchParams;
       if (params.get('search') === 'Hidden') return fulfillJson(route, pageOf(POPULATED.data[3]));
@@ -148,9 +145,41 @@ test.describe('Admin programs list — search, status filter and load more', () 
   });
 });
 
+// The published statuses split from Open (linuxfoundation/lfx-mentorship#426), as their cards and the filter name them.
+test.describe('Admin programs list — In Progress and Upcoming', () => {
+  const IN_PROGRESS_ID = '75555555-5555-4555-8555-555555555555';
+  const UPCOMING_ID = '76666666-6666-4666-8666-666666666666';
+  const SPLIT: MentorshipProgramsResponse = {
+    data: [program(IN_PROGRESS_ID, 'Test Program Running', 'in-progress'), program(UPCOMING_ID, 'Test Program Soon', 'upcoming')],
+    total: 2,
+  };
+
+  test('labels each card with its status, and the filter offers both', async ({ page }) => {
+    const statuses: (string | null)[] = [];
+    await page.route(PROGRAMS_ROUTE, (route) => {
+      const status = new URL(route.request().url()).searchParams.get('status');
+      statuses.push(status);
+      return fulfillJson(route, status === 'upcoming' ? { data: [SPLIT.data[1]], total: 1 } : SPLIT);
+    });
+    await openMentorPage(page, ADMIN_URL);
+
+    const badge = (id: string) => page.getByTestId(`mentorship-program-card-${id}`).getByTestId('mentorship-program-card-status');
+    await expect(badge(IN_PROGRESS_ID)).toHaveText('In Progress', { timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+    await expect(badge(UPCOMING_ID)).toHaveText('Upcoming');
+
+    await page.getByTestId('mentorship-programs-status-filter').locator('.p-select').first().click();
+    await expect(page.getByRole('option', { name: 'In Progress', exact: true })).toBeVisible();
+    await page.getByRole('option', { name: 'Upcoming', exact: true }).click();
+
+    await expect(page.getByTestId(`mentorship-program-card-${UPCOMING_ID}`)).toBeVisible();
+    await expect(page.getByTestId(`mentorship-program-card-${IN_PROGRESS_ID}`)).toHaveCount(0);
+    await expect(page.getByTestId('mentorship-programs-cards')).toHaveCount(1);
+    expect(statuses).toContain('upcoming');
+  });
+});
+
 test.describe('Admin programs list — failed load', () => {
   test('shows an inline error with Retry, and lists the programs once Retry succeeds', async ({ page }) => {
-    await enableMentorshipFlag(page);
     let failing = true;
     await page.route(PROGRAMS_ROUTE, (route) =>
       failing ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'down' }) }) : fulfillJson(route, POPULATED)
@@ -179,7 +208,7 @@ test.describe('Admin programs list — logo missing', () => {
   const rows = (pendingLogoAdded = false): MentorshipProgramsResponse => ({
     data: [
       { ...program(PENDING_NO_LOGO_ID, 'Acme Rocket Mentorship', 'pending-review'), logoMissing: !pendingLogoAdded },
-      { ...program(PUBLISHED_NO_LOGO_ID, 'Acme Orbit Mentorship', 'open'), logoMissing: true },
+      { ...program(PUBLISHED_NO_LOGO_ID, 'Acme Orbit Mentorship', 'accepting'), logoMissing: true },
       { ...program(PENDING_WITH_LOGO_ID, 'Acme Lander Mentorship', 'pending-review'), logoMissing: false },
       { ...program(REJECTED_NO_LOGO_ID, 'Acme Probe Mentorship', 'rejected'), logoMissing: false },
     ],
@@ -208,7 +237,6 @@ test.describe('Admin programs list — logo missing', () => {
   }
 
   test('shows the hint on a pending or published program without a logo, and on no other', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, rows());
     await openMentorPage(page, ADMIN_URL);
     await expect(card(page, PENDING_NO_LOGO_ID)).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
@@ -224,7 +252,6 @@ test.describe('Admin programs list — logo missing', () => {
   });
 
   test('Add logo uploads the picked PNG, stays on the list, and the reloaded list drops the hint', async ({ page }) => {
-    await enableMentorshipFlag(page);
     let logoAdded = false;
     await page.route(PROGRAMS_ROUTE, (route) => fulfillJson(route, rows(logoAdded)));
     const logoRequests: string[] = [];
@@ -247,7 +274,6 @@ test.describe('Admin programs list — logo missing', () => {
   });
 
   test('a 403 shows the permission message once, with no back-off, and keeps the hint', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, rows());
     let logoRequests = 0;
     await page.route(LOGO_ROUTE, (route) => {

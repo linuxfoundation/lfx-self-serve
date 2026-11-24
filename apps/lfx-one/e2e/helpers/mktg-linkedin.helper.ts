@@ -13,12 +13,19 @@ import {
 import { LINKEDIN_RECORDED_CASES } from '../../../../packages/shared/src/constants/linkedin-post-recorded.fixture';
 import { LINKEDIN_RECORDED_QUESTIONS, LINKEDIN_RECORDED_PROGRESS } from '../../../../packages/shared/src/constants/linkedin-post-questions.fixture';
 import { parseLinkedinQuestions, linkedinRunQuestions, linkedinRunActivity } from '../../../../packages/shared/src/utils/linkedin-post-run.utils';
-import type { LinkedinEnvelope, MktgDocumentRunProgress, MktgRevisionResponse, MktgRevisionSummary } from '../../../../packages/shared/src/interfaces';
+import type {
+  LinkedinEnvelope,
+  LinkedinProfile,
+  MktgDocumentRunProgress,
+  MktgRevisionResponse,
+  MktgRevisionSummary,
+} from '../../../../packages/shared/src/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '../../../../packages/shared/src/utils/linkedin-post.utils';
 import { expect, Page, Route } from '@playwright/test';
 import { mockProjects } from '../fixtures/mock-data';
 import { ApiMockHelper } from './api-mock.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
+import { pinMktgOsFlags } from './mktg-os-flags.helper';
 import { waitForHydration } from './meeting-composer-guests.helper';
 
 export const LINKEDIN_RUN_TIMEOUT = 20000;
@@ -66,6 +73,8 @@ export async function setupLinkedin(
     saved?: boolean;
     writer?: boolean;
     profileError?: boolean;
+    /** The saved profile the stubbed GET returns; defaults to the test profile (or the recorded case's). */
+    profile?: LinkedinProfile;
     author?: { name: string | null; isAuthor: boolean };
     recordedCase?: string;
     questions?: boolean;
@@ -82,7 +91,7 @@ export async function setupLinkedin(
   if (!type) throw new Error('LinkedIn document type is not registered');
   const recorded = options.recordedCase ? LINKEDIN_RECORDED_CASES.find((item) => item.name.endsWith(`/${options.recordedCase}`)) : undefined;
   const output: LinkedinEnvelope = JSON.parse(JSON.stringify(options.output ?? recorded?.envelope ?? linkedinEnvelope()));
-  let selectedProfile = recorded ? output.profile : LINKEDIN_TEST_PROFILE;
+  let selectedProfile = options.profile ?? (recorded ? output.profile : LINKEDIN_TEST_PROFILE);
   let hasProfile = options.saved ?? false;
   const turn = parseLinkedinQuestions(LINKEDIN_RECORDED_QUESTIONS);
   const events = LINKEDIN_RECORDED_PROGRESS.map((event, index) =>
@@ -111,7 +120,7 @@ export async function setupLinkedin(
     mailing_list_count: 0,
   };
   await ApiMockHelper.setupProjectSlugMock(page, { writer: options.writer ?? true });
-  await page.addInitScript(() => localStorage.setItem('lfx-feature-flag-overrides', JSON.stringify({ 'mktg-os-agents-enabled': true })));
+  await pinMktgOsFlags(page);
   await page.route('**/api/user/personas*', (route) =>
     json(route, { personas: ['executive-director'], personaProjects: {}, projects: [], organizations: [], isRootWriter: true })
   );
@@ -129,7 +138,30 @@ export async function setupLinkedin(
     (route) => {
       if (route.request().method() !== 'GET' || new URL(route.request().url()).searchParams.get('project') !== project.uid)
         return route.abort('blockedbyclient');
-      return json(route, { project: project.uid, groups: MKTG_DOCUMENT_TYPES.map((type) => ({ type, documents: [] })) }, options.writer === false ? 403 : 200);
+      const own = new URL(route.request().url()).searchParams.get('ownRuns') === '1';
+      const recordedRuns: MktgDocumentRunProgress[] = [];
+      if (own)
+        for (const [session, run] of runs) {
+          if (run.completed) continue;
+          recordedRuns.push({
+            project: project.uid,
+            agentKey: type.agentKey,
+            documentId: run.documentId,
+            runId: Number(session.split('-').at(-1)).toString(16).padStart(64, '0'),
+            state: run.failed ? 'failed' : 'writing',
+            startedAt: '2026-10-28T10:00:00Z',
+          });
+        }
+      if (options.questions)
+        recordedRuns.forEach((row) => {
+          const source = [...runs.values()].find((run) => run.documentId === row.documentId);
+          if (source && !source.answered && !source.failed) row.state = 'questions';
+        });
+      return json(
+        route,
+        { project: project.uid, groups: MKTG_DOCUMENT_TYPES.map((type) => ({ type, documents: [] })), runs: recordedRuns, ...(own && { creatorScoped: true }) },
+        options.writer === false ? 403 : 200
+      );
     }
   );
   await page.route(
@@ -198,7 +230,9 @@ export async function setupLinkedin(
         activity: linkedinRunActivity(events),
       });
     run.completed = true;
-    if (output.profile_source === 'first_run_setup' && options.profileSaved !== false) {
+    // Create-only, like the BFF's initializeOnce: a first run saves the envelope's profile, but a profile the
+    // author already saved is never replaced by a stubbed envelope — the by-line follows the saved profile.
+    if (!hasProfile && output.profile_source === 'first_run_setup' && options.profileSaved !== false) {
       selectedProfile = output.profile;
       hasProfile = true;
     }
@@ -286,7 +320,8 @@ export async function setupLinkedin(
       ...document,
       documentId: run.documentId,
       linkedinPost: {
-        author: { name: options.author?.name === undefined ? 'Example author' : options.author.name },
+        // Mirrors the BFF: the author's by-line is their saved profile's name; a non-author test names the account explicitly.
+        author: { name: options.author?.name === undefined ? selectedProfile.about.name : options.author.name },
         isAuthor: options.author?.isAuthor ?? true,
         options: output.options,
         notes: output.notes,

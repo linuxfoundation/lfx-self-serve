@@ -1,15 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_FILE_TYPES, EDITABLE_STAFF_ROLES, EMAIL_REGEX, LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
+import { ALLOWED_FILE_TYPES, DOCUMENT_DELETE_TYPES, EDITABLE_STAFF_ROLES, EMAIL_REGEX, LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   AddUserToProjectRequest,
   CreateProjectDocumentRequest,
   Meeting,
   PastMeeting,
+  ProjectDocumentType,
   PublicCalendarMeeting,
   PublicProjectMeetingsResponse,
+  PublicProjectSummary,
   RemoveUserFromProjectRequest,
   UpdateProjectStaffRequest,
   UpdateUserRoleRequest,
@@ -165,11 +167,12 @@ export class ProjectController {
 
       const includeMeetingCoordinator = req.query['meeting_coordinator'] === 'true';
       const includeAuditor = req.query['auditor'] === 'true';
+      const strictWriter = req.query['strict_writer'] === 'true';
 
       // A uuid slug fetches by id; otherwise resolve by slug
       const project = isUuid(slug)
-        ? await this.projectService.getProjectById(req, slug, true, includeMeetingCoordinator, includeAuditor)
-        : await this.projectService.getProjectBySlug(req, slug, includeMeetingCoordinator, includeAuditor);
+        ? await this.projectService.getProjectById(req, slug, true, includeMeetingCoordinator, includeAuditor, strictWriter)
+        : await this.projectService.getProjectBySlug(req, slug, includeMeetingCoordinator, includeAuditor, strictWriter);
 
       logger.success(req, 'get_project_by_slug', startTime, {
         slug,
@@ -479,6 +482,36 @@ export class ProjectController {
         role: staffData.role,
         cleared: staffData.assignee === null,
       });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /projects/:uid/formation-record - Change a project's stage and legal-entity fields from the
+   * formation card (#5134). Only the keys present in the body change; the service guards on
+   * `writer_guard` + formation-team membership before any upstream read.
+   */
+  public async updateFormationRecord(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    // Never log the body: it carries legal-entity data. Key names only, inside the service.
+    const startTime = logger.startOperation(req, 'update_formation_record_request', { uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'update_formation_record',
+          service: 'project_controller',
+        })
+      ) {
+        return;
+      }
+
+      const result = await this.projectService.updateFormationRecord(req, uid, req.body);
+
+      logger.success(req, 'update_formation_record_request', startTime, { uid });
 
       res.json(result);
     } catch (error) {
@@ -940,14 +973,14 @@ export class ProjectController {
   }
 
   /**
-   * DELETE /projects/:uid/documents/:documentId?type=folder|link
+   * DELETE /projects/:uid/documents/:documentId?type=folder|link|file
    */
   public async deleteProjectDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, documentId } = req.params;
     // Use getStringQueryParam so repeated `?type=folder&type=link` keys can't slip through
     // as an array and bypass the validation below.
     const documentType = getStringQueryParam(req, 'type');
-    const validDeleteTypes = ['link', 'folder'];
+    const validDeleteTypes: readonly string[] = DOCUMENT_DELETE_TYPES;
     const startTime = logger.startOperation(req, 'delete_project_document', {
       project_id: uid,
       document_id: documentId,
@@ -992,7 +1025,7 @@ export class ProjectController {
         return;
       }
 
-      await this.projectService.deleteProjectDocument(req, uid, documentId, documentType);
+      await this.projectService.deleteProjectDocument(req, uid, documentId, documentType as ProjectDocumentType);
 
       logger.success(req, 'delete_project_document', startTime, {
         project_id: uid,
@@ -1234,6 +1267,59 @@ export class ProjectController {
       logger.success(req, 'get_lens_redirect', startTime, { project_slug: slug, resource, fallback: 'error' });
       res.setHeader('Cache-Control', 'no-store');
       res.redirect(302, `/${resource}?project=${encodeURIComponent(slug)}`);
+    }
+  }
+
+  /**
+   * GET /public/api/projects/:identifier/summary — the name, slug, logo and foundation flag the login-free vote page
+   * shows as branding. A hidden project (not public, or Formation - Confidential) and an unknown identifier get the
+   * same non-cacheable 404, so the route confirms nothing about a project that is not publicly discoverable.
+   */
+  public async getPublicProjectSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const identifier = req.params['identifier'] ?? '';
+    const startTime = logger.startOperation(req, 'get_public_project_summary', { project_id: maskIdentifierForLogs(identifier) });
+
+    if (!identifier || !/^[A-Za-z0-9_-]+$/.test(identifier)) {
+      next(ServiceValidationError.forField('identifier', 'Invalid project identifier', { operation: 'get_public_project_summary' }));
+      return;
+    }
+
+    try {
+      if (!req.bearerToken) {
+        req.bearerToken = await generateM2MToken(req);
+      }
+
+      // Misses and hidden projects must never be cached; only a discoverable project's summary is (set below).
+      res.setHeader('Cache-Control', 'no-store');
+
+      const isProjectUid = isUuid(identifier);
+      const projectUid = await this.resolveProjectIdentifier(req, identifier);
+
+      // Slug metadata failures read as an unknown slug; UID failures still propagate (lfx-self-serve-ops#437).
+      const project = await this.projectService.getPubliclyDiscoverableProject(req, projectUid).catch((error: unknown) => {
+        if (isProjectUid) {
+          throw error;
+        }
+        logger.warning(req, 'get_public_project_summary', 'Project lookup failed; answering slug as not found', { project_uid: projectUid, err: error });
+        return null;
+      });
+      if (!project) {
+        throw this.projectNotFoundError(identifier);
+      }
+
+      const summary: PublicProjectSummary = {
+        name: project.name,
+        slug: project.slug,
+        logo_url: project.logo_url || null,
+        is_foundation: computeIsFoundation(project),
+      };
+
+      logger.success(req, 'get_public_project_summary', startTime, { project_uid: projectUid });
+
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.json(summary);
+    } catch (error) {
+      next(error);
     }
   }
 

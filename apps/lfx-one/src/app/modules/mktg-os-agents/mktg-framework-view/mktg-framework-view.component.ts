@@ -29,9 +29,14 @@ import {
   FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM,
   FOUNDATION_MESSAGE_VIEW_TABS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
+  MKTG_REPORT_GAPS_TITLE,
+  MKTG_PRINT_KIT_READ_NONE,
+  MKTG_REPORT_ASSET_LABELS,
+  MKTG_PRINT_KIT_READ_NOTES,
+  MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS,
 } from '@lfx-one/shared/constants';
 import {
-  BrandKitRevision,
   FoundationMessageAvoidRow,
   FoundationMessageGoalView,
   FoundationMessageNumberRow,
@@ -40,20 +45,25 @@ import {
   MktgFrameworkAsset,
   MktgFrameworkViewState,
   MktgFrameworkViewTab,
+  MktgPrintKitRead,
   MktgSlidesExportTarget,
   MktgRevisionApproval,
   MktgAssetHeaderMetadata,
 } from '@lfx-one/shared/interfaces';
 import {
   buildFoundationMessagePrintView,
+  describeMktgAcceptedGaps,
   mktgAssetHeaderFallback,
   foundationMessageAvoidRows,
   foundationMessageGoalViews,
   foundationMessageNumberRows,
+  mktgPrintDocumentTitle,
+  mktgReportFindingsView,
 } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
+import { MktgReportFindingsComponent } from '../components/mktg-report-findings/mktg-report-findings.component';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 
 import { MktgFrameworkPrintComponent } from '../mktg-framework-print/mktg-framework-print.component';
@@ -90,6 +100,7 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
     MktgFrameworkPrintComponent,
     MktgSlidesExportComponent,
     MktgFieldCommentsComponent,
+    MktgReportFindingsComponent,
   ],
   templateUrl: './mktg-framework-view.component.html',
 })
@@ -115,8 +126,12 @@ export class MktgFrameworkViewComponent {
   public readonly showMetadata = input(true);
   public readonly titleActions = viewChild<TemplateRef<unknown>>('titleActions');
   public readonly approval = input<MktgRevisionApproval | null>(null);
-  /** The project's stored Brand Kit, which the print is set in; null for the LF look. */
-  public readonly kit = input<BrandKitRevision | null>(null);
+  /**
+   * The host's read of the project's stored Brand Kit, which the print is set in: the print root is built only once the read has
+   * settled with the kit or with none stored (the LF look); while it is open, or after it failed, Download PDF waits and says why,
+   * so no project with a kit is ever printed in the LF default. A host that passes none: no kit, the LF look.
+   */
+  public readonly kitRead = input<MktgPrintKitRead>(MKTG_PRINT_KIT_READ_NONE);
   /** The stored revision Export to Google Slides reads; null while there is none (the button shows disabled). */
   public readonly exportTarget = input<MktgSlidesExportTarget | null>(null);
   /** The viewed document for last-export lookup, independent of approved export bytes. */
@@ -125,6 +140,10 @@ export class MktgFrameworkViewComponent {
   public readonly viewingDraft = input(false);
   public readonly approvedAsset = input<MktgFrameworkAsset | null>(null);
   public readonly approvedVersion = input<number | null>(null);
+  /** When the approved revision was stored (ISO), as the page shows it: it dates the PDF's name. */
+  public readonly approvedCreatedAt = input<string | null>(null);
+  /** When the approved revision was approved (ISO): the print's cover and its Sources & gaps approval card date it. */
+  public readonly approvedAt = input<string | null>(null);
   public readonly approvedLoading = input(false);
   public readonly approvedError = input('');
 
@@ -138,11 +157,17 @@ export class MktgFrameworkViewComponent {
   // === Computed ===
   protected readonly content = computed(() => this.asset()?.content ?? null);
   protected readonly report = computed(() => this.asset()?.report ?? null);
+  /** The report's findings as the Sources tab shows them: a v2 report's three groups, a v1 report's failed list alone. */
+  protected readonly reportFindings = computed(() => mktgReportFindingsView(this.report(), MKTG_REPORT_ASSET_LABELS));
   protected readonly findings = computed(() => this.asset()?.checks.findings ?? []);
   protected readonly ready = computed(() => this.state() === 'ready' && this.content() !== null);
   protected readonly title = computed(() => `${this.projectName()} Messaging framework`);
   protected readonly header = computed(() => this.headerMetadata() ?? mktgAssetHeaderFallback('foundation-message', this.version(), null, this.approval()));
   protected readonly approvalRequiredNote = MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
+  protected readonly noSourceFailedNote = MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE;
+  protected readonly gapsTitle = MKTG_REPORT_GAPS_TITLE;
+  /** Under an approved revision's gaps: accepted at that approval, still open. */
+  protected readonly acceptedGapsNote = computed(() => describeMktgAcceptedGaps(this.report(), this.approval(), this.version()));
   protected readonly modeLabel = computed(() => {
     const asset = this.asset();
     return asset && asset.mode !== 'draft' ? FOUNDATION_MESSAGE_MODE_LABELS[asset.mode] : '';
@@ -173,13 +198,31 @@ export class MktgFrameworkViewComponent {
     const content = this.content();
     return content ? foundationMessageNumberRows(content) : [];
   });
-  /** The framework as its print lays it out, in the kit's brand or the LF look; null until the framework exists. */
+  /**
+   * The framework as its print lays it out, in the kit's brand or the LF look; null until the framework exists and the kit read
+   * has settled without failing (a print built before that would be the LF default for a project that has a kit).
+   */
   protected readonly printView: Signal<FoundationMessagePrintView | null> = computed(() => {
     const approved = this.approvedAsset();
-    return approved ? buildFoundationMessagePrintView(approved.content, this.projectName(), this.approvedVersion(), this.kit()) : null;
+    const read = this.kitRead();
+    return approved && read.settled && !read.failed
+      ? buildFoundationMessagePrintView(
+          approved.content,
+          this.projectName(),
+          this.approvedVersion(),
+          read.kit,
+          this.approvedAt(),
+          approved.report,
+          approved.dateRead ?? null
+        )
+      : null;
   });
-  /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
-  protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
+  /** Why Download PDF is disabled: no approved current yet, the kit read still open, or the kit read failed; empty once it can print. */
+  protected readonly pdfTooltip = computed(() => {
+    if (this.printView()) return '';
+    if (!this.approvedAsset()) return this.approvalRequiredNote;
+    return this.kitRead().failed ? MKTG_PRINT_KIT_READ_NOTES.failed : MKTG_PRINT_KIT_READ_NOTES.pending;
+  });
   protected readonly printOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   /** The report's notes as lines (a check writes one issue per line). */
   protected readonly reportNotes = computed(() =>
@@ -197,7 +240,7 @@ export class MktgFrameworkViewComponent {
 
   public constructor() {
     // The print mark never outlives the view (a print dialog still up when the page goes).
-    this.destroyRef.onDestroy(() => this.printService.clear(FOUNDATION_MESSAGE_PRINT_BODY_CLASS));
+    this.destroyRef.onDestroy(() => this.printService.clear());
     toObservable(this.printView)
       .pipe(takeUntilDestroyed())
       .subscribe((view) => {
@@ -260,13 +303,19 @@ export class MktgFrameworkViewComponent {
   /**
    * Prints the framework as one document — the cover, the framework and
    * the key numbers — through the browser's print dialog ("Save as PDF")
-   * inside the click; the typeface is prepared ahead.
+   * inside the click; the typeface is prepared ahead. The frame's title names
+   * the saved PDF like the deck: the project, the asset, the approved revision
+   * and that revision's date.
    */
   protected onDownloadPdf(): void {
     if (!this.printView()) {
       return;
     }
-    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    const label = MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS['foundation-message'];
+    this.printService.printNow(
+      FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+      mktgPrintDocumentTitle(this.projectName(), label, this.approvedVersion(), this.approvedCreatedAt())
+    );
   }
 
   // === Private initializers ===

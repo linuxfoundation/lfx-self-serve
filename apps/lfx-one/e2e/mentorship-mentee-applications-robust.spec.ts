@@ -17,7 +17,7 @@ import { MENTORSHIP_MENTEE_TASKS_URL, MENTORSHIP_MENTEE_WITHDRAW_CONFIRM_HEADER,
 import { expect, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab, stubMenteeApplications } from './helpers/mentee-profile.helper';
+import { MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab, stubMenteeApplications } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -29,7 +29,6 @@ test.use({ viewport: { width: 1440, height: 900 } });
 test.describe('Mentee applications — Robust Tests', () => {
   test.describe('Empty state', () => {
     test.beforeEach(async ({ page }) => {
-      await enableMentorshipFlag(page);
       await stubMenteeApplications(page, 200, JSON.stringify({ data: [], total: 0 }));
     });
 
@@ -55,7 +54,6 @@ test.describe('Mentee applications — Robust Tests', () => {
 
   test.describe('Error state', () => {
     test.beforeEach(async ({ page }) => {
-      await enableMentorshipFlag(page);
       await stubMenteeApplications(page, 503, '');
     });
 
@@ -92,7 +90,6 @@ test.describe('Mentee applications — Robust Tests', () => {
     });
 
     test.beforeEach(async ({ page }) => {
-      await enableMentorshipFlag(page);
       const data = [application(PENDING_APPLICATION_ID, 'pending'), application(ACCEPTED_APPLICATION_ID, 'accepted')];
       await stubMenteeApplications(page, 200, JSON.stringify({ data, total: data.length }));
     });

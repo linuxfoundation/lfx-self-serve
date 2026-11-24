@@ -7,7 +7,7 @@ import { MEMBER_360_API, MEMBER_360_TRACKER_FILENAME_HEADER, MKTG_AGENT_INTAKES 
 import {
   Member360GenerateRequest,
   Member360Session,
-  Member360Tracker,
+  Member360TrackerReceipt,
   Member360Result,
   MktgPendingGeneration,
   MktgRunAnswer,
@@ -82,9 +82,19 @@ export class Member360Service {
     );
   }
 
-  public parseTracker(project: string, file: File): Observable<Member360Tracker> {
+  /** Fetch backend keepalive lets best-effort erasure survive route/page departure. */
+  public deleteTracker(project: string, id: string): Observable<void> {
     return this.http
-      .post<Member360Tracker>(`${MEMBER_360_API}/tracker`, file, {
+      .delete<void>(`${MEMBER_360_API}/tracker/${encodeURIComponent(id)}`, {
+        params: { project },
+        keepalive: true,
+      })
+      .pipe(take(1));
+  }
+
+  public parseTracker(project: string, file: File): Observable<Member360TrackerReceipt> {
+    return this.http
+      .post<Member360TrackerReceipt>(`${MEMBER_360_API}/tracker`, file, {
         params: { project },
         headers: { 'Content-Type': 'application/octet-stream', [MEMBER_360_TRACKER_FILENAME_HEADER]: encodeURIComponent(file.name) },
       })

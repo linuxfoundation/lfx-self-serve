@@ -34,7 +34,7 @@ import { MentorshipMentorOpenProgram, MentorshipMentorProgramRequest } from '@lf
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -138,10 +138,6 @@ function confirmDialog(page: Page) {
 }
 
 test.describe('Mentor program requests — request', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('picking a program sends the request at once, toasts success and lists it as Pending', async ({ page }) => {
     const { requestBodies } = await stubMentorRequests(page);
     await openEditDrawer(page);
@@ -275,10 +271,6 @@ test.describe('Mentor program requests — request', () => {
 test.describe('Mentor program requests — withdraw', () => {
   const pending: MentorshipMentorProgramRequest = { id: BETA_REQUEST_ID, programId: BETA.id, programName: BETA.name, status: 'pending' };
   const withdrawButton = (page: Page) => page.getByTestId(`mentorship-mentor-withdraw-${BETA_REQUEST_ID}`).getByRole('button');
-
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
 
   test('cancelling the confirm step withdraws nothing', async ({ page }) => {
     const { withdrawnIds } = await stubMentorRequests(page, { requests: [pending] });

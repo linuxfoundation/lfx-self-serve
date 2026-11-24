@@ -91,6 +91,8 @@ describe('KeyContactsComponent — roles handed to the person drawer', () => {
     const context = open.mock.calls[0][0];
     expect(context.defaultTab).toBe('key-contacts');
     expect(context.keyContactAssignments?.map((a) => a.role).sort()).toEqual(['Billing Contact', 'PR Contact']);
+    // The drawer reads the company addresses on the same roles' records.
+    expect([...(context.keyContactIds ?? [])].sort()).toEqual(['kc-billing', 'kc-pr']);
   });
 
   // No agreed username is no identity to gather on, so only the clicked row's roles may be attributed.
@@ -105,5 +107,6 @@ describe('KeyContactsComponent — roles handed to the person drawer', () => {
     const context = open.mock.calls[0][0];
     expect(context.username).toBeNull();
     expect(context.keyContactAssignments?.map((a) => a.role)).toEqual(['Billing Contact']);
+    expect(context.keyContactIds).toEqual(['kc-billing']);
   });
 });

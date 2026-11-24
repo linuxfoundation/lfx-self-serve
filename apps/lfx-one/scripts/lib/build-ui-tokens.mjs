@@ -45,6 +45,7 @@ export function buildUiTokensCss(tokens) {
     ...tokens.zIndex.tokens,
     ...tokens.breakpoint.tokens,
     ...tokens.opacity.tokens,
+    ...tokens.motion.tokens,
   ];
   const themed = [...colors, ...shadows].filter(isThemed);
   const themedFor = (theme) => themed.filter((t) => t.value[theme] !== undefined);

@@ -1,8 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- The design's `.hmn`. Pixel sizes follow it; the 14px root makes the rem scale undershoot them. The rail and the
-     panel's pop-over behaviour only apply while the page is narrow — see the stylesheet. -->
+<!-- The design's `.hmn`: a rail at every width, opening as a floating panel. Pixel sizes follow it; the 14px root
+     makes the rem scale undershoot them. -->
 <div class="hmn-rail" aria-hidden="true" [attr.data-testid]="testIdPrefix() + '-sub-nav-rail'">
   @for (item of items(); track item.key) {
     <span class="hmn-tick" [class.hmn-tick-active]="item.key === activeKey()"></span>
@@ -40,13 +40,6 @@
             </span>
           }
         </span>
-        @if (item.count !== null) {
-          <span
-            class="shrink-0 rounded-full border border-gray-200 px-[7px] text-[11px] font-medium tabular-nums text-gray-600"
-            [attr.data-testid]="testIdPrefix() + '-sub-nav-' + item.key + '-count'"
-            >{{ item.count }}</span
-          >
-        }
       </button>
     }
   </div>

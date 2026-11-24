@@ -1,0 +1,19 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Always in the DOM (hidden via class, not @if) so Intercom's custom_launcher_selector can bind to it. Intercom opens
+     the messenger from that binding alone; no click handler here, so one tap can never open-then-close. -->
+<button
+  type="button"
+  [id]="launcherId"
+  class="fixed bottom-4 right-4 z-40 flex h-10 w-10 items-center justify-center rounded-full bg-blue-900 text-white shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+  [class.hidden]="!visible()"
+  aria-label="Support"
+  data-testid="support-launcher">
+  <!-- Same mark and background as the desktop Intercom launcher, so phone and desktop read as one support entry. -->
+  <svg class="h-6 w-6" viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true" focusable="false">
+    <path
+      d="M5.16356 23.25C3.19241 20.9709 2 17.9997 2 14.75C2 7.5703 7.8203 1.75 15 1.75C22.1797 1.75 28 7.5703 28 14.75C28 21.9297 22.1797 27.75 15 27.75C12.8939 27.75 10.9047 27.2492 9.14517 26.3601L3 28.25L5.16356 23.25Z" />
+    <path d="M9 18.75C9 18.75 11 22.25 15 22.25C19 22.25 21 18.75 21 18.75" stroke-linecap="round" />
+  </svg>
+</button>

@@ -154,6 +154,34 @@ module.exports = defineConfig([
     },
   },
   {
+    // Reuse one Storybook project for the uikit and the explicit recovery harness,
+    // avoiding a duplicate TypeScript program. Stories are not application inputs.
+    files: ['src/app/shared/uikit/**/*.stories.ts', 'src/app/shared/components/chunk-load-recovery/chunk-load-recovery-drawer.stories.ts'],
+    languageOptions: {
+      parserOptions: {
+        project: './.storybook/tsconfig.json',
+      },
+    },
+  },
+  {
+    // tsconfig.app.json excludes specs to keep the build program small, so each spec half is
+    // parsed through the project that type-checks it.
+    files: ['src/app/**/*.spec.ts'],
+    languageOptions: {
+      parserOptions: {
+        project: './tsconfig.spec.json',
+      },
+    },
+  },
+  {
+    files: ['src/server/**/*.spec.ts'],
+    languageOptions: {
+      parserOptions: {
+        project: './tsconfig.server-spec.json',
+      },
+    },
+  },
+  {
     // The uikit is a PrimeNG-free library with its own namespace, distinct from the app's `lfx-*` wrappers.
     files: ['src/app/shared/uikit/**/*.ts'],
     rules: {

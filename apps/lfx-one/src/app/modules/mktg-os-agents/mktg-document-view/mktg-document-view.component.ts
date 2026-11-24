@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DecimalPipe, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { DatePipe, DecimalPipe, DOCUMENT, formatDate, isPlatformBrowser, Location, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   afterNextRender,
+  AfterRenderRef,
   Component,
   computed,
   DestroyRef,
@@ -44,13 +45,20 @@ import {
   MKTG_KIT_FRAMEWORK_KEY,
   MKTG_DOCUMENT_TYPES,
   MKTG_AGENTS,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   MKTG_DOCUMENT_PROGRESS_POLL,
+  VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_AGENT_INTAKES,
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_DOCUMENT_COMMENT_LIMITS,
+  MKTG_PRINT_KIT_READ_NONE,
+  MKTG_PRINT_KIT_READ_PENDING,
   MKTG_RUN_RESUME_QUERY_CLEAR,
+  MKTG_APPROVE_HEADER,
+  MKTG_APPROVE_HEADER_GAPS,
+  BRAND_KIT_INTAKE,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
@@ -58,6 +66,8 @@ import {
   MktgFaqAsset,
   MktgFrameworkAsset,
   MktgAssetReport,
+  MktgApproveGapsDialogData,
+  MktgPrintKitRead,
   MktgRevisionResponse,
   MktgBreadcrumbPage,
   MktgRevisionSummary,
@@ -71,7 +81,9 @@ import {
   MktgDocumentLocalProgress,
   MktgDocumentRunProgress,
   MktgGenerateProgress,
+  MktgPendingDocumentRun,
   MktgPendingGeneration,
+  MktgRunAnsweredNotice,
   MktgDocumentCommentScope,
   MktgRedraftLanding,
   MktgCommentAgentKey,
@@ -79,7 +91,6 @@ import {
 import {
   boilerplatesAssetOfRevision,
   describeMktgAssetReadiness,
-  describeMktgRevisionAuthor,
   faqAssetOfRevision,
   foundationMessageAssetOfRevision,
   findMktgRunIntake,
@@ -87,6 +98,10 @@ import {
   mktgAssetHeaderMetadata,
   mktgKitAssetLabel,
   mktgKitRootPath,
+  mktgPrintBrand,
+  mktgPrintDocumentTitle,
+  mktgReportHasOpenGaps,
+  mktgReportNeedsApprovalReview,
   mktgRunRouteFor,
   mktgRunModeFor,
   parseMktgLegacyRevisionId,
@@ -94,6 +109,7 @@ import {
   normalizeLinkedinShareLink,
   readBrandKitRevision,
   readLinkedinDocumentContent,
+  readMktgRetiredRunHint,
 } from '@lfx-one/shared/utils';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
@@ -132,12 +148,15 @@ import {
   takeUntil,
   Subject,
   ReplaySubject,
+  Subscription,
 } from 'rxjs';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
+import { MktgApproveGapsFooterComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-footer.component';
 import { MktgClosedRunMessageComponent } from '../components/mktg-closed-run-message/mktg-closed-run-message.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
+import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { AeoGeoReportComponent } from '../components/aeo-geo-report/aeo-geo-report.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
@@ -152,9 +171,15 @@ import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { Member360ResultComponent } from '../components/member-360-result/member-360-result.component';
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-downstream.component';
+import { MktgPrintSheetRowComponent } from '../components/mktg-print-sheet-row/mktg-print-sheet-row.component';
+import { MktgPrintSheetComponent } from '../components/mktg-print-sheet/mktg-print-sheet.component';
+import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
+import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { mktgRunAnsweredNoticeAsLanded } from '@shared/utils/mktg-run-answered-notice.utils';
+import { createVisibilityPoll, pollBackoffDelayMs } from '@shared/utils/visibility-poll.util';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
@@ -183,7 +208,11 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     RouterLink,
     BrandKitWebViewComponent,
     MarkdownRendererComponent,
+    MktgPrintSheetComponent,
+    MktgPrintSheetRowComponent,
+    MktgPrintRunningHeadComponent,
     MessageComponent,
+    MktgSkeletonComponent,
     MktgBoilerplatesViewComponent,
     MktgFaqViewComponent,
     MktgFrameworkViewComponent,
@@ -197,6 +226,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     MktgRunActivityComponent,
     MktgSkeletonComponent,
     MktgRunProgressComponent,
+    MktgRunQuestionsComponent,
     MktgClosedRunMessageComponent,
   ],
   providers: [DialogService],
@@ -213,11 +243,13 @@ export class MktgDocumentViewComponent {
   private readonly documentComments = inject(MktgDocumentCommentsService);
   private readonly member360 = inject(Member360Service);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly runService = inject(MktgAgentRunService);
   private readonly attempts = inject(MktgRunAttemptService);
 
@@ -236,7 +268,6 @@ export class MktgDocumentViewComponent {
   protected readonly failureDetails = signal('');
   protected readonly runHistory = signal<MktgDocumentListItem[]>([]);
   protected readonly historyError = signal('');
-  protected readonly reload = signal(0);
   protected readonly errorText = signal('');
   protected readonly notice = signal('');
   protected readonly downloadingWorkbook = signal(false);
@@ -250,6 +281,7 @@ export class MktgDocumentViewComponent {
   protected readonly approvingId = signal<string | null>(null);
   protected readonly approvalError = signal('');
   protected readonly currentConflict = signal<MktgDocumentCurrentConflictNotice | null>(null);
+  protected readonly approvedReadIsExplicit = signal(true);
   protected readonly approvalAnnouncement = signal('');
   protected readonly editingLink = signal(false);
   protected readonly savingLink = signal(false);
@@ -272,17 +304,48 @@ export class MktgDocumentViewComponent {
   private redirectedRun = '';
   protected readonly projectUid = computed(() => this.projectContext.activeContextUid());
   protected readonly publicProgressPolling = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.kind === 'living');
+  /** The progress reader renders no line of its own while headless; then this view's one status line is the only one. */
+  protected readonly progressHeadless = computed(() => this.loading() || !!this.closedRun() || (this.publicProgressPolling() && this.runState() !== 'failed'));
   protected readonly progressRefreshKey = signal('0');
+  protected readonly remoteRevisionId = signal('');
+  private pinnedRouteRevision = '';
   private readonly refreshedFailures = new Set<string>();
   private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
   private loadedScope = '';
+  private readonly concurrentAnswers = inject(MktgRunAnswersService);
+  protected readonly answeredNotice = computed(() => this.concurrentAnswers.notice(this.projectUid(), this.params().agentKey, this.params().documentId));
+  /**
+   * The remembered notice as this page should show it, scoped like the reader's own: hidden once its run closed without
+   * landing (failed, discarded, superseded), once the run asks a newer round, or once the page follows another run — an
+   * explicit `run=` selection, or a genuinely newer run (one still active, or started after the notice's); an older or
+   * failed row in the history is not one. Its line is true when read: once the run has landed (completed, or absent from a
+   * complete read that lists runs), the asset is ready. An unavailable read, or one without a runs list, changes nothing.
+   */
+  protected readonly answeredNoticeView = computed(() => {
+    const notice = this.answeredNotice();
+    if (!notice) return null;
+    const detail = this.runDetail();
+    const asHeard = { text: notice.message, kept: notice.kept ?? null };
+    if (!detail || detail.progressUnavailable || !detail.runs) return asHeard;
+    const run = detail.runs.find((row) => row.runId === notice.runId);
+    if (run && (run.state === 'failed' || readMktgRetiredRunHint(run))) return null;
+    if (run?.pendingQuestions && run.pendingQuestions.questionsId !== notice.questionsId) return null;
+    if (this.runFollowedInstead(notice, detail)) return null;
+    const landed = !run || run.state === 'completed';
+    return landed ? { ...asHeard, text: mktgRunAnsweredNoticeAsLanded(notice.message) } : asHeard;
+  });
 
   protected readonly params = toSignal(
     this.route.paramMap.pipe(map((params) => ({ agentKey: params.get('agentKey') ?? '', documentId: params.get('documentId') ?? '' }))),
     { initialValue: { agentKey: '', documentId: '' } }
   );
   protected readonly revisionParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('revision') ?? '')), { initialValue: '' });
+  /** Route intent (including Back to no selector) gets one body read; polls never set this latch. */
+  private readonly selectionReadPending = linkedSignal<string, boolean>({
+    source: this.revisionParam,
+    computation: (selection, previous) => previous !== undefined && previous.source !== selection,
+  });
   private readonly routeProject = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('project'))), { initialValue: null });
 
   // === Computed ===
@@ -304,8 +367,6 @@ export class MktgDocumentViewComponent {
     const revision = this.view()?.revisions.find((entry) => entry.id === this.restoringId());
     return revision ? `Saving revision ${revision.number}…` : this.approvalAnnouncement();
   });
-  protected readonly viewedAuthorLabel: Signal<string> = this.initViewedAuthorLabel();
-  protected readonly currentRevision: Signal<MktgRevisionSummary | null> = this.initCurrentRevision();
   protected readonly visibleRevisionRows: Signal<MktgRevisionSummary[]> = this.initVisibleRevisionRows();
   /**
    * The revision as a framework asset, when it is one: a JSON revision of the
@@ -382,6 +443,12 @@ export class MktgDocumentViewComponent {
   }));
   protected readonly approvedView: Signal<MktgApprovedRevisionState> = this.initApprovedView();
   protected readonly approvedVersion = computed(() => this.approvedView().revision?.revision.number ?? null);
+  /** The approved revision's own approval record: the Brand Kit PDF prints it, whatever revision the page shows. */
+  protected readonly approvedApproval = computed(() => this.approvedView().revision?.revision.approval ?? null);
+  /** When the approved revision was stored, as the page shows it; it dates the PDF's name. */
+  protected readonly approvedCreatedAt = computed(() => this.approvedView().revision?.revision.createdAt ?? null);
+  /** When the approved revision was approved; the framework's print dates its cover with it. */
+  protected readonly approvedAt = computed(() => this.approvedView().revision?.revision.approval?.approvedAt ?? null);
   protected readonly approvedFramework = computed(() => {
     const approved = this.approvedView().revision;
     return approved?.type.agentKey === 'foundation-message' ? foundationMessageAssetOfRevision(approved.markdown, approved.sidecar) : null;
@@ -390,8 +457,17 @@ export class MktgDocumentViewComponent {
     const approved = this.approvedView().revision;
     return approved?.type.agentKey === 'brand-kit' ? readBrandKitRevision(approved.sidecar) : null;
   });
-  /** The project's stored Brand Kit, which a framework revision's print (Download PDF) is set in; null for the LF look. */
-  protected readonly printKit: Signal<BrandKitRevision | null> = this.initPrintKit();
+  /**
+   * The print's Brand Kit read: not settled until the project's kit, or a definite "none stored", has arrived, and marked failed
+   * when the read errored (the framework's Download PDF then waits and says why, never the LF look); a project switch starts a new read.
+   */
+  protected readonly printKitRead: Signal<MktgPrintKitRead> = this.initPrintKitRead();
+  /** The project's stored Brand Kit, which a framework revision's or an AEO/GEO report's print (Download PDF) is set in; null for the LF look. */
+  protected readonly printKit: Signal<BrandKitRevision | null> = computed(() => this.printKitRead().kit);
+  private readonly printKitSettled = computed(() => this.printKitRead().settled);
+  private readonly printKitSettled$ = toObservable(this.printKitSettled);
+  /** The brand the other Marketing OS prints wear on their running head: the project's kit, or the LF look without one. */
+  protected readonly printBrand = computed(() => mktgPrintBrand(this.printKit()));
   /** Read-only deck lookup belongs to the viewed document, not its approved bytes. */
   protected readonly exportLookupTarget: Signal<MktgSlidesExportTarget | null> = computed(() => {
     const view = this.view();
@@ -435,6 +511,43 @@ export class MktgDocumentViewComponent {
   });
   protected readonly runParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), { initialValue: '' });
   protected readonly generationParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('generation') ?? '')), { initialValue: '' });
+  /** 148: a known handoff/ACK chooses run geometry immediately, never a transient document loader. */
+  protected readonly runFirstPaint = computed(() => {
+    const project = this.projectContext.activeContextUid();
+    const { agentKey, documentId } = this.params();
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+    if (!project || !documentId || !type?.catalogAgentId) return false;
+    if (this.generating() || this.submittingGeneration() || this.handoffRunId()) return true;
+    const token = this.generationParam();
+    if (token && this.attempts.peek(token, project, type.catalogAgentId, documentId)) return true;
+    const owned = this.attempts.load(project, type.catalogAgentId, type.kind === 'run' ? documentId : undefined);
+    if (
+      this.runParam() &&
+      owned?.attempt?.runId === this.runParam() &&
+      (type.kind === 'living' || (owned.request.documentId ?? owned.attempt.documentId) === documentId)
+    )
+      return true;
+    return this.pendingDocuments.load(project, documentId)?.agentId === type.catalogAgentId;
+  });
+
+  /** Only a local start/ACK may replace the body after the reader has opened it. */
+  protected readonly readStoredBody = computed(() => {
+    const owned = this.runDetail()?.runs?.find((run) => run.runId === this.handoffRunId());
+    const following = !!owned && (owned.state === 'writing' || owned.state === 'storing' || owned.state === 'questions');
+    const selection = this.revisionParam();
+    const opening = !!selection && selection !== this.view()?.revision.id;
+    return (
+      this.publicProgressPolling() &&
+      (!this.view() ||
+        opening ||
+        this.selectionReadPending() ||
+        following ||
+        !!this.generationParam() ||
+        this.submittingGeneration() ||
+        this.localProgress() === 'writing' ||
+        this.localProgress() === 'storing')
+    );
+  });
 
   private readonly request$ = toObservable(
     computed(() => ({
@@ -446,7 +559,7 @@ export class MktgDocumentViewComponent {
       revisionId: this.revisionParam(),
       runId: this.runParam(),
       generation: this.generationParam(),
-      reload: this.reloads() + this.reload(),
+      reload: this.reloads(),
     }))
   );
 
@@ -466,7 +579,14 @@ export class MktgDocumentViewComponent {
   }));
   protected readonly progressView = viewChild(MktgRunProgressComponent);
   protected readonly runState = computed(() => this.closedRun()?.state ?? this.progressView()?.runState() ?? null);
-  protected readonly liveState = this.initLiveState();
+  protected readonly liveState = computed(() => {
+    if (this.loading() || this.closedRun()) return '';
+    if (this.runState()) {
+      if (this.publicProgressPolling() && this.runState() !== 'failed') return '';
+      return this.progressView()?.liveState() ?? '';
+    }
+    return this.view() ? this.readiness() : '';
+  });
   protected readonly waitingForQuestions = computed(
     () => this.selectedRun()?.state === 'questions' && this.localProgress() === 'writing' && !!MKTG_AGENT_INTAKES[this.runAgentId()]?.oneOffDocument
   );
@@ -507,10 +627,12 @@ export class MktgDocumentViewComponent {
   private readonly pendingDocuments = inject(MktgPendingDocumentService);
   private readonly printService = inject(MktgPrintService);
   private aeoPrintRequested = false;
+  /** A Download PDF press made while the Brand Kit read was still open; it prints once, after the render that follows the read. */
+  private aeoPrintWaiting: Subscription | null = null;
+  private aeoPrintRender: AfterRenderRef | null = null;
   protected readonly aeoPrintOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   protected readonly activity = signal<MktgRunActivity[]>([]);
   protected readonly aeoActivityStartedAt = signal(0);
-  protected readonly retryGenerating = signal(false);
   protected readonly isAeoDocument = computed(() => this.isPendingReportAgent(this.params().agentKey));
   protected readonly aeoHeaderTitle = computed(() => {
     const site = this.view()?.aeoGeoReport?.domain;
@@ -540,6 +662,17 @@ export class MktgDocumentViewComponent {
   public constructor() {
     bindLfxDocumentTitle(computed(() => (this.view()?.member360 ? this.title() : '')));
     if (isPlatformBrowser(this.platformId)) {
+      // Back intent precedes Router's deferred popstate navigation. Drop the historical pin immediately;
+      // the new route selector then drives one current-body read, never a background-poll body swap.
+      const historySelection = this.location.subscribe((event) => {
+        if (event.type !== 'popstate' || !this.revisionParam()) return;
+        const revision = this.router.parseUrl(event.url ?? '').queryParams['revision'];
+        if (revision) return;
+        this.remoteRevisionId.set('');
+        this.pinnedRouteRevision = '';
+        this.selectionReadPending.set(true);
+      });
+      this.destroyRef.onDestroy(() => historySelection.unsubscribe());
       this.destroyRef.onDestroy(() => this.clearAeoPrint());
       toObservable(computed(() => this.view()?.aeoGeoReport))
         .pipe(takeUntilDestroyed())
@@ -547,6 +680,8 @@ export class MktgDocumentViewComponent {
           if (report) void this.printService.prepare('Inter');
         });
       let observedSubject = this.userService.user()?.sub ?? '';
+      let readerSelectionKey = '';
+      let selectionChanged = true;
       // Action rights follow user context without cancelling document or last-export reads.
       const actionContext = computed(() => ({ subject: this.userService.user()?.sub, impersonating: this.userService.impersonating() }));
       combineLatest([this.request$, toObservable(actionContext)])
@@ -580,26 +715,42 @@ export class MktgDocumentViewComponent {
               current.runId === this.handoffRunId() &&
               !!current.runId &&
               JSON.stringify({ ...previous, generation: current.generation, runId: current.runId }) === JSON.stringify(current);
+            if (firstResolution || handoffOnly) readerSelectionKey = JSON.stringify({ ...current, reload: 0 });
             return equal || firstResolution || handoffOnly;
           }),
           tap((request) => {
+            if (request.revisionId !== this.pinnedRouteRevision || request.generation) this.remoteRevisionId.set('');
+            const key = JSON.stringify({ ...request, reload: 0 });
+            selectionChanged = key !== readerSelectionKey;
+            readerSelectionKey = key;
             this.progressRefreshKey.update((value) => String(Number(value) + 1));
-            this.clearAeoPrint();
-            this.errorText.set('');
-            this.notice.set('');
-            this.runHistory.set([]);
-            this.currentConflict.set(null);
-            this.historyError.set('');
-            this.runFailed.set(false);
-            this.failureDetails.set('');
-            this.activityContext.set(['', undefined]);
-            this.refreshWarning.set('');
+            // 145: a refresh is not a new reader selection. Keep the mounted body, choices and announcements.
+            if (selectionChanged) {
+              if (request.runId) {
+                this.loading.set(true);
+                this.view.set(null);
+                this.runDetail.set(null);
+              }
+              this.clearAeoPrint();
+              this.errorText.set('');
+              this.notice.set('');
+              this.runHistory.set([]);
+              this.currentConflict.set(null);
+              this.historyError.set('');
+              this.runFailed.set(false);
+              this.failureDetails.set('');
+              this.activityContext.set(['', undefined]);
+              this.refreshWarning.set('');
+            }
             const scope = JSON.stringify([request.project, request.agentKey === 'member-360' ? '' : request.subject, request.agentKey, request.documentId]);
             if (scope !== this.loadedScope) {
               this.loadedScope = scope;
+              this.remoteRevisionId.set('');
+              this.redirectedRun = '';
               this.downstreamSettledKey.set('');
               const exportIdentity = JSON.stringify({ project: request.project, agentKey: request.agentKey, documentId: request.documentId });
               if (this.exportLookupAnsweredKey() !== exportIdentity) this.exportLookupAnsweredKey.set('');
+
               this.approvalError.set('');
               this.approvalAnnouncement.set('');
               this.editingLink.set(false);
@@ -645,18 +796,17 @@ export class MktgDocumentViewComponent {
                   : this.attempts.consume(request.generation, request.project, type.catalogAgentId);
             }
             this.submittingGeneration.set(!!prepared && !prepared.pending.attempt);
-            if (!prepared) {
+            if (!prepared && selectionChanged) {
               this.localProgress.set(null);
               this.handoffRunId.set('');
               this.failureText.set('');
               this.restoreNotice.set('');
             }
             if (prepared) {
-              this.localProgress.set('writing');
+              this.localProgress.set(null);
               this.handoffRunId.set(prepared.pending.attempt?.runId ?? '');
               if (prepared.pending.attempt?.runId) this.preparedRunIds.add(prepared.pending.attempt.runId);
               if (type?.kind === 'run' && prepared.pending.attempt?.runId) this.onProgress({ type: 'submitted' }, prepared.pending);
-              this.loading.set(false);
             }
             // A manual return has no single-use handoff token. Resolve its accepted attempt from the live registry,
             // but let the public metadata confirm that this exact run is still active before reconnecting its result poll.
@@ -719,17 +869,24 @@ export class MktgDocumentViewComponent {
             let known: MktgDocumentReadCycle | null = existingView ? { detail: existingView, view: existingView } : null;
             if (!known && prepared && type) {
               known = {
-                detail: { project: request.project, type, documentId: request.documentId, revisions: [], approvedCurrent: null, runs: [] },
+                detail: {
+                  project: request.project,
+                  type,
+                  documentId: request.documentId,
+                  revisions: [],
+                  approvedCurrent: null,
+                  runs: [],
+                  progressUnavailable: true,
+                },
                 view: null,
               };
             }
-            let unavailableSince: number | null = null;
             let unavailableCount = 0;
             let observedRun = false;
+            // One plain connection-state line while a check fails; it clears on the next good read and the loaded asset stays.
             const unavailable = () => {
-              unavailableSince ??= Date.now();
               unavailableCount++;
-              this.refreshWarning.set('Could not fully refresh. Showing the last loaded asset; retrying.');
+              this.refreshWarning.set(MKTG_POLL_RETRYING_TEXT);
             };
             const read = (poll: boolean) => {
               const readerSubject = this.userService.user()?.sub ?? '';
@@ -791,11 +948,10 @@ export class MktgDocumentViewComponent {
                   known = cycle;
                   if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) unavailable();
                   else {
-                    unavailableSince = null;
                     unavailableCount = 0;
                     this.refreshWarning.set('');
                   }
-                  this.currentConflict.set(null);
+                  this.retireCurrentConflict(cycle.detail);
                   this.runDetail.set(cycle.detail);
                   this.activityContext.set([readerSubject, this.selectedRun()?.activity]);
                   const failure = this.selectedRun();
@@ -821,7 +977,7 @@ export class MktgDocumentViewComponent {
                 })
               );
             };
-            // Living reads (metadata AND body) have one availability budget in the shared component.
+            // Living reads (metadata AND body) share the progress component's one reader and its retry policy.
             const detail$ = (
               type?.kind === 'living'
                 ? this.publicReads.pipe(
@@ -832,7 +988,7 @@ export class MktgDocumentViewComponent {
                         cycle.detail.documentId === request.documentId
                     ),
                     tap((cycle) => {
-                      this.currentConflict.set(null);
+                      this.retireCurrentConflict(cycle.detail);
                       this.runDetail.set(cycle.detail);
                       if (this.closedRun()) {
                         closedAttempt$.next();
@@ -846,28 +1002,45 @@ export class MktgDocumentViewComponent {
                       if (selected?.state === 'failed' || (observedRun && !selected && cycle.detail.revisions.length)) this.localProgress.set(null);
                     })
                   )
-                : read(false).pipe(
-                    expand((cycle) => {
-                      const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
-                      if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
-                        this.refreshWarning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
-                        return EMPTY;
-                      }
-                      const active = cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
-                      if (this.closedRun() || (this.selectedRun()?.state === 'questions' && unavailableSince === null)) return EMPTY;
-                      const local = this.localProgress();
-                      if (!active && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
-                      let delay: number = MKTG_RUN_POLL.intervalMs;
-                      if (unavailableCount) delay = Math.min(delay * 2 ** Math.min(unavailableCount - 1, 3), MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs);
-                      if (unavailableSince !== null) delay = Math.min(delay, MKTG_RUN_POLL.timeoutMs - elapsed);
-                      return timer(delay).pipe(switchMap(() => read(true)));
+                : createVisibilityPoll(
+                    this.document,
+                    () =>
+                      read(false).pipe(
+                        expand(() => {
+                          if (readMktgRetiredRunHint(this.selectedRun())) return EMPTY;
+                          const base: number = this.selectedRun()?.state === 'questions' ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
+                          // After a partial read: capped jittered backoff floored at the state's interval, never a stop (a thrown read
+                          // retries on the shared poller, floored at `MKTG_RUN_POLL.intervalMs`).
+                          const delay = unavailableCount ? pollBackoffDelayMs(unavailableCount, base, MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs) : base;
+                          return timer(delay).pipe(switchMap(() => read(true)));
+                        })
+                      ),
+                    {
+                      intervalMs: MKTG_RUN_POLL.intervalMs,
+                      backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+                      backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
+                      wakeDebounceMs: VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
+                      shouldContinue: () => false,
+                    }
+                  ).pipe(
+                    switchMap((event) => {
+                      if (event.kind === 'ok') return of(event.value);
+                      // A transient first read fails quietly and the poller retries it; anything else is terminal and the
+                      // outer handler logs it once.
+                      if (!isTransientHttpError(event.error)) return throwError(() => event.error);
+                      // Status only: no upstream payload enters diagnostics.
+                      console.error('Marketing OS document read failed', { status: event.error instanceof HttpErrorResponse ? event.error.status : 0 });
+                      unavailable();
+                      return EMPTY;
                     })
                   )
             ).pipe(
               map((cycle) => cycle.view),
               catchError((error: HttpErrorResponse) => {
+                console.error('Marketing OS document read failed for good', { status: error.status });
                 this.localProgress.set(null);
                 this.runDetail.set(null);
+                this.refreshWarning.set(''); // Nothing is retrying beside a final error.
                 this.errorText.set(this.loadErrorText(error.status, error.error?.code));
                 return of(null);
               })
@@ -914,7 +1087,9 @@ export class MktgDocumentViewComponent {
         )
         .subscribe((view) => {
           this.view.set(view);
-          this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
+          if (view) this.selectionReadPending.set(false);
+          if (!this.editingLink() && !this.savingLink())
+            this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
           this.loading.set(false);
         });
     }
@@ -922,24 +1097,72 @@ export class MktgDocumentViewComponent {
 
   // === Protected methods ===
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
-    this.publicReads.next(cycle); // Keep the headless stored-revision/receipt observer.
-    const run = cycle.detail.runs?.find((entry) => entry.runId === this.runParam());
+    if (cycle.detail.project !== this.projectContext.activeContextUid()) return;
+    const viewed = this.view();
+    // False once the cycle's view is the body already on screen with fresh metadata merged in: its flags are an earlier read's.
+    let viewRead = true;
+    if (
+      viewed &&
+      !this.readStoredBody() &&
+      cycle.detail.project === viewed.project &&
+      cycle.detail.type.agentKey === viewed.type.agentKey &&
+      cycle.detail.documentId === viewed.documentId
+    ) {
+      if (
+        cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing') ||
+        cycle.detail.revisions.some((row) => row.number > viewed.revision.number)
+      ) {
+        this.pinnedRouteRevision = this.revisionParam();
+        this.remoteRevisionId.set(viewed.revision.id);
+      }
+      cycle = { ...cycle, view: this.mergeDocumentMetadata(viewed, cycle.detail) };
+      viewRead = false;
+    } else if (viewed && this.handoffRunId()) {
+      this.remoteRevisionId.set('');
+    }
+    // A verified ACK may arrive before its run= URL replacement. The hint selects a row; only that server row authorizes the redirect.
+    const selectedRunId = this.runParam() || this.handoffRunId();
+    const run = cycle.detail.runs?.find((entry) => entry.runId === selectedRunId);
+    // Another run followed here retires the notice remembered for the earlier one, as the run page does when it starts one.
+    const remembered = this.answeredNotice();
+    const followed = remembered && !cycle.detail.progressUnavailable ? this.runFollowedInstead(remembered, cycle.detail) : null;
+    if (followed) this.concurrentAnswers.observeRun(cycle.detail.project, cycle.detail.type.agentKey, cycle.detail.documentId, followed);
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
+    if (this.publicProgressPolling() && cycle.detail.progressUnavailable) {
+      this.runDetail.set(cycle.detail);
+      // One quiet status line, with or without a body to show; the progress reader keeps checking on its own.
+      this.refreshWarning.set(MKTG_POLL_RETRYING_TEXT);
+      // A plain URL may show its verified revision; a selected unverified run must not expose an older body.
+      this.publicReads.next({ ...cycle, view: selectedRunId ? null : cycle.view });
+      this.loading.set(false);
+      return;
+    }
+    // A good public cycle clears the line a partial one put up; a partial revision read (the detail complete, the view's
+    // progress not) keeps it, since the reader reports transitions only and repeats of a partial view would show no line.
+    // A metadata-only cycle over the body on screen is judged by its own complete detail, never by that body's old flag.
+    if (this.publicProgressPolling()) this.refreshWarning.set(viewRead && cycle.view?.progressUnavailable ? MKTG_POLL_RETRYING_TEXT : '');
     if (
       !this.publicProgressPolling() ||
       cycle.detail.progressUnavailable ||
       !run ||
-      run.state === 'failed' ||
-      run.state === 'discarded' ||
-      run.state === 'superseded' ||
-      !commands ||
-      this.redirectedRun === run.runId
-    )
+      (run.state !== 'writing' && run.state !== 'storing' && run.state !== 'questions') ||
+      !commands
+    ) {
+      this.publicReads.next(cycle);
       return;
+    }
+    if (this.redirectedRun === run.runId) return;
+    // Resolve the run destination before publishing any stored document body: no old-document flash.
     this.redirectedRun = run.runId;
+    // Let the accepted observer consume server proof without publishing an older stored body.
+    this.publicReads.next({ ...cycle, view: null });
+    this.loading.set(true);
+    this.view.set(null);
     const failedNavigation = () => {
-      if (this.redirectedRun !== run.runId) return;
+      if (this.redirectedRun !== run.runId || cycle.detail.project !== this.projectContext.activeContextUid()) return;
       this.redirectedRun = '';
+      this.publicReads.next({ ...cycle, view: null });
+      this.loading.set(false);
       this.errorText.set('The run page could not be opened. Open this run from Documents.');
     };
     void this.router
@@ -1074,9 +1297,19 @@ export class MktgDocumentViewComponent {
     const intake = MKTG_AGENT_INTAKES[agentId];
     const selected = this.selectedRun();
     if (!oneOff && selected?.state === 'failed' && pending?.attempt?.runId !== selected.runId) pending = null;
-    if (pending && selected?.state === 'failed' && pending.attempt?.runId === selected.runId && pending.state !== 'failed') {
+    if (pending && selected?.state === 'failed' && pending.attempt?.runId === selected.runId && (pending.state !== 'failed' || pending.pendingQuestions)) {
       pending = { ...pending, state: 'failed', pendingQuestions: undefined };
       this.attempts.save(pending); // The server is authoritative even before the private poll has settled.
+    }
+    if (pending?.pendingQuestions && selected?.state !== 'failed') {
+      const sameQuestions =
+        selected?.state === 'questions' &&
+        pending.attempt?.runId === selected.runId &&
+        (oneOff || pending.pendingQuestions.questionsId === selected.pendingQuestions?.questionsId);
+      if (!sameQuestions) {
+        this.attempts.save({ ...pending, pendingQuestions: undefined, state: 'writing' });
+        pending = null;
+      }
     }
     if (!pending && project && oneOff && intake && this.selectedRun()?.state === 'failed') {
       pending = {
@@ -1088,7 +1321,13 @@ export class MktgDocumentViewComponent {
     }
     const token = pending ? this.attempts.prepare(pending.request, true) : null;
     void this.router.navigate([mktgKitRootPath(this.router.url), agentId], {
-      queryParams: { ...this.runAgainParams(), ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: token, mode: null },
+      queryParams: {
+        ...this.runAgainParams(),
+        ...MKTG_RUN_RESUME_QUERY_CLEAR,
+        questions: token,
+        mode: null,
+        run: !oneOff && selected?.state === 'questions' ? selected.runId : null,
+      },
     });
   }
 
@@ -1097,15 +1336,45 @@ export class MktgDocumentViewComponent {
     this.reloads.update((count) => count + 1);
   }
 
+  /**
+   * The progress reader's own connection-state line is invisible while this view renders it headless (loading, closed run,
+   * living document): the reader reports its retrying state and this view shows the one line (and clears it) itself.
+   */
+  protected onProgressRetrying(retrying: boolean): void {
+    if (!this.publicProgressPolling()) return;
+    this.refreshWarning.set(retrying ? MKTG_POLL_RETRYING_TEXT : '');
+  }
+
   protected onRunAgain(): void {
     const project = this.projectContext.activeContextUid();
     if (project) this.pendingDocuments.clear(project, this.params().documentId);
   }
 
   protected onDownload(): void {
-    if (!isPlatformBrowser(this.platformId) || !this.view()?.aeoGeoReport) return;
+    const view = this.view();
+    if (!isPlatformBrowser(this.platformId) || !view?.aeoGeoReport) return;
     this.aeoPrintRequested = true;
-    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    // A press while one is already waiting (for the kit read, or for the render after it) is dropped: one press prints once.
+    if (this.aeoPrintWaiting) return;
+    // The print waits for the Brand Kit read to settle (a kit, or null after a failed read), or a press before it
+    // arrives would save the LF-default PDF: the first press is kept and prints after the render that follows the read.
+    // A press in the frame after the read settles and before that render prints at once, from the head as rendered then.
+    if (this.printKitSettled()) {
+      this.printAeoReport();
+    } else {
+      this.aeoPrintWaiting = this.printKitSettled$.pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+        // The settled signal arrives inside an effect, which runs before this template (and the running head's brand) is
+        // refreshed; the print clones the DOM, so it waits for the render that follows.
+        this.aeoPrintRender = afterNextRender(
+          () => {
+            this.aeoPrintWaiting = null;
+            this.aeoPrintRender = null;
+            this.printAeoReport();
+          },
+          { injector: this.injector }
+        );
+      });
+    }
   }
 
   protected onToggleAllRevisions(): void {
@@ -1118,14 +1387,19 @@ export class MktgDocumentViewComponent {
     if (!isPlatformBrowser(this.platformId) || this.confirmingApproval() || !this.mayApprove() || this.writePending()) return;
     if (!view || !project || view.project !== project || this.loading()) return;
     const report = this.viewedReport();
-    if (!report || (!report.sources_failed.length && !report.gaps.length)) return this.onApprove();
+    // A clean report approves directly; one with a source that could not be read, an open gap, a colour conflict or an LF-reference rule is shown first.
+    if (!report || !mktgReportNeedsApprovalReview(report)) return this.onApprove();
     const selection = this.revisionParam();
     const epoch = this.restoreEpoch;
     const subject = this.userService.user()?.sub;
+    const data: MktgApproveGapsDialogData = { report, brandKit: view.type.agentKey === BRAND_KIT_INTAKE.agentId };
     const ref = this.dialogService.open(MktgApproveGapsDialogComponent, {
-      header: 'Approve with open gaps?',
-      data: report,
+      header: mktgReportHasOpenGaps(report) ? MKTG_APPROVE_HEADER_GAPS : MKTG_APPROVE_HEADER,
+      data,
       modal: true,
+      // The dialog focuses its own content on show, so a long list opens at its top rather than at the footer button.
+      focusOnShow: false,
+      templates: { footer: MktgApproveGapsFooterComponent },
       width: '32rem',
       style: { maxWidth: '90vw' },
       draggable: false,
@@ -1256,11 +1530,6 @@ export class MktgDocumentViewComponent {
     });
   }
 
-  protected retryLoad(): void {
-    if (this.submittingGeneration()) return;
-    this.reload.update((value) => value + 1);
-  }
-
   protected onRestore(revision: MktgRevisionSummary): void {
     const view = this.view();
     const project = this.projectContext.activeContextUid();
@@ -1304,7 +1573,25 @@ export class MktgDocumentViewComponent {
   }
 
   // === Private initializers ===
+  private mergeDocumentMetadata(view: MktgRevisionResponse, detail: MktgDocumentDetailResponse): MktgRevisionResponse {
+    if (
+      JSON.stringify({ revisions: view.revisions, current: view.current, approvedCurrent: view.approvedCurrent }) ===
+      JSON.stringify({ revisions: detail.revisions, current: detail.current, approvedCurrent: detail.approvedCurrent })
+    )
+      return view;
+    const row = detail.revisions.find((entry) => entry.id === view.revision.id);
+    return {
+      ...view,
+      revisions: detail.revisions,
+      current: detail.current,
+      approvedCurrent: detail.approvedCurrent,
+      approval: row ? row.approval : view.approval,
+      revision: row ? { ...view.revision, latest: row.latest, approval: row.approval } : view.revision,
+    };
+  }
+
   private initApprovedView(): Signal<MktgApprovedRevisionState> {
+    let bodyKey = '';
     return toSignal(
       toObservable(this.view).pipe(
         distinctUntilChanged(
@@ -1316,6 +1603,9 @@ export class MktgDocumentViewComponent {
             previous?.approvedCurrent?.revisionId === current?.approvedCurrent?.revisionId
         ),
         switchMap((view) => {
+          const nextBodyKey = view ? JSON.stringify([view.project, view.type.agentKey, view.documentId, view.revision.id]) : '';
+          this.approvedReadIsExplicit.set(nextBodyKey !== bodyKey);
+          bodyKey = nextBodyKey;
           if (!isPlatformBrowser(this.platformId) || !view || !isMktgSlidesExportAgentKey(view.type.agentKey)) {
             return of({ loading: false, revision: null, error: '' });
           }
@@ -1370,17 +1660,23 @@ export class MktgDocumentViewComponent {
     });
   }
 
-  private initLiveState(): Signal<string> {
-    return computed(() => {
-      if (this.loading() || this.closedRun()) return '';
-      const state = this.runState();
-      if (state) {
-        // Living documents observe active runs headlessly; only failure belongs here.
-        if (this.publicProgressPolling() && state !== 'failed') return '';
-        return this.progressView()?.liveState() ?? '';
-      }
-      return this.view() ? this.readiness() : '';
-    });
+  /**
+   * The run this page follows instead of the notice's, if any: the `run=` row when it names another run, else a genuinely
+   * newer run — one still active (an older run cannot be, once a newer one started), or one started after the notice's run
+   * when that run is still listed. Older or failed rows in the history never count.
+   */
+  private runFollowedInstead(notice: MktgRunAnsweredNotice, detail: MktgDocumentDetailResponse): string | null {
+    const selected = this.runParam();
+    if (MKTG_STARTED_RUN_ID_REGEX.test(selected) && selected !== notice.runId) return selected;
+    const own = detail.runs?.find((row) => row.runId === notice.runId);
+    const newer = detail.runs?.find(
+      (row) =>
+        row.runId !== notice.runId &&
+        row.state !== 'failed' &&
+        !readMktgRetiredRunHint(row) &&
+        (row.state === 'questions' || row.state === 'writing' || row.state === 'storing' || (!!own && Date.parse(row.startedAt) > Date.parse(own.startedAt)))
+    );
+    return newer?.runId ?? null;
   }
 
   private initSelectedRun(): Signal<MktgDocumentRunProgress | null> {
@@ -1407,29 +1703,25 @@ export class MktgDocumentViewComponent {
   }
 
   /**
-   * The project's Brand Kit, read only while a framework revision is on
-   * screen (a kit or a Markdown document prints nothing of this) and only in
-   * the browser. Any failed read is the LF look, not an error.
+   * The project's Brand Kit, which the print's running head wears: read only
+   * while a framework revision or an AEO/GEO report is on screen (a kit or a
+   * plain Markdown document prints nothing of this), only in the browser, and
+   * never on the server. Any failed read is null, the LF look, not an error.
    */
-  private initPrintKit(): Signal<BrandKitRevision | null> {
-    const projectUid = computed(() => (isPlatformBrowser(this.platformId) && this.asset() !== null ? this.projectContext.activeContextUid() : ''));
+  private initPrintKitRead(): Signal<MktgPrintKitRead> {
+    const projectUid = computed(() =>
+      isPlatformBrowser(this.platformId) && (this.asset() !== null || !!this.view()?.aeoGeoReport) ? this.projectContext.activeContextUid() : ''
+    );
+    const pending: MktgPrintKitRead = MKTG_PRINT_KIT_READ_PENDING;
     return toSignal(
       toObservable(projectUid).pipe(
         distinctUntilChanged(),
-        // A project switch drops the previous project's kit at once: until the new
-        // project's kit resolves, the print takes the LF look, never another project's brand.
-        switchMap((uid) => (uid ? this.dependencyService.resolveBrandKit(uid).pipe(startWith(null)) : of(null)))
+        // A project switch drops the previous project's kit at once: until the new project's kit resolves, the print
+        // takes the LF look, never another project's brand, and a Download PDF press waits. No kit project is settled.
+        switchMap((uid) => (uid ? this.dependencyService.readBrandKit(uid).pipe(startWith(pending)) : of<MktgPrintKitRead>(MKTG_PRINT_KIT_READ_NONE)))
       ),
-      { initialValue: null }
+      { initialValue: pending }
     );
-  }
-
-  private initViewedAuthorLabel(): Signal<string> {
-    return computed(() => describeMktgRevisionAuthor(this.view()?.revision.author));
-  }
-
-  private initCurrentRevision(): Signal<MktgRevisionSummary | null> {
-    return computed(() => this.view()?.revisions.find((revision) => revision.latest) ?? null);
   }
 
   private initVisibleRevisionRows(): Signal<MktgRevisionSummary[]> {
@@ -1501,6 +1793,15 @@ export class MktgDocumentViewComponent {
     return view.current?.revisionId ?? view.revisions.find((revision) => revision.latest)?.id;
   }
 
+  /**
+   * The page reads continuously (one visibility poller), so a read alone must not take the notice away: it stays until
+   * the reader moves, a write of theirs lands, or a read shows the current moved again past the revision it names.
+   */
+  private retireCurrentConflict(detail: MktgDocumentDetailResponse): void {
+    const named = this.currentConflict()?.revisionId;
+    if (named && named !== this.expectedCurrentId(detail)) this.currentConflict.set(null);
+  }
+
   /** A rejected selection is never automatically replayed. Refresh metadata, not the viewed bytes. */
   private refreshCurrentConflict(error: unknown, viewed: MktgRevisionResponse, selection: string, action: MktgDocumentCurrentConflictAction): boolean {
     if (!(error instanceof HttpErrorResponse) || error.status !== 409 || error.error?.code !== MKTG_APPROVED_CURRENT_CHANGED) return false;
@@ -1520,15 +1821,7 @@ export class MktgDocumentViewComponent {
           if (detail.project !== viewed.project || detail.type.agentKey !== viewed.type.agentKey || detail.documentId !== viewed.documentId) return;
           const view = this.view();
           if (!view) return;
-          const row = detail.revisions.find((entry) => entry.id === view.revision.id);
-          this.view.set({
-            ...view,
-            revisions: detail.revisions,
-            current: detail.current,
-            approvedCurrent: detail.approvedCurrent,
-            approval: row ? row.approval : view.approval,
-            revision: row ? { ...view.revision, latest: row.latest, approval: row.approval } : view.revision,
-          });
+          this.view.set(this.mergeDocumentMetadata(view, detail));
           this.runDetail.set(detail);
           const selected = detail.current?.revisionId ?? detail.revisions.find((entry) => entry.latest)?.id ?? null;
           this.currentConflict.set({ ...notice, revisionId: notice.revisionId ?? selected });
@@ -1567,7 +1860,7 @@ export class MktgDocumentViewComponent {
     if (status === 404) {
       return code === 'MKTG_DOCUMENT_NOT_FOUND' ? 'This document could not be found.' : 'This document has no such revision.';
     }
-    return 'This revision could not be loaded. Try again in a moment.';
+    return 'This revision could not be loaded.';
   }
 
   // === Private helpers ===
@@ -1630,6 +1923,7 @@ export class MktgDocumentViewComponent {
         });
       } else {
         this.localProgress.set('storing');
+        if (this.publicProgressPolling()) this.progressView()?.recheck();
       }
     }
     if (progress.type === 'failed' || progress.type === 'refused') {
@@ -1638,6 +1932,7 @@ export class MktgDocumentViewComponent {
       this.failureText.set(
         progress.type === 'failed' ? progress.failureText || 'The agent could not complete this run. Your intake is kept — try again.' : progress.reply
       );
+      if (this.publicProgressPolling()) this.progressView()?.recheck();
     }
     if (progress.type === 'questions') {
       const token = this.attempts.prepare(pending.request, true);
@@ -1649,9 +1944,22 @@ export class MktgDocumentViewComponent {
   }
 
   // === AEO/GEO pending helpers (private methods follow protected methods by repository lint) ===
+  private printAeoReport(): void {
+    const view = this.view();
+    if (!view?.aeoGeoReport) return;
+    // The saved PDF's name, like the deck's title: the project, the label the page shows, the revision on the page and its date.
+    const title = mktgPrintDocumentTitle(this.projectName(), view.type.itemLabel, view.revision.number, view.revision.createdAt);
+    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, title);
+  }
+
   private clearAeoPrint(): void {
+    // A press still waiting for the kit, or for the render after it, belongs to the document that is leaving the screen.
+    this.aeoPrintWaiting?.unsubscribe();
+    this.aeoPrintWaiting = null;
+    this.aeoPrintRender?.destroy();
+    this.aeoPrintRender = null;
     if (this.aeoPrintRequested) {
-      this.printService.clear(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+      this.printService.clear();
       this.aeoPrintRequested = false;
     }
   }
@@ -1663,7 +1971,6 @@ export class MktgDocumentViewComponent {
   private loadAeoReport(project: string, agentKey: string, documentId: string, revisionId: string, user: string | undefined) {
     this.generating.set(false);
     this.activity.set([]);
-    this.retryGenerating.set(false);
     this.view.set(null);
     if (!project || !documentId || !user) return EMPTY;
     const pending = this.pendingDocuments.load(project, documentId);
@@ -1687,34 +1994,61 @@ export class MktgDocumentViewComponent {
               return id ? this.documentStore.getRevision(project, agentKey, documentId, id) : throwError(() => new HttpErrorResponse({ status: 404 }));
             })
           );
-    return read().pipe(
-      catchError((error: HttpErrorResponse) => {
-        if (error.status !== 404 || !canResume || !pending || !intake) throw error;
-        this.generating.set(true);
-        return this.pendingDocuments.waitForStorage(pending, intake, (activity) => this.activity.set(activity)).pipe(switchMap(() => read()));
+    // The storage wait's budget is absolute from the moment this view first began waiting (persisted with the pending
+    // record, so a tab return, a focus or a reload never moves it); research and answering time are not spent from it.
+    // Only a record that cannot be anchored falls back to the run's savedAt.
+    const deadlineFor = (run: MktgPendingDocumentRun): number => {
+      const anchor = Date.parse(run.waitStartedAt ?? run.savedAt);
+      return (Number.isFinite(anchor) ? anchor : Date.now()) + MKTG_RUN_POLL.timeoutMs;
+    };
+    let denied = false;
+    const attempt = () => {
+      // A refused read is latched for this report (RFC 9110 §15.5.4): no wake sends the same credentials again.
+      if (denied) return EMPTY;
+      return read().pipe(
+        catchError((error: HttpErrorResponse) => {
+          if (error.status !== 404 || !canResume || !pending || !intake) throw error;
+          // The server answered (the report is not stored yet): nothing is retrying while the storage wait runs.
+          this.refreshWarning.set('');
+          this.generating.set(true);
+          const anchored = this.pendingDocuments.markWaitStarted(pending);
+          return this.pendingDocuments
+            .waitForStorage(anchored, intake, (activity) => this.activity.set(activity), deadlineFor(anchored))
+            .pipe(switchMap(() => read()));
+        }),
+        tap(() => this.pendingDocuments.clear(project, documentId)),
+        catchError((error: unknown) => {
+          console.error('Failed to load the audit document', error);
+          const status = error instanceof HttpErrorResponse ? error.status : 0;
+          const refused = error instanceof MktgRunRefusalError;
+          // A transient HTTP failure (RFC 9110: 408, 429, 5xx, no response) is retried by the poller below; a refusal, the
+          // audit's own deadline and everything else, HTTP or not, is final.
+          if (!refused && !(error instanceof TimeoutError) && isTransientHttpError(error)) throw error;
+          denied = status === 401 || status === 403;
+          if (refused) this.errorText.set(error.message);
+          else if (error instanceof TimeoutError) this.errorText.set(AEO_GEO_TIMEOUT_MESSAGE);
+          else this.errorText.set(this.loadErrorText(status, error instanceof HttpErrorResponse ? error.error?.code : undefined));
+          return of(null);
+        })
+      );
+    };
+    // One read that retries itself on the shared poller's capped backoff and again on tab return, focus or reconnect; no button.
+    return createVisibilityPoll(this.document, attempt, {
+      intervalMs: 0,
+      backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+      backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
+      shouldContinue: () => false,
+    }).pipe(
+      tap((event) => {
+        this.generating.set(false);
+        // A transient failure is one quiet status line; a report that arrives, or a final failure's own text, clears it.
+        this.refreshWarning.set(event.kind === 'error' ? MKTG_POLL_RETRYING_TEXT : '');
+        if (event.kind === 'ok' && event.value) this.errorText.set('');
       }),
-      tap(() => this.pendingDocuments.clear(project, documentId)),
-      catchError((error: unknown) => {
-        console.error('Failed to load the audit document', error);
-        const status = error instanceof HttpErrorResponse ? error.status : undefined;
-        const refused = error instanceof MktgRunRefusalError;
-        this.retryGenerating.set(!refused && (status === undefined || isTransientHttpError(error)));
-        if (refused) {
-          this.errorText.set(error.message);
-        } else if (error instanceof TimeoutError) {
-          this.errorText.set(AEO_GEO_TIMEOUT_MESSAGE);
-        } else if (this.retryGenerating()) {
-          this.errorText.set(
-            !this.generating() && !canResume
-              ? 'The report could not be loaded. Check again.'
-              : 'The report has not been stored yet. Try checking again; starting a new audit creates a separate report.'
-          );
-        } else {
-          this.errorText.set(this.loadErrorText(status ?? 0, error instanceof HttpErrorResponse ? error.error?.code : undefined));
-        }
-        return of(null);
-      }),
-      tap(() => this.generating.set(false))
+      // Only a result reaches the view: a loaded report stays through a failed re-read, and a failed first read keeps the
+      // loading state behind the one line (ending it would leave the page blank, and hide the storage wait a retry starts).
+      filter((event) => event.kind === 'ok'),
+      map((event) => (event.kind === 'ok' ? event.value : null))
     );
   }
 }

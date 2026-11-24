@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Committee, CommitteeWriterProbeResult, EntityWithProject, Project, SurveyCommittee } from '@lfx-one/shared/interfaces';
-import { catchError, concatMap, from, map, Observable, of, reduce, takeWhile } from 'rxjs';
+import type { Committee, CommitteeWriterProbeResult, EntityWithProject, Project, SurveyCommittee, Vote } from '@lfx-one/shared/interfaces';
+import { catchError, concatMap, from, map, Observable, of, reduce, switchMap, takeWhile } from 'rxjs';
 
 import { isTransientHttpError } from './http-error.utils';
 
@@ -10,24 +10,6 @@ import { isTransientHttpError } from './http-error.utils';
 // access signals each carried their own copy, drift denied or evicted meeting coordinators.
 export function hasMeetingWriteAccess(project: Project | null): boolean {
   return project?.writer === true || project?.meetingCoordinator === true;
-}
-
-/**
- * Tri-state meeting write-access read: true/false are confirmed grant/deny, `undefined` means
- * the check couldn't be confirmed (lookup failed, or the BFF omitted `meetingCoordinator` because
- * its FGA check itself failed — HTTP 200, field absent). Callers that evict on a `false` transition
- * (e.g. evictOnWriteAccessLoss) must treat `undefined` as "keep provisional access", the same
- * unknown-vs-denied distinction writerGuard already makes for the route guard (linuxfoundation/lfx-self-serve-ops#500) — otherwise
- * a transient BFF blip reads as a flat denial and silently evicts a legitimate meeting coordinator.
- */
-export function meetingWriteAccessState(project: Project | null): boolean | undefined {
-  if (project === null) {
-    return undefined;
-  }
-  if (hasMeetingWriteAccess(project)) {
-    return true;
-  }
-  return project.meetingCoordinator === undefined ? undefined : false;
 }
 
 // Prefers the BFF-enriched slug, falling back to the uid — `GET /api/projects/:slug` sniffs UUIDs,
@@ -91,5 +73,35 @@ export function probeCommitteeWriters(
       }),
       { writer: false, transientFailure: false }
     )
+  );
+}
+
+/**
+ * Whether the viewer manages a vote: project writer first, then committee writer — the same order writerGuard uses.
+ * Used by the vote detail page (`/votes/:id`) to pick the manager view from write access
+ * and never from the lens. A failed check is "not a manager" (the voter view), never an error: the vote itself already loaded.
+ */
+export function resolveVoteCanManage(
+  vote: Pick<Vote, 'project_slug' | 'project_uid' | 'committee_uid'>,
+  getProjectStrict: (slugOrUid: string) => Observable<Pick<Project, 'writer'>>,
+  fetchCommittee: (uid: string) => Observable<Pick<Committee, 'writer'> | null>
+): Observable<boolean> {
+  const projectSlugOrUid = resolveEntityWriteSlug(vote, null);
+  const isProjectWriter$ = projectSlugOrUid
+    ? getProjectStrict(projectSlugOrUid).pipe(
+        map((project) => project.writer === true),
+        catchError((error) => {
+          console.error('Failed to check project write access for vote', { status: error?.status, message: error?.message });
+          return of(false);
+        })
+      )
+    : of(false);
+
+  return isProjectWriter$.pipe(
+    switchMap((isProjectWriter) => {
+      if (isProjectWriter) return of(true);
+      // probeCommitteeWriters catches per-committee failures, so this never errors.
+      return probeCommitteeWriters(vote.committee_uid ? [vote.committee_uid] : [], fetchCommittee).pipe(map((result) => result.writer));
+    })
   );
 }

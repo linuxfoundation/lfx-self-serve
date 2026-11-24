@@ -7,12 +7,11 @@
  * The page reads `/api/mentorship/mentor/programs`, which the BFF builds from the mentor's programs,
  * each card counted across all the program's terms. Each test stubs that read via `page.route` with a
  * synthetic payload, so the suite never depends on the signed-in user's real programs: one populated
- * payload proves the cards render with their project, Open/Completed status and counts, an empty one
+ * payload proves the cards render with their project, Accepting/Completed status and counts, an empty one
  * drives the empty state, and a 503 drives the error state and its Retry.
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the programs read is made by the
  * browser and the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
- * The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -24,7 +23,7 @@ import { MentorshipMentorProgramsResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -44,7 +43,7 @@ const POPULATED: MentorshipMentorProgramsResponse = {
       slug: 'test-program-alpha',
       name: 'Test Program Alpha',
       projectName: 'Test Project',
-      status: 'open',
+      status: 'accepting',
       stats: { mentees: 3, tasksToReview: 2, applicants: 7 },
     },
     {
@@ -52,7 +51,7 @@ const POPULATED: MentorshipMentorProgramsResponse = {
       slug: 'test-program-beta',
       name: 'Test Program Beta',
       projectName: '',
-      status: 'open',
+      status: 'accepting',
       stats: { mentees: 0, tasksToReview: 0, applicants: 4 },
     },
     {
@@ -78,7 +77,6 @@ async function stubPrograms(page: Page, body: MentorshipMentorProgramsResponse, 
 
 test.describe('Mentor My Programs — loaded', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, POPULATED);
     await openMentorPage(page, MENTOR_PROGRAMS_URL);
   });
@@ -95,7 +93,7 @@ test.describe('Mentor My Programs — loaded', () => {
     const open = page.getByTestId(`mentorship-mentor-program-card-${OPEN_ID}`);
     await expect(open).toContainText('Test Project', { timeout: MENTOR_PAGE_LOAD_TIMEOUT });
     await expect(open).not.toContainText('·');
-    await expect(open).toContainText(MENTORSHIP_PROGRAM_STATUS_LABELS.open);
+    await expect(open).toContainText(MENTORSHIP_PROGRAM_STATUS_LABELS.accepting);
 
     const metrics = open.getByTestId('mentorship-mentor-program-card-metrics');
     await expect(metrics).toContainText('Mentees');
@@ -105,7 +103,7 @@ test.describe('Mentor My Programs — loaded', () => {
     await expect(metrics).toContainText('Applicants');
     await expect(metrics).toContainText('7');
 
-    await expect(page.getByTestId(`mentorship-mentor-program-card-${NO_PROJECT_ID}`)).toContainText(MENTORSHIP_PROGRAM_STATUS_LABELS.open);
+    await expect(page.getByTestId(`mentorship-mentor-program-card-${NO_PROJECT_ID}`)).toContainText(MENTORSHIP_PROGRAM_STATUS_LABELS.accepting);
     await expect(page.getByTestId(`mentorship-mentor-program-card-${COMPLETED_ID}`)).toContainText(MENTORSHIP_PROGRAM_STATUS_LABELS.completed);
   });
 
@@ -119,7 +117,6 @@ test.describe('Mentor My Programs — loaded', () => {
 
 test.describe('Mentor My Programs — empty state', () => {
   test('shows the empty state when the mentor has no programs', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, { data: [], total: 0 });
     await openMentorPage(page, MENTOR_PROGRAMS_URL);
 
@@ -132,7 +129,6 @@ test.describe('Mentor My Programs — empty state', () => {
 
 test.describe('Mentor My Programs — error state', () => {
   test('shows the error state and loads the programs on Retry', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, POPULATED, 503);
     await openMentorPage(page, MENTOR_PROGRAMS_URL);
 

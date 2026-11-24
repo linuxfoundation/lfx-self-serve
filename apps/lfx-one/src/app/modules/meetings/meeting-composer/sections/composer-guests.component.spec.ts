@@ -4,12 +4,14 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
-import type { CommitteeMember, ComposerGuestRow, Meeting, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
+import type { CommitteeMember, ComposerGuestRow, Meeting, MeetingRegistrantWithState, MeetingSelfGuest } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
+import { BehaviorSubject, NEVER } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingComposerFormService } from '../meeting-composer-form.service';
@@ -20,6 +22,18 @@ describe('ComposerGuestsComponent', () => {
   let component: ComposerGuestsComponent;
   let formService: MeetingComposerFormService;
   let announce: ReturnType<typeof vi.fn>;
+  let selfGuest$: BehaviorSubject<MeetingSelfGuest | null>;
+
+  const SELF_GUEST: MeetingSelfGuest = {
+    email: 'pat.doe@example.com',
+    first_name: 'Pat',
+    last_name: 'Doe',
+    job_title: 'Engineer',
+    org_name: 'Example Org',
+    username: 'pdoe',
+    avatar_url: 'https://avatars.example.com/pdoe.png',
+    matchEmails: ['pat.doe@example.com', 'pat@example.org'],
+  };
 
   const savedGroupGuest: MeetingRegistrantWithState = {
     uid: 'registrant-1',
@@ -50,6 +64,7 @@ describe('ComposerGuestsComponent', () => {
 
   beforeEach(async () => {
     announce = vi.fn().mockResolvedValue(undefined);
+    selfGuest$ = new BehaviorSubject<MeetingSelfGuest | null>(SELF_GUEST);
     TestBed.configureTestingModule({
       providers: [
         { provide: LiveAnnouncer, useValue: { announce } },
@@ -59,6 +74,7 @@ describe('ComposerGuestsComponent', () => {
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: CommitteeService, useValue: {} },
         { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => selfGuest$ } },
         {
           provide: MeetingService,
           useValue: {
@@ -133,6 +149,86 @@ describe('ComposerGuestsComponent', () => {
       expect(formService.guests()).toHaveLength(0);
     });
   });
+
+  describe('meeting host toggle', () => {
+    const directGuest: MeetingRegistrantWithState = { ...savedGroupGuest, uid: 'registrant-2', email: 'direct@example.com', type: 'direct' };
+
+    it('promotes a saved guest and queues an update for them', () => {
+      formService.setGuests([directGuest, savedGroupGuest]);
+
+      component['onToggleHost'](directGuest);
+
+      const toggled = formService.guests().find((guest) => guest.uid === 'registrant-2');
+      expect(toggled?.host).toBe(true);
+      expect(toggled?.state).toBe('modified');
+      expect(formService.registrantUpdates().toUpdate.map((update) => update.uid)).toEqual(['registrant-2']);
+    });
+
+    it('leaves every other guest untouched', () => {
+      formService.setGuests([directGuest, savedGroupGuest]);
+
+      component['onToggleHost'](directGuest);
+
+      const other = formService.guests().find((guest) => guest.uid === 'registrant-1');
+      expect(other?.host).toBe(false);
+      expect(other?.state).toBe('existing');
+    });
+
+    it('demotes a saved host', () => {
+      const host = { ...directGuest, host: true };
+      formService.setGuests([host]);
+
+      component['onToggleHost'](host);
+
+      expect(formService.guests()[0].host).toBe(false);
+      expect(formService.guests()[0].state).toBe('modified');
+    });
+
+    it('keeps an unsaved guest new so the flag rides along with the create', () => {
+      const pending: MeetingRegistrantWithState = { ...directGuest, uid: '', tempId: 'temp_1', state: 'new' };
+      formService.setGuests([pending]);
+
+      component['onToggleHost'](pending);
+
+      expect(formService.guests()[0].host).toBe(true);
+      expect(formService.guests()[0].state).toBe('new');
+      expect(formService.registrantUpdates().toUpdate).toHaveLength(0);
+      expect(formService.registrantUpdates().toAdd).toHaveLength(1);
+    });
+
+    it('withdraws Undo, which would otherwise take the host change back', () => {
+      formService.setGuests([directGuest]);
+      component['removalBatch'].set({ before: [], suppressedBefore: new Set(), committeeKey: '', labels: [], focusTrackId: null, signature: '' });
+
+      component['onToggleHost'](directGuest);
+
+      expect(component['removalBatch']()).toBeNull();
+    });
+
+    it('keeps a promoted group guest queued for the update when their group is deselected and reselected', () => {
+      const saved = { ...savedGroupGuest, originalData: { ...savedGroupGuest } };
+      formService.setGuests([saved]);
+
+      component['onToggleHost'](saved);
+      reconcile([]);
+      reconcile([member]);
+
+      expect(formService.guests()[0].state).toBe('modified');
+      expect(formService.guests()[0].host).toBe(true);
+      expect(formService.registrantUpdates().toUpdate.map((update) => update.uid)).toEqual(['registrant-1']);
+    });
+
+    it('restores an unchanged group guest as existing', () => {
+      const saved = { ...savedGroupGuest, originalData: { ...savedGroupGuest } };
+      formService.setGuests([saved]);
+
+      reconcile([]);
+      reconcile([member]);
+
+      expect(formService.guests()[0].state).toBe('existing');
+    });
+  });
+
   /**
    * Covers the two things the projected rows have to get right for the list to behave: a `track` key
    * that never repeats, and a remove button that says which guest it removes. Both only go wrong on
@@ -200,6 +296,16 @@ describe('ComposerGuestsComponent', () => {
       formService.setGuests([savedGroupGuest]);
 
       expect(rows()[0].removeLabel).toBe('Remove Member One');
+    });
+
+    it('names the guest in the host toggle and flips it with the host flag', () => {
+      formService.setGuests([savedGroupGuest]);
+      expect(rows()[0].hostLabel).toBe('Make Member One a meeting host');
+      expect(rows()[0].hostTooltip).toBe('Make host');
+
+      formService.setGuests([{ ...savedGroupGuest, host: true }]);
+      expect(rows()[0].hostLabel).toBe('Remove Member One as meeting host');
+      expect(rows()[0].hostTooltip).toBe('Remove host');
     });
 
     it('falls back to the email when the registrant has no name', () => {
@@ -729,8 +835,12 @@ describe('ComposerGuestsComponent', () => {
       expect(resolve({ meeting_type: 'Board', show_meeting_attendees: true })).toBeNull();
     });
 
-    it('reports a restricted meeting as decided off, so a group default cannot switch sharing on', () => {
-      expect(resolve({ restricted: true, show_meeting_attendees: true })).toBe(false);
+    it("reports a restricted meeting's stored choice, as hydration reads it (#5438)", () => {
+      expect(resolve({ restricted: true, show_meeting_attendees: true })).toBe(true);
+    });
+
+    it('reports a restricted meeting with no stored opt-in as decided off, so a group default cannot switch sharing on', () => {
+      expect(resolve({ restricted: true, show_meeting_attendees: undefined })).toBe(false);
     });
 
     it('reports an opt-out for a meeting whose flag the API omitted', () => {
@@ -782,5 +892,107 @@ describe('ComposerGuestsComponent', () => {
     formService.setGuests([savedGroupGuest]);
 
     expect(component['guestRows']().map((row) => [row.scopeLabel, row.removable])).toEqual([[null, true]]);
+  });
+
+  /** "Add myself" (#5798): offered until the signed-in user is on the list under a known email or their LFID. */
+  describe('add myself', () => {
+    const canAddSelf = (): boolean => component['canAddSelf']();
+
+    it('is offered when the user is not invited', () => {
+      formService.setGuests([savedGroupGuest]);
+
+      expect(canAddSelf()).toBe(true);
+    });
+
+    it('is hidden when the user is invited under any of their emails, whatever the case', () => {
+      formService.setGuests([{ ...savedGroupGuest, email: 'Pat@Example.org' }]);
+
+      expect(canAddSelf()).toBe(false);
+    });
+
+    it('is hidden when the user is invited under another address with their LFID, as a group member', () => {
+      formService.setGuests([{ ...savedGroupGuest, email: 'work@example.com', username: 'PDoe' }]);
+
+      expect(canAddSelf()).toBe(false);
+    });
+
+    it('is hidden when the user is invited only to another occurrence', () => {
+      formService.mode.set('edit');
+      formService.occurrenceId.set('1893456000');
+      formService.setGuests([{ ...savedGroupGuest, email: 'pat.doe@example.com', occurrence_id: '1894060800' }]);
+
+      expect(canAddSelf()).toBe(false);
+    });
+
+    it('is hidden while the guest list is loading or failed to load', () => {
+      formService.guestsLoading.set(true);
+      expect(canAddSelf()).toBe(false);
+
+      formService.guestsLoading.set(false);
+      formService.guestsLoadFailed.set(true);
+      expect(canAddSelf()).toBe(false);
+    });
+
+    it('is hidden until the identity lookup resolves', () => {
+      selfGuest$.next(null);
+
+      expect(canAddSelf()).toBe(false);
+    });
+
+    it('adds the user as a direct, non-host guest with their profile details', () => {
+      component['onAddSelf']();
+
+      const [guest] = formService.guests();
+      expect(guest).toMatchObject({
+        email: 'pat.doe@example.com',
+        first_name: 'Pat',
+        last_name: 'Doe',
+        job_title: 'Engineer',
+        org_name: 'Example Org',
+        username: 'pdoe',
+        avatar_url: 'https://avatars.example.com/pdoe.png',
+        host: false,
+        type: 'direct',
+        state: 'new',
+        occurrence_id: null,
+        selfAdded: true,
+      });
+      expect(announce).toHaveBeenCalledWith('Pat Doe added to the guest list.', 'polite');
+      expect(canAddSelf()).toBe(false);
+    });
+
+    it('scopes the guest to the edited occurrence', () => {
+      formService.mode.set('edit');
+      formService.occurrenceId.set('1893456000');
+
+      component['onAddSelf']();
+
+      expect(formService.guests()[0].occurrence_id).toBe('1893456000');
+    });
+
+    it('is offered again once the user removes themselves', () => {
+      component['onAddSelf']();
+
+      component['onRemoveGuest'](formService.guests()[0]);
+
+      expect(canAddSelf()).toBe(true);
+    });
+
+    it('opens the manual dialog prefilled, rather than adding, when a name is missing', () => {
+      const open = vi.mocked(TestBed.inject(DialogService).open).mockReturnValue({ onClose: NEVER } as never);
+      selfGuest$.next({ ...SELF_GUEST, last_name: '' });
+
+      component['onAddSelf']();
+
+      expect(formService.guests()).toHaveLength(0);
+      expect(open).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          data: {
+            prefill: { email: 'pat.doe@example.com', first_name: 'Pat', last_name: '', job_title: 'Engineer', org_name: 'Example Org' },
+          },
+        })
+      );
+    });
   });
 });
