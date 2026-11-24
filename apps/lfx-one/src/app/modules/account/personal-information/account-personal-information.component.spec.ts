@@ -47,6 +47,7 @@ describe('AccountPersonalInformationComponent', () => {
   let impersonating: ReturnType<typeof signal<boolean>>;
   let userService: Record<string, ReturnType<typeof vi.fn> | ReturnType<typeof signal>>;
   let register: ReturnType<typeof vi.fn>;
+  let leaveForAuthorization: ReturnType<typeof vi.fn>;
   let show: ReturnType<typeof vi.fn>;
   let apply: ReturnType<typeof vi.fn>;
 
@@ -55,6 +56,7 @@ describe('AccountPersonalInformationComponent', () => {
   function configure(overrides: Record<string, () => Observable<unknown>> = {}): void {
     impersonating = signal(false);
     register = vi.fn();
+    leaveForAuthorization = vi.fn();
     show = vi.fn();
     apply = vi.fn();
     userService = {
@@ -74,7 +76,7 @@ describe('AccountPersonalInformationComponent', () => {
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: UserService, useValue: userService },
         { provide: ProfileSaveSyncService, useValue: { apply } },
-        { provide: AccountUnsavedChangesService, useValue: { register } },
+        { provide: AccountUnsavedChangesService, useValue: { register, leaveForAuthorization } },
         { provide: UiToastService, useValue: { show } },
       ],
     });
@@ -255,6 +257,7 @@ describe('AccountPersonalInformationComponent', () => {
       const pending = JSON.parse(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY) ?? '{}');
       expect(pending.userMetadata).toEqual(expect.objectContaining({ job_title: 'Maintainer' }));
       expect(show).not.toHaveBeenCalled();
+      expect(leaveForAuthorization).toHaveBeenCalledWith('#authorize');
     });
 
     it('locks the fields while a save is in flight', async () => {

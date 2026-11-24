@@ -121,4 +121,16 @@ describe('AccountUnsavedChangesService', () => {
     destroyCallbacks.forEach((callback) => callback());
     expect(unload()).toBe(false);
   });
+
+  it('sends the browser to authorize without the prompt, keeping the changes to the page', () => {
+    service.register(page, destroyRef);
+    dirty.set(true);
+    service.leaveForAuthorization('#authorize');
+
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(window.location.hash).toBe('#authorize');
+    window.location.hash = '';
+  });
 });

@@ -3,6 +3,7 @@
 
 import { Component, computed, DestroyRef, inject, Signal, signal, TemplateRef, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ReactiveFormsModule } from '@angular/forms';
 import { AccountCardComponent } from '@components/account-card/account-card.component';
 import { ACCOUNT_LINUX_EMAIL_COPY } from '@lfx-one/shared/constants';
@@ -93,6 +94,15 @@ export class AccountLinuxEmailComponent extends ProfileLinuxEmailComponent {
       .subscribe((confirmed) => {
         if (confirmed) this.claim();
       });
+  }
+
+  // Flow C goes through the save bar's service, so a forwarding change in progress doesn't raise the browser's leave prompt.
+  protected override handleError(err: HttpErrorResponse, fallback: string): void {
+    if (err.error?.error === 'management_token_required' && err.error?.authorize_url) {
+      this.unsavedChanges.leaveForAuthorization(err.error.authorize_url);
+      return;
+    }
+    super.handleError(err, fallback);
   }
 
   private initAliasError(): Signal<string> {

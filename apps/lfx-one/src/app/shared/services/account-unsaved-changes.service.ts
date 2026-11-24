@@ -24,6 +24,8 @@ export class AccountUnsavedChangesService {
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
 
   private readonly page = signal<AccountPageForm | null>(null);
+  // Set while the page sends the browser to Flow C itself, which keeps its changes across the round trip or asks again on return.
+  private leavingForAuthorization = false;
 
   public readonly dirty = computed(() => this.page()?.dirty() ?? false);
   public readonly saving = computed(() => this.page()?.saving() ?? false);
@@ -37,6 +39,13 @@ export class AccountUnsavedChangesService {
       this.page.set(null);
       this.document.defaultView?.removeEventListener('beforeunload', this.onBeforeUnload);
     });
+  }
+
+  /** Lets the page send the browser to authorize without the leave prompt; the page keeps or restores its own changes. */
+  public leaveForAuthorization(url: string): void {
+    if (!this.isBrowser) return;
+    this.leavingForAuthorization = true;
+    this.document.defaultView?.location.assign(url);
   }
 
   public save(): void {
@@ -62,7 +71,7 @@ export class AccountUnsavedChangesService {
   }
 
   private readonly onBeforeUnload = (event: BeforeUnloadEvent): void => {
-    if (!this.dirty()) return;
+    if (!this.dirty() || this.leavingForAuthorization) return;
     event.preventDefault();
     // Older browsers need returnValue set to show the prompt.
     event.returnValue = '';

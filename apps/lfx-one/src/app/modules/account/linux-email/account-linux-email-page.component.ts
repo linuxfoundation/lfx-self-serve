@@ -17,7 +17,7 @@ import { AccountLinuxEmailComponent } from './account-linux-email.component';
 @Component({
   selector: 'lfx-account-linux-email-page',
   imports: [AccountLinuxEmailComponent],
-  template: '<lfx-account-linux-email [identities]="identities()" />',
+  templateUrl: './account-linux-email-page.component.html',
 })
 export class AccountLinuxEmailPageComponent {
   private readonly userService = inject(UserService);
@@ -32,7 +32,14 @@ export class AccountLinuxEmailPageComponent {
     return toSignal(
       this.userService.identitiesRefresh$.pipe(
         startWith(undefined),
-        switchMap(() => this.userService.getIdentities().pipe(catchError(() => EMPTY)))
+        switchMap(() =>
+          this.userService.getIdentities().pipe(
+            catchError((error: unknown) => {
+              console.error('Failed to load identities for Linux.com email:', error);
+              return EMPTY;
+            })
+          )
+        )
       ),
       { initialValue: [] as EnrichedIdentity[] }
     );
