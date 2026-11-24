@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { VOTE_OVERVIEW_STANDINGS_LIMIT } from '../constants/vote.constants';
 import { CondorcetOutcome, PollType } from '../enums/poll.enum';
 import type {
   IndexedPollAnswer,
@@ -13,6 +14,8 @@ import type {
   RankedQuestionView,
   RankedStanding,
   UserChoice,
+  VoteOverviewOutcome,
+  VoteOverviewStanding,
   VoteParticipationStats,
   VoteResultsOption,
   VoteResultsQuestion,
@@ -453,6 +456,74 @@ function rankedOutcomeSummary(outcome: RankedOutcome): string {
   if (outcome.kind === 'meek_stv') return `Elected: ${joinNames(outcome.winnerTexts)}`;
   if (outcome.result === 'tie') return `Tied: ${joinNames(outcome.winnerTexts)}`;
   return `${outcome.winnerTexts[0]} won`;
+}
+
+/**
+ * Builds the vote detail Overview outcome for an IRV or Meek STV question (#6124)
+ * @description Mirrors the Results tab banner of `lfx-vote-ranked-question-results` in shorter Overview copy. Standings
+ * keep only the rows after the winners, capped to `VOTE_OVERVIEW_STANDINGS_LIMIT`.
+ * @param view - A view from `buildRankedQuestionViews`
+ * @returns The outcome, or null when the question has no final outcome
+ */
+export function buildRankedOverviewOutcome(view: RankedQuestionView): VoteOverviewOutcome | null {
+  if (!view.outcome) return null;
+  const runnersUp = view.standings
+    .filter((row) => row.label !== 'winner' && row.label !== 'tied' && row.label !== 'elected')
+    .map((row) => ({
+      choiceId: row.choiceId,
+      choiceText: row.choiceText,
+      rank: row.rank,
+      detail:
+        row.label === 'not_elected'
+          ? 'Not elected'
+          : overviewStandingDetail(row.label === 'eliminated', row.round, row.headToHeadWins ?? 0, row.headToHeadTotal ?? 0),
+    }));
+  return buildOverviewOutcome(view.questionId, view.prompt, view.outcome, runnersUp);
+}
+
+/**
+ * Assembles a vote detail Overview outcome (#6124) from a ranked outcome and its runner-up rows; shared by the ranked
+ * and Condorcet IRV adapters so both use the same labels, explanations and standings cap.
+ */
+export function buildOverviewOutcome(questionId: string, prompt: string, outcome: RankedOutcome, runnersUp: VoteOverviewStanding[]): VoteOverviewOutcome {
+  const standings = runnersUp.slice(0, VOTE_OVERVIEW_STANDINGS_LIMIT);
+  return {
+    questionId,
+    prompt,
+    result: outcome.result,
+    label: overviewLabel(outcome),
+    winnerTexts: outcome.result === 'none' ? [] : outcome.winnerTexts,
+    explanation: overviewExplanation(outcome),
+    standings,
+    hiddenCount: runnersUp.length - standings.length,
+  };
+}
+
+/**
+ * Overview standings detail (#6124): "Eliminated in round N" (or "Eliminated") for an eliminated option, otherwise
+ * "Won X of Y head-to-head matchups" when head-to-head data exists, otherwise null.
+ */
+export function overviewStandingDetail(eliminated: boolean, round: number | null, headToHeadWins: number, headToHeadTotal: number): string | null {
+  if (eliminated) return round !== null ? `Eliminated in round ${round}` : 'Eliminated';
+  if (headToHeadTotal > 0) return `Won ${headToHeadWins} of ${headToHeadTotal} head-to-head ${headToHeadTotal === 1 ? 'matchup' : 'matchups'}`;
+  return null;
+}
+
+function overviewLabel(outcome: RankedOutcome): VoteOverviewOutcome['label'] {
+  if (outcome.result === 'none') return 'No winner';
+  if (outcome.kind === 'meek_stv') return 'Elected';
+  if (outcome.result === 'tie') return 'Tied';
+  return 'Winner';
+}
+
+/** How the outcome was decided, in Overview copy; null for no winner. */
+function overviewExplanation(outcome: RankedOutcome): string | null {
+  if (outcome.result === 'none') return null;
+  if (outcome.kind === 'meek_stv') return 'Elected using Meek STV proportional counting.';
+  if (outcome.result === 'tie') return 'No single winner could be determined.';
+  if (outcome.kind === 'condorcet') return 'Beat every other option head-to-head.';
+  if (outcome.condorcetFallback) return 'No option beat every other head-to-head, so instant-runoff elimination decided the result.';
+  return outcome.roundCount > 0 ? `Won a majority of continuing ballots in round ${outcome.roundCount}.` : 'Won a majority of continuing ballots.';
 }
 
 /**

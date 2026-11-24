@@ -46,6 +46,7 @@ import {
   VoteDetailSummaryCardAction,
   VoteDetailTab,
   VoteDetailTabOption,
+  VoteOverviewOutcome,
   VoteParticipationStats,
   VoteResultsQuestion,
   VoteResultsResponse,
@@ -54,9 +55,11 @@ import {
   VoteVoter,
 } from '@lfx-one/shared/interfaces';
 import {
+  buildCondorcetOverviewOutcome,
   buildCondorcetQuestionViews,
   condorcetBallotsMatchResults,
   buildCondorcetSummaryLines,
+  buildRankedOverviewOutcome,
   buildRankedQuestionViews,
   buildVoteResultsQuestions,
   buildVoteResultsSummary,
@@ -115,6 +118,7 @@ import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-d
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteMyBallotComponent } from '../components/vote-my-ballot/vote-my-ballot.component';
 import { VoteOptionResultsComponent } from '../components/vote-option-results/vote-option-results.component';
+import { VoteOverviewOutcomeComponent } from '../components/vote-overview-outcome/vote-overview-outcome.component';
 import { VoteParticipationCardComponent } from '../components/vote-participation-card/vote-participation-card.component';
 import { VoteRankedQuestionResultsComponent } from '../components/vote-ranked-question-results/vote-ranked-question-results.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
@@ -166,6 +170,7 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     VoteDetailHeaderComponent,
     VoteMyBallotComponent,
     VoteOptionResultsComponent,
+    VoteOverviewOutcomeComponent,
     VoteParticipationCardComponent,
     VoteRankedQuestionResultsComponent,
     ShareSlideComponent,
@@ -317,8 +322,8 @@ export class VoteDetailComponent {
     () => !this.voteResultsError() && (!!this.vote()?.allow_abstain || this.participationStats().abstainedVoters > 0)
   );
   protected readonly isVoteClosed: Signal<boolean> = this.initIsVoteClosed();
-  /** Overview results tag — a draft reads "Not open yet", never "Voting in progress". */
-  protected readonly resultsStatusTag: Signal<{ value: string; severity: 'success' | 'secondary' }> = this.initResultsStatusTag();
+  /** Overview results tag — a draft reads "Not open yet", never "Voting in progress"; final results read as complete (#6124). */
+  protected readonly resultsStatusTag: Signal<{ value: string; severity: 'success' | 'secondary'; icon?: string }> = this.initResultsStatusTag();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults(), this.vote()?.poll_type));
   /** Ranked outcomes from main wait for ended status and released final totals. */
@@ -351,6 +356,8 @@ export class VoteDetailComponent {
   );
   /** One leader/winner line per question for the Overview results card; the full breakdown stays on the Results tab. */
   protected readonly overviewSummary: Signal<VoteResultsSummaryLine[]> = this.initOverviewSummary();
+  /** Final ranked outcomes for the Overview results card by question id (#6124); empty until the vote has ended with final results. */
+  protected readonly overviewOutcomes: Signal<Map<string, VoteOverviewOutcome>> = this.initOverviewOutcomes();
   /** The lone generic question that renders as bars on the Overview results card; null for ranked and multi-question votes (#4769). */
   protected readonly overviewQuestion: Signal<VoteResultsQuestion | null> = computed(() => {
     const questions = this.questionsWithResults();
@@ -829,13 +836,13 @@ export class VoteDetailComponent {
     });
   }
 
-  private initResultsStatusTag(): Signal<{ value: string; severity: 'success' | 'secondary' }> {
+  private initResultsStatusTag(): Signal<{ value: string; severity: 'success' | 'secondary'; icon?: string }> {
     return computed(() => {
       // Closure alone cannot finalize retained live counts; wait for released post-closure results.
       if (this.isEnded() && !this.isVoteClosed()) {
         return { value: 'Totals pending', severity: 'secondary' };
       } else if (!this.resultsHeld() && this.isVoteClosed()) {
-        return { value: 'Final results', severity: 'secondary' };
+        return { value: 'Final results', severity: 'success', icon: 'fa-light fa-circle-check' };
       }
       if (this.isActive()) return { value: 'Voting in progress', severity: 'success' };
       return { value: 'Not open yet', severity: 'secondary' };
@@ -850,6 +857,23 @@ export class VoteDetailComponent {
         if (lines.length) return lines;
       }
       return buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed(), this.showRankedOutcome());
+    });
+  }
+
+  /** Condorcet IRV reads the same view as its Results tab (#5969); IRV and Meek STV read the ranked views. */
+  private initOverviewOutcomes(): Signal<Map<string, VoteOverviewOutcome>> {
+    return computed(() => {
+      const outcomes = new Map<string, VoteOverviewOutcome>();
+      if (!this.showRankedOutcome() || this.isGenericPoll()) return outcomes;
+      if (this.isCondorcetPoll()) {
+        for (const view of this.condorcetQuestions()) outcomes.set(view.questionId, buildCondorcetOverviewOutcome(view));
+        return outcomes;
+      }
+      for (const view of this.rankedQuestions()) {
+        const outcome = buildRankedOverviewOutcome(view);
+        if (outcome) outcomes.set(view.questionId, outcome);
+      }
+      return outcomes;
     });
   }
 

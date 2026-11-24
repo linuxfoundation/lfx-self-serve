@@ -25,6 +25,7 @@ import type {
   RankedChoiceVoteResult,
   RankedOutcome,
   RankedQuestionView,
+  RankedStanding,
   UserChoice,
   Vote,
   VoteFormValue,
@@ -40,6 +41,7 @@ import {
   buildCreateVoteRequest,
   buildDraftUpdateVoteRequest,
   buildDraftVoteRequest,
+  buildRankedOverviewOutcome,
   buildRankedQuestionViews,
   buildUpdateVoteRequest,
   buildVoteBallotQuestions,
@@ -1656,6 +1658,116 @@ describe('buildRankedQuestionViews', () => {
       const [view] = buildRankedQuestionViews(resultsWith([question(['a', 'b'], { ranked_choice_winner_info: { poll_choices: [] } })]), PollType.MEEK_STV);
       expect(view.outcome).toMatchObject({ kind: 'meek_stv', result: 'none', winnerTexts: [] });
     });
+  });
+});
+
+describe('buildRankedOverviewOutcome (#6124)', () => {
+  const standing = (choiceId: string, rank: number, label: RankedStanding['label'], overrides: Partial<RankedStanding> = {}): RankedStanding => ({
+    choiceId,
+    choiceText: `Option ${choiceId.toUpperCase()}`,
+    rank,
+    label,
+    round: null,
+    headToHeadWins: null,
+    headToHeadTotal: null,
+    ...overrides,
+  });
+
+  function view(outcome: RankedOutcome | null, standings: RankedStanding[] = []): RankedQuestionView {
+    return { questionId: 'q1', prompt: 'Pick a chair', choiceDistributions: [], outcome, standings };
+  }
+
+  const irv = (overrides: Partial<RankedOutcome> = {}): RankedOutcome => ({
+    kind: 'irv',
+    result: 'winner',
+    winnerTexts: ['Option A'],
+    roundCount: 3,
+    condorcetFallback: false,
+    ...overrides,
+  });
+
+  it('returns null without an outcome', () => {
+    expect(buildRankedOverviewOutcome(view(null))).toBeNull();
+  });
+
+  it('names an IRV winner and the round its majority came in', () => {
+    const outcome = buildRankedOverviewOutcome(view(irv(), [standing('a', 1, 'winner'), standing('b', 2, 'survivor')]));
+    expect(outcome).toEqual({
+      questionId: 'q1',
+      prompt: 'Pick a chair',
+      result: 'winner',
+      label: 'Winner',
+      winnerTexts: ['Option A'],
+      explanation: 'Won a majority of continuing ballots in round 3.',
+      standings: [{ choiceId: 'b', choiceText: 'Option B', rank: 2, detail: null }],
+      hiddenCount: 0,
+    });
+  });
+
+  it('omits the round when the payload has no round summary', () => {
+    expect(buildRankedOverviewOutcome(view(irv({ roundCount: 0 })))?.explanation).toBe('Won a majority of continuing ballots.');
+  });
+
+  it('explains a Condorcet winner and a Condorcet IRV fallback', () => {
+    expect(buildRankedOverviewOutcome(view(irv({ kind: 'condorcet', roundCount: 0 })))?.explanation).toBe('Beat every other option head-to-head.');
+    expect(buildRankedOverviewOutcome(view(irv({ condorcetFallback: true })))?.explanation).toBe(
+      'No option beat every other head-to-head, so instant-runoff elimination decided the result.'
+    );
+  });
+
+  it('labels Meek STV seats as elected and every other option as not elected', () => {
+    const outcome = buildRankedOverviewOutcome(
+      view(irv({ kind: 'meek_stv', winnerTexts: ['Option A', 'Option B'] }), [
+        standing('a', 1, 'elected', { round: 1 }),
+        standing('b', 2, 'elected', { round: 2 }),
+        standing('c', 3, 'not_elected'),
+      ])
+    );
+    expect(outcome).toMatchObject({
+      result: 'winner',
+      label: 'Elected',
+      winnerTexts: ['Option A', 'Option B'],
+      explanation: 'Elected using Meek STV proportional counting.',
+      standings: [{ choiceId: 'c', rank: 3, detail: 'Not elected' }],
+    });
+  });
+
+  it('keeps a tie neutral and lists only the rows after the tied options', () => {
+    const outcome = buildRankedOverviewOutcome(
+      view(irv({ result: 'tie', winnerTexts: ['Option A', 'Option B'] }), [
+        standing('a', 1, 'tied'),
+        standing('b', 1, 'tied'),
+        standing('c', 3, 'eliminated', { round: 1 }),
+      ])
+    );
+    expect(outcome).toMatchObject({ result: 'tie', label: 'Tied', explanation: 'No single winner could be determined.' });
+    expect(outcome?.standings.map((row) => row.choiceId)).toEqual(['c']);
+  });
+
+  it('reports no winner without names or an explanation', () => {
+    const outcome = buildRankedOverviewOutcome(view(irv({ result: 'none', winnerTexts: [] }), [standing('a', 2, 'survivor'), standing('b', 2, 'survivor')]));
+    expect(outcome).toMatchObject({ result: 'none', label: 'No winner', winnerTexts: [], explanation: null });
+    expect(outcome?.standings).toHaveLength(2);
+  });
+
+  it('caps the standings at VOTE_OVERVIEW_STANDINGS_LIMIT and counts the rest', () => {
+    const rows = [standing('a', 1, 'winner'), ...['b', 'c', 'd', 'e', 'f'].map((id, index) => standing(id, index + 2, 'eliminated', { round: 5 - index }))];
+    const outcome = buildRankedOverviewOutcome(view(irv(), rows));
+    expect(outcome?.standings.map((row) => row.choiceId)).toEqual(['b', 'c', 'd']);
+    expect(outcome?.hiddenCount).toBe(2);
+  });
+
+  it('describes eliminations, head-to-head records and rows with nothing to add', () => {
+    const outcome = buildRankedOverviewOutcome(
+      view(irv({ condorcetFallback: true }), [
+        standing('a', 1, 'winner', { headToHeadWins: 2, headToHeadTotal: 3 }),
+        standing('b', 2, 'survivor', { headToHeadWins: 1, headToHeadTotal: 3 }),
+        standing('c', 3, 'eliminated', { round: 2, headToHeadWins: 1, headToHeadTotal: 3 }),
+        standing('d', 4, 'eliminated'),
+      ])
+    );
+    expect(outcome?.standings.map((row) => row.detail)).toEqual(['Won 1 of 3 head-to-head matchups', 'Eliminated in round 2', 'Eliminated']);
+    expect(buildRankedOverviewOutcome(view(irv(), [standing('a', 1, 'winner'), standing('b', 2, 'survivor')]))?.standings[0].detail).toBeNull();
   });
 });
 

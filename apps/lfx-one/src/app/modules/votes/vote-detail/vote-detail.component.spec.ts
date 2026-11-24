@@ -24,6 +24,7 @@ import {
   Vote,
   VoteDetailState,
   VoteDetailTabOption,
+  VoteOverviewOutcome,
   VoteResultsResponse,
   VoteVoter,
 } from '@lfx-one/shared/interfaces';
@@ -47,6 +48,7 @@ import { VoteCondorcetResultsComponent } from '../components/vote-condorcet-resu
 import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteOptionResultsComponent } from '../components/vote-option-results/vote-option-results.component';
+import { VoteOverviewOutcomeComponent } from '../components/vote-overview-outcome/vote-overview-outcome.component';
 import { VoteParticipationCardComponent } from '../components/vote-participation-card/vote-participation-card.component';
 import { VoteRankedQuestionResultsComponent } from '../components/vote-ranked-question-results/vote-ranked-question-results.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
@@ -502,7 +504,9 @@ describe('VoteDetailComponent', () => {
       const fixture = await setup('browser', [VoteOptionResultsComponent, VoteAbstainResultComponent]);
       await fixture.whenStable();
 
-      expect(summary(fixture)).toBe('Winner: No');
+      expect(summary(fixture)).toBe('');
+      expect(testId(fixture, 'vote-detail-overview-outcome-question-1')).not.toBeNull();
+      expect(read<Map<string, VoteOverviewOutcome>>(fixture, 'overviewOutcomes').get('question-1')).toMatchObject({ label: 'Winner', winnerTexts: ['No'] });
       expect(voteService.getVoteVoters).not.toHaveBeenCalled();
     });
 
@@ -1030,12 +1034,18 @@ describe('VoteDetailComponent', () => {
       expect(fixture.nativeElement.querySelector('lfx-vote-condorcet-results')?.textContent).not.toMatch(/choice-[abc]/);
     });
 
-    it('names the winner on the Overview once the vote has ended', async () => {
+    it('names the winner on the Overview once the vote has ended (#6124)', async () => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED })));
       voteService.getVoteResults.mockReturnValue(of(condorcetResults()));
-      const fixture = await setup();
+      const fixture = await setup('browser', [VoteOverviewOutcomeComponent]);
+      const outcome = testId(fixture, 'vote-detail-overview-outcome-question-1');
 
-      expect(squashed(testId(fixture, 'vote-detail-overview-summary-question-1'))).toBe('Winner: Candidate C');
+      expect(testId(fixture, 'vote-detail-overview-summary-question-1')).toBeNull();
+      expect(squashed(outcome?.querySelector('[data-testid="vote-overview-outcome-label"]'))).toBe('Winner');
+      expect(squashed(outcome?.querySelector('[data-testid="vote-overview-outcome-names"]'))).toBe('Candidate C');
+      expect(squashed(outcome?.querySelector('[data-testid="vote-overview-outcome-explanation"]'))).toBe('Beat every other option head-to-head.');
+      expect(outcome?.querySelectorAll('li')).toHaveLength(2);
+      expect(read<{ value: string; severity: string }>(fixture, 'resultsStatusTag')).toMatchObject({ value: 'Final results', severity: 'success' });
     });
 
     it('keeps the outcome hidden on an active vote, even at full participation', async () => {
@@ -1050,6 +1060,7 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-condorcet-outcome-message')).toBeNull();
       expect(testId(fixture, 'vote-condorcet-standings')).toBeNull();
       expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Most first choices: Candidate A (3 voters)');
+      expect(read<Map<string, VoteOverviewOutcome>>(fixture, 'overviewOutcomes').size).toBe(0);
     });
 
     describe('remote closure', () => {
@@ -1083,6 +1094,7 @@ describe('VoteDetailComponent', () => {
         expect(testId(fixture, 'vote-condorcet-outcome-message')).toBeNull();
         expect(testId(fixture, 'vote-condorcet-standings')).toBeNull();
         expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Most first choices: Candidate A (3 voters)');
+        expect(read<Map<string, VoteOverviewOutcome>>(fixture, 'overviewOutcomes').size).toBe(0);
 
         pending.next(condorcetResults());
         pending.complete();
@@ -1092,6 +1104,7 @@ describe('VoteDetailComponent', () => {
         expect(squashed(testId(fixture, 'vote-condorcet-outcome-heading'))).toBe('Candidate C won');
         expect(squashed(testId(fixture, 'vote-condorcet-outcome-message'))).toBe('Preferred over every other option in head-to-head comparisons.');
         expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Winner: Candidate C');
+        expect(read<Map<string, VoteOverviewOutcome>>(fixture, 'overviewOutcomes').get('question-1')).toMatchObject({ result: 'winner' });
       });
     });
   });
@@ -1388,7 +1401,7 @@ describe('VoteDetailComponent', () => {
 
       expect(read<StatCardItem[]>(fixture, 'summaryCards')[2]).toMatchObject({ label: 'Did not vote', subLine: 'Voting is closed' });
       expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
-      expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Final results', severity: 'secondary' });
+      expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Final results', severity: 'success', icon: 'fa-light fa-circle-check' });
     });
   });
 
@@ -3867,6 +3880,131 @@ describe('VoteDetailComponent', () => {
         ['vote-detail-option-choice-no', 'No 7 votes · 7%', false],
         ['vote-detail-option-abstain', 'Abstain 6 abstentions · 6%', false],
       ]);
+    });
+  });
+
+  describe('overview outcome (#6124)', () => {
+    const squashed = (el: Element | null | undefined): string => el?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+    const setupOutcome = (): Promise<ComponentFixture<VoteDetailComponent>> =>
+      setup('browser', [VoteOverviewOutcomeComponent, VoteOptionResultsComponent, VoteAbstainResultComponent]);
+    const outcomes = (fixture: ComponentFixture<VoteDetailComponent>): Map<string, VoteOverviewOutcome> =>
+      read<Map<string, VoteOverviewOutcome>>(fixture, 'overviewOutcomes');
+    const inner = (fixture: ComponentFixture<VoteDetailComponent>, questionId: string, id: string): string =>
+      squashed(testId(fixture, `vote-detail-overview-outcome-${questionId}`)?.querySelector(`[data-testid="vote-overview-outcome-${id}"]`));
+
+    /** A final ranked tally: Yes beats No in round 1, with one abstention. */
+    function rankedFinalResults(questionIds: string[] = ['question-1']): VoteResultsResponse {
+      const base = makeMethodResults();
+      return {
+        ...base,
+        num_abstained: 1,
+        poll_results: questionIds.map((questionId) => ({
+          question: { ...base.poll_results[0].question, question_id: questionId, prompt: `Rank ${questionId}` },
+          ranked_choice_votes: [
+            { choice_id: 'choice-yes', rank_counts: [{ rank: 1, count: 2 }] },
+            { choice_id: 'choice-no', rank_counts: [{ rank: 1, count: 1 }] },
+          ],
+          ranked_choice_winner_info: { poll_choices: [{ choice_id: 'choice-yes', choice_text: 'Yes' }] },
+          irv_round_summary: [
+            {
+              round_number: 1,
+              votes: [
+                { choice_id: 'choice-yes', vote_count: 2 },
+                { choice_id: 'choice-no', vote_count: 1 },
+              ],
+              total_votes: 3,
+              exhausted_votes: 0,
+              threshold: 2,
+              message: '',
+            },
+          ],
+        })),
+      };
+    }
+
+    beforeEach(() => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+    });
+
+    it('shows the winner banner, explanation and standings for an ended Instant Runoff vote', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.INSTANT_RUNOFF_VOTE, status: PollStatus.ENDED, allow_abstain: true })));
+      voteService.getVoteResults.mockReturnValue(of(rankedFinalResults()));
+      const fixture = await setupOutcome();
+
+      expect(testId(fixture, 'vote-detail-overview-summary-question-1')).toBeNull();
+      expect(inner(fixture, 'question-1', 'label')).toBe('Winner');
+      expect(inner(fixture, 'question-1', 'names')).toBe('Yes');
+      expect(inner(fixture, 'question-1', 'explanation')).toBe('Won a majority of continuing ballots in round 1.');
+      expect(testId(fixture, 'vote-overview-outcome-standing-choice-no')).not.toBeNull();
+      expect(testId(fixture, 'vote-overview-outcome')?.getAttribute('aria-label')).toBe('Outcome');
+      expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Final results', severity: 'success', icon: 'fa-light fa-circle-check' });
+    });
+
+    it('shows the elected options for an ended Meek STV vote', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.MEEK_STV, status: PollStatus.ENDED })));
+      voteService.getVoteResults.mockReturnValue(of(rankedFinalResults()));
+      const fixture = await setupOutcome();
+
+      expect(inner(fixture, 'question-1', 'label')).toBe('Elected');
+      expect(inner(fixture, 'question-1', 'explanation')).toBe('Elected using Meek STV proportional counting.');
+      expect(squashed(testId(fixture, 'vote-overview-outcome-standing-choice-no'))).toContain('Not elected');
+    });
+
+    it('lists one compact line per question and keeps the text line for a question without an outcome', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.INSTANT_RUNOFF_VOTE, status: PollStatus.ENDED })));
+      const results = rankedFinalResults(['question-1', 'question-2']);
+      results.poll_results[1] = { ...results.poll_results[1], ranked_choice_votes: [], ranked_choice_winner_info: undefined };
+      voteService.getVoteResults.mockReturnValue(of(results));
+      const fixture = await setupOutcome();
+
+      const compact = testId(fixture, 'vote-detail-overview-outcome-question-1');
+      expect(compact?.querySelector('[data-testid="vote-overview-outcome"]')?.getAttribute('aria-label')).toBe('Q1 outcome');
+      expect(squashed(compact?.querySelector('lfx-tag'))).toBe('Winner');
+      expect(compact?.querySelector('[data-testid="vote-overview-outcome-explanation"]')).toBeNull();
+      expect(compact?.querySelector('ol')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-outcome-question-2')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-summary-question-2')).not.toBeNull();
+      expect([...outcomes(fixture).keys()]).toEqual(['question-1']);
+    });
+
+    it('shows abstentions as a text line whose count opens the abstainers on a named vote', async () => {
+      voteService.fetchVote.mockReturnValue(
+        of(makeVote({ poll_type: PollType.INSTANT_RUNOFF_VOTE, status: PollStatus.ENDED, allow_abstain: true, pseudo_anonymity: false }))
+      );
+      voteService.getVoteResults.mockReturnValue(of(rankedFinalResults()));
+      const fixture = await setupOutcome();
+      const abstain = testId(fixture, 'vote-detail-overview-abstain');
+
+      expect(abstain?.tagName).toBe('P');
+      expect(squashed(abstain)).toBe('1 abstention · 33%');
+      expect(abstain?.querySelector('.bg-slate-300')).toBeNull();
+      (testId(fixture, 'vote-detail-overview-abstain-view-voters') as HTMLButtonElement).click();
+      expect(router.navigate).toHaveBeenLastCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { tab: 'voters', voters_choice: 'status:abstained', voters_ballot: null } })
+      );
+    });
+
+    it('keeps the first-choice line and the live abstain bar on an active ranked vote', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.INSTANT_RUNOFF_VOTE, allow_abstain: true })));
+      voteService.getVoteResults.mockReturnValue(of(rankedFinalResults()));
+      const fixture = await setupOutcome();
+
+      expect(outcomes(fixture).size).toBe(0);
+      expect(squashed(testId(fixture, 'vote-detail-overview-summary-question-1'))).toBe('Most first choices: Yes (2 voters)');
+      expect(testId(fixture, 'vote-detail-overview-abstain')?.querySelector('.bg-slate-300')).not.toBeNull();
+      expect(read<{ value: string }>(fixture, 'resultsStatusTag').value).toBe('Voting in progress');
+    });
+
+    it('keeps the bars and live abstain bar for an ended generic vote, with the final tag', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, allow_abstain: true })));
+      voteService.getVoteResults.mockReturnValue(of({ ...makeMethodResults(), num_abstained: 1 }));
+      const fixture = await setupOutcome();
+
+      expect(outcomes(fixture).size).toBe(0);
+      expect(testId(fixture, 'vote-detail-overview-bars')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-abstain')?.querySelector('.bg-slate-300')).not.toBeNull();
+      expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Final results', severity: 'success', icon: 'fa-light fa-circle-check' });
     });
   });
 

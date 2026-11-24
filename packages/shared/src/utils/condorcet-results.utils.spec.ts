@@ -6,13 +6,20 @@ import { describe, expect, it } from 'vitest';
 import { CondorcetOutcome, PollType, VoteVoterStatus } from '../enums/poll.enum';
 import type {
   CondorcetMatrixEntry,
+  CondorcetQuestionView,
+  CondorcetStandingRow,
   IrvRoundSummary,
   PollQuestionResult,
   RankedChoiceVoteResult,
   VoteResultsResponse,
   VoteVoter,
 } from '../interfaces/poll.interface';
-import { buildCondorcetQuestionViews, buildCondorcetSummaryLines, condorcetBallotsMatchResults } from './condorcet-results.utils';
+import {
+  buildCondorcetOverviewOutcome,
+  buildCondorcetQuestionViews,
+  buildCondorcetSummaryLines,
+  condorcetBallotsMatchResults,
+} from './condorcet-results.utils';
 import { buildRankedQuestionViews } from './vote-results.utils';
 
 const CHOICES = [
@@ -566,6 +573,114 @@ describe('buildCondorcetSummaryLines', () => {
   ])('reads $name once closed', ({ info, text }) => {
     const views = buildCondorcetQuestionViews(results(question({ ranked_choice_winner_info: info })), null);
     expect(buildCondorcetSummaryLines(views, true)).toEqual([{ questionId: 'q1', question: 'Who should chair the board?', text }]);
+  });
+});
+
+describe('buildCondorcetOverviewOutcome (#6124)', () => {
+  const row = (choiceId: string, rank: number, overrides: Partial<CondorcetStandingRow> = {}): CondorcetStandingRow => ({
+    rank,
+    choiceId,
+    choiceText: `Candidate ${choiceId.toUpperCase()}`,
+    winCount: 0,
+    totalMatchups: 3,
+    isWinner: false,
+    isTied: false,
+    eliminatedInRound: null,
+    ...overrides,
+  });
+
+  function overview(outcome: CondorcetOutcome, winnerNames: string[], standings: CondorcetStandingRow[], usedIrv = false) {
+    const questionView: CondorcetQuestionView = {
+      questionId: 'q1',
+      prompt: 'Who should chair the board?',
+      candidates: [],
+      outcome,
+      winnerNames,
+      usedIrv,
+      standings,
+      pairwise: [],
+      ranks: [],
+      rankSummary: [],
+      ballotPatterns: null,
+    };
+    return buildCondorcetOverviewOutcome(questionView);
+  }
+
+  it('names a Condorcet winner with its head-to-head explanation and the runner-up records', () => {
+    const outcome = overview(
+      CondorcetOutcome.CONDORCET_WINNER,
+      ['Candidate A'],
+      [row('a', 1, { isWinner: true, winCount: 3 }), row('b', 2, { winCount: 2 }), row('c', 3, { winCount: 1 })]
+    );
+    expect(outcome).toEqual({
+      questionId: 'q1',
+      prompt: 'Who should chair the board?',
+      result: 'winner',
+      label: 'Winner',
+      winnerTexts: ['Candidate A'],
+      explanation: 'Beat every other option head-to-head.',
+      standings: [
+        { choiceId: 'b', choiceText: 'Candidate B', rank: 2, detail: 'Won 2 of 3 head-to-head matchups' },
+        { choiceId: 'c', choiceText: 'Candidate C', rank: 3, detail: 'Won 1 of 3 head-to-head matchups' },
+      ],
+      hiddenCount: 0,
+    });
+  });
+
+  it('explains the instant-runoff fallback and prefers the elimination round over the head-to-head record', () => {
+    const outcome = overview(
+      CondorcetOutcome.IRV_WINNER,
+      ['Candidate C'],
+      [row('c', 1, { isWinner: true }), row('a', 2, { winCount: 1 }), row('b', 3, { winCount: 1, eliminatedInRound: 1 })],
+      true
+    );
+    expect(outcome).toMatchObject({
+      result: 'winner',
+      label: 'Winner',
+      explanation: 'No option beat every other head-to-head, so instant-runoff elimination decided the result.',
+    });
+    expect(outcome.standings.map((standing) => standing.detail)).toEqual(['Won 1 of 3 head-to-head matchups', 'Eliminated in round 1']);
+  });
+
+  it('keeps a tie neutral and excludes the tied options from the standings', () => {
+    const outcome = overview(
+      CondorcetOutcome.TIE,
+      ['Candidate A', 'Candidate B'],
+      [row('a', 1, { isWinner: true, isTied: true }), row('b', 1, { isWinner: true, isTied: true }), row('c', 3)]
+    );
+    expect(outcome).toMatchObject({
+      result: 'tie',
+      label: 'Tied',
+      winnerTexts: ['Candidate A', 'Candidate B'],
+      explanation: 'No single winner could be determined.',
+    });
+    expect(outcome.standings.map((standing) => standing.choiceId)).toEqual(['c']);
+  });
+
+  it('reports no winner without names or an explanation', () => {
+    const outcome = overview(CondorcetOutcome.NO_WINNER, [], [row('a', 1), row('b', 1)], true);
+    expect(outcome).toMatchObject({ result: 'none', label: 'No winner', winnerTexts: [], explanation: null });
+    expect(outcome.standings).toHaveLength(2);
+  });
+
+  it('leaves the detail empty without a head-to-head matrix', () => {
+    const outcome = overview(
+      CondorcetOutcome.IRV_WINNER,
+      ['Candidate A'],
+      [row('a', 1, { isWinner: true, totalMatchups: 0 }), row('b', 2, { totalMatchups: 0 })],
+      true
+    );
+    expect(outcome.standings[0].detail).toBeNull();
+  });
+
+  it('caps the standings at VOTE_OVERVIEW_STANDINGS_LIMIT and counts the rest', () => {
+    const outcome = overview(
+      CondorcetOutcome.CONDORCET_WINNER,
+      ['Candidate A'],
+      [row('a', 1, { isWinner: true }), ...['b', 'c', 'd', 'e'].map((id, index) => row(id, index + 2))]
+    );
+    expect(outcome.standings.map((standing) => standing.choiceId)).toEqual(['b', 'c', 'd']);
+    expect(outcome.hiddenCount).toBe(1);
   });
 });
 

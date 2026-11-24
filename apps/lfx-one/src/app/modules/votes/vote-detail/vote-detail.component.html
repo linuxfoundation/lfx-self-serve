@@ -98,6 +98,7 @@
                         <lfx-tag
                           [value]="resultsStatusTag().value"
                           [severity]="resultsStatusTag().severity"
+                          [icon]="resultsStatusTag().icon"
                           data-testid="vote-detail-overview-results-status" />
                       </div>
                       <ng-container [ngTemplateOutlet]="overviewResultsSummary" />
@@ -301,7 +302,7 @@
       }
     </ng-template>
 
-    <!-- Compact Overview results: bars for a single generic question, else one leader/winner line per question; the full breakdown stays on the Results tab (#4450, #4769). -->
+    <!-- Compact Overview results: bars for a single generic question, else one leader/winner line per question, or the final ranked outcome once it is known (#6124); the full breakdown stays on the Results tab (#4450, #4769). -->
     <ng-template #overviewResultsSummary>
       @if (loadingVoteResults()) {
         <div class="flex flex-col gap-3" data-testid="vote-detail-results-loading">
@@ -326,19 +327,36 @@
           </div>
         } @else {
           @for (line of overviewSummary(); track line.questionId; let idx = $index) {
-            <div class="flex flex-col gap-1">
+            <div class="flex flex-col" [class.gap-1]="!overviewOutcomes().has(line.questionId)" [class.gap-2]="overviewOutcomes().has(line.questionId)">
               <h3 class="text-sm font-semibold text-gray-900">
                 @if (overviewSummary().length > 1) {
                   Q{{ idx + 1 }}.
                 }
                 {{ line.question }}
               </h3>
-              <p class="text-sm text-gray-700 break-words" [attr.data-testid]="'vote-detail-overview-summary-' + line.questionId">{{ line.text }}</p>
+              @if (overviewOutcomes().get(line.questionId); as outcome) {
+                <lfx-vote-overview-outcome
+                  [outcome]="outcome"
+                  [variant]="overviewSummary().length > 1 ? 'compact' : 'full'"
+                  [ariaLabel]="overviewSummary().length > 1 ? 'Q' + (idx + 1) + ' outcome' : 'Outcome'"
+                  [attr.data-testid]="'vote-detail-overview-outcome-' + line.questionId" />
+              } @else {
+                <p class="text-sm text-gray-700 break-words" [attr.data-testid]="'vote-detail-overview-summary-' + line.questionId">{{ line.text }}</p>
+              }
             </div>
           }
         }
         @if (showAbstain()) {
-          <lfx-vote-abstain-result [stats]="participationStats()" variant="live" testId="vote-detail-overview-abstain" />
+          @if (overviewOutcomes().size > 0) {
+            <lfx-vote-abstain-result
+              [stats]="participationStats()"
+              variant="inline"
+              testId="vote-detail-overview-abstain"
+              [showVoterLinks]="showNamedBallotLinks()"
+              (viewVoters)="onViewAbstainedVoters()" />
+          } @else {
+            <lfx-vote-abstain-result [stats]="participationStats()" variant="live" testId="vote-detail-overview-abstain" />
+          }
         }
       }
     </ng-template>

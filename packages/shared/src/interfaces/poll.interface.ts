@@ -1103,6 +1103,35 @@ export interface VoteResultsSummaryLine {
   text: string;
 }
 
+/** One runner-up row under the vote detail Overview outcome (#6124); `detail` is null when there is nothing to add. */
+export interface VoteOverviewStanding {
+  choiceId: string;
+  choiceText: string;
+  /** Competition rank, rendered as an ordinal */
+  rank: number;
+  /** e.g. "Won 2 of 3 head-to-head matchups", "Eliminated in round 1" or "Not elected" */
+  detail: string | null;
+}
+
+/**
+ * Method-agnostic final outcome of a ranked question for the vote detail Overview card (#6124)
+ * @description Built by `buildCondorcetOverviewOutcome` (Condorcet IRV) or `buildRankedOverviewOutcome` (IRV, Meek STV)
+ * and rendered by `lfx-vote-overview-outcome`. `standings` holds only the rows after the winners, capped to
+ * `VOTE_OVERVIEW_STANDINGS_LIMIT`; `hiddenCount` is how many more rows the Results tab lists.
+ */
+export interface VoteOverviewOutcome {
+  questionId: string;
+  prompt: string;
+  result: 'winner' | 'tie' | 'none';
+  label: 'Winner' | 'Elected' | 'Tied' | 'No winner';
+  /** Winning, elected or tied option names; empty for no winner */
+  winnerTexts: string[];
+  /** How the result was decided; null when there is nothing to explain */
+  explanation: string | null;
+  standings: VoteOverviewStanding[];
+  hiddenCount: number;
+}
+
 /**
  * Participation statistics for vote results
  * @description Contains participation metrics for the results header

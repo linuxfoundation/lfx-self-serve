@@ -55,6 +55,9 @@ export const VOTE_CONDORCET_RANK_COLORS = [
   lfxColors.gray[600],
 ];
 
+/** Runner-up standings rows the vote detail Overview outcome shows before pointing to the Results tab (#6124). */
+export const VOTE_OVERVIEW_STANDINGS_LIMIT = 3;
+
 /**
  * Response header carrying the BFF-stamped create-completion time (epoch ms) on POST /api/votes (GH-2826);
  * the client echoes it verbatim as `create_completed_at` — the enable route's FGA tuple-propagation grace hint.

@@ -13,11 +13,13 @@ import type {
   CondorcetStandingRow,
   IrvRoundSummary,
   PollQuestionResult,
+  RankedOutcome,
+  VoteOverviewOutcome,
   VoteResultsResponse,
   VoteResultsSummaryLine,
   VoteVoter,
 } from '../interfaces/poll.interface';
-import { buildCondorcetSurvivorTiebreaker, joinNames, rankedAnswerChoices, resolveCondorcetOutcome } from './vote-results.utils';
+import { buildCondorcetSurvivorTiebreaker, buildOverviewOutcome, joinNames, overviewStandingDetail, rankedAnswerChoices, resolveCondorcetOutcome } from './vote-results.utils';
 
 /**
  * Builds the Condorcet IRV results view for each question (#5969), a port of PCC's condorcet-poll-result derivations
@@ -78,6 +80,36 @@ export function buildCondorcetSummaryLines(views: CondorcetQuestionView[], isClo
     }
     return { questionId: view.questionId, question: view.prompt, text };
   });
+}
+
+/**
+ * Builds the vote detail Overview outcome for a closed Condorcet IRV question (#6124)
+ * @description Mirrors the Results tab banner of `lfx-vote-condorcet-results` in shorter Overview copy: a Condorcet
+ * winner beat every other option head-to-head; an IRV winner came from the instant-runoff fallback (`usedIrv`).
+ * Standings keep the non-winning rows, capped to `VOTE_OVERVIEW_STANDINGS_LIMIT`.
+ * @param view - A view from `buildCondorcetQuestionViews`
+ */
+export function buildCondorcetOverviewOutcome(view: CondorcetQuestionView): VoteOverviewOutcome {
+  let result: RankedOutcome['result'] = 'none';
+  if (view.outcome === CondorcetOutcome.CONDORCET_WINNER || view.outcome === CondorcetOutcome.IRV_WINNER) result = 'winner';
+  else if (view.outcome === CondorcetOutcome.TIE) result = 'tie';
+
+  const outcome: RankedOutcome = {
+    kind: view.usedIrv ? 'irv' : 'condorcet',
+    result,
+    winnerTexts: view.winnerNames,
+    roundCount: 0,
+    condorcetFallback: view.usedIrv,
+  };
+  const runnersUp = view.standings
+    .filter((row) => !row.isWinner)
+    .map((row) => ({
+      choiceId: row.choiceId,
+      choiceText: row.choiceText,
+      rank: row.rank,
+      detail: overviewStandingDetail(row.eliminatedInRound !== null, row.eliminatedInRound, row.winCount, row.totalMatchups),
+    }));
+  return buildOverviewOutcome(view.questionId, view.prompt, outcome, runnersUp);
 }
 
 function buildQuestionView(pr: PollQuestionResult, ballots: VoteVoter[] | null): CondorcetQuestionView {
