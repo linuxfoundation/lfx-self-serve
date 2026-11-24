@@ -4614,7 +4614,7 @@
                   data-testid="implementation-meta-delivery-block-retry" />
               } @else if (block.kind === 'unsupported') {
                 <lfx-button
-                  label="Clear schedule and cap"
+                  [label]="metaDeliveryClearLabel()"
                   size="small"
                   severity="secondary"
                   [text]="true"

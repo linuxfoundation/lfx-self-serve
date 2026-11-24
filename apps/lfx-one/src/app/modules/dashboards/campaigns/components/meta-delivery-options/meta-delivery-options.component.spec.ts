@@ -50,7 +50,7 @@ describe('MetaDeliveryOptionsComponent', () => {
     expect(model.adSchedule).toEqual({ days: [1, 2, 3, 4, 5, 6], startMinute: 540, endMinute: 1200 });
   });
 
-  it('turns the cap on at 2 every 7 days, takes a typed value, says why one is refused, and leaves a cleared box empty', () => {
+  it('turns the cap on at 2 every 7 days, takes a typed value, says why one or a fraction is refused, and leaves a cleared box empty', () => {
     call('onCapToggle', true);
     fixture.detectChanges();
     expect(model.frequencyCap).toEqual(DEFAULT_META_FREQUENCY_CAP);
@@ -58,6 +58,11 @@ describe('MetaDeliveryOptionsComponent', () => {
     type('meta-delivery-impressions', '120');
     expect(model.frequencyCap).toEqual({ maxImpressions: 120, intervalDays: 7 });
     expect(el('meta-delivery-cap-error')?.textContent).toContain('from 1 to 90');
+
+    // A fraction is kept as typed, not rounded down into an accepted value, so its error shows.
+    type('meta-delivery-impressions', '2.5');
+    expect(model.frequencyCap?.maxImpressions).toBe(2.5);
+    expect(el('meta-delivery-cap-error')).not.toBeNull();
 
     type('meta-delivery-impressions', '');
     expect(el<HTMLInputElement>('meta-delivery-impressions').value).toBe('');

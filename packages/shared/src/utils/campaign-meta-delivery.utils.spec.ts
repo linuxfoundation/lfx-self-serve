@@ -12,6 +12,7 @@ import {
   metaAdScheduleWithDay,
   metaDeliveryApplicable,
   metaDeliveryBlock,
+  metaDeliveryClearLabel,
   metaDeliveryForCreate,
   metaDeliveryFromDraft,
   metaDeliverySendable,
@@ -159,9 +160,22 @@ describe('the Implement tab delivery rules', () => {
     ['a well-formed pair', WEEKDAYS, CAP, both],
     ['unset values', null, null, { adSchedule: null, frequencyCap: null }],
     [
+      // Refused but well typed: kept as saved, so the restored edit still shows its error and holds Create.
       'a half-hour schedule and a zero cap',
       { ...WEEKDAYS, startMinute: 570 },
       { maxImpressions: 0, intervalDays: 7 },
+      { adSchedule: { ...WEEKDAYS, startMinute: 570 }, frequencyCap: { maxImpressions: 0, intervalDays: 7 } },
+    ],
+    [
+      'no days and an end before the start',
+      { days: [], startMinute: 600, endMinute: 540 },
+      undefined,
+      { adSchedule: { days: [], startMinute: 600, endMinute: 540 }, frequencyCap: null },
+    ],
+    [
+      'the wrong shape',
+      { days: 'weekdays', startMinute: 540, endMinute: 1020 },
+      { maxImpressions: '2', intervalDays: 7 },
       { adSchedule: null, frequencyCap: null },
     ],
     ['repeated days', { ...WEEKDAYS, days: [3, 1, 3] }, undefined, { adSchedule: { ...WEEKDAYS, days: [1, 3] }, frequencyCap: null }],
@@ -175,6 +189,14 @@ describe('the Implement tab delivery rules', () => {
     [false, true, { frequencyCap: CAP }],
   ])('sends each option only on its yes (schedule %s, cap %s)', (schedule, cap, expected) => {
     expect(metaDeliveryForCreate(both, schedule, cap)).toEqual(expected);
+  });
+
+  it.each([
+    [false, true, 'Clear the ad schedule'],
+    [true, false, 'Clear the frequency cap'],
+    [false, false, 'Clear the ad schedule and frequency cap'],
+  ])('names what Clear clears (schedule %s, cap %s)', (schedule, cap, label) => {
+    expect(metaDeliveryClearLabel(both, schedule, cap)).toBe(label);
   });
 
   it('clears only the options answered no', () => {

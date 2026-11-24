@@ -195,25 +195,37 @@ export function metaDeliveryApplicable(draft: MetaDeliveryDraft, lifetimeBudget:
   };
 }
 
-/** A schedule a saved draft carries, if well formed: whole-hour minutes in range, at least one day 0–6. Else `null`. */
-function scheduleFromDraft(raw: unknown): MetaAdSchedule | null {
-  const record = metaConfigRecord(raw);
-  if (!record) return null;
-  const probe = metaAdScheduleRefusal({ lifetimeBudget: true, adSchedule: record });
-  return probe === null ? (compactMetaDeliveryOptions({ adSchedule: record }).adSchedule ?? null) : null;
+/** A finite number: the only shape a schedule or cap field can be restored as. */
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
-/** A cap a saved draft carries, if each field is a whole number from 1 to 90. Else `null`. */
+/**
+ * A schedule a saved draft carries, when it has the schedule's SHAPE (a list of numbers and two numbers), or `null`.
+ * Its values are kept even when the rules refuse them (no day, an end before the start): an edit saved half-done must
+ * come back with its error and keep holding Create, never come back as "no schedule" and let the ads run all day.
+ */
+function scheduleFromDraft(raw: unknown): MetaAdSchedule | null {
+  const record = metaConfigRecord(raw);
+  const days = record?.['days'];
+  const start = record?.['startMinute'];
+  const end = record?.['endMinute'];
+  if (!Array.isArray(days) || !days.every(isFiniteNumber) || !isFiniteNumber(start) || !isFiniteNumber(end)) return null;
+  return { days: [...new Set(days)].sort((a, b) => a - b), startMinute: start, endMinute: end };
+}
+
+/** A cap a saved draft carries, when it has the cap's shape (two numbers), or `null`; refused values are kept, as above. */
 function capFromDraft(raw: unknown): MetaFrequencyCap | null {
   const record = metaConfigRecord(raw);
-  if (!record) return null;
-  const probe = metaFrequencyCapRefusal({ objective: 'awareness', frequencyCap: record });
-  return probe === null ? (compactMetaDeliveryOptions({ frequencyCap: record }).frequencyCap ?? null) : null;
+  const maxImpressions = record?.['maxImpressions'];
+  const intervalDays = record?.['intervalDays'];
+  return isFiniteNumber(maxImpressions) && isFiniteNumber(intervalDays) ? { maxImpressions, intervalDays } : null;
 }
 
 /**
  * The delivery options a saved draft restores, or `undefined` for a draft saved before row 5 (neither key present).
- * The draft is persisted JSON, so a malformed schedule or cap restores as `null` (none), never as a bad value.
+ * The draft is persisted JSON: a value without the right shape restores as `null` (none); one with the shape but
+ * values the rules refuse restores as saved, so its error still holds Create.
  */
 export function metaDeliveryFromDraft(adSchedule: unknown, frequencyCap: unknown): MetaDeliveryDraft | undefined {
   if (adSchedule === undefined && frequencyCap === undefined) return undefined;
@@ -264,4 +276,12 @@ export function metaDeliveryBlock(input: MetaDeliveryBlockInput): CampaignMetaAu
     kind: 'failed',
     message: 'Could not confirm that you can send the Meta ad schedule or frequency cap, so Create waits rather than dropping them. Retry the check.',
   };
+}
+
+/** What the Clear past an `unsupported` {@link metaDeliveryBlock} clears, as its button says it: only the options answered no. */
+export function metaDeliveryClearLabel(draft: MetaDeliveryDraft, adScheduleEnabled: boolean | null, frequencyCapEnabled: boolean | null): string {
+  const schedule = draft.adSchedule !== null && adScheduleEnabled === false;
+  const cap = draft.frequencyCap !== null && frequencyCapEnabled === false;
+  if (schedule && cap) return 'Clear the ad schedule and frequency cap';
+  return schedule ? 'Clear the ad schedule' : 'Clear the frequency cap';
 }

@@ -135,6 +135,7 @@ describe('ImplementationTabComponent meta delivery options', () => {
     f.detectChanges();
     expect(c(f)['metaDeliveryBlock']()?.kind).toBe('unsupported');
     expect(c(f)['createBlockedReason']()).toContain('ad schedule');
+    expect(c(f)['metaDeliveryClearLabel']()).toBe('Clear the ad schedule');
 
     c(f)['clearUnsendableMetaDelivery']();
     f.detectChanges();

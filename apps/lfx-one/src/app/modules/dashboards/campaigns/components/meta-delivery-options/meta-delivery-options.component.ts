@@ -77,8 +77,11 @@ export class MetaDeliveryOptionsComponent {
   protected onCapInput(field: 'maxImpressions' | 'intervalDays', event: Event): void {
     const cap = this.delivery().frequencyCap;
     if (cap === null) return;
-    const value = Number.parseInt((event.target as HTMLInputElement).value, 10);
-    this.update({ frequencyCap: { ...cap, [field]: Number.isNaN(value) ? 0 : value } });
+    // The whole number as typed: parseInt would turn 2.5 into an accepted 2, and 1e1 into 1. A fraction is kept, so
+    // the cap's rule refuses it on screen.
+    const raw = (event.target as HTMLInputElement).value.trim();
+    const value = raw === '' ? 0 : Number(raw);
+    this.update({ frequencyCap: { ...cap, [field]: Number.isFinite(value) ? value : 0 } });
   }
 
   private update(patch: Partial<MetaDeliveryDraft>): void {

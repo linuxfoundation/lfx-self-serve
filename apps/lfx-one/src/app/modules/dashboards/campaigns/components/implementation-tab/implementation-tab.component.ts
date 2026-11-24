@@ -484,6 +484,7 @@ import {
   metaAdScheduleRefusal,
   metaDeliveryApplicable,
   metaDeliveryBlock,
+  metaDeliveryClearLabel,
   metaDeliveryForCreate,
   metaDeliverySendable,
   metaFrequencyCapRefusal,
@@ -3509,6 +3510,10 @@ export class ImplementationTabComponent implements OnInit {
       createCapabilityRead: this.createCapabilityRead(),
       briefId: this.briefPersistence().briefId,
     })
+  );
+  /** What the block's Clear clears, named: only the options this deployment answered no to. */
+  protected readonly metaDeliveryClearLabel = computed<string>(() =>
+    metaDeliveryClearLabel(this.metaDelivery(), this.metaAdScheduleEnabled(), this.metaFrequencyCapEnabled())
   );
   /** Why the schedule or cap cannot be sent, or `null`: the create route's own rules, on this budget mode and objective. */
   protected readonly metaDeliveryError = computed<string | null>(() => {
