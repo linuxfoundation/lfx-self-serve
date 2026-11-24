@@ -4,7 +4,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { catchError, EMPTY, map, Observable, of, switchMap } from 'rxjs';
+import { catchError, EMPTY, map, Observable, of, skip, switchMap } from 'rxjs';
 
 import { ProjectContextService } from './project-context.service';
 
@@ -58,16 +58,20 @@ export class SocialListeningService {
   /**
    * Keeps a group member's grant in step with the selected foundation while the page is open: a same-lens
    * foundation switch keeps the page mounted without rerunning the guard, so the grant is re-probed here, and
-   * switchMap drops an answer for a foundation already left. A denial keeps the previous grant: it only
-   * applies to its own foundation, and keeping it lets later switches (including back to it) still work.
+   * switchMap drops an answer for a foundation already left. Every switch to a foundation without a matching
+   * grant is probed, including for a user who opened the page as ED or staff and has no grant yet: the new
+   * foundation may be one they only reach through a Board group. The first value is skipped because the
+   * guard has just checked it. A denial keeps the previous grant: it only applies to its own foundation, and
+   * keeping it lets later switches (including back to it) still work.
    * Call from the page's injection context; it stops when the page is destroyed.
    */
   public trackGroupGrant(): void {
     toObservable(this.projectContextService.selectedFoundation)
       .pipe(
+        skip(1),
         switchMap((foundation) => {
           const grant = this.groupGrant();
-          return grant && foundation?.slug && grant.foundation.uid !== foundation.uid ? this.getAccess(foundation.slug) : EMPTY;
+          return foundation?.slug && grant?.foundation.uid !== foundation.uid ? this.getAccess(foundation.slug) : EMPTY;
         }),
         takeUntilDestroyed()
       )

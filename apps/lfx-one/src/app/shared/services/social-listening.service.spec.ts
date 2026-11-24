@@ -88,11 +88,22 @@ describe('SocialListeningService group grant', () => {
     expect(service.foundationSfid()).toBe('a-sfid');
   });
 
-  it('does not probe for a user without a group grant', () => {
+  it('probes a switched-to foundation for a user who opened the page without a group grant (ED or staff)', () => {
     service.groupGrant.set(null);
-    const getAccess = vi.spyOn(service, 'getAccess');
+    const getAccess = vi
+      .spyOn(service, 'getAccess')
+      .mockReturnValue(of({ canView: true, reason: 'group-member', foundation: foundationB, foundationSfid: 'b-sfid' }));
 
     selectedFoundation.set(foundationB);
+    TestBed.tick();
+
+    expect(getAccess).toHaveBeenCalledWith('b');
+    expect(service.foundationSfid()).toBe('b-sfid');
+  });
+
+  it('does not re-probe the foundation the guard already checked when tracking starts', () => {
+    const getAccess = vi.spyOn(service, 'getAccess');
+    TestBed.runInInjectionContext(() => service.trackGroupGrant());
     TestBed.tick();
 
     expect(getAccess).not.toHaveBeenCalled();
