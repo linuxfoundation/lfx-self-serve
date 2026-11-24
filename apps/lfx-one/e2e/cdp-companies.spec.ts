@@ -8,23 +8,21 @@
  * server guarantees are asserted against the real BFF with `page.request`, each guarded on the identity the harness
  * has (skipped with the reason when it does not apply). Other identities are checked by hand against a deployed environment.
  *
- *   Search and open: CDP rows load below the B2B rows, tagged "CDP"; a same-name B2B and CDP company are
- *          both listed, B2B rows unchanged; picking a CDP row opens `/company/{CDP id}`; under `/company`, a B2B slug
- *          and a static page (`/company/overview`) still open their B2B pages, and a CDP id opens the CDP page
- *          without reaching the B2B resolver.
- *   Outside the audience: availability false hides every CDP surface and `/company/{CDP id}` reads "no company"; a malformed
- *          address reads the same with no page request; callers outside the audience (non-staff global org admin with
- *          the switch off, global-org-auditors with it on or off) get exactly what the server gives an outsider;
- *          against the real BFF an unknown and a malformed id get identical status and body, and search answers an
- *          outsider 404.
- *   Navigation: sections the page marks `on` are links, every other Company Lens section is greyed with
- *          "Not available for CDP companies"; off and refused sections render their state; against the real BFF an
- *          off section is refused 403 `SECTION_OFF_BY_DESIGN` and a low-activity company's sections 404; every CDP
- *          response, stubbed or real, carries only allow-listed keys (no person-level field).
- *   Meetings and Groups: off by design while their flag is off; with it on, rows for LF staff and the
- *          no-access state for anyone else; against the real BFF the staff identity reads rows when the flag is on.
- *   Redirects: merged (CDP redirect, same section), B2B-linked (the company's Company Lens home), unknown,
- *          no-activity and not-enough-activity ids.
+ * - Search and open: CDP rows load below the B2B rows, tagged "CDP"; a same-name B2B and CDP company are both listed,
+ *   B2B rows unchanged; picking a CDP row opens `/company/{CDP id}`; under `/company`, a B2B slug and a static page
+ *   (`/company/overview`) still open their B2B pages, and a CDP id opens the CDP page without reaching the B2B resolver.
+ * - Outside the audience: availability false hides every CDP surface and `/company/{CDP id}` reads "no company"; a
+ *   malformed address reads the same with no page request; callers outside the audience (non-staff global org admin
+ *   with the switch off, global-org-auditors with it on or off) get exactly what the server gives an outsider; against
+ *   the real BFF an unknown and a malformed id get identical status and body, and search answers an outsider 404.
+ * - Navigation: sections the page marks `on` are links, every other Company Lens section is greyed with "Not available
+ *   for CDP companies"; off and refused sections render their state; against the real BFF an off section is refused
+ *   403 `SECTION_OFF_BY_DESIGN` and a low-activity company's sections 404; every CDP response, stubbed or real, carries
+ *   only allow-listed keys (no person-level field).
+ * - Meetings and Groups: off by design while their flag is off; with it on, rows for LF staff and the no-access state
+ *   for anyone else; against the real BFF the staff identity reads rows when the flag is on.
+ * - Redirects: merged (CDP redirect, same section), B2B-linked (the company's Company Lens home), unknown, no-activity
+ *   and not-enough-activity ids.
  *
  * Optional environment for the real-BFF cases: `E2E_CDP_COMPANY_ID` (a searchable CDP id; otherwise one is found by
  * search) and `E2E_CDP_LOW_ACTIVITY_ID` (an addressable CDP id below the search rule).

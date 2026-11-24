@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Names of the Org Lens empty states shipped in spec 053 phase 1 (`ORG_LENS_EMPTY_STATE_COPY` keys), plus `affiliated-no-grant` (#4225)
- * and the CDP company states: `off-by-design`, the two `low-activity-*` variants and `no-company`.
+ * Names of the Org Lens empty states (`ORG_LENS_EMPTY_STATE_COPY` keys), including `affiliated-no-grant` (#4225) and the
+ * CDP company states: `off-by-design`, the two `low-activity-*` variants and `no-company`.
  */
 export type OrgLensEmptyStateName =
   | 'no-organization'
