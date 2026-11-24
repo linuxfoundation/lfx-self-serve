@@ -141,6 +141,8 @@ export class Member360RunComponent {
   protected readonly stillRunning = signal(false);
   protected readonly startedAt = signal(0);
   protected readonly pollRetry = signal(0);
+  /** The requester chose Start over on the in-progress view: the intake shows beside the still-active run. Nothing is discarded until the guard confirms. */
+  protected readonly startingOver = signal(false);
   private readonly screenScope = computed(() =>
     JSON.stringify([this.context.activeContextUid(), this.users.user()?.sub, this.context.canWrite(), !!this.context.activeProject()])
   );
@@ -158,6 +160,11 @@ export class Member360RunComponent {
     return this.context.canWrite() && subject === this.users.user()?.sub && pending?.request.projectUid === this.context.activeContextUid() ? pending : null;
   });
   protected readonly trackers = toSignal(this.form.controls.trackers.valueChanges, { initialValue: this.form.controls.trackers.value });
+  /** The run the in-progress view renders; null while the requester is on the intake by choice. */
+  protected readonly running = computed(() => (this.startingOver() ? null : this.pending()));
+  protected readonly openRunningLabel = computed(() =>
+    this.ownedRun()?.state === 'questions' || this.questions().length ? 'Answer the questions' : 'Open it'
+  );
   protected readonly result = computed(() => (this.resultContext()[0] === this.pending() ? this.resultContext()[1] : null));
   protected readonly questions = computed(() => {
     const result = this.result();
@@ -201,10 +208,23 @@ export class Member360RunComponent {
     }
   }
 
+  /** Start over shows the intake only: the active run is discarded by the shared guard after Create, never here. */
+  protected startOver(): void {
+    if (!this.pending() || this.answering()) return;
+    this.error.set('');
+    this.startingOver.set(true);
+  }
+
+  /** Back to the in-progress view of the same run; the intake's values stay in the form. */
+  protected openRunning(): void {
+    this.error.set('');
+    this.startingOver.set(false);
+  }
+
   protected run(): void {
     const project = this.context.activeContextUid();
     const user = this.users.user()?.sub;
-    if (!project || !this.context.canWrite() || this.loading() || this.submitting() || this.pending()) return;
+    if (!project || !this.context.canWrite() || this.loading() || this.submitting() || (this.pending() && !this.startingOver())) return;
     if (this.uploading()) {
       this.error.set('Wait for your trackers to finish parsing, then create Member 360.');
       return;
@@ -254,6 +274,7 @@ export class Member360RunComponent {
       if (!current()) return;
       const pending = this.attempts.load(project, 'member-360', session.documentId);
       this.submitting.set(false);
+      this.startingOver.set(false);
       this.startedAt.set(Date.now());
       this.ownedContext.set([this.screenScope(), null]);
       this.accepted.set([user ?? '', pending]);
@@ -282,6 +303,11 @@ export class Member360RunComponent {
                   onValue: onSession,
                   onDiscard: (fresh) => start(fresh.activeRunId),
                   onOpen: (fresh) => {
+                    // The run this page already follows opens here, where its questions are answered.
+                    if (this.startingOver() && this.progressRunId() === fresh.activeRunId) {
+                      this.openRunning();
+                      return;
+                    }
                     void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', fresh.agentKey, fresh.documentId], {
                       queryParams: { project: this.context.activeContext()?.slug, ...MKTG_RUN_RESUME_QUERY_CLEAR, run: fresh.activeRunId },
                     });
@@ -519,6 +545,7 @@ export class Member360RunComponent {
             this.latest.set(null);
             this.lastHistoryRevision = '';
             this.accepted.set([user, null]);
+            this.startingOver.set(false);
             this.ownedContext.set([key, null]);
             this.startedAt.set(0); // Local timestamps do not decide the server's run budget.
             this.releaseUnconsumed();
@@ -737,7 +764,8 @@ export class Member360RunComponent {
                 // must not be cleared, or hidden, by the connection line.
                 // A 400/404 abandons the run and opens the create form below: no "No new run is started." line beside that form.
                 const abandoned = event.error instanceof HttpErrorResponse && [400, 404].includes(event.error.status);
-                if (!transient) this.error.set(abandoned ? '' : 'The run could not be checked. No new run is started.');
+                // On the Start over intake the line belongs to the form's own submission, not to the run behind it.
+                if (!transient && !this.startingOver()) this.error.set(abandoned ? '' : 'The run could not be checked. No new run is started.');
                 if (event.error instanceof HttpErrorResponse && [400, 401, 403, 404].includes(event.error.status)) {
                   // Latch before the attempt is cleared: the roster may still list this run, and restoring it would repeat
                   // the refused read with no backoff. A 401/403 also latches the scope (the plain access state), and the
@@ -754,7 +782,7 @@ export class Member360RunComponent {
               }
               this.loadingIssue.set(['', '', 'error']);
               this.retrying.set(false);
-              this.error.set('');
+              if (!this.startingOver()) this.error.set('');
               const result = event.value;
               if (!result) {
                 this.forgetAttempt(pending);
@@ -762,6 +790,13 @@ export class Member360RunComponent {
                 return;
               }
               if (result.status === 'failed' || (result.status === 'ready' && (result.stored || result.persistence))) {
+                if (this.startingOver()) {
+                  // The run ended while the requester fills a new intake: keep them on the form and re-read run history.
+                  this.forgetAttempt(pending);
+                  this.confirmedScope.set(key);
+                  this.historyRetry.update((value) => value + 1);
+                  return;
+                }
                 this.openVerifiedDocument(pending, result);
                 return;
               }

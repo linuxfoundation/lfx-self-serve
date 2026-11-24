@@ -200,6 +200,95 @@ describe('Member360RunComponent', () => {
     }
   });
 
+  it.each(['open', 'discard', 'dialog-open'] as const)(
+    'offers Start over on the in-progress view and handles the %s branch through the shared guard',
+    async (choice) => {
+      await render();
+      fixture.componentInstance.form.controls.compare.setValue(false);
+      button().click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const element: HTMLElement = fixture.nativeElement;
+      const find = (id: string) => element.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+      expect(find('member-360-generating')).not.toBeNull();
+      expect(find('member-360-intake')).toBeNull();
+      find('member-360-start-over')?.querySelector('button')?.click();
+      fixture.detectChanges();
+      // Start over only shows the intake: the active run is untouched and no start is sent.
+      expect(find('member-360-generating')).toBeNull();
+      expect(find('member-360-intake')).not.toBeNull();
+      expect(find('member-360-waiting-notice')?.textContent).toContain('A Member 360 run is in progress.');
+      expect(run.generate).toHaveBeenCalledTimes(1);
+      expect(confirmation.confirm).not.toHaveBeenCalled();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      if (choice === 'open') {
+        find('member-360-waiting-open')?.querySelector('button')?.click();
+        fixture.detectChanges();
+        expect(find('member-360-generating')).not.toBeNull();
+        expect(find('member-360-intake')).toBeNull();
+        expect(run.generate).toHaveBeenCalledTimes(1);
+        expect(navigate).not.toHaveBeenCalled();
+        return;
+      }
+      const conflict = {
+        code: 'MKTG_RUN_ACTIVE',
+        message: 'Your Member 360 run is in progress.',
+        activeRunId: 'b'.repeat(64),
+        state: 'writing',
+        agentKey: 'member-360',
+        documentId: 'run-0123456789abcdef01234567',
+        startedBy: 'Synthetic writer',
+        startedByViewer: true,
+        startedAt: '2026-10-19T12:00:00.000Z',
+      };
+      run.generate
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })))
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })));
+      fixture.componentInstance.form.controls.window.setValue('6');
+      button().click();
+      const original = { project: 'sample-project', window: '6', compare: false, trackerIds: [] };
+      expect(run.generate).toHaveBeenNthCalledWith(2, original);
+      expect(run.generate).toHaveBeenNthCalledWith(3, original); // The guard's own recheck, still without discard.
+      const prompt = confirmation.confirm.mock.calls.at(-1)?.[0];
+      expect(prompt).toMatchObject({ key: 'mktg-active-member360', acceptLabel: 'Discard and start over', rejectLabel: 'Open it' });
+      if (choice === 'discard') {
+        prompt?.accept?.();
+        expect(run.generate).toHaveBeenNthCalledWith(4, { ...original, discard: conflict.activeRunId });
+      } else {
+        prompt?.reject?.(ConfirmEventType.REJECT);
+        expect(run.generate).toHaveBeenCalledTimes(3);
+      }
+      await fixture.whenStable();
+      fixture.detectChanges();
+      // Both end on this page's in-progress view: the replacement run, or the same run it already follows.
+      expect(find('member-360-generating')).not.toBeNull();
+      expect(find('member-360-intake')).toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
+    }
+  );
+
+  it('keeps the requester on the Start over intake, with their message, when the earlier run finishes behind it', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    run.questions
+      .mockReturnValueOnce(of({ status: 'pending', activity: [] }))
+      .mockReturnValue(of({ status: 'ready', stored: true, documentId: 'run-0123456789abcdef01234567' }));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await render();
+    fixture.componentInstance.form.controls.compare.setValue(false);
+    button().click();
+    await fixture.whenStable();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    fixture.componentInstance['startOver']();
+    fixture.componentInstance['error'].set('Wait for your trackers to finish parsing, then create Member 360.');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    fixture.detectChanges();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['pending']()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-waiting-notice"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]')).not.toBeNull();
+  });
+
   function serverQuestions(): Member360Result {
     return {
       status: 'needs_input',
