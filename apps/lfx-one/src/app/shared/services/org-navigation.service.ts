@@ -74,6 +74,12 @@ export class OrgNavigationService {
 
   private readonly state: OrgListState = this.createOrgListState();
 
+  /**
+   * The trimmed term the displayed rows were fetched with: set when a search's first page lands and kept while later
+   * pages of the same search append. A live input that differs means that search's rows have not landed yet.
+   */
+  public readonly displayedTerm: Signal<string> = this.pageTerm.asReadonly();
+
   /** The one deferred `'default'` address write waiting for the router to go idle, if any. */
   private pendingDefaultWrite: Subscription | null = null;
   /** The one first-page decision still waiting for the grant set to settle (`whenGrantsSettled`): a default selection or the empty-list handling (#2961). Cleared when it fires, when a newer decision supersedes it, or when `resetAndReload` starts a new page. */

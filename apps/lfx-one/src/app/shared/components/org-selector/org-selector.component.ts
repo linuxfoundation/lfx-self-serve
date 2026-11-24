@@ -799,8 +799,10 @@ export class OrgSelectorComponent {
     return computed(() => {
       const group = this.cdpSearch();
       if (!group || !this.isStaff() || group.term !== this.trimmedSearchTerm() || this.searchFailed()) return null;
-      // FR-021: CDP rows show only once the page's B2B results rendered, never under the B2B list's first "Loading...".
-      if (this.loading() && this.displayedItems().length === 0) return null;
+      // FR-021: the CDP group (loading, rows or "unavailable") belongs below the B2B results of the SAME search. Until
+      // that search's first page lands, the rows on screen are an older search's, so nothing shows for CDP yet. Paging
+      // keeps the term, so the group stays while later pages load.
+      if (group.term !== this.orgNavigationService.displayedTerm()) return null;
       if (group.status === 'settled' && !group.unavailable && group.items.length === 0) return null;
       return group;
     });
