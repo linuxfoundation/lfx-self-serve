@@ -394,6 +394,9 @@ export class CommitteeService {
    *   user-facing detail read (GET /committees/:id).
    * @param options.includeAuditor When true, adds a caller-scoped `auditor` boolean via a strict
    *   `committee#auditor` access check (GH-2407) — `writer === true` short-circuits to `true`, and a failed check omits the field.
+   * @param options.strictWriter When true, resolves `writer` with a strict access check that propagates an
+   *   upstream failure instead of degrading to `writer: false`, so a caller can tell "couldn't verify" from
+   *   "no access" (#5731; mirrors the project detail read's `strict_writer`).
    * @param options.requestOptions Per-request `ApiRequestOptions` (e.g. an M2M `bearerToken`)
    *   forwarded to the base committee fetch and settings lookup only. Every other sub-fetch always
    *   runs under the caller's own `req.bearerToken` regardless of this option: `addAccessToResource`
@@ -422,6 +425,7 @@ export class CommitteeService {
       throwOnSettingsError?: boolean;
       includeMailingListStatus?: boolean;
       includeAuditor?: boolean;
+      strictWriter?: boolean;
       requestOptions?: ApiRequestOptions;
     } = {}
   ): Promise<Committee> {
@@ -462,7 +466,11 @@ export class CommitteeService {
     const [settings, membership, withAccess, inheritedPermissions, mlCount] = await Promise.all([
       this.getCommitteeSettings(req, committeeId, { throwOnError: options.throwOnSettingsError, requestOptions: options.requestOptions }),
       options.includeMembership ? this.getCallerMembership(req, committeeId) : Promise.resolve(null),
-      this.accessCheckService.addAccessToResource(req, committee, 'committee'),
+      options.strictWriter
+        ? this.accessCheckService
+            .checkSingleAccessStrict(req, { resource: 'committee', id: committee.uid, access: 'writer' })
+            .then((writer) => ({ ...committee, writer }))
+        : this.accessCheckService.addAccessToResource(req, committee, 'committee'),
       options.includeInheritedPermissions ? this.getInheritedPermissions(req, committee.project_uid) : Promise.resolve(null),
       options.includeMailingListStatus ? this.getMailingListCountByCommittee(req, committeeId) : Promise.resolve(null),
     ]);

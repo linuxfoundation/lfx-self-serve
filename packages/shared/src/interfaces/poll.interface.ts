@@ -1830,16 +1830,14 @@ export interface CondorcetQuestionView {
   ballotPatterns: CondorcetBallotPatternRow[] | null;
 }
 
-/** What the vote detail page re-reads a Condorcet vote's named ballots on — a change in any field triggers a new read (#5969). */
+/** Context for polling a named Condorcet vote's ballots on the Results tab (#5969). */
 export interface CondorcetBallotsKey {
   uid: string;
-  /** Whether the Results tab is active; tab-only changes hide, but do not discard, cached ballots */
+  /** Whether Results is active; inactive keys retain eligibility so privacy changes invalidate cached ballots */
   active: boolean;
   /** Vote detail refresh tick, bumped after a ballot is cast from the page */
   tick: number;
-  votesCast: number;
-  /** Bumped on every successful results read, including ranking edits with unchanged participation */
-  resultsRevision: number;
+  /** Voting ended and final totals were released; starts the bounded ballot-confirmation window */
   closed: boolean;
   /** A draft has no ballots, and the voters endpoint refuses it, so the read is skipped */
   draft: boolean;
@@ -1850,6 +1848,10 @@ export interface CondorcetBallotsRead {
   uid: string;
   /** Null when the first read for this vote failed */
   voters: VoteVoter[] | null;
+  /** The latest refresh failed; any retained ballots may be out of date */
+  stale: boolean;
+  /** The bounded final ballot-confirmation window is still running */
+  confirming: boolean;
 }
 
 /**

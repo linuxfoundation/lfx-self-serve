@@ -242,6 +242,17 @@
   <section class="flex flex-col gap-3 border-t border-slate-200 pt-5" data-testid="vote-condorcet-ballots">
     <h5 class="text-base font-semibold text-gray-900">Ballot breakdown</h5>
     @if (q.ballotPatterns; as patterns) {
+      @if (ballotsStale()) {
+        <p class="text-sm text-amber-700" role="status" data-testid="vote-condorcet-ballots-stale">
+          Ballot rankings may be out of date. The latest refresh failed.
+        </p>
+      } @else if (ballotsConfirming()) {
+        <p class="text-sm text-slate-500" role="status" data-testid="vote-condorcet-ballots-confirming">Ballot rankings are being confirmed.</p>
+      } @else if (ballotsMismatch()) {
+        <p class="text-sm text-amber-700" role="status" data-testid="vote-condorcet-ballots-mismatch">
+          Ballot rankings may be out of date. They do not match the final totals.
+        </p>
+      }
       @if (patterns.length > 0) {
         <details class="group rounded-lg border border-gray-200" data-testid="vote-condorcet-ballots-details">
           <summary

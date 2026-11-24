@@ -55,6 +55,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildCondorcetQuestionViews,
+  condorcetBallotsMatchResults,
   buildCondorcetSummaryLines,
   buildRankedQuestionViews,
   buildVoteResultsQuestions,
@@ -95,9 +96,7 @@ import {
   Observable,
   of,
   startWith,
-  shareReplay,
   Subject,
-  Subscription,
   switchMap,
   take,
   tap,
@@ -220,8 +219,6 @@ export class VoteDetailComponent {
   });
   /** Bumped after a ballot is submitted so my-response and results reload. */
   private readonly refreshTick = signal<number>(0);
-  /** Successful results reads invalidate named ballot rankings even when participation stays unchanged. */
-  private readonly resultsRevision = signal<number>(0);
   /** The vote a ballot was cast on from this page — it reads as submitted before the refreshed (indexed) response catches up. */
   private readonly submittedBallotFor = signal<string | null>(null);
   /** Comment-question expansion choices survive tab switches and same-vote refreshes. */
@@ -324,24 +321,30 @@ export class VoteDetailComponent {
   protected readonly resultsStatusTag: Signal<{ value: string; severity: 'success' | 'secondary' }> = this.initResultsStatusTag();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults(), this.vote()?.poll_type));
-  /** Ranked outcomes and standings wait for an ended vote's final results, even at 100% participation. */
+  /** Ranked outcomes from main wait for ended status and released final totals. */
   protected readonly showRankedOutcome: Signal<boolean> = computed(() => this.isEnded() && this.isVoteClosed());
-  /** Condorcet IRV gets its own results layout (#5969); Instant Runoff and Meek STV keep their ranked results. */
+  /** Condorcet IRV gets its own results layout (#5969); other ranked methods retain main's outcome and standings. */
   protected readonly isCondorcetPoll: Signal<boolean> = computed(() => this.vote()?.poll_type === PollType.CONDORCET_IRV);
-  /** Which vote's named ballots to read for the Condorcet ballot ranking distribution — a manager on a named vote only (#5969). */
+  /** Managers on Results only; `closed` here means voting ended and final totals were released, not 100% participation. */
   private readonly condorcetBallotsKey: Signal<CondorcetBallotsKey | null> = this.initCondorcetBallotsKey();
-  /** The latest ballots read and the vote it belongs to; `voters` is null when the read failed. */
   private readonly condorcetBallotsRead: Signal<CondorcetBallotsRead | null> = this.initCondorcetBallotsRead();
-  /** Ballots for the current vote; null hides the table behind the "not available" note. */
   private readonly condorcetBallots: Signal<VoteVoter[] | null> = computed(() => {
     const read = this.condorcetBallotsRead();
     if (!this.condorcetBallotsKey()?.active || !read || read.uid !== this.vote()?.uid) return null;
     return read.voters;
   });
-  /** The first read for this vote is still in flight, so the table isn't "not available" yet. */
   protected readonly condorcetBallotsLoading: Signal<boolean> = computed(() => {
     const key = this.condorcetBallotsKey();
     return !!key?.active && this.condorcetBallotsRead()?.uid !== key.uid;
+  });
+  protected readonly condorcetBallotsStale: Signal<boolean> = computed(() => this.condorcetBallots() !== null && this.condorcetBallotsRead()?.stale === true);
+  protected readonly condorcetBallotsConfirming: Signal<boolean> = computed(
+    () => !!this.condorcetBallotsKey()?.active && this.condorcetBallotsRead()?.confirming === true
+  );
+  protected readonly condorcetBallotsMismatch: Signal<boolean> = computed(() => {
+    const ballots = this.condorcetBallots();
+    const results = this.voteResults();
+    return this.condorcetBallotsKey()?.closed === true && ballots !== null && !!results && !condorcetBallotsMatchResults(results, ballots);
   });
   protected readonly condorcetQuestions: Signal<CondorcetQuestionView[]> = computed(() =>
     buildCondorcetQuestionViews(this.voteResults(), this.condorcetBallots())
@@ -753,7 +756,6 @@ export class VoteDetailComponent {
                 this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: !stale, stale });
               } else {
                 lastResults = event.value;
-                this.resultsRevision.update((revision) => revision + 1);
                 this.finalResultsFor.set(ended && event.value.results_held !== true ? resultsKey.id : null);
                 this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: false, stale: false });
               }
@@ -840,7 +842,7 @@ export class VoteDetailComponent {
     });
   }
 
-  /** A closed Condorcet vote names the voting service's winner; anything else (and an open Condorcet vote) keeps the leader summary. */
+  /** Final Condorcet summaries wait for ended status and released totals, matching main's ranked outcome gate. */
   private initOverviewSummary(): Signal<VoteResultsSummaryLine[]> {
     return computed(() => {
       if (this.isCondorcetPoll() && this.showRankedOutcome()) {
@@ -852,93 +854,67 @@ export class VoteDetailComponent {
   }
 
   /**
-   * A manager of a named Condorcet vote reads the voters list on the Results tab once its results load, again after
-   * each successful results poll (rankings can change without changing participation), and after a ballot from this
-   * page, so its ballot orderings match its other tables. Pseudo-anonymous votes return participation-only rows, and voters can't
-   * read ballots at all, so neither gets a key and the table gives way to a note (#5969). A draft has no ballots and
-   * GET /api/votes/:uid/voters refuses it (409), so it skips the read, just as `showVotersTab` hides the Voters tab.
+   * Only managers of named Condorcet votes on Results can read ballots (#5969). A draft skips the voters endpoint
+   * (409). Aggregate counts cannot identify all revised ballot patterns, so eligible live ballots poll independently.
    */
   private initCondorcetBallotsKey(): Signal<CondorcetBallotsKey | null> {
     return computed(() => {
       const uid = this.vote()?.uid;
-      const results = this.voteResults();
-      if (!uid || !results || !this.isCondorcetPoll() || this.audience() !== 'creator' || this.isPseudoAnonymous() || !this.showsResults()) return null;
+      if (!uid || !this.voteResults() || !this.isCondorcetPoll() || this.audience() !== 'creator' || this.isPseudoAnonymous() || !this.showsResults())
+        return null;
       return {
         uid,
         active: this.activeTab() === 'results',
         tick: this.refreshTick(),
-        votesCast: results.num_votes_cast,
-        resultsRevision: this.resultsRevision(),
-        closed: this.isVoteClosed(),
+        closed: this.isEnded() && this.isVoteClosed(),
         draft: !this.showVotersTab(),
       };
     });
   }
 
   /**
-   * A failed first read settles with null voters, so it ends the loading state and shows the "not available" note;
-   * a failed re-read of the same eligible vote keeps its last ballots, including across Results tab changes.
+   * Indexed ballots can lag released final totals, so ended votes read through the entire bounded finalization
+   * window, including successful reads. Active votes keep polling even at 100% participation. Visibility wakes
+   * cannot reset the budget. Temporary failures retry with backoff; tab/access/route changes cancel all reads.
    */
   private initCondorcetBallotsRead(): Signal<CondorcetBallotsRead | null> {
     let last: CondorcetBallotsRead | null = null;
-    const keys = toObservable(this.condorcetBallotsKey).pipe(
-      distinctUntilChanged(
-        (a, b) =>
-          a?.uid === b?.uid &&
-          a?.active === b?.active &&
-          a?.tick === b?.tick &&
-          a?.votesCast === b?.votesCast &&
-          a?.resultsRevision === b?.resultsRevision &&
-          a?.closed === b?.closed &&
-          a?.draft === b?.draft
-      ),
-      shareReplay({ bufferSize: 1, refCount: true })
-    );
     return toSignal(
-      keys.pipe(
-        // Only context changes cancel a read; same-vote refreshes coalesce while it is in flight.
-        distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.active === b?.active && a?.draft === b?.draft),
+      toObservable(this.condorcetBallotsKey).pipe(
+        distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.active === b?.active && a?.tick === b?.tick && a?.closed === b?.closed && a?.draft === b?.draft),
         switchMap((key) => {
+          // Tab changes preserve the same eligible vote's cache; route and privacy changes discard it.
           if (!key || last?.uid !== key.uid) last = null;
           if (!key?.active) return of(null);
-          if (key.draft) return of({ uid: key.uid, voters: [] });
-          return new Observable<CondorcetBallotsRead>((subscriber) => {
-            const subscriptions = new Subscription();
-            let reading = false;
-            let pending = false;
-            const load = () => {
-              reading = true;
-              pending = false;
-              subscriptions.add(
-                this.voteService
-                  .getVoteVoters(key.uid)
-                  .pipe(
-                    map((voters) => ({ uid: key.uid, voters: voters.filter((voter): voter is VoteVoter => 'uid' in voter) })),
-                    catchError((error) => {
-                      console.error('Failed to load Condorcet ballots', { status: error?.status });
-                      return of({ uid: key.uid, voters: last?.uid === key.uid ? last.voters : null });
-                    })
-                  )
-                  .subscribe({
-                    next: (read) => subscriber.next(read),
-                    complete: () => {
-                      reading = false;
-                      if (pending && !subscriber.closed) load();
-                    },
-                  })
+          if (key.draft) return of({ uid: key.uid, voters: [], stale: false, confirming: false });
+          let attempts = 0;
+          const browser = isPlatformBrowser(this.platformId);
+          const transient = (error: unknown): boolean =>
+            error instanceof HttpErrorResponse && (error.status === 0 || (error.status >= 500 && error.status < 600));
+          const load = () => this.voteService.getVoteVoters(key.uid);
+          const requests = browser
+            ? createVisibilityPoll(this.document, load, VOTE_DETAIL_RESULTS_POLL_OPTIONS)
+            : load().pipe(
+                map((value) => ({ kind: 'ok' as const, value })),
+                catchError((error: unknown) => of({ kind: 'error' as const, error }))
               );
-            };
-            subscriptions.add(
-              keys.subscribe(() => {
-                if (reading) pending = true;
-                else load();
-              })
-            );
-            return subscriptions;
-          });
-        }),
-        tap((read) => {
-          if (read) last = read;
+          return requests.pipe(
+            takeWhile((event) => {
+              attempts++;
+              const withinBudget = !key.closed || attempts < VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS;
+              return withinBudget && (event.kind === 'ok' || transient(event.error));
+            }, true),
+            map((event) => {
+              const confirming = browser && key.closed && attempts < VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS;
+              if (event.kind === 'ok') {
+                last = { uid: key.uid, voters: event.value.filter((voter): voter is VoteVoter => 'uid' in voter), stale: false, confirming };
+                return last;
+              }
+              console.error('Failed to load Condorcet ballots', { status: event.error instanceof HttpErrorResponse ? event.error.status : undefined });
+              const voters = last?.uid === key.uid ? last.voters : null;
+              return { uid: key.uid, voters, stale: voters !== null, confirming: confirming && transient(event.error) };
+            })
+          );
         })
       ),
       { initialValue: null }

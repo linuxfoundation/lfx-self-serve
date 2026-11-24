@@ -4,12 +4,14 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   BEHAVIORAL_CLASS_CONFIG,
   GROUPS_HOME_DEFAULT_FILTERS,
   GROUPS_HOME_PAGE_SIZE,
   GROUPS_VIEW_MODE_STORAGE_KEY,
+  MEMBER_IMPORT_RECONCILE_INTERVAL_MS,
+  MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS,
   WG_ENGAGEMENT_METRICS_FLAG,
 } from '@lfx-one/shared/constants';
 import {
@@ -22,12 +24,14 @@ import {
   GroupsHomeVotingCounts,
   GroupsViewMode,
   MyCommittee,
+  MemberImportRunSummary,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 import { buildEngagementStatCards, getGroupBehavioralClass } from '@lfx-one/shared/utils';
+import { CommitteeMemberImportService } from '@services/committee-member-import.service';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
-import { catchError, EMPTY, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
+import { catchError, EMPTY, exhaustMap, filter, finalize, first, map, merge, Observable, of, switchMap, take, tap, timer } from 'rxjs';
 
 /**
  * State of the Me lens groups page, provided by the page component.
@@ -40,6 +44,7 @@ export class GroupsHomeStore {
   private readonly committeeService = inject(CommitteeService);
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly importService = inject(CommitteeMemberImportService);
 
   private readonly loadingState: WritableSignal<boolean> = signal(true);
   private readonly failedState: WritableSignal<boolean> = signal(false);
@@ -93,6 +98,7 @@ export class GroupsHomeStore {
   public constructor() {
     // Restored after the first render so the server's card view hydrates unchanged.
     afterNextRender(() => this.viewState.set(this.readStoredView()));
+    this.initImportReconciliation();
   }
 
   public setTab(tab: GroupsHomeTab): void {
@@ -201,6 +207,75 @@ export class GroupsHomeStore {
         })
       ),
       { initialValue: [] }
+    );
+  }
+
+  /** Retained reports cover settlements before the page loads; refreshes never replay notifications or restart an attempt. */
+  private initImportReconciliation(): void {
+    const retained = computed(() => {
+      if (this.loading() || this.failed()) return [];
+      return this.groups().flatMap((group) => {
+        const summary = this.importService.getSummary(group.uid);
+        return summary?.phase === 'settled' ? [summary] : [];
+      });
+    });
+    const retained$ = toObservable(retained);
+    toObservable(this.importService.viewerSubject)
+      .pipe(
+        switchMap((owner) => {
+          const targets = new Map<string, number>();
+          const seen = new Set<string>();
+          return merge(this.importService.settlements$.pipe(map(({ summary }) => [summary])), retained$).pipe(
+            map((summaries: MemberImportRunSummary[]) =>
+              summaries.filter(
+                (summary) =>
+                  !!owner &&
+                  this.importService.viewerSubject() === owner &&
+                  !this.loading() &&
+                  !this.failed() &&
+                  this.groups().some((group) => group.uid === summary.committeeUid) &&
+                  !seen.has(`${summary.runId}:${summary.attempt}`)
+              )
+            ),
+            filter((summaries) => summaries.length > 0),
+            tap((summaries) => {
+              for (const summary of summaries) {
+                seen.add(`${summary.runId}:${summary.attempt}`);
+                targets.set(summary.committeeUid, summary.reconciliationTarget);
+              }
+            }),
+            switchMap(() => this.reconcileImportedTotals(targets))
+          );
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe();
+  }
+
+  private reconcileImportedTotals(targets: Map<string, number>): Observable<unknown> {
+    const reached = (groups: readonly MyCommittee[]): boolean =>
+      [...targets].every(([uid, target]) => (groups.find((group) => group.uid === uid)?.total_members ?? -1) >= target);
+    const alreadyReached = reached(this.groups());
+    this.refresh();
+    if (alreadyReached) {
+      targets.clear();
+      return EMPTY;
+    }
+    return timer(MEMBER_IMPORT_RECONCILE_INTERVAL_MS, MEMBER_IMPORT_RECONCILE_INTERVAL_MS).pipe(
+      exhaustMap(() =>
+        this.committeeService.getMyCommitteesOrError().pipe(
+          catchError((error: unknown) => {
+            console.error('Failed to refetch groups after CSV import', { status: error instanceof HttpErrorResponse ? error.status : 0 });
+            return of(null);
+          })
+        )
+      ),
+      take(MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS),
+      first((groups) => groups !== null && reached(groups), null),
+      tap(() => {
+        targets.clear();
+        this.refresh();
+      })
     );
   }
 

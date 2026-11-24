@@ -103,6 +103,24 @@ describe('VoteCondorcetResultsComponent', () => {
     expect(text(byTestId(el, 'vote-condorcet-outcome-message'))).toBe(message);
   });
 
+  it.each([
+    { stale: true, confirming: true, mismatch: true, id: 'stale' },
+    { stale: false, confirming: true, mismatch: true, id: 'confirming' },
+    { stale: false, confirming: false, mismatch: true, id: 'mismatch' },
+  ])('shows the $id notice outside the collapsed ballot breakdown', ({ stale, confirming, mismatch, id }) => {
+    fixture.componentRef.setInput('ballotsStale', stale);
+    fixture.componentRef.setInput('ballotsConfirming', confirming);
+    fixture.componentRef.setInput('ballotsMismatch', mismatch);
+    const el = render(question());
+    const notice = byTestId(el, 'vote-condorcet-ballots-' + id);
+    expect(notice?.getAttribute('role')).toBe('status');
+    expect(notice?.closest('details')).toBeNull();
+    const breakdown = byTestId(el, 'vote-condorcet-ballots')?.querySelector('details');
+    expect(breakdown).not.toBeNull();
+    expect(breakdown?.hasAttribute('open')).toBe(false);
+    expect(el.querySelectorAll('[data-testid="vote-condorcet-ballots"] [role="status"]')).toHaveLength(1);
+  });
+
   it('renders standings with the winner tag and head-to-head record', () => {
     // Angular drops inter-element whitespace, so compare with all whitespace removed.
     const compact = (value: string): string => value.replace(/\s+/g, '');

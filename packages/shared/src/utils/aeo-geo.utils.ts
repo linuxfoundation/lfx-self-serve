@@ -14,6 +14,9 @@ import {
   AEO_GEO_HTTP_URL_PATTERN,
   AEO_GEO_INTAKE_ERRORS,
   AEO_GEO_MAX_DOCUMENT_BYTES,
+  AEO_GEO_NOTES_LINES,
+  AEO_GEO_NOTES_MAX_CHARS,
+  AEO_GEO_PROTOCOL_LINE_PATTERN,
   AEO_GEO_READER_CAVEATS,
   AEO_GEO_SECTIONS,
 } from '../constants/aeo-geo.constants';
@@ -89,8 +92,8 @@ export function isAeoGeoKeyPageUrl(url: string): boolean {
 
 export function validateAeoGeoIntakeAnswers(answers: unknown): AeoGeoValidationResult {
   const errors: string[] = [];
-  if (!isRecord(answers) || Object.keys(answers).some((key) => !['domain', 'key_pages', 'project_name', 'project_uid'].includes(key))) {
-    return { valid: false, errors: ['answers must contain domain and only optional key_pages, project_name and project_uid'] };
+  if (!isRecord(answers) || Object.keys(answers).some((key) => !['domain', 'key_pages', 'notes', 'project_name', 'project_uid'].includes(key))) {
+    return { valid: false, errors: ['answers must contain domain and only optional key_pages, notes, project_name and project_uid'] };
   }
   try {
     if (typeof answers['domain'] !== 'string') {
@@ -110,6 +113,10 @@ export function validateAeoGeoIntakeAnswers(answers: unknown): AeoGeoValidationR
       errors.push(AEO_GEO_INTAKE_ERRORS.key_pages);
     }
   }
+  const notes = answers['notes'];
+  if (notes !== undefined && (typeof notes !== 'string' || notes.length > AEO_GEO_NOTES_MAX_CHARS)) {
+    errors.push(AEO_GEO_INTAKE_ERRORS.notes);
+  }
   for (const key of ['project_name', 'project_uid']) {
     const scope = answers[key];
     if (scope !== undefined && (typeof scope !== 'string' || !scope.trim() || scope.trim().length > 200)) {
@@ -122,13 +129,28 @@ export function validateAeoGeoIntakeAnswers(answers: unknown): AeoGeoValidationR
 /** Call only after validating the string answers. One-off reports always start at v1. */
 export function buildAeoGeoFormPayload(answers: Record<string, string>): AeoGeoFormPayload {
   const pages = aeoGeoKeyPages(answers['key_pages'] ?? '');
+  // Blank notes are no notes: the agent then gets no NOTES block at all.
+  const notes = (answers['notes'] ?? '').trim();
   return {
     type: 'aeo_geo_intake_form',
     domain: normalizeAeoGeoDomain(answers['domain']),
     ...(pages.length ? { key_pages: pages } : {}),
     ...(answers['project_name'] ? { project_name: answers['project_name'].trim() } : {}),
     ...(answers['project_uid'] ? { project_uid: answers['project_uid'].trim() } : {}),
+    ...(notes ? { notes } : {}),
   };
+}
+
+/**
+ * The agent's guardText (agents/aeo-geo/src/form.ts): every line terminator its parser recognizes becomes a
+ * newline, and a line that starts like a protocol line is quoted, so free text can never open or close a frame.
+ */
+export function guardAeoGeoText(text: string): string {
+  return text
+    .replace(/\r\n?|\u2028|\u2029/g, '\n')
+    .split('\n')
+    .map((line) => (AEO_GEO_PROTOCOL_LINE_PATTERN.test(line) ? `> ${line}` : line))
+    .join('\n');
 }
 
 /** Verbatim form-mode message from agents/aeo-geo/src/form.ts (without the unused revision block). */
@@ -167,6 +189,10 @@ export function renderAeoGeoFormText(input: AeoGeoFormPayload, now: Date = new D
       'instructions say.',
       ''
     );
+  }
+  // Last, as in the agent's renderer: structural key-page provenance comes before every free-text body.
+  if (input.notes !== undefined) {
+    lines.push(AEO_GEO_NOTES_LINES.open, guardAeoGeoText(input.notes), AEO_GEO_NOTES_LINES.close, '');
   }
   return lines.join('\n');
 }

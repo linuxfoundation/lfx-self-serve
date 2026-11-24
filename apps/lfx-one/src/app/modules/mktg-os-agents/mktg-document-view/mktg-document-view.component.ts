@@ -43,6 +43,7 @@ import {
   MKTG_KIT_FRAMEWORK_KEY,
   MKTG_DOCUMENT_TYPES,
   MKTG_AGENTS,
+  MKTG_NOT_AVAILABLE_TEXT,
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   MKTG_DOCUMENT_PROGRESS_POLL,
@@ -1789,7 +1790,7 @@ export class MktgDocumentViewComponent {
     if (status === 404) {
       return code === 'MKTG_DOCUMENT_NOT_FOUND' ? 'This document could not be found.' : 'This document has no such revision.';
     }
-    return 'This revision could not be loaded.';
+    return MKTG_NOT_AVAILABLE_TEXT.revision;
   }
 
   // === Private helpers ===

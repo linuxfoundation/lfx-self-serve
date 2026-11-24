@@ -32,6 +32,10 @@ export class VoteCondorcetResultsComponent {
   public readonly isDraft = input<boolean>(false);
   /** Named ballots are still loading, so the ballot section waits instead of saying they aren't available. */
   public readonly ballotsLoading = input<boolean>(false);
+  /** A failed refresh retained rankings that may no longer match the latest results. */
+  public readonly ballotsStale = input<boolean>(false);
+  public readonly ballotsConfirming = input<boolean>(false);
+  public readonly ballotsMismatch = input<boolean>(false);
   protected readonly rankColors = VOTE_CONDORCET_RANK_COLORS;
   protected readonly ballotPreviewLimit = VOTE_CONDORCET_BALLOT_PREVIEW_LIMIT;
 

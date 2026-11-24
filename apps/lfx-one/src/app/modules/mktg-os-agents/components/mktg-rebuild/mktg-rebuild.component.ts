@@ -6,12 +6,19 @@ import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, si
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { MKTG_AGENT_INTAKES, MKTG_LIVING_DOCUMENT_ID, MKTG_REBUILD_STEP_LABELS } from '@lfx-one/shared/constants';
+import {
+  MKTG_AGENT_INTAKES,
+  MKTG_LIVING_DOCUMENT_ID,
+  MKTG_NOT_AVAILABLE_TEXT,
+  MKTG_POLL_RETRYING_TEXT,
+  MKTG_REBUILD_STEP_LABELS,
+  MKTG_REBUILD_UNREACHABLE_TEXT,
+} from '@lfx-one/shared/constants';
 import { MktgRebuildResponse, MktgRebuildStepView, MktgRevisionRef, MktgRunAnswer } from '@lfx-one/shared/interfaces';
 import { buildMktgDocumentProjectPrefix, parseMktgRevisionKey, mktgKitRootPath } from '@lfx-one/shared/utils';
 import { MktgRebuildService } from '@services/mktg-rebuild.service';
 import { UserService } from '@services/user.service';
-import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { extractErrorMessage, isTransientHttpError } from '@shared/utils/http-error.utils';
 import { distinctUntilChanged, Observable, Subscription } from 'rxjs';
 import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
@@ -39,6 +46,11 @@ export class MktgRebuildComponent {
   public readonly chain = signal<MktgRebuildResponse | null>(null);
   public readonly error = signal('');
   public readonly sending = signal(false);
+  /** The start itself could not reach the server: a failed user action, the one case that offers "Try again". */
+  protected readonly startUnreachable = signal(false);
+  /** The chain's own checks cannot reach the server: one grey line while they keep trying; the steps shown stay. */
+  protected readonly retrying = computed(() => this.api.retrying() && !this.error() && !!this.chain());
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly startedAt = signal(0);
   protected readonly livingId = MKTG_LIVING_DOCUMENT_ID;
   private subscription?: Subscription;
@@ -63,6 +75,7 @@ export class MktgRebuildComponent {
         this.subscription?.unsubscribe();
         this.chain.set(null);
         this.error.set('');
+        this.startUnreachable.set(false);
         this.sending.set(false);
         this.usedAutoStart = '';
       });
@@ -84,6 +97,7 @@ export class MktgRebuildComponent {
     if (!this.canStart() || !framework) return;
     this.chain.set(null);
     this.error.set('');
+    this.startUnreachable.set(false);
     this.sending.set(true);
     this.startedAt.set(Date.now());
     this.started.emit();
@@ -135,8 +149,11 @@ export class MktgRebuildComponent {
         if (chain.status === 'complete' || chain.status === 'failed') this.changed.emit();
       },
       error: (error: unknown) => {
+        // The watch retries its own checks, so a transient error here is the start or the answers not reaching the server.
+        const unreachable = isTransientHttpError(error);
         this.sending.set(false);
-        this.error.set(extractErrorMessage(error, 'Rebuild progress could not be loaded. Earlier Drafts are saved; reload the family before trying again.'));
+        this.startUnreachable.set(unreachable && !this.chain());
+        this.error.set(unreachable ? MKTG_REBUILD_UNREACHABLE_TEXT : extractErrorMessage(error, MKTG_NOT_AVAILABLE_TEXT.rebuild));
         this.changed.emit();
       },
     });

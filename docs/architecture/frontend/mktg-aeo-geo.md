@@ -7,7 +7,9 @@ The catalog's `aeo-geo` entry and `AEO_GEO_INTAKE` register the live agent's
 form-only flow. The existing run route hosts `AeoGeoRunComponent`: website
 prefill comes from the active LFX project, remains editable, and loses its
 provenance label when changed. Key pages are optional: none, or two to five
-distinct absolute http(s) URLs. A new audit never revises an earlier report.
+distinct absolute http(s) URLs. Notes are optional context (the audience,
+comparison targets), at most 10,000 characters, in the Notes field the
+family's other forms carry. A new audit never revises an earlier report.
 
 `POST /api/mktg-agents/aeo-geo/generate` requires the effective user and project
 writer grant, validates the intake, takes routing from the shared catalog and
@@ -17,6 +19,10 @@ with the writer-entitled project's canonical name and UID. The renderer's
 `LFX SCOPE` JSON line matches the 2.0 form renderer. The 1.0 rendered-text
 parser ignores it safely; its strict structured-form schema would reject the
 extra fields, so generation continues to send text, never a raw form object.
+Notes are rendered last, as the agent's `NOTES (untrusted context):` …
+`END NOTES` block, after the structural key-page lines its parser reads, with
+every protocol-looking line inside them quoted (`guardAeoGeoText`, the agent's
+`guardText`); blank notes send no block.
 The response includes a stable run-document id and creator-bound owner token.
 `MktgPendingDocumentService` retains that capability under the effective user,
 project and document, with the existing run TTL; it never travels in a URL.
@@ -58,7 +64,7 @@ A plain transport/domain-confirmation refusal stays an error on the run page,
 with no invented question round or report. Malformed questions fail visibly.
 Question position and edits stay in the same user/project/session-scoped pending record, with its existing TTL/pruning; they are not proof of writing.
 Acknowledged answers, the writing handoff or termination clear the question draft. Reloading or leaving/returning restores the current question and edits.
-The intake remains domain plus optional key pages, not messaging sources or
+The intake remains domain plus optional key pages and notes, not messaging sources or
 uploaded documents. The agent is reachable at `/mktg-os-agents/aeo-geo`
 through the existing `:agentId` route. The dedicated run breadcrumb reads
 `<project> kit › Website & web › AEO/GEO`. The kit crumb links to the existing

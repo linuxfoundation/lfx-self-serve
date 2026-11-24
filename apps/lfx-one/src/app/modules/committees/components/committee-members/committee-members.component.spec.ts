@@ -1,13 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Members tab entry points for adding people, including the CSV import (GH-3849). Synthetic data only.
+// Members tab entry points for adding people, including the CSV import (GH-3849) and its retained
+// progress/report banner (#5731). Synthetic data only.
 
-import { HttpParams } from '@angular/common/http';
+import { HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
-import { Committee, CommitteeEngagementResponse, CommitteeInvite, CommitteeMember, MemberImportDialogResult } from '@lfx-one/shared/interfaces';
+import {
+  Committee,
+  CommitteeEngagementResponse,
+  CommitteeInvite,
+  CommitteeMember,
+  MemberImportRunSummary,
+  MemberImportSettlement,
+} from '@lfx-one/shared/interfaces';
+import { CommitteeMemberImportDialogService } from '@services/committee-member-import-dialog.service';
+import { CommitteeMemberImportService } from '@services/committee-member-import.service';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -15,12 +26,33 @@ import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
-import { ImportMembersDialogComponent } from '../import-members-dialog/import-members-dialog.component';
 import { CommitteeMembersComponent } from './committee-members.component';
 
 const WRITER_GROUP = { uid: 'committee-1', name: 'Docs Working Group', writer: true, member_visibility: 'basic_profile' } as Committee;
 const MEMBERS = [{ uid: 'member-1', email: 'ada@example.com', first_name: 'Ada', last_name: 'Example' }] as CommitteeMember[];
 const INVITES = [{ uid: 'invite-1', invitee_email: 'grace@example.com', status: 'pending' }] as CommitteeInvite[];
+
+function importSummary(patch: Partial<MemberImportRunSummary> = {}): MemberImportRunSummary {
+  return {
+    committeeUid: WRITER_GROUP.uid,
+    committeeName: WRITER_GROUP.name,
+    runId: 'member-import-1',
+    attempt: 1,
+    phase: 'importing',
+    batchTotal: 30,
+    batchSettled: 25,
+    added: 25,
+    failed: 0,
+    unknown: 0,
+    notSubmitted: 0,
+    retryable: 0,
+    stopReason: null,
+    manualStopRequested: false,
+    baselineMemberCount: 1,
+    reconciliationTarget: 26,
+    ...patch,
+  };
+}
 
 describe('CommitteeMembersComponent add-people actions', () => {
   let fixture: ComponentFixture<CommitteeMembersComponent>;
@@ -33,10 +65,39 @@ describe('CommitteeMembersComponent add-people actions', () => {
     createCommitteeInvite: ReturnType<typeof vi.fn>;
   };
   let refreshes: number;
+  let importDialog: { openNew: ReturnType<typeof vi.fn>; openRun: ReturnType<typeof vi.fn> };
+  let summaries: ReturnType<typeof signal<ReadonlyMap<string, MemberImportRunSummary>>>;
+  let settlements: Subject<MemberImportSettlement>;
+  let importService: {
+    viewerSubject: ReturnType<typeof signal<string | null>>;
+    getSummary: (uid: string) => MemberImportRunSummary | undefined;
+    settlements$: Subject<MemberImportSettlement>;
+    dismiss: ReturnType<typeof vi.fn>;
+  };
+
+  function settle(summary: MemberImportRunSummary): void {
+    const report = { ...summary, phase: 'settled' as const };
+    summaries.update((runs) => new Map(runs).set(report.committeeUid, report));
+    settlements.next({ key: `${summary.runId}:${summary.attempt}`, summary: report });
+  }
+
+  async function setRetained(summary: MemberImportRunSummary | null): Promise<void> {
+    summaries.set(summary ? new Map([[summary.committeeUid, summary]]) : new Map());
+    await fixture.whenStable();
+  }
 
   async function setup(committee: Committee | null, inputs: Record<string, unknown> = {}): Promise<void> {
     dialogClose = new Subject<unknown>();
     dialogService = { open: vi.fn(() => ({ onClose: dialogClose })) };
+    importDialog = { openNew: vi.fn(), openRun: vi.fn() };
+    summaries = signal<ReadonlyMap<string, MemberImportRunSummary>>(new Map());
+    settlements = new Subject<MemberImportSettlement>();
+    importService = {
+      viewerSubject: signal<string | null>('synthetic-manager'),
+      getSummary: (uid) => summaries().get(uid),
+      settlements$: settlements,
+      dismiss: vi.fn(),
+    };
     committeeService = {
       getCommitteeMembers: vi.fn().mockReturnValue(of(MEMBERS)),
       getCommitteeInvites: vi.fn().mockReturnValue(of(INVITES)),
@@ -45,7 +106,13 @@ describe('CommitteeMembersComponent add-people actions', () => {
 
     await TestBed.configureTestingModule({
       imports: [CommitteeMembersComponent],
-      providers: [provideNoopAnimations(), MessageService, { provide: CommitteeService, useValue: committeeService }],
+      providers: [
+        provideNoopAnimations(),
+        MessageService,
+        { provide: CommitteeService, useValue: committeeService },
+        { provide: CommitteeMemberImportDialogService, useValue: importDialog },
+        { provide: CommitteeMemberImportService, useValue: importService },
+      ],
     })
       .overrideComponent(CommitteeMembersComponent, {
         set: { providers: [ConfirmationService, { provide: DialogService, useValue: dialogService }] },
@@ -139,18 +206,12 @@ describe('CommitteeMembersComponent add-people actions', () => {
       expect((query('add-member-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
     });
 
-    it('opens the import dialog with the group snapshot and only its own close controls', () => {
+    it('opens a new preview through the shared opener with the complete group snapshot', () => {
       query('import-members-csv-btn')?.querySelector('button')?.click();
 
-      expect(dialogService.open).toHaveBeenCalledWith(
-        ImportMembersDialogComponent,
-        expect.objectContaining({
-          closable: false,
-          closeOnEscape: false,
-          dismissableMask: false,
-          data: { committee: WRITER_GROUP, existingMembers: MEMBERS, existingInvites: INVITES },
-        })
-      );
+      expect(importDialog.openNew).toHaveBeenCalledExactlyOnceWith({ committee: WRITER_GROUP, existingMembers: MEMBERS, existingInvites: INVITES });
+      expect(importDialog.openRun).not.toHaveBeenCalled();
+      expect(dialogService.open).not.toHaveBeenCalled();
     });
 
     it.each(['membersLoading', 'invitesLoading'])('waits for %s before opening with the current group snapshot', async (loadingInput) => {
@@ -162,7 +223,7 @@ describe('CommitteeMembersComponent add-people actions', () => {
       expect(button.disabled).toBe(true);
       button.click();
       component.openImportMembersDialog();
-      expect(dialogService.open).not.toHaveBeenCalled();
+      expect(importDialog.openNew).not.toHaveBeenCalled();
 
       const members = [{ uid: 'member-2', email: 'lin@example.com' }] as CommitteeMember[];
       const invites = [{ uid: 'invite-2', invitee_email: 'new@example.com', status: 'pending' }] as CommitteeInvite[];
@@ -175,140 +236,206 @@ describe('CommitteeMembersComponent add-people actions', () => {
 
       expect(button.disabled).toBe(false);
       button.click();
-      expect(dialogService.open).toHaveBeenCalledExactlyOnceWith(
-        ImportMembersDialogComponent,
-        expect.objectContaining({ data: { committee: component.committee(), existingMembers: members, existingInvites: invites } })
-      );
+      expect(importDialog.openNew).toHaveBeenCalledExactlyOnceWith({ committee: component.committee(), existingMembers: members, existingInvites: invites });
     });
 
-    it('unsubscribes from import close when the host is destroyed', () => {
-      vi.useFakeTimers();
-      component.openImportMembersDialog();
-      expect(dialogClose.observed).toBe(true);
-      fixture.destroy();
+    describe('retained import', () => {
+      it.each([
+        ['importing', {}, 'Importing members from CSV: 25 of 30 processed.', 'View progress', 'View import progress'],
+        [
+          'automatic wait',
+          { phase: 'paused' },
+          "Importing members from CSV: 25 of 30 processed. Waiting for the service. We'll retry automatically.",
+          'View progress',
+          'View import progress',
+        ],
+        ['stopping', { phase: 'stopping' }, 'Stopping the CSV import after the current batch: 25 of 30 processed.', 'View progress', 'View import progress'],
+        [
+          'settled with problems',
+          { phase: 'settled', added: 25, failed: 2, unknown: 1, notSubmitted: 2, stopReason: 'You stopped the import.' },
+          'CSV import stopped: 25 added, 2 failed, 1 outcome unknown, 2 not yet submitted.',
+          'View report',
+          'View import report',
+        ],
+        ['settled cleanly', { phase: 'settled', added: 30 }, 'CSV import finished: 30 added.', 'View report', 'View import report'],
+      ] as const)('shows a %s banner with actual counts and a contextual toolbar entry', async (_label, patch, message, view, toolbar) => {
+        const summary = importSummary(patch as Partial<MemberImportRunSummary>);
+        await setRetained(summary);
 
-      expect(dialogClose.observed).toBe(false);
-      dialogClose.next({ added: 2, conflicts: 0 } satisfies MemberImportDialogResult);
-      vi.advanceTimersByTime(3000);
-      expect(refreshes).toBe(0);
-      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
-    });
-
-    it('refreshes and polls for the cumulative added count after an import', () => {
-      vi.useFakeTimers();
-      committeeService.getCommitteeMembers.mockReturnValueOnce(of(MEMBERS)).mockReturnValue(of([...MEMBERS, { uid: 'member-2' }, { uid: 'member-3' }]));
-      component.openImportMembersDialog();
-      dialogClose.next({ added: 2, conflicts: 1 } satisfies MemberImportDialogResult);
-
-      expect(refreshes).toBe(1);
-      vi.advanceTimersByTime(400);
-      expect(committeeService.getCommitteeMembers).toHaveBeenCalledWith('committee-1');
-      // 1 member before + 2 added = 3 — the poll stops and refreshes once more.
-      expect(refreshes).toBe(2);
-    });
-
-    it("polls from a reopened run's own baseline when the fresh roster already includes its additions", () => {
-      vi.useFakeTimers();
-      const roster = [...MEMBERS, { uid: 'member-2' }, { uid: 'member-3' }] as CommitteeMember[];
-      committeeService.getCommitteeMembers.mockReturnValue(of(roster));
-      component.openImportMembersDialog();
-      dialogClose.next({ added: 2, conflicts: 0, baselineMemberCount: 1 } satisfies MemberImportDialogResult);
-
-      vi.advanceTimersByTime(400);
-      // 1 member before the run + 2 added = 3, already present: one poll confirms it instead of six.
-      expect(refreshes).toBe(2);
-      vi.advanceTimersByTime(3000);
-      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(2);
-    });
-
-    it('refreshes without polling after a conflict-only result', () => {
-      vi.useFakeTimers();
-      component.openImportMembersDialog();
-      dialogClose.next({ added: 0, conflicts: 2 } satisfies MemberImportDialogResult);
-      vi.advanceTimersByTime(3000);
-
-      expect(refreshes).toBe(1);
-      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
-    });
-
-    it('refreshes without inventing an addition count when an import outcome is unknown', () => {
-      vi.useFakeTimers();
-      component.openImportMembersDialog();
-      dialogClose.next({ added: 0, conflicts: 0, uncertain: true } satisfies MemberImportDialogResult);
-      vi.advanceTimersByTime(3000);
-
-      expect(refreshes).toBe(1);
-      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
-    });
-
-    it('does nothing after a cancelled preview', () => {
-      component.openImportMembersDialog();
-      dialogClose.next({ added: 0, conflicts: 0 } satisfies MemberImportDialogResult);
-      expect(refreshes).toBe(0);
-    });
-
-    it('ignores the result when the page has moved to a different group', async () => {
-      component.openImportMembersDialog();
-      fixture.componentRef.setInput('committee', { ...WRITER_GROUP, uid: 'committee-2' });
-      await fixture.whenStable();
-      dialogClose.next({ added: 3, conflicts: 0 } satisfies MemberImportDialogResult);
-
-      expect(refreshes).toBe(0);
-      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
-    });
-
-    describe('import confirmation', () => {
-      let toast: ReturnType<typeof vi.spyOn>;
-
-      beforeEach(() => {
-        vi.useFakeTimers();
-        toast = vi.spyOn(TestBed.inject(MessageService), 'add');
+        expect(query('committee-members-import-banner-message')?.textContent).toContain(message);
+        expect(query('committee-members-import-banner-message')?.textContent).not.toContain('paused');
+        expect(query('committee-members-import-banner-spinner') !== null).toBe(summary.phase !== 'settled');
+        expect(query('committee-members-import-banner-message')?.getAttribute('role')).toBe('status');
+        expect(query('committee-members-import-banner-view')?.textContent).toContain(view);
+        expect(query('committee-members-import-banner-dismiss') !== null).toBe(summary.phase === 'settled');
+        expect(query('import-members-csv-btn')?.textContent).toContain(toolbar);
+        // Unrelated actions stay usable.
+        expect((query('add-member-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+        expect(query('members-search-filters')).not.toBeNull();
       });
 
-      // Let the post-import roster poll finish while the host is still alive.
-      afterEach(() => vi.advanceTimersByTime(3000));
-
-      it('confirms how many members were added and that they may take a moment to appear', () => {
-        component.openImportMembersDialog();
-        dialogClose.next({ added: 2, conflicts: 1 } satisfies MemberImportDialogResult);
-
-        expect(toast).toHaveBeenCalledExactlyOnceWith({
-          severity: 'success',
-          summary: 'Members Added',
-          detail: '2 members added to Docs Working Group. New members may take a moment to appear.',
-          life: 6000,
-        });
-      });
-
-      it('uses the singular for one added member', () => {
-        component.openImportMembersDialog();
-        dialogClose.next({ added: 1, conflicts: 0 } satisfies MemberImportDialogResult);
-
-        expect(toast).toHaveBeenCalledExactlyOnceWith(
-          expect.objectContaining({ detail: '1 member added to Docs Working Group. New members may take a moment to appear.' })
-        );
-      });
-
-      it('still confirms the imported group after the page moved to another group', async () => {
-        component.openImportMembersDialog();
-        fixture.componentRef.setInput('committee', { ...WRITER_GROUP, uid: 'committee-2', name: 'Other Group' });
+      it('reopens the retained run from the banner and toolbar instead of loading snapshots for a second import', async () => {
+        await setRetained(importSummary());
+        fixture.componentRef.setInput('membersLoading', true);
         await fixture.whenStable();
-        dialogClose.next({ added: 3, conflicts: 0 } satisfies MemberImportDialogResult);
 
-        expect(toast).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ detail: expect.stringContaining('3 members added to Docs Working Group.') }));
-        expect(refreshes).toBe(0);
+        const toolbar = query('import-members-csv-btn')?.querySelector('button') as HTMLButtonElement;
+        expect(toolbar.disabled).toBe(false);
+        toolbar.click();
+        query('committee-members-import-banner-view')?.querySelector('button')?.click();
+
+        expect(importDialog.openRun).toHaveBeenCalledTimes(2);
+        expect(importDialog.openRun).toHaveBeenCalledWith(WRITER_GROUP.uid);
+        expect(importDialog.openNew).not.toHaveBeenCalled();
+        expect(committeeService.getCommitteeMembers).not.toHaveBeenCalled();
+      });
+
+      it("shows only the shown group's run and restores the import action after switching groups", async () => {
+        await setRetained(importSummary());
+        fixture.componentRef.setInput('committee', { ...WRITER_GROUP, uid: 'committee-2' });
+        await fixture.whenStable();
+
+        expect(query('committee-members-import-banner')).toBeNull();
+        expect(query('import-members-csv-btn')?.textContent).toContain('Import Members');
+      });
+
+      it.each([{ failed: 2 }, { manualStopRequested: true }, { failed: 0 }])('does not promise new members for a zero-addition report (%j)', async (patch) => {
+        await setRetained(importSummary({ ...patch, phase: 'settled', added: 0, reconciliationTarget: 1 }));
+        expect(query('committee-members-import-banner-message')?.textContent).not.toContain('New members may take a moment to appear.');
+        expect(query('committee-members-import-banner-message')?.textContent).not.toContain('keep this tab open');
+      });
+
+      it('dismisses a clean report directly', async () => {
+        await setRetained(importSummary({ phase: 'settled' }));
+        query('committee-members-import-banner-dismiss')?.querySelector('button')?.click();
+
+        expect(importService.dismiss).toHaveBeenCalledExactlyOnceWith(WRITER_GROUP.uid);
       });
 
       it.each([
-        ['conflicts only', { added: 0, conflicts: 2 }],
-        ['an unknown outcome', { added: 0, conflicts: 0, uncertain: true }],
-        ['a cancelled preview', { added: 0, conflicts: 0 }],
-        ['no result', undefined],
-      ] satisfies [string, MemberImportDialogResult | undefined][])('shows no confirmation after %s', (_label, result) => {
-        component.openImportMembersDialog();
-        dialogClose.next(result);
+        { retryable: 1, unknown: 1 }, // One unknown row can also be retryable.
+        { retryable: 0, unknown: 1 },
+        { retryable: 1, unknown: 0 },
+      ])('warns before dismissing unresolved rows (%j), and never dismisses an active run', async (counts) => {
+        const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+        await setRetained(importSummary({ phase: 'settled', ...counts }));
+        component.dismissImportReport();
 
+        expect(importService.dismiss).not.toHaveBeenCalled();
+        const request = confirm.mock.calls[0][0];
+        expect(request.message).toContain('Some rows have not been confirmed as added.');
+        expect(request.message).toContain('Members already added stay in the group.');
+        request.accept?.();
+        expect(importService.dismiss).toHaveBeenCalledExactlyOnceWith(WRITER_GROUP.uid);
+
+        await setRetained(importSummary());
+        component.dismissImportReport();
+        expect(importService.dismiss).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('settlement refresh', () => {
+      beforeEach(() => vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] }));
+
+      it('refreshes and polls until the roster reaches the retained target, without a toast of its own', () => {
+        const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
+        committeeService.getCommitteeMembers.mockReturnValue(of([...MEMBERS, { uid: 'member-2' }, { uid: 'member-3' }]));
+        settle(importSummary({ added: 2, reconciliationTarget: 3 }));
+
+        expect(refreshes).toBe(1);
+        vi.advanceTimersByTime(400);
+        expect(committeeService.getCommitteeMembers).toHaveBeenCalledWith('committee-1');
+        expect(refreshes).toBe(2);
+        vi.advanceTimersByTime(3000);
+        expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
         expect(toast).not.toHaveBeenCalled();
+      });
+
+      it('reconciles a retained report after remounting and waits for the roster to be ready', async () => {
+        fixture.destroy();
+        settle(importSummary({ added: 2, reconciliationTarget: 3 }));
+        fixture = TestBed.createComponent(CommitteeMembersComponent);
+        component = fixture.componentInstance;
+        fixture.componentRef.setInput('committee', WRITER_GROUP);
+        fixture.componentRef.setInput('members', MEMBERS);
+        fixture.componentRef.setInput('membersLoading', true);
+        component.refresh.subscribe(() => refreshes++);
+        await fixture.whenStable();
+        expect(refreshes).toBe(0);
+        fixture.componentRef.setInput('membersLoading', false);
+        fixture.componentRef.setInput('membersReady', true);
+        await fixture.whenStable();
+        expect(refreshes).toBe(1);
+        vi.advanceTimersByTime(10_000);
+        expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(6);
+        expect(refreshes).toBe(2);
+        fixture.componentRef.setInput('members', [...MEMBERS]);
+        await fixture.whenStable();
+        vi.advanceTimersByTime(10_000);
+        expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(6);
+      });
+
+      it('cancels retained-report polling when navigating to another group', async () => {
+        settle(importSummary({ added: 2, reconciliationTarget: 3 }));
+        vi.advanceTimersByTime(400);
+        expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
+        fixture.componentRef.setInput('committee', { ...WRITER_GROUP, uid: 'committee-2' });
+        await fixture.whenStable();
+        vi.advanceTimersByTime(10_000);
+        expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
+        expect(refreshes).toBe(1);
+      });
+
+      it('refreshes once without polling when the roster already reaches the target after a remount or retry', async () => {
+        // Earlier additions are already in the roster: the retained target, not roster + added, decides.
+        fixture.componentRef.setInput('members', [...MEMBERS, { uid: 'member-2' }, { uid: 'member-3' }]);
+        await fixture.whenStable();
+        settle(importSummary({ attempt: 2, added: 2, baselineMemberCount: 1, reconciliationTarget: 3 }));
+        vi.advanceTimersByTime(3000);
+
+        expect(refreshes).toBe(1);
+        expect(committeeService.getCommitteeMembers).not.toHaveBeenCalled();
+      });
+
+      it('stops polling at the bound without inventing success', () => {
+        settle(importSummary({ added: 5, reconciliationTarget: 6 }));
+        vi.advanceTimersByTime(10_000);
+
+        expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(6);
+        expect(refreshes).toBe(2);
+      });
+
+      it('logs only status on repeated roster failures and stops at the retry bound', () => {
+        const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        committeeService.getCommitteeMembers.mockReturnValue(
+          throwError(() => new HttpErrorResponse({ status: 503, error: { message: 'private@example.com' } }))
+        );
+        settle(importSummary({ added: 2, reconciliationTarget: 3 }));
+        vi.advanceTimersByTime(10_000);
+        expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(6);
+        expect(refreshes).toBe(2);
+        expect(log).toHaveBeenCalledTimes(6);
+        expect(log.mock.calls).toEqual(Array.from({ length: 6 }, () => ['Failed to refetch members after CSV import', { status: 503 }]));
+        log.mockRestore();
+      });
+
+      it('refreshes without polling when nothing was confirmed as added', () => {
+        settle(importSummary({ added: 0, unknown: 2, reconciliationTarget: 1 }));
+        vi.advanceTimersByTime(3000);
+
+        expect(refreshes).toBe(1);
+        expect(committeeService.getCommitteeMembers).not.toHaveBeenCalled();
+      });
+
+      it('ignores settlements for another group and after the host is destroyed', () => {
+        settle(importSummary({ committeeUid: 'committee-2' }));
+        expect(refreshes).toBe(0);
+
+        fixture.destroy();
+        expect(settlements.observed).toBe(false);
+        settle(importSummary());
+        vi.advanceTimersByTime(3000);
+        expect(refreshes).toBe(0);
       });
     });
 
@@ -322,6 +449,7 @@ describe('CommitteeMembersComponent add-people actions', () => {
         component.openAddMemberDialog();
         component.openImportMembersDialog();
         expect(dialogService.open).not.toHaveBeenCalled();
+        expect(importDialog.openNew).not.toHaveBeenCalled();
         expect(committeeService.getCommitteeMembers).not.toHaveBeenCalled();
       }
     );
@@ -383,10 +511,10 @@ describe('CommitteeMembersComponent add-people actions', () => {
       expect(committeeService.getCommitteeInvites.mock.calls[0][1].get('require_complete')).toBe('true');
       members.next(MEMBERS);
       members.complete();
-      expect(dialogService.open).not.toHaveBeenCalled();
+      expect(importDialog.openNew).not.toHaveBeenCalled();
       invites.next(INVITES);
       invites.complete();
-      expect(dialogService.open.mock.calls[0][1].data).toEqual({ committee: WRITER_GROUP, existingMembers: MEMBERS, existingInvites: INVITES });
+      expect(importDialog.openNew.mock.calls[0][0]).toEqual({ committee: WRITER_GROUP, existingMembers: MEMBERS, existingInvites: INVITES });
       expect(component.importSnapshotsLoading()).toBe(false);
     });
 
@@ -400,13 +528,13 @@ describe('CommitteeMembersComponent add-people actions', () => {
         fixture.componentRef.setInput('invites', []);
         component.openImportMembersDialog();
         response.error({ status: 503, error: { message: 'private@example.com' } });
-        expect(dialogService.open).not.toHaveBeenCalled();
+        expect(importDialog.openNew).not.toHaveBeenCalled();
         expect(component.importSnapshotsLoading()).toBe(false);
         expect(errorLog).toHaveBeenCalledExactlyOnceWith('Failed to load CSV import snapshots', { status: 503 });
         committeeService.getCommitteeMembers.mockReturnValue(of(MEMBERS));
         committeeService.getCommitteeInvites.mockReturnValue(of(INVITES));
         component.openImportMembersDialog();
-        expect(dialogService.open).toHaveBeenCalledTimes(1);
+        expect(importDialog.openNew).toHaveBeenCalledTimes(1);
       } finally {
         errorLog.mockRestore();
       }
@@ -428,7 +556,7 @@ describe('CommitteeMembersComponent add-people actions', () => {
       }
       response.next(INVITES);
       response.complete();
-      expect(dialogService.open).not.toHaveBeenCalled();
+      expect(importDialog.openNew).not.toHaveBeenCalled();
     });
   });
 
@@ -441,7 +569,19 @@ describe('CommitteeMembersComponent add-people actions', () => {
     expect(query('members-toolbar-actions')).toBeNull();
     expect(query('invite-member-btn')?.closest('[data-testid="members-search-filters"]')).toBe(query('members-search-filters'));
     component.openImportMembersDialog();
-    expect(dialogService.open).not.toHaveBeenCalled();
+    expect(importDialog.openNew).not.toHaveBeenCalled();
+  });
+
+  it("never shows a retained import's details or reopen action to a member who cannot manage the group", async () => {
+    await setup({ ...WRITER_GROUP, writer: false });
+    summaries.set(new Map([[WRITER_GROUP.uid, importSummary({ phase: 'settled' })]]));
+    await fixture.whenStable();
+
+    expect(query('committee-members-import-banner')).toBeNull();
+    component.openImportMembersDialog();
+    component.dismissImportReport();
+    expect(importDialog.openRun).not.toHaveBeenCalled();
+    expect(importService.dismiss).not.toHaveBeenCalled();
   });
 
   it('hides every add action from read-only viewers', async () => {

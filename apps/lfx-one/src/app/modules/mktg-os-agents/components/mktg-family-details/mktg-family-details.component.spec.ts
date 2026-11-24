@@ -1,14 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_NOT_AVAILABLE_TEXT, MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 import { MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { resolveMktgKit } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgFamilyDetailsComponent } from './mktg-family-details.component';
 
 const revisionId = '000003-' + 'a'.repeat(64);
@@ -63,7 +64,10 @@ function revision(): MktgRevisionResponse {
 
 describe('Family-only source details', () => {
   let getRevision: ReturnType<typeof vi.fn>;
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
+    // The read goes through the shared poller, which reads only in a visible tab.
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
     getRevision = vi.fn(() => of(revision()));
     TestBed.configureTestingModule({ imports: [MktgFamilyDetailsComponent], providers: [{ provide: MktgDocumentStoreService, useValue: { getRevision } }] });
   });
@@ -186,23 +190,44 @@ describe('Family-only source details', () => {
     expect(getRevision).toHaveBeenCalledTimes(1);
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-approve"]')).toBeNull();
   });
-  it('keeps loading/error separate and retries without revealing roadmap copy', async () => {
+  it('keeps trying behind one grey line while the server cannot be reached, with no alert and no button', async () => {
     getRevision.mockReturnValue(new Subject<MktgRevisionResponse>());
     const fixture = create();
     await fixture.whenStable();
     const status = fixture.nativeElement.querySelector('[role="status"]');
     expect(status?.textContent).toContain('Loading source details');
-    getRevision.mockReturnValue(throwError(() => new Error('synthetic read error')));
+    getRevision.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     fixture.componentRef.setInput('projectUid', 'other');
     await fixture.whenStable();
-    expect(fixture.nativeElement.querySelector('[role="alert"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[role="status"]')).toBe(status);
-    expect(status?.textContent).toBe('');
+    expect(status?.textContent).toBe(MKTG_POLL_RETRYING_TEXT);
+    expect(status?.className).toContain('text-gray-500');
+    expect(status?.classList.contains('sr-only')).toBe(false);
+    expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-sources-retry"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Try again');
+    // The network coming back re-reads at once; the good read clears the line by itself.
     getRevision.mockReturnValue(of(revision()));
-    fixture.nativeElement.querySelector('[data-testid="mktg-family-sources-retry"] button').click();
+    window.dispatchEvent(new Event('online'));
     await fixture.whenStable();
+    expect(status?.textContent).toBe('');
     expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-sources"]')).not.toBeNull();
+  });
+  it('shows a final refusal as one red line that names what is not available, with no Retry and no roadmap copy', async () => {
+    getRevision.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+    const fixture = create();
+    await fixture.whenStable();
+    const alert = fixture.nativeElement.querySelector('[data-testid="mktg-family-sources-error"]');
+    expect(alert?.textContent?.trim()).toBe(MKTG_NOT_AVAILABLE_TEXT.familyDetails);
+    expect(alert?.getAttribute('role')).toBe('alert');
+    expect(alert?.className).toContain('text-red-700');
+    expect(fixture.nativeElement.querySelector('[role="status"]')?.textContent).toBe('');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-sources-retry"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-sources"]')).toBeNull();
+    window.dispatchEvent(new Event('online'));
+    await fixture.whenStable();
+    expect(getRevision).toHaveBeenCalledTimes(1);
   });
   it('reads only the framework row, ignores discarded-row failures and cancels the old scope', async () => {
     const view = family();

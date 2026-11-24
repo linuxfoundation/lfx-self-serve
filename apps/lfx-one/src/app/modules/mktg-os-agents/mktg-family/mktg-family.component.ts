@@ -10,6 +10,8 @@ import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.c
 import {
   MKTG_KIT_FAMILIES,
   MKTG_KIT_POSITIONING_FAMILY_ID,
+  MKTG_POLL_MAX_BACKOFF_MS,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_REBUILD_NAVIGATION_STATE_KEY,
   MKTG_RUN_NEW_MODE,
   MKTG_RUN_POLL,
@@ -66,6 +68,7 @@ export class MktgFamilyComponent {
   protected readonly rebuildPanel = viewChild(MktgRebuildComponent);
   protected readonly exportPanels = viewChildren(MktgFamilyExportActionsComponent);
   protected readonly rebuildFamilyId = MKTG_KIT_POSITIONING_FAMILY_ID;
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly hasStale = computed(() => this.family()?.rows.some((row) => row.state === 'needs-rebuild') ?? false);
   private readonly familyId = toSignal(this.route.paramMap.pipe(map((params) => params.get('familyId'))), { initialValue: '' });
   protected readonly definition = computed(() => MKTG_KIT_FAMILIES.find((family) => family.id === this.familyId()));
@@ -118,7 +121,7 @@ export class MktgFamilyComponent {
               : createVisibilityPoll(this.document, (poll) => this.kit.refresh(poll), {
                   intervalMs: MKTG_RUN_POLL.intervalMs,
                   backoffBaseMs: MKTG_RUN_POLL.intervalMs,
-                  backoffMaxMs: MKTG_RUN_POLL.intervalMs,
+                  backoffMaxMs: MKTG_POLL_MAX_BACKOFF_MS,
                   shouldContinue: () => !this.kit.accessDenied() && !this.kit.refreshDenied(),
                 })
           ),

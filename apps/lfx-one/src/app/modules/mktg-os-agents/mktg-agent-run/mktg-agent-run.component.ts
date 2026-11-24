@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { DOCUMENT, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -32,6 +32,7 @@ import {
   MKTG_RUN_FAILURE_REASON,
   MKTG_REVISION_ID_REGEX,
   MKTG_RUN_POLL,
+  MKTG_RUN_UNREACHABLE_TEXT,
   MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
 import {
@@ -96,7 +97,9 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { isTransientHttpError } from '@shared/utils/http-error.utils';
 import { mktgRunAnsweredElsewhereNotice } from '@shared/utils/mktg-run-answered-notice.utils';
+import { readUntilReachable } from '@shared/utils/visibility-poll.util';
 
 import { AeoGeoRunComponent } from '../components/aeo-geo-run/aeo-geo-run.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
@@ -148,6 +151,7 @@ export class MktgAgentRunComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly route = inject(ActivatedRoute);
@@ -181,10 +185,11 @@ export class MktgAgentRunComponent {
   protected readonly checkingGuard = signal(false);
   protected readonly answeredNotice = signal<MktgRunAnsweredNotice | null>(null);
   /**
-   * In-flight "Try again" dependency check. Only one may run, and it is
-   * cancelled when the active project changes: a late result (or a late
-   * failure, which sets `dependencyCheckFailed`) must never overwrite the
-   * newer check's record or land on another project.
+   * The dependency check that keeps trying by itself while the server cannot
+   * be reached. Only one may run, and it is cancelled when the active project
+   * changes or a newer check starts: a late result (or a late refusal, which
+   * sets `dependencyCheckFailed`) must never overwrite the newer check's
+   * record or land on another project.
    */
   private dependencyRetrySub: Subscription | null = null;
   /** The existing-documents section, when the intake has one and the form is on screen: its file reads are cancelled with the generation. */
@@ -335,13 +340,20 @@ export class MktgAgentRunComponent {
    */
   protected readonly dependencyDocs = signal<Record<string, MktgDependencyDocument | null> | null>(null);
   /**
-   * True when the last dependency resolution FAILED (a 403, a 5xx, the
-   * network) rather than found nothing: `dependencyDocs` stays null, submit
-   * stays disabled, and the page says the check could not be made — never
-   * "Approve a messaging framework first", which would read a failed read as
-   * a measured absence. Try again re-resolves.
+   * True when the last dependency resolution was REFUSED for good (a 403, a
+   * 400, an unreadable document) rather than found nothing: `dependencyDocs`
+   * stays null, submit stays disabled, and the page says in one red line what
+   * is not available — never "Approve a messaging framework first", which
+   * would read a failed read as a measured absence. No Retry: the answer
+   * would be the same.
    */
   protected readonly dependencyCheckFailed = signal(false);
+  /**
+   * True while the dependency check cannot reach the server (network, 408,
+   * 429, 5xx): one grey line in the check's spot, submit stays disabled, and
+   * the check keeps trying by itself until it lands.
+   */
+  protected readonly dependencyRetrying = signal(false);
   /**
    * The existing documents on the form (intakes with a documents section),
    * already read to text by the BFF. Kept for edit-inputs resubmits; not
@@ -516,7 +528,8 @@ export class MktgAgentRunComponent {
    */
   protected readonly missingDependencyNote = computed(() => {
     if (this.dependencyCheckFailed()) {
-      return `Could not check the project’s ${this.dependencyIds.map((agentId) => this.gateDocumentName(agentId)).join(' and ')} — try again.`;
+      const names = this.dependencyIds.map((agentId) => this.gateDocumentName(agentId));
+      return `The project’s ${names.join(' and ')} ${names.length > 1 ? 'are' : 'is'} not available.`;
     }
     const unmet = this.unmetRequiredAttachment();
     if (unmet?.incomplete) {
@@ -736,7 +749,8 @@ export class MktgAgentRunComponent {
         .subscribe(({ context, project, dependencies, lastIntake, versionExists, fresh }) => {
           this.checkingRun.set(false);
           this.hasVersion.set(versionExists ?? !!lastIntake);
-          this.dependencyDocs.set(dependencies);
+          // A check that could not reach the server keeps trying by itself and may have landed already: keep its record.
+          this.dependencyDocs.set(dependencies ?? this.dependencyDocs());
           if (fresh) {
             this.sourcesLoading.set(false);
             if (this.sourcesDenied()) return;
@@ -1042,18 +1056,6 @@ export class MktgAgentRunComponent {
   /** The sibling agent's page — where the document this run needs is made (the Messaging Framework page). */
   protected onOpenAgent(agentId: string): void {
     this.router.navigate(['..', agentId], { relativeTo: this.route, queryParams: { project: this.projectSlug() } });
-  }
-
-  /** Re-runs the dependency check that failed, for the active project. */
-  protected onRetryDependencies(): void {
-    const projectUid = this.projectContext.activeContextUid();
-    if (!projectUid) {
-      return;
-    }
-    this.dependencyRetrySub?.unsubscribe();
-    this.dependencyRetrySub = this.resolveDependenciesForGate(projectUid)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((dependencies) => this.dependencyDocs.set(dependencies));
   }
 
   protected onEditSources(section?: string): void {
@@ -1837,15 +1839,35 @@ export class MktgAgentRunComponent {
 
   /**
    * The dependency resolution behind the gate: the resolved record, or null
-   * with `dependencyCheckFailed` set when the read failed (the service logs
-   * and rethrows anything but a 404 on a sidecar read). Null keeps
-   * submit disabled; the flag keeps the note honest.
+   * when the read failed (the service logs and rethrows anything but a 404
+   * on a sidecar read). Null keeps submit disabled. A read that could not
+   * reach the server keeps trying by itself behind the one grey line
+   * (`dependencyRetrying`); any other failure is final
+   * (`dependencyCheckFailed`) and keeps the note honest.
    */
   private resolveDependenciesForGate(projectUid: string): Observable<Record<string, MktgDependencyDocument | null> | null> {
+    const read = (): Observable<Record<string, MktgDependencyDocument | null>> =>
+      this.dependencyService.resolveDependencies(projectUid, this.attachmentSourceIds, this.sidecarSourceIds);
+    this.dependencyRetrySub?.unsubscribe();
     this.dependencyCheckFailed.set(false);
-    return this.dependencyService.resolveDependencies(projectUid, this.attachmentSourceIds, this.sidecarSourceIds).pipe(
-      catchError(() => {
-        this.dependencyCheckFailed.set(true);
+    this.dependencyRetrying.set(false);
+    return read().pipe(
+      catchError((error: unknown) => {
+        if (!isTransientHttpError(error) || !isPlatformBrowser(this.platformId)) {
+          this.dependencyCheckFailed.set(true);
+          return of(null);
+        }
+        this.dependencyRetrying.set(true);
+        this.dependencyRetrySub = readUntilReachable(this.document, read, (retrying) => this.dependencyRetrying.set(retrying))
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: (dependencies) => {
+              this.dependencyDocs.set(dependencies);
+              // The submit that met the outage said so; the form is usable again.
+              if (this.errorText() === MKTG_RUN_UNREACHABLE_TEXT) this.errorText.set('');
+            },
+            error: () => this.dependencyCheckFailed.set(true),
+          });
         return of(null);
       })
     );
@@ -2096,6 +2118,7 @@ export class MktgAgentRunComponent {
     // submission stays disabled meanwhile).
     this.dependencyDocs.set(null);
     this.dependencyCheckFailed.set(false);
+    this.dependencyRetrying.set(false);
     this.sourcesEditing.set(false);
     this.sourcesLoading.set(fresh);
     this.sourcesDenied.set(false);
@@ -2362,7 +2385,8 @@ export class MktgAgentRunComponent {
             // The stored dependency disappeared between page load and submit,
             // or the check itself failed — surface the honest gate note
             // instead of submitting an invalid run.
-            this.errorText.set(this.missingDependencyNote() || 'A required dependency document is no longer available for this project.');
+            const unavailable = this.missingDependencyNote() || 'A required dependency document is no longer available for this project.';
+            this.errorText.set(this.dependencyRetrying() ? MKTG_RUN_UNREACHABLE_TEXT : unavailable);
             this.phase.set('form');
             return EMPTY;
           }

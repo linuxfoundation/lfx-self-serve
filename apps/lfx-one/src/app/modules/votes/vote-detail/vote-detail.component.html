@@ -269,7 +269,10 @@
               [isClosed]="showRankedOutcome()"
               [isEnded]="isEnded()"
               [isDraft]="!isActive() && !isEnded()"
-              [ballotsLoading]="condorcetBallotsLoading()" />
+              [ballotsLoading]="condorcetBallotsLoading()"
+              [ballotsStale]="condorcetBallotsStale()"
+              [ballotsConfirming]="condorcetBallotsConfirming()"
+              [ballotsMismatch]="condorcetBallotsMismatch()" />
           }
         } @else {
           @for (question of rankedQuestions(); track question.questionId; let idx = $index) {

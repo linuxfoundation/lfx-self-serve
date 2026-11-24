@@ -8,10 +8,13 @@ import { FormControl, FormGroup } from '@angular/forms';
 import { provideRouter, Router } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Committee } from '@lfx-one/shared';
+import { MemberImportAccessState, MemberImportRunSummary } from '@lfx-one/shared/interfaces';
+import { CommitteeMemberImportDialogService } from '@services/committee-member-import-dialog.service';
+import { CommitteeMemberImportService } from '@services/committee-member-import.service';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CommitteeTableComponent } from './committee-table.component';
@@ -77,15 +80,45 @@ class TableHostComponent {
   }
 }
 
+function importSummary(patch: Partial<MemberImportRunSummary> = {}): MemberImportRunSummary {
+  return {
+    committeeUid: 'synthetic-alpha',
+    committeeName: 'Synthetic Alpha',
+    runId: 'member-import-1',
+    attempt: 1,
+    phase: 'importing',
+    batchTotal: 30,
+    batchSettled: 25,
+    added: 25,
+    failed: 0,
+    unknown: 0,
+    notSubmitted: 0,
+    retryable: 0,
+    stopReason: null,
+    manualStopRequested: false,
+    baselineMemberCount: 3,
+    reconciliationTarget: 28,
+    ...patch,
+  };
+}
+
 describe('CommitteeTableComponent consumer behavior', () => {
   let fixture: ComponentFixture<TableHostComponent>;
   let confirmation: ConfirmationService;
   const leaveCommittee = vi.fn(() => of(undefined));
   const writeText = vi.fn(() => Promise.resolve());
+  const summaries = signal<ReadonlyMap<string, MemberImportRunSummary>>(new Map());
+  const access = signal<ReadonlyMap<string, MemberImportAccessState>>(new Map());
+  const probeAccess = vi.fn<(uids: readonly string[]) => Subject<never>>(() => new Subject<never>());
+  const openRun = vi.fn();
 
   beforeEach(async () => {
     leaveCommittee.mockClear();
     writeText.mockClear();
+    probeAccess.mockClear();
+    openRun.mockClear();
+    summaries.set(new Map());
+    access.set(new Map());
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
     await TestBed.configureTestingModule({
       imports: [TableHostComponent],
@@ -96,6 +129,8 @@ describe('CommitteeTableComponent consumer behavior', () => {
         MessageService,
         { provide: PersonaService, useValue: { currentPersona: signal('contributor') } },
         { provide: CommitteeService, useValue: { leaveCommittee } },
+        { provide: CommitteeMemberImportService, useValue: { getSummary: (uid: string) => summaries().get(uid) } },
+        { provide: CommitteeMemberImportDialogService, useValue: { accessByUid: access, probeAccess, openRun } },
       ],
     }).compileComponents();
     confirmation = TestBed.inject(ConfirmationService);
@@ -264,5 +299,79 @@ describe('CommitteeTableComponent consumer behavior', () => {
     cancel!.click();
     await fixture.whenStable();
     expect(leaveCommittee).not.toHaveBeenCalled();
+  });
+
+  describe('retained CSV import status (#5731)', () => {
+    async function retain(summary: MemberImportRunSummary, state: MemberImportAccessState | null = 'authorized'): Promise<void> {
+      summaries.set(new Map([[summary.committeeUid, summary]]));
+      access.set(state ? new Map([[summary.committeeUid, state]]) : new Map());
+      await fixture.whenStable();
+    }
+
+    function status(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('[data-testid="committee-import-status-synthetic-alpha"]');
+    }
+
+    it.each([true, false])('keeps the API member count and shows the authorized status beneath it (My Groups %s)', async (isMe) => {
+      fixture.componentInstance.isMe.set(isMe);
+      // My Groups rows carry no effective writer; the fresh access check decides instead.
+      await showRows([group({ writer: undefined })]);
+      await retain(importSummary());
+
+      const entry = status();
+      expect(entry?.tagName).toBe('BUTTON');
+      expect(entry?.textContent).toContain('Importing 25/30');
+      expect(entry?.getAttribute('aria-label')).toBe('Importing 25/30 for Synthetic Alpha. Opens the import progress.');
+      expect(entry?.parentElement?.querySelector('span')?.textContent?.trim()).toBe('3');
+    });
+
+    it.each([
+      ['paused', 'Importing 25/30'],
+      ['stopping', 'Stopping import'],
+      ['settled', 'View import report'],
+    ] as const)('labels a %s run', async (phase, label) => {
+      await showRows([group()]);
+      await retain(importSummary({ phase }));
+
+      expect(status()?.textContent).toContain(label);
+      expect(status()?.getAttribute('aria-label')).toBe(`${label} for Synthetic Alpha. Opens the import ${phase === 'settled' ? 'report' : 'progress'}.`);
+      expect(status()?.textContent).not.toContain('paused');
+    });
+
+    it.each(['pending', 'denied', 'error'] as const)('reveals nothing while access is %s', async (state) => {
+      await showRows([group({ writer: true })]);
+      await retain(importSummary(), state === 'pending' ? null : state);
+
+      expect(status()).toBeNull();
+    });
+
+    it('probes only shown groups with retained runs, again on a list refresh but not on progress', async () => {
+      await showRows([group(), group({ uid: 'synthetic-beta', name: 'Synthetic Beta' })]);
+      expect(probeAccess).toHaveBeenLastCalledWith([]);
+      await retain(importSummary());
+      expect(probeAccess).toHaveBeenLastCalledWith(['synthetic-alpha']);
+      const calls = probeAccess.mock.calls.length;
+
+      await retain(importSummary({ batchSettled: 30 }));
+      expect(probeAccess).toHaveBeenCalledTimes(calls);
+
+      await showRows([group({ total_members: 28 }), group({ uid: 'synthetic-beta', name: 'Synthetic Beta' })]);
+      expect(probeAccess.mock.calls.length).toBeGreaterThan(calls);
+      expect(probeAccess).toHaveBeenLastCalledWith(['synthetic-alpha']);
+    });
+
+    it('opens the run by click or keyboard without selecting the row', async () => {
+      await showRows([group()]);
+      await retain(importSummary({ phase: 'settled' }));
+
+      status()!.click();
+      for (const key of ['Enter', ' ']) {
+        status()!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      }
+      await fixture.whenStable();
+
+      expect(openRun).toHaveBeenCalledExactlyOnceWith('synthetic-alpha');
+      expect(fixture.componentInstance.selected()).toBeNull();
+    });
   });
 });
