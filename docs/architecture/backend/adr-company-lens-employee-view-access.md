@@ -24,6 +24,7 @@ For this release the BFF derives the entitlement at request time, as a third qua
 - The selector shows an employee company without an explicit grant, which departs from `permission-persona-navigation-model-preread.md`.
 - The rule lives in application code (`OrgEmployeeViewService`), so every reader of the gate must go through it; default-deny paths and a flag limit the blast radius.
 - Former employees keep access until they end the work-history entry (accepted for this release).
+- **Prerequisite before the flag is turned on: the BFF machine client must be able to read `b2b_org`.** `b2b_org` is gated on `auditor`, and today the app's M2M client cannot read it (see `docs/architecture/frontend/lens-system.md`, "`b2b_org` access"). Until it holds `b2b_org#auditor` (an OpenFGA grant owned by the platform team), the company lookup returns no rows and every qualifying employee is denied (`no-verified-company-email`). This fails safe, never open, and the zero-row warning log makes it visible. Decision: grant the M2M client that read, scoped to this one lookup, rather than add a member-service lookup. A NATS lookup in `lfx-v2-member-service` stays the alternative if the grant is refused.
 
 ## Follow-up
 
