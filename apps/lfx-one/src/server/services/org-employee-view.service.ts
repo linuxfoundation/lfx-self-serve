@@ -10,6 +10,7 @@ import {
   MEMBER_BENEFIT_ACTIVE_STATUS_FILTERS,
   MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS,
   ORG_LENS_EMPLOYEE_VIEW_MEMBER_INDEX_MAX_STALE_MS,
+  ORG_LENS_EMPLOYEE_VIEW_MEMBER_INDEX_RETRY_BACKOFF_MS,
 } from '@lfx-one/shared/constants';
 import type {
   OrgEmployeeViewDenial,
@@ -132,10 +133,13 @@ export class OrgEmployeeViewService {
   private static readonly cache = new Map<string, { expiresAt: number; outcome: Promise<EmployeeViewOutcome> }>();
 
   /** Per process: the active member companies by domain, being loaded or loaded. Shared by every instance, like {@link cache}. */
-  private static memberIndex: { expiresAt: number; settled: boolean; value: Promise<Map<string, OrgLensEmployeeViewGrant[]>> } | null = null;
+  private static memberIndex: { expiresAt: number; settled: boolean; startedAt: number; value: Promise<Map<string, OrgLensEmployeeViewGrant[]>> } | null = null;
 
   /** The last index that loaded successfully, served while a newer one refreshes so no caller waits on a full re-read. */
-  private static lastGoodIndex: { index: Map<string, OrgLensEmployeeViewGrant[]>; at: number } | null = null;
+  private static lastGoodIndex: { index: Map<string, OrgLensEmployeeViewGrant[]>; at: number; startedAt: number } | null = null;
+
+  /** Until this time a failed refresh is not retried (the previous index is served meanwhile), so a failing upstream is not re-scanned on every request. */
+  private static memberIndexRetryAfter = 0;
 
   private readonly workHistory: CdpService;
   private readonly emailVerification: EmailVerificationService;
@@ -164,6 +168,7 @@ export class OrgEmployeeViewService {
     OrgEmployeeViewService.cache.clear();
     OrgEmployeeViewService.memberIndex = null;
     OrgEmployeeViewService.lastGoodIndex = null;
+    OrgEmployeeViewService.memberIndexRetryAfter = 0;
   }
 
   /**
@@ -380,15 +385,21 @@ export class OrgEmployeeViewService {
       return current.settled || !usableStale ? current.value : Promise.resolve(usableStale);
     }
 
+    // A refresh just failed and there is an index to serve: back off instead of re-reading everything on the next request.
+    if (usableStale && OrgEmployeeViewService.memberIndexRetryAfter > now) return Promise.resolve(usableStale);
+
     const value = this.loadMemberCompanyIndex(req);
-    const entry = { expiresAt: now + MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS, settled: false, value };
+    const entry = { expiresAt: now + MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS, settled: false, startedAt: now, value };
     OrgEmployeeViewService.memberIndex = entry;
     value.then(
       (index) => {
         entry.settled = true;
-        OrgEmployeeViewService.lastGoodIndex = { index, at: Date.now() };
+        // A slower, older load finishing after a newer one must not replace the newer index.
+        const last = OrgEmployeeViewService.lastGoodIndex;
+        if (!last || entry.startedAt >= last.startedAt) OrgEmployeeViewService.lastGoodIndex = { index, at: Date.now(), startedAt: entry.startedAt };
       },
       () => {
+        OrgEmployeeViewService.memberIndexRetryAfter = Date.now() + ORG_LENS_EMPLOYEE_VIEW_MEMBER_INDEX_RETRY_BACKOFF_MS;
         if (OrgEmployeeViewService.memberIndex === entry) OrgEmployeeViewService.memberIndex = null;
       }
     );
@@ -444,7 +455,9 @@ export class OrgEmployeeViewService {
       if (!orgUid) continue;
       activeOrgUids.add(orgUid);
 
-      const domain = normalizeDomain(membership.company_domain);
+      // Only a website that is a bare host is proof of employment: one with a path (`github.com/acme`, `sites.example/acme`) names a page on a
+      // host the company does not own, so it is never indexed.
+      const domain = bareWebsiteHost(membership.company_domain);
       if (!domain) continue;
       const companies = byDomain.get(domain) ?? [];
       if (!companies.some((company) => company.orgUid === orgUid)) {
@@ -453,9 +466,10 @@ export class OrgEmployeeViewService {
       }
     }
 
-    // The Linux Foundation family always has active members: an empty index means the read was filtered, broken, or keyed on a slug the
-    // memberships do not carry. Rejecting keeps it from being cached as "nobody is a member" and denying every employee.
-    if (activeOrgUids.size === 0) {
+    // The Linux Foundation family always has active members with websites: an empty index (no active member, or none with a usable domain)
+    // means the read was filtered, broken, or keyed on something the memberships do not carry. Rejecting keeps it from being cached as
+    // "nobody is a member" and denying every employee.
+    if (activeOrgUids.size === 0 || byDomain.size === 0) {
       logger.warning(req, OPERATION, 'Membership read returned no active members; cannot find member companies', { membership_rows: memberships.length });
       throw new MicroserviceError('Membership data is unavailable', 503, 'EMPLOYEE_VIEW_MEMBER_INDEX_UNAVAILABLE', {
         operation: OPERATION,
@@ -469,4 +483,19 @@ export class OrgEmployeeViewService {
   private getVerifiedEmails(req: Request): Promise<string[]> {
     return resolveVerifiedUserEmails(req, this.emailVerification, { strict: true });
   }
+}
+
+/**
+ * The host of a company website, only when the website is a bare host (a scheme, `www.` and a root slash are fine). A website with a
+ * path, query or fragment names a page on a host the company may not own (`github.com/acme`, `sites.example/acme`), so it is not proof
+ * that an address on that host belongs to the company.
+ */
+function bareWebsiteHost(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const afterHost = value
+    .trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+    .replace(/^[^/?#]*/, '');
+  if (afterHost !== '' && afterHost !== '/') return null;
+  return normalizeDomain(value);
 }

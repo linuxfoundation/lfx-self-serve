@@ -262,7 +262,7 @@ export interface RoleGrantsResponse {
   affiliation?: OrgLensAffiliationVerdict;
   /**
    * Epic #5845 — the company the caller may open in the all employee view (read-only, no names or emails):
-   * their current employer is an active LF member and they hold a verified email on one of its domains.
+   * their current employer is an active LF member and they hold a verified email on that company's domain (the website host of its active membership for now).
    * Computed only when the caller holds no grant and is not staff, like `affiliation`, and only when that
    * verdict already says the employer is a member. Absent for everyone else, and whenever the lookup could not
    * prove every condition, so an outage keeps today's empty state. Never widens what a grant holder sees.

@@ -134,6 +134,12 @@ describe('embedded personal data in free text', () => {
     // Where the local part itself ends in non-ASCII letters, the words before it cannot be told apart from it: the whole run goes (fail-safe).
     expect(scrubFreeText(`联系${cjk}`)).toBe('');
     expect(scrubFreeText(`联系 ${cjk}`)).toBe('联系 ');
+    // A Unicode local part is taken whole after a boundary, whatever its last letter: start of string, whitespace or punctuation.
+    const accented = ['ünal', 'example.com'].join('@');
+    const accentedEnd = ['josé', 'example.com'].join('@');
+    expect(scrubFreeText(accented)).toBe('');
+    expect(scrubFreeText(`mail (${accented}), ${accentedEnd}; ${cjk}.`)).toBe('mail (), ; .');
+    expect(stripPersonalFields({ note: `ask ${accented} or ${accentedEnd}`, list: [accented, accentedEnd] }, page)).toEqual({ note: 'ask  or ', list: [] });
     expect(scrubFreeText(mixed)).toBe('');
   });
 
