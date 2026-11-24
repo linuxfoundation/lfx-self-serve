@@ -1,3 +1,6 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
 # ADR: All employee view access is decided in the BFF, outside OpenFGA
 
 **Status:** Proposed, awaiting architect sign-off. **Epic:** linuxfoundation/lfx-self-serve#5845. **Behind a flag:** `LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED` (off).

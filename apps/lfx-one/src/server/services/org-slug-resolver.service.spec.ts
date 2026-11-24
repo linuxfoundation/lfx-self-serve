@@ -18,9 +18,10 @@ import { OrgSlugResolverService } from './org-slug-resolver.service';
 // The resolver is access-sensitive (spec 050, DR-002/DR-003/DR-007): these specs pin the outcome
 // decisions — which rows count, when a slug is a tie, what the cache may store — against a stubbed
 // query-service. `valkey.service` is mocked whole: it reaches the Angular-tainted shared utils barrel.
-const { proxyRequest, getEffectiveUsername, withCache, buildPerUserOrgKey, resolveClaOnlyOrg } = vi.hoisted(() => ({
+const { proxyRequest, getEffectiveUsername, isImpersonating, withCache, buildPerUserOrgKey, resolveClaOnlyOrg } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getEffectiveUsername: vi.fn(),
+  isImpersonating: vi.fn(() => false),
   withCache: vi.fn(),
   buildPerUserOrgKey: vi.fn(),
   resolveClaOnlyOrg: vi.fn(),
@@ -33,7 +34,7 @@ vi.mock('./microservice-proxy.service', () => ({
   },
 }));
 vi.mock('./valkey.service', () => ({ buildPerUserOrgKey, valkeyService: { withCache } }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername, getEffectiveEmail: () => null }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername, getEffectiveEmail: () => null, isImpersonating }));
 vi.mock('./org-cla-only-orgs.service', () => ({
   OrgClaOnlyOrgsService: class {
     public resolveOrg = resolveClaOnlyOrg;
@@ -69,6 +70,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   getEffectiveUsername.mockReturnValue('viewer');
   delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
+  delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_IMPERSONATION_ONLY'];
+  isImpersonating.mockReturnValue(false);
   resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
   buildPerUserOrgKey.mockImplementation((namespace: string, username: string, segment: string) => `${namespace}:${username}:${segment}`);
   // Pass-through cache: the fetcher decides, the predicates are captured for assertion.
@@ -486,6 +489,26 @@ describe('OrgSlugResolverService — all employee view company (#5845)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe('staff preview (impersonation-only)', () => {
+    beforeEach(() => {
+      delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
+      process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_IMPERSONATION_ONLY'] = 'true';
+      proxyRequest.mockResolvedValue(page([]));
+      resolveEmployeeView.mockResolvedValue(eligible);
+    });
+
+    it('resolves the employee company only while staff impersonate the caller', async () => {
+      isImpersonating.mockReturnValue(true);
+
+      await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_A, employeeView: true } });
+    });
+
+    it('is a miss, asking nothing of the employee view, for a real non-impersonated caller', async () => {
+      await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).resolves.toMatchObject({ outcome: 'miss' });
+      expect(resolveEmployeeView).not.toHaveBeenCalled();
+    });
   });
 
   it('asks nothing of the employee view when the flag is off', async () => {
