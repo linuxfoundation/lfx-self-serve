@@ -38,7 +38,7 @@ intercom_collection: Company
 
 ## What is the Company lens, and what can I do in it?
 
-The Company lens in LFX Self Serve shows one company at a time: how it takes part in Linux Foundation foundations and projects, its foundation memberships, its projects, its people and their activity, its profile, and its corporate CLAs (Contributor License Agreements). You can open a company there when you hold a role on it, such as an admin or viewer role, or a CLA Manager or initial CLA Manager designee role. An admin or viewer sees **Dashboard**, **Memberships**, **Projects**, **Crowdfunding Initiatives** (only for an Admin granted directly on that company), **Crowdfunding Donations**, the **Company Engagement** pages (**People**, **Code Contributions**, **Events**, **Training & Certification**, **Meetings** and **Groups**), **EasyCLA** and **Company Profile**. A CLA Manager, or an initial CLA Manager designee, with no other role on that company sees only **EasyCLA**. See [What can I do in the Company lens?](../#what-can-i-do-in-the-company-lens).
+The Company lens in LFX Self Serve shows one company at a time: how it takes part in Linux Foundation foundations and projects, its foundation memberships, its projects, its people and their activity, its profile, and its corporate CLAs (Contributor License Agreements). You can open a company there when you hold a role on it, such as an admin or viewer role, or a CLA Manager or initial CLA Manager designee role. An admin or viewer sees **Dashboard**, **Memberships**, **Projects**, the **Company Engagement** pages (**People**, **Code Contributions**, **Events**, **Training & Certification**, **Meetings**, **Groups**, **Crowdfunding Initiatives** (only for an Admin granted directly on that company) and **Crowdfunding Donations**), **EasyCLA** and **Company Profile**. A CLA Manager, or an initial CLA Manager designee, with no other role on that company sees only **EasyCLA**. See [What can I do in the Company lens?](../#what-can-i-do-in-the-company-lens).
 
 ## How do I switch to a different company?
 
@@ -102,7 +102,7 @@ The Company Profile page shows the selected company's logo, name, description, w
 
 ## Why don't I see Crowdfunding Initiatives in the Company lens?
 
-You see **Crowdfunding Initiatives** in the Company lens only if you are an Admin granted directly on that company. It appears in the sidebar, below **Projects**, only for an **Admin** (Company Admin – Editor) added on the company's own **Company Lens Access** tab. A **Viewer** role does not show it, and neither does Admin access to a parent or other related company. To get it, ask one of the company's Admins to make you an Admin. See [Lens-scoped Initiatives](../../crowdfunding/lens-initiatives/#who-sees-it).
+You see **Crowdfunding Initiatives** in the Company lens only if you are an Admin granted directly on that company. It appears in the sidebar, under **Company Engagement** below **Groups**, only for an **Admin** (Company Admin – Editor) added on the company's own **Company Lens Access** tab. A **Viewer** role does not show it, and neither does Admin access to a parent or other related company. To get it, ask one of the company's Admins to make you an Admin. See [Lens-scoped Initiatives](../../crowdfunding/lens-initiatives/#who-sees-it).
 
 ## Why can't I edit this corporate CLA?
 
