@@ -13,9 +13,18 @@ import { AutoComplete } from 'primeng/autocomplete';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The location picker (campaign-service #411): with `googleGeoSearchEnabled`, the postal-code box
@@ -67,7 +76,7 @@ describe('ImplementationTabComponent google location picker', () => {
     ctx.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
     search = vi.fn(() => of({ suggestions: [AUSTIN, ZIP], truncated: false }));
     vi.spyOn(TestBed.inject(CampaignService), 'searchGoogleAdsGeoTargets').mockImplementation(search as never);
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
     // Timers only, after the fixture is stable: the debounce is an RxJS `timer`, and advancing a fake
@@ -124,7 +133,7 @@ describe('ImplementationTabComponent google location picker', () => {
     expect(find('implementation-google-geo-search')).toBeNull();
   });
 
-  it('debounces the search, asks once for the latest query, and marks an already-added row disabled', async () => {
+  it('debounces the search, asks once for the latest query, and marks an already-added row disabled', STATE_ONLY, async () => {
     const c = seedPicker();
     c['addGooglePostalGeoTarget'](ZIP.id);
 
@@ -144,7 +153,7 @@ describe('ImplementationTabComponent google location picker', () => {
    * A repeat that trims to the query already searched still reaches the search — PrimeNG waits on
    * suggestions after every completion — which is also how a failed search is retried.
    */
-  it('searches again on a repeated completion that trims to the same query', async () => {
+  it('searches again on a repeated completion that trims to the same query', STATE_ONLY, async () => {
     const c = seedPicker();
 
     c['onGoogleGeoSearch']({ query: 'Austin' });
@@ -159,7 +168,7 @@ describe('ImplementationTabComponent google location picker', () => {
    * An edit cancels the request still out for the previous text and clears its rows at once, so an
    * answer for text the operator has already changed can never become a pickable row.
    */
-  it('never offers rows from a superseded search', async () => {
+  it('never offers rows from a superseded search', STATE_ONLY, async () => {
     const first = new Subject<GoogleAdsGeoTargetSearchResult>();
     const second = new Subject<GoogleAdsGeoTargetSearchResult>();
     search.mockReturnValueOnce(first).mockReturnValueOnce(second);
@@ -197,7 +206,7 @@ describe('ImplementationTabComponent google location picker', () => {
   });
 
   /** A foundation switch mid-debounce cancels the search rather than finishing it for the old project. */
-  it('cancels a pending search when the foundation changes', async () => {
+  it('cancels a pending search when the foundation changes', STATE_ONLY, async () => {
     const c = seedPicker();
     c['onGoogleGeoSearch']({ query: 'Austin' });
     fixture.detectChanges();
@@ -212,7 +221,7 @@ describe('ImplementationTabComponent google location picker', () => {
   });
 
   /** The capability going away mid-debounce cancels the search and clears its state. */
-  it('cancels a pending search and clears it when the picker stops being offered', async () => {
+  it('cancels a pending search and clears it when the picker stops being offered', STATE_ONLY, async () => {
     const c = seedPicker();
     c['onGoogleGeoSearch']({ query: 'Austin' });
     fixture.detectChanges();
@@ -228,7 +237,7 @@ describe('ImplementationTabComponent google location picker', () => {
   });
 
   /** Each blank completion yields a NEW empty state, so PrimeNG gets suggestions back every time. */
-  it('answers every blank completion with a fresh empty state', async () => {
+  it('answers every blank completion with a fresh empty state', STATE_ONLY, async () => {
     const c = seedPicker();
     c['onGoogleGeoSearch']({ query: '   ' });
     await afterDebounce();
@@ -296,7 +305,7 @@ describe('ImplementationTabComponent google location picker', () => {
     expect(document.querySelector(`[data-testid="implementation-google-geo-search-option-${AUSTIN.id}"]`)).not.toBeNull();
   });
 
-  it('sends no request for a blank query', async () => {
+  it('sends no request for a blank query', STATE_ONLY, async () => {
     const c = seedPicker();
 
     c['onGoogleGeoSearch']({ query: '   ' });
@@ -306,7 +315,7 @@ describe('ImplementationTabComponent google location picker', () => {
     expect(c['googleGeoSearchOptions']()).toEqual([]);
   });
 
-  it("cuts a query to upstream's 100 characters rather than sending one it refuses", () => {
+  it("cuts a query to upstream's 100 characters rather than sending one it refuses", STATE_ONLY, () => {
     const c = seedPicker();
 
     c['onGoogleGeoSearch']({ query: 'a'.repeat(120) });
@@ -332,7 +341,7 @@ describe('ImplementationTabComponent google location picker', () => {
     expect(emitted?.googlePostalGeoLabels).toEqual({ [AUSTIN.id]: 'Austin,Texas,United States' });
   });
 
-  it('does not add a disabled row, and records no label for it', () => {
+  it('does not add a disabled row, and records no label for it', STATE_ONLY, () => {
     const c = seedPicker();
     c['addGooglePostalGeoTarget'](ZIP.id);
 
@@ -342,7 +351,7 @@ describe('ImplementationTabComponent google location picker', () => {
     expect(c['googlePostalGeoLabels']()).toEqual({});
   });
 
-  it('withdraws the label when the shared cap refuses the pick', () => {
+  it('withdraws the label when the shared cap refuses the pick', STATE_ONLY, () => {
     const c = seedPicker();
     c['googlePostalGeoTargets'].set(Array.from({ length: GOOGLE_ADS_MAX_GEO_TARGETS }, (_, i) => String(9031900 + i)));
 
@@ -351,7 +360,7 @@ describe('ImplementationTabComponent google location picker', () => {
   });
 
   /** A picked id dispatches exactly as a typed one does: the bare id, in `geoTargets`. */
-  it('submits the picked id in geoTargets, with no label on the wire', async () => {
+  it('submits the picked id in geoTargets, with no label on the wire', STATE_ONLY, async () => {
     // No debounce here, and `whenStable` below waits on the real scheduler, so the real clock is back.
     vi.useRealTimers();
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
@@ -369,7 +378,7 @@ describe('ImplementationTabComponent google location picker', () => {
     expect(JSON.stringify(request)).not.toContain('78701,Texas');
   });
 
-  it('removes a picked chip together with its label', () => {
+  it('removes a picked chip together with its label', STATE_ONLY, () => {
     const c = seedPicker();
     c['onGoogleGeoSearchSelect']({ value: { ...AUSTIN, disabled: false } });
     c['onGoogleGeoSearchSelect']({ value: { ...ZIP, disabled: false } });
@@ -380,7 +389,7 @@ describe('ImplementationTabComponent google location picker', () => {
     expect(c['googlePostalGeoLabels']()).toEqual({ [ZIP.id]: '78701,Texas,United States' });
   });
 
-  it('round-trips the labels through a draft, dropping a non-string one', () => {
+  it('round-trips the labels through a draft, dropping a non-string one', STATE_ONLY, () => {
     const c = seedPicker();
 
     restoreGoogleDraft(fixture, c, {
@@ -410,7 +419,7 @@ describe('ImplementationTabComponent google location picker', () => {
     expect(c['googleGeoSearchDescribedBy']()).toBe('google-geo-search-failed');
   });
 
-  it('recovers from a failed search on the next query', async () => {
+  it('recovers from a failed search on the next query', STATE_ONLY, async () => {
     search.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
     const c = seedPicker();
     c['onGoogleGeoSearch']({ query: 'Austin' });
@@ -445,7 +454,7 @@ describe('ImplementationTabComponent google location targets held by the capabil
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -507,7 +516,7 @@ describe('ImplementationTabComponent google location targets held by the capabil
     expect(find('implementation-google-locations-capability-remove')).not.toBeNull();
   });
 
-  it('asks for the brief to be saved when there is nothing to check against', () => {
+  it('asks for the brief to be saved when there is nothing to check against', STATE_ONLY, () => {
     const c = seedHeld(null, 'unknown', null);
 
     expect(c['googleLocationsCapabilityBlock']()?.kind).toBe('unsaved');
@@ -526,7 +535,7 @@ describe('ImplementationTabComponent google location targets held by the capabil
     expect(c['canSubmit']()).toBe(true);
   });
 
-  it('clears once the capability answers yes, and the lists are sent again', () => {
+  it('clears once the capability answers yes, and the lists are sent again', STATE_ONLY, () => {
     const c = seedHeld(null, 'failed', 'brief-1');
 
     fixture.componentRef.setInput('googleCreativeEnabled', true);
@@ -589,7 +598,7 @@ describe('ImplementationTabComponent google location targets held by the capabil
     expect(find('implementation-google-proximity-withheld')?.getAttribute('role')).toBeNull();
   });
 
-  it('says nothing when no postal code or radius is held', () => {
+  it('says nothing when no postal code or radius is held', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     fixture.componentRef.setInput('googleCreativeEnabled', null);
     fixture.detectChanges();
@@ -601,7 +610,7 @@ describe('ImplementationTabComponent google location targets held by the capabil
    * Ids held on the legacy road are neither shown nor sent there, so they must not take up the
    * country picker's share of the cap, where the operator could not see or remove them.
    */
-  it('does not count held postal ids against the country cap', () => {
+  it('does not count held postal ids against the country cap', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['googlePostalGeoTargets'].set(Array.from({ length: GOOGLE_ADS_MAX_GEO_TARGETS }, (_, i) => String(9031900 + i)));
     expect(c['googleGeoTargetsFull']()).toBe(true);
@@ -657,7 +666,7 @@ describe('ImplementationTabComponent google location targets held by the capabil
     expect(c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, latitude: text })).toBe(false);
   });
 
-  it.each([['-33.'], ['+33.5'], ['.5']])('accepts the decimal spelling %s', (text) => {
+  it.each([['-33.'], ['+33.5'], ['.5']])('accepts the decimal spelling %s', STATE_ONLY, (text) => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, latitude: text })).toBe(true);
@@ -707,7 +716,7 @@ describe('ImplementationTabComponent google location targets held by the capabil
   });
 
   /** Picking the unit through the select's control reaches the draft the add reads. */
-  it('reads the unit from the select control, and an unpicked unit as empty', () => {
+  it('reads the unit from the select control, and an unpicked unit as empty', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     expect(c['googleProximityDraft']().radiusUnit).toBe('');
 

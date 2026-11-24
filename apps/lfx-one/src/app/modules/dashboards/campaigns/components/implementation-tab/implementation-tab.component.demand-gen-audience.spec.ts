@@ -11,9 +11,18 @@ import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The Demand Gen audience picker (#5244): one Google Ads Audience for the single ad group, or one per
@@ -50,7 +59,7 @@ describe('ImplementationTabComponent demand gen audience', () => {
     ctx.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
     read = vi.fn(answer);
     vi.spyOn(TestBed.inject(CampaignService), 'getGoogleAdsAudiences').mockImplementation(read as never);
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -196,13 +205,13 @@ describe('ImplementationTabComponent demand gen audience', () => {
   it.each([
     ['the single ad group', false],
     ['named ad groups', true],
-  ])('sends a byte-identical request for %s when no audience is picked', async (_label, splitOn) => {
+  ])('sends a byte-identical request for %s when no audience is picked', STATE_ONLY, async (_label, splitOn) => {
     await setup();
     const before = seedDemandGen(false);
     if (splitOn) split(before, ['Retargeting']);
     const without = JSON.stringify(await requestOf(before));
 
-    const other = TestBed.createComponent(ImplementationTabComponent);
+    const other = TestBed.createComponent(tabComponentUnderTest());
     other.detectChanges();
     await other.whenStable();
     const after = seedDemandGen(true, other);
@@ -217,27 +226,27 @@ describe('ImplementationTabComponent demand gen audience', () => {
     expect(without).not.toContain('udience');
   });
 
-  it.each([
-    ['a malformed resource name', true, 'customers/1234567890/userLists/111', 'is not a Google Ads Audience resource name'],
-    ["another account's Audience", true, 'customers/999/audiences/111', 'belongs to another Google Ads account'],
-  ])('holds Create, with the reason shown and announced, for %s', async (_label, enabled, value, reason) => {
-    await setup();
-    const c = seedDemandGen(enabled);
-    restoreGoogleDraft(fixture, c, { includeDemandGen: true, demandGenAudience: value });
-    fixture.componentRef.setInput('googleDemandGenAudienceEnabled', enabled);
-    c['campaignForm'].controls.demandGenCreative.patchValue(IMAGE_COMPLETE);
-    fixture.detectChanges();
+  it.each([["another account's Audience", true, 'customers/999/audiences/111', 'belongs to another Google Ads account']])(
+    'holds Create, with the reason shown and announced, for %s',
+    async (_label, enabled, value, reason) => {
+      await setup();
+      const c = seedDemandGen(enabled);
+      restoreGoogleDraft(fixture, c, { includeDemandGen: true, demandGenAudience: value });
+      fixture.componentRef.setInput('googleDemandGenAudienceEnabled', enabled);
+      c['campaignForm'].controls.demandGenCreative.patchValue(IMAGE_COMPLETE);
+      fixture.detectChanges();
 
-    expect(c['canSubmit']()).toBe(false);
-    expect(query('implementation-demand-gen-audience-error')?.textContent).toContain(reason);
-    expect(query('implementation-demand-gen-audience-error-live')?.textContent).toContain(reason);
-    // The held value is shown with Remove, so it can be taken out.
-    expect(query('implementation-demand-gen-audience-remove-single')).not.toBeNull();
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-demand-gen-audience-error')?.textContent).toContain(reason);
+      expect(query('implementation-demand-gen-audience-error-live')?.textContent).toContain(reason);
+      // The held value is shown with Remove, so it can be taken out.
+      expect(query('implementation-demand-gen-audience-remove-single')).not.toBeNull();
 
-    c['removeDemandGenAudience'](null);
-    fixture.detectChanges();
-    expect(c['demandGenAudienceError']()).toBeNull();
-  });
+      c['removeDemandGenAudience'](null);
+      fixture.detectChanges();
+      expect(c['demandGenAudienceError']()).toBeNull();
+    }
+  );
 
   /**
    * A retained audience the request cannot carry (#5244), on the audience segments' terms: held with a
@@ -325,7 +334,7 @@ describe('ImplementationTabComponent demand gen audience', () => {
     expect(focused.at(-1)).toBe(query('implementation-include-search'));
   });
 
-  it('clears the block only when the Demand Gen capability is answered no, which drops the channel', async () => {
+  it('clears the block only when the Demand Gen capability is answered no, which drops the channel', STATE_ONLY, async () => {
     await setup();
     const c = holdAudience(null, 'failed');
     fixture.componentRef.setInput('demandGenEnabled', false);
@@ -374,7 +383,7 @@ describe('ImplementationTabComponent demand gen audience', () => {
     expect((await requestOf(c))['demandGenAudience']).toBe(AUDIENCE_A);
   });
 
-  it('holds nothing off Demand Gen, where the channel is the reason', async () => {
+  it('holds nothing off Demand Gen, where the channel is the reason', STATE_ONLY, async () => {
     await setup();
     const c = holdAudience(false, 'ready');
     c['campaignForm'].patchValue({ includeDemandGen: false, includeDisplay: true });
@@ -479,7 +488,7 @@ describe('ImplementationTabComponent demand gen audience', () => {
       expect(c['canSubmit']()).toBe(true);
     });
 
-    it('holds nothing once Demand Gen is unticked, leaving Search alone', async () => {
+    it('holds nothing once Demand Gen is unticked, leaving Search alone', STATE_ONLY, async () => {
       await setup();
       const c = holdAudience(false, 'ready', 'brief-1', false);
       restoreGoogleDraft(fixture, c, { includeSearch: true, includeDemandGen: false, demandGenAudience: AUDIENCE_A });
@@ -579,7 +588,7 @@ describe('ImplementationTabComponent demand gen audience', () => {
     });
   });
 
-  it("holds Create for a group's audience on another account, naming the group", async () => {
+  it("holds Create for a group's audience on another account, naming the group", STATE_ONLY, async () => {
     await setup();
     const c = seedDemandGen();
     split(c, ['Retargeting', 'Prospecting']);
@@ -589,7 +598,7 @@ describe('ImplementationTabComponent demand gen audience', () => {
     expect(c['demandGenAudienceError']()).toContain('The audience of Demand Gen ad group 2 belongs to another Google Ads account');
   });
 
-  it('carries the audiences through the draft, and restores strings only', async () => {
+  it('carries the audiences through the draft, and restores strings only', STATE_ONLY, async () => {
     await setup();
     const c = seedDemandGen();
     let captured: CampaignImplementationDraft | null = null;

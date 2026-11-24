@@ -12,9 +12,10 @@ import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The remaining signal-backed values, carried across the destroy/remount the parent's
@@ -132,7 +133,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     fixture: ComponentFixture<ImplementationTabComponent>;
     latest: () => CampaignImplementationDraft | null;
   }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     if (draft) f.componentRef.setInput('draft', draft);
@@ -289,7 +290,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * makes turning this control on safe. Pinned as a LITERAL: asserting the constant back would
    * agree with any value someone later seeded it with.
    */
-  it('sends conversions as the default reddit objective', async () => {
+  it('sends conversions as the default reddit objective', STATE_ONLY, async () => {
     const f = (await mount(null)).fixture;
     at(f).selectedPlatforms.set(['reddit-ads']);
     makeSubmittable(f);
@@ -354,7 +355,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * a blank value is the same decision as an absent key, so sending one only gives a reader
    * something to misread.
    */
-  it('omits the reddit post url when it was never typed', async () => {
+  it('omits the reddit post url when it was never typed', STATE_ONLY, async () => {
     const f = (await mount(null)).fixture;
     at(f).selectedPlatforms.set(['reddit-ads']);
     makeSubmittable(f);
@@ -698,7 +699,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   async function freshMount(
     next: CampaignBriefOutput
   ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     f.componentRef.setInput('briefData', next);

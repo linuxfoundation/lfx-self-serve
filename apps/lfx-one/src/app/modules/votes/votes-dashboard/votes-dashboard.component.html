@@ -94,6 +94,7 @@
         [first]="currentFirst()"
         [lazy]="!isMeLens()"
         [isMeLens]="isMeLens()"
+        [canCancelVotes]="isManagementVotesLens()"
         [serverFiltersActive]="!isMeLens() && hasActiveFilters()"
         [groupOptions]="groupOptions()"
         [foundationOptions]="foundationOptions()"
@@ -132,5 +133,6 @@
     [listVote]="castDrawerVote()"
     [changeMode]="castDrawerReviewMode()"
     (voteSubmitted)="onCastVoteSubmitted($event)"
+    (ballotUnavailable)="onCastBallotUnavailable()"
     data-testid="votes-dashboard-cast-drawer"></lfx-vote-cast-drawer>
 }

@@ -2494,6 +2494,94 @@ export interface MetaAudienceTargeting {
  */
 export type MetaAudienceTargetingDraft = Required<Omit<MetaAudienceTargeting, 'advantageAudience'>> & Pick<MetaAudienceTargeting, 'advantageAudience'>;
 
+/** The Meta keys of the Implement tab draft: what the Meta draft helpers (`campaign-meta-draft.utils.ts`) read and write. */
+export type MetaDraftSnapshot = Pick<
+  CampaignImplementationDraft,
+  | 'metaObjective'
+  | 'metaPlacements'
+  | 'metaPixelId'
+  | 'metaGeoTargets'
+  | 'metaInstagramUserId'
+  | 'metaDsaBeneficiary'
+  | 'metaDsaPayor'
+  | 'metaAudienceTargeting'
+  | 'metaAudienceTargetingProject'
+  | 'metaAdOptions'
+  | 'metaAdOptionsProject'
+  | 'metaLeadFormId'
+  | 'metaLeadFormProject'
+  | 'metaBudgetUsd'
+  | 'metaLifetimeBudget'
+  | 'metaImageUrl'
+  | 'metaImageAssetId'
+  | 'metaImageAssetName'
+  | 'metaImageAssetBriefId'
+  | 'metaImageUploadPendingName'
+  | 'metaImageUploadPendingBriefId'
+  | 'metaImageUploadFailedMessage'
+  | 'metaImageUploadFailedBriefId'
+>;
+
+/** The Meta form's state `metaDraftFields` (`campaign-meta-draft.utils.ts`) snapshots into the Implement tab draft. */
+export interface MetaDraftState {
+  objective: MetaObjective;
+  placements: MetaPlacement;
+  pixelId: string;
+  geoTargets: readonly string[];
+  instagramUserId: string;
+  dsaBeneficiary: string;
+  dsaPayor: string;
+  audienceTargeting: MetaAudienceTargetingDraft;
+  adOptions: MetaAdOptions;
+  leadFormId: string;
+  /** The foundation the choices were made under; targeting, ad options and the lead form restore only under it. */
+  foundation: string;
+  budgetUsd: number;
+  lifetimeBudget: boolean;
+}
+
+/** The Meta image state `metaImageDraftFields` snapshots into the draft. */
+export interface MetaImageDraftState {
+  imageUrl: string;
+  assetId: string;
+  assetName: string;
+  assetBriefId: string;
+  uploadPendingName: string;
+  uploadPendingBriefId: string;
+  uploadError: string;
+  uploadFailedBriefId: string;
+}
+
+/**
+ * What a restored draft sets on the Meta form. A field left `undefined` (or `leadFormId: null`) keeps the
+ * form's current value, which is how a draft saved before that field shipped leaves the brief's seed standing.
+ */
+export interface MetaDraftRestore {
+  /** Always set: the restored objective, after the lead form rule (`leads` without a form for this foundation falls back). */
+  objective: MetaObjective;
+  placements?: MetaPlacement;
+  pixelId?: string;
+  /** The Instagram id and DSA disclosures to patch, one emitting patch; empty when the draft carries none. */
+  instagramDsaPatch: Partial<Record<'instagramUserId' | 'dsaBeneficiary' | 'dsaPayor', string>>;
+  audienceTargeting?: MetaAudienceTargetingDraft;
+  adOptions?: MetaAdOptions;
+  /** `null` keeps the current form; `''` clears it. */
+  leadFormId: string | null;
+  geoTargets?: string[];
+  budgetUsd?: number;
+  lifetimeBudget?: boolean;
+}
+
+/** What a restored draft does to the Meta image: values to set, and at most one upload step for the component to run. */
+export interface MetaImageDraftRestore {
+  imageUrl?: string;
+  asset?: { id: string; name: string; briefId: string };
+  /** Show a failed upload, as the draft recorded it. */
+  failedUpload?: { message: string; briefId: string };
+  /** Resume an upload the draft recorded as still running. */
+  pendingUpload?: { name: string; briefId: string };
+}
+
 /** The two custom-audience lists of {@link MetaAudienceTargeting}. */
 export type MetaCustomAudienceListKey = 'customAudiences' | 'excludedCustomAudiences';
 
@@ -7622,6 +7710,20 @@ export interface CampaignMetaAudienceTargetingBlock {
   message: string;
 }
 
+/** The Meta audience-targeting state `metaAudienceTargetingBlock` (`campaign-meta-audience-targeting.utils.ts`) reads, as plain values. */
+export interface MetaAudienceTargetingBlockInput {
+  /** The targeting the draft holds. */
+  targeting: MetaAudienceTargeting | null;
+  targetingEnabled: boolean | null;
+  customAudiencesEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
+/** The per-option capability answers for the Meta ad choices: `true` yes, `false` no, `null` or absent unanswered. */
+export type MetaAdOptionsEnabled = Partial<Record<MetaAdOptionKey, boolean | null>>;
+
 /**
  * Why Create is blocked for Demand Gen audiences (#5244) the draft still holds but the request cannot
  * carry. The kinds mean what they do on {@link CampaignGoogleAudienceSegmentsBlock}: `restricted` is an
@@ -7682,6 +7784,27 @@ export interface CampaignRedditImageAssetBlock {
 export interface CampaignMetaImageAssetBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
   message: string;
+}
+
+/** The image a Meta create puts on every variant: an uploaded asset, a pasted URL, or none. Never both. */
+export type MetaImageField = { imageAssetId: string } | { imageUrl: string } | Record<string, never>;
+
+/** The Meta image state `metaImageAssetBlock` (`campaign-meta-image.utils.ts`) reads, as plain values. */
+export interface MetaImageBlockInput {
+  /** Whether the Meta section is shown (Meta is a selected platform). */
+  showMetaSection: boolean;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+  assetId: string;
+  assetBriefId: string;
+  uploadStatus: CreativeAssetUploadStatus;
+  uploadFailedBriefId: string;
+  uploadError: string;
+  assetWithheld: boolean;
+  urlWithheld: boolean;
+  creativeEnabled: boolean | null;
+  assetUploadEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
 }
 
 /**

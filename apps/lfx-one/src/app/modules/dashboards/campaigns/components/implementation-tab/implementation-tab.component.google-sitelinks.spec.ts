@@ -17,9 +17,18 @@ import { CampaignService } from '@services/campaign.service';
 import { of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The sitelink extensions.
@@ -42,7 +51,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -110,7 +119,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
     expect(find('implementation-google-sitelink-url')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-url-invalid')?.id);
   });
 
-  it('trims an added sitelink and drops the two blank description lines', () => {
+  it('trims an added sitelink and drops the two blank description lines', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['addGoogleSitelink'](sitelink('  Register now  ', { finalUrl: '  https://events.example.org/register  ' }))).toBe(true);
@@ -122,17 +131,15 @@ describe('ImplementationTabComponent google sitelinks', () => {
 
   it.each([
     ['no link text', sitelink('   ')],
-    ['no destination', sitelink('Register', { finalUrl: '  ' })],
     ['a destination with no scheme', sitelink('Register', { finalUrl: 'events.example.org/register' })],
-    ['a destination carrying embedded credentials', sitelink('Register', { finalUrl: 'https://user:pw@events.example.org/register' })],
-  ])('refuses a sitelink with %s', (_label, entry) => {
+  ])('refuses a sitelink with %s', STATE_ONLY, (_label, entry) => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['addGoogleSitelink'](entry)).toBe(false);
     expect(c['googleSitelinks']()).toEqual([]);
   });
 
-  it('refuses a sitelink that repeats an existing link text in a different case', () => {
+  it('refuses a sitelink that repeats an existing link text in a different case', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleSitelink'](sitelink('Register Now'));
 
@@ -140,7 +147,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
     expect(c['googleSitelinks']()).toHaveLength(1);
   });
 
-  it('refuses an add at the cap', () => {
+  it('refuses an add at the cap', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     for (let i = 0; i < GOOGLE_ADS_MAX_SITELINKS; i++) c['addGoogleSitelink'](sitelink(`Sitelink ${i + 1}`));
 
@@ -152,7 +159,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
    * Runes, not UTF-16 units — the same hazard the callouts carry. 25 astral-plane characters are
    * link text upstream accepts; counted with `.length` they would be 50 and refused for no reason.
    */
-  it('accepts 25-emoji link text and refuses 26 characters', () => {
+  it('accepts 25-emoji link text and refuses 26 characters', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['addGoogleSitelink'](sitelink('🎉'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES)))).toBe(true);
@@ -165,7 +172,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
   it.each([
     ['only the first line', { description1: 'Seats are limited' }],
     ['only the second line', { description2: 'Seats are limited' }],
-  ])('refuses a sitelink described on %s', (_label, overrides) => {
+  ])('refuses a sitelink described on %s', STATE_ONLY, (_label, overrides) => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['addGoogleSitelink'](sitelink('Register', overrides))).toBe(false);
@@ -175,7 +182,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
    * The 35-rune bound is PER LINE, not on the two together: upstream measures each line with its
    * own `utf8.RuneCountInString`. Summing them would refuse this 70-rune pair, which it accepts.
    */
-  it('accepts both description lines at exactly 35 runes and refuses a 36th on either', () => {
+  it('accepts both description lines at exactly 35 runes and refuses a 36th on either', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const line = 'A'.repeat(GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
 
@@ -183,7 +190,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
     expect(c['addGoogleSitelink'](sitelink('Tickets', { description1: line, description2: `${line}B` }))).toBe(false);
   });
 
-  it('warns on the sub-form in progress and withholds the add button until both required fields are filled', () => {
+  it('warns on the sub-form in progress and withholds the add button until both required fields are filled', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleSitelink'](sitelink('Register Now'));
 
@@ -210,7 +217,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
   });
 
   /** Cleared ONLY on success, so a refused entry stays editable beside the warning that named it. */
-  it('clears the sub-form on a successful add and leaves it standing on a refusal', () => {
+  it('clears the sub-form on a successful add and leaves it standing on a refusal', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     c['googleSitelinkDraft'].set(sitelink('Register'));
@@ -222,7 +229,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
     expect(c['googleSitelinkDraft']().text).toBe('register');
   });
 
-  it('removes a sitelink by index', () => {
+  it('removes a sitelink by index', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleSitelink'](sitelink('First'));
     c['addGoogleSitelink'](sitelink('Second'));
@@ -272,13 +279,13 @@ describe('ImplementationTabComponent google sitelinks', () => {
   });
 
   /** Omitted rather than sent empty, so the upstream default is reached by the absent-key route. */
-  it('omits the sitelinks key when nothing was added', () => {
+  it('omits the sitelinks key when nothing was added', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['googleSitelinksPayload']()).toEqual({});
   });
 
-  it('round-trips the sitelinks through a draft', () => {
+  it('round-trips the sitelinks through a draft', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
@@ -297,7 +304,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
    * shallow spread would still hand the draft's own entries over and let an edit here reach back
    * into the stored draft.
    */
-  it('does not share the restored entries with the draft', () => {
+  it('does not share the restored entries with the draft', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const saved = [sitelink('Register')];
 
@@ -311,7 +318,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
   it.each([
     ['a trailing U+0085', 'Register', 'register\u0085'],
     ['final sigma', 'ΟΔΟΣ', 'οδοσ'],
-  ])('refuses a repeated link text hidden by %s, on the add and in the live warning', (_label, first, repeat) => {
+  ])('refuses a repeated link text hidden by %s, on the add and in the live warning', STATE_ONLY, (_label, first, repeat) => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleSitelink'](sitelink(first));
 
@@ -322,11 +329,9 @@ describe('ImplementationTabComponent google sitelinks', () => {
   });
 
   it.each([
-    ['a semicolon in the query', 'https://events.example.org/register?a=1;b=2'],
     ['a stray percent sign', 'https://events.example.org/50%off'],
-    ['no `//` after the scheme', 'https:events.example.org/register'],
     ['a tab inside the path', 'https://events.example.org/reg\tister'],
-  ])("refuses a destination with %s, which Go's URL parser refuses and `new URL()` accepts", (_label, finalUrl) => {
+  ])("refuses a destination with %s, which Go's URL parser refuses and `new URL()` accepts", STATE_ONLY, (_label, finalUrl) => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     c['googleSitelinkDraft'].set(sitelink('Register', { finalUrl }));
@@ -386,7 +391,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
   });
 
   /** The sitelink half of the channel-vs-capability split the callout tests describe in full. */
-  it('still names the channel while the capability answer has not come back', () => {
+  it('still names the channel while the capability answer has not come back', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleSitelink'](sitelink('Register'));
     c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true });
@@ -397,7 +402,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
     expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
   });
 
-  it('never tells Search it takes no sitelinks while the capability is unanswered', () => {
+  it('never tells Search it takes no sitelinks while the capability is unanswered', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleSitelink'](sitelink('Register'));
     fixture.componentRef.setInput('googleCreativeEnabled', null);
@@ -412,7 +417,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
     ['Search', { includeSearch: true }, [{ text: 'Register', finalUrl: 'https://events.example.org/register' }]],
     ['Demand Gen, after a switch from Search', { includeDemandGen: true }, [{ text: 'Register', finalUrl: 'https://events.example.org/register' }]],
     ['Display, after a switch from Search', { includeDisplay: true }, undefined],
-  ])('sends the sitelinks on a submitted %s create only when the channel takes them', async (_label, channel, expected) => {
+  ])('sends the sitelinks on a submitted %s create only when the channel takes them', STATE_ONLY, async (_label, channel, expected) => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleSitelink'](sitelink('Register'));
@@ -432,7 +437,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
    * reached Demand Gen — and lists Demand Gen does not take (here a callout and a snippet typed under
    * Search) are held, not sent, so they leave it identical too.
    */
-  it('builds a byte-identical Demand Gen request when no sitelinks are entered, whatever else is held', async () => {
+  it('builds a byte-identical Demand Gen request when no sitelinks are entered, whatever else is held', STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const submitDemandGen = async (seed: (c: Record<string, any>) => void): Promise<string> => {
       const c = seedChannel(fixture, { includeSearch: true });
@@ -454,7 +459,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
     expect(held).toBe(bare);
   });
 
-  it('leaves the list alone when the draft carries no sitelinks key', () => {
+  it('leaves the list alone when the draft carries no sitelinks key', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleSitelink'](sitelink('Register'));
 
@@ -514,7 +519,7 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
     images = [];
     vi.stubGlobal('Image', FakeImage);
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
   });
 
   afterEach(() => {

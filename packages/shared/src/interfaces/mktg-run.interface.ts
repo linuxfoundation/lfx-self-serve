@@ -607,6 +607,18 @@ export interface MktgRunResultBody {
 export interface MktgRunQuestionDraft {
   index: number;
   answers: Record<string, string>;
+  /**
+   * True once at least one answer differs, trimmed, from what the form opened with (the
+   * question's suggestion or the earlier try's answer): the requester has typed.
+   */
+  dirty?: boolean;
+}
+
+/** A questions block with the draft typed into it, kept read-only once someone else answered the block. */
+export interface MktgRunKeptDraft {
+  questionsId: string;
+  questions: MktgRunQuestion[];
+  draft: MktgRunQuestionDraft;
 }
 
 /** Browser-local capability for resuming a pending one-off document; never placed in a URL. */
@@ -623,6 +635,11 @@ export interface MktgPendingDocumentRun {
   sessionId: string;
   ownerToken: string;
   savedAt: string;
+  /**
+   * When a view first began waiting for this run's storage (ISO). The storage wait's completion budget is absolute from
+   * here, so research and answering time are not spent from it and a tab return or focus never moves it.
+   */
+  waitStartedAt?: string;
 }
 
 /** Response of an agent's `generate` endpoint — the session to poll. */

@@ -13,9 +13,10 @@ import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * What the create request actually CARRIES for the email channel.
@@ -80,7 +81,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
     fixture: ComponentFixture<ImplementationTabComponent>;
     latest: () => CampaignImplementationDraft | null;
   }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     if (draft) f.componentRef.setInput('draft', draft);
@@ -115,7 +116,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
    * neither the brief's recommendation (`[US]`) nor the empty default. Only a working restore can
    * produce it.
    */
-  it('keeps a removed geo target removed after a tab round-trip', async () => {
+  it('keeps a removed geo target removed after a tab round-trip', STATE_ONLY, async () => {
     const first = await mount(null);
     at(first.fixture).addGeoTarget(DE_GEO.urn);
     first.fixture.detectChanges();
@@ -142,7 +143,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
     ).toEqual([DE_GEO.urn]);
   });
 
-  it('keeps an added geo target after a tab round-trip', async () => {
+  it('keeps an added geo target after a tab round-trip', STATE_ONLY, async () => {
     const first = await mount(null);
     at(first.fixture).addGeoTarget(DE_GEO.urn);
     first.fixture.detectChanges();
@@ -161,7 +162,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
     ).toEqual([US_GEO.urn, DE_GEO.urn]);
   });
 
-  it('keeps a switched targeting profile after a tab round-trip', async () => {
+  it('keeps a switched targeting profile after a tab round-trip', STATE_ONLY, async () => {
     const first = await mount(null);
     // Away from the brief's `cloud-native`, so the re-stamp cannot produce this value.
     at(first.fixture).setLinkedInTargetingProfile('mcp');
@@ -190,7 +191,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
    * outright, which makes it a claim about nothing. The geo gate gets its own test in the account
    * suite below, where a stubbed catalog lets it be the only failing condition.
    */
-  it('keeps an emptied geo list empty after a tab round-trip', async () => {
+  it('keeps an emptied geo list empty after a tab round-trip', STATE_ONLY, async () => {
     const first = await mount(null);
     // The brief recommends exactly one; removing it leaves the list genuinely empty.
     at(first.fixture).removeGeoTarget(0);
@@ -206,7 +207,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
     expect(at(second.fixture).linkedInGeoTargets()).toEqual([]);
   });
 
-  it('keeps a chosen ad account after a tab round-trip', async () => {
+  it('keeps a chosen ad account after a tab round-trip', STATE_ONLY, async () => {
     const first = await mount(null);
     // Through the handler the TEMPLATE binds, so a regression in it fails this test. Calling
     // `setLinkedInAccount` instead would pass against a broken `(change)` binding, since nothing
@@ -235,7 +236,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
    * bridges over `valueChanges`, so writing them with `{ emitEvent: false }` updates the control
    * while every reader keeps the stale initial value — this test fails on exactly that.
    */
-  it('still seeds from the brief on a first visit with no draft', async () => {
+  it('still seeds from the brief on a first visit with no draft', STATE_ONLY, async () => {
     const first = await mount(null);
 
     expect(
@@ -255,7 +256,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
    * ran unconditionally, declining the restore leaves the brief's own values standing, which is
    * what this asserts.
    */
-  it('seeds from the brief when the carried draft belongs to another event', async () => {
+  it('seeds from the brief when the carried draft belongs to another event', STATE_ONLY, async () => {
     const first = await mount(null);
     at(first.fixture).removeGeoTarget(0);
     first.fixture.detectChanges();
@@ -359,7 +360,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
 
   /** `catalog` defaults to the two-account list; pass `[]` for the unconfigured-LinkedIn case. */
   async function mount(draft: CampaignImplementationDraft | null, catalog: typeof ACCOUNTS = ACCOUNTS): Promise<ComponentFixture<ImplementationTabComponent>> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     lastEmitted = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (lastEmitted = d));
     if (draft) f.componentRef.setInput('draft', draft);
@@ -392,14 +393,14 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     }).compileComponents();
   });
 
-  it('defaults to the first account when nothing is restored', async () => {
+  it('defaults to the first account when nothing is restored', STATE_ONLY, async () => {
     const fixture = await mount(null);
 
     expect(accountId(fixture)).toBe(ACCOUNTS[0].accountId);
   });
 
   /** The guard's reason for existing: a restored choice must outlive the fetch that follows it. */
-  it('keeps a restored account rather than defaulting over it', async () => {
+  it('keeps a restored account rather than defaulting over it', STATE_ONLY, async () => {
     const fixture = await mount(draftWith(ACCOUNTS[1].accountId));
 
     expect(accountId(fixture)).toBe(ACCOUNTS[1].accountId);
@@ -428,8 +429,8 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
    *
    * `canSubmit` therefore requires catalog MEMBERSHIP rather than a non-empty id.
    */
-  it('blocks a linkedin create while the account catalog is still loading', async () => {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+  it('blocks a linkedin create while the account catalog is still loading', STATE_ONLY, async () => {
+    const f = TestBed.createComponent(tabComponentUnderTest());
     f.componentRef.setInput('draft', draftWith(ACCOUNTS[1].accountId));
     f.componentRef.setInput('briefData', brief());
     f.detectChanges();
@@ -441,8 +442,8 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(false);
   });
 
-  it('keeps a linkedin create blocked when the account fetch fails', async () => {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+  it('keeps a linkedin create blocked when the account fetch fails', STATE_ONLY, async () => {
+    const f = TestBed.createComponent(tabComponentUnderTest());
     f.componentRef.setInput('draft', draftWith(ACCOUNTS[1].accountId));
     f.componentRef.setInput('briefData', brief());
     f.detectChanges();
@@ -464,8 +465,8 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
    * unavailable account catalog no longer blocks a create it has no part in. Unknown or `false`
    * keeps the selector and the gate, because the legacy creator still reads the chosen account.
    */
-  it('lets a linkedin create through without the account catalog when campaign-service owns the create', async () => {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+  it('lets a linkedin create through without the account catalog when campaign-service owns the create', STATE_ONLY, async () => {
+    const f = TestBed.createComponent(tabComponentUnderTest());
     f.componentRef.setInput('draft', draftWith(ACCOUNTS[1].accountId));
     f.componentRef.setInput('briefData', brief());
     f.componentRef.setInput('googleCreativeEnabled', true);
@@ -552,7 +553,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     });
 
     async function mountWithSelection(selection: boolean | null): Promise<ComponentFixture<ImplementationTabComponent>> {
-      const f = TestBed.createComponent(ImplementationTabComponent);
+      const f = TestBed.createComponent(tabComponentUnderTest());
       f.componentRef.setInput('draft', draftWith(ACCOUNTS[1].accountId));
       f.componentRef.setInput('briefData', brief());
       f.componentRef.setInput('googleCreativeEnabled', true);
@@ -636,7 +637,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     });
 
     // The ED 403: while campaign-service's selection is on, naming the default needs global_marketing_ops too.
-    it('omits adAccountId when the default account is chosen', async () => {
+    it('omits adAccountId when the default account is chosen', STATE_ONLY, async () => {
       const f = await mountWithSelection(true);
       await answer(f, chooser);
 
@@ -646,7 +647,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       expectNoAccountSent(submitAndRead(f));
     });
 
-    it('starts the picker on the default and sends nothing for an account the answer does not list', async () => {
+    it('starts the picker on the default and sends nothing for an account the answer does not list', STATE_ONLY, async () => {
       const f = await mountWithSelection(true);
       await answer(f, chooser);
 
@@ -687,7 +688,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
    * catalog IS stubbed and every other LinkedIn gate is satisfied, so clearing the geo list is
    * the single failing condition.
    */
-  it('blocks a linkedin create when the geo target list is empty', async () => {
+  it('blocks a linkedin create when the geo target list is empty', STATE_ONLY, async () => {
     const f = await mount(draftWith(ACCOUNTS[1].accountId));
     makeLinkedInOtherwiseValid(f);
     const c = f.componentInstance as unknown as {
@@ -716,7 +717,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
    * pass on a guard that returned true, which is the fail-open answer — a create dispatched with
    * no geo targets at all.
    */
-  it('blocks rather than crashing when the restored geo list is absent', async () => {
+  it('blocks rather than crashing when the restored geo list is absent', STATE_ONLY, async () => {
     const f = await mount(draftWith(ACCOUNTS[1].accountId));
     makeLinkedInOtherwiseValid(f);
     const c = f.componentInstance as unknown as {
@@ -750,7 +751,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     f.detectChanges();
   }
 
-  it('clears a restored account when the catalog comes back empty', async () => {
+  it('clears a restored account when the catalog comes back empty', STATE_ONLY, async () => {
     // A SUCCESSFUL response that happens to carry no accounts, released after the restore.
     const f = await mount(draftWith(ACCOUNTS[1].accountId), []);
 
@@ -768,7 +769,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
    * and it would silently strand the parent's draft on the stale id while the form and the
    * request both moved on. The next tab switch would then restore the stale id all over again.
    */
-  it('emits the corrected account to the parent draft', async () => {
+  it('emits the corrected account to the parent draft', STATE_ONLY, async () => {
     await mount(draftWith('urn:li:sponsoredAccount:revoked-999'));
 
     expect(emitted()?.linkedInAccountId).toBe(ACCOUNTS[0].accountId);
@@ -790,7 +791,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
    * surfaces disagree. This drives the real `submit()` and compares the dispatched
    * `linkedInConfig.adAccountId` against the displayed account.
    */
-  it('does not dispatch to an account the page is not displaying', async () => {
+  it('does not dispatch to an account the page is not displaying', STATE_ONLY, async () => {
     let posted: Record<string, unknown> | null = null;
     // Re-configure with a capturing stub: this is the only case here that reaches `submit()`.
     TestBed.resetTestingModule();
@@ -922,7 +923,7 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
     draft: CampaignImplementationDraft | null = null,
     briefData: CampaignBriefOutput = brief()
   ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     if (draft) f.componentRef.setInput('draft', draft);

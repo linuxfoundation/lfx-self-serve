@@ -13,9 +13,17 @@ import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { GOOGLE_BASE_DRAFT, SEED_KEYWORD, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  GOOGLE_BASE_DRAFT,
+  SEED_KEYWORD,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The Google image slots' stored-image library (`googleAssetUploadEnabled`): picks and uploads ride
@@ -51,7 +59,7 @@ describe('ImplementationTabComponent google stored images', () => {
     upload: boolean | null,
     draft: Partial<CampaignImplementationDraft> = {}
   ): Promise<{ f: ComponentFixture<ImplementationTabComponent>; c: Record<string, any>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     f.componentRef.setInput('draft', { ...GOOGLE_BASE_DRAFT, includeDisplay: true, ...draft } as unknown as CampaignImplementationDraft);
@@ -137,7 +145,7 @@ describe('ImplementationTabComponent google stored images', () => {
   });
 
   /** Display's logo is 4:1 at 512x128: the square image, the undersized one and the unmeasured one are not offered. */
-  it("offers only the stored images that fit the slot's ratio and minimum size", async () => {
+  it("offers only the stored images that fit the slot's ratio and minimum size", STATE_ONLY, async () => {
     const { c } = await mount(true);
 
     const slot = c['googleImageSlots']()[SLOT];
@@ -146,7 +154,7 @@ describe('ImplementationTabComponent google stored images', () => {
     expect(c['googleImageSlots']()['displayCreative.squareLogoImages'].options.map((o: { value: string }) => o.value)).toEqual([SQUARE_LOGO]);
   });
 
-  it('sends a picked image as { imageAssetId } after the pasted URLs, and persists it in the draft', async () => {
+  it('sends a picked image as { imageAssetId } after the pasted URLs, and persists it in the draft', STATE_ONLY, async () => {
     const { c, latest } = await mount(true);
     c['campaignForm'].controls.displayCreative.controls.logoImages.setValue('https://cdn.example.org/logo.png');
     c['onGoogleImagePick'](SLOT, WIDE_LOGO);
@@ -158,7 +166,7 @@ describe('ImplementationTabComponent google stored images', () => {
     expect(c['googleImageSlots']()[SLOT].options).toEqual([]);
   });
 
-  it('counts a held image toward the slot minimum, as campaign-service does', async () => {
+  it('counts a held image toward the slot minimum, as campaign-service does', STATE_ONLY, async () => {
     const { c } = await mount(true, { includeDisplay: false, includePerformanceMax: true } as Partial<CampaignImplementationDraft>);
     c['campaignForm'].patchValue({ includeDisplay: false, includePerformanceMax: true });
     const pmax = c['campaignForm'].controls.performanceMaxCreative.controls;
@@ -174,7 +182,7 @@ describe('ImplementationTabComponent google stored images', () => {
     expect(c['googleCreativeError']()).toBeNull();
   });
 
-  it('uploads into the library for the saved brief and holds the upload in the slot it was chosen for', async () => {
+  it('uploads into the library for the saved brief and holds the upload in the slot it was chosen for', STATE_ONLY, async () => {
     const { c } = await mount(true);
     const revision = c['creativeLibraryRevision']();
     const file = new File([new Uint8Array(16)], 'wide-logo.png', { type: 'image/png' });
@@ -186,7 +194,7 @@ describe('ImplementationTabComponent google stored images', () => {
     expect(logos(c)).toEqual([{ imageAssetId: UPLOADED }]);
   });
 
-  it('refuses a file that is not a PNG or JPEG before any upload, blocking Create until it is removed', async () => {
+  it('refuses a file that is not a PNG or JPEG before any upload, blocking Create until it is removed', STATE_ONLY, async () => {
     const { c, latest } = await mount(true);
     c['onGoogleImageUpload'](SLOT, new File([new Uint8Array(4)], 'logo.gif', { type: 'image/gif' }));
 
@@ -200,7 +208,7 @@ describe('ImplementationTabComponent google stored images', () => {
     expect(c['googleImageAssetBlock']()).toBeNull();
   });
 
-  it('holds Create while an upload runs, and Cancel aborts the Google upload', async () => {
+  it('holds Create while an upload runs, and Cancel aborts the Google upload', STATE_ONLY, async () => {
     uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
     const { c } = await mount(true);
     c['onGoogleImageUpload'](SLOT, new File([new Uint8Array(16)], 'l.png', { type: 'image/png' }));
@@ -242,7 +250,7 @@ describe('ImplementationTabComponent google stored images', () => {
     expect(c['googleImageAssetBlock']()).toBeNull();
   });
 
-  it('blocks a held image stored for another brief, and Remove drops only that one', async () => {
+  it('blocks a held image stored for another brief, and Remove drops only that one', STATE_ONLY, async () => {
     const { c } = await mount(true, {
       googleImageAssets: {
         [SLOT]: [
@@ -262,7 +270,7 @@ describe('ImplementationTabComponent google stored images', () => {
   it.each([
     ['missing', '99999999-0000-4000-8000-000000000009'],
     ['misfit', SQUARE_LOGO],
-  ])('blocks a held image the library read shows as %s, and Remove drops only that one', async (kind, id) => {
+  ])('blocks a held image the library read shows as %s, and Remove drops only that one', STATE_ONLY, async (kind, id) => {
     const { c } = await mount(true, {
       googleImageAssets: {
         [SLOT]: [
@@ -281,7 +289,7 @@ describe('ImplementationTabComponent google stored images', () => {
     expect(c['googleImageAssetBlock']()).toBeNull();
   });
 
-  it('refuses a slot whose pasted URLs and held images together pass its cap', async () => {
+  it('refuses a slot whose pasted URLs and held images together pass its cap', STATE_ONLY, async () => {
     const { c } = await mount(true);
     const display = c['campaignForm'].controls.displayCreative.controls;
     display.headlines.setValue('H1');
@@ -310,7 +318,7 @@ describe('ImplementationTabComponent google stored images', () => {
   };
 
   /** A draft can carry an over-cap slot the controls could not have produced; Create must still refuse it. */
-  it('refuses a restored draft whose slot is over its cap', async () => {
+  it('refuses a restored draft whose slot is over its cap', STATE_ONLY, async () => {
     const { c } = await mount(true, {
       googleCreatives: { displayCreative: { ...DISPLAY_COPY, logoImages: FIVE_LOGO_URLS } },
       googleImageAssets: { [SLOT]: [{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }] },
@@ -321,7 +329,7 @@ describe('ImplementationTabComponent google stored images', () => {
   });
 
   /** An upload started before the slot filled lands after it did: the cap is judged on what is held, not on what was offered. */
-  it('refuses a slot an upload completed into after it filled', async () => {
+  it('refuses a slot an upload completed into after it filled', STATE_ONLY, async () => {
     const upload$ = new Subject<unknown>();
     uploadCreativeAsset.mockReturnValue(upload$);
     const { c } = await mount(true, { googleCreatives: { displayCreative: { ...DISPLAY_COPY, logoImages: '' } } });
@@ -337,7 +345,7 @@ describe('ImplementationTabComponent google stored images', () => {
     expect(c['canSubmit']()).toBe(false);
   });
 
-  it('does not block on a failed upload into a section the operator un-ticked', async () => {
+  it('does not block on a failed upload into a section the operator un-ticked', STATE_ONLY, async () => {
     const { f, c } = await mount(true, {
       googleImageUploadFailedMessage: 'image is not decodable',
       googleImageUploadFailedBriefId: BRIEF_ID,
@@ -351,7 +359,7 @@ describe('ImplementationTabComponent google stored images', () => {
   });
 
   /** campaign-service's Google dispatcher holds at most 5 MiB per image, under the library's 10 MiB. */
-  it('neither offers nor accepts an image over the Google byte cap, and refuses one before upload', async () => {
+  it('neither offers nor accepts an image over the Google byte cap, and refuses one before upload', STATE_ONLY, async () => {
     const big = { ...asset('66666666-0000-4000-8000-000000000006', 1200, 300), byteSize: 6 * 1024 * 1024 };
     listCreativeAssets.mockReturnValue(of({ assets: [...LIBRARY, big], count: 5, countLimit: 50, bytesUsed: 1, bytesLimit: 1e9 }));
     const { c } = await mount(true, { googleImageAssets: { [SLOT]: [{ id: big.id, name: '', briefId: BRIEF_ID }] } });
@@ -366,7 +374,7 @@ describe('ImplementationTabComponent google stored images', () => {
     expect(c['googleImageAssetBlock']()?.kind).toBe('uploadFailed');
   });
 
-  it('stops holding Create for a running upload once its section is un-ticked', async () => {
+  it('stops holding Create for a running upload once its section is un-ticked', STATE_ONLY, async () => {
     uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
     const { f, c } = await mount(true);
     c['onGoogleImageUpload'](SLOT, new File([new Uint8Array(16)], 'l.png', { type: 'image/png' }));
@@ -379,7 +387,7 @@ describe('ImplementationTabComponent google stored images', () => {
   });
 
   /** A failed re-save clears the brief id; held images then match no brief and must hold Create, not vanish. */
-  it('blocks on held images while the brief id is unresolved, and Remove clears them', async () => {
+  it('blocks on held images while the brief id is unresolved, and Remove clears them', STATE_ONLY, async () => {
     const { f, c } = await mount(true, { googleImageAssets: { [SLOT]: [{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }] } });
     f.componentRef.setInput('briefPersistence', { status: 'error', briefId: null, message: 'save failed', approved: true });
     f.detectChanges();
@@ -392,7 +400,7 @@ describe('ImplementationTabComponent google stored images', () => {
   });
 
   /** One slug source for the read and the upload, so an upload lands in the library the slot reads. */
-  it('uploads under the same project slug the library read uses', async () => {
+  it('uploads under the same project slug the library read uses', STATE_ONLY, async () => {
     const { c } = await mount(true);
     c['onGoogleImageUpload'](SLOT, new File([new Uint8Array(16)], 'l.png', { type: 'image/png' }));
 
@@ -401,7 +409,7 @@ describe('ImplementationTabComponent google stored images', () => {
   });
 
   /** A failed read is not evidence of a deletion: campaign-service still refuses a missing asset by name. */
-  it('does not call a held image missing when the library read failed', async () => {
+  it('does not call a held image missing when the library read failed', STATE_ONLY, async () => {
     listCreativeAssets.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     const { c } = await mount(true, { googleImageAssets: { [SLOT]: [{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }] } });
 
@@ -410,7 +418,7 @@ describe('ImplementationTabComponent google stored images', () => {
     expect(c['googleImageSlots']()[SLOT].optionsNote).toContain("Couldn't load");
   });
 
-  it('keeps an image held in an un-ticked section without sending or blocking on it', async () => {
+  it('keeps an image held in an un-ticked section without sending or blocking on it', STATE_ONLY, async () => {
     const { c } = await mount(true, { googleImageAssets: { 'demandGenCreative.logoImages': [{ id: SQUARE_LOGO, name: '', briefId: OTHER_BRIEF }] } });
 
     expect(c['googleImageAssetBlock']()).toBeNull();
@@ -418,7 +426,7 @@ describe('ImplementationTabComponent google stored images', () => {
     expect(c['googleHeldImages']()['demandGenCreative.logoImages']).toHaveLength(1);
   });
 
-  it('restores a failed upload from the draft, so a tab switch does not lift its block', async () => {
+  it('restores a failed upload from the draft, so a tab switch does not lift its block', STATE_ONLY, async () => {
     const { c } = await mount(true, {
       googleImageUploadFailedMessage: 'image is not decodable',
       googleImageUploadFailedBriefId: BRIEF_ID,
@@ -443,7 +451,7 @@ describe('ImplementationTabComponent google stored images', () => {
       maxCount: 5,
     });
 
-    it('fills empty rendered fields and reports how many', async () => {
+    it('fills empty rendered fields and reports how many', STATE_ONLY, async () => {
       const { c, latest } = await mount(true);
       c['onApplySuggestedGoogleImages']([assignment('logoImages', [WIDE_LOGO]), assignment('squareLogoImages', [SQUARE_LOGO])]);
 
@@ -453,7 +461,7 @@ describe('ImplementationTabComponent google stored images', () => {
       expect(c['googleSuggestedApplyResult']()).toBe('Filled 2 empty image slots with suggested images.');
     });
 
-    it('leaves a field the operator filled — by a pick or a pasted URL — exactly as it is', async () => {
+    it('leaves a field the operator filled — by a pick or a pasted URL — exactly as it is', STATE_ONLY, async () => {
       const { c } = await mount(true);
       c['onGoogleImagePick'](SLOT, SQUARE_LOGO);
       c['campaignForm'].controls.displayCreative.controls.squareLogoImages.setValue('https://cdn.example.org/square.png');
@@ -470,7 +478,7 @@ describe('ImplementationTabComponent google stored images', () => {
     });
 
     /** The running upload's file is held when it lands, so filling the field now would put it over its max. */
-    it('leaves a field with an upload still running as it is', async () => {
+    it('leaves a field with an upload still running as it is', STATE_ONLY, async () => {
       const { c } = await mount(true);
       c['googleImageUploadStatus'].set('uploading');
       c['googleImageUploadSlot'].set(SLOT);
@@ -498,7 +506,7 @@ describe('ImplementationTabComponent google stored images', () => {
       expect(c['googleSuggestedApplyResult']()).toBe('No suggested images to apply: no Google image field on screen has a suggestion.');
     });
 
-    it('caps a field at its own catalogued max', async () => {
+    it('caps a field at its own catalogued max', STATE_ONLY, async () => {
       const { c } = await mount(true);
       const max = GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'logoImages')?.max ?? 0;
       const many = Array.from({ length: max + 2 }, (_, i) => `aaaaaaaa-0000-4000-8000-${String(i).padStart(12, '0')}`);
@@ -507,7 +515,7 @@ describe('ImplementationTabComponent google stored images', () => {
       expect((logos(c) as unknown[]).length).toBe(max);
     });
 
-    it('says when every suggested field was already filled, and pressing again changes nothing', async () => {
+    it('says when every suggested field was already filled, and pressing again changes nothing', STATE_ONLY, async () => {
       const { c } = await mount(true);
       c['onApplySuggestedGoogleImages']([assignment('logoImages', [WIDE_LOGO])]);
       c['onApplySuggestedGoogleImages']([assignment('logoImages', [SQUARE_LOGO])]);
@@ -519,7 +527,7 @@ describe('ImplementationTabComponent google stored images', () => {
     });
 
     /** The slot grid reads the library only; the tab tells it what the form already holds, by plan slot (#4833). */
-    it('counts pasted URLs and images held for the open brief per plan slot, for the grid', async () => {
+    it('counts pasted URLs and images held for the open brief per plan slot, for the grid', STATE_ONLY, async () => {
       const { c } = await mount(true);
       expect(c['googleFormFilledSlots']()).toEqual({});
 
@@ -539,7 +547,7 @@ describe('ImplementationTabComponent google stored images', () => {
     });
 
     /** Pasted URLs fill a slot whatever the library answers; held images count only where the request would send them. */
-    it('counts pasted URLs with the library off, and ignores held images it would not send', async () => {
+    it('counts pasted URLs with the library off, and ignores held images it would not send', STATE_ONLY, async () => {
       const { c } = await mount(false);
       c['campaignForm'].controls.displayCreative.controls.marketingImages.setValue('https://cdn.example.org/wide.png');
       c['googleHeldImages'].update((held: Record<string, unknown[]>) => ({
@@ -551,7 +559,7 @@ describe('ImplementationTabComponent google stored images', () => {
     });
 
     /** Performance Max names its slots by Google asset field type; the table maps them onto the request's fields. */
-    it("maps Performance Max's asset field types onto its fields", async () => {
+    it("maps Performance Max's asset field types onto its fields", STATE_ONLY, async () => {
       const { f, c } = await mount(true);
       c['campaignForm'].patchValue({ includeDisplay: false, includePerformanceMax: true });
       f.detectChanges();
@@ -564,7 +572,7 @@ describe('ImplementationTabComponent google stored images', () => {
     });
 
     /** #5262: Search's plan slots carry the request's own names, so the table maps them one to one. */
-    it("fills Search's ad image and business logo fields from the plan, and offers its three slots", async () => {
+    it("fills Search's ad image and business logo fields from the plan, and offers its three slots", STATE_ONLY, async () => {
       const { f, c } = await mount(true);
       c['campaignForm'].patchValue({ includeDisplay: false, includeSearch: true });
       f.detectChanges();
@@ -583,7 +591,7 @@ describe('ImplementationTabComponent google stored images', () => {
       expect(c['googleFormFilledSlots']()).toEqual({ 'google-ads/SEARCH/adImages': 1, 'google-ads/SEARCH/businessLogoImages': 1 });
     });
 
-    it('maps every planned slot onto an image field of its own channel', () => {
+    it('maps every planned slot onto an image field of its own channel', STATE_ONLY, () => {
       for (const [channel, slots] of Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS)) {
         const imageControls = (
           GOOGLE_CREATIVE_FIELD_SPECS[channel as keyof typeof GOOGLE_CREATIVE_FIELD_SPECS] as readonly { control: string; image?: unknown }[]

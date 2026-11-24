@@ -35,11 +35,12 @@ import { map, NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import { CampaignsComponent } from './campaigns.component';
-import { seedSelectedFoundation } from './campaigns.spec-helper';
+import { seedSelectedFoundation, STATE_ONLY, campaignsComponentUnderTest, trackStateOnlyTests } from './campaigns.spec-helper';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
 import { PlanningTabComponent } from './components/planning-tab/planning-tab.component';
 
 seedSelectedFoundation({ uid: 'f-t', slug: 'tlf', name: 'TLF' });
+trackStateOnlyTests();
 
 /** A draft with every REQUIRED member of {@link CampaignImplementationDraft} present. */
 function completeDraftFor(slug: string): CampaignImplementationDraft {
@@ -112,7 +113,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
         { provide: DialogService, useValue: { open: vi.fn() } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(CampaignsComponent);
+    fixture = TestBed.createComponent(campaignsComponentUnderTest());
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     fixture.detectChanges();
   });
@@ -446,7 +447,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     expect(persisted.googleSitelinks).toEqual(emitted!.googleSitelinks);
   });
 
-  it('leaves a brief that carries no extension lists exactly as it arrived', () => {
+  it('leaves a brief that carries no extension lists exactly as it arrived', STATE_ONLY, () => {
     // `buildDraft` always emits both fields as arrays, so without the empty-and-absent exception a
     // second Proceed would add `googleCallouts: []` to a brief that never had one — a field written
     // into the persisted row recording a clearance of a list that was never there.
@@ -462,7 +463,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     expect(internals().briefOutput()).toBe(plain);
   });
 
-  it('carries an emptied extension list as [], so a full clear-out is not undone', () => {
+  it('carries an emptied extension list as [], so a full clear-out is not undone', STATE_ONLY, () => {
     // The case Copilot named explicitly. On `CampaignBriefOutput` absent and empty differ — `[]`
     // CLEARS the editor, `undefined` leaves it alone — so dropping an empty list here would put the
     // generator's entries back over a deliberate removal.
@@ -479,7 +480,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     expect(internals().briefOutput()?.googleSitelinks).toEqual([]);
   });
 
-  it('carries edited sitelinks and leaves the regenerated fields alone', () => {
+  it('carries edited sitelinks and leaves the regenerated fields alone', STATE_ONLY, () => {
     internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
     const edited = { text: 'Operator link', finalUrl: 'https://example.com/schedule' };
     internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleSitelinks: [edited] });
@@ -494,7 +495,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
   });
 
-  it('does not carry one event extensions onto a different event brief', () => {
+  it('does not carry one event extensions onto a different event brief', STATE_ONLY, () => {
     internals().onProceedToImplementation(briefWithExtensions('event-a'));
     internals().implementationDraft.set({
       ...completeDraftFor('event-a'),
@@ -527,7 +528,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
       googleSitelinks: [{ text: 'Book now', finalUrl: 'https://example.com/book' }],
     }) as unknown as CampaignBriefOutput;
 
-  it('drops the edits when the same event is generated again, rather than overwriting the new lists', () => {
+  it('drops the edits when the same event is generated again, rather than overwriting the new lists', STATE_ONLY, () => {
     internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
     internals().implementationDraft.set({
       ...completeDraftFor('kubecon-eu-2026'),
@@ -562,7 +563,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     expect(internals().briefOutput()?.googleCallouts).toEqual(['Early bird pricing']);
   });
 
-  it('carries nothing on the first Proceed of a session, when no brief has been handed over yet', () => {
+  it('carries nothing on the first Proceed of a session, when no brief has been handed over yet', STATE_ONLY, () => {
     // Fail-closed: a draft with no baseline behind it is a draft typed over nothing this page
     // handed out, so it has no claim on the incoming lists.
     internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Stale'] });
@@ -572,7 +573,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
   });
 
-  it('does not carry onto a restored brief, and records its lists for what follows', () => {
+  it('does not carry onto a restored brief, and records its lists for what follows', STATE_ONLY, () => {
     const restore = internals() as unknown as { onProceedToImplementation(b: CampaignBriefOutput, alreadyPersisted: boolean): void };
 
     internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
@@ -590,7 +591,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     expect(internals().briefOutput()?.googleCallouts).toEqual(['After restore']);
   });
 
-  it('does not carry onto a restored brief whose lists MATCH the baseline', () => {
+  it('does not carry onto a restored brief whose lists MATCH the baseline', STATE_ONLY, () => {
     // The case the test above cannot cover. There the restored brief's lists differ from the
     // baseline, so `sameCallouts` refuses the carry on its own and the `alreadyPersisted` exclusion
     // could be deleted with the test still green. Here the restored lists are the baseline's, the
@@ -614,7 +615,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
   });
 
-  it('carries nothing after Start Over, which clears the baseline with the draft', () => {
+  it('carries nothing after Start Over, which clears the baseline with the draft', STATE_ONLY, () => {
     internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
     internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Early bird pricing'] });
 
@@ -628,7 +629,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
   });
 
-  it('gates each extension list on its own, so one regenerated list does not void the other', () => {
+  it('gates each extension list on its own, so one regenerated list does not void the other', STATE_ONLY, () => {
     internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
     internals().implementationDraft.set({
       ...completeDraftFor('kubecon-eu-2026'),
@@ -647,7 +648,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     expect(internals().briefOutput()?.googleSitelinks).toEqual([{ text: 'Operator link', finalUrl: 'https://example.com/schedule' }]);
   });
 
-  it('treats a reordered list as regenerated, since positional edits no longer line up', () => {
+  it('treats a reordered list as regenerated, since positional edits no longer line up', STATE_ONLY, () => {
     const twoCallouts = { ...briefFor('kubecon-eu-2026'), googleCallouts: ['First', 'Second'] } as unknown as CampaignBriefOutput;
     internals().onProceedToImplementation(twoCallouts);
     internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['First edited', 'Second'] });
@@ -711,7 +712,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         { provide: ProjectContextService, useValue: { activeContext: ctx, activeContextUid: computed(() => ctx()?.uid ?? '') } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(CampaignsComponent);
+    fixture = TestBed.createComponent(campaignsComponentUnderTest());
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
@@ -2028,7 +2029,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('KubeCon promo');
   });
 
-  it('lists the templates a search returned, dropping any row with no id', () => {
+  it('lists the templates a search returned, dropping any row with no id', STATE_ONLY, () => {
     picker().searchEmailTemplates('');
     respond({
       enabled: true,
@@ -2051,7 +2052,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
   // The collapse that matters. An empty array asserts the portal holds nothing; only a completed
   // search can support that.
-  it('leaves the list NULL when the search fails, rather than empty', () => {
+  it('leaves the list NULL when the search fails, rather than empty', STATE_ONLY, () => {
     picker().searchEmailTemplates('kubecon');
     const req = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
     req.flush({ message: 'boom' }, { status: 500, statusText: 'Server Error' });
@@ -2061,7 +2062,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     expect(picker().emailTemplatesError()).toBeTruthy();
   });
 
-  it('leaves the list NULL when the service reports an upstream error', () => {
+  it('leaves the list NULL when the service reports an upstream error', STATE_ONLY, () => {
     picker().searchEmailTemplates('');
     respond({ enabled: true, error: 'HubSpot refused the request', possiblyTruncated: false, emails: [] });
 
@@ -2070,7 +2071,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
   });
 
   // Not an error: the steady state wherever HubSpot is not connected for the foundation.
-  it('reports a disconnected channel without rendering it as a failure', () => {
+  it('reports a disconnected channel without rendering it as a failure', STATE_ONLY, () => {
     picker().searchEmailTemplates('');
     respond({ enabled: false, error: null, possiblyTruncated: false, emails: [] });
 
@@ -2079,7 +2080,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     expect(picker().emailTemplates()).toBeNull();
   });
 
-  it('distinguishes a successful empty search from a failure', () => {
+  it('distinguishes a successful empty search from a failure', STATE_ONLY, () => {
     picker().searchEmailTemplates('nothing-matches');
     respond({ enabled: true, error: null, possiblyTruncated: false, emails: [] });
 
@@ -2089,14 +2090,14 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
   // possiblyTruncated is only meaningful for an EMPTY query. Telling someone to narrow a search
   // that was already exhaustive sends them hunting for a template that does not exist.
-  it('carries the truncation warning through', () => {
+  it('carries the truncation warning through', STATE_ONLY, () => {
     picker().searchEmailTemplates('');
     respond({ enabled: true, error: null, possiblyTruncated: true, emails: [{ id: '1', name: 'One' }] });
 
     expect(picker().emailTemplatesTruncated()).toBe(true);
   });
 
-  it('refuses to search without a foundation rather than listing another portal', () => {
+  it('refuses to search without a foundation rather than listing another portal', STATE_ONLY, () => {
     ctx.set(null);
     fixture.detectChanges();
 
@@ -2290,7 +2291,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
   // foundation is selected. selectedEmailTemplateId is the one that must not survive — it becomes
   // hubspotConfig.sourceEmailId on create, so a stale selection stages a send that clones
   // foundation A's email into foundation B's portal.
-  it('clears the picker when the foundation changes', () => {
+  it('clears the picker when the foundation changes', STATE_ONLY, () => {
     picker().searchEmailTemplates('');
     respond({ enabled: true, error: null, possiblyTruncated: true, emails: [{ id: '1', name: 'A-only template' }] });
     picker().onSelectEmailTemplate('1');
@@ -2422,7 +2423,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     expect(panel().querySelector('[data-testid="campaigns-email-templates-empty"]')?.textContent?.trim()).toBe('No templates match “no templates”.');
   });
 
-  it('records the chosen template id, which is what sourceEmailId takes', () => {
+  it('records the chosen template id, which is what sourceEmailId takes', STATE_ONLY, () => {
     picker().onSelectEmailTemplate('123');
     expect(picker().selectedEmailTemplateId()).toBe('123');
   });
@@ -2470,7 +2471,7 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
         { provide: ProjectContextService, useValue: { activeContext: ctx, activeContextUid: computed(() => ctx()?.uid ?? '') } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(CampaignsComponent);
+    fixture = TestBed.createComponent(campaignsComponentUnderTest());
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
@@ -2483,7 +2484,7 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
    * lands last and wins — leaving the list from search A on screen while the query box shows B.
    * Driven by flushing the two requests out of order, which is the only way to reproduce it.
    */
-  it('ignores a stale response that lands after a newer search', () => {
+  it('ignores a stale response that lands after a newer search', STATE_ONLY, () => {
     picker().searchEmailTemplates('alpha');
     picker().searchEmailTemplates('beta');
 
@@ -2699,7 +2700,7 @@ describe('CampaignsComponent when the client flag is on and the user holds a cam
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true), providerReady: signal(true) } },
       ],
     }).compileComponents();
-    fgaFixture = TestBed.createComponent(CampaignsComponent);
+    fgaFixture = TestBed.createComponent(campaignsComponentUnderTest());
     const personas = TestBed.inject(PersonaService);
     personas.currentPersona.set('contributor');
     personas.isCampaignManager.set(true);
@@ -2801,7 +2802,7 @@ describe('CampaignsComponent email monitor', () => {
         { provide: DialogService, useValue: { open: vi.fn() } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(CampaignsComponent);
+    fixture = TestBed.createComponent(campaignsComponentUnderTest());
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     fixture.detectChanges();
   });
@@ -3209,7 +3210,7 @@ describe('CampaignsComponent email monitor', () => {
    * Asserts the COMPUTED the template binds, not the request: the defect is a control that renders
    * enabled beside a panel it cannot change.
    */
-  it('does not offer Refresh when no brief id is resolvable', () => {
+  it('does not offer Refresh when no brief id is resolvable', STATE_ONLY, () => {
     internals().emailBriefId.set('');
     internals().emailBriefOutput.set(null);
     internals().emailMetricsState.set('idle');
@@ -3218,7 +3219,7 @@ describe('CampaignsComponent email monitor', () => {
     expect(internals().canRefreshEmailMetrics()).toBe(false);
   });
 
-  it('offers Refresh in the recoverable idle state a reset leaves behind', () => {
+  it('offers Refresh in the recoverable idle state a reset leaves behind', STATE_ONLY, () => {
     // Establish the slug EXPLICITLY rather than inheriting whatever the shared TestBed happens
     // to hold. `canRefreshEmailMetrics` is now gated on it, and these positive assertions were
     // passing only because another suite leaks 'foundation-b' through the shared context -- a
@@ -3279,7 +3280,7 @@ describe('CampaignsComponent email monitor', () => {
     expect(el.querySelector('[data-testid="campaigns-email-metric-delivery-rate"]')?.textContent).toContain('100.0%');
   });
 
-  it('picks up an ownership entry recorded AFTER the computed was first read', () => {
+  it('picks up an ownership entry recorded AFTER the computed was first read', STATE_ONLY, () => {
     // Establish the slug EXPLICITLY rather than inheriting whatever the shared TestBed happens
     // to hold. `canRefreshEmailMetrics` is now gated on it, and these positive assertions were
     // passing only because another suite leaks 'foundation-b' through the shared context -- a
@@ -3308,7 +3309,7 @@ describe('CampaignsComponent email monitor', () => {
     expect(internals().canRefreshEmailMetrics()).toBe(true);
   });
 
-  it('does not offer Refresh when the ownership cache holds no row for this event', () => {
+  it('does not offer Refresh when the ownership cache holds no row for this event', STATE_ONLY, () => {
     // Same shape, cache deliberately empty: proves the previous test passes BECAUSE of the entry
     // rather than because the reset happens to leave something else enabled.
     const brief = { eventDetails: { name: 'KubeCon Europe 2026', slug: 'kubecon-eu-2026' } };
@@ -3319,7 +3320,7 @@ describe('CampaignsComponent email monitor', () => {
     expect(internals().canRefreshEmailMetrics()).toBe(false);
   });
 
-  it('does not offer Refresh without a foundation slug', () => {
+  it('does not offer Refresh without a foundation slug', STATE_ONLY, () => {
     // `loadEmailMetrics` early-returns to idle on an empty slug, so offering a refresh there is a
     // button whose only possible outcome is the state it started in.
     //
@@ -3337,7 +3338,7 @@ describe('CampaignsComponent email monitor', () => {
     expect(internals().canRefreshEmailMetrics()).toBe(false);
   });
 
-  it('does not offer Refresh while a load is already in flight', () => {
+  it('does not offer Refresh while a load is already in flight', STATE_ONLY, () => {
     internals().emailBriefId.set('b-monitor');
     internals().emailMetricsState.set('loading');
     fixture.detectChanges();
@@ -3470,7 +3471,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     const service = TestBed.inject(CampaignService);
     vi.spyOn(service, 'persistBrief').mockReturnValue(saved() as never);
     listBriefCampaigns = vi.spyOn(service, 'listBriefCampaigns').mockReturnValue(capability(true));
-    fixture = TestBed.createComponent(CampaignsComponent);
+    fixture = TestBed.createComponent(campaignsComponentUnderTest());
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     selectFoundation('tlf');
     await settle();
@@ -3821,7 +3822,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     expect(tab()['canSubmit']()).toBe(true);
   });
 
-  it('a retry reached without a brief id reads nothing and leaves the state unknown', async () => {
+  it('a retry reached without a brief id reads nothing and leaves the state unknown', STATE_ONLY, async () => {
     (fixture.componentInstance as unknown as { briefCampaignsCapabilityRead: { set(v: string): void } }).briefCampaignsCapabilityRead.set('failed');
     listBriefCampaigns.mockClear();
 

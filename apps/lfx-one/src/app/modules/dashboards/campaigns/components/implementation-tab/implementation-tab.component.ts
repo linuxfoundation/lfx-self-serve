@@ -233,7 +233,6 @@ import {
   isCanonicalGoogleAdsResourceId,
   isGoogleAdsServableUrl,
   DEFAULT_META_AUDIENCE_TARGETING,
-  META_AD_OPTION_FIELDS,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
@@ -387,14 +386,15 @@ import type {
   MetaAdOptionKey,
   MetaAdOptions,
   MetaAdOptionView,
+  MetaImageField,
 } from '@lfx-one/shared/interfaces';
 import {
   campaignBiddingError,
   campaignBiddingPayload,
   campaignFlightDays,
   campaignLabelColumns,
-  compactMetaAdOptions,
   compactMetaAudienceTargeting,
+  copyMetaAudienceTargeting,
   defaultCampaignBiddingDraft,
   defaultCampaignEndDate,
   describeCampaignDispatchFailure,
@@ -463,24 +463,40 @@ import {
   linkedInTargetingAfterRemovals,
   linkedInVariantTextError,
   metaAcceptedGeos,
-  metaAdOptionApplies,
-  metaAdOptionLabel,
+  metaAdOptionsBlock,
+  metaAdOptionsForCreate,
+  metaAdOptionsForObjective,
   metaAdOptionsRefusal,
+  metaAdOptionsWithChoice,
+  metaAdOptionsWithoutUnsupported,
+  metaAdOptionViews,
+  metaAudienceTargetingBlock,
+  metaAudienceTargetingCapabilities,
   metaAudienceTargetingRefusal,
   metaBasicsRefusal,
   metaBriefSeed,
-  metaCallToActionAllowedWithLeadForm,
   metaCreateRefusal,
+  metaDraftFields,
+  metaDraftRestore,
   metaDsaCountries,
   metaDsaFieldError,
   metaEffectiveGeoTargets,
   metaGeoIsIneligible,
   metaHasPlacement,
+  metaImageAssetBlock,
+  metaImageAssetForBrief,
+  metaImageAssetWithheld,
+  metaImageCapabilities,
+  metaImageDraftFields,
+  metaImageDraftRestore,
+  metaImageField,
+  metaImageFileRefusal,
+  metaImageUploadStatusMessage,
+  metaImageUrlWithheld,
   metaInstagramDsaFields,
   metaInstagramUserIdError,
   metaLeadFormDraftRefusal,
   metaLeadFormForObjective,
-  metaLeadFormRestore,
   metaObjectiveAfterFoundationSwitch,
   metaObjectiveChoices,
   metaObjectiveIsUnavailable,
@@ -488,9 +504,10 @@ import {
   metaPixelValid,
   metaPlacementIsSelectable,
   metaPlacementOverrides,
+  metaPreviewImageLabel,
   metaRequiresPixel,
-  metaTargetingNamesCustomAudiences,
   metaUsesInstagram,
+  metaVariantsWithImage,
   parseNegativeKeywordInput,
   resolveLinkedInTargetingProfileId,
   roundUsdToCentsLikeGo,
@@ -804,7 +821,9 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaCreativeEnabled = input<boolean | null>(null);
 
   /** @see metaCreativeEnabled — an explicit yes, never a `null`. */
-  protected readonly metaCreativeAvailable = computed<boolean>(() => this.metaCreativeEnabled() === true);
+  protected readonly metaCreativeAvailable = computed<boolean>(
+    () => metaImageCapabilities(this.metaCreativeEnabled(), this.metaAssetUploadEnabled()).creativeAvailable
+  );
 
   /**
    * Whether the Reddit section may offer a per-campaign conversion pixel override
@@ -825,7 +844,9 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaAssetUploadEnabled = input<boolean | null>(null);
 
   /** @see metaAssetUploadEnabled — both capabilities an explicit yes. */
-  protected readonly metaAssetUploadAvailable = computed<boolean>(() => this.metaCreativeAvailable() && this.metaAssetUploadEnabled() === true);
+  protected readonly metaAssetUploadAvailable = computed<boolean>(
+    () => metaImageCapabilities(this.metaCreativeEnabled(), this.metaAssetUploadEnabled()).uploadAvailable
+  );
 
   /**
    * Whether the LinkedIn section may offer an image UPLOAD (`CampaignListResult.linkedInAssetUploadEnabled`).
@@ -986,9 +1007,11 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaAudienceTargetingEnabled = input<boolean | null>(null);
   /** Whether THIS caller may pick custom audiences — `CampaignListResult.metaCustomAudiencesEnabled` (`global_marketing_ops`). */
   public readonly metaCustomAudiencesEnabled = input<boolean | null>(null);
-  protected readonly metaAudienceTargetingAvailable = computed<boolean>(() => this.metaAudienceTargetingEnabled() === true);
+  protected readonly metaAudienceTargetingAvailable = computed<boolean>(
+    () => metaAudienceTargetingCapabilities(this.metaAudienceTargetingEnabled(), this.metaCustomAudiencesEnabled()).targetingAvailable
+  );
   protected readonly metaCustomAudiencesAvailable = computed<boolean>(
-    () => this.metaAudienceTargetingAvailable() && this.metaCustomAudiencesEnabled() === true
+    () => metaAudienceTargetingCapabilities(this.metaAudienceTargetingEnabled(), this.metaCustomAudiencesEnabled()).customAudiencesAvailable
   );
 
   /**
@@ -3408,20 +3431,7 @@ export class ImplementationTabComponent implements OnInit {
   private readonly metaManualBidding = computed<boolean>(() => this.biddingField('meta-ads').bidding?.strategy === 'manual');
   /** The Meta ad choice dropdowns offered (#5934): each only on an explicit yes and where the objective fits. */
   protected readonly metaAdOptionViews = computed<MetaAdOptionView[]>(() =>
-    META_AD_OPTION_FIELDS.filter((field) => this.metaAdOptionsEnabled()[field.key] === true && metaAdOptionApplies(field, this.metaObjective())).map(
-      (field) => ({
-        key: field.key,
-        label: field.label,
-        notSetLabel: `Not set (${metaAdOptionLabel(field.values[0])})`,
-        options: field.values.map((value) => ({
-          value,
-          label: metaAdOptionLabel(value),
-          disabled:
-            (field.key === 'optimizationGoal' && value === 'LANDING_PAGE_VIEWS' && this.metaManualBidding()) ||
-            (field.key === 'callToAction' && !metaCallToActionAllowedWithLeadForm(value, this.metaLeadFormRequested())),
-        })),
-      })
-    )
+    metaAdOptionViews(this.metaAdOptionsEnabled(), this.metaObjective(), this.metaManualBidding(), this.metaLeadFormRequested())
   );
   /** Why the Meta ad choices cannot be sent, or `null`: the create route's own rules. */
   protected readonly metaAdOptionsError = computed<string | null>(
@@ -3552,31 +3562,25 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly metaImageAssetBlock: Signal<CampaignMetaImageAssetBlock | null> = this.initMetaImageAssetBlock();
   /** Whether the draft holds an uploaded Meta image made for the brief now open — the only one sent. */
-  protected readonly metaImageAssetForThisBrief = computed(
-    () => this.metaImageAssetId() !== '' && this.metaImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  protected readonly metaImageAssetForThisBrief = computed(() =>
+    metaImageAssetForBrief(this.metaImageAssetId(), this.metaImageAssetBriefId(), this.briefPersistence().briefId)
   );
   /** An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes. */
-  private readonly metaAssetWithheld = computed(
-    () => (this.metaImageAssetForThisBrief() || this.metaImageUploadStatus() === 'uploading') && !this.metaAssetUploadAvailable()
+  private readonly metaAssetWithheld = computed(() =>
+    metaImageAssetWithheld(this.metaImageAssetForThisBrief(), this.metaImageUploadStatus(), this.metaAssetUploadAvailable())
   );
   /** A pasted image URL the request cannot carry: the image capability is not an explicit yes. */
-  private readonly metaImageUrlWithheld = computed(() => this.metaImageUrl() !== '' && !this.metaCreativeAvailable());
+  private readonly metaImageUrlWithheld = computed(() => metaImageUrlWithheld(this.metaImageUrl(), this.metaCreativeAvailable()));
   protected readonly metaImageAssetBlockMessage = computed(() => this.metaImageAssetBlock()?.message ?? '');
-  protected readonly metaImageUploadStatusMessage = computed(() => {
-    if (this.metaImageUploadStatus() === 'uploading') return 'Uploading image…';
-    return this.metaImageAssetForThisBrief() ? `Uploaded: ${this.metaImageAssetName() || 'image'}` : '';
-  });
+  protected readonly metaImageUploadStatusMessage = computed(() =>
+    metaImageUploadStatusMessage(this.metaImageUploadStatus(), this.metaImageAssetForThisBrief(), this.metaImageAssetName())
+  );
   protected readonly metaImageUploadLiveMessage = computed(() => (this.metaAssetUploadAvailable() ? this.metaImageUploadStatusMessage() : ''));
   /**
    * What the variant preview says about the image each ad will carry, read from the same field the
    * payload is (`metaImageField`), so the preview never promises an image the request leaves out.
    */
-  protected readonly metaPreviewImageLabel = computed(() => {
-    const image = this.metaImageField();
-    if ('imageAssetId' in image) return `Image: ${this.metaImageAssetName() || 'uploaded image'}`;
-    if ('imageUrl' in image) return `Image: ${image.imageUrl}`;
-    return '';
-  });
+  protected readonly metaPreviewImageLabel = computed(() => metaPreviewImageLabel(this.metaImageField(), this.metaImageAssetName()));
 
   /**
    * The brief's stored images, read while a Google image slot offers the library. Re-read on every
@@ -5249,18 +5253,11 @@ export class ImplementationTabComponent implements OnInit {
     this.clearMetaImageAsset();
     this.emitDraft();
 
-    if (!isCreativeAssetMimeType(file.type)) {
-      this.failMetaImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
-      return;
-    }
-    if (file.size > CREATIVE_ASSET_MAX_BYTES) {
-      this.failMetaImageUpload(CREATIVE_ASSET_TOO_LARGE_MESSAGE);
-      return;
-    }
     const briefId = this.briefPersistence().briefId ?? '';
     const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
-    if (!briefId || !projectSlug) {
-      this.failMetaImageUpload('Save the brief before uploading an image for it.');
+    const refusal = metaImageFileRefusal(file, briefId, projectSlug);
+    if (refusal !== null) {
+      this.failMetaImageUpload(refusal);
       return;
     }
 
@@ -5668,12 +5665,7 @@ export class ImplementationTabComponent implements OnInit {
 
   /** One Meta ad choice (#5934); the empty "Not set" option removes the key, so nothing is sent. */
   protected onMetaAdOptionChange(key: MetaAdOptionKey, value: string | null): void {
-    this.metaAdOptions.update((options) => {
-      const next = { ...options };
-      if (!value) delete next[key];
-      else next[key] = value;
-      return next;
-    });
+    this.metaAdOptions.update((options) => metaAdOptionsWithChoice(options, key, value));
     this.emitDraft();
   }
 
@@ -5685,9 +5677,7 @@ export class ImplementationTabComponent implements OnInit {
 
   /** Drops every Meta ad choice this deployment answered no to: the way past an `unsupported` {@link metaAdOptionsBlock}. */
   protected clearUnsupportedMetaAdOptions(): void {
-    this.metaAdOptions.update((options) =>
-      Object.fromEntries(Object.entries(options).filter(([key]) => this.metaAdOptionsEnabled()[key as MetaAdOptionKey] !== false))
-    );
+    this.metaAdOptions.update((options) => metaAdOptionsWithoutUnsupported(options, this.metaAdOptionsEnabled()));
     this.emitDraft();
   }
 
@@ -7447,14 +7437,17 @@ export class ImplementationTabComponent implements OnInit {
    * `metaCreativeAvailable()`. Never both on a variant, which campaign-service refuses.
    */
   private metaVariantsForCreate(): MetaAdVariant[] {
-    const image = this.metaImageField();
-    return Object.keys(image).length > 0 ? this.metaVariants().map((variant) => ({ ...variant, ...image })) : this.metaVariants();
+    return metaVariantsWithImage(this.metaVariants(), this.metaImageField());
   }
 
-  private metaImageField(): { imageAssetId: string } | { imageUrl: string } | Record<string, never> {
-    if (this.metaAssetUploadAvailable() && this.metaImageAssetForThisBrief()) return { imageAssetId: this.metaImageAssetId() };
-    if (this.metaCreativeAvailable() && this.metaImageUrl()) return { imageUrl: this.metaImageUrl() };
-    return {};
+  private metaImageField(): MetaImageField {
+    return metaImageField({
+      uploadAvailable: this.metaAssetUploadAvailable(),
+      assetForThisBrief: this.metaImageAssetForThisBrief(),
+      assetId: this.metaImageAssetId(),
+      creativeAvailable: this.metaCreativeAvailable(),
+      imageUrl: this.metaImageUrl(),
+    });
   }
 
   /**
@@ -7469,43 +7462,22 @@ export class ImplementationTabComponent implements OnInit {
    * upload does, since `metaImageField` would withhold it.
    */
   private initMetaImageAssetBlock(): Signal<CampaignMetaImageAssetBlock | null> {
-    return computed(() => {
-      if (!this.showMetaSection()) return null;
-      const briefId = this.briefPersistence().briefId;
-      if (this.metaImageAssetId() !== '' && briefId && this.metaImageAssetBriefId() !== briefId) {
-        return {
-          kind: 'otherBrief',
-          message:
-            'The uploaded Meta image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again or use an image URL.',
-        };
-      }
-      if (this.metaImageUploadStatus() === 'error' && briefId && this.metaImageUploadFailedBriefId() === briefId) {
-        return {
-          kind: 'uploadFailed',
-          message: `The Meta image upload did not complete: ${this.metaImageUploadError()} Remove it, or choose the image again.`,
-        };
-      }
-      if (!this.metaAssetWithheld() && !this.metaImageUrlWithheld()) return null;
-      if (this.metaCreativeEnabled() === false || (this.metaAssetWithheld() && this.metaAssetUploadEnabled() === false)) {
-        return {
-          kind: 'unsupported',
-          message: 'Meta ad images are not available on this deployment, so the image cannot be sent. Remove it to create the campaign without it.',
-        };
-      }
-      if (this.createCapabilityRead() === 'pending') {
-        return { kind: 'pending', message: 'Checking Meta ad image support…' };
-      }
-      if (!this.briefPersistence().briefId) {
-        return {
-          kind: 'unsaved',
-          message: "Meta ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
-        };
-      }
-      return {
-        kind: 'failed',
-        message: 'Could not confirm that Meta ad images are supported, so the image cannot be sent yet. Retry the check, or remove the image.',
-      };
-    });
+    return computed(() =>
+      metaImageAssetBlock({
+        showMetaSection: this.showMetaSection(),
+        briefId: this.briefPersistence().briefId,
+        assetId: this.metaImageAssetId(),
+        assetBriefId: this.metaImageAssetBriefId(),
+        uploadStatus: this.metaImageUploadStatus(),
+        uploadFailedBriefId: this.metaImageUploadFailedBriefId(),
+        uploadError: this.metaImageUploadError(),
+        assetWithheld: this.metaAssetWithheld(),
+        urlWithheld: this.metaImageUrlWithheld(),
+        creativeEnabled: this.metaCreativeEnabled(),
+        assetUploadEnabled: this.metaAssetUploadEnabled(),
+        createCapabilityRead: this.createCapabilityRead(),
+      })
+    );
   }
 
   /** `followRedditImageUpload`'s sibling. */
@@ -8852,51 +8824,22 @@ export class ImplementationTabComponent implements OnInit {
       this.campaignForm.controls.googlePerformanceMaxAudienceSignal.setValue(draft.googlePerformanceMaxAudienceSignal, { emitEvent: false });
     }
 
-    // Restored only when PRESENT. A draft persisted before these fields shipped has none of them,
-    // and absence there means "this draft predates Meta fields" — the seeded values must stand.
-    // Writing `?? 'traffic'` instead would let an old draft silently downgrade a Conversions
-    // campaign. A present-but-empty `metaPixelId` is a real cleared value and is restored as one,
-    // which is exactly the distinction `undefined` preserves and `''` would destroy.
-    if (draft.metaObjective !== undefined) {
-      this.metaObjective.set(draft.metaObjective);
-    }
-    if (draft.metaPlacements !== undefined) {
-      this.metaPlacements.set({ ...draft.metaPlacements });
-    }
-    if (draft.metaPixelId !== undefined) {
-      this.metaPixelId.set(draft.metaPixelId);
-    }
-    this.restoreMetaInstagramDsa(draft);
-    // Only under the foundation it was edited under: a foundation switch keeps the brief and its draft
-    // (`CampaignsComponent` leaves both alone), and another foundation's audiences must not ride along.
-    if (draft.metaAudienceTargeting !== undefined && draft.metaAudienceTargetingProject === this.activeFoundationSlug()) {
-      this.metaAudienceTargeting.set(this.copyMetaAudienceTargeting({ ...DEFAULT_META_AUDIENCE_TARGETING, ...draft.metaAudienceTargeting }));
-    }
-    // The Meta ad choices (#5934) on the same foundation rule, minus any the restored objective does not take.
-    if (draft.metaAdOptions !== undefined && draft.metaAdOptionsProject === this.activeFoundationSlug()) {
-      this.metaAdOptions.set(compactMetaAdOptions(draft.metaAdOptions));
-      this.dropInapplicableMetaAdOptions();
-    }
-    // The lead form (#5940) on the same foundation rule, and only if the restored objective takes one. A draft
-    // saved under another foundation also drops `leads`, as the in-place switch does: this component may be new
-    // since the switch (left the tab and came back), so that handler never ran for it.
-    const leadFormRestore = metaLeadFormRestore(
-      { objective: this.metaObjective(), leadFormId: draft.metaLeadFormId, project: draft.metaLeadFormProject },
-      this.activeFoundationSlug()
-    );
-    this.metaObjective.set(leadFormRestore.objective);
-    if (leadFormRestore.leadFormId !== null) {
-      this.metaLeadFormId.set(leadFormRestore.leadFormId);
-    }
-    if (draft.metaGeoTargets !== undefined) {
-      this.metaGeoTargets.set(metaAcceptedGeos(draft.metaGeoTargets));
-    }
-    if (draft.metaBudgetUsd !== undefined) {
-      this.metaBudgetUsd.set(draft.metaBudgetUsd);
-    }
-    if (draft.metaLifetimeBudget !== undefined) {
-      this.metaLifetimeBudget.set(draft.metaLifetimeBudget);
-    }
+    // Each field only when the draft carries it; targeting, ad options and the lead form only under their own
+    // foundation; the objective after the lead form rule. See `metaDraftRestore`.
+    const metaRestore = metaDraftRestore(draft, this.metaObjective(), this.activeFoundationSlug());
+    this.metaObjective.set(metaRestore.objective);
+    if (metaRestore.placements !== undefined) this.metaPlacements.set(metaRestore.placements);
+    if (metaRestore.pixelId !== undefined) this.metaPixelId.set(metaRestore.pixelId);
+    // ONE emitting patch: `metaInstagramDsaDraft` (what validation, `submit` and `emitDraft` read) follows this
+    // group's `valueChanges`, so a silent write would leave the inputs showing the restored text while every check
+    // still saw blanks (PR #4483 review). The emit cannot loop: `applyDraft` runs only while `seeding`.
+    if (Object.keys(metaRestore.instagramDsaPatch).length > 0) this.metaInstagramDsaForm.patchValue(metaRestore.instagramDsaPatch);
+    if (metaRestore.audienceTargeting !== undefined) this.metaAudienceTargeting.set(metaRestore.audienceTargeting);
+    if (metaRestore.adOptions !== undefined) this.metaAdOptions.set(metaRestore.adOptions);
+    if (metaRestore.leadFormId !== null) this.metaLeadFormId.set(metaRestore.leadFormId);
+    if (metaRestore.geoTargets !== undefined) this.metaGeoTargets.set(metaRestore.geoTargets);
+    if (metaRestore.budgetUsd !== undefined) this.metaBudgetUsd.set(metaRestore.budgetUsd);
+    if (metaRestore.lifetimeBudget !== undefined) this.metaLifetimeBudget.set(metaRestore.lifetimeBudget);
 
     // Same present-only rule, for the same reason: an older draft omits these, and absence there
     // means "keep what the brief seeded".
@@ -8958,20 +8901,15 @@ export class ImplementationTabComponent implements OnInit {
       this.redditVideoGoal.set(draft.redditVideoGoal);
     }
     // The Meta image, on the Reddit image's terms above.
-    if (draft.metaImageUrl !== undefined) {
-      this.metaImageUrl.set(draft.metaImageUrl);
+    const metaImageRestore = metaImageDraftRestore(draft);
+    if (metaImageRestore.imageUrl !== undefined) this.metaImageUrl.set(metaImageRestore.imageUrl);
+    if (metaImageRestore.asset !== undefined) {
+      this.metaImageAssetId.set(metaImageRestore.asset.id);
+      this.metaImageAssetName.set(metaImageRestore.asset.name);
+      this.metaImageAssetBriefId.set(metaImageRestore.asset.briefId);
     }
-    if (draft.metaImageAssetId !== undefined) {
-      this.metaImageAssetId.set(draft.metaImageAssetId);
-      this.metaImageAssetName.set(draft.metaImageAssetName ?? '');
-      this.metaImageAssetBriefId.set(draft.metaImageAssetBriefId ?? '');
-    }
-    if (draft.metaImageUploadFailedMessage && draft.metaImageUploadFailedBriefId) {
-      this.failMetaImageUpload(draft.metaImageUploadFailedMessage, draft.metaImageUploadFailedBriefId);
-    }
-    if (draft.metaImageUploadPendingName) {
-      this.resumeMetaImageUpload(draft.metaImageUploadPendingName, draft.metaImageUploadPendingBriefId ?? '');
-    }
+    if (metaImageRestore.failedUpload) this.failMetaImageUpload(metaImageRestore.failedUpload.message, metaImageRestore.failedUpload.briefId);
+    if (metaImageRestore.pendingUpload) this.resumeMetaImageUpload(metaImageRestore.pendingUpload.name, metaImageRestore.pendingUpload.briefId);
     // The LinkedIn variants as edited, each with its own image, over the brief's seed (#5547). Each
     // entry copied, so the parent's draft is never reachable from the editor.
     if (Array.isArray(draft.linkedInVariants)) {
@@ -9426,22 +9364,21 @@ export class ImplementationTabComponent implements OnInit {
       // Signal-backed, so `valueChanges` never carries them — they are snapshotted here and
       // emitted explicitly by each Meta handler. `placements` is spread rather than referenced so
       // the parent holds a value, not a live view of a signal this component is about to destroy.
-      metaObjective: this.metaObjective(),
-      metaPlacements: { ...this.metaPlacements() },
-      metaPixelId: this.metaPixelId(),
-      metaGeoTargets: [...this.metaGeoTargets()],
-      // As typed, whether or not the capability is on, so a draft survives the answer arriving late.
-      metaInstagramUserId: this.metaInstagramDsaDraft().instagramUserId,
-      metaDsaBeneficiary: this.metaInstagramDsaDraft().dsaBeneficiary,
-      metaDsaPayor: this.metaInstagramDsaDraft().dsaPayor,
-      metaAudienceTargeting: this.copyMetaAudienceTargeting(this.metaAudienceTargeting()),
-      metaAudienceTargetingProject: this.activeFoundationSlug(),
-      metaAdOptions: { ...this.metaAdOptions() },
-      metaAdOptionsProject: this.activeFoundationSlug(),
-      metaLeadFormId: this.metaLeadFormId(),
-      metaLeadFormProject: this.activeFoundationSlug(),
-      metaBudgetUsd: this.metaBudgetUsd(),
-      metaLifetimeBudget: this.metaLifetimeBudget(),
+      ...metaDraftFields({
+        objective: this.metaObjective(),
+        placements: this.metaPlacements(),
+        pixelId: this.metaPixelId(),
+        geoTargets: this.metaGeoTargets(),
+        instagramUserId: this.metaInstagramDsaDraft().instagramUserId,
+        dsaBeneficiary: this.metaInstagramDsaDraft().dsaBeneficiary,
+        dsaPayor: this.metaInstagramDsaDraft().dsaPayor,
+        audienceTargeting: this.metaAudienceTargeting(),
+        adOptions: this.metaAdOptions(),
+        leadFormId: this.metaLeadFormId(),
+        foundation: this.activeFoundationSlug(),
+        budgetUsd: this.metaBudgetUsd(),
+        lifetimeBudget: this.metaLifetimeBudget(),
+      }),
       // Microsoft's four (LFXV2-3312), snapshotted rather than referenced for the same reason as
       // the Meta block: the parent must hold a value, not a live view of a signal this component
       // is about to destroy. The two ARRAYS are carried because they have a real editor here —
@@ -9508,14 +9445,16 @@ export class ImplementationTabComponent implements OnInit {
       redditImageUploadFailedMessage: this.redditImageUploadFailedBriefId() ? this.redditImageUploadError() : '',
       redditImageUploadFailedBriefId: this.redditImageUploadFailedBriefId(),
       redditVideoGoal: this.redditVideoGoal(),
-      metaImageUrl: this.metaImageUrl(),
-      metaImageAssetId: this.metaImageAssetId(),
-      metaImageAssetName: this.metaImageAssetName(),
-      metaImageAssetBriefId: this.metaImageAssetBriefId(),
-      metaImageUploadPendingName: this.metaImageUploadPendingName(),
-      metaImageUploadPendingBriefId: this.metaImageUploadPendingBriefId(),
-      metaImageUploadFailedMessage: this.metaImageUploadFailedBriefId() ? this.metaImageUploadError() : '',
-      metaImageUploadFailedBriefId: this.metaImageUploadFailedBriefId(),
+      ...metaImageDraftFields({
+        imageUrl: this.metaImageUrl(),
+        assetId: this.metaImageAssetId(),
+        assetName: this.metaImageAssetName(),
+        assetBriefId: this.metaImageAssetBriefId(),
+        uploadPendingName: this.metaImageUploadPendingName(),
+        uploadPendingBriefId: this.metaImageUploadPendingBriefId(),
+        uploadError: this.metaImageUploadError(),
+        uploadFailedBriefId: this.metaImageUploadFailedBriefId(),
+      }),
       // A real editor since #5547, so carried (see the note on the brief-derived arrays above).
       linkedInVariants: this.linkedInVariants().map((variant) => ({ ...variant })),
       linkedInImageUploadVariantKey: this.linkedInImageUploadVariantKey(),
@@ -11384,41 +11323,15 @@ export class ImplementationTabComponent implements OnInit {
    * offered but waiting or Retry: the targeting may well be sendable once it answers.
    */
   private initMetaAudienceTargetingBlock(): Signal<CampaignMetaAudienceTargetingBlock | null> {
-    return computed(() => {
-      const chosen = compactMetaAudienceTargeting(this.metaAudienceTargeting());
-      if (chosen === null) return null;
-      const deploymentUnanswered = !this.metaAudienceTargetingAvailable();
-      if (!deploymentUnanswered && (!metaTargetingNamesCustomAudiences(chosen) || this.metaCustomAudiencesAvailable())) return null;
-      if (deploymentUnanswered && this.metaAudienceTargetingEnabled() === false) {
-        return {
-          kind: 'unsupported',
-          message:
-            'Meta audience targeting is not available on this deployment, so the targeting on this brief cannot be sent. Clear it to create the campaign.',
-        };
-      }
-      if (!deploymentUnanswered && this.metaCustomAudiencesEnabled() === false) {
-        return {
-          kind: 'restricted',
-          message:
-            'Only the LF marketing team can use Meta custom audiences, because every foundation shares one Meta ad account. Remove them to create the campaign.',
-        };
-      }
-      const subject = deploymentUnanswered ? 'Meta audience targeting' : 'Meta custom audiences';
-      const orRemove = deploymentUnanswered ? '' : ', or remove them';
-      if (this.createCapabilityRead() === 'pending') {
-        return {
-          kind: 'pending',
-          message: `Checking whether you can send ${subject}. Create waits for the answer so the targeting on this brief is not dropped.`,
-        };
-      }
-      if (!this.briefPersistence().briefId) {
-        return { kind: 'unsaved', message: `${subject} can't be checked until this brief is saved. Save the brief${orRemove}.` };
-      }
-      return {
-        kind: 'failed',
-        message: `Could not confirm that you can send ${subject}, so Create waits rather than dropping the targeting on this brief. Retry the check${orRemove}.`,
-      };
-    });
+    return computed(() =>
+      metaAudienceTargetingBlock({
+        targeting: this.metaAudienceTargeting(),
+        targetingEnabled: this.metaAudienceTargetingEnabled(),
+        customAudiencesEnabled: this.metaCustomAudiencesEnabled(),
+        createCapabilityRead: this.createCapabilityRead(),
+        briefId: this.briefPersistence().briefId,
+      })
+    );
   }
 
   /**
@@ -11428,24 +11341,7 @@ export class ImplementationTabComponent implements OnInit {
    * Create waits or offers Retry, because the choice may well be sendable once it answers.
    */
   private initMetaAdOptionsBlock(): Signal<CampaignBiddingCapabilityBlock | null> {
-    return computed(() => {
-      const enabled = this.metaAdOptionsEnabled();
-      const held = Object.keys(compactMetaAdOptions(this.metaAdOptions())).filter((key) => enabled[key as MetaAdOptionKey] !== true);
-      if (held.length === 0) return null;
-      const labels = META_AD_OPTION_FIELDS.filter((field) => held.includes(field.key))
-        .map((field) => field.label.toLowerCase())
-        .join(', ');
-      if (held.every((key) => enabled[key as MetaAdOptionKey] === false)) {
-        return { kind: 'unsupported', message: `This deployment cannot send the Meta ${labels} on this brief. Clear it to create the campaign.` };
-      }
-      if (this.createCapabilityRead() === 'pending') {
-        return { kind: 'pending', message: `Checking whether the Meta ${labels} can be sent. Create waits so it is not dropped.` };
-      }
-      if (!this.briefPersistence().briefId) {
-        return { kind: 'unsaved', message: `The Meta ${labels} can't be checked until this brief is saved. Save the brief.` };
-      }
-      return { kind: 'failed', message: `Could not confirm that the Meta ${labels} can be sent, so Create waits rather than dropping it. Retry the check.` };
-    });
+    return computed(() => metaAdOptionsBlock(this.metaAdOptions(), this.metaAdOptionsEnabled(), this.createCapabilityRead(), this.briefPersistence().briefId));
   }
 
   /**
@@ -14256,49 +14152,16 @@ export class ImplementationTabComponent implements OnInit {
 
   /** The Meta ad choices for the request: each only on an explicit yes, "Not set" never sent. */
   private metaAdOptionsField(): MetaAdOptions {
-    const enabled = this.metaAdOptionsEnabled();
-    return Object.fromEntries(Object.entries(compactMetaAdOptions(this.metaAdOptions())).filter(([key]) => enabled[key as MetaAdOptionKey] === true));
+    return metaAdOptionsForCreate(this.metaAdOptions(), this.metaAdOptionsEnabled());
   }
 
   /** Clears each Meta ad choice the current objective does not take (#5934). */
   private dropInapplicableMetaAdOptions(): void {
-    this.metaAdOptions.update((options) =>
-      Object.fromEntries(
-        Object.entries(options).filter(([key]) => META_AD_OPTION_FIELDS.some((f) => f.key === key && metaAdOptionApplies(f, this.metaObjective())))
-      )
-    );
+    this.metaAdOptions.update((options) => metaAdOptionsForObjective(options, this.metaObjective()));
   }
 
   private defaultMetaAudienceTargeting(): MetaAudienceTargetingDraft {
-    return this.copyMetaAudienceTargeting(DEFAULT_META_AUDIENCE_TARGETING);
-  }
-
-  /** A copy whose arrays are its own, so the parent's draft never holds a live view of this component's state. */
-  private copyMetaAudienceTargeting(t: MetaAudienceTargetingDraft): MetaAudienceTargetingDraft {
-    return { ...t, genders: [...t.genders], customAudiences: [...t.customAudiences], excludedCustomAudiences: [...t.excludedCustomAudiences] };
-  }
-
-  /**
-   * Restores the Meta Instagram id and DSA disclosures, each only when present and a string — the
-   * same present-only rule as `restoreGoogleBidding`.
-   */
-  private restoreMetaInstagramDsa(draft: CampaignImplementationDraft): void {
-    const fields = [
-      ['metaInstagramUserId', 'instagramUserId'],
-      ['metaDsaBeneficiary', 'dsaBeneficiary'],
-      ['metaDsaPayor', 'dsaPayor'],
-    ] as const;
-    const patch: Partial<Record<(typeof fields)[number][1], string>> = {};
-    for (const [draftKey, control] of fields) {
-      const value = draft[draftKey];
-      if (typeof value === 'string') patch[control] = value;
-    }
-    // ONE emitting patch, unlike `restoreGoogleBidding`: `metaInstagramDsaDraft` (what validation,
-    // `submit` and `emitDraft` read) follows this group's `valueChanges`, so a silent write would
-    // leave the inputs showing the restored text while every check still saw blanks (PR #4483
-    // review). The emit cannot loop: `applyDraft` runs only while `seeding`, which the group's
-    // draft subscription honours.
-    if (Object.keys(patch).length > 0) this.metaInstagramDsaForm.patchValue(patch);
+    return copyMetaAudienceTargeting(DEFAULT_META_AUDIENCE_TARGETING);
   }
 
   /**

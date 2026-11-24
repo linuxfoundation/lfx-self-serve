@@ -5,7 +5,7 @@ import { NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -44,6 +44,7 @@ import {
   parseEmailList,
   rankUserSearchResults,
 } from '@lfx-one/shared/utils';
+import { maxCodePointsValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
 import { UserInitialsPipe } from '@pipes/user-initials.pipe';
 import { CommitteeService } from '@services/committee.service';
@@ -167,6 +168,9 @@ export class AddMemberDialogComponent {
   public readonly searchForm = new FormGroup({ query: new FormControl('') });
   /** Picker for "import registrants from a meeting" (LFXV2-2607). */
   public readonly importForm = new FormGroup({ meeting: new FormControl<string | null>(null) });
+  public readonly memberNamesForm = new FormArray<FormGroup<{ email: FormControl<string>; first_name: FormControl<string>; last_name: FormControl<string> }>>(
+    []
+  );
 
   public submitting = signal(false);
   public searchLoading = signal(false);
@@ -176,6 +180,7 @@ export class AddMemberDialogComponent {
   private readonly orgSubmitAttempted = signal(false);
 
   private readonly rawEmails = toSignal(this.form.get('emails')!.valueChanges.pipe(startWith(this.form.get('emails')!.value)), { initialValue: '' });
+  private readonly memberNamesStatus = toSignal(this.memberNamesForm.statusChanges, { initialValue: this.memberNamesForm.status });
   /** Bridges the meeting picker's plain FormControl value into a signal so the Import button's
    * `[disabled]` binding reliably re-evaluates under zoneless change detection. */
   public readonly selectedMeetingId = toSignal(this.importForm.get('meeting')!.valueChanges.pipe(startWith(this.importForm.get('meeting')!.value)), {
@@ -211,6 +216,7 @@ export class AddMemberDialogComponent {
       !this.submitting() &&
       !this.importing() &&
       this.categorized().toInvite.length > 0 &&
+      (!this.isDirectAdd() || this.collectOnly || this.memberNamesStatus() === 'VALID') &&
       !this.directAddRequiresSingleEmail() &&
       !(this.showOrganizationField() && this.orgInvalid())
   );
@@ -248,6 +254,7 @@ export class AddMemberDialogComponent {
   public readonly votingStatusOptions = [...MEMBER_FORM_VOTING_STATUSES];
 
   public constructor() {
+    this.form.controls.emails.valueChanges.pipe(startWith(''), takeUntilDestroyed()).subscribe(() => this.syncMemberNameForms());
     this.form
       .get('organization')!
       .valueChanges.pipe(takeUntilDestroyed())
@@ -272,6 +279,7 @@ export class AddMemberDialogComponent {
     }
     const current = this.form.get('emails')!.value.trim();
     this.form.get('emails')!.setValue(current ? `${current}\n${email}` : email);
+    this.prefillMemberNames(email, user.first_name, user.last_name);
     this.searchForm.get('query')!.setValue('');
 
     // Pre-fill organization from search result / profile when the field is shown.
@@ -351,9 +359,20 @@ export class AddMemberDialogComponent {
     const emails = this.categorized().toInvite;
     // Immediate mode POSTs to a committee, so it needs one; collect mode only stages payloads.
     // Also refuses while an import is in flight — see canSubmit.
-    if ((!this.collectOnly && !committeeId) || emails.length === 0 || this.importing()) {
+    if ((!this.collectOnly && !committeeId) || emails.length === 0 || this.importing() || this.submitting()) {
       return;
     }
+
+    if (this.isDirectAdd() && !this.collectOnly && this.memberNamesForm.invalid) {
+      this.memberNamesForm.markAllAsTouched();
+      return;
+    }
+    // Snapshot each person's names with their email before asynchronous company resolution.
+    const members: CreateCommitteeMemberRequest[] = this.memberNamesForm.getRawValue().map((row) => ({
+      email: row.email,
+      first_name: row.first_name.trim(),
+      last_name: row.last_name.trim(),
+    }));
 
     if (this.organizationRequiredForDirectAdd() && emails.length > 1) {
       this.messageService.add({
@@ -400,7 +419,7 @@ export class AddMemberDialogComponent {
       }
 
       if (this.isDirectAdd()) {
-        this.fanOutDirectAdd(committeeId!, emails, role, organization, votingStatus);
+        this.fanOutDirectAdd(committeeId!, members, role, organization, votingStatus);
         return;
       }
       this.fanOutInvites(committeeId!, emails, role, organization);
@@ -432,17 +451,17 @@ export class AddMemberDialogComponent {
 
   private fanOutDirectAdd(
     committeeId: string,
-    emails: string[],
+    members: CreateCommitteeMemberRequest[],
     role: string | null,
     organization: CommitteeOrganizationReference | null | undefined,
     votingStatus: CommitteeMemberVotingStatus | null
   ): void {
     const skipNotification = !this.form.get('send_notification')!.value;
 
-    from(emails)
+    from(members)
       .pipe(
-        mergeMap((email): Observable<DirectAddResult> => {
-          const memberData: CreateCommitteeMemberRequest = { email };
+        mergeMap((memberData): Observable<DirectAddResult> => {
+          const email = memberData.email;
           if (role) {
             memberData.role = { name: role as CommitteeMemberRole };
           }
@@ -699,6 +718,37 @@ export class AddMemberDialogComponent {
     });
   }
 
+  private syncMemberNameForms(): void {
+    if (!this.isDirectAdd() || this.collectOnly) return;
+    const existing = new Map(this.memberNamesForm.controls.map((form) => [form.controls.email.value, form]));
+    this.memberNamesForm.clear({ emitEvent: false });
+    for (const email of this.categorized().toInvite) {
+      const form =
+        existing.get(email) ??
+        new FormGroup({
+          email: new FormControl(email, { nonNullable: true }),
+          first_name: new FormControl('', {
+            nonNullable: true,
+            validators: [Validators.required, trimmedRequired(), maxCodePointsValidator(100, { trim: true })],
+          }),
+          last_name: new FormControl('', {
+            nonNullable: true,
+            validators: [Validators.required, trimmedRequired(), maxCodePointsValidator(100, { trim: true })],
+          }),
+        });
+      this.memberNamesForm.push(form, { emitEvent: false });
+    }
+    this.memberNamesForm.updateValueAndValidity();
+  }
+
+  private prefillMemberNames(email: string, firstName?: string | null, lastName?: string | null): void {
+    const form = this.memberNamesForm.controls.find((row) => row.controls.email.value === email.trim().toLowerCase());
+    if (!form) return;
+    // Imported or searched names fill gaps only; never overwrite a person's reviewed details.
+    if (!form.controls.first_name.value.trim()) form.controls.first_name.setValue(firstName?.trim() ?? '');
+    if (!form.controls.last_name.value.trim()) form.controls.last_name.setValue(lastName?.trim() ?? '');
+  }
+
   /**
    * Append imported emails not already listed to the emails textarea and report the outcome.
    * Filters against `parsed().valid` (already lowercased) so re-imports don't re-add rows and
@@ -713,6 +763,9 @@ export class AddMemberDialogComponent {
       const current = this.form.get('emails')!.value.trim();
       const appended = toAppend.join('\n');
       this.form.get('emails')!.setValue(current ? `${current}\n${appended}` : appended);
+    }
+    for (const registrant of registrants) {
+      this.prefillMemberNames(registrant.email ?? '', registrant.first_name, registrant.last_name);
     }
 
     this.importSummary.set(buildImportSummary(meetingTitle, toAppend.length, emails.length - toAppend.length, skippedNoEmail));

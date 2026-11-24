@@ -203,7 +203,7 @@ test.describe('asset comments structure', () => {
     await page.screenshot({ path: test.info().outputPath('field-draft-survives-tab-and-ack.png'), fullPage: true });
   });
 
-  test('a denied save shows access Retry and restores the same viewer draft after a successful read', async ({ page }) => {
+  test('a denied save is a terminal access line: no Retry button, and no wake re-reads the refused scope', async ({ page }) => {
     const fixture = await setupComments(page);
     await fixture.open();
     const field = page.getByTestId('mktg-field-comments-mf.positioning');
@@ -215,18 +215,19 @@ test.describe('asset comments structure', () => {
     await field.getByRole('button', { name: 'Add comment', exact: true }).click();
     const panel = page.getByTestId('mktg-comments-panel');
     await expect(panel.getByRole('alert')).toContainText('write access');
+    await expect(panel.getByRole('button', { name: 'Retry comments' })).toHaveCount(0);
+    await expect(panel.getByTestId('mktg-comments-retrying')).toHaveCount(0);
     await expect(field.getByRole('textbox')).toHaveCount(0);
     expect(fixture.state.posts).toHaveLength(1);
+    // RFC 9110 §15.5.4: the same credentials would be refused again, so a focus does not send another read of this scope.
+    const reads = fixture.state.reads;
+    // Arm the listener before the wake, then let it time out: no comments GET may follow the focus.
+    const wakeRead = page.waitForRequest((request) => request.method() === 'GET' && /\/comments(\?|$)/.test(request.url()), { timeout: 1500 });
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect(wakeRead).rejects.toThrow();
+    expect(fixture.state.reads).toBe(reads);
+    await expect(panel.getByRole('alert')).toContainText('write access');
     await page.screenshot({ path: test.info().outputPath('comment-save-denied.png'), fullPage: true });
-    fixture.state.deny = false;
-    await panel.getByRole('button', { name: 'Retry comments' }).click();
-    await expect(field.getByRole('textbox')).toHaveValue('Keep this synthetic draft.');
-    expect(fixture.state.posts).toHaveLength(1);
-    await field.getByRole('button', { name: 'Add comment', exact: true }).click();
-    await panel.getByRole('button', { name: 'Details', exact: true }).click();
-    await expect(panel.getByTestId('mktg-comment-body')).toHaveText('Keep this synthetic draft.');
-    expect(fixture.state.posts[0]['clientRequestId']).toBe(fixture.state.posts[1]['clientRequestId']);
-    await page.screenshot({ path: test.info().outputPath('comment-save-restored.png'), fullPage: true });
   });
 
   test('project non-writers see the access message, never a comments composer', async ({ page }) => {

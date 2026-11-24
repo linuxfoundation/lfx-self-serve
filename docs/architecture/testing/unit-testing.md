@@ -197,11 +197,55 @@ clock. Attach the promise's rejection assertion before asynchronous timer advanc
 rejection cannot become unhandled. Keep boundary cases and read-count assertions intact. Destroy
 fixtures or reset TestBed before restoring real timers, and clear pending virtual timers in teardown.
 
-For state-only component cases, an explicit empty-template fixture can retain the real component,
-forms, services, and signals without repeatedly mounting unrelated children. Keep real templates
-for DOM, child-binding, lazy-panel, and handoff assertions. Similarly, expensive module initialization
-can be shared within a fixed-configuration suite while stdout spies, mutable state, environment
-restoration, and filesystem scratch directories remain isolated per test.
+Expensive module initialization can be shared within a fixed-configuration suite while stdout
+spies, mutable state, environment restoration, and filesystem scratch directories remain isolated
+per test.
+
+### Choose the cheapest test that proves the behaviour
+
+A full render of a large component costs hundreds of milliseconds per test; a pure function costs
+well under one. Pick the first of these that can prove what the test is about:
+
+1. **A pure function.** Rule logic (validation, payload building, draft mapping) belongs in
+   `packages/shared/src/utils/` or a plain function beside the component, tested as table rows.
+2. **An empty-template subclass** for state on a component: form validity, computed signals,
+   request payloads, draft and persistence state. The subclass keeps the real inputs, forms,
+   services, signals and effects, and `detectChanges()` still runs the same change-detection and
+   effect cycles; only the DOM is gone.
+3. **A full render** only for DOM behaviour: rendered text, aria, focus, child bindings, lazy
+   panels, handoffs, and anything that queries `nativeElement` or `debugElement`.
+
+The recipe for step 2, as the campaign implementation tab does it in
+`implementation-tab.spec-helper.ts` (#5980):
+
+```ts
+@Component({ selector: 'lfx-implementation-tab-state-only', template: '', providers: [DialogService] })
+export class StateOnlyImplementationTab extends ImplementationTabComponent {}
+
+// in the spec: mount through the helper, and mark each state-only test
+trackStateOnlyTests();
+beforeEach(async () => {
+  fixture = TestBed.createComponent(tabComponentUnderTest());
+  // …
+});
+it('refuses a malformed conversion action', STATE_ONLY, () => {
+  /* assertions on signals and forms only */
+});
+```
+
+The campaigns page has the same fixture in `campaigns.spec-helper.ts`: `StateOnlyCampaignsComponent`,
+its own `STATE_ONLY`, `trackStateOnlyTests()` and `campaignsComponentUnderTest()`.
+
+- **Subclass, never `TestBed.overrideTemplate` on the component itself.** TestBed drops overrides
+  after each test, so the whole template recompiles every time (about 250 ms a test); the subclass
+  compiles once. `@Component` metadata is not inherited, so redeclare any component-scoped
+  `providers`.
+- **A test on the empty template must not touch the DOM**, directly or through a helper.
+- **An absence check is trivially true with no DOM.** A test asserting that something is _not_
+  rendered (`querySelector(...)` is `null`, a count of zero) passes on the empty template whether or
+  not the rule holds, so it stays on the full render even though it goes green on the subclass.
+- **Prove the fixture runs the logic:** break a rule the state-only tests cover and confirm they
+  fail before relying on them.
 
 ## Writing an app spec
 

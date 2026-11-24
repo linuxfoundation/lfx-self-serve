@@ -16,13 +16,20 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { PollType } from '@lfx-one/shared';
 import {
   INVITATION_NOT_FOUND,
+  VOTE_BALLOT_ENDED_STATE,
   VOTE_BALLOT_FINAL_NOTICE,
   VOTE_BALLOT_FINAL_STATE,
+  VOTE_BALLOT_NOT_FOUND,
+  VOTE_BALLOT_REMOVED_STATE,
   VOTE_CHANGE_NOT_ALLOWED,
   VOTE_COMMENT_RESPONSE_MAX_LENGTH,
   VOTE_IMPERSONATION_PRIVATE_NOTICE,
   VOTE_IMPERSONATION_READ_ONLY_NOTICE,
   VOTE_LAST_VOTER_CONFIRMATION,
+  VOTE_RATE_LIMITED_MESSAGE,
+  VOTE_UPSTREAM_ENDED,
+  VOTE_UPSTREAM_UPDATE_REMOVAL_MESSAGES,
+  VOTE_VOTER_REMOVED_ERROR_CODE,
 } from '@lfx-one/shared/constants';
 import {
   CommentResponseFormData,
@@ -122,9 +129,10 @@ export class VoteCastDrawerComponent {
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
   public readonly listVote = input<Vote | null>(null);
-  /** Review mode (#4331): shows the voter's submitted ballot without allowing changes. */
-  public readonly readOnly = input<boolean>(false);
-  /** Change mode (#4723): reviews the voter's own submitted ballot, allowing edits and PUT only when eligible. */
+  /**
+   * Change mode (#4723), the drawer's only recorded-ballot mode: reviews the voter's own submitted ballot,
+   * allowing edits and PUT only when eligible. An ineligible or impersonated ballot stays read-only.
+   */
   public readonly changeMode = input<boolean>(false);
 
   // === Model Signals (two-way binding) ===
@@ -132,6 +140,8 @@ export class VoteCastDrawerComponent {
 
   // === Outputs ===
   public readonly voteSubmitted = output<string>();
+  // Emitted when an update is rejected because the vote ended, the voter was removed, or the ballot wasn't found (#5964).
+  public readonly ballotUnavailable = output<string>();
 
   // === Forms ===
   public readonly form = new FormGroup({});
@@ -159,8 +169,8 @@ export class VoteCastDrawerComponent {
   private readonly cancelSubmit$ = new Subject<void>();
 
   // === Derived Signals (from API) ===
-  /** Both review and change mode show the voter's recorded ballot; only review locks it. */
-  protected readonly showsRecordedBallot: Signal<boolean> = computed(() => this.readOnly() || this.changeMode());
+  /** Change mode shows the voter's recorded ballot; `ballotReadOnly` decides whether it stays locked. */
+  protected readonly showsRecordedBallot: Signal<boolean> = computed(() => this.changeMode());
   protected readonly vote: Signal<Vote | null> = this.initVote();
   protected readonly myBallot: Signal<MyVoteBallot | null> = this.initMyBallot();
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
@@ -168,7 +178,7 @@ export class VoteCastDrawerComponent {
   // === Computed Signals ===
   /** A change request never unlocks a ballot until the caller's own saved ballot confirms eligibility. */
   protected readonly ballotReadOnly: Signal<boolean> = computed(() => {
-    if (this.readOnly() || this.impersonating()) return true;
+    if (this.impersonating()) return true;
     if (!this.changeMode()) return false;
     const vote = this.vote();
     const ballot = this.myBallot();
@@ -195,7 +205,7 @@ export class VoteCastDrawerComponent {
   protected readonly reviewNotice = 'Your vote has been recorded.';
   /** Pre-submit notice on a first ballot when the vote makes submitted ballots final (#4723); a missing setting means allowed. */
   protected readonly finalNotice: Signal<string | null> = computed(() =>
-    !this.readOnly() && !this.changeMode() && !this.impersonating() && !isVoteChangeAllowed(this.vote()) ? VOTE_BALLOT_FINAL_NOTICE : null
+    !this.changeMode() && !this.impersonating() && !isVoteChangeAllowed(this.vote()) ? VOTE_BALLOT_FINAL_NOTICE : null
   );
   protected readonly ballotLoadError = "Couldn't load your submitted ballot. Close this panel and try again.";
   // Footer is hidden (not removed) until a ballot exists — see drawer-pattern.md § Sticky footer.
@@ -229,13 +239,13 @@ export class VoteCastDrawerComponent {
         this.applyBallotPrefill();
       });
 
-    // Review mode: display the form once the voter's recorded ballot loads.
+    // Change mode: display the form once the voter's recorded ballot loads.
     toObservable(this.myBallot)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.applyBallotPrefill());
 
     // A reused drawer must not carry recorded choices or disabled controls into a first ballot.
-    toObservable(computed(() => `${this.readOnly()}|${this.changeMode()}`))
+    toObservable(this.changeMode)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.appliedPrefillKey = null;
@@ -265,7 +275,7 @@ export class VoteCastDrawerComponent {
     });
 
     // A persistent drawer's selection/mode changes end the previous submit session, including its body-appended dialog.
-    toObservable(computed(() => [this.visible(), this.voteId(), this.readOnly(), this.changeMode()] as const))
+    toObservable(computed(() => [this.visible(), this.voteId(), this.changeMode()] as const))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(([visible]) => {
         this.submissionGeneration++;
@@ -694,7 +704,7 @@ export class VoteCastDrawerComponent {
 
   /**
    * Displays the recorded ballot in the same controls used for voting (#4331). Reapply after a
-   * ballot or control-shape change, keeping all controls locked throughout loading and review.
+   * ballot or control-shape change, keeping controls locked while loading and whenever ballotReadOnly holds.
    */
   private applyBallotPrefill(): void {
     const vote = this.vote();
@@ -721,7 +731,7 @@ export class VoteCastDrawerComponent {
     for (const [questionId, value] of Object.entries(prefill.answers)) {
       this.form.get(questionId)?.setValue(value, { emitEvent: false });
     }
-    // Emitting updates the displayed abstention while syncControls keeps review locked.
+    // Emitting updates the displayed abstention while syncControls applies the current lock state.
     this.abstainControl.setValue(prefill.abstain);
     for (const [promptId, text] of Object.entries(prefill.comments)) {
       this.commentForm.get(promptId)?.setValue(text, { emitEvent: false });
@@ -759,6 +769,10 @@ export class VoteCastDrawerComponent {
           this.visible.set(false);
         },
         error: (err: unknown) => {
+          if (err instanceof HttpErrorResponse && err.status === 429) {
+            this.messageService.add({ severity: 'warn', summary: 'Too many requests', detail: VOTE_RATE_LIMITED_MESSAGE, life: 5000 });
+            return;
+          }
           const isInvitationMissing = err instanceof Error && !(err instanceof HttpErrorResponse) && err.message === INVITATION_NOT_FOUND;
           this.messageService.add({
             severity: 'error',
@@ -798,12 +812,42 @@ export class VoteCastDrawerComponent {
           this.visible.set(false);
         },
         error: (err: unknown) => {
-          const body = err instanceof HttpErrorResponse ? (err.error as { error?: unknown } | null) : null;
+          const body = err instanceof HttpErrorResponse ? (err.error as { error?: unknown; code?: unknown } | null) : null;
           const message = typeof body?.error === 'string' ? body.error.toLowerCase() : '';
-          if (err instanceof HttpErrorResponse && err.status === 409 && message.includes(VOTE_CHANGE_NOT_ALLOWED)) {
+          const status = err instanceof HttpErrorResponse ? err.status : undefined;
+          if (status === 409 && message.includes(VOTE_CHANGE_NOT_ALLOWED)) {
             this.messageService.add({ severity: 'warn', summary: "This vote doesn't allow changes", detail: VOTE_BALLOT_FINAL_STATE, life: 5000 });
             this.changeBlockedFor.update((ids) => new Set(ids).add(voteUid));
             this.visible.set(false);
+            return;
+          }
+          // #5964: an ended vote or a removed voter can never be updated, so block further edits; a ballot that
+          // isn't found may come back, so it only closes. All three refresh the host's list.
+          if (status === 400 && message.includes(VOTE_UPSTREAM_ENDED)) {
+            this.messageService.add({ severity: 'warn', summary: 'This vote has ended', detail: VOTE_BALLOT_ENDED_STATE, life: 5000 });
+            this.changeBlockedFor.update((ids) => new Set(ids).add(voteUid));
+            this.visible.set(false);
+            this.ballotUnavailable.emit(voteUid);
+            return;
+          }
+          if (
+            (status === 404 && body?.code === VOTE_VOTER_REMOVED_ERROR_CODE) ||
+            (status === 400 && VOTE_UPSTREAM_UPDATE_REMOVAL_MESSAGES.some((fragment) => message.includes(fragment)))
+          ) {
+            this.messageService.add({ severity: 'warn', summary: "You're no longer a voter", detail: VOTE_BALLOT_REMOVED_STATE, life: 5000 });
+            this.changeBlockedFor.update((ids) => new Set(ids).add(voteUid));
+            this.visible.set(false);
+            this.ballotUnavailable.emit(voteUid);
+            return;
+          }
+          if (status === 404) {
+            this.messageService.add({ severity: 'error', summary: 'Unable to update vote', detail: VOTE_BALLOT_NOT_FOUND, life: 5000 });
+            this.visible.set(false);
+            this.ballotUnavailable.emit(voteUid);
+            return;
+          }
+          if (status === 429) {
+            this.messageService.add({ severity: 'warn', summary: 'Too many requests', detail: VOTE_RATE_LIMITED_MESSAGE, life: 5000 });
             return;
           }
           this.messageService.add({

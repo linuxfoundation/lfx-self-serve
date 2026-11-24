@@ -6,9 +6,17 @@ import { GOOGLE_BIDDING_DEFAULT_BY_CHANNEL, GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL
 import type { CampaignImplementationDraft } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  configureGoogleTab,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The bidding plan.
@@ -22,12 +30,12 @@ describe('ImplementationTabComponent google bidding', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
 
-  it('offers no bidding plan until a Google channel is selected', () => {
+  it('offers no bidding plan until a Google channel is selected', STATE_ONLY, () => {
     const c = seedChannel(fixture, {});
 
     expect(c['googleBiddingChannel']()).toBeNull();
@@ -42,7 +50,7 @@ describe('ImplementationTabComponent google bidding', () => {
     ['includeDemandGen', 'demand-gen'],
     ['includePerformanceMax', 'performance-max'],
     ['includeDisplay', 'display'],
-  ])('offers exactly the strategies %s accepts', (control, channel) => {
+  ])('offers exactly the strategies %s accepts', STATE_ONLY, (control, channel) => {
     const c = seedChannel(fixture, { [control]: true });
     const accepted = GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel as keyof typeof GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL];
 
@@ -56,7 +64,7 @@ describe('ImplementationTabComponent google bidding', () => {
    * Search + Demand Gen and funds Demand Gen out of the split. Offering Demand Gen's single-entry
    * set here would hand the operator a plan the campaign they actually get cannot use.
    */
-  it('writes the plan against search when search accompanies demand gen', () => {
+  it('writes the plan against search when search accompanies demand gen', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true, includeDemandGen: true });
 
     expect(c['googleBiddingChannel']()).toBe('search');
@@ -68,7 +76,7 @@ describe('ImplementationTabComponent google bidding', () => {
     ['includeDemandGen', 'demand-gen'],
     ['includePerformanceMax', 'performance-max'],
     ['includeDisplay', 'display'],
-  ])('resolves an unpicked strategy to the %s channel default', (control, channel) => {
+  ])('resolves an unpicked strategy to the %s channel default', STATE_ONLY, (control, channel) => {
     const c = seedChannel(fixture, { [control]: true });
     const fallback = GOOGLE_BIDDING_DEFAULT_BY_CHANNEL[channel as keyof typeof GOOGLE_BIDDING_DEFAULT_BY_CHANNEL];
 
@@ -86,7 +94,7 @@ describe('ImplementationTabComponent google bidding', () => {
   describe('display target CPA (#5737)', () => {
     const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
 
-    it('offers every strategy in the display catalogue, target CPA included', () => {
+    it('offers every strategy in the display catalogue, target CPA included', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeDisplay: true });
       const offered = c['googleBiddingOptions']().map((o: { value: string }) => o.value);
 
@@ -116,7 +124,7 @@ describe('ImplementationTabComponent google bidding', () => {
       expect(query('implementation-google-target-cpa-withheld')).toBeNull();
     });
 
-    it('keeps a target CPA pick and its value on a switch from search to display', () => {
+    it('keeps a target CPA pick and its value on a switch from search to display', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'target-cpa', googleTargetCpa: '25' });
 
       c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true });
@@ -127,7 +135,7 @@ describe('ImplementationTabComponent google bidding', () => {
       expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'target-cpa', targetCpa: 25 });
     });
 
-    it('restores a target CPA draft on display as it was saved', () => {
+    it('restores a target CPA draft on display as it was saved', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeDisplay: true });
       c['restoreGoogleBidding']({ googleBiddingStrategy: 'target-cpa', googleTargetCpa: '25' } as CampaignImplementationDraft);
       // The restore writes without emitting; the full draft restore emits once at the end, as here.
@@ -144,7 +152,7 @@ describe('ImplementationTabComponent google bidding', () => {
    * to Demand Gen, and the control still holds a value Demand Gen refuses. Resolving it away is
    * what keeps the dependent fields — and the payload — honest about what will be sent.
    */
-  it('resolves an out-of-set pick to the default and withholds it from the payload', () => {
+  it('resolves an out-of-set pick to the default and withholds it from the payload', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.googleBiddingStrategy.setValue('target-roas');
     expect(c['googleBiddingStrategy']()).toBe('target-roas');
@@ -157,7 +165,7 @@ describe('ImplementationTabComponent google bidding', () => {
     expect(c['googleBiddingPayload']().biddingStrategy).toBeUndefined();
   });
 
-  it('sends a picked strategy the channel accepts', () => {
+  it('sends a picked strategy the channel accepts', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
     c['campaignForm'].controls.googleTargetCpa.setValue('25');
@@ -169,7 +177,7 @@ describe('ImplementationTabComponent google bidding', () => {
    * Which dependent fields are in play is a question about the EFFECTIVE strategy, and upstream
    * REFUSES a target on a strategy that cannot carry it rather than dropping it.
    */
-  it('shows the target CPA field only under a CPA strategy', () => {
+  it('shows the target CPA field only under a CPA strategy', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-clicks');
     expect(c['googleTakesTargetCpa']()).toBe(false);
@@ -180,7 +188,7 @@ describe('ImplementationTabComponent google bidding', () => {
     expect(c['googleTakesCpcBid']()).toBe(false);
   });
 
-  it('shows the target ROAS field only under a ROAS strategy', () => {
+  it('shows the target ROAS field only under a ROAS strategy', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversion-value');
 
@@ -218,7 +226,7 @@ describe('ImplementationTabComponent google bidding', () => {
   });
 
   /** The CPC bid is manual CPC's alone, and manual CPC is Search's alone. */
-  it('shows the CPC bid only under manual CPC', () => {
+  it('shows the CPC bid only under manual CPC', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['googleBiddingStrategy']()).toBe('manual-cpc');
@@ -239,13 +247,13 @@ describe('ImplementationTabComponent google bidding', () => {
     ['includeDisplay', true],
     ['includeDemandGen', true],
     ['includePerformanceMax', false],
-  ])('gates the conversion-action list on the channel (%s)', (control, allowed) => {
+  ])('gates the conversion-action list on the channel (%s)', STATE_ONLY, (control, allowed) => {
     const c = seedChannel(fixture, { [control]: true });
 
     expect(c['googleTakesConversionActions']()).toBe(allowed);
   });
 
-  it('withholds a conversion list typed on a channel that refuses it', () => {
+  it('withholds a conversion list typed on a channel that refuses it', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.googleConversionActions.setValue('12345');
     expect(c['googleBiddingPayload']().conversionActions).toEqual(['12345']);
@@ -263,6 +271,7 @@ describe('ImplementationTabComponent google bidding', () => {
    */
   it.each([['maximize-clicks'], ['maximize-conversions'], ['target-cpa'], ['maximize-conversion-value']])(
     'sends demand gen conversion actions under %s',
+    STATE_ONLY,
     (strategy) => {
       const c = seedChannel(fixture, { includeDemandGen: true, googleBiddingStrategy: strategy, googleConversionActions: ' 111 \n\n222' });
       expect(c['googleBiddingPayload']().conversionActions).toEqual(['111', '222']);
@@ -270,7 +279,7 @@ describe('ImplementationTabComponent google bidding', () => {
     }
   );
 
-  it('checks demand gen conversion actions as it checks every other channel', () => {
+  it('checks demand gen conversion actions as it checks every other channel', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDemandGen: true, googleConversionActions: '12345\nnot-an-id' });
     expect(c['googleBiddingError']()).toBe('"not-an-id" is not a conversion action id or resource name.');
   });

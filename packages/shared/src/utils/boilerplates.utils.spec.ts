@@ -26,6 +26,7 @@ import {
   validateBoilerplatesIntakeAnswers,
 } from './boilerplates.utils';
 import { mktgJsonAttachmentUsable } from './mktg-intake.utils';
+import { boilerplatesReportV2Envelope } from './__fixtures__/mktg-report-v2.fixture';
 
 /**
  * An envelope built by the agent's OWN `buildEnvelope` (marketing-os-agents
@@ -384,6 +385,19 @@ describe('boilerplates end-of-run replies', () => {
 });
 
 describe('boilerplates envelope', () => {
+  it('accepts the agent’s real v2 report (version and findings) and rejects a malformed present findings field with the kit’s message shape', () => {
+    const v2 = boilerplatesReportV2Envelope();
+    expect(validateBoilerplatesEnvelope(v2)).toEqual({ valid: true, errors: [] });
+    const findings = v2.report.findings;
+    expect(
+      validateBoilerplatesEnvelope({ ...v2, report: { ...v2.report, findings: { ...findings, missing_assets: [{ asset: '', reason: 'No id.' }] } } }).errors
+    ).toEqual(['report.findings.missing_assets must be a list of { asset, reason, fix? }']);
+    expect(validateBoilerplatesEnvelope({ ...v2, report: { ...v2.report, extra: 1 } }).errors).toEqual(['report has unknown keys: extra']);
+    // The stored revision reads the findings through untouched.
+    const { content, ...sidecar } = v2;
+    expect(boilerplatesAssetOfRevision(JSON.stringify(content), sidecar)?.report.findings).toEqual(findings);
+  });
+
   it('accepts the envelope the agent builds, and its sha256 recomputes over the content JSON', () => {
     expect(validateBoilerplatesEnvelope(envelope())).toEqual({ valid: true, errors: [] });
     const sha = createHash('sha256')

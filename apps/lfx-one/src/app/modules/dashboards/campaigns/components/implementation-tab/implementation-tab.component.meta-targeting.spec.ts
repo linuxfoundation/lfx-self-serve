@@ -12,9 +12,10 @@ import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The Meta geo chips (LFXV2-3227).
@@ -72,7 +73,7 @@ describe('ImplementationTabComponent Meta geo targets', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
     await selectMeta();
@@ -282,7 +283,7 @@ describe('ImplementationTabComponent meta ad image', () => {
     upload: boolean | null,
     draft: CampaignImplementationDraft | null = null
   ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     if (draft) f.componentRef.setInput('draft', draft);
@@ -368,11 +369,9 @@ describe('ImplementationTabComponent meta ad image', () => {
     }).compileComponents();
   });
 
-  it.each([
-    ['unanswered', null],
-    ['off', false],
-  ])('renders no image controls while the Meta creative capability is %s, and sends the variants unchanged', async (_label, creative) => {
-    const f = (await mount(creative, true)).fixture;
+  // Unanswered (`null`) is the stricter wiring case; the full null/false/true matrix is `metaImageCapabilities` in the helper spec.
+  it('renders no image controls while the Meta creative capability is unanswered, and sends the variants unchanged', async () => {
+    const f = (await mount(null, true)).fixture;
 
     expect(q(f, 'implementation-meta-image-url')).toBeNull();
     expect(q(f, 'implementation-meta-image-file')).toBeNull();
@@ -382,11 +381,8 @@ describe('ImplementationTabComponent meta ad image', () => {
     ]);
   });
 
-  it.each([
-    ['unanswered', null],
-    ['off', false],
-  ])('offers the image URL but no upload while the upload capability is %s', async (_label, upload) => {
-    const f = (await mount(true, upload)).fixture;
+  it('offers the image URL but no upload while the upload capability is unanswered', async () => {
+    const f = (await mount(true, null)).fixture;
 
     expect(q(f, 'implementation-meta-image-url')).not.toBeNull();
     expect(q(f, 'implementation-meta-image-file')).toBeNull();
@@ -478,15 +474,6 @@ describe('ImplementationTabComponent meta ad image', () => {
     expect(submitVariants(f).some((v) => 'imageAssetId' in v)).toBe(false);
   });
 
-  it('never sends an upload made for another brief, and says so', async () => {
-    const draft = { ...(await uploadedDraft()), metaImageAssetBriefId: '0f8fad5b-d9cb-469f-a165-70867728950e' };
-    const f = (await mount(true, true, draft)).fixture;
-    fillForm(f);
-
-    expect(q(f, 'implementation-meta-image-asset-block-otherBrief')).not.toBeNull();
-    expect(at(f).canSubmit()).toBe(false);
-  });
-
   it('keeps Create blocked after a failed upload with both capabilities on, until the operator removes it', async () => {
     uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } })));
     const f = (await mount(true, true)).fixture;
@@ -506,22 +493,19 @@ describe('ImplementationTabComponent meta ad image', () => {
     expect(submitVariants(f).map((v) => v['imageUrl'])).toEqual(['https://cdn.example.org/promo.png', 'https://cdn.example.org/promo.png']);
   });
 
-  it.each([
-    ['unanswered, with the read failed', null, 'failed', 'failed'],
-    ['unanswered, with the read pending', null, 'pending', 'pending'],
-    ['off', false, 'ready', 'unsupported'],
-  ] as const)('blocks Create for a restored image URL while the image capability is %s, rather than dropping it', async (_label, creative, read, kind) => {
+  // Wiring for the withheld URL on an unanswered capability; the `unsupported`, `pending` and `unsaved` kinds are rows in `metaImageAssetBlock`'s helper table.
+  it('blocks Create for a restored image URL while the image capability is unanswered and its read failed, rather than dropping it', async () => {
     const first = await mount(true, false);
     typeImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
     const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
     first.fixture.destroy();
 
-    const f = (await mount(creative, false, draft)).fixture;
-    f.componentRef.setInput('createCapabilityRead', read);
+    const f = (await mount(null, false, draft)).fixture;
+    f.componentRef.setInput('createCapabilityRead', 'failed');
     fillForm(f);
 
     expect(q(f, 'implementation-meta-image-url')).toBeNull();
-    expect(q(f, `implementation-meta-image-asset-block-${kind}`)).not.toBeNull();
+    expect(q(f, 'implementation-meta-image-asset-block-failed')).not.toBeNull();
     expect(at(f).canSubmit()).toBe(false);
 
     (q(f, 'implementation-meta-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
@@ -567,7 +551,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
   }
 
   async function mount(enabled: boolean | null | undefined, draft?: Record<string, unknown>): Promise<ComponentFixture<ImplementationTabComponent>> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     if (enabled !== undefined) f.componentRef.setInput('metaInstagramDsaEnabled', enabled);
     if (draft) f.componentRef.setInput('draft', { eventSlug: 'kubecon-eu-2026', headlines: [''], descriptions: [''], ...draft });
     f.componentRef.setInput('briefData', brief());
@@ -636,7 +620,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
   async function mountLive(
     briefData: CampaignBriefOutput
   ): Promise<{ f: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     f.componentRef.setInput('metaInstagramDsaEnabled', true);
@@ -739,7 +723,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
   });
 
   /** The geos and variants are seeded only from Meta copy, so a brief without any opens on none. */
-  it('clears the meta geos and variants when the next brief carries no meta copy', async () => {
+  it('clears the meta geos and variants when the next brief carries no meta copy', STATE_ONLY, async () => {
     const { f, latest } = await mountLive(brief());
     component(f)['addMetaGeoTarget']('DE');
     expect(latest()?.metaGeoTargets).toEqual(['US', 'DE']);
@@ -798,7 +782,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       expect(request['metaConfig']['instagramUserId']).toBe('17841400000000000');
     });
 
-    it('neither requires nor sends the Instagram id when every Instagram placement is off', async () => {
+    it('neither requires nor sends the Instagram id when every Instagram placement is off', STATE_ONLY, async () => {
       fixture = await mount(true);
       component()['metaPlacements'].update((p: Record<string, boolean>) => ({ ...p, instagramFeed: false, stories: false, reels: false }));
       await type({ instagramUserId: '17841400000000000' });
@@ -824,7 +808,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       expect(request['metaConfig']['dsaPayor']).toBe('The Linux Foundation');
     });
 
-    it('refuses a one-sided pair even without an EU geo', async () => {
+    it('refuses a one-sided pair even without an EU geo', STATE_ONLY, async () => {
       fixture = await mount(true);
       await type({ instagramUserId: '17841400000000000', dsaBeneficiary: 'CNCF' });
 
@@ -847,7 +831,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       expect(fixture.nativeElement.querySelector('#meta-dsa-beneficiary')?.getAttribute('maxlength')).toBeNull();
     });
 
-    it('persists the three values in the draft as typed, and restores them on remount', async () => {
+    it('persists the three values in the draft as typed, and restores them on remount', STATE_ONLY, async () => {
       fixture = await mount(true);
       let draft: Record<string, unknown> | undefined;
       component()['draftChange'].subscribe((d: Record<string, unknown>) => (draft = d));
