@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_EXPORT_KINDS, MKTG_PRINT_FONT_WEIGHTS } from '@lfx-one/shared/constants';
 import {
@@ -56,7 +56,8 @@ export class MktgFamilyExportService {
     const lookup = this.http.get<MktgFamilyExportLastResponse>(`${MKTG_FAMILY_EXPORT_API_PATH}/last`, { params }).pipe(
       take(1),
       catchError((error: unknown) => {
-        console.error('[mktg-family-export] Last export read failed', error);
+        // Status only: the poller re-reads through an outage, and no upstream payload may enter diagnostics on each retry.
+        console.error('[mktg-family-export] Last export read failed', { status: error instanceof HttpErrorResponse ? error.status : 0 });
         return throwError(() => error);
       }),
       shareReplay({ bufferSize: 1, refCount: false })

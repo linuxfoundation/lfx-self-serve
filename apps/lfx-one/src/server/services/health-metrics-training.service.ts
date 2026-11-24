@@ -6,6 +6,7 @@ import {
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
   HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSE_TYPE_LABELS,
   HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES,
   HEALTH_METRICS_TRAINING_ENROLLMENT_COMPARED_RANGES,
   HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED,
@@ -13,6 +14,7 @@ import {
 } from '@lfx-one/shared/constants';
 
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
+import { buildHealthMetricsSortOrderBy } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -21,8 +23,11 @@ import type {
   HealthMetricsL2Range,
   HealthMetricsTrainingCourse,
   HealthMetricsTrainingCourses,
+  HealthMetricsSqlSortColumn,
   HealthMetricsTrainingCoursesQuery,
+  HealthMetricsTrainingCoursesSortKey,
   HealthMetricsTrainingEnrollment,
+  HealthMetricsTrainingEnrollmentGoals,
   HealthMetricsTrainingEnrollmentPeriod,
   HealthMetricsTrainingEnrollmentQuery,
   HealthMetricsTrainingEnrollmentTotals,
@@ -50,11 +55,15 @@ type SummaryRow = { DELIVERY_TYPE: string; IS_LISTED_DELIVERY_TYPE?: boolean | n
 interface YearRow {
   ENROLLMENT_YEAR: number;
   ENROLLMENT_COUNT: number | null;
+  CERTIFICATION_EXAM_COUNT: number | null;
+  MICROCOURSE_COUNT: number | null;
+  INSTRUCTOR_LED_COUNT: number | null;
 }
 
 /** Totals ride on every row; a page past the end leaves one totals-only row whose course columns are NULL. */
 interface CourseRow {
   SCOPE_TOTAL: number | null;
+  ACTIVE_TOTAL: number | null;
   TOTAL_RECORDS: number;
   IS_PAGE_ROW: boolean | null;
   COURSE_KEY: string | null;
@@ -65,7 +74,7 @@ interface CourseRow {
   ENROLLMENT_COUNT: number | null;
   REVENUE_USD: number | null;
   /** Orders the page only; `toCourse` leaves it out of the response. */
-  SORT_RANK: number | null;
+  PAGE_POSITION: number | null;
 }
 
 /** Snowflake reads behind the Health Metrics Training tab; every figure is foundation-wide. */
@@ -86,6 +95,10 @@ export class HealthMetricsTrainingService {
         `certifications_earned_count_${suffix} AS certifications_${range}`,
         `revenue_usd_${suffix} AS revenue_usd_${range}`,
         `sort_rank_${suffix} AS sort_rank_${range}`,
+        `enrollment_goal_${suffix} AS enrollment_goal_${range}`,
+        `enrollment_goal_progress_${suffix} AS enrollment_goal_progress_${range}`,
+        `revenue_goal_usd_${suffix} AS revenue_goal_usd_${range}`,
+        `revenue_goal_progress_${suffix} AS revenue_goal_progress_${range}`,
       ];
     });
 
@@ -97,16 +110,13 @@ export class HealthMetricsTrainingService {
         ${periodColumns.join(',\n        ')},
         enrollment_count_change_pct,
         certifications_change_pct,
-        revenue_change_pct,
-        enrollment_goal,
-        enrollment_goal_progress_ytd,
-        revenue_goal_usd,
-        revenue_goal_progress_ytd
+        revenue_change_pct
       FROM ${TRAINING_SUMMARY_VIEW}
       WHERE foundation_slug = ?
     `;
+    // The three named types per year; the chart's Other is the total less them, so a new type still counts.
     const trendSql = `
-      SELECT enrollment_year, enrollment_count
+      SELECT enrollment_year, enrollment_count, certification_exam_count, microcourse_count, instructor_led_count
       FROM ${TRAINING_ENROLLMENTS_BY_YEAR_VIEW}
       WHERE foundation_slug = ?
       ORDER BY enrollment_year ASC
@@ -130,18 +140,22 @@ export class HealthMetricsTrainingService {
     return {
       measured: true,
       periods,
-      trend: trend.rows.map((row) => ({ year: Number(row.ENROLLMENT_YEAR), enrollments: toNullableNumber(row.ENROLLMENT_COUNT) })),
+      trend: trend.rows.map((row) => ({
+        year: Number(row.ENROLLMENT_YEAR),
+        enrollments: toNullableNumber(row.ENROLLMENT_COUNT),
+        certificationExams: toNullableNumber(row.CERTIFICATION_EXAM_COUNT),
+        microcourses: toNullableNumber(row.MICROCOURSE_COUNT),
+        instructorLed: toNullableNumber(row.INSTRUCTOR_LED_COUNT),
+      })),
       // Goals ride on the `All` row only; a goal of zero or less is no goal.
-      goals: {
-        enrollments: toPositiveOrNull(all['ENROLLMENT_GOAL']),
-        revenueUsd: toPositiveOrNull(all['REVENUE_GOAL_USD']),
-        enrollmentsProgressYtd: toNullableNumber(all['ENROLLMENT_GOAL_PROGRESS_YTD']),
-        revenueProgressYtd: toNullableNumber(all['REVENUE_GOAL_PROGRESS_YTD']),
-      },
+      goals: Object.fromEntries(HEALTH_METRICS_L2_RANGES.map((range) => [range, toGoals(all, range)])) as Record<
+        HealthMetricsL2Range,
+        HealthMetricsTrainingEnrollmentGoals
+      >,
     };
   }
 
-  /** One page of every course ever enrolled in, ranked by the view for the period, with the totals beside it. */
+  /** One page of every course ever enrolled in, in the view's rank for the period or a picked column's order, with the totals beside it. */
   public async getCourses(req: Request, query: HealthMetricsTrainingCoursesQuery): Promise<HealthMetricsTrainingCourses> {
     // The suffix comes from a fixed map keyed by the validated range, never from the request.
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
@@ -149,8 +163,9 @@ export class HealthMetricsTrainingService {
 
     const predicates: string[] = [];
     if (query.type !== 'all') {
-      predicates.push('delivery_type = ?');
-      binds.push(HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES[query.type]);
+      const deliveryTypes = HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES[query.type];
+      predicates.push(`delivery_type IN (${deliveryTypes.map(() => '?').join(', ')})`);
+      binds.push(...deliveryTypes);
     }
     if (query.search) {
       predicates.push("course_name ILIKE ? ESCAPE '!'");
@@ -160,6 +175,8 @@ export class HealthMetricsTrainingService {
 
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE, HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+    // A picked column orders every page; the view's rank, then the key, breaks its ties.
+    const orderBy = buildHealthMetricsSortOrderBy(query.sort, courseSortColumns(), 'sort_rank ASC NULLS LAST, course_key ASC');
 
     // Totals are joined onto the page rather than read as `COUNT(*) OVER()`, so a page past the end still reports them.
     const sql = `
@@ -185,21 +202,26 @@ export class HealthMetricsTrainingService {
         SELECT * FROM scoped ${matchClause}
       ),
       totals AS (
-        -- The scope total is the view's own count, repeated on every row and the same in every period.
-        SELECT (SELECT MAX(scope_courses_count) FROM scoped) AS scope_total, (SELECT COUNT(*) FROM matched) AS total_records
+        -- The scope total is the view's own count, the same in every period; the active total is the period's, over every type.
+        SELECT
+          (SELECT MAX(scope_courses_count) FROM scoped) AS scope_total,
+          (SELECT COUNT(*) FROM matched) AS total_records,
+          (SELECT COUNT_IF(COALESCE(enrollment_count, 0) > 0 OR COALESCE(revenue_usd, 0) <> 0) FROM scoped) AS active_total
       ),
       page AS (
         -- Named columns, so scope_courses_count rides only on the totals, not every page row.
-        SELECT course_key, course_name, delivery_type, is_free, has_purchase_coverage, enrollment_count, revenue_usd, sort_rank, TRUE AS is_page_row
+        SELECT
+          course_key, course_name, delivery_type, is_free, has_purchase_coverage, enrollment_count, revenue_usd, TRUE AS is_page_row,
+          ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS page_position
         FROM matched
-        -- course_key breaks any tie, and NULLS LAST pins placement against the session's null ordering.
-        ORDER BY sort_rank ASC NULLS LAST, course_key ASC
+        -- The position carries the order, with course_key as the last tie-break and NULLS LAST pinned in every column.
+        ORDER BY page_position ASC
         LIMIT ${pageSize} OFFSET ${offset}
       )
       SELECT totals.*, page.*
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.sort_rank ASC NULLS LAST, page.course_key ASC
+      ORDER BY page.page_position ASC NULLS LAST
     `;
 
     const result = await executeSnowflakeViewRead<CourseRow>(this.snowflakeService, req, sql, binds, {
@@ -213,8 +235,23 @@ export class HealthMetricsTrainingService {
       rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap((row) => toCourse(row) ?? []),
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
       scopeTotal: Number(first?.SCOPE_TOTAL ?? 0),
+      activeTotal: Number(first?.ACTIVE_TOTAL ?? 0),
     };
   }
+}
+
+/** Each sortable column's SQL; Type sorts by the badge's label, and a free course's revenue sorts as $0. */
+function courseSortColumns(): Record<HealthMetricsTrainingCoursesSortKey, HealthMetricsSqlSortColumn> {
+  const labels = Object.entries(HEALTH_METRICS_TRAINING_COURSE_TYPE_LABELS)
+    .map(([deliveryType, label]) => `WHEN '${deliveryType}' THEN '${label}'`)
+    .join(' ');
+  return {
+    course: { expression: 'course_name', kind: 'text' },
+    type: { expression: `CASE delivery_type ${labels} ELSE delivery_type END`, kind: 'text' },
+    enrollments: { expression: 'enrollment_count', kind: 'number' },
+    // Uncaptured revenue reads "—", so it sorts last in both directions.
+    revenue: { expression: 'CASE WHEN is_free THEN 0 WHEN is_free = FALSE AND has_purchase_coverage THEN revenue_usd END', kind: 'number' },
+  };
 }
 
 /** A page row as a course; a row missing its key or name cannot render, so it is dropped. */
@@ -260,6 +297,15 @@ function toPeriod(all: SummaryRow, types: SummaryRow[], range: HealthMetricsL2Ra
 
 function toTotals(enrollments: unknown, certifications: unknown, revenueUsd: unknown): HealthMetricsTrainingEnrollmentTotals {
   return { enrollments: toNullableNumber(enrollments), certifications: toNullableNumber(certifications), revenueUsd: toNullableNumber(revenueUsd) };
+}
+
+function toGoals(all: SummaryRow, range: HealthMetricsL2Range): HealthMetricsTrainingEnrollmentGoals {
+  return {
+    enrollments: toPositiveOrNull(all[`ENROLLMENT_GOAL_${range}`]),
+    revenueUsd: toPositiveOrNull(all[`REVENUE_GOAL_USD_${range}`]),
+    enrollmentsProgress: toNullableNumber(all[`ENROLLMENT_GOAL_PROGRESS_${range}`]),
+    revenueProgress: toNullableNumber(all[`REVENUE_GOAL_PROGRESS_${range}`]),
+  };
 }
 
 function toPositiveOrNull(value: unknown): number | null {

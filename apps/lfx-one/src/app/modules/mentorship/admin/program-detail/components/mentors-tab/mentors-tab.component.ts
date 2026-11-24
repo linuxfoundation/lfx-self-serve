@@ -51,7 +51,7 @@ import { InviteMentorDialogComponent } from '../invite-mentor-dialog/invite-ment
 /**
  * Mentors tab — the program's mentors and their invitation status, one server page at a time. The toolbar pairs a
  * search and status filter (both go upstream) with an Invite mentor button, which opens the Invite a mentor dialog:
- * pick an LF user found by name, LFID or full email, or invite a full email no LF account uses by email. Rows expose
+ * pick an LF user found by name, LF username or full email, or invite a full email no LF account uses by email. Rows expose
  * Approve / Decline / Revoke invite / Remove, gated by the mentor's status; each confirms, writes through the BFF, then
  * reloads the page and has the parent refresh the tab counts.
  */

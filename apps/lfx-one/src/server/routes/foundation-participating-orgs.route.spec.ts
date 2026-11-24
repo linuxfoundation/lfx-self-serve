@@ -6,13 +6,10 @@ import '@angular/compiler';
 
 import express from 'express';
 import type { Server } from 'node:http';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Router-level coverage for the Participating Companies gates (#5697): the dark-launch flag answers a neutral 404 before
- * any access check, `requireDashboardAccess` admits only the executive director of the named foundation or LF staff, and
+ * Router-level coverage for the Participating Companies gates (#5697): `requireDashboardAccess` admits only the executive director of the named foundation or LF staff, and
  * the controller refuses a missing, repeated or malformed `foundationSlug` and bad filters. Real HTTP requests go through
  * the assembled router, so dropping or reordering a middleware registration fails here.
  */
@@ -92,13 +89,8 @@ afterAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env[ServerFeatureFlag.FoundationParticipatingOrgs] = 'true';
   checkProjectWriter.mockResolvedValue(false);
   getPersonas.mockResolvedValue({ personas: ['contributor'], isLFStaff: false, isRootWriter: false, personaProjects: {} });
-});
-
-afterEach(() => {
-  delete process.env[ServerFeatureFlag.FoundationParticipatingOrgs];
 });
 
 function get(path: string): Promise<Response> {
@@ -113,17 +105,6 @@ function asExecutiveDirectorOf(slug: string): void {
     personaProjects: { 'executive-director': [{ projectSlug: slug }] },
   });
 }
-
-describe('dark launch', () => {
-  it('answers a neutral 404 on every route before any access check when the flag is off', async () => {
-    delete process.env[ServerFeatureFlag.FoundationParticipatingOrgs];
-    for (const path of ['', '/summary', '/projects', '/breakdown', '/export']) {
-      const response = await get(`${path}?foundationSlug=synthetic-foundation`);
-      expect(response.status).toBe(404);
-    }
-    expect(getPersonas).not.toHaveBeenCalled();
-  });
-});
 
 describe('access', () => {
   it('refuses a caller who is neither an executive director nor LF staff', async () => {

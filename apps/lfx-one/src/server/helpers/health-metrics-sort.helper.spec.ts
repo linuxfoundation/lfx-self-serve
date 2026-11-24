@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HEALTH_METRICS_SORT_TRIM_CODE_POINTS } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
 import { buildHealthMetricsSortOrderBy, healthMetricsTierRankSql } from './health-metrics-sort.helper';
@@ -13,6 +14,7 @@ const COLUMNS: Record<'company' | 'registrations' | 'tier', HealthMetricsSqlSort
   tier: { expression: 'membership_tier', kind: 'tier' },
 };
 const DEFAULT_ORDER = 'sort_rank_ytd ASC, account_id';
+const TRIM_CHARACTERS = HEALTH_METRICS_SORT_TRIM_CODE_POINTS.map((code) => `\\u${code.toString(16).padStart(4, '0')}`).join('');
 
 describe('buildHealthMetricsSortOrderBy', () => {
   it('keeps the default order with no sort', () => {
@@ -24,7 +26,7 @@ describe('buildHealthMetricsSortOrderBy', () => {
       `registrations_ytd DESC NULLS LAST, ${DEFAULT_ORDER}`
     );
     expect(buildHealthMetricsSortOrderBy({ key: 'company', direction: 'asc' }, COLUMNS, DEFAULT_ORDER)).toBe(
-      `COLLATE(NULLIF(NULLIF(TRIM(account_name, ' \\t\\n\\r'), ''), '—'), 'en-ci-ai') ASC NULLS LAST, ${DEFAULT_ORDER}`
+      `COLLATE(NULLIF(NULLIF(TRIM(account_name, '${TRIM_CHARACTERS}'), ''), '—'), 'en-ci-ai') ASC NULLS LAST, ${DEFAULT_ORDER}`
     );
   });
 
@@ -42,7 +44,7 @@ describe('buildHealthMetricsSortOrderBy', () => {
 describe('healthMetricsTierRankSql', () => {
   it('ranks the named tiers and their "Membership" forms as the client does, an unknown tier 1 and no tier NULL', () => {
     const sql = healthMetricsTierRankSql('t.tier');
-    const trimmed = "TRIM(t.tier, ' \\t\\n\\r')";
+    const trimmed = `TRIM(t.tier, '${TRIM_CHARACTERS}')`;
     const name = `REGEXP_REPLACE(LOWER(${trimmed}), '[^a-z]', '')`;
 
     expect(sql.startsWith(`CASE WHEN ${trimmed} IS NULL OR ${trimmed} IN ('', '—') THEN NULL `)).toBe(true);
@@ -50,5 +52,24 @@ describe('healthMetricsTierRankSql', () => {
     expect(sql).toContain(`WHEN ${name} IN ('endusersupporter', 'endusersupportermembership', 'endusersupportermember') THEN 2`);
     expect(sql).toContain(`WHEN ${name} IN ('nonmember') THEN 0`);
     expect(sql.endsWith('ELSE 1 END')).toBe(true);
+  });
+});
+
+describe('the SQL trim set', () => {
+  it("covers every character JavaScript's trim() removes, including the non-breaking space, as ASCII escapes", () => {
+    const sql = buildHealthMetricsSortOrderBy({ key: 'company', direction: 'asc' }, COLUMNS, DEFAULT_ORDER);
+
+    expect(sql).toContain('\\u00a0');
+    expect(sql).toContain('\\u3000');
+    expect(/^[\x20-\x7e—]*$/.test(sql)).toBe(true);
+    // The set is exactly what the client trims: every code point in it is whitespace there, and none is missing.
+    expect(
+      HEALTH_METRICS_SORT_TRIM_CODE_POINTS.map((code) => String.fromCodePoint(code))
+        .join('')
+        .trim()
+    ).toBe('');
+    const trimmedByClient = Array.from({ length: 0x10000 }, (_, code) => code).filter((code) => String.fromCharCode(code).trim() === '');
+    expect(trimmedByClient).toEqual([...HEALTH_METRICS_SORT_TRIM_CODE_POINTS].sort((a, b) => a - b));
+    expect('\u00a0—\u00a0'.trim()).toBe('—');
   });
 });

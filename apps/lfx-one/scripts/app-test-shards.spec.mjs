@@ -117,40 +117,84 @@ describe('shard CLI', () => {
     }
   );
 
-  it('passes only selected files to Angular and propagates failures and signals', async () => {
+  it('passes only selected files to Angular, propagates failures and signals, and enforces the runtime budget', async () => {
+    const { EventEmitter } = await import('node:events');
+    const { vitestNameForSpec } = await import('./lib/spec-timings.mjs');
+    // A fake child: prints one Vitest file line per selected spec (none when ms is null), then exits.
+    const fakeChild =
+      ({ status = 0, signal = null, error, ms = 100 } = {}) =>
+      (_command, args) => {
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter();
+        setImmediate(() => {
+          if (error) return child.emit('error', error);
+          if (ms !== null) {
+            const files = args.filter((arg) => arg.startsWith('--include=')).map((arg) => arg.slice('--include='.length));
+            child.stdout.emit('data', Buffer.from(files.map((file) => ` ✓ lfx-one ${vitestNameForSpec(file)} (10 tests) ${ms}ms\n`).join('')));
+          }
+          child.emit('close', status, signal);
+        });
+        return child;
+      };
+    const run = async (behaviour) => {
+      vi.resetModules();
+      spawn.mockImplementation(fakeChild(behaviour));
+      await import('./run-app-test-shard.mjs');
+    };
+
     vi.resetModules();
-    const spawn = vi.fn().mockReturnValue({ status: 7, signal: null });
-    vi.doMock('node:child_process', () => ({ spawnSync: spawn }));
+    const spawn = vi.fn();
+    vi.doMock('node:child_process', () => ({ spawn }));
     const argv = process.argv;
     const exitCode = process.exitCode;
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     try {
       process.argv = ['node', 'run-app-test-shard.mjs', '1/4'];
-      await import('./run-app-test-shard.mjs');
+      await run({ status: 7 });
       const [command, args, options] = spawn.mock.calls[0];
       expect(command).toBe('yarn');
       expect(args.slice(0, 2)).toEqual(['test:app', '--watch=false']);
       expect(args.slice(2).every((arg) => arg.startsWith('--include=src/app/') && arg.endsWith('.spec.ts'))).toBe(true);
-      expect(options).toMatchObject({ cwd: APP_ROOT, shell: false, stdio: 'inherit' });
+      expect(options).toMatchObject({ cwd: APP_ROOT, shell: false, stdio: ['inherit', 'pipe', 'inherit'] });
       expect(process.exitCode).toBe(7);
+      expect(write).toHaveBeenCalled();
 
-      vi.resetModules();
-      spawn.mockReturnValue({ status: null, signal: 'SIGTERM' });
-      await import('./run-app-test-shard.mjs');
+      await run({ status: 0 });
+      expect(process.exitCode).toBe(0);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('all within budget'));
+
+      vi.stubEnv('GITHUB_EVENT_NAME', 'pull_request');
+      await run({ status: 0, ms: 41_000 });
+      expect(process.exitCode).toBe(1);
+      expect(errorLog).toHaveBeenCalledWith(expect.stringMatching(/Spec runtime budget: src\/app\/.+ took 41\.0s, over .+unit-testing\.md/));
+
+      // The same violation on a merge queue run is only a warning.
+      vi.stubEnv('GITHUB_EVENT_NAME', 'merge_group');
+      await run({ status: 0, ms: 41_000 });
+      expect(process.exitCode).toBe(0);
+      expect(errorLog).toHaveBeenCalledWith(expect.stringMatching(/Spec runtime budget \(warning only on merge_group runs\): src\/app\/.+ took 41\.0s/));
+      vi.unstubAllEnvs();
+
+      await run({ status: 0, ms: null });
+      expect(process.exitCode).toBe(1);
+      expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('Found no per-file Vitest timings'));
+
+      await run({ status: null, signal: 'SIGTERM' });
       expect(process.exitCode).toBe(1);
       expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('SIGTERM'));
 
-      vi.resetModules();
-      spawn.mockReturnValue({ status: null, error: new Error('Failed to start yarn') });
-      await import('./run-app-test-shard.mjs');
+      await run({ error: new Error('Failed to start yarn') });
       expect(process.exitCode).toBe(1);
       expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('Failed to start yarn'));
     } finally {
       process.argv = argv;
       process.exitCode = exitCode;
+      vi.unstubAllEnvs();
       log.mockRestore();
       errorLog.mockRestore();
+      write.mockRestore();
       vi.doUnmock('node:child_process');
       vi.resetModules();
     }

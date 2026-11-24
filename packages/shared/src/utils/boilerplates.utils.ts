@@ -62,7 +62,9 @@ import { MktgBoilerplatesAsset, MktgRunAnswer, MktgRunQuestion } from '../interf
 import { foundationMessageBasisLinks, foundationMessageQuestionLabel } from './foundation-message.utils';
 import { mktgAnswerProblem } from './mktg-run-answers.utils';
 import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '../constants/mktg-run.constants';
+import { MKTG_REPORT_V2_KEYS } from '../constants/mktg-asset.constants';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { mktgReportV2Errors } from './mktg-report-v2.utils';
 import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
 import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
 
@@ -515,10 +517,11 @@ function reportErrors(report: unknown): string[] {
     return ['report must be an object'];
   }
   const errors: string[] = [];
-  const extra = Object.keys(report).filter((key) => !['sources_read', 'sources_failed', 'gaps', 'notes'].includes(key));
+  const extra = Object.keys(report).filter((key) => !['sources_read', 'sources_failed', 'gaps', 'notes', ...MKTG_REPORT_V2_KEYS].includes(key));
   if (extra.length > 0) {
     errors.push(`report has unknown keys: ${extra.join(', ')}`);
   }
+  errors.push(...mktgReportV2Errors(report));
   if (!Array.isArray(report['sources_read']) || !report['sources_read'].every(isText)) {
     errors.push('report.sources_read must be an array of non-empty strings');
   }

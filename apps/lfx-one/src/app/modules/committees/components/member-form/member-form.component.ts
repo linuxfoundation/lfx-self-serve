@@ -30,7 +30,7 @@ import {
   OrganizationResolveResult,
 } from '@lfx-one/shared/interfaces';
 import { buildCommitteeOrganizationPayload, formatDateToISOString, parseISODateString } from '@lfx-one/shared/utils';
-import { acceptedMemberVotingStatus } from '@lfx-one/shared/validators';
+import { acceptedMemberVotingStatus, trimmedRequired } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -60,6 +60,8 @@ export class MemberFormComponent {
   public readonly isEditing: boolean;
   public readonly memberId: string | undefined;
   public readonly member: CommitteeMember | undefined;
+  // Add-mode starting values (e.g. the signed-in user's details from "Add myself")
+  public readonly prefill: Partial<Pick<CreateCommitteeMemberRequest, 'email' | 'first_name' | 'last_name'>> | undefined;
   public readonly committee: Committee | undefined;
   // Wizard mode: returns data instead of calling API (used when committee doesn't exist yet)
   public readonly wizardMode: boolean;
@@ -77,6 +79,7 @@ export class MemberFormComponent {
     this.isEditing = this.config.data?.isEditing || false;
     this.memberId = this.config.data?.memberId;
     this.member = this.config.data?.member;
+    this.prefill = this.config.data?.prefill;
     this.committee = this.config.data?.committee;
     this.wizardMode = this.config.data?.wizardMode || false;
 
@@ -131,8 +134,8 @@ export class MemberFormComponent {
 
       // Prepare member data using form values, mapping to new structure
       const memberData: CreateCommitteeMemberRequest = {
-        first_name: formValue.first_name || null,
-        last_name: formValue.last_name || null,
+        first_name: formValue.first_name.trim() || null,
+        last_name: formValue.last_name.trim() || null,
         email: formValue.email,
         job_title: formValue.job_title || null,
         linkedin_profile: formValue.linkedin_profile || null,
@@ -265,6 +268,12 @@ export class MemberFormComponent {
         voting_status_end: parseISODateString(member.voting?.end_date),
         permission: this.deriveInitialPermission(member),
       });
+    } else if (!this.isEditing && this.prefill) {
+      this.form().patchValue({
+        email: this.prefill.email,
+        first_name: this.prefill.first_name,
+        last_name: this.prefill.last_name,
+      });
     }
   }
 
@@ -328,8 +337,8 @@ export class MemberFormComponent {
   private createMemberFormGroup(): FormGroup {
     return new FormGroup(
       {
-        first_name: new FormControl('', [Validators.required]),
-        last_name: new FormControl('', [Validators.required]),
+        first_name: new FormControl('', [Validators.required, trimmedRequired()]),
+        last_name: new FormControl('', [Validators.required, trimmedRequired()]),
         email: new FormControl('', [Validators.required, Validators.email]),
         job_title: new FormControl(''),
         linkedin_profile: new FormControl('', [Validators.pattern(LINKEDIN_PROFILE_PATTERN)]),

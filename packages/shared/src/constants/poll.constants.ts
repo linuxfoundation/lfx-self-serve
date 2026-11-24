@@ -307,6 +307,12 @@ export const DRAFT_VOTE_DEFAULT_DURATION_DAYS = 30;
 /** Default close window applied when cloning a vote whose source deadline has already passed. */
 export const CLONE_VOTE_DEFAULT_DURATION_DAYS = 7;
 
+/** Days from today a new vote's close date defaults to; a weekend result moves forward to Monday (#6104). */
+export const VOTE_DEFAULT_CLOSE_DAYS = 7;
+
+/** Eligible Participants value a new vote starts with — the "All Members of the Group" option (#6104). */
+export const VOTE_DEFAULT_ELIGIBLE_PARTICIPANTS = 'all';
+
 /** Default close time (12-hour format) for a vote's deadline when none is set yet. */
 export const VOTE_DEFAULT_CLOSE_TIME = '11:59 PM';
 

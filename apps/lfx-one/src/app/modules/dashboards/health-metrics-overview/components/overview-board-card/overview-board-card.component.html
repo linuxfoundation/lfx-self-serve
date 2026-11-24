@@ -34,7 +34,9 @@
         <span role="columnheader" [attr.aria-sort]="table.headers().name.ariaSort">
           <lfx-health-metrics-th label="Name" [sort]="table.headers().name.state" (sorted)="table.toggle('name')" data-testid="overview-board-sort-name" />
         </span>
-        <span role="columnheader">Company</span>
+        <span role="columnheader" [attr.aria-sort]="table.headers().org.ariaSort">
+          <lfx-health-metrics-th label="Company" [sort]="table.headers().org.state" (sorted)="table.toggle('org')" data-testid="overview-board-sort-company" />
+        </span>
         <span role="columnheader" [attr.aria-sort]="table.headers().att.ariaSort">
           <lfx-health-metrics-th
             label="Attended"
@@ -42,7 +44,13 @@
             (sorted)="table.toggle('att')"
             data-testid="overview-board-sort-attended" />
         </span>
-        <span role="columnheader">Last attended</span>
+        <span role="columnheader" [attr.aria-sort]="table.headers().last.ariaSort">
+          <lfx-health-metrics-th
+            label="Last attended"
+            [sort]="table.headers().last.state"
+            (sorted)="table.toggle('last')"
+            data-testid="overview-board-sort-last-attended" />
+        </span>
       </div>
       @for (row of rows(); track row.key) {
         <div
@@ -54,6 +62,7 @@
               class="flex-none"
               [size]="32"
               [name]="row.name"
+              [src]="row.photoUrl"
               [initials]="row.initials"
               [initialsSize]="11"
               initialsWeight="semibold"

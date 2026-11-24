@@ -22,6 +22,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
@@ -104,7 +105,10 @@ describe('MeetingDetailsGuestsComponent', () => {
   let confirmedRsvps: WritableSignal<MeetingRsvp[]>;
   let toastShow: ReturnType<typeof vi.fn>;
   let refreshList: ReturnType<typeof vi.fn<() => void>>;
+  let markSelfInvited: ReturnType<typeof vi.fn>;
   let selfGuest$: BehaviorSubject<MeetingSelfGuest | null>;
+  let hostSelfInvite: WritableSignal<readonly string[] | undefined>;
+  let hostRows: WritableSignal<MeetingHomeRow[]>;
 
   const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   const all = (testId: string): HTMLElement[] => Array.from(fixture.nativeElement.querySelectorAll(`[data-testid="${testId}"]`));
@@ -128,6 +132,8 @@ describe('MeetingDetailsGuestsComponent', () => {
     removedUids = signal(new Set<string>());
     removedIds = signal(new Set<string>());
     selfGuest$ = new BehaviorSubject<MeetingSelfGuest | null>(null);
+    hostSelfInvite = signal(undefined);
+    hostRows = signal([]);
     meetingService = {
       getMeetingDetail: vi.fn(() => of(current())),
       getMyMeetingRegistrants: vi.fn(() => of(registrants)),
@@ -148,6 +154,7 @@ describe('MeetingDetailsGuestsComponent', () => {
     confirmedRsvps = signal([]);
     toastShow = vi.fn();
     refreshList = vi.fn();
+    markSelfInvited = vi.fn();
 
     TestBed.configureTestingModule({
       imports: [MeetingDetailsGuestsComponent],
@@ -196,7 +203,10 @@ describe('MeetingDetailsGuestsComponent', () => {
         { provide: UiToastService, useValue: { show: toastShow } },
         { provide: Router, useValue: { navigate: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
-        { provide: MeetingDetailsSource, useValue: { hostRef: { close: closeDialog, closed: dialogClosed } } },
+        {
+          provide: MeetingDetailsSource,
+          useValue: { hostRef: { close: closeDialog, closed: dialogClosed }, markSelfInvited, selfInviteOf: () => hostSelfInvite(), upcomingRows: hostRows },
+        },
       ],
     });
   });
@@ -799,6 +809,7 @@ describe('MeetingDetailsGuestsComponent', () => {
       ]);
       expect(modalOpen).not.toHaveBeenCalled();
       expect(refreshList).toHaveBeenCalled();
+      expect(markSelfInvited).toHaveBeenCalledWith('synthetic-meeting', ['self-1']);
       expect(document.activeElement).toBe(query('meeting-details-guests-add')?.querySelector('button'));
     });
 
@@ -847,6 +858,43 @@ describe('MeetingDetailsGuestsComponent', () => {
       expect(query('meeting-details-guests-add-self')).toBeNull();
     });
 
+    it('hides and blocks self-add while another entry point owns the shared pending guard', async () => {
+      await render();
+      const invite = TestBed.inject(MeetingSelfInviteService);
+      const response = new Subject<void>();
+      invite.withPendingInvite$('synthetic-meeting', () => response).subscribe();
+      await fixture.whenStable();
+
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+      component()['addSelf']();
+      expect(meetingService['addMeetingRegistrants']).not.toHaveBeenCalled();
+
+      response.complete();
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).not.toBeNull();
+    });
+
+    it.each([[], ['self-1']])('honors a confirmed host self-invite while this drawer roster is stale: %j', async (...uids) => {
+      await render();
+      expect(query('meeting-details-guests-add-self')).not.toBeNull();
+      expect(TestBed.inject(MeetingSelfInviteService).isPending('synthetic-meeting')).toBe(false);
+      hostSelfInvite.set(uids);
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+      component()['addSelf']();
+      expect(meetingService['addMeetingRegistrants']).not.toHaveBeenCalled();
+
+      // Feed confirmation can precede a fresh drawer roster; it still must not allow a duplicate.
+      hostRows.set([row({ ...current(), invited: true, my_registrant_ids: ['self-1'] })]);
+      hostSelfInvite.set(undefined);
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+
+      removedIds.set(new Set(['synthetic-meeting']));
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).not.toBeNull();
+    });
+
     it.each(['success', 'failure'])('keeps a confirmed write alive after destruction and skips late %s view updates', async (outcome) => {
       const response = new Subject<BatchRegistrantOperationResponse<MeetingRegistrant>>();
       meetingService['addMeetingRegistrants'].mockReturnValue(response);
@@ -858,13 +906,22 @@ describe('MeetingDetailsGuestsComponent', () => {
       fixture.destroy();
 
       expect(response.observed).toBe(true);
+      const invite = TestBed.inject(MeetingSelfInviteService);
+      expect(invite.isPending('synthetic-meeting')).toBe(true);
+      const competingWrite = vi.fn(() => of(success));
+      invite.withPendingInvite$('synthetic-meeting', competingWrite).subscribe();
+      invite.add$('synthetic-meeting').subscribe();
+      expect(competingWrite).not.toHaveBeenCalled();
+      expect(meetingService['addMeetingRegistrants']).toHaveBeenCalledTimes(1);
       if (outcome === 'success') {
         response.next(success);
         expect(meetingService['clearRemovedRegistration']).toHaveBeenCalledWith('synthetic-meeting');
+        expect(markSelfInvited).toHaveBeenCalledWith('synthetic-meeting', ['self-1']);
       } else {
         response.error(new HttpErrorResponse({ status: 503 }));
       }
       expect(response.observed).toBe(false);
+      expect(invite.isPending('synthetic-meeting')).toBe(false);
       expect(refreshParticipants).not.toHaveBeenCalled();
       expect(toastShow).not.toHaveBeenCalled();
     });
@@ -898,6 +955,7 @@ describe('MeetingDetailsGuestsComponent', () => {
       expect(query('meeting-details-guests-add-self')).not.toBeNull();
       expect(guestCount()).toBe(3);
       expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
+      expect(markSelfInvited).not.toHaveBeenCalled();
       clickSelf();
       await fixture.whenStable();
       expect(query('meeting-details-guests-add-self')).toBeNull();

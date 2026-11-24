@@ -108,23 +108,23 @@ environment:
 
 ### Application Parameters
 
-| Parameter                        | Description                                                                                                    | Default                                                                       |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `replicaCount`                   | Number of replicas                                                                                             | `3`                                                                           |
-| `strategy`                       | Kubernetes rolling update strategy. Default spins up a full new replica set before terminating any old pods.   | `{type: RollingUpdate, rollingUpdate: {maxSurge: "100%", maxUnavailable: 0}}` |
-| `minReadySeconds`                | Seconds a new pod must stay Ready before the rollout counts it as available. Set to `null` to omit.            | `40`                                                                          |
-| `terminationGracePeriodSeconds`  | Seconds Kubernetes waits before SIGKILL after SIGTERM. Must exceed `preStop.sleep` + PM2 `kill_timeout` (70s). | `75`                                                                          |
-| `lifecycle.preStop.exec.command` | Command run inside the container before SIGTERM. Allows kube-proxy/Traefik to deregister the endpoint.         | `["/bin/sh", "-c", "sleep 10"]`                                               |
-| `image.registry`                 | Image registry                                                                                                 | `""`                                                                          |
-| `image.repository`               | Image repository                                                                                               | `ghcr.io/linuxfoundation/lfx-self-serve`                                      |
-| `image.tag`                      | Image tag                                                                                                      | `"latest"`                                                                    |
-| `image.pullPolicy`               | Image pull policy                                                                                              | `IfNotPresent`                                                                |
-| `imagePullSecrets`               | Image pull secrets                                                                                             | `[]`                                                                          |
-| `nodeSelector`                   | Node labels required for scheduling                                                                            | `{}`                                                                          |
-| `tolerations`                    | Taints the pod tolerates. Pair with `nodeSelector` to target a tainted node pool.                              | `[]`                                                                          |
-| `affinity`                       | Node/pod affinity rules. Prefer `topologySpreadConstraints` for simple spreading.                              | `{}`                                                                          |
-| `priorityClassName`              | PriorityClass for preemption ordering. A nonexistent class blocks scheduling.                                  | `""`                                                                          |
-| `topologySpreadConstraints`      | Spread replicas across failure domains                                                                         | `[]`                                                                          |
+| Parameter                        | Description                                                                                                                           | Default                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `replicaCount`                   | Number of replicas                                                                                                                    | `3`                                                                           |
+| `strategy`                       | Kubernetes rolling update strategy. Chart default surges a full new replica set; the deployed value is `maxSurge: 1` (lfx-v2-argocd). | `{type: RollingUpdate, rollingUpdate: {maxSurge: "100%", maxUnavailable: 0}}` |
+| `minReadySeconds`                | Seconds a new pod must stay Ready before the rollout counts it as available. Set to `null` to omit.                                   | `40`                                                                          |
+| `terminationGracePeriodSeconds`  | Seconds Kubernetes waits before SIGKILL after SIGTERM. Must exceed `preStop.sleep` + PM2 `kill_timeout` (70s).                        | `75`                                                                          |
+| `lifecycle.preStop.exec.command` | Command run inside the container before SIGTERM. Allows kube-proxy/Traefik to deregister the endpoint.                                | `["/bin/sh", "-c", "sleep 10"]`                                               |
+| `image.registry`                 | Image registry                                                                                                                        | `""`                                                                          |
+| `image.repository`               | Image repository                                                                                                                      | `ghcr.io/linuxfoundation/lfx-self-serve`                                      |
+| `image.tag`                      | Image tag                                                                                                                             | `"latest"`                                                                    |
+| `image.pullPolicy`               | Image pull policy                                                                                                                     | `IfNotPresent`                                                                |
+| `imagePullSecrets`               | Image pull secrets                                                                                                                    | `[]`                                                                          |
+| `nodeSelector`                   | Node labels required for scheduling                                                                                                   | `{}`                                                                          |
+| `tolerations`                    | Taints the pod tolerates. Pair with `nodeSelector` to target a tainted node pool.                                                     | `[]`                                                                          |
+| `affinity`                       | Node/pod affinity rules. Prefer `topologySpreadConstraints` for simple spreading.                                                     | `{}`                                                                          |
+| `priorityClassName`              | PriorityClass for preemption ordering. A nonexistent class blocks scheduling.                                                         | `""`                                                                          |
+| `topologySpreadConstraints`      | Spread replicas across failure domains                                                                                                | `[]`                                                                          |
 
 `tolerations` only lets a pod land on a tainted node pool; it does not require it. Set `nodeSelector` too if the pod must land there.
 
@@ -213,6 +213,14 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION`        | Offers the Meta ad button, sent as `metaConfig.callToAction`. Requires campaign-service v1.0.38 deployed with `META_CALL_TO_ACTION_ENABLED` on, and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                                                                                                                  | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_CONVERSION_EVENT`      | Offers the Meta conversion event of a `conversions` campaign, sent as `metaConfig.conversionEvent`. Requires campaign-service v1.0.38 deployed with `META_CONVERSION_EVENT_ENABLED` on, and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                                                                          | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_OPTIMIZATION_GOAL`     | Offers the Meta optimization goal of a `traffic` campaign, sent as `metaConfig.optimizationGoal`. Requires campaign-service v1.0.38 deployed with `META_OPTIMIZATION_GOAL_ENABLED` on, and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                                                                           | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS`            | Offers the Meta `leads` objective with an existing Instant Form, sent as `metaConfig.leadFormId`, only for `global_marketing_ops`. Requires campaign-service v1.0.38 deployed with `META_LEAD_FORMS_ENABLED` on, and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                                                 | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING`    | Accepts Meta interests on create (`metaConfig.targeting.interests`) and opens the Meta targeting search. Requires campaign-service v1.0.37 deployed with `META_INTEREST_TARGETING_ENABLED` (and `META_TARGETING_SEARCH_ENABLED`) on; see `values.yaml`                                                                                                                                                                                                                                                         | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING`    | Accepts Meta behaviors and job titles on create (`behaviors`, `workPositions`) and opens the Meta targeting search. Requires `META_BEHAVIOR_TARGETING_ENABLED` (and `META_TARGETING_SEARCH_ENABLED`) on; see `values.yaml`                                                                                                                                                                                                                                                                                     | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_LOCALE_TARGETING`      | Accepts Meta languages on create (`metaConfig.targeting.locales`). Requires `META_LOCALE_TARGETING_ENABLED` on; see `values.yaml`                                                                                                                                                                                                                                                                                                                                                                              | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING`      | Accepts Meta device targeting on create (`metaConfig.targeting.devicePlatforms`). Requires campaign-service v1.0.37 deployed with `META_DEVICE_TARGETING_ENABLED` on; see `values.yaml`                                                                                                                                                                                                                                                                                                                        | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_OS_TARGETING`          | Accepts Meta operating-system targeting on create (`metaConfig.targeting.userOs`). Requires campaign-service v1.0.37 deployed with `META_OS_TARGETING_ENABLED` on; see `values.yaml`                                                                                                                                                                                                                                                                                                                           | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE`           | Accepts a Meta ad schedule on create (`metaConfig.adSchedule`, lifetime budgets only). Requires campaign-service v1.0.37 deployed with `META_AD_SCHEDULE_ENABLED` on; see `values.yaml`                                                                                                                                                                                                                                                                                                                        | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_FREQUENCY_CAP`         | Accepts a Meta frequency cap on create (`metaConfig.frequencyCap`, awareness only). Requires campaign-service v1.0.37 deployed with `META_FREQUENCY_CAP_ENABLED` on; see `values.yaml`                                                                                                                                                                                                                                                                                                                         | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_ASSETS`           | Offers a PNG/JPEG image upload in the Microsoft create section, sent as `imageAssetId` and attached as an image ad extension (at most 76,800 bytes). NOT about URL signing: Microsoft's dispatch uploads the stored bytes to the account's media library. Requires a campaign-service from v1.0.21 and the create pipeline on; see `values.yaml`                                                                                                                                                               | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`              | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                                                                                                                                                                                                                                                                                                                                           | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`                   | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES [campaign-service #190](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/190) deployed first; CHANGES THE NUMBERS — see the flag's own note in `values.yaml`                                                                                                                                                                                                           | No       | on       |
@@ -234,7 +242,7 @@ TIME, each converging before the next:
 JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 ```
 
-The remaining flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._GOOGLE_GEO_SEARCH`, `..._META_INSTAGRAM_DSA`, `..._META_AUDIENCE_TARGETING`, the three Meta ad-choice flags (`..._META_CALL_TO_ACTION`, `..._META_CONVERSION_EVENT`, `..._META_OPTIMIZATION_GOAL`), `..._TWITTER_CREATE`, `..._INSIGHTS`,
+The remaining flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._GOOGLE_GEO_SEARCH`, `..._META_INSTAGRAM_DSA`, `..._META_AUDIENCE_TARGETING`, the three Meta ad-choice flags (`..._META_CALL_TO_ACTION`, `..._META_CONVERSION_EVENT`, `..._META_OPTIMIZATION_GOAL`), `..._META_LEAD_FORMS`, the three Meta detailed-targeting flags, `..._TWITTER_CREATE`, `..._INSIGHTS`,
 `..._KEYWORD_ACTIONS`, `..._HUBSPOT_UTM`, the creative-asset flags (`..._REDDIT_ASSETS`, `..._GOOGLE_ASSETS`, `..._META_ASSETS`) and `..._MONITOR`
 -- are NOT part of this enable order. They gate later, independent moves, each
 with its own prerequisite noted in the table. Their defaults now differ, and the difference
@@ -244,7 +252,7 @@ matters to an operator deciding whether an override is needed:
   campaign-service, so no override is required to use them — and an override back to `"false"` is
   NOT a safe rollback wherever the `GADS_*` credentials have been removed, because the legacy arm
   then calls `getGadsClient()`, which throws before any read.
-- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._GOOGLE_GEO_SEARCH`, `..._META_INSTAGRAM_DSA`, `..._META_AUDIENCE_TARGETING`, the three Meta ad-choice flags, `..._TWITTER_CREATE` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
+- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._GOOGLE_GEO_SEARCH`, `..._META_INSTAGRAM_DSA`, `..._META_AUDIENCE_TARGETING`, the three Meta ad-choice flags, `..._META_LEAD_FORMS`, the three Meta detailed-targeting flags, `..._TWITTER_CREATE` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
   HubSpot connection to exist for the project (or the LF system row) before it does anything but
   turn one error into another. The ordering rules below
   are about the create pipeline only; each of the flags outside the enable order carries its own note in `values.yaml`.
@@ -424,6 +432,34 @@ are of the Bidding kind too, one per `metaConfig` field (campaign-service v1.0.3
 field with a 400. On, the dropdown is offered to every campaign manager where its objective fits, and its
 "Not set" option sends nothing, so campaign-service's default applies.
 
+`LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS` is of the Bidding kind too (campaign-service v1.0.38 with
+`META_LEAD_FORMS_ENABLED` on). Off (the default), the `leads` objective stays hidden, the lead form read answers
+404 and the create route refuses `metaConfig.leadFormId` with a 400. On, the lead form read answers and the
+create route accepts `metaConfig.leadFormId`, only from a caller holding `global_marketing_ops` on the project
+(403 otherwise, 503 when that cannot be checked). The Implement tab offers `leads` with a form picker once the
+UI change lands; until then the flag opens the server half only.
+
+The three Meta detailed-targeting flags (`..._META_INTEREST_TARGETING`, `..._META_BEHAVIOR_TARGETING`,
+`..._META_LOCALE_TARGETING`) are of the Bidding kind too (campaign-service v1.0.37 with the matching
+`META_*_TARGETING_ENABLED` on, and `META_TARGETING_SEARCH_ENABLED` for the search). Off (the default), the create
+route refuses `metaConfig.targeting.interests`, `behaviors`/`workPositions` or `locales` with a 400, and the
+targeting search answers 404 for a kind whose own flag is off (`type=interest` on the interest flag,
+`type=behavior` and `type=work_position` on the behavior flag). A block with only these fields no longer needs `..._META_AUDIENCE_TARGETING`, as in
+campaign-service. The Implement tab offers the interests, behaviors and job titles picker (#6125); languages follow in
+a later change.
+
+The two Meta device and operating-system flags (`..._META_DEVICE_TARGETING`, `..._META_OS_TARGETING`) are of the
+Bidding kind too (campaign-service v1.0.37 with `META_DEVICE_TARGETING_ENABLED` or `META_OS_TARGETING_ENABLED` on). Off
+(the default), the create route refuses `metaConfig.targeting.devicePlatforms` or `userOs` with a 400. Like the
+detailed fields, a block with only these needs no `..._META_AUDIENCE_TARGETING`. The Implement tab controls follow in a
+later change; until then the flags open the server half only.
+
+The two Meta delivery flags (`..._META_AD_SCHEDULE`, `..._META_FREQUENCY_CAP`) are of the Bidding kind too
+(campaign-service v1.0.37 with `META_AD_SCHEDULE_ENABLED` or `META_FREQUENCY_CAP_ENABLED` on). Off (the default), the
+create route refuses `metaConfig.adSchedule` or `metaConfig.frequencyCap` with a 400, and either under another spelling
+of its key whatever the flag. The Implement tab controls follow in a later change; until then the flags open the
+server half only.
+
 `LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_ASSETS` is an eighth, of the Meta kind: it asserts that the
 deployed campaign-service resolves **Microsoft** creative asset ids, which every release from
 v1.0.21 does, uploading the stored bytes to the ad account's media library and attaching them to
@@ -515,7 +551,7 @@ campaign is not much comforted that the error named the right field.
 campaign only has a UUID if campaign-service created it — so shipping it first changes nothing
 observable, which is precisely what makes it the safe half to ship alone. The reverse order is
 the one that costs: with CREATE on first, a new pod can mint a UUID campaign while an old pod
-still refuses its pause, and with `replicaCount: 3`, `maxSurge: "100%"` and non-sticky requests
+still refuses its pause, and with `replicaCount: 3`, an effective `maxSurge: 1` and non-sticky requests
 that window lasts as long as the rollout.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM` moves the HubSpot campaign UTM lookup and create

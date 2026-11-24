@@ -3,7 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import { MKTG_AGENTS, MKTG_AGENT_INTAKES, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { MKTG_AGENTS, MKTG_AGENT_INTAKES, MKTG_DOCUMENT_TYPES, MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 
 import {
   DOCUMENT_PROJECT,
@@ -56,23 +56,23 @@ test.describe('Marketing OS Documents structure', () => {
       await expect(live).toMatchAriaSnapshot('- status: /Waiting for your answers/');
       await expect(live).toContainText('Waiting for your answers');
       await expect(page.getByTestId('mktg-agent-run-form')).toHaveCount(0);
-      const refresh = page.getByTestId('mktg-document-view-refresh-progress').getByRole('button');
-      await refresh.focus();
-      await expect(refresh).toBeFocused();
+      // The waiting state checks on its own: no Refresh control to reach, and no note explaining it (a best practice needs none).
+      await expect(page.getByTestId('mktg-run-progress-questions-refresh')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-run-public-progress').getByRole('button', { name: 'Refresh' })).toHaveCount(0);
+      await expect(page.getByTestId('mktg-run-progress-owner-note')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-run-public-progress')).not.toContainText('write access');
       await expect(page.getByTestId('mktg-run-public-progress').locator('h1')).toHaveCount(1);
       await expect(page.locator('main main')).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     });
   }
 
-  test('progress read failures have a retry warning, not fabricated active rows or an empty-history error', async ({ page }) => {
+  test('progress read failures show the one plain line and no Refresh button, not fabricated active rows or an empty-history error', async ({ page }) => {
     await setupDocuments(page, { progressUnavailable: true });
     await openDocuments(page);
-    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('Retrying');
-    const refresh = page.getByTestId('mktg-documents-refresh-progress').getByRole('button');
-    await expect(refresh).toHaveAttribute('type', 'button');
-    await refresh.focus();
-    await expect(refresh).toBeFocused();
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText(MKTG_POLL_RETRYING_TEXT);
+    await expect(page.getByTestId('mktg-documents-refresh-progress')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-documents-refresh-warning').getByRole('button')).toHaveCount(0);
     await expect(page.getByTestId('mktg-documents-started-runs')).toHaveCount(0);
     await expect(page.getByTestId('mktg-documents-revisions')).toBeVisible();
     await expect(page.getByTestId('mktg-documents-error')).toHaveCount(0);

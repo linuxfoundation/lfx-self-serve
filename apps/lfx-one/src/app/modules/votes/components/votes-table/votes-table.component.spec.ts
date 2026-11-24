@@ -4,14 +4,14 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { DOCUMENT } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
-import { VOTE_CLOSE_CONFIRMATION } from '@lfx-one/shared/constants';
+import { VOTE_CLOSE_CONFIRMATION, VOTE_DELETE_ENDED, VOTE_DELETE_ENDED_MESSAGE } from '@lfx-one/shared/constants';
 import { SendVoteSummaryResponse, VoteSummaryPreviewResponse } from '@lfx-one/shared/interfaces';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -1938,6 +1938,304 @@ describe('VotesTableComponent — Close vote (#4740)', () => {
 
     expect(endVote).not.toHaveBeenCalled();
     expect(add).not.toHaveBeenCalled();
+  });
+});
+
+describe('VotesTableComponent — Cancel vote (#5968)', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  let table: VotesTableComponent;
+  let deleteVote: ReturnType<typeof vi.fn<VoteService['deleteVote']>>;
+  let voteService: VoteService;
+  let add: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.fn>;
+  let refreshed: ReturnType<typeof vi.fn<() => void>>;
+  const ROWS = [
+    vote('active', { writer: true }),
+    vote('other', { writer: false }),
+    vote('unknown'),
+    vote('ended', { status: PollStatus.ENDED, writer: true }),
+    vote('draft', { status: PollStatus.DISABLED, writer: true }),
+  ];
+
+  const menuLabels = async (uid: string): Promise<string[]> => {
+    const more = fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`) as HTMLButtonElement | null;
+    if (!more) return []; // drafts have no row menu at all
+    more.click();
+    await settle();
+    return table['rowActionMenuItems']().map((item) => item.label as string);
+  };
+  const cancelItem = async (uid: string) => {
+    await menuLabels(uid);
+    return table['rowActionMenuItems']().find((item) => item.label === 'Cancel vote');
+  };
+  const acceptCancel = async (): Promise<() => void> => {
+    (await cancelItem('active'))!.command!({});
+    const confirmation = confirm.mock.calls[0][0] as Confirmation;
+    return () => confirmation.accept!();
+  };
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  beforeEach(async () => {
+    deleteVote = vi.fn<VoteService['deleteVote']>().mockReturnValue(of(undefined));
+    add = vi.fn();
+    refreshed = vi.fn<() => void>();
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        VoteService,
+        { provide: HttpClient, useValue: {} },
+        { provide: MessageService, useValue: { add } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
+        { provide: MailingListService, useValue: {} },
+      ],
+    }).compileComponents();
+    voteService = TestBed.inject(VoteService);
+    vi.spyOn(voteService, 'deleteVote').mockImplementation(deleteVote);
+    voteService.voteCancellationCompleted$.subscribe(() => refreshed());
+    fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
+    table.refresh.subscribe(() => refreshed());
+    fixture.componentRef.setInput('votes', ROWS);
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    fixture.componentRef.setInput('canCancelVotes', true);
+    fixture.detectChanges();
+    confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm') as unknown as ReturnType<typeof vi.fn>;
+    await settle();
+  });
+  afterEach(() => fixture?.destroy());
+
+  it('offers Cancel vote beside Close vote on an active row the viewer can manage, even without project write access', async () => {
+    expect(await menuLabels('active')).toEqual(expect.arrayContaining(['Close vote', 'Cancel vote']));
+
+    fixture.componentRef.setInput('hasPMOAccess', false);
+    await settle();
+    expect(await menuLabels('active')).toContain('Cancel vote');
+  });
+
+  it('hides Cancel vote from non-managers, ended and draft votes, and hosts that do not opt in', async () => {
+    expect(await menuLabels('other')).not.toContain('Cancel vote');
+    expect(await menuLabels('unknown')).not.toContain('Cancel vote');
+    expect(await menuLabels('ended')).not.toContain('Cancel vote');
+    expect(await menuLabels('draft')).toEqual([]);
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-delete-draft"]')).not.toBeNull();
+
+    fixture.componentRef.setInput('canCancelVotes', false);
+    await settle();
+    expect(await menuLabels('active')).not.toContain('Cancel vote');
+    expect(await menuLabels('active')).toContain('Close vote');
+  });
+
+  it('asks first, naming the vote and the permanent deletion, and sends nothing when the manager keeps the vote', async () => {
+    (await cancelItem('active'))!.command!({});
+
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ header: 'Cancel vote', acceptLabel: 'Cancel vote', rejectLabel: 'Keep vote' }));
+    const message = (confirm.mock.calls[0][0] as Confirmation).message!;
+    expect(message).toContain('"Board active"');
+    expect(message).toContain('permanently deleted');
+    expect(message).toContain("can't be undone");
+    (confirm.mock.calls[0][0] as Confirmation).reject?.();
+    expect(deleteVote).not.toHaveBeenCalled();
+  });
+
+  it('escapes the vote name, since the dialog renders its message as HTML', async () => {
+    fixture.componentRef.setInput('votes', [vote('active', { writer: true, name: 'Approve <Q3> & "draft"' })]);
+    await settle();
+    (await cancelItem('active'))!.command!({});
+
+    const message = (confirm.mock.calls[0][0] as Confirmation).message!;
+    expect(message).toContain('"Approve &lt;Q3&gt; &amp; &quot;draft&quot;"');
+    expect(message).not.toContain('<Q3>');
+  });
+
+  it('deletes once on accept, toasts and refreshes the list', async () => {
+    (await acceptCancel())();
+    await settle();
+
+    expect(deleteVote).toHaveBeenCalledTimes(1);
+    expect(deleteVote).toHaveBeenCalledWith('active');
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Vote cancelled' }));
+    expect(refreshed).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a second accept while the first cancel is in flight', async () => {
+    const pending = new Subject<void>();
+    deleteVote.mockReturnValue(pending);
+    const accept = await acceptCancel();
+    accept();
+    accept();
+    expect(deleteVote).toHaveBeenCalledTimes(1);
+    expect((await cancelItem('active'))!.disabled).toBe(true);
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => (row.uid === 'active' ? { ...row, status: PollStatus.ENDED } : row))
+    );
+    fixture.detectChanges();
+    accept();
+    expect(deleteVote).toHaveBeenCalledTimes(1);
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshed).not.toHaveBeenCalled();
+
+    pending.next();
+    pending.complete();
+    await settle();
+    expect(refreshed).toHaveBeenCalledTimes(1);
+  });
+
+  it('explains a vote that ended first and refreshes the list without reporting success', async () => {
+    const evict = vi.spyOn(voteService, 'evictRecentlyCreatedVote');
+    deleteVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: VOTE_DELETE_ENDED_MESSAGE, code: VOTE_DELETE_ENDED } })));
+    (await acceptCancel())();
+    await settle();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Vote already ended', detail: VOTE_DELETE_ENDED_MESSAGE }));
+    expect(add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    expect(refreshed).toHaveBeenCalledTimes(1);
+    expect(evict).not.toHaveBeenCalled();
+  });
+
+  it('tells the manager a vote that is already gone and refreshes the list', async () => {
+    voteService.markVoteCreated(vote('active', { writer: true }), true);
+    const evict = vi.spyOn(voteService, 'evictRecentlyCreatedVote');
+    expect(voteService.mergeRecentlyCreatedVotes([], { projectUid: 'synthetic-project', statusFilter: PollStatus.ACTIVE })).toHaveLength(1);
+    let votesAtRefresh: Vote[] | undefined;
+    voteService.voteCancellationCompleted$.subscribe(() => {
+      votesAtRefresh = voteService.mergeRecentlyCreatedVotes([], { projectUid: 'synthetic-project', statusFilter: PollStatus.ACTIVE });
+    });
+    deleteVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'Not found' } })));
+    (await acceptCancel())();
+    await settle();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'Vote already removed' }));
+    expect(refreshed).toHaveBeenCalledTimes(1);
+    expect(evict).toHaveBeenCalledTimes(1);
+    expect(evict).toHaveBeenCalledWith('active');
+    expect(votesAtRefresh).toEqual([]);
+    expect(add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    expect(voteService.mergeRecentlyCreatedVotes([], { projectUid: 'synthetic-project', statusFilter: PollStatus.ACTIVE })).toEqual([]);
+  });
+
+  it('shows an actionable error on any other failure and leaves the row in place', async () => {
+    voteService.markVoteCreated(vote('active', { writer: true }), true);
+    const evict = vi.spyOn(voteService, 'evictRecentlyCreatedVote');
+    deleteVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: {} })));
+    (await acceptCancel())();
+    await settle();
+
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: 'Unable to cancel the vote', detail: "We couldn't cancel the vote. Please try again." })
+    );
+    expect(refreshed).not.toHaveBeenCalled();
+    expect(table['displayedVotes']().some((row) => row.uid === 'active')).toBe(true);
+    expect(evict).not.toHaveBeenCalled();
+    expect(voteService.mergeRecentlyCreatedVotes([], { projectUid: 'synthetic-project', statusFilter: PollStatus.ACTIVE })).toHaveLength(1);
+  });
+
+  it('warns and refreshes without deleting when the row ends while confirmation is open', async () => {
+    const accept = await acceptCancel();
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => (row.uid === 'active' ? { ...row, status: PollStatus.ENDED } : row))
+    );
+    fixture.detectChanges();
+    accept();
+
+    expect(deleteVote).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Vote already ended', detail: VOTE_DELETE_ENDED_MESSAGE }));
+    expect(add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    expect(refreshed).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])('ignores an unknown missing row (lazy: %s)', async (lazy) => {
+    fixture.componentRef.setInput('lazy', lazy);
+    fixture.detectChanges();
+    const accept = await acceptCancel();
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.filter((row) => row.uid !== 'active')
+    );
+    fixture.detectChanges();
+    accept();
+
+    expect(deleteVote).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshed).not.toHaveBeenCalled();
+  });
+
+  it('explains a confirmed Close after a lazy Active-page refresh removes the row', async () => {
+    fixture.componentRef.setInput('lazy', true);
+    fixture.componentRef.setInput('statusTab', PollStatus.ACTIVE);
+    fixture.detectChanges();
+    const accept = await acceptCancel();
+    table['closedVotes'].set(new Map([['active', { status: PollStatus.ENDED }]]));
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.filter((row) => row.uid !== 'active')
+    );
+    fixture.detectChanges();
+    accept();
+
+    expect(deleteVote).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Vote already ended', detail: VOTE_DELETE_ENDED_MESSAGE }));
+    expect(add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    expect(refreshed).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['input', 'close override'])('explains an ended vote hidden by Active using the %s, reconciling its carriers', async (source) => {
+    fixture.componentRef.setInput('statusTab', PollStatus.ACTIVE);
+    voteService.markVoteCreated(vote('active', { writer: true }), true);
+    voteService.markVoteOpened('active');
+    await settle();
+    const accept = await acceptCancel();
+    if (source === 'input') {
+      fixture.componentRef.setInput(
+        'votes',
+        ROWS.map((row) => (row.uid === 'active' ? { ...row, status: PollStatus.ENDED } : row))
+      );
+    } else {
+      table['closedVotes'].set(new Map([['active', { status: PollStatus.ENDED }]]));
+    }
+    fixture.detectChanges();
+    expect(table['displayedVotes']().some((row) => row.uid === 'active')).toBe(false);
+    accept();
+
+    expect(deleteVote).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Vote already ended' }));
+    expect(refreshed).toHaveBeenCalledTimes(1);
+    expect(voteService.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ACTIVE })).toEqual([]);
+    expect(voteService.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ENDED })).toEqual([
+      expect.objectContaining({ uid: 'active', status: PollStatus.ENDED }),
+    ]);
+    expect(voteService.mergeRecentlyOpenedVotes([vote('active', { status: PollStatus.DISABLED })])[0].status).toBe(PollStatus.ENDED);
+  });
+
+  it('retains the pending guard and notifies the surviving host after the table is destroyed and rebuilt', async () => {
+    const pending = new Subject<void>();
+    deleteVote.mockReturnValue(pending);
+    (await acceptCancel())();
+    fixture.destroy();
+
+    fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
+    fixture.componentRef.setInput('votes', ROWS);
+    fixture.componentRef.setInput('canCancelVotes', true);
+    fixture.detectChanges();
+    await settle();
+    expect((await cancelItem('active'))!.disabled).toBe(true);
+    const rebuiltConfirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    table['onCancelVote'](ROWS[0]);
+    rebuiltConfirm.mock.calls[0][0].accept!();
+    expect(deleteVote).toHaveBeenCalledTimes(1);
+
+    pending.next();
+    pending.complete();
+    expect(refreshed).toHaveBeenCalledTimes(1);
+    expect(voteService.cancellingVoteUids().has('active')).toBe(false);
   });
 });
 

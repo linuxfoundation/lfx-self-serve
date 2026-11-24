@@ -18,7 +18,13 @@ import { of, throwError, NEVER, Subject } from 'rxjs';
 import type { Member360Session, Member360TrackerReceipt } from '@lfx-one/shared/interfaces';
 import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
-import { MKTG_AGENT_INTAKES, MKTG_RUN_POLL, MEMBER_360_RUN_CEILING_MS, MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS } from '@lfx-one/shared/constants';
+import {
+  MKTG_AGENT_INTAKES,
+  MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_POLL,
+  MEMBER_360_RUN_CEILING_MS,
+  MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS,
+} from '@lfx-one/shared/constants';
 import { MktgPendingGeneration, Member360Result, MktgDocumentDetailResponse } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -194,6 +200,267 @@ describe('Member360RunComponent', () => {
     }
   });
 
+  it.each(['open', 'discard', 'dialog-open'] as const)(
+    'offers Start over on the in-progress view and handles the %s branch through the shared guard',
+    async (choice) => {
+      await render();
+      fixture.componentInstance.form.controls.compare.setValue(false);
+      button().click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const element: HTMLElement = fixture.nativeElement;
+      const find = (id: string) => element.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+      expect(find('member-360-generating')).not.toBeNull();
+      expect(find('member-360-intake')).toBeNull();
+      find('member-360-start-over')?.querySelector('button')?.click();
+      fixture.detectChanges();
+      // Start over only shows the intake: the active run is untouched and no start is sent.
+      expect(find('member-360-generating')).toBeNull();
+      expect(find('member-360-intake')).not.toBeNull();
+      expect(find('member-360-waiting-notice')?.textContent).toContain('A Member 360 run is in progress.');
+      expect(run.generate).toHaveBeenCalledTimes(1);
+      expect(confirmation.confirm).not.toHaveBeenCalled();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      if (choice === 'open') {
+        find('member-360-waiting-open')?.querySelector('button')?.click();
+        fixture.detectChanges();
+        expect(find('member-360-generating')).not.toBeNull();
+        expect(find('member-360-intake')).toBeNull();
+        expect(run.generate).toHaveBeenCalledTimes(1);
+        expect(navigate).not.toHaveBeenCalled();
+        return;
+      }
+      const conflict = {
+        code: 'MKTG_RUN_ACTIVE',
+        message: 'Your Member 360 run is in progress.',
+        activeRunId: 'b'.repeat(64),
+        state: 'writing',
+        agentKey: 'member-360',
+        documentId: 'run-0123456789abcdef01234567',
+        startedBy: 'Synthetic writer',
+        startedByViewer: true,
+        startedAt: '2026-10-19T12:00:00.000Z',
+      };
+      run.generate
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })))
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })));
+      fixture.componentInstance.form.controls.window.setValue('6');
+      button().click();
+      const original = { project: 'sample-project', window: '6', compare: false, trackerIds: [] };
+      expect(run.generate).toHaveBeenNthCalledWith(2, original);
+      expect(run.generate).toHaveBeenNthCalledWith(3, original); // The guard's own recheck, still without discard.
+      const prompt = confirmation.confirm.mock.calls.at(-1)?.[0];
+      expect(prompt).toMatchObject({ key: 'mktg-active-member360', acceptLabel: 'Discard and start over', rejectLabel: 'Open it' });
+      if (choice === 'discard') {
+        prompt?.accept?.();
+        expect(run.generate).toHaveBeenNthCalledWith(4, { ...original, discard: conflict.activeRunId });
+      } else {
+        prompt?.reject?.(ConfirmEventType.REJECT);
+        expect(run.generate).toHaveBeenCalledTimes(3);
+      }
+      await fixture.whenStable();
+      fixture.detectChanges();
+      // Both end on this page's in-progress view: the replacement run, or the same run it already follows.
+      expect(find('member-360-generating')).not.toBeNull();
+      expect(find('member-360-intake')).toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['ready', 'failed'] as const)(
+    'keeps the requester on the Start over intake, with their message, when the earlier run ends %s behind it',
+    async (ending) => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+      // The roster still lists the run after its terminal result.
+      documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: progress().runs }));
+      run.questions
+        .mockReturnValueOnce(of({ status: 'pending', activity: [] }))
+        .mockReturnValue(
+          of(ending === 'ready' ? { status: 'ready', stored: true, documentId: 'run-0123456789abcdef01234567' } : { status: 'failed', message: 'Stopped.' })
+        );
+      if (ending === 'failed') documents.getDocument.mockReturnValueOnce(of(progress())).mockReturnValue(of(progress('failed')));
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      await render();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      fixture.detectChanges();
+      const find = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+      expect(find('member-360-generating')).not.toBeNull();
+      fixture.componentInstance['startOver']();
+      fixture.componentInstance['error'].set('Wait for your trackers to finish parsing, then create Member 360.');
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(fixture.componentInstance['pending']()).toBeNull();
+      expect(fixture.componentInstance['startingOver']()).toBe(false);
+      expect(find('mktg-skeleton')).toBeNull();
+      expect(find('member-360-intake')).not.toBeNull();
+      expect(find('member-360-waiting-notice')).toBeNull();
+      expect(find('member-360-error')).not.toBeNull();
+      // A run that failed behind the intake says so in one line; a finished one shows in run history instead.
+      expect(find('member-360-earlier-run-failed')?.textContent ?? '').toContain(ending === 'failed' ? 'The earlier Member 360 run failed.' : '');
+      expect(!!find('member-360-earlier-run-failed')).toBe(ending === 'failed');
+      // The ended run is latched: the roster that still lists it does not restore it, and its result is not read again.
+      const reads = run.questions.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(2 * MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS);
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(run.questions).toHaveBeenCalledTimes(reads);
+      expect(fixture.componentInstance['pending']()).toBeNull();
+      expect(find('member-360-intake')).not.toBeNull();
+      // A different run restored later (another tab) opens on its own in-progress view, not behind the old choice.
+      const other = progress();
+      other.documentId = 'run-' + 'c'.repeat(24);
+      if (other.runs?.[0]) Object.assign(other.runs[0], { documentId: other.documentId, runId: 'd'.repeat(64) });
+      attempts.load.mockReturnValue(null);
+      run.questions.mockReturnValue(of({ status: 'pending', activity: [] }));
+      documents.getDocument.mockReturnValue(of(other));
+      documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: other.runs }));
+      window.dispatchEvent(new Event('focus'));
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(fixture.componentInstance['pending']()?.request.documentId).toBe(other.documentId);
+      expect(find('member-360-generating')).not.toBeNull();
+      expect(find('member-360-intake')).toBeNull();
+      expect(find('member-360-earlier-run-failed')).toBeNull();
+      expect(fixture.componentInstance['earlierRunNotice']()).toBe('');
+    }
+  );
+
+  it('opens a different run on its own in-progress view when the roster replaces the run Start over was chosen on', async () => {
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: progress().runs }));
+    run.questions.mockReturnValue(of({ status: 'pending', activity: [] }));
+    await render();
+    const find = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+    fixture.componentInstance['startOver']();
+    // A draft typed on the run Start over was chosen on must not follow a replacement run.
+    fixture.componentInstance['questionDraft'].set(['same-questions', { step: 1, answers: {} } as never]);
+    fixture.detectChanges();
+    expect(find('member-360-intake')).not.toBeNull();
+    expect(find('member-360-waiting-notice')).not.toBeNull();
+    const other = progress();
+    other.documentId = 'run-' + 'c'.repeat(24);
+    if (other.runs?.[0]) Object.assign(other.runs[0], { documentId: other.documentId, runId: 'd'.repeat(64) });
+    attempts.load.mockReturnValue(null);
+    documents.getDocument.mockReturnValue(of(other));
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: other.runs }));
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['pending']()?.request.documentId).toBe(other.documentId);
+    expect(fixture.componentInstance['startingOver']()).toBe(false);
+    expect(fixture.componentInstance['questionDraft']()).toBeNull();
+    expect(find('member-360-generating')).not.toBeNull();
+    expect(find('member-360-intake')).toBeNull();
+  });
+
+  it('keeps the Start over form message in front of a transient failure of the earlier run poll', async () => {
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: progress().runs }));
+    run.questions.mockReturnValue(of({ status: 'pending', activity: [] }));
+    await render();
+    const find = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+    fixture.componentInstance['startOver']();
+    fixture.componentInstance['uploading'].set(true);
+    fixture.detectChanges();
+    button().click();
+    fixture.detectChanges();
+    expect(find('member-360-error')?.textContent).toContain('Wait for your trackers to finish parsing');
+    run.questions.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['retrying']()).toBe(true);
+    expect(find('member-360-intake')).not.toBeNull();
+    expect(find('member-360-error')?.textContent).toContain('Wait for your trackers to finish parsing');
+    expect(find('member-360-retrying')).toBeNull();
+    // With no form message, the connection line of the run behind the intake shows.
+    fixture.componentInstance['error'].set('');
+    fixture.detectChanges();
+    expect(find('member-360-retrying')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(run.generate).not.toHaveBeenCalled();
+  });
+
+  it('keeps answers typed but not sent across Start over and back to the questions', async () => {
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: progress('questions').runs }));
+    run.questions.mockImplementation(() => of(serverQuestions()));
+    documents.getDocument.mockReturnValue(of(progress('questions')));
+    await render();
+    const find = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+    const answer: HTMLTextAreaElement = fixture.nativeElement.querySelector('lfx-mktg-run-questions textarea');
+    answer.value = 'Typed but not sent: the last two quarters.';
+    answer.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+    find('member-360-start-over').querySelector('button').click();
+    fixture.detectChanges();
+    expect(find('member-360-questions')).toBeNull();
+    expect(find('member-360-intake')).not.toBeNull();
+    const back: HTMLButtonElement = find('member-360-waiting-open').querySelector('button');
+    expect(back.textContent).toContain('Answer the questions');
+    // A re-read of the same turn behind the intake changes nothing about the kept draft.
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    back.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(find('member-360-intake')).toBeNull();
+    const restored: HTMLTextAreaElement = fixture.nativeElement.querySelector('lfx-mktg-run-questions textarea');
+    expect(restored).not.toBe(answer);
+    expect(restored.value).toBe('Typed but not sent: the last two quarters.');
+    find('mktg-run-questions-send').querySelector('button').click();
+    expect(run.answer).toHaveBeenCalledWith(
+      expect.anything(),
+      'c'.repeat(64),
+      [{ key: 'window', text: 'Typed but not sent: the last two quarters.', origin: 'edited' }],
+      'b'.repeat(64)
+    );
+  });
+
+  it('disables the way back while a Create is in flight, and offers Start over only while the run is going', async () => {
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: progress().runs }));
+    run.questions.mockReturnValue(of({ status: 'pending', activity: [] }));
+    await render();
+    const find = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+    const component = fixture.componentInstance;
+    const pending = component['pending']();
+    if (!pending) throw new Error('Missing synthetic pending run');
+    expect(find('member-360-run-choice')?.querySelector('[data-testid="member-360-start-over"]')).not.toBeNull();
+    // The ready and failed fallback panes are not a run that is going: no Start over row, no "keeps going" copy.
+    for (const ended of [{ status: 'ready', stored: true }, { status: 'failed' }] as Member360Result[]) {
+      component['resultContext'].set([pending, ended]);
+      fixture.detectChanges();
+      expect(find('member-360-generating')).not.toBeNull();
+      expect(find('member-360-run-choice')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('This run keeps going');
+      component['startOver']();
+      expect(component['startingOver']()).toBe(false);
+    }
+    component['resultContext'].set([pending, { status: 'pending' }]);
+    fixture.detectChanges();
+    find('member-360-start-over').querySelector('button').click();
+    fixture.detectChanges();
+    const open = (): HTMLButtonElement => find('member-360-waiting-open').querySelector('button');
+    expect(open().disabled).toBe(false);
+    const session = new Subject<Member360Session>();
+    run.generate.mockReturnValueOnce(session);
+    component.form.controls.compare.setValue(false);
+    button().click();
+    fixture.detectChanges();
+    expect(component['submitting']()).toBe(true);
+    expect(open().disabled).toBe(true);
+    component['openRunning']();
+    expect(component['startingOver']()).toBe(true);
+    session.error(new HttpErrorResponse({ status: 503 }));
+    fixture.detectChanges();
+    expect(open().disabled).toBe(false);
+    open().click();
+    fixture.detectChanges();
+    expect(find('member-360-generating')).not.toBeNull();
+    expect(find('member-360-intake')).toBeNull();
+  });
+
   function serverQuestions(): Member360Result {
     return {
       status: 'needs_input',
@@ -339,9 +606,6 @@ describe('Member360RunComponent', () => {
     window.dispatchEvent(new Event('focus'));
     await fixture.whenStable();
     expect(documents.listDocuments).toHaveBeenLastCalledWith('sample-project', true, true);
-    fixture.componentInstance['retryHistory']();
-    await fixture.whenStable();
-    expect(documents.listDocuments).toHaveBeenLastCalledWith('sample-project', false, true);
   });
   it('verifies a selected long-running Member record without the polling window', async () => {
     attempts.latestPending.mockReturnValue({ documentId: capability().request.documentId, state: 'writing' });
@@ -843,6 +1107,18 @@ describe('Member360RunComponent', () => {
         { key: 'window', text: 'Use the current analysis window.', origin: 'accepted' },
       ]);
       expect(!!fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).toBe(state === 'send-error');
+      if (state === 'send-error') {
+        // The kept form's background re-read fails transiently: the submission error stays in front of the connection line.
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]')?.textContent).toContain('Your answers could not be sent');
+        run.questions.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+        window.dispatchEvent(new Event('focus'));
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(fixture.componentInstance['retrying']()).toBe(true);
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]')?.textContent).toContain('Your answers could not be sent');
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-retrying"]')).toBeNull();
+        expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).not.toBeNull();
+      }
       if (state === 'already-answered') {
         expect(fixture.nativeElement.textContent).toContain('Synthetic writer already answered these — the agent is writing');
         expect(fixture.nativeElement.querySelector('[data-testid="member-360-generating"]')).not.toBeNull();
@@ -850,8 +1126,17 @@ describe('Member360RunComponent', () => {
     } else {
       expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).toBeNull();
       if (state === 'failed') expect(navigate).toHaveBeenCalledWith(['../documents/member-360', capability().request.documentId], expect.anything());
-      if (state === 'empty') expect(fixture.nativeElement.textContent).toContain('The questions are not available yet.');
-      if (state === 'poll-error') expect(fixture.nativeElement.textContent).toContain('could not be checked');
+      if (state === 'empty') {
+        // A self-updating wait is a plain status line, never an error box.
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-generating"] [role="status"]')?.textContent).toContain(
+          'The questions are not available yet.'
+        );
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
+      }
+      if (state === 'poll-error') {
+        expect(fixture.nativeElement.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-check-again"]')).toBeNull();
+      }
     }
   });
   it('restores this tab capability and slows polling past the ceiling without failing the run', async () => {
@@ -881,18 +1166,164 @@ describe('Member360RunComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('could not be started');
     expect(button().disabled).toBe(false);
   });
-  it('does not guess a form when the initial server snapshot fails, and offers a safe refresh', async () => {
+  it('shows the questions-not-yet wait of a run confirmed during the first load as a status line, not an error box', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    // A restored owned run whose first confirmation is needs_input with no questions yet: the page is still loading.
+    attempts.latestPending.mockReturnValue({ documentId: capability().request.documentId, state: 'questions' });
+    run.questions.mockReturnValue(of({ status: 'needs_input' }));
+    documents.getDocument.mockReturnValue(of(progress('questions')));
+    await render();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).not.toBeNull();
+    const note = fixture.nativeElement.querySelector('[data-testid="member-360-state-note"]');
+    expect(note?.getAttribute('role')).toBe('status');
+    expect(note?.textContent).toContain('The questions are not available yet.');
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-retrying"]')).toBeNull();
+    expect(run.generate).not.toHaveBeenCalled();
+  });
+  it('treats a partial progress read of the owned run as a check still going, and a mismatched document as final', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    run.questions.mockReturnValue(of({ status: 'pending' }));
+    documents.getDocument.mockReturnValue(of({ ...progress(), progressUnavailable: true }));
+    await render();
+    fixture.componentInstance.form.controls.compare.setValue(false);
+    button().click();
+    await fixture.whenStable();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    fixture.detectChanges();
+    // The server could not confirm the run's phase: the quiet connection line, no alert, the poller keeps checking.
+    expect(fixture.componentInstance['retrying']()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-retrying"]')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
+    documents.getDocument.mockReturnValue(of(progress()));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    fixture.detectChanges();
+    expect(fixture.componentInstance['retrying']()).toBe(false);
+    expect(fixture.componentInstance['result']()?.status).toBe('pending');
+    // A read that belongs to another document is not a connection problem: a final line, no further retry.
+    documents.getDocument.mockReturnValue(of({ ...progress(), project: 'other-project' }));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    fixture.detectChanges();
+    expect(fixture.componentInstance['retrying']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-retrying"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]')?.textContent).toContain(
+      'The run could not be checked. No new run is started.'
+    );
+  });
+  it('does not guess a form when the initial server snapshot fails, and reads again on its own with no Refresh button', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     documents.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     await render();
     expect(button()).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).not.toBeNull();
-    expect(fixture.nativeElement.textContent).toContain('The run state could not be checked.');
+    // One quiet status line, never an alert box, while the check keeps going.
+    const line = fixture.nativeElement.querySelector('[data-testid="member-360-state-retrying"]');
+    expect(line?.getAttribute('role')).toBe('status');
+    expect(line?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-refresh"]')).toBeNull();
+    // The retrying state is its own flag: no failure message is set while the poller is still trying.
+    expect(fixture.componentInstance['loadingRetrying']()).toBe(true);
+    expect(fixture.componentInstance['loadingError']()).toBe('');
+    expect(fixture.componentInstance['historyRetrying']()).toBe(true);
+    expect(fixture.componentInstance['historyError']()).toBe('');
     expect(run.generate).not.toHaveBeenCalled();
     documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [] }));
-    fixture.nativeElement.querySelector('[data-testid="member-360-state-refresh"] button').click();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-retrying"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
     expect(button().disabled).toBe(false);
+  });
+  it('never claims "no previous runs" while the first revision read of a listed report is failing transiently', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    documents.listDocuments.mockReturnValue(
+      of({ project: 'sample-project', groups: [{ type: member360DocumentType(), documents: [MEMBER_360_STORED_DOCUMENT] }] })
+    );
+    documents.getRevision.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await render();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(fixture.componentInstance['historyRetrying']()).toBe(true);
+    expect(fixture.componentInstance['historyError']()).toBe('');
+    expect(root.querySelector('[data-testid="member-360-history-retrying"]')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(root.querySelector('[data-testid="member-360-run-history"]')?.textContent).not.toContain('No Member 360 runs yet.');
+    expect(root.querySelector('[data-testid="member-360-compare"]')?.textContent).not.toContain('No previous run yet');
+    expect(root.querySelector('[data-testid="member-360-compare"]')?.textContent).toContain('Loading previous run…');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['historyRetrying']()).toBe(false);
+    expect(root.querySelector('[data-testid="member-360-history-retrying"]')).toBeNull();
+    expect(root.querySelector(`[data-testid="member-360-run-history-${MEMBER_360_STORED_DOCUMENT.documentId}"]`)).not.toBeNull();
+    expect(root.querySelector('[data-testid="member-360-compare"]')?.textContent).toContain('Previous run: Q3 2026 (1 Oct)');
+  });
+  it('treats a partial roster read (progressUnavailable) as a check still going, not a final failure', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], progressUnavailable: true }));
+    await render();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-retrying"]')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('could not be loaded');
+    const before = documents.listDocuments.mock.calls.length;
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [] }));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(documents.listDocuments.mock.calls.length).toBeGreaterThan(before);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-retrying"]')).toBeNull();
+    expect(button().disabled).toBe(false);
+  });
+  it.each([401, 403])('latches a refused roster read (%s): a plain access state, and no poll or wake sends the same credentials again', async (status) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    documents.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    await render();
+    expect(fixture.componentInstance['serverDenied']()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-retrying"]')).toBeNull();
+    const reads = documents.listDocuments.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(2 * MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(documents.listDocuments).toHaveBeenCalledTimes(reads);
+  });
+  it.each([401, 403])('latches a refused owned-run read (%s): the access state, and the roster does not restore the run to read it again', async (status) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: progress().runs }));
+    run.questions.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    await render();
+    expect(fixture.componentInstance['serverDenied']()).toBe(true);
+    expect(run.questions).toHaveBeenCalledTimes(1);
+    const reads = documents.listDocuments.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(2 * MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(documents.listDocuments).toHaveBeenCalledTimes(reads);
+    expect(run.questions).toHaveBeenCalledTimes(1);
+  });
+  it.each([400, 404])('does not restore an owned run whose read failed for good (%s), though the roster still lists it', async (status) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: progress().runs }));
+    run.questions.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    await render();
+    expect(run.questions).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance['serverDenied']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).not.toBeNull();
+    // The create form is offered, so no "No new run is started." line sits beside it.
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('No new run is started.');
+    await vi.advanceTimersByTimeAsync(2 * MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(run.questions).toHaveBeenCalledTimes(1);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).not.toBeNull();
   });
 });

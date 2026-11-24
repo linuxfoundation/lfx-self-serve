@@ -119,7 +119,24 @@ export class LensService {
    */
   public switchLens(lens: Lens): void {
     const target = this.switchTarget(lens);
+    // A switch made while an earlier switch or pick is still navigating keeps that one's page snapshot, so a rollback
+    // returns to the page that is actually showing rather than to the earlier provisional lens.
+    const pending = this.pendingMenuPickState();
+    const previous = pending?.previous ?? this.activeLens();
+    const previousNavLens = pending?.previousNavLens ?? this.navLensSelection();
     if (this.setLens(target)) {
+      // Like a menu pick: if the navigation never leaves the page (a declined unsaved-changes prompt, a refusing guard),
+      // the page's lens comes back. The epoch never matches, so no drawer preview is restored.
+      const pick: MenuLensPick = {
+        previous,
+        previousNavLens,
+        committed: this.activeLens(),
+        previewed: this.activeLens(),
+        epoch: -1,
+        onRestore: pending?.onRestore,
+      };
+      this.pendingMenuPickState.set(pick);
+      this.restoreLensIfPickFails(pick);
       this.router.navigate(target === 'org' ? this.orgLensNavigation.orgLensLandingLink() : [LENS_DEFAULT_ROUTES[target]]);
     }
   }

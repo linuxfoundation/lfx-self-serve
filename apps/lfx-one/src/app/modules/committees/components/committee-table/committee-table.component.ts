@@ -3,7 +3,8 @@
 
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -12,13 +13,15 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
-import { CommitteeTableRowVm } from '@lfx-one/shared/interfaces';
+import { CommitteeTableRowVm, MemberImportTableStatus } from '@lfx-one/shared/interfaces';
 import { JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
 import { getCommitteeMailingListLink, getGroupCommands, resolveJoinModeSeverity, resolveRoleChip, resolveTypeDisplay } from '@lfx-one/shared/utils';
 import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
 import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
 import { ValidExternalUrlPipe } from '@app/shared/pipes/valid-external-url.pipe';
+import { CommitteeMemberImportDialogService } from '@services/committee-member-import-dialog.service';
+import { CommitteeMemberImportService } from '@services/committee-member-import.service';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
 import { committeeLeaveErrorMessage } from '@shared/utils/http-error.utils';
@@ -26,6 +29,8 @@ import { committeeLeaveErrorMessage } from '@shared/utils/http-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
+import { combineLatest, map, switchMap } from 'rxjs';
+import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-filter-bar.component';
 
 @Component({
@@ -46,6 +51,7 @@ import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-f
     PlatformLabelPipe,
     ValidExternalUrlPipe,
     EmptyStateComponent,
+    UiSpinnerComponent,
   ],
   templateUrl: './committee-table.component.html',
   styleUrl: './committee-table.component.scss',
@@ -56,6 +62,8 @@ export class CommitteeTableComponent {
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly committeeService = inject(CommitteeService);
+  private readonly importService = inject(CommitteeMemberImportService);
+  private readonly importDialogService = inject(CommitteeMemberImportDialogService);
   private readonly platformId = inject(PLATFORM_ID);
 
   // Inputs
@@ -125,6 +133,21 @@ export class CommitteeTableComponent {
 
   /** Show the Role column only when the input data carries `my_role` (i.e. Me Lens — MyCommittee rows). */
   protected readonly hasRoleColumn = computed(() => this.tableRows().some((r) => r.my_role != null));
+  /**
+   * This subject's retained CSV import per shown group (#5731), only once a fresh access check authorizes it.
+   * My Groups rows carry no effective `writer`, so the row itself never decides; the API count stays unchanged.
+   */
+  protected readonly importStatusByUid: Signal<ReadonlyMap<string, MemberImportTableStatus>> = this.initImportStatusByUid();
+
+  public constructor() {
+    this.initImportAccessProbes();
+  }
+
+  /** Opens the import progress or report without activating the row's navigation. */
+  protected openImportStatus(event: Event, committeeUid: string): void {
+    event.stopPropagation();
+    this.importDialogService.openRun(committeeUid);
+  }
 
   protected onLeave(event: Event, committee: CommitteeTableRowVm): void {
     event.stopPropagation();
@@ -180,6 +203,53 @@ export class CommitteeTableComponent {
     } catch {
       this.messageService.add({ severity: 'error', summary: 'Copy failed', detail: 'Could not access clipboard.' });
     }
+  }
+
+  private initImportStatusByUid(): Signal<ReadonlyMap<string, MemberImportTableStatus>> {
+    return computed(() => {
+      const access = this.importDialogService.accessByUid();
+      const statuses = new Map<string, MemberImportTableStatus>();
+      for (const committee of this.committees()) {
+        const summary = this.importService.getSummary(committee.uid);
+        if (!summary || access.get(committee.uid) !== 'authorized') continue;
+        const label = {
+          importing: `Importing ${summary.batchSettled}/${summary.batchTotal}`,
+          paused: `Importing ${summary.batchSettled}/${summary.batchTotal}`,
+          stopping: 'Stopping import',
+          settled: 'View import report',
+        }[summary.phase];
+        const opens = summary.phase === 'settled' ? 'report' : 'progress';
+        statuses.set(committee.uid, {
+          committeeUid: committee.uid,
+          phase: summary.phase,
+          label,
+          ariaLabel: `${label} for ${committee.name}. Opens the import ${opens}.`,
+        });
+      }
+      return statuses;
+    });
+  }
+
+  /**
+   * Re-checks access for shown groups with retained runs whenever the list or those runs change; a newer list
+   * abandons the previous checks. Progress updates within a run do not trigger another check.
+   */
+  private initImportAccessProbes(): void {
+    const retainedRuns = computed(() =>
+      this.committees()
+        .flatMap((committee) => {
+          const summary = this.importService.getSummary(committee.uid);
+          return summary ? [`${committee.uid}|${summary.runId}`] : [];
+        })
+        .join(',')
+    );
+    combineLatest([toObservable(this.committees), toObservable(retainedRuns)])
+      .pipe(
+        map(([, runs]) => (runs ? runs.split(',').map((entry) => entry.split('|')[0]) : [])),
+        switchMap((committeeUids) => this.importDialogService.probeAccess(committeeUids)),
+        takeUntilDestroyed()
+      )
+      .subscribe();
   }
 
   private setLeaving(uid: string, leaving: boolean): void {

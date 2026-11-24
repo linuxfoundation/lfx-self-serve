@@ -1,6 +1,6 @@
 ---
 title: Company FAQ
-description: Short answers about the Company lens — what the lens is and what you can do in it, how to switch companies, what the Company Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Company Profile page shows and who can edit it, where to see the company's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Company Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Company lens — what the lens is and what you can do in it, how to switch companies, what the Company Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Events page shows for a company family, what the Company Profile page shows and who can edit it, where to see the company's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Company Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Company
 tags:
@@ -16,6 +16,7 @@ tags:
     projects,
     workspaces,
     events,
+    company-family,
     training,
     meetings,
     groups,
@@ -31,13 +32,13 @@ tags:
     leaderboard,
     crowdfunding,
   ]
-last_updated: 2026-11-17
+last_updated: 2026-11-23
 intercom_collection: Company
 ---
 
 ## What is the Company lens, and what can I do in it?
 
-The Company lens in LFX Self Serve shows one company at a time: how it takes part in Linux Foundation foundations and projects, its foundation memberships, its projects, its people and their activity, its profile, and its corporate CLAs (Contributor License Agreements). You can open a company there when you hold a role on it, such as an admin or viewer role, or a CLA Manager or initial CLA Manager designee role. An admin or viewer sees **Dashboard**, **Memberships**, **Projects**, **Crowdfunding Initiatives** (only for an Admin granted directly on that company), **Crowdfunding Donations**, the **Company Engagement** pages (**People**, **Code Contributions**, **Events**, **Training & Certification**, **Meetings** and **Groups**), **EasyCLA** and **Company Profile**. A CLA Manager, or an initial CLA Manager designee, with no other role on that company sees only **EasyCLA**. See [What can I do in the Company lens?](../#what-can-i-do-in-the-company-lens).
+The Company lens in LFX Self Serve shows one company at a time: how it takes part in Linux Foundation foundations and projects, its foundation memberships, its projects, its people and their activity, its profile, and its corporate CLAs (Contributor License Agreements). You can open a company there when you hold a role on it, such as an admin or viewer role, or a CLA Manager or initial CLA Manager designee role. An admin or viewer sees **Dashboard**, **Memberships**, **Projects**, the **Company Engagement** pages (**People**, **Code Contributions**, **Events**, **Training & Certification**, **Meetings**, **Groups**, **Crowdfunding Initiatives** (only for an Admin granted directly on that company) and **Crowdfunding Donations**), **EasyCLA** and **Company Profile**. A CLA Manager, or an initial CLA Manager designee, with no other role on that company sees only **EasyCLA**. See [What can I do in the Company lens?](../#what-can-i-do-in-the-company-lens).
 
 ## How do I switch to a different company?
 
@@ -79,6 +80,10 @@ Yes. The time range you pick on People or Code Contributions carries to the othe
 
 The Events page in the Company lens lists the foundation events where the selected company has registrants, a submitted speaker or a sponsorship, on an **Upcoming** tab and a **Past** tab. Three tiles count **Upcoming Events**, **Past Events** and **Total Events**. By default the page counts everyone who registered or attended (**All**), credits people by **Employee match** (a company email address on record, or an LF account that matches someone on the company roster), and on the **Past** tab covers the last 2 years. **Show** set to **All foundation events** also lists events with no activity from the company. Select an attendee or speaker count to open the people behind it. The page is under **Company Engagement** in the Company lens sidebar. See [Events page](../company-events/#events-page).
 
+## What does the Events page show for a company family?
+
+When you pick a company family in the company selector, listed as **All**, the family's name and **Companies** (for example, **All Acme Companies**), the Events page lists the events where any company in that family that you have access to has registrants, a submitted speaker or a sponsorship, with one row per event and company. Each row shows that company's own attendee, speaker and sponsor figures, and the tiles and tab counts count rows, so two companies at one event count as two. A **Company** filter narrows the page to one company, and **Show** is not offered. See [What does the Events page show for a company family?](../company-events/#what-does-the-events-page-show-for-a-company-family).
+
 ## What does the Training & Certification page show?
 
 The Training & Certification page shows the Linux Foundation training courses and certifications the selected company's people enrolled in or completed over a time range. Ten cards count its learners and courses, such as **Courses taken**, **Certifications** and **Completion rate**, and a table on the **Certifications** and **Trainings** tabs groups them by course, foundation, project, level or format. The time range defaults to **Past 2 years**. **Clear all** resets only the five filters under **More filters**, and keeps the time range, **Group by** and the search. Select a **Certified**, **Completed** or **In progress** number to see the current employees behind it. The sidebar item is **Training & Certification**, under **Company Engagement**, and the page heading reads **Training & Certifications —** followed by the company's name. See [What is the Training & Certification page?](../training/#what-is-the-training-amp-certification-page).
@@ -97,7 +102,7 @@ The Company Profile page shows the selected company's logo, name, description, w
 
 ## Why don't I see Crowdfunding Initiatives in the Company lens?
 
-You see **Crowdfunding Initiatives** in the Company lens only if you are an Admin granted directly on that company. It appears in the sidebar, below **Projects**, only for an **Admin** (Company Admin – Editor) added on the company's own **Company Lens Access** tab. A **Viewer** role does not show it, and neither does Admin access to a parent or other related company. To get it, ask one of the company's Admins to make you an Admin. See [Lens-scoped Initiatives](../../crowdfunding/lens-initiatives/#who-sees-it).
+You see **Crowdfunding Initiatives** in the Company lens only if you are an Admin granted directly on that company. It appears in the sidebar, under **Company Engagement** below **Groups**, only for an **Admin** (Company Admin – Editor) added on the company's own **Company Lens Access** tab. A **Viewer** role does not show it, and neither does Admin access to a parent or other related company. To get it, ask one of the company's Admins to make you an Admin. See [Lens-scoped Initiatives](../../crowdfunding/lens-initiatives/#who-sees-it).
 
 ## Why can't I edit this corporate CLA?
 

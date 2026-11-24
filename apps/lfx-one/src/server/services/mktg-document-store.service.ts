@@ -8,6 +8,7 @@ import {
   MKTG_ARTIFACT_PARTITION_REGEX,
   MKTG_ARTIFACT_SPECS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_APPROVED_CURRENT_CHANGED,
   MKTG_DOCUMENT_CURRENT_KEY,
   MKTG_DOCUMENT_READ_CONCURRENCY,
   MKTG_DOCUMENT_TYPES,
@@ -38,6 +39,7 @@ import {
   MktgDocumentCurrentRecord,
   MktgDocumentCurrentSelection,
   MktgDocumentCurrentSnapshot,
+  MktgDocumentCurrentConflictResponse,
   MktgDocumentDetailResponse,
   MktgDocumentGroup,
   MktgDocumentsResponse,
@@ -498,13 +500,16 @@ export class MktgDocumentStoreService {
     project: string,
     type: MktgDocumentType,
     documentId: string,
-    revisionId: string
+    revisionId: string,
+    expectedCurrentId?: string,
+    expectedCurrentChangedAt?: string
   ): Promise<{ detail: MktgDocumentDetailResponse; revision: MktgRevisionSummary } | null> {
     if (type.kind === 'run') throw ServiceValidationError.forField('documentId', 'Make current is not available for one-off run documents.');
     const snapshot = await this.readCurrent(req, project, type, documentId);
     const detail = await this.readDocument(req, project, type, documentId, snapshot);
     const view = detail ? await this.readRevision(req, detail, revisionId) : null;
     if (!view) return null;
+    this.requireExpectedCurrent(snapshot, view, expectedCurrentId, expectedCurrentChangedAt);
     let record = snapshot.record;
     let current = await this.currentSelection(req, record);
     if (!view.revision.latest) {
@@ -517,7 +522,7 @@ export class MktgDocumentStoreService {
         view.revision.id,
         view.revisions.map((entry) => entry.id)
       );
-      if (!committed) throw new PreconditionFailedError('The document changed while making a revision current. Reload and try again.');
+      if (!committed) throw this.currentChanged(await this.getDocument(req, project, type, documentId));
       record = committed;
       current = await this.currentSelection(req, committed);
     }
@@ -532,7 +537,9 @@ export class MktgDocumentStoreService {
     project: string,
     type: MktgDocumentType,
     documentId: string,
-    revisionId: string
+    revisionId: string,
+    expectedCurrentId?: string,
+    expectedCurrentChangedAt?: string
   ): Promise<MktgRevisionResponse | null> {
     if (type.kind === 'run') throw ServiceValidationError.forField('documentId', 'Approve is not available for one-off run documents.');
     const snapshot = await this.readCurrent(req, project, type, documentId);
@@ -542,6 +549,7 @@ export class MktgDocumentStoreService {
     if (parseMktgLegacyRevisionId(view.revision.id)) {
       throw ServiceValidationError.forField('revisionId', 'A revision must be stored before it can be approved.');
     }
+    this.requireExpectedCurrent(snapshot, view, expectedCurrentId, expectedCurrentChangedAt);
     if (view.revision.latest && view.approval) return view;
     // A brand kit approval also records what its report shows at this moment: the Sources tab marks those items
     // afterwards. Other documents' approvals stay as they were.
@@ -558,7 +566,7 @@ export class MktgDocumentStoreService {
       false,
       accepted
     );
-    if (!committed) throw new PreconditionFailedError('The document changed while making a revision current. Reload and try again.');
+    if (!committed) throw this.currentChanged(await this.getDocument(req, project, type, documentId));
     const updated = await this.withApprovals(
       req,
       {
@@ -932,6 +940,48 @@ export class MktgDocumentStoreService {
     }
     const current = revisions.find((revision) => revision.latest && revision.approval);
     return { ...detail, revisions, approvedCurrent: current ? { revisionId: current.id, number: current.number } : null };
+  }
+
+  /**
+   * Compare the human's observed selection before the snapshot/ETag CAS publishes anything.
+   * This two-part precondition can also guard a future redraft-queue claim; no queue is created here.
+   */
+  private requireExpectedCurrent(
+    snapshot: MktgDocumentCurrentSnapshot,
+    detail: MktgDocumentDetailResponse,
+    expectedCurrentId?: string,
+    expectedCurrentChangedAt?: string
+  ): void {
+    const selected = snapshot.record?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id;
+    if (expectedCurrentId !== undefined && expectedCurrentId !== selected) throw this.currentChanged(detail);
+    // Every selection or approval stamps a new instant, also one that leaves the id alone (approving the current
+    // revision); a generation that keeps the selection keeps its instant.
+    if (expectedCurrentChangedAt !== undefined && expectedCurrentChangedAt !== snapshot.record?.changedAt) throw this.currentChanged(detail);
+  }
+
+  /**
+   * Only the existing public name projection crosses the error boundary, never stored identities.
+   * `selectedBy`/`selectedAt` say who made this revision current and when. `approvedBy`/`approvedAt` are set only when
+   * that selection was this revision's approval (one write stamps both with the same instant): an unapproved draft, or
+   * a revision approved earlier and made current later by someone else, reports no approval here.
+   */
+  private currentChanged(detail: MktgDocumentDetailResponse | null): ConflictError {
+    const selection = detail?.current ?? null;
+    const selected = detail?.revisions.find((revision) => revision.id === selection?.revisionId) ?? detail?.revisions.find((revision) => revision.latest);
+    const approval = selected?.approval && selection && selected.approval.approvedAt === selection.changedAt ? selected.approval : null;
+    const current: MktgDocumentCurrentConflictResponse['current'] = selected
+      ? {
+          revisionId: selected.id,
+          number: selected.number,
+          approvedBy: approval?.approvedBy?.name ?? null,
+          approvedAt: approval?.approvedAt ?? null,
+          selectedBy: selection?.changedBy?.name ?? null,
+          selectedAt: selection?.changedAt ?? null,
+        }
+      : null;
+    return new ConflictError('The current revision changed. Review it before changing the current selection.', MKTG_APPROVED_CURRENT_CHANGED, {
+      details: { current },
+    });
   }
 
   /** Publish the full manifest via CAS, optionally preserving the caller's observed selection and attribution. */

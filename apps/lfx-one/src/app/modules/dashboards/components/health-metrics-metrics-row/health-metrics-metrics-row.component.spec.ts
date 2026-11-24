@@ -84,6 +84,14 @@ describe('HealthMetricsMetricsRowComponent', () => {
     expect(classes('row-a-value')).toContain('max-[640px]:text-[28px]');
   });
 
+  it('inks a value, and mutes an unset one that reads "—"', async () => {
+    await render([metric('a'), metric('b', { value: '—' })]);
+
+    expect(classes('row-a-value')).toContain('text-gray-900');
+    expect(classes('row-b-value')).toContain('text-gray-400');
+    expect(classes('row-b-value')).not.toContain('text-gray-900');
+  });
+
   it('colours the trend by tone, defaulting to plain context, and leaves no trend line without one', async () => {
     await render([
       metric('up', { trend: '+12%', trendTone: 'up' }),

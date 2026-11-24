@@ -135,6 +135,8 @@ export class EventsSpeakerProposalsDrawerComponent {
       offset,
       pageSize: HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE,
       includeEvents: !this.eventsLoaded,
+      // The drawer lists the most recent first; only the section's table sorts by a column.
+      sort: null,
     };
   }
 

@@ -11,8 +11,20 @@
   [blank]="blank"
   navLabel="Non-Members sections"
   testIdPrefix="non-members">
+  <ng-template lfxHealthMetricsL2SectionControls="orgs">
+    <lfx-ui-switch
+      size="small"
+      ariaLabel="Company activity"
+      [value]="orgsFilter()"
+      (valueChange)="onOrgsFilterChange($event)"
+      data-testid="non-members-orgs-filter">
+      @for (filter of orgsFilters; track filter.id) {
+        <lfx-ui-switch-option [value]="filter.id" [label]="filter.label" [attr.data-testid]="'non-members-orgs-filter-' + filter.id" />
+      }
+    </lfx-ui-switch>
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="orgs">
-    <lfx-non-members-orgs (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs', $event)" />
+    <lfx-non-members-orgs [(filter)]="orgsFilter" (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="people">
     <lfx-non-members-people (reading)="shell.sectionReading('people')" (settled)="shell.sectionSettled('people', $event)" />

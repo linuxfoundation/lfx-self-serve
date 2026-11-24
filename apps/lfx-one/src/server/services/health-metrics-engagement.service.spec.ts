@@ -52,7 +52,7 @@ import type { Request } from 'express';
 import type { HealthMetricsEngagementGroupQuery } from '@lfx-one/shared/interfaces';
 
 function query(overrides: Partial<HealthMetricsEngagementGroupQuery> = {}): HealthMetricsEngagementGroupQuery {
-  return { foundationSlug: 'acme', projectSlug: null, groupType: 'all', range: 'YTD', page: 1, size: 25, ...overrides };
+  return { foundationSlug: 'acme', projectSlug: null, groupType: 'all', range: 'YTD', page: 1, size: 25, sort: null, ...overrides };
 }
 
 /** The logger only reads request metadata off this, so a bare cast is enough for the service call. */
@@ -234,6 +234,22 @@ describe('HealthMetricsEngagementService', () => {
     expect(response.rows).toHaveLength(1);
     expect(response.rows[0]?.committeeId).toBe('');
     expect(response.totalRecords).toBe(34);
+  });
+
+  it("sorts every page by the reader's column, empty values last, then the view's rank, and keeps that order after the join", async () => {
+    await service.getGroupAttendance(req, query({ sort: { key: 'attendance', direction: 'desc' } }));
+
+    const sql = lastSql();
+    const rank =
+      'sort_rank_ytd ASC NULLS LAST, committee_name ASC NULLS LAST, committee_id ASC NULLS LAST, project_slug ASC NULLS LAST, group_type_label ASC NULLS LAST';
+    // Dormant below every rate; a group with too few meetings to rate is empty, as its "—" cell shows.
+    const attendance = `CASE WHEN COALESCE(is_dormant_ytd, FALSE) THEN -1 WHEN meetings_count_ytd >= ${HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE} THEN attendance_pct_ytd END`;
+    expect(sql).toContain(`ORDER BY ${attendance} DESC NULLS LAST, ${rank} LIMIT`);
+    expect(sql).toContain(`ROW_NUMBER() OVER (ORDER BY ${attendance} DESC NULLS LAST, ${rank}) AS page_position`);
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+
+    await service.getGroupAttendance(req, query({ sort: { key: 'meetings', direction: 'asc' } }));
+    expect(lastSql()).toContain(`ORDER BY NULLIF(meetings_count_ytd, 0) ASC NULLS LAST, ${rank}`);
   });
 
   it('selects, ranks and aggregates on the requested period suffix', async () => {

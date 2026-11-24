@@ -1,18 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Injector } from '@angular/core';
+import type { Injector, Signal } from '@angular/core';
 
 import type { MeetingVisibilityKind } from '../enums';
 import type { User } from './auth.interface';
 import type { FilterOption } from './filter.interface';
 import type {
   Meeting,
+  MeetingDashboardView,
   MeetingOccurrence,
   MeetingRegistrant,
   MeetingResponseFilter,
   MeetingRsvp,
   OccurrenceNavItem,
+  PastMeeting,
   PastMeetingSummary,
   RsvpResponse,
   RsvpScope,
@@ -54,6 +56,10 @@ export interface MeetingsHomeFilters {
   foundation: string | null;
   /** Project UID; null means all projects. Takes precedence over `foundation`. */
   project: string | null;
+  /** Committee UID; null means all groups. Set only in a project or foundation lens. */
+  group: string | null;
+  /** Group type, as {@link getMeetingGroupType} names it; null means all types. Set only in a project or foundation lens. */
+  groupType: string | null;
   /** Exact `meeting_type`; null means all types. */
   meetingType: string | null;
   /** The viewer's RSVP for the row's date. */
@@ -62,6 +68,21 @@ export interface MeetingsHomeFilters {
   organizedByMe: boolean;
   /** Hide a series when the viewer declined every upcoming date of it; never hides meetings the viewer organizes. */
   hideDeclined: boolean;
+}
+
+/** The filters a paged past feed applies on the server; null means not filtered. */
+export interface MeetingsHomePastFilters {
+  projectUid: string | null;
+  committeeUid: string | null;
+  /** A group category the server can match; types read from group names are filtered on the loaded rows only. */
+  groupType: string | null;
+  meetingType: string | null;
+}
+
+/** Regex a group name is matched against when the group has no category, and the type it then reads as. */
+export interface MeetingGroupTypePattern {
+  pattern: RegExp;
+  type: string;
 }
 
 export interface MeetingResponseFilterOption {
@@ -321,7 +342,7 @@ export type MeetingDetailsState = 'far' | 'soon' | 'live' | 'ended';
 export type MeetingDetailsTab = 'agenda' | 'guests';
 
 /** Where on the meetings home page the details drawer was opened from, sent with its analytics event. */
-export type MeetingDetailsEntryPoint = 'row' | 'next_card' | 'last_card' | 'pending_rsvps' | 'attendance';
+export type MeetingDetailsEntryPoint = 'row' | 'next_card' | 'last_card' | 'pending_rsvps' | 'attendance' | 'calendar';
 
 /** How the meeting details drawer opens. */
 export interface MeetingDetailsOpenOptions {
@@ -506,4 +527,141 @@ export interface MeetingReconcileDialogData {
   pastMeetingId: string;
   /** Called after attendee records change, so the opener reloads its participants. */
   onChange: () => void;
+}
+
+/** One page of the meetings home past feed; `pageToken` continues it when the feed is paged on the server. */
+export interface MeetingsHomePastPage {
+  meetings: PastMeeting[];
+  pageToken?: string;
+}
+
+/** One meeting date on the meetings home calendars, upcoming or past. */
+export interface MeetingCalendarEntry {
+  row: MeetingHomeRow;
+  past: boolean;
+}
+
+/** One day cell of the meetings home mini calendar. */
+export interface MeetingMiniCalendarDay {
+  /** Local day key, `YYYY-MM-DD`; list rows carry it as `data-day`. */
+  key: string;
+  /** Day of the month. */
+  day: number;
+  inMonth: boolean;
+  today: boolean;
+  /** Meetings that day, soonest first; empty outside the shown month. */
+  entries: MeetingCalendarEntry[];
+  /** Row keys of the day's dots, one per meeting up to three. */
+  dots: string[];
+  /** "Thu, Oct 1". */
+  label: string;
+  /** Tab that lists the day's meetings: Upcoming while one of them is, else Past for today and earlier days. */
+  tab: MeetingDashboardView;
+}
+
+/** One week row of the meetings home mini calendar. */
+export interface MeetingMiniCalendarWeek {
+  key: string;
+  days: MeetingMiniCalendarDay[];
+}
+
+/** Where a meetings home calendar tooltip sits: its bottom centre, in viewport px. */
+export interface MeetingCalendarTooltipAnchor {
+  left: number;
+  top: number;
+}
+
+/** Hover card over a meetings home calendar day. */
+export interface MeetingMiniCalendarTooltip extends MeetingCalendarTooltipAnchor {
+  /** Key of the day it describes. */
+  day: string;
+  /** Opens above the day; false when it would leave the top of the window, so it opens below. */
+  above: boolean;
+  head: string;
+  items: { key: string; time: string; title: string }[];
+  /** Meetings beyond the shown items. */
+  more: number;
+}
+
+/** Layout of the meetings home calendar dialog. */
+export type MeetingCalendarView = 'month' | 'week';
+
+/** A meeting type and the colour its calendar chips and legend dot take. */
+export interface MeetingCalendarTypeColor {
+  type: string;
+  /** A CSS colour, such as `var(--ui-danger-500)`. */
+  color: string;
+}
+
+/** One meeting on the calendar dialog, coloured by type and by whether it is past. */
+export interface MeetingCalendarChip {
+  key: string;
+  entry: MeetingCalendarEntry;
+  /** "10:00 AM". */
+  time: string;
+  title: string;
+  background: string;
+  ink: string;
+  bar: string;
+  /** Tooltip line under the title: "Thu, Oct 1 · 10:00 AM · Board", with " · Past" for a past meeting. */
+  detail: string;
+}
+
+/** A chip placed in a week view day column. */
+export interface MeetingCalendarWeekEvent extends MeetingCalendarChip {
+  /** Offset from midnight in px. */
+  top: number;
+  height: number;
+  /** Lane among the overlapping events, from 0, and how many lanes they share. */
+  lane: number;
+  lanes: number;
+}
+
+/** Hover card over one meeting of the calendar dialog. */
+export interface MeetingCalendarChipTooltip extends MeetingCalendarTooltipAnchor {
+  /** Opens above the chip; false when there is no room above its visible part, so it opens below. */
+  above: boolean;
+  title: string;
+  /** "Thu, Oct 1 · 10:00 AM · Board", as on the chip. */
+  detail: string;
+}
+
+/** One day of the calendar dialog's month or week view. */
+export interface MeetingCalendarDialogDay {
+  key: string;
+  date: Date;
+  /** "Thu, Oct 1". */
+  label: string;
+  day: number;
+  inMonth: boolean;
+  today: boolean;
+  /** Chips shown, soonest first; at most three in the month view. */
+  chips: MeetingCalendarChip[];
+  /** Meetings left out of the month view's cell. */
+  more: number;
+  /** Week view only: every meeting placed by start and duration. */
+  events: MeetingCalendarWeekEvent[];
+}
+
+/** What the meetings home calendar dialog opens with. */
+export interface MeetingCalendarDialogData {
+  upcomingRows: Signal<MeetingHomeRow[]>;
+  pastRows: Signal<MeetingHomeRow[]>;
+  now: Signal<Date>;
+  /** The project or foundation the calendar belongs to. */
+  name: string;
+  logoUrl: string;
+  /** Opens the meeting details drawer above the dialog. */
+  openMeeting: (row: MeetingHomeRow) => void;
+  /** Asks for past meetings back to a local day (`YYYY-MM-DD`), the first one shown, so its past meetings can load. */
+  showPastFrom: (day: string) => void;
+  /** The past meetings, their first page or an older one, failed to load. */
+  pastFailed: Signal<boolean>;
+  /** Retries the failed past meetings, back to a local day (`YYYY-MM-DD`). */
+  retryPast: (day: string) => void;
+  /** The upcoming meetings failed to load. */
+  upcomingFailed: Signal<boolean>;
+  retryUpcoming: () => void;
+  /** A date in the month to open on; the current month without one. */
+  month?: Date;
 }

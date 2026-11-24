@@ -88,13 +88,15 @@ vi.mock('../services/logger.service', () => ({ logger: loggerMocks }));
 
 import type { NextFunction, Request, Response } from 'express';
 import { findMktgDocumentType } from '@lfx-one/shared/utils';
-import type { MktgDocumentDetailResponse, MktgDocumentRunProgress } from '@lfx-one/shared/interfaces';
+import type { MktgDocumentDetailResponse, MktgDocumentRunCoverage, MktgDocumentRunProgress } from '@lfx-one/shared/interfaces';
 
 import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { MktgDocumentsController } from './mktg-documents.controller';
 
 const PROJECT = 'proj-uid-1';
 const REVISION_ID = `000002-${'a'.repeat(64)}`;
+/** The per-read coverage a detail read hands to its selected and refreshed run lookups (no lookup failed here). */
+const detailCoverage: MktgDocumentRunCoverage = { uncheckedCount: 0, retainedRunIds: [] };
 
 function runProgress(overrides: Partial<MktgDocumentRunProgress> = {}): MktgDocumentRunProgress {
   return {
@@ -313,9 +315,67 @@ describe('MktgDocumentsController', () => {
       'resolved-uid',
       expect.objectContaining({ agentKey: 'faq' }),
       'living',
-      REVISION_ID
+      REVISION_ID,
+      undefined,
+      undefined
     );
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ approval: expect.any(Object) }));
+  });
+
+  it.each(['approve', 'restore'] as const)('passes a validated expected current (id and instant) on %s under the canonical writer project', async (action) => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: 'resolved-uid', writer: true });
+    const expectedCurrentId = `000001-${'b'.repeat(64)}`;
+    const expectedCurrentChangedAt = '2026-10-29T12:00:00.000Z';
+    storeMocks.approveRevision.mockResolvedValue({ revision: { number: 2 } });
+    storeMocks.restoreRevision.mockResolvedValue({ detail: {}, revision: { number: 2 } });
+    const request = buildReq(
+      { agentKey: 'faq', documentId: 'living', revisionId: REVISION_ID },
+      { project: PROJECT },
+      { project: PROJECT, revisionId: REVISION_ID, expectedCurrentId, expectedCurrentChangedAt }
+    );
+    await controller[action === 'approve' ? 'approveRevision' : 'restoreRevision'](request, buildRes(), next);
+    expect(storeMocks[action === 'approve' ? 'approveRevision' : 'restoreRevision']).toHaveBeenCalledWith(
+      request,
+      'resolved-uid',
+      expect.objectContaining({ agentKey: 'faq' }),
+      'living',
+      REVISION_ID,
+      expectedCurrentId,
+      expectedCurrentChangedAt
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['approve', 'restore'] as const)('rejects a malformed expectedCurrentChangedAt on %s before authorization/storage', async (action) => {
+    for (const expectedCurrentChangedAt of [null, 4, '', 'yesterday-ish', [], {}, `2026-10-29T12:00:00.000Z${' '.repeat(40)}`]) {
+      vi.clearAllMocks();
+      const request = buildReq(
+        { agentKey: 'faq', documentId: 'living', revisionId: REVISION_ID },
+        { project: PROJECT },
+        { project: PROJECT, revisionId: REVISION_ID, expectedCurrentChangedAt }
+      );
+      await controller[action === 'approve' ? 'approveRevision' : 'restoreRevision'](request, buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'expectedCurrentChangedAt' })] }));
+      expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+      expect(storeMocks.approveRevision).not.toHaveBeenCalled();
+      expect(storeMocks.restoreRevision).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each(['approve', 'restore'] as const)('rejects malformed expectedCurrentId on %s before authorization/storage', async (action) => {
+    for (const expectedCurrentId of [null, 4, '', '../invalid', [], {}, 'x'.repeat(200)]) {
+      next.mockClear();
+      const request = buildReq(
+        { agentKey: 'faq', documentId: 'living', revisionId: REVISION_ID },
+        { project: PROJECT },
+        { project: PROJECT, revisionId: REVISION_ID, expectedCurrentId }
+      );
+      await controller[action === 'approve' ? 'approveRevision' : 'restoreRevision'](request, buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'expectedCurrentId' })] }));
+      expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+      expect(storeMocks.approveRevision).not.toHaveBeenCalled();
+      expect(storeMocks.restoreRevision).not.toHaveBeenCalled();
+    }
   });
 
   it('refuses approval without writer rights and rejects invalid revision/project params', async () => {
@@ -413,7 +473,15 @@ describe('MktgDocumentsController', () => {
 
     await controller.restoreRevision(buildReq({ agentKey: 'icp', documentId: 'living' }, {}, { project: PROJECT, revisionId: REVISION_ID }), res, next);
 
-    expect(storeMocks.restoreRevision).toHaveBeenCalledWith(expect.anything(), PROJECT, expect.objectContaining({ agentKey: 'icp' }), 'living', REVISION_ID);
+    expect(storeMocks.restoreRevision).toHaveBeenCalledWith(
+      expect.anything(),
+      PROJECT,
+      expect.objectContaining({ agentKey: 'icp' }),
+      'living',
+      REVISION_ID,
+      undefined,
+      undefined
+    );
     expect(res.json).toHaveBeenCalledWith({ project: PROJECT, documentId: 'living', revisions: [], revision: { number: 3 } });
   });
 
@@ -457,7 +525,7 @@ describe('MktgDocumentsController', () => {
       next
     );
     expect(next).not.toHaveBeenCalled();
-    expect(runMocks.selectedProgress).toHaveBeenCalledWith(expect.anything(), PROJECT, 'brand-kit', 'living', closed.runId, undefined);
+    expect(runMocks.selectedProgress).toHaveBeenCalledWith(expect.anything(), PROJECT, 'brand-kit', 'living', closed.runId, undefined, detailCoverage);
     expect(runMocks.selectedProgress.mock.invocationCallOrder[0]).toBeLessThan(storeMocks.getDocument.mock.invocationCallOrder[0]);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ revisions: [], runs: [closed] }));
     expect(storeMocks.getRevision).not.toHaveBeenCalled();
@@ -478,7 +546,7 @@ describe('MktgDocumentsController', () => {
     runMocks.refreshFailure.mockResolvedValue(runProgress({ runId: id, state: 'failed', failureText: 'Synthetic plain reply' }));
     const res = buildRes();
     await controller.getDocument(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT, refreshRun: id }), res, next);
-    expect(runMocks.refreshFailure).toHaveBeenCalledWith(expect.anything(), PROJECT, 'brand-kit', 'living', id);
+    expect(runMocks.refreshFailure).toHaveBeenCalledWith(expect.anything(), PROJECT, 'brand-kit', 'living', id, detailCoverage);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ runs: [expect.objectContaining({ failureText: 'Synthetic plain reply' })] }));
     runMocks.refreshFailure.mockClear();
     await controller.getDocument(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT, poll: '1', refreshRun: id }), buildRes(), next);
@@ -502,7 +570,7 @@ describe('MktgDocumentsController', () => {
     runMocks.refreshFailure.mockRejectedValueOnce(failure);
     const res = buildRes();
     await controller.getDocument(buildReq({ agentKey: type.agentKey, documentId: 'living' }, { project: PROJECT, refreshRun: selector }), res, next);
-    expect(runMocks.refreshFailure).toHaveBeenCalledWith(expect.anything(), PROJECT, type.agentKey, 'living', selector);
+    expect(runMocks.refreshFailure).toHaveBeenCalledWith(expect.anything(), PROJECT, type.agentKey, 'living', selector, detailCoverage);
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ ...detail, runs: [runProgress({ state: 'failed' })], progressUnavailable: true });
   }

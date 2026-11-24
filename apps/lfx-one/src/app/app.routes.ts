@@ -24,7 +24,6 @@ import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-ano
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
-import { foundationParticipatingOrgsEnabledGuard } from './shared/guards/foundation-participating-orgs-enabled.guard';
 import { formationMeEnabledGuard } from './shared/guards/formation-me-enabled.guard';
 import { formationOverviewRedirectGuard } from './shared/guards/formation-overview-redirect.guard';
 import { formationOverviewReleaseGuard } from './shared/guards/formation-overview-release.guard';
@@ -40,6 +39,7 @@ import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { legacyOrgLensMatcher, legacyOrgLensRedirect } from './shared/utils/legacy-org-lens-redirect.utils';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
+import { socialListeningAccessGuard } from './shared/guards/social-listening-access.guard';
 import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
 import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavailable-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
@@ -49,6 +49,7 @@ import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
 import { openprofileMeLensGuard } from './shared/guards/openprofile-me-lens.guard';
+import { profileRedesignEnabledGuard } from './shared/guards/profile-redesign.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
@@ -416,12 +417,12 @@ export const routes: Routes = [
         canActivate: [campaignAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
       },
-      // Foundation Lens — Social Listening page (ED + LF Staff)
+      // Foundation Lens — Social Listening page (ED + LF Staff; members of the foundation's groups that opt in)
       {
         path: 'foundation/social-listening',
         title: 'Social Listening',
         data: { lens: 'foundation' },
-        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
+        canActivate: [socialListeningAccessGuard], // also seeds the foundation from ?project=
         loadComponent: () => import('./modules/dashboards/social-listening/social-listening.component').then((m) => m.SocialListeningComponent),
       },
       // Foundation Lens — Participating Companies page (ED + LF Staff, same policy as Health Metrics; #5697)
@@ -429,7 +430,6 @@ export const routes: Routes = [
         path: 'foundation/participating-orgs',
         title: 'Participating Companies',
         data: { lens: 'foundation' },
-        canMatch: [foundationParticipatingOrgsEnabledGuard],
         canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () =>
           import('./modules/dashboards/foundation-participating-orgs/foundation-participating-orgs.component').then(
@@ -916,6 +916,14 @@ export const routes: Routes = [
         title: 'Profile',
         data: { lens: 'me' },
         loadChildren: () => import('./modules/profile/profile.routes').then((m) => m.PROFILE_ROUTES),
+      },
+      {
+        // Account & Settings (#6067): the hub's account tabs behind the profile redesign flag, a Me page like /profile.
+        path: 'account',
+        title: 'Account & Settings',
+        data: { lens: 'me' },
+        canMatch: [profileRedesignEnabledGuard],
+        loadChildren: () => import('./modules/account/account.routes').then((m) => m.ACCOUNT_ROUTES),
       },
       {
         path: 'me/training',

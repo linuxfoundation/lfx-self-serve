@@ -11,7 +11,6 @@ const baseProfile: MentorshipUpstreamUserProfile = {
   user_id: 'user-1',
   profile_type: 'mentee',
   terms_and_conditions: true,
-  number_of_projects: 0,
   created_on: '2026-01-01T00:00:00Z',
   updated_on: '2026-01-01T00:00:00Z',
 };

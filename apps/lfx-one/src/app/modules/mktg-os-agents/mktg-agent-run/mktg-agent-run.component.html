@@ -22,6 +22,10 @@
         <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-run-public-identity-loading" />
       } @else if (checkingRun()) {
         <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-run-progress-loading" />
+        @if (publicRetrying()) {
+          <!-- The reader is headless while the run is checked: its one quiet connection-state line is shown here. -->
+          <p role="status" class="text-xs text-gray-500" data-testid="mktg-run-public-retrying">{{ retryingText }}</p>
+        }
       } @else {
         <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id, label: assetName }" class="mb-4 block" />
         <h1 class="mb-4 text-base font-semibold text-gray-900">{{ assetName }}</h1>
@@ -35,15 +39,28 @@
         [runId]="publicRunId()"
         [refreshKey]="publicRefreshKey()"
         [runPage]="true"
-        [headless]="publicIdentityPending() || checkingRun() || phase() === 'questions' || (!!errorText() && !navigation())"
+        [headless]="progressHeadless()"
         [watchQuestions]="phase() === 'questions'"
         [errorText]="errorText()"
         [retainedAnswersNotice]="answeredNotice()"
         (alreadyAnswered)="onAlreadyAnswered($event)"
         (observed)="onPublicObserved($event)"
         (readError)="onPublicReadError($event)"
+        (readRetrying)="publicRetrying.set($event)"
         (landed)="onPublicLanding()"
         (failed)="onPublicLanding(true)" />
+      @if (!publicIdentityPending() && publicWaitingText()) {
+        <p role="status" class="text-xs text-gray-500" data-testid="mktg-run-public-waiting">{{ publicWaitingText() }}</p>
+        @if (publicRetrying() && !checkingRun()) {
+          <!-- The reader is headless in the waiting state too: its connection-state line is shown here, under the waiting copy. -->
+          <p role="status" class="text-xs text-gray-500" data-testid="mktg-run-public-retrying">{{ retryingText }}</p>
+        }
+        <lfx-button
+          label="Open the document"
+          [routerLink]="publicDocumentLink()"
+          [queryParams]="{ project: projectSlug() ?? '' }"
+          data-testid="mktg-run-public-document-link" />
+      }
       @if (!publicIdentityPending() && errorText()) {
         <lfx-message severity="error" [text]="errorText()" data-testid="mktg-run-public-error" />
         @if (navigation()) {
@@ -121,20 +138,16 @@
         }
 
         <ng-template #dependencyStatus>
+          @if (dependencyRetrying()) {
+            <!-- The dependency check cannot reach the server: one quiet line in its spot while it keeps trying by itself. -->
+            <p role="status" class="text-xs text-gray-500" data-testid="mktg-agent-run-dependency-retrying">{{ retryingText }}</p>
+          }
           @if (missingDependencyNote()) {
             <div class="flex flex-col gap-2">
-              <lfx-message severity="warn" [text]="missingDependencyNote()" data-testid="mktg-agent-run-missing-dependency" />
-              @if (dependencyCheckFailed()) {
-                <div class="flex">
-                  <lfx-button
-                    label="Try again"
-                    icon="fa-light fa-rotate-right"
-                    [text]="true"
-                    size="small"
-                    data-testid="mktg-agent-run-dependency-retry"
-                    (onClick)="onRetryDependencies()" />
-                </div>
-              }
+              <lfx-message
+                [severity]="dependencyCheckFailed() ? 'error' : 'warn'"
+                [text]="missingDependencyNote()"
+                data-testid="mktg-agent-run-missing-dependency" />
               @if (missingDependencyLink(); as link) {
                 <div class="flex">
                   <lfx-button
@@ -548,7 +561,8 @@
                   [projectName]="projectName()"
                   [previousAnswers]="lastAnswers()"
                   [busy]="answersSending()"
-                  (answered)="onAnswerQuestions($event)" />
+                  (answered)="onAnswerQuestions($event)"
+                  (draftChanged)="onQuestionDraft($event)" />
               </div>
             }
           }

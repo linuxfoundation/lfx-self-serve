@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
+import { HttpParams } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -11,25 +12,40 @@ import { MessageComponent } from '@components/message/message.component';
 import {
   COMMITTEE_LABEL,
   OPEN_VOTE_CONFIRMATION,
+  VOTE_CONDORCET_MIN_ELIGIBLE_VOTERS,
   VOTE_COMMENT_PROMPT_MAX_LENGTH,
   VOTE_DEFAULT_CLOSE_TIME,
+  VOTE_DEFAULT_ELIGIBLE_PARTICIPANTS,
   VOTE_LABEL,
   VOTE_QUESTION_MIN_LENGTH,
   VOTE_TITLE_MAX_LENGTH,
   VOTE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
-import { Committee, CommitteeReference, EntityWithProject, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
+import { PollType } from '@lfx-one/shared/enums';
+import {
+  Committee,
+  CommitteeReference,
+  EntityWithProject,
+  Vote,
+  VoteBasicsDefaults,
+  VoteEligibleVoterCountState,
+  VoteFormValue,
+} from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import {
   buildCreateVoteRequest,
   buildDraftUpdateVoteRequest,
   buildDraftVoteRequest,
   buildUpdateVoteRequest,
+  buildVoteBasicsDefaults,
+  countEligibleVoters,
+  getDefaultVoteCloseDate,
   getUserTimezone,
   isRankedPollType,
   mapVoteToCloneFormValue,
   mapVoteToFormValue,
   markFormControlsAsTouched,
+  parseVoteMethodParam,
 } from '@lfx-one/shared/utils';
 import {
   maxCodePointsValidator,
@@ -45,7 +61,7 @@ import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, forkJoin, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { VoteBasicsComponent } from '../components/vote-basics/vote-basics.component';
 import { VoteQuestionComponent } from '../components/vote-question/vote-question.component';
@@ -105,6 +121,10 @@ export class VoteManageComponent {
   // source vote's own project/foundation context for entity-context sync and project-UID resolution.
   private readonly cloneSourceVote = signal<Vote | null>(null);
   private readonly internalStep = signal<number>(1);
+  // Group-based title/description last written by initGroupBasicsDefaults, and the form instance it went into —
+  // a clone -> create transition swaps the form, which must not inherit the old form's seed (#6104).
+  private readonly seededForm = signal<FormGroup | null>(null);
+  private readonly seededBasics = signal<VoteBasicsDefaults | null>(null);
   // Reactive, not a snapshot read — the rail's Create Vote dialog can navigate this reused component
   // to a new ?committee_uid= without a full reload (GH-3781); a one-time read would leave writeAccess's
   // committee leg and initCommitteeContext() pinned to whatever group was active when the route first matched.
@@ -123,6 +143,13 @@ export class VoteManageComponent {
   public readonly isLastStep: Signal<boolean> = this.initIsLastStep();
   public currentStep: Signal<number> = this.initCurrentStep();
   public readonly isDraftSavable: Signal<boolean> = this.initIsDraftSavable();
+  /** Eligible voters for a Condorcet IRV vote's group — fetched only while Condorcet IRV and a group are both selected. */
+  public readonly eligibleVoterCountState: Signal<VoteEligibleVoterCountState> = this.initEligibleVoterCountState();
+  /** False while a Condorcet IRV vote's eligible count is loading or below the minimum; a failed count never blocks. */
+  public readonly meetsVoterMinimum: Signal<boolean> = this.initMeetsVoterMinimum();
+  /** True while step 1's title / description still hold the group-based default seeded into this form (#6104). */
+  public readonly prefilledTitle: Signal<boolean> = this.initPrefilledBasic('title');
+  public readonly prefilledDescription: Signal<boolean> = this.initPrefilledBasic('description');
   private readonly voteEntityContext: Signal<EntityWithProject | null> = this.initVoteEntityContext();
   private readonly accessLegs = this.initWriteAccess();
   private readonly writeAccess: Signal<boolean> = this.accessLegs.optimistic;
@@ -136,6 +163,8 @@ export class VoteManageComponent {
   public constructor() {
     this.initCommitteeContext();
     this.initCloneFromQuery();
+    this.initPollTypeFromQuery();
+    this.initGroupBasicsDefaults();
     evictOnWriteAccessLoss(this.writeAccess);
 
     // Context-less edit links land in the VOTE's project (not the cookie-restored one);
@@ -199,7 +228,7 @@ export class VoteManageComponent {
   }
 
   public onSaveAsDraft(): void {
-    if (this.submitting()) {
+    if (this.submitting() || this.blockUnavailableCreateMethod()) {
       return;
     }
 
@@ -286,7 +315,7 @@ export class VoteManageComponent {
   }
 
   public onSubmit(): void {
-    if (this.submitting() || this.confirmingOpenVote()) {
+    if (this.submitting() || this.confirmingOpenVote() || this.blockUnavailableCreateMethod()) {
       return;
     }
 
@@ -296,6 +325,12 @@ export class VoteManageComponent {
 
     if (this.form().invalid) {
       this.handleInvalidSubmit();
+      return;
+    }
+
+    // Edit mode moves freely between steps, so Step 1's voter-minimum gate alone can't stop an Open.
+    if (!this.meetsVoterMinimum()) {
+      this.goToStep(1);
       return;
     }
 
@@ -401,8 +436,27 @@ export class VoteManageComponent {
     }
   }
 
+  /** Creation availability never prevents editing or opening an existing ranked draft. */
+  private blockUnavailableCreateMethod(): boolean {
+    const pollType = this.form().getRawValue().poll_type as PollType;
+    if (this.isEditMode() || parseVoteMethodParam(pollType) === pollType) {
+      return false;
+    }
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Voting method unavailable',
+      detail: 'This voting method is coming soon. Select Plurality to create a new vote.',
+    });
+    return true;
+  }
+
   private submitVote(): void {
     if (this.submitting()) {
+      return;
+    }
+
+    if (this.blockUnavailableCreateMethod()) {
+      this.voteService.discardSpeculativeVote();
       return;
     }
 
@@ -516,6 +570,7 @@ export class VoteManageComponent {
    */
   private patchFormWithVote(vote: Vote): void {
     this.patchFormWithValue(mapVoteToFormValue(vote));
+    this.applyMethodLock();
   }
 
   /**
@@ -563,6 +618,7 @@ export class VoteManageComponent {
       description: formValue.description,
       committee: formValue.committee,
       eligible_participants: formValue.eligible_participants,
+      poll_type: formValue.poll_type,
       close_date: formValue.close_date,
       close_time: formValue.close_time,
       timezone: formValue.timezone,
@@ -608,18 +664,22 @@ export class VoteManageComponent {
 
   // Private initializer functions
   private createFormGroup(): FormGroup {
+    const timezone = getUserTimezone();
     return new FormGroup(
       {
         // Step 1: Vote Basics
         title: new FormControl('', [trimmedRequired(), trimmedMinLength(3), Validators.maxLength(VOTE_TITLE_MAX_LENGTH)]),
         description: new FormControl(''),
         committee: new FormControl<CommitteeReference | null>(null, [Validators.required, validCommitteeReference()]),
-        eligible_participants: new FormControl('', [Validators.required]),
-        close_date: new FormControl<Date | null>(null, [Validators.required]),
+        // Create defaults (#6104) — edit and clone hydration patch both fields, so they only survive on create.
+        eligible_participants: new FormControl(VOTE_DEFAULT_ELIGIBLE_PARTICIPANTS, [Validators.required]),
+        // Seeded from ?poll_type= on create (initPollTypeFromQuery); disabled in edit mode.
+        poll_type: new FormControl<PollType>(PollType.GENERIC, { nonNullable: true }),
+        close_date: new FormControl<Date | null>(getDefaultVoteCloseDate(Date.now(), timezone), [Validators.required]),
         close_time: new FormControl<string>(VOTE_DEFAULT_CLOSE_TIME, { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
         // The v2 mutation contract requires end_time_timezone on every request (responses keep it
         // optional for legacy votes); combineDateTime also needs a zone to build a meaningful end_time.
-        timezone: new FormControl<string>(getUserTimezone(), { nonNullable: true, validators: [Validators.required] }),
+        timezone: new FormControl<string>(timezone, { nonNullable: true, validators: [Validators.required] }),
         allow_abstain: new FormControl<boolean>(false, { nonNullable: true }),
         allow_vote_change: new FormControl<boolean>(true, { nonNullable: true }),
 
@@ -631,6 +691,13 @@ export class VoteManageComponent {
       },
       { validators: voteDeadlineValidator() }
     );
+  }
+
+  private initPrefilledBasic(field: keyof VoteBasicsDefaults): Signal<boolean> {
+    return computed(() => {
+      const seeded = this.seededBasics();
+      return seeded !== null && this.seededForm() === this.form() && this.formValue()[field] === seeded[field];
+    });
   }
 
   private initIsEditMode(): Signal<boolean> {
@@ -669,6 +736,62 @@ export class VoteManageComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  /**
+   * Counts the eligible voters of a Condorcet IRV vote's group, mirroring ITX's recipient resolution.
+   * @description Keyed on the group alone so changing Eligible Participants recounts without a refetch;
+   * `switchMap` drops a stale group's fetch. Reads raw form values, so a locked group still counts.
+   */
+  private initEligibleVoterCountState(): Signal<VoteEligibleVoterCountState> {
+    const idle: VoteEligibleVoterCountState = { status: 'idle', count: null };
+    const rankedCommitteeUid = computed(() => {
+      const value = this.formValue();
+      return value['poll_type'] === PollType.CONDORCET_IRV ? ((value['committee'] as CommitteeReference | null)?.uid ?? null) : null;
+    });
+    const eligibility$ = toObservable(computed(() => (this.formValue()['eligible_participants'] as string) ?? ''));
+
+    return toSignal(
+      toObservable(rankedCommitteeUid).pipe(
+        distinctUntilChanged(),
+        switchMap((uid): Observable<VoteEligibleVoterCountState> => {
+          if (!uid) {
+            return of(idle);
+          }
+          return forkJoin({
+            committee: this.committeeService.getCommitteeDetail(uid),
+            members: this.committeeService.getCommitteeMembers(uid, new HttpParams().set('require_complete', 'true')),
+          }).pipe(
+            switchMap(({ committee, members }) =>
+              eligibility$.pipe(
+                map(
+                  (eligibility): VoteEligibleVoterCountState => ({
+                    status: 'loaded',
+                    count: countEligibleVoters(members, eligibility, committee.enable_voting === true),
+                  })
+                )
+              )
+            ),
+            catchError((error) => {
+              console.error('Failed to count eligible voters for a Condorcet IRV group', { committeeUid: uid, status: error?.status, message: error?.message });
+              return of<VoteEligibleVoterCountState>({ status: 'error', count: null });
+            }),
+            startWith<VoteEligibleVoterCountState>({ status: 'loading', count: null })
+          );
+        })
+      ),
+      { initialValue: idle }
+    );
+  }
+
+  private initMeetsVoterMinimum(): Signal<boolean> {
+    return computed(() => {
+      const { status, count } = this.eligibleVoterCountState();
+      if (status === 'loading') {
+        return false;
+      }
+      return status !== 'loaded' || (count ?? 0) >= VOTE_CONDORCET_MIN_ELIGIBLE_VOTERS;
+    });
   }
 
   /** Maps the loaded vote to the {@link EntityWithProject} shape; absent enrichment fields map to null.
@@ -918,7 +1041,10 @@ export class VoteManageComponent {
         // Gate on every group-level error voteDeadlineValidator can set — a spring-forward gap wall time
         // (nonexistentWallTime) must block Next just like a past deadline (futureDateTime) does.
         const deadlineValid = !form.errors?.['futureDateTime'] && !form.errors?.['nonexistentWallTime'];
-        return titleValid && committeeValid && eligibleParticipantsValid && closeDateValid && closeTimeValid && timezoneValid && deadlineValid;
+        const minVotersValid = this.meetsVoterMinimum();
+        return (
+          titleValid && committeeValid && eligibleParticipantsValid && closeDateValid && closeTimeValid && timezoneValid && deadlineValid && minVotersValid
+        );
       }
       case 2: {
         const questionsArray = form.get('questions') as FormArray;
@@ -970,7 +1096,8 @@ export class VoteManageComponent {
   }
 
   private markAllFormControlsAsTouched(): void {
-    markFormControlsAsTouched(this.form());
+    // Validation must not turn untouched defaults into organizer edits.
+    markFormControlsAsTouched(this.form(), false, false, false);
   }
 
   /** Touch only the fields gated by `isDraftSavable` so missing-value errors render under the right inputs. */
@@ -1030,6 +1157,66 @@ export class VoteManageComponent {
     const ref: CommitteeReference = { uid: committee.uid, name: committee.name };
     committeeControl?.setValue(ref);
     committeeControl?.disable();
+  }
+
+  /** Seeds the voting method from ?poll_type= (the Create Vote dropdown's choice) on create. Edit mode keeps
+   *  the vote's own method, and a clone keeps its normalized creation method. Unsupported values fall back to plurality.
+   *  Subscribed after initCloneFromQuery so a clone -> create transition seeds the form that transition
+   *  just rebuilt. Changing the method afterwards is a normal form edit; the URL is not rewritten. */
+  private initPollTypeFromQuery(): void {
+    this.route.queryParamMap
+      .pipe(
+        map((params) => (params.get('clone') ? null : params.get('poll_type'))),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((pollType) => {
+        if (this.route.snapshot.paramMap.has('id') || this.route.snapshot.queryParamMap.has('clone')) {
+          return;
+        }
+        this.form().get('poll_type')?.setValue(parseVoteMethodParam(pollType));
+      });
+  }
+
+  /** Prefills a new vote's title and description from its selected or locked group (#6104), mirroring the
+   *  meetings composer's pristine-guarded type template. A group change re-seeds a field only while it is
+   *  pristine and still empty or holding this form's last seed, so an organizer's edit is never overwritten;
+   *  clearing the group clears an unedited seed. Keyed on the form instance as well as the group name, because
+   *  a clone -> create transition swaps in a fresh form (initCloneFromQuery). Edit and clone keep their
+   *  hydrated values; a blocked or failed clone keeps `?clone=` but leaves a fresh form with nothing hydrated,
+   *  so the skip keys on a clone in flight or applied, not on the URL. A seed's own setValue leaves the group
+   *  name unchanged, so it never re-emits. */
+  private initGroupBasicsDefaults(): void {
+    const groupContext = computed(() => ({ form: this.form(), name: (this.formValue()['committee'] as CommitteeReference | null)?.name?.trim() || null }), {
+      equal: (a, b) => a.form === b.form && a.name === b.name,
+    });
+
+    toObservable(groupContext)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ form, name }) => {
+        if (this.isEditMode() || this.loading() || this.cloneSourceVote() !== null) {
+          return;
+        }
+        const lastSeed = this.seededForm() === form ? this.seededBasics() : null;
+        const defaults = name ? buildVoteBasicsDefaults(name) : null;
+        for (const field of ['title', 'description'] as const) {
+          const control = form.get(field);
+          const next = defaults?.[field] ?? '';
+          if (control?.pristine && (!control.value || control.value === lastSeed?.[field]) && control.value !== next) {
+            control.setValue(next);
+          }
+        }
+        this.seededForm.set(form);
+        this.seededBasics.set(defaults);
+      });
+  }
+
+  /** Locks the voting method on the CURRENT form in edit mode — the method is fixed once the vote exists,
+   *  and the update builders never send poll_type either. Re-applied after any blanket `enable()`. */
+  private applyMethodLock(): void {
+    if (this.route.snapshot.paramMap.has('id')) {
+      this.form().get('poll_type')?.disable({ emitEvent: false });
+    }
   }
 
   /** Tears down an open confirmation dialog and discards its speculative vote. Shared between the
@@ -1111,11 +1298,14 @@ export class VoteManageComponent {
         // instance this just replaced/re-enabled, and the blanket enable() above would otherwise strip
         // a lock that's still supposed to be in effect (GH-3781 review round 3: dealako — cache-hit race).
         this.applyCommitteeLock(this.committeeContext());
+        // Same for the method lock: an edit whose vote loaded first would otherwise come out editable.
+        this.applyMethodLock();
         if (!vote) return;
-        // This form has no poll-type/num-winners UI and can only represent a generic, non-anonymous
-        // ballot — prefilling from a ranked-choice or pseudo-anonymous source would silently submit a
-        // plain plurality vote in its place. Updates are only permitted while a vote is disabled, so
-        // once a published election has ballots coming in a silently-wrong clone can't be corrected.
+        // The form can't represent an instant-runoff or Meek STV method, or pseudo-anonymity, so prefilling
+        // from such a source would silently submit a different kind of vote in its place. Condorcet IRV is
+        // representable, but its clones stay blocked until ranked cloning is verified end to end. Updates are
+        // only permitted while a vote is disabled, so once a published election has ballots coming in a
+        // silently-wrong clone can't be corrected.
         if (isRankedPollType(vote.poll_type) || vote.pseudo_anonymity) {
           this.messageService.add({
             severity: 'warn',

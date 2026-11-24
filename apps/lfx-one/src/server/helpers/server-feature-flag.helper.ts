@@ -436,6 +436,64 @@ export enum ServerFeatureFlag {
   CampaignServiceMetaOptimizationGoal = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_OPTIMIZATION_GOAL',
 
   /**
+   * Open the Meta lead form read (`GET /api/campaigns/meta/lead-forms`) and accept `metaConfig.leadFormId` on
+   * create (#5940). The Implement tab offers `leads` with a form picker once the UI change lands; until then
+   * this flag opens the server half only. Only a caller holding
+   * `global_marketing_ops` on the project may read the forms or send one: a project without its own Meta
+   * connection uses the shared LF Page, which holds every foundation's forms.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 DEPLOYED with its own
+   * `META_LEAD_FORMS_ENABLED` on, since campaign-service refuses `leadFormId` and the read with a 400 otherwise.
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`). Off (the default), `leads` stays
+   * hidden, the read answers 404 and the create route refuses a `leadFormId` with a 400. A request field and a
+   * read only, so flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaLeadForms = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS',
+
+  /**
+   * Meta detailed targeting (#5904 row 4): accept `metaConfig.targeting.interests`, `behaviors` with
+   * `workPositions`, and `locales` on create, one flag each. The targeting search
+   * (`GET /api/campaigns/meta/targeting-search`) answers each kind only while that kind's flag is on:
+   * `type=interest` on the interest flag, `type=behavior` and `type=work_position` on the behavior flag.
+   *
+   * CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
+   * `META_INTEREST_TARGETING_ENABLED`, `META_BEHAVIOR_TARGETING_ENABLED` or `META_LOCALE_TARGETING_ENABLED` on
+   * (and `META_TARGETING_SEARCH_ENABLED` for the search), since campaign-service refuses the field or the read
+   * with a 400 otherwise, and is only meaningful while the create cutover is on (`cutoverOwnsCreate`). Off (the
+   * default), the create route refuses the field with a 400, never dropping it, and the search answers 404. A
+   * request field and a read only, so flipping one back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaInterestTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING',
+  CampaignServiceMetaBehaviorTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING',
+  CampaignServiceMetaLocaleTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_LOCALE_TARGETING',
+
+  /**
+   * Meta device and operating-system targeting (#5904 row 6): accept `metaConfig.targeting.devicePlatforms` and
+   * `metaConfig.targeting.userOs` on create, one flag each.
+   *
+   * CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
+   * `META_DEVICE_TARGETING_ENABLED` or `META_OS_TARGETING_ENABLED` on, since campaign-service refuses the field with a
+   * 400 otherwise, and is only meaningful while the create cutover is on (`cutoverOwnsCreate`). Off (the default), the
+   * create route refuses the field with a 400, never dropping it. A request field only, so flipping one back strands
+   * nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaDeviceTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING',
+  CampaignServiceMetaOsTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_OS_TARGETING',
+
+  /**
+   * Meta delivery options (#5904 row 5): accept `metaConfig.adSchedule` (a lifetime-budget ad set's hours) and
+   * `metaConfig.frequencyCap` (an awareness ad set's impressions per person), one flag each.
+   *
+   * CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
+   * `META_AD_SCHEDULE_ENABLED` or `META_FREQUENCY_CAP_ENABLED` on, since campaign-service refuses the field with a
+   * 400 otherwise, and is only meaningful while the create cutover is on (`cutoverOwnsCreate`). Off (the default),
+   * the create route refuses the field with a 400, never dropping it. A request field only, so flipping one back
+   * strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaAdSchedule = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE',
+  CampaignServiceMetaFrequencyCap = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_FREQUENCY_CAP',
+
+  /**
    * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
    * `microsoftConfig.imageAssetId`.
    *
@@ -746,19 +804,6 @@ export enum ServerFeatureFlag {
    * flag exists so a bad rollout can be reverted with an env var, not a revert PR.
    */
   MarketingOpsFga = 'LFX_MARKETING_OPS_FGA_ENABLED',
-
-  /**
-   * Dark-launch gate for the Foundation Lens Participating Companies endpoints
-   * (`/api/foundation-participating-orgs`, #5697). OFF answers every request with a neutral 404,
-   * whether or not the caller may use the page. The endpoints read the lf-dbt participating-orgs
-   * table through `foundation-participating-orgs.snowflake-source.ts` (#5707); this stays OFF until the rollout.
-   *
-   * Paired with, and independent of, the client-side `foundation-participating-orgs-enabled`
-   * flag: the client flag hides the route and the nav item, this one is the real kill switch for a
-   * direct API call. Reads only, so a rolling update where pods disagree just means some pods answer
-   * 404 and others serve; nothing is half-written. OFF by default.
-   */
-  FoundationParticipatingOrgs = 'LFX_FOUNDATION_PARTICIPATING_ORGS_ENABLED',
 
   /**
    * The master kill switch for the embedded Gatewaze admin pilot (`GwModuleOutletComponent`,

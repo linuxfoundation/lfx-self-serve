@@ -92,7 +92,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
       await openLinkedin(page);
       await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic retained source');
       await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
-      const dialog = activeRunConfirmDialog(page, 'mktg-linkedin-active-run-confirm');
+      const dialog = activeRunConfirmDialog(page);
       await expect(dialog).toContainText('Your LinkedIn post run is in progress');
       await dialog.getByRole('button', { name: choice, exact: true }).click();
       await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();

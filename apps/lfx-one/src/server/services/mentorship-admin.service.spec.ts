@@ -623,7 +623,6 @@ const termManagementRow = (id: string, overrides: Record<string, unknown> = {}) 
   program_id: PROGRAM_ID,
   name: 'Fall',
   status: 'open',
-  active_users: 1,
   created_on: '2026-01-01T00:00:00Z',
   updated_on: '2026-01-02T00:00:00Z',
   pending: 1,
@@ -1008,7 +1007,6 @@ describe('MentorshipAdminService term writes', () => {
     program_id: PROGRAM_ID,
     name: 'Fall 2026',
     status: 'open',
-    active_users: 0,
     created_on: '2026-06-01',
     updated_on: '2026-06-01',
   };

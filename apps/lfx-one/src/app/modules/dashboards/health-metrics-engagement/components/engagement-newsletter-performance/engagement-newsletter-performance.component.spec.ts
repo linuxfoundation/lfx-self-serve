@@ -102,6 +102,13 @@ describe('EngagementNewsletterPerformanceComponent', () => {
     expect(query('engagement-newsletter-performance-metrics-cto')).toBeNull();
     expect(legend()).toEqual(['Open rate', 'Click rate', 'Click-to-open rate']);
     expect(query('engagement-newsletter-performance-chart-line-cto')?.getAttribute('stroke-dasharray')).toBe('5 4');
+    // The click-to-open swatch is dashed like its line; the solid lines keep a solid swatch.
+    const swatch = (key: string, kind: string) =>
+      query(`engagement-newsletter-performance-legend-${key}`)?.querySelector(`[data-testid="engagement-newsletter-performance-legend-${kind}"]`);
+    expect(swatch('cto', 'swatch-dashed')?.className).toContain('border-dashed');
+    expect(swatch('cto', 'swatch')).toBeNull();
+    expect(swatch('open', 'swatch')).not.toBeNull();
+    expect(swatch('open', 'swatch-dashed')).toBeNull();
     const rows = [...fixture.nativeElement.querySelectorAll('[data-testid="engagement-newsletter-performance-table"] tbody tr')] as HTMLElement[];
     expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual([
       'engagement-newsletter-performance-row-n2',
@@ -149,6 +156,38 @@ describe('EngagementNewsletterPerformanceComponent', () => {
     expect(query('engagement-newsletter-performance-chart')).toBeNull();
     expect(query('engagement-newsletter-performance-chart-empty')).not.toBeNull();
     expect(query('engagement-newsletter-performance-row-n2')).not.toBeNull();
+  });
+
+  it('opens on the latest send with the Newsletter arrow, and sorts a rate highest first, a newsletter with no engagement data last', async () => {
+    const quiet = { ...LATEST, key: 'n0', name: 'Monthly: Quiet', sentDate: `${YEAR}-08-01`, hasEngagementData: false };
+    await render({ ...PERFORMANCE, newsletters: [...PERFORMANCE.newsletters, quiet] });
+    const keys = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('[data-testid="engagement-newsletter-performance-table"] tbody tr')].map(
+        (row: Element) => row.getAttribute('data-testid') ?? ''
+      );
+    const header = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="engagement-newsletter-performance-sort-${key}"]`);
+
+    expect(header('newsletter').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+    expect(keys()).toEqual([
+      'engagement-newsletter-performance-row-n2',
+      'engagement-newsletter-performance-row-n1',
+      'engagement-newsletter-performance-row-n0',
+    ]);
+
+    (header('openRate').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(keys()).toEqual([
+      'engagement-newsletter-performance-row-n2',
+      'engagement-newsletter-performance-row-n1',
+      'engagement-newsletter-performance-row-n0',
+    ]);
+    (header('openRate').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(keys()).toEqual([
+      'engagement-newsletter-performance-row-n1',
+      'engagement-newsletter-performance-row-n2',
+      'engagement-newsletter-performance-row-n0',
+    ]);
   });
 
   it('pages ten newsletters at a time with the numbered pager', async () => {

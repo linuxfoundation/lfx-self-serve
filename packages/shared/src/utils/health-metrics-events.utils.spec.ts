@@ -283,6 +283,8 @@ describe('forecast table helpers', () => {
       pct: 100,
       fillClass: 'bg-emerald-500',
       paceLabel: 'On track',
+      // The sort keeps the share uncapped, so an event past its goal still outranks one at it.
+      sortValues: { event: 'Summit', registrations: expect.closeTo(120.04, 6) },
     });
     expect(buildHealthMetricsEventsForecastRowViews([event({ registrationsNow: 250, goal: 1000 })])[0].pct).toBe(25);
   });
@@ -410,6 +412,7 @@ describe('buildHealthMetricsEventsPastView', () => {
       status: 'near-miss',
       statusLabel: 'Just missed',
       statusTone: 'warning',
+      sortValues: { event: '2026-03-10', registrations: 900, revenue: 125000, status: 'Just missed' },
     });
   });
 
@@ -497,6 +500,14 @@ describe('buildHealthMetricsEventsAtAGlanceView', () => {
     expect(last.metrics.find((item) => item.key === 'events')?.description).toBe('14 past');
   });
 
+  it('reads a show-up rate under 1% to one decimal, and sorts it on that shown figure', () => {
+    const periods = [glancePeriod({ showUpRate: 0.004 }), glancePeriod({ range: 'COMPLETED_YEAR', showUpRate: 0.75 })];
+    const view = buildHealthMetricsEventsAtAGlanceView(glance({ periods }), 'YTD');
+    const showUp = view.rows.find((row) => row.key === 'show-up-rate');
+    expect(showUp?.value).toBe('0.4%');
+    expect(showUp?.sortValues.period).toBe(0.4);
+  });
+
   it('lists each figure against the comparison period, with its change as a badge, the show-up rate in points', () => {
     // Each comparison value is the one its change implies, as the view measures year to date against the whole last year.
     const changes = {
@@ -513,13 +524,24 @@ describe('buildHealthMetricsEventsAtAGlanceView', () => {
       glancePeriod({ range: 'COMPLETED_YEAR', registrations: 14000, attendees: 14308, organizations: 409, speakers: 171, countries: 32, showUpRate: 0.728 }),
     ];
 
-    expect(buildHealthMetricsEventsAtAGlanceView(glance({ periods }), 'YTD').rows).toEqual([
-      { key: 'registrations', label: 'Registrations', value: '12,400', comparison: '14,000', change: '−11%', changeTone: 'danger' },
-      { key: 'attendees', label: 'Attendees', value: '9,300', comparison: '14,308', change: '−35%', changeTone: 'danger' },
-      { key: 'companies', label: 'Participating companies', value: '410', comparison: '409', change: '+0%', changeTone: 'success' },
-      { key: 'speakers', label: 'Speakers', value: '120', comparison: '171', change: '−30%', changeTone: 'danger' },
-      { key: 'countries', label: 'Countries', value: '38', comparison: '32', change: '+19%', changeTone: 'success' },
-      { key: 'show-up-rate', label: 'Show-up rate', value: '75%', comparison: '73%', change: '+2.2pp', changeTone: 'success' },
+    expect(buildHealthMetricsEventsAtAGlanceView(glance({ periods }), 'YTD').rows).toEqual(
+      [
+        { key: 'registrations', label: 'Registrations', value: '12,400', comparison: '14,000', change: '−11%', changeTone: 'danger' },
+        { key: 'attendees', label: 'Attendees', value: '9,300', comparison: '14,308', change: '−35%', changeTone: 'danger' },
+        { key: 'companies', label: 'Participating companies', value: '410', comparison: '409', change: '+0%', changeTone: 'success' },
+        { key: 'speakers', label: 'Speakers', value: '120', comparison: '171', change: '−30%', changeTone: 'danger' },
+        { key: 'countries', label: 'Countries', value: '38', comparison: '32', change: '+19%', changeTone: 'success' },
+        { key: 'show-up-rate', label: 'Show-up rate', value: '75%', comparison: '73%', change: '+2.2pp', changeTone: 'success' },
+      ].map((row) => expect.objectContaining(row))
+    );
+    // Each figure sorts as its cell reads: the show-up rate and the changes by their shown percent.
+    expect(buildHealthMetricsEventsAtAGlanceView(glance({ periods }), 'YTD').rows.map((row) => row.sortValues)).toEqual([
+      { metric: 'Registrations', period: 12400, comparison: 14000, change: -11 },
+      { metric: 'Attendees', period: 9300, comparison: 14308, change: -35 },
+      { metric: 'Participating companies', period: 410, comparison: 409, change: 0 },
+      { metric: 'Speakers', period: 120, comparison: 171, change: -30 },
+      { metric: 'Countries', period: 38, comparison: 32, change: 19 },
+      { metric: 'Show-up rate', period: 75, comparison: 73, change: 2.2 },
     ]);
   });
 
@@ -632,6 +654,7 @@ describe('buildHealthMetricsEventsRevenueView', () => {
       registrationGoalSuffix: ' / $145K (goal)',
       sponsorshipLabel: '$40K',
       sponsorshipGoalSuffix: ' / no goal set',
+      sortValues: { event: 'Summit', registration: 96000, sponsorship: 40000 },
     });
   });
 
@@ -647,6 +670,8 @@ describe('buildHealthMetricsEventsRevenueView', () => {
       registrationGoalSuffix: ' / no goal set',
       sponsorshipLabel: '$0',
       sponsorshipGoalSuffix: ' / $15K (goal)',
+      // The "—" amount is empty and sorts last; $0 against a goal is a real zero.
+      sortValues: { registration: null, sponsorship: 0 },
     });
     expect(withheld).toMatchObject({ registrationGoalSuffix: ' / goal not in USD', sponsorshipLabel: '—' });
   });
@@ -857,6 +882,11 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
       ['speakers', 'Unique speakers', '3,559', undefined, '−14%'],
     ]);
     expect(view.metrics[3].tip).toContain('A speaker with several talks counts once');
+  });
+
+  it('reads an acceptance rate under 1% to one decimal, never 0%', () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers({ periods: [speakersPeriod({ acceptanceRate: 0.003 })] }), 'YTD');
+    expect(view.metrics.find((metric) => metric.key === 'accepted')?.description).toBe('0.3% acceptance rate');
   });
 
   it('leaves Unique speakers without a change for an uncompared period', () => {
@@ -1091,6 +1121,11 @@ describe('buildHealthMetricsEventsSponsorshipView', () => {
 
     expect(view.metrics[1]).toEqual({ key: 'goal', label: 'Goal', value: '—' });
     expect(view.metrics[0].trend).toBeUndefined();
+  });
+
+  it('reads progress to goal under 1% to one decimal, never 0% reached', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ progressToGoal: 0.004 })), 'YTD');
+    expect(view.metrics.find((metric) => metric.key === 'goal')?.description).toBe('0.4% reached');
   });
 
   it('draws each tier as a bar against the most sold, with the tier icon for Diamond to Silver and the ticket for any other package', () => {

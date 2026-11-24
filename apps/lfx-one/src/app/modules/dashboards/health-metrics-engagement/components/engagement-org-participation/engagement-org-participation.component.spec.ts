@@ -174,6 +174,50 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(query('ui-pagination-info')?.textContent?.trim()).toBe('Showing 1 to 10 of 23');
   });
 
+  it("keeps the view's rank under the default Meetings attended arrow, then sorts the whole list from page 1 on a picked column", async () => {
+    const ytd = (rank: number, attended: number) => [
+      {
+        range: 'YTD' as const,
+        meetingsHeld: 30,
+        meetingsTotal: 20,
+        invitedCount: 20,
+        attendedCount: attended,
+        attendancePct: attended / 20,
+        avgReps: 1,
+        sortRank: rank,
+      },
+    ];
+    // The view ranks Beta first even though Alpha attended more, so the default must not re-sort by the share.
+    const rows = [
+      orgRow({ accountId: 'b', accountName: 'Beta Labs', membershipTier: 'Silver', periods: ytd(1, 10) }),
+      orgRow({ accountId: 'a', accountName: 'Alpha Works', membershipTier: 'Gold', periods: ytd(2, 15) }),
+      ...Array.from({ length: 10 }, (_, index) =>
+        orgRow({ accountId: `n-${index}`, accountName: `Zed ${index}`, isMember: false, membershipTier: '', periods: ytd(3 + index, 1) })
+      ),
+    ];
+    await render(response({ rows, counts: { orgs: 12, lapsedOrgs: 0 } }));
+    const keys = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('[data-testid^="engagement-org-participation-row-"]')].map(
+        (row: Element) => row.getAttribute('data-testid') ?? ''
+      );
+    const header = (key: string): HTMLElement => query(`engagement-org-participation-sort-${key}`) as HTMLElement;
+
+    expect(keys().slice(0, 2)).toEqual(['engagement-org-participation-row-b', 'engagement-org-participation-row-a']);
+    expect(header('attended').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+
+    fixture.componentInstance['page'].set(1);
+    (header('membership').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    // Tiers rank highest first on the first click, non-members last, and the table is back on page 1.
+    expect(keys().slice(0, 2)).toEqual(['engagement-org-participation-row-a', 'engagement-org-participation-row-b']);
+    expect(fixture.componentInstance['page']()).toBe(0);
+
+    (header('company').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(keys().slice(0, 2)).toEqual(['engagement-org-participation-row-a', 'engagement-org-participation-row-b']);
+    expect(header('company').closest('th')?.getAttribute('aria-sort')).toBe('ascending');
+  });
+
   // The period pill projects the loaded rows, so switching it must not cost another request.
   it('re-projects the loaded rows when the period changes, without re-reading', async () => {
     await render();

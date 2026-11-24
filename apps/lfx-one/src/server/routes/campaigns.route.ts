@@ -16,6 +16,7 @@ import {
   requireGoogleMonitorAccess,
   requireGoogleUserListsAccess,
   requireMetaCustomAudiencesAccess,
+  requireMetaLeadFormsAccess,
 } from '../middleware/require-marketing-access.middleware';
 
 /**
@@ -101,6 +102,12 @@ router.get('/google/audiences', requireGoogleAudiencesAccess, (req, res, next) =
 // reason as the Google lists above.
 router.get('/meta/custom-audiences', requireMetaCustomAudiencesAccess, (req, res, next) => campaignController.getMetaCustomAudiences(req, res, next));
 
+// The Instant Forms of the Facebook Page a Meta create uses, for the Implement tab's lead form picker (#5940).
+// A project without its own connection uses the shared LF Page, which holds every foundation's forms: answered
+// only to `global_marketing_ops` on the project, as campaign-service answers. 404 while Meta lead forms are off.
+// Ahead of `router.use(requireCampaignManager)` for the same reason as the lists above.
+router.get('/meta/lead-forms', requireMetaLeadFormsAccess, (req, res, next) => campaignController.getMetaLeadForms(req, res, next));
+
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
 // server flag is off — this is an intentional tightening of the prior (fully open) behavior, not
@@ -185,6 +192,10 @@ router.get('/twitter/create-capability', (req, res) => campaignController.getTwi
 // behind LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH — 404 while it is off. Public location data,
 // so not root-only: `requireCampaignManager` above is the gate.
 router.get('/google/geo-targets', (req, res, next) => campaignController.searchGoogleAdsGeoTargets(req, res, next));
+// Meta's targeting taxonomy (interests, behaviors, job titles), searched for the Implement tab's detailed
+// targeting (#5904 row 4; campaign-service #612). Each kind answers only while its own flag is on (404 otherwise). Meta
+// taxonomy, so not root-only: `requireCampaignManager` above is the gate, as campaign-service's.
+router.get('/meta/targeting-search', (req, res, next) => campaignController.searchMetaTargetingOptions(req, res, next));
 // campaign-service only (#2519), behind LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off.
 // Microsoft and X take the platform account id as `?accountKey=`; HubSpot is project-scoped and takes none.
 router.get('/microsoft/monitor', (req, res, next) => campaignController.getMicrosoftMonitor(req, res, next));

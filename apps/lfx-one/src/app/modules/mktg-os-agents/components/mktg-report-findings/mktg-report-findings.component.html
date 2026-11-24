@@ -1,0 +1,49 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- The Brand Kit's Missing assets card: the asset's label, the agent's plain reason in amber, and its fix when it names one. -->
+<div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4" data-testid="mktg-report-findings-missing">
+  <h3 class="text-sm font-semibold text-gray-900">{{ titles.missing }}</h3>
+  @if (view().missing.length > 0) {
+    <ul class="flex flex-col gap-1.5 text-sm">
+      @for (missing of view().missing; track $index) {
+        <li class="flex flex-col" data-testid="mktg-report-findings-missing-item">
+          <span class="text-gray-800">{{ missing.title }}</span>
+          <span class="text-xs text-amber-700" data-testid="mktg-report-findings-missing-reason">{{ missing.text }}</span>
+          @if (missing.fix) {
+            <span class="text-xs text-gray-700" data-testid="mktg-report-findings-missing-fix">{{ fixPrefix }}{{ missing.fix }}</span>
+          }
+        </li>
+      }
+    </ul>
+  } @else {
+    <p class="text-xs text-gray-500" data-testid="mktg-report-findings-missing-empty">{{ emptyLines.missing }}</p>
+  }
+</div>
+<!-- The Brand Kit's Warnings card: the agent's text, and where it looked as a link only for an http(s) address, else grey text. -->
+<div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4" data-testid="mktg-report-findings-warnings">
+  <h3 class="text-sm font-semibold text-gray-900">{{ titles.warnings }}</h3>
+  @if (view().warnings.length > 0) {
+    <ul class="flex flex-col gap-1.5 text-sm">
+      @for (warning of view().warnings; track $index) {
+        <li class="flex flex-col" data-testid="mktg-report-findings-warnings-item">
+          <span class="text-gray-800" data-testid="mktg-report-findings-warnings-text">{{ warning.text }}</span>
+          @if (warning.href) {
+            <a
+              class="text-xs text-blue-600 hover:text-blue-800 [overflow-wrap:anywhere]"
+              [href]="warning.href"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="mktg-report-findings-warnings-source-link"
+              >{{ warning.source }}<span class="sr-only"> (opens in a new tab)</span></a
+            >
+          } @else if (warning.source) {
+            <span class="text-xs text-gray-500">{{ warning.source }}</span>
+          }
+        </li>
+      }
+    </ul>
+  } @else {
+    <p class="text-xs text-gray-500" data-testid="mktg-report-findings-warnings-empty">{{ emptyLines.warnings }}</p>
+  }
+</div>

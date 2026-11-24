@@ -57,6 +57,14 @@ describe('MeetingSelfRemovalService', () => {
     expect(refreshUserMeetings).not.toHaveBeenCalled();
   });
 
+  it('forwards a saved registration UID when subscribed', async () => {
+    const removal$ = service.remove$(MEETING_ID, 'meeting-card', 'saved-self');
+    expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+
+    await expect(firstValueFrom(removal$)).resolves.toEqual(complete);
+    expect(removeMyMeetingRegistration).toHaveBeenCalledWith(MEETING_ID, 'meeting-card', 'saved-self');
+  });
+
   it('keeps the meeting and defers a feed refresh when some registrations remain', async () => {
     removeMyMeetingRegistration.mockReturnValue(of(partial));
 

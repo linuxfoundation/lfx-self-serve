@@ -20,6 +20,7 @@ import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.s
 import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
+import { MeetingsHomeFeed } from '../../services/meetings-home-feed';
 import { MeetingHomeRowComponent } from './meeting-home-row.component';
 
 const START = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
@@ -70,6 +71,7 @@ function buildRow(meeting: Meeting, overrides: Partial<MeetingHomeRow> = {}): Me
 }
 
 describe('MeetingHomeRowComponent', () => {
+  const feedScope = { showsProject: signal(true) };
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn>;
@@ -111,7 +113,11 @@ describe('MeetingHomeRowComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigateByUrl, navigate } },
-        { provide: MeetingsHomeStore, useValue: { lastMeeting: signal(null), approvedSummaries: signal(new Map()), now: signal(new Date()) } },
+        {
+          provide: MeetingsHomeStore,
+          useValue: { lastMeeting: signal(null), approvedSummaries: signal(new Map()), now: signal(new Date()), selfInviteOf: () => undefined },
+        },
+        { provide: MeetingsHomeFeed, useValue: feedScope },
         { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()), getPublicMeetingJoinUrl } },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
@@ -127,10 +133,52 @@ describe('MeetingHomeRowComponent', () => {
   });
 
   afterEach(() => {
+    feedScope.showsProject.set(true);
     vi.unstubAllGlobals();
   });
 
   describe('upcoming', () => {
+    it('names no project on a single project list', async () => {
+      feedScope.showsProject.set(false);
+      const fixture = await render(buildRow(buildMeeting()));
+      feedScope.showsProject.set(true);
+
+      expect(query(fixture, 'meetings-home-row-project')).toBeNull();
+      expect(text(fixture, 'meetings-home-row-title')).toBe('Series title');
+    });
+
+    it('names the project once the list starts naming them, as on a foundation', async () => {
+      feedScope.showsProject.set(false);
+      const fixture = await render(buildRow(buildMeeting()));
+      expect(query(fixture, 'meetings-home-row-project')).toBeNull();
+
+      feedScope.showsProject.set(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(text(fixture, 'meetings-home-row-project-name')).toBe('Kubernetes');
+    });
+
+    it('watches a project name that appears after the row first renders, for its truncation tooltip', async () => {
+      const observed: Element[] = [];
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          public observe = vi.fn((element: Element) => observed.push(element));
+          public unobserve = vi.fn();
+          public disconnect = vi.fn();
+        }
+      );
+      feedScope.showsProject.set(false);
+      const fixture = await render(buildRow(buildMeeting()));
+
+      feedScope.showsProject.set(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(observed).toContain(query(fixture, 'meetings-home-row-project-name'));
+    });
+
     it('renders the date tile, project, title and meta line', async () => {
       const fixture = await render(buildRow(buildMeeting()));
 

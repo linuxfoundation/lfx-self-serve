@@ -2,17 +2,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="mt-4 flex flex-col gap-4" data-testid="mktg-family-details">
-  <p
-    role="status"
-    class="text-sm text-gray-500"
-    [class.sr-only]="!loading()"
-    data-testid="mktg-family-sources-loading"
-    [textContent]="loading() ? 'Loading source details…' : ''"></p>
+  <p role="status" class="text-sm text-gray-500" [class.sr-only]="!loading()" data-testid="mktg-family-sources-loading" [textContent]="loadingText()"></p>
   @if (failed()) {
-    <div role="alert" class="flex flex-col items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-4" data-testid="mktg-family-sources-error">
-      <p class="text-sm">Some family details could not be loaded.</p>
-      <lfx-button label="Try again" size="small" [outlined]="true" data-testid="mktg-family-sources-retry" (onClick)="retry()" />
-    </div>
+    <p role="alert" class="text-sm text-red-700" data-testid="mktg-family-sources-error">{{ failedText }}</p>
   }
   @if (sources(); as sources) {
     <section class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-5" data-testid="mktg-family-sources">

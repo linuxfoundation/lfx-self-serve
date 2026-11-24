@@ -25,8 +25,20 @@
           <!-- Vote Title -->
           <div class="flex flex-col gap-1">
             <label for="vote-title" class="text-sm font-medium text-gray-700"> {{ voteLabel.singular }} Title <span class="text-red-500">*</span> </label>
-            <lfx-input-text [form]="form()" size="small" control="title" id="vote-title" placeholder="e.g., Approve Q4 2024 Budget" dataTest="vote-title-input">
+            <lfx-input-text
+              [form]="form()"
+              size="small"
+              control="title"
+              id="vote-title"
+              placeholder="e.g., Approve Q4 2024 Budget"
+              dataTest="vote-title-input"
+              [describedBy]="prefilledTitle() ? 'vote-title-prefilled-hint' : null">
             </lfx-input-text>
+            @if (prefilledTitle()) {
+              <p id="vote-title-prefilled-hint" class="text-xs text-gray-500" data-testid="vote-title-prefilled-hint">
+                Pre-filled for this {{ committeeLabel.singular | lowercase }} — edit freely.
+              </p>
+            }
             @if (form().get('title')?.touched && form().get('title')?.errors?.['required']) {
               <p class="text-red-500 text-xs">{{ voteLabel.singular }} title is required.</p>
             }
@@ -45,8 +57,14 @@
               [placeholder]="'Provide context or additional details about this ' + (voteLabel.singular | lowercase)"
               [rows]="4"
               styleClass="w-full min-h-32"
+              [ariaDescribedBy]="prefilledDescription() ? 'vote-description-prefilled-hint' : undefined"
               data-testid="vote-description-textarea">
             </lfx-textarea>
+            @if (prefilledDescription()) {
+              <p id="vote-description-prefilled-hint" class="text-xs text-gray-500" data-testid="vote-description-prefilled-hint">
+                Pre-filled for this {{ committeeLabel.singular | lowercase }} — edit freely.
+              </p>
+            }
           </div>
         </div>
       </div>
@@ -111,6 +129,42 @@
               <p class="text-red-500 text-xs">Eligible participants is required.</p>
             }
             <p class="text-xs text-gray-400">Defines who within the selected {{ committeeLabel.singular | lowercase }} will be eligible to vote.</p>
+          </div>
+
+          <!-- Only enabled methods can be chosen for new votes; an existing vote keeps its locked method. -->
+          <div class="flex flex-col gap-1">
+            <label for="vote-method" class="text-sm font-medium text-gray-700"> Voting Method <span class="text-red-500">*</span> </label>
+            <lfx-select
+              styleClass="w-full"
+              appendTo="body"
+              inputId="vote-method"
+              [form]="form()"
+              control="poll_type"
+              [options]="methodDisplayOptions()"
+              optionLabel="label"
+              optionValue="value"
+              optionDisabled="disabled"
+              data-testid="vote-method-select">
+              <ng-template #item let-option>
+                {{ option.label }}
+                @if (option.disabled) {
+                  <span class="text-xs text-gray-500">— Coming soon</span>
+                }
+              </ng-template>
+            </lfx-select>
+            <p class="text-xs text-gray-400" data-testid="vote-method-description">{{ selectedMethodDescription() }}</p>
+            @if (isEditMode()) {
+              <p class="text-xs text-gray-400" data-testid="vote-method-locked">The voting method can't be changed after the vote is created.</p>
+            }
+            @if (minVotersWarning(); as warning) {
+              <lfx-message severity="warn" icon="fa-light fa-triangle-exclamation" [text]="warning" data-testid="vote-basics-min-voters-warning"></lfx-message>
+            } @else if (eligibleVoterCountState().status === 'error') {
+              <lfx-message
+                severity="info"
+                icon="fa-light fa-circle-info"
+                text="We couldn't check how many people are eligible to vote."
+                data-testid="vote-basics-min-voters-unchecked"></lfx-message>
+            }
           </div>
 
           <!-- Close Date -->

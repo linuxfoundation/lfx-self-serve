@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HEALTH_METRICS_TABLE_DASH } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_SORT_TRIM_CODE_POINTS, HEALTH_METRICS_TABLE_DASH } from '@lfx-one/shared/constants';
 // Deep import, as across the server: the `utils` barrel loads `@angular/forms`, which throws in the Node spec runtime.
 import { healthMetricsTierSortRanks } from '@lfx-one/shared/utils/health-metrics-table.utils';
 
@@ -24,7 +24,7 @@ export function buildHealthMetricsSortOrderBy<K extends string>(
 
 /** A tier column as its rank, matching `healthMetricsTierSortRank`: Diamond highest, Non-member 0, no tier `NULL`. */
 export function healthMetricsTierRankSql(expression: string): string {
-  const trimmed = trimmedSql(expression);
+  const trimmed = healthMetricsTrimSql(expression);
   const name = `REGEXP_REPLACE(LOWER(${trimmed}), '[^a-z]', '')`;
   const ranks = healthMetricsTierSortRanks()
     .map((tier) => `WHEN ${name} IN (${tier.names.map((alias) => `'${alias}'`).join(', ')}) THEN ${tier.rank}`)
@@ -34,14 +34,15 @@ export function healthMetricsTierRankSql(expression: string): string {
 
 /** Case- and accent-insensitive, as the client's base-sensitivity collator; blank and "—" are empty, so they sort last. */
 function sortExpression(column: HealthMetricsSqlSortColumn): string {
-  if (column.kind === 'text') return `COLLATE(NULLIF(NULLIF(${trimmedSql(column.expression)}, ''), '${HEALTH_METRICS_TABLE_DASH}'), 'en-ci-ai')`;
+  if (column.kind === 'text') return `COLLATE(NULLIF(NULLIF(${healthMetricsTrimSql(column.expression)}, ''), '${HEALTH_METRICS_TABLE_DASH}'), 'en-ci-ai')`;
   if (column.kind === 'tier') return healthMetricsTierRankSql(column.expression);
   return column.expression;
 }
 
-/** Trims spaces, tabs and line breaks, as the client's `trim()` does. */
-function trimmedSql(expression: string): string {
-  return `TRIM(${expression}, ' \\t\\n\\r')`;
+/** Trims the whitespace the client's `trim()` does, written as Snowflake `\uXXXX` escapes so the SQL stays ASCII. */
+export function healthMetricsTrimSql(expression: string): string {
+  const characters = HEALTH_METRICS_SORT_TRIM_CODE_POINTS.map((code) => `\\u${code.toString(16).padStart(4, '0')}`).join('');
+  return `TRIM(${expression}, '${characters}')`;
 }
 
 function emptyTextSql(trimmed: string): string {

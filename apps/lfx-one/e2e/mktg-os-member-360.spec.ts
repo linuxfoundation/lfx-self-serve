@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import { activeRunConfirmDialog } from './helpers/mktg-os-confirm-dialog.helper';
 import { createHash } from 'node:crypto';
 import { MEMBER_360_INPUT_TIMEOUT_MESSAGE, MEMBER_360_RENEWAL_RED_DAYS } from '../../../packages/shared/src/constants/member-360.constants';
+import { MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 
 import {
   json,
@@ -19,6 +20,14 @@ import { member360Revision } from './fixtures/mock-data/member-360.mock';
 import { SYNTHETIC_ORG_NAME, SYNTHETIC_SECOND_ORG_LEGAL_NAME } from './fixtures/mock-data/synthetic-org.mock';
 
 test.use({ storageState: { cookies: [], origins: [] } });
+
+/**
+ * A failed read recovers on the poller's retry: the first retry's backoff is ≤ 10 s (5 s floor plus full jitter to 2×)
+ * and the second's ≤ 20 s (to 4×). Sized at the second retry's ceiling plus a margin, so a retry that raced the route
+ * switch and failed too cannot flake the wait.
+ */
+const POLL_RECOVERY_TIMEOUT = 25_000;
+
 test.describe.configure({ timeout: 60000 });
 test.beforeEach(({ page, isMobile }) => {
   if (isMobile) expect(page.viewportSize()?.width).toBeLessThan(640);
@@ -53,7 +62,7 @@ for (const choice of ['Open it', 'Discard and start over'])
     await openMember360(page);
     await selectMember360Option(page, 'member-360-compare', 'No comparison');
     await page.getByTestId('member-360-run').getByRole('button').click();
-    const dialog = activeRunConfirmDialog(page, 'member-360-active-run-confirm');
+    const dialog = activeRunConfirmDialog(page);
     await expect(dialog).toContainText('Your Member 360 run is in progress');
     await dialog.getByRole('button', { name: choice, exact: true }).click();
     if (choice === 'Open it') await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
@@ -62,6 +71,83 @@ for (const choice of ['Open it', 'Discard and start over'])
     expect(bodies.filter((body) => body['discard'])).toHaveLength(choice === 'Open it' ? 0 : 1);
     if (choice !== 'Open it') expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
     await page.screenshot({ path: info.outputPath('member-active-run-choice.png'), fullPage: true });
+  });
+
+for (const choice of ['Open it', 'Open it in the dialog', 'Discard and start over'])
+  test(`Member 360 in-progress view offers Start over: ${choice}`, async ({ page }, info) => {
+    await setupMember360(page); // Includes suppressCookieBanner and synthetic writer/flag overrides.
+    let detail = member360Progress('writing');
+    const activeRunId = 'b'.repeat(64);
+    // The replacement run is a new run with a new document, as the server makes it.
+    const replacement = { runId: 'c'.repeat(64), documentId: `run-${'c'.repeat(24)}` };
+    // The server roster owns the active run: the page lands on its in-progress view, with the intake hidden.
+    await page.route('**/api/mktg-agents/documents?*', (route) => json(route, { project: 'sample-project', groups: [], runs: detail.runs }));
+    await stubMember360Progress(page, () => detail);
+    await page.route('**/api/mktg-agents/member-360/result', (route) => json(route, { status: 'pending', activity: detail.runs?.[0]?.activity }));
+    const bodies: Record<string, unknown>[] = [];
+    await page.route('**/api/mktg-agents/member-360/generate', (route) => {
+      bodies.push(route.request().postDataJSON());
+      if (!bodies.at(-1)?.['discard'])
+        return route.fulfill({
+          status: 409,
+          json: {
+            code: 'MKTG_RUN_ACTIVE',
+            message: 'Your Member 360 run is in progress.',
+            activeRunId,
+            state: 'writing',
+            agentKey: 'member-360',
+            documentId: MEMBER_360_DOCUMENT_ID,
+            startedBy: 'Synthetic writer',
+            startedByViewer: true,
+            startedAt: '2026-10-19T12:00:00.000Z',
+          },
+        });
+      // From here the roster and the progress read answer for the replacement run only.
+      detail = {
+        ...detail,
+        documentId: replacement.documentId,
+        runs: detail.runs?.map((run) => ({ ...run, ...replacement, startedAt: '2026-10-19T13:00:00Z' })),
+      };
+      return json(route, { sessionId: 'synthetic-new', ownerToken: 'synthetic-proof', ...replacement });
+    });
+    await openMember360(page);
+    await expect(page.getByTestId('member-360-generating')).toBeVisible();
+    await expect(page.getByTestId('member-360-intake')).toHaveCount(0);
+    await page.getByTestId('member-360-start-over').getByRole('button').click();
+    // Start over shows the intake beside a notice; nothing is sent or discarded yet.
+    await expect(page.getByTestId('member-360-intake')).toBeVisible();
+    await expect(page.getByTestId('member-360-generating')).toHaveCount(0);
+    await expect(page.getByTestId('member-360-waiting-notice')).toContainText('A Member 360 run is in progress.');
+    await page.screenshot({ path: info.outputPath('member-start-over-intake.png'), fullPage: true });
+    expect(bodies).toHaveLength(0);
+    if (choice === 'Open it') {
+      await page.getByTestId('member-360-waiting-open').getByRole('button').click();
+      await expect(page.getByTestId('member-360-generating')).toBeVisible();
+      await expect(page.getByTestId('member-360-intake')).toHaveCount(0);
+      expect(bodies).toHaveLength(0);
+    } else {
+      await selectMember360Option(page, 'member-360-compare', 'No comparison');
+      await page.getByTestId('member-360-run').getByRole('button').click();
+      const dialog = activeRunConfirmDialog(page);
+      await expect(dialog).toContainText('Your Member 360 run is in progress');
+      const discard = choice === 'Discard and start over';
+      await dialog.getByRole('button', { name: discard ? choice : 'Open it', exact: true }).click();
+      // Both end on this page's in-progress view: the replacement run, or the run the page already follows.
+      await expect(page.getByTestId('member-360-generating')).toBeVisible();
+      await expect(page.getByTestId('member-360-intake')).toHaveCount(0);
+      await expect(page.getByTestId('member-360-waiting-notice')).toHaveCount(0);
+      expect(bodies.filter((body) => body['discard'])).toHaveLength(discard ? 1 : 0);
+      if (discard) {
+        expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
+        // The view follows the replacement run's document, not the discarded one.
+        const progressRead = page.waitForRequest((request) => request.url().includes(`/documents/member-360/${replacement.documentId}`));
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+        await progressRead;
+        await expect(page.getByTestId('member-360-generating')).toBeVisible();
+      }
+    }
+    await expect(page.getByTestId('mktg-document-view-page')).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath('member-start-over-choice.png'), fullPage: true });
   });
 
 for (const state of ['writing', 'questions', 'none'] as const)
@@ -136,7 +222,9 @@ for (const state of ['writing', 'questions', 'none'] as const)
     await page.screenshot({ path: info.outputPath(`member-owned-${state}-settled.png`), fullPage: true });
   });
 
-test('an unavailable initial roster stays neutral and Refresh loads the correct intake', async ({ page }, info) => {
+test('an unavailable initial roster stays neutral, shows the one plain line with no Refresh button, and loads the correct intake on its own', async ({
+  page,
+}, info) => {
   await setupMember360(page); // Includes suppressCookieBanner and synthetic writer/flag overrides.
   let available = false;
   await page.route('**/api/mktg-agents/documents?*', (route) =>
@@ -144,11 +232,16 @@ test('an unavailable initial roster stays neutral and Refresh loads the correct 
   );
   await openMember360(page);
   await expect(page.getByTestId('mktg-skeleton')).toBeVisible();
-  await expect(page.getByTestId('member-360-state-error')).toContainText('The run state could not be checked.');
+  await expect(page.getByTestId('member-360-state-retrying')).toContainText(MKTG_POLL_RETRYING_TEXT);
+  await expect(page.getByTestId('member-360-state-retrying')).toHaveAttribute('role', 'status');
+  await expect(page.getByTestId('member-360-state-error')).toHaveCount(0);
+  await expect(page.getByTestId('member-360-state-refresh')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Refresh' })).toHaveCount(0);
+  await expect(page.getByTestId('member-360-retry-history')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Retry history' })).toHaveCount(0);
   await expect(page.getByTestId('member-360-intake')).toHaveCount(0);
   available = true;
-  await page.getByTestId('member-360-state-refresh').getByRole('button').click();
-  await expect(page.getByTestId('member-360-intake')).toBeVisible();
+  await expect(page.getByTestId('member-360-intake')).toBeVisible({ timeout: POLL_RECOVERY_TIMEOUT });
   await expect(page.getByTestId('mktg-skeleton')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('member-roster-recovered.png'), fullPage: true });
 });
@@ -526,7 +619,14 @@ for (const state of ['resume', 'send-error', 'already-answered', 'load-error', '
     await selectMember360Option(page, 'member-360-compare', 'No comparison');
     await page.getByTestId('member-360-run').getByRole('button').click();
     if (state === 'load-error') {
-      await expect(page.getByTestId('member-360-error')).toContainText('could not be checked', { timeout: 15000 });
+      // A 503 on the run check is transient: one quiet status line while the poller retries, no error box and no button.
+      await expect(page.getByTestId('member-360-retrying')).toContainText(MKTG_POLL_RETRYING_TEXT, { timeout: POLL_RECOVERY_TIMEOUT });
+      await expect(page.getByTestId('member-360-retrying')).toHaveAttribute('role', 'status');
+      await expect(page.getByTestId('member-360-error')).toHaveCount(0);
+      await expect(page.getByTestId('member-360-state-refresh')).toHaveCount(0);
+      await expect(page.getByTestId('member-360-check-again')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Check again' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Refresh' })).toHaveCount(0);
     } else if (state === 'empty') {
       await expect(page.getByTestId('member-360-generating')).toContainText('Member 360 is working on your report.', { timeout: 15000 });
       await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);

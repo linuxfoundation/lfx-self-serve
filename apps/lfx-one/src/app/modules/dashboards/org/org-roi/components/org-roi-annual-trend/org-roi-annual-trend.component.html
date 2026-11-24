@@ -48,29 +48,32 @@
     <!-- The canvas is otherwise the only presentation of these values, so it is unreadable to a
          screen reader. This table carries the same series; `sr-only` keeps it out of the visual
          layout without hiding it from assistive technology (`hidden`/`display:none` would). -->
-    <table class="sr-only" data-testid="org-roi-annual-trend-table">
-      <caption>
-        {{
-          tableCaption()
-        }}
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">Year</th>
-          <th scope="col">Investment</th>
-          <th scope="col">Return</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (row of tableRows(); track row.year) {
+    <!-- sr-only sits on a wrapper: a table ignores its 1px height and overflow, so it would keep its full height and stretch the page. -->
+    <div class="sr-only">
+      <table data-testid="org-roi-annual-trend-table">
+        <caption>
+          {{
+            tableCaption()
+          }}
+        </caption>
+        <thead>
           <tr>
-            <th scope="row">{{ row.year }}{{ row.isPartial ? ' (partial year)' : '' }}</th>
-            <td>{{ row.investment }}</td>
-            <td>{{ row.return }}</td>
+            <th scope="col">Year</th>
+            <th scope="col">Investment</th>
+            <th scope="col">Return</th>
           </tr>
-        }
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          @for (row of tableRows(); track row.year) {
+            <tr>
+              <th scope="row">{{ row.year }}{{ row.isPartial ? ' (partial year)' : '' }}</th>
+              <td>{{ row.investment }}</td>
+              <td>{{ row.return }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
 
     <div class="flex flex-col gap-1 border-t border-gray-100 pt-3">
       @if (apportioned()) {

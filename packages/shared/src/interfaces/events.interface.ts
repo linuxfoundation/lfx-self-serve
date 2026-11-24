@@ -53,7 +53,8 @@ export interface MyEvent {
 }
 
 /**
- * Raw row returned from ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+ * Row shape for the my-events reads (ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS)
+ * and the travel fund picker read (TRAVEL_FUND_EVENTS_TABLE).
  */
 export interface MyEventRow {
   EVENT_ID: string;
@@ -65,8 +66,10 @@ export interface MyEventRow {
   EVENT_COUNTRY: string | null;
   PROJECT_ID: string;
   PROJECT_NAME: string;
-  PROJECT_SLUG: string;
-  ACCOUNT_NAME: string;
+  /** Null on the travel fund picker read; the events table does not carry it */
+  PROJECT_SLUG: string | null;
+  /** Null on the travel fund picker read; the events table does not carry it */
+  ACCOUNT_NAME: string | null;
   ACCOUNT_LOGO_URL: string | null;
   /** Null when the user has not registered for this event */
   USER_ROLE: string | null;
