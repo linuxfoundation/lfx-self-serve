@@ -316,20 +316,22 @@ describe('MktgDocumentsController', () => {
       expect.objectContaining({ agentKey: 'faq' }),
       'living',
       REVISION_ID,
+      undefined,
       undefined
     );
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ approval: expect.any(Object) }));
   });
 
-  it.each(['approve', 'restore'] as const)('passes a validated expectedCurrentId on %s under the canonical writer project', async (action) => {
+  it.each(['approve', 'restore'] as const)('passes a validated expected current (id and instant) on %s under the canonical writer project', async (action) => {
     projectMocks.getProjectById.mockResolvedValue({ uid: 'resolved-uid', writer: true });
     const expectedCurrentId = `000001-${'b'.repeat(64)}`;
+    const expectedCurrentChangedAt = '2026-10-29T12:00:00.000Z';
     storeMocks.approveRevision.mockResolvedValue({ revision: { number: 2 } });
     storeMocks.restoreRevision.mockResolvedValue({ detail: {}, revision: { number: 2 } });
     const request = buildReq(
       { agentKey: 'faq', documentId: 'living', revisionId: REVISION_ID },
       { project: PROJECT },
-      { project: PROJECT, revisionId: REVISION_ID, expectedCurrentId }
+      { project: PROJECT, revisionId: REVISION_ID, expectedCurrentId, expectedCurrentChangedAt }
     );
     await controller[action === 'approve' ? 'approveRevision' : 'restoreRevision'](request, buildRes(), next);
     expect(storeMocks[action === 'approve' ? 'approveRevision' : 'restoreRevision']).toHaveBeenCalledWith(
@@ -338,9 +340,26 @@ describe('MktgDocumentsController', () => {
       expect.objectContaining({ agentKey: 'faq' }),
       'living',
       REVISION_ID,
-      expectedCurrentId
+      expectedCurrentId,
+      expectedCurrentChangedAt
     );
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['approve', 'restore'] as const)('rejects a malformed expectedCurrentChangedAt on %s before authorization/storage', async (action) => {
+    for (const expectedCurrentChangedAt of [null, 4, '', 'yesterday-ish', [], {}, `2026-10-29T12:00:00.000Z${' '.repeat(40)}`]) {
+      vi.clearAllMocks();
+      const request = buildReq(
+        { agentKey: 'faq', documentId: 'living', revisionId: REVISION_ID },
+        { project: PROJECT },
+        { project: PROJECT, revisionId: REVISION_ID, expectedCurrentChangedAt }
+      );
+      await controller[action === 'approve' ? 'approveRevision' : 'restoreRevision'](request, buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'expectedCurrentChangedAt' })] }));
+      expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+      expect(storeMocks.approveRevision).not.toHaveBeenCalled();
+      expect(storeMocks.restoreRevision).not.toHaveBeenCalled();
+    }
   });
 
   it.each(['approve', 'restore'] as const)('rejects malformed expectedCurrentId on %s before authorization/storage', async (action) => {
@@ -460,6 +479,7 @@ describe('MktgDocumentsController', () => {
       expect.objectContaining({ agentKey: 'icp' }),
       'living',
       REVISION_ID,
+      undefined,
       undefined
     );
     expect(res.json).toHaveBeenCalledWith({ project: PROJECT, documentId: 'living', revisions: [], revision: { number: 3 } });

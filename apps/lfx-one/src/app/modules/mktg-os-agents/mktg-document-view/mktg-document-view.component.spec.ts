@@ -3295,7 +3295,10 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-viewed-make-current')?.textContent).toContain('Make current');
     query('mktg-document-view-viewed-make-current')?.click();
     await settle();
-    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', survivor.id, current.revisionId);
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', survivor.id, {
+      expectedCurrentId: current.revisionId,
+      expectedCurrentChangedAt: current.changedAt,
+    });
     expect(query('mktg-document-view-viewed-make-current')).toBeNull();
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Current');
     expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 is now current.');
@@ -3935,7 +3938,7 @@ describe('MktgDocumentViewComponent', () => {
     );
     expect(store.approveRevision).not.toHaveBeenCalled();
     closed.next(true);
-    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id, LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id, { expectedCurrentId: LATEST.id });
   });
 
   it('asks under the open-gaps header when only the v2 findings carry a failed source and the legacy fields are empty', async () => {
@@ -3988,7 +3991,7 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
     query('mktg-document-view-approve')?.querySelector('button')?.click();
     expect(dialog.open).not.toHaveBeenCalled();
-    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id, LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id, { expectedCurrentId: LATEST.id });
   });
 
   it('allows another approval attempt after the gaps dialog is dismissed', async () => {
@@ -4008,8 +4011,20 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.approveRevision).not.toHaveBeenCalled();
     approve?.click();
     expect(dialog.open).toHaveBeenCalledTimes(2);
+    // Another writer's selection is merged in behind the open dialog: confirming still sends what the reader reviewed.
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const viewed = component['view']();
+    if (!viewed) throw new Error('Missing synthetic FAQ view');
+    const moved = {
+      ...viewed,
+      revisions: viewed.revisions.map((entry) => ({ ...entry, latest: entry.id === OLDER.id })),
+      current: { revisionId: OLDER.id, changedAt: '2026-10-29T12:50:00Z', changedBy: null },
+    };
+    progressReader().observed.emit({ detail: moved, view: moved });
+    await settle();
+    expect(component['view']()?.current?.revisionId).toBe(OLDER.id);
     closed.next(true);
-    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'faq', 'living', LATEST.id, LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'faq', 'living', LATEST.id, { expectedCurrentId: LATEST.id });
   });
 
   it.each([
@@ -4070,13 +4085,9 @@ describe('MktgDocumentViewComponent', () => {
       if (action === 'approve') component['onApprove']();
       else component['onRestore'](OLDER);
       await settle();
-      expect(write).toHaveBeenCalledExactlyOnceWith(
-        PROJECT.uid,
-        'foundation-message',
-        'living',
-        action === 'approve' ? loaded.revision.id : OLDER.id,
-        loaded.revision.id
-      );
+      expect(write).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'foundation-message', 'living', action === 'approve' ? loaded.revision.id : OLDER.id, {
+        expectedCurrentId: loaded.revision.id,
+      });
       expect(store.getDocument).toHaveBeenCalledTimes(reads + 1);
       expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
       expect(query('mktg-document-view-current-conflict-open')?.textContent?.trim()).toBe(name ? 'Open v3' : 'Open the latest version');
@@ -4084,6 +4095,12 @@ describe('MktgDocumentViewComponent', () => {
       expect(href).toContain(`revision=${winner.id}`);
       expect(href).toContain('tab=numbers');
       expect(query('mktg-document-view-current-conflict')?.textContent).not.toContain('12:50');
+      // A poll that started before the conflict answers after it, with the selection from before: it neither retires
+      // the notice nor outdates the re-read still in flight.
+      const earlier = { ...loaded, current: { revisionId: loaded.revision.id, changedAt: '2026-10-29T12:00:00Z', changedBy: null } };
+      progressReader().observed.emit({ detail: earlier, view: earlier });
+      await settle();
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
       pending.next(refreshed);
       pending.complete();
       await settle();
@@ -4108,6 +4125,11 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
       // A read where the current moved again retires it: the notice would name the wrong revision.
       const moved = { ...refreshed, current: { revisionId: OLDER.id, changedAt: '2026-10-29T12:55:00Z', changedBy: null } };
+      // The body on screen may carry an earlier partial read's flag, which a metadata-only cycle keeps; the fresh
+      // metadata decides.
+      const onScreen = component['view']();
+      if (!onScreen) throw new Error('Missing synthetic framework view');
+      component['view'].set({ ...onScreen, progressUnavailable: true });
       progressReader().observed.emit({ detail: moved, view: { ...loaded, revisions: moved.revisions, current: moved.current } });
       await settle();
       expect(query('mktg-document-view-current-conflict')).toBeNull();
@@ -4221,6 +4243,18 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     expect(component['view']()?.revisions).toHaveLength(newer.revisions.length);
     expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+
+    // 3. The re-read itself already shows a selection after the one the 409 named: no notice pointing at a superseded one.
+    const third = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(third);
+    component['onRestore'](OLDER);
+    await settle();
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+    third.next({ ...approved, revisions: newer.revisions.map((entry) => ({ ...entry, latest: entry.id === LATEST.id })) });
+    third.complete();
+    await settle();
+    expect(component['view']()?.current?.revisionId).toBe(LATEST.id);
+    expect(query('mktg-document-view-current-conflict')).toBeNull();
   });
 
   it('approves directly without confirmation and updates saving/state metadata', async () => {
@@ -4238,7 +4272,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-saving-status')).toBe(status);
     expect(dialog.open).not.toHaveBeenCalled();
     expect(status?.textContent).toBe('Approving revision 2…');
-    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'faq', 'living', LATEST.id, LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'faq', 'living', LATEST.id, { expectedCurrentId: LATEST.id });
     expect(query('mktg-document-view-approve')?.querySelector('button')?.disabled).toBe(true);
     const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Project writer' } };
     pending.next({
@@ -4381,7 +4415,9 @@ describe('MktgDocumentViewComponent', () => {
     store.approveRevision.mockReturnValue(of(approved));
     component['onApprove']();
     await settle();
-    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'foundation-message', 'living', loaded.revision.id, loaded.revision.id);
+    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'foundation-message', 'living', loaded.revision.id, {
+      expectedCurrentId: loaded.revision.id,
+    });
     expect(listing.observed).toBe(true);
     store.getDocument.mockReturnValue(of(approved));
     store.getRevision.mockReturnValue(of(approved));
@@ -5103,7 +5139,7 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
     query('mktg-document-view-restore-1')?.click();
     await settle();
-    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id, LATEST.id);
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id, { expectedCurrentId: LATEST.id });
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain(status);
     expect(query('mktg-document-view-revision-chip')?.textContent).not.toContain('Current');
   });
@@ -5140,7 +5176,7 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-document-view-viewed-make-current')?.click();
     await settle();
 
-    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id, LATEST.id);
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id, { expectedCurrentId: LATEST.id });
     expect(TestBed.inject(MktgDependencyService).notifyDocumentsChanged).toHaveBeenCalledWith(PROJECT.uid);
     expect(TestBed.inject(Router).url).toContain(`revision=${OLDER.id}`);
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');

@@ -660,6 +660,33 @@ describe('MktgDocumentStoreService', () => {
       });
     });
 
+    it.each(['approve', 'restore'] as const)(
+      'rejects %s when the current revision was approved since the read, although its id did not change',
+      async (action) => {
+        const { first, second } = await twoRevisions();
+        // Both writers read the unapproved current v2, selected at this instant.
+        const reviewedAt = '2026-10-29T12:00:00.000Z';
+        storedObject(key).body = JSON.stringify({ ...JSON.parse(storedObject(key).body), changedAt: reviewedAt });
+        const write = action === 'approve' ? 'approveRevision' : 'restoreRevision';
+        // The other writer approves v2: the pointer stays on v2, the selection instant moves.
+        await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', second.id, second.id, reviewedAt);
+        const before = storedObject(key).body;
+        const approved = JSON.parse(before);
+        expect(approved.revisionId).toBe(second.id);
+        store.conditionalWrites = [];
+        const failure = await service[write](req, PROJECT, BRAND_KIT, 'living', first.id, second.id, reviewedAt).catch((error: unknown) => error);
+        if (!(failure instanceof ConflictError)) throw new Error('Expected selection conflict');
+        expect(failure.toResponse()).toMatchObject({
+          code: 'MKTG_APPROVED_CURRENT_CHANGED',
+          current: { revisionId: second.id, number: 2, approvedBy: 'The writer', approvedAt: approved.changedAt, selectedAt: approved.changedAt },
+        });
+        expect(store.conditionalWrites).toEqual([]);
+        expect(storedObject(key).body).toBe(before);
+        // With the instant the writer now sees, the same write goes through; with the id alone it behaves as before.
+        await expect(service[write](req, PROJECT, BRAND_KIT, 'living', first.id, second.id, approved.changedAt)).resolves.toBeTruthy();
+      }
+    );
+
     it.each(['approve', 'restore'] as const)('reports a draft made current as a selection, never as an approval (%s)', async (action) => {
       const { first, second } = await twoRevisions();
       // The newest generated draft is current and nobody approved it.

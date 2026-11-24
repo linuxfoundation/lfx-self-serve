@@ -99,8 +99,9 @@ polls, including one-off run polls.
 Historical revisions without that token are matched by session and content hash.
 A failed revision write drops the receipt so a later poll retries. Pre-revision
 artifacts become revision 1 on the next run, excluding that run's own artifact.
-Make current never retries a stale comparison: it returns 412 so the caller can
-reload rather than silently overwrite a concurrent choice. The file backend
+Make current never retries a stale comparison: it returns 409
+`MKTG_APPROVED_CURRENT_CHANGED` (see "Approval and consumers") rather than
+silently overwrite a concurrent choice. The file backend
 uses an exclusive per-key directory across processes for the same comparison;
 a crash leaves that lock for operator recovery rather than stealing it from a
 possibly live writer. All file puts take the lock, so unconditional writes cannot
@@ -127,7 +128,26 @@ then derives what it can. Approve uses the existing `writeCurrent` CAS to
 add an annotation and select that revision atomically. Already approved and
 current is a no-op; selecting an earlier approval preserves its original
 approval time and actor. Make current only moves selection: it never approves
-a Draft. Both operations fail fast on a stale CAS with 412, without retries.
+a Draft.
+
+Both operations take an optional expectation in the request body: the current
+selection the writer reviewed, as `expectedCurrentId` (its revision id) and
+`expectedCurrentChangedAt` (the `current.changedAt` it was read with). The
+server compares them with the stored record before the CAS. The instant catches
+a change that leaves the id alone, such as an approval of the current revision
+itself; a generation that keeps the selection keeps its instant. A request
+without them behaves as before (older clients): only the CAS guards it.
+
+A mismatch, or a lost CAS, fails fast without retries and without writing:
+409 with `code: MKTG_APPROVED_CURRENT_CHANGED` and `current`, the selection
+that is current now: `revisionId`, `number`, who made it current and when
+(`selectedBy`, `selectedAt`), and `approvedBy`/`approvedAt` only when that
+selection was the revision's approval (null for a Draft, or for a revision
+approved earlier and made current later). Names are display names; no stored
+subject or manifest crosses. `current` is null when no selection can be named.
+These two paths no longer answer 412. The caller does not replay the write: it
+re-reads the document's metadata and shows the reader what changed
+(`describeMktgCurrentConflict`).
 One-off run documents cannot be approved. A true pre-revision document must have
 a stored revision before approval; the API returns a field validation error
 and the UI omits Approve rather than migrating it.

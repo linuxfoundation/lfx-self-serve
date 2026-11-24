@@ -501,14 +501,15 @@ export class MktgDocumentStoreService {
     type: MktgDocumentType,
     documentId: string,
     revisionId: string,
-    expectedCurrentId?: string
+    expectedCurrentId?: string,
+    expectedCurrentChangedAt?: string
   ): Promise<{ detail: MktgDocumentDetailResponse; revision: MktgRevisionSummary } | null> {
     if (type.kind === 'run') throw ServiceValidationError.forField('documentId', 'Make current is not available for one-off run documents.');
     const snapshot = await this.readCurrent(req, project, type, documentId);
     const detail = await this.readDocument(req, project, type, documentId, snapshot);
     const view = detail ? await this.readRevision(req, detail, revisionId) : null;
     if (!view) return null;
-    this.requireExpectedCurrent(snapshot, view, expectedCurrentId);
+    this.requireExpectedCurrent(snapshot, view, expectedCurrentId, expectedCurrentChangedAt);
     let record = snapshot.record;
     let current = await this.currentSelection(req, record);
     if (!view.revision.latest) {
@@ -537,7 +538,8 @@ export class MktgDocumentStoreService {
     type: MktgDocumentType,
     documentId: string,
     revisionId: string,
-    expectedCurrentId?: string
+    expectedCurrentId?: string,
+    expectedCurrentChangedAt?: string
   ): Promise<MktgRevisionResponse | null> {
     if (type.kind === 'run') throw ServiceValidationError.forField('documentId', 'Approve is not available for one-off run documents.');
     const snapshot = await this.readCurrent(req, project, type, documentId);
@@ -547,7 +549,7 @@ export class MktgDocumentStoreService {
     if (parseMktgLegacyRevisionId(view.revision.id)) {
       throw ServiceValidationError.forField('revisionId', 'A revision must be stored before it can be approved.');
     }
-    this.requireExpectedCurrent(snapshot, view, expectedCurrentId);
+    this.requireExpectedCurrent(snapshot, view, expectedCurrentId, expectedCurrentChangedAt);
     if (view.revision.latest && view.approval) return view;
     // A brand kit approval also records what its report shows at this moment: the Sources tab marks those items
     // afterwards. Other documents' approvals stay as they were.
@@ -944,9 +946,17 @@ export class MktgDocumentStoreService {
    * Compare the human's observed selection before the snapshot/ETag CAS publishes anything.
    * This two-part precondition can also guard a future redraft-queue claim; no queue is created here.
    */
-  private requireExpectedCurrent(snapshot: MktgDocumentCurrentSnapshot, detail: MktgDocumentDetailResponse, expectedCurrentId?: string): void {
+  private requireExpectedCurrent(
+    snapshot: MktgDocumentCurrentSnapshot,
+    detail: MktgDocumentDetailResponse,
+    expectedCurrentId?: string,
+    expectedCurrentChangedAt?: string
+  ): void {
     const selected = snapshot.record?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id;
     if (expectedCurrentId !== undefined && expectedCurrentId !== selected) throw this.currentChanged(detail);
+    // Every selection or approval stamps a new instant, also one that leaves the id alone (approving the current
+    // revision); a generation that keeps the selection keeps its instant.
+    if (expectedCurrentChangedAt !== undefined && expectedCurrentChangedAt !== snapshot.record?.changedAt) throw this.currentChanged(detail);
   }
 
   /**

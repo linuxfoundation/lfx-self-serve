@@ -520,7 +520,7 @@ test('a stale approval after another context wins refreshes metadata and explain
     (url) => url.pathname === `${path}/revisions/${original.revision.id}/approve`,
     async (route) => {
       expect(route.request().method()).toBe('POST');
-      expect(route.request().postDataJSON()).toEqual({ expectedCurrentId: original.revision.id });
+      expect(route.request().postDataJSON()).toEqual({ expectedCurrentId: original.revision.id, expectedCurrentChangedAt: stale.current?.changedAt });
       staleWrites++;
       rejected = true;
       await kitJson(
@@ -573,7 +573,7 @@ test('a stale approval after another context wins refreshes metadata and explain
     await other.route(
       (url) => url.pathname === `${path}/revisions/${newer.id}/approve`,
       async (route) => {
-        expect(route.request().postDataJSON()).toEqual({ expectedCurrentId: original.revision.id });
+        expect(route.request().postDataJSON()).toEqual({ expectedCurrentId: original.revision.id, expectedCurrentChangedAt: stale.current?.changedAt });
         const winner = { ...newer, latest: true, approval };
         response = {
           ...stale,

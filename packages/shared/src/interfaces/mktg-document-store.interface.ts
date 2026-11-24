@@ -332,9 +332,14 @@ export interface MktgDocumentReadCycle {
   view: MktgRevisionResponse | null;
 }
 
-/** Optional for older clients; the current selection the writer actually reviewed. */
+/**
+ * Optional for older clients; the current selection the writer actually reviewed: its revision id and the instant it
+ * was selected (`current.changedAt`). The instant catches a change that leaves the id alone, such as an approval of
+ * the current revision itself.
+ */
 export interface MktgApproveRevisionRequest {
   expectedCurrentId?: string;
+  expectedCurrentChangedAt?: string;
 }
 
 /** Body of `POST /api/mktg-agents/documents/:agentKey/:documentId/restore`. */

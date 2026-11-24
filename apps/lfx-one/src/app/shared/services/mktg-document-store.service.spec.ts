@@ -248,11 +248,12 @@ describe('MktgDocumentStoreService', () => {
 
   it('sends the believed-current id with approval and restore, without a display name or revision body', () => {
     const expectedCurrentId = `000001-${'b'.repeat(64)}`;
-    service.approveRevision('proj-1', 'faq', 'living', REVISION_ID, expectedCurrentId).subscribe();
+    const expectedCurrentChangedAt = '2026-10-29T12:00:00.000Z';
+    service.approveRevision('proj-1', 'faq', 'living', REVISION_ID, { expectedCurrentId, expectedCurrentChangedAt }).subscribe();
     const approve = http.expectOne((candidate) => candidate.url.endsWith(`/revisions/${REVISION_ID}/approve`));
-    expect(approve.request.body).toEqual({ expectedCurrentId });
+    expect(approve.request.body).toEqual({ expectedCurrentId, expectedCurrentChangedAt });
     approve.flush({});
-    service.restoreRevision('proj-1', 'faq', 'living', REVISION_ID, expectedCurrentId).subscribe();
+    service.restoreRevision('proj-1', 'faq', 'living', REVISION_ID, { expectedCurrentId }).subscribe();
     const restore = http.expectOne((candidate) => candidate.url.endsWith('/restore'));
     expect(restore.request.body).toEqual({ project: 'proj-1', revisionId: REVISION_ID, expectedCurrentId });
     restore.flush({});
