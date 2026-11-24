@@ -377,6 +377,7 @@ describe('CSV import count reconciliation (#5731)', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     localStorage.clear();
     TestBed.resetTestingModule();
   });
@@ -445,9 +446,8 @@ describe('CSV import count reconciliation (#5731)', () => {
     const method = activeLens === 'me' ? 'getMyCommitteesOrError' : 'getCommitteesByProjectOrThrow';
     const failed = () => throwError(() => new HttpErrorResponse({ status: 503, error: { message: 'private@example.com' } }));
     committeeService[method].mockReturnValueOnce(failed());
-    if (activeLens === 'project') committeeService[method].mockReturnValueOnce(of([group('a-enabled', { total_members: 5 })]));
+    committeeService[method].mockReturnValueOnce(of([group('a-enabled', { total_members: 5 })]));
     committeeService[method].mockReturnValueOnce(failed());
-    if (activeLens === 'me') committeeService.getMyCommittees.mockReturnValueOnce(of([group('a-enabled', { total_members: 5 })]));
     settle();
     await step();
     expect(shownTotal()).toBe(3);
@@ -469,7 +469,7 @@ describe('CSV import count reconciliation (#5731)', () => {
     await step();
     for (let attempt = 0; attempt < 6; attempt++) {
       const response = new Subject<MyCommittee[]>();
-      committeeService.getMyCommittees.mockReturnValueOnce(response);
+      committeeService.getMyCommitteesOrError.mockReturnValueOnce(response);
       await step(400);
       const inFlightCount = fetches();
       await step(2_000);
@@ -570,20 +570,26 @@ describe('CSV import count reconciliation (#5731)', () => {
     expect(shownTotal()).toBe(5);
   });
 
-  it('logs only the status of each failed project refetch and still ends at the bound', async () => {
-    await setup('project', [3]);
+  it.each(['me', 'project'] as const)('logs only the status of each failed %s refetch and still ends at the bound', async (activeLens) => {
+    await setup(activeLens, [3]);
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    committeeService.getCommitteesByProjectOrThrow.mockImplementation(() => throwError(() => new HttpErrorResponse({ status: 503 })));
+    const method = activeLens === 'me' ? 'getMyCommitteesOrError' : 'getCommitteesByProjectOrThrow';
+    committeeService[method].mockImplementation(() => throwError(() => new HttpErrorResponse({ status: 503, error: { message: 'private@example.com' } })));
     settle();
     await step();
     await step(10_000);
 
-    expect(committeeService.getCommitteesByProjectOrThrow).toHaveBeenCalledTimes(8);
+    expect(committeeService[method]).toHaveBeenCalledTimes(8);
+    expect(committeeService.getMyCommittees).not.toHaveBeenCalled();
     expect(committeeService.getCommitteesByProject).not.toHaveBeenCalled();
-    expect(consoleError).toHaveBeenCalledTimes(8);
-    expect(consoleError).toHaveBeenCalledWith('Failed to refresh groups after CSV import', { status: 503 });
+    expect(consoleError.mock.calls).toEqual([
+      ['Failed to refresh groups after CSV import', { status: 503 }],
+      ...Array.from({ length: 6 }, () => ['Failed to refetch committees after CSV import', { status: 503 }]),
+      ['Failed to refresh groups after CSV import', { status: 503 }],
+    ]);
     expect(shownTotal()).toBe(3);
-    expect(consoleError).toHaveBeenCalledWith('Failed to refetch committees after CSV import', { status: 503 });
+    await step(10_000);
+    expect(committeeService[method]).toHaveBeenCalledTimes(8);
     consoleError.mockRestore();
   });
 });

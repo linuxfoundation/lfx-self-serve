@@ -12,6 +12,7 @@ import { TestBed } from '@angular/core/testing';
 import {
   CommitteeMemberBulkCreateResult,
   CreateCommitteeMemberRequest,
+  ImpersonationTransition,
   MemberImportRow,
   MemberImportRunInput,
   MemberImportSettlement,
@@ -22,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CommitteeMemberImportService } from './committee-member-import.service';
 import { CommitteeService } from './committee.service';
+import { ImpersonationService } from './impersonation.service';
 import { UserService } from './user.service';
 
 interface PendingBulk {
@@ -53,6 +55,7 @@ function input(committeeUid: string, rows: MemberImportRow[], patch: Partial<Mem
 
 describe('CommitteeMemberImportService', () => {
   const user = signal<{ sub: string } | null>({ sub: 'synthetic-manager' });
+  const transition = signal<ImpersonationTransition | null>(null);
   let pending: PendingBulk[];
   let revokes: Subject<void>[];
   let committeeService: { bulkCreateCommitteeMembers: ReturnType<typeof vi.fn>; revokeCommitteeInvite: ReturnType<typeof vi.fn> };
@@ -77,6 +80,7 @@ describe('CommitteeMemberImportService', () => {
     TestBed.resetTestingModule();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     user.set({ sub: 'synthetic-manager' });
+    transition.set(null);
     pending = [];
     revokes = [];
     committeeService = {
@@ -96,6 +100,7 @@ describe('CommitteeMemberImportService', () => {
       providers: [
         { provide: UserService, useValue: { user } },
         { provide: CommitteeService, useValue: committeeService },
+        { provide: ImpersonationService, useValue: { transition } },
         { provide: MessageService, useValue: { add: toast } },
       ],
     });
@@ -240,6 +245,82 @@ describe('CommitteeMemberImportService', () => {
     });
     expect(revokes).toHaveLength(5);
     expect(service.getRun('group-a')).toBeUndefined();
+  });
+
+  describe('impersonation transitions', () => {
+    it.each(['starting', 'switching', 'stopping'] as const)('blocks reads and later writes immediately when %s, even if reload never happens', (state) => {
+      const settled = vi.fn();
+      service.settlements$.subscribe(settled);
+      service.start(input('group-a', readyRows(30)));
+      transition.set(state);
+
+      // No render or subject update yet: the response must not send the next chunk.
+      expect(service.viewerSubject()).toBeNull();
+      expect(service.getRun('group-a')).toBeUndefined();
+      expect(service.summaries().size).toBe(0);
+      expect(service.start(input('group-b', readyRows(1)))).toBe(false);
+      expect(service.retry('group-a')).toBe(false);
+      respond(0);
+      expect(pending).toHaveLength(1);
+      expect(settled).not.toHaveBeenCalled();
+      expect(toast).not.toHaveBeenCalled();
+
+      TestBed.tick();
+      transition.set(null);
+      TestBed.tick();
+      expect(service.getRun('group-a')).toBeUndefined();
+      expect(service.start(input('group-a', readyRows(1, 50)))).toBe(true);
+      expect(pending).toHaveLength(2);
+    });
+
+    it('retires paused runs and cooldown timers without resubmitting or restoring reports on a failed transition', () => {
+      vi.useFakeTimers();
+      service.start(input('group-a', readyRows(1)));
+      pending[0].response.error(new HttpErrorResponse({ status: 429, headers: new HttpHeaders({ 'Retry-After': '5' }) }));
+      expect(service.getSummary('group-a')?.phase).toBe('paused');
+      transition.set('starting');
+      TestBed.tick();
+      transition.set(null);
+      TestBed.tick();
+      vi.advanceTimersByTime(600_000);
+      expect(pending).toHaveLength(1);
+      expect(service.getRun('group-a')).toBeUndefined();
+      expect(service.summaries().size).toBe(0);
+      expect(toast).not.toHaveBeenCalled();
+    });
+
+    it('does not schedule more invitation cleanup after an impersonation transition begins', () => {
+      const rows = readyRows(7);
+      const pendingInviteUidByEmail = Object.fromEntries(rows.map((row, index) => [row.normalizedEmail, `invite-${index}`]));
+      service.start(input('group-a', rows, { pendingInviteUidByEmail }));
+      respond(0);
+      expect(revokes).toHaveLength(5);
+      transition.set('switching');
+      revokes.forEach((revoke) => {
+        revoke.next();
+        revoke.complete();
+      });
+      expect(revokes).toHaveLength(5);
+      expect(service.getRun('group-a')).toBeUndefined();
+      expect(toast).not.toHaveBeenCalled();
+    });
+
+    it('does not warn against the impersonation reload before listener cleanup runs', () => {
+      const add = vi.spyOn(window, 'addEventListener');
+      const remove = vi.spyOn(window, 'removeEventListener');
+      service.start(input('group-a', readyRows(30)));
+      TestBed.tick();
+      const handler = add.mock.calls.find(([type]) => type === 'beforeunload')?.[1] as (event: BeforeUnloadEvent) => void;
+      expect(handler).toBeDefined();
+      transition.set('stopping');
+      const event = { preventDefault: vi.fn(), returnValue: undefined } as unknown as BeforeUnloadEvent;
+      handler(event);
+      expect(event.preventDefault).not.toHaveBeenCalled();
+      expect(event.returnValue).toBeUndefined();
+      TestBed.tick();
+      expect(remove).toHaveBeenCalledWith('beforeunload', handler);
+      expect(service.getRun('group-a')).toBeUndefined();
+    });
   });
 
   describe('background surfaces (#5731)', () => {

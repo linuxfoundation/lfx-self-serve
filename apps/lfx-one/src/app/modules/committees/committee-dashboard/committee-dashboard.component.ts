@@ -526,7 +526,7 @@ export class CommitteeDashboardComponent {
 
   private fetchShownCommittees(): Observable<readonly Committee[]> {
     if (this.isMeLens()) {
-      return this.committeeService.getMyCommittees();
+      return this.committeeService.getMyCommitteesOrError();
     }
     const projectUid = this.project()?.uid;
     return projectUid ? this.committeeService.getCommitteesByProjectOrThrow(projectUid) : of([]);

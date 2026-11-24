@@ -47,6 +47,7 @@ import {
 } from 'rxjs';
 
 import { CommitteeService } from './committee.service';
+import { ImpersonationService } from './impersonation.service';
 import { UserService } from './user.service';
 
 /**
@@ -71,6 +72,7 @@ import { UserService } from './user.service';
 export class CommitteeMemberImportService {
   private readonly committeeService = inject(CommitteeService);
   private readonly userService = inject(UserService);
+  private readonly impersonationService = inject(ImpersonationService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
@@ -83,7 +85,11 @@ export class CommitteeMemberImportService {
   private owner: string | null = null;
   private runSequence = 0;
 
-  public readonly viewerSubject = computed(() => this.userService.user()?.sub ?? null);
+  /** No import owner is available while this tab changes its server-side impersonation session. */
+  public readonly viewerSubject = computed(() => {
+    if (this.impersonationService.transition()) return null;
+    return this.userService.user()?.sub ?? null;
+  });
   /** Counts-only projections of this subject's retained runs, by group UID. */
   public readonly summaries: Signal<ReadonlyMap<string, MemberImportRunSummary>> = this.initSummaries();
   /** Emits once per settled attempt, only while its subject is still the observed subject. */
@@ -212,6 +218,8 @@ export class CommitteeMemberImportService {
     const view = this.document.defaultView;
     if (!isPlatformBrowser(this.platformId) || !view) return;
     const warn = (event: BeforeUnloadEvent): void => {
+      // The session changes before reload; never let this warning keep an old-owner run alive.
+      if (this.impersonationService.transition()) return;
       event.preventDefault();
       // Some browsers still require a return value to show the prompt.
       event.returnValue = '';
