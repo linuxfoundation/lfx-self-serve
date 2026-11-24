@@ -193,7 +193,7 @@ router.get('/twitter/create-capability', (req, res) => campaignController.getTwi
 // so not root-only: `requireCampaignManager` above is the gate.
 router.get('/google/geo-targets', (req, res, next) => campaignController.searchGoogleAdsGeoTargets(req, res, next));
 // Meta's targeting taxonomy (interests, behaviors, job titles), searched for the Implement tab's detailed
-// targeting (#5904 row 4; campaign-service #612). 404 unless Meta interest or behavior targeting is on. Meta
+// targeting (#5904 row 4; campaign-service #612). Each kind answers only while its own flag is on (404 otherwise). Meta
 // taxonomy, so not root-only: `requireCampaignManager` above is the gate, as campaign-service's.
 router.get('/meta/targeting-search', (req, res, next) => campaignController.searchMetaTargetingOptions(req, res, next));
 // campaign-service only (#2519), behind LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off.

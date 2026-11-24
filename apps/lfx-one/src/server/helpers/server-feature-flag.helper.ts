@@ -452,8 +452,9 @@ export enum ServerFeatureFlag {
 
   /**
    * Meta detailed targeting (#5904 row 4): accept `metaConfig.targeting.interests`, `behaviors` with
-   * `workPositions`, and `locales` on create, one flag each, and open the targeting search
-   * (`GET /api/campaigns/meta/targeting-search`) while the interest or behavior flag is on.
+   * `workPositions`, and `locales` on create, one flag each. The targeting search
+   * (`GET /api/campaigns/meta/targeting-search`) answers each kind only while that kind's flag is on:
+   * `type=interest` on the interest flag, `type=behavior` and `type=work_position` on the behavior flag.
    *
    * CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
    * `META_INTEREST_TARGETING_ENABLED`, `META_BEHAVIOR_TARGETING_ENABLED` or `META_LOCALE_TARGETING_ENABLED` on

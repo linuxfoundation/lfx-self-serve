@@ -831,7 +831,8 @@ environment:
   # Meta detailed targeting (#5904 row 4), one flag each: `..._META_INTEREST_TARGETING` accepts
   # `metaConfig.targeting.interests`, `..._META_BEHAVIOR_TARGETING` accepts `behaviors` and `workPositions`
   # (job titles), and `..._META_LOCALE_TARGETING` accepts `locales` (languages). The targeting search
-  # (`GET /api/campaigns/meta/targeting-search`) answers while the interest or behavior flag is on.
+  # (`GET /api/campaigns/meta/targeting-search`) answers each kind only while that kind's flag is on:
+  # `type=interest` on the interest flag, `type=behavior` and `type=work_position` on the behavior flag.
   #
   # CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
   # `META_INTEREST_TARGETING_ENABLED`, `META_BEHAVIOR_TARGETING_ENABLED` or `META_LOCALE_TARGETING_ENABLED` on,

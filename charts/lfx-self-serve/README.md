@@ -439,7 +439,8 @@ The three Meta detailed-targeting flags (`..._META_INTEREST_TARGETING`, `..._MET
 `..._META_LOCALE_TARGETING`) are of the Bidding kind too (campaign-service v1.0.37 with the matching
 `META_*_TARGETING_ENABLED` on, and `META_TARGETING_SEARCH_ENABLED` for the search). Off (the default), the create
 route refuses `metaConfig.targeting.interests`, `behaviors`/`workPositions` or `locales` with a 400, and the
-targeting search answers 404. A block with only these fields no longer needs `..._META_AUDIENCE_TARGETING`, as in
+targeting search answers 404 for a kind whose own flag is off (`type=interest` on the interest flag,
+`type=behavior` and `type=work_position` on the behavior flag). A block with only these fields no longer needs `..._META_AUDIENCE_TARGETING`, as in
 campaign-service. The Implement tab picker follows in a later change; until then the flags open the server half only.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_ASSETS` is an eighth, of the Meta kind: it asserts that the
