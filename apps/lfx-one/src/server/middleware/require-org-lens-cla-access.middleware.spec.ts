@@ -231,11 +231,12 @@ describe('requireOrgLensClaAccess: all employee view (epic #5845, #5857)', () =>
     delete process.env[FLAG];
   });
 
-  it('refuses an employee-view caller with 403 EMPLOYEE_VIEW_FORBIDDEN, though the read gate admits them', async () => {
+  it("refuses an employee-view caller with the read gate's 403 FORBIDDEN, without running the employee lookup", async () => {
     const next = await run(OWN);
 
     expect(statusOf(next)).toBe(403);
-    expect(next.mock.calls[0][0]).toMatchObject({ code: 'EMPLOYEE_VIEW_FORBIDDEN' });
+    expect(next.mock.calls[0][0]).toMatchObject({ code: 'FORBIDDEN' });
+    expect(resolveEmployeeView).not.toHaveBeenCalled();
   });
 
   it('admits an employee who is also a CLA Manager of this company, by the scope', async () => {

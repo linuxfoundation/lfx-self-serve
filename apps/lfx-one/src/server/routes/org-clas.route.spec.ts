@@ -855,9 +855,9 @@ describe('org-clas router — CLA manager designee (#2780)', () => {
   });
 });
 
-// Epic #5845 (#5857): EasyCLA is hidden in the all employee view, so every route on this router answers 403
-// EMPLOYEE_VIEW_FORBIDDEN to an employee even though `assertOrgLensClaRead` delegates to the read gate that admits them.
-// Enforced by `requireOrgLensClaAccess` (on every route), not `blockEmployeeView`: see the note in org-clas.route.ts.
+// Epic #5845 (#5857): EasyCLA is hidden in the all employee view, so every route on this router answers 403 to an employee: the CLA
+// gate tells the read gate not to try the employee view, so the answer is the read gate's own FORBIDDEN, and the employee lookup is
+// never run. Enforced by `requireOrgLensClaAccess` (on every route), not `blockEmployeeView`: see the note in org-clas.route.ts.
 describe('org-clas router — all employee view', () => {
   const EMPLOYEE_ORG = '0014100000EmpAAAAA';
   const FLAG = 'LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED';
@@ -926,11 +926,12 @@ describe('org-clas router — all employee view', () => {
     expect(routes).toHaveLength(controllers().length);
   });
 
-  it.each(routes)('answers 403 EMPLOYEE_VIEW_FORBIDDEN on %s %s and never reaches the controller', async (method, _name, path) => {
+  it.each(routes)('answers 403 FORBIDDEN on %s %s without running the employee lookup, and never reaches the controller', async (method, _name, path) => {
     const res = await call(method, path);
 
     expect(res.status).toBe(403);
-    expect(JSON.stringify(await res.json())).toContain('EMPLOYEE_VIEW_FORBIDDEN');
+    expect(JSON.stringify(await res.json())).toContain('FORBIDDEN');
+    expect(resolveEmployeeView).not.toHaveBeenCalled();
     controllers().forEach((controller) => expect(controller).not.toHaveBeenCalled());
   });
 
