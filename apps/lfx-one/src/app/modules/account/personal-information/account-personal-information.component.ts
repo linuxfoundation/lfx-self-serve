@@ -164,14 +164,16 @@ export class AccountPersonalInformationComponent {
     this.loadEmails();
     this.loadCompanies();
 
-    // A profile that lands, or changes after a save, seeds the form unless the user is mid-edit.
+    // A profile that lands, or changes after a save, seeds the form. Mid-edit, only the untouched fields take it, so a save
+    // replayed after Flow C still reaches them and the next save cannot send the older value back.
     toObservable(this.profile)
       .pipe(
         filter((profile): profile is CombinedProfile => profile !== null),
         takeUntilDestroyed()
       )
       .subscribe((profile) => {
-        if (!this.form.dirty) this.seed(profile);
+        if (this.form.dirty) this.refreshUntouchedFields(profile);
+        else this.seed(profile);
         this.syncEnabled();
       });
 
@@ -384,36 +386,51 @@ export class AccountPersonalInformationComponent {
       });
   }
 
-  // Saves are laid over the profile even with no record yet, so after one the fields show, and Revert returns to, what was saved.
   private seed(profile: CombinedProfile): void {
-    const saved = this.accountProfile.savedFields();
-    const details: Partial<UserMetadata> = { ...(profile.profile ?? {}), ...saved };
-    this.form.reset(
-      {
-        given_name: saved.given_name ?? (profile.user.first_name || ''),
-        family_name: saved.family_name ?? (profile.user.last_name || ''),
-        bio: details?.bio || '',
-        // Trimmed to match the trimmed company options.
-        organization: (details?.organization || '').trim(),
-        job_title: details?.job_title || '',
-        country: details?.country || '',
-        state_province: details?.state_province || '',
-        city: details?.city || '',
-        postal_code: details?.postal_code || '',
-        address: details?.address || '',
-        phone_number: details?.phone_number || '',
-        t_shirt_size: normalizeTShirtSize(details?.t_shirt_size),
-      },
-      { emitEvent: false }
-    );
-    this.seededBio = details?.bio || '';
+    const values = this.valuesFor(profile);
+    this.form.reset(values, { emitEvent: false });
+    this.seededBio = values.bio;
     this.lastValidBio = this.seededBio;
     this.bioLength.set(codePointLength(this.seededBio));
     this.formDirty.set(false);
     this.syncCompanyControl();
   }
 
-  // Editable once the profile has loaded, and never while impersonating.
+  private refreshUntouchedFields(profile: CombinedProfile): void {
+    const values = this.valuesFor(profile);
+    for (const name of Object.keys(values) as (keyof typeof values)[]) {
+      const control = this.form.controls[name];
+      if (control.pristine) control.setValue(values[name], { emitEvent: false });
+    }
+    if (this.form.controls.bio.pristine) {
+      this.seededBio = values.bio;
+      this.lastValidBio = values.bio;
+      this.bioLength.set(codePointLength(values.bio));
+    }
+    this.syncCompanyControl();
+  }
+
+  // Saves are laid over the profile even with no record yet, so after one the fields show, and Revert returns to, what was saved.
+  private valuesFor(profile: CombinedProfile): ReturnType<typeof this.form.getRawValue> {
+    const saved = this.accountProfile.savedFields();
+    const details: Partial<UserMetadata> = { ...(profile.profile ?? {}), ...saved };
+    return {
+      given_name: saved.given_name ?? (profile.user.first_name || ''),
+      family_name: saved.family_name ?? (profile.user.last_name || ''),
+      bio: details.bio || '',
+      // Trimmed to match the trimmed company options.
+      organization: (details.organization || '').trim(),
+      job_title: details.job_title || '',
+      country: details.country || '',
+      state_province: details.state_province || '',
+      city: details.city || '',
+      postal_code: details.postal_code || '',
+      address: details.address || '',
+      phone_number: details.phone_number || '',
+      t_shirt_size: normalizeTShirtSize(details.t_shirt_size),
+    };
+  }
+
   // A save in flight keeps the fields locked until it ends, when finalize calls this again.
   private syncEnabled(): void {
     if (this.saving()) return;

@@ -299,6 +299,19 @@ describe('AccountPersonalInformationComponent', () => {
       expect(page.form.enabled).toBe(true);
     });
 
+    it('takes a save replayed after Flow C into the fields the user has not touched', async () => {
+      const page = await createState();
+      page.form.controls.city.setValue('Paris');
+      page.form.controls.city.markAsDirty();
+      page.form.updateValueAndValidity();
+      TestBed.inject(AccountProfileService).applySaved({ job_title: 'Maintainer' });
+      TestBed.tick();
+
+      expect(page.form.controls.job_title.value).toBe('Maintainer');
+      expect(page.form.controls.city.value).toBe('Paris');
+      expect(page.dirty()).toBe(true);
+    });
+
     it('reverts to a save even when the profile has no record yet', async () => {
       const page = await createState({ getCurrentUserProfile: () => of({ ...PROFILE, profile: null }) });
       editJobTitle(page, 'Maintainer');
