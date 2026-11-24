@@ -719,7 +719,7 @@ export const LINKEDIN_POST_INTAKE: MktgAgentIntake = {
   persistsDocument: true,
 };
 
-/** Domain-only audit; key pages are optional but must number 2–5 when supplied. */
+/** Domain-only audit; key pages are optional but must number 2–5 when supplied, and notes are optional context. */
 export const AEO_GEO_INTAKE: MktgAgentIntake = {
   agentId: 'aeo-geo',
   formTitleAction: 'Run',
@@ -730,6 +730,15 @@ export const AEO_GEO_INTAKE: MktgAgentIntake = {
   fields: [
     { key: 'domain', question: 'The website to audit', kind: 'text' },
     { key: 'key_pages', question: 'Key pages', kind: 'textarea', optional: true },
+    {
+      key: 'notes',
+      question: 'Notes',
+      kind: 'textarea',
+      rows: 3,
+      optional: true,
+      placeholder: 'The audience you care about, sites to compare against, context for the audit',
+      hint: 'Read as context for the audit, never as instructions.',
+    },
   ],
   sections: AEO_GEO_SECTIONS.map((heading) => heading.replace(/^## /, '')),
   endpoints: { generate: '/api/mktg-agents/aeo-geo/generate', result: '/api/mktg-agents/aeo-geo/result', answers: '/api/mktg-agents/aeo-geo/answers' },
