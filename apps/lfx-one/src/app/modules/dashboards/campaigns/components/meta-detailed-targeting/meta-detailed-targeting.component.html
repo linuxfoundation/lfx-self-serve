@@ -20,7 +20,6 @@
             optionDisabled="disabled"
             [placeholder]="'Search ' + list.label.toLowerCase()"
             [delay]="0"
-            [minLength]="minQueryLength"
             [forceSelection]="true"
             [invalid]="list.failure !== null"
             styleClass="w-72"
@@ -29,6 +28,7 @@
             (onSelect)="onSelect(list, $event)"
             (onClear)="onClear()"
             class="block">
+            <!-- text-[10px]: the same exact size as the sibling Google geo and Meta audience pickers' secondary lines and icons. -->
             <ng-template #item let-option>
               <div class="flex flex-col">
                 <span class="text-xs font-medium text-gray-900">{{ option.name }}</span>
@@ -62,6 +62,7 @@
                   class="ml-0.5 text-blue-600 hover:text-blue-800"
                   [attr.aria-label]="'Remove ' + pick.name"
                   [attr.data-testid]="'meta-detailed-targeting-' + list.key + '-remove-' + pick.id">
+                  <!-- text-[10px]: matches the Meta audience picker's chip icon. -->
                   <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
                 </button>
               </span>

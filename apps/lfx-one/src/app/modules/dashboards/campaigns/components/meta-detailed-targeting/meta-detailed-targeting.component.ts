@@ -6,7 +6,7 @@ import { Component, computed, inject, input, model, Signal, signal } from '@angu
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
-import { META_MAX_DETAILED_TARGETING_IDS, META_TARGETING_QUERY_MIN_LENGTH, META_TARGETING_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
+import { META_MAX_DETAILED_TARGETING_IDS, META_TARGETING_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import type {
   MetaDetailedTargetingListView,
   MetaDetailedTargetingPicks,
@@ -50,8 +50,6 @@ export class MetaDetailedTargetingComponent {
   public readonly picks = model.required<MetaDetailedTargetingPicks>();
 
   protected readonly maxIds = META_MAX_DETAILED_TARGETING_IDS;
-  /** The popup asks nothing before this many characters; text that trims shorter still gets its own message. */
-  protected readonly minQueryLength = META_TARGETING_QUERY_MIN_LENGTH;
   /** One control per search box; each is cleared after a pick, so the box reads "search another". */
   protected readonly searchForm = new FormGroup({
     interest: new FormControl<unknown>(null),
@@ -117,8 +115,9 @@ export class MetaDetailedTargetingComponent {
               this.campaignService.searchMetaTargetingOptions(projectSlug, type, query).pipe(
                 map((result): MetaTargetingSearchState => ({ type, options: result.options, pending: false, failure: null })),
                 catchError((err: unknown) => {
-                  console.error('Meta targeting search failed:', err);
+                  // The status only: the error's URL carries the typed search text.
                   const status = err instanceof HttpErrorResponse ? err.status : 0;
+                  console.error('Meta targeting search failed:', status);
                   return of<MetaTargetingSearchState>({ type, options: [], pending: false, failure: metaTargetingSearchFailure(status) });
                 })
               )

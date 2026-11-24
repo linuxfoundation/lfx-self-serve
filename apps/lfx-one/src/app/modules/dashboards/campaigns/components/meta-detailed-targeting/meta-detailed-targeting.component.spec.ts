@@ -80,11 +80,18 @@ describe('MetaDetailedTargetingComponent', () => {
     expect(query('meta-detailed-targeting-interests-6003')).toBeNull();
   });
 
-  it('says why a search failed, under its own box', async () => {
+  it('says why a search failed, under its own box, until the text is shortened', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     searchMetaTargetingOptions.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     await searchInterests('open source');
     expect(query('meta-detailed-targeting-interests-error')?.textContent).toContain(META_TARGETING_SEARCH_BUSY_MESSAGE);
     expect(query('meta-detailed-targeting-behaviors-error')).toBeNull();
+
+    // Shortened to one character: the stale failure goes, and nothing is searched.
+    call('onSearch', 'interest', { query: 'o', originalEvent: new Event('input') });
+    await vi.advanceTimersByTimeAsync(META_TARGETING_SEARCH_DEBOUNCE_MS);
+    fixture.detectChanges();
+    expect(query('meta-detailed-targeting-interests-error')).toBeNull();
+    expect(searchMetaTargetingOptions).toHaveBeenCalledTimes(1);
   });
 });

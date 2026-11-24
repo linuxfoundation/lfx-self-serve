@@ -780,7 +780,9 @@ export class CampaignService {
    * row 4). A 404 while the search is off on this deployment, and a 503 when Meta is busy or refuses the read.
    */
   public searchMetaTargetingOptions(projectSlug: string, type: MetaTargetingSearchType, query: string): Observable<MetaTargetingSearchResult> {
-    return this.http.get<MetaTargetingSearchResult>('/api/campaigns/meta/targeting-search', { params: { project: projectSlug, type, query } });
+    // Strict encoding: the default codec leaves `+` bare, which Express reads as a space, so `C++` would search `C`.
+    const params = strictHttpParams().set('project', projectSlug).set('type', type).set('query', query);
+    return this.http.get<MetaTargetingSearchResult>('/api/campaigns/meta/targeting-search', { params });
   }
 
   /**

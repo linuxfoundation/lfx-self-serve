@@ -1696,7 +1696,7 @@ export const META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE = 'Meta targeting search 
 export const META_TARGETING_SEARCH_FAILED_MESSAGE = "Meta search didn't answer. Search again.";
 /** What the targeting search popup says while it waits, when the typed text cannot be searched, and when nothing matched. */
 export const META_TARGETING_SEARCH_PENDING_MESSAGE = 'Searching…';
-export const META_TARGETING_SEARCH_TOO_SHORT_MESSAGE = 'Type at least 2 characters, on one line.';
+export const META_TARGETING_SEARCH_TOO_SHORT_MESSAGE = `Type at least ${META_TARGETING_QUERY_MIN_LENGTH} characters, on one line.`;
 export const META_TARGETING_SEARCH_NO_MATCH_MESSAGE = 'Nothing matches. Try another word.';
 /** The 503 a Meta targeting search gets when Meta or campaign-service cannot answer it (a throttle is not retried upstream). */
 export const META_TARGETING_SEARCH_BUSY_MESSAGE = "Meta targeting search isn't available right now. Wait a few seconds, then search again.";
