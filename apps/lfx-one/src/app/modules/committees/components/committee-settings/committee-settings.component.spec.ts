@@ -404,7 +404,7 @@ describe('CommitteeSettingsComponent — SSO group name', () => {
     expect(ssoLine()).toBeNull();
   });
 
-  it('does not render the line when showSsoGroupName is unset (the create/edit wizard), even for a public group', async () => {
+  it('does not render the line when showSsoGroupName is unset (the create and edit wizard opt out), even for a public group', async () => {
     await render({ public: true, sso_group_enabled: true }, 'example-wg', false);
 
     expect(ssoLine()).toBeNull();
@@ -415,6 +415,14 @@ describe('CommitteeSettingsComponent — SSO group name', () => {
     form.disable();
     fixture.componentRef.setInput('showSsoGroupName', true);
     fixture.componentRef.setInput('ssoGroupName', 'example-wg');
+    await fixture.whenStable();
+
+    expect(ssoValue()?.textContent?.trim()).toBe('example-wg');
+  });
+
+  it('still shows the line when only the public toggle is disabled, which drops it from the form value', async () => {
+    await render({ public: true, sso_group_enabled: false }, 'example-wg');
+    form.controls['public'].disable();
     await fixture.whenStable();
 
     expect(ssoValue()?.textContent?.trim()).toBe('example-wg');

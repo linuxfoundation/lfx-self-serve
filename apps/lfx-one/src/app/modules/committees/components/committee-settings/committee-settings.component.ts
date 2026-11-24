@@ -69,9 +69,9 @@ export class CommitteeSettingsComponent {
   public readonly category = input<string | null | undefined>(null);
   /**
    * Whether to render the read-only SSO group name line in the Enable SSO Group card. Defaults to
-   * false — the create/edit wizard (`committee-manage.component`) has no saved committee, so a
-   * name (or a "generated on save" placeholder) there would describe a group that doesn't exist
-   * yet. Only `committee-settings-tab.component` opts in.
+   * false; only `committee-settings-tab.component` opts in, because issue #6054 scopes the name to
+   * group settings. The create wizard (`committee-manage.component`) has no saved committee yet,
+   * and its edit mode, which does load one, intentionally leaves the line out.
    */
   public readonly showSsoGroupName = input<boolean>(false);
   /** The saved committee's `sso_group_name`, shown when `showSsoGroupName` is true. */
@@ -104,7 +104,7 @@ export class CommitteeSettingsComponent {
     this.impersonating() ? `${this.slackWebhookCancelLabel()} — unavailable while impersonating another user` : this.slackWebhookCancelLabel()
   );
 
-  /** Live (unsaved) public/SSO toggle values from the form, read raw so a disabled (read-only Auditor) form still reports them. */
+  /** Live (unsaved) public/SSO toggle values from the form, read raw so a per-control disable of either toggle still reports it. */
   private readonly formToggles: Signal<Partial<Pick<Committee, 'public' | 'sso_group_enabled'>>> = this.initFormToggles();
   /** The SSO group name line, or null when the parent hasn't opted in or neither toggle is on. */
   public readonly ssoGroupNameDisplay: Signal<CommitteeSsoGroupNameDisplay | null> = this.initSsoGroupNameDisplay();
@@ -137,8 +137,9 @@ export class CommitteeSettingsComponent {
     this.cancelEditingSlackWebhookUrl.emit();
   }
 
-  // `valueChanges` payloads omit disabled controls, so map every emission to `getRawValue()` —
-  // the settings tab disables the whole form for read-only Auditor access.
+  // A partially disabled group drops its disabled controls from `valueChanges` payloads, so map
+  // every emission to `getRawValue()` — a per-control lock on `public` or `sso_group_enabled`
+  // can't hide the toggle. A whole-form disable (read-only Auditor) already keeps every control.
   private initFormToggles(): Signal<Partial<Pick<Committee, 'public' | 'sso_group_enabled'>>> {
     return toSignal(
       toObservable(this.form).pipe(
