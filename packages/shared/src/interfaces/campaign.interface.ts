@@ -8228,6 +8228,31 @@ export interface LinkedInVariantView {
   imageBlock: CampaignLinkedInImageAssetBlock | null;
 }
 
+/**
+ * The one LinkedIn image upload slot (#5547): the variant it belongs to (`''` for none), where it stands, and for a
+ * failed upload the brief it failed for and why. Read by the `campaign-linkedin-image.utils` rules (#5980).
+ */
+export interface LinkedInImageSlot {
+  variantKey: string;
+  status: CreativeAssetUploadStatus;
+  failedBriefId: string;
+  error: string;
+}
+
+/** What `linkedInVariantViews` reads (#5980): the variants, the upload slot, and the brief and capability state. */
+export interface LinkedInVariantViewsInput {
+  variants: readonly LinkedInVariantDraft[];
+  slot: LinkedInImageSlot;
+  /** The open brief's id, `''` while it is unsaved. */
+  briefId: string;
+  briefSaving: boolean;
+  /** Whether the LinkedIn section is shown; no image block applies while it is not. */
+  showSection: boolean;
+  /** `linkedInAssetUploadEnabled` as the page holds it: `null` while unknown. */
+  uploadEnabled: boolean | null;
+  capabilityRead: CampaignCapabilityReadState;
+}
+
 /** `CampaignLinkedInImageAssetBlock`'s X sibling, for the authored tweet's image, with the same kinds. */
 export interface CampaignTwitterImageAssetBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
