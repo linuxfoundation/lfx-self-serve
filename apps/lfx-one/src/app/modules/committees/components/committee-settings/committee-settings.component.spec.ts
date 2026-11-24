@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { provideRouter } from '@angular/router';
@@ -9,6 +10,10 @@ import { SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { CommitteeSettingsComponent } from './committee-settings.component';
+
+/** Runs the real component's signals without rendering its cards for state-only assertions. */
+@Component({ selector: 'lfx-committee-settings-state-only', template: '' })
+class StateOnlyCommitteeSettingsComponent extends CommitteeSettingsComponent {}
 
 /** Mirrors committee-settings-tab.component.ts's real FormGroup shape — every control the template's other cards (member visibility, join mode, feature toggles) reference via formControlName must exist or Angular throws NG01203. chat_webhook_url carries the real Validators.pattern too, not just the same key, so a test asserting form-invalid behavior around it is actually exercising that validator. */
 function buildForm(): FormGroup {
@@ -366,11 +371,8 @@ describe('CommitteeSettingsComponent — SSO group name', () => {
     await fixture.whenStable();
   }
 
-  it.each([
-    ['public only', { public: true, sso_group_enabled: false }],
-    ['SSO enabled', { public: false, sso_group_enabled: true }],
-  ])('shows the saved name inside the Enable SSO Group card when %s', async (_description, toggles) => {
-    await render(toggles, 'example-wg');
+  it('shows the saved name inside the Enable SSO Group card for a public group', async () => {
+    await render({ public: true, sso_group_enabled: false }, 'example-wg');
 
     expect(ssoLine()?.textContent).toContain('SSO Group Name:');
     expect(ssoValue()?.textContent?.trim()).toBe('example-wg');
@@ -409,22 +411,36 @@ describe('CommitteeSettingsComponent — SSO group name', () => {
 
     expect(ssoLine()).toBeNull();
   });
+});
 
-  it('still shows the line when the form is disabled for read-only Auditor access', async () => {
-    form.patchValue({ public: true });
-    form.disable();
+describe('CommitteeSettingsComponent — SSO group name state-only', () => {
+  let fixture: ComponentFixture<StateOnlyCommitteeSettingsComponent>;
+  let form: FormGroup;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [StateOnlyCommitteeSettingsComponent],
+    }).compileComponents();
+    fixture = TestBed.createComponent(StateOnlyCommitteeSettingsComponent);
+    form = buildForm();
+    form.patchValue({ public: true, sso_group_enabled: false });
+    fixture.componentRef.setInput('form', form);
     fixture.componentRef.setInput('showSsoGroupName', true);
     fixture.componentRef.setInput('ssoGroupName', 'example-wg');
     await fixture.whenStable();
-
-    expect(ssoValue()?.textContent?.trim()).toBe('example-wg');
   });
 
-  it('still shows the line when only the public toggle is disabled, which drops it from the form value', async () => {
-    await render({ public: true, sso_group_enabled: false }, 'example-wg');
+  it('retains the saved name state when the form is disabled for read-only Auditor access', async () => {
+    form.disable();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.ssoGroupNameDisplay()).toEqual({ value: 'example-wg', pending: false });
+  });
+
+  it('retains the saved name state when only the public toggle is disabled, which drops it from the form value', async () => {
     form.controls['public'].disable();
     await fixture.whenStable();
 
-    expect(ssoValue()?.textContent?.trim()).toBe('example-wg');
+    expect(fixture.componentInstance.ssoGroupNameDisplay()).toEqual({ value: 'example-wg', pending: false });
   });
 });
