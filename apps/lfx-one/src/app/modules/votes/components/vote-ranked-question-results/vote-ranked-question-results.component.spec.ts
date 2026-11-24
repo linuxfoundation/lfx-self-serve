@@ -120,7 +120,7 @@ describe('VoteRankedQuestionResultsComponent', () => {
     it.each([
       [
         outcome({ result: 'tie', winnerTexts: ['Candidate One', 'Candidate Two'] }),
-        'Candidate One and Candidate Two are tied. No single winner could be determined.',
+        'There is a tie between Candidate One and Candidate Two. No single winner could be determined.',
       ],
       [outcome({ kind: 'irv', result: 'none', winnerTexts: [] }), 'No winner could be determined.'],
       [outcome({ kind: 'irv', roundCount: 3 }), 'Candidate One is the winner, with a majority of continuing ballots in round 3.'],

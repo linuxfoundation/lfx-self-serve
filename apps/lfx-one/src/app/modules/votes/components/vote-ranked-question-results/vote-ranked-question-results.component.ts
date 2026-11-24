@@ -58,8 +58,8 @@ export class VoteRankedQuestionResultsComponent {
         const verb = outcome.winnerTexts.length === 1 ? 'was' : 'were';
         return { lead: '', names, tail: ` ${verb} elected using Meek STV proportional counting.` };
       }
-      // Condorcet IRV sentences match its Results tab and the Overview word for word (#6124).
-      if (outcome.result === 'tie') return { lead: '', names, tail: ` are tied. ${VOTE_RANKED_OUTCOME_EXPLANATIONS.tie}` };
+      // Share the Condorcet IRV method explanations and tie wording across results surfaces (#6124).
+      if (outcome.result === 'tie') return { lead: 'There is a tie between ', names, tail: `. ${VOTE_RANKED_OUTCOME_EXPLANATIONS.tie}` };
       if (outcome.kind === 'condorcet') return { lead: '', names, tail: ` is the winner. ${VOTE_RANKED_OUTCOME_EXPLANATIONS.condorcetWinner}` };
       if (outcome.condorcetFallback) {
         return {

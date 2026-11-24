@@ -4034,6 +4034,10 @@ describe('VoteDetailComponent', () => {
 
       expect(read(fixture, 'isVoteClosed')).toBe(true);
       expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Final results', severity: 'secondary' });
+      const tag = fixture.debugElement.query(By.css('[data-testid="vote-detail-overview-results-status"]'));
+      expect(tag.properties['value']).toBe('Final results');
+      expect(tag.properties['severity']).toBe('secondary');
+      expect(tag.properties['icon']).toBeUndefined();
     });
   });
 
