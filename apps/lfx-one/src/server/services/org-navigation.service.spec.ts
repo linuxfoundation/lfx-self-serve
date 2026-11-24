@@ -501,6 +501,22 @@ describe('OrgNavigationService — all employee view company (#5845)', () => {
     expect(response).toMatchObject({ upstream_failed: false, total: 1 });
   });
 
+  it('does not hold the list on a hung employee lookup: it gives up after the lookup budget and reports the list as failed', async () => {
+    vi.useFakeTimers();
+    try {
+      resolveEmployeeView.mockReturnValue(new Promise(() => undefined));
+
+      const pending = new OrgNavigationService().getOrgItems(req, {});
+      await vi.advanceTimersByTimeAsync(5001);
+      const response = await pending;
+
+      expect(response.items).toEqual([]);
+      expect(response.upstream_failed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('lists nothing extra for a caller who does not qualify', async () => {
     const response = await new OrgNavigationService().getOrgItems(req, {});
 

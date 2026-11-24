@@ -266,4 +266,20 @@ describe('OrgRoleGrantsService addressed full access', () => {
     expect(service.fullAccessOrgUids().has(UID)).toBe(false);
     expect(service.employeeViewOrgUids().has(UID)).toBe(true);
   });
+
+  it('clears every reduced-mode source for a company a later answer says is CLA-only, and leaves other companies alone', async () => {
+    const OTHER = '0014100000OtherAAAA';
+    await answer({ ...grants, employeeView: { orgUid: UID }, fullAccessOrgUid: OTHER });
+    service.noteEmployeeViewAddressed(UID, true);
+    service.noteFullAccessAddressed(UID, true);
+    expect(service.employeeViewOrgUids().has(UID)).toBe(true);
+    expect(service.fullAccessOrgUids().has(UID)).toBe(true);
+
+    service.clearReducedModes(UID);
+
+    expect(service.employeeViewOrgUid()).toBeNull();
+    expect(service.employeeViewOrgUids().has(UID)).toBe(false);
+    expect(service.fullAccessOrgUids().has(UID)).toBe(false);
+    expect(service.fullAccessOrgUids().has(OTHER)).toBe(true);
+  });
 });

@@ -143,6 +143,18 @@ export class OrgRoleGrantsService {
     this.addressedFullAccessUidsInternal.set(next);
   }
 
+  /**
+   * A server answer that `uid` is CLA-only supersedes every earlier reduced-mode note for it, the role-grants-backed ones included
+   * (which the addressed setters never touch): otherwise a user who lost the employee or full-access view would stay classified by the
+   * stale mode, `isClaOnly` would stay false, and the EasyCLA-only redirect would never run.
+   */
+  public clearReducedModes(uid: string): void {
+    if (this.employeeViewOrgUidInternal() === uid) this.employeeViewOrgUidInternal.set(null);
+    if (this.fullAccessOrgUidInternal() === uid) this.fullAccessOrgUidInternal.set(null);
+    this.noteEmployeeViewAddressed(uid, false);
+    this.noteFullAccessAddressed(uid, false);
+  }
+
   /** Records an address's or selector row's employee-view answer for `uid`; a later non-employee answer clears it. */
   public noteEmployeeViewAddressed(uid: string, employeeView: boolean): void {
     // A positive employee-only answer supersedes every earlier full-access note for that company (the role-grants one and the addressed one).
