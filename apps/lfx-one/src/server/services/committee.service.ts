@@ -1528,7 +1528,8 @@ export class CommitteeService {
       if (settings?.members_can_view_social_listening !== true) {
         return false;
       }
-      // Board only for now: confirm on the group record, not the membership's copy of the category.
+      // Board only for now, and only the foundation's own groups: confirm both on the group record, not the
+      // membership's indexed copy, which can be stale or tagged with an ancestor (a child project's Board).
       const group = await this.microserviceProxy.proxyRequest<Committee>(
         req,
         'LFX_V2_SERVICE',
@@ -1539,7 +1540,7 @@ export class CommitteeService {
         undefined,
         requestOptions
       );
-      return canGroupGrantSocialListening(group?.category);
+      return group?.project_uid === foundationUid && canGroupGrantSocialListening(group.category);
     });
     if (results.some((r) => r.status === 'fulfilled' && r.value === true)) {
       return true;

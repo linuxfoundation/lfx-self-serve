@@ -2141,14 +2141,15 @@ describe('CommitteeService — group Social Listening access (lfx-self-serve-ops
       settings: Record<string, boolean | Error>,
       status = 'Active',
       category: string | undefined = 'Board',
-      groupCategory = category
+      groupCategory = category,
+      groupProjectUid = FOUNDATION_UID
     ): void {
       proxyRequest.mockImplementation((_req: unknown, _svc: string, path: string) => {
         if (path === '/query/resources') {
           return Promise.resolve({ resources: memberships.map((uid) => ({ data: { committee_uid: uid, status, committee_category: category } })) });
         }
         if (!path.endsWith('/settings')) {
-          return Promise.resolve({ uid: path.split('/')[2], category: groupCategory });
+          return Promise.resolve({ uid: path.split('/')[2], category: groupCategory, project_uid: groupProjectUid });
         }
         const value = settings[path.split('/')[2]];
         return value instanceof Error ? Promise.reject(value) : Promise.resolve({ members_can_view_social_listening: value });
@@ -2191,6 +2192,12 @@ describe('CommitteeService — group Social Listening access (lfx-self-serve-ops
 
     it('denies when the group record is not a Board, even if the membership says it is', async () => {
       upstream(['wg-1'], { 'wg-1': true }, 'Active', 'Board', 'Working Group');
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+    });
+
+    it("denies a Board group that belongs to another project, such as a child project's Board", async () => {
+      upstream(['child-board'], { 'child-board': true }, 'Active', 'Board', 'Board', 'child-project-uid');
 
       await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
     });
