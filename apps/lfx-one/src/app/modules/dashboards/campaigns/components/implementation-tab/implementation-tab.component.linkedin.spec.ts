@@ -1081,6 +1081,16 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       );
     });
 
+    // One row proves the brief's save state reaches the picker; the rest are rows in `campaign-linkedin-image.utils.spec.ts` (#5980).
+    it('disables every picker while the brief is saving', async () => {
+      const f = (await mount(true)).fixture;
+      f.componentRef.setInput('briefPersistence', { status: 'saving', briefId: '6f9619ff-8b86-d011-b42d-00c04fc964ff', message: null, approved: true });
+      f.detectChanges();
+
+      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(true);
+      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(true);
+    });
+
     it("holds Create and the other variants' pickers while an upload is in flight, and Cancel aborts it", async () => {
       uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
       const f = (await mount(true)).fixture;
@@ -1148,7 +1158,8 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
 
     it.each([
       ['off', false, 'ready', 'unsupported'],
-      // The other kinds (failed, pending, unsaved, otherBrief) are rows in `campaign-linkedin-image.utils.spec.ts` (#5980).
+      // Pending proves `createCapabilityRead` reaches the rule; the other kinds are rows in `campaign-linkedin-image.utils.spec.ts` (#5980).
+      ['unanswered, with the read pending', null, 'pending', 'pending'],
     ] as const)('blocks Create for a restored upload while the capability is %s, until it is removed', async (_label, upload, read, kind) => {
       const draft = await uploadedDraft();
       const f = (await mount(upload, draft)).fixture;
