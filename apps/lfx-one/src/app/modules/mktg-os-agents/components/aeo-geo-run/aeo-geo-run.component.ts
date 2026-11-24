@@ -19,6 +19,7 @@ import {
   MKTG_AGENTS,
   MKTG_DOCUMENT_TYPES,
   MKTG_POLL_MAX_BACKOFF_MS,
+  MKTG_NOT_AVAILABLE_TEXT,
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
@@ -216,7 +217,7 @@ export class AeoGeoRunComponent {
                 this.answerValues.set({});
                 this.busy.set(false);
                 // A refused project is the plain no-access state; anything else final is a plain load error.
-                if (status !== 401 && status !== 403) this.error.set('The project could not be loaded.');
+                if (status !== 401 && status !== 403) this.error.set(MKTG_NOT_AVAILABLE_TEXT.project);
                 return EMPTY;
               })
             );

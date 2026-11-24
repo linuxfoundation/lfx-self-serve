@@ -13,6 +13,7 @@ import {
   MKTG_DOCUMENT_PROGRESS_POLL,
   VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
   MKTG_DOCUMENT_TYPES,
+  MKTG_NOT_AVAILABLE_TEXT,
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   MKTG_REVISION_ID_REGEX,
@@ -569,7 +570,7 @@ export class MktgRunProgressComponent {
                 this.setRetrying(false);
                 this.loaded.set(null);
                 this.readError.emit(error);
-                this.readFailure.set(denied ? 'You need write access to this project to see its Marketing OS documents.' : 'This run could not be loaded.');
+                this.readFailure.set(denied ? 'You need write access to this project to see its Marketing OS documents.' : MKTG_NOT_AVAILABLE_TEXT.run);
                 return EMPTY;
               })
             );

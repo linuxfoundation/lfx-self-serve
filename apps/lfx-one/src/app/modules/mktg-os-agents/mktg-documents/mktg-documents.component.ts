@@ -12,6 +12,7 @@ import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.c
 import {
   MKTG_DOCUMENT_TYPES,
   MKTG_KIT_FAMILIES,
+  MKTG_NOT_AVAILABLE_TEXT,
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   MKTG_DOCUMENT_PROGRESS_POLL,
@@ -491,7 +492,7 @@ export class MktgDocumentsComponent {
               this.listFailed.set(true);
               const denied = error.status === 403 || error.status === 401;
               if (denied) this.listDeniedScope = scope;
-              this.errorText.set(denied ? 'You need write access to this project to see its Marketing OS documents.' : 'The documents could not be loaded.');
+              this.errorText.set(denied ? 'You need write access to this project to see its Marketing OS documents.' : MKTG_NOT_AVAILABLE_TEXT.documents);
               return of(null);
             })
           );

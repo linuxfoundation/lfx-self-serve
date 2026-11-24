@@ -5,9 +5,11 @@ import { EMPTY, Subject, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { VisibilityPollEvent } from '@lfx-one/shared/interfaces';
-import { VISIBILITY_POLL_WAKE_DEBOUNCE_MS } from '@lfx-one/shared/constants';
+import { MKTG_POLL_MAX_BACKOFF_MS, MKTG_RUN_POLL, VISIBILITY_POLL_WAKE_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 
-import { createVisibilityPoll, pollBackoffDelayMs } from './visibility-poll.util';
+import { HttpErrorResponse } from '@angular/common/http';
+
+import { createVisibilityPoll, pollBackoffDelayMs, pollWake, readUntilReachable } from './visibility-poll.util';
 
 describe('createVisibilityPoll', () => {
   const options = { intervalMs: 5000, backoffBaseMs: 5000, backoffMaxMs: 30000 };
@@ -254,5 +256,100 @@ describe('pollBackoffDelayMs', () => {
     const random = vi.fn(() => 0.5);
     expect([1, 2, 3, 4, 5].map((f) => pollBackoffDelayMs(f, 5000, 30000, random, false))).toEqual([5000, 10000, 20000, 30000, 30000]);
     expect(random).not.toHaveBeenCalled();
+  });
+});
+
+describe('readUntilReachable', () => {
+  let state: DocumentVisibilityState;
+  let doc: Document;
+  const unreachable = (status: number) => throwError(() => new HttpErrorResponse({ status }));
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    state = 'visible';
+    doc = document.implementation.createHTMLDocument('t');
+    Object.defineProperty(doc, 'visibilityState', { get: () => state, configurable: true });
+    Object.defineProperty(doc, 'defaultView', { configurable: true, value: window });
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it.each([0, 408, 429, 500, 503])('keeps trying a %i behind the retrying cue and never stops, backing off to the shared cap', (status) => {
+    const read = vi.fn(() => unreachable(status));
+    const retrying: boolean[] = [];
+    const settled = vi.fn();
+    const sub = readUntilReachable(doc, read, (value) => retrying.push(value)).subscribe({ next: settled, error: settled, complete: settled });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(retrying).toEqual([true]);
+    // Ten minutes offline: every wait is between the poll interval and the cap, so the read keeps being tried.
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(read.mock.calls.length).toBeGreaterThanOrEqual((10 * 60_000) / MKTG_POLL_MAX_BACKOFF_MS);
+    expect(read.mock.calls.length).toBeLessThanOrEqual((10 * 60_000) / MKTG_RUN_POLL.intervalMs + 1);
+    expect(retrying.every(Boolean)).toBe(true);
+    expect(settled).not.toHaveBeenCalled();
+    sub.unsubscribe();
+  });
+
+  it('re-reads at once on reconnect, emits the good read once, clears the cue and sends nothing on a later wake', () => {
+    let online = false;
+    const read = vi.fn(() => (online ? of('kit') : unreachable(0)));
+    const retrying: boolean[] = [];
+    const values: string[] = [];
+    const done = vi.fn();
+    readUntilReachable(doc, read, (value) => retrying.push(value)).subscribe({ next: (value) => values.push(value), complete: done });
+    expect(values).toEqual([]);
+    online = true;
+    window.dispatchEvent(new Event('online'));
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(values).toEqual(['kit']);
+    expect(retrying).toEqual([true, false]);
+    expect(done).toHaveBeenCalledOnce();
+    window.dispatchEvent(new Event('focus'));
+    vi.advanceTimersByTime(60_000);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([400, 401, 403, 404])('ends on a final %i with the error and no retry', (status) => {
+    const read = vi.fn(() => unreachable(status));
+    const retrying: boolean[] = [];
+    const failed = vi.fn();
+    readUntilReachable(doc, read, (value) => retrying.push(value)).subscribe({ error: failed });
+    expect(failed).toHaveBeenCalledWith(expect.objectContaining({ status }));
+    expect(retrying).toEqual([false]);
+    window.dispatchEvent(new Event('online'));
+    vi.advanceTimersByTime(60_000);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads nothing in a hidden tab and reads once it is shown', () => {
+    state = 'hidden';
+    const read = vi.fn(() => of(1));
+    const values: number[] = [];
+    readUntilReachable(doc, read, () => undefined).subscribe((value) => values.push(value));
+    vi.advanceTimersByTime(60_000);
+    expect(read).not.toHaveBeenCalled();
+    state = 'visible';
+    doc.dispatchEvent(new Event('visibilitychange'));
+    expect(values).toEqual([1]);
+  });
+});
+
+describe('pollWake', () => {
+  it('emits on tab return, focus and reconnect, and only while the tab is visible', () => {
+    let state: DocumentVisibilityState = 'visible';
+    const doc = document.implementation.createHTMLDocument('t');
+    Object.defineProperty(doc, 'visibilityState', { get: () => state, configurable: true });
+    Object.defineProperty(doc, 'defaultView', { configurable: true, value: window });
+    const woke = vi.fn();
+    const sub = pollWake(doc).subscribe(woke);
+    window.dispatchEvent(new Event('online'));
+    window.dispatchEvent(new Event('focus'));
+    doc.dispatchEvent(new Event('visibilitychange'));
+    expect(woke).toHaveBeenCalledTimes(3);
+    state = 'hidden';
+    doc.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('online'));
+    expect(woke).toHaveBeenCalledTimes(3);
+    sub.unsubscribe();
   });
 });

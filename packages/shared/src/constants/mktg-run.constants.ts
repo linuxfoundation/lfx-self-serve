@@ -945,10 +945,36 @@ export const MKTG_POLL_MAX_BACKOFF_MS = 30_000;
  * content stays. A 401/403 is a terminal line instead, and the readers that
  * poll on their own latch the refused scope so that neither a scheduled poll nor a tab-return, focus or reconnect wake
  * sends it again (RFC 9110 §15.5.4): the run progress reader, the agent-run persistence watch, the comments service, the
- * Documents list and detail and the document view's stored-report read. The Kit and Family pages keep polling at
- * `MKTG_RUN_POLL.intervalMs`; the Kit service latches only a 403 (a 401 there is read again on the next tick).
+ * Documents list and detail and the document view's stored-report read. The Kit and Family pages show the same line
+ * (over the loading skeleton when nothing is loaded yet) and back off to the same cap; the Kit service latches only a
+ * 403 (a 401 there is read again on the next tick). One-shot reads (family details, the downstream panel, the run
+ * page's dependency check, the LinkedIn first load) keep trying through `readUntilReachable`.
  */
 export const MKTG_POLL_RETRYING_TEXT = "Can't reach the server. Trying again…";
+
+/**
+ * The one form of a FINAL read refusal (a 400/404 or any other answer that a retry cannot change): a red one-liner
+ * that names what is not available, with no Retry beside it. A 401/403 names the access needed instead ("You need
+ * write access to this project to …"). A connection failure is never one of these: it is `MKTG_POLL_RETRYING_TEXT`.
+ */
+export const MKTG_NOT_AVAILABLE_TEXT = {
+  kit: 'The Marketing kit is not available.',
+  familyDetails: 'The family details are not available.',
+  downstream: 'The downstream assets are not available.',
+  rebuild: 'Rebuild progress is not available. Earlier Drafts are saved.',
+  rebuildTimeout: 'Rebuild progress is not available: this step took too long. Earlier Drafts are saved.',
+  linkedin: 'Your profile, project or recorded run is not available.',
+  documents: 'The documents are not available.',
+  run: 'This run is not available.',
+  revision: 'This revision is not available.',
+  project: 'The project is not available.',
+} as const;
+
+/** A user ACTION (start or answer a rebuild) that could not reach the server: the one place a "Try again" stays. */
+export const MKTG_REBUILD_UNREACHABLE_TEXT = "Can't reach the server, so the rebuild did not continue. Earlier Drafts are saved.";
+
+/** A run the user submitted while the dependency check could not reach the server: the submit button is the retry. */
+export const MKTG_RUN_UNREACHABLE_TEXT = "Can't reach the server, so the run was not started. Try again.";
 
 /**
  * Extra result polls spent in the background when a persisting agent's ready

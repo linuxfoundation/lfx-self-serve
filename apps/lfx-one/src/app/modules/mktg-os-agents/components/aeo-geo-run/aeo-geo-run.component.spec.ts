@@ -534,7 +534,7 @@ describe('AeoGeoRunComponent', () => {
       getProject.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
       await render();
       const reads = getProject.mock.calls.length;
-      expect(query('mktg-aeo-run-error').textContent).toContain('The project could not be loaded.');
+      expect(query('mktg-aeo-run-error').textContent).toContain('The project is not available.');
       expect(query('mktg-aeo-run-retrying')).toBeNull();
       expect(query('mktg-aeo-run-retry')).toBeNull();
       await vi.advanceTimersByTimeAsync(2 * MKTG_POLL_MAX_BACKOFF_MS);
@@ -641,7 +641,7 @@ describe('AeoGeoRunComponent', () => {
     window.dispatchEvent(new Event('focus'));
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(query('mktg-aeo-run-error').textContent).toContain('The project could not be loaded.');
+    expect(query('mktg-aeo-run-error').textContent).toContain('The project is not available.');
     expect(query('mktg-aeo-run-retrying')).toBeNull();
     expect(query('mktg-aeo-run-form')).toBeNull();
     expect(query('mktg-aeo-run-open-doc-1')).toBeNull();

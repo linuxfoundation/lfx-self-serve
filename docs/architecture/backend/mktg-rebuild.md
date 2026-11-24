@@ -37,8 +37,11 @@ inputs. Questions appear in place on the Family page using the shared questions
 component; answering continues the chain. No run-page behavior is changed.
 
 Refusal or non-transient failure stops later steps and retains earlier Drafts.
-Transient poll failures keep the same step running and retry within the existing
-run deadline; starting sessions and sending answers are never blindly retried. The UI provides
+Transient poll failures keep the same step running and are retried by the browser on the shared jittered backoff
+(and at once on tab return, focus or reconnect) behind one grey status line; a step deadline that passes while the
+server cannot be reached waits for the next good read. A queued advance that cannot reach the server is retried the
+same way, since a duplicate advance has no side effects; starting sessions and sending answers are never blindly
+retried (a start that could not reach the server offers "Try again"). The UI provides
 Open Draft using each canonical revision receipt, never a content-hash lookup or
 inferred newest revision. Every generated result uses the existing document writer,
 so an approved current selection remains unchanged.
@@ -97,7 +100,8 @@ In-flight queued steps appear running in attached/passive snapshots to avoid a
 queued-advance hot loop; an interrupted operation can therefore look running until
 the browser's approximately 10-minute step deadline. The browser polls sequentially with the existing run cadence. Each active
 step gets its own `MKTG_RUN_POLL.timeoutMs` (10-minute) deadline, restarted when the
-active step index changes, not on same-step progress or transient retries. Questions
+active step index changes, not on same-step progress or transient retries; a deadline that passes during an
+outage is held until the next good read. Questions
 pause polling; answering starts a new bounded stretch on the same session. Leaving
 the page stops browser polling/advancing, not a Guild session already accepted.
 A sessionStorage resume entry point remains a follow-up.
