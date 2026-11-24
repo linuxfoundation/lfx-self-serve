@@ -206,7 +206,6 @@ describe('OrgEmployeeViewService.resolve', () => {
       'GET',
       expect.objectContaining({
         type: 'project_membership',
-        filters_all: 'project_slug:tlf',
         filters_or: ['status:Active', 'status:active', 'status:Purchased', 'status:purchased'],
       }),
       undefined,
@@ -239,23 +238,32 @@ describe('OrgEmployeeViewService.resolve', () => {
     await expect(failing.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
   });
 
-  it('re-checks every returned membership, and ignores one that is not an active Linux Foundation membership', async () => {
+  it('re-checks every returned membership, and ignores one that is not an active membership', async () => {
     const unrelated = build({ orgs: [[ORG_UID, { name: 'Acme Motors', is_member: true, primary_domain: 'unrelated.example' }]] });
     await expect(unrelated.svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
 
     OrgEmployeeViewService.clearCache();
     const lapsed = build({ orgs: [[ORG_UID, { ...acme, is_member: false }], other] });
     await expect(lapsed.svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+  });
 
-    OrgEmployeeViewService.clearCache();
-    const wrongProject = build();
-    wrongProject.proxy.proxyRequest.mockResolvedValue({
-      resources: [
-        ...page([[ORG_UID, acme]]).resources.map((resource) => ({ ...resource, data: { ...resource.data, project_slug: 'cncf' } })),
-        ...page([other]).resources,
-      ],
+  it('counts an active member of any foundation, not only the Linux Foundation project', async () => {
+    const { svc, proxy } = build();
+    proxy.proxyRequest.mockResolvedValue({
+      resources: page([[ORG_UID, acme]]).resources.map((resource) => ({ ...resource, data: { ...resource.data, project_slug: 'cncf' } })),
     });
-    await expect(wrongProject.svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+    expect(proxy.proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      expect.not.objectContaining({ filters_all: expect.anything() }),
+      undefined,
+      undefined,
+      expect.anything()
+    );
   });
 
   it('matches the registered domain on the membership, and does not match a domain alias (denies, never admits)', async () => {
