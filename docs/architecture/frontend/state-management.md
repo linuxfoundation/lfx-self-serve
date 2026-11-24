@@ -513,8 +513,11 @@ attempt, stays), and neither do the Kit home, the Family page and its details, t
 rebuild progress panel, the run page's dependency check and the LinkedIn first load. A connection failure is one
 behaviour everywhere: (A) on an open page, the one grey `role="status"` line in the spot being checked, the loaded
 content still usable; (B) on a screen opened while the server cannot be reached, the same line over the loading
-skeleton. Only a FINAL refusal (400, 404…; a 401/403 names the access needed) is a red `role="alert"` one-liner that
-names what is not available (`MKTG_NOT_AVAILABLE_TEXT`), with no Retry. A failed user ACTION may still offer "Try
+skeleton. Only a FINAL refusal (400, 404…) is a red `role="alert"` one-liner that names what is not available
+(`MKTG_NOT_AVAILABLE_TEXT`), with no Retry. A refused access names the access needed instead on the page-level reads
+only: the Documents list, the document view and run progress on a 401/403, the Kit and Family pages on a 403 (a 401
+there shows the Kit's not-available line), and the LinkedIn first load as its no-access state on either; family
+details, Downstream and the dependency check show their not-available line for any final refusal, a 401/403 included. A failed user ACTION may still offer "Try
 again": a new export, a run, and a rebuild start that could not reach the server. One-shot reads (family details,
 Downstream, the dependency check, the LinkedIn first load) keep trying through `readUntilReachable`, which runs the
 read on the shared poller and completes on the first good read; the rebuild chain keeps its own sequential loop and

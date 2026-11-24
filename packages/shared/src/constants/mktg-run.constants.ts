@@ -954,8 +954,12 @@ export const MKTG_POLL_RETRYING_TEXT = "Can't reach the server. Trying again…"
 
 /**
  * The one form of a FINAL read refusal (a 400/404 or any other answer that a retry cannot change): a red one-liner
- * that names what is not available, with no Retry beside it. A 401/403 names the access needed instead ("You need
- * write access to this project to …"). A connection failure is never one of these: it is `MKTG_POLL_RETRYING_TEXT`.
+ * that names what is not available, with no Retry beside it. A connection failure is never one of these: it is
+ * `MKTG_POLL_RETRYING_TEXT`. Where a refused access (401/403) names the access needed instead ("You need write access
+ * to this project to …") is per screen: the Documents list, the document view and the run progress reader do so on a
+ * 401 or 403; the Kit and Family pages only on a 403 (a 401 there shows `kit`); the LinkedIn first load shows its
+ * no-access state on either. The panels inside an already loaded page (family details, Downstream, the run page's
+ * dependency check) do not branch on the status: any final refusal, a 401/403 included, shows their line from here.
  */
 export const MKTG_NOT_AVAILABLE_TEXT = {
   kit: 'The Marketing kit is not available.',

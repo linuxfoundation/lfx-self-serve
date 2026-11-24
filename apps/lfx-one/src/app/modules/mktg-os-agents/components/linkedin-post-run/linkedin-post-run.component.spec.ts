@@ -1441,4 +1441,27 @@ describe('LinkedIn profile and post surface', () => {
     expect(api.profile).not.toHaveBeenCalled();
     log.mockRestore();
   });
+  it.each([
+    ['recorded-runs', 401],
+    ['recorded-runs', 403],
+    ['profile', 401],
+    ['profile', 403],
+  ])('shows the no-access state, never a blank page, when the %s read is refused (%s) after the project granted write', async (read, status) => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const refusal = throwError(() => new HttpErrorResponse({ status }));
+    if (read === 'profile') api.profile.mockReturnValue(refusal);
+    else documents.listDocuments.mockReturnValue(refusal);
+    const fixture = await render();
+    expect(projects.getProjectStrict).toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-no-access"]')?.textContent).toContain(
+      'You need write access to this project to draft LinkedIn posts.'
+    );
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-loading"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retrying"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-profile-form"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).toBeNull();
+    expect(log).toHaveBeenCalledWith('LinkedIn first load refused', { status });
+    log.mockRestore();
+  });
 });

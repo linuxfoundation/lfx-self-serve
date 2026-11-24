@@ -296,8 +296,15 @@ export class LinkedinPostRunComponent {
               // Status only: no upstream payload enters diagnostics.
               const status = error instanceof HttpErrorResponse ? error.status : 0;
               console.error('LinkedIn first load refused', { status });
-              // A refused project is the page's plain no-access state; anything else final names what is not available.
-              if (status === 401 || status === 403) return of(null);
+              // A 401/403 from any of the three reads is the page's plain no-access state. The project read may already have
+              // granted `writer` before the recorded-runs or profile read was refused, so the grant is withdrawn here:
+              // otherwise no branch of the template matches and the page is blank. Anything else final names what is not
+              // available.
+              if (status === 401 || status === 403) {
+                this.writer.set(false);
+                this.historyGrant.set('');
+                return of(null);
+              }
               this.runLookupFailed.set(true);
               this.error.set(MKTG_NOT_AVAILABLE_TEXT.linkedin);
               return of(null);
