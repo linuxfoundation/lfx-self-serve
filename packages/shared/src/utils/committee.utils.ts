@@ -26,6 +26,7 @@ import {
   FILTERED_COMMITTEE_CATEGORIES,
   FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL,
   GROUPS_ENGAGEMENT_ICON_CLASS,
+  MEMBER_FORM_VOTING_STATUSES,
   OTHER_GROUPS_LABEL,
 } from '../constants/committees.constants';
 import { formatRelativeTime } from './date-time.utils';
@@ -34,6 +35,7 @@ import { getEntityCommands } from './entity-route.utils';
 import { slugify } from './string.utils';
 import { isMailtoSafeEmail } from './email.utils';
 import { normalizeToUrl, toAppUrl } from './url.utils';
+import { committeeOrganizationFormComplete } from './invitation.utils';
 
 /**
  * Determine the behavioral class for a given committee category.
@@ -413,6 +415,25 @@ export function selfMemberNeedsDetails(
   requirements: Pick<Committee, 'business_email_required' | 'enable_voting'>
 ): boolean {
   return !request.first_name?.trim() || !request.last_name?.trim() || !!requirements.business_email_required || !!requirements.enable_voting;
+}
+
+/** Required group details still missing from a staged addition under the settings being saved. */
+export function getMissingCommitteeMemberRequirements(
+  member: Pick<CreateCommitteeMemberRequest, 'organization' | 'role' | 'voting'>,
+  requirements: Pick<Committee, 'business_email_required' | 'enable_voting'>
+): string[] {
+  const missing: string[] = [];
+  if (
+    (requirements.business_email_required || requirements.enable_voting) &&
+    !committeeOrganizationFormComplete({ organization: member.organization?.name ?? '', organization_url: member.organization?.website ?? '' })
+  ) {
+    missing.push('company name and HTTPS website');
+  }
+  if (requirements.enable_voting) {
+    if (!member.role?.name?.trim()) missing.push('role');
+    if (!MEMBER_FORM_VOTING_STATUSES.some(({ value }) => value === member.voting?.status)) missing.push('voting status');
+  }
+  return missing;
 }
 
 // ── My Groups card grid (LFXV2-1715) ────────────────────────────────────────

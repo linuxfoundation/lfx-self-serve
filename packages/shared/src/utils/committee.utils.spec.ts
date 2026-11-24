@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { Committee, CommitteeMember, GroupsEngagementStats } from '../interfaces';
+import type { Committee, CommitteeMember, CreateCommitteeMemberRequest, GroupsEngagementStats } from '../interfaces';
 import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL } from '../constants/committees.constants';
 import { CommitteeMemberRole } from '../enums/committee-member.enum';
 import {
@@ -29,6 +29,7 @@ import {
   getGroupChannels,
   countVotingReps,
   getEditableCommitteeCategories,
+  getMissingCommitteeMemberRequirements,
   getGroupCommands,
   getGroupEditLink,
   getSelectableCommitteeCategories,
@@ -551,6 +552,39 @@ describe('selfMemberNeedsDetails', () => {
     ['voting enabled', names, { ...none, enable_voting: true }, true],
   ])('with %s returns the expected result', (_description, request, requirements, expected) => {
     expect(selfMemberNeedsDetails(request, requirements)).toBe(expected);
+  });
+});
+
+describe('getMissingCommitteeMemberRequirements', () => {
+  const business = { business_email_required: true, enable_voting: false };
+  const voting = { business_email_required: false, enable_voting: true };
+  const company = { name: 'Example Company', website: 'https://company.example' };
+  const complete = { organization: company, role: { name: CommitteeMemberRole.CHAIR }, voting: { status: CommitteeMemberVotingStatus.OBSERVER } };
+
+  it.each([
+    ['no requirements', {}, { business_email_required: false, enable_voting: false }, []],
+    ['missing company', {}, business, ['company name and HTTPS website']],
+    ['blank company name', { organization: { ...company, name: ' ' } }, business, ['company name and HTTPS website']],
+    ['missing company website', { organization: { name: company.name } }, business, ['company name and HTTPS website']],
+    ['non-HTTPS company website', { organization: { ...company, website: 'http://company.example' } }, business, ['company name and HTTPS website']],
+    ['complete business details', { organization: company }, business, []],
+    ['missing voting details', {}, voting, ['company name and HTTPS website', 'role', 'voting status']],
+    ['missing role', { ...complete, role: null }, voting, ['role']],
+    ['missing voting status', { ...complete, voting: null }, voting, ['voting status']],
+    ['legacy voting status', { ...complete, voting: { status: CommitteeMemberVotingStatus.NONE } }, voting, ['voting status']],
+    ['complete voting details', complete, voting, []],
+  ] as const)('reports %s', (_description, member, requirements, expected) => {
+    expect(getMissingCommitteeMemberRequirements(member, requirements)).toEqual(expected);
+  });
+
+  it.each([
+    CommitteeMemberVotingStatus.VOTING_REP,
+    CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP,
+    CommitteeMemberVotingStatus.OBSERVER,
+    CommitteeMemberVotingStatus.EMERITUS,
+  ])('accepts the existing member-form voting choice %s', (status) => {
+    const member: CreateCommitteeMemberRequest = { email: 'self@example.com', ...complete, voting: { status } };
+    expect(getMissingCommitteeMemberRequirements(member, voting)).toEqual([]);
   });
 });
 

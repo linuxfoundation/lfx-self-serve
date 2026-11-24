@@ -64,6 +64,8 @@ Creating a group doesn't make you a member of it. To join, select **Add myself**
 
 If some members fail to save, you stay on the step so you can retry rather than lose them.
 
+Before saving staged additions, the wizard checks the group's required company and voting details. If anything is missing, a message identifies the member to edit on **Add Members**, and your staged changes are kept. Complete the required details before selecting **Done** again.
+
 ## After creation
 
 The group appears on the Groups page for its foundation or project. Open it to see its tabs. Use **Edit Group** to rerun the wizard on an existing group. See [Manage Groups](../manage-committees/).

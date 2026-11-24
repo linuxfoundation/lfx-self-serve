@@ -13,6 +13,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeMember, MemberPendingChanges, PersonaType, Project, StagedCommitteeMemberRequest } from '@lfx-one/shared/interfaces';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -701,6 +702,81 @@ describe('CommitteeManageComponent', () => {
       component.onSubmitAll();
       expect(createCommitteeMember).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, { email: createdMember.email }, { skipNotification: true });
       expect(revokeCommitteeInvite).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, 'invite-1');
+    });
+
+    it.each(['business_email_required', 'enable_voting'])('checks staged self-add details before saving newly enabled %s', async (field) => {
+      const self = {
+        email: 'self@example.com',
+        first_name: 'Self',
+        last_name: 'User',
+        isSelfAddition: true,
+        createOptions: { skipNotification: true },
+        pendingInviteUids: ['self-invite'],
+      };
+      const component = await setupPending([self]);
+      const pending = component.memberUpdates();
+      component.form.get(field)!.setValue(true);
+
+      component.onSubmitAll();
+
+      expect(updateCommittee).not.toHaveBeenCalled();
+      expect(createCommitteeMember).not.toHaveBeenCalled();
+      expect(revokeCommitteeInvite).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalledWith(['/groups']);
+      expect(component.memberUpdates()).toEqual(pending);
+      expect(component.submitting()).toBe(false);
+      expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(
+        expect.objectContaining({ summary: 'Member Details Required', detail: expect.stringContaining('Edit self@example.com on Add Members') })
+      );
+
+      const details = {
+        organization: { name: 'Example Company', website: 'https://company.example' },
+        role: { name: CommitteeMemberRole.CHAIR },
+        voting: { status: CommitteeMemberVotingStatus.OBSERVER },
+      };
+      component.onMemberUpdatesChange({ ...pending, toAdd: [{ ...self, ...details }] });
+      component.onSubmitAll();
+
+      expect(updateCommittee).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, expect.objectContaining({ [field]: true }));
+      expect(createCommitteeMember).toHaveBeenCalledExactlyOnceWith(
+        COMMITTEE_UID,
+        { email: self.email, first_name: self.first_name, last_name: self.last_name, ...details },
+        { skipNotification: true }
+      );
+      expect(revokeCommitteeInvite).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, 'self-invite');
+      expect(navigate).toHaveBeenCalledWith(['/groups']);
+    });
+
+    it('permits the staged self-add after newly enabled requirements are turned off again', async () => {
+      const self = { email: 'self@example.com', first_name: 'Self', last_name: 'User', isSelfAddition: true };
+      const component = await setupPending([self]);
+      component.form.patchValue({ enable_voting: true, business_email_required: true });
+      component.form.patchValue({ enable_voting: false, business_email_required: false });
+      component.onSubmitAll();
+      expect(updateCommittee).toHaveBeenCalledTimes(1);
+      expect(createCommitteeMember).toHaveBeenCalledExactlyOnceWith(
+        COMMITTEE_UID,
+        { email: self.email, first_name: self.first_name, last_name: self.last_name },
+        undefined
+      );
+    });
+
+    it('does not bypass final member requirements through the earlier edit-step submit', async () => {
+      const component = await setupPending([{ email: 'self@example.com' }]);
+      component.form.get('enable_voting')!.setValue(true);
+      component.onSubmit();
+      expect(updateCommittee).not.toHaveBeenCalled();
+      expect(component.memberUpdates().toAdd).toHaveLength(1);
+    });
+
+    it('checks saved group requirements when finishing member additions in create mode', async () => {
+      getCommittee.mockReturnValue(of({ ...enrichedCommittee(), enable_voting: true }));
+      const component = await setupPending([{ email: 'self@example.com' }]);
+      component.mode.set('create');
+      component.onDone();
+      expect(createCommitteeMember).not.toHaveBeenCalled();
+      expect(component.memberUpdates().toAdd).toHaveLength(1);
+      expect(navigate).not.toHaveBeenCalledWith(['/groups']);
     });
 
     it('waits for the group update and successful member creation before revoking invitations', async () => {

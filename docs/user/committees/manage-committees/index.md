@@ -45,6 +45,8 @@ To link directly to a tab, append `?tab=members` to the group URL for the Member
 
 On **Add Members**, adding or editing a staged member uses the **Business Email Required** and **Enable Voting** values currently selected in **Settings**, even before you select **Update Group**. If you turn voting off, editing a staged member no longer requires role or voting details; company details are still required if **Business Email Required** remains on.
 
+If you enable either requirement after staging a new member, **Update Group** checks the staged additions before saving anything. If details are missing, a message identifies the member and required fields. Edit that row on **Add Members**, complete the details, and select **Update Group** again. Your staged changes are kept.
+
 When you rename a group in the edit wizard, a public-facing name that matched the original group name follows the new name, including when you make the group public in the same update. A distinct public-facing alias is preserved.
 
 To change only the name, type, parent, join mode, features, or chat channel, you can also use the group's **Settings** tab, which saves with **Save Changes**. Changing the group type there asks you to confirm first; the edit wizard saves it when you select **Update Group**, without a separate confirmation. Associated mailing lists are managed on the **Settings** tab and save as soon as you confirm them, without **Save Changes**.

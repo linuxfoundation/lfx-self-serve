@@ -18,7 +18,7 @@ import {
   ProjectContext,
   SucceededMemberOperations,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, getSelectableCommitteeCategories } from '@lfx-one/shared/utils';
+import { computeIsFoundation, getMissingCommitteeMemberRequirements, getSelectableCommitteeCategories } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -262,6 +262,8 @@ export class CommitteeManageComponent {
       return;
     }
 
+    if (this.isEditMode() && !this.validateStagedMemberRequirements()) return;
+
     this.submitting.set(true);
 
     const formValue = {
@@ -293,7 +295,7 @@ export class CommitteeManageComponent {
 
   public onDone(): void {
     const committeeUid = this.resolveCommitteeWriteUid();
-    if (!committeeUid || this.memberSaveDisabled()) {
+    if (!committeeUid || this.memberSaveDisabled() || !this.validateStagedMemberRequirements()) {
       return;
     }
 
@@ -353,6 +355,8 @@ export class CommitteeManageComponent {
       });
       return;
     }
+
+    if (!this.validateStagedMemberRequirements()) return;
 
     this.submitting.set(true);
 
@@ -643,6 +647,25 @@ export class CommitteeManageComponent {
       return name;
     }
     return display_name;
+  }
+
+  private validateStagedMemberRequirements(): boolean {
+    // Edit saves the live draft; Done in create mode only saves members of the already-created group.
+    const requirements = this.isEditMode()
+      ? this.organizationRequirements()
+      : { enable_voting: this.committee()?.enable_voting ?? false, business_email_required: this.committee()?.business_email_required ?? false };
+    const invalid = this.memberUpdates()
+      .toAdd.map((member) => ({ member, missing: getMissingCommitteeMemberRequirements(member, requirements) }))
+      .find(({ missing }) => missing.length > 0);
+    if (!invalid) return true;
+
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Member Details Required',
+      detail: `Edit ${invalid.member.email} on Add Members and complete: ${invalid.missing.join(', ')}. Your changes have not been saved.`,
+      life: 8000,
+    });
+    return false;
   }
 
   private cleanFormData(formData: Record<string, unknown>): Record<string, unknown> {
