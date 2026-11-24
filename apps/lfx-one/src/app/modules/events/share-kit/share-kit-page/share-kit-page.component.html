@@ -288,6 +288,8 @@
           @case ('eligible') {
             <lfx-share-kit-copy-card
               heading="Your member code"
+              [sensitive]="true"
+              [buttonVariant]="copyButtonVariant()"
               [text]="offer.code ?? ''"
               copyLabel="Copy code"
               testId="share-kit-member-code"

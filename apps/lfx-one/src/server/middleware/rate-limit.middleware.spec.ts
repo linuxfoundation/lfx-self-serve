@@ -14,6 +14,7 @@ import {
   publicApiRateLimiter,
   selfResendInviteRateLimiter,
   voteLinkRateLimiter,
+  shareKitMemberRateLimiter,
 } from './rate-limit.middleware';
 import { IMPERSONATION_SEARCH_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/impersonation.constants';
 import { SELF_RESEND_INVITE_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/meeting-registrant.constants';
@@ -421,5 +422,28 @@ describe('publicApiRateLimiter skip (#5964)', () => {
 
     expect(rejected.allowed).toBe(false);
     expect(rejected.statusCode).toBe(429);
+  });
+});
+
+describe('shareKitMemberRateLimiter (#6061)', () => {
+  const LIMIT = 30;
+  const path = '/events/example-summit-2027/share-kit';
+
+  it('meters signed-in reads per user, since each runs a membership lookup', async () => {
+    const sub = 'auth0|share-kit-member-1';
+    for (let attempt = 0; attempt < LIMIT; attempt++) {
+      expect((await request({ sub, path }, shareKitMemberRateLimiter)).allowed, `signed-in read ${attempt}`).toBe(true);
+    }
+    const rejected = await request({ sub, path }, shareKitMemberRateLimiter);
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect((await request({ sub: 'auth0|share-kit-member-2', path }, shareKitMemberRateLimiter)).allowed).toBe(true);
+  });
+
+  it('skips anonymous reads, which run no lookup', async () => {
+    const ip = `${testIpv6Prefix()}:0001:0:0:0:1`;
+    for (let attempt = 0; attempt <= LIMIT; attempt++) {
+      expect((await request({ ip, path }, shareKitMemberRateLimiter)).allowed, `anonymous read ${attempt}`).toBe(true);
+    }
   });
 });

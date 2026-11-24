@@ -29,6 +29,8 @@ export class ShareKitCopyCardComponent {
   public readonly buttonVariant = input<UiButtonVariant>('secondary');
   /** Stable prefix for data-testid attributes. */
   public readonly testId = input<string>('share-kit-copy-card');
+  /** Masks the card's text in Datadog Session Replay, e.g. a member discount code. */
+  public readonly sensitive = input<boolean>(false);
 
   /** Emitted after the text was copied (or selected for manual copy). */
   public readonly copied = output<void>();
