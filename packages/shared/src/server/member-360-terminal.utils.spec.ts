@@ -100,8 +100,8 @@ describe('Member 360 terminal session facts', () => {
   // event (no parent_task key), tool tasks end DONE, an error is the last event, and
   // there is no root runtime_done and no session object anywhere.
   const now = Date.parse('2026-01-01T12:00:00.000Z');
-  const crashedRootPayloads = (lastErrorAgeMs: number, dated = true): string[] => {
-    const root = { entity_type: 'EntTaskAgent', parent_task_id: null, status: 'ERROR' };
+  const crashedRootPayloads = (lastErrorAgeMs: number, dated = true, rootStatus = 'ERROR'): string[] => {
+    const root = { entity_type: 'EntTaskAgent', parent_task_id: null, status: rootStatus };
     const tool = { entity_type: 'EntTaskTool', parent_task_id: null, parent_task: {}, status: 'DONE' };
     const at = (ageMs: number): { created_at?: string } => (dated ? { created_at: new Date(now - ageMs).toISOString() } : {});
     const stream = { type: 'application/guild-response-stream', stream_id: 'opaque-stream-id', sequence: 1 };
@@ -136,6 +136,11 @@ describe('Member 360 terminal session facts', () => {
   });
   it('never fails a crashed root on undated errors', () => {
     expect(member360TerminalResult(crashedRootPayloads(40_000, false), [], now)).toBeNull();
+  });
+  // The same settled, unrecovered error as the crashed root above; only Guild's root task
+  // status differs. Isolates the rootTaskEnded guard: the error alone never ends a live root.
+  it('keeps a settled, unrecovered error pending while the root task is still running', () => {
+    expect(member360TerminalResult(crashedRootPayloads(40_000, true, 'RUNNING'), [], now)).toBeNull();
   });
   it('keeps a live run pending after an older recovered error', () => {
     expect(
