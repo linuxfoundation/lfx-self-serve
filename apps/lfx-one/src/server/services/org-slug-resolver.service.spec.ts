@@ -5,8 +5,12 @@ import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { resolveEmployeeView } = vi.hoisted(() => ({ resolveEmployeeView: vi.fn() }));
+const slugSupport = vi.hoisted(() => ({ provides: true }));
 vi.mock('./org-employee-view.service', () => ({
   OrgEmployeeViewService: class {
+    public get providesSlugs(): boolean {
+      return slugSupport.provides;
+    }
     public resolveReduced = resolveEmployeeView;
     public getRoleGrantEmployeeView = vi.fn().mockResolvedValue({});
   },
@@ -68,6 +72,7 @@ function cachePredicates(): { accept: (value: unknown) => boolean; storable: (va
 
 beforeEach(() => {
   vi.resetAllMocks();
+  slugSupport.provides = true;
   getEffectiveUsername.mockReturnValue('viewer');
   delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
   delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_IMPERSONATION_ONLY'];
@@ -516,6 +521,33 @@ describe('OrgSlugResolverService — all employee view company (#5845)', () => {
     it('is a miss, asking nothing of the employee view, for a real non-impersonated caller', async () => {
       await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).resolves.toMatchObject({ outcome: 'miss' });
       expect(resolveEmployeeView).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('while the employee companies carry no slug (the interim membership lookup)', () => {
+    beforeEach(() => {
+      slugSupport.provides = false;
+      proxyRequest.mockResolvedValue(page([]));
+    });
+
+    it('answers a slug miss as a 404 without asking the employee view, even when that lookup would fail', async () => {
+      resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
+
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).resolves.toMatchObject({ outcome: 'miss' });
+      expect(resolveEmployeeView).not.toHaveBeenCalled();
+    });
+
+    it('keeps the readable company for a slug without asking the employee view', async () => {
+      proxyRequest.mockResolvedValue(page([{ uid: UID_A }]));
+
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_A } });
+      expect(resolveEmployeeView).not.toHaveBeenCalled();
+    });
+
+    it('still resolves the employee company by its id', async () => {
+      resolveEmployeeView.mockResolvedValue({ eligible: true, org: { orgUid: UID_A, orgName: 'Acme Motors', orgSlug: null } });
+
+      await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_A, employeeView: true } });
     });
   });
 

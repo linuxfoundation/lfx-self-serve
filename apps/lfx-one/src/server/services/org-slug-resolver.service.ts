@@ -118,8 +118,9 @@ export class OrgSlugResolverService {
     else if (fetched) cache = 'miss';
 
     if (cached.outcome === 'miss') {
-      // query-service hides a company the caller cannot read, so an employee-view company is a miss there. Never cached.
-      const org = await this.resolveFallbackOrg(req, (employee) => employee.orgSlug === segment, null);
+      // query-service hides a company the caller cannot read, so an employee-view company is a miss there. Never cached. Skipped while
+      // the employee companies carry no slug: nothing could match, and a failed lookup would turn this 404 into a 503.
+      const org = this.employeeView.providesSlugs ? await this.resolveFallbackOrg(req, (employee) => employee.orgSlug === segment, null) : null;
       return org ? { outcome: 'hit', org, cache } : { ...cached, cache };
     }
     // The all employee view company is invisible to query-service, so it can share this slug with a company the caller CAN read. It must
@@ -168,7 +169,7 @@ export class OrgSlugResolverService {
    * where the caller's own selection could be the company that could not be checked.
    */
   private async employeeCandidateForSlug(req: Request, slug: string): Promise<{ employee: OrgLensEmployeeViewGrant | null; failed: boolean }> {
-    if (!isOrgLensEmployeeViewEnabled(req)) return { employee: null, failed: false };
+    if (!isOrgLensEmployeeViewEnabled(req) || !this.employeeView.providesSlugs) return { employee: null, failed: false };
     try {
       const verdict = await this.resolveReducedWithinBudget(req, 'resolve_org_slug');
       return { employee: verdict.eligible && verdict.org.orgSlug === slug ? verdict.org : null, failed: false };

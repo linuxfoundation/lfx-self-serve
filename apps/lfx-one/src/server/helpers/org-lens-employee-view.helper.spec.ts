@@ -143,6 +143,17 @@ describe('embedded personal data in free text', () => {
     expect(scrubFreeText(mixed)).toBe('');
   });
 
+  it('redacts a local part that ends in a combining mark, or mixes scripts and ASCII', () => {
+    const nfd = ['jose\u0301', 'example.com'].join('@'); // e + combining acute
+    const devanagari = ['नमस्ते', 'example.com'].join('@'); // ends in a vowel sign
+    const mixed = ['andré.smith', 'example.com'].join('@');
+    expect(scrubFreeText(nfd)).toBe('');
+    expect(scrubFreeText(devanagari)).toBe('');
+    expect(scrubFreeText(mixed)).toBe('');
+    expect(scrubFreeText(`ask ${nfd}, ${devanagari}; ${mixed}.`)).toBe('ask , ; .');
+    expect(stripPersonalFields({ owner: nfd, list: [devanagari, mixed], note: `see ${nfd}` }, page)).toEqual({ list: [], note: 'see ' });
+  });
+
   it('does not swallow unspaced CJK text next to an address', () => {
     expect(scrubFreeText('联系ada@example.com')).toBe('联系');
     expect(stripPersonalFields({ note: '联系ada@example.com 谢谢' }, page)).toEqual({ note: '联系 谢谢' });
