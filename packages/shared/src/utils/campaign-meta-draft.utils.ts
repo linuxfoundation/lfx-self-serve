@@ -6,6 +6,7 @@ import type {
   MetaDraftSnapshot,
   MetaAudienceTargetingDraft,
   MetaDeliveryDraft,
+  MetaDeviceOsDraft,
   MetaDraftRestore,
   MetaDraftState,
   MetaImageDraftRestore,
@@ -16,6 +17,7 @@ import { compactMetaAdOptions, metaAdOptionsForObjective } from './campaign-meta
 import { metaAcceptedGeos } from './campaign-meta-form.utils';
 import { copyMetaDeliveryDraft, metaDeliveryFromDraft } from './campaign-meta-delivery.utils';
 import { copyMetaDetailedTargetingPicks, metaDetailedTargetingPicksFromDraft } from './campaign-meta-detailed-targeting.utils';
+import { copyMetaDeviceOsDraft, metaDeviceOsFromDraft } from './campaign-meta-device-os.utils';
 import { metaLeadFormRestore } from './campaign-meta-lead-form.utils';
 
 /**
@@ -49,6 +51,8 @@ export function metaDraftFields(
   | 'metaDetailedTargeting'
   | 'metaAdSchedule'
   | 'metaFrequencyCap'
+  | 'metaDevicePlatforms'
+  | 'metaUserOs'
   | 'metaAdOptions'
   | 'metaAdOptionsProject'
   | 'metaLeadFormId'
@@ -69,6 +73,7 @@ export function metaDraftFields(
     metaAudienceTargetingProject: s.foundation,
     metaDetailedTargeting: copyMetaDetailedTargetingPicks(s.detailedTargeting),
     ...deliveryFields(s.delivery),
+    ...deviceOsFields(s.deviceOs),
     metaAdOptions: { ...s.adOptions },
     metaAdOptionsProject: s.foundation,
     metaLeadFormId: s.leadFormId,
@@ -152,6 +157,18 @@ function deliveryRestore(draft: MetaDraftSnapshot): Pick<MetaDraftRestore, 'deli
   return delivery === undefined ? {} : { delivery };
 }
 
+/** The devices and operating systems as the draft saves them: each list as ticked, empty when none. */
+function deviceOsFields(deviceOs: MetaDeviceOsDraft): Pick<MetaDraftSnapshot, 'metaDevicePlatforms' | 'metaUserOs'> {
+  const copy = copyMetaDeviceOsDraft(deviceOs);
+  return { metaDevicePlatforms: copy.devicePlatforms, metaUserOs: copy.userOs };
+}
+
+/** The devices and operating systems a draft restores, under any foundation, or nothing for a draft saved before row 6. */
+function deviceOsRestore(draft: MetaDraftSnapshot): Pick<MetaDraftRestore, 'deviceOs'> {
+  const deviceOs = metaDeviceOsFromDraft(draft.metaDevicePlatforms, draft.metaUserOs);
+  return deviceOs === undefined ? {} : { deviceOs };
+}
+
 /** The detailed targeting a draft restores, under any foundation (Meta's taxonomy is global), or nothing for a draft without it. */
 function detailedTargetingRestore(raw: unknown): Pick<MetaDraftRestore, 'detailedTargeting'> {
   const picks = metaDetailedTargetingPicksFromDraft(raw);
@@ -179,6 +196,7 @@ export function metaDraftRestore(draft: MetaDraftSnapshot, currentObjective: Met
       : {}),
     ...detailedTargetingRestore(draft.metaDetailedTargeting),
     ...deliveryRestore(draft),
+    ...deviceOsRestore(draft),
     ...(draft.metaAdOptions !== undefined && draft.metaAdOptionsProject === activeFoundation
       ? { adOptions: metaAdOptionsForObjective(compactMetaAdOptions(draft.metaAdOptions), objective) }
       : {}),

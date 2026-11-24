@@ -385,6 +385,7 @@ import type {
   MetaAudienceTargetingDraft,
   MetaDetailedTargetingPicks,
   MetaDeliveryDraft,
+  MetaDeviceOsDraft,
   MetaAdOptionKey,
   MetaAdOptions,
   MetaAdOptionView,
@@ -487,6 +488,12 @@ import {
   metaDeliveryClearLabel,
   metaDeliveryForCreate,
   metaDeliverySendable,
+  emptyMetaDeviceOsDraft,
+  metaDeviceOsBlock,
+  metaDeviceOsClearLabel,
+  metaDeviceOsError,
+  metaDeviceOsForCreate,
+  metaDeviceOsSendable,
   metaFrequencyCapRefusal,
   metaBasicsRefusal,
   metaBriefSeed,
@@ -539,6 +546,7 @@ import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another
 import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
 import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
+import { MetaDeviceOsOptionsComponent } from '../meta-device-os-options/meta-device-os-options.component';
 import { MetaDetailedTargetingComponent } from '../meta-detailed-targeting/meta-detailed-targeting.component';
 import { MetaLeadFormPickerComponent } from '../meta-lead-form-picker/meta-lead-form-picker.component';
 import { CampaignGoogleDemographicsPanelComponent } from '../campaign-google-demographics-panel/campaign-google-demographics-panel.component';
@@ -625,6 +633,7 @@ let linkedInVariantKeySequence = 0;
     MetaAudienceTargetingComponent,
     MetaDetailedTargetingComponent,
     MetaDeliveryOptionsComponent,
+    MetaDeviceOsOptionsComponent,
     MetaLeadFormPickerComponent,
     CampaignGoogleDemographicsPanelComponent,
     CampaignGoogleExclusionsPanelComponent,
@@ -1068,6 +1077,15 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaAdScheduleShown = computed<boolean>(() => this.metaAdScheduleEnabled() === true && this.metaLifetimeBudget());
   /** The cap is offered on its explicit yes and the awareness objective, the only one Meta takes it on. */
   protected readonly metaFrequencyCapShown = computed<boolean>(() => this.metaFrequencyCapEnabled() === true && this.metaObjective() === 'awareness');
+  /**
+   * Whether this deployment sends Meta devices (#5904 row 6) — `CampaignListResult.metaDeviceTargetingEnabled`, behind
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING`. Deployment-wide; `null` while unanswered.
+   */
+  public readonly metaDeviceTargetingEnabled = input<boolean | null>(null);
+  /** The same for Meta operating systems — `CampaignListResult.metaOsTargetingEnabled`. */
+  public readonly metaOsTargetingEnabled = input<boolean | null>(null);
+  /** Whether either device or OS group is offered: each only on its explicit yes. */
+  protected readonly metaDeviceOsShown = computed<boolean>(() => this.metaDeviceTargetingEnabled() === true || this.metaOsTargetingEnabled() === true);
 
   /** Whether any detailed-targeting list is offered: each only on an explicit yes. */
   protected readonly metaDetailedTargetingAvailable = computed<boolean>(
@@ -1663,6 +1681,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaDetailedTargeting = signal<MetaDetailedTargetingPicks>(emptyMetaDetailedTargetingPicks());
   /** The Meta ad schedule and frequency cap as edited in `lfx-meta-delivery-options` (#5904 row 5); `null` is unset. */
   protected readonly metaDelivery = signal<MetaDeliveryDraft>(emptyMetaDeliveryDraft());
+  /** The Meta devices and operating systems as ticked in `lfx-meta-device-os-options` (#5904 row 6); empty is Meta's default. */
+  protected readonly metaDeviceOs = signal<MetaDeviceOsDraft>(emptyMetaDeviceOsDraft());
   /** The Meta call to action, conversion event and optimization goal as chosen (#5934); an absent key is "Not set". */
   protected readonly metaAdOptions = signal<MetaAdOptions>({});
   /** The Meta Instant Form picked or typed in `lfx-meta-lead-form-picker` (#5940); blank is none. Sent only under `leads`. */
@@ -3520,6 +3540,30 @@ export class ImplementationTabComponent implements OnInit {
     const raw = { ...this.metaDeliveryRequested(), lifetimeBudget: this.metaLifetimeBudget(), objective: this.metaObjective() };
     return (metaAdScheduleRefusal(raw) ?? metaFrequencyCapRefusal(raw))?.message ?? null;
   });
+  /** The devices and operating systems the create carries (#5904 row 6): each list only on its explicit yes. */
+  private readonly metaDeviceOsRequested = computed(() =>
+    metaDeviceOsForCreate(this.metaDeviceOs(), this.metaDeviceTargetingEnabled(), this.metaOsTargetingEnabled())
+  );
+  /** Why Create is held for devices or systems the request cannot carry, or `null`: {@link metaAudienceTargetingBlock}'s states. */
+  protected readonly metaDeviceOsBlock = computed(() =>
+    metaDeviceOsBlock({
+      draft: this.metaDeviceOs(),
+      deviceEnabled: this.metaDeviceTargetingEnabled(),
+      osEnabled: this.metaOsTargetingEnabled(),
+      createCapabilityRead: this.createCapabilityRead(),
+      briefId: this.briefPersistence().briefId,
+    })
+  );
+  /** What the block's Clear clears, named: only the lists this deployment answered no to. */
+  protected readonly metaDeviceOsClearLabel = computed<string>(() =>
+    metaDeviceOsClearLabel(this.metaDeviceOs(), this.metaDeviceTargetingEnabled(), this.metaOsTargetingEnabled())
+  );
+  /**
+   * Why the devices or systems cannot be sent, or `null`: the create route's own rule, on this objective and every
+   * placement. Shown and holding Create rather than cleared, so turning Audience Network on never silently widens a
+   * desktop-only ad set.
+   */
+  protected readonly metaDeviceOsError = computed<string | null>(() => metaDeviceOsError(this.metaDeviceOs(), this.metaObjective(), this.metaPlacements()));
 
   /** Why the detailed fields cannot be sent, or `null`: the create route's own rules. */
   protected readonly metaDetailedTargetingError = computed<string | null>(
@@ -4097,6 +4141,8 @@ export class ImplementationTabComponent implements OnInit {
           detailedTargetingError: this.metaDetailedTargetingError(),
           deliveryBlock: this.metaDeliveryBlock()?.message ?? null,
           deliveryError: this.metaDeliveryError(),
+          deviceOsBlock: this.metaDeviceOsBlock()?.message ?? null,
+          deviceOsError: this.metaDeviceOsError(),
           adOptionsBlock: this.metaAdOptionsBlock()?.message ?? null,
           adOptionsError: this.metaAdOptionsError(),
           leadFormError: this.metaLeadFormError(),
@@ -5823,6 +5869,16 @@ export class ImplementationTabComponent implements OnInit {
   /** Clears each option this deployment answered no to: the way past an `unsupported` {@link metaDeliveryBlock}, whose control is hidden. */
   protected clearUnsendableMetaDelivery(): void {
     this.onMetaDeliveryChange(metaDeliverySendable(this.metaDelivery(), this.metaAdScheduleEnabled(), this.metaFrequencyCapEnabled()));
+  }
+
+  protected onMetaDeviceOsChange(deviceOs: MetaDeviceOsDraft): void {
+    this.metaDeviceOs.set(deviceOs);
+    this.emitDraft();
+  }
+
+  /** Clears each list this deployment answered no to: the way past an `unsupported` {@link metaDeviceOsBlock}, whose group is hidden. */
+  protected clearUnsendableMetaDeviceOs(): void {
+    this.onMetaDeviceOsChange(metaDeviceOsSendable(this.metaDeviceOs(), this.metaDeviceTargetingEnabled(), this.metaOsTargetingEnabled()));
   }
 
   protected onMetaDetailedTargetingChange(picks: MetaDetailedTargetingPicks): void {
@@ -9000,6 +9056,8 @@ export class ImplementationTabComponent implements OnInit {
     if (metaRestore.delivery !== undefined) {
       this.metaDelivery.set(metaDeliveryApplicable(metaRestore.delivery, this.metaLifetimeBudget(), this.metaObjective()));
     }
+    // As saved, even when the rules now refuse it, so its error shows and holds Create (#5904 row 6).
+    if (metaRestore.deviceOs !== undefined) this.metaDeviceOs.set(metaRestore.deviceOs);
 
     // Same present-only rule, for the same reason: an older draft omits these, and absence there
     // means "keep what the brief seeded".
@@ -9535,6 +9593,7 @@ export class ImplementationTabComponent implements OnInit {
         audienceTargeting: this.metaAudienceTargeting(),
         detailedTargeting: this.metaDetailedTargeting(),
         delivery: this.metaDelivery(),
+        deviceOs: this.metaDeviceOs(),
         adOptions: this.metaAdOptions(),
         leadFormId: this.metaLeadFormId(),
         foundation: this.activeFoundationSlug(),
@@ -9923,6 +9982,7 @@ export class ImplementationTabComponent implements OnInit {
     this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
     this.metaDetailedTargeting.set(emptyMetaDetailedTargetingPicks());
     this.metaDelivery.set(emptyMetaDeliveryDraft());
+    this.metaDeviceOs.set(emptyMetaDeviceOsDraft());
     this.metaAdOptions.set({});
     this.metaLeadFormId.set('');
     this.metaBudgetUsd.set(DEFAULT_META_BUDGET_USD);
@@ -14313,11 +14373,15 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * `metaConfig.targeting` for the request: the audience fields and the detailed ones (#5904 row 4) in one block, or
-   * nothing when it asks for nothing. `canSubmit` has already refused a bad one.
+   * `metaConfig.targeting` for the request: the audience fields, the detailed ones (#5904 row 4) and the devices and
+   * operating systems (row 6) in one block, or nothing when it asks for nothing. `canSubmit` has already refused a bad one.
    */
   private metaTargetingField(): Pick<MetaCampaignCreateRequest, 'targeting'> {
-    const targeting = { ...compactMetaAudienceTargeting(this.metaAudienceTargetingRequested()), ...this.metaDetailedTargetingRequested() };
+    const targeting = {
+      ...compactMetaAudienceTargeting(this.metaAudienceTargetingRequested()),
+      ...this.metaDetailedTargetingRequested(),
+      ...this.metaDeviceOsRequested(),
+    };
     return Object.keys(targeting).length > 0 ? { targeting } : {};
   }
 

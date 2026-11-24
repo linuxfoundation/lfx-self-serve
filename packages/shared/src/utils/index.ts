@@ -161,6 +161,7 @@ export * from './campaign-google-user-lists.utils';
 export * from './campaign-meta-audience-targeting.utils';
 export * from './campaign-meta-detailed-targeting.utils';
 export * from './campaign-meta-delivery.utils';
+export * from './campaign-meta-device-os.utils';
 export * from './campaign-meta-ad-options.utils';
 export * from './campaign-meta-ad-option-views.utils';
 export * from './campaign-meta-lead-form.utils';

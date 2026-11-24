@@ -29,6 +29,7 @@ import type {
   MetaCustomAudienceListView,
   MetaAdSchedule,
   MetaAdScheduleDayOption,
+  MetaDeviceOsOption,
   MetaFrequencyCap,
   MetaTargetingKind,
   CampaignKeyword,
@@ -971,6 +972,16 @@ export const META_MAX_DETAILED_TARGETING_IDS = 25;
 export const META_MAX_LOCALES = 50;
 /** The Meta device platforms a create may name (#5904 row 6; campaign-service#612). */
 export const META_DEVICE_PLATFORMS = ['mobile', 'desktop'] as const;
+/** The device checkboxes the Implement tab offers, as a create sends them. */
+export const META_DEVICE_PLATFORM_OPTIONS: readonly MetaDeviceOsOption[] = [
+  { value: 'mobile', label: 'Mobile' },
+  { value: 'desktop', label: 'Desktop' },
+];
+/** The operating-system checkboxes the Implement tab offers: the two families, in Meta's `user_os` spelling, no versions (v1). */
+export const META_OS_FAMILY_OPTIONS: readonly MetaDeviceOsOption[] = [
+  { value: 'iOS', label: 'iOS' },
+  { value: 'Android', label: 'Android' },
+];
 /** At most this many distinct Meta `user_os` values. */
 export const META_MAX_USER_OS = 10;
 /** The OS versions Meta's Advanced Targeting reference lists, per family, as campaign-service checks them. */
