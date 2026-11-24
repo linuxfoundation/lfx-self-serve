@@ -62,12 +62,7 @@ describe('ProfileLinuxEmailComponent — forward re-auth state (#1935)', () => {
   // lfx-self-serve-ops#2006: a null forwardTo suppressed for impersonation, not a genuinely unset
   // or unreadable one. forwardAuthRequired is deliberately absent here — the BFF never sets both.
   const claimedUnavailableDuringImpersonation: LinuxAliasData = {
-    state: 'claimed',
-    domain: 'linux.com',
-    alias: 'jsmith',
-    email: 'jsmith@linux.com',
-    forwardTo: null,
-    primaryEmail: 'jsmith@example.org',
+    ...claimedForwardUnset,
     forwardUnavailableDuringImpersonation: true,
   };
 
