@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import type { Committee, CommitteeMember, CreateCommitteeMemberRequest, GroupsEngagementStats } from '../interfaces';
-import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL } from '../constants/committees.constants';
+import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL, SSO_GROUP_NAME_PENDING_LABEL } from '../constants/committees.constants';
 import { CommitteeMemberRole } from '../enums/committee-member.enum';
 import {
   buildCommitteeCreateQueryParams,
@@ -38,6 +38,7 @@ import {
   resolveCommitteeMemberPermission,
   resolveGroupsCardRoleSeverity,
   resolveJoinModeSeverity,
+  resolveSsoGroupNameDisplay,
   resolveTypeDisplay,
   selfMemberNeedsDetails,
 } from './committee.utils';
@@ -183,6 +184,37 @@ describe('committeeRouteIdMatches', () => {
     expect(committeeRouteIdMatches(null, committee({ uid }))).toBe(false);
     expect(committeeRouteIdMatches(uid, null)).toBe(false);
     expect(committeeRouteIdMatches('cncf-toc', committee({ uid }))).toBe(false);
+  });
+});
+
+describe('resolveSsoGroupNameDisplay', () => {
+  it.each([
+    ['public only', { public: true, sso_group_enabled: false }],
+    ['SSO only', { public: false, sso_group_enabled: true }],
+    ['both public and SSO', { public: true, sso_group_enabled: true }],
+  ])('shows the saved name when %s', (_description, toggles) => {
+    expect(resolveSsoGroupNameDisplay(toggles, 'example-wg')).toEqual({ value: 'example-wg', pending: false });
+  });
+
+  it.each([
+    ['both toggles off', { public: false, sso_group_enabled: false }],
+    ['both toggles null', { public: null, sso_group_enabled: null }],
+    ['no toggles', {}],
+  ])('hides the line when %s, even with a saved name', (_description, toggles) => {
+    expect(resolveSsoGroupNameDisplay(toggles, 'example-wg')).toBeNull();
+  });
+
+  it.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['empty', ''],
+    ['blank', '   '],
+  ])('shows the pending label when the name is %s', (_description, name) => {
+    expect(resolveSsoGroupNameDisplay({ public: true }, name)).toEqual({ value: SSO_GROUP_NAME_PENDING_LABEL, pending: true });
+  });
+
+  it('trims surrounding whitespace from a saved name', () => {
+    expect(resolveSsoGroupNameDisplay({ sso_group_enabled: true }, '  example-wg  ')).toEqual({ value: 'example-wg', pending: false });
   });
 });
 

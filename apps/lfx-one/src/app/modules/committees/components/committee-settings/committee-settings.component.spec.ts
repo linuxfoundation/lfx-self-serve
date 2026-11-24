@@ -330,3 +330,93 @@ describe('CommitteeSettingsComponent — Social Listening toggle is Board only',
     expect(hasToggle()).toBe(false);
   });
 });
+
+describe('CommitteeSettingsComponent — SSO group name', () => {
+  let fixture: ComponentFixture<CommitteeSettingsComponent>;
+  let form: FormGroup;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsComponent],
+      providers: [provideRouter([]), provideNoopAnimations()],
+    }).compileComponents();
+    fixture = TestBed.createComponent(CommitteeSettingsComponent);
+    form = buildForm();
+    fixture.componentRef.setInput('form', form);
+  });
+
+  function ssoLine(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="feature-sso_group_enabled"] [data-testid="settings-sso-group-name"]');
+  }
+
+  function ssoValue(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="settings-sso-group-name-value"]');
+  }
+
+  async function render(
+    toggles: { public: boolean; sso_group_enabled: boolean },
+    ssoGroupName: string | null | undefined,
+    showSsoGroupName = true
+  ): Promise<void> {
+    form.patchValue(toggles);
+    if (showSsoGroupName) {
+      fixture.componentRef.setInput('showSsoGroupName', true);
+    }
+    fixture.componentRef.setInput('ssoGroupName', ssoGroupName);
+    await fixture.whenStable();
+  }
+
+  it.each([
+    ['public only', { public: true, sso_group_enabled: false }],
+    ['SSO enabled', { public: false, sso_group_enabled: true }],
+  ])('shows the saved name inside the Enable SSO Group card when %s', async (_description, toggles) => {
+    await render(toggles, 'example-wg');
+
+    expect(ssoLine()?.textContent).toContain('SSO Group Name:');
+    expect(ssoValue()?.textContent?.trim()).toBe('example-wg');
+    expect(ssoValue()?.classList.contains('italic')).toBe(false);
+  });
+
+  it('does not render the line when neither public nor SSO is enabled', async () => {
+    await render({ public: false, sso_group_enabled: false }, 'example-wg');
+
+    expect(ssoLine()).toBeNull();
+  });
+
+  it('shows the pending copy, never a blank or "undefined", when the group has no saved name', async () => {
+    await render({ public: true, sso_group_enabled: false }, undefined);
+
+    expect(ssoValue()?.textContent?.trim()).toBe('Generated when you save');
+    expect(ssoValue()?.classList.contains('italic')).toBe(true);
+    expect(ssoLine()?.textContent).not.toContain('undefined');
+  });
+
+  it('follows the live, unsaved Enable SSO Group toggle', async () => {
+    await render({ public: false, sso_group_enabled: false }, null);
+    expect(ssoLine()).toBeNull();
+
+    form.controls['sso_group_enabled'].setValue(true);
+    await fixture.whenStable();
+    expect(ssoValue()?.textContent?.trim()).toBe('Generated when you save');
+
+    form.controls['sso_group_enabled'].setValue(false);
+    await fixture.whenStable();
+    expect(ssoLine()).toBeNull();
+  });
+
+  it('does not render the line when showSsoGroupName is unset (the create/edit wizard), even for a public group', async () => {
+    await render({ public: true, sso_group_enabled: true }, 'example-wg', false);
+
+    expect(ssoLine()).toBeNull();
+  });
+
+  it('still shows the line when the form is disabled for read-only Auditor access', async () => {
+    form.patchValue({ public: true });
+    form.disable();
+    fixture.componentRef.setInput('showSsoGroupName', true);
+    fixture.componentRef.setInput('ssoGroupName', 'example-wg');
+    await fixture.whenStable();
+
+    expect(ssoValue()?.textContent?.trim()).toBe('example-wg');
+  });
+});

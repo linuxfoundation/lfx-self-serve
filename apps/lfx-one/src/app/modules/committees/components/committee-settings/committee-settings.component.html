@@ -271,6 +271,19 @@
                   {{ feature.note }}
                 </p>
               }
+              @if (feature.key === 'sso_group_enabled' && ssoGroupNameDisplay(); as ssoName) {
+                <!-- Read-only display text; 11.5px matches the sibling feature note line above. -->
+                <p class="mt-1 text-[11.5px] text-gray-500" data-testid="settings-sso-group-name">
+                  SSO Group Name:
+                  <span
+                    data-testid="settings-sso-group-name-value"
+                    [class.italic]="ssoName.pending"
+                    [class.font-medium]="!ssoName.pending"
+                    [class.text-gray-700]="!ssoName.pending"
+                    >{{ ssoName.value }}</span
+                  >
+                </p>
+              }
             </div>
           </div>
           <lfx-toggle [form]="form()" [control]="feature.key" [id]="feature.key" [attr.data-testid]="'toggle-' + feature.key"> </lfx-toggle>
