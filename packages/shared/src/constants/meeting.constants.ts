@@ -15,6 +15,9 @@ import { lfxColors } from './colors.constants';
 /** Every valid RSVP answer; used to reject an acknowledgement whose answer is missing or unrecognised. */
 export const RSVP_RESPONSES: readonly RsvpResponse[] = ['accepted', 'maybe', 'declined'];
 
+/** Gaps between bounded post-invite feed refreshes: 1s, 5s and 15s after a successful add or explicit retry. */
+export const MEETING_SELF_INVITE_RECONCILIATION_DELAYS_MS = [1000, 4000, 10000] as const;
+
 /**
  * Service-account usernames/emails that own `created_by` on system-created meetings
  * (e.g. Zoom webhook events). These are not real people and must never be shown as
@@ -929,11 +932,14 @@ export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;
 /** Max concurrent query-service batches when flagging recordings or AI summaries on the Me-lens past feed. */
 export const PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY = 5;
 
-/** `include` value that makes GET /api/user/past-meetings add `has_recording` / `recording_share_url` / `has_ai_summary`. */
+/** `include` value that makes GET /api/user/past-meetings and /api/past-meetings add `has_recording` / `recording_share_url` / `has_ai_summary`. */
 export const USER_PAST_MEETINGS_INCLUDE_ARTIFACTS = 'artifacts';
 
-/** `include` value that makes GET /api/user/meetings and /api/user/past-meetings add organizer attendance summaries. */
+/** `include` value that makes the user and project meeting lists (upcoming and past) add organizer attendance summaries. */
 export const USER_MEETINGS_INCLUDE_ATTENDANCE = 'attendance';
+
+/** `include` value that makes GET /api/meetings add the viewer's `my_rsvp` / `my_rsvps` / `my_registrant_ids`, as the user feed always does. */
+export const MEETINGS_INCLUDE_VIEWER_RSVP = 'viewer_rsvp';
 
 /** Meetings per query-service request when loading organizer attendance summaries. */
 export const MEETING_ATTENDANCE_BATCH_SIZE = 25;

@@ -607,11 +607,12 @@ export interface HealthMetricsEngagementNewsletterView {
   ratePoints: HealthMetricsEngagementNewsletterPointView[];
 }
 
-/** One entry of the newsletter chart's legend: a line swatch in the series colour. */
+/** One entry of the newsletter chart's legend: a line swatch in the series colour, dashed like a dashed line. */
 export interface HealthMetricsEngagementNewsletterLegendItem {
   key: string;
   label: string;
   color: string;
+  dashed: boolean;
 }
 
 /** The newsletter chart for the selected mode, and its legend. */

@@ -16,7 +16,7 @@
           placeholder="Enter first name"
           styleClass="w-full"
           data-testid="member-form-first-name"></lfx-input-text>
-        @if (form().get('first_name')?.errors?.['required'] && form().get('first_name')?.touched) {
+        @if (form().get('first_name')?.invalid && form().get('first_name')?.touched) {
           <p class="mt-1 text-xs text-red-600">First name is required</p>
         }
       </div>
@@ -32,7 +32,7 @@
           placeholder="Enter last name"
           styleClass="w-full"
           data-testid="member-form-last-name"></lfx-input-text>
-        @if (form().get('last_name')?.errors?.['required'] && form().get('last_name')?.touched) {
+        @if (form().get('last_name')?.invalid && form().get('last_name')?.touched) {
           <p class="mt-1 text-xs text-red-600">Last name is required</p>
         }
       </div>

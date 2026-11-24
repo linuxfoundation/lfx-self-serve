@@ -4,6 +4,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MeetingDayGroup, MeetingHomeRow } from '@lfx-one/shared/interfaces';
+import { getLocalDayKey } from '@lfx-one/shared/utils';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
@@ -30,7 +31,7 @@ describe('MeetingsDayGroupComponent', () => {
         { provide: MeetingsHomeEditService, useValue: { isChecking: () => false } },
         { provide: MeetingsHomeDeleteService, useValue: {} },
         { provide: MeetingsHomeDetailsService, useValue: {} },
-        { provide: MeetingsHomeStore, useValue: { now: signal(new Date()) } },
+        { provide: MeetingsHomeStore, useValue: { now: signal(new Date()), selfInviteOf: () => undefined } },
       ],
     });
   });
@@ -53,6 +54,13 @@ describe('MeetingsDayGroupComponent', () => {
       expect.stringContaining('Board Review'),
       expect.stringContaining('Tech Sync'),
     ]);
+  });
+
+  it('keys each row by its local day for the calendar to find', async () => {
+    const element = await render({ label: 'This month', count: 1, rows: [row('a', 'Board Review')] });
+
+    const day = getLocalDayKey('2026-11-03T15:00:00Z');
+    expect(element.querySelector('[data-testid="meetings-home-day-group-row"]')?.getAttribute('data-day')).toBe(day);
   });
 
   it('reads a single meeting in the singular', async () => {

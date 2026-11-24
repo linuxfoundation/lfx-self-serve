@@ -311,12 +311,14 @@ export class EventsController {
   /**
    * GET /api/events/countries
    * Get distinct country names for upcoming events (for the location filter dropdown)
+   * Query params: requestType ('travel-fund' limits the list to events open for travel funding)
    */
   public async getUpcomingCountries(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_upcoming_countries', {});
+    const requestType = req.query['requestType'] === 'travel-fund' ? 'travel-fund' : undefined;
+    const startTime = logger.startOperation(req, 'get_upcoming_countries', { request_type: requestType });
 
     try {
-      const response: GetUpcomingCountriesResponse = await this.eventsService.getUpcomingCountries(req);
+      const response: GetUpcomingCountriesResponse = await this.eventsService.getUpcomingCountries(req, requestType);
 
       logger.success(req, 'get_upcoming_countries', startTime, { result_count: response.data.length });
 

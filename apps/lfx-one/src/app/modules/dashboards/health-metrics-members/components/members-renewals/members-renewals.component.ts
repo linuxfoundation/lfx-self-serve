@@ -2,50 +2,55 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, model, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
 import {
-  HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
   HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
-  HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER,
+  HEALTH_METRICS_MEMBERS_RENEWALS_DEFAULT_SORT,
   HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_RENEWALS_RENEWED_MARKER,
+  HEALTH_METRICS_MEMBERS_RENEWALS_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED,
-  HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_OPTIONS,
   HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_PHRASES,
   HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS,
 } from '@lfx-one/shared/constants';
-import {
-  buildHealthMetricsMembersRenewalRows,
-  buildHealthMetricsMembersRenewalsCountLabel,
-  buildHealthMetricsMembersRenewalsSummary,
-} from '@lfx-one/shared/utils';
+import { buildHealthMetricsMembersRenewalRows, buildHealthMetricsMembersRenewalsMetrics } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
+
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
+import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 
 import type {
   HealthMetricsMembersRenewalRowView,
   HealthMetricsMembersRenewals,
   HealthMetricsMembersRenewalsQuery,
-  HealthMetricsMembersRenewalsSummaryView,
   HealthMetricsMembersRenewalsWindow,
-  HealthMetricsMembersRenewalsWindowOption,
+  HealthMetricsMetricItem,
 } from '@lfx-one/shared/interfaces';
-import type { TablePageEvent } from 'primeng/table';
 
 /**
- * `#renewals` — memberships renewing inside the chosen window, soonest first, with the dues they carry; ones already
- * renewed stay listed and marked. A snapshot of now, so the period picker does not apply; paged server-side.
+ * `#renewals` — memberships renewing inside the chosen window, highest dues first, with the value they carry. A
+ * snapshot of now, so the period picker does not apply; paged and sorted server-side.
  */
 @Component({
   selector: 'lfx-members-renewals',
-  imports: [EmptyStateComponent, FilterPillsComponent, Skeleton, TableComponent],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsMetricsRowComponent,
+    HealthMetricsThComponent,
+    Skeleton,
+    TableComponent,
+    UiPaginationComponent,
+  ],
   templateUrl: './members-renewals.component.html',
 })
 export class MembersRenewalsComponent {
@@ -57,53 +62,47 @@ export class MembersRenewalsComponent {
 
   /**
    * Fires once the section settles; its height changes, moving every anchor below. `false` once renewals are due;
-   * a window with none gives no verdict, keeping its own note and the window pills to widen it.
+   * a window with none gives no verdict, keeping its own note and the header's window switch to widen it.
    */
   public readonly settled = output<boolean | null>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
+  /** The header's window switch lives in the page's section controls, so the page owns the window. */
+  public readonly window = model<HealthMetricsMembersRenewalsWindow>(HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS[0]);
+
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
-  protected readonly tierPillClass = HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS;
-  protected readonly marker = HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER;
-  protected readonly renewedMarker = HEALTH_METRICS_MEMBERS_RENEWALS_RENEWED_MARKER;
-  protected readonly windowOptions: HealthMetricsMembersRenewalsWindowOption[] = [...HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_OPTIONS];
   protected readonly size = HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE;
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not a foundation with no renewals due, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
   /** The foundation the shown response belongs to, so a new foundation's read holds the skeleton, not the old figures. */
   private readonly responseSlug = signal<string | null>(null);
-  /** The window the shown response belongs to, so a window change holds its own skeleton under the pills. */
+  /** The window the shown response belongs to, so a window change holds its own skeleton. */
   private readonly responseWindow = signal<HealthMetricsMembersRenewalsWindow | null>(null);
-  protected readonly window = signal<HealthMetricsMembersRenewalsWindow>(
-    this.toWindow(this.initialParams.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.renewalsWindow))
-  );
 
-  /** A new foundation or window restarts paging, since a page from a wider window can sit past the end of a narrower one. */
+  /** Sorted on the server across every page; the default is the highest dues first. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_MEMBERS_RENEWALS_SORT_COLUMNS, HEALTH_METRICS_MEMBERS_RENEWALS_DEFAULT_SORT);
+  /** Zero-based, as the pager counts. A new foundation, window or order restarts paging, since a wider window's page can sit past a narrower one's end. */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.window()}`),
-    computation: (_slug, previous) => (previous === undefined ? this.parseInitialPage() : 1),
+    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.window()}|${JSON.stringify(this.sorting.sort())}`),
+    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 0),
   });
 
   protected readonly query: Signal<HealthMetricsMembersRenewalsQuery> = this.initQuery();
   protected readonly response: Signal<HealthMetricsMembersRenewals> = this.initResponse();
 
-  protected readonly summary: Signal<HealthMetricsMembersRenewalsSummaryView> = computed(() =>
-    buildHealthMetricsMembersRenewalsSummary(this.response().summary)
-  );
+  protected readonly metrics: Signal<HealthMetricsMetricItem[]> = computed(() => buildHealthMetricsMembersRenewalsMetrics(this.response().summary));
   protected readonly rowViews: Signal<HealthMetricsMembersRenewalRowView[]> = computed(() => buildHealthMetricsMembersRenewalRows(this.response().rows));
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  protected readonly countLabel = computed(() => buildHealthMetricsMembersRenewalsCountLabel(this.totalRecords()));
-  protected readonly first = computed(() => (this.page() - 1) * this.size);
-  /** Holds the skeleton until a foundation's first read lands, failed or not, so a later window read keeps the pills. */
+  /** Holds the skeleton until a foundation's first read lands, failed or not. */
   protected readonly firstRead = computed(() => {
     const slug = this.projectContextService.selectedFoundation()?.slug ?? '';
     return this.loading() && (!slug || this.responseSlug() !== slug);
   });
   protected readonly windowRead = computed(() => this.loading() && this.responseWindow() !== this.window());
-  /** Needs no matched rows and a measured zero total, so neither a row nor the sub-nav's model count is contradicted. */
+  /** Needs no matched rows and a measured zero total, so neither a row nor the model's count is contradicted. */
   protected readonly noneDue = computed(() => this.totalRecords() === 0 && this.response().summary.renewalCount === 0);
   protected readonly windowPhrase = computed(() => HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_PHRASES[this.window()]);
 
@@ -120,20 +119,13 @@ export class MembersRenewalsComponent {
     }
   }
 
-  protected onWindowChange(id: string): void {
-    this.window.set(this.toWindow(id));
-  }
-
-  protected onTablePage(event: TablePageEvent): void {
-    this.page.set(Math.floor((event.first ?? 0) / this.size) + 1);
-  }
-
   private initQuery(): Signal<HealthMetricsMembersRenewalsQuery> {
     return computed(() => ({
       foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
       window: this.window(),
-      offset: (this.page() - 1) * this.size,
+      offset: this.page() * this.size,
       pageSize: this.size,
+      sort: this.sorting.order(),
     }));
   }
 
@@ -188,7 +180,8 @@ export class MembersRenewalsComponent {
       relativeTo: this.route,
       queryParams: {
         [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.renewalsWindow]: this.window() === HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS[0] ? null : this.window(),
-        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.renewalsPage]: page > 1 ? page : null,
+        // The URL counts pages from 1.
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.renewalsPage]: page > 0 ? page + 1 : null,
       },
       queryParamsHandling: 'merge',
       preserveFragment: true,
@@ -201,8 +194,8 @@ export class MembersRenewalsComponent {
    * the last page with rows, writing it back since the clamp can precede the sync's first emission.
    */
   private clampPage(response: HealthMetricsMembersRenewals): boolean {
-    const lastPage = Math.max(1, Math.ceil(response.totalRecords / this.size));
-    // The sentinel's zero is no count, so a failed read keeps the page; an empty foundation moves to page 1.
+    const lastPage = Math.max(0, Math.ceil(response.totalRecords / this.size) - 1);
+    // The sentinel's zero is no count, so a failed read keeps the page; an empty foundation moves to the first page.
     if (response === HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED || this.page() <= lastPage) return false;
 
     this.page.set(lastPage);
@@ -210,12 +203,9 @@ export class MembersRenewalsComponent {
     return true;
   }
 
+  /** The URL's 1-based page as the pager's 0-based one. */
   private parseInitialPage(): number {
     const page = Number(this.initialParams.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.renewalsPage));
-    return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
-  }
-
-  private toWindow(value: string | null): HealthMetricsMembersRenewalsWindow {
-    return HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS.find((option) => option === value) ?? HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS[0];
+    return Number.isFinite(page) && page > 1 ? Math.floor(page) - 1 : 0;
   }
 }

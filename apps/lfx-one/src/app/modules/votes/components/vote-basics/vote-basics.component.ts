@@ -4,16 +4,27 @@
 import { LowerCasePipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { Committee } from '@lfx-one/shared/interfaces';
+import { PollType } from '@lfx-one/shared/enums';
+import { Committee, VoteEligibleVoterCountState, VoteMethodOption } from '@lfx-one/shared/interfaces';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { CalendarComponent } from '@components/calendar/calendar.component';
+import { MessageComponent } from '@components/message/message.component';
 import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { COMMITTEE_LABEL, VOTE_ALLOW_ABSTAIN_OPTIONS, VOTE_ALLOW_VOTE_CHANGE_OPTIONS, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL } from '@lfx-one/shared/constants';
+import {
+  COMMITTEE_LABEL,
+  VOTE_ALLOW_ABSTAIN_OPTIONS,
+  VOTE_ALLOW_VOTE_CHANGE_OPTIONS,
+  VOTE_CONDORCET_MIN_ELIGIBLE_VOTERS,
+  VOTE_ELIGIBLE_PARTICIPANTS,
+  VOTE_LABEL,
+  VOTE_METHOD_LABELS,
+  VOTE_METHOD_OPTIONS,
+} from '@lfx-one/shared/constants';
 import { buildTimezoneOptions, getTimezoneUtcOffsetString, parseTime12Hour, startOfTodayInTimezone } from '@lfx-one/shared/utils';
 
 @Component({
@@ -26,6 +37,7 @@ import { buildTimezoneOptions, getTimezoneUtcOffsetString, parseTime12Hour, star
     CalendarComponent,
     TimePickerComponent,
     CommitteeSelectorComponent,
+    MessageComponent,
     LowerCasePipe,
   ],
   templateUrl: './vote-basics.component.html',
@@ -44,6 +56,7 @@ export class VoteBasicsComponent {
   public readonly formValue = input.required<Signal<Record<string, unknown>>>();
   public readonly isEditMode = input<boolean>(false);
   public readonly committeeContext = input<Committee | null>(null);
+  public readonly eligibleVoterCountState = input<VoteEligibleVoterCountState>({ status: 'idle', count: null });
 
   // Constants
   public readonly committeeLabel = COMMITTEE_LABEL;
@@ -51,6 +64,12 @@ export class VoteBasicsComponent {
   public readonly eligibleParticipantsOptions = [...VOTE_ELIGIBLE_PARTICIPANTS];
   public readonly allowAbstainOptions = [...VOTE_ALLOW_ABSTAIN_OPTIONS];
   public readonly allowVoteChangeOptions = [...VOTE_ALLOW_VOTE_CHANGE_OPTIONS];
+  public readonly methodOptions = VOTE_METHOD_OPTIONS;
+  /** Includes an existing vote's method for display without offering it for new votes. */
+  public readonly methodDisplayOptions: Signal<VoteMethodOption[]> = this.initMethodDisplayOptions();
+  public readonly selectedMethodDescription: Signal<string> = this.initSelectedMethodDescription();
+  /** Set when Condorcet IRV's known eligible count is below the minimum — Next and Open Vote are blocked meanwhile. */
+  public readonly minVotersWarning: Signal<string | null> = this.initMinVotersWarning();
   // Cosmetic floor only — the group-level voteDeadlineValidator does the real zone-aware future check.
   // Derived from the selected zone so a zone behind the browser (e.g. Honolulu vs Sydney) keeps its valid "today" selectable.
   public readonly minDate: Signal<Date> = this.initMinDate();
@@ -64,6 +83,39 @@ export class VoteBasicsComponent {
   /** Arms the clearStaleCloseDate gate from the select's own change event — the only causal signal that the organizer picked the current zone. */
   public onTimezoneUserPick(zone: string): void {
     this.userPickedZone = zone;
+  }
+
+  private initMethodDisplayOptions(): Signal<VoteMethodOption[]> {
+    return computed(() => {
+      const pollType = this.formValue()()['poll_type'] as PollType;
+      if (!this.isEditMode() || this.methodOptions.some((option) => option.value === pollType)) {
+        return this.methodOptions;
+      }
+      return [
+        ...this.methodOptions,
+        { label: VOTE_METHOD_LABELS[pollType] ?? pollType, value: pollType, description: 'This vote keeps its original voting method.', icon: '' },
+      ];
+    });
+  }
+
+  private initSelectedMethodDescription(): Signal<string> {
+    return computed(() => {
+      const pollType = this.formValue()()['poll_type'] as PollType;
+      return this.methodDisplayOptions().find((option) => option.value === pollType)?.description ?? '';
+    });
+  }
+
+  private initMinVotersWarning(): Signal<string | null> {
+    return computed(() => {
+      const { status, count } = this.eligibleVoterCountState();
+      const belowMinimum =
+        this.formValue()()['poll_type'] === PollType.CONDORCET_IRV && status === 'loaded' && (count ?? 0) < VOTE_CONDORCET_MIN_ELIGIBLE_VOTERS;
+      if (!belowMinimum) {
+        return null;
+      }
+      const label = this.committeeLabel.singular.toLowerCase();
+      return `Condorcet IRV needs at least ${VOTE_CONDORCET_MIN_ELIGIBLE_VOTERS} eligible voters. This ${label} has ${count ?? 0}.`;
+    });
   }
 
   // Offset labels must reflect the picked wall-clock date/time — static catalog offsets lie across DST boundaries,

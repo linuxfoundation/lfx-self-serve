@@ -33,6 +33,12 @@ export abstract class MeetingDetailsSource {
   public readonly guestJoinInPlace?: boolean;
   /** The server's answer to whether the join window is open, for a passcode guest's copy, which has no start time. */
   public readonly canJoin?: Signal<boolean>;
+  /** Marks the viewer invited in the host's list after a self-add there, until its feed lists the new registration. */
+  public readonly markSelfInvited?: (meetingId: string, registrantUids: readonly string[]) => void;
+  /** A confirmed self-invite awaiting the host's feed; [] is a successful add without a returned UID. */
+  public readonly selfInviteOf?: (meetingId: string) => readonly string[] | undefined;
+  /** Refreshes unindexed self-invites and restarts the host's bounded confirmation reads. */
+  public readonly retrySelfInvites?: () => void;
   /** Shows another row, such as an upcoming date picked from a past one. */
   public abstract open(row: MeetingHomeRow): void;
   /** Mirrors a summary edit into the host's list. */
@@ -54,6 +60,9 @@ export function provideMeetingDetailsDrawerSource(): Provider {
         hostRef: inject(DialogRef),
         open: data.open,
         applySummaryChange: (key, summary) => store.applySummaryChange(key, summary),
+        markSelfInvited: (meetingId, registrantUids) => store.markSelfInvited(meetingId, registrantUids),
+        selfInviteOf: (meetingId) => store.selfInviteOf(meetingId),
+        retrySelfInvites: () => store.retrySelfInvites(),
       };
     },
   };

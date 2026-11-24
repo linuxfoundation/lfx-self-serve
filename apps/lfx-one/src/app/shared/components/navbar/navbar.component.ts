@@ -12,6 +12,7 @@ import { OrgSelectorComponent } from '@components/org-selector/org-selector.comp
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
 import {
+  ACCOUNT_BASE_PATH,
   CREATABLE_ARTIFACTS,
   LINKS_CONFIG,
   NAVBAR_BRAND_SITE,
@@ -29,6 +30,7 @@ import {
   BOARD_SCOPED_PERSONAS,
   PERSONA_OPTIONS,
   PERSONA_PRIORITY,
+  PROFILE_SETTINGS_PATH,
 } from '@lfx-one/shared/constants';
 import {
   CreatableArtifactConfig,
@@ -59,6 +61,7 @@ import { LogoutLinkDirective } from '@shared/directives/logout-link.directive';
 import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
+import { injectProfileRedesignEnabled } from '@shared/utils/profile-redesign.util';
 import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
 import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -209,6 +212,9 @@ export class NavbarComponent extends NavMenuBase {
    * visible panel and its live region, so screen readers never hear a state the panel hasn't shown.
    */
   protected readonly menuStateReady: Signal<boolean> = computed(() => this.hydrated() && this.lensLoaded() && !this.menuPending());
+  /** The profile redesign (#6067) splits the Me card's link and sends Settings to Account & Settings. */
+  protected readonly profileRedesignEnabled: Signal<boolean> = injectProfileRedesignEnabled(this.hydrated);
+  protected readonly accountPath = ACCOUNT_BASE_PATH;
 
   /** The no-access / lookup-failed state as the live region announces it: only once the visible panel shows it. */
   protected readonly announcedNoAccessState: Signal<'foundation' | 'project' | null> = computed(() =>
@@ -399,7 +405,8 @@ export class NavbarComponent extends NavMenuBase {
   protected navigateToProfileSettings(): void {
     this.userMenu()?.hide();
     this.lensService.setLens('me');
-    this.router.navigate(['/profile/settings']);
+    // With the profile redesign, Settings opens the Account & Settings landing page.
+    this.router.navigate([this.profileRedesignEnabled() ? ACCOUNT_BASE_PATH : PROFILE_SETTINGS_PATH]);
   }
 
   /** The account menu's sidebar theme switch: applies and remembers the choice. The menu stays open. */

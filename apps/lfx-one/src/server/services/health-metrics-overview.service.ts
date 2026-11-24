@@ -20,6 +20,7 @@ import { SnowflakeService } from './snowflake.service';
 
 import type {
   HealthMetricsL2Range,
+  HealthMetricsOverviewBalancePeriod,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewBoardAttendance,
   HealthMetricsOverviewBoardMember,
@@ -73,6 +74,7 @@ interface EventRowBase {
 
 interface UpcomingEventRow extends EventRowBase {
   COMP_SCORE: string | null;
+  PROPOSALS_COMP_SCORE: string | null;
 }
 
 interface PastEventRow extends EventRowBase {
@@ -217,18 +219,22 @@ export class HealthMetricsOverviewService {
     };
   }
 
-  /** Overdue membership invoices today, split by risk; the view has no period columns. */
+  /** Overdue membership invoices in every period, split by risk; one row per foundation carries every period. */
   public async getOutstandingBalance(req: Request, query: HealthMetricsOverviewQuery): Promise<HealthMetricsOverviewOutstandingBalance> {
+    const columns = HEALTH_METRICS_L2_RANGES.flatMap((range) =>
+      [
+        'outstanding_balance_usd',
+        'overdue_members_count',
+        'high_risk_balance_usd',
+        'high_risk_members_count',
+        'high_risk_balance_share_pct',
+        'medium_risk_balance_usd',
+        'medium_risk_members_count',
+        'medium_risk_balance_share_pct',
+      ].map((column) => periodSelect(column, range))
+    );
     const sql = `
-      SELECT
-        outstanding_balance_usd,
-        overdue_members_count,
-        high_risk_balance_usd,
-        high_risk_members_count,
-        high_risk_balance_share_pct,
-        medium_risk_balance_usd,
-        medium_risk_members_count,
-        medium_risk_balance_share_pct
+      SELECT ${columns.join(',\n        ')}
       FROM ${OUTSTANDING_BALANCE_VIEW}
       WHERE foundation_slug = ?
       -- One row per foundation_slug, so LIMIT 1 has nothing to pick between.
@@ -242,17 +248,7 @@ export class HealthMetricsOverviewService {
     });
 
     const row = result.rows[0];
-    return {
-      measured: !!row,
-      outstandingUsd: toNullableNumber(row?.['OUTSTANDING_BALANCE_USD']),
-      overdueMembers: toNullableNumber(row?.['OVERDUE_MEMBERS_COUNT']),
-      highRiskUsd: toNullableNumber(row?.['HIGH_RISK_BALANCE_USD']),
-      highRiskMembers: toNullableNumber(row?.['HIGH_RISK_MEMBERS_COUNT']),
-      highRiskSharePct: toNullableNumber(row?.['HIGH_RISK_BALANCE_SHARE_PCT']),
-      mediumRiskUsd: toNullableNumber(row?.['MEDIUM_RISK_BALANCE_USD']),
-      mediumRiskMembers: toNullableNumber(row?.['MEDIUM_RISK_MEMBERS_COUNT']),
-      mediumRiskSharePct: toNullableNumber(row?.['MEDIUM_RISK_BALANCE_SHARE_PCT']),
-    };
+    return { measured: !!row, periods: byRange((range) => mapBalancePeriod(row, range)) };
   }
 
   /**
@@ -305,6 +301,7 @@ export class HealthMetricsOverviewService {
         NULLIF(TRIM(person_job_title), '') AS person_job_title,
         NULLIF(TRIM(account_name), '') AS account_name,
         NULLIF(TRIM(logo_url), '') AS logo_url,
+        NULLIF(TRIM(person_photo_url), '') AS person_photo_url,
         last_attended_date,
         ${memberColumns.join(',\n        ')}
       FROM ${BOARD_MEMBERS_VIEW}
@@ -467,6 +464,7 @@ export class HealthMetricsOverviewService {
         r.count_registrations_all_time AS registrations,
         r.event_registrations_goal AS registrations_goal,
         NULLIF(TRIM(r.comp_score), '') AS comp_score,
+        NULLIF(TRIM(r.proposals_comp_score), '') AS proposals_comp_score,
         r.accepted_speaker_proposals_all_time AS accepted_talks,
         r.total_speaker_proposals_all_time AS total_proposals,
         NULLIF(TRIM(r.cfp_status), '') AS cfp_status
@@ -601,7 +599,7 @@ function mapChurnTier(row: WideRow, range: HealthMetricsL2Range): HealthMetricsO
 }
 
 /** The fields both lists share. */
-function mapEventBase(row: EventRowBase): Omit<HealthMetricsOverviewEvent, 'registrationsGoal' | 'compScore' | 'ranges'> {
+function mapEventBase(row: EventRowBase): Omit<HealthMetricsOverviewEvent, 'registrationsGoal' | 'compScore' | 'proposalsCompScore' | 'ranges'> {
   const eventId = String(row.EVENT_ID);
   return {
     eventId,
@@ -622,6 +620,7 @@ function mapUpcomingEvent(row: UpcomingEventRow): HealthMetricsOverviewEvent {
     ...mapEventBase(row),
     registrationsGoal: positiveOrNull(toNullableNumber(row.REGISTRATIONS_GOAL)),
     compScore: row.COMP_SCORE?.toLowerCase() ?? null,
+    proposalsCompScore: row.PROPOSALS_COMP_SCORE?.toLowerCase() ?? null,
     ranges: [],
   };
 }
@@ -632,7 +631,21 @@ function mapPastEvent(row: PastEventRow): HealthMetricsOverviewEvent {
     ...mapEventBase(row),
     registrationsGoal: row.HAS_GOAL === true ? toNullableNumber(row.REGISTRATIONS_GOAL) : null,
     compScore: null,
+    proposalsCompScore: null,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[`IS_IN_PERIOD_${range}`] === true),
+  };
+}
+
+function mapBalancePeriod(row: WideRow | undefined, range: HealthMetricsL2Range): HealthMetricsOverviewBalancePeriod {
+  return {
+    outstandingUsd: periodNumber(row, 'OUTSTANDING_BALANCE_USD', range),
+    overdueMembers: periodNumber(row, 'OVERDUE_MEMBERS_COUNT', range),
+    highRiskUsd: periodNumber(row, 'HIGH_RISK_BALANCE_USD', range),
+    highRiskMembers: periodNumber(row, 'HIGH_RISK_MEMBERS_COUNT', range),
+    highRiskSharePct: periodNumber(row, 'HIGH_RISK_BALANCE_SHARE_PCT', range),
+    mediumRiskUsd: periodNumber(row, 'MEDIUM_RISK_BALANCE_USD', range),
+    mediumRiskMembers: periodNumber(row, 'MEDIUM_RISK_MEMBERS_COUNT', range),
+    mediumRiskSharePct: periodNumber(row, 'MEDIUM_RISK_BALANCE_SHARE_PCT', range),
   };
 }
 
@@ -662,6 +675,7 @@ function mapBoardMember(row: WideRow): HealthMetricsOverviewBoardMember {
     jobTitle: jobTitle && jobTitle.toLowerCase() !== 'unavailable' ? jobTitle : null,
     organization: typeof row['ACCOUNT_NAME'] === 'string' ? row['ACCOUNT_NAME'] : null,
     logoUrl: typeof row['LOGO_URL'] === 'string' ? row['LOGO_URL'] : null,
+    photoUrl: typeof row['PERSON_PHOTO_URL'] === 'string' ? row['PERSON_PHOTO_URL'] : null,
     lastAttendedDate: toIsoDate(row['LAST_ATTENDED_DATE'] as Date | string | null),
     attendance,
   };

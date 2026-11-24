@@ -5,8 +5,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, input, model, NO_ERRORS_SCHEMA, output, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { provideRouter, Router } from '@angular/router';
-import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
+import { provideRouter, Router, RouterLink } from '@angular/router';
+import { PollStatus, PollType, VoteResponseStatus } from '@lfx-one/shared';
 import { VOTE_INVITATION_COUNT_REFRESH_MS } from '@lfx-one/shared/constants';
 import { Lens, MyVotesResponse, ProjectContext, Vote, VoteListResponse, VoteStatusCounts, VoteSummary } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
@@ -22,6 +22,7 @@ import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
+import { VoteCreateMenuComponent } from '../components/vote-create-menu/vote-create-menu.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
 import { VotesDashboardComponent } from './votes-dashboard.component';
 
@@ -33,6 +34,7 @@ class StubVoteCastDrawerComponent {
   public readonly changeMode = input<boolean>(false);
   public readonly visible = model<boolean>(false);
   public readonly voteSubmitted = output<string>();
+  public readonly ballotUnavailable = output<string>();
 }
 
 const NOW = Date.parse('2026-01-10T12:00:00Z');
@@ -66,6 +68,7 @@ describe('VotesDashboardComponent personal summary', () => {
   let canWrite: WritableSignal<boolean>;
   let getMyVotes: ReturnType<typeof vi.fn>;
   let hasVotesAwaitingInvitationCount: ReturnType<typeof vi.fn>;
+  let cancellationCompleted: Subject<void>;
   const cards = () => dashboard['myVoteStatCards']();
   const rows = () => table['displayedVotes']().map((row) => row.uid);
   const tabPills = () =>
@@ -94,6 +97,7 @@ describe('VotesDashboardComponent personal summary', () => {
     canWrite = signal(false);
     getMyVotes = vi.fn(() => of({ votes: feed, complete: true }));
     hasVotesAwaitingInvitationCount = vi.fn(() => false);
+    cancellationCompleted = new Subject<void>();
     TestBed.configureTestingModule({
       imports: [VotesDashboardComponent],
       providers: [
@@ -103,6 +107,8 @@ describe('VotesDashboardComponent personal summary', () => {
         {
           provide: VoteService,
           useValue: {
+            cancellingVoteUids: signal(new Set<string>()),
+            voteCancellationCompleted$: cancellationCompleted,
             getMyVotes,
             mergeRecentlyOpenedVotes: (votes: Vote[]) => votes,
             mergeRecentlyCreatedVotes: (votes: Vote[]) => votes,
@@ -154,9 +160,49 @@ describe('VotesDashboardComponent personal summary', () => {
     table = fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance;
   }
 
+  it.each<Lens>(['project', 'foundation', 'me'])('refreshes the current lens on cancellation completion (%s)', async (lens) => {
+    if (lens !== 'me') await management(lens);
+    const refresh = vi.spyOn(dashboard as unknown as { refreshVotes: () => void }, 'refreshVotes');
+    cancellationCompleted.next();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    fixture.destroy();
+    cancellationCompleted.next();
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the personal feed when a management cancellation completes after switching to Me', async () => {
+    await management();
+    const pending = new Subject<void>();
+    pending.subscribe(() => cancellationCompleted.next());
+    activeLens.set('me');
+    await settle();
+    getMyVotes.mockClear();
+    getMyVotes.mockReturnValue(of({ votes: feed.filter((row) => row.uid !== 'soon'), complete: true }));
+    pending.next();
+    pending.complete();
+    await settle();
+    expect(getMyVotes).toHaveBeenCalledTimes(1);
+    expect(rows()).not.toContain('soon');
+    expect(table.canCancelVotes()).toBe(false);
+  });
+
   it.each<Lens>(['project', 'foundation'])('enables participation progress in the %s lens', async (lens) => {
     await management(lens);
     expect(table.showParticipationProgress()).toBe(true);
+  });
+
+  it('offers row-menu Cancel vote on the project and foundation lens, never the Me lens (#5968)', async () => {
+    expect(table.canCancelVotes()).toBe(false);
+
+    await management('project');
+    expect(table.canCancelVotes()).toBe(true);
+    await management('foundation');
+    expect(table.canCancelVotes()).toBe(true);
+
+    activeLens.set('me');
+    await settle();
+    table = fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance;
+    expect(table.canCancelVotes()).toBe(false);
   });
 
   it('re-fetches the page and counts while a just-opened vote is still counting invitations (GH-4078)', async () => {
@@ -818,6 +864,42 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(card?.textContent?.includes('Create')).toBe(writer);
       expect(element('votes-create-button') !== null).toBe(writer);
     });
+
+    it('makes the header Create Vote a menu button and keeps the empty-state link on plurality (#2921)', async () => {
+      canWrite.set(true);
+      vi.mocked(TestBed.inject(VoteService).getVotesByProjectPaginated).mockReturnValue(of({ data: [], total_records: 0 }));
+      await freshDashboard('project');
+      element('filter-pill-all')!.click();
+      await settle();
+
+      const trigger = element('votes-create-button')!.querySelector('button')!;
+      expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      const cta = fixture.debugElement.query(By.css('[data-testid="votes-empty-state-card"] lfx-button')).injector.get(RouterLink);
+      expect(cta.urlTree?.toString()).toBe('/votes/create');
+    });
+
+    it('toggles the Create Vote dropdown from the header trigger (#2921)', async () => {
+      canWrite.set(true);
+      await freshDashboard('project');
+      const menu = fixture.debugElement.query(By.directive(VoteCreateMenuComponent)).componentInstance as VoteCreateMenuComponent;
+      const toggle = vi.spyOn(menu, 'toggle').mockImplementation(() => undefined);
+
+      element('votes-create-button')!.querySelector('button')!.click();
+
+      expect(toggle).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens the create form with the method chosen in the Create Vote dropdown (#2921)', async () => {
+      canWrite.set(true);
+      await freshDashboard('project');
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const menu = fixture.debugElement.query(By.directive(VoteCreateMenuComponent)).componentInstance as VoteCreateMenuComponent;
+
+      menu.methodSelected.emit(PollType.CONDORCET_IRV);
+
+      expect(navigate).toHaveBeenCalledWith(['/votes', 'create'], { queryParams: { poll_type: 'condorcet_irv' } });
+    });
   });
 
   it('preserves plain status labels in the Org lens where counts are not sourced', async () => {
@@ -1183,6 +1265,20 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(element('votes-load-error')).toBeNull();
       expect(element('votes-your-vote-soon')?.getAttribute('aria-label')).toBe('Voted');
       expect(element('votes-cast-soon')?.textContent).toContain('Review');
+    });
+
+    it('refreshes the list without marking the vote voted when an update is rejected (#5964)', async () => {
+      table.viewVote.emit('soon');
+      await settle();
+      const callsBefore = getMyVotes.mock.calls.length;
+
+      drawer()!.ballotUnavailable.emit('soon');
+      await settle();
+
+      expect(getMyVotes).toHaveBeenCalledTimes(callsBefore + 1);
+      expect(element('votes-your-vote-soon')?.getAttribute('aria-label')).not.toBe('Voted');
+      expect(element('votes-cast-soon')?.textContent?.trim()).toBe('Vote');
+      expect(dashboard['submittedVoteIds']().has('soon')).toBe(false);
     });
 
     it('marks the emitted vote UID, never another selected ballot, and retains multiple submissions', async () => {

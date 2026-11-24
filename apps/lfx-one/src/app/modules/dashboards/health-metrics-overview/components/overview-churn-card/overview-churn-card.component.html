@@ -46,7 +46,13 @@
           class="grid min-w-[520px] grid-cols-[minmax(90px,0.8fr)_minmax(200px,2fr)_minmax(90px,0.8fr)_minmax(90px,0.8fr)] items-center gap-[16px] border-b border-gray-100 py-[10px] text-[13px] text-gray-900"
           role="row"
           [attr.data-testid]="'overview-churn-tier-' + tier.key">
-          <span class="font-medium" role="cell">{{ tier.label }}</span>
+          <!-- A reserved tier leads with its icon; the name stays neutral-900 at 500. -->
+          <span class="flex min-w-0 items-center gap-[8px] font-medium" role="cell">
+            @if (tier.tier; as icon) {
+              <lfx-health-metrics-tier-icon [tier]="icon" />
+            }
+            <span class="min-w-0 break-words">{{ tier.label }}</span>
+          </span>
           <div class="flex items-center gap-[10px]" role="cell">
             <span class="relative h-[8px] flex-1 rounded-full bg-gray-100" aria-hidden="true">
               <span class="block h-full rounded-full bg-blue-500" [style.width.%]="tier.rateWidthPct"></span>

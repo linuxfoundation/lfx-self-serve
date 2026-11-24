@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CombinedProfile, MeetingInviteEmail, MeetingRegistrant, User } from '../interfaces';
-import { buildMeetingSelfGuest, filterUnindexedMeetingRegistrants, isMeetingSelfGuestListed } from './meeting-self-guest.utils';
+import { buildMeetingSelfGuest, filterUnindexedMeetingRegistrants, isMeetingSelfGuestListed, toMeetingSelfGuestRegistrant } from './meeting-self-guest.utils';
 
 const session = (overrides: Partial<User> = {}): User => ({
   sid: 'synthetic-session',
@@ -142,6 +142,24 @@ describe('isMeetingSelfGuestListed', () => {
   it('never matches on a missing email or LFID', () => {
     expect(isMeetingSelfGuestListed({ matchEmails: ['primary@example.com'], username: null }, [{ email: null, username: null }])).toBe(false);
     expect(isMeetingSelfGuestListed({ matchEmails: ['primary@example.com'], username: null }, [{ email: '', username: 'pdoe' }])).toBe(false);
+  });
+});
+
+describe('toMeetingSelfGuestRegistrant', () => {
+  it('posts the profile details as a regular, self-added guest without the match emails', () => {
+    const self = buildMeetingSelfGuest(session(), profile(), invite('invites@example.com'), 'Employer Corp');
+
+    expect(toMeetingSelfGuestRegistrant(self!)).toEqual({
+      email: 'invites@example.com',
+      first_name: 'Profile',
+      last_name: 'Person',
+      job_title: 'Engineer',
+      org_name: 'Employer Corp',
+      username: 'profile-lfid',
+      avatar_url: 'https://avatars.example.com/profile.png',
+      host: false,
+      selfAdded: true,
+    });
   });
 });
 

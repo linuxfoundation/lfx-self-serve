@@ -1319,10 +1319,10 @@ export class MeetingService {
 
   /**
    * Removes the authenticated user as a registrant of a meeting using their own bearer token.
-   * The caller's registrant records are resolved server-side (by email or username) so the client
-   * never needs a registrant UID; upstream re-verifies ownership and returns 403 for anyone else's
-   * record. Committee and mailing list registrations are removed like any other: the meeting service flags
-   * the delete as a self removal, so ITX records an exclusion that keeps later syncs from adding the user back.
+   * The caller's indexed records are resolved server-side (by email or username). An optional saved
+   * UID covers a just-created registration that is not indexed yet; the user-token self endpoint
+   * re-verifies ownership and meeting binding for every UID. Committee and mailing list registrations
+   * are removed as self removals too, so ITX records an exclusion that keeps later syncs from adding the user back.
    * The lookup must be complete, since a partial page walk would delete only a prefix of the caller's rows.
    * Every matching row is attempted; the call fails only when none could be removed, and a partial result is
    * returned to the client and logged rather than reported as a failure, since the rows already deleted stay deleted.
@@ -1333,11 +1333,13 @@ export class MeetingService {
     meetingUid: string,
     email: string | undefined,
     username: string | undefined,
-    m2mToken: string
+    m2mToken: string,
+    registrantUid?: string
   ): Promise<MeetingRegistrationRemovalResult> {
     const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken, true);
+    const registrantIds = [...new Set([...registrants.map((registrant) => registrant.uid), ...(registrantUid ? [registrantUid] : [])])];
 
-    if (registrants.length === 0) {
+    if (registrantIds.length === 0) {
       throw new ResourceNotFoundError('Meeting registration', meetingUid, {
         operation: 'remove_meeting_registrant_self',
         service: 'meeting_service',
@@ -1346,13 +1348,13 @@ export class MeetingService {
 
     logger.debug(req, 'remove_meeting_registrant_self', 'Removing authenticated user as meeting registrant', {
       meeting_id: meetingUid,
-      registrant_count: registrants.length,
+      registrant_count: registrantIds.length,
     });
 
     const outcomes = await Promise.allSettled(
-      registrants.map((registrant) =>
+      registrantIds.map((uid) =>
         this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/self`, 'DELETE', {
-          registrant_id: registrant.uid,
+          registrant_id: uid,
         })
       )
     );
@@ -1361,7 +1363,7 @@ export class MeetingService {
     const result: MeetingRegistrationRemovalResult = { removed_registrant_ids: [], remaining_registrant_ids: [] };
     outcomes.forEach((outcome, index) => {
       const ids = outcome.status === 'fulfilled' ? result.removed_registrant_ids : result.remaining_registrant_ids;
-      ids.push(registrants[index].uid);
+      ids.push(registrantIds[index]);
     });
 
     if (result.removed_registrant_ids.length === 0) {

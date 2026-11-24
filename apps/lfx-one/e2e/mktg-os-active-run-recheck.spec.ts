@@ -110,8 +110,7 @@ for (const surface of ['catalog', 'linkedin', 'member'] as const) {
       if (surface === 'linkedin') await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic retained source');
       if (surface === 'member') await selectMember360Option(page, 'member-360-compare', 'No comparison');
       await page.getByTestId(submit).getByRole('button').click();
-      const hostTestId = { catalog: undefined, linkedin: 'mktg-linkedin-active-run-confirm', member: 'member-360-active-run-confirm' }[surface];
-      const dialog = activeRunConfirmDialog(page, hostTestId);
+      const dialog = activeRunConfirmDialog(page);
       await expect(dialog).toContainText('Checking the active run…');
       await expect(dialog.getByRole('button', { name: 'Discard and start over' })).toBeDisabled();
       const originalNode = await dialog.elementHandle();

@@ -208,7 +208,7 @@ test.describe('Admin Mentors tab — invite a mentor', () => {
     const dialog = await openInviteDialog(page);
 
     await expect(dialog).toContainText('Search LF users, or enter an email to invite someone new.');
-    await expect(page.getByTestId('mentorship-mentors-invite-prompt')).toContainText('Start typing a name, LFID or email.');
+    await expect(page.getByTestId('mentorship-mentors-invite-prompt')).toContainText('Start typing a name, LF username or email.');
     await expect(sendButton(page)).toBeDisabled();
   });
 
@@ -273,6 +273,7 @@ test.describe('Admin Mentors tab — invite by email', () => {
 
     const offer = page.getByTestId('mentorship-mentors-email-invite');
     await expect(offer).toContainText('Invite new.mentor@example.invalid by email');
+    await expect(page.getByTestId('mentorship-mentors-email-invite-steps-intro')).toHaveText('Once you send it, the invitee will need to:');
     await expect(page.getByTestId('mentorship-mentors-email-invite-steps').locator('li')).toHaveText([
       'Create an LF account with this email',
       'Set up a mentor profile',

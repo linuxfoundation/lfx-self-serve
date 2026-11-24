@@ -132,6 +132,8 @@ import type {
   RedditAdVariant,
   RedditBriefCopy,
   StoredCreativeAsset,
+  CampaignServiceMetaTargetingSearch,
+  MetaTargetingSearchType,
 } from '@lfx-one/shared/interfaces';
 import { MULTI_CAMPAIGN_PLATFORMS_ENV } from '../constants/campaign-multi.constants';
 import type { Request } from 'express';
@@ -838,6 +840,24 @@ export function canSetMetaLeadForm(): boolean {
 }
 
 /**
+ * Whether a Meta create may carry `metaConfig.targeting.interests`, `behaviors` with `workPositions`, and
+ * `locales` (#5904 row 4), one flag each, each also needing the campaign-service create path.
+ */
+export function canSetMetaInterestTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaInterestTargeting);
+}
+export function canSetMetaBehaviorTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaBehaviorTargeting);
+}
+export function canSetMetaLocaleTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaLocaleTargeting);
+}
+/** Whether `GET /api/campaigns/meta/targeting-search` answers: only while interests or behaviors can be sent. */
+export function canSearchMetaTargeting(): boolean {
+  return canSetMetaInterestTargeting() || canSetMetaBehaviorTargeting();
+}
+
+/**
  * Whether a LinkedIn create may carry `linkedInConfig.targetingProfileEdit` (#5546): the selected
  * targeting profile with entries removed.
  *
@@ -1096,6 +1116,9 @@ export class CampaignServiceClient {
         metaCallToActionEnabled: canSetMetaCallToAction(),
         metaConversionEventEnabled: canSetMetaConversionEvent(),
         metaOptimizationGoalEnabled: canSetMetaOptimizationGoal(),
+        metaInterestTargetingEnabled: canSetMetaInterestTargeting(),
+        metaBehaviorTargetingEnabled: canSetMetaBehaviorTargeting(),
+        metaLocaleTargetingEnabled: canSetMetaLocaleTargeting(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
         googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -1174,6 +1197,9 @@ export class CampaignServiceClient {
       metaCallToActionEnabled: canSetMetaCallToAction(),
       metaConversionEventEnabled: canSetMetaConversionEvent(),
       metaOptimizationGoalEnabled: canSetMetaOptimizationGoal(),
+      metaInterestTargetingEnabled: canSetMetaInterestTargeting(),
+      metaBehaviorTargetingEnabled: canSetMetaBehaviorTargeting(),
+      metaLocaleTargetingEnabled: canSetMetaLocaleTargeting(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -3664,6 +3690,33 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/meta-ads/lead-forms`,
       'GET'
+    );
+  }
+
+  /**
+   * One page of Meta's targeting taxonomy for the Implement tab's detailed-targeting picker (#5904 row 4):
+   * `search-meta-targeting-options` (linuxfoundation/lfx-v2-campaign-service#612), at most 50 options, cached
+   * upstream for an hour per query. Upstream answers it on `campaign_manager` of the path project, with the same
+   * credentials a create uses. A Meta throttle answers 503 and is not retried. Failures are left to the caller.
+   */
+  public async searchMetaTargetingOptions(
+    req: Request,
+    projectSlug: string,
+    type: MetaTargetingSearchType,
+    query: string
+  ): Promise<CampaignServiceMetaTargetingSearch> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A targeting search requires the project it is made for.', {
+        operation: 'search_meta_targeting_options',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceMetaTargetingSearch>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/meta-ads/targeting-search`,
+      'GET',
+      { type, query }
     );
   }
 

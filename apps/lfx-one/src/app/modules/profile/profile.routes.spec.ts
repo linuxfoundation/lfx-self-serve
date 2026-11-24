@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { provideRouter, Route } from '@angular/router';
+import { ActivatedRouteSnapshot, CanActivateFn, provideRouter, Route, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
 import { PROFILE_ROUTE_SEGMENTS } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
+import { profileRedesignRedirectGuard } from '../../shared/guards/profile-redesign.guard';
 import { PROFILE_ROUTES } from './profile.routes';
 
 /**
@@ -69,5 +70,24 @@ describe('PROFILE_ROUTES — developer-settings alias (ID-1147)', () => {
     expect(tree.fragment).toBe('developer-settings');
     expect(tree.toString()).toContain('/profile/settings');
     expect(tree.queryParams).toEqual({ from: 'openprofile' });
+  });
+});
+
+describe('PROFILE_ROUTES — linux-email', () => {
+  it('opens Identities after the redesign guard, keeping a Flow C query', () => {
+    const route = PROFILE_ROUTES[0].children!.find((r) => r.path === 'linux-email')!;
+    const [redesignGuard, toIdentities] = route.canActivate as CanActivateFn[];
+    expect(redesignGuard).toBe(profileRedesignRedirectGuard);
+
+    TestBed.configureTestingModule({ providers: [provideRouter([])] });
+    const tree = TestBed.runInInjectionContext(() =>
+      toIdentities({ queryParams: { success: 'profile_token_obtained' } } as unknown as ActivatedRouteSnapshot, {} as RouterStateSnapshot)
+    );
+    expect(TestBed.inject(Router).serializeUrl(tree as UrlTree)).toBe('/profile/identities?success=profile_token_obtained');
+  });
+
+  it('guards each tab that moves to Account & Settings, and not the ones that stay', () => {
+    const guarded = PROFILE_ROUTES[0].children!.filter((r) => r.canActivate?.includes(profileRedesignRedirectGuard)).map((r) => r.path);
+    expect(guarded).toEqual(['identities', 'individual-enrollment', 'clas', 'transactions', 'settings', 'linux-email']);
   });
 });

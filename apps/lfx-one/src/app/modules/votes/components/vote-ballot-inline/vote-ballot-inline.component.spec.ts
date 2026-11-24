@@ -2,18 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { BreakpointObserver } from '@angular/cdk/layout';
+import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { UserService } from '@services/user.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { VOTE_COMMENT_RESPONSE_MAX_LENGTH, VOTE_LAST_VOTER_CONFIRMATION } from '@lfx-one/shared/constants';
+import { VOTE_COMMENT_RESPONSE_MAX_LENGTH, VOTE_LAST_VOTER_CONFIRMATION, VOTE_RATE_LIMITED_MESSAGE } from '@lfx-one/shared/constants';
 import { PollStatus } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteBallotInlineComponent } from './vote-ballot-inline.component';
@@ -471,5 +472,75 @@ describe('VoteBallotInlineComponent — last-voter confirmation (#4726)', () => 
 
     expect(confirm).toHaveBeenCalledOnce();
     expect(submitMyResponse).not.toHaveBeenCalled();
+  });
+});
+
+describe('VoteBallotInlineComponent — submit errors (#5964)', () => {
+  let fixture: ComponentFixture<VoteBallotInlineComponent>;
+  let add: ReturnType<typeof vi.fn>;
+  let emitted: string[];
+
+  const VOTE: Vote = {
+    uid: 'vote-1',
+    name: 'Test vote',
+    status: PollStatus.ACTIVE,
+    project_uid: 'project-1',
+    end_time: '2099-01-01T00:00:00Z',
+    poll_questions: [
+      {
+        question_id: 'q1',
+        prompt: 'Approve the budget?',
+        type: 'single_choice',
+        choices: [
+          { choice_id: 'c1', choice_text: 'Yes' },
+          { choice_id: 'c2', choice_text: 'No' },
+        ],
+      },
+    ],
+  } as Vote;
+
+  async function submitWithError(status: number): Promise<void> {
+    add = vi.fn();
+    emitted = [];
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [VoteBallotInlineComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: false, breakpoints: {} }), isMatched: () => false } },
+        {
+          provide: VoteService,
+          useValue: { submitMyResponse: vi.fn(() => throwError(() => new HttpErrorResponse({ status }))), getMyWouldEndVote: vi.fn(() => of(false)) },
+        },
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+        { provide: MessageService, useValue: { add } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VoteBallotInlineComponent);
+    fixture.componentRef.setInput('vote', VOTE);
+    fixture.componentInstance.voteSubmitted.subscribe((uid) => emitted.push(uid));
+    await fixture.whenStable();
+    (fixture.componentInstance.form.get('q1') as unknown as FormControl<string | null>).setValue('c1');
+    await fixture.whenStable();
+
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+  }
+
+  it('shows the rate-limit toast, like the cast drawer, when a first ballot is throttled', async () => {
+    await submitWithError(429);
+
+    expect(add).toHaveBeenCalledOnce();
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Too many requests', detail: VOTE_RATE_LIMITED_MESSAGE }));
+    expect(emitted).toEqual([]);
+    expect(fixture.componentInstance['submitting']()).toBe(false);
+  });
+
+  it('keeps the generic error toast for other failures', async () => {
+    await submitWithError(500);
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Unable to submit vote' }));
+    expect(add).not.toHaveBeenCalledWith(expect.objectContaining({ detail: VOTE_RATE_LIMITED_MESSAGE }));
   });
 });

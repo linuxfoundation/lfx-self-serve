@@ -4,25 +4,29 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_DEFAULT_SORT,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
-  HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE_OPTIONS,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_SEARCH_DEBOUNCE_MS,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_SORT_COLUMNS,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_UNMEASURED,
   HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsNonMembersPeopleCountLabel, buildHealthMetricsNonMembersPersonRows } from '@lfx-one/shared/utils';
+import { buildHealthMetricsNonMembersPersonRows } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, debounceTime, distinctUntilChanged, map, merge, of, skip, Subject, switchMap, tap } from 'rxjs';
+import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
+import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
+import { catchError, debounce, distinctUntilChanged, map, of, skip, switchMap, tap, timer } from 'rxjs';
 
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
@@ -33,12 +37,12 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#people` — the non-member individuals who attended the foundation's meetings in the period, busiest first.
- * Paged and searched server-side; the rows carry no contact details and are not links.
+ * `#people` — the non-member individuals who attended the foundation's meetings in the period, busiest first. Paged,
+ * searched and sorted server-side; the rows carry no contact details and are not links.
  */
 @Component({
   selector: 'lfx-non-members-people',
-  imports: [EmptyStateComponent, InputTextComponent, TableComponent],
+  imports: [EmptyStateComponent, HealthMetricsCellComponent, HealthMetricsThComponent, TableComponent, UiPaginationComponent, UiSearchInputComponent],
   templateUrl: './non-members-people.component.html',
 })
 export class NonMembersPeopleComponent {
@@ -56,35 +60,30 @@ export class NonMembersPeopleComponent {
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
-  protected readonly searchForm = new FormGroup({
-    search: new FormControl<string>(this.parseInitialSearch(), { nonNullable: true }),
-  });
-
-  protected readonly pageSizeOptions: number[] = [...HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE_OPTIONS];
+  protected readonly size = HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE;
+  /** The field stops at the length the read applies, so it never shows text the search ignores. */
   protected readonly maxSearchLength = HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH;
-  protected readonly size = signal<number>(HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE);
+  protected readonly searchText = signal<string>(this.normalizeSearch(this.initialParams.get(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.peopleSearch) ?? ''));
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not a foundation with no engaged individuals, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
 
-  /** Clears the search past the debounce, so "clear" lands in one read. */
-  private readonly searchReset = new Subject<string>();
-
-  // Debounced so a keystroke does not fire a warehouse read; trimmed so padding cannot re-read the same cut.
+  // Typing is debounced so a keystroke does not fire a warehouse read; a cleared search applies at once, so a reset never lags.
   protected readonly search: Signal<string> = toSignal(
-    merge(
-      this.searchForm.controls.search.valueChanges.pipe(
-        debounceTime(HEALTH_METRICS_NON_MEMBERS_PEOPLE_SEARCH_DEBOUNCE_MS),
-        map((value) => this.normalizeSearch(value))
-      ),
-      this.searchReset
+    toObservable(this.searchText).pipe(
+      map((value) => this.normalizeSearch(value)),
+      debounce((term) => (term ? timer(HEALTH_METRICS_NON_MEMBERS_PEOPLE_SEARCH_DEBOUNCE_MS) : of(0)))
     ),
-    { initialValue: this.parseInitialSearch() }
+    { initialValue: this.searchText() }
   );
-  /** Any change to the cut restarts paging, since a page from a wider cut can sit past the end of a narrower one. */
+  /** Sorted on the server across every page; the default keeps the view's rank. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_NON_MEMBERS_PEOPLE_SORT_COLUMNS, HEALTH_METRICS_NON_MEMBERS_PEOPLE_DEFAULT_SORT);
+  /** Zero-based, as the pager counts. Any change to the cut or the order restarts paging, since a wider cut's page can sit past a narrower one's end. */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.range()}|${this.search()}`),
-    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 1),
+    source: computed(
+      () => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.range()}|${this.search()}|${JSON.stringify(this.sorting.sort())}`
+    ),
+    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 0),
   });
 
   protected readonly query: Signal<HealthMetricsNonMembersPeopleQuery> = this.initQuery();
@@ -92,17 +91,8 @@ export class NonMembersPeopleComponent {
 
   protected readonly rowViews: Signal<HealthMetricsNonMembersPersonRowView[]> = computed(() => buildHealthMetricsNonMembersPersonRows(this.response().rows));
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  protected readonly scopeTotal = computed(() => this.response().scopeTotal);
-  /** No person took part in the period; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.scopeTotal() === 0);
-  protected readonly first = computed(() => (this.page() - 1) * this.size());
-  protected readonly summary = computed(() => buildHealthMetricsNonMembersPeopleCountLabel(this.scopeTotal()));
-  /** An unset total is not zero, so the search line drops its "of N", and "match" becomes a noun that takes a plural. */
-  protected readonly searchSuffix = computed(() => {
-    if (this.scopeTotal() !== null) return `of ${this.summary()} match`;
-    return this.totalRecords() === 1 ? 'match' : 'matches';
-  });
-  protected readonly totalRecordsLabel = computed(() => this.totalRecords().toLocaleString('en-US'));
+  /** No person took part in the period; the shell shows the section's empty state instead. An unset total is not zero. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.response().scopeTotal === 0);
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -117,15 +107,9 @@ export class NonMembersPeopleComponent {
     }
   }
 
-  protected onTablePage(event: { first?: number; rows?: number }): void {
-    const rows = event.rows ?? this.size();
-    this.size.set(rows);
-    this.page.set(Math.floor((event.first ?? 0) / rows) + 1);
-  }
-
-  protected clearSearch(): void {
-    this.searchForm.setValue({ search: '' });
-    this.searchReset.next('');
+  /** Clears the search and the page, as the empty state offers; the sort stays. */
+  protected onResetFilters(): void {
+    this.searchText.set('');
   }
 
   private initQuery(): Signal<HealthMetricsNonMembersPeopleQuery> {
@@ -133,8 +117,9 @@ export class NonMembersPeopleComponent {
       foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
       range: this.range(),
       search: this.search(),
-      offset: (this.page() - 1) * this.size(),
-      pageSize: this.size(),
+      offset: this.page() * this.size,
+      pageSize: this.size,
+      sort: this.sorting.order(),
     }));
   }
 
@@ -192,7 +177,8 @@ export class NonMembersPeopleComponent {
       relativeTo: this.route,
       queryParams: {
         [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.peopleSearch]: query.search || null,
-        [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.peoplePage]: page > 1 ? page : null,
+        // The URL counts pages from 1.
+        [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.peoplePage]: page > 0 ? page + 1 : null,
       },
       queryParamsHandling: 'merge',
       preserveFragment: true,
@@ -205,7 +191,7 @@ export class NonMembersPeopleComponent {
    * the last page with rows, writing it back since the clamp can precede the sync's first emission.
    */
   private clampPage(totalRecords: number): boolean {
-    const lastPage = Math.max(1, Math.ceil(totalRecords / this.size()));
+    const lastPage = Math.max(0, Math.ceil(totalRecords / this.size) - 1);
     if (totalRecords === 0 || this.page() <= lastPage) return false;
 
     this.page.set(lastPage);
@@ -213,13 +199,10 @@ export class NonMembersPeopleComponent {
     return true;
   }
 
-  private parseInitialSearch(): string {
-    return this.normalizeSearch(this.initialParams.get(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.peopleSearch) ?? '');
-  }
-
+  /** The URL's 1-based page as the pager's 0-based one. */
   private parseInitialPage(): number {
     const page = Number(this.initialParams.get(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.peoplePage));
-    return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+    return Number.isFinite(page) && page > 1 ? Math.floor(page) - 1 : 0;
   }
 
   private normalizeSearch(value: string): string {

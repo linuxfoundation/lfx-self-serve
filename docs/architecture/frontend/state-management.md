@@ -49,6 +49,18 @@ export class DataService {
 - **Simplicity**: Easier to understand than RxJS for simple state
 - **Debugging**: Clear state flow and mutations
 
+### Vote cancellation lifetime
+
+`VoteService.cancelVote()` owns pending vote IDs and a non-ref-counted write subscription. Destroying the initiating table or switching group tabs cannot abort an initiated cancellation or reset its duplicate in-flight guard. The surviving Project/Foundation Votes dashboard and group page subscribe to `voteCancellationCompleted$` with their own destruction scopes; success, cancellation 404 and `409 VOTE_DELETE_ENDED` refresh those hosts. The table keeps confirmation and toast presentation. Draft deletion uses the existing `deleteVote()` flow unchanged.
+
+Before an ended-state refresh, `markVoteEnded()` reconciles the recently-created and recently-opened carriers without restarting their TTLs and records a confirmed-ended override independently of those windows. A stale ACTIVE index row cannot reopen that vote in the UI or put it back into Active results. A real indexed ENDED row retires the override; internally overlaid rows do not count as index convergence. The cancellation-only 404 path evicts both carriers and cached detail; confirming ENDED also invalidates cached detail so the next detail navigation re-reads the server. A locally confirmed ended row is checked against unfiltered inputs and Close overrides, so the group Active filter cannot hide its explanation. Completion refreshes the dashboard's current lens even after switching to Me, without enabling cancellation there. These guards are in-memory concurrency control, not cross-tab or server-side idempotency.
+
+### Meetings home self-invite confirmation
+
+The feature-flagged meetings home keeps successful self-invites in viewer/feed-scoped `MeetingsHomeStore` state until the feed confirms their registration IDs. An empty UID list means the write succeeded without returning an ID; removed IDs cannot confirm a re-add. `MeetingDetailsSource` forwards both that state and `retrySelfInvites` to the drawer, so a stale drawer roster cannot duplicate an invitation. Index-dependent RSVP and resend actions wait for confirmation; row removal can use a saved UID.
+
+A stale first refresh gets bounded upcoming-feed refreshes at approximately 1, 5 and 15 seconds, with the gaps defined by `MEETING_SELF_INVITE_RECONCILIATION_DELAYS_MS`. Confirmation, removal, viewer/feed changes and store destruction stop the scheduled work. Exhaustion leaves the invitation explicitly syncing rather than clearing confirmed state: the row menu and RSVP area expose **Refresh invitation**, and a toast also offers it. An explicit retry refreshes immediately and starts another bounded window; no unbounded polling or invitation write retry occurs.
+
 ### Vote summary send lifetime
 
 `VoteSummarySendService` owns each initiated summary POST independently of its dialog. It retains the reviewed preview and the pending, successful, or failed attempt per vote in memory. **Hide while sending** closes only the view: the host's `onClose` event cannot dismiss a pending attempt, so reopening observes the same request without another preview or POST and other table actions remain usable. Successful detailed results and ambiguous errors remain inspectable until explicit dismissal through the footer **Close** or header **X**. The host's `onClose` event clears settled attempts; destroying the view during navigation does not. Clear pre-send rejections are dismissed after the dialog reports them, permitting a new attempt. The dialog observes a per-vote computed attempt through `toObservable` with `takeUntilDestroyed`, so another vote's map updates do not repeat result transitions or move focus.
@@ -129,7 +141,7 @@ Registration lifetime also bounds retained responses. The personal-feed BFF enri
 
 `GET /api/user/past-meetings?include=artifacts` also sets `has_recording` (a recording with a share URL) with that URL as `recording_share_url`, and `has_ai_summary` (a summary with content that is approved or needs no approval, or awaits approval and the viewer is an organizer) from batched user-token lookups on the recording and summary indexes; other `include` values are ignored, and without it the response and its latency are unchanged. A failed lookup leaves the flag absent.
 
-`DELETE /api/meetings/:uid/registrants/self` returns `200` with `MeetingRegistrationRemovalResult`: `removed_registrant_ids` contains only successful upstream deletions and `remaining_registrant_ids` contains the caller's rows whose deletion failed. The BFF resolves those IDs from the session; the client supplies only the meeting ID, plus an optional `x-lfx-removal-source` header (`meeting-card`, `meeting-join`, `meetings-home` or `email-link`, the last for the remove-yourself link in invite emails and calendar events that opens the meeting page with `?action=leave`) that the BFF only logs as `source`. A missing or unrecognised value is logged as `unknown`; the header is never used for authorization and is not forwarded upstream. The success log records the `removed_registrant_ids` and never the removing user's `username` or `email`, so removals can be matched to the upstream service's own logs and registrant records without putting personal data in durable logs. On partial removal it also reads raw RSVP history under the caller's token and returns `remaining_rsvps` restricted to the surviving IDs and meeting. An empty history is known-empty; an omitted field means history was unavailable (or removal was complete). History lookup failure cannot undo successful deletions or turn their result into a failed removal. `clearConfirmedMeetingRsvps` ends only the deleted IDs and preserves the registration generation and surviving confirmations, so a survivor's in-flight RSVP acknowledgement stays valid. It merges recovered history without stamping it as a new write and keeps the newer copy of a matching RSVP row. The active personal feed therefore immediately reselects the survivor's applicable response even after a fresh page load; the card controls and join-page status use the same retained history with their date guards. The card and join page remain invited, warn that removal is incomplete, refresh meeting data, and lazily invalidate the personal replay for its next consumer. Only a result with no remaining IDs marks the meeting registration removed.
+`DELETE /api/meetings/:uid/registrants/self` returns `200` with `MeetingRegistrationRemovalResult`: `removed_registrant_ids` contains only successful upstream deletions and `remaining_registrant_ids` contains the caller's rows whose deletion failed. The BFF resolves indexed IDs from the session and accepts an optional non-empty `registrant_id` query hint for a just-saved registration that is not indexed yet. It deduplicates the hint with the complete lookup, then deletes each candidate through the caller-token self endpoint; the meeting wrapper checks ownership and ITX checks meeting binding independently of the index. The client also supplies an optional `x-lfx-removal-source` header (`meeting-card`, `meeting-join`, `meetings-home` or `email-link`, the last for the remove-yourself link in invite emails and calendar events that opens the meeting page with `?action=leave`) that the BFF only logs as `source`. A missing or unrecognised value is logged as `unknown`; the header is never used for authorization and is not forwarded upstream. The success log records the `removed_registrant_ids` and never the removing user's `username` or `email`, so removals can be matched to the upstream service's own logs and registrant records without putting personal data in durable logs. On partial removal it also reads raw RSVP history under the caller's token and returns `remaining_rsvps` restricted to the surviving IDs and meeting. An empty history is known-empty; an omitted field means history was unavailable (or removal was complete). History lookup failure cannot undo successful deletions or turn their result into a failed removal. `clearConfirmedMeetingRsvps` ends only the deleted IDs and preserves the registration generation and surviving confirmations, so a survivor's in-flight RSVP acknowledgement stays valid. It merges recovered history without stamping it as a new write and keeps the newer copy of a matching RSVP row. The active personal feed therefore immediately reselects the survivor's applicable response even after a fresh page load; the card controls and join-page status use the same retained history with their date guards. The card and join page remain invited, warn that removal is incomplete, and lazily invalidate the personal replay for its next consumer. The join page refreshes meeting data; the card instead retains each distinct confirmed deletion across partial retries, avoiding stale detail counts. Card-confirmed guest-count adjustments are separate from the Guests drawer's own delta. The drawer receives saved registrants, removed IDs, and that signed adjustment, merges saved rows by real UID or fallback email/invitation scope until indexing acknowledges them, permanently retires each acknowledged confirmation, and filters confirmed deletions before emitting counts. Known deleted rows are excluded before acknowledging saved writes, so a stale old registration cannot retire a new re-invitation; opening it cannot erase a successful card add or removal. `MeetingSelfInviteService` owns a viewer/meeting-scoped in-flight guard from subscription through settlement. Card profile/roster resolution and drawer self-invitation submissions share that guard, including manually entered guests matching the viewer. Submission guarding, successful self-add acknowledgement, and drawer self-removal acknowledgement (including surviving self registrations) match the resolved guest identity or the session's known email/canonical LFID using the existing case-insensitive guest-viewer matcher. This matching remains available when the meeting-invitation email preference lookup fails; it does not select a replacement delivery address, guess ownership of unknown aliases, or enable automatic Add myself while the preference is unknown. Pending state suppresses duplicate requests in either direction and survives closing the drawer; completion, errors and unsubscription release only the captured viewer/meeting key. It is an in-memory concurrency guard, not cross-tab or server-side idempotency. When an `already-listed` result follows a card-confirmed removal, its matching `registrants` rows identify the new UIDs: the card retains its original count baseline, excludes deleted/already-retained UIDs, and adds each new row exactly once rather than applying the old removal delta to a replacement backend count. When backend count fields are absent, fetched roster length replaces the baseline rather than retaining a delta it has already acknowledged. The organizer overview receives the same confirmed additions/removals, filters deleted RSVP history, and reuses the drawer's reconciled roster once loaded; a pending guest does not hide other RSVP-only preview people or become an accepted response. Self-removal does not emit a meeting-deletion event: the dashboard's existing removal signal hides non-organizers without destroying the retained organizer card, and the personal feed is invalidated lazily. This does not persist local count adjustments across unrelated navigation or page reloads. Empty or synthetic UIDs are never sent as removal hints. A successful no-UID create remains invited with explicit syncing feedback and retryable self-removal; a 404 while its identity is pending prompts a later retry through the existing lookup, never another invitation POST. Only a result with no remaining IDs marks the meeting registration removed.
 
 Fresh acknowledgements bridge registration-index lag too: before a newly confirmed registration first appears in indexed metadata, an older or empty registration list cannot invalidate its successful write. Once its UID has appeared, a later missing/replaced UID invalidates that registration's retained responses. Explicit successful removal always ends the registration immediately, even before its first indexed appearance.
 
@@ -442,8 +454,9 @@ are recovery hints, never evidence that a run is writing, waiting or complete. F
 observation gates the page behind one neutral, layout-shaped skeleton; no intake,
 old document or local questions appear first. Recorded state wins on open, focus and
 visibility return. A private questions block can continue only for the matching server
-run/questions turn; missing or contradictory recorded state retires that private
-block immediately. Capability-only agents without a document-run contract are not
+run/questions turn; a `questions` row that omits its block (a reader the BFF could not
+verify, or a non-writer poll) keeps the held block, and only a visible newer round or
+another recorded state retires it (`mktgRunHoldsQuestions`). Capability-only agents without a document-run contract are not
 promoted into public run-state evidence. Documents labels use only the recorded state. The shared
 visibility poller pauses hidden work, re-reads on focus and keeps live lists/documents
 fresh while idle as well as running. Selected closed-run detail requests carry the
@@ -451,7 +464,8 @@ opaque `run` query so a discarded/superseded marker can render safe navigation c
 instead of a blank page. No browser cache or actor identifier substitutes for server facts.
 
 `MktgRunProgressComponent` owns living-document public detail/body reads and their
-single bounded availability budget. The document view consumes its read cycles headlessly for living runs: only the
+one retry policy: uniform jitter in [base, min(cap, base·2^n)] (AWS "Full Jitter" offset to a floor at the reader's
+base interval, by the operator's ruling; cf. Google Cloud truncated exponential backoff), that never stops (a denied read is latched instead). The document view consumes its read cycles headlessly for living runs: only the
 failed card renders there, and an active `?run=` replaces to the run page. The
 run page owns one asset heading, one status line and the progress steps. A server-observed discarded/superseded marker cancels the document receiver matching private stream; late results cannot replace that closed view.
 One-off receivers keep their generating presentation and use the same visible/focus lifetime for reads. A living run-page `?run=` reader always measures public progress, including when a matching private attempt exists. Public landing opens the current
@@ -469,10 +483,45 @@ its document instead. Other writers submit
 without any session capability. An accepted answer resumes public progress;
 403 retains a reason-bearing waiting notice without retries. A scoped 409
 `MKTG_RUN_ANSWERED` retires the submitted questions block, shows the server's
-safe display name (or Another writer), and resumes writing progress without
-resending. Identifier-like names are not echoed. A genuinely new server questions
-block remains answerable; other 409/412 responses refresh the current row. A waiting reader can also Refresh progress after another
-browser answers; successful Send resumes normal polling. One-off answers remain creator-only.
+safe display name (or Someone on your team), resumes writing progress without
+resending, and keeps the sent draft read-only under the notice (`locked` questions block: every
+box disabled, no Send, the stepper still browsable) until a newer block, another run or leaving.
+The same conflict learnt at read time, from a poll that shows the held block moved to writing,
+storing or completed while this browser's own send is not open, is heard the same way when the
+form was typed (an answer differs, trimmed, from what it opened with): the notice names nobody
+("Someone on your team"), or "another window" when this profile's stored attempt shows the block
+answered there (the sibling window's accepted send reaches shared storage, never this window's
+memory copy, so the attempt store reads storage for that look, and the save that retires the held
+block carries the stored answered round forward rather than erasing it), and the typed draft stays
+below; an untouched form moves on to Writing quietly. While either form's own send is open, a poll
+changes nothing: the server claims the block before it replies, so the reply, or its 409, settles
+it. A poll that finds the run already completed (or absent from a complete, non-unavailable read
+that lists runs) says "the asset is ready" instead of "the agent is writing"; a line heard while
+writing says the same once the document view sees its run landed, since a line must be true when
+read, and the document view scopes the remembered line as the reader does: gone once the run closed
+without landing (failed, discarded, superseded), once it asks a newer round, or once the page
+follows another run, which means a `run=` selection naming one or a genuinely newer run (still
+active, or started after the notice's); an older or failed row in the history is not one, and the
+run page likewise makes the run it follows the remembered one. The
+notice travels with the kept block (`MktgRunAnsweredNotice.kept`): the progress
+reader draws the block directly under its line on both pages, and the document the run landed on
+shows the same line with the draft beside the produced revision. One notice text builder serves
+both paths and both forms, public and private. Identifier-like names are not echoed. A genuinely new server questions
+block remains answerable; other 409/412 responses refresh the current row. The waiting state
+checks on its own (`MKTG_RUN_POLL.questionsIntervalMs`), on the run page and on the document card
+alike, and keeps a held block through polls that omit it. The run page, the document card and view, the Documents
+list and the comments panel offer no Refresh button and no re-read Retry (the run-again Retry, which starts a new
+attempt, stays); the re-read buttons that remain on other Marketing OS
+surfaces (the run page's dependency "Try again", the Kit, family, downstream and family-details pages, the LinkedIn
+load retry, and the slides, family-export, AEO/GEO and Member 360 lookups) are tracked as follow-up work under
+lfx-self-serve issue #5058. On the button-free surfaces a failed
+or partial read shows one plain line (`MKTG_POLL_RETRYING_TEXT`) while the shared visibility poller
+(`createVisibilityPoll`) retries with uniform jitter in [base, min(cap, base·2^n)] (cap `MKTG_POLL_MAX_BACKOFF_MS`),
+pausing while the tab is hidden and reading at once on tab return, window focus or reconnect; a 401/403 is a plain
+line whose scope the reader latches (the poller's wakes get `EMPTY` for it) — the run progress reader, the agent-run
+persistence watch, the comments service, the Documents list and detail and the document view's stored-report read
+all do; the Kit and Family pages keep polling at `MKTG_RUN_POLL.intervalMs` and the Kit service latches only a 403 —
+and any other final failure is a plain line. Successful Send resumes normal polling. One-off answers remain creator-only.
 Catalog/intakes own membership/routing.
 Framework, kit and boilerplates renderers, exports and dependency sidecars stay
 on the document view. Revision workflows, not the retired inline feedback form,
@@ -505,10 +554,10 @@ so two failed sessions of one living document cannot share a retry target.
 Initial navigation discovers runs of all ages. Timer reads are bounded; private
 coverage is materialized into validated public rows, never serialized as skipped
 ids or counts. Window-skipped unfinished snapshots are last-known and unavailable.
-Clients retain missing same-scope rows while unavailable, back off and stop at the
-shared availability timeout; manual refresh resets that budget. One stale row can
-make the project's progress unknown and retain another completed run's last-known
-row until that pause/manual refresh. Known stored-current metadata is not changed.
+Clients retain missing same-scope rows while unavailable and keep checking on the
+capped jittered backoff, with no stop and no manual refresh; a healthy read resets
+it. One stale row can make the project's progress unknown and retain another
+completed run's last-known row until a healthy read. Known stored-current metadata is not changed.
 Transient reads retain the last same-scope asset/list with a warning; auth,
 permission and scope changes fail closed. A first run can have zero revisions and
 progress only. Other browsers can read writer-authorized progress, not creator

@@ -2,20 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { ApplicationRef, PLATFORM_ID, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, NavigationEnd, Router } from '@angular/router';
 import { CommitteeMemberVotingStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
-import { Vote } from '@lfx-one/shared/interfaces';
+import { CommitteeMember, Vote } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { VoteManageComponent } from './vote-manage.component';
 
@@ -39,6 +39,8 @@ describe('VoteManageComponent', () => {
   let getProject: Mock;
   let fetchCommittee: Mock;
   let getCommittee: Mock;
+  let getCommitteeDetail: Mock;
+  let getCommitteeMembers: Mock;
   let routerEvents$: BehaviorSubject<NavigationEnd>;
   let setProject: Mock;
   let messageAdd: Mock;
@@ -115,6 +117,8 @@ describe('VoteManageComponent', () => {
     // Committee leg grants write access by default so the eviction predicate stays quiet.
     fetchCommittee = vi.fn().mockReturnValue(of({ uid: COMMITTEE_UID, writer: true }));
     getCommittee = vi.fn().mockReturnValue(of(null));
+    getCommitteeDetail = vi.fn().mockReturnValue(of({ uid: COMMITTEE_UID, enable_voting: true }));
+    getCommitteeMembers = vi.fn().mockReturnValue(of([]));
     routerEvents$ = new BehaviorSubject<NavigationEnd>(new NavigationEnd(0, '/project/votes/x/edit', '/project/votes/x/edit'));
     setRouteMode(VOTE_UID);
     activeContext.set(null);
@@ -171,6 +175,8 @@ describe('VoteManageComponent', () => {
           provide: CommitteeService,
           useValue: {
             getCommittee,
+            getCommitteeDetail,
+            getCommitteeMembers,
             fetchCommittee,
           },
         },
@@ -925,6 +931,33 @@ describe('VoteManageComponent', () => {
       expect(fixture.componentInstance.form().disabled).toBe(false);
     });
 
+    it.each(['save', 'open'])('can %s a majority clone as a new plurality vote', async (action) => {
+      routeMock.snapshot.queryParamMap = convertToParamMap({ clone: CLONE_SOURCE_UID });
+      activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG });
+      getProject.mockReturnValue(of({ uid: PROJECT_UID, writer: true }));
+      fetchVote.mockReturnValue(of(sourceVote({ poll_type: PollType.MAJORITY, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('all');
+      const question = (form.get('questions') as FormArray).at(0) as FormGroup;
+      question.get('question')?.setValue('Approve the proposed budget?');
+      (question.get('options') as FormArray).at(0).setValue('Yes');
+      (question.get('options') as FormArray).at(1).setValue('No');
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      if (action === 'save') {
+        fixture.componentInstance.onSaveAsDraft();
+        expect(voteServiceMock.createVote).toHaveBeenCalledWith(expect.objectContaining({ poll_type: PollType.GENERIC }));
+      } else {
+        const confirm = vi.spyOn(TestBed.inject(ConfirmationService), 'confirm');
+        fixture.componentInstance.onSubmit();
+        expect(confirm).toHaveBeenCalled();
+        confirm.mock.calls.at(-1)?.[0].accept?.();
+        expect(voteServiceMock.confirmSpeculativeVote).toHaveBeenCalledWith(expect.objectContaining({ poll_type: PollType.GENERIC }));
+      }
+      expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Voting method unavailable' }));
+    });
+
     // GH-3781 review round 3 (PRRT_kwDOPMiRQ86uDywE, dealako; pins the uAPFY/vote.utils.ts SSR fix):
     // cloning an ended vote resets its deadline through getUserTimezone() unless running on the
     // server, matching every other getUserTimezone() call site's isPlatformBrowser guard. Pins that
@@ -1050,5 +1083,241 @@ describe('VoteManageComponent', () => {
     await TestBed.inject(ApplicationRef).whenStable();
 
     expect(router.navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  // #2921: the voting method is seeded from the Create Vote dropdown's ?poll_type=, locked once the
+  // vote exists, and a Condorcet IRV vote needs at least three eligible voters before it can open.
+  describe('voting method (#2921)', () => {
+    let capturedConfirmation: Confirmation | null;
+
+    const members = (count: number, status = CommitteeMemberVotingStatus.VOTING_REP): CommitteeMember[] =>
+      Array.from({ length: count }, (_, index) => ({ uid: `member-${index}`, voting: { status } }) as CommitteeMember);
+
+    const setQueryParams = (params: Record<string, string>) => {
+      routeMock.queryParamMap = of(convertToParamMap(params));
+      routeMock.snapshot.queryParamMap = convertToParamMap(params);
+    };
+
+    const fillValidForm = (component: VoteManageComponent, pollType: PollType = PollType.CONDORCET_IRV) => {
+      const form = component.form();
+      form.get('title')?.setValue('Chair election 2026');
+      form.get('committee')?.setValue({ uid: COMMITTEE_UID, name: 'Test Committee' });
+      form.get('eligible_participants')?.setValue('voting_rep');
+      form.get('poll_type')?.setValue(pollType);
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Who should chair the board?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Alice');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('Bob');
+      form.updateValueAndValidity();
+    };
+
+    const createFilled = async (pollType: PollType = PollType.CONDORCET_IRV) => {
+      const fixture = await createComponent();
+      fillValidForm(fixture.componentInstance, pollType);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture;
+    };
+
+    const rankedVote = () =>
+      ({
+        ...enrichedVote(),
+        name: 'Ranked draft',
+        status: PollStatus.DISABLED,
+        poll_type: PollType.CONDORCET_IRV,
+        committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
+        end_time: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        end_time_timezone: 'UTC',
+        poll_questions: [
+          {
+            question_id: 'q1',
+            prompt: 'Who should chair the board?',
+            type: 'multiple_choice',
+            choices: [
+              { choice_id: 'c1', choice_text: 'Alice' },
+              { choice_id: 'c2', choice_text: 'Bob' },
+            ],
+          },
+        ],
+      }) as unknown as Vote;
+
+    beforeEach(() => {
+      setRouteMode(null); // create mode
+      setQueryParams({});
+      activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG, name: 'Test Project' });
+      getProject.mockReturnValue(of({ uid: PROJECT_UID, writer: true }));
+      getCommitteeMembers.mockReturnValue(of(members(3)));
+      capturedConfirmation = null;
+      const confirmationService = TestBed.inject(ConfirmationService);
+      vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation) => {
+        capturedConfirmation = confirmation;
+        return confirmationService;
+      });
+    });
+
+    afterEach(() => setQueryParams({}));
+
+    it.each([
+      ['condorcet_irv', PollType.GENERIC],
+      ['generic', PollType.GENERIC],
+      ['meek_stv', PollType.GENERIC],
+      ['bogus', PollType.GENERIC],
+    ])('seeds only enabled methods from ?poll_type=%s on create', async (param, expected) => {
+      setQueryParams({ poll_type: param });
+      const fixture = await createComponent();
+      const control = fixture.componentInstance.form().get('poll_type')!;
+
+      expect(control.value).toBe(expected);
+      expect(control.enabled).toBe(true);
+      control.setValue(PollType.GENERIC);
+      expect(control.value).toBe(PollType.GENERIC);
+    });
+
+    it('defaults to plurality without a ?poll_type=', async () => {
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.form().get('poll_type')?.value).toBe(PollType.GENERIC);
+    });
+
+    it('keeps an existing vote’s method in edit mode, locked, whatever ?poll_type= says', async () => {
+      setRouteMode(VOTE_UID);
+      setQueryParams({ poll_type: 'generic' });
+      fetchVote.mockReturnValue(of(rankedVote()));
+      const fixture = await createComponent();
+      const control = fixture.componentInstance.form().get('poll_type')!;
+
+      expect(control.value).toBe(PollType.CONDORCET_IRV);
+      expect(control.disabled).toBe(true);
+    });
+
+    it.each(['onSubmit', 'onSaveAsDraft'] as const)('blocks new Condorcet votes at %s even if the form is set programmatically', async (action) => {
+      const fixture = await createFilled();
+
+      fixture.componentInstance[action]();
+
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+      expect(voteServiceMock.createVote).not.toHaveBeenCalled();
+      expect(voteServiceMock.confirmSpeculativeVote).not.toHaveBeenCalled();
+      expect(capturedConfirmation).toBeNull();
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Voting method unavailable' }));
+    });
+
+    it('rechecks availability after the open confirmation and discards a pending speculative vote', async () => {
+      const fixture = await createFilled(PollType.GENERIC);
+      fixture.componentInstance.onSubmit();
+      expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledTimes(1);
+      expect(capturedConfirmation).not.toBeNull();
+
+      fixture.componentInstance.form().get('poll_type')?.setValue(PollType.CONDORCET_IRV);
+      capturedConfirmation!.accept!();
+
+      expect(voteServiceMock.confirmSpeculativeVote).not.toHaveBeenCalled();
+      expect(voteServiceMock.discardSpeculativeVote).toHaveBeenCalled();
+      expect(fixture.componentInstance.submitting()).toBe(false);
+    });
+
+    it('still opens an existing Condorcet draft with ranked questions', async () => {
+      setRouteMode(VOTE_UID);
+      fetchVote.mockReturnValue(of(rankedVote()));
+      const fixture = await createComponent();
+
+      fixture.componentInstance.onSubmit();
+
+      expect(voteServiceMock.updateVote).toHaveBeenCalledTimes(1);
+      expect(voteServiceMock.updateVote.mock.calls[0][1].poll_questions.map((question: { type: string }) => question.type)).toEqual(['multiple_choice']);
+      expect(voteServiceMock.enableVote).toHaveBeenCalledWith(VOTE_UID);
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+    });
+
+    it('requires a complete roster before counting eligible voters for an existing Condorcet draft', async () => {
+      setRouteMode(VOTE_UID);
+      fetchVote.mockReturnValue(of(rankedVote()));
+      const fixture = await createComponent();
+
+      expect(getCommitteeMembers).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, expect.any(HttpParams));
+      expect(getCommitteeMembers.mock.calls[0][1].get('require_complete')).toBe('true');
+      expect(fixture.componentInstance.eligibleVoterCountState()).toEqual({ status: 'loaded', count: 3 });
+    });
+
+    it('keeps the method out of an edit’s update request, so ITX keeps the stored one', async () => {
+      setRouteMode(VOTE_UID);
+      fetchVote.mockReturnValue(of(rankedVote()));
+      getProject.mockReturnValue(of({ uid: PROJECT_UID, writer: true }));
+      const fixture = await createComponent();
+
+      fixture.componentInstance.onSaveAsDraft();
+
+      expect(voteServiceMock.updateVote).toHaveBeenCalledTimes(1);
+      const request = voteServiceMock.updateVote.mock.calls[0][1];
+      expect('poll_type' in request).toBe(false);
+      expect(request.poll_questions.map((question: { type: string }) => question.type)).toEqual(['multiple_choice']);
+    });
+
+    it.each([
+      ['2 eligible voters', () => of(members(2)), false, 'loaded'],
+      ['3 eligible voters', () => of(members(3)), true, 'loaded'],
+      ['a failed member fetch', () => throwError(() => new Error('503')), true, 'error'],
+    ])('Step 1 with %s: valid = %s', async (_label, response, valid, status) => {
+      getCommitteeMembers.mockImplementation(response);
+      const fixture = await createFilled();
+
+      expect(fixture.componentInstance.eligibleVoterCountState().status).toBe(status);
+      expect(fixture.componentInstance.isCurrentStepValid()).toBe(valid);
+      expect(fixture.componentInstance.canGoNext()).toBe(valid);
+    });
+
+    it('logs a failed count before falling back to the non-blocking error state', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getCommitteeMembers.mockReturnValue(throwError(() => new Error('503')));
+      const fixture = await createFilled();
+
+      expect(fixture.componentInstance.eligibleVoterCountState()).toEqual({ status: 'error', count: null });
+      expect(consoleError).toHaveBeenCalledWith(
+        'Failed to count eligible voters for a Condorcet IRV group',
+        expect.objectContaining({ committeeUid: COMMITTEE_UID, message: '503' })
+      );
+      consoleError.mockRestore();
+    });
+
+    it('counts every member of a group without voting enabled, as ITX does', async () => {
+      getCommitteeDetail.mockReturnValue(of({ uid: COMMITTEE_UID, enable_voting: false }));
+      getCommitteeMembers.mockReturnValue(of(members(3, CommitteeMemberVotingStatus.NONE)));
+      const fixture = await createFilled();
+
+      expect(fixture.componentInstance.eligibleVoterCountState()).toEqual({ status: 'loaded', count: 3 });
+      expect(fixture.componentInstance.canGoNext()).toBe(true);
+    });
+
+    it('blocks Next while the count is loading', async () => {
+      getCommitteeMembers.mockReturnValue(new Subject<CommitteeMember[]>().asObservable());
+      const fixture = await createFilled();
+
+      expect(fixture.componentInstance.eligibleVoterCountState().status).toBe('loading');
+      expect(fixture.componentInstance.canGoNext()).toBe(false);
+    });
+
+    it('never fetches members for a plurality vote', async () => {
+      const fixture = await createFilled(PollType.GENERIC);
+
+      expect(getCommitteeMembers).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.eligibleVoterCountState().status).toBe('idle');
+      expect(fixture.componentInstance.canGoNext()).toBe(true);
+    });
+
+    it('refuses to open an existing Condorcet draft below the minimum but still saves edits', async () => {
+      getCommitteeMembers.mockReturnValue(of(members(2)));
+      setRouteMode(VOTE_UID);
+      fetchVote.mockReturnValue(of(rankedVote()));
+      const fixture = await createComponent();
+
+      fixture.componentInstance.onSubmit();
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+      expect(capturedConfirmation).toBeNull();
+
+      fixture.componentInstance.onSaveAsDraft();
+      expect(voteServiceMock.updateVote).toHaveBeenCalledTimes(1);
+      expect(voteServiceMock.enableVote).not.toHaveBeenCalled();
+      expect(voteServiceMock.createVote).not.toHaveBeenCalled();
+    });
   });
 });

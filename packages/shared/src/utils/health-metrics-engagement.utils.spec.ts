@@ -248,6 +248,13 @@ describe('group attendance rows', () => {
     expect(view).toMatchObject({ meetings: '—', lastMetLabel: '—', dormant: true, attendanceLabel: '—', attendancePct: null });
   });
 
+  // The bar width stays a whole percent; the server sorts this table.
+  it('labels a rate under 1% to one decimal', () => {
+    const periods = row.periods.map((period) => (period.range === 'YTD' ? { ...period, attendancePct: 0.004 } : period));
+
+    expect(buildHealthMetricsEngagementGroupRowView({ ...row, periods }, 'YTD')).toMatchObject({ attendanceLabel: '0.4%', attendancePct: 0 });
+  });
+
   // Too few meetings to rate reads as no rate, not as a percentage built on one or two meetings.
   it('drops the rate below the minimum meetings', () => {
     const periods = row.periods.map((period) =>
@@ -346,6 +353,15 @@ describe('participation period selection and delta formatting', () => {
       fillRule: HEALTH_METRICS_ENGAGEMENT_BOARD_BAR_FILL,
       sortValues: { type: 'Board', meetings: 7, attendance: 86 },
     });
+  });
+
+  it('reads an attendance rate under 1% to one decimal and sorts it on that shown figure', () => {
+    const faint = {
+      ...participationRow,
+      periods: participationRow.periods.map((candidate) => (candidate.range === 'YTD' ? { ...candidate, attendancePct: 0.004 } : candidate)),
+    };
+    const view = buildHealthMetricsEngagementParticipationRowView(faint, 'YTD');
+    expect([view.attendanceLabel, view.sortValues.attendance]).toEqual(['0.4%', 0.4]);
   });
 
   it('gives a type the view adds later the Other icon and the default bar rule', () => {
@@ -477,6 +493,17 @@ describe('organization participation rules', () => {
       attendedPct: 33,
       attendedFillClass: 'bg-amber-500',
     });
+  });
+
+  it('reads a company attended share under 1% to one decimal, and sorts it on that shown figure', () => {
+    const view = buildHealthMetricsEngagementOrgRowView(
+      orgRow('Acme Motors', 1, {
+        periods: [{ range: 'YTD', meetingsHeld: 300, meetingsTotal: 250, invitedCount: 250, attendedCount: 1, attendancePct: 0.004, avgReps: 1, sortRank: 1 }],
+      }),
+      'YTD'
+    );
+    expect(view.attendedLabel).toBe('1 of 250 (0.4%)');
+    expect(view.sortValues.attended).toBe(0.4);
   });
 
   it('reads a non-member as "Non-member" with no tier, and a tier outside the four as its own name', () => {
@@ -994,6 +1021,24 @@ describe('buildHealthMetricsEngagementAttendanceTrendView', () => {
     expect(view.chart?.paths[0].d).not.toContain('600.0');
   });
 
+  // Rates under 1% read to one decimal; the change stays in whole points, as the design writes trends.
+  it('shows rates under 1% to one decimal in the metrics', () => {
+    const small: Record<number, number> = { 0: 0.4, 8: 0.9 };
+    const view = buildHealthMetricsEngagementAttendanceTrendView(
+      months(
+        2026,
+        design.map(([pct, meetings], index): [number, number] => [small[index] ?? pct, meetings])
+      ),
+      'YTD',
+      2026,
+      today
+    );
+
+    expect(view.metrics[0]).toMatchObject({ value: '0.9%', descriptionLead: '−11pp', description: 'vs August' });
+    expect(view.metrics[1]).toMatchObject({ value: '+1pp', description: '0.4% in Jan → 0.9% in Sep' });
+    expect(view.metrics[3]).toMatchObject({ value: '0.4%', description: 'January 2026' });
+  });
+
   it('leaves the comparison out when the month before the last full month is thin', () => {
     expect(buildHealthMetricsEngagementAttendanceTrendView(thin(7), 'YTD', 2026, today).metrics[0]).toEqual({
       key: 'latest',
@@ -1129,6 +1174,20 @@ describe('buildHealthMetricsEngagementNewsletterView', () => {
     ]);
   });
 
+  it('keeps Avg. click rate to one decimal, never 0.0% above zero, and the whole rates to one decimal under 1%', () => {
+    const faint = buildHealthMetricsEngagementNewsletterView(
+      { ...performance, periods: { ...performance.periods, YTD: { ...period, avgClickRate: 0.0002, avgOpenRate: 0.004 } } },
+      'YTD'
+    );
+    expect(faint.metrics.find((metric) => metric.key === 'click')?.value).toBe('0.1%');
+    expect(faint.metrics.find((metric) => metric.key === 'open')?.value).toBe('0.4%');
+    const atOne = buildHealthMetricsEngagementNewsletterView(
+      { ...performance, periods: { ...performance.periods, YTD: { ...period, avgClickRate: 0.0097 } } },
+      'YTD'
+    );
+    expect(atOne.metrics.find((metric) => metric.key === 'click')?.value).toBe('1.0%');
+  });
+
   it('leaves out a description with no rate behind it', () => {
     const view = buildHealthMetricsEngagementNewsletterView(
       { ...performance, periods: { ...performance.periods, YTD: { ...period, avgDeliveryRate: null, avgClickToOpenRate: null } } },
@@ -1223,10 +1282,10 @@ describe('buildHealthMetricsEngagementNewsletterChart', () => {
     expect(chart.area?.color).toBe('#009AFF');
     expect(chart.ticks.map((tick) => tick.label)).toEqual(['Jan', 'Feb']);
     expect(chart.ariaLabel).toBe('Open, click and click-to-open rate by newsletter');
-    expect(legend.map((item) => [item.label, item.color])).toEqual([
-      ['Open rate', '#009AFF'],
-      ['Click rate', '#AD46FF'],
-      ['Click-to-open rate', '#00BC7D'],
+    expect(legend.map((item) => [item.label, item.color, item.dashed])).toEqual([
+      ['Open rate', '#009AFF', false],
+      ['Click rate', '#AD46FF', false],
+      ['Click-to-open rate', '#00BC7D', true],
     ]);
   });
 

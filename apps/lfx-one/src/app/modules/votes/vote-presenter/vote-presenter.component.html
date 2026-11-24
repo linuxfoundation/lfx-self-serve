@@ -87,7 +87,7 @@
                 @if (isRanked()) {
                   <div class="rounded-[20px] bg-white p-6 text-gray-900">
                     @for (q of rankedQuestions(); track q.questionId) {
-                      <lfx-vote-ranked-question-results [question]="q" variant="creator" />
+                      <lfx-vote-ranked-question-results [question]="q" variant="creator" [showOutcome]="true" />
                     }
                   </div>
                 } @else {

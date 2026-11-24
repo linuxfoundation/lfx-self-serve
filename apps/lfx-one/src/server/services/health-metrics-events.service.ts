@@ -29,8 +29,11 @@ import {
   HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
+// Deep import, as across the server: the `utils` barrel loads `@angular/forms`, which throws in the Node spec runtime.
+import { formatHealthMetricsCountryName } from '@lfx-one/shared/utils/health-metrics-world-map.utils';
 
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
+import { healthMetricsAccountLogoJoinSql, healthMetricsAccountLogoSql } from '../helpers/health-metrics-logo.helper';
 import { buildHealthMetricsSortOrderBy, healthMetricsTierRankSql, healthMetricsTrimSql } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
@@ -103,7 +106,6 @@ const REGISTRATION_COUNTRY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_RE
 const WEEK_OVER_WEEK_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS_WEEK_OVER_WEEK';
 const SPONSORSHIPS_BY_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER';
 const EVENT_REGISTRATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS';
-const ACCOUNT_LOGO_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING';
 /** Each company's current membership tier; the events views carry membership but no tier. */
 const MEMBERSHIP_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
 
@@ -836,10 +838,10 @@ export class HealthMetricsEventsService {
         ORDER BY ${orderBy}
         LIMIT ${pageSize} OFFSET ${offset}
       )
-      SELECT totals.*, page.*, NULLIF(TRIM(logos.logo_url), '') AS logo_url
+      SELECT totals.*, page.*, ${healthMetricsAccountLogoSql('logos')} AS logo_url
       FROM totals
       LEFT JOIN page ON TRUE
-      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = page.account_id
+      ${healthMetricsAccountLogoJoinSql('logos', 'page.account_id')}
       ORDER BY page.page_position ASC NULLS LAST
     `;
 
@@ -938,7 +940,7 @@ export class HealthMetricsEventsService {
         page.account_id,
         page.account_name,
         -- The mapped logo first; the view's own is the fallback.
-        COALESCE(NULLIF(TRIM(logos.logo_url), ''), NULLIF(TRIM(page.logo_url), '')) AS logo_url,
+        ${healthMetricsAccountLogoSql('logos', 'page.logo_url')} AS logo_url,
         page.is_member,
         page.membership_tier,
         page.registrations_count,
@@ -949,7 +951,7 @@ export class HealthMetricsEventsService {
         page.sort_rank
       FROM totals
       LEFT JOIN page ON TRUE
-      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = page.account_id
+      ${healthMetricsAccountLogoJoinSql('logos', 'page.account_id')}
       ORDER BY page.page_position ASC NULLS LAST
     `;
 
@@ -1143,23 +1145,41 @@ export class HealthMetricsEventsService {
     // Only a code that can key a country is kept, before either fold, so a placeholder code never merges two countries or
     // outranks a real one. The list comes from constants, never from the request, so interpolating it is safe.
     const codes = [...HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES].map((code) => `'${code}'`).join(', ');
+    // A spelling's registrations across every period, so a group is labelled by its most common spelling. Qualified, so
+    // it reads the source's columns, never the SUM aliases of the same name beside it.
+    const total = (source: string) => columns.map((column) => `COALESCE(${source}${column}, 0)`).join(' + ');
+    // A name read as words: underscores as spaces, runs of whitespace as one, trimmed after both, case ignored.
+    const nameKey = "LOWER(TRIM(REGEXP_REPLACE(REPLACE(country, '_', ' '), '[[:space:]]+', ' ')))";
     const sql = `
-      WITH by_name AS (
+      WITH spellings AS (
         SELECT
           NULLIF(TRIM(country), '') AS country,
+          ${nameKey} AS name_key,
           MAX(CASE WHEN UPPER(TRIM(country_code)) IN (${codes}) THEN UPPER(TRIM(country_code)) END) AS country_code,
           ${sums('')}
         FROM ${REGISTRATION_COUNTRY_VIEW}
         WHERE project_id = ?
           AND NULLIF(TRIM(country), '') IS NOT NULL
-        GROUP BY NULLIF(TRIM(country), '')
+        GROUP BY NULLIF(TRIM(country), ''), ${nameKey}
+      ),
+      -- Spellings that read as the same words fold first, taking any code one of them carries, so "united_kingdom" with
+      -- no code joins "United Kingdom" under GB.
+      by_name AS (
+        SELECT
+          name_key,
+          MAX(country_code) AS country_code,
+          MAX_BY(spellings.country, ${total('spellings.')}) AS country,
+          ${sums('spellings.')}
+        FROM spellings
+        GROUP BY name_key
       )
       SELECT
         MAX(country_code) AS country_code,
-        MAX(country) AS country,
+        MAX_BY(by_name.country, ${total('by_name.')}) AS country,
         ${sums('by_name.')}
       FROM by_name
-      GROUP BY COALESCE(country_code, country)
+      -- Names under one code fold into one row; a code names its country, and a name with no code keeps its most common spelling.
+      GROUP BY COALESCE(country_code, name_key)
     `;
 
     const result = await executeSnowflakeViewRead<GeographyCountryRow>(this.snowflakeService, req, sql, [foundationId], {
@@ -1189,10 +1209,10 @@ export class HealthMetricsEventsService {
         d.account_name,
         d.is_all_organizations,
         d.is_unaffiliated_organization,
-        NULLIF(TRIM(logos.logo_url), '') AS logo_url,
+        ${healthMetricsAccountLogoSql('logos')} AS logo_url,
         ${periodColumns}
       FROM ${SPEAKERS_DRILLDOWN_VIEW} d
-      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = d.account_id
+      ${healthMetricsAccountLogoJoinSql('logos', 'd.account_id')}
       WHERE d.foundation_slug = ?
         AND d.is_all_projects = TRUE
         AND (d.is_all_organizations = TRUE OR ${ranked})
@@ -1229,9 +1249,9 @@ export class HealthMetricsEventsService {
         p.submission_status_original,
         p.proposal_status_group,
         p.is_unaffiliated_proposal,
-        NULLIF(TRIM(logos.logo_url), '') AS logo_url
+        ${healthMetricsAccountLogoSql('logos')} AS logo_url
       FROM ${SPEAKERS_LIST_VIEW} p
-      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = p.account_id
+      ${healthMetricsAccountLogoJoinSql('logos', 'p.account_id')}
       WHERE p.foundation_slug = ?
         AND p.is_all_projects = TRUE
         AND (${inAnyPeriod})
@@ -1536,14 +1556,15 @@ function mapSponsorshipPeriod(
 /** Countries with no registration in the period drop out; the rest rank by registrations, then name. */
 function mapGeographyPeriod(scope: GeographyScopeRow, rows: GeographyCountryRow[], range: HealthMetricsL2Range): HealthMetricsEventsGeographyPeriod {
   const ranked = rows
-    .map(
-      (row): HealthMetricsEventsGeographyCountry => ({
-        // Only an assigned ISO code (or Kosovo's XK) keys the map and the flag.
-        code: row.COUNTRY_CODE && HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES.has(row.COUNTRY_CODE) ? row.COUNTRY_CODE : null,
-        country: row.COUNTRY ?? '',
+    .map((row): HealthMetricsEventsGeographyCountry => {
+      // Only an assigned ISO code (or Kosovo's XK) keys the map and the flag, and names the country.
+      const code = row.COUNTRY_CODE && HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES.has(row.COUNTRY_CODE) ? row.COUNTRY_CODE : null;
+      return {
+        code,
+        country: formatHealthMetricsCountryName(code, row.COUNTRY ?? ''),
         registrations: toNullableNumber(row[periodColumn('registration_count', range)]) ?? 0,
-      })
-    )
+      };
+    })
     .filter((country) => country.country !== '' && country.registrations > 0)
     .sort((a, b) => b.registrations - a.registrations || a.country.localeCompare(b.country));
 

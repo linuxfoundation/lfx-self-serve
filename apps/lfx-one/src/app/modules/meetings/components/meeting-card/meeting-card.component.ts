@@ -59,6 +59,7 @@ import {
   MeetingDeleteTypeResult,
   MeetingGroupLink,
   MeetingOccurrence,
+  MeetingRegistrant,
   MeetingRsvp,
   MeetingSelfRegistrationRemovalEvent,
   MeetingRecurrence,
@@ -93,6 +94,7 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
@@ -162,6 +164,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly meetingService = inject(MeetingService);
   private readonly inviteResend = inject(MeetingInviteResendService);
   private readonly selfRemoval = inject(MeetingSelfRemovalService);
+  private readonly selfInvite = inject(MeetingSelfInviteService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -195,6 +198,13 @@ export class MeetingCardComponent implements OnInit {
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
+  /** Confirmed card writes are separate from the drawer's own count delta. */
+  public readonly confirmedSelfCountDelta = signal(0);
+  public readonly confirmedSelfRegistrants = signal<MeetingRegistrant[]>([]);
+  public readonly confirmedRemovedRegistrantIds = signal<string[]>([]);
+  public readonly selfIdentityPending = signal(false);
+  /** Reuse the drawer's reconciled roster after it has loaded, rather than counting its writes twice. */
+  public readonly drawerRegistrants = signal<MeetingRegistrant[] | null>(null);
   public readonly confirmedRsvps = signal<MeetingRsvp[]>([]);
   /**
    * What the registrants drawer counted, or `null` while it has not counted yet.
@@ -219,6 +229,8 @@ export class MeetingCardComponent implements OnInit {
   /** Set while the pre-open write-access probe is in flight, so the edit button cannot be double-fired. */
   public checkingEditAccess: WritableSignal<boolean> = signal(false);
   public readonly leavingMeeting: WritableSignal<boolean> = signal(false);
+  public readonly addingMyself: WritableSignal<boolean> = signal(false);
+  public readonly selfInvitePending = computed(() => this.addingMyself() || this.selfInvite.isPending(this.meeting().id));
   public readonly resendingInvite: Signal<boolean> = computed(() => this.inviteResend.isResendingOwn(this.meeting().id));
 
   // Computed values for template
@@ -313,6 +325,12 @@ export class MeetingCardComponent implements OnInit {
   });
   // Whoever is shown as registered can remove that registration, so the badge and the action share one rule.
   public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee());
+  // The other half of that toggle, for the organizers who can manage guests. The feed's `invited` flag also reads "not
+  // invited" when its registrant lookup failed, so this only decides whether to offer the add; the service confirms the
+  // complete roster before posting.
+  public readonly canAddMyself: Signal<boolean> = computed(
+    () => this.authenticated() && !!this.meeting().organizer && !this.pastMeeting() && !this.isRegisteredAttendee() && !this.leavingMeeting()
+  );
   // Resending goes to the viewer's own registrant row, so it needs one that really exists. `isRegisteredAttendee` is not
   // enough for a non-organizer: `invited` is derived from access grants and can be true while the feed's
   // `my_registrant_ids` is `[]` (no active registration), which would offer a resend that 404s. So a supplied list is
@@ -415,6 +433,13 @@ export class MeetingCardComponent implements OnInit {
       .subscribe(() => {
         this.optimisticInvited.set(false);
         this.confirmedRsvps.set([]);
+        this.confirmedSelfCountDelta.set(0);
+        this.confirmedSelfRegistrants.set([]);
+        this.confirmedRemovedRegistrantIds.set([]);
+        this.selfIdentityPending.set(false);
+        this.drawerRegistrants.set(null);
+        this.additionalRegistrantsCount.set(0);
+        this.drawerGuestCount.set(null);
       });
   }
 
@@ -571,12 +596,13 @@ export class MeetingCardComponent implements OnInit {
   }
 
   /** The guest drawer already updates counts; synchronize only the viewer's invitation state here. */
-  public onSelfAdded(meetingId: string): void {
+  public onSelfAdded(meetingId: string, registrant?: MeetingRegistrant): void {
     if (this.meeting().id !== meetingId) return;
     this.optimisticInvited.set(true);
     this.meetingService.clearRemovedRegistration(meetingId);
     this.userService.refreshUserMeetings(false);
-    this.refreshMeeting();
+    this.rememberSelfRegistrant(registrant);
+    this.meeting.update((meeting) => ({ ...meeting, invited: true }));
   }
 
   public onSelfRemoved(result: MeetingSelfRegistrationRemovalEvent): void {
@@ -590,7 +616,12 @@ export class MeetingCardComponent implements OnInit {
     if (stillInvited) this.meetingService.rememberRemovedRegistrants(meetingId, result.removed_registrant_ids);
     else this.meetingService.markRegistrationRemoved(meetingId, result.removed_registrant_ids);
     this.userService.refreshUserMeetings(false);
-    this.refreshMeeting();
+    this.recordConfirmedRemoval(result.removed_registrant_ids, false);
+    if (!stillInvited) {
+      this.confirmedSelfRegistrants.set([]);
+      this.selfIdentityPending.set(false);
+    }
+    this.meeting.update((meeting) => ({ ...meeting, invited: stillInvited, my_rsvp: stillInvited ? meeting.my_rsvp : null }));
   }
 
   public confirmLeaveMeeting(): void {
@@ -607,6 +638,71 @@ export class MeetingCardComponent implements OnInit {
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
       accept: () => this.leaveMeeting(),
     });
+  }
+
+  /**
+   * Adds the viewer to this meeting's guests, for every occurrence, from the card's own-actions row.
+   * @description A saved invite updates the card locally so a stale detail refetch cannot undo the guest count. When
+   * the roster already lists the viewer the card refetches to catch up, unless confirmed removals require retaining
+   * the original count baseline and incorporating the newly discovered re-invitation instead. When the service cannot resolve the viewer as a guest
+   * (no email, no first and last name, or a failed meeting-invite email lookup), the Guests drawer opens on its Add
+   * Guest form instead.
+   */
+  public addMyself(): void {
+    if (this.selfInvitePending() || !this.canAddMyself()) return;
+    const meetingId = this.meeting().id;
+    this.addingMyself.set(true);
+
+    this.selfInvite
+      .add$(meetingId)
+      .pipe(
+        take(1),
+        finalize(() => this.addingMyself.set(false))
+      )
+      .subscribe({
+        next: (result) => {
+          if (this.meeting().id !== meetingId) return;
+          if (result.status === 'unavailable') {
+            this.messageService.add({
+              severity: 'info',
+              summary: 'Add Yourself',
+              detail: "We couldn't add you automatically. Use Add Guest to invite yourself.",
+            });
+            this.onInvitePeople();
+            return;
+          }
+          this.optimisticInvited.set(true);
+          if (result.status === 'added') {
+            this.confirmedSelfCountDelta.update((count) => count + 1);
+            this.rememberSelfRegistrant(result.registrant);
+            this.drawerGuestCount.set(null);
+            // Keep the confirmed count instead of replacing it with cached, pre-add details.
+            this.meeting.update((meeting) => ({ ...meeting, invited: true }));
+            this.messageService.add({ severity: 'success', summary: 'Added', detail: "You've been added to this meeting." });
+          } else {
+            this.messageService.add({ severity: 'info', summary: 'Already Invited', detail: "You're already a guest of this meeting." });
+            if (this.confirmedRemovedRegistrantIds().length > 0 && result.registrants) {
+              // Retain the original baseline: a new snapshot may already include our earlier deletion.
+              const known = new Set([...this.confirmedRemovedRegistrantIds(), ...this.confirmedSelfRegistrants().map((row) => row.uid)]);
+              const reinvited = result.registrants.filter((row) => {
+                if (known.has(row.uid)) return false;
+                known.add(row.uid);
+                return true;
+              });
+              this.confirmedSelfCountDelta.update((count) => count + reinvited.length);
+              for (const registrant of reinvited) this.rememberSelfRegistrant(registrant);
+              this.drawerGuestCount.set(null);
+              this.meeting.update((meeting) => ({ ...meeting, invited: true }));
+            } else {
+              this.refreshMeeting();
+            }
+          }
+          this.userService.refreshUserMeetings(false);
+        },
+        error: (error: unknown) => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: this.selfInvite.describeFailure(error) });
+        },
+      });
   }
 
   /** Asks before resending, the same way Remove Myself asks before removing; nothing is sent unless the user confirms. */
@@ -891,10 +987,14 @@ export class MeetingCardComponent implements OnInit {
 
   private leaveMeeting(): void {
     const meetingId = this.meeting().id;
+    const savedUid = this.confirmedSelfRegistrants()
+      .map((registrant) => registrant.uid?.trim())
+      .filter((uid) => uid && !uid.startsWith('optimistic-'))
+      .at(-1);
     this.leavingMeeting.set(true);
 
     this.selfRemoval
-      .remove$(meetingId, 'meeting-card')
+      .remove$(meetingId, 'meeting-card', savedUid)
       .pipe(
         take(1),
         finalize(() => this.leavingMeeting.set(false))
@@ -902,6 +1002,7 @@ export class MeetingCardComponent implements OnInit {
       .subscribe({
         next: (result) => {
           if (this.meeting().id !== meetingId) return;
+          this.recordConfirmedRemoval(result.removed_registrant_ids);
           if (result.remaining_registrant_ids.length > 0) {
             this.confirmedRsvps.update((responses) => responses.filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id)));
             this.optimisticInvited.set(true);
@@ -910,23 +1011,49 @@ export class MeetingCardComponent implements OnInit {
               summary: 'Removal incomplete',
               detail: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
             });
-            this.refreshMeeting();
             return;
           }
           this.confirmedRsvps.set([]);
           this.optimisticInvited.set(false);
+          // Keep the confirmed deletion across stale detail reads and drawer opens.
           this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
           this.messageService.add({
             severity: 'success',
             summary: 'Removed',
             detail: 'You have been removed from this meeting.',
           });
-          this.meetingDeleted.emit();
+          this.confirmedSelfRegistrants.set([]);
+          this.selfIdentityPending.set(false);
+          // The dashboard already hides removed invitees reactively; a deletion event would destroy this confirmed count.
+          this.userService.refreshUserMeetings(false);
         },
         error: (error: unknown) => {
+          if (this.selfIdentityPending() && error instanceof HttpErrorResponse && error.status === 404) {
+            this.messageService.add({
+              severity: 'info',
+              summary: 'Invitation syncing',
+              detail: 'Your invitation is saved but is still syncing. Try Remove Myself again shortly.',
+            });
+            return;
+          }
           this.messageService.add({ severity: 'error', summary: 'Error', detail: this.selfRemoval.describeFailure(error) });
         },
       });
+  }
+
+  private rememberSelfRegistrant(registrant?: MeetingRegistrant): void {
+    if (registrant) this.confirmedSelfRegistrants.update((rows) => [...rows.filter((row) => row.uid !== registrant.uid), registrant]);
+    const uid = registrant?.uid?.trim();
+    this.selfIdentityPending.set(!uid || uid.startsWith('optimistic-'));
+  }
+
+  private recordConfirmedRemoval(ids: string[], adjustCount = true): void {
+    const known = new Set(this.confirmedRemovedRegistrantIds());
+    const newIds = [...new Set(ids)].filter((id) => !known.has(id));
+    if (adjustCount) this.confirmedSelfCountDelta.update((count) => count - newIds.length);
+    this.confirmedRemovedRegistrantIds.set([...known, ...newIds]);
+    this.confirmedSelfRegistrants.update((rows) => rows.filter((row) => !ids.includes(row.uid)));
+    this.drawerGuestCount.set(null);
   }
 
   private refreshMeeting(): void {
@@ -937,6 +1064,7 @@ export class MeetingCardComponent implements OnInit {
         tap((meeting) => {
           this.additionalRegistrantsCount.set(0);
           this.drawerGuestCount.set(null);
+          this.drawerRegistrants.set(null);
           this.meeting.set(meeting);
         })
       )
@@ -1313,7 +1441,7 @@ export class MeetingCardComponent implements OnInit {
     return computed(() => {
       const meeting = this.meeting();
       const meetingBaseCount = resolveMeetingBaseCount(meeting) ?? 0;
-      const meetingTotalCount = meetingBaseCount + this.additionalRegistrantsCount();
+      const meetingTotalCount = meetingBaseCount + this.additionalRegistrantsCount() + this.confirmedSelfCountDelta();
       return Math.max(meetingTotalCount, this.drawerGuestCount() ?? 0);
     });
   }

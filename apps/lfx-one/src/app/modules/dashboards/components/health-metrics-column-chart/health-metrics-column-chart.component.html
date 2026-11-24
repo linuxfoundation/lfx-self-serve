@@ -24,13 +24,13 @@
               class="relative flex h-full min-w-0 flex-1 justify-center rounded-[6px] outline-none transition-colors duration-ui-fast hover:bg-[var(--ui-neutral-alpha-50)] focus-visible:ring-2 focus-visible:ring-blue-500"
               role="listitem"
               tabindex="0"
-              [class.z-20]="activeIndex() === index"
+              [class.z-20]="tip.activeIndex() === index"
               [attr.aria-label]="column.ariaLabel"
               [attr.data-testid]="testId() + '-column-' + column.key"
-              (mouseenter)="onEnter(index, $event)"
-              (focus)="onEnter(index, $event)"
-              (mouseleave)="onLeave(index)"
-              (blur)="onLeave(index)">
+              (mouseenter)="tip.enter(index, $event)"
+              (focus)="tip.enter(index, $event)"
+              (mouseleave)="tip.leave(index)"
+              (blur)="tip.leave(index)">
               <div class="relative h-full max-w-[70%]" aria-hidden="true" [style.width.px]="chart().barWidthPx">
                 <!-- A 1px white line parts the segments; the highest one rounds the stack's top corners. -->
                 <div class="absolute inset-0" [style.opacity]="column.opacity">
@@ -53,12 +53,12 @@
                   >
                 }
               </div>
-              @if (activeIndex() === index) {
+              @if (tip.activeIndex() === index) {
                 <!-- Exact px: the popup sits 12px off the column's centre. -->
                 <lfx-health-metrics-chart-tip
                   class="pointer-events-none absolute top-1/2 z-10 -translate-y-1/2"
-                  [style.left]="tipPlacement()?.left ?? null"
-                  [style.right]="tipPlacement()?.right ?? null"
+                  [style.left]="tip.placement()?.left ?? null"
+                  [style.right]="tip.placement()?.right ?? null"
                   aria-hidden="true"
                   [tip]="column.tip"
                   [attr.data-testid]="testId() + '-tip'" />

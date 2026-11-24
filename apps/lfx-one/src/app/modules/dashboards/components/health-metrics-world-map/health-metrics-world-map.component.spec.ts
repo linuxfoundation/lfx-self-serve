@@ -108,7 +108,9 @@ describe('HealthMetricsWorldMapComponent', () => {
       [...row.children].map((cell) => cell.textContent?.trim())
     );
 
-    expect(query('health-metrics-world-map-table')?.className).toContain('sr-only');
+    // The wrapper hides the table: a table ignores sr-only's 1px height and overflow, so it would stretch the page.
+    expect(query('health-metrics-world-map-table')?.className).not.toContain('sr-only');
+    expect(query('health-metrics-world-map-table')?.parentElement?.className).toContain('sr-only');
     expect(rows).toEqual([
       ['United States', '900 · 90%'],
       ['Atlantis', '100 · 10%'],

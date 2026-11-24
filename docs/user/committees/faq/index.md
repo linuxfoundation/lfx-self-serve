@@ -4,7 +4,7 @@ description: Frequently asked questions about groups (committees) in LFX Self Se
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, faq, governance, join, leave]
-last_updated: 2026-11-20
+last_updated: 2026-11-23
 intercom_collection: Committees
 ---
 
@@ -58,7 +58,7 @@ Open the group, go to the **Members** tab, and select **Add Member** to search a
 
 Yes. If you can manage the group's members, use **Import Members** on the group's **Members** tab to add up to 500 people from a CSV file, including each person's name, company, role, and voting details. The import adds people directly as members after you review a preview — it does not send invitations, change anyone's permissions, or create groups. You can also select **Import Members** on the **Add Members** step when creating or editing a group; there, members stay pending in the editable list until you select **Done** or **Update Group**. See [Import members from a CSV](../manage-committees/#import-members-from-a-csv).
 
-**Add Member** is quicker for a few people: you can paste email addresses or import a meeting's registrants, but groups that require a company need one person at a time there. Members who can only send invitations see **Invite Someone** instead and cannot import a CSV.
+**Add Member** is quicker for a few people: you can paste email addresses or import a meeting's registrants, then review each person's first and last name. Available search or meeting names are filled in; complete any missing names before adding people. CSV imports also require both names for every new member, including people with an LF Account. Groups that require a company need one person at a time in **Add Member**. Members who can only send invitations see **Invite Someone** instead and cannot import a CSV; invitations still need only an email address.
 
 ## Can I keep using LFX while a CSV import runs?
 

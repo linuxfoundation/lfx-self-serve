@@ -55,23 +55,26 @@ import {
   registrantDisplayName,
   getPastMeetingResourceId,
   isMeetingInviteResponsesEnabled,
+  isMeetingGuestViewer,
   isMeetingSelfGuestListed,
   markFormControlsAsTouched,
   resolveMeetingBaseCount,
   resolveMeetingGuestRole,
   resolveRsvpOccurrenceId,
   occurrenceIdToSeconds,
+  toMeetingSelfGuestRegistrant,
 } from '@lfx-one/shared/utils';
 import type { RegistrantAttendanceStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, filter, finalize, map, of, pairwise, startWith, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, defer, filter, finalize, map, of, pairwise, startWith, switchMap, take, tap } from 'rxjs';
 
 import { RegistrantFormComponent } from '../registrant-form/registrant-form.component';
 
@@ -112,6 +115,7 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly userService = inject(UserService);
+  private readonly selfInvite = inject(MeetingSelfInviteService);
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
   protected readonly inviteResend = inject(MeetingInviteResendService);
 
@@ -126,10 +130,20 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
   /** The parent could not confirm a complete roster; suppress duplicate-sensitive self-adds. */
   public readonly initialRegistrantsFailed: InputSignal<boolean> = input<boolean>(false);
+  /** The host already shows the viewer as a guest, for example right after adding them; hides "Add myself" while the roster catches up. */
+  public readonly selfInvited: InputSignal<boolean> = input<boolean>(false);
+  /** A card-level self-invite is still pending; prevent a second write from this drawer. */
+  public readonly selfInvitePending = input(false);
+  /** Confirmed parent writes, retained independently of the drawer's own mutations and lagging reads. */
+  public readonly confirmedRegistrants = input<MeetingRegistrant[]>([]);
+  public readonly confirmedRemovedRegistrantIds = input<string[]>([]);
+  public readonly confirmedCountAdjustment = input(0);
   /** The occurrence the host is showing; lets a guest be invited to that date only. */
   public readonly occurrence: InputSignal<MeetingOccurrence | null> = input<MeetingOccurrence | null>(null);
 
   public readonly registrantsCountChange: OutputEmitterRef<number> = output<number>();
+  /** The complete reconciled roster, so the card overview can reuse the same saved rows and deletions. */
+  public readonly registrantsChange = output<MeetingRegistrant[]>();
   public readonly refreshRequested: OutputEmitterRef<number> = output<number>();
   /** A successful self-invite, so parents can expose RSVP and self-registration controls immediately. */
   public readonly selfAdded: OutputEmitterRef<MeetingRegistrant> = output<MeetingRegistrant>();
@@ -144,6 +158,7 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly internalLoadFailed: WritableSignal<boolean> = signal(false);
   private readonly refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
   private readonly optimisticRegistrants: WritableSignal<MeetingRegistrant[]> = signal<MeetingRegistrant[]>([]);
+  private readonly acknowledgedConfirmedRegistrants = signal<MeetingRegistrant[]>([]);
   private readonly pendingSelfFocusContext = signal<string | null>(null);
   // UIDs removed by the organizer — filtered immediately from the displayed list so the guest
   // disappears without waiting for the async refetch to complete.
@@ -318,6 +333,30 @@ export class MeetingRegistrantsDisplayComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((hosts) => this.resolvedHostsChange.emit(hosts));
 
+    toObservable(
+      computed(() => {
+        if (this.pastMeeting() || this.externallyManaged() || this.registrantsLoading() || this.internalLoadFailed()) return null;
+        const resolvedBase = resolveMeetingBaseCount(this.meeting());
+        const base = (resolvedBase ?? this.internalRegistrants().length) + this.confirmedCountAdjustment();
+        // The merged roster acknowledges saved UIDs and excludes confirmed deletions before counting.
+        const registrants = this.registrants();
+        const rosterDelta = registrants.length - base;
+        // With no backend count, each fetched roster is the new baseline, not an additional delta.
+        const additional = resolvedBase === undefined ? rosterDelta : Math.max(rosterDelta, this.additionalRegistrantsCount());
+        return { additional, total: Math.max(0, base + additional), registrants };
+      })
+    )
+      .pipe(
+        filter((counts) => counts !== null),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ additional, total, registrants }) => {
+        this.additionalRegistrantsCount.set(additional);
+        this.registrantsCountChange.emit(additional);
+        this.totalCountChange.emit(total);
+        this.registrantsChange.emit(registrants);
+      });
+
     toObservable(this.inviteResponsesEnabled)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((enabled) => {
@@ -332,24 +371,36 @@ export class MeetingRegistrantsDisplayComponent {
       .subscribe(() => {
         this.optimisticRegistrants.set([]);
         this.deletedRegistrantUids.set(new Set());
+        this.acknowledgedConfirmedRegistrants.set([]);
       });
 
     toObservable(
       computed(() => {
         const self = this.selfGuest();
+        const removed = new Set([...this.deletedRegistrantUids(), ...this.confirmedRemovedRegistrantIds()]);
+        const fetched = this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.internalRegistrants();
         return {
-          fetched: this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.internalRegistrants(),
+          fetched: fetched.filter((row) => !removed.has(row.uid)),
+          confirmed: this.confirmedRegistrants(),
           self,
           selfRemoved: !!self && this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id),
         };
       })
     )
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(({ fetched, self, selfRemoved }) => {
+      .subscribe(({ fetched, confirmed, self, selfRemoved }) => {
+        const known = this.acknowledgedConfirmedRegistrants();
+        const candidates = this.unacknowledgedConfirmedRegistrants(confirmed);
+        const pending = filterUnindexedMeetingRegistrants(candidates, fetched);
+        const acknowledged = candidates.filter((row) => !pending.includes(row));
+        if (acknowledged.length) this.acknowledgedConfirmedRegistrants.set([...known, ...acknowledged]);
         this.optimisticRegistrants.update((rows) => {
           if (selfRemoved && self) {
             const removedUids = [...fetched, ...rows].filter((row) => isMeetingSelfGuestListed(self, [row])).map((row) => row.uid);
-            this.deletedRegistrantUids.update((known) => new Set([...known, ...removedUids]));
+            this.deletedRegistrantUids.update((known) => {
+              const added = removedUids.filter((uid) => !known.has(uid));
+              return added.length ? new Set([...known, ...added]) : known;
+            });
           }
           const retained = rows.filter((row) => !(selfRemoved && self && isMeetingSelfGuestListed(self, [row])));
           const indexed = fetched.filter((row) => !this.deletedRegistrantUids().has(row.uid));
@@ -469,19 +520,7 @@ export class MeetingRegistrantsDisplayComponent {
 
     const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
     const focusContext = this.selfFocusContextKey();
-    const guest = {
-      email: self.email,
-      first_name: self.first_name,
-      last_name: self.last_name,
-      job_title: self.job_title,
-      org_name: self.org_name,
-      username: self.username,
-      avatar_url: self.avatar_url,
-      host: false,
-      selfAdded: true,
-    } satisfies Partial<MeetingRegistrantWithState>;
-
-    this.submitGuest(guest, occurrenceId, this.selfSubmitId, () => {
+    this.submitGuest(toMeetingSelfGuestRegistrant(self), occurrenceId, this.selfSubmitId, () => {
       if (!this.destroyRef.destroyed) this.pendingSelfFocusContext.set(focusContext);
     });
   }
@@ -643,6 +682,8 @@ export class MeetingRegistrantsDisplayComponent {
     stagedGuestId?: string,
     onAdded?: (added: MeetingRegistrant) => void
   ): void {
+    const addsSelf = this.isSelfRegistrant(formValue as unknown as MeetingRegistrant);
+    if (addsSelf && this.selfInvite.isPending(this.meeting().id)) return;
     if (stagedGuestId) {
       this.submittingGuestIds.update((ids) => new Set([...ids, stagedGuestId]));
     } else {
@@ -656,8 +697,8 @@ export class MeetingRegistrantsDisplayComponent {
       ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
     };
 
-    this.meetingService
-      .addMeetingRegistrants(meetingId, [createData])
+    const request = () => this.meetingService.addMeetingRegistrants(meetingId, [createData]);
+    defer(() => (addsSelf ? this.selfInvite.withPendingInvite$(meetingId, request) : request()))
       .pipe(take(1))
       .subscribe({
         next: (response) => {
@@ -704,8 +745,7 @@ export class MeetingRegistrantsDisplayComponent {
               ...returned,
               uid: returned.uid?.trim() || `optimistic-${crypto.randomUUID()}`,
             };
-            const self = this.selfGuest();
-            const addsSelf = !!self && isMeetingSelfGuestListed(self, [optimistic]);
+            const addsSelf = this.isSelfRegistrant(optimistic);
             // A confirmed self-invite supersedes a prior removal, including normal Add Guest submissions.
             if (addsSelf) this.meetingService.clearRemovedRegistration(meetingId);
             if (this.externallyManaged()) {
@@ -713,7 +753,7 @@ export class MeetingRegistrantsDisplayComponent {
               this.refreshRequested.emit(response.summary.successful);
             } else {
               const meeting = this.meeting();
-              const baseCount = resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length;
+              const baseCount = (resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length) + this.confirmedCountAdjustment();
               const nextAdditionalCount = this.additionalRegistrantsCount() + response.summary.successful;
               this.optimisticRegistrants.update((list) => [...list, optimistic]);
               this.additionalRegistrantsCount.set(nextAdditionalCount);
@@ -755,7 +795,6 @@ export class MeetingRegistrantsDisplayComponent {
     }
     const meetingId = this.meeting().id;
     const contextKey = this.registrantContextKey();
-    const self = this.selfGuest();
     this.deleting.set(true);
     this.meetingService
       .deleteMeetingRegistrants(meetingId, [uid])
@@ -770,9 +809,9 @@ export class MeetingRegistrantsDisplayComponent {
             // waiting for the async refetch (works for both managed and self-managed modes).
             this.deletedRegistrantUids.update((uids) => new Set([...uids, uid]));
             this.optimisticRegistrants.update((list) => list.filter((r) => r.uid !== uid));
-            if (self && isMeetingSelfGuestListed(self, [registrant])) {
+            if (this.isSelfRegistrant(registrant)) {
               const remaining = this.registrants()
-                .filter((row) => isMeetingSelfGuestListed(self, [row]))
+                .filter((row) => this.isSelfRegistrant(row))
                 .map((row) => row.uid);
               this.selfRemoved.emit({ meeting_id: meetingId, removed_registrant_ids: [uid], remaining_registrant_ids: remaining });
             }
@@ -780,11 +819,11 @@ export class MeetingRegistrantsDisplayComponent {
               this.refreshRequested.emit(-response.summary.successful);
             } else {
               const meeting = this.meeting();
-              const baseCount = resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length;
+              const baseCount = (resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length) + this.confirmedCountAdjustment();
               // Capture the current total before decrementing additionalRegistrantsCount so we subtract
               // response.summary.successful exactly once from the emitted total, not twice.
               const currentTotal = baseCount + this.additionalRegistrantsCount();
-              const nextAdditionalCount = Math.max(0, this.additionalRegistrantsCount() - response.summary.successful);
+              const nextAdditionalCount = this.additionalRegistrantsCount() - response.summary.successful;
               this.additionalRegistrantsCount.set(nextAdditionalCount);
               this.registrantsCountChange.emit(nextAdditionalCount);
               this.totalCountChange.emit(Math.max(0, currentTotal - response.summary.successful));
@@ -836,17 +875,6 @@ export class MeetingRegistrantsDisplayComponent {
                   return of([]);
                 }),
                 map((registrants) => registrants.sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]),
-                tap((registrants) => {
-                  const meeting = this.meeting();
-                  const resolvedBaseCount = resolveMeetingBaseCount(meeting);
-                  const hasBackendBaseCount = resolvedBaseCount !== undefined;
-                  const baseCount = hasBackendBaseCount ? resolvedBaseCount : (registrants?.length ?? 0);
-                  const fetchedAdditional = Math.max(0, (registrants?.length ?? 0) - baseCount);
-                  const additionalCount = hasBackendBaseCount ? Math.max(fetchedAdditional, this.additionalRegistrantsCount()) : fetchedAdditional;
-                  this.additionalRegistrantsCount.set(additionalCount);
-                  this.registrantsCountChange.emit(additionalCount);
-                  this.totalCountChange.emit(baseCount + additionalCount);
-                }),
                 finalize(() => this.internalLoading.set(false))
               );
             })
@@ -939,7 +967,7 @@ export class MeetingRegistrantsDisplayComponent {
 
   private initRegistrants(): Signal<MeetingRegistrant[]> {
     return computed(() => {
-      const deletedUids = this.deletedRegistrantUids();
+      const deletedUids = new Set([...this.deletedRegistrantUids(), ...this.confirmedRemovedRegistrantIds()]);
       let list: MeetingRegistrant[];
       if (this.externallyManaged()) {
         const seed = this.initialRegistrants() ?? [];
@@ -952,10 +980,9 @@ export class MeetingRegistrantsDisplayComponent {
         list = list.filter((row) => !isMeetingSelfGuestListed(self, [row]));
       }
       // Real UIDs match exactly; UID-less hints reconcile only to the same email and invitation scope.
-      const pending = filterUnindexedMeetingRegistrants(
-        this.optimisticRegistrants().filter((row) => !deletedUids.has(row.uid)),
-        list
-      );
+      const optimistic = this.optimisticRegistrants().filter((row) => !deletedUids.has(row.uid));
+      const confirmed = this.unacknowledgedConfirmedRegistrants().filter((row) => !deletedUids.has(row.uid));
+      const pending = filterUnindexedMeetingRegistrants([...optimistic, ...filterUnindexedMeetingRegistrants(confirmed, optimistic)], list);
       const merged = pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
 
       const overrides = this.hostOverrides();
@@ -1082,13 +1109,17 @@ export class MeetingRegistrantsDisplayComponent {
   /**
    * Whether to offer "Add myself".
    * @description Hidden while the list loads or after its fetch failed, since it may be incomplete, and
-   * once the user is on it under a known email or their LFID. A profile without both names is never
-   * offered: the add payload requires them.
+   * once the user is on it under a known email or their LFID. Also hidden while the host shows the user
+   * as a guest ({@link selfInvited}), since the list can lag a save made outside this drawer. A profile
+   * without both names is never offered: the add payload requires them.
    */
   private initCanAddSelf(): Signal<boolean> {
     return computed(() => {
       const self = this.selfGuest();
       if (
+        this.selfInvited() ||
+        this.selfInvitePending() ||
+        (this.selfInvite.isPending(this.meeting().id) && !this.selfSubmitting()) ||
         !self?.first_name ||
         !self.last_name ||
         this.pastMeeting() ||
@@ -1110,5 +1141,21 @@ export class MeetingRegistrantsDisplayComponent {
 
       return new Map(people.map((person) => [person.uid, resolveMeetingGuestRole(person, organizerKeys)] as const));
     });
+  }
+
+  /** Identity matching does not choose an invitation address, so known session identity stays usable after a preference lookup fails. */
+  private isSelfRegistrant(registrant: Pick<MeetingHostCandidate, 'email' | 'username'>): boolean {
+    const self = this.selfGuest();
+    if (self && isMeetingSelfGuestListed(self, [registrant])) return true;
+    return isMeetingGuestViewer(registrant, {
+      email: this.userService.user()?.email ?? null,
+      username: this.userService.viewerUsername(),
+    });
+  }
+
+  /** Real UIDs persist across row copies; a UID-less acknowledgement belongs only to that saved write. */
+  private unacknowledgedConfirmedRegistrants(rows = this.confirmedRegistrants()): MeetingRegistrant[] {
+    const known = this.acknowledgedConfirmedRegistrants();
+    return rows.filter((row) => !known.includes(row) && (!row.uid || row.uid.startsWith('optimistic-') || !known.some((saved) => saved.uid === row.uid)));
   }
 }

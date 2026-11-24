@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
+import { PollType } from '@lfx-one/shared/enums';
 import { CommitteeReference } from '@lfx-one/shared/interfaces';
 import { trimmedMinLength, trimmedRequired, validCommitteeReference, validTimeFormat, voteDeadlineValidator } from '@lfx-one/shared/validators';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,6 +38,7 @@ function buildForm(): FormGroup {
       description: new FormControl(''),
       committee: new FormControl<CommitteeReference | null>(null, [Validators.required, validCommitteeReference()]),
       eligible_participants: new FormControl('', [Validators.required]),
+      poll_type: new FormControl<PollType>(PollType.GENERIC, { nonNullable: true }),
       close_date: new FormControl<Date | null>(null, [Validators.required]),
       close_time: new FormControl<string>('11:59 PM', { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
       timezone: new FormControl<string>('Pacific/Honolulu', { nonNullable: true, validators: [Validators.required] }),
@@ -289,5 +291,138 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
 
     expect(closeDate.value).toBeInstanceOf(Date);
     expect(form.errors?.['futureDateTime']).toBeTruthy(); // surfaced by the validator, not by wiping the date
+  });
+});
+
+describe('VoteBasicsComponent — voting method (#2921)', () => {
+  let fixture: ComponentFixture<VoteBasicsComponent>;
+  let form: FormGroup;
+  let scrollIntoView: typeof HTMLElement.prototype.scrollIntoView;
+
+  const element = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  const render = async (pollType: PollType, inputs: Record<string, unknown> = {}): Promise<void> => {
+    form.get('poll_type')?.setValue(pollType);
+    for (const [name, value] of Object.entries(inputs)) {
+      fixture.componentRef.setInput(name, value);
+    }
+    await fixture.whenStable();
+  };
+
+  beforeEach(async () => {
+    // jsdom lacks the browser APIs used by PrimeNG's real select overlay.
+    scrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    vi.stubGlobal('matchMedia', (media: string) => ({
+      matches: false,
+      media,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: () => false,
+    }));
+    await TestBed.configureTestingModule({
+      imports: [VoteBasicsComponent],
+      providers: [provideRouter([]), provideNoopAnimations()],
+    })
+      .overrideComponent(VoteBasicsComponent, {
+        remove: { imports: [CommitteeSelectorComponent] },
+        add: { imports: [StubCommitteeSelectorComponent] },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(VoteBasicsComponent);
+    form = buildForm();
+    const formValue = signal(form.getRawValue());
+    form.valueChanges.subscribe(() => formValue.set(form.getRawValue()));
+    fixture.componentRef.setInput('form', form);
+    fixture.componentRef.setInput('formValue', formValue);
+  });
+
+  afterEach(async () => {
+    // Let PrimeNG's overlay alignment finish before restoring browser shims.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    fixture.destroy();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    vi.unstubAllGlobals();
+  });
+
+  it('disables Condorcet in the rendered creation select and labels it coming soon', async () => {
+    await render(PollType.GENERIC);
+    element('vote-method-select')!.querySelector<HTMLElement>('[role="combobox"]')!.click();
+    await fixture.whenStable();
+
+    const options = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'));
+    const condorcet = options.find((option) => option.textContent?.includes('Condorcet IRV'))!;
+    const plurality = options.find((option) => option.textContent?.includes('Plurality'))!;
+    expect(condorcet.getAttribute('data-p-disabled')).toBe('true');
+    expect(condorcet.textContent).toContain('Coming soon');
+    expect(plurality.getAttribute('data-p-disabled')).not.toBe('true');
+    condorcet.click();
+    await fixture.whenStable();
+
+    expect(form.get('poll_type')?.value).toBe(PollType.GENERIC);
+  });
+
+  it('offers Plurality and Condorcet IRV, describing the selected one', async () => {
+    await render(PollType.CONDORCET_IRV);
+
+    expect(element('vote-method-select')).not.toBeNull();
+    expect(fixture.componentInstance.methodOptions.map((option) => [option.label, option.value])).toEqual([
+      ['Plurality', PollType.GENERIC],
+      ['Condorcet IRV', PollType.CONDORCET_IRV],
+    ]);
+    expect(element('vote-method-description')?.textContent).toContain('Voters rank the options.');
+    expect(element('vote-method-locked')).toBeNull();
+  });
+
+  it('explains the lock in edit mode', async () => {
+    await render(PollType.CONDORCET_IRV, { isEditMode: true });
+
+    expect(element('vote-method-locked')?.textContent).toContain("The voting method can't be changed after the vote is created.");
+    expect(element('vote-method-select')?.textContent).toContain('Condorcet IRV');
+    expect(element('vote-method-select')?.textContent).not.toContain('Coming soon');
+    expect(element('vote-method-description')?.textContent).toContain('Voters rank the options.');
+  });
+
+  it.each([
+    [PollType.MAJORITY, 'Majority vote'],
+    [PollType.INSTANT_RUNOFF_VOTE, 'Instant runoff vote'],
+    [PollType.MEEK_STV, 'Meek STV'],
+  ])('shows the locked %s method even when it is not offered for creation', async (pollType, label) => {
+    form.get('poll_type')?.disable();
+    await render(pollType, { isEditMode: true });
+
+    expect(element('vote-method-select')?.textContent).toContain(label);
+    expect(element('vote-method-description')?.textContent?.trim()).not.toBe('');
+    expect(form.get('poll_type')?.disabled).toBe(true);
+    expect(form.get('poll_type')?.value).toBe(pollType);
+    expect(fixture.componentInstance.methodOptions.map((option) => option.value)).toEqual([PollType.GENERIC, PollType.CONDORCET_IRV]);
+  });
+
+  it('warns when Condorcet IRV has fewer than three eligible voters', async () => {
+    await render(PollType.CONDORCET_IRV, { eligibleVoterCountState: { status: 'loaded', count: 2 } });
+
+    expect(element('vote-basics-min-voters-warning')?.textContent).toContain('Condorcet IRV needs at least 3 eligible voters. This group has 2.');
+    expect(element('vote-basics-min-voters-unchecked')).toBeNull();
+  });
+
+  it.each([
+    ['three eligible voters', PollType.CONDORCET_IRV, { status: 'loaded', count: 3 }],
+    ['a count still loading', PollType.CONDORCET_IRV, { status: 'loading', count: null }],
+    ['a plurality vote', PollType.GENERIC, { status: 'loaded', count: 1 }],
+  ])('shows no warning for %s', async (_label, pollType, state) => {
+    await render(pollType, { eligibleVoterCountState: state });
+
+    expect(element('vote-basics-min-voters-warning')).toBeNull();
+  });
+
+  it('notes, without blocking, when the eligible count could not be checked', async () => {
+    await render(PollType.CONDORCET_IRV, { eligibleVoterCountState: { status: 'error', count: null } });
+
+    expect(element('vote-basics-min-voters-unchecked')?.textContent).toContain("We couldn't check how many people are eligible to vote.");
+    expect(element('vote-basics-min-voters-warning')).toBeNull();
   });
 });

@@ -47,6 +47,10 @@
             <span class="text-gray-900 text-right">{{ eligibleParticipantsLabel() }}</span>
           </div>
           <div class="flex justify-between gap-4">
+            <span class="text-gray-500">Voting Method:</span>
+            <span class="text-gray-900 text-right" data-testid="vote-review-method">{{ methodLabel() }}</span>
+          </div>
+          <div class="flex justify-between gap-4">
             <span class="text-gray-500">Close Date & Time:</span>
             <span class="text-gray-900 text-right">
               @if (closeDate()) {

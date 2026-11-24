@@ -43,6 +43,7 @@ describe('CommitteeViewComponent', () => {
   let getCommittee: ReturnType<typeof vi.fn>;
   let routeParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
   let queryParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
+  let cancellationCompleted: Subject<void>;
 
   const committee = { uid: 'committee-1', name: 'Technical Steering', my_role: 'member' } as unknown as Committee;
   const meeting = { uid: 'meeting-1', title: 'Weekly sync' } as unknown as Meeting;
@@ -59,6 +60,7 @@ describe('CommitteeViewComponent', () => {
     getCommittee = vi.fn(() => of(currentCommittee));
     routeParams = new BehaviorSubject(convertToParamMap({ id: committee.uid }));
     queryParams = new BehaviorSubject(convertToParamMap({}));
+    cancellationCompleted = new Subject<void>();
 
     TestBed.configureTestingModule({
       providers: [
@@ -99,6 +101,7 @@ describe('CommitteeViewComponent', () => {
         {
           provide: VoteService,
           useValue: {
+            voteCancellationCompleted$: cancellationCompleted,
             getVotesByCommittee: vi.fn(() => of([])),
             mergeRecentlyOpenedVotes: vi.fn((v: unknown[]) => v),
             mergeRecentlyCreatedVotes: vi.fn((v: unknown[]) => v),
@@ -188,6 +191,28 @@ describe('CommitteeViewComponent', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('refreshes the parent-owned votes after cancellation completes while another group tab is selected', () => {
+    currentCommittee = { ...committee, enable_voting: true } as unknown as Committee;
+    const getVotes = vi.mocked(TestBed.inject(VoteService).getVotesByCommittee);
+    getVotes.mockReturnValue(of([{ uid: 'vote-1', status: PollStatus.ACTIVE } as Vote]));
+    const component = createComponent();
+    flush();
+    expect(component.votes()).toHaveLength(1);
+    component.activeTab.set('votes');
+    flush();
+    component.activeTab.set('about');
+    flush();
+    getVotes.mockReturnValue(of([]));
+    cancellationCompleted.next();
+    flush();
+    expect(getVotes).toHaveBeenCalledTimes(2);
+    expect(component.votes()).toEqual([]);
+    component.activeTab.set('votes');
+    flush();
+    expect(component.votes()).toEqual([]);
+    expect(getVotes).toHaveBeenCalledTimes(2);
   });
 
   it('holds a row-menu close in parent state, so the vote stays ended after the Votes tab is rebuilt (#4744)', () => {
