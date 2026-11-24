@@ -21,8 +21,10 @@ import {
   META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE,
 } from '../constants/campaign.constants';
 import type {
+  CampaignMetaAudienceTargetingBlock,
   MetaConfigRefusal,
   MetaDetailedTargeting,
+  MetaDetailedTargetingBlockInput,
   MetaDetailedTargetingPicks,
   MetaTargetingFlags,
   MetaTargetingKind,
@@ -35,8 +37,8 @@ import { metaConfigRecord } from './campaign-meta-ad-options.utils';
 
 /**
  * Meta detailed targeting (#5904 row 4): interests, behaviors, work positions and languages in
- * `metaConfig.targeting`. One set of rules for the create route (which answers a refusal with a 400) and, later,
- * the Implement tab, mirroring campaign-service's `checkMetaTargeting` and `normalizeDetailedTargeting`
+ * `metaConfig.targeting`. One set of rules for the create route (which answers a refusal with a 400) and the
+ * Implement tab, mirroring campaign-service's `checkMetaTargeting` and `normalizeDetailedTargeting`
  * (linuxfoundation/lfx-v2-campaign-service#612).
  */
 
@@ -211,4 +213,94 @@ export function metaTargetingSearchEmptyMessage(refused: boolean, pending: boole
   if (failure !== null) return failure;
   if (refused) return META_TARGETING_SEARCH_TOO_SHORT_MESSAGE;
   return META_TARGETING_SEARCH_NO_MATCH_MESSAGE;
+}
+
+/** Which flag each list needs: interests the interest flag, behaviors and job titles the behavior flag. */
+function kindFlag(kind: MetaTargetingKind, interestEnabled: boolean | null, behaviorEnabled: boolean | null): boolean | null {
+  return kind.type === 'interest' ? interestEnabled : behaviorEnabled;
+}
+
+/**
+ * The picks a saved draft carries, or `undefined` when it carries none or not as a record (a draft saved before row
+ * 4). The draft is persisted JSON, so each list keeps only well-formed picks: a Meta id and a string name,
+ * de-duplicated in first-seen order and capped at {@link META_MAX_DETAILED_TARGETING_IDS}.
+ */
+export function metaDetailedTargetingPicksFromDraft(raw: unknown): MetaDetailedTargetingPicks | undefined {
+  const record = metaConfigRecord(raw);
+  if (record === null || record === undefined) return undefined;
+  const picks = emptyMetaDetailedTargetingPicks();
+  for (const { key } of META_TARGETING_KINDS) {
+    const list = record[key];
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      const entry = metaConfigRecord(item);
+      const id = entry?.['id'];
+      const name = entry?.['name'];
+      if (typeof id !== 'string' || typeof name !== 'string') continue;
+      picks[key] = metaTargetingPicksWith(picks[key], { id, name });
+    }
+  }
+  return picks;
+}
+
+/** A copy of `picks`, so the parent's draft never holds a live view of the tab's signal. */
+export function copyMetaDetailedTargetingPicks(picks: MetaDetailedTargetingPicks): MetaDetailedTargetingPicks {
+  return { interests: [...picks.interests], behaviors: [...picks.behaviors], workPositions: [...picks.workPositions] };
+}
+
+/**
+ * The detailed fields a Meta create sends, or `null` when none: the ids of each list whose flag is an explicit yes.
+ * A list whose flag is not a yes is never sent; {@link metaDetailedTargetingBlock} holds Create while it has picks.
+ */
+export function metaDetailedTargetingForCreate(
+  picks: MetaDetailedTargetingPicks,
+  interestEnabled: boolean | null,
+  behaviorEnabled: boolean | null
+): MetaDetailedTargeting | null {
+  const out: MetaDetailedTargeting = {};
+  for (const kind of META_TARGETING_KINDS) {
+    if (kindFlag(kind, interestEnabled, behaviorEnabled) === true) out[kind.key] = picks[kind.key].map((pick) => pick.id);
+  }
+  return compactMetaDetailedTargeting(out);
+}
+
+/** `picks` with every list this deployment answered no to emptied: the Clear past an `unsupported` block, whose lists are hidden. An unanswered list is kept, since it may yet be sendable. */
+export function metaDetailedTargetingPicksSendable(
+  picks: MetaDetailedTargetingPicks,
+  interestEnabled: boolean | null,
+  behaviorEnabled: boolean | null
+): MetaDetailedTargetingPicks {
+  const out = copyMetaDetailedTargetingPicks(picks);
+  for (const kind of META_TARGETING_KINDS) {
+    if (kindFlag(kind, interestEnabled, behaviorEnabled) === false) out[kind.key] = [];
+  }
+  return out;
+}
+
+/**
+ * Why Create is held for detailed targeting the draft holds but the request cannot carry, or `null`: the audience
+ * block's states (`metaAudienceTargetingBlock`). Held rather than dropped, since targeting changes who the campaign
+ * reaches. `unsupported` (a list's flag answered no) offers Clear, since that list is hidden; while an answer is
+ * out or failed, only waiting or Retry, since the picks may well be sendable once it answers.
+ */
+export function metaDetailedTargetingBlock(input: MetaDetailedTargetingBlockInput): CampaignMetaAudienceTargetingBlock | null {
+  const held = META_TARGETING_KINDS.filter((kind) => input.picks[kind.key].length > 0 && kindFlag(kind, input.interestEnabled, input.behaviorEnabled) !== true);
+  if (held.length === 0) return null;
+  if (held.some((kind) => kindFlag(kind, input.interestEnabled, input.behaviorEnabled) === false)) {
+    return {
+      kind: 'unsupported',
+      message: 'Some Meta detailed targeting on this brief is not available on this deployment, so it cannot be sent. Clear it to create the campaign.',
+    };
+  }
+  if (input.createCapabilityRead === 'pending') {
+    return {
+      kind: 'pending',
+      message: 'Checking whether you can send Meta detailed targeting. Create waits for the answer so the targeting on this brief is not dropped.',
+    };
+  }
+  if (!input.briefId) return { kind: 'unsaved', message: "Meta detailed targeting can't be checked until this brief is saved. Save the brief." };
+  return {
+    kind: 'failed',
+    message: 'Could not confirm that you can send Meta detailed targeting, so Create waits rather than dropping the targeting on this brief. Retry the check.',
+  };
 }

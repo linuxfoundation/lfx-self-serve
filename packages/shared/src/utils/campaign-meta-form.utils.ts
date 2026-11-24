@@ -207,6 +207,13 @@ export function metaCreateRefusal(input: MetaCreateRefusalInput): string | null 
   if (!input.hasPlacement) return 'Meta Ads: choose at least one placement.';
   if (!input.pixelValid) return 'Meta Ads: fix the pixel.';
   if (input.instagramDsaInvalid) return 'Meta Ads: fix the Instagram account or the EU disclosure fields.';
-  const message = input.audienceTargetingBlock ?? input.audienceTargetingError ?? input.adOptionsBlock ?? input.adOptionsError ?? input.leadFormError;
+  const message =
+    input.audienceTargetingBlock ??
+    input.audienceTargetingError ??
+    input.detailedTargetingBlock ??
+    input.detailedTargetingError ??
+    input.adOptionsBlock ??
+    input.adOptionsError ??
+    input.leadFormError;
   return message === null ? null : `Meta Ads: ${message}`;
 }
