@@ -27,7 +27,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS_BY_PAGE: Readonly<Record<strin
   // overview
   overview: [/^\/foundations-and-projects\/?$/],
   // projects
-  projects: [],
+  projects: [/^\/projects(\/search)?\/?$/, /^\/workspaces\/?$/],
   // project-detail
   'project-detail': [],
   // contributions

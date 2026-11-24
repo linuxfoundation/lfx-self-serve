@@ -71,16 +71,18 @@
               styleClass="w-full"
               data-testid="org-projects-foundation-filter" />
           </div>
-          <div class="w-full sm:w-56">
-            <lfx-multi-select
-              [form]="filterForm"
-              control="employees"
-              optionLabel="label"
-              optionValue="value"
-              [options]="employeeOptions()"
-              placeholder="All Employees"
-              data-testid="org-projects-employee-filter" />
-          </div>
+          @if (!isEmployeeView()) {
+            <div class="w-full sm:w-56">
+              <lfx-multi-select
+                [form]="filterForm"
+                control="employees"
+                optionLabel="label"
+                optionValue="value"
+                [options]="employeeOptions()"
+                placeholder="All Employees"
+                data-testid="org-projects-employee-filter" />
+            </div>
+          }
           <lfx-more-filters-toggle
             [(expanded)]="moreFiltersExpanded"
             [count]="hiddenFilterCount()"
@@ -133,7 +135,7 @@
       </div>
 
       <div class="p-5">
-        @if (maintainerRolesUnavailable()) {
+        @if (maintainerRolesUnavailable() && !isEmployeeView()) {
           <p class="mb-3 text-xs text-gray-500" data-testid="org-projects-maintainer-roles-unavailable">
             Maintainer data is currently unavailable — the Employees filter matches contributors only.
           </p>

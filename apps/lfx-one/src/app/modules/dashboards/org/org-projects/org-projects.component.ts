@@ -88,6 +88,7 @@ import { OrgEditAccessService } from '@shared/services/org-edit-access.service';
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
+import { OrgLensViewModeService } from '@shared/services/org-lens-view-mode.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 import { orgScopeQueryParams, readOrgScope, syncOrgScopeWithUrl } from '@shared/utils/org-scope-url.util';
 import { readOrgTeamMembers, syncOrgTeamMembersWithUrl } from '@shared/utils/org-team-members-url.util';
@@ -132,6 +133,7 @@ export class OrgProjectsComponent {
   private readonly projectsService = inject(OrgLensProjectsService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly orgEditAccess = inject(OrgEditAccessService);
+  private readonly viewMode = inject(OrgLensViewModeService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
@@ -286,7 +288,9 @@ export class OrgProjectsComponent {
    * company-wide teams (`lf-staff`) and auditors can select an org but could never use these controls.
    * Loading the page stays a pure read for non-roster editors (server `resolveCanEdit`).
    */
-  protected readonly canManageWorkspaces = this.orgEditAccess.canEditSelected;
+  /** All employee view: a read-only summary with no people, so no workspace editing and no Employees filter (the server redacts the people regardless). */
+  protected readonly isEmployeeView = this.viewMode.isEmployeeView;
+  protected readonly canManageWorkspaces = computed(() => this.orgEditAccess.canEditSelected() && !this.isEmployeeView());
   protected readonly canAddProjects = computed(() => this.canManageWorkspaces() && !!this.selectedWorkspace() && !this.loading() && !this.error());
   protected readonly addProjectDisabledReason = computed(() => this.initAddProjectDisabledReason());
   protected readonly selectedAddProjectCount = computed(() => this.addProjectsFormValue().projects?.length ?? 0);
