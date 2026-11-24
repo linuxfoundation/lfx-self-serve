@@ -639,7 +639,7 @@ export const MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES: readonly MentorshipM
     state: {
       icon: 'fa-light fa-user-check',
       title: 'You are already in a mentorship',
-      subtitle: 'You have been accepted into a mentorship that has not ended yet, so you cannot apply to another one until it does.',
+      subtitle: 'You are still accepted into a mentorship, so you cannot apply to another one until its Program Admin resolves it, even if its term has ended.',
     },
   },
   {
