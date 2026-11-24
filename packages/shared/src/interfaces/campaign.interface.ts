@@ -1270,6 +1270,10 @@ export interface CampaignImplementationDraft {
   metaAdSchedule?: MetaAdSchedule | null;
   /** The Meta frequency cap as edited (#5904 row 5); `null` is none. */
   metaFrequencyCap?: MetaFrequencyCap | null;
+  /** The Meta devices as ticked (#5904 row 6): `mobile` and/or `desktop`. Not foundation-scoped. Absent means the draft predates it. */
+  metaDevicePlatforms?: string[];
+  /** The Meta operating systems as ticked (#5904 row 6): Meta `user_os` values, families only from the tab. */
+  metaUserOs?: string[];
   /** The Meta call to action, conversion event and optimization goal as chosen (#5934); an absent key is "Not set". */
   metaAdOptions?: MetaAdOptions;
   /** The foundation slug {@link metaAdOptions} was chosen under: restored only under the same one, like the targeting. */
@@ -2358,6 +2362,8 @@ export interface MetaCreateRefusalInput {
   detailedTargetingError: string | null;
   deliveryBlock: string | null;
   deliveryError: string | null;
+  deviceOsBlock: string | null;
+  deviceOsError: string | null;
   adOptionsBlock: string | null;
   adOptionsError: string | null;
   leadFormError: string | null;
@@ -2651,6 +2657,35 @@ export interface MetaDeliveryDraft {
   frequencyCap: MetaFrequencyCap | null;
 }
 
+/** The Meta devices and operating systems as ticked on the Implement tab (#5904 row 6); an empty list is Meta's default (all). */
+export interface MetaDeviceOsDraft {
+  devicePlatforms: string[];
+  userOs: string[];
+}
+
+/** One device or OS checkbox the Implement tab offers: the value a create sends and its label. */
+export interface MetaDeviceOsOption {
+  value: string;
+  label: string;
+}
+
+/** One device or OS checkbox as the options component draws it: on when the draft holds its value. */
+export interface MetaDeviceOsOptionView extends MetaDeviceOsOption {
+  on: boolean;
+}
+
+/** The Meta device and OS state `metaDeviceOsBlock` (`campaign-meta-device-os.utils.ts`) reads, as plain values. */
+export interface MetaDeviceOsBlockInput {
+  draft: MetaDeviceOsDraft;
+  /** `CampaignListResult.metaDeviceTargetingEnabled`: `null` while unanswered. */
+  deviceEnabled: boolean | null;
+  /** `CampaignListResult.metaOsTargetingEnabled`: `null` while unanswered. */
+  osEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
 /** One day toggle of the ad schedule: Meta's day number and its short label. */
 export interface MetaAdScheduleDayOption {
   value: number;
@@ -2722,6 +2757,8 @@ export type MetaDraftSnapshot = Pick<
   | 'metaDetailedTargeting'
   | 'metaAdSchedule'
   | 'metaFrequencyCap'
+  | 'metaDevicePlatforms'
+  | 'metaUserOs'
   | 'metaAdOptions'
   | 'metaAdOptionsProject'
   | 'metaLeadFormId'
@@ -2750,6 +2787,7 @@ export interface MetaDraftState {
   audienceTargeting: MetaAudienceTargetingDraft;
   detailedTargeting: MetaDetailedTargetingPicks;
   delivery: MetaDeliveryDraft;
+  deviceOs: MetaDeviceOsDraft;
   adOptions: MetaAdOptions;
   leadFormId: string;
   /** The foundation the choices were made under; targeting, ad options and the lead form restore only under it. */
@@ -2784,6 +2822,7 @@ export interface MetaDraftRestore {
   audienceTargeting?: MetaAudienceTargetingDraft;
   detailedTargeting?: MetaDetailedTargetingPicks;
   delivery?: MetaDeliveryDraft;
+  deviceOs?: MetaDeviceOsDraft;
   adOptions?: MetaAdOptions;
   /** `null` keeps the current form; `''` clears it. */
   leadFormId: string | null;

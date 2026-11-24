@@ -214,6 +214,8 @@ export function metaCreateRefusal(input: MetaCreateRefusalInput): string | null 
     input.detailedTargetingError ??
     input.deliveryBlock ??
     input.deliveryError ??
+    input.deviceOsBlock ??
+    input.deviceOsError ??
     input.adOptionsBlock ??
     input.adOptionsError ??
     input.leadFormError;

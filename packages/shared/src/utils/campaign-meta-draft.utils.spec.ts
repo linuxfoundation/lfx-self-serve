@@ -28,6 +28,7 @@ const state: MetaDraftState = {
   audienceTargeting: { ...DEFAULT_META_AUDIENCE_TARGETING, ageMin: 25, customAudiences: ['1001'] },
   detailedTargeting: { interests: [{ id: '6003', name: 'Open source' }], behaviors: [], workPositions: [] },
   delivery: { adSchedule: { days: [1, 5], startMinute: 540, endMinute: 1020 }, frequencyCap: null },
+  deviceOs: { devicePlatforms: ['mobile'], userOs: ['iOS'] },
   adOptions: { conversionEvent: 'LEAD' },
   leadFormId: '',
   foundation: 'tlf',
@@ -50,6 +51,8 @@ describe('metaDraftFields', () => {
       metaDetailedTargeting: { interests: [{ id: '6003', name: 'Open source' }], behaviors: [], workPositions: [] },
       metaAdSchedule: { days: [1, 5], startMinute: 540, endMinute: 1020 },
       metaFrequencyCap: null,
+      metaDevicePlatforms: ['mobile'],
+      metaUserOs: ['iOS'],
       metaAdOptions: { conversionEvent: 'LEAD' },
       metaAdOptionsProject: 'tlf',
       metaLeadFormId: '',
@@ -68,6 +71,7 @@ describe('metaDraftFields', () => {
     expect(fields.metaAudienceTargeting?.customAudiences).not.toBe(state.audienceTargeting.customAudiences);
     expect(fields.metaDetailedTargeting?.interests).not.toBe(state.detailedTargeting.interests);
     expect(fields.metaAdSchedule?.days).not.toBe(state.delivery.adSchedule?.days);
+    expect(fields.metaDevicePlatforms).not.toBe(state.deviceOs.devicePlatforms);
   });
 });
 
@@ -122,6 +126,7 @@ describe('metaDraftRestore', () => {
       audienceTargeting: { ...DEFAULT_META_AUDIENCE_TARGETING, ageMin: 25, customAudiences: ['1001'] },
       detailedTargeting: { interests: [{ id: '6003', name: 'Open source' }], behaviors: [], workPositions: [] },
       delivery: { adSchedule: { days: [1, 5], startMinute: 540, endMinute: 1020 }, frequencyCap: null },
+      deviceOs: { devicePlatforms: ['mobile'], userOs: ['iOS'] },
       adOptions: { conversionEvent: 'LEAD' },
       leadFormId: '',
       geoTargets: ['US', 'DE'],

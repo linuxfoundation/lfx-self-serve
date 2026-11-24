@@ -4624,6 +4624,54 @@
             </div>
           }
 
+          <!-- Devices and operating systems (#5904 row 6), each group only on its own explicit yes. -->
+          @if (metaDeviceOsShown()) {
+            <lfx-meta-device-os-options
+              class="mb-4 block"
+              [deviceShown]="metaDeviceTargetingEnabled() === true"
+              [osShown]="metaOsTargetingEnabled() === true"
+              [deviceOs]="metaDeviceOs()"
+              (deviceOsChange)="onMetaDeviceOsChange($event)"
+              data-testid="implementation-meta-device-os" />
+          }
+          @if (metaDeviceOsError(); as error) {
+            <p role="alert" class="mb-4 text-xs text-red-600" data-testid="implementation-meta-device-os-error">{{ error }}</p>
+          }
+          @if (metaDeviceOsBlock(); as block) {
+            <div
+              role="alert"
+              class="mb-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-meta-device-os-block-' + block.kind">
+              <p class="flex items-center gap-2">
+                @if (block.kind === 'pending') {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                }
+                {{ block.message }}
+              </p>
+              @if (block.kind === 'failed') {
+                <lfx-button
+                  label="Retry"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="retryCreateCapabilities.emit()"
+                  data-testid="implementation-meta-device-os-block-retry" />
+              } @else if (block.kind === 'unsupported') {
+                <lfx-button
+                  [label]="metaDeviceOsClearLabel()"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="clearUnsendableMetaDeviceOs()"
+                  data-testid="implementation-meta-device-os-clear" />
+              }
+            </div>
+          }
+
           <!-- Interests, behaviors and job titles (#5904 row 4), each list only on its own explicit yes. -->
           @if (metaDetailedTargetingAvailable()) {
             <lfx-meta-detailed-targeting
