@@ -10,6 +10,7 @@ import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { linkedinProfileFromSetup } from '../../../packages/shared/src/utils/linkedin-post.utils';
 import { kitTest as test, kitDocuments, kitJson, kitRevision, kitPrintMembers, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
 import { linkedinEnvelope } from './helpers/mktg-linkedin.helper';
+import { expectRetryingLine, OUTAGE_AUTO_RETRY_TIMEOUT } from './helpers/mktg-os-outage.helper';
 
 test.describe('Marketing family content', () => {
   test.beforeEach(async ({ page }) => {
@@ -287,24 +288,28 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-sources-loading')).toBeEmpty();
     await expect(page.getByTestId('mktg-family-sources')).toHaveCount(0);
   });
-  test('source read failures retry without inventing sources or hiding assets', async ({ page }) => {
+  test('a source read that cannot reach the server keeps trying by itself, without inventing sources or hiding assets', async ({ page }) => {
     const options = { loaded: true, revisionStatus: 500 };
     await setupKit(page, options);
     await openKit(page, '/families/positioning-brand');
-    await expect(page.getByTestId('mktg-family-sources-error')).toBeVisible();
+    await expectRetryingLine(page, page.getByTestId('mktg-family-sources-loading'));
+    await expect(page.getByTestId('mktg-family-sources-error')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-family-sources-retry')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-asset-boilerplates')).toContainText('Draft');
     options.revisionStatus = 200;
-    await page.getByTestId('mktg-family-sources-retry').getByRole('button').click();
-    await expect(page.getByTestId('mktg-family-sources')).toContainText('Sources read on the last run');
+    // No button: the next automatic check (jittered, at most the 30 s cap) reads the sources.
+    await expect(page.getByTestId('mktg-family-sources')).toContainText('Sources read on the last run', { timeout: OUTAGE_AUTO_RETRY_TIMEOUT });
+    await expect(page.getByTestId('mktg-family-sources-loading')).toBeEmpty();
   });
-  test('failed read has a separate error state', async ({ page }) => {
+  test('a read that cannot reach the server has its own state: one grey line over the skeleton, no error box and no button', async ({ page }) => {
     await setupKit(page, { status: 500 });
     await openKit(page, '/families/positioning-brand');
-    await expect(page.getByTestId('mktg-family-error')).toContainText('could not be loaded');
+    await expectRetryingLine(page, page.getByTestId('mktg-family-retrying'));
+    await expect(page.getByTestId('mktg-family-content-loading')).toBeVisible();
+    await expect(page.getByTestId('mktg-family-error')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-family-error-retry')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-actions')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-assets')).toHaveCount(0);
-    await page.getByTestId('mktg-family-error-retry').getByRole('button').click();
-    await expect(page.getByTestId('mktg-family-error')).toBeVisible();
   });
   test('unknown family renders the not-found state', async ({ page }) => {
     await setupKit(page);

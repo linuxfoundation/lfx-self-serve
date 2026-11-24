@@ -98,6 +98,22 @@ describe('AeoGeoController', () => {
       'catalog-audit-handle'
     );
   });
+  it('passes request notes through to the run and refuses notes over the agent’s cap', async () => {
+    const notes = 'Audience: maintainers.\nCompare against other.example.';
+    const result = await call('generate', { ...body(), answers: { ...body().answers, notes } });
+    expect(result.next).not.toHaveBeenCalled();
+    expect(mocks.startGeneration).toHaveBeenCalledWith(
+      expect.anything(),
+      { domain: 'project.example', notes, project_name: 'Synthetic Canonical Project', project_uid: 'resolved-project' },
+      'catalog-audit-handle'
+    );
+    mocks.startGeneration.mockClear();
+    for (const invalid of ['x'.repeat(10_001), 7]) {
+      const refused = await call('generate', { ...body(), answers: { ...body().answers, notes: invalid } });
+      expect(refused.next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    }
+    expect(mocks.startGeneration).not.toHaveBeenCalled();
+  });
   it('rejects malformed answers and revision attempts before calling Guild', async () => {
     for (const payload of [null, { ...body(), answers: { domain: 'invalid' } }, { ...body(), feedback: 'revise' }, { ...body(), priorVersion: 1 }]) {
       expect((await call('generate', payload)).next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));

@@ -10,15 +10,18 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   AEO_GEO_INTAKE_ERRORS,
   AEO_GEO_KEY_PAGE_FIELDS,
+  AEO_GEO_NOTES_MAX_CHARS,
   AEO_GEO_RECENT_RUNS_LIMIT,
   AEO_GEO_QUESTION_KEY_PREFIX,
   AEO_GEO_TIMEOUT_MESSAGE,
   MKTG_AGENTS,
   MKTG_DOCUMENT_TYPES,
   MKTG_POLL_MAX_BACKOFF_MS,
+  MKTG_NOT_AVAILABLE_TEXT,
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
@@ -73,6 +76,7 @@ import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-que
     ButtonComponent,
     InputTextComponent,
     MessageComponent,
+    TextareaComponent,
     MktgRunActivityComponent,
     MktgRunQuestionsComponent,
     MktgBreadcrumbComponent,
@@ -94,7 +98,9 @@ export class AeoGeoRunComponent {
 
   public readonly intake = input.required<MktgAgentIntake>();
   protected readonly form = new FormGroup(
-    Object.fromEntries(['domain', ...AEO_GEO_KEY_PAGE_FIELDS.map((field) => field.key)].map((key) => [key, new FormControl('', { nonNullable: true })]))
+    Object.fromEntries(
+      ['domain', ...AEO_GEO_KEY_PAGE_FIELDS.map((field) => field.key), 'notes'].map((key) => [key, new FormControl('', { nonNullable: true })])
+    )
   );
   protected readonly loading = signal(true);
   protected readonly writer = signal(false);
@@ -104,6 +110,9 @@ export class AeoGeoRunComponent {
   /** The project read is failing transiently and the poller is retrying it: one quiet status line, nothing else changes. */
   protected readonly retrying = signal(false);
   protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
+  protected readonly notesMaxChars = AEO_GEO_NOTES_MAX_CHARS;
+  /** The catalog's Notes field: its label, placeholder, hint and rows are declared once, with the family's other forms. */
+  protected readonly notesField = computed(() => this.intake().fields.find((field) => field.key === 'notes'));
   protected readonly documentLink = signal<string[] | null>(null);
   protected readonly previousError = signal('');
   protected readonly previousLoading = signal(true);
@@ -192,11 +201,12 @@ export class AeoGeoRunComponent {
           // poller on its capped backoff and on tab return, focus or reconnect, behind one quiet line; a refused or missing
           // project (401/403/404, any other final) is a plain state, latched, so no wake sends the same request again
           // (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the operator's choice, since a session-expiry
-          // 401 needs a sign-in, not a poll). No Try again button.
+          // 401 needs a sign-in, not a poll). No Try again button. `strictWriter`: a writer check that could not be made fails
+          // the read (and is retried) instead of answering 200 with `writer: false`, which would be a cached false denial.
           let projectFinal = false;
           const readProject = (): Observable<Project> => {
             if (projectFinal) return EMPTY;
-            return this.projects.getProjectStrict(context.slug).pipe(
+            return this.projects.getProjectStrict(context.slug, { strictWriter: true }).pipe(
               catchError((error: unknown) => {
                 if (isTransientHttpError(error)) return throwError(() => error);
                 projectFinal = true;
@@ -216,7 +226,7 @@ export class AeoGeoRunComponent {
                 this.answerValues.set({});
                 this.busy.set(false);
                 // A refused project is the plain no-access state; anything else final is a plain load error.
-                if (status !== 401 && status !== 403) this.error.set('The project could not be loaded.');
+                if (status !== 401 && status !== 403) this.error.set(MKTG_NOT_AVAILABLE_TEXT.project);
                 return EMPTY;
               })
             );
@@ -387,7 +397,7 @@ export class AeoGeoRunComponent {
       .subscribe();
   }
 
-  private initAnswers(): Signal<Record<'domain' | 'key_pages', string>> {
+  private initAnswers(): Signal<Record<'domain' | 'key_pages' | 'notes', string>> {
     return computed(() => {
       const values = this.values();
       return {
@@ -395,6 +405,7 @@ export class AeoGeoRunComponent {
         key_pages: AEO_GEO_KEY_PAGE_FIELDS.map((field) => values[field.key]?.trim() ?? '')
           .filter(Boolean)
           .join('\n'),
+        notes: values['notes'] ?? '',
       };
     });
   }

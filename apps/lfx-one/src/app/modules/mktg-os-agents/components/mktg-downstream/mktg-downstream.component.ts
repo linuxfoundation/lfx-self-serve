@@ -1,17 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { mktgKitRootPath } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
-import { MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_REBUILD_NAVIGATION_STATE_KEY } from '@lfx-one/shared/constants';
+import { MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_NOT_AVAILABLE_TEXT, MKTG_POLL_RETRYING_TEXT, MKTG_REBUILD_NAVIGATION_STATE_KEY } from '@lfx-one/shared/constants';
 import { MktgDocumentsResponse } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { UserService } from '@services/user.service';
+import { readUntilReachable } from '@shared/utils/visibility-poll.util';
 import { catchError, of, switchMap } from 'rxjs';
 
 /** The framework Asset board reads the SAME server projection as Kit and Family. */
@@ -23,6 +24,7 @@ import { catchError, of, switchMap } from 'rxjs';
 export class MktgDownstreamComponent {
   private readonly store = inject(MktgDocumentStoreService);
   private readonly platform = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
   private readonly router = inject(Router);
   protected readonly user = inject(UserService);
   public readonly project = input.required<string>();
@@ -34,9 +36,13 @@ export class MktgDownstreamComponent {
   private readProject = '';
   protected readonly familyId = MKTG_KIT_POSITIONING_FAMILY_ID;
   protected readonly listing = signal<MktgDocumentsResponse | null>(null);
+  /** A final refusal of the listing read: one red line, no Retry. */
   protected readonly failed = signal(false);
+  /** The server cannot be reached: one grey line in the card while the read keeps trying; a loaded listing stays. */
+  protected readonly retrying = signal(false);
   protected readonly loading = signal(true);
-  private readonly reload = signal(0);
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
+  protected readonly failedText = MKTG_NOT_AVAILABLE_TEXT.downstream;
   protected readonly stale = computed(
     () =>
       this.listing()?.groups.flatMap((group) =>
@@ -55,7 +61,7 @@ export class MktgDownstreamComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platform)) {
-      toObservable(computed(() => ({ project: this.project(), refresh: this.refreshKey(), reload: this.reload() })))
+      toObservable(computed(() => ({ project: this.project(), refresh: this.refreshKey() })))
         .pipe(
           switchMap(({ project, refresh }) => {
             this.readKey = JSON.stringify([project, refresh]);
@@ -64,9 +70,18 @@ export class MktgDownstreamComponent {
               this.listing.set(null);
             }
             this.failed.set(false);
+            this.retrying.set(false);
             this.loading.set(!!project && this.listing() === null);
             if (!project) return of(null);
-            return this.store.listDocuments(project).pipe(
+            return readUntilReachable(
+              this.document,
+              () => this.store.listDocuments(project),
+              (retrying) => {
+                this.retrying.set(retrying);
+                // The card has its state to show (the line over its skeleton): the host's rail need not wait for the server.
+                if (retrying) this.settled.emit(this.readKey);
+              }
+            ).pipe(
               catchError(() => {
                 this.failed.set(true);
                 return of(null);
@@ -81,10 +96,6 @@ export class MktgDownstreamComponent {
           this.settled.emit(this.readKey);
         });
     }
-  }
-
-  protected retry(): void {
-    this.reload.update((value) => value + 1);
   }
 
   protected rebuild(): void {

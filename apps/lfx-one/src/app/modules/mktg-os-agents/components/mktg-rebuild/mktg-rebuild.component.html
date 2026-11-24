@@ -10,6 +10,14 @@
     <p class="text-sm text-gray-600">Each result is a new Draft to approve. Your approved current assets stay in the kit until you approve a replacement.</p>
     @if (error()) {
       <p role="alert" class="text-sm text-red-700" data-testid="mktg-rebuild-error">{{ error() }}</p>
+      @if (startUnreachable() && canStart()) {
+        <div class="flex">
+          <lfx-button label="Try again" [outlined]="true" size="small" (onClick)="start()" data-testid="mktg-rebuild-try-again" />
+        </div>
+      }
+    }
+    @if (retrying()) {
+      <p role="status" class="text-xs text-gray-500" data-testid="mktg-rebuild-retrying">{{ retryingText }}</p>
     }
     @if (chain(); as chain) {
       <p role="status" aria-live="polite" class="text-sm" data-testid="mktg-rebuild-status">

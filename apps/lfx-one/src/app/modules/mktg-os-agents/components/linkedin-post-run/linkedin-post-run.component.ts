@@ -30,6 +30,7 @@ import {
   LINKEDIN_VOICE_FIELDS,
   MKTG_RUN_NEW_MODE,
   MKTG_DOCUMENT_TYPES,
+  MKTG_NOT_AVAILABLE_TEXT,
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   MKTG_RUN_ACTIVE_DIALOG_KEYS,
@@ -64,7 +65,7 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
-import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
+import { createVisibilityPoll, readUntilReachable } from '@shared/utils/visibility-poll.util';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -159,7 +160,9 @@ export class LinkedinPostRunComponent {
   protected readonly setup = signal<LinkedinSetup | null>(null);
   protected readonly source = signal<LinkedinContentSource>('text');
   protected readonly file = signal<File | null>(null);
-  protected readonly reload = signal(0);
+  /** The first load cannot reach the server: one grey line over the skeleton while it keeps trying by itself. */
+  protected readonly loadRetrying = signal(false);
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly questions = signal<MktgRunQuestion[]>([]);
   protected readonly recordedPending = signal<MktgPendingGeneration | null>(null);
   protected readonly serverRun = signal<MktgDocumentRunProgress | null>(null);
@@ -187,7 +190,7 @@ export class LinkedinPostRunComponent {
   protected readonly projectName = computed(() => this.context.activeContext()?.name ?? '');
   protected readonly documentsLink = computed(() => [mktgKitRootPath(this.router.url), 'documents']);
   protected readonly writingAs = computed(() => this.saved()?.profile.about.name ?? this.setup()?.name ?? '');
-  private readonly scope$ = toObservable(computed(() => ({ context: this.context.activeContext(), sub: this.user.user()?.sub, reload: this.reload() })));
+  private readonly scope$ = toObservable(computed(() => ({ context: this.context.activeContext(), sub: this.user.user()?.sub })));
 
   private generation: Subscription | null = null;
   private scopeVersion = 0;
@@ -229,7 +232,7 @@ export class LinkedinPostRunComponent {
     });
     this.scope$
       .pipe(
-        distinctUntilChanged((a, b) => a.context?.uid === b.context?.uid && a.sub === b.sub && a.reload === b.reload),
+        distinctUntilChanged((a, b) => a.context?.uid === b.context?.uid && a.sub === b.sub),
         switchMap(({ context, sub }) => {
           this.scopeVersion++;
           this.confirmation.close();
@@ -240,6 +243,7 @@ export class LinkedinPostRunComponent {
           this.serverRun.set(null);
           this.recordedRequest.set(null);
           this.runLookupFailed.set(false);
+          this.loadRetrying.set(false);
           this.runWarning.set('');
           this.ownRunsSeed.set(null);
           this.ownRunsSubject = '';
@@ -270,22 +274,40 @@ export class LinkedinPostRunComponent {
             return of(null);
           }
           if (!sub) return EMPTY;
-          return this.projects.getProject(context.slug, false).pipe(
-            switchMap((project) => {
-              if (!project) throw new Error('Project unavailable');
-              this.writer.set(!!project.writer);
-              this.historyGrant.set(project.writer ? JSON.stringify([context.uid, sub]) : '');
-              if (!project.writer) return of(null);
-              return this.documents.listDocuments(context.uid, true, true).pipe(
-                switchMap((snapshot) => {
-                  if (snapshot.progressUnavailable) this.runWarning.set(MKTG_POLL_RETRYING_TEXT);
-                  return this.api.profile().pipe(map((profile) => ({ ...profile, snapshot })));
-                })
-              );
-            }),
-            catchError(() => {
+          // The strict read keeps the failure's status, so a connection failure (network, 408, 429, 5xx) on the project, the
+          // recorded runs or the profile is tried again by itself behind the one grey line, over the skeleton; only a final
+          // refusal ends the load, in one red line with no Retry. `strictWriter`: a writer check that could not be made fails
+          // the read (and is retried) instead of answering 200 with `writer: false`, which would be a cached false denial.
+          const load = () =>
+            this.projects.getProjectStrict(context.slug, { strictWriter: true }).pipe(
+              switchMap((project) => {
+                this.writer.set(!!project.writer);
+                this.historyGrant.set(project.writer ? JSON.stringify([context.uid, sub]) : '');
+                if (!project.writer) return of(null);
+                return this.documents.listDocuments(context.uid, true, true).pipe(
+                  switchMap((snapshot) => {
+                    if (snapshot.progressUnavailable) this.runWarning.set(MKTG_POLL_RETRYING_TEXT);
+                    return this.api.profile().pipe(map((profile) => ({ ...profile, snapshot })));
+                  })
+                );
+              })
+            );
+          return readUntilReachable(this.document, load, (retrying) => this.loadRetrying.set(retrying)).pipe(
+            catchError((error: unknown) => {
+              // Status only: no upstream payload enters diagnostics.
+              const status = error instanceof HttpErrorResponse ? error.status : 0;
+              console.error('LinkedIn first load refused', { status });
+              // A 401/403 from any of the three reads is the page's plain no-access state. The project read may already have
+              // granted `writer` before the recorded-runs or profile read was refused, so the grant is withdrawn here:
+              // otherwise no branch of the template matches and the page is blank. Anything else final names what is not
+              // available.
+              if (status === 401 || status === 403) {
+                this.writer.set(false);
+                this.historyGrant.set('');
+                return of(null);
+              }
               this.runLookupFailed.set(true);
-              this.error.set('Your profile, project or recorded run could not be loaded. Try again.');
+              this.error.set(MKTG_NOT_AVAILABLE_TEXT.linkedin);
               return of(null);
             })
           );
@@ -798,7 +820,6 @@ export class LinkedinPostRunComponent {
         writer: this.writer(),
         fresh: this.freshMode(),
         grant: this.historyGrant(),
-        reload: this.reload(),
         ready: !this.loading() && !this.checkingPending() && !this.serverRun() && !this.runLookupFailed(),
       }))
     )
