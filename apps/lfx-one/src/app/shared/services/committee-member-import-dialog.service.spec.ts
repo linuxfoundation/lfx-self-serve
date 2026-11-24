@@ -229,13 +229,36 @@ describe('CommitteeMemberImportDialogService', () => {
       expect(dialogService.open).toHaveBeenCalledTimes(1);
     });
 
-    it('does not open a report that was dismissed while access was being checked', () => {
-      retain();
-      service.openRun(GROUP.uid);
-      runs.set(new Map());
-      answer(0);
+    describe.each(['dismissed', 'replaced'] as const)('a %s run during an access check', (change) => {
+      it.each(['authorized', 'denied', 403, 404, 503] as const)('ignores a stale %s result without notifications or revocation', (result) => {
+        retain();
+        service.openRun(GROUP.uid);
+        if (change === 'dismissed') {
+          runs.set(new Map());
+        } else {
+          retain(GROUP.uid, 'member-import-2');
+        }
+        if (typeof result === 'number') {
+          fail(0, result);
+        } else {
+          answer(0, { writer: result === 'authorized' });
+        }
 
-      expect(dialogService.open).not.toHaveBeenCalled();
+        expect(dialogService.open).not.toHaveBeenCalled();
+        expect(toast).not.toHaveBeenCalled();
+        expect(importService.revoke).not.toHaveBeenCalled();
+        expect(service.accessByUid().size).toBe(0);
+        if (change === 'replaced') {
+          expect(importService.getRun(GROUP.uid)?.runId).toBe('member-import-2');
+          service.openRun(GROUP.uid);
+          expect(details).toHaveLength(2);
+          answer(1);
+          expect(dialogService.open).toHaveBeenCalledOnce();
+          expect(openedData().attach).toBe(true);
+        } else {
+          expect(importService.getRun(GROUP.uid)).toBeUndefined();
+        }
+      });
     });
   });
 

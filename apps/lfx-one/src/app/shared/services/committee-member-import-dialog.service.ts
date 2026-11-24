@@ -160,6 +160,8 @@ export class CommitteeMemberImportDialogService {
           console.error('CSV member import access check failed', { status });
           return of<MemberImportAccessCheck>({ state: status === 403 || status === 404 ? 'denied' : 'error' });
         }),
+        // Drop stale replies before denial can revoke a run or the opener can show a notification.
+        filter(() => this.isCurrent(committeeUid, owner, runId)),
         tap((check) => this.applyAccess(committeeUid, owner, runId, check.state))
       );
     });
