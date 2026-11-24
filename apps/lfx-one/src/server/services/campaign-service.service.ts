@@ -904,6 +904,24 @@ export function canSetLinkedInDailyCap(): boolean {
 }
 
 /**
+ * Whether a LinkedIn variant may carry its ad `name` and `description` (#5764 row 17, campaign-service #588, #589).
+ * `cutoverOwnsCreate()` and nothing else, like `canSetLinkedInDailyCap`: campaign-service has taken both since v1.0.38
+ * with no flag of its own, and the LEGACY creator ignores them.
+ */
+export function canSetLinkedInVariantCopy(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
+ * Whether a LinkedIn variant may carry a `callToAction` (#5764 row 16, campaign-service #588). Needs the campaign-service
+ * create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CALL_TO_ACTION`, which follows campaign-service's own
+ * `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED`: campaign-service refuses the field while that is off.
+ */
+export function canSetLinkedInCallToAction(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInCallToAction);
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -1129,6 +1147,8 @@ export class CampaignServiceClient {
         linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
         linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
         linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
+        linkedInVariantCopyEnabled: canSetLinkedInVariantCopy(),
+        linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1214,6 +1234,8 @@ export class CampaignServiceClient {
       linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
       linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
       linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
+      linkedInVariantCopyEnabled: canSetLinkedInVariantCopy(),
+      linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),

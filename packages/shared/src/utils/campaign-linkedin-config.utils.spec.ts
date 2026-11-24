@@ -25,7 +25,7 @@ describe('linkedInConfigKeyRefusal', () => {
     // Another spelling of a known key names the key; Go folds U+017F (long s) to s.
     [{ ...config, DailyCapUsd: 20 }, 'linkedInConfig.dailyCapUsd'],
     [{ ...config, ['ſelectedAdAccountId']: '1' }, 'linkedInConfig.selectedAdAccountId'],
-    [{ ...config, variants: [variant, { ...variant, callToAction: 'REGISTER' }] }, 'linkedInConfig.variants[1]'],
+    [{ ...config, variants: [variant, { ...variant, videoAssetId: 'v1' }] }, 'linkedInConfig.variants[1]'],
     [{ ...config, variants: [{ ...variant, ImageUrn: 'urn:li:image:1' }] }, 'linkedInConfig.variants[0].imageUrn'],
   ])('refuses %j, naming %s', (raw, field) => {
     expect(linkedInConfigKeyRefusal(raw)?.field).toBe(field);

@@ -4806,6 +4806,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInTargetingEditEnabled: false,
       linkedInAccountSelectionEnabled: false,
       linkedInDailyCapEnabled: false,
+      linkedInVariantCopyEnabled: false,
+      linkedInCallToActionEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5408,6 +5410,27 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** The LinkedIn variant capabilities (#5764 rows 16–17): name and description need the cutover, the call to action its flag too. */
+  it.each([
+    [{ cutover: true, callToAction: true }, true, true],
+    [{ cutover: true, callToAction: false }, true, false],
+    [{ cutover: false, callToAction: true }, false, false],
+  ])('reports the LinkedIn variant capabilities (%o): copy %s, call to action %s', async (flags, copy, callToAction) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceLinkedInCallToAction ? flags.callToAction : flags.cutover
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.linkedInVariantCopyEnabled).toBe(copy);
+      expect(result.linkedInCallToActionEnabled).toBe(callToAction);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The LinkedIn daily-cap capability (#5774): the create cutover alone, like the targeting edit above. */
   it.each([
     [{ create: true, briefs: true, jobs: true, others: false }, true],
@@ -5503,6 +5526,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInTargetingEditEnabled: false,
       linkedInAccountSelectionEnabled: false,
       linkedInDailyCapEnabled: false,
+      linkedInVariantCopyEnabled: false,
+      linkedInCallToActionEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,

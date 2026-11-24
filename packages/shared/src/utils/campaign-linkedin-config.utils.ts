@@ -31,7 +31,7 @@ const LINKEDIN_CONFIG_REQUEST_KEYS = [
 ] as const;
 
 /** The `linkedInConfig.variants[i]` keys a create may carry, spelled exactly (`LinkedInCreativeVariant`). */
-const LINKEDIN_VARIANT_REQUEST_KEYS = ['introText', 'headline', 'imageUrn', 'imageAssetId'] as const;
+const LINKEDIN_VARIANT_REQUEST_KEYS = ['introText', 'headline', 'imageUrn', 'imageAssetId', 'name', 'description', 'callToAction'] as const;
 
 /** A key as Go's `encoding/json` matches it: Unicode case folding, which upper-casing first catches (`ſ` is `s`). */
 function foldKey(key: string): string {
