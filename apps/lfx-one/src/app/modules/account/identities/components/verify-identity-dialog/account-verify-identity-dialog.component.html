@@ -54,7 +54,7 @@
     } @else {
       <lfx-ui-button
         [loading]="verification.verifying()"
-        [disabled]="verification.code().length !== 6"
+        [disabled]="!verification.codeComplete()"
         (click)="verify()"
         data-testid="account-verify-identity-verify">
         Verify

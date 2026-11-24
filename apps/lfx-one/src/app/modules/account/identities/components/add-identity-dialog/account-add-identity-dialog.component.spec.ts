@@ -7,7 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AccountAddIdentityDialogComponent } from './account-add-identity-dialog.component';
@@ -39,7 +39,7 @@ describe('AccountAddIdentityDialogComponent', () => {
       input.dispatchEvent(new Event('input'));
       await fixture.whenStable();
     };
-    return { host, query, click, type, close, userService };
+    return { fixture, host, query, click, type, close, userService };
   }
 
   it('lists the providers to connect, with an email address to add', async () => {
@@ -77,6 +77,25 @@ describe('AccountAddIdentityDialogComponent', () => {
     const input = query('account-add-identity-email')?.querySelector('input') as HTMLInputElement;
     expect(input.disabled).toBe(false);
     expect(query('account-add-identity-email')?.textContent).toContain('Too many requests');
+  });
+
+  it('holds the address while the code is sending, and verifies the one the code went to', async () => {
+    const { fixture, query, click, type, userService } = await render();
+    const sent = new Subject<{ success: boolean }>();
+    userService.sendEmailVerificationCode.mockReturnValueOnce(sent);
+    await click('account-add-identity-choose-email');
+    await type('account-add-identity-email', 'ada@example.com');
+    await click('account-add-identity-send');
+
+    expect((query('account-add-identity-email')?.querySelector('input') as HTMLInputElement).readOnly).toBe(true);
+    sent.next({ success: true });
+    sent.complete();
+    await fixture.whenStable();
+    await type('account-email-code-input', '123456');
+    await click('account-add-identity-verify');
+
+    expect(query('account-email-code-instructions')?.textContent).toContain('ada@example.com');
+    expect(userService.verifyAndLinkEmail).toHaveBeenCalledWith('ada@example.com', '123456');
   });
 
   it('goes back from the code to the address, and from the address to the providers', async () => {

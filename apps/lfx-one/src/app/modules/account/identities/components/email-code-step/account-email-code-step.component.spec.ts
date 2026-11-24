@@ -31,15 +31,33 @@ describe('AccountEmailCodeStepComponent', () => {
     return { fixture, query, verification: TestBed.inject(EmailCodeVerificationService) };
   }
 
-  it('keeps only digits, in the field as well as the code', async () => {
-    const { fixture, query, verification } = await render();
-    const input = query('account-email-code-input')?.querySelector('input') as HTMLInputElement;
-    input.value = '12345a';
+  async function typeInto(fixture: { whenStable: () => Promise<unknown> }, input: HTMLInputElement, value: string) {
+    input.value = value;
     input.dispatchEvent(new Event('input'));
     await fixture.whenStable();
+  }
+
+  it('drops a letter typed after five digits from the field as well as the code', async () => {
+    const { fixture, query, verification } = await render();
+    const input = query('account-email-code-input')?.querySelector('input') as HTMLInputElement;
+    await typeInto(fixture, input, '12345');
+    await typeInto(fixture, input, '12345a');
 
     expect(verification.code()).toBe('12345');
     expect(input.value).toBe('12345');
+
+    await typeInto(fixture, input, '123456');
+    expect(verification.code()).toBe('123456');
+  });
+
+  it('takes a pasted code with a space in it', async () => {
+    const { fixture, query, verification } = await render();
+    const input = query('account-email-code-input')?.querySelector('input') as HTMLInputElement;
+    await typeInto(fixture, input, '123 456');
+
+    expect(input.maxLength).toBe(-1);
+    expect(verification.code()).toBe('123456');
+    expect(input.value).toBe('123456');
   });
 
   it('offers support for an address already linked to another account', async () => {

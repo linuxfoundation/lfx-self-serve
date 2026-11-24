@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AccountCardComponent } from '@components/account-card/account-card.component';
 import { ACCOUNT_IDENTITIES_COPY, ACCOUNT_IDENTITIES_PATH } from '@lfx-one/shared/constants';
 import { ConnectedIdentityFull, RemoveIdentityDialogData, VerifyIdentityDialogData } from '@lfx-one/shared/interfaces';
@@ -16,7 +17,7 @@ import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { DialogService } from 'primeng/dynamicdialog';
-import { Observable } from 'rxjs';
+import { Observable, take } from 'rxjs';
 
 import { ProfileIdentitiesComponent } from '../../profile/identities/profile-identities.component';
 import { ProfileLinuxEmailComponent } from '../../profile/linux-email/profile-linux-email.component';
@@ -49,6 +50,7 @@ import { AccountVerifyIdentityDialogComponent } from './components/verify-identi
 })
 export class AccountIdentitiesComponent extends ProfileIdentitiesComponent {
   private readonly modal = inject(UiModalService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected override readonly authReturnPath = ACCOUNT_IDENTITIES_PATH;
   protected readonly copy = ACCOUNT_IDENTITIES_COPY;
@@ -71,7 +73,8 @@ export class AccountIdentitiesComponent extends ProfileIdentitiesComponent {
         autoFocus: '[data-autofocus] button',
         data: { identity } satisfies RemoveIdentityDialogData,
       })
-      .closed.subscribe((remove) => {
+      .closed.pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe((remove) => {
         if (remove) this.removeIdentity(identity);
       });
   }
@@ -98,7 +101,7 @@ export class AccountIdentitiesComponent extends ProfileIdentitiesComponent {
   }
 
   private refreshOnClose(closed: Observable<boolean | undefined>): void {
-    closed.subscribe((linked) => {
+    closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((linked) => {
       if (linked) this.userService.refreshUserIdentities();
     });
   }

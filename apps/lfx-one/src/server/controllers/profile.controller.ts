@@ -355,7 +355,7 @@ export class ProfileController {
           res.status(403).json({
             error: 'management_token_required',
             message: 'Profile authorization required',
-            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.personalInformationReturnTo(req, ProfileController.profileDefaultReturnTo))}`,
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.accountPageReturnTo(req, ACCOUNT_PERSONAL_INFORMATION_PATH, ProfileController.profileDefaultReturnTo))}`,
           });
           return;
         }
@@ -482,7 +482,7 @@ export class ProfileController {
           res.status(403).json({
             error: 'management_token_required',
             message: 'Profile authorization required',
-            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.personalInformationReturnTo(req, ProfileController.profileDefaultReturnTo))}`,
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.accountPageReturnTo(req, ACCOUNT_PERSONAL_INFORMATION_PATH, ProfileController.profileDefaultReturnTo))}`,
           });
           return;
         }
@@ -656,7 +656,7 @@ export class ProfileController {
           message: 'Profile authorization required to change the primary email',
           // From the settings page, a static legacy path (its `referer` carries no fragment): profile.routes.ts's
           // redirectTo re-attaches #email-settings on return. From Personal information, that page.
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.personalInformationReturnTo(req, PROFILE_EMAILS_PATH))}`,
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.accountPageReturnTo(req, ACCOUNT_PERSONAL_INFORMATION_PATH, PROFILE_EMAILS_PATH))}`,
         });
         return;
       }
@@ -2283,9 +2283,9 @@ export class ProfileController {
             success: false,
             error: 'management_token_required',
             message: 'Profile authorization required',
-            // Static legacy path (not `referer`, which is the settings page itself and carries no
-            // fragment) — profile.routes.ts's redirectTo re-attaches #email-settings on return.
-            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(PROFILE_EMAILS_PATH)}`,
+            // From the settings page, a static legacy path (its `referer` carries no fragment): profile.routes.ts's
+            // redirectTo re-attaches #email-settings on return. From Account & Settings › Identities, that page.
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.accountPageReturnTo(req, ACCOUNT_IDENTITIES_PATH, PROFILE_EMAILS_PATH))}`,
           });
           return;
         }
@@ -3108,11 +3108,11 @@ export class ProfileController {
   }
 
   /**
-   * Where a Flow C round trip for a profile save, photo upload or primary email change returns: the Account & Settings Personal
-   * information page when it started there (#6072), otherwise the page that hosted the change before.
+   * Where a Flow C round trip returns: the given Account & Settings page when the change started there (#6072, #6074), otherwise
+   * the page that hosted the change before. Only that page is taken from the Referer, so the hub's destinations stay as they were.
    */
-  private personalInformationReturnTo(req: Request, fallback: string): string {
-    return this.normalizeReturnTo(req.headers['referer'], fallback) === ACCOUNT_PERSONAL_INFORMATION_PATH ? ACCOUNT_PERSONAL_INFORMATION_PATH : fallback;
+  private accountPageReturnTo(req: Request, page: string, fallback: string): string {
+    return this.normalizeReturnTo(req.headers['referer'], fallback) === page ? page : fallback;
   }
 
   private normalizeProfileReturnTo(raw: unknown): string {

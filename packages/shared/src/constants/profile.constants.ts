@@ -297,6 +297,9 @@ export const EMAIL_VERIFICATION_SENT_MESSAGE = `Check your email for a 6-digit v
 export const EMAIL_RESEND_SUPPORT_THRESHOLD = 1;
 
 /** Heading for the initial code-step guidance, neutral about delivery and linked-account status. */
+/** Digits in an email verification code. */
+export const EMAIL_VERIFICATION_CODE_LENGTH = 6;
+
 export const EMAIL_CODE_NOT_RECEIVED_TITLE = 'No code yet?';
 
 /** Standalone code-step hint shown alongside a secondary Contact support action. */

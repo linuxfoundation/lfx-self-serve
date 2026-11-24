@@ -9,6 +9,7 @@ import {
   EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_RESEND_FAILED_MESSAGE,
   EMAIL_RESEND_SUPPORT_THRESHOLD,
+  EMAIL_VERIFICATION_CODE_LENGTH,
 } from '@lfx-one/shared/constants';
 import { isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
@@ -34,6 +35,8 @@ export class EmailCodeVerificationService {
   public readonly verifying = signal(false);
   public readonly resendCount = signal(0);
   public readonly resendCooldown = this.cooldownTimer.cooldown;
+  /** True once the code has all its digits. */
+  public readonly codeComplete = computed(() => this.code().length === EMAIL_VERIFICATION_CODE_LENGTH);
   /** After a few resends, Resend gives way to Contact support. */
   public readonly showResendSupport = computed(() => this.resendCount() >= EMAIL_RESEND_SUPPORT_THRESHOLD);
   /** The address is verified but belongs to another LFX account, which only support can resolve. */
@@ -81,7 +84,7 @@ export class EmailCodeVerificationService {
 
   /** Verifies the entered code and links the address; `onLinked` runs once it is part of the account. */
   public verify(email: string, onLinked: () => void): void {
-    if (this.code().length !== 6 || this.verifying()) return;
+    if (!this.codeComplete() || this.verifying()) return;
     this.verifying.set(true);
     this.error.set('');
     this.userService.verifyAndLinkEmail(email, this.code()).subscribe({

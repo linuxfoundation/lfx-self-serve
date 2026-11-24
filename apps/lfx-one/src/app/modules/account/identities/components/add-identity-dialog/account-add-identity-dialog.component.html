@@ -45,10 +45,11 @@
       placeholder="name@example.com"
       autocomplete="email"
       [formControl]="email"
+      [readonly]="verification.sending()"
       [error]="emailError() || verification.error()"
       data-testid="account-add-identity-email" />
   } @else {
-    <lfx-account-email-code-step [email]="email.getRawValue()" />
+    <lfx-account-email-code-step [email]="sentTo()" />
   }
 
   @if (stage() === 'email') {
@@ -71,7 +72,7 @@
         <lfx-ui-button variant="secondary" [disabled]="verification.verifying()" (click)="back()" data-testid="account-add-identity-back">Back</lfx-ui-button>
         <lfx-ui-button
           [loading]="verification.verifying()"
-          [disabled]="verification.code().length !== 6"
+          [disabled]="!verification.codeComplete()"
           (click)="verify()"
           data-testid="account-add-identity-verify">
           Verify email

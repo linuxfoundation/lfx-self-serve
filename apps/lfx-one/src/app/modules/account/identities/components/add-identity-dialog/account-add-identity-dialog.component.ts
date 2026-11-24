@@ -37,6 +37,8 @@ export class AccountAddIdentityDialogComponent {
 
   /** `pick` lists the providers; `email` asks for the address, and shows the code step once a code is sent. */
   protected readonly stage = signal<'pick' | 'email'>('pick');
+  /** The address the code went to: the code step, Resend and Verify use it, not whatever the field holds now. */
+  protected readonly sentTo = signal('');
 
   protected readonly copy = ACCOUNT_IDENTITIES_COPY;
   // Staging and production keep GitLab as Coming soon while dev validates the linking rollout (#4151).
@@ -64,15 +66,16 @@ export class AccountAddIdentityDialogComponent {
       this.email.markAsTouched();
       return;
     }
-    this.verification.send(this.email.getRawValue());
+    this.sentTo.set(this.email.getRawValue());
+    this.verification.send(this.sentTo());
   }
 
   protected resend(): void {
-    this.verification.resend(this.email.getRawValue());
+    this.verification.resend(this.sentTo());
   }
 
   protected verify(): void {
-    this.verification.verify(this.email.getRawValue(), () => this.dialogRef.close(true));
+    this.verification.verify(this.sentTo(), () => this.dialogRef.close(true));
   }
 
   /** From the code step, back to a different address; from the address, back to the providers. */

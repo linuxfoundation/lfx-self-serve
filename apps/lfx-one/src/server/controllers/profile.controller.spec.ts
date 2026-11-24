@@ -2376,6 +2376,19 @@ describe('ProfileController.verifyAndLinkEmail — step-2 failures are indisting
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'management_token_required' }));
     expect(emailVerificationSvc.verifyOtp).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['Account & Settings › Identities', 'https://app.example/account/identities', '/account/identities'],
+    ['the hub', 'https://app.example/profile/identities', '/profile/emails'],
+    ['no page', undefined, '/profile/emails'],
+  ])('returns Flow C from %s to the page that hosts the link', async (_page, referer, returnTo) => {
+    profileAuthSvc.getManagementToken.mockReturnValue(null);
+    const res = buildRes();
+    const req = verificationReq();
+    if (referer) req.headers = { ...req.headers, referer };
+    await controller.verifyAndLinkEmail(req, res, vi.fn());
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(returnTo)}` }));
+  });
 });
 
 describe('ProfileController.getIdentities — primary email and multi-LFID reconciliation (#4123)', () => {
