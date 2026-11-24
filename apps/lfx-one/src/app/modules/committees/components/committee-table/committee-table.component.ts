@@ -214,7 +214,7 @@ export class CommitteeTableComponent {
         if (!summary || access.get(committee.uid) !== 'authorized') continue;
         const label = {
           importing: `Importing ${summary.batchSettled}/${summary.batchTotal}`,
-          paused: 'Import paused',
+          paused: `Importing ${summary.batchSettled}/${summary.batchTotal}`,
           stopping: 'Stopping import',
           settled: 'View import report',
         }[summary.phase];

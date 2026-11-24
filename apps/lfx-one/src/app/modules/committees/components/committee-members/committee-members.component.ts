@@ -1076,7 +1076,7 @@ export class CommitteeMembersComponent implements OnInit {
         case 'importing':
           return `Importing members from CSV: ${processed}.`;
         case 'paused':
-          return `CSV import paused: ${processed}. It resumes automatically.`;
+          return `Importing members from CSV: ${processed}. Waiting for the service. We'll retry automatically.`;
         case 'stopping':
           return `Stopping the CSV import after the current batch: ${processed}.`;
         default: {

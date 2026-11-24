@@ -883,7 +883,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(query('import-members-paused-icon')).toBeNull();
       expect(query('import-members-progress')?.textContent).toContain('Importing members…');
       expect(query('import-members-processed-count')?.textContent?.trim()).toBe('25 of 30 processed');
-      expect(query('import-members-paused-notice')).toBeNull();
+      expect(query('import-members-waiting-notice')?.textContent).toBe("Waiting for the service. We'll retry automatically.");
       expect(component.statusMessage()).toBe('Importing members: 25 of 30 processed.');
       expect(query('filter-pill-waiting')?.textContent).toContain('Pending (5)');
       expect(
@@ -904,10 +904,12 @@ describe('ImportMembersDialogComponent', () => {
       expect(pending).toHaveLength(2);
       expect(query('import-members-spinner')).not.toBeNull();
       expect(query('import-members-processed-count')?.textContent?.trim()).toBe('25 of 30 processed');
+      expect(query('import-members-waiting-notice')?.textContent).toBe("Waiting for the service. We'll retry automatically.");
 
       vi.advanceTimersByTime(1);
       await render();
       expect(component.paused()).toBe(false);
+      expect(query('import-members-waiting-notice')).toBeNull();
       expect(query('import-members-spinner')).not.toBeNull();
       expect(query('import-members-progress')?.textContent).toContain('Importing members…');
       expect(query('import-members-processed-count')?.textContent?.trim()).toBe('25 of 30 processed');
@@ -916,6 +918,7 @@ describe('ImportMembersDialogComponent', () => {
       await render();
       expect(component.phase()).toBe('results');
       expect(query('import-members-progress')).toBeNull();
+      expect(query('import-members-waiting-notice')).toBeNull();
     });
 
     it('sends notification emails when the user opts in', async () => {
@@ -1080,7 +1083,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.paused()).toBe(true);
       expect(component.waitingCount()).toBe(5);
       expect(component.statusMessage()).toBe('Importing members: 25 of 30 processed.');
-      expect(query('import-members-paused-notice')).toBeNull();
+      expect(query('import-members-waiting-notice')?.textContent).toBe("Waiting for the service. We'll retry automatically.");
       expect(query('import-members-stop-btn')).not.toBeNull();
       expect(console.error).toHaveBeenCalledExactlyOnceWith('CSV member import chunk failed', { status: 429 });
 
@@ -1089,7 +1092,7 @@ describe('ImportMembersDialogComponent', () => {
       fixture.detectChanges();
       expect(pending).toHaveLength(2);
       expect(component.resumeAt()).toBe(resumeAt);
-      expect(query('import-members-paused-notice')).toBeNull();
+      expect(query('import-members-waiting-notice')?.textContent).toBe("Waiting for the service. We'll retry automatically.");
       expect(query('import-members-status')?.textContent).toContain('Importing members: 25 of 30 processed.');
       vi.advanceTimersByTime(1);
       expect(pending).toHaveLength(3);

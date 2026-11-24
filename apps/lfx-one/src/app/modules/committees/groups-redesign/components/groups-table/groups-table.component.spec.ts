@@ -107,9 +107,10 @@ describe('GroupsTableComponent', () => {
       await fixture.whenStable();
       const button = fixture.nativeElement.querySelector('[data-testid="groups-table-import-status"]') as HTMLButtonElement;
       expect(button).not.toBeNull();
-      const labels = { importing: 'Importing 25/30', paused: 'Import paused', stopping: 'Stopping import', settled: 'View import report' };
+      const labels = { importing: 'Importing 25/30', paused: 'Importing 25/30', stopping: 'Stopping import', settled: 'View import report' };
       expect(button.textContent?.trim()).toBe(labels[phase]);
-      expect(button.getAttribute('aria-label')).toContain('for Group a. Opens the import');
+      expect(button.getAttribute('aria-label')).toBe(`${labels[phase]} for Group a. Opens the import ${phase === 'settled' ? 'report' : 'progress'}.`);
+      expect(button.textContent).not.toContain('paused');
       expect(button.parentElement?.firstElementChild?.textContent).toBe('1,200');
       button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       button.click();

@@ -82,7 +82,7 @@ export class GroupsTableComponent {
         if (!summary || access.get(group.uid) !== 'authorized') continue;
         const label = {
           importing: `Importing ${summary.batchSettled}/${summary.batchTotal}`,
-          paused: 'Import paused',
+          paused: `Importing ${summary.batchSettled}/${summary.batchTotal}`,
           stopping: 'Stopping import',
           settled: 'View import report',
         }[summary.phase];

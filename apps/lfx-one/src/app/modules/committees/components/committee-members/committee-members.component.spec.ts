@@ -242,7 +242,13 @@ describe('CommitteeMembersComponent add-people actions', () => {
     describe('retained import', () => {
       it.each([
         ['importing', {}, 'Importing members from CSV: 25 of 30 processed.', 'View progress', 'View import progress'],
-        ['paused', { phase: 'paused' }, 'CSV import paused: 25 of 30 processed. It resumes automatically.', 'View progress', 'View import progress'],
+        [
+          'automatic wait',
+          { phase: 'paused' },
+          "Importing members from CSV: 25 of 30 processed. Waiting for the service. We'll retry automatically.",
+          'View progress',
+          'View import progress',
+        ],
         ['stopping', { phase: 'stopping' }, 'Stopping the CSV import after the current batch: 25 of 30 processed.', 'View progress', 'View import progress'],
         [
           'settled with problems',
@@ -257,6 +263,8 @@ describe('CommitteeMembersComponent add-people actions', () => {
         await setRetained(summary);
 
         expect(query('committee-members-import-banner-message')?.textContent).toContain(message);
+        expect(query('committee-members-import-banner-message')?.textContent).not.toContain('paused');
+        expect(query('committee-members-import-banner-spinner') !== null).toBe(summary.phase !== 'settled');
         expect(query('committee-members-import-banner-message')?.getAttribute('role')).toBe('status');
         expect(query('committee-members-import-banner-view')?.textContent).toContain(view);
         expect(query('committee-members-import-banner-dismiss') !== null).toBe(summary.phase === 'settled');

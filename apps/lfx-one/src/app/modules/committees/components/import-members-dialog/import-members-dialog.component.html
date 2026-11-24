@@ -148,6 +148,8 @@
         </p>
         @if (stopping()) {
           <p class="text-sm text-gray-600" data-testid="import-members-stopping-notice">Rows after this batch will not be sent.</p>
+        } @else if (paused()) {
+          <p class="text-sm text-gray-600" data-testid="import-members-waiting-notice">Waiting for the service. We'll retry automatically.</p>
         }
         <p class="rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800" data-testid="import-members-background-notice">
           You can keep working in LFX. Keep this tab open; refreshing or closing it interrupts the import.

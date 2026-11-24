@@ -326,7 +326,7 @@ describe('CommitteeTableComponent consumer behavior', () => {
     });
 
     it.each([
-      ['paused', 'Import paused'],
+      ['paused', 'Importing 25/30'],
       ['stopping', 'Stopping import'],
       ['settled', 'View import report'],
     ] as const)('labels a %s run', async (phase, label) => {
@@ -334,6 +334,8 @@ describe('CommitteeTableComponent consumer behavior', () => {
       await retain(importSummary({ phase }));
 
       expect(status()?.textContent).toContain(label);
+      expect(status()?.getAttribute('aria-label')).toBe(`${label} for Synthetic Alpha. Opens the import ${phase === 'settled' ? 'report' : 'progress'}.`);
+      expect(status()?.textContent).not.toContain('paused');
     });
 
     it.each(['pending', 'denied', 'error'] as const)('reveals nothing while access is %s', async (state) => {
