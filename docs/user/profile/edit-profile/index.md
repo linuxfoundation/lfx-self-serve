@@ -24,7 +24,7 @@ Your personal details are edited in the **Edit Profile** drawer, not directly on
 4. Update the fields you want to change (see the tables below).
 5. Select **Save Changes**. The button stays disabled until you have made a change.
 
-If you have an LFX Mentorship mentor or mentee profile, a new name or picture is also copied onto it, so your public mentorship pages show it too. A save that changes neither leaves your mentorship profile as it is, including a photo you added in Mentorship.
+If you have an LFX Mentorship mentor or mentee profile, a new name or picture is also copied onto it, so your public mentorship pages show it too. Your mentorship photo changes only when you upload a new picture, so a photo you added in Mentorship stays until then.
 
 > **Two changes apply immediately, not on Save:** uploading a **profile picture** and selecting a **primary email address** each save on their own as soon as you make them. Closing the drawer with **Cancel** does not undo those two — it only discards unsaved text fields (About Me, name, job title, location, and so on).
 

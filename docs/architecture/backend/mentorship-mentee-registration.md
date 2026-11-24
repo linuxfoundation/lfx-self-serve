@@ -68,7 +68,7 @@ ProfileCardComponent.onProfileSaved() / ngOnInit()      only with [syncMentorshi
   → MentorshipService.syncLfxProfileFields()            PATCH /api/mentorship/me/lfx-profile
       → blockDuringImpersonation                        403 IMPERSONATION_READ_ONLY
       → MentorshipController.syncLfxProfile             401 with no signed-in user · 400 per field
-      → GET /mentorship/v1/me/profiles                  every page, via listAllMentorshipPages without provisioning
+      → GET /mentorship/v1/me/profiles                  every page, via listMentorshipPagesWithoutProvisioning
                                                         not-provisioned 401 → 204, nothing written
       → resolveMentorshipPrimaryEmail                   only when there is a mentor or mentee row
       → resolveMentorshipGithubProfileLink              in parallel with the email

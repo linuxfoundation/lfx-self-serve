@@ -203,24 +203,30 @@ export async function readMentorshipLocalUserId(proxy: MicroserviceProxyService,
  * Reads an upstream list to the end, at the largest page size unless the route takes a smaller one, stopping once the rows read reach
  * the reported total, a page comes back empty, or the page carries no usable total. A list still
  * going after `MENTORSHIP_LIST_MAX_PAGES` pages logs a warning and returns the rows read so far.
- *
- * With `provision` false the pages are read straight from upstream, so a caller with no mentorship record is not given one:
- * upstream's not-provisioned 401 propagates instead, for a caller that only acts on people who already use Mentorship.
  */
 export async function listAllMentorshipPages<T>(
   proxy: MicroserviceProxyService,
   req: Request,
   path: string,
   query: Record<string, unknown> = {},
-  pageSize: number = MENTORSHIP_LIST_PAGE_SIZE,
-  provision = true
+  pageSize: number = MENTORSHIP_LIST_PAGE_SIZE
 ): Promise<T[]> {
-  return (await readMentorshipPages<T>(proxy, req, path, query, pageSize, provision)).items;
+  return (await readMentorshipPages<T>(proxy, req, path, query, pageSize)).items;
+}
+
+/**
+ * `listAllMentorshipPages` read straight from upstream, so a caller with no mentorship record is not given one: it skips the
+ * once-per-login `PUT /me` and the provision-and-retry, and upstream's not-provisioned 401 propagates instead. For a caller
+ * that only acts on people who already use Mentorship.
+ */
+export async function listMentorshipPagesWithoutProvisioning<T>(proxy: MicroserviceProxyService, req: Request, path: string): Promise<T[]> {
+  return (await readMentorshipPages<T>(proxy, req, path, {}, MENTORSHIP_LIST_PAGE_SIZE, false)).items;
 }
 
 /**
  * `listAllMentorshipPages`, also saying whether the read stopped at `MENTORSHIP_LIST_MAX_PAGES` with rows still to come,
- * for a caller that must tell its user the list is incomplete. `provision` works as it does there.
+ * for a caller that must tell its user the list is incomplete. With `provision` false it reads as
+ * `listMentorshipPagesWithoutProvisioning` does.
  */
 export async function readMentorshipPages<T>(
   proxy: MicroserviceProxyService,

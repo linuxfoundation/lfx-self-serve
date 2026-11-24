@@ -31,12 +31,16 @@ import {
   MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH,
   MENTORSHIP_LF_PROJECT_MAX_LIMIT,
   MENTORSHIP_LF_PROJECT_MAX_READS,
-  MENTORSHIP_LIST_PAGE_SIZE,
   MENTORSHIP_ME_PROFILES_PATH,
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest, withoutQueryInErrorPath } from '../helpers/mentorship-api.helper';
+import {
+  isMentorshipNotProvisionedError,
+  listMentorshipPagesWithoutProvisioning,
+  proxyMentorshipRequest,
+  withoutQueryInErrorPath,
+} from '../helpers/mentorship-api.helper';
 import {
   buildMentorshipUpstreamLfxProfileFields,
   buildMentorshipUpstreamProfileLinks,
@@ -262,14 +266,7 @@ export class MentorshipService {
   public async syncLfxProfileFields(req: Request, fields: MentorshipLfxProfileFields): Promise<number> {
     let profiles: MentorshipUpstreamUserProfile[];
     try {
-      profiles = await listAllMentorshipPages<MentorshipUpstreamUserProfile>(
-        this.microserviceProxy,
-        req,
-        MENTORSHIP_ME_PROFILES_PATH,
-        {},
-        MENTORSHIP_LIST_PAGE_SIZE,
-        false
-      );
+      profiles = await listMentorshipPagesWithoutProvisioning<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_PROFILES_PATH);
     } catch (error) {
       if (!isMentorshipNotProvisionedError(error)) throw error;
       logger.debug(req, 'mentorship_sync_lfx_profile', 'Caller has no mentorship record, nothing to copy');

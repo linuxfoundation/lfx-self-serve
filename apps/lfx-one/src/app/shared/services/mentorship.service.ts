@@ -77,7 +77,8 @@ export class MentorshipService {
 
   /**
    * Copies the LFX profile's name, email, logo and GitHub link onto the caller's mentor and mentee
-   * profiles; the BFF resolves the email and the link. Not caught here: the profile card logs the failure and tells the user.
+   * profiles; the BFF resolves the email and the link. Not caught here: each caller logs the failure, and the profile card
+   * also tells the user, while Profile & Account (which sends only the name parts or picture a save changed) does not.
    */
   public syncLfxProfileFields(fields: MentorshipLfxProfileFields): Observable<void> {
     return this.http.patch<void>('/api/mentorship/me/lfx-profile', fields).pipe(take(1));

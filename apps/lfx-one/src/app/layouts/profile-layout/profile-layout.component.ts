@@ -280,8 +280,9 @@ export class ProfileLayoutComponent {
    * it differs from the one saved before; with no profile loaded yet it is sent as saved. The picture is sent only when this
    * save uploaded one, so an unchanged save never replaces a photo kept in Mentorship with the avatar shown here.
    *
-   * The BFF does nothing for a user with no mentorship record. A failure is only logged: the LFX profile did save, and the
-   * next save, or a save from a Mentorship page, copies the values again.
+   * The BFF does nothing for a user with no mentorship record. A failure is only logged, since the LFX profile did save. The
+   * saved name is merged locally either way, so a later save here copies only a name or picture that changes again; a save
+   * from a Mentorship page, whose profile card sends every field, repairs the rows.
    */
   private syncMentorshipProfiles(metadata: Partial<UserMetadata>): void {
     if (this.impersonating()) return;
