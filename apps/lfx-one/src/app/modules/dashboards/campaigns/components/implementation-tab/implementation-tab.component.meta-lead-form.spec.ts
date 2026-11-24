@@ -174,4 +174,33 @@ describe('ImplementationTabComponent meta lead form', () => {
     expect(c(restored)['metaObjective']()).toBe('leads');
     expect(c(restored)['metaLeadFormId']()).toBe('111');
   });
+
+  it('does not carry a draft waiting for the foundation into another brief', STATE_ONLY, async () => {
+    const f = await mount(true);
+    let saved: CampaignImplementationDraft | null = null;
+    f.componentInstance.draftChange.subscribe((d: CampaignImplementationDraft) => (saved = d));
+    c(f)['onMetaLeadFormChange']('111');
+    f.detectChanges();
+    await f.whenStable();
+    f.destroy();
+
+    const context = TestBed.inject(ProjectContextService);
+    context.clearFoundation(false);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
+    restored.componentRef.setInput('metaLeadFormsEnabled', true);
+    restored.componentRef.setInput('draft', saved);
+    restored.componentRef.setInput('briefData', brief());
+    restored.detectChanges();
+    await restored.whenStable();
+
+    restored.componentRef.setInput('draft', null);
+    restored.componentRef.setInput('briefData', { ...brief(), eventDetails: { ...brief().eventDetails, name: 'OSS NA 2026', slug: 'oss-na-2026' } });
+    restored.detectChanges();
+    await restored.whenStable();
+    context.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
+    restored.detectChanges();
+    await restored.whenStable();
+    expect(c(restored)['metaObjective']()).not.toBe('leads');
+    expect(c(restored)['metaLeadFormId']()).toBe('');
+  });
 });

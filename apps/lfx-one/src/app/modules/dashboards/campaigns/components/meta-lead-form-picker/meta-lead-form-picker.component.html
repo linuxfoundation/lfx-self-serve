@@ -27,9 +27,6 @@
           }
         </lfx-ui-select>
       }
-      @if (heldRefusal(); as refusal) {
-        <p class="text-xs text-red-600" role="alert" data-testid="meta-lead-form-picker-inactive">{{ refusal }}</p>
-      }
     }
     @case ('unavailable') {
       <lfx-ui-input

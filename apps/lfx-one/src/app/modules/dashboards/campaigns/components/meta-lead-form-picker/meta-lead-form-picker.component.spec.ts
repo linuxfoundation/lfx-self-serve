@@ -64,7 +64,7 @@ describe('MetaLeadFormPickerComponent', () => {
     expect(fixture.componentInstance.leadFormId()).toBe('');
   });
 
-  it('reports a held form the Page lists as inactive, and shows why', () => {
+  it('reports a held form the Page lists as inactive', () => {
     const reported: (string | null)[] = [];
     fixture.componentInstance.heldRefusalChange.subscribe((refusal) => reported.push(refusal));
     fixture.componentRef.setInput('projectSlug', 'tlf');
@@ -72,12 +72,10 @@ describe('MetaLeadFormPickerComponent', () => {
     fixture.detectChanges();
 
     expect(reported.at(-1)).toBe(META_LEAD_FORM_INACTIVE_REFUSAL);
-    expect(query('meta-lead-form-picker-inactive')?.textContent).toContain(META_LEAD_FORM_INACTIVE_REFUSAL);
 
     handlers()['onPick']('111');
     fixture.detectChanges();
     expect(reported.at(-1)).toBeNull();
-    expect(query('meta-lead-form-picker-inactive')).toBeNull();
   });
 
   it('offers a typed form id when the forms cannot be read', () => {

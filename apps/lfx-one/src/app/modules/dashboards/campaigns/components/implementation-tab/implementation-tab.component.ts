@@ -4961,9 +4961,10 @@ export class ImplementationTabComponent implements OnInit {
       }
     });
 
-    // skip(1) drops the emission toObservable fires immediately on subscribe — ngOnInit already
-    // runs the initial load, so only later foundation switches should refetch the ad-account list
-    // and the targeting-profile catalogue. Both serve the same ConfigMap for every project, but each
+    // pairwise() absorbs the emission toObservable fires immediately on subscribe — ngOnInit already
+    // runs the initial load, so only later foundation changes refetch the ad-account list and the
+    // targeting-profile catalogue. metaFoundationChange tells the foundation first becoming known
+    // (restore the pending draft) from a real switch (reset the Meta choices). Both serve the same ConfigMap for every project, but each
     // route is gated per project by requireCampaignManager, which can 403 for a foundation the
     // caller doesn't manage.
     toObservable(this.activeFoundationSlug)
@@ -5653,6 +5654,8 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected onMetaObjectiveChange(event: Event): void {
+    // A choice made while the foundation is unknown wins over the draft still waiting for it (#6107).
+    this.pendingMetaDraft = null;
     this.metaObjective.set((event.target as HTMLSelectElement).value as MetaObjective);
     // A conversion event or optimization goal the new objective does not take is cleared, not kept hidden (#5934).
     this.dropInapplicableMetaAdOptions();
@@ -5678,23 +5681,26 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected onMetaAudienceTargetingChange(targeting: MetaAudienceTargetingDraft): void {
+    this.pendingMetaDraft = null;
     this.metaAudienceTargeting.set(targeting);
     this.emitDraft();
   }
 
   /** One Meta ad choice (#5934); the empty "Not set" option removes the key, so nothing is sent. */
   protected onMetaAdOptionChange(key: MetaAdOptionKey, value: string | null): void {
+    this.pendingMetaDraft = null;
     this.metaAdOptions.update((options) => metaAdOptionsWithChoice(options, key, value));
     this.emitDraft();
   }
 
-  /** The lead form picked or typed in `lfx-meta-lead-form-picker` (#5940). Signal-backed like the other Meta fields, so it emits. */
   /** The picker's report on the held form (#6107): not a draft field, so nothing is emitted. */
   protected onMetaLeadFormHeldRefusal(refusal: string | null): void {
     this.metaLeadFormHeldRefusal.set(refusal);
   }
 
+  /** The lead form picked or typed in `lfx-meta-lead-form-picker` (#5940). Signal-backed like the other Meta fields, so it emits. */
   protected onMetaLeadFormChange(leadFormId: string): void {
+    this.pendingMetaDraft = null;
     this.metaLeadFormId.set(leadFormId);
     this.emitDraft();
   }
@@ -9774,6 +9780,8 @@ export class ImplementationTabComponent implements OnInit {
 
   /** Meta: objective, placements, pixel, Instagram/DSA, budget and its mode, image URL; geos and variants until the brief's Meta copy seeds them. */
   private resetMetaFields(): void {
+    // A draft still waiting for the foundation belongs to the previous brief (#6107).
+    this.pendingMetaDraft = null;
     this.metaObjective.set(DEFAULT_META_OBJECTIVE);
     this.metaPlacements.set({ ...META_DEFAULT_PLACEMENTS });
     this.metaPixelId.set('');
