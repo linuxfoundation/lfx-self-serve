@@ -69,15 +69,15 @@ export class AccountLinuxEmailComponent extends ProfileLinuxEmailComponent {
     return control.touched && control.invalid ? 'Please choose a forwarding address.' : '';
   });
   protected readonly forwardHint: Signal<string> = this.initForwardHint();
-  /** A changed forwarding address the header save bar can save; never while the address can't be read or edited. */
+  /** A changed forwarding address the header save bar can save; never while the address can't be read or edited, or reloads. */
   public readonly forwardChanged: Signal<boolean> = computed(
-    () => this.state() === 'claimed' && !this.forwardReauthRequired() && !this.impersonating() && this.forwardDirty()
+    () => this.state() === 'claimed' && !this.forwardReauthRequired() && !this.impersonating() && !this.loading() && this.forwardDirty()
   );
 
   public constructor() {
     super();
     this.unsavedChanges.register(
-      { dirty: this.forwardChanged, saving: this.savingForward, save: () => this.updateForward(), revert: () => this.revertForward() },
+      { dirty: this.forwardChanged, saving: this.savingForward, save: () => this.saveForward(), revert: () => this.revertForward() },
       this.destroyRef
     );
 
@@ -96,9 +96,16 @@ export class AccountLinuxEmailComponent extends ProfileLinuxEmailComponent {
       .pipe(takeUntilDestroyed())
       .subscribe(({ editable, options }) => {
         const pending = this.pendingForward;
-        if (!pending || !editable || this.impersonating() || !options.some((option) => option.value === pending)) return;
+        const control = this.editForm.controls.forwardTo;
+        if (!pending) return;
+        // A choice the user made since returning wins; the kept one is dropped.
+        if (control.dirty) {
+          this.pendingForward = null;
+          return;
+        }
+        if (!editable || this.impersonating() || !options.some((option) => option.value === pending)) return;
         this.pendingForward = null;
-        this.editForm.controls.forwardTo.setValue(pending);
+        control.setValue(pending);
       });
   }
 
@@ -168,6 +175,11 @@ export class AccountLinuxEmailComponent extends ProfileLinuxEmailComponent {
     } catch {
       return null;
     }
+  }
+
+  // The select is locked while a save or reload runs, so there is nothing to save until it is editable again.
+  private saveForward(): void {
+    if (this.editForm.controls.forwardTo.enabled) this.updateForward();
   }
 
   private revertForward(): void {

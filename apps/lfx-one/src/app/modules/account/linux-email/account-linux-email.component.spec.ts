@@ -162,6 +162,32 @@ describe('Account & Settings › Linux.com email', () => {
     expect(sessionStorage.getItem(PENDING_LINUX_FORWARD_KEY)).toBeNull();
   });
 
+  it('drops the kept choice once the user picks another address before it can be restored', async () => {
+    sessionStorage.setItem(PENDING_LINUX_FORWARD_KEY, JSON.stringify({ savedAt: Date.now(), forwardTo: 'ada@work.example' }));
+    setup({});
+    const fixture = TestBed.createComponent(StateLinuxEmailComponent);
+    await fixture.whenStable();
+    const card = fixture.componentInstance;
+    card.editForm.controls.forwardTo.setValue('ada@example.com');
+    card.editForm.controls.forwardTo.markAsDirty();
+
+    fixture.componentRef.setInput('identities', [WORK_EMAIL]);
+    await fixture.whenStable();
+    expect(card.editForm.controls.forwardTo.value).toBe('ada@example.com');
+  });
+
+  it('has nothing to save, and saves nothing, while the alias reloads after a save', async () => {
+    const { userService, page } = setup({});
+    const card = await createCard();
+    card.editForm.controls.forwardTo.setValue('ada@work.example');
+    card.loading.set(true);
+    TestBed.tick();
+
+    expect(page().dirty()).toBe(false);
+    page().save();
+    expect(userService.updateLinuxForward).not.toHaveBeenCalled();
+  });
+
   it('locks the forwarding select while a save and the refresh after it run', async () => {
     const { userService } = setup({});
     const saved = new Subject<object>();
