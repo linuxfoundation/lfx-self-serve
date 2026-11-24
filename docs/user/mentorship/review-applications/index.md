@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, program-admin, applications, accept, decline, graduate, undo-graduation, re-open, withdraw, mentees]
 last_generated: 2026-10-26
-last_updated: 2026-11-09
+last_updated: 2026-11-24
 intercom_collection: Mentorship
 ---
 
