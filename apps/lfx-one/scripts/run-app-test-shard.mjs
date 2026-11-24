@@ -42,7 +42,10 @@ try {
     console.log(selected.join('\n'));
   } else {
     const { status, output } = await runShard(selected, `${index}/${count}`);
-    const budgetFailed = checkBudget(output, selected);
+    // Only a completed run has timings to check. A compile error or crash already fails the
+    // shard, and checking its output would wrongly blame the timing parser.
+    if (status !== 0) console.error('[test:app] Spec runtime budget not checked: the test run did not complete successfully.');
+    const budgetFailed = status === 0 && checkBudget(output, selected);
     process.exitCode = status === 0 && budgetFailed ? 1 : (status ?? 1);
   }
 } catch (error) {

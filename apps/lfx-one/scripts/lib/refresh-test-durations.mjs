@@ -44,3 +44,19 @@ export function weightDrift(previous, next) {
   }
   return total === 0 ? 0 : moved / total;
 }
+
+/**
+ * One `[id, conclusion]` per job name: the row from its highest run attempt. The jobs API with
+ * `filter=all` returns every attempt, and a "re-run failed jobs" leaves the passed shards only
+ * on the earlier attempt.
+ *
+ * @param {string[][]} rows - `[name, runAttempt, id, conclusion]` per job and attempt.
+ */
+export function latestAttempts(rows) {
+  const latest = new Map();
+  for (const [name, attempt, id, conclusion] of rows) {
+    const previous = latest.get(name);
+    if (!previous || Number(attempt) > previous.attempt) latest.set(name, { attempt: Number(attempt), id, conclusion });
+  }
+  return [...latest.values()].map(({ id, conclusion }) => [id, conclusion]);
+}

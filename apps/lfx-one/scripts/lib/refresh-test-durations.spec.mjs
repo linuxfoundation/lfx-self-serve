@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildTestDurations, weightDrift } from './refresh-test-durations.mjs';
+import { buildTestDurations, latestAttempts, weightDrift } from './refresh-test-durations.mjs';
 
 describe('buildTestDurations', () => {
   it.each([
@@ -29,5 +29,26 @@ describe('weightDrift', () => {
     ['empty maps', {}, {}, 0],
   ])('%s', (_, previous, next, expected) => {
     expect(weightDrift(previous, next)).toBeCloseTo(expected);
+  });
+});
+
+describe('latestAttempts', () => {
+  it.each([
+    ['one attempt', [['Frontend Tests (1)', '1', '10', 'success']], [['10', 'success']]],
+    [
+      'a re-run of the failed shard keeps the passed shard from attempt 1',
+      [
+        ['Frontend Tests (1)', '1', '10', 'success'],
+        ['Frontend Tests (2)', '1', '11', 'failure'],
+        ['Frontend Tests (2)', '2', '21', 'success'],
+      ],
+      [
+        ['10', 'success'],
+        ['21', 'success'],
+      ],
+    ],
+    ['a later failed attempt wins over an earlier pass', [['Frontend Tests (1)', '1', '10', 'success'], ['Frontend Tests (1)', '2', '20', 'failure']], [['20', 'failure']]],
+  ])('%s', (_label, rows, expected) => {
+    expect(latestAttempts(rows)).toEqual(expected);
   });
 });

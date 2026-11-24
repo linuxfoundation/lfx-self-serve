@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 import { discoverSpecs } from './lib/app-test-shards.mjs';
 import { buildSpecBudgetBaseline } from './lib/check-spec-budget.mjs';
-import { buildTestDurations, DRIFT_THRESHOLD, weightDrift } from './lib/refresh-test-durations.mjs';
+import { DRIFT_THRESHOLD, buildTestDurations, latestAttempts, weightDrift } from './lib/refresh-test-durations.mjs';
 import { attachSpecPaths, missingSpecs, parseVitestFileLines } from './lib/spec-timings.mjs';
 
 const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -80,14 +80,24 @@ function gh(...args) {
   return execFileSync('gh', ['api', ...args], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
 }
 
-/** Every Frontend Tests job of the run must have passed, or the weights would miss whole shards. */
+/**
+ * Every Frontend Tests job of the run must have passed, or the weights would miss whole shards.
+ * The jobs API defaults to `filter=latest`, which after a "re-run failed jobs" omits the shards
+ * that passed on an earlier attempt, so fetch every attempt and keep each job's latest one.
+ */
 function fetchRunLogs(runId) {
   const run = JSON.parse(gh(`repos/${REPO}/actions/runs/${runId}`));
-  const jobs = gh('--paginate', `repos/${REPO}/actions/runs/${runId}/jobs?per_page=100`, '--jq', '.jobs[] | select(.name | startswith("Frontend Tests")) | [.id, .conclusion] | @tsv')
+  const rows = gh(
+    '--paginate',
+    `repos/${REPO}/actions/runs/${runId}/jobs?filter=all&per_page=100`,
+    '--jq',
+    '.jobs[] | select(.name | startswith("Frontend Tests")) | [.name, (.run_attempt // 1), .id, .conclusion] | @tsv'
+  )
     .trim()
     .split('\n')
     .filter(Boolean)
     .map((line) => line.split('\t'));
+  const jobs = latestAttempts(rows);
   if (jobs.length === 0) throw new Error(`Run ${runId} has no Frontend Tests jobs.`);
   const failed = jobs.filter(([, conclusion]) => conclusion !== 'success');
   if (failed.length > 0) throw new Error(`Run ${runId} has ${failed.length} Frontend Tests job(s) that did not succeed; use a green run.`);

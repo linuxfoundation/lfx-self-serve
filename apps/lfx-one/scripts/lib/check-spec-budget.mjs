@@ -48,7 +48,10 @@ export function checkSpecBudget(timings, baseline = {}, budget = SPEC_BUDGET) {
     for (const metric of metrics) {
       const failAt = limits[metric] * budget.noiseTolerance;
       if (measured[metric] > failAt) {
-        violations.push({ file, metric, measured: measured[metric], limit: limits[metric], failAt, listed: entry !== undefined });
+        // `listed` only when the baseline value for THIS metric set the limit, so the message
+        // never calls the global budget a baseline.
+        const global = metric === 'seconds' ? budget.maxSeconds : budget.maxMsPerTest;
+        violations.push({ file, metric, measured: measured[metric], limit: limits[metric], failAt, listed: (entry?.[metric] ?? 0) > global });
       }
     }
   }

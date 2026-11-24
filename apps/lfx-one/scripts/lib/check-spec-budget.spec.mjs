@@ -21,7 +21,8 @@ describe('checkSpecBudget', () => {
     ['listed and within its baseline', timing(40_000, 100), { [FILE]: { seconds: 30, msPerTest: 400 } }, []],
     ['listed and slower than its baseline', timing(46_000, 100), { [FILE]: { seconds: 30, msPerTest: 400 } }, [['seconds', 46, 30, 45, true]]],
     ['a baseline below the budget never tightens it', timing(29_000, 1_000), { [FILE]: { seconds: 10 } }, []],
-    ['listed for one metric only', timing(10_000, 20), { [FILE]: { seconds: 25 } }, [['msPerTest', 500, 150, 225, true]]],
+    // Listed for seconds only, so a per-test failure is against the global budget, not a baseline.
+    ['listed for one metric only', timing(10_000, 20), { [FILE]: { seconds: 25 } }, [['msPerTest', 500, 150, 225, false]]],
     ['a baseline for another file does not apply', timing(31_000, 1_000), { 'src/app/other.spec.ts': { seconds: 60 } }, [['seconds', 31, 20, 30, false]]],
   ])('%s', (_, timings, baseline, expected) => {
     const actual = checkSpecBudget(timings, baseline).map(({ metric, measured, limit, failAt, listed }) => [metric, measured, limit, failAt, listed]);
