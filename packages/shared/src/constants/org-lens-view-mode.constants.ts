@@ -21,9 +21,9 @@ export const ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE = 'EMPLOYEE_VIEW_FORBIDDEN';
  */
 export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS_BY_PAGE: Readonly<Record<string, readonly RegExp[]>> = {
   // The gate itself: the page asks "may I view this company?".
-  access: [/^\/(read-check|edit-check)\/?$/],
+  access: [/^\/(read-check|edit-check)\/?$/i],
   // Shared shell data several pages read (company scope, no people).
-  shared: [/^\/org-scope\/?$/],
+  shared: [/^\/org-scope\/?$/i],
   // overview
   overview: [/^\/foundations-and-projects\/?$/],
   // projects

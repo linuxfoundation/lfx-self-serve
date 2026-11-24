@@ -58,3 +58,22 @@ export interface StripPersonalFieldsOptions {
   /** Override the allow-list; tests only. Production always uses `ORG_LENS_EMPLOYEE_VIEW_EXCEPTIONS`. */
   exceptions?: readonly OrgLensEmployeeViewException[];
 }
+
+/**
+ * How a caller cleared the gate. Both values mean "allowed" — the distinction matters only to
+ * callers that share one resolved result across requesters (GH-1809).
+ *
+ * `org-grant` is a grant resolved on *this* org, matching the question the upstream check asks.
+ * `auditor-entitlement` is the authorizer answering `b2b_org:<uid>#auditor` for a caller with no
+ * roster grant here — LF team membership, a hierarchy cascade the roster did not surface, or a
+ * key-contact promotion. Sharing a resolved result lets a caller be served without reaching
+ * upstream, so upstream stops being the deciding authority for that request. Callers that share
+ * must therefore serve the shared copy only on `org-grant`, keeping every other caller on the
+ * direct path.
+ *
+ * `employee-view` (epic #5845) is the third way in and the only reduced one: the caller holds no grant and no
+ * entitlement here, but works for this company, which is an active LF member, and holds a verified email on one of
+ * its domains. It is READ-ONLY and redacted — it maps to `OrgLensViewMode` `'employee'` (see
+ * `getOrgLensViewMode` (`org-lens-read-access.helper.ts`)) — so it is never equivalent to the other two, and shared results are never served on it.
+ */
+export type OrgLensReadQualification = 'org-grant' | 'auditor-entitlement' | 'employee-view';
