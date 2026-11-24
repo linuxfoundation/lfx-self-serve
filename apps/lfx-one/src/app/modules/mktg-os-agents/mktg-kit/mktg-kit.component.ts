@@ -8,7 +8,15 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { distinctUntilChanged, EMPTY, map, switchMap } from 'rxjs';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { ButtonComponent } from '@components/button/button.component';
-import { MKTG_KIT_FILTERS, MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_KIT_SHOW_COMING_SOON, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import {
+  MKTG_KIT_FILTERS,
+  MKTG_KIT_FAMILIES,
+  MKTG_KIT_POSITIONING_FAMILY_ID,
+  MKTG_KIT_SHOW_COMING_SOON,
+  MKTG_POLL_MAX_BACKOFF_MS,
+  MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_POLL,
+} from '@lfx-one/shared/constants';
 import { MktgKitFilter } from '@lfx-one/shared/interfaces';
 import { resolveMktgFamilyActions, resolveMktgFamilyNextStep, resolveMktgFamilyRun } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
@@ -33,6 +41,7 @@ export class MktgKitComponent {
   protected readonly kit = inject(MktgKitService);
   protected readonly filters = MKTG_KIT_FILTERS;
   protected readonly showComingSoon = MKTG_KIT_SHOW_COMING_SOON;
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly familyCount = computed(() => (this.showComingSoon ? MKTG_KIT_FAMILIES.length : this.kit.families().length));
   protected readonly selectedFilter = this.initSelectedFilter();
   protected readonly cards = this.initCards();
@@ -49,7 +58,7 @@ export class MktgKitComponent {
               : createVisibilityPoll(this.document, (poll) => this.kit.refresh(poll), {
                   intervalMs: MKTG_RUN_POLL.intervalMs,
                   backoffBaseMs: MKTG_RUN_POLL.intervalMs,
-                  backoffMaxMs: MKTG_RUN_POLL.intervalMs,
+                  backoffMaxMs: MKTG_POLL_MAX_BACKOFF_MS,
                   shouldContinue: () => !this.kit.accessDenied() && !this.kit.refreshDenied(),
                 })
           ),

@@ -1225,7 +1225,7 @@ describe('MktgDocumentsComponent', () => {
     store.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400 })));
     await render();
 
-    expect(query('mktg-documents-error')?.textContent).toContain('The documents could not be loaded');
+    expect(query('mktg-documents-error')?.textContent).toContain('The documents are not available.');
     expect(query('mktg-documents-refresh-warning')).toBeNull();
     expect(query('mktg-documents-list-failed')).not.toBeNull();
     expect(query('mktg-documents-empty-living')).toBeNull();

@@ -1662,7 +1662,7 @@ describe('MktgDocumentViewComponent', () => {
     it('leaves main’s terminal load errors on the shared error path with no Retry button, not audit recovery', async () => {
       store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 400 })));
       await render('/documents/brand-kit/living');
-      expect(query('mktg-document-view-error')?.textContent).toContain('could not be loaded');
+      expect(query('mktg-document-view-error')?.textContent).toContain('This revision is not available.');
       expect(query('mktg-document-view-retry')).toBeNull();
       expect(pending.waitForStorage).not.toHaveBeenCalled();
     });
@@ -3521,7 +3521,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(select).toHaveBeenLastCalledWith(null);
   });
 
-  it('keeps the lower rail neutral until both reads answer, then reveals errors together in board order', async () => {
+  it('keeps the lower rail neutral until both reads answer, then reveals each card’s state together in board order', async () => {
     useFrameworkRevision();
     const loading = signal(true);
     const commentsError = signal('');
@@ -3559,7 +3559,10 @@ describe('MktgDocumentViewComponent', () => {
     listing.error(new HttpErrorResponse({ status: 503 }));
     await settle();
     expect(query('mktg-comments-loading')).toBeNull();
-    expect(query('mktg-downstream-error')).not.toBeNull();
+    // The downstream read cannot reach the server: its card shows the one grey line and the rail does not wait for it.
+    expect(query('mktg-downstream-retrying')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(query('mktg-downstream-error')).toBeNull();
+    expect(query('mktg-downstream-retry')).toBeNull();
     expect(query('mktg-comments-panel')).toBe(comments);
     expect(query('mktg-downstream-card')).toBe(downstream);
     expect(query('mktg-document-view-revision-2')).toBe(revision);

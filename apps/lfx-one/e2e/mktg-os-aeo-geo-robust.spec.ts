@@ -137,7 +137,7 @@ test('a permanent document-side polling error offers Run again, not Check again'
   await app.go('/aeo-geo');
   await page.getByTestId('mktg-aeo-run-submit').click();
   await expect(page).toHaveURL(/\/documents\/aeo-geo\/run-/, { timeout: PAGE_LOAD_TIMEOUT });
-  await expect(page.getByTestId('mktg-document-view-error')).toContainText('could not be loaded', { timeout: PAGE_LOAD_TIMEOUT });
+  await expect(page.getByTestId('mktg-document-view-error')).toContainText('This revision is not available.', { timeout: PAGE_LOAD_TIMEOUT });
   await expect(page.getByTestId('mktg-document-view-retry')).toHaveCount(0);
   await expect(page.getByTestId('mktg-document-view-run-again')).toBeVisible();
   await expect(page.getByTestId('mktg-document-view-scorecard')).toHaveCount(0);

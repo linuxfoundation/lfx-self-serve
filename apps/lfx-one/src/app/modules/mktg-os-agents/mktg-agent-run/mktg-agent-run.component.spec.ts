@@ -20,6 +20,7 @@ import {
   MKTG_DRIVE_SHARING_HINT,
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_FAILURE_REASON,
+  MKTG_RUN_UNREACHABLE_TEXT,
   MKTG_RUN_ACTIVE,
   MKTG_RUN_ANSWERED,
 } from '@lfx-one/shared/constants';
@@ -640,19 +641,20 @@ describe('MktgAgentRunComponent', () => {
 
     it.each(['missing', 'failed'])('shows the %s dependency blocker and recovery before opening Edit', async (state) => {
       await configure('browser', 'brand-kit', { mode: 'new' });
-      if (state === 'failed') resolveDependencies.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      // A check that cannot reach the server tries again by itself (no button) and lands on the measured absence.
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      if (state === 'failed') resolveDependencies.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       expect(component['showIntakeForm']()).toBe(false);
       expect(component['submitDisabled']()).toBe(true);
       expect(query('mktg-run-sources')?.contains(query('mktg-agent-run-missing-dependency'))).toBe(true);
       if (state === 'failed') {
-        expect(query('mktg-run-sources')?.contains(query('mktg-agent-run-dependency-retry'))).toBe(true);
-        resolveDependencies.mockReturnValue(of({}));
-        query('mktg-agent-run-dependency-retry')?.querySelector('button')?.click();
-        await fixture.whenStable();
+        expect(resolveDependencies).toHaveBeenCalledTimes(2);
         expect(component['dependencyCheckFailed']()).toBe(false);
+        expect(component['dependencyRetrying']()).toBe(false);
       }
+      expect(query('mktg-agent-run-dependency-retry')).toBeNull();
       expect(query('mktg-run-sources')?.contains(query('mktg-agent-run-missing-dependency-link'))).toBe(true);
       component['onEditSources']();
       await fixture.whenStable();
@@ -3802,86 +3804,117 @@ describe('MktgAgentRunComponent', () => {
         expectIncompleteFrameworkStop();
       });
 
-      it('shows a failed check with Try again rather than approval guidance when the read fails, and re-resolves from the button', async () => {
-        resolveDependencies.mockReturnValueOnce(throwError(() => new Error('503 from the BFF')));
+      const unreachable = () => throwError(() => new HttpErrorResponse({ status: 503 }));
+      const visible = () => Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+
+      it('shows one grey line and no button while the check cannot reach the server, then lands by itself', async () => {
+        visible();
+        const again = new Subject<Record<string, MktgDependencyDocument | null>>();
+        resolveDependencies.mockReturnValueOnce(unreachable()).mockReturnValueOnce(again.asObservable());
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+
+        const line = query('mktg-agent-run-dependency-retrying');
+        expect(line?.textContent?.trim()).toBe(MKTG_POLL_RETRYING_TEXT);
+        expect(line?.getAttribute('role')).toBe('status');
+        expect(component['submitDisabled']()).toBe(true);
+        expect(component['dependencyCheckFailed']()).toBe(false);
+        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+        expect(query('mktg-agent-run-dependency-retry')).toBeNull();
+        expect(host().textContent).not.toContain('Try again');
+
+        again.next({ 'foundation-setup': latestFramework });
+        again.complete();
+        await fixture.whenStable();
+
+        expect(resolveDependencies).toHaveBeenCalledTimes(2);
+        expect(query('mktg-agent-run-dependency-retrying')).toBeNull();
+        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+        expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('messaging framework · v2');
+        expect(component['submitDisabled']()).toBe(false);
+      });
+
+      it('shows a final refusal as one red line that names the document, with no Retry and no approval guidance', async () => {
+        resolveDependencies.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403 })));
         activeContext.set(PROJECT_1);
         await fixture.whenStable();
         fillRequired();
         await fixture.whenStable();
 
         expect(component['submitDisabled']()).toBe(true);
-        expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('Could not check the project’s Messaging Framework — try again.');
+        expect(component['dependencyCheckFailed']()).toBe(true);
+        expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('The project’s Messaging Framework is not available.');
         expect(query('mktg-agent-run-missing-dependency')?.textContent).not.toContain('Approve a messaging framework first');
-        expect(query('mktg-agent-run-missing-dependency-link')).toBeNull();
-        expect(query('mktg-agent-run-attachment-foundation-setup')).toBeNull();
-
-        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
-        query('mktg-agent-run-dependency-retry')?.querySelector('button')?.click();
-        await fixture.whenStable();
-
-        expect(resolveDependencies).toHaveBeenCalledTimes(2);
-        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+        expect(query('mktg-agent-run-dependency-retrying')).toBeNull();
         expect(query('mktg-agent-run-dependency-retry')).toBeNull();
-        expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('messaging framework · v2');
-        expect(component['submitDisabled']()).toBe(false);
+        expect(query('mktg-agent-run-missing-dependency-link')).toBeNull();
+        expect(resolveDependencies).toHaveBeenCalledTimes(1);
       });
 
-      it('lets only the latest Try again land: a slower, earlier retry that fails afterwards does not clear its result', async () => {
-        resolveDependencies.mockReturnValueOnce(throwError(() => new Error('503 from the BFF')));
+      it('drops a check still trying when the project changes, so it cannot land on the new project', async () => {
+        visible();
+        const again = new Subject<Record<string, MktgDependencyDocument | null>>();
+        resolveDependencies.mockReturnValueOnce(unreachable()).mockReturnValueOnce(again.asObservable());
         activeContext.set(PROJECT_1);
         await fixture.whenStable();
-        fillRequired();
-        await fixture.whenStable();
+        expect(again.observed).toBe(true);
 
-        const slowRetry = new Subject<Record<string, MktgDependencyDocument | null>>();
-        resolveDependencies.mockReturnValueOnce(slowRetry.asObservable());
-        component['onRetryDependencies']();
-        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
-        component['onRetryDependencies']();
-        slowRetry.error(new Error('503 from the BFF'));
-        await fixture.whenStable();
-
-        expect(component['dependencyCheckFailed']()).toBe(false);
-        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
-        expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('messaging framework · v2');
-        expect(component['submitDisabled']()).toBe(false);
-      });
-
-      it('drops a Try again still in flight when the project changes, so it cannot land on the new project', async () => {
-        resolveDependencies.mockReturnValueOnce(throwError(() => new Error('503 from the BFF')));
-        activeContext.set(PROJECT_1);
-        await fixture.whenStable();
-
-        const retry = new Subject<Record<string, MktgDependencyDocument | null>>();
-        resolveDependencies.mockReturnValueOnce(retry.asObservable());
-        component['onRetryDependencies']();
         dependencyDocs = { 'proj-2:foundation-setup': latestFramework };
         activeContext.set(PROJECT_2);
         await fixture.whenStable();
-        retry.error(new Error('503 from the BFF'));
-        await fixture.whenStable();
 
-        expect(retry.observed).toBe(false);
+        expect(again.observed).toBe(false);
+        expect(component['dependencyRetrying']()).toBe(false);
         expect(component['dependencyCheckFailed']()).toBe(false);
-        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
         expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('messaging framework · v2');
       });
 
-      it('reports a check that fails at submit time as such, not as a failed run', async () => {
+      it('says a submit could not reach the server, starts no run, and clears the line once the check lands by itself', async () => {
+        visible();
         dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
         activeContext.set(PROJECT_1);
         await fixture.whenStable();
         fillRequired();
         await fixture.whenStable();
-        resolveDependencies.mockReturnValueOnce(throwError(() => new Error('503 from the BFF')));
+        const again = new Subject<Record<string, MktgDependencyDocument | null>>();
+        resolveDependencies.mockReturnValueOnce(unreachable()).mockReturnValueOnce(again.asObservable());
 
         component['onSubmit']();
         await fixture.whenStable();
 
         expect(generate).not.toHaveBeenCalled();
         expect(component['phase']()).toBe('form');
-        expect(query('mktg-agent-run-error')?.textContent).toContain('Could not check the project’s Messaging Framework — try again.');
-        expect(query('mktg-agent-run-dependency-retry')).not.toBeNull();
+        expect(query('mktg-agent-run-error')?.textContent).toContain(MKTG_RUN_UNREACHABLE_TEXT);
+        expect(query('mktg-agent-run-dependency-retrying')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+        expect(query('mktg-agent-run-dependency-retry')).toBeNull();
+        expect(component['submitDisabled']()).toBe(true);
+
+        again.next({ 'foundation-setup': latestFramework });
+        again.complete();
+        await fixture.whenStable();
+
+        expect(query('mktg-agent-run-error')).toBeNull();
+        expect(query('mktg-agent-run-dependency-retrying')).toBeNull();
+        expect(component['submitDisabled']()).toBe(false);
+      });
+
+      it('reports a check refused at submit time as such, not as a failed run', async () => {
+        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+        resolveDependencies.mockReturnValueOnce(throwError(() => new Error('The approved document has no supported attachment reading.')));
+
+        component['onSubmit']();
+        await fixture.whenStable();
+
+        expect(generate).not.toHaveBeenCalled();
+        expect(component['phase']()).toBe('form');
+        expect(query('mktg-agent-run-error')?.textContent).toContain('The project’s Messaging Framework is not available.');
+        expect(query('mktg-agent-run-dependency-retry')).toBeNull();
       });
 
       it('stays disabled, with no note, while the framework is still resolving', async () => {

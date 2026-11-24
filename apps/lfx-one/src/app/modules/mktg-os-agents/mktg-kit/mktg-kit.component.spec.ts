@@ -11,13 +11,14 @@ import { resolveMktgKit, summarizeMktgKit } from '@lfx-one/shared/utils';
 import { MktgDocumentsResponse, MktgKitFamilyView } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { of } from 'rxjs';
-import { MKTG_AGENTS, MKTG_KIT_FAMILIES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import { MKTG_AGENTS, MKTG_KIT_FAMILIES, MKTG_NOT_AVAILABLE_TEXT, MKTG_POLL_RETRYING_TEXT, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgKitComponent } from './mktg-kit.component';
 
 describe('Marketing kit home', () => {
   const families = signal<MktgKitFamilyView[]>([]);
   const loading = signal(false);
   const error = signal('');
+  const retrying = signal(false);
   const accessDenied = signal(false);
   const refreshDenied = signal(false);
   const documents = signal<MktgDocumentsResponse | null>(null);
@@ -28,6 +29,7 @@ describe('Marketing kit home', () => {
     families.set(resolveMktgKit({ project: 'synthetic', groups: [] }));
     loading.set(false);
     error.set('');
+    retrying.set(false);
     accessDenied.set(false);
     refreshDenied.set(false);
     refresh.mockReset().mockImplementation(() => of(documents()));
@@ -45,6 +47,7 @@ describe('Marketing kit home', () => {
               families,
               loading,
               error,
+              retrying,
               accessDenied,
               refreshDenied,
               projectUid: computed(() => context().uid),
@@ -452,5 +455,47 @@ describe('Marketing kit home', () => {
     await fixture.whenStable();
     expect(root.querySelector('[role="alert"]')?.textContent).toContain('write access');
     expect(root.querySelectorAll('article')).toHaveLength(0);
+  });
+
+  it('keeps a loaded kit usable under one grey line while the server cannot be reached, with no alert and no button', async () => {
+    retrying.set(true);
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const line = root.querySelector('[data-testid="mktg-kit-retrying"]');
+    expect(line?.textContent?.trim()).toBe(MKTG_POLL_RETRYING_TEXT);
+    expect(line?.getAttribute('role')).toBe('status');
+    expect(line?.className).toContain('text-gray-500');
+    expect(root.querySelector('[data-testid="mktg-kit-families"]')).not.toBeNull();
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-kit-error-retry"]')).toBeNull();
+    expect(root.textContent).not.toContain('Try again');
+    retrying.set(false);
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="mktg-kit-retrying"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-kit-families"]')).not.toBeNull();
+  });
+
+  it('shows the grey line over the loading skeleton when opened offline, and a final refusal as one red line with no Retry', async () => {
+    loading.set(true);
+    retrying.set(true);
+    documents.set(null);
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="mktg-kit-retrying"]')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(root.querySelector('[data-testid="mktg-kit-loading"]')).not.toBeNull();
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    loading.set(false);
+    retrying.set(false);
+    error.set(MKTG_NOT_AVAILABLE_TEXT.kit);
+    await fixture.whenStable();
+    const alert = root.querySelector('[data-testid="mktg-kit-error"]');
+    expect(alert?.textContent?.trim()).toBe('The Marketing kit is not available.');
+    expect(alert?.getAttribute('role')).toBe('alert');
+    expect(alert?.className).toContain('text-red-700');
+    expect(root.querySelector('[data-testid="mktg-kit-retrying"]')).toBeNull();
+    expect(root.querySelector('button')?.textContent ?? '').not.toContain('Try again');
+    expect(root.querySelector('[data-testid="mktg-kit-error-retry"]')).toBeNull();
   });
 });

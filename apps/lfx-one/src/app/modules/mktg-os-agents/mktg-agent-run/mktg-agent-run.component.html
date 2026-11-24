@@ -138,20 +138,16 @@
         }
 
         <ng-template #dependencyStatus>
+          @if (dependencyRetrying()) {
+            <!-- The dependency check cannot reach the server: one quiet line in its spot while it keeps trying by itself. -->
+            <p role="status" class="text-xs text-gray-500" data-testid="mktg-agent-run-dependency-retrying">{{ retryingText }}</p>
+          }
           @if (missingDependencyNote()) {
             <div class="flex flex-col gap-2">
-              <lfx-message severity="warn" [text]="missingDependencyNote()" data-testid="mktg-agent-run-missing-dependency" />
-              @if (dependencyCheckFailed()) {
-                <div class="flex">
-                  <lfx-button
-                    label="Try again"
-                    icon="fa-light fa-rotate-right"
-                    [text]="true"
-                    size="small"
-                    data-testid="mktg-agent-run-dependency-retry"
-                    (onClick)="onRetryDependencies()" />
-                </div>
-              }
+              <lfx-message
+                [severity]="dependencyCheckFailed() ? 'error' : 'warn'"
+                [text]="missingDependencyNote()"
+                data-testid="mktg-agent-run-missing-dependency" />
               @if (missingDependencyLink(); as link) {
                 <div class="flex">
                   <lfx-button

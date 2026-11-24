@@ -6,6 +6,7 @@ import { LINKEDIN_API } from '@lfx-one/shared/constants';
 import { LINKEDIN_RECORDED_CASES } from '@lfx-one/shared/constants/linkedin-post-recorded.fixture';
 import { LINKEDIN_RECORDED_PROGRESS } from '@lfx-one/shared/constants/linkedin-post-questions.fixture';
 import { json, LINKEDIN_RUN_TIMEOUT, openLinkedin, setupLinkedin } from './helpers/mktg-linkedin.helper';
+import { expectRetryingLine } from './helpers/mktg-os-outage.helper';
 
 // openLinkedin calls suppressCookieBanner(page) before every navigation.
 test.describe('Marketing OS LinkedIn structure and states', () => {
@@ -63,12 +64,14 @@ test.describe('Marketing OS LinkedIn structure and states', () => {
     expect(reads).toHaveLength(0);
     await page.screenshot({ path: info.outputPath('no-access.png'), fullPage: true });
   });
-  test('profile failure is distinct from first-run setup and offers retry', async ({ page }, info) => {
+  test('a profile read that cannot reach the server is distinct from first-run setup: one grey line over the skeleton, no button', async ({ page }, info) => {
     await setupLinkedin(page, { profileError: true });
     await openLinkedin(page);
-    await expect(page.getByTestId('mktg-linkedin-error')).toContainText('could not be loaded');
+    await expectRetryingLine(page, page.getByTestId('mktg-linkedin-retrying'));
+    await expect(page.getByTestId('mktg-linkedin-loading')).toBeVisible();
+    await expect(page.getByTestId('mktg-linkedin-error')).toHaveCount(0);
     await expect(page.getByTestId('mktg-linkedin-profile-form')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-linkedin-retry-load')).toBeVisible();
+    await expect(page.getByTestId('mktg-linkedin-retry-load')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath('load-error.png'), fullPage: true });
   });
   test('generation failure keeps the content and allows a new attempt', async ({ page }, info) => {

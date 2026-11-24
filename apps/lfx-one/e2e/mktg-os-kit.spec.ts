@@ -6,6 +6,7 @@ import { isMktgKitFamilyLive } from '../../../packages/shared/src/utils/mktg-kit
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { expect } from '@playwright/test';
 import { kitTest as test, kitDocuments, openKit, setupKit } from './helpers/mktg-kit.helper';
+import { expectRetryingLine } from './helpers/mktg-os-outage.helper';
 
 test.describe('Marketing kit home content', () => {
   test.beforeEach(async ({ page }) => {
@@ -118,13 +119,15 @@ test.describe('Marketing kit home content', () => {
     release();
     await expect(page.getByTestId('mktg-kit-in-kit')).toHaveText('0 assets');
   });
-  test('failed read is not an empty kit and can be retried', async ({ page }) => {
+  test('a read that cannot reach the server is not an empty kit: one grey line over the skeleton, no error box and no button', async ({ page }) => {
     await setupKit(page, { status: 500 });
     await openKit(page);
-    await expect(page.getByTestId('mktg-kit-error')).toContainText('could not be loaded');
+    await expectRetryingLine(page, page.getByTestId('mktg-kit-retrying'));
+    await expect(page.getByTestId('mktg-kit-loading')).toBeVisible();
+    await expect(page.getByTestId('mktg-kit-error')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-kit-error-retry')).toHaveCount(0);
     await expect(page.getByTestId('mktg-kit-families')).toHaveCount(0);
-    await page.getByTestId('mktg-kit-error-retry').getByRole('button').click();
-    await expect(page.getByTestId('mktg-kit-error')).toBeVisible();
+    await expect(page.getByTestId('mktg-kit-in-kit')).toHaveText('—');
   });
   test('no write access has its own message', async ({ page }) => {
     await setupKit(page, { writer: false });
