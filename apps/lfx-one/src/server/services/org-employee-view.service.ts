@@ -9,7 +9,6 @@ import {
   MEMBER_BENEFIT_ACTIVE_MEMBERSHIP_STATUSES,
   MEMBER_BENEFIT_ACTIVE_STATUS_FILTERS,
   MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS,
-  MEMBER_BENEFIT_FOUNDATION_SLUG,
 } from '@lfx-one/shared/constants';
 import type {
   OrgEmployeeViewDenial,
@@ -338,7 +337,7 @@ export class OrgEmployeeViewService {
   /**
    * Active-member companies whose registered domain exactly equals one of `domains`, in a stable order (name, then uid).
    *
-   * Read from the active Linux Foundation memberships (`project_membership`, project `tlf`), not from `b2b_org`: `b2b_org` is gated
+   * Read from the active memberships of ANY Linux Foundation foundation (`project_membership`, every project), not from `b2b_org`: `b2b_org` is gated
    * on `auditor`, which the BFF machine client does not hold, and the caller was just refused it, so their own token sees nothing.
    * Memberships are readable with the machine token (the newsletter member benefit already depends on it) and carry the company's
    * id, name and one registered domain. The token is scoped to this one read, which holds no personal data, and the answer is
@@ -388,7 +387,6 @@ export class OrgEmployeeViewService {
             'GET',
             {
               type: 'project_membership',
-              filters_all: `project_slug:${MEMBER_BENEFIT_FOUNDATION_SLUG}`,
               filters_or: MEMBER_BENEFIT_ACTIVE_STATUS_FILTERS,
               page_size: 1000,
               ...(pageToken && { page_token: pageToken }),
@@ -414,7 +412,6 @@ export class OrgEmployeeViewService {
     const byDomain = new Map<string, OrgLensEmployeeViewGrant[]>();
     const activeOrgUids = new Set<string>();
     for (const membership of memberships) {
-      if (membership.project_slug !== MEMBER_BENEFIT_FOUNDATION_SLUG) continue;
       if (!MEMBER_BENEFIT_ACTIVE_MEMBERSHIP_STATUSES.has((membership.status ?? '').toLowerCase())) continue;
       const orgUid = membership.b2b_org_uid;
       if (!orgUid) continue;
@@ -429,7 +426,7 @@ export class OrgEmployeeViewService {
       }
     }
 
-    // The Linux Foundation always has active members: an empty index means the read was filtered, broken, or keyed on a slug the
+    // The Linux Foundation family always has active members: an empty index means the read was filtered, broken, or keyed on a slug the
     // memberships do not carry. Rejecting keeps it from being cached as "nobody is a member" and denying every employee.
     if (activeOrgUids.size === 0) {
       logger.warning(req, OPERATION, 'Membership read returned no active members; cannot find member companies', { membership_rows: memberships.length });
