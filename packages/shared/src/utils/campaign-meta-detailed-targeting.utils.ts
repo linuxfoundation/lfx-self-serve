@@ -37,8 +37,8 @@ import { metaConfigRecord } from './campaign-meta-ad-options.utils';
 
 /**
  * Meta detailed targeting (#5904 row 4): interests, behaviors, work positions and languages in
- * `metaConfig.targeting`. One set of rules for the create route (which answers a refusal with a 400) and, later,
- * the Implement tab, mirroring campaign-service's `checkMetaTargeting` and `normalizeDetailedTargeting`
+ * `metaConfig.targeting`. One set of rules for the create route (which answers a refusal with a 400) and the
+ * Implement tab, mirroring campaign-service's `checkMetaTargeting` and `normalizeDetailedTargeting`
  * (linuxfoundation/lfx-v2-campaign-service#612).
  */
 
@@ -264,7 +264,7 @@ export function metaDetailedTargetingForCreate(
   return compactMetaDetailedTargeting(out);
 }
 
-/** `picks` with every list this deployment does not send emptied: the Clear past an `unsupported` block, whose lists are hidden. */
+/** `picks` with every list this deployment answered no to emptied: the Clear past an `unsupported` block, whose lists are hidden. An unanswered list is kept, since it may yet be sendable. */
 export function metaDetailedTargetingPicksSendable(
   picks: MetaDetailedTargetingPicks,
   interestEnabled: boolean | null,
@@ -272,7 +272,7 @@ export function metaDetailedTargetingPicksSendable(
 ): MetaDetailedTargetingPicks {
   const out = copyMetaDetailedTargetingPicks(picks);
   for (const kind of META_TARGETING_KINDS) {
-    if (kindFlag(kind, interestEnabled, behaviorEnabled) !== true) out[kind.key] = [];
+    if (kindFlag(kind, interestEnabled, behaviorEnabled) === false) out[kind.key] = [];
   }
   return out;
 }

@@ -280,8 +280,9 @@ describe('the detailed-targeting create rules', () => {
     expect(metaDetailedTargetingForCreate(none, true, true)).toBeNull();
   });
 
-  it('clears only the lists this deployment does not send', () => {
+  it('clears only the lists this deployment answered no to', () => {
     expect(metaDetailedTargetingPicksSendable(picks, true, false)).toEqual({ ...none, interests: picks.interests });
+    expect(metaDetailedTargetingPicksSendable(picks, null, false)).toEqual({ ...none, interests: picks.interests });
   });
 
   const block = (over: Partial<Parameters<typeof metaDetailedTargetingBlock>[0]>) =>
