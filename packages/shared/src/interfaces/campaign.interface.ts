@@ -1261,6 +1261,19 @@ export interface CampaignImplementationDraft {
    * because custom audience ids belong to the ad account that foundation's connection resolves to.
    */
   metaAudienceTargetingProject?: string;
+  /**
+   * The Meta interests, behaviors and job titles as picked (#5904 row 4), with names so a restored chip reads the
+   * same. Not stamped with a foundation: Meta's targeting taxonomy is the same for every ad account.
+   */
+  metaDetailedTargeting?: MetaDetailedTargetingPicks;
+  /** The Meta ad schedule as edited (#5904 row 5); `null` is none. Not foundation-scoped. Absent means the draft predates it. */
+  metaAdSchedule?: MetaAdSchedule | null;
+  /** The Meta frequency cap as edited (#5904 row 5); `null` is none. */
+  metaFrequencyCap?: MetaFrequencyCap | null;
+  /** The Meta devices as ticked (#5904 row 6): `mobile` and/or `desktop`. Not foundation-scoped. Absent means the draft predates it. */
+  metaDevicePlatforms?: string[];
+  /** The Meta operating systems as ticked (#5904 row 6): Meta `user_os` values, families only from the tab. */
+  metaUserOs?: string[];
   /** The Meta call to action, conversion event and optimization goal as chosen (#5934); an absent key is "Not set". */
   metaAdOptions?: MetaAdOptions;
   /** The foundation slug {@link metaAdOptions} was chosen under: restored only under the same one, like the targeting. */
@@ -2134,6 +2147,50 @@ export interface LinkedInCreateAccountState {
   account: LinkedInCreateAccountResult | null;
 }
 
+/** What `linkedInDailyCapError` and `linkedInDailyCapField` read (#5774): the cap beside a lifetime budget. */
+export interface LinkedInDailyCapInput {
+  capUsd: number | null;
+  lifetimeBudget: boolean;
+  /** Whether this deployment offers the cap (`linkedInDailyCapEnabled`). */
+  available: boolean;
+  budgetUsd: number;
+}
+
+/** What `linkedInAccountFields` reads (#5809) to choose the account fields a LinkedIn create sends. */
+export interface LinkedInAccountFieldsInput {
+  /** The connection decides the account (`linkedInAccountSetByConnection`), so the legacy `adAccountId` is not sent. */
+  setByConnection: boolean;
+  /** The account picker applies on this deployment (`linkedInAccountSelectionAvailable`). */
+  selectionAvailable: boolean;
+  /** The account the create goes to, from `linkedInEffectiveAccount`, or `null` when the read has no answer. */
+  effectiveAccount: LinkedInCreateAccountOption | null;
+  canChoose: boolean;
+  /** The legacy form's account, sent only when the connection does not decide it. */
+  legacyAccountId: string;
+}
+
+/**
+ * What `linkedInCreateRefusal` reads (#5980): the LinkedIn section's state as the Implement tab holds it. One flat
+ * object of plain values, like `MetaCreateRefusalInput`, so the rules are tested without the component.
+ */
+export interface LinkedInCreateRefusalInput {
+  budgetUsd: number;
+  dailyCapError: string | null;
+  geoTargetCount: number;
+  variantCount: number;
+  variantTextInvalid: boolean;
+  /** Targeting entries removed from the selected profile (#5546). */
+  removalsHeld: boolean;
+  targetingEditAvailable: boolean;
+  /** The selected profile's details are loaded, so removals can be applied. */
+  profileLoaded: boolean;
+  accountSetByConnection: boolean;
+  /** The legacy form's account is one the catalog lists. */
+  accountInCatalog: boolean;
+  accountSelectionAvailable: boolean;
+  createAccountStatus: LinkedInCreateAccountState['status'];
+}
+
 export interface LinkedInCampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -2168,6 +2225,12 @@ export interface LinkedInCampaignCreateRequest {
   bidding?: CampaignBiddingConfig;
   /** The selected targeting profile with entries removed (#5546). Omitted when nothing was removed. */
   targetingProfileEdit?: LinkedInTargetingProfileEdit;
+}
+
+/** A `linkedInConfig` the create route refuses for its keys (#5764): the field to name, and why. Never echoes a caller key. */
+export interface LinkedInConfigKeyRefusal {
+  field: string;
+  message: string;
 }
 
 export interface LinkedInCampaignCreateResult {
@@ -2345,6 +2408,12 @@ export interface MetaCreateRefusalInput {
   instagramDsaInvalid: boolean;
   audienceTargetingBlock: string | null;
   audienceTargetingError: string | null;
+  detailedTargetingBlock: string | null;
+  detailedTargetingError: string | null;
+  deliveryBlock: string | null;
+  deliveryError: string | null;
+  deviceOsBlock: string | null;
+  deviceOsError: string | null;
   adOptionsBlock: string | null;
   adOptionsError: string | null;
   leadFormError: string | null;
@@ -2395,6 +2464,17 @@ export interface MetaCampaignCreateRequest {
   variants: MetaAdVariant[];
   project?: string;
   objective?: MetaObjective;
+  /**
+   * When the ad set runs (#5904 row 5; campaign-service#612): one window of whole hours on the chosen days, in the
+   * Meta ad account's time zone. Needs `lifetimeBudget: true`. Sent ONLY when `CampaignListResult.metaAdScheduleEnabled`
+   * is a yes; the create route refuses it with a 400 otherwise.
+   */
+  adSchedule?: MetaAdSchedule;
+  /**
+   * At most `maxImpressions` impressions per person every `intervalDays` days (#5904 row 5), on the awareness objective
+   * only. Sent ONLY when `CampaignListResult.metaFrequencyCapEnabled` is a yes; the create route refuses it otherwise.
+   */
+  frequencyCap?: MetaFrequencyCap;
   placements?: Partial<MetaPlacement>;
   pixelId?: string;
   /**
@@ -2502,6 +2582,10 @@ export interface MetaDetailedTargeting {
   behaviors?: string[];
   workPositions?: string[];
   locales?: number[];
+  /** `mobile` and/or `desktop` (#5904 row 6); one device restricts the ad set, both or none is Meta's default. */
+  devicePlatforms?: string[];
+  /** Meta `user_os` values (#5904 row 6): `iOS`, `Android`, or either with a listed minimum version or version range. */
+  userOs?: string[];
 }
 
 /** The whole `metaConfig.targeting` block a Meta create may send: the audience fields and the detailed ones. */
@@ -2513,6 +2597,15 @@ export interface MetaTargetingFlags {
   interest: boolean;
   behavior: boolean;
   locale: boolean;
+  device: boolean;
+  os: boolean;
+}
+
+/** One Meta `user_os` value, parsed: its spelling as Meta takes it, its family, and whether it names a version. */
+export interface MetaUserOsValue {
+  canonical: string;
+  family: 'iOS' | 'Android';
+  versioned: boolean;
 }
 
 /** A kind the Meta targeting search answers (`GET /api/campaigns/meta/targeting-search?type=`). */
@@ -2585,6 +2678,99 @@ export interface MetaTargetingSearchState {
   failure: string | null;
 }
 
+/**
+ * A Meta ad set schedule (#5904 row 5; campaign-service#612): it runs only on `days` (0 Sunday to 6 Saturday, Meta's
+ * numbering) between `startMinute` and `endMinute` of the day, whole hours with 0 <= start < end <= 1440, in the
+ * ad account's time zone. One window for every chosen day.
+ */
+export interface MetaAdSchedule {
+  days: number[];
+  startMinute: number;
+  endMinute: number;
+}
+
+/** A Meta frequency cap (#5904 row 5): at most `maxImpressions` impressions per person every `intervalDays` days, each 1–90. */
+export interface MetaFrequencyCap {
+  maxImpressions: number;
+  intervalDays: number;
+}
+
+/** The Meta delivery options a create sends, each only once checked. */
+export interface MetaDeliveryOptions {
+  adSchedule?: MetaAdSchedule;
+  frequencyCap?: MetaFrequencyCap;
+}
+
+/** The Meta delivery options as edited on the Implement tab (#5904 row 5): `null` is "not set". */
+export interface MetaDeliveryDraft {
+  adSchedule: MetaAdSchedule | null;
+  frequencyCap: MetaFrequencyCap | null;
+}
+
+/** The Meta devices and operating systems as ticked on the Implement tab (#5904 row 6); an empty list is Meta's default (all). */
+export interface MetaDeviceOsDraft {
+  devicePlatforms: string[];
+  userOs: string[];
+}
+
+/** One device or OS checkbox the Implement tab offers: the value a create sends and its label. */
+export interface MetaDeviceOsOption {
+  value: string;
+  label: string;
+}
+
+/** One device or OS checkbox as the options component draws it: on when the draft holds its value. */
+export interface MetaDeviceOsOptionView extends MetaDeviceOsOption {
+  on: boolean;
+}
+
+/** The Meta device and OS state `metaDeviceOsBlock` (`campaign-meta-device-os.utils.ts`) reads, as plain values. */
+export interface MetaDeviceOsBlockInput {
+  draft: MetaDeviceOsDraft;
+  /** `CampaignListResult.metaDeviceTargetingEnabled`: `null` while unanswered. */
+  deviceEnabled: boolean | null;
+  /** `CampaignListResult.metaOsTargetingEnabled`: `null` while unanswered. */
+  osEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
+/** One day toggle of the ad schedule: Meta's day number and its short label. */
+export interface MetaAdScheduleDayOption {
+  value: number;
+  label: string;
+}
+
+/** One day toggle as the delivery options component draws it: on when the schedule names the day. */
+export interface MetaAdScheduleDayView extends MetaAdScheduleDayOption {
+  on: boolean;
+}
+
+/** One hour of the ad schedule's start or end select: minutes of the day and a 24-hour label. */
+export interface MetaAdScheduleHourOption {
+  value: number;
+  label: string;
+}
+
+/** The Meta delivery state `metaDeliveryBlock` (`campaign-meta-delivery.utils.ts`) reads, as plain values. */
+export interface MetaDeliveryBlockInput {
+  draft: MetaDeliveryDraft;
+  /** `CampaignListResult.metaAdScheduleEnabled`: `null` while unanswered. */
+  adScheduleEnabled: boolean | null;
+  /** `CampaignListResult.metaFrequencyCapEnabled`: `null` while unanswered. */
+  frequencyCapEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
+/** Which Meta delivery options this deployment accepts on create, one answer per flag. */
+export interface MetaDeliveryFlags {
+  adSchedule: boolean;
+  frequencyCap: boolean;
+}
+
 /** campaign-service's raw answer for `search-meta-targeting-options` (snake_case, as on the wire). */
 export interface CampaignServiceMetaTargetingSearch {
   type?: string;
@@ -2618,6 +2804,11 @@ export type MetaDraftSnapshot = Pick<
   | 'metaDsaPayor'
   | 'metaAudienceTargeting'
   | 'metaAudienceTargetingProject'
+  | 'metaDetailedTargeting'
+  | 'metaAdSchedule'
+  | 'metaFrequencyCap'
+  | 'metaDevicePlatforms'
+  | 'metaUserOs'
   | 'metaAdOptions'
   | 'metaAdOptionsProject'
   | 'metaLeadFormId'
@@ -2644,6 +2835,9 @@ export interface MetaDraftState {
   dsaBeneficiary: string;
   dsaPayor: string;
   audienceTargeting: MetaAudienceTargetingDraft;
+  detailedTargeting: MetaDetailedTargetingPicks;
+  delivery: MetaDeliveryDraft;
+  deviceOs: MetaDeviceOsDraft;
   adOptions: MetaAdOptions;
   leadFormId: string;
   /** The foundation the choices were made under; targeting, ad options and the lead form restore only under it. */
@@ -2676,6 +2870,9 @@ export interface MetaDraftRestore {
   /** The Instagram id and DSA disclosures to patch, one emitting patch; empty when the draft carries none. */
   instagramDsaPatch: Partial<Record<'instagramUserId' | 'dsaBeneficiary' | 'dsaPayor', string>>;
   audienceTargeting?: MetaAudienceTargetingDraft;
+  detailedTargeting?: MetaDetailedTargetingPicks;
+  delivery?: MetaDeliveryDraft;
+  deviceOs?: MetaDeviceOsDraft;
   adOptions?: MetaAdOptions;
   /** `null` keeps the current form; `''` clears it. */
   leadFormId: string | null;
@@ -7509,6 +7706,18 @@ export interface CampaignListResult {
   metaBehaviorTargetingEnabled?: boolean;
   metaLocaleTargetingEnabled?: boolean;
   /**
+   * Whether a Meta create may carry `metaConfig.targeting.devicePlatforms` and `userOs` (#5904 row 6), one flag each:
+   * `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING` / `..._META_OS_TARGETING`.
+   */
+  metaDeviceTargetingEnabled?: boolean;
+  metaOsTargetingEnabled?: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.adSchedule` and `frequencyCap` (#5904 row 5), one flag each:
+   * `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE` / `..._META_FREQUENCY_CAP`. Deployment-wide.
+   */
+  metaAdScheduleEnabled?: boolean;
+  metaFrequencyCapEnabled?: boolean;
+  /**
    * Whether THIS caller may offer the `leads` objective with an Instant Form, through
    * `GET /api/campaigns/meta/lead-forms`, and send `metaConfig.leadFormId` (#5940): `cutoverOwnsCreate()` AND
    * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS` AND `global_marketing_ops` on the listed project, the relation
@@ -7844,6 +8053,18 @@ export interface MetaAudienceTargetingBlockInput {
   targeting: MetaAudienceTargeting | null;
   targetingEnabled: boolean | null;
   customAudiencesEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
+/** The Meta detailed-targeting state `metaDetailedTargetingBlock` (`campaign-meta-detailed-targeting.utils.ts`) reads, as plain values. */
+export interface MetaDetailedTargetingBlockInput {
+  picks: MetaDetailedTargetingPicks;
+  /** `CampaignListResult.metaInterestTargetingEnabled`: `null` while unanswered. */
+  interestEnabled: boolean | null;
+  /** `CampaignListResult.metaBehaviorTargetingEnabled`, for behaviors and job titles: `null` while unanswered. */
+  behaviorEnabled: boolean | null;
   createCapabilityRead: CampaignCapabilityReadState;
   /** The open brief's id, or `null` while the brief is unsaved. */
   briefId: string | null;

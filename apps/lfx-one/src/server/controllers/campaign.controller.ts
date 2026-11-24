@@ -10,6 +10,7 @@ import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
+import { linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
 import {
   googleAdScheduleRefusal,
   googleAdsDevicesOn,
@@ -60,12 +61,26 @@ import {
   metaAudienceTargetingRefusal,
   metaTargetingNamesCustomAudiences,
 } from '@lfx-one/shared/utils/campaign-meta-audience-targeting.utils';
-import { compactMetaAdOptions, metaAdOptionOffMessage, metaAdOptionsRefusal, metaConfigRecord } from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
+import {
+  compactMetaAdOptions,
+  metaAdOptionOffMessage,
+  metaAdOptionsRefusal,
+  metaConfigKeyVariant,
+  metaConfigRecord,
+} from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
 import { hasMetaLeadFormKeyVariant, metaLeadFormId, metaLeadFormRefusal } from '@lfx-one/shared/utils/campaign-meta-lead-form.utils';
+import {
+  compactMetaDeliveryOptions,
+  metaAdScheduleRefusal,
+  metaDeliveryFlagRefusal,
+  metaDeliveryKeyVariant,
+  metaFrequencyCapRefusal,
+} from '@lfx-one/shared/utils/campaign-meta-delivery.utils';
 import {
   compactMetaDetailedTargeting,
   isMetaTargetingSearchType,
   metaDetailedTargetingRefusal,
+  metaDeviceOsRefusal,
   metaTargetingFlagRefusal,
   metaTargetingQueryRefusal,
 } from '@lfx-one/shared/utils/campaign-meta-detailed-targeting.utils';
@@ -154,6 +169,7 @@ import type {
   NormalizedGoogleDeviceBidModifier,
   MetaAdOptionKey,
   MetaAdOptions,
+  MetaDeliveryOptions,
   MetaAudienceTargeting,
   MetaTargeting,
   MetaTargetingSearchResult,
@@ -409,6 +425,10 @@ import {
   canSetMetaBehaviorTargeting,
   canSetMetaInterestTargeting,
   canSetMetaLocaleTargeting,
+  canSetMetaDeviceTargeting,
+  canSetMetaOsTargeting,
+  canSetMetaAdSchedule,
+  canSetMetaFrequencyCap,
   canSetMetaOptimizationGoal,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
@@ -1300,17 +1320,39 @@ export class CampaignController {
         return;
       }
 
+      // Any top-level or variant LinkedIn key the create route does not check is refused before any LinkedIn
+      // read or create, whatever the flags (#5764): `buildLinkedInConfig` forwards the rest of `linkedInConfig`
+      // as it comes, and campaign-service decodes keys ignoring case. See `linkedInConfigKeyRefusal`.
+      const linkedInKeyRefusal = linkedInConfigKeyRefusal(body?.linkedInConfig);
+      if (linkedInKeyRefusal !== null) {
+        throw ServiceValidationError.forField(linkedInKeyRefusal.field, linkedInKeyRefusal.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
       // The LinkedIn ad account to name: only the picker's explicit choice, checked against
       // campaign-service's own list (#5809) and refused when it cannot be honoured. See
       // `linkedInAdAccountToForward`.
       const linkedInAdAccountId = await this.linkedInAdAccountToForward(req, projectSlug, body);
+      // Any Meta field under another spelling of its key is refused first, whatever the flags: campaign-service
+      // decodes keys ignoring case, so it would reach it past every gate below. See `metaConfigKeyVariant`.
+      const metaKeyVariant = metaConfigKeyVariant(body?.metaConfig);
+      if (metaKeyVariant !== null) {
+        throw ServiceValidationError.forField(metaKeyVariant, `Send it as ${metaKeyVariant}, spelled exactly.`, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
       // The Meta audience targeting to send (#5905), or none. See `metaTargetingToForward`.
       const metaTargeting = await this.metaTargetingToForward(req, projectSlug, body);
       // The Meta call to action, conversion event and optimization goal (#5934). See `metaAdOptionsToForward`.
       const metaAdOptions = this.metaAdOptionsToForward(body);
+      // The Meta ad schedule and frequency cap (#5904 row 5), checked here, before the lead form's upstream reads,
+      // so a bad one fails fast. See `metaDeliveryOptionsToForward`.
+      const metaDelivery = this.metaDeliveryOptionsToForward(body);
       // The Meta Instant Form of a `leads` create (#5940), or none. See `metaLeadFormToForward`.
       const metaLeadFormIdToSend = await this.metaLeadFormToForward(req, projectSlug, body);
-      const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId, metaTargeting, metaAdOptions, metaLeadFormIdToSend);
+      const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId, metaTargeting, metaAdOptions, metaLeadFormIdToSend, metaDelivery);
 
       // The channel the Google config resolved to, read ONCE for every channel fence below rather
       // than re-read and re-cast by each of them. `unknown`, not the channel union: it is whatever
@@ -7158,7 +7200,8 @@ export class CampaignController {
     linkedInAdAccountId: string | null = null,
     metaTargeting: MetaTargeting | null = null,
     metaAdOptions: MetaAdOptions = {},
-    metaLeadFormIdToSend: string | null = null
+    metaLeadFormIdToSend: string | null = null,
+    metaDelivery: MetaDeliveryOptions = {}
   ): Record<string, unknown> {
     const envelope: Record<string, unknown> = {};
     if (body?.hsToken) envelope['hsToken'] = body.hsToken;
@@ -7170,7 +7213,7 @@ export class CampaignController {
     if (linkedInConfig) envelope['linkedInConfig'] = linkedInConfig;
     if (body?.redditConfig) envelope['redditConfig'] = body.redditConfig;
 
-    const metaConfig = this.buildMetaConfig(body, metaTargeting, metaAdOptions, metaLeadFormIdToSend);
+    const metaConfig = this.buildMetaConfig(body, metaTargeting, metaAdOptions, metaLeadFormIdToSend, metaDelivery);
     if (metaConfig) envelope['metaConfig'] = metaConfig;
 
     const microsoftConfig = this.buildMicrosoftConfig(body);
@@ -9609,6 +9652,9 @@ export class CampaignController {
    *    removal only by `linkedInTargetingEditRefusal` in `createCampaign` — it narrows that one
    *    profile in the catalogue and is then dropped. Absent, the catalogue goes out exactly as
    *    configured, as before.
+   *
+   * 4. Every other key goes out as it came, which is safe only because `createCampaign` has already refused any key
+   *    outside the request's own top-level and variant fields (`linkedInConfigKeyRefusal`, #5764).
    */
   private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;
@@ -9701,21 +9747,57 @@ export class CampaignController {
    * The request's own `targeting` is never forwarded: only the block `metaTargetingToForward` checked and
    * compacted (#5905), and otherwise nothing. Likewise the call to action, conversion event and
    * optimization goal: only what `metaAdOptionsToForward` checked (#5934), and the lead form: only the id
-   * `metaLeadFormToForward` checked (#5940).
+   * `metaLeadFormToForward` checked (#5940), and the ad schedule and frequency cap: only what
+   * `metaDeliveryOptionsToForward` checked (#5904 row 5).
    */
   private buildMetaConfig(
     body: CampaignCreateRequest,
     targeting: MetaTargeting | null = null,
     adOptions: MetaAdOptions = {},
-    leadFormId: string | null = null
+    leadFormId: string | null = null,
+    delivery: MetaDeliveryOptions = {}
   ): Record<string, unknown> | null {
     if (!body?.metaConfig) return null;
 
     const { budgetUsd, ...rest } = body.metaConfig;
     delete rest.targeting;
     delete rest.leadFormId;
+    delete rest.adSchedule;
+    delete rest.frequencyCap;
     for (const { key } of META_AD_OPTION_FIELDS) delete rest[key];
-    return { ...rest, budget: budgetUsd, ...(targeting ? { targeting } : {}), ...adOptions, ...(leadFormId !== null ? { leadFormId } : {}) };
+    return {
+      ...rest,
+      budget: budgetUsd,
+      ...(targeting ? { targeting } : {}),
+      ...adOptions,
+      ...(leadFormId !== null ? { leadFormId } : {}),
+      ...delivery,
+    };
+  }
+
+  /**
+   * The `metaConfig.adSchedule` and `frequencyCap` a create sends (#5904 row 5):
+   *
+   * - either under another spelling of its key (`metaDeliveryKeyVariant`): 400, whatever the flag. campaign-service
+   *   decodes keys ignoring case, so it would otherwise reach it past every check below;
+   * - a field present (anything but absent or null) while its flag is off (`canSetMetaAdSchedule`,
+   *   `canSetMetaFrequencyCap`): 400, never a silent drop. Dropping a schedule would run the ads around the clock;
+   * - a schedule or cap that breaks campaign-service's rules (`metaAdScheduleRefusal`, `metaFrequencyCapRefusal`, the
+   *   tab's own rules): 400 naming the field;
+   * - otherwise only the known fields, the schedule's days de-duplicated and sorted.
+   */
+  private metaDeliveryOptionsToForward(body: CampaignCreateRequest): MetaDeliveryOptions {
+    const meta = metaConfigRecord(body?.metaConfig);
+    if (!meta) return {};
+    const context = { operation: 'campaign_create', service: 'campaign_controller' };
+    const variant = metaDeliveryKeyVariant(meta);
+    if (variant !== null) throw ServiceValidationError.forField(`metaConfig.${variant}`, `Send it as metaConfig.${variant}, spelled exactly.`, context);
+    const refusal =
+      metaDeliveryFlagRefusal(meta, { adSchedule: canSetMetaAdSchedule(), frequencyCap: canSetMetaFrequencyCap() }) ??
+      metaAdScheduleRefusal(meta) ??
+      metaFrequencyCapRefusal(meta);
+    if (refusal !== null) throw ServiceValidationError.forField(refusal.field, refusal.message, context);
+    return compactMetaDeliveryOptions(meta);
   }
 
   /**
@@ -9813,8 +9895,8 @@ export class CampaignController {
    *   detailed fields passes while audience targeting is off. The form never sends a field that is off, so a block
    *   here comes from a tab opened while the flag was on (a rollout or a rollback); dropping it would create the
    *   campaign without the audience the operator chose;
-   * - a block that breaks campaign-service's rules (`metaAudienceTargetingRefusal`, `metaDetailedTargetingRefusal`):
-   *   400 naming the field;
+   * - a block that breaks campaign-service's rules (`metaAudienceTargetingRefusal`, `metaDetailedTargetingRefusal`,
+   *   and `metaDeviceOsRefusal` for devices and operating systems, #5904 row 6): 400 naming the field;
    * - a block naming custom audiences from a caller without `global_marketing_ops` on the project: 403;
    *   a check that cannot be made: 503 — the Meta ad account is shared by every foundation, and
    *   campaign-service checks the same relation (lfx-v2-campaign-service#550). Detailed fields are Meta taxonomy,
@@ -9830,11 +9912,16 @@ export class CampaignController {
       interest: canSetMetaInterestTargeting(),
       behavior: canSetMetaBehaviorTargeting(),
       locale: canSetMetaLocaleTargeting(),
+      device: canSetMetaDeviceTargeting(),
+      os: canSetMetaOsTargeting(),
     });
     if (flagRefusal !== null) {
       throw ServiceValidationError.forField(flagRefusal.field, flagRefusal.message, { operation, service: 'campaign_controller' });
     }
-    const refusal = metaAudienceTargetingRefusal(raw) ?? metaDetailedTargetingRefusal(raw);
+    const refusal =
+      metaAudienceTargetingRefusal(raw) ??
+      metaDetailedTargetingRefusal(raw) ??
+      metaDeviceOsRefusal(raw, body.metaConfig?.objective, body.metaConfig?.placements);
     if (refusal !== null) {
       throw ServiceValidationError.forField(refusal.field, refusal.message, { operation, service: 'campaign_controller' });
     }

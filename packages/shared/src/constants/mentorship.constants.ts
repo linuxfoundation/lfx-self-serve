@@ -188,7 +188,7 @@ export const MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE = 'Another change is st
  * `MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE` and the mentorship user docs: change them together.
  */
 export const MENTORSHIP_ADMIN_DECISION_REFUSED_REASONS: readonly MentorshipUpstreamReasonMessage[] = [
-  { match: 'already holds an accepted mentorship', message: "the mentee is already accepted in another mentorship that hasn't ended." },
+  { match: 'already holds an accepted mentorship', message: 'the mentee is still accepted in another mentorship.' },
   { match: 'not open for this term', message: 'the term is closed.' },
   { match: 'program is hidden', message: 'the program is hidden. Unhide it, then try again.' },
   { match: 'applications under review', message: 'the mentee already has three applications under review.' },

@@ -36,7 +36,9 @@
       }
       <span class="min-w-0">{{ outcomeHeading() }}</span>
     </h5>
-    @if (!isClosed() && isEnded()) {
+    @if (isDraft()) {
+      <p class="text-sm text-slate-700" data-testid="vote-condorcet-not-open">Voting has not opened yet. Results will be available once voting begins.</p>
+    } @else if (!isClosed() && isEnded()) {
       <p class="text-sm text-slate-700" data-testid="vote-condorcet-finalizing">
         Voting has ended. The final outcome will appear once the final totals are confirmed.
       </p>

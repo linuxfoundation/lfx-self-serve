@@ -163,6 +163,17 @@ describe('VoteCondorcetResultsComponent', () => {
     expect(byTestId(el, 'vote-condorcet-rank-summary')).toBeTruthy();
   });
 
+  it('shows that voting has not opened for a draft, without in-progress or final outcome copy', () => {
+    fixture.componentRef.setInput('isDraft', true);
+    const el = render(question(), false);
+    expect(text(byTestId(el, 'vote-condorcet-outcome-heading'))).toBe('Not open yet');
+    expect(text(byTestId(el, 'vote-condorcet-not-open'))).toBe('Voting has not opened yet. Results will be available once voting begins.');
+    expect(byTestId(el, 'vote-condorcet-in-progress')).toBeNull();
+    expect(byTestId(el, 'vote-condorcet-finalizing')).toBeNull();
+    expect(byTestId(el, 'vote-condorcet-outcome-message')).toBeNull();
+    expect(byTestId(el, 'vote-condorcet-standings')).toBeNull();
+  });
+
   it('says the result is being finalized, never in progress, once voting has ended but final totals are pending', () => {
     fixture.componentRef.setInput('isEnded', true);
     const el = render(question(), false);

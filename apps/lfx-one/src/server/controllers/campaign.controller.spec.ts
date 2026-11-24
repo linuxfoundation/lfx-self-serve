@@ -2545,7 +2545,7 @@ describe('CampaignController.createCampaign cutover', () => {
     const flagsOff = (...off: ServerFeatureFlag[]): void => {
       isServerFeatureEnabled.mockImplementation((flag: unknown) => !off.includes(flag as ServerFeatureFlag));
     };
-    async function sendWith(targeting: unknown): Promise<Record<string, unknown> | null> {
+    async function sendWith(targeting: unknown, extra: Record<string, unknown> = {}): Promise<Record<string, unknown> | null> {
       createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
       const metaConfig = {
         budgetUsd: 250,
@@ -2555,6 +2555,7 @@ describe('CampaignController.createCampaign cutover', () => {
         geoTargets: ['US'],
         variants: [{ primaryText: 'p', headline: 'h' }],
         targeting,
+        ...extra,
       };
       await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
       return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
@@ -2593,6 +2594,39 @@ describe('CampaignController.createCampaign cutover', () => {
     it('refuses an id a create would refuse upstream with a 400 naming the field', async () => {
       expect(await sendWith({ behaviors: ['06004'] })).toBeNull();
       expect(refusedField()).toBe('metaConfig.targeting.behaviors');
+    });
+
+    // Devices and operating systems (#5904 row 6): their own flags, campaign-service's rules, Meta's spelling.
+    it('forwards devices and operating systems, normalized, while audience targeting is off', async () => {
+      flagsOff(ServerFeatureFlag.CampaignServiceMetaAudienceTargeting);
+
+      expect((await sendWith({ devicePlatforms: ['Mobile'], userOs: ['ios_ver_8.0_and_above'] }))?.['targeting']).toEqual({
+        devicePlatforms: ['mobile'],
+        userOs: ['iOS_ver_8.0_and_above'],
+      });
+    });
+
+    it.each([
+      [
+        'device targeting off',
+        [ServerFeatureFlag.CampaignServiceMetaDeviceTargeting],
+        { devicePlatforms: ['mobile'] },
+        {},
+        'metaConfig.targeting.devicePlatforms',
+      ],
+      ['OS targeting off', [ServerFeatureFlag.CampaignServiceMetaOsTargeting], { userOs: ['iOS'] }, {}, 'metaConfig.targeting.userOs'],
+      // The rules read the rest of metaConfig: an OS version on the awareness objective is refused.
+      ['an OS version on awareness', [], { userOs: ['iOS_ver_8.0_and_above'] }, { objective: 'awareness' }, 'metaConfig.targeting.userOs'],
+    ])('refuses %s with a 400 naming the field', async (_case, off, targeting, extra, field) => {
+      flagsOff(...off);
+
+      expect(await sendWith(targeting, extra)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+
+    it('refuses a targeting block under another spelling of its key, whatever the flags, rather than forwarding it unchecked', async () => {
+      expect(await sendWith(undefined, { Targeting: { userOs: ['iOS'] } })).toBeNull();
+      expect(refusedField()).toBe('metaConfig.targeting');
     });
   });
 
@@ -2661,6 +2695,70 @@ describe('CampaignController.createCampaign cutover', () => {
         { optimizationGoal: 'LANDING_PAGE_VIEWS', bidding: { strategy: 'manual', bidAmount: 1 } },
         'metaConfig.optimizationGoal',
       ],
+    ])('refuses %s with a 400 naming the field, creating nothing', async (_label, extra, field) => {
+      expect(await sendWith(extra)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+  });
+
+  /**
+   * The Meta ad schedule and frequency cap (#5904 row 5), one flag each: refused with a 400 while the flag is off or
+   * under another spelling of the key (never dropped), checked by the tab's own rules, and forwarded as checked.
+   */
+  describe('meta delivery options', () => {
+    const SCHEDULE = { days: [5, 1, 3, 1], startMinute: 540, endMinute: 1020 };
+    const CAP = { maxImpressions: 2, intervalDays: 7 };
+    const flagsWith = (off: ServerFeatureFlag[] = []): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => !off.includes(flag as ServerFeatureFlag));
+    };
+    async function sendWith(extra: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = {
+        budgetUsd: 250,
+        lifetimeBudget: true,
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        geoTargets: ['US'],
+        variants: [{ primaryText: 'p', headline: 'h' }],
+        ...extra,
+      };
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+    const refusedField = (): unknown => {
+      const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      return error.toResponse()['errors'][0].field;
+    };
+
+    beforeEach(() => flagsWith());
+
+    it.each([
+      [ServerFeatureFlag.CampaignServiceMetaAdSchedule, { adSchedule: SCHEDULE }, 'metaConfig.adSchedule'],
+      [ServerFeatureFlag.CampaignServiceMetaFrequencyCap, { objective: 'awareness', frequencyCap: CAP }, 'metaConfig.frequencyCap'],
+    ])('refuses a field with a 400 while %s is off, rather than creating without it', async (flag, extra, field) => {
+      flagsWith([flag]);
+
+      expect(await sendWith(extra)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+
+    it('forwards only the checked fields, the schedule days de-duplicated and sorted, and nothing when unset', async () => {
+      const sent = await sendWith({ objective: 'awareness', adSchedule: { ...SCHEDULE, extra: 1 }, frequencyCap: CAP });
+
+      expect(sent).toMatchObject({ adSchedule: { days: [1, 3, 5], startMinute: 540, endMinute: 1020 }, frequencyCap: CAP });
+      expect(sent?.['adSchedule']).not.toHaveProperty('extra');
+      createCampaigns.mockClear();
+      // A null is "not set": stripped, so the request never carries the raw value.
+      const plain = await sendWith({ adSchedule: null, frequencyCap: null });
+      expect(plain).not.toHaveProperty('adSchedule');
+      expect(plain).not.toHaveProperty('frequencyCap');
+    });
+
+    it.each([
+      ['a schedule on a daily budget', { lifetimeBudget: false, adSchedule: SCHEDULE }, 'metaConfig.adSchedule'],
+      ['a cap on traffic', { objective: 'traffic', frequencyCap: CAP }, 'metaConfig.frequencyCap'],
+      ['the schedule under another spelling, whatever the flag', { AdSchedule: SCHEDULE }, 'metaConfig.adSchedule'],
     ])('refuses %s with a 400 naming the field, creating nothing', async (_label, extra, field) => {
       expect(await sendWith(extra)).toBeNull();
       expect(refusedField()).toBe(field);

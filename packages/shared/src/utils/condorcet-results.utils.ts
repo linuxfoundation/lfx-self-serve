@@ -18,6 +18,7 @@ import type {
   VoteVoter,
 } from '../interfaces/poll.interface';
 import { joinNames } from './vote-results.utils';
+import { rankedAnswerChoices } from './vote.utils';
 
 /**
  * Builds the Condorcet IRV results view for each question (#5969), a port of PCC's condorcet-poll-result derivations
@@ -72,7 +73,7 @@ function buildQuestionView(pr: PollQuestionResult, ballots: VoteVoter[] | null):
   }
 
   const matrix = buildMatrix(pr);
-  const winCounts = new Map(candidates.map((candidate) => [candidate.choiceId, countHeadToHeadWins(candidate.choiceId, matrix)]));
+  const winCounts = new Map(candidates.map((candidate) => [candidate.choiceId, countHeadToHeadWins(candidate.choiceId, candidates, matrix)]));
   const totalMatchups = matrix.size > 0 ? Math.max(candidates.length - 1, 0) : 0;
 
   const winnerIds = [...new Set((pr.ranked_choice_winner_info?.poll_choices ?? []).map((choice) => choice.choice_id))];
@@ -136,8 +137,12 @@ function pairwiseCounts(rowId: string, colId: string, matrix: Map<string, Map<st
   return mirror ? [mirror.other_choice_id_wins, mirror.choice_id_wins] : [0, 0];
 }
 
-function countHeadToHeadWins(choiceId: string, matrix: Map<string, Map<string, CondorcetMatrixEntry>>): number {
-  return [...(matrix.get(choiceId)?.values() ?? [])].filter((entry) => entry.choice_id_wins > entry.other_choice_id_wins).length;
+function countHeadToHeadWins(choiceId: string, candidates: CondorcetCandidate[], matrix: Map<string, Map<string, CondorcetMatrixEntry>>): number {
+  return candidates.filter((other) => {
+    if (other.choiceId === choiceId) return false;
+    const [mine, theirs] = pairwiseCounts(choiceId, other.choiceId, matrix);
+    return mine > theirs;
+  }).length;
 }
 
 function buildPairwise(candidates: CondorcetCandidate[], matrix: Map<string, Map<string, CondorcetMatrixEntry>>): CondorcetPairwiseRow[] {
@@ -266,9 +271,8 @@ function buildBallotPatterns(questionId: string, ballots: VoteVoter[], textById:
   const patterns = new Map<string, CondorcetBallotPatternRow>();
   for (const ballot of ballots) {
     if (ballot.status !== VoteVoterStatus.VOTED) continue;
-    const ranked = [...(ballot.poll_answers?.find((answer) => answer.question_id === questionId)?.ranked_user_choice ?? [])].sort(
-      (a, b) => (a.choice_rank ?? 0) - (b.choice_rank ?? 0)
-    );
+    const answer = ballot.poll_answers?.find((answer) => answer.question_id === questionId);
+    const ranked = answer ? rankedAnswerChoices(answer) : [];
     if (!ranked.length) continue;
     const key = ranked.map((choice) => choice.choice_id).join('\u0000');
     const existing = patterns.get(key);

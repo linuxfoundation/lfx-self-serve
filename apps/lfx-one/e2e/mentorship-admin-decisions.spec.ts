@@ -207,6 +207,6 @@ test.describe('Admin Current Mentees — application decisions', () => {
     await page.getByRole('option').first().click();
     await page.getByTestId('mentorship-admin-accept-confirm').getByRole('button').click();
 
-    await expect(page.getByText("This application can't be accepted: the mentee is already accepted in another mentorship that hasn't ended.")).toBeVisible();
+    await expect(page.getByText("This application can't be accepted: the mentee is still accepted in another mentorship.")).toBeVisible();
   });
 });

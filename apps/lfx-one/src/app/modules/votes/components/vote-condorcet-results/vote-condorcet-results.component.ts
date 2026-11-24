@@ -28,6 +28,8 @@ export class VoteCondorcetResultsComponent {
   public readonly isClosed = input.required<boolean>();
   /** Voting has ended; until `isClosed`, the final results are still being confirmed. */
   public readonly isEnded = input<boolean>(false);
+  /** Drafts have not opened, so they must not be described as voting in progress. */
+  public readonly isDraft = input<boolean>(false);
   /** Named ballots are still loading, so the ballot section waits instead of saying they aren't available. */
   public readonly ballotsLoading = input<boolean>(false);
   protected readonly rankColors = VOTE_CONDORCET_RANK_COLORS;
@@ -50,6 +52,7 @@ export class VoteCondorcetResultsComponent {
   // === Private Initializers ===
   private initOutcomeHeading(): Signal<string> {
     return computed(() => {
+      if (this.isDraft()) return 'Not open yet';
       if (!this.isClosed()) return this.isEnded() ? 'Finalizing results' : 'Voting in progress';
       if (this.hasWinner()) return `${this.question().winnerNames[0]} won`;
       return this.isTie() ? 'Tie — no single winner' : 'No winner determined';

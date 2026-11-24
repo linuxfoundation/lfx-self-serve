@@ -215,23 +215,34 @@ export async function listAllMentorshipPages<T>(
 }
 
 /**
+ * `listAllMentorshipPages` read straight from upstream, so a caller with no mentorship record is not given one: it skips the
+ * once-per-login `PUT /me` and the provision-and-retry, and upstream's not-provisioned 401 propagates instead. For a caller
+ * that only acts on people who already use Mentorship.
+ */
+export async function listMentorshipPagesWithoutProvisioning<T>(proxy: MicroserviceProxyService, req: Request, path: string): Promise<T[]> {
+  return (await readMentorshipPages<T>(proxy, req, path, {}, MENTORSHIP_LIST_PAGE_SIZE, false)).items;
+}
+
+/**
  * `listAllMentorshipPages`, also saying whether the read stopped at `MENTORSHIP_LIST_MAX_PAGES` with rows still to come,
- * for a caller that must tell its user the list is incomplete.
+ * for a caller that must tell its user the list is incomplete. With `provision` false it reads as
+ * `listMentorshipPagesWithoutProvisioning` does.
  */
 export async function readMentorshipPages<T>(
   proxy: MicroserviceProxyService,
   req: Request,
   path: string,
   query: Record<string, unknown> = {},
-  pageSize: number = MENTORSHIP_LIST_PAGE_SIZE
+  pageSize: number = MENTORSHIP_LIST_PAGE_SIZE,
+  provision = true
 ): Promise<{ items: T[]; truncated: boolean }> {
+  const readPage = (pageQuery: Record<string, unknown>): Promise<MentorshipUpstreamListResponse<T>> =>
+    provision
+      ? proxyMentorshipRequest<MentorshipUpstreamListResponse<T>>(proxy, req, path, 'GET', pageQuery)
+      : proxy.proxyRequest<MentorshipUpstreamListResponse<T>>(req, 'LFX_V2_SERVICE', path, 'GET', pageQuery);
   const items: T[] = [];
   for (let page = 0; page < MENTORSHIP_LIST_MAX_PAGES; page++) {
-    const { data, meta } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<T>>(proxy, req, path, 'GET', {
-      ...query,
-      limit: pageSize,
-      offset: items.length,
-    });
+    const { data, meta } = await readPage({ ...query, limit: pageSize, offset: items.length });
     const rows = data ?? [];
     items.push(...rows);
     const total = meta?.total;

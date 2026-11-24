@@ -57,6 +57,10 @@ export class VoteBasicsComponent {
   public readonly isEditMode = input<boolean>(false);
   public readonly committeeContext = input<Committee | null>(null);
   public readonly eligibleVoterCountState = input<VoteEligibleVoterCountState>({ status: 'idle', count: null });
+  /** True while the title still holds the group-based default the create form seeded (#6104). */
+  public readonly prefilledTitle = input<boolean>(false);
+  /** True while the description still holds the group-based default the create form seeded (#6104). */
+  public readonly prefilledDescription = input<boolean>(false);
 
   // Constants
   public readonly committeeLabel = COMMITTEE_LABEL;

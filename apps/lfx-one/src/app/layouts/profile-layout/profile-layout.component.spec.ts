@@ -24,12 +24,18 @@ import { CombinedProfile, EnrichedIdentity, LinkedEmailSupportDraft, User } from
 import { buildLinkedEmailSupportMessage } from '@lfx-one/shared/utils';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { IntercomService } from '@services/intercom.service';
+import { MentorshipService } from '@services/mentorship.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { EMPTY, Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProfileLayoutComponent } from './profile-layout.component';
+
+// MentorshipService reaches HttpClient, which no setup here provides.
+function mentorshipServiceStub() {
+  return { provide: MentorshipService, useValue: { queueLfxProfileSync: vi.fn() } };
+}
 
 /**
  * Guards the Flow C (management-token re-auth) cold-return read-your-writes fix (LFXV2-3267):
@@ -80,6 +86,7 @@ describe('ProfileLayoutComponent — Flow C cold-return read-your-writes (LFXV2-
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
@@ -176,6 +183,7 @@ describe('ProfileLayoutComponent — member-since wiring (#2837)', () => {
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
@@ -236,6 +244,7 @@ describe('ProfileLayoutComponent — Flow C error message ownership (#1935)', ()
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of({ error }) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl } },
@@ -329,6 +338,7 @@ describe('ProfileLayoutComponent — clearAuthQueryParams preserves the fragment
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
         { provide: Router, useValue: { url, navigateByUrl } },
@@ -376,6 +386,7 @@ describe('ProfileLayoutComponent — profile help link click tracking (#2986)', 
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
@@ -423,6 +434,7 @@ describe('ProfileLayoutComponent — Intercom launcher re-scan on mount (#2986)'
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
@@ -492,6 +504,7 @@ describe('ProfileLayoutComponent — primary email and identity notifications (#
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: platformId },
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
@@ -601,6 +614,7 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: platform },
         { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
         { provide: Router, useValue: { url, navigateByUrl } },
@@ -806,6 +820,7 @@ describe('ProfileLayoutComponent — nav name sync after a profile save', () => 
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
+        mentorshipServiceStub(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
@@ -892,6 +907,7 @@ describe('ProfileLayoutComponent — rendered linked-email callback support (#55
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent, ToastModule],
       providers: [
+        mentorshipServiceStub(),
         MessageService,
         provideNoopAnimations(),
         { provide: PLATFORM_ID, useValue: 'browser' },
@@ -1009,5 +1025,107 @@ describe('ProfileLayoutComponent — rendered linked-email callback support (#55
     expect(response$.observed).toBe(true);
     fixture.destroy();
     expect(response$.observed).toBe(false);
+  });
+});
+
+/**
+ * Guards linuxfoundation/lfx-mentorship#466: Mentorship shows its own copy of the picture and name, so a new picture or name
+ * saved on Profile & Account is copied onto the mentor and mentee profiles. An unchanged picture is never sent, so a photo
+ * kept in Mentorship is not replaced by the avatar shown here.
+ */
+describe('ProfileLayoutComponent — copy to Mentorship (lfx-mentorship#466)', () => {
+  const PICTURE = 'https://cdn.example.com/avatars/new.png';
+
+  async function setup(options: { impersonating?: boolean; queryParams?: Record<string, string> } = {}) {
+    const profile = {
+      user: { first_name: 'Ada', last_name: 'Lovelace', username: 'ada', email: 'ada@example.com' },
+      profile: { bio: 'OLD BIO' },
+    } as unknown as CombinedProfile;
+    const queueLfxProfileSync = vi.fn();
+
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { queryParams: of(options.queryParams ?? {}) } },
+        { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
+        {
+          provide: UserService,
+          useValue: {
+            user: signal({ user_id: 'u1', name: 'Ada Lovelace' } as unknown as User),
+            impersonating: signal(options.impersonating ?? false),
+            uploadedAvatarUrl: signal<string | null>(null),
+            effectiveAvatarUrl: computed(() => ''),
+            identitiesRefresh$: EMPTY,
+            getCurrentUserProfile: vi.fn(() => of(profile)),
+            updateUserProfile: vi.fn(() => of({})),
+            getIdentities: vi.fn(() => of([])),
+            applyDisplayName: vi.fn(),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MentorshipService, useValue: { queueLfxProfileSync } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return { fixture, queueLfxProfileSync };
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  it('copies an uploaded picture, and nothing else', async () => {
+    const { fixture, queueLfxProfileSync } = await setup();
+
+    fixture.componentInstance.onProfileSaved({ picture: PICTURE });
+
+    expect(queueLfxProfileSync).toHaveBeenCalledExactlyOnceWith({ logoUrl: PICTURE });
+  });
+
+  it('sends nothing for a save that changes neither the picture nor the name', async () => {
+    const { fixture, queueLfxProfileSync } = await setup();
+
+    fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Lovelace', bio: 'NEW BIO' });
+
+    expect(queueLfxProfileSync).not.toHaveBeenCalled();
+  });
+
+  it('copies only the part of the name that changed, without a picture', async () => {
+    const { fixture, queueLfxProfileSync } = await setup();
+
+    fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron', bio: 'NEW BIO' });
+
+    expect(queueLfxProfileSync).toHaveBeenCalledExactlyOnceWith({ lastName: 'Byron' });
+  });
+
+  it('compares a later save with the name saved before it, not the name first loaded', async () => {
+    const { fixture, queueLfxProfileSync } = await setup();
+
+    fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron' });
+    fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron', bio: 'NEW BIO' });
+
+    expect(queueLfxProfileSync).toHaveBeenCalledOnce();
+  });
+
+  it('sends nothing while impersonating', async () => {
+    const { fixture, queueLfxProfileSync } = await setup({ impersonating: true });
+
+    fixture.componentInstance.onProfileSaved({ picture: PICTURE });
+
+    expect(queueLfxProfileSync).not.toHaveBeenCalled();
+  });
+
+  // The replay runs before the first profile GET lands, so there is no saved name to compare with: the name goes as saved.
+  it('copies the name of a save replayed after the Flow C authorization', async () => {
+    sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), userMetadata: { given_name: 'Augusta', family_name: 'Lovelace' } }));
+    const { queueLfxProfileSync } = await setup({ queryParams: { success: 'profile_token_obtained' } });
+
+    expect(queueLfxProfileSync).toHaveBeenCalledExactlyOnceWith({ firstName: 'Augusta', lastName: 'Lovelace' });
   });
 });

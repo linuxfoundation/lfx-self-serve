@@ -1,6 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// The shared ranked-answer helper imports Angular forms; load the compiler for plain Vitest, as vote.utils.spec.ts does.
+import '@angular/compiler';
+
 import { describe, expect, it } from 'vitest';
 
 import { CondorcetOutcome, VoteVoterStatus } from '../enums/poll.enum';
@@ -150,6 +153,38 @@ describe('buildCondorcetQuestionViews', () => {
         { value: '0–0', result: 'neutral' },
         { value: '—', result: 'self' },
       ],
+    ]);
+  });
+
+  it('uses reverse-only matchups consistently for pairwise cells and standings', () => {
+    const q = question({
+      ranked_choice_votes: [
+        {
+          choice_id: 'a',
+          rank_counts: [],
+          condorcet_matrix: [
+            { choice_id: 'a', other_choice_id: 'b', choice_id_wins: 2, other_choice_id_wins: 3, result: '' },
+            { choice_id: 'a', other_choice_id: 'c', choice_id_wins: 3, other_choice_id_wins: 2, result: '' },
+          ],
+        },
+        {
+          choice_id: 'c',
+          rank_counts: [],
+          condorcet_matrix: [{ choice_id: 'c', other_choice_id: 'b', choice_id_wins: 2, other_choice_id_wins: 3, result: '' }],
+        },
+      ],
+      ranked_choice_winner_info: winners(['b']),
+    });
+    const v = view(q);
+    expect(v.pairwise.find((row) => row.candidate.choiceId === 'b')?.cells).toEqual([
+      { value: '3–2', result: 'win' },
+      { value: '—', result: 'self' },
+      { value: '3–2', result: 'win' },
+    ]);
+    expect(v.standings.map(({ choiceId, rank, winCount, isWinner }) => ({ choiceId, rank, winCount, isWinner }))).toEqual([
+      { choiceId: 'b', rank: 1, winCount: 2, isWinner: true },
+      { choiceId: 'a', rank: 2, winCount: 1, isWinner: false },
+      { choiceId: 'c', rank: 3, winCount: 0, isWinner: false },
     ]);
   });
 
@@ -354,6 +389,17 @@ describe('buildCondorcetQuestionViews', () => {
     expect(view(question(), ballots).ballotPatterns).toEqual([
       { key: 'b\u0000a\u0000c', count: 2, ranking: ['Candidate B', 'Candidate A', 'Candidate C'] },
       { key: 'a\u0000b', count: 1, ranking: ['Candidate A', 'Candidate B'] },
+    ]);
+  });
+
+  it.each(['empty', 'omitted'])('groups user_choice ballots when ranked_user_choice is %s', (rankedState) => {
+    const fallback = ballot('fallback', ['b', 'a', 'c']);
+    const answer = fallback.poll_answers![0];
+    answer.user_choice = answer.ranked_user_choice;
+    answer.ranked_user_choice = [];
+    if (rankedState === 'omitted') Reflect.deleteProperty(answer, 'ranked_user_choice');
+    expect(view(question(), [fallback, ballot('ranked', ['b', 'a', 'c'])]).ballotPatterns).toEqual([
+      { key: 'b\u0000a\u0000c', count: 2, ranking: ['Candidate B', 'Candidate A', 'Candidate C'] },
     ]);
   });
 

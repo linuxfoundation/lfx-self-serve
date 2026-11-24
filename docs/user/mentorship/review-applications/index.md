@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, program-admin, applications, accept, decline, graduate, undo-graduation, re-open, withdraw, mentees]
 last_generated: 2026-10-26
-last_updated: 2026-11-09
+last_updated: 2026-11-24
 intercom_collection: Mentorship
 ---
 
@@ -66,7 +66,7 @@ If the mentee still has tasks that are not Submitted or Completed, the confirmat
 
 ## When an action is refused
 
-Accept, Graduate, Undo graduation and Re-open can be refused because of the program, the term or the mentee's other applications. The error message says which: for example, "This application can't be accepted: the mentee is already accepted in another mentorship that hasn't ended." A mentee can hold only one accepted mentorship at a time, none of these actions works while the program is hidden, and Accept, Undo graduation and Re-open need the term to be open.
+Accept, Graduate, Undo graduation and Re-open can be refused because of the program, the term or the mentee's other applications. The error message says which: for example, "This application can't be accepted: the mentee is still accepted in another mentorship." A mentee can hold only one accepted mentorship at a time, none of these actions works while the program is hidden, and Accept, Undo graduation and Re-open need the term to be open.
 
 ## Undoing a graduation
 
@@ -85,7 +85,7 @@ A re-opened application is checked like a new one: it can't be re-opened while t
 | What you see                                                                                                                  | What it means                                                                                                                                            |
 | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | "This application changed. The list has been refreshed."                                                                      | Someone else decided first. Check the new status before acting again.                                                                                    |
-| "This application can't be accepted: the mentee is already accepted in another mentorship that hasn't ended."                 | A mentee can hold only one accepted mentorship at a time. See [When an action is refused](#when-an-action-is-refused).                                   |
+| "This application can't be accepted: the mentee is still accepted in another mentorship."                                     | A mentee can hold only one accepted mentorship at a time, even after its term has ended. See [When an action is refused](#when-an-action-is-refused).    |
 | "This application can't be accepted: the term is closed."                                                                     | The term closed while you were looking.                                                                                                                  |
 | "…: the program is hidden. Unhide it, then try again."                                                                        | Select **Unhide Program** first; see [Hide or Show a Program](../program-visibility/).                                                                   |
 | "Another change is still being saved. Try again in a moment."                                                                 | One decision at a time.                                                                                                                                  |

@@ -218,6 +218,8 @@ export class VoteDetailComponent {
   });
   /** Bumped after a ballot is submitted so my-response and results reload. */
   private readonly refreshTick = signal<number>(0);
+  /** Successful results reads invalidate named ballot rankings even when participation stays unchanged. */
+  private readonly resultsRevision = signal<number>(0);
   /** The vote a ballot was cast on from this page — it reads as submitted before the refreshed (indexed) response catches up. */
   private readonly submittedBallotFor = signal<string | null>(null);
   /** Comment-question expansion choices survive tab switches and same-vote refreshes. */
@@ -331,13 +333,13 @@ export class VoteDetailComponent {
   /** Ballots for the current vote; null hides the table behind the "not available" note. */
   private readonly condorcetBallots: Signal<VoteVoter[] | null> = computed(() => {
     const read = this.condorcetBallotsRead();
-    if (!this.condorcetBallotsKey() || !read || read.uid !== this.vote()?.uid) return null;
+    if (!this.condorcetBallotsKey()?.active || !read || read.uid !== this.vote()?.uid) return null;
     return read.voters;
   });
   /** The first read for this vote is still in flight, so the table isn't "not available" yet. */
   protected readonly condorcetBallotsLoading: Signal<boolean> = computed(() => {
     const key = this.condorcetBallotsKey();
-    return !!key && this.condorcetBallotsRead()?.uid !== key.uid;
+    return !!key?.active && this.condorcetBallotsRead()?.uid !== key.uid;
   });
   protected readonly condorcetQuestions: Signal<CondorcetQuestionView[]> = computed(() =>
     buildCondorcetQuestionViews(this.voteResults(), this.condorcetBallots())
@@ -749,6 +751,7 @@ export class VoteDetailComponent {
                 this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: !stale, stale });
               } else {
                 lastResults = event.value;
+                this.resultsRevision.update((revision) => revision + 1);
                 this.finalResultsFor.set(ended && event.value.results_held !== true ? resultsKey.id : null);
                 this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: false, stale: false });
               }
@@ -847,9 +850,9 @@ export class VoteDetailComponent {
   }
 
   /**
-   * A manager of a named Condorcet vote reads the voters list on the Results tab once its results load, again whenever
-   * the results poll reports a different ballot count or the vote finalizes, and after a ballot from this page, so its
-   * ballot orderings match its other tables. Pseudo-anonymous votes return participation-only rows, and voters can't
+   * A manager of a named Condorcet vote reads the voters list on the Results tab once its results load, again after
+   * each successful results poll (rankings can change without changing participation), and after a ballot from this
+   * page, so its ballot orderings match its other tables. Pseudo-anonymous votes return participation-only rows, and voters can't
    * read ballots at all, so neither gets a key and the table gives way to a note (#5969). A draft has no ballots and
    * GET /api/votes/:uid/voters refuses it (409), so it skips the read, just as `showVotersTab` hides the Voters tab.
    */
@@ -857,33 +860,41 @@ export class VoteDetailComponent {
     return computed(() => {
       const uid = this.vote()?.uid;
       const results = this.voteResults();
-      if (
-        !uid ||
-        !results ||
-        !this.isCondorcetPoll() ||
-        this.audience() !== 'creator' ||
-        this.isPseudoAnonymous() ||
-        !this.showsResults() ||
-        this.activeTab() !== 'results'
-      )
-        return null;
-      return { uid, tick: this.refreshTick(), votesCast: results.num_votes_cast, closed: this.isVoteClosed(), draft: !this.showVotersTab() };
+      if (!uid || !results || !this.isCondorcetPoll() || this.audience() !== 'creator' || this.isPseudoAnonymous() || !this.showsResults()) return null;
+      return {
+        uid,
+        active: this.activeTab() === 'results',
+        tick: this.refreshTick(),
+        votesCast: results.num_votes_cast,
+        resultsRevision: this.resultsRevision(),
+        closed: this.isVoteClosed(),
+        draft: !this.showVotersTab(),
+      };
     });
   }
 
   /**
    * A failed first read settles with null voters, so it ends the loading state and shows the "not available" note;
-   * a failed re-read of the same vote keeps its last ballots.
+   * a failed re-read of the same eligible vote keeps its last ballots, including across Results tab changes.
    */
   private initCondorcetBallotsRead(): Signal<CondorcetBallotsRead | null> {
     let last: CondorcetBallotsRead | null = null;
     return toSignal(
       toObservable(this.condorcetBallotsKey).pipe(
         distinctUntilChanged(
-          (a, b) => a?.uid === b?.uid && a?.tick === b?.tick && a?.votesCast === b?.votesCast && a?.closed === b?.closed && a?.draft === b?.draft
+          (a, b) =>
+            a?.uid === b?.uid &&
+            a?.active === b?.active &&
+            a?.tick === b?.tick &&
+            a?.votesCast === b?.votesCast &&
+            a?.resultsRevision === b?.resultsRevision &&
+            a?.closed === b?.closed &&
+            a?.draft === b?.draft
         ),
         switchMap((key) => {
-          if (!key) return of(null);
+          // Only a tab switch retains the cache; a different vote or lost eligibility clears it.
+          if (!key || last?.uid !== key.uid) last = null;
+          if (!key?.active) return of(null);
           if (key.draft) return of({ uid: key.uid, voters: [] });
           return this.voteService.getVoteVoters(key.uid).pipe(
             map((voters) => ({ uid: key.uid, voters: voters.filter((voter): voter is VoteVoter => 'uid' in voter) })),
@@ -894,7 +905,7 @@ export class VoteDetailComponent {
           );
         }),
         tap((read) => {
-          last = read;
+          if (read) last = read;
         })
       ),
       { initialValue: null }

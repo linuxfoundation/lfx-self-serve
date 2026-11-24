@@ -971,6 +971,18 @@ export interface VoteFormValue {
 }
 
 /**
+ * Title and description a new vote is prefilled with once a group is selected (#6104)
+ * @description Built by `buildVoteBasicsDefaults`; the create form only writes them into fields the
+ * organizer hasn't edited.
+ */
+export interface VoteBasicsDefaults {
+  /** Prefilled vote title */
+  title: string;
+  /** Prefilled vote description */
+  description: string;
+}
+
+/**
  * A voting method offered when creating a vote
  * @description Shared by the Create Vote dropdown and the form's Voting Method select, so adding a
  * method is one entry in `VOTE_METHOD_OPTIONS`.
@@ -1821,9 +1833,13 @@ export interface CondorcetQuestionView {
 /** What the vote detail page re-reads a Condorcet vote's named ballots on — a change in any field triggers a new read (#5969). */
 export interface CondorcetBallotsKey {
   uid: string;
+  /** Whether the Results tab is active; tab-only changes hide, but do not discard, cached ballots */
+  active: boolean;
   /** Vote detail refresh tick, bumped after a ballot is cast from the page */
   tick: number;
   votesCast: number;
+  /** Bumped on every successful results read, including ranking edits with unchanged participation */
+  resultsRevision: number;
   closed: boolean;
   /** A draft has no ballots, and the voters endpoint refuses it, so the read is skipped */
   draft: boolean;
