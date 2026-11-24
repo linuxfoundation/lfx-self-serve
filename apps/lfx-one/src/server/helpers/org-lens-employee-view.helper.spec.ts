@@ -125,6 +125,18 @@ describe('embedded personal data in free text', () => {
     expect(scrubFreeText('pin pkg@1.2.3 and git@git.example.com:acme-org/repo.git')).toBe('pin pkg@1.2.3 and git@git.example.com:acme-org/repo.git');
   });
 
+  it('redacts an address whose local part is Unicode, whole or inside free text', () => {
+    const cjk = ['用户', 'example.com'].join('@');
+    const mixed = ['ada用户', 'example.com'].join('@');
+    const cyrillic = ['иван', 'acme.рф'].join('@');
+    expect(stripPersonalFields({ owner: cjk, list: [cjk, cyrillic, mixed], other: { value: mixed } }, page)).toEqual({ list: [], other: {} });
+    expect(scrubFreeText(`write ${cjk} or ${cyrillic} today`)).toBe('write  or  today');
+    // Where the local part itself ends in non-ASCII letters, the words before it cannot be told apart from it: the whole run goes (fail-safe).
+    expect(scrubFreeText(`联系${cjk}`)).toBe('');
+    expect(scrubFreeText(`联系 ${cjk}`)).toBe('联系 ');
+    expect(scrubFreeText(mixed)).toBe('');
+  });
+
   it('does not swallow unspaced CJK text next to an address', () => {
     expect(scrubFreeText('联系ada@example.com')).toBe('联系');
     expect(stripPersonalFields({ note: '联系ada@example.com 谢谢' }, page)).toEqual({ note: '联系 谢谢' });

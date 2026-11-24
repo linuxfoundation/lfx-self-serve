@@ -12,10 +12,11 @@ const normalizeKey = (key: string): string => key.toLowerCase().replace(/[_-]/g,
 
 const PERSONAL_FIELD_KEYS: ReadonlySet<string> = new Set(ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS.map(normalizeKey));
 
-// A real address (ASCII local part, so unspaced CJK text before it is never swallowed; the host may be Unicode or punycode): a plain local part, a dotted host and an alphabetic or punycode TLD. It must not run on into a word,
+// A real address: a local part, a dotted host and an alphabetic or punycode TLD. The local part is either ASCII (so unspaced CJK text before it is never swallowed: in `联系ada@x.com` only `ada@x.com` goes) or a run of letters that ENDS in a non-ASCII letter right before the `@` (`用户@x.com`, whose whole local part is the address); the host may be Unicode or punycode. It must not run on into a word,
 // so a version spec (`pkg@1.2.3`) survives. A git SSH remote (`git@github.com:org/repo.git`) is the one address-shaped
 // token kept on purpose, and only by {@link isGitRemote}: an address followed by a path or a colon is otherwise still an address.
-const EMBEDDED_EMAIL = /[A-Za-z0-9._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})(?![A-Za-z0-9_-]|\.[\p{L}\p{N}_])/gu;
+const EMBEDDED_EMAIL =
+  /(?:[\p{L}\p{N}._%+-]*(?!\p{ASCII})[\p{L}\p{N}]|[A-Za-z0-9._%+-]+)@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})(?![A-Za-z0-9_-]|\.[\p{L}\p{N}_])/gu;
 
 /** A recognized git remote: the user is exactly `git` and a path follows (`git@host:org/repo.git`, `ssh://git@host/org/repo.git`). */
 function isGitRemote(match: string, following: string): boolean {
@@ -23,7 +24,7 @@ function isGitRemote(match: string, following: string): boolean {
 }
 
 /** A whole value that is an address, by the same rule as {@link EMBEDDED_EMAIL}: `git@git.example.com:org/repo.git` and `pkg@1.2.3` are not. */
-const EMAIL_SHAPE = /^[A-Za-z0-9._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})$/u;
+const EMAIL_SHAPE = /^[^\s@]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})$/u;
 
 /** A URL that names a person: a `mailto:` link, or a LinkedIn / X / Twitter profile path. */
 const PERSONAL_URL = /(?:mailto:\S+|https?:\/\/(?:[\w-]+\.)?(?:linkedin\.com\/(?:in|pub)\/|(?:x|twitter)\.com\/(?!i\/|intent\/|share)[\w]+)\S*)/gi;
