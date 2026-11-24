@@ -433,8 +433,13 @@ state, question DOM and unsent edits while pausing submission until verification
 recording before this mechanism applies to it.
 
 LinkedIn content sources use `source=`; profile editing keeps `profile=edit` until Save or Cancel.
-Edit actions mark their pushed history entry with `mktgEditPushed: 'run' | 'document'`.
-Cancel and persisted saves return through history only for a marked entry. Cold entries strip `profile`
+Edit actions mark their pushed history entry with `mktgEditPushed: 'run' | 'document' | 'redraft'`
+(`LINKEDIN_PROFILE_EDIT_ORIGINS`). For a `run` or `document` entry, Cancel and persisted saves return
+through history. A `redraft` entry (the Document's "Change who this is written as" → Edit profile and
+draft again, see [Objections to who a post is written as](../backend/mktg-linkedin-post.md#objections-to-who-a-post-is-written-as))
+returns through history only on Cancel: Save and setup-only Continue stay on the intake source form
+with `replaceUrl: true`, because a changed profile reaches a post only through a new draft. Cold
+(unmarked) entries strip `profile`
 in place, including after Family → Back. Setup-only Continue keeps its answers and returns through
 history only for run origin; document origin stays on intake with `replaceUrl: true` to avoid losing
 unpersisted answers. Legacy boolean markers conservatively retain document-origin behavior.
