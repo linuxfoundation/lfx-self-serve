@@ -1,0 +1,181 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<div class="flex flex-col gap-[20px]" data-testid="account-identities">
+  @if (identitiesLoadError()) {
+    <lfx-ui-note variant="error" label="Identity service unavailable" data-testid="account-identities-error">
+      Identity verification status cannot be loaded right now. Please try again in a few minutes.
+    </lfx-ui-note>
+  }
+
+  @if (conflictBanner()) {
+    <lfx-ui-note variant="warning" data-testid="account-identities-conflict">
+      This identity is already linked to another LFX account. A single identity can only be linked to one account. If you believe this is an error,
+      <button type="button" lfxOpenIntercom class="font-medium underline">contact support</button>.
+      <lfx-ui-button note-action variant="tertiary" size="tiny" (click)="dismissConflictBanner()" data-testid="account-identities-conflict-dismiss">
+        Dismiss
+      </lfx-ui-button>
+    </lfx-ui-note>
+  }
+
+  <lfx-account-card heading="Identities" [subtitle]="copy.subtitle" testId="account-identities-card">
+    @if (hasAny()) {
+      <lfx-ui-button
+        accountCardActions
+        variant="tertiary-accent"
+        size="small"
+        icon="fa-light fa-plus"
+        [disabled]="impersonating()"
+        (click)="onAdd()"
+        data-testid="account-identities-add">
+        Add identity
+      </lfx-ui-button>
+    }
+
+    @if (loading()) {
+      <div class="flex flex-col gap-[12px]" aria-hidden="true" data-testid="account-identities-loading">
+        @for (row of [1, 2, 3]; track row) {
+          <div class="flex flex-row items-center gap-[12px]">
+            <lfx-ui-skeleton width="28px" height="28px" />
+            <lfx-ui-skeleton width="220px" />
+          </div>
+        }
+      </div>
+    } @else if (isEmpty()) {
+      <lfx-ui-empty-state
+        size="small"
+        icon="fa-light fa-fingerprint"
+        heading="No identities found"
+        [description]="copy.emptyText"
+        data-testid="account-identities-empty">
+        <lfx-ui-button
+          empty-state-action
+          variant="secondary-accent"
+          icon="fa-light fa-plus"
+          [disabled]="impersonating()"
+          (click)="onAdd()"
+          data-testid="account-identities-empty-add">
+          Add identity
+        </lfx-ui-button>
+      </lfx-ui-empty-state>
+    } @else {
+      @if (hasUnverified()) {
+        <!-- A 2px rail down the left joins the group to its heading. -->
+        <section
+          class="relative flex flex-col gap-[8px] before:absolute before:bottom-0 before:left-[6.5px] before:top-[26px] before:w-[2px] before:rounded-[2px] before:bg-ui-warning-600"
+          aria-labelledby="account-identities-unverified-heading"
+          data-testid="account-identities-unverified">
+          <h3
+            id="account-identities-unverified-heading"
+            class="m-0 flex flex-row items-center gap-[10px] text-[12px] font-semibold leading-[16px] text-ui-neutral-900">
+            <i class="fa-solid fa-circle-exclamation text-[15px] text-ui-warning-600" aria-hidden="true"></i>
+            Unverified identities
+          </h3>
+          @if (hasActionableUnverified()) {
+            <p class="m-0 mb-[4px] ml-[32px] text-[12px] leading-[16px] text-ui-neutral-500" data-testid="account-identities-unverified-note">
+              {{ copy.unverifiedNote }}
+            </p>
+          }
+          <ul class="m-0 ml-[32px] flex list-none flex-col p-0">
+            @for (identity of unverifiedIdentities(); track identity.id) {
+              <li
+                class="flex min-h-[44px] flex-row flex-wrap items-center gap-x-[12px] gap-y-[8px] py-[8px]"
+                [attr.data-testid]="'account-identities-row-' + identity.id">
+                <ng-container [ngTemplateOutlet]="identityMain" [ngTemplateOutletContext]="{ $implicit: identity }" />
+                @if (!identity.isPrimary) {
+                  <span class="flex flex-row gap-[8px]">
+                    <lfx-ui-button
+                      variant="secondary-accent"
+                      size="small"
+                      [disabled]="impersonating()"
+                      [ariaLabel]="'Verify ' + identity.identifier"
+                      (click)="onVerify(identity)"
+                      [attr.data-testid]="'account-identities-verify-' + identity.id">
+                      Verify
+                    </lfx-ui-button>
+                    <lfx-ui-button
+                      variant="secondary"
+                      size="small"
+                      [disabled]="impersonating()"
+                      [ariaLabel]="identity.identifier + ' is not me'"
+                      (click)="onRemove(identity)"
+                      [attr.data-testid]="'account-identities-not-me-' + identity.id">
+                      This is not me
+                    </lfx-ui-button>
+                  </span>
+                } @else {
+                  <span class="text-[12px] leading-[16px] text-ui-neutral-500" data-testid="account-identities-primary-hint">
+                    This is your primary email. It can't be verified or removed here — contact support if it should show as verified.
+                  </span>
+                }
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
+      @if (verifiedIdentities().length > 0) {
+        <section
+          class="relative flex flex-col gap-[8px] before:absolute before:bottom-0 before:left-[6.5px] before:top-[26px] before:w-[2px] before:rounded-[2px] before:bg-ui-accent-600"
+          [class.mt-[16px]]="hasUnverified()"
+          aria-labelledby="account-identities-verified-heading"
+          data-testid="account-identities-verified">
+          <h3
+            id="account-identities-verified-heading"
+            class="m-0 flex flex-row items-center gap-[10px] text-[12px] font-semibold leading-[16px] text-ui-neutral-900">
+            <i class="fa-solid fa-circle-check text-[15px] text-ui-accent-600" aria-hidden="true"></i>
+            Verified identities
+          </h3>
+          <ul class="m-0 ml-[32px] flex list-none flex-col p-0">
+            @for (identity of verifiedIdentities(); track identity.id) {
+              <li class="flex min-h-[44px] flex-row items-center gap-[12px] py-[8px]" [attr.data-testid]="'account-identities-row-' + identity.id">
+                <ng-container [ngTemplateOutlet]="identityMain" [ngTemplateOutletContext]="{ $implicit: identity }" />
+                <lfx-ui-button
+                  variant="tertiary"
+                  icon="fa-light fa-ellipsis"
+                  iconOnly
+                  [disabled]="impersonating()"
+                  [ariaLabel]="'More actions for ' + identity.identifier"
+                  [menu]="identityMenu"
+                  menuAlign="end"
+                  [attr.data-testid]="'account-identities-menu-' + identity.id" />
+                <ng-template #identityMenu>
+                  <lfx-ui-menu ariaLabel="Identity actions">
+                    <lfx-ui-menu-item
+                      variant="danger"
+                      icon="fa-light fa-trash"
+                      [disabled]="removeBlockedReasons().has(identity.id)"
+                      [disabledReason]="removeBlockedReasons().get(identity.id) ?? ''"
+                      (triggered)="onRemove(identity)"
+                      [attr.data-testid]="'account-identities-remove-' + identity.id">
+                      Remove
+                    </lfx-ui-menu-item>
+                  </lfx-ui-menu>
+                </ng-template>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+    }
+  </lfx-account-card>
+
+  <!-- Until Linux.com email gets its own page (#6075), it stays here, as on the hub's Identities tab. -->
+  <lfx-account-card heading="Linux.com email" testId="account-identities-linux-email">
+    <lfx-profile-linux-email [identities]="enrichedIdentities()" />
+  </lfx-account-card>
+</div>
+
+<ng-template #identityMain let-identity>
+  <span class="flex min-w-0 flex-1 flex-row items-center gap-[12px]">
+    <span class="grid h-[28px] w-[28px] flex-none place-items-center rounded-ui-xs bg-ui-background-100 shadow-small" aria-hidden="true">
+      <i class="text-[14px] text-ui-neutral-700" [class]="identity.icon"></i>
+    </span>
+    <!-- Cut short with an ellipsis as in the design; the title shows the whole identifier. -->
+    <span class="min-w-0 truncate text-[14px] font-medium leading-[20px] text-ui-neutral-900" [title]="identity.identifier">{{ identity.identifier }}</span>
+    @if (identity.isPrimary) {
+      <lfx-ui-badge tone="accent" size="sm" data-testid="account-identities-primary-badge">Primary</lfx-ui-badge>
+    }
+  </span>
+</ng-template>

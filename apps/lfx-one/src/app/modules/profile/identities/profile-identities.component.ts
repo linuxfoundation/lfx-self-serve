@@ -56,7 +56,7 @@ interface IdentitiesState {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfileIdentitiesComponent implements OnInit {
-  private readonly userService = inject(UserService);
+  protected readonly userService = inject(UserService);
   // Read-only when impersonating — identity mutations act on the real account and are blocked server-side.
   public readonly impersonating = this.userService.impersonating;
   private readonly dialogService = inject(DialogService);
@@ -72,6 +72,8 @@ export class ProfileIdentitiesComponent implements OnInit {
   // queryParams observable. If that ever changes to router.navigate, this approach
   // stays correct while a queryParams-derived computed would silently break.
   private readonly conflictDetected = signal(false);
+  // Where a Flow C authorization started from this page returns. Account & Settings › Identities overrides it.
+  protected readonly authReturnPath: string = '/profile/identities';
   public readonly conflictBanner: Signal<boolean> = computed(() => this.conflictDetected() && !this.conflictDismissed());
 
   public readonly identities: Signal<ConnectedIdentityFull[]> = computed(() =>
@@ -96,7 +98,7 @@ export class ProfileIdentitiesComponent implements OnInit {
   public readonly meetingInviteEmail: Signal<string | null> = computed(() => this.identitiesState().inviteEmail);
   public readonly menuItemsMap: Signal<Map<string, MenuItem[]>> = this.initMenuItemsMap();
 
-  private readonly identitiesState: Signal<IdentitiesState> = this.initIdentitiesState();
+  protected readonly identitiesState: Signal<IdentitiesState> = this.initIdentitiesState();
 
   public ngOnInit(): void {
     const params = this.route.snapshot.queryParams;
@@ -178,7 +180,7 @@ export class ProfileIdentitiesComponent implements OnInit {
         .pipe(take(1))
         .subscribe((status) => {
           if (!status.authorized) {
-            window.location.href = '/api/profile/auth/start?returnTo=/profile/identities';
+            window.location.href = `/api/profile/auth/start?returnTo=${encodeURIComponent(this.authReturnPath)}`;
             return;
           }
           this.openRemoveDialog(identity);
@@ -206,14 +208,7 @@ export class ProfileIdentitiesComponent implements OnInit {
     });
   }
 
-  private clearQueryParams(): void {
-    if (!isPlatformBrowser(this.platformId)) return;
-    // Use history API instead of router.navigate to avoid triggering route re-evaluation
-    // that could destroy component state or re-run lifecycle hooks.
-    window.history.replaceState(window.history.state, '', window.location.pathname);
-  }
-
-  private openRemoveDialog(identity: ConnectedIdentityFull): void {
+  protected openRemoveDialog(identity: ConnectedIdentityFull): void {
     const dialogRef = this.dialogService.open(RemoveIdentityDialogComponent, {
       header: identity.state === 'verified' ? 'Remove verified identity' : 'Remove unverified identity',
       width: '480px',
@@ -224,28 +219,52 @@ export class ProfileIdentitiesComponent implements OnInit {
     }) as DynamicDialogRef;
 
     dialogRef.onClose.pipe(take(1)).subscribe((result) => {
-      if (result) {
-        this.userService
-          .rejectIdentity(identity.id, identity.provider, identity.auth0UserId, identity.type === 'email' ? identity.identifier : undefined)
-          .pipe(take(1))
-          .subscribe({
-            next: () => this.userService.refreshUserIdentities(),
-            error: (err: HttpErrorResponse) => {
-              if (err.error?.error === 'management_token_required' && err.error?.authorize_url) {
-                window.location.href = err.error.authorize_url;
-                return;
-              }
-              // extractErrorMessage surfaces the server's crafted 409 meeting_invite_email_active
-              // copy (e.g. a race with another tab) instead of a generic, unactionable retry toast.
-              this.messageService.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: extractErrorMessage(err, 'Failed to remove identity. Please try again.'),
-              });
-            },
-          });
-      }
+      if (result) this.removeIdentity(identity);
     });
+  }
+
+  /** Removes an identity the user confirmed. */
+  protected removeIdentity(identity: ConnectedIdentityFull): void {
+    this.userService
+      .rejectIdentity(identity.id, identity.provider, identity.auth0UserId, identity.type === 'email' ? identity.identifier : undefined)
+      .pipe(take(1))
+      .subscribe({
+        next: () => this.userService.refreshUserIdentities(),
+        error: (err: HttpErrorResponse) => {
+          if (err.error?.error === 'management_token_required' && err.error?.authorize_url) {
+            window.location.href = err.error.authorize_url;
+            return;
+          }
+          // extractErrorMessage surfaces the server's crafted 409 meeting_invite_email_active
+          // copy (e.g. a race with another tab) instead of a generic, unactionable retry toast.
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: extractErrorMessage(err, 'Failed to remove identity. Please try again.'),
+          });
+        },
+      });
+  }
+
+  protected isMeetingInviteIdentity(identity: ConnectedIdentityFull): boolean {
+    // Use `type`, not `provider` — the server rewrites a Google-cross-matched CDP email row's
+    // `provider` to 'google' while keeping `type: 'email'`, and that row must still be guarded.
+    if (identity.type !== 'email') {
+      return false;
+    }
+    // Which identity is protected can't be determined when the invite fetch failed — fail closed
+    // and treat every email identity as protected rather than letting the guard silently open up.
+    if (this.identitiesState().inviteLoadFailed) {
+      return true;
+    }
+    return emailsEqual(identity.identifier, this.meetingInviteEmail());
+  }
+
+  private clearQueryParams(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    // Use history API instead of router.navigate to avoid triggering route re-evaluation
+    // that could destroy component state or re-run lifecycle hooks.
+    window.history.replaceState(window.history.state, '', window.location.pathname);
   }
 
   private mapToConnectedIdentity(enriched: EnrichedIdentity): ConnectedIdentityFull {
@@ -285,20 +304,6 @@ export class ProfileIdentitiesComponent implements OnInit {
       }
       return map;
     });
-  }
-
-  private isMeetingInviteIdentity(identity: ConnectedIdentityFull): boolean {
-    // Use `type`, not `provider` — the server rewrites a Google-cross-matched CDP email row's
-    // `provider` to 'google' while keeping `type: 'email'`, and that row must still be guarded.
-    if (identity.type !== 'email') {
-      return false;
-    }
-    // Which identity is protected can't be determined when the invite fetch failed — fail closed
-    // and treat every email identity as protected rather than letting the guard silently open up.
-    if (this.identitiesState().inviteLoadFailed) {
-      return true;
-    }
-    return emailsEqual(identity.identifier, this.meetingInviteEmail());
   }
 
   /**

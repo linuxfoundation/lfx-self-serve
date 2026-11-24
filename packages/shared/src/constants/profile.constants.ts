@@ -297,6 +297,9 @@ export const EMAIL_VERIFICATION_SENT_MESSAGE = `Check your email for a 6-digit v
 export const EMAIL_RESEND_SUPPORT_THRESHOLD = 1;
 
 /** Heading for the initial code-step guidance, neutral about delivery and linked-account status. */
+/** Digits in an email verification code. */
+export const EMAIL_VERIFICATION_CODE_LENGTH = 6;
+
 export const EMAIL_CODE_NOT_RECEIVED_TITLE = 'No code yet?';
 
 /** Standalone code-step hint shown alongside a secondary Contact support action. */
@@ -372,6 +375,18 @@ export const PERSONAL_INFORMATION_COPY = {
   phoneHint: 'Optional. Only used for urgent event notifications and swag delivery.',
   tshirtSubtitle: 'We use it to send you swag, like the t-shirts given to speakers, maintainers and event attendees.',
   saved: 'Personal information updated',
+} as const;
+
+/** Copy for the Account & Settings Identities page and its dialogs (#6074). */
+export const ACCOUNT_IDENTITIES_COPY = {
+  subtitle: 'Manage the accounts used to identify you and attribute contributions.',
+  unverifiedNote: 'You have unverified identities connected to your profile. Please verify them to validate your project affiliations and work history.',
+  emptyText:
+    'No connected accounts were found for your profile. Link GitHub, LinkedIn, Google or an email address so your contributions are attributed to you.',
+  primaryEmailRemoveReason: 'This email is your primary email and receives meeting invitations. Choose a different one in Email settings before removing it.',
+  addSubtitle:
+    'Identities are used to attribute contributions and participation across projects. Adding verified identities helps ensure accurate project affiliations.',
+  emailProviderDescription: 'Add and verify an email address you use for open source work',
 } as const;
 
 /** Length limits of the Personal information fields; the server rejects longer values. */

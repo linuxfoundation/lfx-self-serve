@@ -51,7 +51,7 @@ export const ACCOUNT_ROUTES: Routes = [
       {
         path: 'identities',
         title: 'Identities',
-        loadComponent: () => import('../profile/identities/profile-identities.component').then((m) => m.ProfileIdentitiesComponent),
+        loadComponent: () => import('./identities/account-identities.component').then((m) => m.AccountIdentitiesComponent),
       },
       // Linux.com email still sits at the foot of Identities, which feeds it the verified addresses, until #6075. A function
       // redirect, so a Flow C return keeps its query.
