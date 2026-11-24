@@ -966,6 +966,13 @@ export const META_CUSTOM_AUDIENCE_ID_PATTERN = /^[1-9][0-9]*$/;
 export const META_MAX_DETAILED_TARGETING_IDS = 25;
 /** At most this many distinct `locales` (Meta `adlocale` keys). */
 export const META_MAX_LOCALES = 50;
+/** A Meta frequency cap's impressions and days are each 1–90, as Meta documents them (#5904 row 5; campaign-service#612). */
+export const META_FREQUENCY_CAP_MIN = 1;
+export const META_FREQUENCY_CAP_MAX = 90;
+/** A Meta ad schedule is whole hours (multiples of 60) of a 1440-minute day, days 0 (Sunday) to 6 (Saturday). */
+export const META_AD_SCHEDULE_MINUTES_PER_DAY = 1440;
+export const META_AD_SCHEDULE_STEP_MINUTES = 60;
+export const META_AD_SCHEDULE_MAX_DAY = 6;
 /** The Meta targeting search's kinds, as campaign-service names them. */
 export const META_TARGETING_SEARCH_TYPES = ['interest', 'behavior', 'work_position'] as const;
 /** A targeting search query is 2–100 characters after trimming, as campaign-service checks it. */
@@ -1692,6 +1699,10 @@ export const META_BEHAVIOR_TARGETING_OFF_MESSAGE =
   'Meta behavior and job title targeting is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for Meta languages while language targeting is off on this deployment. */
 export const META_LOCALE_TARGETING_OFF_MESSAGE = 'Meta language targeting is not available on this deployment. Reload the page, then create again without it.';
+/** The 400 a create gets for a Meta ad schedule while scheduling is off on this deployment. */
+export const META_AD_SCHEDULE_OFF_MESSAGE = 'Meta ad scheduling is not available on this deployment. Reload the page, then create again without it.';
+/** The 400 a create gets for a Meta frequency cap while it is off on this deployment. */
+export const META_FREQUENCY_CAP_OFF_MESSAGE = 'The Meta frequency cap is not available on this deployment. Reload the page, then create again without it.';
 /** A targeting search refused with a 404: the search is off on this deployment. */
 export const META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE = 'Meta targeting search is not available on this deployment.';
 /** A targeting search that failed for any other reason. */
