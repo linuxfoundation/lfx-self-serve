@@ -3,6 +3,7 @@
 
 import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MENTORSHIP_LF_PROJECT_PAGE_SIZE } from '@lfx-one/shared/constants';
 import {
   MentorshipApplicantTask,
@@ -48,7 +49,9 @@ export class MentorshipService {
               return EMPTY;
             })
           )
-        )
+        ),
+        // The root injector's teardown, so the queue outlives every page but not the app (or a server render).
+        takeUntilDestroyed()
       )
       .subscribe();
   }
