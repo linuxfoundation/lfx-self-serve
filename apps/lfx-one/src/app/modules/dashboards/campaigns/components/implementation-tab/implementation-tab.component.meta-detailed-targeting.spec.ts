@@ -105,7 +105,7 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
     });
   });
 
-  it('saves the picks in the draft and restores them', STATE_ONLY, async () => {
+  it('saves the picks in the draft, restores them, and drops them on a brief switch', STATE_ONLY, async () => {
     const f = await mount(true, true);
     let saved: CampaignImplementationDraft | null = null;
     f.componentInstance.draftChange.subscribe((d: CampaignImplementationDraft) => (saved = d));
@@ -117,6 +117,13 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
 
     const restored = await mount(true, true, saved);
     expect(c(restored)['metaDetailedTargeting']()).toEqual(PICKS);
+
+    // Another brief never inherits them: a brief switch empties every list.
+    restored.componentRef.setInput('draft', null);
+    restored.componentRef.setInput('briefData', { ...brief(), eventDetails: { ...brief().eventDetails, name: 'OSS NA 2026', slug: 'oss-na-2026' } });
+    restored.detectChanges();
+    await restored.whenStable();
+    expect(c(restored)['metaDetailedTargeting']()).toEqual({ interests: [], behaviors: [], workPositions: [] });
   });
 
   it('holds Create for picks in a list this deployment does not send, until they are cleared', STATE_ONLY, async () => {
