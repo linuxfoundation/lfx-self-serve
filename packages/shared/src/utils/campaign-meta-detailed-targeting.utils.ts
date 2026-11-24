@@ -43,8 +43,8 @@ import type {
 import { metaConfigRecord } from './campaign-meta-ad-options.utils';
 
 /**
- * Meta detailed targeting (#5904 row 4): interests, behaviors, work positions and languages in
- * `metaConfig.targeting`. One set of rules for the create route (which answers a refusal with a 400) and the
+ * Meta detailed targeting in `metaConfig.targeting`: interests, behaviors, work positions and languages (#5904 row 4),
+ * and devices and operating systems (row 6). One set of rules for the create route (which answers a refusal with a 400) and the
  * Implement tab, mirroring campaign-service's `checkMetaTargeting` and `normalizeDetailedTargeting`
  * (linuxfoundation/lfx-v2-campaign-service#612).
  */
@@ -127,8 +127,9 @@ export function metaDetailedTargetingRefusal(raw: unknown): MetaConfigRefusal | 
 }
 
 /**
- * The detailed fields a create sends for an ACCEPTED block ({@link metaDetailedTargetingRefusal} is `null`), or
- * `null` when it sets none: ids trimmed and de-duplicated in first-seen order, empty lists dropped.
+ * The detailed fields a create sends for an ACCEPTED block ({@link metaDetailedTargetingRefusal} and
+ * {@link metaDeviceOsRefusal} are `null`), or `null` when it sets none: ids trimmed, devices lower-cased, OS values in
+ * Meta's spelling, each list de-duplicated in first-seen order, empty lists dropped.
  */
 export function compactMetaDetailedTargeting(raw: unknown): MetaDetailedTargeting | null {
   const record = metaConfigRecord(raw);

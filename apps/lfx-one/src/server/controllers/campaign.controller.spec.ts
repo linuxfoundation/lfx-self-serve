@@ -2545,7 +2545,7 @@ describe('CampaignController.createCampaign cutover', () => {
     const flagsOff = (...off: ServerFeatureFlag[]): void => {
       isServerFeatureEnabled.mockImplementation((flag: unknown) => !off.includes(flag as ServerFeatureFlag));
     };
-    async function sendWith(targeting: unknown): Promise<Record<string, unknown> | null> {
+    async function sendWith(targeting: unknown, extra: Record<string, unknown> = {}): Promise<Record<string, unknown> | null> {
       createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
       const metaConfig = {
         budgetUsd: 250,
@@ -2555,6 +2555,7 @@ describe('CampaignController.createCampaign cutover', () => {
         geoTargets: ['US'],
         variants: [{ primaryText: 'p', headline: 'h' }],
         targeting,
+        ...extra,
       };
       await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
       return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
@@ -2606,14 +2607,26 @@ describe('CampaignController.createCampaign cutover', () => {
     });
 
     it.each([
-      ['device targeting off', [ServerFeatureFlag.CampaignServiceMetaDeviceTargeting], { devicePlatforms: ['mobile'] }, 'metaConfig.targeting.devicePlatforms'],
-      ['OS targeting off', [ServerFeatureFlag.CampaignServiceMetaOsTargeting], { userOs: ['iOS'] }, 'metaConfig.targeting.userOs'],
-      ['an OS with desktop only', [], { devicePlatforms: ['desktop'], userOs: ['Android'] }, 'metaConfig.targeting.userOs'],
-    ])('refuses %s with a 400 naming the field', async (_case, off, targeting, field) => {
+      [
+        'device targeting off',
+        [ServerFeatureFlag.CampaignServiceMetaDeviceTargeting],
+        { devicePlatforms: ['mobile'] },
+        {},
+        'metaConfig.targeting.devicePlatforms',
+      ],
+      ['OS targeting off', [ServerFeatureFlag.CampaignServiceMetaOsTargeting], { userOs: ['iOS'] }, {}, 'metaConfig.targeting.userOs'],
+      // The rules read the rest of metaConfig: an OS version on the awareness objective is refused.
+      ['an OS version on awareness', [], { userOs: ['iOS_ver_8.0_and_above'] }, { objective: 'awareness' }, 'metaConfig.targeting.userOs'],
+    ])('refuses %s with a 400 naming the field', async (_case, off, targeting, extra, field) => {
       flagsOff(...off);
 
-      expect(await sendWith(targeting)).toBeNull();
+      expect(await sendWith(targeting, extra)).toBeNull();
       expect(refusedField()).toBe(field);
+    });
+
+    it('refuses a targeting block under another spelling of its key, whatever the flags, rather than forwarding it unchecked', async () => {
+      expect(await sendWith(undefined, { Targeting: { userOs: ['iOS'] } })).toBeNull();
+      expect(refusedField()).toBe('metaConfig.targeting');
     });
   });
 

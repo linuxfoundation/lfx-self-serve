@@ -60,7 +60,13 @@ import {
   metaAudienceTargetingRefusal,
   metaTargetingNamesCustomAudiences,
 } from '@lfx-one/shared/utils/campaign-meta-audience-targeting.utils';
-import { compactMetaAdOptions, metaAdOptionOffMessage, metaAdOptionsRefusal, metaConfigRecord } from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
+import {
+  compactMetaAdOptions,
+  metaAdOptionOffMessage,
+  metaAdOptionsRefusal,
+  metaConfigKeyVariant,
+  metaConfigRecord,
+} from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
 import { hasMetaLeadFormKeyVariant, metaLeadFormId, metaLeadFormRefusal } from '@lfx-one/shared/utils/campaign-meta-lead-form.utils';
 import {
   compactMetaDeliveryOptions,
@@ -1317,6 +1323,15 @@ export class CampaignController {
       // campaign-service's own list (#5809) and refused when it cannot be honoured. See
       // `linkedInAdAccountToForward`.
       const linkedInAdAccountId = await this.linkedInAdAccountToForward(req, projectSlug, body);
+      // Any Meta field under another spelling of its key is refused first, whatever the flags: campaign-service
+      // decodes keys ignoring case, so it would reach it past every gate below. See `metaConfigKeyVariant`.
+      const metaKeyVariant = metaConfigKeyVariant(body?.metaConfig);
+      if (metaKeyVariant !== null) {
+        throw ServiceValidationError.forField(metaKeyVariant, `Send it as ${metaKeyVariant}, spelled exactly.`, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
       // The Meta audience targeting to send (#5905), or none. See `metaTargetingToForward`.
       const metaTargeting = await this.metaTargetingToForward(req, projectSlug, body);
       // The Meta call to action, conversion event and optimization goal (#5934). See `metaAdOptionsToForward`.
