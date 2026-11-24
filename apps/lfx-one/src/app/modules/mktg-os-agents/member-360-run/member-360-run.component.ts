@@ -524,6 +524,9 @@ export class Member360RunComponent {
       const hint = this.validLocalHint(project, active.documentId);
       this.confirmedScope.set('');
       this.earlierRunNotice.set(''); // The line was about the run before this one.
+      // A draft belongs to the run it was typed on: the questions id hashes the question text only, so a
+      // replacement run asking the same questions would otherwise inherit the old unsent answers.
+      if (previous?.runId !== active.runId) this.questionDraft.set(null);
       this.accepted.set([
         user,
         hint?.attempt?.runId === active.runId

@@ -335,6 +335,8 @@ describe('Member360RunComponent', () => {
     await render();
     const find = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
     fixture.componentInstance['startOver']();
+    // A draft typed on the run Start over was chosen on must not follow a replacement run.
+    fixture.componentInstance['questionDraft'].set(['same-questions', { step: 1, answers: {} } as never]);
     fixture.detectChanges();
     expect(find('member-360-intake')).not.toBeNull();
     expect(find('member-360-waiting-notice')).not.toBeNull();
@@ -349,6 +351,7 @@ describe('Member360RunComponent', () => {
     fixture.detectChanges();
     expect(fixture.componentInstance['pending']()?.request.documentId).toBe(other.documentId);
     expect(fixture.componentInstance['startingOver']()).toBe(false);
+    expect(fixture.componentInstance['questionDraft']()).toBeNull();
     expect(find('member-360-generating')).not.toBeNull();
     expect(find('member-360-intake')).toBeNull();
   });
