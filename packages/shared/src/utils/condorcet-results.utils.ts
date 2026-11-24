@@ -35,6 +35,33 @@ export function buildCondorcetQuestionViews(results: VoteResultsResponse | null,
 }
 
 /**
+ * Compares indexed submitted ballots with released participation and per-question rank counts.
+ * Agreement is not an authoritative revision token: cancelling revisions can preserve aggregates, so callers
+ * must not use this to stop the bounded finalization window early. A mismatch identifies an out-of-date table.
+ */
+export function condorcetBallotsMatchResults(results: VoteResultsResponse, ballots: VoteVoter[]): boolean {
+  const voted = ballots.filter((ballot) => ballot.status === VoteVoterStatus.VOTED);
+  const abstained = ballots.filter((ballot) => ballot.status === VoteVoterStatus.ABSTAINED).length;
+  if (voted.length + abstained !== results.num_votes_cast || abstained !== (results.num_abstained ?? 0)) return false;
+  return (results.poll_results ?? []).every((pr) => {
+    if (!pr.ranked_choice_votes?.length && voted.length > 0) return false;
+    const actual = new Map<string, number>();
+    for (const ballot of voted) {
+      const answer = ballot.poll_answers?.find((answer) => answer.question_id === pr.question.question_id);
+      for (const [index, choice] of (answer ? rankedAnswerChoices(answer) : []).entries()) {
+        const key = JSON.stringify([choice.choice_id, choice.choice_rank ?? index + 1]);
+        actual.set(key, (actual.get(key) ?? 0) + 1);
+      }
+    }
+    const expected = new Map<string, number>();
+    for (const choice of pr.ranked_choice_votes ?? []) {
+      for (const rank of choice.rank_counts ?? []) expected.set(JSON.stringify([choice.choice_id, rank.rank]), rank.count);
+    }
+    return [...new Set([...actual.keys(), ...expected.keys()])].every((key) => (actual.get(key) ?? 0) === (expected.get(key) ?? 0));
+  });
+}
+
+/**
  * Builds the vote detail Overview line for each closed Condorcet IRV question (#5969)
  * @param views - Views from `buildCondorcetQuestionViews`
  * @param isClosed - Whether the vote is finalized

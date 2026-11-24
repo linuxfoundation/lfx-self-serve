@@ -145,6 +145,7 @@ describe('OrgLensMembershipsService — family roll-up', () => {
       logoUrl: null,
     })),
     complete: true,
+    excludedCount: 0,
   });
   const PARENT_ORG = { accountId: PARENT, name: 'Parent Co' };
   const SUBSIDIARY_ORG = { accountId: SUBSIDIARY, name: 'Subsidiary Co' };

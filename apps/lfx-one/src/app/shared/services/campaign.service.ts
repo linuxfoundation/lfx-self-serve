@@ -99,6 +99,7 @@ import {
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
   MetaCustomAudiencesResult,
+  MetaLeadFormsResult,
   LinkedInAccount,
   LinkedInCreateAccountResult,
   LinkedInMonitorResponse,
@@ -761,6 +762,15 @@ export class CampaignService {
    */
   public getMetaCustomAudiences(projectSlug: string): Observable<MetaCustomAudiencesResult> {
     return this.http.get<MetaCustomAudiencesResult>('/api/campaigns/meta/custom-audiences', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The Instant Forms on the Facebook Page a Meta create for this project uses, for the Implement tab's lead form
+   * picker (#5940). A coded 403 without `global_marketing_ops` on the project, a 404 while Meta lead forms are off,
+   * and a 503 when Meta refuses the read or the Page holds more forms than campaign-service lists.
+   */
+  public getMetaLeadForms(projectSlug: string): Observable<MetaLeadFormsResult> {
+    return this.http.get<MetaLeadFormsResult>('/api/campaigns/meta/lead-forms', { params: { project: projectSlug } });
   }
 
   /**

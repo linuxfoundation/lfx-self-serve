@@ -32,11 +32,12 @@ import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import { CampaignsComponent } from './campaigns.component';
-import { seedSelectedFoundation } from './campaigns.spec-helper';
+import { seedSelectedFoundation, STATE_ONLY, campaignsComponentUnderTest, trackStateOnlyTests } from './campaigns.spec-helper';
 import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
 import { PlanningTabComponent } from './components/planning-tab/planning-tab.component';
 
 seedSelectedFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' });
+trackStateOnlyTests();
 
 describe('CampaignsComponent — email delivery channel', () => {
   let fixture: ComponentFixture<CampaignsComponent>;
@@ -168,7 +169,7 @@ describe('CampaignsComponent — email delivery channel', () => {
         { provide: DialogService, useValue: { open: vi.fn() } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(CampaignsComponent);
+    fixture = TestBed.createComponent(campaignsComponentUnderTest());
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     fixture.detectChanges();
   });
@@ -213,7 +214,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(hint?.textContent?.trim()).toContain('Generate a brief');
     });
 
-    it('cannot stage without a brief, a template, an audience, and a project', () => {
+    it('cannot stage without a brief, a template, an audience, and a project', STATE_ONLY, () => {
       selectEmail();
       expect(internals().canStageEmail()).toBe(false);
 
@@ -234,7 +235,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().canStageEmail()).toBe(true);
     });
 
-    it('refuses to stage while copy is still generating', () => {
+    it('refuses to stage while copy is still generating', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -261,7 +262,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().canStageEmail()).toBe(false);
     });
 
-    it('refuses to stage on an audience that is not BUILT', () => {
+    it('refuses to stage on an audience that is not BUILT', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -309,7 +310,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(panel?.textContent).toContain('1 exclusion list(s) applied');
     });
 
-    it("tells the Audience tab why there is no brief id, rather than 'save the plan first'", () => {
+    it("tells the Audience tab why there is no brief id, rather than 'save the plan first'", STATE_ONLY, () => {
       const state = internals() as unknown as {
         emailBriefState: () => string;
         emailBriefSaveOutcome: { set: (v: string) => void };
@@ -354,7 +355,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(includes?.textContent).toContain('102');
     });
 
-    it('refuses to stage if the audience stops being built before the await', async () => {
+    it('refuses to stage if the audience stops being built before the await', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -373,7 +374,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(create).not.toHaveBeenCalled();
     });
 
-    it("sends the selected type's STAGE, not its id", async () => {
+    it("sends the selected type's STAGE, not its id", STATE_ONLY, async () => {
       selectEmail();
       const gen = vi
         .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
@@ -403,7 +404,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event', 'urgency-fomo', undefined);
     });
 
-    it('defaults the Survey & Report dropdown to Survey Promo -- the control, not just the planner', () => {
+    it('defaults the Survey & Report dropdown to Survey Promo -- the control, not just the planner', STATE_ONLY, () => {
       internals().selectorForm.controls.deliveryType.setValue('survey');
       fixture.detectChanges();
 
@@ -414,7 +415,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().selectedEmailStage()).toBe('Survey Promo');
     });
 
-    it('puts the email default back on the dropdown when returning from Survey & Report', () => {
+    it('puts the email default back on the dropdown when returning from Survey & Report', STATE_ONLY, () => {
       internals().selectorForm.controls.deliveryType.setValue('survey');
       fixture.detectChanges();
       selectEmail();
@@ -448,7 +449,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(gen).toHaveBeenCalledWith('tlf', 'brief-9', 'Survey Promo', undefined, undefined);
     });
 
-    it('ranks templates matching the selected type first, without removing any', () => {
+    it('ranks templates matching the selected type first, without removing any', STATE_ONLY, () => {
       selectEmail();
       const templates = [
         { id: '1', name: 'Registration reminder', subject: 'Register now' },
@@ -467,7 +468,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(rendered.map((t: { id: string }) => t.id).sort()).toEqual(['1', '2', '3']);
     });
 
-    it('leaves the order untouched when nothing matches', () => {
+    it('leaves the order untouched when nothing matches', STATE_ONLY, () => {
       selectEmail();
       const templates = [
         { id: '1', name: 'Alpha', subject: 'One' },
@@ -485,7 +486,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       ).toEqual(['1', '2']);
     });
 
-    it('ranks before the render cap, so a match beyond it can still surface', () => {
+    it('ranks before the render cap, so a match beyond it can still surface', STATE_ONLY, () => {
       selectEmail();
       // 600 unmatched rows, then the match -- comfortably past HUBSPOT_TEMPLATE_RENDER_LIMIT.
       const templates = Array.from({ length: 600 }, (_, i) => ({ id: `u${i}`, name: 'Unrelated', subject: 'Monthly update' }));
@@ -508,7 +509,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * whose subject begins "you" must NOT score for it -- a match across the boundary between two
      * unrelated fields is a coincidence of adjacency, not a description of the template.
      */
-    it('does not score a keyword split across the name and subject boundary', () => {
+    it('does not score a keyword split across the name and subject boundary', STATE_ONLY, () => {
       selectEmail();
       internals().emailTemplates.set([
         // The SPLIT row is listed FIRST by the server, so the server order and the correct order
@@ -555,7 +556,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * reduce to a boolean left them all green — ranking would silently stop distinguishing a
      * three-keyword match from a one-keyword one, which is the whole point of scoring.
      */
-    it('ranks a template matching more type keywords above one matching fewer', () => {
+    it('ranks a template matching more type keywords above one matching fewer', STATE_ONLY, () => {
       selectEmail();
       // `final-countdown` carries seven keywords. The first row matches one, the second several,
       // and BOTH are non-zero — so only a counting score can order them.
@@ -577,7 +578,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * `|| a.index - b.index` unverified for the case it exists for: several templates matching the
      * type equally, where the server's newest-first order must survive the sort.
      */
-    it('keeps the server order among templates that score equally above zero', () => {
+    it('keeps the server order among templates that score equally above zero', STATE_ONLY, () => {
       selectEmail();
       // All three carry the same type keyword, so they score identically and only `index` orders
       // them. Ids are deliberately NOT alphabetical, so a comparator falling back to any other
@@ -600,7 +601,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * The cap banner must not claim "the FIRST 100" once a spliced row is among them — that is
      * false in exactly the case the splice exists for.
      */
-    it('does not claim the drawn rows are the first N when a selection was spliced in', () => {
+    it('does not claim the drawn rows are the first N when a selection was spliced in', STATE_ONLY, () => {
       selectEmail();
       const templates: { id: string; name: string; subject: string }[] = [{ id: 'chosen', name: 'Bespoke', subject: 'Nothing' }];
       for (let i = 0; i < 600; i++) {
@@ -626,7 +627,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * clones that now-invisible template, so the operator stages a clone of something they can no
      * longer see or change.
      */
-    it('keeps the selected template visible after a type change reranks the list', () => {
+    it('keeps the selected template visible after a type change reranks the list', STATE_ONLY, () => {
       selectEmail();
       // The operator's pick names no type keyword, so reranking sinks it; the 600 rows that follow
       // all match the new type and crowd it out of the first 100 drawn.
@@ -713,7 +714,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCopy()).toBeNull();
     });
 
-    it('drops the previous copy when a regeneration fails', async () => {
+    it('drops the previous copy when a regeneration fails', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().emailBriefId.set('brief-77');
@@ -824,7 +825,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(hint?.textContent?.trim()).toContain('Compose the send audience on the Audience tab');
     });
 
-    it('drops the previous brief id when a new brief arrives', () => {
+    it('drops the previous brief id when a new brief arrives', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefId.set('brief-old');
       internals().emailAudience.set({ id: 'aud-old', status: 'built' } as never);
@@ -837,7 +838,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailAudience()).toBeNull();
     });
 
-    it('persists the brief FIRST, then creates with the returned brief id', async () => {
+    it('persists the brief FIRST, then creates with the returned brief id', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -868,7 +869,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStaging()).toBe('staging');
     });
 
-    it('drops the brief-derived state when the foundation changes', async () => {
+    it('drops the brief-derived state when the foundation changes', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefId.set('brief-from-old-foundation');
       internals().emailAudience.set({ id: 'aud-old', status: 'built' } as never);
@@ -885,7 +886,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailAudience()).toBeNull();
     });
 
-    it('does not cache a brief id that never reached approved', async () => {
+    it('does not cache a brief id that never reached approved', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockReturnValue(of({ enabled: true, briefId: 'brief-77', approved: false }) as never);
@@ -899,7 +900,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailBriefId()).toBe('');
     });
 
-    it('reuses a brief this session already owns instead of trying to create a second', async () => {
+    it('reuses a brief this session already owns instead of trying to create a second', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       const persist = vi
@@ -931,7 +932,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     // LOOKUP, but the parent's cached `emailBriefId` is separate state and survived the change --
     // so generate and stage ran the new stage against the previous stage's row. Staging is the
     // one that writes: it clones a HubSpot draft against that brief's audience.
-    it('drops the cached brief id when the type change moves the stage', () => {
+    it('drops the cached brief id when the type change moves the stage', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().emailBriefId.set('brief-cfp');
@@ -945,7 +946,7 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     // The audience card's origin, the unattached-list warning and the skip all describe the
     // previous stage's send. Clearing `emailAudience` alone left them rendering on the new one.
-    it('drops the audience-derived state when the type change moves the stage', () => {
+    it('drops the audience-derived state when the type change moves the stage', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().emailBriefId.set('brief-cfp');
@@ -975,7 +976,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     // previous stage's brief, and `ensureEmailBriefId` persists whatever it is handed — so with an
     // empty id it creates a NEW row for the new stage carrying the OLD stage's copy, which is the
     // wrong-brief association the id clearing exists to prevent, reached one step later.
-    it('drops the previous stage brief output, not just its id', () => {
+    it('drops the previous stage brief output, not just its id', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().emailBriefId.set('brief-cfp');
@@ -992,7 +993,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     // brief campaign-service will not create from. `persistEmailBrief` already applies this exact
     // rule at its own call site ("caching that id would make every downstream call fail"); the
     // restore path is the other way in.
-    it('does not cache the restored brief id when the stored brief is unapproved', () => {
+    it('does not cache the restored brief id when the stored brief is unapproved', STATE_ONLY, () => {
       selectEmail();
 
       (
@@ -1004,7 +1005,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailBriefId(), 'an unapproved brief id was cached; ensureEmailBriefId will short-circuit and never retry approval').toBe('');
     });
 
-    it('caches the restored brief id when the stored brief IS approved', () => {
+    it('caches the restored brief id when the stored brief IS approved', STATE_ONLY, () => {
       selectEmail();
 
       (
@@ -1024,7 +1025,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     // failing loudly.
     //
     // The id is now handed THROUGH the handoff, so the warm-up sees it and skips.
-    it('does not persist the brief when an approved one is restored', () => {
+    it('does not persist the brief when an approved one is restored', STATE_ONLY, () => {
       selectEmail();
       persistBrief.mockClear();
 
@@ -1044,7 +1045,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     // announces "Draft created" for the PREVIOUS send under the newly selected stage.
     // `resetEmailBriefDerivedState` cancels it for exactly this reason; the stage-change path has
     // the same hazard and had none of the protection.
-    it('cancels a live staging poll when the type change moves the stage', () => {
+    it('cancels a live staging poll when the type change moves the stage', STATE_ONLY, () => {
       selectEmail();
       internals().emailStaging.set('staging');
       const sub = { unsubscribe: vi.fn(), closed: false };
@@ -1061,7 +1062,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     // email type" step must not live in it -- paid has no type selector, and an earlier revision
     // told paid users to use one. The step belongs to `emailSaveFailureMessage`, the one caller
     // that knows a stage is involved.
-    it('keeps the email re-select step out of the shared conflict copy', () => {
+    it('keeps the email re-select step out of the shared conflict copy', STATE_ONLY, () => {
       selectEmail();
       const shared = (internals() as unknown as { conflictMessages: Record<string, string> }).conflictMessages;
 
@@ -1080,7 +1081,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     // recording the conflict only when the id is empty dropped it — and the operator got the
     // generic "Try again" copy for a refusal that retrying alone cannot clear. That is the exact
     // gap `emailBriefConflict` was added to close.
-    it.each([['stale-brief'], ['unverified-validator']])('records the %s conflict even though the server returned a brief id', async (conflict) => {
+    it.each([['stale-brief'], ['unverified-validator']])('records the %s conflict even though the server returned a brief id', STATE_ONLY, async (conflict) => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockReturnValue(
@@ -1104,7 +1105,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     it.each([
       ['an approved brief', true, 'brief-approved'],
       ['an unapproved brief', false, 'brief-unapproved'],
-    ])('records ownership when restoring %s', (_label, approved, id) => {
+    ])('records ownership when restoring %s', STATE_ONLY, (_label, approved, id) => {
       selectEmail();
 
       (
@@ -1130,7 +1131,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     // The paid restore adopts the brief's own program; the email restore did not, so an Events
     // brief could be opened while the selector still said Education. Correcting it by hand then
     // triggers the program-switch reset and discards the brief the operator just restored.
-    it('adopts the restored email brief program', () => {
+    it('adopts the restored email brief program', STATE_ONLY, () => {
       selectEmail();
       internals().selectorForm.controls.programType.setValue('education');
 
@@ -1144,7 +1145,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(programControl.value, 'the restored brief opened under the wrong program').toBe('events');
     });
 
-    it('keeps the loaded brief when two types share one stage', () => {
+    it('keeps the loaded brief when two types share one stage', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
@@ -1155,7 +1156,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailBriefId(), 'a same-stage type change discarded the loaded brief; it addresses the same row upstream').toBe('brief-cfp');
     });
 
-    it('keys ownership per delivery type and stage, not per event', () => {
+    it('keys ownership per delivery type and stage, not per event', STATE_ONLY, () => {
       const key = (b: unknown): string => (internals() as unknown as { ownershipKey(p: string, b: unknown): string }).ownershipKey('tlf', b);
 
       const paid = { ...emailBrief, deliveryType: 'paid-marketing', emailStage: undefined };
@@ -1176,7 +1177,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(key(legacy)).toBe(key(paid));
     });
 
-    it('reports an error when the staging job FAILS after the ack', async () => {
+    it('reports an error when the staging job FAILS after the ack', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -1193,7 +1194,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingMessage()).toContain('hubspot refused the clone');
     });
 
-    it('reports done once the staging job settles successfully', async () => {
+    it('reports done once the staging job settles successfully', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -1207,7 +1208,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStaging()).toBe('done');
     });
 
-    it('clears variant B when the A/B toggle is switched off', async () => {
+    it('clears variant B when the A/B toggle is switched off', STATE_ONLY, async () => {
       selectEmail();
       internals().abTestForm.controls.enabled.setValue(true);
       internals().abTestForm.controls.subjectB.setValue('Variant B subject');
@@ -1252,7 +1253,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     });
 
     /** #3306: the event page's links ride with the stage request, so the controller can judge the body as the preview did. */
-    it('sends the event-page links with the stage request as secondaryLinkUrls', async () => {
+    it('sends the event-page links with the stage request as secondaryLinkUrls', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: {
@@ -1280,7 +1281,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.secondaryLinkUrls).toEqual(['https://kubecon.example/eu/cfp', 'https://training.linuxfoundation.org/venue']);
     });
 
-    it('omits the CTA when the registration URL is not an http(s) URL', async () => {
+    it('omits the CTA when the registration URL is not an http(s) URL', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'javascript:alert(1)' },
@@ -1325,7 +1326,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       ['zero-width-space subject B', '\u200B\u200B', '<p>b</p>'],
       ['soft-hyphen subject B', '\u00AD', '<p>b</p>'],
       ['Hangul-filler subject B', '\u3164', '<p>b</p>'],
-    ])('does not stage an A/B test for %s', async (_label, subjectB, bodyHtmlB) => {
+    ])('does not stage an A/B test for %s', STATE_ONLY, async (_label, subjectB, bodyHtmlB) => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -1346,7 +1347,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(create.mock.calls[0][0].hubspotConfig?.abTestEnabled).toBeUndefined();
     });
 
-    it('generates variant B with ordinary stage copy and writes it into the B controls', async () => {
+    it('generates variant B with ordinary stage copy and writes it into the B controls', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().emailBriefId.set('brief-77');
@@ -1369,7 +1370,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestBodyHtmlB()).toBe('<p>B body</p>');
     });
 
-    it('sanitizes the previewed sponsor name, so preview and wire cannot disagree', () => {
+    it('sanitizes the previewed sponsor name, so preview and wire cannot disagree', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: {
@@ -1387,7 +1388,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(sponsor.name).not.toContain('\u202E');
     });
 
-    it('truncates a long sponsor name the same way the controller does', () => {
+    it('truncates a long sponsor name the same way the controller does', STATE_ONLY, () => {
       selectEmail();
       // 150 code points, past the 100 the controller forwards. An astral character at the cut
       // boundary proves the slice is by CODE POINT -- a UTF-16 slice would split the surrogate
@@ -1408,7 +1409,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(sponsor.name.endsWith('\u{1F600}')).toBe(true);
     });
 
-    it('keeps a subject typed during generation but still fills the untouched body', async () => {
+    it('keeps a subject typed during generation but still fills the untouched body', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().emailBriefId.set('brief-77');
@@ -1439,7 +1440,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestForm.controls.bodyHtmlB.value).toBe('<p>Generated body</p>');
     });
 
-    it('discards a variant B response that lands after the operator toggled A/B off', async () => {
+    it('discards a variant B response that lands after the operator toggled A/B off', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().emailBriefId.set('brief-77');
@@ -1470,7 +1471,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestForm.controls.bodyHtmlB.value).toBe('');
     });
 
-    it('abandons an in-flight variant B generation when the operator toggles A/B off', async () => {
+    it('abandons an in-flight variant B generation when the operator toggles A/B off', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().abTestForm.controls.enabled.setValue(true);
@@ -1517,7 +1518,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestForm.controls.bodyHtmlB.value).toBe('');
     });
 
-    it('keeps a terminal staging banner when the type changes after a completed stage', () => {
+    it('keeps a terminal staging banner when the type changes after a completed stage', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().emailStaging.set('done');
@@ -1534,7 +1535,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingMessage()).toBe('Draft created');
     });
 
-    it('does not leave the Stage button spinning when the type changes mid-stage', () => {
+    it('does not leave the Stage button spinning when the type changes mid-stage', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().emailStaging.set('staging');
@@ -1568,7 +1569,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingMessage()).toBe('');
     });
 
-    it('drops variant B when A/B is toggled off and back ON during the await', async () => {
+    it('drops variant B when A/B is toggled off and back ON during the await', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -1605,7 +1606,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestForm.controls.subjectB.value).toBe('');
     });
 
-    it('drops variant B when the operator toggles A/B off during the brief-id await', async () => {
+    it('drops variant B when the operator toggles A/B off during the brief-id await', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -1645,7 +1646,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.subject).toBe('S');
     });
 
-    it('forwards variant B preheader as previewTextB, so B does not inherit A', async () => {
+    it('forwards variant B preheader as previewTextB, so B does not inherit A', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -1671,7 +1672,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.preheader).toBe('A preheader');
     });
 
-    it('omits previewTextB when blank rather than blanking B preheader', async () => {
+    it('omits previewTextB when blank rather than blanking B preheader', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -1695,7 +1696,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.abTestEnabled).toBe(true);
     });
 
-    it('still links the hero when the generator omitted the button url', async () => {
+    it('still links the hero when the generator omitted the button url', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: {
@@ -1725,7 +1726,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.buttonUrl).toBeUndefined();
     });
 
-    it('trims the previewed preheaders and falls B back to A', () => {
+    it('trims the previewed preheaders and falls B back to A', STATE_ONLY, () => {
       selectEmail();
       internals().emailCopy.set({ subject: 'S', preheader: '  A preheader  ', body: '<p>b</p>', cta: '', ctaUrl: '' });
       internals().abTestForm.controls.preheaderB.setValue('   ');
@@ -1745,7 +1746,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestPreheaderBPreview()).toBe('B preheader');
     });
 
-    it('accepts a CTA url that differs from the brief only by a trailing slash', async () => {
+    it('accepts a CTA url that differs from the brief only by a trailing slash', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/' },
@@ -1774,7 +1775,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.buttonText).toBe('Register');
     });
 
-    it('refuses a CTA url the brief never contained', async () => {
+    it('refuses a CTA url the brief never contained', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/' },
@@ -1799,7 +1800,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.buttonText).toBeUndefined();
     });
 
-    it('accepts a CTA url that matches the brief, modulo canonical form', async () => {
+    it('accepts a CTA url that matches the brief, modulo canonical form', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/' },
@@ -1827,7 +1828,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.buttonText).toBe('Register');
     });
 
-    it('sends no button when the generator omitted its url, even with a registration URL', async () => {
+    it('sends no button when the generator omitted its url, even with a registration URL', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -1851,7 +1852,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.buttonText).toBeUndefined();
     });
 
-    it('omits a whitespace-only CTA even when the registration URL is valid', async () => {
+    it('omits a whitespace-only CTA even when the registration URL is valid', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -1873,7 +1874,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCtaLabel()).toBe('');
     });
 
-    it('omits heroLinkUrl when the registration URL is not an http(s) URL, but keeps the image', async () => {
+    it('omits heroLinkUrl when the registration URL is not an http(s) URL, but keeps the image', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: {
@@ -1907,7 +1908,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     it.each([
       ['a whitespace-only body', '   '],
       ['an empty body', ''],
-    ])('withholds the hero and sponsors for %s', async (_label, body) => {
+    ])('withholds the hero and sponsors for %s', STATE_ONLY, async (_label, body) => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: {
@@ -1938,7 +1939,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailBodyIsStageable()).toBe(false);
     });
 
-    it('canonicalizes the preview hero and drops blank-name sponsors, matching the controller', async () => {
+    it('canonicalizes the preview hero and drops blank-name sponsors, matching the controller', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: {
@@ -1966,7 +1967,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailSponsors()).toEqual([{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }]);
     });
 
-    it('loads the preview hero only for https linuxfoundation.org hosts', () => {
+    it('loads the preview hero only for https linuxfoundation.org hosts', STATE_ONLY, () => {
       selectEmail();
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
@@ -2004,7 +2005,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(previewFor('https://events.linuxfoundation.org/uploads/HERO.JPG')).toBe('https://events.linuxfoundation.org/uploads/HERO.JPG');
     });
 
-    it('stages the call to action whose destination was refused, as text', async () => {
+    it('stages the call to action whose destination was refused, as text', STATE_ONLY, async () => {
       // The server keeps a button's label inline in `body` only when the section carried NO url
       // (`!section.url`). A url supplied and then REFUSED takes the label out of `body` there and
       // sends no native button here, so the CTA vanished from the draft while the preview still
@@ -2036,7 +2037,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.bodyHtml).not.toContain('evil.example');
     });
 
-    it('does not ship a hero from copy that was cleared mid-stage', async () => {
+    it('does not ship a hero from copy that was cleared mid-stage', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: {
@@ -2079,7 +2080,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.heroImageUrl).toBe('https://cdn.example.com/hero.png');
     });
 
-    it('sends the registration URL in the canonical form, without userinfo', async () => {
+    it('sends the registration URL in the canonical form, without userinfo', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: {
@@ -2116,7 +2117,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(String(cfg?.buttonUrl)).not.toContain('secret');
     });
 
-    it('does not preview or stage a hero the controller would drop', async () => {
+    it('does not preview or stage a hero the controller would drop', STATE_ONLY, async () => {
       selectEmail();
       // A RESTORED brief: asEventDetails accepts any string, so a persisted blob can carry a
       // host the controller later refuses. Binding it raw made the BROWSER fetch it, which no
@@ -2153,7 +2154,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.sponsors).toEqual([{ name: 'Good', logoUrl: 'https://cdn.example.com/good.png' }]);
     });
 
-    it('withholds the CTA when the body is blank, even with a valid destination', async () => {
+    it('withholds the CTA when the body is blank, even with a valid destination', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://events.example/register' },
@@ -2178,7 +2179,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCtaLabel()).toBe('');
     });
 
-    it('withholds the hero and sponsors when no copy was generated', async () => {
+    it('withholds the hero and sponsors when no copy was generated', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: {
@@ -2211,7 +2212,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.sourceEmailId).toBe('hs-123');
     });
 
-    it('omits the CTA entirely when the brief has no registration URL to send it to', async () => {
+    it('omits the CTA entirely when the brief has no registration URL to send it to', STATE_ONLY, async () => {
       selectEmail();
       // normalizeEventDetails defaults an absent registrationUrl to '' -- a real shape, not a
       // contrived one: a brief scraped from a page with no register link produces exactly this.
@@ -2248,7 +2249,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.heroLinkUrl).toBeUndefined();
     });
 
-    it('carries the generated copy into hubspotConfig when copy exists', async () => {
+    it('carries the generated copy into hubspotConfig when copy exists', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -2286,7 +2287,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       });
     });
 
-    it('omits subject, bodyHtml, and preheader entirely when no copy was generated', async () => {
+    it('omits subject, bodyHtml, and preheader entirely when no copy was generated', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -2304,7 +2305,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(create.mock.calls[0][0].hubspotConfig).toEqual({ sourceEmailId: 'hs-123' });
     });
 
-    it('carries abTestEnabled/subjectB/bodyHtmlB into hubspotConfig when the test is on and variant B has content', async () => {
+    it('carries abTestEnabled/subjectB/bodyHtmlB into hubspotConfig when the test is on and variant B has content', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -2332,7 +2333,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * writes subject/body onto a variant it creates, so sending `abTestEnabled: true` with empty
      * strings would claim a test exists when there is no B-side content to run it with.
      */
-    it('omits the A/B fields entirely when the test is enabled but variant B has no content', async () => {
+    it('omits the A/B fields entirely when the test is enabled but variant B has no content', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -2366,7 +2367,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(create.mock.calls[0][0].hubspotConfig).toEqual({ sourceEmailId: 'hs-123' });
     });
 
-    it('does NOT create when the persist returns no brief id', async () => {
+    it('does NOT create when the persist returns no brief id', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -2385,7 +2386,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingMessage()).not.toBe('');
     });
 
-    it('reports a create failure rather than claiming the draft was staged', async () => {
+    it('reports a create failure rather than claiming the draft was staged', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -2503,7 +2504,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       vi.spyOn(service, 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [] }) as never);
     });
 
-    it('offers one email or the full promo, reminder and closing series', () => {
+    it('offers one email or the full promo, reminder and closing series', STATE_ONLY, () => {
       selectSurvey();
       expect(seq().surveySequenceStages()).toEqual(['Survey Promo']);
 
@@ -2515,7 +2516,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().surveySequenceStages()).toEqual(['Report Promo']);
     });
 
-    it('drops the email brief when switching to the survey surface, a different brief identity', () => {
+    it('drops the email brief when switching to the survey surface, a different brief identity', STATE_ONLY, () => {
       selectEmail();
       seq().emailBriefOutput.set(exampleBrief);
       seq().emailBriefId.set('email-brief-1');
@@ -2528,7 +2529,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().selectedEmailStage()).toBe('Survey Promo');
     });
 
-    it('writes one brief per send under its own stage, in send order', async () => {
+    it('writes one brief per send under its own stage, in send order', STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -2578,7 +2579,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canBuildSequenceWorkflow(), 'build a partial series').toBe(false);
     });
 
-    it('shares a multi-list audience with the later sends as the same lists, suppression included', async () => {
+    it('shares a multi-list audience with the later sends as the same lists, suppression included', STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -2614,7 +2615,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(attach.mock.calls[0][1]).not.toHaveProperty('masterListId');
     });
 
-    it("shows each send's button as it will be staged, beside its body", () => {
+    it("shows each send's button as it will be staged, beside its body", STATE_ONLY, () => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);
       seq().surveySequenceSends.set([
@@ -2637,7 +2638,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().surveySequenceButtons().get('brief-2')?.text).toBe('');
     });
 
-    it('shows each body as it will be staged, without resource-loading HTML', () => {
+    it('shows each body as it will be staged, without resource-loading HTML', STATE_ONLY, () => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);
       seq().surveySequenceSends.set([
@@ -2660,7 +2661,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(body).not.toContain('tracker.example.com');
     });
 
-    it("surfaces a refused draft in the refusal's own words and stops the series there", async () => {
+    it("surfaces a refused draft in the refusal's own words and stops the series there", STATE_ONLY, async () => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);
       seq().selectedEmailTemplateId.set('hs-1');
@@ -2681,7 +2682,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().sequenceStagedBriefIds()).toEqual([]);
     });
 
-    it('stages each send with its own copy and a button to the promoted link, then records the draft', async () => {
+    it('stages each send with its own copy and a button to the promoted link, then records the draft', STATE_ONLY, async () => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);
       seq().selectedEmailTemplateId.set('hs-1');
@@ -2718,7 +2719,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().sequenceStagingState()).toBe('done');
     });
 
-    it('builds the workflow only once every send is staged AND has its date', async () => {
+    it('builds the workflow only once every send is staged AND has its date', STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -2750,7 +2751,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       });
     });
 
-    it('creates each send date control before publishing it, so a failed later send leaves them usable', async () => {
+    it('creates each send date control before publishing it, so a failed later send leaves them usable', STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -2765,7 +2766,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(Object.keys(seq().sequenceDatesForm.controls)).toEqual(['date-0', 'date-1']);
     });
 
-    it('does not offer Stage all while later sends are still being written', async () => {
+    it('does not offer Stage all while later sends are still being written', STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -2788,7 +2789,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canStageSequence()).toBe(true);
     });
 
-    it("stops at a refused save instead of writing over another editor's brief", async () => {
+    it("stops at a refused save instead of writing over another editor's brief", STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -2811,7 +2812,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().surveySequenceError()).toContain('Reload the page, restore the brief');
     });
 
-    it('names the step that failed when the error carries no message of its own', async () => {
+    it('names the step that failed when the error carries no message of its own', STATE_ONLY, async () => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);
       generateEmailCopy.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })) as never);
@@ -2821,7 +2822,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().surveySequenceError()).toBe('The emails could not be written.');
     });
 
-    it("re-attaches the first send's audience to a later send built against different lists", async () => {
+    it("re-attaches the first send's audience to a later send built against different lists", STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -2857,7 +2858,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       ['a request timeout', 408, true],
       ['throttling', 429, true],
       ['an explicit refusal', 400, false],
-    ])('after %s on the create request, holds the send only when a draft may exist', async (_label, status, held) => {
+    ])('after %s on the create request, holds the send only when a draft may exist', STATE_ONLY, async (_label, status, held) => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);
       seq().selectedEmailTemplateId.set('hs-1');
@@ -2871,7 +2872,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canStageSequence()).toBe(!held);
     });
 
-    it('does not hold a send of a series that was reset while its create was in flight', async () => {
+    it('does not hold a send of a series that was reset while its create was in flight', STATE_ONLY, async () => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);
       seq().selectedEmailTemplateId.set('hs-1');
@@ -2902,7 +2903,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       seq().surveySequenceSends.set(stages.map((stage, i) => ({ stage, label: stage, briefId: `brief-${i + 1}`, copy: copyFor(stage) })));
     };
 
-    it("joins the page's own save for the first send instead of creating its brief a second time", async () => {
+    it("joins the page's own save for the first send instead of creating its brief a second time", STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -2916,7 +2917,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(savedStages).toEqual(['Survey Reminder', 'Survey Closing']);
     });
 
-    it('keeps ownership of a brief saved without approval, so writing again updates it', async () => {
+    it('keeps ownership of a brief saved without approval, so writing again updates it', STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -2939,14 +2940,14 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(retry?.slice(2)).toEqual(['brief-r', '"2"', false]);
     });
 
-    it('does not offer a rewrite once a send is staged, since HubSpot keeps the staged draft', () => {
+    it('does not offer a rewrite once a send is staged, since HubSpot keeps the staged draft', STATE_ONLY, () => {
       stageable(1);
       expect(seq().canGenerateSurveySequence()).toBe(true);
       seq().sequenceStagedBriefIds.set(['brief-1']);
       expect(seq().canGenerateSurveySequence()).toBe(false);
     });
 
-    it('holds a send whose create was accepted with nothing to track, as the single-send path does', async () => {
+    it('holds a send whose create was accepted with nothing to track, as the single-send path does', STATE_ONLY, async () => {
       stageable(1);
       vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: '' }) as never);
 
@@ -2956,7 +2957,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canStageSequence(), 'staging again could clone a second draft').toBe(false);
     });
 
-    it('holds a send whose failed job still created its draft, and records where it landed', async () => {
+    it('holds a send whose failed job still created its draft, and records where it landed', STATE_ONLY, async () => {
       stageable(1);
       vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
       vi.spyOn(service, 'getCreateResult').mockReturnValue(
@@ -2974,7 +2975,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canStageSequence()).toBe(false);
     });
 
-    it("reports the HubSpot row's own refusal before the job's generic failure", async () => {
+    it("reports the HubSpot row's own refusal before the job's generic failure", STATE_ONLY, async () => {
       stageable(1);
       vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
       vi.spyOn(service, 'getCreateResult').mockReturnValue(
@@ -2990,7 +2991,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().sequenceStagingMessage()).toContain('no audience found for this brief');
     });
 
-    it('stops sharing an audience once the series it was for is reset', async () => {
+    it('stops sharing an audience once the series it was for is reset', STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -3016,7 +3017,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(attach).not.toHaveBeenCalled();
     });
 
-    it("shares nothing when the first send's NEWEST audience is not built, rather than an older one", async () => {
+    it("shares nothing when the first send's NEWEST audience is not built, rather than an older one", STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -3072,14 +3073,14 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canBuildSequenceWorkflow(), 'build during an audience write').toBe(false);
     });
 
-    it('blocks a rewrite while a send is held unconfirmed, even with none confirmed staged', () => {
+    it('blocks a rewrite while a send is held unconfirmed, even with none confirmed staged', STATE_ONLY, () => {
       stageable(3);
       expect(seq().canGenerateSurveySequence(), 'fixture precondition').toBe(true);
       seq().sequenceUnresolvedBriefIds.set(['brief-1']);
       expect(seq().canGenerateSurveySequence(), 'a rewrite would clear the hold and reuse the brief').toBe(false);
     });
 
-    it('locks the count and rewrites once the single Stage button staged the brief, until a restart', async () => {
+    it('locks the count and rewrites once the single Stage button staged the brief, until a restart', STATE_ONLY, async () => {
       stageable(1);
       seq().emailBriefId.set('brief-primary');
       seq().surveySequenceSends.set([]);
@@ -3112,7 +3113,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canGenerateSurveySequence()).toBe(true);
     });
 
-    it('selects the survey template itself, since its picker is hidden, and never replaces a choice', () => {
+    it('selects the survey template itself, since its picker is hidden, and never replaces a choice', STATE_ONLY, () => {
       selectSurvey();
       const templates = [
         { id: 'hs-a', name: 'Newsletter', subject: 'News' },
@@ -3135,7 +3136,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().selectedEmailTemplateId(), 'the event picker only suggests (#2057)').toBe('');
     });
 
-    it('never takes the survey template from a list an Email search filtered', () => {
+    it('never takes the survey template from a list an Email search filtered', STATE_ONLY, () => {
       const component = fixture.componentInstance as unknown as {
         emailTemplateSubmittedQuery: { set(q: string): void };
         ensureSurveyTemplateSelected(): void;
@@ -3153,7 +3154,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(search).toHaveBeenCalledWith('');
     });
 
-    it('reads the portal templates once when a filtered pick is dropped on the way off Planning', () => {
+    it('reads the portal templates once when a filtered pick is dropped on the way off Planning', STATE_ONLY, () => {
       TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-t', slug: 'tlf', name: 'TLF' } as ProjectContext, false);
       selectSurvey();
       const search = vi.spyOn(service, 'searchHubSpotEmails').mockReturnValue(new Subject<never>() as never);
@@ -3171,7 +3172,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(search).toHaveBeenCalledWith('tlf', '');
     });
 
-    it('stages a one-email survey only once its copy is generated, since the template alone promotes nothing', async () => {
+    it('stages a one-email survey only once its copy is generated, since the template alone promotes nothing', STATE_ONLY, async () => {
       stageable(1);
       const component = fixture.componentInstance as unknown as { canStageEmail(): boolean };
       const create = vi.spyOn(service, 'createCampaign');
@@ -3200,7 +3201,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().selectedEmailTemplateId(), 'the rows on screen are the ones being replaced').toBe('');
     });
 
-    it('treats a restored approved survey send as possibly staged until the series is started over', () => {
+    it('treats a restored approved survey send as possibly staged until the series is started over', STATE_ONLY, () => {
       stageable(1);
       const component = fixture.componentInstance as unknown as {
         onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
@@ -3219,7 +3220,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(component.canGenerateEmailCopy()).toBe(true);
     });
 
-    it('does not hold back a restored survey brief that was never approved, since nothing was staged from it', () => {
+    it('does not hold back a restored survey brief that was never approved, since nothing was staged from it', STATE_ONLY, () => {
       stageable(1);
       const component = fixture.componentInstance as unknown as {
         onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
@@ -3260,7 +3261,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canGenerateSurveySequence()).toBe(true);
     });
 
-    it('builds the workflow once, and holds Build after an unconfirmed create', async () => {
+    it('builds the workflow once, and holds Build after an unconfirmed create', STATE_ONLY, async () => {
       const ready = (): void => {
         stageable(3);
         const dates = (fixture.componentInstance as unknown as { sequenceDatesForm: FormGroup }).sequenceDatesForm;
@@ -3292,7 +3293,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canBuildSequenceWorkflow(), 'the workflow may exist').toBe(false);
     });
 
-    it('names the validation reason, not the field prefix, when the workflow is refused', async () => {
+    it('names the validation reason, not the field prefix, when the workflow is refused', STATE_ONLY, async () => {
       stageable(3);
       const dates = (fixture.componentInstance as unknown as { sequenceDatesForm: FormGroup }).sequenceDatesForm;
       [0, 1, 2].forEach((index) => dates.addControl(`date-${index}`, new FormControl(`2026-12-0${index + 1}`, { nonNullable: true })));
@@ -3317,7 +3318,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().sendWorkflowUnconfirmed(), 'a 400 created nothing').toBe(false);
     });
 
-    it('moves the next write to new briefs when an asset switch drops a staged series', async () => {
+    it('moves the next write to new briefs when an asset switch drops a staged series', STATE_ONLY, async () => {
       stageable(3);
       await seq().onGenerateSurveySequence();
       expect(persistBrief, 'fixture precondition: the series was written').toHaveBeenCalled();
@@ -3335,7 +3336,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().surveySeriesRestarted(), 'the old briefs hold drafts').toBe(true);
     });
 
-    it('turns off a variant B left armed on Email when the surface switches to Survey', () => {
+    it('turns off a variant B left armed on Email when the surface switches to Survey', STATE_ONLY, () => {
       seq().selectorForm.controls.deliveryType.setValue('email');
       fixture.detectChanges();
       const ab = (fixture.componentInstance as unknown as { abTestForm: { controls: { enabled: { setValue(v: boolean): void; value: boolean } } } }).abTestForm;
@@ -3346,7 +3347,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(ab.controls.enabled.value, 'survey has no A/B control to turn it off').toBe(false);
     });
 
-    it('ignores a late unowned answer for a series a reset already replaced', async () => {
+    it('ignores a late unowned answer for a series a reset already replaced', STATE_ONLY, async () => {
       stageable(3);
       seq().surveySequenceSends.set([]);
       const late = new Subject<unknown>();
@@ -3380,7 +3381,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(card?.textContent).not.toContain('audience is locked');
     });
 
-    it('locks Regenerate once the single Stage button staged the brief', () => {
+    it('locks Regenerate once the single Stage button staged the brief', STATE_ONLY, () => {
       stageable(1);
       seq().emailBriefId.set('brief-primary');
       expect(seq().canGenerateEmailCopy(), 'fixture precondition').toBe(true);
@@ -3388,7 +3389,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canGenerateEmailCopy(), 'regenerating would never reach the draft').toBe(false);
     });
 
-    it('moves the next write to new briefs when Planning drops a staged series', async () => {
+    it('moves the next write to new briefs when Planning drops a staged series', STATE_ONLY, async () => {
       stageable(3);
       await seq().onGenerateSurveySequence();
       seq().sequenceStagedBriefIds.set([seq().surveySequenceSends()[0].briefId]);
@@ -3400,7 +3401,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().surveySeriesRestarted(), 'the old briefs hold drafts').toBe(true);
     });
 
-    it('keeps the briefs when Planning drops a series that never reached HubSpot', async () => {
+    it('keeps the briefs when Planning drops a series that never reached HubSpot', STATE_ONLY, async () => {
       stageable(3);
       await seq().onGenerateSurveySequence();
 
@@ -3409,7 +3410,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().surveySeriesRestarted()).toBe(false);
     });
 
-    it('locks the count and rewrites while the single Stage button is still in flight', () => {
+    it('locks the count and rewrites while the single Stage button is still in flight', STATE_ONLY, () => {
       stageable(1);
       seq().emailStaging.set('staging');
 
@@ -3465,7 +3466,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(host.querySelector('[data-testid="campaigns-sequence-start-over"]')).toBeNull();
     });
 
-    it('releases the audience after a restart leaves a single-send hold on the original brief', () => {
+    it('releases the audience after a restart leaves a single-send hold on the original brief', STATE_ONLY, () => {
       stageable(1);
       seq().emailBriefId.set('brief-primary');
       const unresolved = fixture.componentInstance as unknown as {
@@ -3495,7 +3496,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="campaigns-survey-sequence"]')).not.toBeNull();
     });
 
-    it('starts the series over from a held send, clearing its staging so it can be written again', () => {
+    it('starts the series over from a held send, clearing its staging so it can be written again', STATE_ONLY, () => {
       stageable(3);
       seq().sequenceStagedBriefIds.set(['brief-1']);
       seq().sequenceUnresolvedBriefIds.set(['brief-2']);
@@ -3509,7 +3510,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canGenerateSurveySequence()).toBe(true);
     });
 
-    it("writes a restarted series under NEW briefs, sharing the page's audience, and remembers it across a reload", async () => {
+    it("writes a restarted series under NEW briefs, sharing the page's audience, and remembers it across a reload", STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -3549,7 +3550,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(attach).toHaveBeenCalledTimes(3);
 
       // A fresh page (a reload) keeps writing the restarted identity, not the original briefs.
-      const reloaded = TestBed.createComponent(CampaignsComponent);
+      const reloaded = TestBed.createComponent(campaignsComponentUnderTest());
       const page = reloaded.componentInstance as unknown as { readSeriesRestart(project: string, slug: string): number };
       const project = (fixture.componentInstance as unknown as { activeFoundationSlug(): string }).activeFoundationSlug();
       expect(page.readSeriesRestart(project, 'cloud-native-2026')).toBe(1);
@@ -3639,7 +3640,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(planner?.emailStage()).toBe(page.selectedEmailStage());
     });
 
-    it('keeps the original briefs when a series is started over before anything reached HubSpot', async () => {
+    it('keeps the original briefs when a series is started over before anything reached HubSpot', STATE_ONLY, async () => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);
       seq().onStartSeriesOver();
@@ -3682,7 +3683,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(host.querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent).toContain('email series below');
     });
 
-    it('creates no further drafts once the page is left mid-staging', async () => {
+    it('creates no further drafts once the page is left mid-staging', STATE_ONLY, async () => {
       stageable(3);
       const first = new Subject<unknown>();
       const create = vi
@@ -3703,7 +3704,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(create).toHaveBeenCalledTimes(1);
     });
 
-    it('keeps the single Stage button and Stage all from creating beside each other', () => {
+    it('keeps the single Stage button and Stage all from creating beside each other', STATE_ONLY, () => {
       stageable(1);
       expect(seq().canStageSequence()).toBe(true);
       seq().emailStaging.set('staging');
@@ -3740,7 +3741,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(note?.textContent).toContain('Wait for the audience to finish updating.');
     });
 
-    it('keeps the audience locked and Stage all off around an audience replacement', () => {
+    it('keeps the audience locked and Stage all off around an audience replacement', STATE_ONLY, () => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);
       seq().selectedEmailTemplateId.set('hs-1');
@@ -3756,7 +3757,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().audienceLockedByStaging(), 'audience replaced while a series send is held').toBe(true);
     });
 
-    it('says why there is no template on the survey surface, and retries the read', () => {
+    it('says why there is no template on the survey surface, and retries the read', STATE_ONLY, () => {
       selectSurvey();
       seq().selectedEmailTemplateId.set('');
       seq().emailTemplates.set(null);
@@ -3774,7 +3775,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(search).toHaveBeenCalledWith('');
     });
 
-    it('keeps the chosen type, brief and copy across a trip through Paid Marketing', () => {
+    it('keeps the chosen type, brief and copy across a trip through Paid Marketing', STATE_ONLY, () => {
       selectSurvey();
       seq().onSelectEmailType('report-promo');
       seq().emailBriefOutput.set(surveyBrief);
@@ -3789,7 +3790,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().emailBriefOutput()).not.toBeNull();
     });
 
-    it('sends every date when every one is filled in', async () => {
+    it('sends every date when every one is filled in', STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -3809,7 +3810,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().sendWorkflowResult()?.editUrl).toBe('');
     });
 
-    it('does not attach an audience to a send whose own audience could not be read, and says so', async () => {
+    it('does not attach an audience to a send whose own audience could not be read, and says so', STATE_ONLY, async () => {
       selectSurvey();
       seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
@@ -3832,7 +3833,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().surveySequenceWarning()).toContain('could not be read');
     });
 
-    it('holds a send whose draft never reported back instead of offering to stage it again', async () => {
+    it('holds a send whose draft never reported back instead of offering to stage it again', STATE_ONLY, async () => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);
       seq().selectedEmailTemplateId.set('hs-1');
@@ -3849,7 +3850,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canStageSequence()).toBe(false);
     });
 
-    it('forgets the series, its drafts and its workflow when the brief is reset', () => {
+    it('forgets the series, its drafts and its workflow when the brief is reset', STATE_ONLY, () => {
       selectSurvey();
       seq().surveySequenceSends.set([{ stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') }]);
       seq().sequenceStagedBriefIds.set(['brief-1']);
@@ -3860,7 +3861,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().sequenceStagedBriefIds()).toEqual([]);
     });
 
-    it('picks the survey template again from the loaded list after a reset clears it', () => {
+    it('picks the survey template again from the loaded list after a reset clears it', STATE_ONLY, () => {
       selectSurvey();
       seq().emailTemplates.set([{ id: 'hs-7', name: 'Survey template' } as HubSpotMarketingEmail]);
       seq().selectedEmailTemplateId.set('');

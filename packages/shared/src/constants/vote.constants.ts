@@ -82,6 +82,12 @@ export const VOTE_REMINDER_INACTIVE = 'VOTE_REMINDER_INACTIVE';
 /** The voter list (#3911) rejects a draft or unrecognized-status vote with this state-conflict code. */
 export const VOTE_VOTERS_DRAFT = 'VOTE_VOTERS_DRAFT';
 
+/** Deleting (cancelling) a vote that has already ended is rejected with this state-conflict code (#5968). */
+export const VOTE_DELETE_ENDED = 'VOTE_DELETE_ENDED';
+
+/** Client message for a VOTE_DELETE_ENDED rejection: BFF-owned so upstream copy drift never reaches the user (#5968). */
+export const VOTE_DELETE_ENDED_MESSAGE = "This vote has already ended, so it can't be cancelled.";
+
 /** No reminders were sent because at least one selected recipient is no longer eligible. */
 export const VOTE_REMINDER_SELECTION_STALE = 'VOTE_REMINDER_SELECTION_STALE';
 
@@ -132,6 +138,8 @@ export const VOTE_DETAIL_RESULTS_POLL_OPTIONS = {
   intervalMs: 5000,
   backoffBaseMs: 5000,
   backoffMaxMs: 30000,
+  // Votes keeps its fixed 5/10/20/30 s retry cadence, as the presenter does; Marketing OS readers take the jittered default.
+  jitter: false,
 } as const;
 
 /** Detail managers: total final-results reads after closure, including held payloads and failed attempts. */
@@ -285,6 +293,46 @@ export const VOTE_LINK_NOT_RESPONDED = 'not responded';
 /** Upstream 409 message (lowercased substring) when a ballot update hits a vote that makes submitted ballots final (#4723). */
 export const VOTE_CHANGE_NOT_ALLOWED = 'does not allow changing a submitted vote';
 
+/** Upstream 400 message (lowercased substring) when a ballot write hits a vote that has ended (#5964). */
+export const VOTE_UPSTREAM_ENDED = 'ended';
+
+/** Upstream 400 message (lowercased substring) when a vote link's voter was removed from the vote (#5964). */
+export const VOTE_UPSTREAM_REMOVED = 'removed';
+
+/** Verified upstream 400 message fragments rejecting ballot updates after voter removal or loss of committee membership (#5964). */
+export const VOTE_UPSTREAM_UPDATE_REMOVAL_MESSAGES = [
+  'vote cannot be updated for a removed voter',
+  'vote cannot be changed for a removed or missing voter',
+  'user is no longer in the committee for this poll',
+] as const;
+
+/** BFF 404 `code` when a ballot update finds the caller's voter row explicitly removed; missing rows keep generic `NOT_FOUND` (#5964). */
+export const VOTE_VOTER_REMOVED_ERROR_CODE = 'VOTE_VOTER_REMOVED';
+
+/** Shown when a ballot update is rejected because the vote has ended (#5964). */
+export const VOTE_BALLOT_ENDED_STATE = "This vote has ended, so your ballot can't be changed.";
+
+/** Shown when a ballot update is rejected because the caller was removed from the vote (#5964). */
+export const VOTE_BALLOT_REMOVED_STATE = "You're no longer a voter on this vote, so your ballot can't be changed.";
+
+/** Shown when a ballot update cannot find the caller's submitted ballot (#5964). */
+export const VOTE_BALLOT_NOT_FOUND = "We couldn't find your submitted ballot. Refresh the list and try again.";
+
+/** Shown when a ballot read or write is rate limited (429), so the voter knows to retry shortly (#5964). */
+export const VOTE_RATE_LIMITED_MESSAGE = 'Too many requests. Please wait a moment and try again.';
+
+/** Shown when the initial vote-link ballot read is throttled; refreshing cannot reuse the consumed token (#5964). */
+export const VOTE_LINK_RATE_LIMITED_READ_MESSAGE = 'Too many requests. Please wait a moment, then reopen your ballot link.';
+
+/** Vote-link requests allowed per IP per window: covers a shared office of voters plus reloads and retries (#5964). */
+export const VOTE_LINK_RATE_LIMIT_MAX = 300;
+
+/** Window for the vote-link rate limiter (#5964). */
+export const VOTE_LINK_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+/** Exact methods and mount-relative `/public/api` paths metered by the vote-link limiter instead of the public API limiter (#5964). */
+export const VOTE_LINK_RATE_LIMITED_REQUESTS = ['POST /votes/link-ballot', 'POST /votes/link-responses', 'PUT /votes/link-responses'] as const;
+
 /** Pre-submit notice on every first-submit surface when the vote makes submitted ballots final (#4723). */
 export const VOTE_BALLOT_FINAL_NOTICE = "Once you submit, your vote can't be changed.";
 
@@ -297,6 +345,16 @@ export const VOTE_CLOSE_CONFIRMATION = {
   message: 'Close the vote now? Members can no longer cast or change ballots.',
   acceptLabel: 'Close vote',
   rejectLabel: 'Cancel',
+  acceptButtonStyleClass: 'p-button-danger p-button-sm',
+  rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+} as const;
+
+/** Cancel-vote confirmation (votes-table row menu); the message names the vote, so the table supplies it. */
+export const VOTE_CANCEL_CONFIRMATION = {
+  header: 'Cancel vote',
+  acceptLabel: 'Cancel vote',
+  rejectLabel: 'Keep vote',
+  defaultFocus: 'reject',
   acceptButtonStyleClass: 'p-button-danger p-button-sm',
   rejectButtonStyleClass: 'p-button-outlined p-button-sm',
 } as const;

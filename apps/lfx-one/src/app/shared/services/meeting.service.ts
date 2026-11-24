@@ -306,13 +306,15 @@ export class MeetingService {
   /**
    * One page of a project's past meetings for its meetings home, most recent first, with artifacts, organizer
    * attendance and the viewer's own attendance. Rows take `meeting_and_occurrence_id` as their id, as the user feed's do.
+   * `filters` are query-service clauses such as `meeting_type:Board`.
    */
   public getProjectPastMeetingsForHome(
     projectUid: string,
     search: string,
     pageToken?: string,
     pageSize: number = MEETINGS_HOME_PROJECT_PAST_PAGE_SIZE,
-    options: MeetingProjectQueryOptions = {}
+    options: MeetingProjectQueryOptions = {},
+    filters: string[] = []
   ): Observable<MeetingsHomePastPage> {
     let params = this.projectScopeParams(projectUid, { ...options, pageSize })
       .set('sort', PAST_MEETING_SORT.NAME_DESC)
@@ -320,6 +322,7 @@ export class MeetingService {
       .set('include_viewer_attendance', 'true');
     if (search) params = params.set('name', search);
     if (pageToken) params = params.set('page_token', pageToken);
+    for (const filter of filters) params = params.append('filters', filter);
     return this.http.get<PaginatedResponse<PastMeeting>>('/api/past-meetings', { params }).pipe(
       map((response) => ({
         meetings: response.data.flatMap((meeting) => (meeting.meeting_and_occurrence_id ? [{ ...meeting, id: meeting.meeting_and_occurrence_id }] : [])),

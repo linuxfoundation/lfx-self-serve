@@ -34,6 +34,8 @@ export class VoteCondorcetResultsComponent {
   public readonly ballotsLoading = input<boolean>(false);
   /** A failed refresh retained previously loaded ballots, which may no longer match the latest results. */
   public readonly ballotsStale = input<boolean>(false);
+  public readonly ballotsConfirming = input<boolean>(false);
+  public readonly ballotsMismatch = input<boolean>(false);
 
   // === Computed Signals ===
   protected readonly outcomeMessage: Signal<string> = this.initOutcomeMessage();

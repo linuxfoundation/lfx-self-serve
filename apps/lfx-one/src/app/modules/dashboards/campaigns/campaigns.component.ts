@@ -1137,6 +1137,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsMetaCustomAudiencesEnabled = signal<boolean | null>(null);
   /** The Meta call to action, conversion event and optimization goal (#5934), one capability each, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaCallToActionEnabled = signal<boolean | null>(null);
+  /** Meta lead forms (#5940) — `CampaignListResult.metaLeadFormsEnabled`: whether THIS caller may create a lead ad. */
+  protected readonly briefCampaignsMetaLeadFormsEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaConversionEventEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaOptimizationGoalEnabled = signal<boolean | null>(null);
   /** Whether the Implement tab searches Google's geo target table — `CampaignListResult.googleGeoSearchEnabled`, read and cleared like the capabilities above. */
@@ -3115,6 +3117,7 @@ export class CampaignsComponent {
         this.briefCampaignsMetaInstagramDsaEnabled.set(null);
         this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
         this.briefCampaignsMetaCallToActionEnabled.set(null);
+        this.briefCampaignsMetaLeadFormsEnabled.set(null);
         this.briefCampaignsMetaConversionEventEnabled.set(null);
         this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
         this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
@@ -5942,6 +5945,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
           this.briefCampaignsMetaAudienceTargetingEnabled.set(result.metaAudienceTargetingEnabled ?? null);
           this.briefCampaignsMetaCallToActionEnabled.set(result.metaCallToActionEnabled ?? null);
+          this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
           this.briefCampaignsMetaConversionEventEnabled.set(result.metaConversionEventEnabled ?? null);
           this.briefCampaignsMetaOptimizationGoalEnabled.set(result.metaOptimizationGoalEnabled ?? null);
           this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
@@ -5985,6 +5989,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaInstagramDsaEnabled.set(null);
           this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
           this.briefCampaignsMetaCallToActionEnabled.set(null);
+          this.briefCampaignsMetaLeadFormsEnabled.set(null);
           this.briefCampaignsMetaConversionEventEnabled.set(null);
           this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
           this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
@@ -6073,6 +6078,7 @@ export class CampaignsComponent {
       this.briefCampaignsMetaInstagramDsaEnabled.set(null);
       this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
       this.briefCampaignsMetaCallToActionEnabled.set(null);
+      this.briefCampaignsMetaLeadFormsEnabled.set(null);
       this.briefCampaignsMetaConversionEventEnabled.set(null);
       this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
       this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
@@ -6131,6 +6137,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
             this.briefCampaignsMetaAudienceTargetingEnabled.set(result.metaAudienceTargetingEnabled ?? null);
             this.briefCampaignsMetaCallToActionEnabled.set(result.metaCallToActionEnabled ?? null);
+            this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
             this.briefCampaignsMetaConversionEventEnabled.set(result.metaConversionEventEnabled ?? null);
             this.briefCampaignsMetaOptimizationGoalEnabled.set(result.metaOptimizationGoalEnabled ?? null);
             this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
@@ -6172,6 +6179,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaInstagramDsaEnabled.set(null);
             this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
             this.briefCampaignsMetaCallToActionEnabled.set(null);
+            this.briefCampaignsMetaLeadFormsEnabled.set(null);
             this.briefCampaignsMetaConversionEventEnabled.set(null);
             this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
             this.briefCampaignsMetaCustomAudiencesEnabled.set(null);

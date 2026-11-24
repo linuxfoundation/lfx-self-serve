@@ -10,9 +10,8 @@ import {
   EVENT_REQUEST_SOURCE_TABLES,
   EVENT_SOURCE_BACKFILL,
   MY_EVENT_STATUS,
-  TRAVEL_FUND_LATEST_DEADLINE_AGG,
-  TRAVEL_FUND_OFFERED_AGG,
-  TRAVEL_FUND_OPEN_ENDED_AGG,
+  TRAVEL_FUND_EVENT_STATUSES,
+  TRAVEL_FUND_EVENTS_TABLE,
   VALID_EVENT_SORT_FIELDS,
   VALID_VISA_REQUEST_SORT_FIELDS,
   WHOLE_NUMBER_PATTERN,
@@ -363,7 +362,7 @@ export class EventsService {
 
   /**
    * Upcoming events that currently accept travel fund applications. Event-level and user-independent:
-   * any registration row flagged IS_TRAVEL_FUND_ACCEPTED qualifies the event, and the deadline must still be open.
+   * read from the events table, so an event qualifies before it has any registration.
    */
   public async getTravelFundEvents(req: Request, options: GetTravelFundEventsOptions): Promise<MyEventsResponse> {
     const { eventId, searchQuery, startDateFrom, startDateTo, country, pageSize, offset } = options;
@@ -383,36 +382,8 @@ export class EventsService {
     const startDateToFilter = startDateTo ? 'AND EVENT_START_DATE <= ?' : '';
     const countryFilter = country ? 'AND EVENT_COUNTRY = ?' : '';
 
-    // Window aggregates see every registrant's row for the event; QUALIFY then keeps one row per event.
+    // One row per event already; columns the events table lacks are NULL to keep the MyEventRow shape.
     const sql = `
-      WITH tf_events AS (
-        SELECT
-          EVENT_ID,
-          EVENT_NAME,
-          EVENT_START_DATE,
-          EVENT_END_DATE,
-          EVENT_LOCATION,
-          EVENT_CITY,
-          EVENT_COUNTRY,
-          PROJECT_ID,
-          PROJECT_NAME,
-          PROJECT_SLUG,
-          ACCOUNT_NAME,
-          ACCOUNT_LOGO_URL,
-          EVENT_SOURCE,
-          EVENT_URL,
-          EVENT_REGISTRATION_URL,
-          ${TRAVEL_FUND_OFFERED_AGG} OVER (PARTITION BY EVENT_ID) AS EVENT_OFFERS_TRAVEL_FUND,
-          ${this.travelFundDeadlineSql(' OVER (PARTITION BY EVENT_ID)')} AS EVENT_TRAVEL_FUND_END_TS
-        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-        WHERE NOT (${this.isPastEventSql()})
-          ${eventIdFilter}
-          ${searchQueryFilter}
-          ${startDateFromFilter}
-          ${startDateToFilter}
-          ${countryFilter}
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1
-      )
       SELECT
         EVENT_ID,
         EVENT_NAME,
@@ -423,10 +394,10 @@ export class EventsService {
         EVENT_COUNTRY,
         PROJECT_ID,
         PROJECT_NAME,
-        PROJECT_SLUG,
-        ACCOUNT_NAME,
-        ACCOUNT_LOGO_URL,
-        EVENT_SOURCE,
+        NULL AS PROJECT_SLUG,
+        NULL AS ACCOUNT_NAME,
+        NULL AS ACCOUNT_LOGO_URL,
+        SOURCE AS EVENT_SOURCE,
         EVENT_URL,
         EVENT_REGISTRATION_URL,
         NULL AS USER_ROLE,
@@ -439,10 +410,15 @@ export class EventsService {
         NULL AS USER_ATTENDED,
         FALSE AS IS_REGISTERED,
         FALSE AS IS_PAST_EVENT,
-        EVENT_TRAVEL_FUND_END_TS AS TRAVEL_FUND_END_TS,
+        TRAVEL_FUND_END_TS,
         COUNT(*) OVER() AS TOTAL_RECORDS
-      FROM tf_events
-      WHERE ${this.travelFundOpenSql('EVENT_OFFERS_TRAVEL_FUND', 'EVENT_TRAVEL_FUND_END_TS')}
+      FROM ${TRAVEL_FUND_EVENTS_TABLE}
+      WHERE ${this.travelFundOpenEventSql()}
+        ${eventIdFilter}
+        ${searchQueryFilter}
+        ${startDateFromFilter}
+        ${startDateToFilter}
+        ${countryFilter}
       ORDER BY EVENT_START_DATE ASC, EVENT_ID ASC
       LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
     `;
@@ -645,14 +621,21 @@ export class EventsService {
     return { data };
   }
 
-  public async getUpcomingCountries(req: Request): Promise<GetUpcomingCountriesResponse> {
-    logger.debug(req, 'get_upcoming_countries', 'Fetching distinct countries for upcoming events');
+  /** Countries for the location filter. For travel funding they come from the same events and rule as the picker list. */
+  public async getUpcomingCountries(req: Request, requestType?: RequestType): Promise<GetUpcomingCountriesResponse> {
+    logger.debug(req, 'get_upcoming_countries', 'Fetching distinct countries for upcoming events', { request_type: requestType });
+
+    const source =
+      requestType === 'travel-fund'
+        ? `${TRAVEL_FUND_EVENTS_TABLE}
+      WHERE ${this.travelFundOpenEventSql()}`
+        : `ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+      WHERE NOT (${this.isPastEventSql()})`;
 
     const sql = `
       SELECT DISTINCT EVENT_COUNTRY
-      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-      WHERE NOT (${this.isPastEventSql()})
-        AND EVENT_COUNTRY IS NOT NULL
+      FROM ${source}
+        AND NULLIF(TRIM(EVENT_COUNTRY), '') IS NOT NULL
       ORDER BY EVENT_COUNTRY
     `;
 
@@ -710,11 +693,9 @@ export class EventsService {
     const sql = isTravelFund
       ? `
       SELECT 1 AS ELIGIBLE
-      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+      FROM ${TRAVEL_FUND_EVENTS_TABLE}
       WHERE EVENT_ID = ?
-        AND NOT (${this.isPastEventSql()})
-      GROUP BY EVENT_ID
-      HAVING ${this.travelFundOpenSql(TRAVEL_FUND_OFFERED_AGG, this.travelFundDeadlineSql())}
+        AND ${this.travelFundOpenEventSql()}
       LIMIT 1
     `
       : `
@@ -1174,14 +1155,16 @@ export class EventsService {
                  ELSE IS_PAST_EVENT END`;
   }
 
-  /** Latest deadline across flagged rows; NULL (open-ended) when any flagged row has no deadline. `over` makes it a window aggregate. */
-  private travelFundDeadlineSql(over = ''): string {
-    return `IFF(${TRAVEL_FUND_OPEN_ENDED_AGG}${over}, NULL, ${TRAVEL_FUND_LATEST_DEADLINE_AGG}${over})`;
-  }
-
-  /** Event offers travel funding and its deadline (among the flagged rows) is unset or still ahead. */
-  private travelFundOpenSql(offered: string, deadline: string): string {
-    return `${offered} AND (${deadline} IS NULL OR ${deadline} >= CURRENT_TIMESTAMP())`;
+  /**
+   * Event-level rule shared by the picker, its country filter and the submit check; valid only against TRAVEL_FUND_EVENTS_TABLE.
+   * Uses the table's EVENT_IS_PAST as-is: the backfill correction in isPastEventSql() is not needed, backfill events never offer funding.
+   */
+  private travelFundOpenEventSql(): string {
+    const statuses = TRAVEL_FUND_EVENT_STATUSES.map((status) => `'${status}'`).join(', ');
+    return `IS_TRAVEL_FUND_ACCEPTED = TRUE
+        AND EVENT_STATUS IN (${statuses})
+        AND EVENT_IS_PAST = FALSE
+        AND (TRAVEL_FUND_END_TS IS NULL OR TRAVEL_FUND_END_TS >= CURRENT_TIMESTAMP())`;
   }
 
   /** Status filter for the past events query (unqualified column names, no IS NULL support). */

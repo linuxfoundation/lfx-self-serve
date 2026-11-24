@@ -12,9 +12,10 @@ import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 describe('ImplementationTabComponent per-platform draft round-trip', () => {
   const EVENT_SLUG = 'kubecon-eu-2026';
@@ -110,7 +111,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     fixture: ComponentFixture<ImplementationTabComponent>;
     latest: () => CampaignImplementationDraft | null;
   }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     if (draft) f.componentRef.setInput('draft', draft);
@@ -292,7 +293,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * be advice the operator cannot take. Asserted at both withheld states, since `null` (unanswered)
    * and `false` (answered no) reach the template by different routes.
    */
-  it.each([[undefined], [false]])('names only the post url while redditCreativeEnabled is %s', async (capability) => {
+  it.each([[undefined], [false]])('names only the post url while redditCreativeEnabled is %s', STATE_ONLY, async (capability) => {
     const f = (await mount(null, capability as boolean | undefined)).fixture;
     const c = selectReddit(f);
 
@@ -342,7 +343,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   });
 
   /** Nothing here belongs to a campaign Reddit is not part of. */
-  it('says nothing when reddit is not selected', async () => {
+  it('says nothing when reddit is not selected', STATE_ONLY, async () => {
     const f = (await mount(null, true)).fixture;
     const c = at(f);
     c.selectedPlatforms.set(['linkedin-ads']);
@@ -699,7 +700,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * post and no image, so there is nothing to seed and an omitted field must leave them blank
    * rather than acquire a value from anywhere.
    */
-  it('leaves the platform values seeded when an older draft omits them', async () => {
+  it('leaves the platform values seeded when an older draft omits them', STATE_ONLY, async () => {
     const first = await mount(null);
     const legacy = { ...(first.latest() as CampaignImplementationDraft) } as Record<string, unknown>;
     for (const key of [
@@ -746,7 +747,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * green under a docblock claiming every array was covered. `linkedInVariants` left the set when it
    * gained an editor (#5547); its round trip is tested with the LinkedIn variant editor.
    */
-  it('re-seeds the brief-derived arrays from the brief on remount rather than from the draft', async () => {
+  it('re-seeds the brief-derived arrays from the brief on remount rather than from the draft', STATE_ONLY, async () => {
     const first = await mount(null);
     const draft = first.latest();
     first.fixture.destroy();
@@ -771,7 +772,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * supplied here without ever being read back, so a restore arm replaying it would have wiped the
    * brief's variants while this test stayed green (LFXV2-3230 review).
    */
-  it('ignores brief-derived arrays left in a draft by an older build', async () => {
+  it('ignores brief-derived arrays left in a draft by an older build', STATE_ONLY, async () => {
     const first = await mount(null);
     const stale = {
       ...(first.latest() as CampaignImplementationDraft),

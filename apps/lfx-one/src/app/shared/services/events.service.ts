@@ -23,6 +23,7 @@ import {
   OrgEventsResponse,
   OrgEventsSummary,
   OrgSearchResponse,
+  RequestType,
   TravelFundApplication,
   TravelFundApplicationResponse,
   TravelFundRequestsResponse,
@@ -131,8 +132,9 @@ export class EventsService {
     return this.http.get<TravelFundRequestsResponse>('/api/events/travel-fund-requests', { params: httpParams });
   }
 
-  public getUpcomingCountries(): Observable<GetUpcomingCountriesResponse> {
-    return this.http.get<GetUpcomingCountriesResponse>('/api/events/countries');
+  public getUpcomingCountries(requestType?: RequestType): Observable<GetUpcomingCountriesResponse> {
+    const params = requestType === 'travel-fund' ? new HttpParams().set('requestType', requestType) : undefined;
+    return this.http.get<GetUpcomingCountriesResponse>('/api/events/countries', { params });
   }
 
   public submitVisaRequestApplication(payload: VisaRequestApplication): Observable<VisaRequestApplicationResponse> {
@@ -149,7 +151,10 @@ export class EventsService {
     return this.http.get<OrgSearchResponse>('/api/events/search-organizations', { params });
   }
 
-  public getOrgEventsSummary(accountId: string, params: Pick<GetOrgEventsParams, 'eventScope' | 'foundation' | 'range'> = {}): Observable<OrgEventsSummary> {
+  public getOrgEventsSummary(
+    accountId: string,
+    params: Pick<GetOrgEventsParams, 'eventScope' | 'foundation' | 'range' | 'company'> = {}
+  ): Observable<OrgEventsSummary> {
     return this.http.get<OrgEventsSummary>(`/api/orgs/${encodeURIComponent(accountId)}/lens/events/summary`, { params: this.orgEventsFilterParams(params) });
   }
 
@@ -162,7 +167,7 @@ export class EventsService {
   public getEventAttendees(
     accountId: string,
     eventId: string,
-    params: Pick<GetOrgEventsParams, 'participation' | 'range' | 'searchQuery'> = {}
+    params: Pick<GetOrgEventsParams, 'participation' | 'range' | 'searchQuery' | 'company'> = {}
   ): Observable<OrgEventAttendeesDrawerResponse> {
     let httpParams = this.orgEventsFilterParams(params);
     if (params.searchQuery) httpParams = httpParams.set('searchQuery', params.searchQuery);
@@ -171,9 +176,13 @@ export class EventsService {
     });
   }
 
-  public getEventSpeakers(accountId: string, eventId: string, searchQuery?: string): Observable<OrgEventSpeakersResponse> {
-    let httpParams = new HttpParams();
-    if (searchQuery) httpParams = httpParams.set('searchQuery', searchQuery);
+  public getEventSpeakers(
+    accountId: string,
+    eventId: string,
+    params: Pick<GetOrgEventsParams, 'searchQuery' | 'company'> = {}
+  ): Observable<OrgEventSpeakersResponse> {
+    let httpParams = this.orgEventsFilterParams(params);
+    if (params.searchQuery) httpParams = httpParams.set('searchQuery', params.searchQuery);
     return this.http.get<OrgEventSpeakersResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/events/${encodeURIComponent(eventId)}/speakers`, {
       params: httpParams,
     });
@@ -211,7 +220,7 @@ export class EventsService {
 
   /** The Events filters (lfx-self-serve#4598) a request carries; a missing or empty one is left to the server's default. */
   private orgEventsFilterParams(
-    params: Pick<GetOrgEventsParams, 'participation' | 'eventScope' | 'foundation' | 'range'>,
+    params: Pick<GetOrgEventsParams, 'participation' | 'eventScope' | 'foundation' | 'range' | 'company'>,
     base: HttpParams = new HttpParams()
   ): HttpParams {
     let httpParams = base;
@@ -219,6 +228,7 @@ export class EventsService {
     if (params.eventScope) httpParams = httpParams.set('eventScope', params.eventScope);
     if (params.foundation) httpParams = httpParams.set('foundation', params.foundation);
     if (params.range) httpParams = httpParams.set('range', params.range);
+    if (params.company) httpParams = httpParams.set('company', params.company);
     return httpParams;
   }
 }

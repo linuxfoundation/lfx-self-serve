@@ -266,11 +266,13 @@
             <lfx-vote-condorcet-results
               [question]="question"
               [questionNumber]="condorcetQuestions().length > 1 ? idx + 1 : undefined"
-              [isClosed]="isVoteClosed()"
+              [isClosed]="showRankedOutcome()"
               [isEnded]="isEnded()"
               [isActive]="isActive()"
               [ballotsLoading]="condorcetBallotsLoading()"
-              [ballotsStale]="condorcetBallotsStale()" />
+              [ballotsStale]="condorcetBallotsStale()"
+              [ballotsConfirming]="condorcetBallotsConfirming()"
+              [ballotsMismatch]="condorcetBallotsMismatch()" />
           }
         } @else {
           @for (question of rankedQuestions(); track question.questionId; let idx = $index) {
@@ -279,6 +281,7 @@
               [questionNumber]="rankedQuestions().length > 1 ? idx + 1 : undefined"
               [variant]="audience()"
               [showVoterLinks]="showNamedBallotLinks()"
+              [showOutcome]="showRankedOutcome()"
               (viewVoters)="onViewVoters($event)" />
           }
         }

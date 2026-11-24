@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-11-16
+last_updated: 2026-11-23
 intercom_collection: Committees
 ---
 
@@ -50,7 +50,7 @@ To change only the name, type, parent, join mode, features, or chat channel, you
 ## Add or remove members
 
 1. Open the group and go to the **Members** tab.
-2. Select **Add Member**, search for the person by name or email (or paste emails), and confirm. If the group has voting, you can also set the new member's **Voting status** when adding them. Voting status dates can still be set from **Edit**. (This applies when you add members directly, not when you send invitations.) For managers, **Add Member** followed by **Import Members** appears on the right of the member filter pills, above search and dropdown filters. On narrower screens, the controls wrap as needed. Members who can only send invitations see **Invite Someone** instead.
+2. Select **Add Member**, search for the person by name or email (or paste emails), and review each person's **First name** and **Last name** before confirming. Search and meeting imports fill in available names; complete any missing names. Both names are required, must contain more than whitespace, and can be up to 100 characters each. **Add Members** stays unavailable until every person has valid names. If the group has voting, you can also set the new member's **Voting status** when adding them. Voting status dates can still be set from **Edit**. (This applies when you add members directly, not when you send invitations.) For managers, **Add Member** followed by **Import Members** appears on the right of the member filter pills, above search and dropdown filters. On narrower screens, the controls wrap as needed. Members who can only send invitations see **Invite Someone** instead; sending an invitation does not require names.
 3. Each row has an actions menu with **Send Message** (opens an email to the member), **Edit** (change role, voting status, or permission), and **Remove** (asks you to confirm).
 
 The roster shows **Name**, **Email** (hidden from visitors), **Company**, and, when the group has voting, **Role** and **Voting Status**. When engagement metrics are turned on for your account, **Meetings** and **Engagement** columns appear for people with access to them. The last column is **Permission**.
@@ -110,7 +110,7 @@ People already in the group or already staged in the form are skipped. Imports u
 
 ### What the CSV needs
 
-- `email` is always required and must contain one valid email address, not a comma- or semicolon-separated list. Names, job title, LinkedIn profile, role and its dates, and appointed by are optional.
+- `email`, `first_name`, and `last_name` columns are always required. Every new member needs both names, even if they already have an LF Account. Names cannot be empty or whitespace-only and can be up to 100 characters each. `email` must contain one valid email address, not a comma- or semicolon-separated list. Job title, LinkedIn profile, role and its dates, and appointed by are optional.
 - Groups with voting or a business email requirement need `organization_name` and a full `https://` `organization_website` for every row. In any group, if you give one of the two you must give both.
 - Voting groups also need `role` and `voting_status` (Voting Rep, Alternate Voting Rep, Observer, or Emeritus) for every row. Leave the voting columns empty for groups without voting.
 - Dates use `YYYY-MM-DD`, and an end date cannot be before its start date.

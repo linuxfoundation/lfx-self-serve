@@ -961,5 +961,27 @@ describe('MeetingService project meetings home fetchers', () => {
 
     expect(params().has('name')).toBe(false);
     expect(params().has('page_token')).toBe(false);
+    expect(params().has('filters')).toBe(false);
+  });
+
+  it('sends the roll-up filters and query-service filters it is given', async () => {
+    get.mockReturnValue(of({ data: [], page_token: undefined }));
+
+    await firstValueFrom(
+      service.getProjectPastMeetingsForHome(
+        'project-1',
+        '',
+        undefined,
+        undefined,
+        { includeSubProjects: true, projectUids: ['project-2'], committeeUid: 'c-1', groupType: 'Working Group' },
+        ['meeting_type:Board']
+      )
+    );
+
+    expect(params().get('root_project_uid')).toBe('project-1');
+    expect(params().get('project_uids')).toBe('project-2');
+    expect(params().get('committee_uid')).toBe('c-1');
+    expect(params().get('group_type')).toBe('Working Group');
+    expect(params().getAll('filters')).toEqual(['meeting_type:Board']);
   });
 });

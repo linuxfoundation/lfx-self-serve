@@ -136,7 +136,7 @@ export const MENTORSHIP_MENTOR_REGISTER_FAILURE_OPTIONS: MentorshipRegisterFailu
 };
 
 export const MENTORSHIP_MENTOR_INTRODUCTION_INTRO =
-  'This information is displayed on your mentor profile page. Your name, email and avatar come from your LFX account.';
+  'This information is displayed on your mentor profile page. Your name, email and avatar come from your LFX profile.';
 export const MENTORSHIP_MENTOR_INTRODUCTION_PLACEHOLDER = `What is your current contributor status (i.e., experience in contributing to or maintaining open source projects, open source contributions)?
 
 Why are you interested in volunteering as a mentor?
@@ -313,7 +313,7 @@ export function createEmptyMentorshipMentorForm(): MentorshipMentorRegisterForm 
  */
 export const MENTORSHIP_MENTOR_PROFILE_DETAILS_TITLE = 'Mentor Profile';
 export const MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL = 'Edit Mentor Profile';
-export const MENTORSHIP_MENTOR_PROFILE_ABOUT_LABEL = 'About Me';
+export const MENTORSHIP_MENTOR_PROFILE_ABOUT_LABEL = 'Introduction';
 export const MENTORSHIP_MENTOR_PROFILE_SKILLS_LABEL = 'Skills';
 export const MENTORSHIP_MENTOR_PROFILE_ABOUT_EMPTY = 'No introduction added yet.';
 export const MENTORSHIP_MENTOR_PROFILE_SKILLS_EMPTY = 'No skills added yet.';

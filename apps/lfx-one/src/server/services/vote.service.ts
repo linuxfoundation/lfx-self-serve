@@ -11,7 +11,10 @@ import {
   VOTE_SEND_BALLOTS_BATCH_SIZE,
   VOTE_SUMMARY_NOT_ENDED,
   VOTE_SUMMARY_PRECHECK_FAILED,
+  VOTE_DELETE_ENDED,
+  VOTE_DELETE_ENDED_MESSAGE,
   VOTE_SUMMARY_SEND_FAILED,
+  VOTE_VOTER_REMOVED_ERROR_CODE,
   VOTE_VOTERS_DRAFT,
 } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus, VoteVoterStatus } from '@lfx-one/shared/enums';
@@ -464,14 +467,25 @@ export class VoteService {
   }
 
   /**
-   * Deletes a vote directly via microservice proxy
+   * Deletes a vote directly via microservice proxy. Upstream deletes draft and active votes (cancelling an active one
+   * notifies its voters and removes every response) and rejects an ended vote with a 400, surfaced here as a 409
+   * `VOTE_DELETE_ENDED` (#5968). ITX's only 400 on delete is "ended polls cannot be deleted". The BFF checks only that
+   * the uid is present; a malformed uid would also earn a 400 from upstream's UUID check, but the gateway's `vote#writer`
+   * check normally answers it with a 403 first. The caller must hold `vote#writer`, enforced upstream by the gateway.
    */
   public async deleteVote(req: Request, voteUid: string): Promise<void> {
     logger.debug(req, 'delete_vote', 'Deleting vote', {
       vote_uid: voteUid,
     });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'DELETE');
+    try {
+      await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'DELETE');
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 400) {
+        throw new ConflictError(VOTE_DELETE_ENDED_MESSAGE, VOTE_DELETE_ENDED, { operation: 'delete_vote', service: 'vote_service' });
+      }
+      throw error;
+    }
 
     // Poll the query service until the vote is removed from the index, on the shared fine grid —
     // see voteIndexPoll* for the budget rationale and the filters-on-vote_uid (never tags) invariant.
@@ -671,11 +685,20 @@ export class VoteService {
    * Changes the caller's own submitted ballot via PUT /vote_responses/{uid} using the user's bearer token (#4723).
    * @description The response uid comes only from the caller's identity-matched row (`getMyVoteResponse`), never from
    * the client, so a caller cannot target another voter's ballot. Upstream 409 (the vote makes ballots final) and 400
-   * (the vote ended) propagate unchanged.
+   * (the vote ended or voter eligibility changed) propagate unchanged. Two distinct 404s (#5964): an explicitly
+   * removed voter row carries `code: VOTE_VOTER_REMOVED_ERROR_CODE`; a missing row or one that is not RESPONDED
+   * keeps the generic `NOT_FOUND`, since an index miss alone does not prove removal.
    */
   public async updateMyVoteResponse(req: Request, voteUid: string, payload: UpdateMyVoteResponseRequest): Promise<void> {
     const row = await this.getMyVoteResponse(req, voteUid);
-    if (!row || row.voter_removed || row.vote_status !== IndexedVoteResponseStatus.RESPONDED) {
+    if (row?.voter_removed) {
+      throw new ResourceNotFoundError('Vote ballot', voteUid, {
+        operation: 'update_my_vote_response',
+        service: 'vote_service',
+        code: VOTE_VOTER_REMOVED_ERROR_CODE,
+      });
+    }
+    if (!row || row.vote_status !== IndexedVoteResponseStatus.RESPONDED) {
       throw new ResourceNotFoundError('Vote ballot', voteUid, {
         operation: 'update_my_vote_response',
         service: 'vote_service',
@@ -1210,7 +1233,8 @@ export class VoteService {
 
     // `filters` narrows on vote_uid at the index, avoiding a full-history scan per drawer open;
     // the helper's identity `filters_or` then disjuncts the user match. Both AND together.
-    let match = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`vote_uid:${voteUid}`] }));
+    // Never classify a partial prefix as missing/removed: a current re-invitation may be on an unread page.
+    let match = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`vote_uid:${voteUid}`], failOnPartial: true }));
 
     // Legacy poll_id-only rows carry no `vote_uid` (GH #2985): fall back to a poll_id-scoped
     // query so a vote that surfaces in My Votes via the `getParentVoteId` fallback also resolves
@@ -1219,7 +1243,7 @@ export class VoteService {
     // scoped queries run sequentially. Fall through when no current match exists: an owned
     // foreign-vote row or a historical removed invitation must not hide a current legacy row.
     if (!match || match.voter_removed) {
-      const legacyMatch = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] }));
+      const legacyMatch = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`], failOnPartial: true }));
       if (!legacyMatch?.voter_removed) match = legacyMatch ?? match;
       else match ??= legacyMatch;
     }

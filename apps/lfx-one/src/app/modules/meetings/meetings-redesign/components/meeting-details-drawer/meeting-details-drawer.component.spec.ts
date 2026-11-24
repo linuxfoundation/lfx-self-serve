@@ -95,7 +95,7 @@ describe('MeetingDetailsDrawerComponent', () => {
     getMeetingDetail.mockReturnValue(detail$);
     const page = Injector.create({
       providers: [
-        { provide: MeetingsHomeStore, useValue: { now } },
+        { provide: MeetingsHomeStore, useValue: { now, selfInviteOf: () => undefined } },
         { provide: MeetingsHomeEditService, useValue: { edit } },
         { provide: MeetingsHomeDeleteService, useValue: { cancelOccurrence } },
       ],

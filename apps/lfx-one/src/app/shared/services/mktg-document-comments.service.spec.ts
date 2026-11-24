@@ -6,7 +6,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
-import { MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import type { MktgDocumentComment, MktgDocumentCommentScope } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgFieldCommentsComponent } from '../../modules/mktg-os-agents/components/mktg-field-comments/mktg-field-comments.component';
@@ -136,7 +136,8 @@ describe('MktgDocumentCommentsService', () => {
     for (let cycle = 0; cycle < 2; cycle++) {
       service.refresh(); // The panel delegates directly to this existing same-scope read.
       fixture.detectChanges();
-      expect(service.loading()).toBe(true);
+      // A re-read of a loaded list is not a loading state (law 5): the list, the composer and Send stay as they are.
+      expect(service.loading()).toBe(false);
       expect(service.loaded()).toBe(true);
       expect(element.querySelector('textarea')).toBe(textarea);
       expect(document.activeElement).toBe(textarea);
@@ -227,6 +228,7 @@ describe('MktgDocumentCommentsService', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(service.saving()).toBe(false);
     expect(service.threads()).toEqual([thread()]);
+    finishRead([thread()]); // The revalidation after the save.
     http.expectNone(() => true);
   });
 
@@ -238,6 +240,7 @@ describe('MktgDocumentCommentsService', () => {
     expect(oldRead.cancelled).toBe(true);
     expect(service.threads()).toEqual([thread()]);
     expect(service.loading()).toBe(false);
+    finishRead([thread()]);
   });
 
   it('retains the list and allows an explicit same-ID retry after a failed save, never automatically retries', () => {
@@ -260,6 +263,7 @@ describe('MktgDocumentCommentsService', () => {
     retry.flush({ revisionId: SCOPE.revisionId, threads: [thread(), thread('second')] });
     expect(service.saveError()).toBe('');
     expect(service.threads()).toHaveLength(2);
+    finishRead([thread(), thread('second')]);
   });
 
   it('keeps read failure distinct from a measured empty result and logs only status', () => {
@@ -267,36 +271,94 @@ describe('MktgDocumentCommentsService', () => {
     http.expectOne((request) => request.method === 'GET').flush({ error: 'private reply' }, { status: 503, statusText: 'Unavailable' });
     expect(service.loaded()).toBe(false);
     expect(service.loading()).toBe(false);
-    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.load);
+    expect(service.retrying()).toBe(true);
+    expect(service.loadError()).toBe('');
     expect(consoleError).toHaveBeenCalledWith('Asset comments read failed', { status: 503 });
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain('private reply');
   });
 
-  it('retains previously measured comments during a transient same-scope read failure and recovers manually', () => {
+  it('keeps a final read failure as its own line, not retried', () => {
+    service.select(SCOPE);
+    http.expectOne((request) => request.method === 'GET').flush('', { status: 404, statusText: 'Not found' });
+    expect(service.loaded()).toBe(false);
+    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.load);
+  });
+
+  it('retries a transient read on its own after the backoff, behind the one plain line, and clears it on the good read', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    service.select(SCOPE);
+    http.expectOne((request) => request.method === 'GET').flush('', { status: 503, statusText: 'Unavailable' });
+    expect(service.retrying()).toBe(true);
+    http.expectNone((request) => request.method === 'GET');
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    finishRead([thread()]);
+    expect(service.retrying()).toBe(false);
+    expect(service.loadError()).toBe('');
+    expect(service.threads()).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it('retains previously measured comments during a transient same-scope read failure and recovers on the next read', () => {
     service.select(SCOPE);
     finishRead([thread()]);
     service.refresh();
     http.expectOne((request) => request.method === 'GET').flush('', { status: 500, statusText: 'Error' });
     expect(service.threads()).toEqual([thread()]);
     expect(service.loaded()).toBe(true);
-    expect(service.loadError()).not.toBe('');
+    expect(service.retrying()).toBe(true);
+    expect(service.loadError()).toBe('');
     service.refresh();
     finishRead([thread(), thread('second')]);
-    expect(service.loadError()).toBe('');
+    expect(service.retrying()).toBe(false);
     expect(service.threads()).toHaveLength(2);
   });
 
-  it.each([401, 403])('clears inaccessible comment data on read status %s', (status) => {
+  it('keeps a loaded list steady through a wake re-read: loading stays false until the read lands (law 5)', () => {
     service.select(SCOPE);
+    expect(service.loading()).toBe(true);
     finishRead([thread()]);
-    service.refresh();
-    http.expectOne((request) => request.method === 'GET').flush('', { status, statusText: 'Denied' });
-    expect(service.threads()).toEqual([]);
-    expect(service.loaded()).toBe(false);
-    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
+    expect(service.loading()).toBe(false);
+    window.dispatchEvent(new Event('focus'));
+    const wake = http.expectOne((request) => request.method === 'GET');
+    expect(service.loading()).toBe(false);
+    expect(service.loaded()).toBe(true);
+    expect(service.threads()).toEqual([thread()]);
+    wake.flush({ revisionId: SCOPE.revisionId, threads: [thread(), thread('second')] });
+    expect(service.loading()).toBe(false);
+    expect(service.threads()).toHaveLength(2);
   });
 
-  it.each([401, 403])('shows a recoverable access-read failure after save status %s without an automatic POST retry', (status) => {
+  it.each([401, 403])(
+    'clears inaccessible comment data on read status %s, never re-reads that scope on a wake, and reads it once more after another scope was selected',
+    (status) => {
+      service.select(SCOPE);
+      finishRead([thread()]);
+      service.refresh();
+      http.expectOne((request) => request.method === 'GET').flush('', { status, statusText: 'Denied' });
+      expect(service.threads()).toEqual([]);
+      expect(service.loaded()).toBe(false);
+      expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
+      // RFC 9110 §15.5.4: the same credentials are refused again, so the denied scope is latched, not retried.
+      window.dispatchEvent(new Event('focus'));
+      service.refresh();
+      http.expectNone(() => true);
+      expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
+      // Another scope reads normally.
+      service.select({ ...SCOPE, revisionId: `${SCOPE.revisionId}-next` });
+      TestBed.tick();
+      http.expectOne((request) => request.method === 'GET').flush({ revisionId: `${SCOPE.revisionId}-next`, threads: [] });
+      expect(service.loadError()).toBe('');
+      expect(service.loaded()).toBe(true);
+      // Back to the refused scope: the latch was cleared by the change of scope, so it is read once more (A → B → A).
+      service.select(SCOPE);
+      TestBed.tick();
+      http.expectOne((request) => request.method === 'GET').flush({ revisionId: SCOPE.revisionId, threads: [] });
+      expect(service.loadError()).toBe('');
+    }
+  );
+
+  it.each([401, 403])('turns save status %s into a terminal access line: no automatic POST retry and no re-read of the refused scope', (status) => {
     service.select(SCOPE);
     finishRead([thread()]);
     service.add({ kind: 'field', key: 'mf.tagline' }, 'Change it.', 'request').subscribe({ error: vi.fn() });
@@ -307,9 +369,65 @@ describe('MktgDocumentCommentsService', () => {
     expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
     http.expectNone(() => true);
     service.refresh();
-    finishRead([]);
+    window.dispatchEvent(new Event('focus'));
+    http.expectNone(() => true);
+    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
+    expect(service.loaded()).toBe(false);
+  });
+
+  it('drops the retrying line when a save lands during a failing read: the saved list is the next good state', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    service.select(SCOPE);
+    http.expectOne((request) => request.method === 'GET').flush('', { status: 503, statusText: 'Unavailable' });
+    expect(service.retrying()).toBe(true);
+    service.add({ kind: 'field', key: 'mf.tagline' }, 'Shorten it.', 'stable-request').subscribe();
+    http.expectOne(PATH).flush({ revisionId: SCOPE.revisionId, threads: [thread()] });
+    expect(service.retrying()).toBe(false);
     expect(service.loadError()).toBe('');
-    expect(service.loaded()).toBe(true);
+    expect(service.threads()).toEqual([thread()]);
+    finishRead([thread()]); // The revalidation after the save.
+    // The cancelled read's retry never fires: nothing is retrying behind the saved list.
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone((request) => request.method === 'GET');
+    vi.useRealTimers();
+  });
+
+  it('keeps re-reading on wakes after a save lands: the POST snapshot is the list now, and a focus sends exactly one GET (law 3)', () => {
+    service.select(SCOPE);
+    finishRead([thread()]);
+    service.add({ kind: 'field', key: 'mf.tagline' }, 'Shorten it.', 'stable-request').subscribe();
+    http.expectOne(PATH).flush({ revisionId: SCOPE.revisionId, threads: [thread(), thread('second')] });
+    expect(service.threads()).toHaveLength(2);
+    // Invalidate after the mutation: one re-read now, with no loading flicker over the snapshot (law 5)...
+    expect(service.loading()).toBe(false);
+    finishRead([thread(), thread('second')]);
+    http.expectNone((request) => request.method === 'GET');
+    // ...and another writer's comment appears on tab return: one GET per wake.
+    window.dispatchEvent(new Event('focus'));
+    finishRead([thread(), thread('second'), thread('third')]);
+    http.expectNone((request) => request.method === 'GET');
+    expect(service.threads()).toHaveLength(3);
+    expect(service.loading()).toBe(false);
+  });
+
+  it('drops the retrying line when a save is refused during a failing read: the access line shows, not the retrying one', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    service.select(SCOPE);
+    http.expectOne((request) => request.method === 'GET').flush('', { status: 503, statusText: 'Unavailable' });
+    expect(service.retrying()).toBe(true);
+    service.add({ kind: 'field', key: 'mf.tagline' }, 'Change it.', 'request').subscribe({ error: vi.fn() });
+    http.expectOne(PATH).flush('', { status: 403, statusText: 'Denied' });
+    expect(service.retrying()).toBe(false);
+    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
+    // RFC 9110 §15.5.4: the refused scope is latched; the backoff retry and a later refresh send nothing.
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    service.refresh();
+    http.expectNone((request) => request.method === 'GET');
+    expect(service.retrying()).toBe(false);
+    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
+    vi.useRealTimers();
   });
 
   it('cancels a pending read after a denied save so stale data cannot reappear', () => {
@@ -360,6 +478,7 @@ describe('MktgDocumentCommentsService', () => {
     service.add({ kind: 'field', key: 'mf.tagline' }, 'Second', 'second').subscribe();
     http.expectNone(() => true);
     first.flush({ revisionId: SCOPE.revisionId, threads: [thread()] });
+    finishRead([thread()]);
   });
 
   it('does not accept a response that belongs to a different revision', () => {

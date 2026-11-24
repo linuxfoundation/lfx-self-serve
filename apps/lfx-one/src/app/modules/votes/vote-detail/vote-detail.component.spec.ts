@@ -671,7 +671,7 @@ describe('VoteDetailComponent', () => {
           { key: 'choice-no\u0000choice-yes', count: 1, ranking: ['No', 'Yes'] },
         ]);
         await nextPoll(fixture);
-        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(5);
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(6);
       });
 
       it('re-reads the ballots when a revised ranking changes the rank counts but not the ballot count', async () => {
@@ -798,7 +798,7 @@ describe('VoteDetailComponent', () => {
         expect(cancelled).toHaveBeenCalledTimes(1);
       });
 
-      it('backs off transient failures and stops after a successful finalized ballot read', async () => {
+      it('backs off transient failures and continues successful reads through the finalization window', async () => {
         voteService.fetchVote.mockReturnValue(of({ ...activeVote, status: PollStatus.ENDED }));
         voteService.getVoteVoters.mockReturnValue(httpError(503));
         const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
@@ -811,6 +811,35 @@ describe('VoteDetailComponent', () => {
         await nextPoll(fixture);
         expect(voteService.getVoteVoters).toHaveBeenCalledTimes(3);
         expect(condorcetQuestion(fixture).question().ballotPatterns).toHaveLength(1);
+        await nextPoll(fixture);
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(4);
+        expect(condorcetQuestion(fixture).ballotsConfirming()).toBe(true);
+      });
+
+      it.each([true, false])('uses the full final window for lagging indexed ballots (catches up: %s)', async (catchesUp) => {
+        voteService.fetchVote.mockReturnValue(of({ ...activeVote, status: PollStatus.ENDED }));
+        voteService.getVoteResults.mockReturnValue(of(liveResults(3)));
+        const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+        expect(testId(fixture, 'vote-condorcet-ballots-confirming')).not.toBeNull();
+        if (catchesUp) voteService.getVoteVoters.mockReturnValue(of([firstBallot, laterBallot('ballot-2'), laterBallot('ballot-3')]));
+        for (let attempt = 1; attempt < VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS; attempt++) await nextPoll(fixture);
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS);
+        expect(testId(fixture, 'vote-condorcet-ballots-confirming')).toBeNull();
+        expect(condorcetQuestion(fixture).ballotsMismatch()).toBe(!catchesUp);
+        expect(!!testId(fixture, 'vote-condorcet-ballots-mismatch')).toBe(!catchesUp);
+        await nextPoll(fixture);
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS);
+      });
+
+      it('keeps reading revised ballots at 100% participation while the vote is active', async () => {
+        voteService.getVoteResults.mockReturnValue(of({ ...liveResults(1), num_recipients: 1 }));
+        const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+        expect(read(fixture, 'isVoteClosed')).toBe(true);
+        expect(condorcetQuestion(fixture).ballotsConfirming()).toBe(false);
+        voteService.getVoteVoters.mockReturnValue(of([laterBallot('ballot-1')]));
+        await nextPoll(fixture);
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(2);
+        expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ key: 'choice-yes\u0000choice-no', count: 1, ranking: ['Yes', 'No'] }]);
         await nextPoll(fixture);
         expect(voteService.getVoteVoters).toHaveBeenCalledTimes(3);
       });
@@ -894,6 +923,135 @@ describe('VoteDetailComponent', () => {
         expect(participation[0].nativeElement.compareDocumentPosition(questions[0].nativeElement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       }
       expect(read(fixture, 'participationStats')).toMatchObject({ totalResponses: 3, abstainedVoters: 1 });
+    });
+  });
+
+  describe('ranked outcome (lfx-self-serve-ops#2005)', () => {
+    const squashed = (el: Element | null | undefined): string => el?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    /** A Condorcet result whose winner info lists only the winner, as upstream sends it; C beats A beats B, while A has the most first choices. */
+    function condorcetResults(overrides: Partial<VoteResultsResponse> = {}): VoteResultsResponse {
+      const ids = ['choice-a', 'choice-b', 'choice-c'];
+      const strength = ['choice-c', 'choice-a', 'choice-b'];
+      const firstChoices: Record<string, number> = { 'choice-a': 3, 'choice-b': 0, 'choice-c': 1 };
+      return {
+        ...makeResults(),
+        poll_results: [
+          {
+            question: {
+              question_id: 'question-1',
+              prompt: 'Elect the synthetic chair',
+              type: 'single_choice',
+              choices: ids.map((id) => ({ choice_id: id, choice_text: `Candidate ${id.slice(-1).toUpperCase()}` })),
+            },
+            ranked_choice_votes: ids.map((id) => ({
+              choice_id: id,
+              rank_counts: [{ rank: 1, count: firstChoices[id] }],
+              condorcet_matrix: ids
+                .filter((other) => other !== id)
+                .map((other) => {
+                  const wins = strength.indexOf(id) < strength.indexOf(other) ? 3 : 1;
+                  return { choice_id: id, other_choice_id: other, choice_id_wins: wins, other_choice_id_wins: 4 - wins, result: `${wins}(${4 - wins})` };
+                }),
+            })),
+            ranked_choice_winner_info: { poll_choices: [{ choice_id: 'choice-c', choice_text: 'Candidate C' }], condorcet_irv_used_for_eliminations: false },
+          },
+        ],
+        ...overrides,
+      };
+    }
+
+    beforeEach(() => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+    });
+
+    it('names every candidate and shows the winner banner and standings once the vote has ended', async () => {
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED })));
+      voteService.getVoteResults.mockReturnValue(of(condorcetResults()));
+      const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+      await fixture.whenStable();
+
+      expect(squashed(testId(fixture, 'vote-condorcet-outcome-message'))).toBe(
+        'Candidate C is the winner, having defeated all other candidates in head-to-head matchups.'
+      );
+      // Angular drops inter-element whitespace, so standings rows compare with all whitespace removed.
+      const compact = (value: string): string => value.replace(/\s+/g, '');
+      expect(['choice-c', 'choice-a', 'choice-b'].map((id) => compact(squashed(testId(fixture, `vote-condorcet-standing-${id}`))))).toEqual(
+        [
+          '1st Candidate C Winner Won 2 out of 2 possible head-to-head matchups',
+          '2nd Candidate A Won 1 out of 2 possible head-to-head matchups',
+          '3rd Candidate B Won 0 out of 2 possible head-to-head matchups',
+        ].map(compact)
+      );
+      expect(squashed(testId(fixture, 'vote-condorcet-rank-summary'))).toContain('Candidate A');
+      expect(fixture.nativeElement.querySelector('lfx-vote-condorcet-results')?.textContent).not.toMatch(/choice-[abc]/);
+    });
+
+    it('names the winner on the Overview once the vote has ended', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED })));
+      voteService.getVoteResults.mockReturnValue(of(condorcetResults()));
+      const fixture = await setup();
+
+      expect(squashed(testId(fixture, 'vote-detail-overview-summary-question-1'))).toBe('Winner: Candidate C');
+    });
+
+    it('keeps the outcome hidden on an active vote, even at full participation', async () => {
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV })));
+      voteService.getVoteResults.mockReturnValue(of(condorcetResults({ num_recipients: 4, num_votes_cast: 4 })));
+      const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+      await fixture.whenStable();
+
+      expect(read(fixture, 'isVoteClosed')).toBe(true);
+      expect(testId(fixture, 'vote-condorcet-rank-summary')).not.toBeNull();
+      expect(testId(fixture, 'vote-condorcet-outcome-message')).toBeNull();
+      expect(testId(fixture, 'vote-condorcet-standings')).toBeNull();
+      expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Most first choices: Candidate A (3 voters)');
+    });
+
+    describe('remote closure', () => {
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+        vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+      });
+
+      afterEach(() => {
+        TestBed.resetTestingModule();
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+      });
+
+      it('keeps the outcome hidden after the vote ends until its final results load', async () => {
+        const pending = new Subject<VoteResultsResponse>();
+        queryParamMap.next(convertToParamMap({ tab: 'results' }));
+        voteService.fetchVote
+          .mockReturnValueOnce(of(makeVote({ poll_type: PollType.CONDORCET_IRV })))
+          .mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED })));
+        voteService.getVoteResults.mockReturnValueOnce(of(condorcetResults())).mockReturnValueOnce(pending);
+        const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+
+        await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+        TestBed.tick();
+        fixture.detectChanges();
+        expect(read(fixture, 'isEnded')).toBe(true);
+        expect(read(fixture, 'isVoteClosed')).toBe(false);
+        expect(read<{ value: string }>(fixture, 'resultsStatusTag').value).toBe('Totals pending');
+        expect(testId(fixture, 'vote-condorcet-rank-summary')).not.toBeNull();
+        expect(testId(fixture, 'vote-condorcet-outcome-message')).toBeNull();
+        expect(testId(fixture, 'vote-condorcet-standings')).toBeNull();
+        expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Most first choices: Candidate A (3 voters)');
+
+        pending.next(condorcetResults());
+        pending.complete();
+        TestBed.tick();
+        fixture.detectChanges();
+        expect(read(fixture, 'isVoteClosed')).toBe(true);
+        expect(squashed(testId(fixture, 'vote-condorcet-outcome-message'))).toBe(
+          'Candidate C is the winner, having defeated all other candidates in head-to-head matchups.'
+        );
+        expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Winner: Candidate C');
+      });
     });
   });
 
@@ -1097,11 +1255,35 @@ describe('VoteDetailComponent', () => {
     projectService.getProjectStrict.mockReturnValue(of({ writer: manager } as Project));
     voteService.fetchVote.mockReturnValue(of(makeVote({ allow_vote_change: true })));
     voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
-    const fixture = await setup();
+    const ballot: MyVoteBallot = {
+      vote_response_uid: 'resp-1',
+      vote_uid: 'vote-1',
+      abstained: false,
+      poll_answers: [],
+      comment_responses: [],
+      can_change_vote: true,
+    };
+    voteService.getMyVoteBallot.mockReturnValue(of(ballot));
+    const fixture = await setup('browser', [VoteDetailHeaderComponent]);
 
-    expect(testId(fixture, 'vote-detail-manager-ballot')).toBeNull();
-    expect(testId(fixture, 'vote-detail-manager-change-vote')).toBeNull();
-    expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
+    expect(fixture.debugElement.query(By.directive(VoteDetailHeaderComponent))).not.toBeNull();
+    if (manager) {
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+    } else {
+      expect(testId(fixture, 'vote-detail-my-ballot')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot-error')).toBeNull();
+    }
+    // The drawer stays schema-stripped, so any [changeMode] binding lands in its properties and fails this test.
+    const drawer = fixture.debugElement.query(By.css('lfx-vote-cast-drawer'));
+    expect(drawer).not.toBeNull();
+    expect(drawer.properties['changeMode']).toBeUndefined();
+    expect(voteService.updateMyResponse).not.toHaveBeenCalled();
+    // Static `label="…"` lands in attributes and bound `[label]` in properties; check both.
+    const buttonLabels = [
+      ...fixture.debugElement.queryAll(By.css('lfx-button')).map((button) => String(button.properties['label'] ?? button.attributes['label'] ?? '')),
+      ...fixture.debugElement.queryAll(By.css('button')).map((button) => (button.nativeElement as HTMLElement).textContent ?? ''),
+    ];
+    expect(buttonLabels.filter((label) => /update/i.test(label))).toEqual([]);
     expect(read(fixture, 'castDrawerVisible')).toBe(false);
   });
 

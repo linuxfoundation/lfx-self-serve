@@ -118,6 +118,11 @@ describe('ImportMembersDialogComponent', () => {
     await fixture.whenStable();
   }
 
+  /** Complete member fixtures for lifecycle tests that vary only the email column. */
+  async function uploadMembers(addresses: string, name = 'members.csv'): Promise<void> {
+    await upload(['email,first_name,last_name', ...addresses.split('\n').map((email) => `${email},First,Last`)].join('\n'), name);
+  }
+
   /** Answers bulk call `call` with one result per row: added unless overridden by row index. */
   function respond(call: number, overrides: Record<number, Partial<CommitteeMemberBulkCreateRowResult>> = {}): void {
     const results = pending[call].members.map(
@@ -222,13 +227,14 @@ describe('ImportMembersDialogComponent', () => {
 
     it('shows the open-group guidance without voting columns', async () => {
       expect(query('import-members-guide-email')?.textContent).toContain('Required');
-      expect(query('import-members-guide-first_name')?.textContent).toContain('Optional');
+      expect(query('import-members-guide-first_name')?.textContent).toContain('Required');
+      expect(query('import-members-guide-last_name')?.textContent).toContain('Required');
       expect(query('import-members-guide-voting_status')).toBeNull();
       expect(component.closeLabel()).toBe('Cancel');
     });
 
     it('previews valid, invalid and skipped rows without writing anything', async () => {
-      await upload('email,first_name\nada@example.com,Ada\nnot-an-email,Bad\nexisting@example.com,Old\nADA@example.com,Again');
+      await upload('email,first_name,last_name\nada@example.com,First,Last\nnot-an-email,First,Last\nexisting@example.com,,\nADA@example.com,,');
       await render();
 
       expect(component.phase()).toBe('preview');
@@ -246,7 +252,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('blocks a quoted comma in a single email address without sending requests', async () => {
-      await upload('email\n"ada,grace@example.com"');
+      await uploadMembers('"ada,grace@example.com"');
       await render();
 
       expect(component.invalidCount()).toBe(1);
@@ -257,7 +263,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('lets the user remove an invalid row, then import', async () => {
-      await upload('email\nada@example.com\nnot-an-email');
+      await uploadMembers('ada@example.com\nnot-an-email');
       component.removeRow(3);
       await render();
 
@@ -269,12 +275,12 @@ describe('ImportMembersDialogComponent', () => {
     it.each(['', 'not-a-url'])('promotes the next occurrence after removing the first, whose LinkedIn is "%s"', async (linkedin) => {
       await upload(
         [
-          'email,first_name,linkedin_profile',
-          `ada@example.com,First,${linkedin}`,
-          'ADA@example.com,Survivor,https://www.linkedin.com/in/example-person',
-          'existing@example.com,,',
-          'EXISTING@example.com,,',
-          'ada@example.com,Later,',
+          'email,first_name,last_name,linkedin_profile',
+          `ada@example.com,First,Last,${linkedin}`,
+          'ADA@example.com,Survivor,Last,https://www.linkedin.com/in/example-person',
+          'existing@example.com,,,',
+          'EXISTING@example.com,,,',
+          'ada@example.com,Later,Last,',
         ].join('\n')
       );
       await render();
@@ -302,6 +308,7 @@ describe('ImportMembersDialogComponent', () => {
         {
           email: 'ada@example.com',
           first_name: 'Survivor',
+          last_name: 'Last',
           linkedin_profile: 'https://www.linkedin.com/in/example-person',
         },
       ]);
@@ -312,7 +319,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('blocks malformed organization websites in preview without sending a create request', async () => {
-      await upload('email,organization_name,organization_website\nada@example.com,Example Org,https:org.example');
+      await upload('email,first_name,last_name,organization_name,organization_website\nada@example.com,First,Last,Example Org,https:org.example');
       await render();
 
       expect(component.invalidCount()).toBe(1);
@@ -328,7 +335,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.phase()).toBe('select');
       expect(query('import-members-file-errors')?.textContent).toContain('The column "email" appears more than once.');
 
-      await upload('email\nada@example.com', 'fixed.csv');
+      await uploadMembers('ada@example.com', 'fixed.csv');
       await render();
       expect(component.fileErrors()).toEqual([]);
       expect(component.phase()).toBe('preview');
@@ -336,7 +343,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('rejects a non-CSV file before previewing', async () => {
-      await upload('email\nada@example.com', 'members.xlsx');
+      await uploadMembers('ada@example.com', 'members.xlsx');
       expect(component.rows()).toEqual([]);
       expect(component.fileErrors()[0]).toContain('Choose a .csv file');
     });
@@ -359,7 +366,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('reads a non-UTF-8 file as Windows-1252 and says so in the preview', async () => {
-      await upload(new Uint8Array([...new TextEncoder().encode('email,first_name\nada@example.com,Jos'), 0xe9]));
+      await upload(new Uint8Array([...new TextEncoder().encode('email,last_name,first_name\nada@example.com,Last,Jos'), 0xe9]));
       await render();
 
       expect(component.phase()).toBe('preview');
@@ -373,11 +380,11 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('clears file notices when a different file is chosen', async () => {
-      await upload(new Uint8Array([...new TextEncoder().encode('email,notes\nada@example.com,Jos'), 0xe9]));
+      await upload(new Uint8Array([...new TextEncoder().encode('email,first_name,last_name,notes\nada@example.com,First,Last,Jos'), 0xe9]));
       await render();
       expect(component.fileNotices()).toHaveLength(2);
 
-      await upload('email\ngrace@example.com', 'clean.csv');
+      await uploadMembers('grace@example.com', 'clean.csv');
       await render();
       expect(component.phase()).toBe('preview');
       expect(component.fileNotices()).toEqual([]);
@@ -396,7 +403,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('sends nothing when every row is skipped', async () => {
-      await upload('email\nexisting@example.com\nEXISTING@example.com');
+      await upload('email,first_name,last_name\nexisting@example.com,,\nEXISTING@example.com,,');
       await render();
 
       expect(component.canImport()).toBe(false);
@@ -406,7 +413,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('returns zero counts when the preview is cancelled', async () => {
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       component.close();
       expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0 });
       expectNothingWritten();
@@ -419,7 +426,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.phase()).toBe('select');
       expect(query('import-members-guidance')?.textContent).toContain('Done (when creating) or Update Group (when editing)');
 
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       await render();
       expect(query('import-members-summary')?.textContent?.replace(/\s+/g, ' ')).toContain(
         'Confirm to add them to the form, then select Done (when creating) or Update Group (when editing) to save.'
@@ -429,7 +436,7 @@ describe('ImportMembersDialogComponent', () => {
 
     it('returns only ready requests without writing members or revoking invitations', async () => {
       await setup(OPEN_GROUP, [{ email: 'existing@example.com' }], [{ uid: 'invite-1', invitee_email: 'ada@example.com', status: 'pending' }], true);
-      await upload('email,first_name\nada@example.com,Ada\nexisting@example.com,Existing\nADA@example.com,Duplicate');
+      await upload('email,first_name,last_name\nada@example.com,First,Last\nexisting@example.com,,\nADA@example.com,,');
       await render();
 
       expect(query('import-members-guidance')?.textContent).toContain('Done (when creating) or Update Group (when editing)');
@@ -439,7 +446,7 @@ describe('ImportMembersDialogComponent', () => {
       query('import-members-submit-btn')?.querySelector('button')?.click();
 
       expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith([
-        { email: 'ada@example.com', first_name: 'Ada', createOptions: { skipNotification: true }, pendingInviteUids: ['invite-1'] },
+        { email: 'ada@example.com', first_name: 'First', last_name: 'Last', createOptions: { skipNotification: true }, pendingInviteUids: ['invite-1'] },
       ]);
       expectNothingWritten();
       expect(committeeService.revokeCommitteeInvite).not.toHaveBeenCalled();
@@ -459,13 +466,19 @@ describe('ImportMembersDialogComponent', () => {
         ],
         true
       );
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       if (notify) {
         query('import-members-send-notification')?.querySelector('input')?.click();
       }
       component.startImport();
       expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith([
-        { email: 'ada@example.com', createOptions: { skipNotification: !notify }, pendingInviteUids: ['invite-1', 'invite-2'] },
+        {
+          email: 'ada@example.com',
+          first_name: 'First',
+          last_name: 'Last',
+          createOptions: { skipNotification: !notify },
+          pendingInviteUids: ['invite-1', 'invite-2'],
+        },
       ]);
       expectNothingWritten();
       expect(committeeService.revokeCommitteeInvite).not.toHaveBeenCalled();
@@ -473,7 +486,7 @@ describe('ImportMembersDialogComponent', () => {
 
     it('returns no members when the collected preview is cancelled', async () => {
       await setup(OPEN_GROUP, [], [], true);
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       component.close();
       expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith();
       expectNothingWritten();
@@ -483,9 +496,9 @@ describe('ImportMembersDialogComponent', () => {
       await setup(VOTING_GROUP, [], [], true);
       await upload(
         [
-          'email,organization_name,organization_website,role,voting_status',
-          'ada@example.com,Example Org,https://org.example,None,Invalid',
-          'grace@example.com,Example Org,https://org.example,None,Observer',
+          'email,first_name,last_name,organization_name,organization_website,role,voting_status',
+          'ada@example.com,First,Last,Example Org,https://org.example,None,Invalid',
+          'grace@example.com,First,Last,Example Org,https://org.example,None,Observer',
         ].join('\n')
       );
       await render();
@@ -496,6 +509,8 @@ describe('ImportMembersDialogComponent', () => {
       expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith([
         {
           email: 'grace@example.com',
+          first_name: 'First',
+          last_name: 'Last',
           organization: { id: null, name: 'Example Org', website: 'https://org.example' },
           role: { name: 'None' },
           voting: { status: 'Observer' },
@@ -508,7 +523,7 @@ describe('ImportMembersDialogComponent', () => {
 
     it('keeps the import disabled when every row is invalid but still offers the invalid rows', async () => {
       await setup(OPEN_GROUP, [], [], true);
-      await upload('email\nnot-an-email\nalso-bad');
+      await uploadMembers('not-an-email\nalso-bad');
       await render();
       expect(component.canImport()).toBe(false);
       expect((query('import-members-submit-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
@@ -520,14 +535,16 @@ describe('ImportMembersDialogComponent', () => {
 
     it('collects 100 voting-group members with their organizations, roles and voting statuses', async () => {
       await setup(VOTING_GROUP, [], [], true);
-      const rows = Array.from({ length: 100 }, (_, i) => `person${i}@example.com,Example Org,https://org.example,LF Staff,Observer`);
-      await upload(['email,organization_name,organization_website,role,voting_status', ...rows].join('\n'));
+      const rows = Array.from({ length: 100 }, (_, i) => `person${i}@example.com,First,Last,Example Org,https://org.example,LF Staff,Observer`);
+      await upload(['email,first_name,last_name,organization_name,organization_website,role,voting_status', ...rows].join('\n'));
       expect(component.readyCount()).toBe(100);
       component.startImport();
       const collected = dialogRef.close.mock.calls[0][0] as CreateCommitteeMemberRequest[];
       expect(collected).toHaveLength(100);
       expect(collected[99]).toEqual({
         email: 'person99@example.com',
+        first_name: 'First',
+        last_name: 'Last',
         organization: { id: null, name: 'Example Org', website: 'https://org.example' },
         role: { name: 'LF Staff' },
         voting: { status: 'Observer' },
@@ -541,8 +558,38 @@ describe('ImportMembersDialogComponent', () => {
   describe('skipping, downloading and filtering invalid rows', () => {
     beforeEach(async () => setup());
 
+    it('imports named rows while retaining blank-name rows for correction and re-import', async () => {
+      await upload('email,first_name,last_name\nready@example.com, First , Last \nmissing-first@example.com, \t ,Last\nmissing-last@example.com,First,');
+      await render();
+      expect([component.readyCount(), component.invalidCount()]).toEqual([1, 2]);
+      expect(query('import-members-row-issues-3')?.textContent).toContain('First name is required.');
+      expect(query('import-members-row-issues-4')?.textContent).toContain('Last name is required.');
+
+      component.startImport();
+      expect(pending[0].members).toEqual([{ email: 'ready@example.com', first_name: 'First', last_name: 'Last' }]);
+      respond(0);
+      await render();
+      expect(component.rows().map((row) => row.status)).toEqual(['added', 'invalid', 'invalid']);
+      const { csv } = await captureInvalidRowsDownload();
+      expect(csv).toContain('First name is required.');
+      expect(csv).toContain('Last name is required.');
+      const corrected = csv
+        .replace('missing-first@example.com,,Last,', 'missing-first@example.com,First,Last,')
+        .replace('missing-last@example.com,First,,', 'missing-last@example.com,First,Last,');
+      component.close();
+      fixture.destroy();
+      await createDialog();
+      await upload(corrected, 'corrected-names.csv');
+      expect([component.readyCount(), component.invalidCount()]).toEqual([2, 0]);
+      component.startImport();
+      expect(sentEmails(1)).toEqual(['missing-first@example.com', 'missing-last@example.com']);
+      expect(pending[1].members.every((member) => member.first_name === 'First' && member.last_name === 'Last')).toBe(true);
+      respond(1);
+      expect(component.addedCount()).toBe(2);
+    });
+
     it('sends only ready rows and keeps the invalid rows listed and downloadable in the results', async () => {
-      await upload('email\nada@example.com\nnot-an-email\ngrace@example.com');
+      await uploadMembers('ada@example.com\nnot-an-email\ngrace@example.com');
       await render();
       query('import-members-submit-btn')?.querySelector('button')?.click();
 
@@ -560,7 +607,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('downloads only the invalid rows with their values as written and an errors column', async () => {
-      await upload('email,first_name\nada@example.com,Ada\nnot-an-email,Bad\n,=Formula\nexisting@example.com,Old');
+      await upload('email,first_name,last_name\nada@example.com,First,Last\nnot-an-email,First,Last\n,=Formula,Last\nexisting@example.com,First,Last');
       await render();
 
       const { filename, rows } = await captureInvalidRowsDownload();
@@ -578,7 +625,9 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('re-uploads corrected downloaded rows with metadata and submits the exact recovered identities', async () => {
-      await upload("email,role\nready@example.com,Chair\n+person@example.com,unsupported\n'+literal@example.com,unsupported\nbad,Chair");
+      await upload(
+        "email,first_name,last_name,role\nready@example.com,First,Last,Chair\n+person@example.com,First,Last,unsupported\n'+literal@example.com,First,Last,unsupported\nbad,First,Last,Chair"
+      );
       await render();
       expect(component.invalidCount()).toBe(3);
       const { csv } = await captureInvalidRowsDownload();
@@ -600,14 +649,14 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('hides the download when no row is invalid', async () => {
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       await render();
       expect(query('import-members-download-invalid-btn')).toBeNull();
       expect(pillLabels()).toEqual(['All (1)', 'Ready (1)']);
     });
 
     it('filters the preview by status and returns to all rows', async () => {
-      await upload('email\nada@example.com\nnot-an-email\nada@example.com\ngrace@example.com');
+      await uploadMembers('ada@example.com\nnot-an-email\nada@example.com\ngrace@example.com');
       await render();
       expect(visibleRowNumbers()).toEqual(['2', '3', '4', '5']);
 
@@ -627,7 +676,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('filters the results by status', async () => {
-      await upload('email\nada@example.com\nnot-an-email\ngrace@example.com');
+      await uploadMembers('ada@example.com\nnot-an-email\ngrace@example.com');
       component.startImport();
       respond(0, { 1: { status: 'failed', retryable: false, reason: 'invalid' } });
       await render();
@@ -640,7 +689,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('falls back to all rows when the filtered status disappears', async () => {
-      await upload('email\nada@example.com\nnot-an-email\ngrace@example.com');
+      await uploadMembers('ada@example.com\nnot-an-email\ngrace@example.com');
       await render();
 
       await selectStatus('invalid');
@@ -661,7 +710,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('keeps All selected when a vanished status returns during automatic recovery', async () => {
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       vi.useFakeTimers();
       component.startImport();
       failBulk(0, 429, { 'Retry-After': '1' });
@@ -687,7 +736,7 @@ describe('ImportMembersDialogComponent', () => {
 
     it('returns to page 1 when the filter changes', async () => {
       const invalid = Array.from({ length: 12 }, (_, i) => `bad-${i}`).join('\n');
-      await upload(`email\n${emails(13)}\n${invalid}`);
+      await uploadMembers(`${emails(13)}\n${invalid}`);
       await render();
       expect(visibleRowNumbers()).toHaveLength(10);
 
@@ -703,7 +752,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it.each([470, 20])('keeps live filtered page %i within bounds while preserving valid pages', async (first) => {
-      await upload(`email\n${emails(500)}`);
+      await uploadMembers(emails(500));
       component.startImport();
       await render();
       expect(pending).toHaveLength(1);
@@ -732,11 +781,11 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('resets the filter when another file is chosen', async () => {
-      await upload('email\nada@example.com\nnot-an-email');
+      await uploadMembers('ada@example.com\nnot-an-email');
       await render();
       await selectStatus('invalid');
 
-      await upload('email\ngrace@example.com\nnot-an-email', 'next.csv');
+      await uploadMembers('grace@example.com\nnot-an-email', 'next.csv');
       await render();
       expect(component.statusFilter()).toBe('all');
       expect(visibleRowNumbers()).toEqual(['2', '3']);
@@ -748,18 +797,13 @@ describe('ImportMembersDialogComponent', () => {
 
     it('sends rows in sequential chunks with the native payload and notifications off by default', async () => {
       expect(MEMBER_IMPORT_BULK_CHUNK_SIZE).toBe(25);
-      // Every record needs one cell per header, so the remaining rows leave first_name empty.
-      const others = emails(29, 1)
-        .split('\n')
-        .map((email) => `${email},`)
-        .join('\n');
-      await upload(`email,first_name\nperson0@example.com,Ada\n${others}`);
+      await uploadMembers(emails(30));
       component.startImport();
 
       expect(component.phase()).toBe('importing');
       expect(pending).toHaveLength(1);
       expect(pending[0].members).toHaveLength(25);
-      expect(pending[0].members[0]).toEqual({ email: 'person0@example.com', first_name: 'Ada' });
+      expect(pending[0].members[0]).toEqual({ email: 'person0@example.com', first_name: 'First', last_name: 'Last' });
       expect(pending[0].options).toEqual({ skipNotification: true });
       expect(component.rows().map((row) => row.status)).toEqual([...Array(25).fill('importing'), ...Array(5).fill('not_submitted')]);
 
@@ -776,7 +820,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('shows an inline spinner and only confirmed processed rows until results arrive', async () => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       expect(query('import-members-progress')).toBeNull();
       vi.useFakeTimers();
       component.startImport();
@@ -815,7 +859,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it.each([429, 503])('keeps the importing spinner and confirmed count through automatic recovery from HTTP %i', async (status) => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       vi.useFakeTimers();
       component.startImport();
       respond(0);
@@ -863,14 +907,14 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('sends notification emails when the user opts in', async () => {
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       component.form.controls.send_notification.setValue(true);
       component.startImport();
       expect(pending[0].options).toEqual({ skipNotification: false });
     });
 
     it('blocks closing, re-upload and removal while rows are in flight', async () => {
-      await upload('email\nada@example.com\ngrace@example.com');
+      await uploadMembers('ada@example.com\ngrace@example.com');
       component.startImport();
       await render();
 
@@ -885,7 +929,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('stops after the in-flight batch and leaves later rows unsent for Retry', async () => {
-      await upload(`email\n${emails(60)}`);
+      await uploadMembers(emails(60));
       component.startImport();
       await render();
 
@@ -928,7 +972,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('clears the manual stopping state before retrying unsent rows', async () => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       component.startImport();
       component.stopImport();
       respond(0);
@@ -948,7 +992,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('keeps a lost in-flight response unknown when stopped mid-batch', async () => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       vi.useFakeTimers();
       component.startImport();
       component.stopImport();
@@ -975,7 +1019,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('does not start a pause when the in-flight batch is throttled after Stop', async () => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       vi.useFakeTimers();
       component.startImport();
       component.stopImport();
@@ -993,7 +1037,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('records added, existing and invalid rows, and never retries invalid rows', async () => {
-      await upload('email\nada@example.com\ngrace@example.com\nlin@example.com');
+      await uploadMembers('ada@example.com\ngrace@example.com\nlin@example.com');
       component.startImport();
       respond(0, {
         1: { status: 'skipped', reason: 'already_member' },
@@ -1012,7 +1056,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('pauses for Retry-After on a 429, then resubmits the throttled chunk', async () => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       vi.useFakeTimers();
       component.startImport();
       respond(0);
@@ -1047,7 +1091,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('retries only a missing result and preserves the existing-member outcome on recovery', async () => {
-      await upload('email\nada@example.com\ngrace@example.com');
+      await uploadMembers('ada@example.com\ngrace@example.com');
       vi.useFakeTimers();
       component.startImport();
       pending[0].response.next({
@@ -1081,7 +1125,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('waits on temporary and not-attempted rows, then resubmits only those rows', async () => {
-      await upload('email\nada@example.com\ngrace@example.com\nlin@example.com');
+      await uploadMembers('ada@example.com\ngrace@example.com\nlin@example.com');
       vi.useFakeTimers();
       component.startImport();
       respond(0, {
@@ -1109,7 +1153,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('stops after the third pause and preserves unknown outcomes for Retry', async () => {
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       vi.useFakeTimers();
       component.startImport();
       for (const [call, delay] of [
@@ -1146,7 +1190,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('stops during a pause without sending anything else', async () => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       vi.useFakeTimers();
       component.startImport();
       failBulk(0, 429, { 'Retry-After': '30' });
@@ -1164,7 +1208,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('keeps lost-response attempts unknown on Stop and Close while later chunks remain unsent', async () => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       vi.useFakeTimers();
       component.startImport();
       failBulk(0, 0);
@@ -1193,7 +1237,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it.each(['seconds', 'date'])('stops for a long %s cooldown and guards manual Retry until its deadline', async (format) => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-11-10T12:00:00Z'));
       component.startImport();
@@ -1222,7 +1266,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('retains the cooldown when Stop ends a short pause', async () => {
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       vi.useFakeTimers();
       component.startImport();
       failBulk(0, 429, { 'Retry-After': '30' });
@@ -1235,7 +1279,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('preserves uncertainty if a retry is refused before Stop', async () => {
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       vi.useFakeTimers();
       component.startImport();
       failBulk(0, 0);
@@ -1254,7 +1298,7 @@ describe('ImportMembersDialogComponent', () => {
       [403, true, 'You no longer have permission to manage this group.'],
       [404, true, 'This group could not be found.'],
     ])('stops sending after HTTP %i with manual stop %s and keeps unsent rows retryable', async (status, manualStop, reason) => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       component.startImport();
       if (manualStop) {
         component.stopImport();
@@ -1281,7 +1325,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('fails a rejected chunk for good and still sends the next chunk', async () => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       component.startImport();
       failBulk(0, 400);
 
@@ -1298,7 +1342,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('stops resubmitting when the dialog is destroyed mid-pause', async () => {
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       vi.useFakeTimers();
       component.startImport();
       failBulk(0, 429, { 'Retry-After': '5' });
@@ -1313,7 +1357,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('lets the in-flight batch settle but sends no later chunk after the dialog is destroyed', async () => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       component.startImport();
       fixture.destroy();
 
@@ -1326,7 +1370,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('shows a retained run when reopened instead of resubmitting it', async () => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       component.form.controls.send_notification.setValue(true);
       component.startImport();
       fixture.destroy();
@@ -1357,7 +1401,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('unlocks notifications when a retry settles before phase emissions observe it', async () => {
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       component.startImport();
       failBulk(0, 403);
       await render();
@@ -1376,7 +1420,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('unlocks notifications when an attached run settles before its first emission', async () => {
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       component.form.controls.send_notification.setValue(true);
       component.startImport();
       fixture.destroy();
@@ -1395,7 +1439,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it.each([false, true])('preserves results and blocks writes during Close with reopened run %s', async (reopened) => {
-      await upload('email\nada@example.com\ngrace@example.com');
+      await uploadMembers('ada@example.com\ngrace@example.com');
       component.startImport();
       component.stopImport();
       respond(0, { 1: { status: 'failed', reason: 'temporary', retryable: true } });
@@ -1419,7 +1463,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.canChooseFile()).toBe(false);
       component.startImport();
       component.retryFailed();
-      await upload('email\nother@example.com');
+      await uploadMembers('other@example.com');
       component.close();
       expect(pending).toHaveLength(1);
       expect(component.form.controls.send_notification.disabled).toBe(true);
@@ -1427,7 +1471,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('discards the closing snapshot when the observed user changes', async () => {
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       component.startImport();
       respond(0);
       component.close();
@@ -1442,7 +1486,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('dismisses the settled run on Close so the next import of the group starts fresh', async () => {
-      await upload('email\nada@example.com');
+      await uploadMembers('ada@example.com');
       component.startImport();
       respond(0);
       component.close();
@@ -1452,7 +1496,7 @@ describe('ImportMembersDialogComponent', () => {
       fixture.destroy();
       await createDialog();
       expect(component.phase()).toBe('select');
-      await upload('email\ngrace@example.com');
+      await uploadMembers('grace@example.com');
       component.startImport();
       expect(sentEmails(1)).toEqual(['grace@example.com']);
       respond(1);
@@ -1461,7 +1505,7 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('closes without a result and resubmits nothing when the observed user changes', async () => {
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       component.startImport();
       user.set({ sub: 'synthetic-replacement' });
       // The previous subject's preview cannot be started again, even before the dialog reacts.
@@ -1484,9 +1528,9 @@ describe('ImportMembersDialogComponent', () => {
       await setup(VOTING_GROUP);
       await upload(
         [
-          'email,organization_name,organization_website,role,voting_status',
-          'ada@example.com,Acme Motors,https://acme-motors.example,Chair,Voting Rep',
-          'grace@example.com,Vendor Corp,https://vendor-corp.example,None,Observer',
+          'email,first_name,last_name,organization_name,organization_website,role,voting_status',
+          'ada@example.com,First,Last,Acme Motors,https://acme-motors.example,Chair,Voting Rep',
+          'grace@example.com,First,Last,Vendor Corp,https://vendor-corp.example,None,Observer',
         ].join('\n')
       );
       component.startImport();
@@ -1495,12 +1539,16 @@ describe('ImportMembersDialogComponent', () => {
         {
           email: 'ada@example.com',
           organization: { id: null, name: 'Acme Motors', website: 'https://acme-motors.example' },
+          first_name: 'First',
+          last_name: 'Last',
           role: { name: 'Chair' },
           voting: { status: 'Voting Rep' },
         },
         {
           email: 'grace@example.com',
           organization: { id: null, name: 'Vendor Corp', website: 'https://vendor-corp.example' },
+          first_name: 'First',
+          last_name: 'Last',
           role: { name: 'None' },
           voting: { status: 'Observer' },
         },
@@ -1512,7 +1560,7 @@ describe('ImportMembersDialogComponent', () => {
       'preserves existing-member skips after a %s instead of attributing creation or revoking invites',
       async () => {
         await setup(OPEN_GROUP, [], [{ uid: 'invite-1', invitee_email: 'ada@example.com', status: 'pending' }]);
-        await upload('email,role\nada@example.com,Chair');
+        await upload('email,first_name,last_name,role\nada@example.com,First,Last,Chair');
         vi.useFakeTimers();
         component.startImport();
         // These histories are indistinguishable on the wire: no response, then membership exists.
@@ -1534,7 +1582,7 @@ describe('ImportMembersDialogComponent', () => {
 
     it('keeps going after a rate-limited invite cleanup, with a warning on the added row', async () => {
       await setup(OPEN_GROUP, [], [{ uid: 'invite-1', invitee_email: 'person0@example.com', status: 'pending' }]);
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       component.startImport();
       respond(0);
       // The next chunk waits for this chunk's cleanup.
@@ -1567,7 +1615,7 @@ describe('ImportMembersDialogComponent', () => {
           { uid: 'invite-2', invitee_email: 'person1@example.com', status: 'pending' },
         ]
       );
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       component.startImport();
       respond(0);
       expect(revokeResponses).toHaveLength(2);
@@ -1607,7 +1655,7 @@ describe('ImportMembersDialogComponent', () => {
 
     it.each([401, 403, 404])('stops queued chunks after cleanup HTTP %i while retaining the added member', async (status) => {
       await setup(OPEN_GROUP, [], [{ uid: 'invite-1', invitee_email: 'person0@example.com', status: 'pending' }]);
-      await upload(`email\n${emails(30)}`);
+      await uploadMembers(emails(30));
       component.startImport();
       respond(0);
 
@@ -1646,7 +1694,7 @@ describe('ImportMembersDialogComponent', () => {
           { uid: 'invite-2', invitee_email: 'grace@example.com', status: 'accepted' },
         ]
       );
-      await upload('email\nada@example.com\ngrace@example.com');
+      await uploadMembers('ada@example.com\ngrace@example.com');
       component.startImport();
       respond(0);
 

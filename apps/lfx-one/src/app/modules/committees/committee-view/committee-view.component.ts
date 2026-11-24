@@ -675,6 +675,8 @@ export class CommitteeViewComponent {
 
   public constructor() {
     this.initAutoSelectInitialTab();
+    // The group page survives tab switches; cancellation completion must not depend on the Votes tab's outputs.
+    this.voteService.voteCancellationCompleted$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.onVotesRefreshed());
 
     // Re-fetch votes while a just-opened vote still shows "Counting invitations…" (GH-4078) so its
     // real participation count appears without a manual reload; stops once the carrier window ends.

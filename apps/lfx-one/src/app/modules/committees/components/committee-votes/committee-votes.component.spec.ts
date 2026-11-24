@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, NO_ERRORS_SCHEMA, output, signal } from '@angular/core';
+import { Component, input, NO_ERRORS_SCHEMA, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { Router } from '@angular/router';
@@ -19,6 +19,7 @@ import { CommitteeVotesComponent } from './committee-votes.component';
 /** Stands in for lfx-votes-table so the spec drives the real template bindings through its outputs. */
 @Component({ selector: 'lfx-votes-table', template: '' })
 class VotesTableStubComponent {
+  public readonly canCancelVotes = input<boolean>(false);
   public readonly viewVote = output<string>();
   public readonly viewResults = output<string>();
   public readonly voteClosed = output<Vote>();
@@ -65,6 +66,10 @@ describe('CommitteeVotesComponent', () => {
     table().viewVote.emit(uid);
 
     expect(navigate).toHaveBeenLastCalledWith(['/votes', uid]);
+  });
+
+  it('opts the group Votes tab into row-menu Cancel vote (#5968)', () => {
+    expect(table().canCancelVotes()).toBe(true);
   });
 
   it('relays a row-menu close to the parent so it can hold the ended status (#4744)', () => {

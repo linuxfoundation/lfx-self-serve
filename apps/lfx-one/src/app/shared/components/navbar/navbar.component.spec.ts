@@ -12,6 +12,7 @@ import {
   NAVBAR_PEEK_RECHECK_DELAY_MS,
   NAVBAR_ROLE_STYLES,
   NAVBAR_THEME_STORAGE_KEY,
+  PROFILE_REDESIGN_FLAG,
 } from '@lfx-one/shared/constants';
 import type {
   CreatableArtifactConfig,
@@ -75,6 +76,8 @@ interface NavbarView {
   onToggleClick(event: MouseEvent): void;
   brandMenuOpen: WritableSignal<boolean>;
   openCreateDialog(artifact: CreatableArtifactConfig): void;
+  profileRedesignEnabled: Signal<boolean>;
+  navigateToProfileSettings(): void;
 }
 
 /**
@@ -128,6 +131,7 @@ const createNavbarFixture = async (
     template = '',
     routerEvents = EMPTY,
     navigation = null,
+    profileRedesign = false,
   }: {
     lens?: Lens;
     itemsPending?: boolean;
@@ -140,6 +144,7 @@ const createNavbarFixture = async (
     template?: string;
     routerEvents?: Observable<unknown>;
     navigation?: { extras: { replaceUrl?: boolean }; trigger: string } | null;
+    profileRedesign?: boolean;
   } = {}
 ): Promise<ComponentFixture<NavbarComponent>> => {
   TestBed.resetTestingModule();
@@ -156,7 +161,7 @@ const createNavbarFixture = async (
           parseUrl: (value: string) => new DefaultUrlSerializer().parse(value),
         },
       },
-      { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+      { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn((key: string) => signal(key === PROFILE_REDESIGN_FLAG && profileRedesign)) } },
       { provide: LensService, useValue: createLensServiceFake(lens, lenses) },
       {
         provide: OrgLensNavigationService,
@@ -208,6 +213,31 @@ const createNavbar = async (...args: Parameters<typeof createNavbarFixture>): Pr
   (await createNavbarFixture(...args)).componentInstance as unknown as NavbarView;
 
 describe('NavbarComponent', () => {
+  describe('profile redesign entry points (#6069)', () => {
+    it('keeps the single Profile & Account link and the old Settings page with the flag off', async () => {
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+
+      navbar.navigateToProfileSettings();
+
+      expect(navbar.profileRedesignEnabled()).toBe(false);
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/profile/settings']);
+    });
+
+    it('splits the link and sends Settings to Account & Settings with the flag on, once hydrated', async () => {
+      const fixture = await createNavbarFixture([], [], {}, { profileRedesign: true });
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      navbar.hydrated.set(false);
+      expect(navbar.profileRedesignEnabled()).toBe(false);
+
+      navbar.hydrated.set(true);
+      navbar.navigateToProfileSettings();
+
+      expect(navbar.profileRedesignEnabled()).toBe(true);
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/account']);
+    });
+  });
+
   it('groups top-level runs and sections into spaced blocks, ruling off a dividerBefore run', async () => {
     const navbar = await createNavbar([
       { label: 'Dashboard', routerLink: '/dashboard' },

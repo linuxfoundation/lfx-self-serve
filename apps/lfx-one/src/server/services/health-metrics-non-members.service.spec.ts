@@ -28,6 +28,7 @@ import {
 } from '@lfx-one/shared/constants';
 
 import { HealthMetricsNonMembersService, isSupportedNonMembersRange } from './health-metrics-non-members.service';
+import { logger } from './logger.service';
 
 import type { Request } from 'express';
 
@@ -42,13 +43,12 @@ describe('isSupportedNonMembersRange', () => {
 });
 
 describe('HealthMetricsNonMembersService.getOrgs', () => {
-  const query = { foundationSlug: 'acme', range: 'YTD' as const, filter: 'all' as const, search: '', offset: 0, pageSize: 10 };
+  const query = { foundationSlug: 'acme', range: 'YTD' as const, filter: 'all' as const, search: '', offset: 0, pageSize: 10, sort: null };
 
   function orgRow(overrides: Record<string, unknown> = {}) {
     return {
       SCOPE_TOTAL: 1412,
       TOTAL_RECORDS: 1412,
-      NEW_COUNT: 37,
       IS_PAGE_ROW: true,
       ACCOUNT_ID: '0014100000AcmeAAAA',
       ACCOUNT_NAME: 'Acme Motors',
@@ -56,10 +56,10 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
       MEETINGS_ATTENDED_COUNT: 42,
       DISTINCT_PEOPLE_COUNT: 9,
       CONTRIBUTIONS_COUNT: 1840,
-      IS_NEW: true,
       SORT_RANK: 1,
-      MEMBERSHIP_STATUS: 'Non-member',
       FIT_BAND: 'High',
+      PAGE_POSITION: 1,
+      LOGO_URL: 'https://logos.example/acme.png',
       ...overrides,
     };
   }
@@ -88,10 +88,11 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
       expect(sql.match(/\?/g)).toHaveLength(binds.length);
       expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_COMPANY_PARTICIPATION p');
       expect(sql).not.toContain('NON_MEMBER_FIT_SCORE');
-      for (const column of ['meetings_attended_count', 'distinct_people_count', 'contributions_count', 'is_new', 'sort_rank']) {
+      for (const column of ['meetings_attended_count', 'distinct_people_count', 'contributions_count', 'sort_rank']) {
         expect(sql).toContain(`p.${column}_${suffix} AS ${column}`);
       }
-      expect(sql).toContain('p.membership_status,');
+      // The count line and the Membership column are gone, so neither is read.
+      expect(sql).not.toMatch(/is_new|membership_status|new_count/);
       expect(sql).toContain('p.fit_band,');
       expect(sql).toContain("COALESCE(p.fit_band = 'High', FALSE) AS is_high_fit");
       expect(sql).not.toMatch(/FROM scoped WHERE/);
@@ -120,16 +121,106 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     await new HealthMetricsNonMembersService().getOrgs(req, query);
 
     const [sql] = orgsRead();
-    const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('matched AS'));
+    const scoped = sql.slice(sql.indexOf('scoped AS'), sql.indexOf('matched AS'));
     expect(scoped).toContain('AND p.account_id IS NOT NULL');
     expect(scoped).toContain("AND p.account_id <> ''");
     expect(scoped).toContain('AND (COALESCE(p.meetings_attended_count_ytd, 0) > 0 OR COALESCE(p.contributions_count_ytd, 0) > 0)');
     expect(sql).toContain('(SELECT COUNT(*) FROM scoped) AS scope_total');
-    expect(sql).toContain('(SELECT COUNT_IF(is_new) FROM scoped) AS new_count');
     expect(sql).toContain('(SELECT COUNT(*) FROM matched) AS total_records');
+    expect(sql).toContain('ROW_NUMBER() OVER (ORDER BY sort_rank ASC NULLS LAST, account_id ASC) AS page_position');
     expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, account_id ASC\n        LIMIT 10 OFFSET 0');
-    expect(sql).toContain('ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC');
     expect(sql).toContain('LEFT JOIN page ON TRUE');
+    expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
+    expect(sql).toContain("NULLIF(TRIM(logos.logo_url), '') AS logo_url");
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+  });
+
+  it.each([
+    ['company', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(TRIM(account_name, '"],
+    ['memberships', 'desc', 'IFF(other_membership_count > 0, other_top_tier_rank * 1000 + other_membership_count, NULL) DESC NULLS LAST'],
+    ['meetings', 'asc', 'NULLIF(meetings_attended_count, 0) ASC NULLS LAST, sort_rank ASC NULLS LAST, account_id ASC'],
+    ['contributions', 'desc', 'NULLIF(contributions_count, 0) DESC NULLS LAST, sort_rank ASC NULLS LAST'],
+    ['fit', 'desc', "CASE TRIM(fit_band) WHEN 'High' THEN 3 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 1 END DESC NULLS LAST"],
+  ] as const)("sorts %s %s across every page, then the view's rank", async (key, direction, expected) => {
+    await new HealthMetricsNonMembersService().getOrgs(req, { ...query, sort: { key, direction } });
+
+    const [sql, binds] = orgsRead();
+    expect(sql).toContain(expected);
+    expect(sql).toContain(`ROW_NUMBER() OVER (ORDER BY ${expected.split(' ASC')[0].split(' DESC')[0]}`);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+  });
+
+  it('reads no membership directory for any order but Other memberships, so the table never depends on it', async () => {
+    for (const sort of [null, { key: 'company', direction: 'asc' }, { key: 'fit', direction: 'desc' }] as const) {
+      execute.mockClear();
+      await new HealthMetricsNonMembersService().getOrgs(req, { ...query, sort });
+
+      const [sql] = orgsRead();
+      expect(sql).not.toContain('MEMBERSHIP_DIRECTORY');
+      expect(sql).toContain('CAST(NULL AS NUMBER) AS other_top_tier_rank');
+    }
+  });
+
+  it("summarises each company's memberships in other foundations for the Other memberships sort, leaving the viewed foundation out", async () => {
+    await new HealthMetricsNonMembersService().getOrgs(req, { ...query, search: 'acme', sort: { key: 'memberships', direction: 'desc' } });
+
+    const [sql, binds] = orgsRead();
+    expect(binds).toEqual(['acme', 'acme', '%acme%']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    const other = sql.slice(sql.indexOf('other AS ('), sql.indexOf('scoped AS'));
+    expect(other).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY');
+    expect(other).toContain("WHERE foundation_slug <> ?\n          AND foundation_slug <> ''");
+    expect(other).toContain('COUNT(DISTINCT foundation_slug) AS other_membership_count');
+    expect(other).toMatch(/COALESCE\(MAX\(CASE WHEN .* END\), 0\) AS other_top_tier_rank/);
+    expect(other).toContain('GROUP BY account_id');
+    expect(sql).toContain('LEFT JOIN other o ON o.account_id = p.account_id');
+  });
+
+  it("reads the page's other memberships for its companies only, after the page, and merges them on", async () => {
+    execute.mockResolvedValueOnce({ rows: [orgRow(), orgRow({ ACCOUNT_ID: '0014100000VendAAAA', PAGE_POSITION: 2 })] }).mockResolvedValueOnce({
+      rows: [
+        { ACCOUNT_ID: '0014100000AcmeAAAA', FOUNDATION_SLUG: 'cncf', FOUNDATION_NAME: 'Cloud Native Computing Foundation', MEMBERSHIP_TIER: 'Gold Membership' },
+        { ACCOUNT_ID: '0014100000AcmeAAAA', FOUNDATION_SLUG: 'openssf', FOUNDATION_NAME: '', MEMBERSHIP_TIER: '' },
+        { ACCOUNT_ID: null, FOUNDATION_SLUG: 'cncf', FOUNDATION_NAME: 'x', MEMBERSHIP_TIER: null },
+      ],
+    });
+
+    const response = await new HealthMetricsNonMembersService().getOrgs(req, query);
+
+    const [sql, binds] = execute.mock.calls[1] as [string, unknown[]];
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY');
+    expect(sql).toContain('WHERE foundation_slug <> ?');
+    expect(sql).toContain('AND account_id IN (?, ?)');
+    expect(binds).toEqual(['acme', '0014100000AcmeAAAA', '0014100000VendAAAA']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    expect(response.rows[0].otherMemberships).toEqual([
+      { foundationSlug: 'cncf', foundationName: 'Cloud Native Computing Foundation', tier: 'Gold Membership' },
+      { foundationSlug: 'openssf', foundationName: 'openssf', tier: null },
+    ]);
+    expect(response.rows[1].otherMemberships).toEqual([]);
+  });
+
+  it('shows no badges, keeping the page, when the memberships read fails', async () => {
+    execute.mockResolvedValueOnce({ rows: [orgRow()] }).mockRejectedValueOnce(new Error('warehouse down'));
+
+    const response = await new HealthMetricsNonMembersService().getOrgs(req, query);
+
+    expect(response.rows).toHaveLength(1);
+    expect(response.rows[0].otherMemberships).toEqual([]);
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'get_non_members_other_memberships',
+      'Other memberships unavailable, showing none',
+      expect.objectContaining({ account_count: 1 })
+    );
+  });
+
+  it('skips the memberships read for an empty page', async () => {
+    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: 4, TOTAL_RECORDS: 0, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
+
+    await new HealthMetricsNonMembersService().getOrgs(req, query);
+
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it('clamps an oversized page and offset before interpolating them', async () => {
@@ -147,10 +238,9 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
           ACCOUNT_NAME: '',
           MEETINGS_ATTENDED_COUNT: null,
           DISTINCT_PEOPLE_COUNT: null,
-          IS_NEW: null,
           LAST_ENGAGED_DATE: null,
-          MEMBERSHIP_STATUS: '',
           FIT_BAND: null,
+          LOGO_URL: null,
         }),
       ],
     });
@@ -160,45 +250,52 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     expect(response).toEqual({
       totalRecords: 1412,
       scopeTotal: 1412,
-      newCount: 37,
       rows: [
         {
           accountId: '0014100000AcmeAAAA',
           accountName: 'Acme Motors',
+          logoUrl: 'https://logos.example/acme.png',
           lastEngagedDate: '2026-03-14',
           meetingsAttended: 42,
           distinctPeople: 9,
           contributions: 1840,
-          isNew: true,
-          membershipStatus: 'Non-member',
           fitBand: 'High',
+          otherMemberships: [],
         },
         {
           accountId: '0014100000AcmeAAAA',
           accountName: '0014100000AcmeAAAA',
+          logoUrl: null,
           lastEngagedDate: null,
           meetingsAttended: null,
           distinctPeople: null,
           contributions: 1840,
-          isNew: false,
-          membershipStatus: null,
           fitBand: null,
+          otherMemberships: [],
         },
       ],
     });
   });
 
+  it('shows the account id for a company whose name is only spaces, as the Company sort orders it', async () => {
+    execute.mockResolvedValueOnce({ rows: [orgRow({ ACCOUNT_NAME: '   ' })] }).mockResolvedValueOnce({ rows: [] });
+
+    const response = await new HealthMetricsNonMembersService().getOrgs(req, query);
+
+    expect(response.rows[0].accountName).toBe('0014100000AcmeAAAA');
+  });
+
   it('keeps the totals when the page is past the end', async () => {
-    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: 1412, TOTAL_RECORDS: 30, NEW_COUNT: 37, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
+    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: 1412, TOTAL_RECORDS: 30, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
 
     const response = await new HealthMetricsNonMembersService().getOrgs(req, { ...query, offset: 500 });
 
-    expect(response).toEqual({ rows: [], totalRecords: 30, scopeTotal: 1412, newCount: 37 });
+    expect(response).toEqual({ rows: [], totalRecords: 30, scopeTotal: 1412 });
   });
 });
 
 describe('HealthMetricsNonMembersService.getPeople', () => {
-  const query = { foundationSlug: 'acme', range: 'YTD' as const, search: '', offset: 0, pageSize: 10 };
+  const query = { foundationSlug: 'acme', range: 'YTD' as const, search: '', offset: 0, pageSize: 10, sort: null };
 
   function personRow(overrides: Record<string, unknown> = {}) {
     return {
@@ -213,6 +310,8 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
       LAST_ATTENDED_DATE: new Date(Date.UTC(2026, 2, 14)),
       MEETINGS_ATTENDED_COUNT: 42,
       SORT_RANK: 1,
+      PAGE_POSITION: 1,
+      LOGO_URL: 'https://logos.example/acme.png',
       ...overrides,
     };
   }
@@ -272,8 +371,25 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
     expect(scoped).toContain("AND p.person_key <> ''");
     expect(sql).toContain('(SELECT CASE WHEN COUNT(*) = 0 THEN 0 ELSE ANY_VALUE(scope_individuals_count) END FROM scoped) AS scope_total');
     expect(sql).toContain('(SELECT COUNT(*) FROM matched) AS total_records');
+    expect(sql).toContain('ROW_NUMBER() OVER (ORDER BY sort_rank ASC NULLS LAST, person_key ASC) AS page_position');
     expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, person_key ASC\n        LIMIT 10 OFFSET 0');
     expect(sql).toContain('LEFT JOIN page ON TRUE');
+    expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
+    expect(sql).toContain("NULLIF(TRIM(logos.logo_url), '') AS logo_url");
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+  });
+
+  it.each([
+    ['person', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(person_display_name, ''), 'Unnamed individual')"],
+    ['company', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(TRIM(account_name, '"],
+    ['meetings', 'asc', 'NULLIF(meetings_attended_count, 0) ASC NULLS LAST, sort_rank ASC NULLS LAST, person_key ASC'],
+    ['lastAttended', 'desc', 'last_attended_date DESC NULLS LAST, sort_rank ASC NULLS LAST'],
+  ] as const)("sorts %s %s across every page, then the view's rank", async (key, direction, expected) => {
+    await new HealthMetricsNonMembersService().getPeople(req, { ...query, sort: { key, direction } });
+
+    const [sql, binds] = peopleRead();
+    expect(sql).toContain(expected);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
   });
 
   it('clamps an oversized page and offset before interpolating them', async () => {
@@ -294,6 +410,7 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
           ACCOUNT_NAME: '',
           LAST_ATTENDED_DATE: null,
           MEETINGS_ATTENDED_COUNT: null,
+          LOGO_URL: null,
         }),
       ],
     });
@@ -310,6 +427,7 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
           jobTitle: 'Staff Engineer',
           accountId: '0014100000AcmeAAAA',
           accountName: 'Acme Motors',
+          logoUrl: 'https://logos.example/acme.png',
           lastAttendedDate: '2026-03-14',
           meetingsAttended: 42,
         },
@@ -319,6 +437,7 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
           jobTitle: null,
           accountId: null,
           accountName: null,
+          logoUrl: null,
           lastAttendedDate: null,
           meetingsAttended: null,
         },
@@ -356,16 +475,15 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
 describe('HealthMetricsNonMembersService.getConversion', () => {
   const query = { foundationSlug: 'acme', range: 'YTD' as const };
 
-  const summaryRow = {
-    ENTRY_TIER_NAME: 'Silver',
-    ENTRY_TIER_FEE_USD: 25000,
-    ORGANIZATIONS_TRACKED_COUNT: 412,
-    HIGH_FIT_ORG_COUNT: 2,
-    NEW_ORG_COUNT: 37,
-    ESTIMATED_PIPELINE_USD: 50000,
-  };
+  const summaryRow = { HIGH_FIT_ORG_COUNT: 2, NEW_ORG_COUNT: 37, ESTIMATED_PIPELINE_USD: 50000 };
 
-  const warmRow = { ACCOUNT_ID: '0014100000AcmeAAAA', ACCOUNT_NAME: 'Acme Motors', MEETINGS_ATTENDED_COUNT: 12, CONTRIBUTIONS_COUNT: 400 };
+  const warmRow = {
+    ACCOUNT_ID: '0014100000AcmeAAAA',
+    ACCOUNT_NAME: 'Acme Motors',
+    MEETINGS_ATTENDED_COUNT: 12,
+    CONTRIBUTIONS_COUNT: 400,
+    LOGO_URL: 'https://logos.example/acme.png',
+  };
 
   // The two reads run in parallel; route each mock result by the view it reads.
   function mockReads(summary: unknown[], warmest: unknown[]) {
@@ -393,52 +511,57 @@ describe('HealthMetricsNonMembersService.getConversion', () => {
 
       const [summarySql, summaryBinds] = readFor('NON_MEMBER_CONVERSION_OPPORTUNITY');
       expect(summarySql).toContain(`high_fit_org_count_${suffix} AS high_fit_org_count`);
+      expect(summarySql).toContain(`new_org_count_${suffix} AS new_org_count`);
       expect(summarySql).toContain(`estimated_pipeline_usd_${suffix} AS estimated_pipeline_usd`);
+      // The tracked count and entry tier fed the removed chip and footnote, so they are no longer read.
+      expect(summarySql).not.toMatch(/organizations_tracked|entry_tier/);
       expect(summarySql).toContain('ORDER BY _key ASC\n      LIMIT 1');
       expect(summaryBinds).toEqual(['acme']);
 
-      const [warmSql, warmBinds] = readFor('NON_MEMBER_FIT_SCORE');
-      expect(warmSql).toContain(`AND is_high_fit_${suffix}`);
-      expect(warmSql).toContain(`ORDER BY sort_rank_${suffix} ASC NULLS LAST, account_id ASC`);
-      expect(warmSql).toContain('LIMIT 10');
+      const [warmSql, warmBinds] = readFor('NON_MEMBER_COMPANY_PARTICIPATION');
+      expect(warmSql).not.toContain('NON_MEMBER_FIT_SCORE');
+      expect(warmSql).not.toContain('is_high_fit');
+      expect(warmSql).toContain(`p.meetings_attended_count_${suffix} AS meetings_attended_count`);
+      expect(warmSql).toContain(`AND (COALESCE(p.meetings_attended_count_${suffix}, 0) > 0 OR COALESCE(p.contributions_count_${suffix}, 0) > 0)`);
+      expect(warmSql).toContain('ORDER BY sort_rank ASC NULLS LAST, p.account_id ASC\n        LIMIT 8');
+      expect(warmSql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = warmest.account_id');
+      expect(warmSql).toContain('ORDER BY warmest.sort_rank ASC NULLS LAST, warmest.account_id ASC');
       expect(warmBinds).toEqual(['acme']);
+      expect(warmSql.match(/\?/g)).toHaveLength(warmBinds.length);
     }
   });
 
-  it('maps the summary and the warmest organizations, dropping a row without an account', async () => {
-    mockReads([summaryRow], [warmRow, { ...warmRow, ACCOUNT_ID: null }, { ...warmRow, ACCOUNT_ID: '0014100000VendAAAA', ACCOUNT_NAME: null }]);
+  it('maps the figures and the warmest companies, dropping a row without an account', async () => {
+    mockReads([summaryRow], [warmRow, { ...warmRow, ACCOUNT_ID: null }, { ...warmRow, ACCOUNT_ID: '0014100000VendAAAA', ACCOUNT_NAME: '  ', LOGO_URL: null }]);
 
     const response = await new HealthMetricsNonMembersService().getConversion(req, query);
 
     expect(response).toEqual({
       measured: true,
-      entryTierName: 'Silver',
-      entryTierFeeUsd: 25000,
-      organizationsTracked: 412,
       highFitCount: 2,
       newCount: 37,
       estimatedPipelineUsd: 50000,
       warmest: [
-        { accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: 12, contributions: 400 },
-        { accountId: '0014100000VendAAAA', accountName: '0014100000VendAAAA', meetingsAttended: 12, contributions: 400 },
+        { accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', logoUrl: 'https://logos.example/acme.png', meetingsAttended: 12, contributions: 400 },
+        { accountId: '0014100000VendAAAA', accountName: '0014100000VendAAAA', logoUrl: null, meetingsAttended: 12, contributions: 400 },
       ],
     });
   });
 
-  it('keeps a NULL fee and estimate as NULL, never zero', async () => {
-    mockReads([{ ...summaryRow, ENTRY_TIER_NAME: null, ENTRY_TIER_FEE_USD: null, ESTIMATED_PIPELINE_USD: null }], []);
+  it('keeps a NULL figure as NULL, never zero', async () => {
+    mockReads([{ ...summaryRow, ESTIMATED_PIPELINE_USD: null, NEW_ORG_COUNT: null }], []);
 
     const response = await new HealthMetricsNonMembersService().getConversion(req, query);
 
-    expect(response).toMatchObject({ measured: true, entryTierName: null, entryTierFeeUsd: null, estimatedPipelineUsd: null, warmest: [] });
+    expect(response).toMatchObject({ measured: true, highFitCount: 2, newCount: null, estimatedPipelineUsd: null, warmest: [] });
   });
 
-  it('reports a foundation with no conversion row as not measured', async () => {
+  it('leaves the figures unset with no conversion row, but still lists the warmest companies', async () => {
     mockReads([], [warmRow]);
 
     const response = await new HealthMetricsNonMembersService().getConversion(req, query);
 
-    expect(response).toEqual(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
+    expect(response).toEqual({ ...HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED, warmest: [expect.objectContaining({ accountId: '0014100000AcmeAAAA' })] });
   });
 
   it('rethrows a failed read', async () => {

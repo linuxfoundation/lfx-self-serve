@@ -12,7 +12,7 @@ import type {
   VoteResultsResponse,
   VoteVoter,
 } from '../interfaces/poll.interface';
-import { buildCondorcetQuestionViews, buildCondorcetSummaryLines } from './condorcet-results.utils';
+import { buildCondorcetQuestionViews, buildCondorcetSummaryLines, condorcetBallotsMatchResults } from './condorcet-results.utils';
 
 const CHOICES = [
   { choice_id: 'a', choice_text: 'Candidate A' },
@@ -382,5 +382,42 @@ describe('buildCondorcetSummaryLines', () => {
   ])('reads $name once closed', ({ info, text }) => {
     const views = buildCondorcetQuestionViews(results(question({ ranked_choice_winner_info: info })), null);
     expect(buildCondorcetSummaryLines(views, true)).toEqual([{ questionId: 'q1', question: 'Who should chair the board?', text }]);
+  });
+});
+
+describe('condorcetBallotsMatchResults', () => {
+  const final = () => ({ ...results(question({ ranked_choice_votes: rankedVotes([], { a: [1, 1, 0], b: [1, 1, 0], c: [0, 0, 0] }) })), num_votes_cast: 2 });
+  const indexed = () => [ballot('1', ['a', 'b']), ballot('2', ['b', 'a'])];
+  it('matches submitted partial rankings in stored rank order and ignores unsubmitted rows', () => {
+    expect(condorcetBallotsMatchResults(final(), [...indexed(), ballot('3', [], VoteVoterStatus.NOT_VOTED)])).toBe(true);
+  });
+  it('detects an indexed ballot count that lags the final tally', () => {
+    expect(condorcetBallotsMatchResults(final(), indexed().slice(0, 1))).toBe(false);
+  });
+  it('detects old rankings even when indexed participation matches', () => {
+    expect(condorcetBallotsMatchResults(final(), [ballot('1', ['a', 'b']), ballot('2', ['a', 'b'])])).toBe(false);
+  });
+  it('counts abstentions separately without including them in ranked counts', () => {
+    const results = { ...final(), num_votes_cast: 3, num_abstained: 1 };
+    expect(condorcetBallotsMatchResults(results, [...indexed(), ballot('3', [], VoteVoterStatus.ABSTAINED)])).toBe(true);
+    expect(condorcetBallotsMatchResults(results, indexed())).toBe(false);
+  });
+  it('uses user_choice when indexed ranked_user_choice is empty', () => {
+    const ballots = indexed();
+    const answer = ballots[0].poll_answers![0];
+    answer.user_choice = answer.ranked_user_choice;
+    answer.ranked_user_choice = [];
+    expect(condorcetBallotsMatchResults(final(), ballots)).toBe(true);
+  });
+  it('detects missing question answers and missing final rank counts', () => {
+    expect(condorcetBallotsMatchResults(final(), [ballot('1', ['a', 'b'], VoteVoterStatus.VOTED, 'other'), indexed()[1]])).toBe(false);
+    const noRanks = final();
+    delete noRanks.poll_results[0].ranked_choice_votes;
+    expect(condorcetBallotsMatchResults(noRanks, indexed())).toBe(false);
+  });
+  it('does not claim a revision token when cancelling rankings preserve every aggregate', () => {
+    const final = { ...results(question({ ranked_choice_votes: rankedVotes([], { a: [1, 1, 1], b: [1, 1, 1], c: [1, 1, 1] }) })), num_votes_cast: 3 };
+    expect(condorcetBallotsMatchResults(final, [ballot('1', ['a', 'b', 'c']), ballot('2', ['b', 'c', 'a']), ballot('3', ['c', 'a', 'b'])])).toBe(true);
+    expect(condorcetBallotsMatchResults(final, [ballot('1', ['a', 'c', 'b']), ballot('2', ['b', 'a', 'c']), ballot('3', ['c', 'b', 'a'])])).toBe(true);
   });
 });

@@ -13,9 +13,10 @@ import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { configureGoogleTab, stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * Reddit needs a budget floor like its siblings.
@@ -66,7 +67,7 @@ describe('ImplementationTabComponent reddit budget gate', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -216,7 +217,7 @@ describe('ImplementationTabComponent reddit budget gate', () => {
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Subreddits (1)');
   });
 
-  it('allows submit once the reddit budget is positive', () => {
+  it('allows submit once the reddit budget is positive', STATE_ONLY, () => {
     setup(500);
     // The positive case must pass, or the zero case above would be satisfied by any unrelated
     // guard rather than by the budget floor it claims to bind.
@@ -236,7 +237,7 @@ describe('ImplementationTabComponent reddit budget gate', () => {
 describe('ImplementationTabComponent reddit objective', () => {
   /** Mount with a persisted draft naming `objective`, as a tab revisit would. */
   async function restoredWithObjective(objective: string): Promise<ComponentFixture<ImplementationTabComponent>> {
-    const restored = TestBed.createComponent(ImplementationTabComponent);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
     // `headlines`, `descriptions` and `countryCode` are supplied because `applyDraft` consumes
     // all three unguarded — it iterates the copy arrays and patches `countryCode` straight onto
     // the form, which the Reddit geo preview then trims. Every draft `emitDraft` produces carries
@@ -359,7 +360,7 @@ describe('ImplementationTabComponent reddit call to action', () => {
    * below would fail on a null element rather than on the behaviour it names.
    */
   async function restoredWithCallToAction(cta: string): Promise<ComponentFixture<ImplementationTabComponent>> {
-    const restored = TestBed.createComponent(ImplementationTabComponent);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
     // Same three unguarded `applyDraft` keys the objective suite supplies, for the same reason.
     restored.componentRef.setInput('draft', {
       eventSlug: 'kubecon-eu-2026',
@@ -456,7 +457,7 @@ describe('ImplementationTabComponent reddit results notice', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });

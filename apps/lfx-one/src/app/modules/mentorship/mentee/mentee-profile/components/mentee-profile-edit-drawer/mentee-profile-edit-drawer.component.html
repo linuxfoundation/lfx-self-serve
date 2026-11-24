@@ -26,7 +26,7 @@
     <div class="flex flex-col gap-6" data-testid="mentee-profile-edit-drawer-fields" [attr.inert]="saving() ? '' : null">
       <div class="flex flex-col gap-3" data-testid="mentee-profile-edit-about">
         <div class="flex flex-col gap-1">
-          <h2 class="text-base font-semibold text-gray-900">About Me</h2>
+          <h2 class="text-base font-semibold text-gray-900">Introduction</h2>
           <p class="text-sm text-gray-500">{{ aboutIntro }}</p>
           <ol class="list-decimal pl-5 text-sm text-gray-500 flex flex-col gap-0.5" data-testid="mentee-profile-edit-about-prompts">
             @for (prompt of aboutPrompts; track prompt) {

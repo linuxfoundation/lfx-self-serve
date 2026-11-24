@@ -39,6 +39,7 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { Observable, pairwise, switchMap, take } from 'rxjs';
 
 import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
+import { MeetingsHomeFeed } from '../../services/meetings-home-feed';
 import { MeetingsHomeResizeService } from '../../services/meetings-home-resize.service';
 
 import { MeetingDateTileComponent } from '../meeting-date-tile/meeting-date-tile.component';
@@ -73,6 +74,8 @@ export class PendingRsvpsComponent {
   private readonly resize = inject(MeetingsHomeResizeService);
   private readonly details = inject(MeetingsHomeDetailsService);
   private readonly destroyRef = inject(DestroyRef);
+  // A single project's list names no project on its items.
+  private readonly feed = inject(MeetingsHomeFeed, { optional: true });
   private readonly drawerTemplate = viewChild.required<TemplateRef<unknown>>('drawer');
   private readonly panelList = viewChild<ElementRef<HTMLElement>>('panelList');
   private readonly rowElements = viewChildren<ElementRef<HTMLElement>>('rowElement');
@@ -188,7 +191,7 @@ export class PendingRsvpsComponent {
   private toItem(row: MeetingHomeRow): MeetingPendingRsvpItem {
     return {
       row,
-      project: getMeetingHomeRowProject(row.meeting),
+      project: this.feed?.showsProject() === false ? null : getMeetingHomeRowProject(row.meeting),
       link: getMeetingHomeRowLink(row, 'upcoming'),
       // Public is the default, so only Private and Restricted get a badge.
       visibilityBadges: getMeetingVisibilityBadges(row.meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC),

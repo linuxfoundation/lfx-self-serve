@@ -231,10 +231,14 @@ export class EventSelectionComponent {
     });
   }
 
+  // Keyed on requestType so the travel fund picker's countries match the events it lists.
   private initializeCountries() {
-    return toSignal(this.eventsService.getUpcomingCountries().pipe(catchError(() => of({ data: [] }))), {
-      initialValue: { data: [] as string[] },
-    });
+    return toSignal(
+      toObservable(this.requestType).pipe(
+        switchMap((requestType) => this.eventsService.getUpcomingCountries(requestType).pipe(catchError(() => of({ data: [] }))))
+      ),
+      { initialValue: { data: [] as string[] } }
+    );
   }
 
   private initializeRegisteredEventsTotal() {

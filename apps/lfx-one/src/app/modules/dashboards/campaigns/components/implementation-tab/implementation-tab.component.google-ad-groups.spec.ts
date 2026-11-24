@@ -15,9 +15,18 @@ import { CampaignService } from '@services/campaign.service';
 import { of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * Demand Gen's video ad (#5226): a second creative for the same channel, picked by an ad-format
@@ -41,7 +50,7 @@ describe('ImplementationTabComponent demand gen video ad', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -135,7 +144,7 @@ describe('ImplementationTabComponent demand gen video ad', () => {
     expect(find('implementation-creative-demand-gen-format')?.getAttribute('aria-describedby')).toBe('implementation-demand-gen-format-held');
   });
 
-  it('holds Create on the shared judge the BFF refuses on, and releases it once the ad is valid', () => {
+  it('holds Create on the shared judge the BFF refuses on, and releases it once the ad is valid', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDemandGen: true });
     c['campaignForm'].controls.demandGenAdFormat.setValue('video');
     c['campaignForm'].controls.demandGenVideoCreative.patchValue({ ...VIDEO_COMPLETE, youtubeVideoIds: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' });
@@ -151,7 +160,7 @@ describe('ImplementationTabComponent demand gen video ad', () => {
     expect(c['canSubmit']()).toBe(true);
   });
 
-  it('blocks nothing for a wholly empty video ad, the shell campaign-service accepts', () => {
+  it('blocks nothing for a wholly empty video ad, the shell campaign-service accepts', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDemandGen: true });
     c['campaignForm'].controls.demandGenAdFormat.setValue('video');
 
@@ -188,7 +197,7 @@ describe('ImplementationTabComponent demand gen video ad', () => {
     expect(find('implementation-creative-demand-gen-youtubeVideoIds')).not.toBeNull();
   });
 
-  it('withdraws both Demand Gen formats and the held note when the channel moves away', () => {
+  it('withdraws both Demand Gen formats and the held note when the channel moves away', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDemandGen: true });
     c['campaignForm'].controls.demandGenAdFormat.setValue('video');
     c['campaignForm'].controls.demandGenCreative.patchValue({ headlines: 'An image headline' });
@@ -243,7 +252,7 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -285,7 +294,7 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
     expect(find(fixture, 'implementation-demand-gen-ad-group-add')).not.toBeNull();
   });
 
-  it('sends the groups, each with its chosen format, and no campaign-level creative', () => {
+  it('sends the groups, each with its chosen format, and no campaign-level creative', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDemandGen: true });
     c['campaignForm'].controls.demandGenCreative.patchValue(IMAGE_COMPLETE);
     split(c, [
@@ -327,9 +336,6 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
   });
 
   it.each([
-    ['a blank name', [{ name: '  ' }], 'ad group 1 needs a name'],
-    ['a name repeated ignoring case', [{ name: 'Retargeting' }, { name: 'RETARGETING' }], 'ad group 2 has the same name as ad group 1'],
-    ['a full name over 255 characters', [{ name: 'x'.repeat(240) }], 'over Google'],
     ['a group with no ad', [{ name: 'a', creative: {} }], 'ad group 1 has no ad'],
     ['an image ad below its minimums', [{ name: 'a', creative: { headlines: 'One headline' } }], 'ad group 1: the image ad needs'],
     ['a video ad that fails its rules', [{ name: 'a', format: 'video' as const, creative: { ...VIDEO_COMPLETE, logoImages: '' } }], 'exactly one logo'],
@@ -382,7 +388,7 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
     expect(find(fixture, 'implementation-demand-gen-ad-groups-held')).toBeNull();
   });
 
-  it("counts text typed only inside a group's ad as entered", () => {
+  it("counts text typed only inside a group's ad as entered", STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDemandGen: true });
     c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(true);
     c['onDemandGenAdGroupsSplitChange']();
@@ -395,7 +401,7 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
     );
   });
 
-  it('holds Create when the split is on with every ad group removed', () => {
+  it('holds Create when the split is on with every ad group removed', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDemandGen: true });
     split(c, [{ name: 'Retargeting' }]);
     c['removeDemandGenAdGroup'](0);
@@ -443,7 +449,7 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
     ['an image ad', 'demandGenCreative', IMAGE_COMPLETE],
     ['a video ad', 'demandGenVideoCreative', VIDEO_COMPLETE],
     ['no ad', null, {}],
-  ] as const)('sends the same request with the split off, carrying %s', async (_label, key, creative) => {
+  ] as const)('sends the same request with the split off, carrying %s', STATE_ONLY, async (_label, key, creative) => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const requestFrom = async (f: ComponentFixture<ImplementationTabComponent>, withGroups: boolean): Promise<string> => {
       const c = seedChannel(f, { includeDemandGen: true });
@@ -462,7 +468,7 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
     };
 
     const before = await requestFrom(fixture, false);
-    const other = TestBed.createComponent(ImplementationTabComponent);
+    const other = TestBed.createComponent(tabComponentUnderTest());
     other.detectChanges();
     await other.whenStable();
     const after = await requestFrom(other, true);
@@ -504,7 +510,7 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
     expect(find(fixture, 'implementation-demand-gen-ad-group-1')).not.toBeNull();
   });
 
-  it('restores a saved name that is not a string as a blank name the judge then names', () => {
+  it('restores a saved name that is not a string as a blank name the judge then names', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDemandGen: true });
     restoreGoogleDraft(fixture, c, {
       includeDemandGen: true,
@@ -596,7 +602,7 @@ describe('ImplementationTabComponent several demand gen ads', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -629,8 +635,6 @@ describe('ImplementationTabComponent several demand gen ads', () => {
   });
 
   it.each([
-    ['a blank first ad name', '  ', [{ name: 'Recap' }], 'Ad 1 of the Demand Gen ad group needs a name'],
-    ['a name repeated ignoring case', 'Teaser', [{ name: 'TEASER' }], 'Ad 2 of the Demand Gen ad group has the same name as ad 1'],
     ['an empty ad', 'Teaser', [{ name: 'Recap', creative: {} }], 'Ad 2 of the Demand Gen ad group has no creative'],
     [
       'an image ad below its minimums',
@@ -638,7 +642,6 @@ describe('ImplementationTabComponent several demand gen ads', () => {
       [{ name: 'Recap', format: 'image' as const, creative: { headlines: 'One' } }],
       'Ad 2 of the Demand Gen ad group: the image ad needs',
     ],
-    ['a video ad name over 255', 'x'.repeat(240), [{ name: 'Recap' }], 'which makes'],
   ])('holds Create on %s, saying why and announcing it', (_label, first, ads, fragment) => {
     const c = seedChannel(fixture, { includeDemandGen: true });
     several(c, first, ads);
@@ -650,7 +653,7 @@ describe('ImplementationTabComponent several demand gen ads', () => {
     expect(find(fixture, 'implementation-demand-gen-ads-error-live')?.textContent).toContain(fragment);
   });
 
-  it('holds a video ad name to 255 counting the ad group name, the event name then " - Display"', () => {
+  it('holds a video ad name to 255 counting the ad group name, the event name then " - Display"', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDemandGen: true });
     c['campaignForm'].controls.eventName.setValue('E'.repeat(255 - ' - Display - ab'.length));
     several(c, 'ab', [{ name: 'Recap', format: 'image', creative: IMAGE_COMPLETE }]);
@@ -662,7 +665,7 @@ describe('ImplementationTabComponent several demand gen ads', () => {
     );
   });
 
-  it('holds Create on an empty first ad instead of warning about it', () => {
+  it('holds Create on an empty first ad instead of warning about it', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDemandGen: true });
     several(c, 'Teaser', [{ name: 'Recap' }]);
     c['campaignForm'].controls.demandGenVideoCreative.reset();
@@ -672,7 +675,7 @@ describe('ImplementationTabComponent several demand gen ads', () => {
     expect(c['googleCreativeEmptyWarning']()).toBeNull();
   });
 
-  it('does not hold Create on a value left in an ad the create does not send', () => {
+  it('does not hold Create on a value left in an ad the create does not send', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDemandGen: true });
     several(c, 'Teaser', [{ name: 'Recap', format: 'image', creative: { ...IMAGE_COMPLETE, headlines: 'h'.repeat(31) } }]);
     fixture.detectChanges();
@@ -727,7 +730,7 @@ describe('ImplementationTabComponent several demand gen ads', () => {
   it.each([
     ['the single ad group', false],
     ['a named group', true],
-  ])('sends the same request with one ad in %s', async (_label, splitOn) => {
+  ])('sends the same request with one ad in %s', STATE_ONLY, async (_label, splitOn) => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const requestFrom = async (f: ComponentFixture<ImplementationTabComponent>, addAndRemove: boolean): Promise<string> => {
       const c = seedChannel(f, { includeDemandGen: true });
@@ -755,7 +758,7 @@ describe('ImplementationTabComponent several demand gen ads', () => {
     };
 
     const before = await requestFrom(fixture, false);
-    const other = TestBed.createComponent(ImplementationTabComponent);
+    const other = TestBed.createComponent(tabComponentUnderTest());
     other.detectChanges();
     await other.whenStable();
     const after = await requestFrom(other, true);
@@ -765,7 +768,7 @@ describe('ImplementationTabComponent several demand gen ads', () => {
     expect(after).not.toContain('"ads"');
   });
 
-  it('carries the ads through the draft, and restores them defensively', () => {
+  it('carries the ads through the draft, and restores them defensively', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDemandGen: true });
     let captured: CampaignImplementationDraft | null = null;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
@@ -880,7 +883,7 @@ describe('ImplementationTabComponent display ad groups', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -915,7 +918,7 @@ describe('ImplementationTabComponent display ad groups', () => {
     expect(find('implementation-display-ad-group-add')).not.toBeNull();
   });
 
-  it('sends the groups and no campaign-level Display ad', async () => {
+  it('sends the groups and no campaign-level Display ad', STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.displayCreative.patchValue(AD);
@@ -936,9 +939,6 @@ describe('ImplementationTabComponent display ad groups', () => {
   });
 
   it.each([
-    ['a blank name', [{ name: '  ' }], 'ad group 1 needs a name'],
-    ['a name repeated ignoring case', [{ name: 'Retargeting' }, { name: 'RETARGETING' }], 'ad group 2 has the same name as ad group 1'],
-    ['a full name over 255 characters', [{ name: 'x'.repeat(240) }], 'over Google'],
     ['a group with no ad', [{ name: 'a', creative: {} }], 'ad group 1 has no ad'],
     ['an ad below its minimums', [{ name: 'a', creative: { headlines: 'One headline' } }], 'Display ad group 1: the ad needs'],
   ])('holds Create on %s, saying why and announcing it', (_label, groups, fragment) => {
@@ -952,7 +952,7 @@ describe('ImplementationTabComponent display ad groups', () => {
     expect(find('implementation-display-ad-groups-error-live')?.textContent).toContain(fragment);
   });
 
-  it('holds Create when the split is on with every ad group removed', () => {
+  it('holds Create when the split is on with every ad group removed', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     split(c, [{ name: 'Retargeting' }]);
     c['removeDisplayAdGroup'](0);
@@ -996,7 +996,7 @@ describe('ImplementationTabComponent display ad groups', () => {
     expect(find('implementation-display-ad-groups-held')).toBeNull();
   });
 
-  it('does not hold Create on a value left in a group the create does not send, nor in the single ad while split', () => {
+  it('does not hold Create on a value left in a group the create does not send, nor in the single ad while split', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     split(c, [{ name: 'a', creative: { ...AD, headlines: 'h'.repeat(31) } }]);
     expect(c['campaignForm'].invalid).toBe(true);
@@ -1017,7 +1017,7 @@ describe('ImplementationTabComponent display ad groups', () => {
   it.each([
     ['a Display ad', AD],
     ['no ad', {}],
-  ])('sends the same request with the split off, carrying %s', async (_label, creative) => {
+  ])('sends the same request with the split off, carrying %s', STATE_ONLY, async (_label, creative) => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const requestFrom = async (f: ComponentFixture<ImplementationTabComponent>, withGroups: boolean): Promise<string> => {
       const c = seedChannel(f, { includeDisplay: true });
@@ -1035,14 +1035,14 @@ describe('ImplementationTabComponent display ad groups', () => {
     };
 
     const before = await requestFrom(fixture, false);
-    const other = TestBed.createComponent(ImplementationTabComponent);
+    const other = TestBed.createComponent(tabComponentUnderTest());
     other.detectChanges();
     await other.whenStable();
     expect(await requestFrom(other, true)).toBe(before);
     expect(before).not.toContain('displayAdGroups');
   });
 
-  it('carries the split and the groups through the draft, restores them defensively, and clears them for a new brief', () => {
+  it('carries the split and the groups through the draft, restores them defensively, and clears them for a new brief', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     let captured: CampaignImplementationDraft | null = null;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));

@@ -1265,6 +1265,10 @@ export interface CampaignImplementationDraft {
   metaAdOptions?: MetaAdOptions;
   /** The foundation slug {@link metaAdOptions} was chosen under: restored only under the same one, like the targeting. */
   metaAdOptionsProject?: string;
+  /** The Meta lead form id as picked or typed (#5940); absent means the draft predates it. */
+  metaLeadFormId?: string;
+  /** The foundation slug {@link metaLeadFormId} was picked under: a form belongs to that foundation's Page, so restored only under the same one. */
+  metaLeadFormProject?: string;
   /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *
@@ -2319,14 +2323,40 @@ export interface MetaBriefCopy {
   recommendedGeos: string[];
 }
 
+/** The Instagram account and DSA text as the operator typed it. */
+export interface MetaInstagramDsaInput {
+  instagramUserId: string;
+  dsaBeneficiary: string;
+  dsaPayor: string;
+}
+
+/** The Meta copy a brief seeds the form with: its variants and its eligible recommended geos. */
+export interface MetaBriefSeed {
+  variants: MetaAdVariant[];
+  geoTargets: string[];
+}
+
+/** The Meta state `metaCreateRefusal` (`campaign-meta-form.utils.ts`) reads. Each `string | null` is a section's message, `null` when clear. */
+export interface MetaCreateRefusalInput {
+  variants: readonly Pick<MetaAdVariant, 'primaryText' | 'headline'>[];
+  hasPlacement: boolean;
+  pixelValid: boolean;
+  /** Whether the Instagram id or either EU DSA disclosure has an error. */
+  instagramDsaInvalid: boolean;
+  audienceTargetingBlock: string | null;
+  audienceTargetingError: string | null;
+  adOptionsBlock: string | null;
+  adOptionsError: string | null;
+  leadFormError: string | null;
+}
+
 export type MetaObjective = 'awareness' | 'traffic' | 'engagement' | 'leads' | 'conversions';
 
 /**
- * Objectives deliberately withheld from the campaign objective selector.
+ * Objectives withheld from the objective selector unless a condition holds.
  *
- * `leads` dispatches as a website-traffic campaign (see `META_OBJECTIVE_PARAMS`), so offering it
- * would label a traffic campaign "Leads". LFXV2-2665 builds instant-form support and removes it
- * from this union.
+ * `leads` dispatches as a website-traffic campaign without a lead form (see `META_OBJECTIVE_PARAMS`),
+ * so it is offered only to a caller who may send one (`metaObjectiveChoices`, #5940).
  *
  * Declared as a type so `SelectableMetaObjective` can be DERIVED rather than restated: a new member
  * of `MetaObjective` is then a compile error in `META_SELECTABLE_OBJECTIVES` unless it is named
@@ -2386,11 +2416,14 @@ export interface MetaCampaignCreateRequest {
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
   /**
-   * Ad set audience targeting (#5905; linuxfoundation/lfx-v2-campaign-service#550). Sent ONLY when
-   * `CampaignListResult.metaAudienceTargetingEnabled` is an explicit yes; the create route refuses it with a
-   * 400 otherwise, so a tab opened while the capability was on must reload.
+   * Ad set targeting: the audience fields (#5905; linuxfoundation/lfx-v2-campaign-service#550) and the detailed
+   * fields (#5904 row 4; campaign-service #612), each sent ONLY when its own capability is an explicit yes:
+   * `metaAudienceTargetingEnabled` for age, gender, custom audiences and Advantage+, `metaInterestTargetingEnabled`
+   * for `interests`, `metaBehaviorTargetingEnabled` for `behaviors` and `workPositions`, `metaLocaleTargetingEnabled`
+   * for `locales`. The create route refuses a field whose capability is off with a 400, so a tab opened while it
+   * was on must reload. A block with only detailed fields needs no audience capability.
    */
-  targeting?: MetaAudienceTargeting;
+  targeting?: MetaTargeting;
   /**
    * The button on every ad (#5934; campaign-service #550), one of `META_CALL_TO_ACTIONS`. Absent means
    * campaign-service's default, LEARN_MORE. Sent ONLY when `CampaignListResult.metaCallToActionEnabled` is
@@ -2459,10 +2492,159 @@ export interface MetaAudienceTargeting {
 }
 
 /**
+ * Meta detailed targeting (#5904 row 4; linuxfoundation/lfx-v2-campaign-service#612), carried in the same
+ * `metaConfig.targeting` block as {@link MetaAudienceTargeting}. Interests, behaviors and work positions are
+ * Meta taxonomy ids from the targeting search, sent as one `flexible_spec` entry (a person matching any one
+ * qualifies); locales are Meta `adlocale` keys, a hard constraint. Each field has its own campaign-service flag.
+ */
+export interface MetaDetailedTargeting {
+  interests?: string[];
+  behaviors?: string[];
+  workPositions?: string[];
+  locales?: number[];
+}
+
+/** The whole `metaConfig.targeting` block a Meta create may send: the audience fields and the detailed ones. */
+export type MetaTargeting = MetaAudienceTargeting & MetaDetailedTargeting;
+
+/** Which Meta targeting fields this deployment accepts on create, one answer per campaign-service flag. */
+export interface MetaTargetingFlags {
+  audience: boolean;
+  interest: boolean;
+  behavior: boolean;
+  locale: boolean;
+}
+
+/** A kind the Meta targeting search answers (`GET /api/campaigns/meta/targeting-search?type=`). */
+export type MetaTargetingSearchType = 'interest' | 'behavior' | 'work_position';
+
+/** One option of the Meta targeting search, camel-cased from campaign-service's answer. */
+export interface MetaTargetingSearchOption {
+  id: string;
+  name: string;
+  /** The taxonomy path, e.g. ["Interests", "Technology"]; empty when Meta gives none. */
+  path: string[];
+  description?: string;
+  audienceSizeLowerBound?: number;
+  audienceSizeUpperBound?: number;
+  /** Set for work positions only. */
+  coverage?: number;
+}
+
+/** The BFF's answer for a Meta targeting search. */
+export interface MetaTargetingSearchResult {
+  type: MetaTargetingSearchType;
+  options: MetaTargetingSearchOption[];
+}
+
+/** campaign-service's raw answer for `search-meta-targeting-options` (snake_case, as on the wire). */
+export interface CampaignServiceMetaTargetingSearch {
+  type?: string;
+  options?: {
+    id?: unknown;
+    name?: unknown;
+    path?: unknown;
+    description?: unknown;
+    audience_size_lower_bound?: unknown;
+    audience_size_upper_bound?: unknown;
+    coverage?: unknown;
+  }[];
+  option_count?: number;
+}
+
+/**
  * The Implement tab's Meta audience targeting as edited: every key present, defaults included, except
  * `advantageAudience`, which stays absent until the operator ticks or unticks the box.
  */
 export type MetaAudienceTargetingDraft = Required<Omit<MetaAudienceTargeting, 'advantageAudience'>> & Pick<MetaAudienceTargeting, 'advantageAudience'>;
+
+/** The Meta keys of the Implement tab draft: what the Meta draft helpers (`campaign-meta-draft.utils.ts`) read and write. */
+export type MetaDraftSnapshot = Pick<
+  CampaignImplementationDraft,
+  | 'metaObjective'
+  | 'metaPlacements'
+  | 'metaPixelId'
+  | 'metaGeoTargets'
+  | 'metaInstagramUserId'
+  | 'metaDsaBeneficiary'
+  | 'metaDsaPayor'
+  | 'metaAudienceTargeting'
+  | 'metaAudienceTargetingProject'
+  | 'metaAdOptions'
+  | 'metaAdOptionsProject'
+  | 'metaLeadFormId'
+  | 'metaLeadFormProject'
+  | 'metaBudgetUsd'
+  | 'metaLifetimeBudget'
+  | 'metaImageUrl'
+  | 'metaImageAssetId'
+  | 'metaImageAssetName'
+  | 'metaImageAssetBriefId'
+  | 'metaImageUploadPendingName'
+  | 'metaImageUploadPendingBriefId'
+  | 'metaImageUploadFailedMessage'
+  | 'metaImageUploadFailedBriefId'
+>;
+
+/** The Meta form's state `metaDraftFields` (`campaign-meta-draft.utils.ts`) snapshots into the Implement tab draft. */
+export interface MetaDraftState {
+  objective: MetaObjective;
+  placements: MetaPlacement;
+  pixelId: string;
+  geoTargets: readonly string[];
+  instagramUserId: string;
+  dsaBeneficiary: string;
+  dsaPayor: string;
+  audienceTargeting: MetaAudienceTargetingDraft;
+  adOptions: MetaAdOptions;
+  leadFormId: string;
+  /** The foundation the choices were made under; targeting, ad options and the lead form restore only under it. */
+  foundation: string;
+  budgetUsd: number;
+  lifetimeBudget: boolean;
+}
+
+/** The Meta image state `metaImageDraftFields` snapshots into the draft. */
+export interface MetaImageDraftState {
+  imageUrl: string;
+  assetId: string;
+  assetName: string;
+  assetBriefId: string;
+  uploadPendingName: string;
+  uploadPendingBriefId: string;
+  uploadError: string;
+  uploadFailedBriefId: string;
+}
+
+/**
+ * What a restored draft sets on the Meta form. A field left `undefined` (or `leadFormId: null`) keeps the
+ * form's current value, which is how a draft saved before that field shipped leaves the brief's seed standing.
+ */
+export interface MetaDraftRestore {
+  /** Always set: the restored objective, after the lead form rule (`leads` without a form for this foundation falls back). */
+  objective: MetaObjective;
+  placements?: MetaPlacement;
+  pixelId?: string;
+  /** The Instagram id and DSA disclosures to patch, one emitting patch; empty when the draft carries none. */
+  instagramDsaPatch: Partial<Record<'instagramUserId' | 'dsaBeneficiary' | 'dsaPayor', string>>;
+  audienceTargeting?: MetaAudienceTargetingDraft;
+  adOptions?: MetaAdOptions;
+  /** `null` keeps the current form; `''` clears it. */
+  leadFormId: string | null;
+  geoTargets?: string[];
+  budgetUsd?: number;
+  lifetimeBudget?: boolean;
+}
+
+/** What a restored draft does to the Meta image: values to set, and at most one upload step for the component to run. */
+export interface MetaImageDraftRestore {
+  imageUrl?: string;
+  asset?: { id: string; name: string; briefId: string };
+  /** Show a failed upload, as the draft recorded it. */
+  failedUpload?: { message: string; briefId: string };
+  /** Resume an upload the draft recorded as still running. */
+  pendingUpload?: { name: string; briefId: string };
+}
 
 /** The two custom-audience lists of {@link MetaAudienceTargeting}. */
 export type MetaCustomAudienceListKey = 'customAudiences' | 'excludedCustomAudiences';
@@ -2522,6 +2704,46 @@ export interface MetaLeadFormOption {
 export interface MetaLeadFormsResult {
   pageId: string;
   forms: MetaLeadFormOption[];
+}
+
+/** One row of the Implement tab's lead form picker (#5940): only an ACTIVE form with a valid id can be picked. */
+export interface MetaLeadFormChoice {
+  value: string;
+  label: string;
+  disabled: boolean;
+}
+
+/** Where the lead form picker stands; `unavailable` carries the sentence the typed form id box is offered with. */
+export interface MetaLeadFormPickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  choices: MetaLeadFormChoice[];
+  reason: string | null;
+}
+
+/** What a saved Implement-tab draft restores for the Meta lead form (#5940); `leadFormId` `null` keeps the current one. */
+export interface MetaLeadFormRestore {
+  objective: MetaObjective;
+  leadFormId: string | null;
+}
+/** What the lead form picker shows once the forms are read (#5940). */
+export interface MetaLeadFormPickerView {
+  /** The Page has no forms: show the empty text. */
+  empty: boolean;
+  /** Show the select: there are forms, or a held id the list does not show. */
+  select: boolean;
+  /** The held id is not in the list, so it gets its own option. */
+  heldIdUnlisted: boolean;
+}
+/** What the Implement tab's lead form check reads: the Meta draft as the screen holds it (#5940). */
+export interface MetaLeadFormDraft {
+  /** Whether this caller may send a lead form: `CampaignListResult.metaLeadFormsEnabled` is an explicit yes. */
+  leadFormsEnabled: boolean;
+  objective: MetaObjective;
+  /** The picked or typed form id; blank is none. */
+  leadFormId: string;
+  manualBidding: boolean;
+  /** The chosen call to action; absent or blank is "Not set". */
+  callToAction?: string;
 }
 
 /** Where the Meta custom-audience picker stands; `unavailable` carries the sentence the typed boxes are offered with. */
@@ -7223,6 +7445,15 @@ export interface CampaignListResult {
   metaConversionEventEnabled?: boolean;
   metaOptimizationGoalEnabled?: boolean;
   /**
+   * Whether a Meta create may carry `metaConfig.targeting.interests`, `behaviors` with `workPositions`, and
+   * `locales` (#5904 row 4), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING`,
+   * `..._META_BEHAVIOR_TARGETING`, `..._META_LOCALE_TARGETING`. Deployment-wide (Meta taxonomy, no account
+   * resource). Optional, so a BFF that predates them reads as unanswered.
+   */
+  metaInterestTargetingEnabled?: boolean;
+  metaBehaviorTargetingEnabled?: boolean;
+  metaLocaleTargetingEnabled?: boolean;
+  /**
    * Whether THIS caller may offer the `leads` objective with an Instant Form, through
    * `GET /api/campaigns/meta/lead-forms`, and send `metaConfig.leadFormId` (#5940): `cutoverOwnsCreate()` AND
    * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS` AND `global_marketing_ops` on the listed project, the relation
@@ -7552,6 +7783,20 @@ export interface CampaignMetaAudienceTargetingBlock {
   message: string;
 }
 
+/** The Meta audience-targeting state `metaAudienceTargetingBlock` (`campaign-meta-audience-targeting.utils.ts`) reads, as plain values. */
+export interface MetaAudienceTargetingBlockInput {
+  /** The targeting the draft holds. */
+  targeting: MetaAudienceTargeting | null;
+  targetingEnabled: boolean | null;
+  customAudiencesEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
+/** The per-option capability answers for the Meta ad choices: `true` yes, `false` no, `null` or absent unanswered. */
+export type MetaAdOptionsEnabled = Partial<Record<MetaAdOptionKey, boolean | null>>;
+
 /**
  * Why Create is blocked for Demand Gen audiences (#5244) the draft still holds but the request cannot
  * carry. The kinds mean what they do on {@link CampaignGoogleAudienceSegmentsBlock}: `restricted` is an
@@ -7612,6 +7857,27 @@ export interface CampaignRedditImageAssetBlock {
 export interface CampaignMetaImageAssetBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
   message: string;
+}
+
+/** The image a Meta create puts on every variant: an uploaded asset, a pasted URL, or none. Never both. */
+export type MetaImageField = { imageAssetId: string } | { imageUrl: string } | Record<string, never>;
+
+/** The Meta image state `metaImageAssetBlock` (`campaign-meta-image.utils.ts`) reads, as plain values. */
+export interface MetaImageBlockInput {
+  /** Whether the Meta section is shown (Meta is a selected platform). */
+  showMetaSection: boolean;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+  assetId: string;
+  assetBriefId: string;
+  uploadStatus: CreativeAssetUploadStatus;
+  uploadFailedBriefId: string;
+  uploadError: string;
+  assetWithheld: boolean;
+  urlWithheld: boolean;
+  creativeEnabled: boolean | null;
+  assetUploadEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
 }
 
 /**

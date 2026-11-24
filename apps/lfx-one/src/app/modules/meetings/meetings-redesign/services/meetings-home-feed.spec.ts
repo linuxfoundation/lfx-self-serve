@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { signal } from '@angular/core';
+import { MEETINGS_HOME_NO_PAST_FILTERS } from '@lfx-one/shared/constants';
 import { PastMeeting } from '@lfx-one/shared/interfaces';
 import { TestBed } from '@angular/core/testing';
-import { LensService } from '@services/lens.service';
+import { ActivatedRoute } from '@angular/router';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -27,14 +28,18 @@ describe('MeetingsHomeFeed', () => {
   let foundation: ReturnType<typeof signal<boolean>>;
   let pastRefresh$: Subject<void>;
   let upcomingRefresh$: Subject<void>;
-  let meetingService: { getProjectMeetingsForHome: ReturnType<typeof vi.fn>; getProjectPastMeetingsForHome: ReturnType<typeof vi.fn> };
+  let meetingService: {
+    getProjectMeetingsForHome: ReturnType<typeof vi.fn>;
+    getProjectPastMeetingsForHome: ReturnType<typeof vi.fn>;
+    getRollupFilterOptions: ReturnType<typeof vi.fn>;
+  };
   let userService: Record<string, unknown>;
 
   const inject = (): MeetingsHomeFeed => {
     TestBed.configureTestingModule({
       providers: [
         ...provideMeetingsHomeFeed(),
-        { provide: LensService, useValue: { activeLens: lens } },
+        { provide: ActivatedRoute, useValue: { snapshot: { pathFromRoot: [{ data: {} }, { data: lens() === 'me' ? {} : { lens: lens() } }] } } },
         { provide: ProjectContextService, useValue: { activeContextUid: projectUid, isFoundationContext: foundation } },
         { provide: MeetingService, useValue: meetingService },
         { provide: UserService, useValue: userService },
@@ -53,6 +58,16 @@ describe('MeetingsHomeFeed', () => {
     meetingService = {
       getProjectMeetingsForHome: vi.fn(() => of([{ id: 'm-1' }])),
       getProjectPastMeetingsForHome: vi.fn(() => of({ meetings: [ended('m-1:1'), running('m-2:1')], pageToken: 'next' })),
+      getRollupFilterOptions: vi.fn(() =>
+        of({
+          projects: [{ uid: 'project-2', name: 'Child', slug: 'child' }],
+          groups: [
+            { uid: 'c-1', name: 'TSC', category: 'Technical Steering Committee', project_uid: 'project-1' },
+            { uid: 'c-2', name: 'Child WG', category: null, project_uid: 'project-2' },
+          ],
+          complete: true,
+        })
+      ),
     };
     userService = {
       meetingFeedIdentity: signal('viewer'),
@@ -70,7 +85,7 @@ describe('MeetingsHomeFeed', () => {
 
     expect(feed).toBeInstanceOf(UserMeetingsHomeFeed);
     expect(feed.pagedPast).toBe(false);
-    await expect(firstValueFrom(feed.past('ignored', 'ignored'))).resolves.toEqual({ meetings: [{ id: 'mine:1' }] });
+    await expect(firstValueFrom(feed.past('ignored', MEETINGS_HOME_NO_PAST_FILTERS, 'ignored'))).resolves.toEqual({ meetings: [{ id: 'mine:1' }] });
     expect(userService['getUserPastMeetings']).toHaveBeenCalledWith({ includeArtifactsAndAttendance: true });
   });
 
@@ -85,8 +100,62 @@ describe('MeetingsHomeFeed', () => {
 
     await expect(firstValueFrom(feed.upcoming())).resolves.toEqual([{ id: 'm-1' }]);
     expect(meetingService.getProjectMeetingsForHome).toHaveBeenCalledWith('project-2', { includeSubProjects: false });
-    await firstValueFrom(feed.past('weekly', 'cursor'));
-    expect(meetingService.getProjectPastMeetingsForHome).toHaveBeenCalledWith('project-2', 'weekly', 'cursor', undefined, { includeSubProjects: false });
+    await firstValueFrom(feed.past('weekly', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor'));
+    expect(meetingService.getProjectPastMeetingsForHome).toHaveBeenCalledWith('project-2', 'weekly', 'cursor', undefined, { includeSubProjects: false }, []);
+  });
+
+  it("sends a project's past filters, taking the roll-up query limited to the project for group filters", async () => {
+    const feed = inject();
+
+    await firstValueFrom(feed.past('', { ...MEETINGS_HOME_NO_PAST_FILTERS, meetingType: 'Board' }));
+    expect(meetingService.getProjectPastMeetingsForHome).toHaveBeenLastCalledWith('project-1', '', undefined, undefined, { includeSubProjects: false }, [
+      'meeting_type:Board',
+    ]);
+
+    await firstValueFrom(feed.past('', { ...MEETINGS_HOME_NO_PAST_FILTERS, committeeUid: 'c-1', groupType: 'Working Group' }, 'cursor'));
+    expect(meetingService.getProjectPastMeetingsForHome).toHaveBeenLastCalledWith(
+      'project-1',
+      '',
+      'cursor',
+      undefined,
+      { includeSubProjects: true, rootOnly: true, committeeUid: 'c-1', groupType: 'Working Group' },
+      []
+    );
+  });
+
+  it("sends a foundation's past filters on its roll-up, narrowed to the picked project", async () => {
+    foundation.set(true);
+    const feed = inject();
+
+    await firstValueFrom(feed.past('', { projectUid: 'project-3', committeeUid: 'c-1', groupType: null, meetingType: null }));
+
+    expect(meetingService.getProjectPastMeetingsForHome).toHaveBeenLastCalledWith(
+      'project-1',
+      '',
+      undefined,
+      undefined,
+      { includeSubProjects: true, projectUids: ['project-3'], committeeUid: 'c-1', groupType: null },
+      []
+    );
+  });
+
+  it("reads a project's own groups from the roll-up filter options", async () => {
+    await expect(firstValueFrom(inject().filterOptions())).resolves.toEqual({
+      projects: [{ uid: 'project-2', name: 'Child', slug: 'child' }],
+      groups: [{ uid: 'c-1', name: 'TSC', category: 'Technical Steering Committee', project_uid: 'project-1' }],
+      complete: true,
+    });
+    expect(meetingService.getRollupFilterOptions).toHaveBeenCalledWith('project-1');
+  });
+
+  it("reads a foundation's whole roll-up, and nothing in the Me lens", async () => {
+    foundation.set(true);
+    const options = await firstValueFrom(inject().filterOptions());
+    expect(options.groups.map((group) => group.uid)).toEqual(['c-1', 'c-2']);
+
+    TestBed.resetTestingModule();
+    lens.set('me');
+    await expect(firstValueFrom(inject().filterOptions())).resolves.toEqual({ projects: [], groups: [], complete: false });
   });
 
   it('includes sub-projects for a foundation', async () => {
@@ -98,26 +167,39 @@ describe('MeetingsHomeFeed', () => {
     expect(meetingService.getProjectMeetingsForHome).toHaveBeenCalledWith('project-1', { includeSubProjects: true });
   });
 
-  it('leaves meetings still running out of the past feed and the latest past meetings', async () => {
+  it('names the project on rows across projects and on a foundation, not on one project', () => {
+    lens.set('me');
+    expect(inject().showsProject()).toBe(true);
+    TestBed.resetTestingModule();
+    lens.set('project');
     const feed = inject();
 
-    await expect(firstValueFrom(feed.past(''))).resolves.toEqual({ meetings: [ended('m-1:1')], pageToken: 'next' });
-    await expect(firstValueFrom(feed.latestPast())).resolves.toEqual([ended('m-1:1')]);
-    expect(meetingService.getProjectPastMeetingsForHome).toHaveBeenLastCalledWith('project-1', '', undefined, 10, { includeSubProjects: false });
+    expect(feed.showsProject()).toBe(false);
+    foundation.set(true);
+    expect(feed.showsProject()).toBe(true);
   });
 
-  it('reloads the upcoming and latest past meetings on refresh', () => {
+  it('leaves meetings still running out of the past feed', async () => {
+    const feed = inject();
+
+    await expect(firstValueFrom(feed.past('', MEETINGS_HOME_NO_PAST_FILTERS))).resolves.toEqual({ meetings: [ended('m-1:1')], pageToken: 'next' });
+  });
+
+  it('reloads the upcoming meetings on refresh', () => {
     const feed = inject();
     const upcoming = vi.fn();
-    const latest = vi.fn();
     feed.upcoming().subscribe(upcoming);
-    feed.latestPast().subscribe(latest);
 
     upcomingRefresh$.next();
-    pastRefresh$.next();
 
     expect(upcoming).toHaveBeenCalledTimes(2);
-    expect(latest).toHaveBeenCalledTimes(2);
+  });
+
+  it('loads no latest past meetings, which the project lens does not show', async () => {
+    const feed = inject();
+
+    await expect(firstValueFrom(feed.latestPast())).resolves.toEqual([]);
+    expect(meetingService.getProjectPastMeetingsForHome).not.toHaveBeenCalled();
   });
 
   it('falls back to start plus duration for the end, and drops rows whose end cannot be read', async () => {
@@ -127,7 +209,7 @@ describe('MeetingsHomeFeed', () => {
     meetingService.getProjectPastMeetingsForHome.mockReturnValue(of({ meetings: [byDuration, runningByDuration, unreadable] }));
     const feed = inject();
 
-    await expect(firstValueFrom(feed.past(''))).resolves.toEqual({ meetings: [byDuration] });
+    await expect(firstValueFrom(feed.past('', MEETINGS_HOME_NO_PAST_FILTERS))).resolves.toEqual({ meetings: [byDuration] });
   });
 
   it('loads nothing until a project is active', async () => {
@@ -135,7 +217,8 @@ describe('MeetingsHomeFeed', () => {
     const feed = inject();
 
     await expect(firstValueFrom(feed.upcoming())).resolves.toEqual([]);
-    await expect(firstValueFrom(feed.past(''))).resolves.toEqual({ meetings: [] });
+    await expect(firstValueFrom(feed.past('', MEETINGS_HOME_NO_PAST_FILTERS))).resolves.toEqual({ meetings: [] });
+    await expect(firstValueFrom(feed.filterOptions())).resolves.toEqual({ projects: [], groups: [], complete: false });
     await expect(firstValueFrom(feed.latestPast())).resolves.toEqual([]);
     expect(meetingService.getProjectMeetingsForHome).not.toHaveBeenCalled();
   });

@@ -28,10 +28,11 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { CampaignsComponent } from './campaigns.component';
-import { seedSelectedFoundation } from './campaigns.spec-helper';
+import { seedSelectedFoundation, STATE_ONLY, campaignsComponentUnderTest, trackStateOnlyTests } from './campaigns.spec-helper';
 import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
 
 seedSelectedFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' });
+trackStateOnlyTests();
 
 describe('CampaignsComponent — email delivery channel', () => {
   let fixture: ComponentFixture<CampaignsComponent>;
@@ -163,7 +164,7 @@ describe('CampaignsComponent — email delivery channel', () => {
         { provide: DialogService, useValue: { open: vi.fn() } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(CampaignsComponent);
+    fixture = TestBed.createComponent(campaignsComponentUnderTest());
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     fixture.detectChanges();
   });
@@ -199,7 +200,7 @@ describe('CampaignsComponent — email delivery channel', () => {
    * press, but not of a programmatic `.click()` — which is what an E2E locator resolving a
    * duplicated testid performs.
    */
-  it('routes a tab selection to the container that owns it, not the visible one', () => {
+  it('routes a tab selection to the container that owns it, not the visible one', STATE_ONLY, () => {
     // Paid is active; the email tablist is mounted but hidden.
     internals().selectTab('implementation', 'email');
 
@@ -207,7 +208,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     expect(internals().selectedTab()).toBe('planning');
   });
 
-  it('keeps each delivery type on its own tab across a round-trip', () => {
+  it('keeps each delivery type on its own tab across a round-trip', STATE_ONLY, () => {
     internals().selectTab('insights', 'paid-marketing');
     expect(internals().selectedTab()).toBe('insights');
 
@@ -292,7 +293,7 @@ describe('CampaignsComponent — email delivery channel', () => {
    * switch. The email panel renders a placeholder today, which is precisely why this would go
    * unnoticed until the real staging form lands.
    */
-  it('clears both delivery types when the program changes', () => {
+  it('clears both delivery types when the program changes', STATE_ONLY, () => {
     const emailBrief = { eventDetails: { name: 'KubeCon', slug: 'kubecon' } } as CampaignBriefOutput;
     internals().onProceedToImplementation(exampleBrief);
     internals().onEmailProceedFromPlanning(emailBrief);
@@ -498,7 +499,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     expect(byTestId('campaigns-email-insights-panel')).toBeNull();
   });
 
-  it('does not let one delivery type receive the other approved brief', () => {
+  it('does not let one delivery type receive the other approved brief', STATE_ONLY, () => {
     internals().onProceedToImplementation(exampleBrief);
     expect(internals().briefOutput()).toEqual(exampleBrief);
     expect(internals().emailBriefOutput()).toBeNull();
@@ -549,7 +550,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailBriefResolving()).toBe(false);
     });
 
-    it("does not let a superseded warm-up clear the newer one's resolving flag", async () => {
+    it("does not let a superseded warm-up clear the newer one's resolving flag", STATE_ONLY, async () => {
       // Warm-up #1 in flight, a reset, warm-up #2 in flight: #1 settling must not reopen compose
       // while #2's persist is still on the wire.
       const first = new Subject<CampaignBriefPersistResult>();
@@ -568,7 +569,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       second.complete();
     });
 
-    it('reads the saved audience back when the warm-up resolves a brief id', async () => {
+    it('reads the saved audience back when the warm-up resolves a brief id', STATE_ONLY, async () => {
       // Re-proceeding from Plan reset `emailAudience` while the warm-up resolved the SAME brief from
       // the ownership cache, and only a restore read the audience back -- so compose reopened over
       // a brief that already had a master.
@@ -594,7 +595,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * legitimate slash variants) as well as by under-denying, and a test for only one direction
      * passes against the other bug.
      */
-    it('accepts only slash variants of the same path, never a different query or fragment', () => {
+    it('accepts only slash variants of the same path, never a different query or fragment', STATE_ONLY, () => {
       selectEmail();
 
       const withRegistrationUrl = (url: string) =>
@@ -652,7 +653,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * The three predicates this PR moved off bare `.trim()` / raw-body checks. Each mutation
      * below passed the whole suite before these existed, so the change was unpinned.
      */
-    it('folds a refused CTA into BOTH variants, or neither', () => {
+    it('folds a refused CTA into BOTH variants, or neither', STATE_ONLY, () => {
       // This flipped twice under review, because two true premises point opposite ways: B has no
       // CTA of its own (its generation discards `cta`/`ctaUrl`), but when the destination is
       // REFUSED no button ships for either variant -- `emailCtaLabel` is '' so `onStageEmailSend`
@@ -684,7 +685,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(bHasLabel).toBe(aHasLabel);
     });
 
-    it('does not fold the refused CTA twice when the server already folded it into B', () => {
+    it('does not fold the refused CTA twice when the server already folded it into B', STATE_ONLY, () => {
       // `emailCtaUnlinkedLabel` gates on variant A's `copy.ctaUrl`, but the fold-back applies to
       // BOTH bodies -- and B comes from its OWN `generateEmailCopy` call. So B's button can be
       // url-LESS (campaign-service folds the label into `body`, `!section.url`) while A's was
@@ -713,7 +714,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(bOut.split('Register Now').length - 1).toBe(1);
     });
 
-    it('does not fold the refused CTA twice after the rich editor rewrites the folded label as a paragraph', () => {
+    it('does not fold the refused CTA twice after the rich editor rewrites the folded label as a paragraph', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().emailCopy.set({
@@ -743,7 +744,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       ['a double quote', 'Say "Hello" Now', 'Say &quot;Hello&quot; Now', 'Now'],
       ['an ampersand', 'Tom & Jerry', 'Tom &amp; Jerry', 'Jerry'],
       ['no entities at all', 'Register Now', 'Register Now', 'Register Now'],
-    ])('suppresses the duplicate fold for a label containing %s', (_case, label, serverEncoded, marker) => {
+    ])('suppresses the duplicate fold for a label containing %s', STATE_ONLY, (_case, label, serverEncoded, marker) => {
       // `escapeHtml` ENCODES `'` and `"`; sanitize-html DECODES them on output. Comparing the raw
       // fragment against the sanitized body therefore missed, and the CTA doubled.
       selectEmail();
@@ -765,7 +766,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(bOut.split(marker).length - 1).toBe(1);
     });
 
-    it('does not stage modules against a body that sanitizes to nothing', () => {
+    it('does not stage modules against a body that sanitizes to nothing', STATE_ONLY, () => {
       // `emailBodyIsStageable` judges the SANITIZED body. A tracking-pixel-only payload is
       // non-empty as raw HTML and empty once stripped, so the raw check staged hero/button/
       // sponsor modules against a body that ships as nothing.
@@ -789,7 +790,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       ['zero-width spaces', '\u200B\u200B'],
       ['a soft hyphen', '\u00AD'],
       ['a Hangul filler', '\u3164'],
-    ])('treats a CTA label of %s as absent, matching the controller', (_label, cta) => {
+    ])('treats a CTA label of %s as absent, matching the controller', STATE_ONLY, (_label, cta) => {
       // `emailCtaLabel` runs `sanitizeDisplayText`, which the controller also runs before
       // dropping an empty `buttonText`. A bare `.trim()` kept these and previewed a label the
       // draft would not carry.
@@ -815,7 +816,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     it.each([
       ['zero-width spaces', '\u200B\u200B'],
       ['a soft hyphen', '\u00AD'],
-    ])('treats a B preheader of %s as absent so B falls back to A', (_label, value) => {
+    ])('treats a B preheader of %s as absent so B falls back to A', STATE_ONLY, (_label, value) => {
       // `abTestPreheaderBForSend` sanitizes for the same reason: the controller omits an empty
       // `previewTextB`, and upstream then preserves A's preview text. A `.trim()` kept these
       // truthy, so B shipped an invisible preheader instead of inheriting A's.
@@ -827,7 +828,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestPreheaderBForSend()).toBe('');
     });
 
-    it('does not let an invented CTA url whitelist its own host for body links', () => {
+    it('does not let an invented CTA url whitelist its own host for body links', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: {
@@ -854,7 +855,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailBodyHtmlPreview()).toContain('here');
     });
 
-    it('keeps a body link on the host the brief vouches for', () => {
+    it('keeps a body link on the host the brief vouches for', STATE_ONLY, () => {
       // The control for the case above: narrowing the list must not drop legitimate links.
       selectEmail();
       internals().emailBriefOutput.set({
@@ -883,7 +884,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * or an LF-owned domain; an off-host one keeps its words only. The controller judges the staged
      * body with the same helper over `emailExtractedLinks`, which the stage request carries.
      */
-    it('keeps vetted event-page links in the preview and strips an off-host one', () => {
+    it('keeps vetted event-page links in the preview and strips an off-host one', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: {
@@ -915,7 +916,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(preview).toContain('Agenda');
     });
 
-    it('strips an LF-owned link the event page did not publish: the preview narrows the service pass', () => {
+    it('strips an LF-owned link the event page did not publish: the preview narrows the service pass', STATE_ONLY, () => {
       // The service's first pass keeps any LF-owned link, since it cannot see the event page. The
       // preview must narrow that back to the page's own links, or an invented LF address survives.
       selectEmail();
@@ -941,7 +942,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailBodyHtmlPreview()).toContain('Invented');
     });
 
-    it('shows a refused CTA as plain text instead of dropping it silently', () => {
+    it('shows a refused CTA as plain text instead of dropping it silently', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/reg' },
@@ -962,7 +963,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCtaUnlinkedLabel()).toBe('Register now');
     });
 
-    it('does not double-render a CTA whose url was OMITTED, since body already carries it', () => {
+    it('does not double-render a CTA whose url was OMITTED, since body already carries it', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/reg' },
@@ -982,7 +983,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCtaUnlinkedLabel()).toBe('');
     });
 
-    it('still shows the unlinked label for a WHITESPACE-ONLY url, which the server treats as supplied', () => {
+    it('still shows the unlinked label for a WHITESPACE-ONLY url, which the server treats as supplied', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/reg' },
@@ -1003,7 +1004,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCtaUnlinkedLabel()).toBe('Register now');
     });
 
-    it('does not double-render a CTA whose destination is accepted', () => {
+    it('does not double-render a CTA whose destination is accepted', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set({
         eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/reg' },
@@ -1023,7 +1024,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCtaUnlinkedLabel()).toBe('');
     });
 
-    it('cannot generate without a brief', () => {
+    it('cannot generate without a brief', STATE_ONLY, () => {
       selectEmail();
       expect(internals().canGenerateEmailCopy()).toBe(false);
 
@@ -1040,7 +1041,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * PREVIOUS stage's copy under the new stage's label. That copy reads plausibly and is simply
      * the wrong kind of email, which `onStageEmailSend` would then clone.
      */
-    it('discards copy that arrives after the operator changed the stage', async () => {
+    it('discards copy that arrives after the operator changed the stage', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1064,7 +1065,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * a (project, event) that already had one — while the paid path, reading the same cache, went
      * on addressing the first.
      */
-    it('records brief ownership so a later save replaces rather than creating a second row', async () => {
+    it('records brief ownership so a later save replaces rather than creating a second row', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1122,7 +1123,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * `persistEmailBrief` awaits `campaignService.persistBrief`, so controlling that controls when
      * each persist settles.
      */
-    it("does not let a late persist clear a newer one's in-flight slot", async () => {
+    it("does not let a late persist clear a newer one's in-flight slot", STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1163,7 +1164,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       await b.catch(() => undefined);
     });
 
-    it('discards an audience that arrives after the brief-derived state reset', async () => {
+    it('discards an audience that arrives after the brief-derived state reset', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1188,7 +1189,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * The same for copy. Carries the same limitation as the audience test above: it pins the
      * outcome, not the generation bump, which the reset's own clear can satisfy in this harness.
      */
-    it('discards copy that arrives after the brief-derived state reset', async () => {
+    it('discards copy that arrives after the brief-derived state reset', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1213,7 +1214,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * because it worked. The reset drops the joinable promise; the in-flight request itself is
      * left to finish.
      */
-    it('does not hand a joined caller the previous brief id after a reset', async () => {
+    it('does not hand a joined caller the previous brief id after a reset', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1247,7 +1248,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * Two email actions started together each found an empty cache and each issued a first-save
      * persist for the same (project, event) — a duplicate brief, or a lost ownership race.
      */
-    it('issues one persist when two email actions start concurrently', async () => {
+    it('issues one persist when two email actions start concurrently', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-1');
@@ -1268,7 +1269,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(persist).toHaveBeenCalledTimes(1);
     });
 
-    it('persists the brief first, then generates against that id', async () => {
+    it('persists the brief first, then generates against that id', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1286,7 +1287,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCopy()?.subject).toBe('Three days in Amsterdam');
     });
 
-    it('does NOT generate when the persist returns no brief id', async () => {
+    it('does NOT generate when the persist returns no brief id', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1301,7 +1302,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCopyState()).toBe('error');
     });
 
-    it('reports a disabled cutover without claiming copy was generated', async () => {
+    it('reports a disabled cutover without claiming copy was generated', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1362,7 +1363,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     // persist is still current by its own generation while its caller has already returned early
     // and rendered NO banner. Promoting there would hand out overwrite permission for a refusal
     // the operator was never shown.
-    it('shows a warm-up conflict on the Audience tab and grants its overwrite only on Retry', async () => {
+    it('shows a warm-up conflict on the Audience tab and grants its overwrite only on Retry', STATE_ONLY, async () => {
       // A conflict carrying an id used to read as "unapproved": no Retry, and the conflict message
       // whose render grants the overwrite never appeared, so proceeding repeated the conflict.
       selectEmail();
@@ -1396,7 +1397,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       );
     });
 
-    it('withholds the overwrite until the conflict warning is actually rendered', async () => {
+    it('withholds the overwrite until the conflict warning is actually rendered', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1438,7 +1439,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     // Asserted on `knownBriefIds` directly rather than by driving three UI actions: the promotion
     // IS an ownership write, and the persist dedup plus the type-change resets make a three-action
     // script assert far less than it appears to.
-    it('drops a staged overwrite when a non-conflict failure renders instead', () => {
+    it('drops a staged overwrite when a non-conflict failure renders instead', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1473,7 +1474,7 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     // The other half of the same rule: a promotion IS granted when the refusal that staged it is
     // the one being rendered. Without this the test above could pass by never promoting at all.
-    it('applies the staged overwrite when its own conflict is the one rendered', () => {
+    it('applies the staged overwrite when its own conflict is the one rendered', STATE_ONLY, () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1503,7 +1504,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     // token or, on its success arm, wiping it. The operator then sees a generic retry banner for a
     // refusal belonging to a send they moved off, and the pending overwrite is dropped because the
     // conflict it matches against is gone.
-    it('does not let an abandoned persist write the current conflict token', async () => {
+    it('does not let an abandoned persist write the current conflict token', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1534,7 +1535,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(priv.emailBriefConflict, 'an abandoned persist wiped the live send conflict token').toBe('unowned-brief-exists');
     });
 
-    it('surfaces the upstream refusal rather than a generic message', async () => {
+    it('surfaces the upstream refusal rather than a generic message', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
@@ -1579,7 +1580,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * HubSpot" for a staging that failed — sending the operator to look for a draft that is not
      * there.
      */
-    it('reports a failed hubspot platform result as an error, not a created draft', async () => {
+    it('reports a failed hubspot platform result as an error, not a created draft', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-1');
@@ -1700,7 +1701,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     });
 
     /** An ABSENT platformResults must still succeed — it is optional on the contract. */
-    it('still reports success when the service omits platformResults', async () => {
+    it('still reports success when the service omits platformResults', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-1');
@@ -1732,7 +1733,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * once sent, but the poll and the state writes after it can be, and those are what an
      * operator sees. Labelling the test is better than reporting coverage it does not demonstrate.
      */
-    it('abandons the staging result when the brief resets during the create', async () => {
+    it('abandons the staging result when the brief resets during the create', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-1');
@@ -1771,7 +1772,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * The guard is kept as defence-in-depth for a reset that lands after that check has passed,
      * which this harness has no seam to produce; the entry check is what this test proves.
      */
-    it('does not create a campaign when the brief resets mid-stage', async () => {
+    it('does not create a campaign when the brief resets mid-stage', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-1');
@@ -1810,7 +1811,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * after a new brief or a foundation switch still writes `done` — announcing a HubSpot draft
      * that belongs to the PREVIOUS brief as though it were this one's.
      */
-    it('stops the staging poll when the brief-derived state resets', async () => {
+    it('stops the staging poll when the brief-derived state resets', STATE_ONLY, async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-1');
@@ -1944,7 +1945,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(hint, 'Stage was held with no reason given').toContain('ended without an answer');
     });
 
-    it('scopes an unresolved stage to its brief: another brief is not locked, and the hold returns with it', () => {
+    it('scopes an unresolved stage to its brief: another brief is not locked, and the hold returns with it', STATE_ONLY, () => {
       // A single global flag locked brief B on A's stage, and B's acknowledgement cleared A's.
       onImplementTab();
       internals().emailBriefId.set('brief-a');
@@ -1974,7 +1975,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingMessage()).toContain('Check HubSpot');
     });
 
-    it('does not advise a retry when the create failed after it was dispatched', async () => {
+    it('does not advise a retry when the create failed after it was dispatched', STATE_ONLY, async () => {
       // The stage is held as unresolved because the create may already be running; "try again"
       // contradicted that hold and invited a duplicate draft.
       onImplementTab();
@@ -1989,7 +1990,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingMessage()).not.toContain('try again');
     });
 
-    it('keeps the retry advice for a failure before anything was dispatched', async () => {
+    it('keeps the retry advice for a failure before anything was dispatched', STATE_ONLY, async () => {
       onImplementTab();
       internals().emailBriefId.set(composed.briefId);
       internals().onAudienceComposed(composed);
@@ -2002,7 +2003,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingMessage()).toContain('try again');
     });
 
-    it('releases the hold when a create cancelled mid-flight comes back as a definite refusal', async () => {
+    it('releases the hold when a create cancelled mid-flight comes back as a definite refusal', STATE_ONLY, async () => {
       // The cancel held the dispatch because the create MIGHT have started; a definite refusal says
       // it did not, but the stale-context return skipped it and kept everything locked.
       onImplementTab();
@@ -2022,7 +2023,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingHeld(), 'a refused create kept the stage held').toBe(false);
     });
 
-    it('keeps the hold when a create cancelled mid-flight comes back as indeterminate', async () => {
+    it('keeps the hold when a create cancelled mid-flight comes back as indeterminate', STATE_ONLY, async () => {
       onImplementTab();
       internals().emailBriefId.set(composed.briefId);
       internals().onAudienceComposed(composed);
@@ -2039,7 +2040,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingHeld(), 'an indeterminate create was released').toBe(true);
     });
 
-    it('holds a DISPATCHED stage when a brief reset cancels its poll', async () => {
+    it('holds a DISPATCHED stage when a brief reset cancels its poll', STATE_ONLY, async () => {
       // The reset idles the display state, but the create cannot be recalled and its job may still
       // resolve the brief's audience -- releasing let A -> B -> A replace it underneath the job.
       onImplementTab();
@@ -2055,7 +2056,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingHeld(), 'a dispatched stage was released by a UI reset').toBe(true);
     });
 
-    it('releases nothing extra once the job reached a terminal answer', async () => {
+    it('releases nothing extra once the job reached a terminal answer', STATE_ONLY, async () => {
       onImplementTab();
       internals().emailBriefId.set(composed.briefId);
       internals().onAudienceComposed(composed);
@@ -2073,7 +2074,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     it.each([
       ['an indeterminate create (it may have started)', { jobId: '', error: 'Campaign creation could not be confirmed.', indeterminate: true }, true],
       ['a definite refusal (nothing was created)', { jobId: '', error: 'Campaign creation was rejected and nothing was created.' }, false],
-    ])('on %s, holds the stage only if a draft may exist', async (_label, response, held) => {
+    ])('on %s, holds the stage only if a draft may exist', STATE_ONLY, async (_label, response, held) => {
       // A refusal left `dispatchedStage` set, so a later segment change or reset turned a draft that
       // cannot exist into an unresolved hold -- and an indeterminate error read as a refusal.
       onImplementTab();
@@ -2123,7 +2124,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingHeld(), 'the acknowledgement never became available').toBe(false);
     });
 
-    it("lets a stale create's rejection settle only its own dispatch, not the newer stage's", async () => {
+    it("lets a stale create's rejection settle only its own dispatch, not the newer stage's", STATE_ONLY, async () => {
       onImplementTab();
       internals().emailBriefId.set(composed.briefId);
       internals().onAudienceComposed(composed);
@@ -2150,7 +2151,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       ).toBe('brief-other');
     });
 
-    it('does not re-lock a brief on a reset after its lost job was acknowledged', async () => {
+    it('does not re-lock a brief on a reset after its lost job was acknowledged', STATE_ONLY, async () => {
       // The poll's error path recorded the stage as unresolved but left the dispatch marker set,
       // so a later reset treated it as a newly abandoned create and locked the brief again.
       onImplementTab();
@@ -2167,7 +2168,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingHeld(), 'an acknowledged stage was re-locked by a reset').toBe(false);
     });
 
-    it('holds the stage when the create request fails after it was sent', async () => {
+    it('holds the stage when the create request fails after it was sent', STATE_ONLY, async () => {
       // The request may have reached the BFF and started; failing closed beats a duplicate draft.
       onImplementTab();
       internals().emailBriefId.set(composed.briefId);
@@ -2180,7 +2181,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingHeld(), 'a create that may have started was released').toBe(true);
     });
 
-    it('holds the locks when staging is accepted but returns no job to follow', async () => {
+    it('holds the locks when staging is accepted but returns no job to follow', STATE_ONLY, async () => {
       // The request WAS accepted, so a draft may still be created; releasing let a retry duplicate it.
       onImplementTab();
       internals().emailBriefId.set(composed.briefId);
@@ -2193,7 +2194,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingHeld(), 'an accepted stage with nothing to track released the locks').toBe(true);
     });
 
-    it('locks the type and segment pickers while a stage is in flight', () => {
+    it('locks the type and segment pickers while a stage is in flight', STATE_ONLY, () => {
       // `onStageEmailSend` snapshots the copy before its awaits, so switching mid-stage cloned a
       // HubSpot draft with the PREVIOUS selection's copy -- a create on the wire cannot be recalled.
       selectEmail();
@@ -2208,7 +2209,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().selectorForm.controls.emailType.disabled).toBe(false);
     });
 
-    it('abandons an in-flight stage when the segment changes, as a type change does', () => {
+    it('abandons an in-flight stage when the segment changes, as a type change does', STATE_ONLY, () => {
       // Left running, the poll went on to report "Draft created" for copy the new segment no longer
       // shows. Invalidated and cleaned up together, like `onSelectEmailType`.
       selectEmail();
@@ -2222,7 +2223,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStaging(), 'the abandoned stage kept spinning').toBe('idle');
     });
 
-    it("keeps a finished stage's confirmation across a segment change", () => {
+    it("keeps a finished stage's confirmation across a segment change", STATE_ONLY, () => {
       selectEmail();
       internals().emailStaging.set('done');
 
@@ -2231,7 +2232,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStaging(), 'a finished stage\'s "Draft created" was erased').toBe('done');
     });
 
-    it('refuses to create when an audience write started during the brief-id await', async () => {
+    it('refuses to create when an audience write started during the brief-id await', STATE_ONLY, async () => {
       // The Audience tab stays mounted, so a replacement write could start while staging resolved
       // its brief id; the create would then clone a draft against the list being replaced.
       onImplementTab();
@@ -2276,7 +2277,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(block?.textContent, 'a restored audience was described as still needed').not.toContain('Needed before the draft can be staged');
     });
 
-    it('unblocks staging on a composed audience', () => {
+    it('unblocks staging on a composed audience', STATE_ONLY, () => {
       onImplementTab();
       expect(internals().canStageEmail(), 'fixture precondition: staging must be blocked before an audience exists').toBe(false);
 
@@ -2294,7 +2295,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * `emailAudience` -- so bumping late leaves a window in which a STALE row lands on top of the
      * list just assembled, and dispatch then sends to the stale one.
      */
-    it('discards a read-back that resolves after a compose attached its own audience', async () => {
+    it('discards a read-back that resolves after a compose attached its own audience', STATE_ONLY, async () => {
       onImplementTab();
       const late = new Subject<{ enabled: boolean; audiences: CampaignAudience[] }>();
       vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(late.asObservable() as never);
@@ -2316,7 +2317,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * names the brief it was dispatched with. Accepting it would put the previous stage's list on
      * this stage's send.
      */
-    it('ignores a composed audience for a brief the parent no longer holds', () => {
+    it('ignores a composed audience for a brief the parent no longer holds', STATE_ONLY, () => {
       onImplementTab();
       internals().emailBriefId.set('brief-other');
       internals().onAudienceComposed(composed);
@@ -2326,7 +2327,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().canStageEmail()).toBe(false);
     });
 
-    it('ignores a composed audience while no brief is held', () => {
+    it('ignores a composed audience while no brief is held', STATE_ONLY, () => {
       onImplementTab();
       internals().emailBriefId.set('');
       internals().onAudienceComposed({ ...composed, briefId: '' });
@@ -2445,7 +2446,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailAudienceUnattached()).toEqual(looseMaster);
     });
 
-    it('keeps a brief-less warning once the plan save fills the brief id', () => {
+    it('keeps a brief-less warning once the plan save fills the brief id', STATE_ONLY, () => {
       // A compose run before the plan was saved is filed under no brief. The save that follows fills
       // `emailBriefId`, and looking up the live id alone hid the warning for a list still unattached.
       onImplementTab();
@@ -2462,7 +2463,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailAudienceUnattached(), 'the warning vanished when the plan was saved').toEqual(looseMaster);
     });
 
-    it('drops a brief-less reply that lands after a reset', () => {
+    it('drops a brief-less reply that lands after a reset', STATE_ONLY, () => {
       // A brief-less compose has no brief to scope by, so a reply landing after a reset was filed
       // under the shared brief-less key and shown on the NEXT brief, offering A's list for B.
       onImplementTab();
@@ -2473,7 +2474,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailAudienceUnattached(), "the previous send's loose list was shown on the next brief").toBeNull();
     });
 
-    it("drops a brief's loose-list warning once a read finds its audience", async () => {
+    it("drops a brief's loose-list warning once a read finds its audience", STATE_ONLY, async () => {
       // With an older campaign-service the attach may have happened despite `recorded: false`. Kept,
       // the warning read "not attached" beside the card naming the same list.
       onImplementTab();
@@ -2494,7 +2495,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailAudienceUnattached()).toBeNull();
     });
 
-    it('clears the warning when the brief-derived state resets', () => {
+    it('clears the warning when the brief-derived state resets', STATE_ONLY, () => {
       onImplementTab();
       internals().onAudienceComposeUnattached(looseHere());
       fixture.detectChanges();
@@ -2533,7 +2534,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       version: 1,
     };
 
-    it('lands on the audience step, not on implement', () => {
+    it('lands on the audience step, not on implement', STATE_ONLY, () => {
       selectEmail();
 
       internals().onEmailProceedFromPlanning(emailBrief);
@@ -2549,7 +2550,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * compose with no brief id creates a real HubSpot list and attaches it to nothing, which is a
      * state this app cannot then fix on the operator's behalf.
      */
-    it('saves the plan on arrival, so a compose there can attach what it creates', () => {
+    it('saves the plan on arrival, so a compose there can attach what it creates', STATE_ONLY, () => {
       selectEmail();
       const persist = vi
         .spyOn(TestBed.inject(CampaignService), 'persistBrief')
@@ -2646,7 +2647,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().canStageEmail()).toBe(false); // no template yet -- the audience is not the blocker
     });
 
-    it('drops the skip when an audience arrives after one', () => {
+    it('drops the skip when an audience arrives after one', STATE_ONLY, () => {
       selectEmail();
       internals().onEmailProceedFromPlanning(emailBrief);
       internals().onSkipAudienceStep();
@@ -2660,7 +2661,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailAudienceSkipped()).toBe(false);
     });
 
-    it('drops the skip when a new brief arrives', () => {
+    it('drops the skip when a new brief arrives', STATE_ONLY, () => {
       selectEmail();
       internals().onEmailProceedFromPlanning(emailBrief);
       internals().onSkipAudienceStep();
@@ -2707,7 +2708,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      * platforms, and dispatching an email send against a non-HubSpot audience is not a degraded
      * result -- it is the wrong list entirely.
      */
-    it('takes the HubSpot row, not merely the first one', async () => {
+    it('takes the HubSpot row, not merely the first one', STATE_ONLY, async () => {
       selectEmail();
       const other = { ...stored, id: 'aud-other', platform: 'linkedin' } as unknown as CampaignAudience;
       vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [other, stored] }));
@@ -2717,7 +2718,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailAudience()?.id).toBe('aud-stored');
     });
 
-    it('records an unavailable lookup apart from a failure, and keeps writes blocked', async () => {
+    it('records an unavailable lookup apart from a failure, and keeps writes blocked', STATE_ONLY, async () => {
       // `enabled: false` is a deploy-time flag: a retry gets the same answer, so it must not be
       // reported as a failure the Audience tab offers to retry.
       selectEmail();
@@ -2734,7 +2735,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       ['the cutover flag is off', { enabled: false }],
       ['the read failed', { enabled: true, error: 'The saved audience could not be read.' }],
       ['the brief has no audience yet', { enabled: true, audiences: [] }],
-    ])('stays silent when %s', async (_label, result) => {
+    ])('stays silent when %s', STATE_ONLY, async (_label, result) => {
       selectEmail();
       vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(of(result) as never);
 
@@ -2751,7 +2752,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     it.each([
       ['no project', '', 'brief-77'],
       ['no brief id', 'tlf', ''],
-    ])('does not provoke a 400 with %s', async (_label, projectSlug, briefId) => {
+    ])('does not provoke a 400 with %s', STATE_ONLY, async (_label, projectSlug, briefId) => {
       selectEmail();
       const list = vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [stored] }));
 
@@ -2760,7 +2761,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(list).not.toHaveBeenCalled();
     });
 
-    it('swallows a thrown read rather than banner-ing a page nobody asked anything of', async () => {
+    it('swallows a thrown read rather than banner-ing a page nobody asked anything of', STATE_ONLY, async () => {
       selectEmail();
       vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(throwError(() => new Error('network')) as never);
 
@@ -2775,7 +2776,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     it.each([
       ['upstream answers with an error', { enabled: true, error: 'The saved audience could not be read.' }],
       ['the call rejects', 'throw'],
-    ])('records the failure when %s', async (_label, outcome) => {
+    ])('records the failure when %s', STATE_ONLY, async (_label, outcome) => {
       selectEmail();
       vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(
         (outcome === 'throw' ? throwError(() => new Error('network')) : of(outcome)) as never
@@ -2789,7 +2790,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     // The failure belongs to ONE brief. Left set, it locked compose for every LATER brief whose
     // audience had never been read and never failed -- a new brief clears `emailBriefId`, and the
     // restore returns early on an empty id, so nothing would ever clear it but a page reload.
-    it('stops reporting a failure once the brief it belonged to is left', async () => {
+    it('stops reporting a failure once the brief it belonged to is left', STATE_ONLY, async () => {
       selectEmail();
       vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(throwError(() => new Error('network')) as never);
       await internals().restoreEmailAudience('tlf', 'brief-77');
@@ -2868,7 +2869,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     }
   });
 
-  it('sanitizes variant B for the preview', () => {
+  it('sanitizes variant B for the preview', STATE_ONLY, () => {
     selectEmail();
     internals().abTestForm.controls.enabled.setValue(true);
     internals().abTestForm.controls.subjectB.setValue('B subject');
@@ -2891,7 +2892,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     expect(preview).toContain('Hi');
   });
 
-  it('names the hero image host, and falls back to empty for an unusable url', () => {
+  it('names the hero image host, and falls back to empty for an unusable url', STATE_ONLY, () => {
     selectEmail();
     // `emailHeroImageUrl` is gated on `emailBodyIsStageable`, so the copy has to be present --
     // the hero is only named when it will actually be staged.
@@ -2914,7 +2915,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     expect(internals().emailHeroImageHost()).toBe('');
   });
 
-  it('refuses to stage a variant B body that is only a tracking pixel', () => {
+  it('refuses to stage a variant B body that is only a tracking pixel', STATE_ONLY, () => {
     selectEmail();
     internals().abTestForm.controls.enabled.setValue(true);
     internals().abTestForm.controls.subjectB.setValue('B subject');

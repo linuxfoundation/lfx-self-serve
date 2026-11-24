@@ -23,7 +23,7 @@ import { MentoringHistoryComponent } from './components/mentoring-history/mentor
  * `MentorPageComponent`'s `<router-outlet>`.
  *
  * Composes three sections: the shared `lfx-mentorship-profile-card` (LFX identity
- * summary — name, emails, linked accounts), the mentor's own profile details (About Me,
+ * summary — name, emails, linked accounts), the mentor's own profile details (Introduction,
  * Skills), and a read-only Mentoring History.
  *
  * The profile-card owns its own fetch, so this page only loads the mentorship-side

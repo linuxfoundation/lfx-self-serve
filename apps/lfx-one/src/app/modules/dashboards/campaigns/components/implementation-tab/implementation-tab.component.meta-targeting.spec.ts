@@ -12,9 +12,10 @@ import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The Meta geo chips (LFXV2-3227).
@@ -72,7 +73,7 @@ describe('ImplementationTabComponent Meta geo targets', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
     await selectMeta();
@@ -143,95 +144,6 @@ describe('ImplementationTabComponent Meta geo targets', () => {
     expect(metaGeoTargets()).toEqual(['US', 'JP']);
   });
 
-  /** Normalised to match campaign-service's `validateGeoTargets`, which uppercases and trims. */
-  it('uppercases and trims an entered code', async () => {
-    await setMetaGeoTargets([]);
-
-    const input = geoAddInput();
-    input.value = ' jp ';
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual(['JP']);
-  });
-
-  /**
-   * The service de-dupes in first-seen order, so rendering `us` beside `US` would show a
-   * targeting set that never reaches Meta.
-   */
-  it('does not add a duplicate that differs only in case', async () => {
-    await setMetaGeoTargets(['US']);
-
-    const input = geoAddInput();
-    input.value = 'us';
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual(['US']);
-  });
-
-  /**
-   * Shape only — NOT eligibility. A malformed code cannot be a country, so rejecting it here
-   * turns what would have been a failed campaign create into a no-op keystroke. Which countries
-   * Meta accepts stays the service's call (it drops ineligible entries from a mixed list, and
-   * refuses the create when nothing usable survives).
-   */
-  it.each(['1', '!!', 'x9', 'U', 'USA'])('ignores a malformed code %s', async (bad) => {
-    await setMetaGeoTargets(['US']);
-
-    const input = geoAddInput();
-    input.value = bad;
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual(['US']);
-  });
-
-  /**
-   * `ZZ` is well-shaped but sits in the ISO user-assigned range, so no ad platform can ever target
-   * it. The create path filters only regulated markets, so it used to survive to `geo_locations`
-   * and be rejected by Meta at AD-SET creation — after `POST /campaigns` had already created a
-   * billable resource. Refused at the chip now, where it costs nothing.
-   */
-  it('refuses a well-shaped but unassigned code', async () => {
-    await setMetaGeoTargets([]);
-
-    const input = geoAddInput();
-    input.value = 'ZZ';
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual([]);
-  });
-
-  /**
-   * The counterpart, and the one that stops the guard over-broadening. ELIGIBILITY remains the
-   * SERVICE's call: a regulated market like `SG` is officially assigned, so it must still be
-   * addable here and filtered upstream where that list lives. Without this, a guard that rejected
-   * every country would pass the test above while breaking geo targeting entirely.
-   */
-  it('still accepts an assigned country the service may later filter', async () => {
-    await setMetaGeoTargets([]);
-
-    const input = geoAddInput();
-    input.value = 'SG';
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual(['SG']);
-  });
-
-  it('ignores a blank entry', async () => {
-    await setMetaGeoTargets(['US']);
-
-    const input = geoAddInput();
-    input.value = '   ';
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual(['US']);
-  });
-
   /**
    * `maxlength="2"` used to sit on this input, and it defeated half of `normalizeGeoTargets`.
    * The normaliser trims BEFORE it validates, precisely so a padded paste survives — but the
@@ -293,24 +205,6 @@ describe('ImplementationTabComponent Meta geo targets', () => {
     await fixture.whenStable();
   }
 
-  it('normalises geo codes seeded from a structured brief', async () => {
-    await seedFromBrief(['us', ' jp '], 'structured');
-
-    expect(metaGeoTargets()).toEqual(['US', 'JP']);
-  });
-
-  it('de-dupes case-variant geo codes seeded from a structured brief', async () => {
-    await seedFromBrief(['us', 'US', 'JP'], 'structured');
-
-    expect(metaGeoTargets()).toEqual(['US', 'JP']);
-  });
-
-  it('normalises and de-dupes geo codes seeded from a typed brief', async () => {
-    await seedFromBrief(['de', 'DE', ' fr '], 'typed');
-
-    expect(metaGeoTargets()).toEqual(['DE', 'FR']);
-  });
-
   /** The defect as reported: a stored lowercase code plus a typed uppercase one made two chips. */
   it('treats a typed code as a duplicate of a lowercase code seeded from the brief', async () => {
     await seedFromBrief(['us'], 'structured');
@@ -320,12 +214,6 @@ describe('ImplementationTabComponent Meta geo targets', () => {
     input.value = 'US';
     input.dispatchEvent(new Event('change'));
     await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual(['US']);
-  });
-
-  it('drops a mis-shaped geo code seeded from the brief', async () => {
-    await seedFromBrief(['us', 'USA', '1', ''], 'structured');
 
     expect(metaGeoTargets()).toEqual(['US']);
   });
@@ -395,7 +283,7 @@ describe('ImplementationTabComponent meta ad image', () => {
     upload: boolean | null,
     draft: CampaignImplementationDraft | null = null
   ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     if (draft) f.componentRef.setInput('draft', draft);
@@ -481,11 +369,9 @@ describe('ImplementationTabComponent meta ad image', () => {
     }).compileComponents();
   });
 
-  it.each([
-    ['unanswered', null],
-    ['off', false],
-  ])('renders no image controls while the Meta creative capability is %s, and sends the variants unchanged', async (_label, creative) => {
-    const f = (await mount(creative, true)).fixture;
+  // Unanswered (`null`) is the stricter wiring case; the full null/false/true matrix is `metaImageCapabilities` in the helper spec.
+  it('renders no image controls while the Meta creative capability is unanswered, and sends the variants unchanged', async () => {
+    const f = (await mount(null, true)).fixture;
 
     expect(q(f, 'implementation-meta-image-url')).toBeNull();
     expect(q(f, 'implementation-meta-image-file')).toBeNull();
@@ -495,11 +381,8 @@ describe('ImplementationTabComponent meta ad image', () => {
     ]);
   });
 
-  it.each([
-    ['unanswered', null],
-    ['off', false],
-  ])('offers the image URL but no upload while the upload capability is %s', async (_label, upload) => {
-    const f = (await mount(true, upload)).fixture;
+  it('offers the image URL but no upload while the upload capability is unanswered', async () => {
+    const f = (await mount(true, null)).fixture;
 
     expect(q(f, 'implementation-meta-image-url')).not.toBeNull();
     expect(q(f, 'implementation-meta-image-file')).toBeNull();
@@ -591,15 +474,6 @@ describe('ImplementationTabComponent meta ad image', () => {
     expect(submitVariants(f).some((v) => 'imageAssetId' in v)).toBe(false);
   });
 
-  it('never sends an upload made for another brief, and says so', async () => {
-    const draft = { ...(await uploadedDraft()), metaImageAssetBriefId: '0f8fad5b-d9cb-469f-a165-70867728950e' };
-    const f = (await mount(true, true, draft)).fixture;
-    fillForm(f);
-
-    expect(q(f, 'implementation-meta-image-asset-block-otherBrief')).not.toBeNull();
-    expect(at(f).canSubmit()).toBe(false);
-  });
-
   it('keeps Create blocked after a failed upload with both capabilities on, until the operator removes it', async () => {
     uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } })));
     const f = (await mount(true, true)).fixture;
@@ -619,22 +493,19 @@ describe('ImplementationTabComponent meta ad image', () => {
     expect(submitVariants(f).map((v) => v['imageUrl'])).toEqual(['https://cdn.example.org/promo.png', 'https://cdn.example.org/promo.png']);
   });
 
-  it.each([
-    ['unanswered, with the read failed', null, 'failed', 'failed'],
-    ['unanswered, with the read pending', null, 'pending', 'pending'],
-    ['off', false, 'ready', 'unsupported'],
-  ] as const)('blocks Create for a restored image URL while the image capability is %s, rather than dropping it', async (_label, creative, read, kind) => {
+  // Wiring for the withheld URL on an unanswered capability; the `unsupported`, `pending` and `unsaved` kinds are rows in `metaImageAssetBlock`'s helper table.
+  it('blocks Create for a restored image URL while the image capability is unanswered and its read failed, rather than dropping it', async () => {
     const first = await mount(true, false);
     typeImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
     const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
     first.fixture.destroy();
 
-    const f = (await mount(creative, false, draft)).fixture;
-    f.componentRef.setInput('createCapabilityRead', read);
+    const f = (await mount(null, false, draft)).fixture;
+    f.componentRef.setInput('createCapabilityRead', 'failed');
     fillForm(f);
 
     expect(q(f, 'implementation-meta-image-url')).toBeNull();
-    expect(q(f, `implementation-meta-image-asset-block-${kind}`)).not.toBeNull();
+    expect(q(f, 'implementation-meta-image-asset-block-failed')).not.toBeNull();
     expect(at(f).canSubmit()).toBe(false);
 
     (q(f, 'implementation-meta-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
@@ -680,7 +551,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
   }
 
   async function mount(enabled: boolean | null | undefined, draft?: Record<string, unknown>): Promise<ComponentFixture<ImplementationTabComponent>> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     if (enabled !== undefined) f.componentRef.setInput('metaInstagramDsaEnabled', enabled);
     if (draft) f.componentRef.setInput('draft', { eventSlug: 'kubecon-eu-2026', headlines: [''], descriptions: [''], ...draft });
     f.componentRef.setInput('briefData', brief());
@@ -749,7 +620,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
   async function mountLive(
     briefData: CampaignBriefOutput
   ): Promise<{ f: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     f.componentRef.setInput('metaInstagramDsaEnabled', true);
@@ -852,7 +723,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
   });
 
   /** The geos and variants are seeded only from Meta copy, so a brief without any opens on none. */
-  it('clears the meta geos and variants when the next brief carries no meta copy', async () => {
+  it('clears the meta geos and variants when the next brief carries no meta copy', STATE_ONLY, async () => {
     const { f, latest } = await mountLive(brief());
     component(f)['addMetaGeoTarget']('DE');
     expect(latest()?.metaGeoTargets).toEqual(['US', 'DE']);
@@ -911,15 +782,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       expect(request['metaConfig']['instagramUserId']).toBe('17841400000000000');
     });
 
-    it('refuses a non-numeric Instagram id', async () => {
-      fixture = await mount(true);
-      await type({ instagramUserId: '@lfprojects' });
-
-      expect(component()['metaInstagramUserIdError']()).toBe('The Instagram account ID must be numeric.');
-      expect(component()['canSubmit']()).toBe(false);
-    });
-
-    it('neither requires nor sends the Instagram id when every Instagram placement is off', async () => {
+    it('neither requires nor sends the Instagram id when every Instagram placement is off', STATE_ONLY, async () => {
       fixture = await mount(true);
       component()['metaPlacements'].update((p: Record<string, boolean>) => ({ ...p, instagramFeed: false, stories: false, reels: false }));
       await type({ instagramUserId: '17841400000000000' });
@@ -945,44 +808,12 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       expect(request['metaConfig']['dsaPayor']).toBe('The Linux Foundation');
     });
 
-    it('does not require the disclosures for a non-EU geo, and sends none', async () => {
-      fixture = await mount(true);
-      await type({ instagramUserId: '17841400000000000' });
-      await setGeos(['US', 'GB', 'CH']);
-
-      expect(component()['metaDsaBeneficiaryError']()).toBeNull();
-      const request = await submitted();
-      expect(Object.keys(request['metaConfig'])).not.toContain('dsaBeneficiary');
-      expect(Object.keys(request['metaConfig'])).not.toContain('dsaPayor');
-    });
-
-    it('refuses a one-sided pair even without an EU geo', async () => {
+    it('refuses a one-sided pair even without an EU geo', STATE_ONLY, async () => {
       fixture = await mount(true);
       await type({ instagramUserId: '17841400000000000', dsaBeneficiary: 'CNCF' });
 
       expect(component()['metaDsaPayorError']()).toBe('Enter both the beneficiary and the payor, or neither.');
       expect(component()['metaDsaBeneficiaryError']()).toBeNull();
-      expect(component()['canSubmit']()).toBe(false);
-    });
-
-    it('requires both disclosures for a non-EU EEA geo too, as campaign-service does', async () => {
-      fixture = await mount(true);
-      await type({ instagramUserId: '17841400000000000' });
-      await setGeos(['NO']);
-
-      expect(component()['metaDsaCountries']()).toEqual(['NO']);
-      expect(component()['canSubmit']()).toBe(false);
-    });
-
-    it.each([
-      ['a tab', 'CNCF\tFoundation'],
-      ['a line separator', 'CNCF\u2028Foundation'],
-      ['a bidi override', '\u202eFNCC'],
-    ])('refuses a disclosure carrying %s', async (_label, value) => {
-      fixture = await mount(true);
-      await type({ instagramUserId: '17841400000000000', dsaBeneficiary: value, dsaPayor: 'LF' });
-
-      expect(component()['metaDsaBeneficiaryError']()).toBe('Enter the name on one line, without tabs, line breaks or invisible formatting characters.');
       expect(component()['canSubmit']()).toBe(false);
     });
 
@@ -1000,15 +831,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       expect(fixture.nativeElement.querySelector('#meta-dsa-beneficiary')?.getAttribute('maxlength')).toBeNull();
     });
 
-    it('accepts a non-Latin disclosure', async () => {
-      fixture = await mount(true);
-      await type({ instagramUserId: '17841400000000000', dsaBeneficiary: 'Fondation Linux — Zürich', dsaPayor: 'リナックス財団' });
-
-      expect(component()['metaDsaBeneficiaryError']()).toBeNull();
-      expect(component()['metaDsaPayorError']()).toBeNull();
-    });
-
-    it('persists the three values in the draft as typed, and restores them on remount', async () => {
+    it('persists the three values in the draft as typed, and restores them on remount', STATE_ONLY, async () => {
       fixture = await mount(true);
       let draft: Record<string, unknown> | undefined;
       component()['draftChange'].subscribe((d: Record<string, unknown>) => (draft = d));

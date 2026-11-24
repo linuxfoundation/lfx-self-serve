@@ -11,9 +11,19 @@ import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
 import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { DISPLAY_COMPLETE, configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  DISPLAY_COMPLETE,
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The Display audience pickers (#5262): user lists, custom audiences, custom affinity segments and
@@ -54,7 +64,7 @@ describe('ImplementationTabComponent display audiences', () => {
     readAudiences = vi.fn((_project: string, type: string, q = '') => audiences(type, q));
     vi.spyOn(TestBed.inject(CampaignService), 'getGoogleAdsUserLists').mockImplementation(readLists as never);
     vi.spyOn(TestBed.inject(CampaignService), 'getGoogleAdsAudiences').mockImplementation(readAudiences as never);
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -258,7 +268,7 @@ describe('ImplementationTabComponent display audiences', () => {
     expect(c['canSubmit']()).toBe(false);
   });
 
-  it('round-trips the picks through the draft, keeping strings only', async () => {
+  it('round-trips the picks through the draft, keeping strings only', STATE_ONLY, async () => {
     await setup();
     const c = seedDisplay();
     restoreGoogleDraft(fixture, c, {
@@ -328,7 +338,7 @@ describe('ImplementationTabComponent display audiences', () => {
   });
 
   /** PR #5388 review: a new brief clears the interest search with the picks, so the picker lists the first interests again. */
-  it('clears the interest search when the form resets for a brief', async () => {
+  it('clears the interest search when the form resets for a brief', STATE_ONLY, async () => {
     await setup();
     const c = seedDisplay();
     c['displayInterestSearchForm'].controls.q.setValue('devops');
@@ -436,7 +446,7 @@ describe('ImplementationTabComponent display audiences', () => {
       expect(focused.at(-1)?.isConnected).toBe(true);
     });
 
-    it('clears once the caller is answered yes', async () => {
+    it('clears once the caller is answered yes', STATE_ONLY, async () => {
       await setup();
       const c = hold(true, 'ready');
       expect(c['displayAudiencesBlock']()).toBeNull();

@@ -42,6 +42,8 @@ import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { take } from 'rxjs';
 
+import { MeetingsHomeStore } from '../../services/meetings-home.store';
+import { MeetingDetailsSource } from '../meeting-details-drawer/meeting-details.source';
 import { MeetingRsvpScopeModalComponent } from '../meeting-rsvp-scope-modal/meeting-rsvp-scope-modal.component';
 
 /**
@@ -59,6 +61,8 @@ import { MeetingRsvpScopeModalComponent } from '../meeting-rsvp-scope-modal/meet
 export class MeetingRsvpControlsComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly rsvpService = inject(MeetingRsvpService);
+  private readonly store = inject(MeetingsHomeStore, { optional: true });
+  private readonly source = inject(MeetingDetailsSource, { optional: true });
   private readonly modal = inject(UiModalService);
   private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
@@ -89,8 +93,14 @@ export class MeetingRsvpControlsComponent {
     return this.fullWidth() ? [...start, ...end] : [...end, ...start];
   });
   protected readonly iconColor: Record<RsvpResponse, string> = { accepted: 'text-emerald-600', declined: 'text-red-600', maybe: 'text-amber-600' };
+  /** The optimistic registration cannot answer through the index-dependent RSVP endpoint yet. */
+  protected readonly invitationSyncing: Signal<boolean> = computed(
+    () => (this.source?.selfInviteOf?.(this.row().meeting.id) ?? this.store?.selfInviteOf(this.row().meeting.id)) !== undefined
+  );
   /** This row is saving, or another date of the same series is: a second write could be confirmed out of order. */
-  protected readonly busy: Signal<boolean> = computed(() => !!this.saving() || this.rsvpService.submittingMeetingIds().has(this.row().meeting.id));
+  protected readonly busy: Signal<boolean> = computed(
+    () => this.invitationSyncing() || !!this.saving() || this.rsvpService.submittingMeetingIds().has(this.row().meeting.id)
+  );
   protected readonly visible: Signal<boolean> = this.initVisible();
   protected readonly current: Signal<MeetingRsvpChoice | null> = computed(
     () => this.choices.find((choice) => choice.response === this.row().myRsvp?.response_type) ?? null
@@ -101,6 +111,12 @@ export class MeetingRsvpControlsComponent {
   });
   /** 112×28 per the design in a row, matching the small RSVP buttons; the card's badge spans it at 32px. */
   protected readonly badgeClass: Signal<string> = computed(() => (this.fullWidth() ? 'w-full !h-ui-small' : 'w-[112px] !h-ui-xsmall'));
+
+  protected refreshInvitation(): void {
+    if (!this.invitationSyncing()) return;
+    if (this.source?.retrySelfInvites) this.source.retrySelfInvites();
+    else this.store?.retrySelfInvites();
+  }
 
   protected choose(response: RsvpResponse): void {
     const row = this.row();
@@ -124,7 +140,9 @@ export class MeetingRsvpControlsComponent {
           variant: 'warning',
           position: 'bottom-center',
           message: 'RSVP Not Saved',
-          description: 'Another response to this meeting is still saving. Try again.',
+          description: this.invitationSyncing()
+            ? 'Your invitation is saved but is still syncing. Try RSVP again shortly.'
+            : 'Another response to this meeting is still saving. Try again.',
           duration: 5000,
         });
       else this.submit(row, response, scope);

@@ -3,7 +3,7 @@
 
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Observable, of, Subject } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createLiveSnapshot } from './live-snapshot.util';
@@ -20,7 +20,10 @@ describe('createLiveSnapshot', () => {
     Object.defineProperty(doc, 'visibilityState', { get: () => 'visible', configurable: true });
   });
 
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 
   it('stamps each value with the landing time and resets failures on success', () => {
     const key = signal<string | null>('a');
@@ -91,7 +94,8 @@ describe('createLiveSnapshot', () => {
     expect(live.landedGeneration()).toBeGreaterThanOrEqual(awaiting);
   });
 
-  it('counts consecutive failures and keeps polling', () => {
+  it('counts consecutive failures and keeps polling, on the jittered default (pinned at the floor here)', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     let calls = 0;
     const live = TestBed.runInInjectionContext(() =>
       createLiveSnapshot({
@@ -109,9 +113,30 @@ describe('createLiveSnapshot', () => {
     expect(live.failures()).toBe(1);
     vi.advanceTimersByTime(5000);
     expect(live.failures()).toBe(2);
-    vi.advanceTimersByTime(10000);
+    vi.advanceTimersByTime(5000);
     expect(live.failures()).toBe(0);
     expect(live.snapshot()?.value).toBe(3);
+  });
+
+  it('keeps the fixed doubling reconnect cadence (5, 10, 20, 30 s; no jitter) when jitter is off, as the Votes presenter asks', () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const fetch = vi.fn(() => throwError(() => new Error('down')));
+    TestBed.runInInjectionContext(() => createLiveSnapshot({ key: signal<string | null>('a'), fetch, doc, ...timing, jitter: false }));
+    flush();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    for (const [wait, calls] of [
+      [5000, 2],
+      [10000, 3],
+      [20000, 4],
+      [30000, 5],
+      [30000, 6],
+    ] as const) {
+      vi.advanceTimersByTime(wait - 1);
+      expect(fetch).toHaveBeenCalledTimes(calls - 1);
+      vi.advanceTimersByTime(1);
+      expect(fetch).toHaveBeenCalledTimes(calls);
+    }
+    expect(random).not.toHaveBeenCalled();
   });
 
   it('restart bumps the generation before restarting and a stale in-flight result does not settle it', () => {

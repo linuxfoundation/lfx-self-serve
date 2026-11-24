@@ -103,18 +103,9 @@
       }
 
       @if (showLookupFailed()) {
-        <div class="flex flex-wrap items-center gap-2 text-sm text-gray-700" data-testid="mktg-slides-export-lookup-failed">
-          <span>Could not check for an earlier deck of this {{ assetLabel() }}. Check again to refresh its export status.</span>
-          <lfx-button
-            [label]="lookupChecking() ? 'Checking…' : 'Check again'"
-            icon="fa-light fa-rotate-right"
-            [text]="true"
-            size="small"
-            [loading]="lookupChecking()"
-            [disabled]="lookupChecking()"
-            data-testid="mktg-slides-export-check-again"
-            (onClick)="onCheckAgain()" />
-        </div>
+        <p class="text-sm text-gray-700" role="status" data-testid="mktg-slides-export-lookup-failed">
+          {{ lookupRetrying() ? retryingText : 'Could not check for an earlier deck of this ' + assetLabel() + '.' }}
+        </p>
       }
 
       @if (showLast()) {

@@ -18,9 +18,18 @@ import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
 import { NEVER, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 describe('ImplementationTabComponent performance max audience signal', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;
@@ -55,7 +64,7 @@ describe('ImplementationTabComponent performance max audience signal', () => {
     ctx.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
     read = vi.fn(answer);
     vi.spyOn(TestBed.inject(CampaignService), 'getGoogleAdsAudiences').mockImplementation(read as never);
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -199,11 +208,11 @@ describe('ImplementationTabComponent performance max audience signal', () => {
   });
 
   /** A Performance Max request with no signal picked is byte-identical to one built before it existed. */
-  it('sends a byte-identical request when no signal is picked', async () => {
+  it('sends a byte-identical request when no signal is picked', STATE_ONLY, async () => {
     await setup();
     const without = JSON.stringify(await requestOf(seedPmax(false)));
 
-    const other = TestBed.createComponent(ImplementationTabComponent);
+    const other = TestBed.createComponent(tabComponentUnderTest());
     other.detectChanges();
     await other.whenStable();
     const after = seedPmax(true, other);
@@ -212,28 +221,28 @@ describe('ImplementationTabComponent performance max audience signal', () => {
     expect(without).not.toContain('performanceMaxAudienceSignal');
   });
 
-  it.each([
-    ['a malformed resource name', 'customers/1234567890/userLists/111', 'is not a Google Ads Audience'],
-    ["another account's Audience", 'customers/999/audiences/111', 'belongs to another Google Ads account'],
-  ])('holds Create, with the reason shown and announced, for %s', async (_label, value, reason) => {
-    await setup();
-    const c = seedPmax();
-    restoreGoogleDraft(fixture, c, { includePerformanceMax: true, googlePerformanceMaxAudienceSignal: value });
-    c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
-    fixture.detectChanges();
+  it.each([["another account's Audience", 'customers/999/audiences/111', 'belongs to another Google Ads account']])(
+    'holds Create, with the reason shown and announced, for %s',
+    async (_label, value, reason) => {
+      await setup();
+      const c = seedPmax();
+      restoreGoogleDraft(fixture, c, { includePerformanceMax: true, googlePerformanceMaxAudienceSignal: value });
+      c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
+      fixture.detectChanges();
 
-    expect(c['canSubmit']()).toBe(false);
-    expect(query('implementation-performance-max-audience-signal-error')?.textContent).toContain(reason);
-    expect(query('implementation-performance-max-audience-signal-error-live')?.textContent).toContain(reason);
-    expect(query('implementation-performance-max-audience-signal-remove')).not.toBeNull();
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-performance-max-audience-signal-error')?.textContent).toContain(reason);
+      expect(query('implementation-performance-max-audience-signal-error-live')?.textContent).toContain(reason);
+      expect(query('implementation-performance-max-audience-signal-remove')).not.toBeNull();
 
-    c['removePerformanceMaxAudienceSignal']();
-    fixture.detectChanges();
-    expect(c['performanceMaxAudienceSignalError']()).toBeNull();
-    expect(c['canSubmit']()).toBe(true);
-  });
+      c['removePerformanceMaxAudienceSignal']();
+      fixture.detectChanges();
+      expect(c['performanceMaxAudienceSignalError']()).toBeNull();
+      expect(c['canSubmit']()).toBe(true);
+    }
+  );
 
-  it("takes a restored bare audience id, which upstream resolves in the campaign's own account", async () => {
+  it("takes a restored bare audience id, which upstream resolves in the campaign's own account", STATE_ONLY, async () => {
     await setup();
     const c = seedPmax();
     restoreGoogleDraft(fixture, c, { includePerformanceMax: true, googlePerformanceMaxAudienceSignal: ' 111 ' });
@@ -275,7 +284,7 @@ describe('ImplementationTabComponent performance max audience signal', () => {
     expect(c['googlePerformanceMaxAudienceSignalPayload']()).toEqual({ performanceMaxAudienceSignal: AUDIENCE_A });
   });
 
-  it('carries the signal through the draft, restores it under any channel, and clears it on reset', async () => {
+  it('carries the signal through the draft, restores it under any channel, and clears it on reset', STATE_ONLY, async () => {
     await setup();
     const c = seedPmax();
     c['onPerformanceMaxAudienceSignalPicked'](AUDIENCE_A);
@@ -389,7 +398,7 @@ describe('ImplementationTabComponent performance max audience signal', () => {
   it.each([
     ['a lone U+FEFF', '\uFEFF'],
     ['a U+FEFF before an id', '\uFEFF42'],
-  ])('trims as Go does, so %s is judged and refused rather than omitted or accepted', async (_label, value) => {
+  ])('trims as Go does, so %s is judged and refused rather than omitted or accepted', STATE_ONLY, async (_label, value) => {
     await setup();
     const c = seedPmax();
     restoreGoogleDraft(fixture, c, { includePerformanceMax: true, googlePerformanceMaxAudienceSignal: value });
@@ -403,7 +412,7 @@ describe('ImplementationTabComponent performance max audience signal', () => {
     expect(c['canSubmit']()).toBe(false);
   });
 
-  it('still trims the whitespace Go trims around an id', async () => {
+  it('still trims the whitespace Go trims around an id', STATE_ONLY, async () => {
     await setup();
     const c = seedPmax();
     restoreGoogleDraft(fixture, c, { includePerformanceMax: true, googlePerformanceMaxAudienceSignal: '\u00a0\t111\n' });
@@ -461,7 +470,7 @@ describe('ImplementationTabComponent performance max audience signal', () => {
   it.each([
     ['denied', false, 'ready', 'restricted'],
     ['unanswered', null, 'failed', 'failed'],
-  ] as const)('follows a channel switch away and back with access %s', async (_label, enabled, read, kind) => {
+  ] as const)('follows a channel switch away and back with access %s', STATE_ONLY, async (_label, enabled, read, kind) => {
     await setup();
     const c = holdSignal(enabled, read);
     expect(c['performanceMaxAudienceSignalBlock']()?.kind).toBe(kind);
@@ -477,7 +486,7 @@ describe('ImplementationTabComponent performance max audience signal', () => {
     }
   });
 
-  it('clears the block only once the channel capability is answered no, which drops Performance Max', async () => {
+  it('clears the block only once the channel capability is answered no, which drops Performance Max', STATE_ONLY, async () => {
     await setup();
     const c = holdSignal(null, 'failed');
     fixture.componentRef.setInput('googleChannelsEnabled', null);

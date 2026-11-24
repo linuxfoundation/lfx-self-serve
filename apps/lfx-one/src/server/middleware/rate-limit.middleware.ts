@@ -16,6 +16,9 @@ import {
   NEWSLETTER_TEST_SEND_RATE_LIMIT_WINDOW_MS,
   SELF_RESEND_INVITE_RATE_LIMIT_MAX,
   SELF_RESEND_INVITE_RATE_LIMIT_WINDOW_MS,
+  VOTE_LINK_RATE_LIMIT_MAX,
+  VOTE_LINK_RATE_LIMIT_WINDOW_MS,
+  VOTE_LINK_RATE_LIMITED_REQUESTS,
 } from '@lfx-one/shared/constants';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
@@ -46,12 +49,37 @@ export const apiRateLimiter = rateLimit({
  *
  * Applied to /public/api/* routes which don't require authentication,
  * so a stricter limit is needed to prevent abuse.
+ *
+ * Skips the vote-link routes (#5964): `voteLinkRateLimiter` meters those instead, so a shared office
+ * voting by link does not exhaust this budget. `req.path` is mount-relative here (`app.use('/public/api/', …)`).
  */
 export const publicApiRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute window
   max: 100, // limit each IP to 100 requests per window
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => VOTE_LINK_RATE_LIMITED_REQUESTS.some((request) => request === `${req.method} ${req.path}`),
+});
+
+/**
+ * Rate limiter for login-free vote-link voting (#5964).
+ *
+ * Applied per-route in `public-votes.route.ts` to `POST /public/api/votes/link-ballot` and
+ * `POST|PUT /public/api/votes/link-responses`, which `publicApiRateLimiter` skips. Each voter makes
+ * about three of these calls, and a board voting from one office shares a NAT IP, so the public API
+ * limiter's 100/min would throttle about 30 voters. Keyed on the default (/56-masked) IP key: the
+ * vote link token is the only credential, and this cap still bounds token guessing.
+ *
+ * The counter lives in the default in-process MemoryStore — per pod, not cluster-wide, like
+ * `voteWriteRateLimiter` — so the effective production ceiling is `limit × pods`.
+ */
+export const voteLinkRateLimiter = rateLimit({
+  windowMs: VOTE_LINK_RATE_LIMIT_WINDOW_MS,
+  max: VOTE_LINK_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: 'Too many requests, please try again later.', code: 'RATE_LIMITED' },
 });
 
 /**

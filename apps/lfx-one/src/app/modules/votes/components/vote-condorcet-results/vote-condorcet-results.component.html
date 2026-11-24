@@ -141,6 +141,12 @@
         <p class="text-sm text-amber-700" role="status" data-testid="vote-condorcet-ballots-stale">
           Ballot rankings may be out of date. The latest refresh failed.
         </p>
+      } @else if (ballotsConfirming()) {
+        <p class="text-sm text-slate-500" role="status" data-testid="vote-condorcet-ballots-confirming">Ballot rankings are being confirmed.</p>
+      } @else if (ballotsMismatch()) {
+        <p class="text-sm text-amber-700" role="status" data-testid="vote-condorcet-ballots-mismatch">
+          Ballot rankings may be out of date. They do not match the final totals.
+        </p>
       }
       @if (patterns.length > 0) {
         <div class="relative overflow-x-auto rounded-lg border border-gray-200">

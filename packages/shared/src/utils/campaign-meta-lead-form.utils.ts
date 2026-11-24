@@ -1,8 +1,23 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_META_OBJECTIVE, META_LEAD_FORM_CALL_TO_ACTIONS, META_LEAD_FORM_ID_PATTERN } from '../constants/campaign.constants';
-import type { MetaConfigRefusal } from '../interfaces/campaign.interface';
+import {
+  DEFAULT_META_OBJECTIVE,
+  META_LEAD_FORM_CALL_TO_ACTIONS,
+  META_LEAD_FORM_ID_PATTERN,
+  META_LEAD_FORM_UNAVAILABLE_REFUSAL,
+  META_OBJECTIVE_LABELS,
+  META_SELECTABLE_OBJECTIVES,
+} from '../constants/campaign.constants';
+import type {
+  MetaConfigRefusal,
+  MetaLeadFormChoice,
+  MetaLeadFormDraft,
+  MetaLeadFormOption,
+  MetaLeadFormPickerView,
+  MetaLeadFormRestore,
+  MetaObjective,
+} from '../interfaces/campaign.interface';
 import { metaAdOptionLabel, metaConfigRecord } from './campaign-meta-ad-options.utils';
 
 /**
@@ -57,4 +72,80 @@ export function metaLeadFormRefusal(raw: unknown, manualBidding: boolean): MetaC
     }
   }
   return null;
+}
+
+/**
+ * The objectives the Implement tab offers, in `META_OBJECTIVE_LABELS` order: the always-selectable ones, plus
+ * `leads` only when this caller may send a lead form. Without a form `leads` would run as a traffic campaign,
+ * which is why it stays hidden otherwise.
+ */
+export function metaObjectiveChoices(leadFormsEnabled: boolean): MetaObjective[] {
+  const selectable = META_SELECTABLE_OBJECTIVES as readonly MetaObjective[];
+  return (Object.keys(META_OBJECTIVE_LABELS) as MetaObjective[]).filter(
+    (objective) => selectable.includes(objective) || (leadFormsEnabled && objective === 'leads')
+  );
+}
+
+/** The picker rows for the Page's forms, in the read's (name) order: a form that is not ACTIVE, or whose id campaign-service would refuse, shows its status and cannot be picked. */
+export function metaLeadFormChoices(forms: readonly MetaLeadFormOption[]): MetaLeadFormChoice[] {
+  return forms.map((form) => {
+    const active = form.status.trim().toUpperCase() === 'ACTIVE' && META_LEAD_FORM_ID_PATTERN.test(form.id);
+    const status = form.status.trim() === '' ? 'unknown' : form.status.trim().toLowerCase();
+    return { value: form.id, label: active ? form.name : `${form.name} (${status})`, disabled: !active };
+  });
+}
+
+/** The form id to keep after the objective changes: only `leads` carries one, so any other objective clears it. */
+export function metaLeadFormForObjective(objective: MetaObjective, leadFormId: string): string {
+  return objective === 'leads' ? leadFormId : '';
+}
+
+/**
+ * The objective to keep after a foundation switch: `leads` falls back to the default, because whether this caller
+ * may send a lead form is re-read for the new foundation, and `leads` without a form would go out as traffic.
+ */
+export function metaObjectiveAfterFoundationSwitch(objective: MetaObjective): MetaObjective {
+  return objective === 'leads' ? DEFAULT_META_OBJECTIVE : objective;
+}
+
+/** Whether a call to action may be offered with a lead form; without one every call to action may be. */
+export function metaCallToActionAllowedWithLeadForm(callToAction: string, withLeadForm: boolean): boolean {
+  return !withLeadForm || (META_LEAD_FORM_CALL_TO_ACTIONS as readonly string[]).includes(callToAction.trim().toUpperCase());
+}
+
+/**
+ * Why the Implement tab's Meta draft cannot be created with its lead form, or `null`. `leads` is only ever sent with
+ * a form, so self-serve never sends the traffic-mapped `leads`. While lead forms are enabled for this caller it needs
+ * one that passes the create route's own rules ({@link metaLeadFormRefusal}); while they are off (or not yet read) no
+ * form can be sent, so any `leads` draft, with or without a form, is held until another objective is chosen.
+ */
+export function metaLeadFormDraftRefusal(draft: MetaLeadFormDraft): MetaConfigRefusal | null {
+  if (draft.objective !== 'leads') return null;
+  if (!draft.leadFormsEnabled) return { field: 'metaConfig.leadFormId', message: META_LEAD_FORM_UNAVAILABLE_REFUSAL };
+  const leadFormId = draft.leadFormId.trim();
+  if (leadFormId === '') return { field: 'metaConfig.leadFormId', message: 'Choose a lead form for the Leads objective.' };
+  return metaLeadFormRefusal({ leadFormId, objective: draft.objective, callToAction: draft.callToAction }, draft.manualBidding);
+}
+
+/**
+ * The objective and form a saved draft restores to under `activeProject`. A form is restored only under the
+ * foundation it was picked under. A draft whose form was saved under another foundation also drops `leads` to the
+ * default, as an in-place foundation switch does ({@link metaObjectiveAfterFoundationSwitch}): leaving the tab,
+ * switching foundation and coming back must not bring `leads` back without its form. `leadFormId` is `null` when
+ * the draft has nothing to restore, so the current form is kept. An unknown active foundation (`''`) changes nothing.
+ */
+export function metaLeadFormRestore(saved: { objective: MetaObjective; leadFormId?: string; project?: string }, activeProject: string): MetaLeadFormRestore {
+  if (saved.leadFormId === undefined || activeProject === '') return { objective: saved.objective, leadFormId: null };
+  if (saved.project !== activeProject) return { objective: metaObjectiveAfterFoundationSwitch(saved.objective), leadFormId: '' };
+  return { objective: saved.objective, leadFormId: metaLeadFormForObjective(saved.objective, saved.leadFormId) };
+}
+
+/**
+ * What the lead form picker shows once the Page's forms are read. A held id the list does not show (a typed or
+ * restored one) stays on screen in the select, even when the list is empty, so it can be seen and cleared rather
+ * than sent unseen.
+ */
+export function metaLeadFormPickerView(choices: readonly MetaLeadFormChoice[], heldId: string): MetaLeadFormPickerView {
+  const heldIdUnlisted = heldId !== '' && !choices.some((choice) => choice.value === heldId);
+  return { empty: choices.length === 0, select: choices.length > 0 || heldIdUnlisted, heldIdUnlisted };
 }

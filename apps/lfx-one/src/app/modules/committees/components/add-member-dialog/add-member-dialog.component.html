@@ -167,6 +167,51 @@
       </div>
     </div>
 
+    @if (isDirectAdd() && !collectOnly && memberNamesForm.length > 0) {
+      <div class="flex flex-col gap-3" data-testid="add-member-names">
+        <p class="text-xs text-gray-500">
+          Review each person's first and last name before adding them. Names from search or a meeting are filled in when available.
+        </p>
+        @for (nameForm of memberNamesForm.controls; track nameForm; let index = $index) {
+          <fieldset class="flex flex-col gap-2 rounded-lg border border-gray-200 p-3" data-testid="add-member-name-row">
+            <legend class="break-all px-1 text-sm font-medium text-gray-700">{{ nameForm.controls.email.value }}</legend>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div class="flex flex-col gap-1">
+                <label [for]="'add-member-first-name-' + index" class="text-sm font-medium text-gray-700">First name <span aria-hidden="true">*</span></label>
+                <lfx-input-text
+                  [form]="nameForm"
+                  control="first_name"
+                  [inputId]="'add-member-first-name-' + index"
+                  [describedBy]="'add-member-first-name-hint-' + index"
+                  [invalid]="nameForm.controls.first_name.invalid && nameForm.controls.first_name.touched"
+                  [required]="true"
+                  autocomplete="given-name"
+                  size="small"
+                  styleClass="w-full"
+                  dataTest="add-member-first-name"></lfx-input-text>
+                <p [id]="'add-member-first-name-hint-' + index" class="text-xs text-gray-500">Required, up to 100 characters; spaces alone are not a name.</p>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label [for]="'add-member-last-name-' + index" class="text-sm font-medium text-gray-700">Last name <span aria-hidden="true">*</span></label>
+                <lfx-input-text
+                  [form]="nameForm"
+                  control="last_name"
+                  [inputId]="'add-member-last-name-' + index"
+                  [describedBy]="'add-member-last-name-hint-' + index"
+                  [invalid]="nameForm.controls.last_name.invalid && nameForm.controls.last_name.touched"
+                  [required]="true"
+                  autocomplete="family-name"
+                  size="small"
+                  styleClass="w-full"
+                  dataTest="add-member-last-name"></lfx-input-text>
+                <p [id]="'add-member-last-name-hint-' + index" class="text-xs text-gray-500">Required, up to 100 characters; spaces alone are not a name.</p>
+              </div>
+            </div>
+          </fieldset>
+        }
+      </div>
+    }
+
     @if (showOrganizationField()) {
       <div class="flex w-full flex-col gap-2">
         <label class="block text-sm font-medium text-gray-700">

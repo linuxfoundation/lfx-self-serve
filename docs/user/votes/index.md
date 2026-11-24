@@ -4,7 +4,7 @@ description: Create votes, cast your ballot, and view results for project govern
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, governance, decisions, elections]
-last_updated: 2026-11-12
+last_updated: 2026-11-20
 intercom_collection: Votes
 ---
 
@@ -18,7 +18,7 @@ The Votes section lets you create and manage votes for formal project governance
 - [Create a vote](create-vote/) with one or more questions, comment questions, and an optional abstain choice
 - Cast your vote on an open vote: select **Vote**, or **Review** once you have voted
 - [See results](vote-results/): a vote's page shows the tallies, abstentions, comments, and who has voted
-- [Manage votes](manage-votes/): edit or delete drafts, send reminders, and copy a link from the **⋮** row menu
+- [Manage votes](manage-votes/): edit or delete drafts, cancel or close active votes, send reminders, and copy a link from the **⋮** row menu
 - [Present, extend, clone, or send a summary](present-extend-clone/) from the same row menu
 
 ## Navigation

@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { DEFAULT_META_OBJECTIVE, META_AD_OPTION_FIELDS } from '../constants/campaign.constants';
-import type { MetaAdOptionField, MetaAdOptions, MetaConfigRefusal } from '../interfaces/campaign.interface';
+import type {
+  CampaignBiddingCapabilityBlock,
+  CampaignCapabilityReadState,
+  MetaAdOptionField,
+  MetaAdOptionKey,
+  MetaAdOptions,
+  MetaAdOptionsEnabled,
+  MetaConfigRefusal,
+} from '../interfaces/campaign.interface';
 
 /**
  * The Meta call to action, conversion event and optimization goal (#5934): `metaConfig.callToAction`,
@@ -69,4 +77,55 @@ export function metaAdOptionOffMessage(field: MetaAdOptionField): string {
 export function metaAdOptionLabel(value: string): string {
   const words = value.toLowerCase().replace(/_/g, ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** The Meta ad choices a create sends: compacted, and each only on an explicit yes. "Not set" is never sent. */
+export function metaAdOptionsForCreate(options: MetaAdOptions, enabled: MetaAdOptionsEnabled): MetaAdOptions {
+  return Object.fromEntries(Object.entries(compactMetaAdOptions(options)).filter(([key]) => enabled[key as MetaAdOptionKey] === true));
+}
+
+/** The choices after one dropdown change: an empty value ("Not set") removes the key. */
+export function metaAdOptionsWithChoice(options: MetaAdOptions, key: MetaAdOptionKey, value: string | null): MetaAdOptions {
+  const next = { ...options };
+  if (!value) delete next[key];
+  else next[key] = value;
+  return next;
+}
+
+/** The choices the objective still takes; the rest are cleared when the objective changes or a draft is restored. */
+export function metaAdOptionsForObjective(options: MetaAdOptions, objective: string): MetaAdOptions {
+  return Object.fromEntries(Object.entries(options).filter(([key]) => META_AD_OPTION_FIELDS.some((f) => f.key === key && metaAdOptionApplies(f, objective))));
+}
+
+/** The choices without those this deployment answered no to: the way past an `unsupported` {@link metaAdOptionsBlock}. */
+export function metaAdOptionsWithoutUnsupported(options: MetaAdOptions, enabled: MetaAdOptionsEnabled): MetaAdOptions {
+  return Object.fromEntries(Object.entries(options).filter(([key]) => enabled[key as MetaAdOptionKey] !== false));
+}
+
+/**
+ * Why Create is held for a Meta ad choice the draft holds but this deployment has not confirmed, or `null`.
+ * Held rather than dropped, since the choice changes the ads. Only an explicit no on every held choice
+ * (`unsupported`) offers Clear; while an answer is out or failed, Create waits or offers Retry.
+ */
+export function metaAdOptionsBlock(
+  options: MetaAdOptions,
+  enabled: MetaAdOptionsEnabled,
+  createCapabilityRead: CampaignCapabilityReadState,
+  briefId: string | null
+): CampaignBiddingCapabilityBlock | null {
+  const held = Object.keys(compactMetaAdOptions(options)).filter((key) => enabled[key as MetaAdOptionKey] !== true);
+  if (held.length === 0) return null;
+  const labels = META_AD_OPTION_FIELDS.filter((field) => held.includes(field.key))
+    .map((field) => field.label.toLowerCase())
+    .join(', ');
+  if (held.every((key) => enabled[key as MetaAdOptionKey] === false)) {
+    return { kind: 'unsupported', message: `This deployment cannot send the Meta ${labels} on this brief. Clear it to create the campaign.` };
+  }
+  if (createCapabilityRead === 'pending') {
+    return { kind: 'pending', message: `Checking whether the Meta ${labels} can be sent. Create waits so it is not dropped.` };
+  }
+  if (!briefId) {
+    return { kind: 'unsaved', message: `The Meta ${labels} can't be checked until this brief is saved. Save the brief.` };
+  }
+  return { kind: 'failed', message: `Could not confirm that the Meta ${labels} can be sent, so Create waits rather than dropping it. Retry the check.` };
 }
