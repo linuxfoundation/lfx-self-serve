@@ -6,6 +6,7 @@ import type {
   MetaDetailedTargeting,
   MetaDeviceOsBlockInput,
   MetaDeviceOsDraft,
+  MetaDeviceOsOption,
   MetaObjective,
   MetaPlacement,
 } from '../interfaces/campaign.interface';
@@ -27,8 +28,9 @@ export function copyMetaDeviceOsDraft(draft: MetaDeviceOsDraft): MetaDeviceOsDra
   return { devicePlatforms: [...draft.devicePlatforms], userOs: [...draft.userOs] };
 }
 
-/** `values` with `value` ticked or unticked, in the order of `order` (the checkboxes' order), so a draft reads the same however it was ticked. */
-export function metaDeviceOsWithValue(values: readonly string[], value: string, on: boolean, order: readonly string[]): string[] {
+/** `values` with `value` ticked or unticked, in the order of `options` (the checkboxes' order), so a draft reads the same however it was ticked. */
+export function metaDeviceOsWithValue(values: readonly string[], value: string, on: boolean, options: readonly MetaDeviceOsOption[]): string[] {
+  const order = options.map((o) => o.value);
   const chosen = new Set(values);
   if (on) chosen.add(value);
   else chosen.delete(value);

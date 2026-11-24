@@ -17,8 +17,6 @@ import {
   metaDeviceOsWithValue,
 } from './campaign-meta-device-os.utils';
 
-const DEVICE_ORDER = META_DEVICE_PLATFORM_OPTIONS.map((o) => o.value);
-const OS_ORDER = META_OS_FAMILY_OPTIONS.map((o) => o.value);
 const both: MetaDeviceOsDraft = { devicePlatforms: ['mobile'], userOs: ['iOS'] };
 
 describe('the Implement tab device and OS rules', () => {
@@ -31,14 +29,14 @@ describe('the Implement tab device and OS rules', () => {
   });
 
   it.each([
-    [[], 'desktop', true, DEVICE_ORDER, ['desktop']],
-    [['desktop'], 'mobile', true, DEVICE_ORDER, ['mobile', 'desktop']],
-    [['mobile', 'desktop'], 'mobile', false, DEVICE_ORDER, ['desktop']],
-    [['Android'], 'iOS', true, OS_ORDER, ['iOS', 'Android']],
+    [[], 'desktop', true, META_DEVICE_PLATFORM_OPTIONS, ['desktop']],
+    [['desktop'], 'mobile', true, META_DEVICE_PLATFORM_OPTIONS, ['mobile', 'desktop']],
+    [['mobile', 'desktop'], 'mobile', false, META_DEVICE_PLATFORM_OPTIONS, ['desktop']],
+    [['Android'], 'iOS', true, META_OS_FAMILY_OPTIONS, ['iOS', 'Android']],
     // A value the boxes do not offer (an older draft's) stays, after the offered ones.
-    [['iOS_ver_9.0_and_above'], 'Android', true, OS_ORDER, ['Android', 'iOS_ver_9.0_and_above']],
-  ])('ticks into %j %s = %s', (values, value, on, order, expected) => {
-    expect(metaDeviceOsWithValue(values, value, on, order)).toEqual(expected);
+    [['iOS_ver_9.0_and_above'], 'Android', true, META_OS_FAMILY_OPTIONS, ['Android', 'iOS_ver_9.0_and_above']],
+  ])('ticks into %j %s = %s', (values, value, on, options, expected) => {
+    expect(metaDeviceOsWithValue(values, value, on, options)).toEqual(expected);
   });
 
   it.each([
