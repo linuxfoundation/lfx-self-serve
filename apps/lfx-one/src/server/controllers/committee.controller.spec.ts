@@ -23,13 +23,26 @@ const { getEffectiveEmailMock, committeeSvc } = vi.hoisted(() => ({
     acceptPendingCommitteeInvitesAfterLfidAccept: vi.fn(),
     getMyCommittees: vi.fn(),
     uploadCommitteeDocument: vi.fn(),
+    updateCommitteeDocument: vi.fn(),
     bulkCreateCommitteeMembers: vi.fn(),
     withdrawApplication: vi.fn(),
   },
 }));
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
-vi.mock('@lfx-one/shared/constants', () => ({ ALLOWED_FILE_TYPES: [], MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX: 100 }));
+// The real document-update allowlist and name limits: the PATCH route's validation must be exercised against the production values.
+vi.mock('@lfx-one/shared/constants', async () => {
+  const documentConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/documents.constants')>(
+    '../../../../../packages/shared/src/constants/documents.constants'
+  );
+  return {
+    ALLOWED_FILE_TYPES: [],
+    MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX: 100,
+    COMMITTEE_DOCUMENT_DELETE_TYPES: documentConstants.COMMITTEE_DOCUMENT_DELETE_TYPES,
+    COMMITTEE_DOCUMENT_NAME_MAX_LENGTH: documentConstants.COMMITTEE_DOCUMENT_NAME_MAX_LENGTH,
+    DOCUMENT_UPDATE_TYPES: documentConstants.DOCUMENT_UPDATE_TYPES,
+  };
+});
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: {} }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // canViewCommitteeRoster is a faithful copy of the shared rule (exhaustively covered in
@@ -682,5 +695,109 @@ describe('CommitteeController.withdrawApplication', () => {
 
     expect(committeeSvc.withdrawApplication).not.toHaveBeenCalled();
     expect(next.mock.calls[0][0].constructor.name).toBe('ServiceValidationError');
+  });
+});
+
+describe('CommitteeController.updateCommitteeDocument', () => {
+  const DOCUMENT_ID = 'c0000000-0000-0000-0000-000000000003';
+  const FOLDER_ID = 'd0000000-0000-0000-0000-000000000004';
+  let controller: CommitteeController;
+
+  function buildUpdateReqRes(overrides: { id?: string; documentId?: string; type?: string; body?: unknown } = {}) {
+    const type = 'type' in overrides ? overrides.type : 'link';
+    const req = {
+      params: { id: overrides.id ?? COMMITTEE_ID, documentId: overrides.documentId ?? DOCUMENT_ID },
+      query: type === undefined ? {} : { type },
+      body: 'body' in overrides ? overrides.body : { name: 'Renamed' },
+      path: '/api/committees/documents',
+      log: {},
+    } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CommitteeController();
+    vi.mocked(getStringQueryParam).mockImplementation((req: any, key: string) => (typeof req.query?.[key] === 'string' ? req.query[key] : undefined));
+  });
+
+  it('passes a rename through to the committee service and returns the updated document', async () => {
+    const { req, res, next } = buildUpdateReqRes();
+    const updated = { uid: DOCUMENT_ID, type: 'link', name: 'Renamed' };
+    committeeSvc.updateCommitteeDocument.mockResolvedValue(updated);
+
+    await controller.updateCommitteeDocument(req, res, next);
+
+    expect(committeeSvc.updateCommitteeDocument).toHaveBeenCalledWith(req, COMMITTEE_ID, DOCUMENT_ID, 'link', { name: 'Renamed' });
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(updated);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes a move into a folder and a move to the root (null) through as given', async () => {
+    const move = buildUpdateReqRes({ type: 'file', body: { parent_uid: FOLDER_ID } });
+    const root = buildUpdateReqRes({ type: 'file', body: { parent_uid: null } });
+    committeeSvc.updateCommitteeDocument.mockResolvedValue({});
+
+    await controller.updateCommitteeDocument(move.req, move.res, move.next);
+    await controller.updateCommitteeDocument(root.req, root.res, root.next);
+
+    expect(committeeSvc.updateCommitteeDocument).toHaveBeenNthCalledWith(1, move.req, COMMITTEE_ID, DOCUMENT_ID, 'file', { parent_uid: FOLDER_ID });
+    expect(committeeSvc.updateCommitteeDocument).toHaveBeenNthCalledWith(2, root.req, COMMITTEE_ID, DOCUMENT_ID, 'file', { parent_uid: null });
+  });
+
+  it.each(['file', 'link', 'folder'])('accepts type=%s', async (type) => {
+    const { req, res, next } = buildUpdateReqRes({ type, body: { name: 'Renamed' } });
+    committeeSvc.updateCommitteeDocument.mockResolvedValue({});
+
+    await controller.updateCommitteeDocument(req, res, next);
+
+    expect(committeeSvc.updateCommitteeDocument).toHaveBeenCalledWith(req, COMMITTEE_ID, DOCUMENT_ID, type, { name: 'Renamed' });
+  });
+
+  it.each([
+    ['a committee id that is not a UUID', { id: '../projects/some-project' }],
+    ['a document id that is not a UUID', { documentId: '../../secrets' }],
+    ['no type', { type: undefined }],
+    ['an unknown type', { type: 'meeting' }],
+    ['no body', { body: undefined }],
+    ['an empty body', { body: {} }],
+    ['a blank name', { body: { name: '   ' } }],
+    ['a link name over its limit', { type: 'link', body: { name: 'x'.repeat(501) } }],
+    ['a folder name over its limit', { type: 'folder', body: { name: 'x'.repeat(201) } }],
+    ['a folder id that is not a UUID', { body: { parent_uid: 'nope' } }],
+    ['a move of a folder', { type: 'folder', body: { parent_uid: FOLDER_ID } }],
+    ['a field that cannot be edited', { body: { name: 'Ok', url: 'https://example.com' } }],
+  ])('rejects %s without calling the committee service', async (_label, overrides) => {
+    const { req, res, next } = buildUpdateReqRes(overrides);
+
+    await controller.updateCommitteeDocument(req, res, next);
+
+    expect(committeeSvc.updateCommitteeDocument).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0].constructor.name).toBe('ServiceValidationError');
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('accepts a file name up to the group limit, which is longer than a folder name', async () => {
+    const { req, res, next } = buildUpdateReqRes({ type: 'file', body: { name: 'x'.repeat(500) } });
+    committeeSvc.updateCommitteeDocument.mockResolvedValue({});
+
+    await controller.updateCommitteeDocument(req, res, next);
+
+    expect(committeeSvc.updateCommitteeDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes an upstream failure to the error handler', async () => {
+    const { req, res, next } = buildUpdateReqRes();
+    const failure = new Error('upstream down');
+    committeeSvc.updateCommitteeDocument.mockRejectedValue(failure);
+
+    await controller.updateCommitteeDocument(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(res.json).not.toHaveBeenCalled();
   });
 });
