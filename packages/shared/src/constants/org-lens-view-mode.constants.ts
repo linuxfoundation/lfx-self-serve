@@ -42,7 +42,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS_BY_PAGE: Readonly<Record<strin
   // training
   training: [/^\/training\/(stats|filter-options|groups)\/?$/],
   // meetings
-  meetings: [],
+  meetings: [/^\/meetings\/(kpi|spend|influence)\/?$/],
 };
 
 /** Every approved path across all pages. */
