@@ -48,6 +48,14 @@ describe('correctLinkedInGeoTargets', () => {
     ['a genuine Switzerland target', [{ label: 'Switzerland', urn: 'urn:li:geo:106693272' }], [{ label: 'Switzerland', urn: 'urn:li:geo:106693272' }]],
     ['other targets', [{ label: 'Japan', urn: 'urn:li:geo:101355337' }, 'x'], [{ label: 'Japan', urn: 'urn:li:geo:101355337' }, 'x']],
     ['a value that is not a list', 'none', 'none'],
+    [
+      'a stale United Kingdom beside a new one',
+      [
+        { label: 'United Kingdom', urn: 'urn:li:geo:106693272' },
+        { label: 'United Kingdom', urn: 'urn:li:geo:101165590' },
+      ],
+      [{ label: 'United Kingdom', urn: 'urn:li:geo:101165590' }],
+    ],
   ])('corrects %s', (_name, raw, expected) => {
     expect(correctLinkedInGeoTargets(raw)).toEqual(expected);
   });

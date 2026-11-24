@@ -467,6 +467,7 @@ import {
   linkedInDailyCapError,
   linkedInDailyCapField,
   linkedInEffectiveAccount,
+  correctLinkedInGeoTargets,
   linkedInTargetingAfterRemovals,
   linkedInTargetingEdit,
   linkedInTargetingEmptyWarning,
@@ -8714,7 +8715,8 @@ export class ImplementationTabComponent implements OnInit {
       // blocks a LinkedIn campaign with no geos, so the empty state is visible rather than
       // dangerous.
       linkedInAccountId: draft.linkedInAccountId,
-      linkedInGeoTargets: draft.linkedInGeoTargets,
+      // Germany and the United Kingdom as the old shared map resolved them, corrected (LFXV2-2665).
+      linkedInGeoTargets: correctLinkedInGeoTargets(draft.linkedInGeoTargets),
       linkedInTargetingProfile: draft.linkedInTargetingProfile,
       // Absent on a draft saved before #5546, which removed nothing (`linkedInDraftRestore`).
       linkedInTargetingRemovals: linkedInRestore.targetingRemovals,
@@ -9755,7 +9757,7 @@ export class ImplementationTabComponent implements OnInit {
       //
       // Emitting is safe because `seeding` is true for the whole of this call, so the
       // `valueChanges` subscription returns early rather than snapshotting a half-built form.
-      this.campaignForm.controls.linkedInGeoTargets.setValue(linkedInSeed.geoTargets);
+      this.campaignForm.controls.linkedInGeoTargets.setValue(correctLinkedInGeoTargets(linkedInSeed.geoTargets));
       this.campaignForm.controls.linkedInTargetingProfile.setValue(linkedInSeed.targetingProfile);
       this.resetLinkedInTargeting();
       // The strategy's lifetime budget, only when it is a finite number (`linkedInBriefSeed`).

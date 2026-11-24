@@ -80,14 +80,25 @@ export function linkedInConfigKeyRefusal(raw: unknown): LinkedInConfigKeyRefusal
 
 /**
  * `geoTargets` with the URNs `LINKEDIN_GEO_RESOLVE_MAP` used to send for Germany and the United Kingdom corrected
- * (`LINKEDIN_GEO_URN_CORRECTIONS`), so a brief or draft saved before the fix targets the country its label names.
- * Anything else, including a value that is not a list, is returned as it came.
+ * (`LINKEDIN_GEO_URN_CORRECTIONS`), so a brief or draft saved before the fix targets the country its label names. An
+ * entry whose URN repeats an earlier one once corrected (a stale United Kingdom beside a new one) is dropped. Anything
+ * else, including a value that is not a list, is returned as it came. Run where the Implement tab seeds or restores
+ * its geos and again by the create route.
  */
-export function correctLinkedInGeoTargets(geoTargets: unknown): unknown {
+export function correctLinkedInGeoTargets<T>(geoTargets: T): T {
   if (!Array.isArray(geoTargets)) return geoTargets;
-  return geoTargets.map((target: unknown) => {
+  const seen = new Set<unknown>();
+  const corrected: unknown[] = [];
+  for (const target of geoTargets as unknown[]) {
     const record = plainRecord(target);
     const fix = record ? LINKEDIN_GEO_URN_CORRECTIONS.find((c) => c.label === record['label'] && c.from === record['urn']) : undefined;
-    return fix && record ? { ...record, urn: fix.to } : target;
-  });
+    const next = fix && record ? { ...record, urn: fix.to } : target;
+    const urn = plainRecord(next)?.['urn'];
+    if (typeof urn === 'string') {
+      if (seen.has(urn)) continue;
+      seen.add(urn);
+    }
+    corrected.push(next);
+  }
+  return corrected as T;
 }

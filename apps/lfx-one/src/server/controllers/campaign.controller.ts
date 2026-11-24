@@ -9673,6 +9673,9 @@ export class CampaignController {
    *
    * 5. A variant's ad name, description and call to action go out only as `compactLinkedInVariantFields` checked and
    *    compacted them (#5764 rows 16–17): the name normalized, the call to action upper-cased, a blank one dropped.
+   *
+   * 6. `geoTargets` goes out with the Germany and United Kingdom URNs the old shared map resolved wrongly corrected,
+   *    and a repeat dropped (`correctLinkedInGeoTargets`, LFXV2-2665), for a stale tab or a direct caller.
    */
   private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;
