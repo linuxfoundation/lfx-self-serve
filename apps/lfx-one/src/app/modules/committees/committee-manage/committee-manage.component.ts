@@ -18,7 +18,7 @@ import {
   ProjectContext,
   SucceededMemberOperations,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, getSelectableCommitteeCategories } from '@lfx-one/shared/utils';
+import { computeIsFoundation, getMissingCommitteeMemberRequirements, getSelectableCommitteeCategories } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -83,6 +83,8 @@ export class CommitteeManageComponent {
   public mode = signal<'create' | 'edit'>('create');
   public committeeId = signal<string | null>(null);
   public isEditMode = computed(() => this.mode() === 'edit');
+  // The detail stream observes route IDs only, so retain create-response requirements separately.
+  private readonly createdCommitteeRequirements = signal<Pick<Committee, 'enable_voting' | 'business_email_required'> | null>(null);
 
   // Initialize committee data
   public committee = this.initializeCommittee();
@@ -124,12 +126,16 @@ export class CommitteeManageComponent {
     this.formValue();
     return this.isStepValid(this.currentStep());
   });
-  // Live Step 3 draft, passed down so Step 4's invite dialog validates against what's about to be
-  // saved rather than a possibly-stale persisted committee (LFXV2-2606 review).
-  public readonly organizationRequirements = computed(() => ({
-    enable_voting: !!this.formValue().enable_voting,
-    business_email_required: !!this.formValue().business_email_required,
-  }));
+  // Edit mode saves the live Step 3 draft. Create-mode Done only saves members, so member
+  // dialogs and final validation must keep using the requirements returned by Create Group.
+  public readonly organizationRequirements = computed(() => {
+    const createdRequirements = this.createdCommitteeRequirements();
+    if (!this.isEditMode() && createdRequirements) return createdRequirements;
+    return {
+      enable_voting: !!this.formValue().enable_voting,
+      business_email_required: !!this.formValue().business_email_required,
+    };
+  });
   public readonly canGoNext = computed(() => this.currentStep() + 1 < this.totalSteps && this.canNavigateToStep(this.currentStep() + 1));
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
   public readonly isFirstStep = computed(() => this.currentStep() === 1);
@@ -262,6 +268,8 @@ export class CommitteeManageComponent {
       return;
     }
 
+    if (this.isEditMode() && !this.validateStagedMemberRequirements()) return;
+
     this.submitting.set(true);
 
     const formValue = {
@@ -293,7 +301,7 @@ export class CommitteeManageComponent {
 
   public onDone(): void {
     const committeeUid = this.resolveCommitteeWriteUid();
-    if (!committeeUid || this.memberSaveDisabled()) {
+    if (!committeeUid || this.memberSaveDisabled() || !this.validateStagedMemberRequirements()) {
       return;
     }
 
@@ -353,6 +361,8 @@ export class CommitteeManageComponent {
       });
       return;
     }
+
+    if (!this.validateStagedMemberRequirements()) return;
 
     this.submitting.set(true);
 
@@ -645,6 +655,23 @@ export class CommitteeManageComponent {
     return display_name;
   }
 
+  private validateStagedMemberRequirements(): boolean {
+    // Edit saves the live draft; Done in create mode only saves members of the already-created group.
+    const requirements = this.organizationRequirements();
+    const invalid = this.memberUpdates()
+      .toAdd.map((member) => ({ member, missing: getMissingCommitteeMemberRequirements(member, requirements) }))
+      .find(({ missing }) => missing.length > 0);
+    if (!invalid) return true;
+
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Member Details Required',
+      detail: `Edit ${invalid.member.email} on Add Members and complete: ${invalid.missing.join(', ')}. Your changes have not been saved.`,
+      life: 8000,
+    });
+    return false;
+  }
+
   private cleanFormData(formData: Record<string, unknown>): Record<string, unknown> {
     const cleaned: Record<string, unknown> = {};
 
@@ -661,6 +688,10 @@ export class CommitteeManageComponent {
   }
 
   private handleCreateSuccess(committee: Committee): void {
+    this.createdCommitteeRequirements.set({
+      enable_voting: committee.enable_voting ?? false,
+      business_email_required: committee.business_email_required ?? false,
+    });
     this.submitting.set(false);
     this.committeeId.set(committee.uid);
 
@@ -814,6 +845,7 @@ export class CommitteeManageComponent {
     if (memberUpdates.toAdd.length > 0) {
       for (const member of memberUpdates.toAdd) {
         const { createOptions, pendingInviteUids = [], ...payload } = member;
+        delete payload.isSelfAddition; // Client-only staging origin must not reach the native API.
         operations.push(
           this.createMemberOperation(
             'add',

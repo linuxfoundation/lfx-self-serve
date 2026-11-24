@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { Component, signal, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
@@ -12,14 +13,17 @@ import {
   CreateCommitteeMemberRequest,
   MemberPendingChanges,
   StagedCommitteeMemberRequest,
+  User,
 } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ImportMembersDialogComponent } from '../import-members-dialog/import-members-dialog.component';
+import { MemberFormComponent } from '../member-form/member-form.component';
 import { CommitteeMembersManagerComponent } from './committee-members-manager.component';
 
 const GROUP = {
@@ -42,8 +46,15 @@ const REQUEST: CreateCommitteeMemberRequest = {
   voting: { status: CommitteeMemberVotingStatus.OBSERVER, start_date: '2026-01-01', end_date: '2027-01-01' },
   appointed_by: CommitteeMemberAppointedBy.COMMUNITY,
 };
+const SELF_USER = { email: 'self@example.com', given_name: 'Self', family_name: 'User' } as User;
+const SELF_REQUEST = { email: SELF_USER.email, first_name: 'Self', last_name: 'User' };
 
-describe('CommitteeMembersManagerComponent CSV import', () => {
+// Empty-template subclass for state-only tests (.claude/rules/unit-test-cost.md). @Component
+// metadata is not inherited, so the component-scoped providers are redeclared.
+@Component({ selector: 'lfx-committee-members-manager-state-only', template: '', providers: [ConfirmationService, DialogService] })
+class StateOnlyCommitteeMembersManager extends CommitteeMembersManagerComponent {}
+
+describe('CommitteeMembersManagerComponent', () => {
   let fixture: ComponentFixture<CommitteeMembersManagerComponent>;
   let component: CommitteeMembersManagerComponent;
   let dialogClose: Subject<StagedCommitteeMemberRequest[] | undefined>;
@@ -56,7 +67,12 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
   };
   let updates: MemberPendingChanges[];
 
-  async function setup(inputs: Record<string, unknown> = {}, membersResponse: Observable<CommitteeMember[]> = of([EXISTING])): Promise<void> {
+  async function setup(
+    inputs: Record<string, unknown> = {},
+    membersResponse: Observable<CommitteeMember[]> = of([EXISTING]),
+    user: User | null = SELF_USER,
+    componentType: Type<CommitteeMembersManagerComponent> = CommitteeMembersManagerComponent
+  ): Promise<void> {
     dialogClose = new Subject();
     dialogService = { open: vi.fn(() => ({ onClose: dialogClose })) };
     committeeService = {
@@ -66,14 +82,19 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
       getCommitteeInvites: vi.fn().mockReturnValue(of([])),
     };
     await TestBed.configureTestingModule({
-      imports: [CommitteeMembersManagerComponent],
-      providers: [provideNoopAnimations(), MessageService, { provide: CommitteeService, useValue: committeeService }],
+      imports: [componentType],
+      providers: [
+        provideNoopAnimations(),
+        MessageService,
+        { provide: CommitteeService, useValue: committeeService },
+        { provide: UserService, useValue: { user: signal(user) } },
+      ],
     })
-      .overrideComponent(CommitteeMembersManagerComponent, {
+      .overrideComponent(componentType, {
         set: { providers: [ConfirmationService, { provide: DialogService, useValue: dialogService }] },
       })
       .compileComponents();
-    fixture = TestBed.createComponent(CommitteeMembersManagerComponent);
+    fixture = TestBed.createComponent(componentType);
     component = fixture.componentInstance;
     fixture.componentRef.setInput('committeeId', GROUP.uid);
     fixture.componentRef.setInput('isEditMode', true);
@@ -83,6 +104,19 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
     updates = [];
     component.memberUpdatesChange.subscribe((value) => updates.push(value));
     await fixture.whenStable();
+  }
+
+  /** Mounts the empty-template subclass: assert on state only, never on the DOM. */
+  function setupStateOnly(inputs: Record<string, unknown> = {}, user: User | null = SELF_USER): Promise<void> {
+    return setup(inputs, of([EXISTING]), user, StateOnlyCommitteeMembersManager);
+  }
+
+  function acceptConfirmations(): void {
+    const confirmationService = fixture.componentRef.injector.get(ConfirmationService);
+    vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation) => {
+      confirmation.accept?.();
+      return confirmationService;
+    });
   }
 
   function query(testId: string): HTMLElement | null {
@@ -463,5 +497,241 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
     component.handleMemberUpdate({ id: staged.tempId!, data: { ...staged, email: 'uninvited@example.com' } });
     expect(updates.at(-1)?.toAdd[0].pendingInviteUids).toEqual([]);
     expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+  });
+
+  describe('Add myself', () => {
+    it('stages the signed-in user silently in one click and offers it again once removed', async () => {
+      await setupStateOnly();
+      const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+      component.addMyself();
+      expect(committeeService.getCommitteeInvites).toHaveBeenCalledWith(GROUP.uid, new HttpParams().set('require_complete', 'true'));
+      expect(component.membersWithState().at(-1)).toEqual(expect.objectContaining({ ...SELF_REQUEST, state: 'new' }));
+      expect(updates.at(-1)?.toAdd).toEqual([expect.objectContaining({ ...SELF_REQUEST, createOptions: { skipNotification: true } })]);
+      expect(updates.at(-1)?.toAdd[0].pendingInviteUids).toBeUndefined();
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Added to members' }));
+      expect(component.canAddSelf()).toBe(false);
+
+      acceptConfirmations();
+      component.handleMemberDelete(component.membersWithState().at(-1)!.tempId!);
+      expect(component.canAddSelf()).toBe(true);
+    });
+
+    it.each([
+      ['same normalized email', ' SELF@example.com ', true],
+      ['another member', REQUEST.email, false],
+    ])('retains self-add behavior only for %s after remount and edit', async (_description, email, remainsSelf) => {
+      await setupStateOnly();
+      committeeService.getCommitteeInvites.mockReturnValue(of([{ uid: 'self-pending', invitee_email: SELF_USER.email, status: 'pending' }]));
+      component.addMyself();
+      const pending = updates.at(-1)!;
+      fixture.destroy();
+      TestBed.resetTestingModule();
+      await setupStateOnly({ memberUpdates: pending });
+      const staged = component.membersWithState().find((member) => member.email === SELF_USER.email)!;
+      component.handleMemberUpdate({ id: staged.tempId!, data: { ...staged, email } });
+      expect(updates.at(-1)?.toAdd[0]).toMatchObject({ email });
+      expect(updates.at(-1)?.toAdd[0].createOptions).toEqual(remainsSelf ? { skipNotification: true } : undefined);
+      expect(updates.at(-1)?.toAdd[0].pendingInviteUids).toEqual(remainsSelf ? ['self-pending'] : undefined);
+      expect(updates.at(-1)?.toAdd[0].isSelfAddition).toBe(remainsSelf ? true : undefined);
+    });
+
+    it('keeps the fresh self-add invitation lookup separate from an earlier CSV snapshot', async () => {
+      await setupStateOnly({
+        memberUpdates: {
+          toAdd: [],
+          toUpdate: [],
+          toDelete: [],
+          toInvite: [],
+          importInvites: [{ uid: 'old-self-invite', invitee_email: SELF_USER.email, status: 'pending' }],
+        },
+      });
+      committeeService.getCommitteeInvites.mockReturnValue(of([{ uid: 'new-self-invite', invitee_email: SELF_USER.email, status: 'pending' }]));
+      component.addMyself();
+      expect(updates.at(-1)?.toAdd[0].pendingInviteUids).toEqual(['new-self-invite']);
+    });
+
+    it('preserves an explicit CSV notification choice even when the imported email belongs to self', async () => {
+      await setupStateOnly({
+        memberUpdates: { toAdd: [{ ...SELF_REQUEST, createOptions: { skipNotification: true } }], toUpdate: [], toDelete: [], toInvite: [] },
+      });
+      const staged = component.membersWithState().find((member) => member.email === SELF_USER.email)!;
+      component.handleMemberUpdate({ id: staged.tempId!, data: { ...staged, email: REQUEST.email } });
+      expect(updates.at(-1)?.toAdd[0].createOptions).toEqual({ skipNotification: true });
+    });
+
+    it('is offered again once the user is removed as an existing member', async () => {
+      await setupStateOnly({}, { ...SELF_USER, email: EXISTING.email });
+      expect(component.canAddSelf()).toBe(false);
+      acceptConfirmations();
+      component.handleMemberDelete(EXISTING.uid);
+      expect(component.membersWithState()).toEqual([expect.objectContaining({ uid: EXISTING.uid, state: 'deleted' })]);
+      expect(component.canAddSelf()).toBe(true);
+    });
+
+    it("revokes the user's pending invitations once they are created", async () => {
+      await setupStateOnly();
+      committeeService.getCommitteeInvites.mockReturnValue(
+        of([
+          { uid: 'self-pending', invitee_email: ' SELF@example.com ', status: 'pending' },
+          { uid: 'self-revoked', invitee_email: SELF_USER.email, status: 'revoked' },
+          { uid: 'other-pending', invitee_email: REQUEST.email, status: 'pending' },
+        ] as CommitteeInvite[])
+      );
+      component.addMyself();
+      expect(updates.at(-1)?.toAdd).toEqual([expect.objectContaining({ ...SELF_REQUEST, pendingInviteUids: ['self-pending'] })]);
+    });
+
+    it('stages without checking invitations while the group is not saved yet', async () => {
+      await setupStateOnly({ committeeId: null, isEditMode: false });
+      component.addMyself();
+      expect(committeeService.getCommitteeInvites).not.toHaveBeenCalled();
+      expect(updates.at(-1)?.toAdd).toEqual([expect.objectContaining({ ...SELF_REQUEST, createOptions: { skipNotification: true } })]);
+    });
+
+    it('stages nothing when the invitation check fails, and allows another attempt', async () => {
+      await setupStateOnly();
+      const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const failure = new Subject<CommitteeInvite[]>();
+      committeeService.getCommitteeInvites.mockReturnValueOnce(failure);
+      component.addMyself();
+      expect(component.mutationsDisabled()).toBe(true);
+      failure.error(new HttpErrorResponse({ status: 500 }));
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Unable to Add You' }));
+      expect(component.membersWithState()).toEqual([expect.objectContaining({ email: EXISTING.email })]);
+      expect(component.mutationsDisabled()).toBe(false);
+      expect(component.canAddSelf()).toBe(true);
+    });
+
+    it('ignores an invitation check that finishes after saving starts', async () => {
+      await setupStateOnly();
+      const invites = new Subject<CommitteeInvite[]>();
+      committeeService.getCommitteeInvites.mockReturnValue(invites);
+      component.addMyself();
+      component.addMyself();
+      expect(committeeService.getCommitteeInvites).toHaveBeenCalledTimes(1);
+      fixture.componentRef.setInput('submitting', true);
+      invites.next([]);
+      expect(component.membersWithState()).toHaveLength(1);
+      expect(updates).toEqual([]);
+    });
+
+    it.each([
+      ['voting is enabled in the live settings', { enable_voting: true, business_email_required: false }],
+      ['a business email is required in the live settings', { enable_voting: false, business_email_required: true }],
+    ])('opens Add with details prefilled, with the live settings, when %s', async (_description, organizationRequirements) => {
+      await setupStateOnly({ organizationRequirements });
+      component.addMyself();
+      expect(dialogService.open).toHaveBeenCalledWith(
+        MemberFormComponent,
+        expect.objectContaining({
+          data: expect.objectContaining({ prefill: SELF_REQUEST, committee: expect.objectContaining({ uid: GROUP.uid, ...organizationRequirements }) }),
+        })
+      );
+      dialogClose.next(undefined);
+      expect(component.membersWithState()).toEqual([expect.objectContaining({ email: EXISTING.email })]);
+      expect(component.canAddSelf()).toBe(true);
+    });
+
+    it.each([
+      [
+        'silently, revoking their invitation, while it is still their email',
+        ' Self@Example.com ',
+        { createOptions: { skipNotification: true }, pendingInviteUids: ['self-pending'] },
+      ],
+      ['as an ordinary member once the email is changed', REQUEST.email, {}],
+    ])('stages the prefilled form result %s', async (_description, email, expected) => {
+      await setupStateOnly({ organizationRequirements: { enable_voting: true, business_email_required: false } });
+      committeeService.getCommitteeInvites.mockReturnValue(
+        of([{ uid: 'self-pending', invitee_email: SELF_USER.email, status: 'pending' }] as CommitteeInvite[])
+      );
+      component.addMyself();
+      // The member form closes with a single request, unlike the CSV dialog this subject also serves.
+      dialogClose.next({ ...REQUEST, email } as unknown as StagedCommitteeMemberRequest[]);
+      const staged = updates.at(-1)!.toAdd[0];
+      expect(staged.email).toBe(email);
+      expect({ createOptions: staged.createOptions, pendingInviteUids: staged.pendingInviteUids }).toEqual({
+        createOptions: undefined,
+        pendingInviteUids: undefined,
+        ...expected,
+      });
+    });
+
+    it('opens Add with details with the live settings overlaid on the saved group', async () => {
+      await setupStateOnly({ organizationRequirements: { enable_voting: true, business_email_required: true } });
+      component.openAddMemberDialog();
+      expect(dialogService.open).toHaveBeenCalledWith(
+        MemberFormComponent,
+        expect.objectContaining({ data: expect.objectContaining({ committee: { ...GROUP, enable_voting: true, business_email_required: true } }) })
+      );
+    });
+
+    it.each([true, false])('uses live requirements (%s) when editing a staged member', async (enabled) => {
+      const requirements = { enable_voting: enabled, business_email_required: enabled };
+      await setupStateOnly({
+        organizationRequirements: requirements,
+        memberUpdates: { toAdd: [SELF_REQUEST], toUpdate: [], toDelete: [], toInvite: [] },
+      });
+      const persistedCommittee = { ...GROUP, enable_voting: !enabled, business_email_required: !enabled };
+      component.committee.set(persistedCommittee);
+      const member = component.membersWithState().find((row) => row.email === SELF_REQUEST.email)!;
+
+      component.openEditMemberDialog(member);
+
+      expect(dialogService.open).toHaveBeenCalledWith(
+        MemberFormComponent,
+        expect.objectContaining({
+          data: expect.objectContaining({ isEditing: true, wizardMode: true, member, committee: { ...GROUP, ...requirements } }),
+        })
+      );
+      expect(component.committee()).toBe(persistedCommittee);
+    });
+
+    it('keeps saved requirements when editing without live overrides', async () => {
+      await setupStateOnly();
+      const persistedCommittee = { ...GROUP, enable_voting: true, business_email_required: true };
+      component.committee.set(persistedCommittee);
+
+      component.openEditMemberDialog(component.membersWithState()[0]);
+
+      expect(dialogService.open).toHaveBeenCalledWith(
+        MemberFormComponent,
+        expect.objectContaining({ data: expect.objectContaining({ committee: persistedCommittee }) })
+      );
+    });
+
+    it.each([
+      ['an existing member, ignoring case', { ...SELF_USER, email: 'EXISTING@example.com' }, {}],
+      ['a staged invitation', SELF_USER, { memberUpdates: { toAdd: [], toUpdate: [], toDelete: [], toInvite: [{ invitee_email: ' Self@Example.com ' }] } }],
+    ])('is unavailable when the user is already %s', async (_description, user, inputs) => {
+      await setup(inputs, of([EXISTING]), user);
+      expect(component.canAddSelf()).toBe(false);
+      expect(query('add-myself-button')).toBeNull();
+    });
+
+    it('shows the button next to the add actions and disables it while saving', async () => {
+      await setup();
+      expect(query('add-myself-button')?.textContent).toContain('Add myself');
+      expect((query('add-myself-button')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+      fixture.componentRef.setInput('submitting', true);
+      await fixture.whenStable();
+      expect((query('add-myself-button')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      component.addMyself();
+      expect(component.membersWithState()).toHaveLength(1);
+    });
+
+    it('spins while checking invitations, then hides once the user is added', async () => {
+      await setup();
+      const invites = new Subject<CommitteeInvite[]>();
+      committeeService.getCommitteeInvites.mockReturnValue(invites);
+      expect(query('add-myself-button')?.getAttribute('data-loading')).toBe('false');
+      query('add-myself-button')?.querySelector('button')?.click();
+      await fixture.whenStable();
+      expect(query('add-myself-button')?.getAttribute('data-loading')).toBe('true');
+      expect(query('import-members-csv-btn')?.querySelector('button')?.disabled).toBe(true);
+      invites.next([]);
+      await fixture.whenStable();
+      expect(query('add-myself-button')).toBeNull();
+    });
   });
 });

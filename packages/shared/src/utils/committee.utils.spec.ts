@@ -14,13 +14,14 @@ import { describe, expect, it } from 'vitest';
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { Committee, CommitteeMember, GroupsEngagementStats } from '../interfaces';
+import type { Committee, CommitteeMember, CreateCommitteeMemberRequest, GroupsEngagementStats } from '../interfaces';
 import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL } from '../constants/committees.constants';
 import { CommitteeMemberRole } from '../enums/committee-member.enum';
 import {
   buildCommitteeCreateQueryParams,
   buildEngagementStatCards,
   buildParentCommitteeOptions,
+  buildSelfMemberRequest,
   canManageCommitteeMembers,
   canViewCommitteeRoster,
   committeeRouteIdMatches,
@@ -28,6 +29,7 @@ import {
   getGroupChannels,
   countVotingReps,
   getEditableCommitteeCategories,
+  getMissingCommitteeMemberRequirements,
   getGroupCommands,
   getGroupEditLink,
   getSelectableCommitteeCategories,
@@ -36,6 +38,7 @@ import {
   resolveGroupsCardRoleSeverity,
   resolveJoinModeSeverity,
   resolveTypeDisplay,
+  selfMemberNeedsDetails,
 } from './committee.utils';
 
 /** Minimal committee builder — only the fields the resolver reads. */
@@ -499,6 +502,89 @@ describe('countVotingReps', () => {
 
   it('is 0 for an empty member list', () => {
     expect(countVotingReps([])).toBe(0);
+  });
+});
+
+describe('buildSelfMemberRequest', () => {
+  const user = { email: 'self@example.com', given_name: 'Self', family_name: 'User' };
+
+  it.each([
+    ['a null user', null, null],
+    ['an empty email', { ...user, email: '  ' }, null],
+    [
+      'the given and family names over the alternative fields',
+      { ...user, first_name: 'Other', last_name: 'Name' },
+      { email: 'self@example.com', first_name: 'Self', last_name: 'User' },
+    ],
+    [
+      'the first and last name fallback',
+      { ...user, given_name: '', family_name: '', first_name: 'Alt', last_name: 'Person' },
+      { email: 'self@example.com', first_name: 'Alt', last_name: 'Person' },
+    ],
+    [
+      'trimmed fallback names when the OIDC names are whitespace-only',
+      { ...user, given_name: ' \t', family_name: '\u00a0 ', first_name: ' Alt ', last_name: ' Person ' },
+      { email: 'self@example.com', first_name: 'Alt', last_name: 'Person' },
+    ],
+    [
+      'empty names when neither source contains a usable name',
+      { ...user, given_name: ' ', family_name: '\t', first_name: ' ', last_name: '' },
+      { email: 'self@example.com', first_name: '', last_name: '' },
+    ],
+    [
+      'trimmed whitespace',
+      { email: ' self@example.com ', given_name: ' Self ', family_name: ' User ' },
+      { email: 'self@example.com', first_name: 'Self', last_name: 'User' },
+    ],
+  ])('returns the expected request for %s', (_description, input, expected) => {
+    expect(buildSelfMemberRequest(input)).toEqual(expected);
+  });
+});
+
+describe('selfMemberNeedsDetails', () => {
+  const names = { first_name: 'Self', last_name: 'User' };
+  const none = { business_email_required: false, enable_voting: false };
+
+  it.each([
+    ['complete names and no requirements', names, none, false],
+    ['a blank last name', { ...names, last_name: ' ' }, none, true],
+    ['a business email requirement', names, { ...none, business_email_required: true }, true],
+    ['voting enabled', names, { ...none, enable_voting: true }, true],
+  ])('with %s returns the expected result', (_description, request, requirements, expected) => {
+    expect(selfMemberNeedsDetails(request, requirements)).toBe(expected);
+  });
+});
+
+describe('getMissingCommitteeMemberRequirements', () => {
+  const business = { business_email_required: true, enable_voting: false };
+  const voting = { business_email_required: false, enable_voting: true };
+  const company = { name: 'Example Company', website: 'https://company.example' };
+  const complete = { organization: company, role: { name: CommitteeMemberRole.CHAIR }, voting: { status: CommitteeMemberVotingStatus.OBSERVER } };
+
+  it.each([
+    ['no requirements', {}, { business_email_required: false, enable_voting: false }, []],
+    ['missing company', {}, business, ['company name and HTTPS website']],
+    ['blank company name', { organization: { ...company, name: ' ' } }, business, ['company name and HTTPS website']],
+    ['missing company website', { organization: { name: company.name } }, business, ['company name and HTTPS website']],
+    ['non-HTTPS company website', { organization: { ...company, website: 'http://company.example' } }, business, ['company name and HTTPS website']],
+    ['complete business details', { organization: company }, business, []],
+    ['missing voting details', {}, voting, ['company name and HTTPS website', 'role', 'voting status']],
+    ['missing role', { ...complete, role: null }, voting, ['role']],
+    ['missing voting status', { ...complete, voting: null }, voting, ['voting status']],
+    ['legacy voting status', { ...complete, voting: { status: CommitteeMemberVotingStatus.NONE } }, voting, ['voting status']],
+    ['complete voting details', complete, voting, []],
+  ] as const)('reports %s', (_description, member, requirements, expected) => {
+    expect(getMissingCommitteeMemberRequirements(member, requirements)).toEqual(expected);
+  });
+
+  it.each([
+    CommitteeMemberVotingStatus.VOTING_REP,
+    CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP,
+    CommitteeMemberVotingStatus.OBSERVER,
+    CommitteeMemberVotingStatus.EMERITUS,
+  ])('accepts the existing member-form voting choice %s', (status) => {
+    const member: CreateCommitteeMemberRequest = { email: 'self@example.com', ...complete, voting: { status } };
+    expect(getMissingCommitteeMemberRequirements(member, voting)).toEqual([]);
   });
 });
 
