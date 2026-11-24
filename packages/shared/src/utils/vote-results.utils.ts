@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PollType } from '../enums/poll.enum';
+import { CondorcetOutcome, PollType } from '../enums/poll.enum';
 import type {
   IndexedPollAnswer,
   IrvRoundSummary,
   MeekStvRoundSummary,
+  CondorcetMatrixEntry,
   PollQuestionResult,
   RankedChoiceVoteResult,
   RankedOutcome,
@@ -19,6 +20,29 @@ import type {
   VoteResultsSummaryLine,
 } from '../interfaces/poll.interface';
 import { computeParticipationPercent } from './vote-participation.utils';
+
+/** Interprets the service's Condorcet winners: one winner, a partial tie, or no winner (none or every candidate). */
+export function resolveCondorcetOutcome(winnerCount: number, candidateCount: number, usedIrv: boolean): CondorcetOutcome {
+  if (winnerCount === 1) return usedIrv ? CondorcetOutcome.IRV_WINNER : CondorcetOutcome.CONDORCET_WINNER;
+  if (winnerCount > 1 && winnerCount < candidateCount) return CondorcetOutcome.TIE;
+  return CondorcetOutcome.NO_WINNER;
+}
+
+/** Shared Condorcet IRV survivor tiebreaker; reads a missing pair from its mirror, then treats it as 0–0. */
+export function buildCondorcetSurvivorTiebreaker(rankedVotes: RankedChoiceVoteResult[]): (a: string, b: string) => number {
+  const matrix = new Map<string, CondorcetMatrixEntry>();
+  for (const rcv of rankedVotes) {
+    for (const entry of rcv.condorcet_matrix ?? []) {
+      matrix.set(JSON.stringify([entry.choice_id, entry.other_choice_id]), entry);
+    }
+  }
+  return (a, b) => {
+    const entry = matrix.get(JSON.stringify([a, b]));
+    if (entry) return entry.other_choice_id_wins - entry.choice_id_wins;
+    const mirror = matrix.get(JSON.stringify([b, a]));
+    return mirror ? mirror.choice_id_wins - mirror.other_choice_id_wins : 0;
+  };
+}
 
 /**
  * True when a poll type uses ranked-choice balloting (drag-to-reorder UI, `ranked_choices` wire shape).
@@ -138,7 +162,7 @@ export function buildVoteResultsQuestions(results: VoteResultsResponse | null, i
  * Builds the ranked-choice per-question view model from the results API payload
  * @description Choice text comes from the question's own choices. `ranked_choice_winner_info.poll_choices` holds only
  * the winning choices, so it only fills ids the question does not list, and the id is the last resort. The outcome and
- * winner labels follow the server-computed winners in `poll_choices` for every method. Condorcet standings are ordered
+ * winner labels follow the server-computed winners; Condorcet returning every candidate means no winner. Condorcet standings are ordered
  * by matrix head-to-head wins; runoff and Meek STV standings put server winners first and use round summaries for
  * elimination and election order. An unrecognized `pollType` yields no outcome.
  * @param results - VoteResultsResponse from the results API, or null when not yet loaded
@@ -180,21 +204,30 @@ export function buildRankedQuestionViews(results: VoteResultsResponse | null, po
     // Candidates in ballot order (the question's configured order; unlisted ids keep payload order), plus any winner
     // the ranked votes do not carry, so a winner always gets a row.
     const position = new Map(questionChoices.map((c, index) => [c.choice_id, index]));
-    const candidateIds = [...new Set([...rankedVotes.map((rcv) => rcv.choice_id), ...winnerChoices.map((c) => c.choice_id)])].sort(
+    const isCondorcet = pollType === PollType.CONDORCET_IRV;
+    const configuredIds = isCondorcet ? questionChoices.map((choice) => choice.choice_id) : [];
+    const candidateIds = [...new Set([...configuredIds, ...rankedVotes.map((rcv) => rcv.choice_id), ...winnerChoices.map((c) => c.choice_id)])].sort(
       (a, b) => (position.get(a) ?? questionChoices.length) - (position.get(b) ?? questionChoices.length)
     );
-    const winnerIds = [...new Set(winnerChoices.map((c) => c.choice_id))];
+    const winnerIds = isCondorcet && outcome.result === 'none' ? [] : [...new Set(winnerChoices.map((c) => c.choice_id))];
 
     let standings: RankedStanding[];
     if (outcome.kind === 'meek_stv') {
       standings = buildMeekStvStandings(candidateIds, winnerIds, pr.meek_stv_round_summary ?? [], textOf);
     } else {
-      const isCondorcet = pollType === PollType.CONDORCET_IRV;
       const headToHead = isCondorcet ? { wins: countCondorcetWins(rankedVotes), total: candidateIds.length - 1 } : null;
       standings =
         outcome.kind === 'condorcet' && headToHead
           ? buildCondorcetStandings(candidateIds, winnerIds, headToHead, textOf)
-          : buildIrvStandings(candidateIds, winnerIds, pr.irv_round_summary ?? [], headToHead, textOf);
+          : buildIrvStandings(
+              candidateIds,
+              winnerIds,
+              pr.irv_round_summary ?? [],
+              headToHead,
+              textOf,
+              isCondorcet && outcome.result === 'none',
+              isCondorcet ? buildCondorcetSurvivorTiebreaker(rankedVotes) : null
+            );
     }
 
     return { ...view, outcome, standings };
@@ -263,14 +296,16 @@ export function rankedAnswerChoices(answer: IndexedPollAnswer): UserChoice[] {
 /**
  * Instant-runoff standings, mirroring legacy PCC: winners at rank 1, then survivors by final-round votes with sequential
  * ranks, then eliminated choices in reverse elimination order. Without rounds, winners take rank 1 and the rest share
- * the next rank. Head-to-head counts are added for Condorcet-IRV.
+ * the next rank. Condorcet-IRV adds head-to-head counts and a pairwise survivor tiebreaker; its no-winner survivors share first place.
  */
 function buildIrvStandings(
   candidateIds: string[],
   winnerIds: string[],
   rounds: IrvRoundSummary[],
   headToHead: { wins: Map<string, number>; total: number } | null,
-  textOf: (choiceId: string) => string
+  textOf: (choiceId: string) => string,
+  shareSurvivorRank = false,
+  survivorTiebreaker: ((a: string, b: string) => number) | null = null
 ): RankedStanding[] {
   const row = (choiceId: string, rank: number, label: RankedStanding['label'], round: number | null): RankedStanding => ({
     choiceId,
@@ -301,13 +336,19 @@ function buildIrvStandings(
   }
 
   const finalVotes = new Map(orderedRounds[orderedRounds.length - 1].votes.map((v) => [v.choice_id, v.vote_count]));
-  const survivors = others.filter((choiceId) => !eliminatedRound.has(choiceId)).sort((a, b) => (finalVotes.get(b) ?? 0) - (finalVotes.get(a) ?? 0));
+  const survivors = others.filter((choiceId) => !eliminatedRound.has(choiceId));
+  if (!shareSurvivorRank) {
+    survivors.sort((a, b) => {
+      const byVotes = (finalVotes.get(b) ?? 0) - (finalVotes.get(a) ?? 0);
+      return byVotes || survivorTiebreaker?.(a, b) || 0;
+    });
+  }
   const eliminated = others.filter((choiceId) => eliminatedRound.has(choiceId)).sort((a, b) => (eliminatedRound.get(b) ?? 0) - (eliminatedRound.get(a) ?? 0));
 
   const startRank = winners.length + 1;
   return [
     ...winnerRows,
-    ...survivors.map((choiceId, index) => row(choiceId, startRank + index, 'survivor', null)),
+    ...survivors.map((choiceId, index) => row(choiceId, startRank + (shareSurvivorRank ? 0 : index), shareSurvivorRank ? null : 'survivor', null)),
     ...eliminated.map((choiceId, index) => row(choiceId, startRank + survivors.length + index, 'eliminated', eliminatedRound.get(choiceId) ?? null)),
   ];
 }
@@ -352,7 +393,7 @@ function buildMeekStvStandings(
 /**
  * Final outcome of a ranked question from the server-computed winners
  * @description Condorcet-IRV is a `condorcet` outcome unless it fell back to eliminations, which makes it `irv`. One
- * winner is `winner`, several a `tie`, none `none`; for Meek STV any elected seat is a `winner`. Returns null for a
+ * winner is `winner`, a partial Condorcet set is a `tie`, every candidate is `none`; other methods keep their winner rules. Returns null for a
  * poll type that is not ranked.
  */
 function buildRankedOutcome(
@@ -378,9 +419,19 @@ function buildRankedOutcome(
   }
   if (pollType === PollType.CONDORCET_IRV) {
     const usedEliminations = pr.ranked_choice_winner_info?.condorcet_irv_used_for_eliminations === true;
+    const candidateCount = new Set([
+      ...(pr.question.choices ?? []).map((choice) => choice.choice_id),
+      ...(pr.ranked_choice_votes ?? []).map((choice) => choice.choice_id),
+      ...winnerIds,
+    ]).size;
+    const outcome = resolveCondorcetOutcome(winnerIds.length, candidateCount, usedEliminations);
+    if (outcome === CondorcetOutcome.NO_WINNER) result = 'none';
+    else if (outcome === CondorcetOutcome.TIE) result = 'tie';
+    else result = 'winner';
+    const names = result === 'none' ? [] : winnerTexts;
     return usedEliminations
-      ? { kind: 'irv', result, winnerTexts, roundCount, condorcetFallback: true }
-      : { kind: 'condorcet', result, winnerTexts, roundCount: 0, condorcetFallback: false };
+      ? { kind: 'irv', result, winnerTexts: names, roundCount, condorcetFallback: true }
+      : { kind: 'condorcet', result, winnerTexts: names, roundCount: 0, condorcetFallback: false };
   }
   return null;
 }

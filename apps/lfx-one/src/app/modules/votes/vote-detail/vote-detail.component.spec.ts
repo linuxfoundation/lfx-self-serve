@@ -493,7 +493,8 @@ describe('VoteDetailComponent', () => {
       expect(question.winnerNames).toEqual(['No']);
       expect(question.ballotPatterns).toEqual([{ key: 'choice-no\u0000choice-yes', count: 2, ranking: ['No', 'Yes'] }]);
       expect(condorcetQuestion(fixture).isClosed()).toBe(true);
-      expect(testId(fixture, 'vote-condorcet-outcome-message')?.textContent).toContain('No is the winner');
+      expect(testId(fixture, 'vote-condorcet-outcome-heading')?.textContent).toContain('No won');
+      expect(testId(fixture, 'vote-condorcet-outcome-message')?.textContent).toContain('Preferred over every other option');
       expect(voteService.getVoteVoters).toHaveBeenCalledWith('vote-1');
     });
 
@@ -612,6 +613,24 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-condorcet-in-progress')).toBeNull();
     });
 
+    it('never restores another vote’s cached rankings after a failed ballot read', async () => {
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+      await fixture.whenStable();
+      expect(condorcetQuestion(fixture).question().ballotPatterns).toHaveLength(1);
+
+      voteService.fetchVote.mockReturnValue(
+        of(makeVote({ uid: 'vote-2', poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED, pseudo_anonymity: false }))
+      );
+      voteService.getVoteVoters.mockReturnValue(httpError(503));
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+      await fixture.whenStable();
+
+      expect(voteService.getVoteVoters).toHaveBeenLastCalledWith('vote-2');
+      expect(condorcetQuestion(fixture).question().ballotPatterns).toBeNull();
+      expect(testId(fixture, 'vote-condorcet-ballots-unavailable')).not.toBeNull();
+    });
+
     describe('live refresh', () => {
       /** Ten recipients, so a few more ballots never reach the 100% participation that reads as closed. */
       const liveResults = (votesCast: number): VoteResultsResponse => ({ ...condorcetResults(), num_recipients: 10, num_votes_cast: votesCast });
@@ -665,13 +684,16 @@ describe('VoteDetailComponent', () => {
         voteService.getVoteVoters.mockReturnValue(of([firstBallot, laterBallot('ballot-2'), laterBallot('ballot-3')]));
         await nextPoll(fixture);
         expect(condorcetQuestion(fixture).isClosed()).toBe(true);
-        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(5);
+        // The final live read and the closed-window restart may settle in either order.
+        const readsAtClosure = voteService.getVoteVoters.mock.calls.length;
+        expect(readsAtClosure).toBeGreaterThan(3);
+        expect(readsAtClosure).toBeLessThanOrEqual(5);
         expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([
           { key: 'choice-yes\u0000choice-no', count: 2, ranking: ['Yes', 'No'] },
           { key: 'choice-no\u0000choice-yes', count: 1, ranking: ['No', 'Yes'] },
         ]);
         await nextPoll(fixture);
-        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(6);
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(readsAtClosure + 1);
       });
 
       it('re-reads the ballots when a revised ranking changes the rank counts but not the ballot count', async () => {
@@ -693,6 +715,27 @@ describe('VoteDetailComponent', () => {
 
         expect(voteService.getVoteVoters).toHaveBeenCalledTimes(2);
         expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ key: 'choice-yes\u0000choice-no', count: 1, ranking: ['Yes', 'No'] }]);
+      });
+
+      it('does not fetch ballots on Overview and clears cached data when privacy eligibility changes', async () => {
+        const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+        queryParamMap.next(convertToParamMap({ tab: 'overview' }));
+        await fixture.whenStable();
+        await nextPoll(fixture);
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(1);
+
+        voteService.fetchVote.mockReturnValue(of({ ...activeVote, pseudo_anonymity: true }));
+        await nextPoll(fixture);
+        expect(read(fixture, 'condorcetBallots')).toBeNull();
+        voteService.fetchVote.mockReturnValue(of(activeVote));
+        voteService.getVoteVoters.mockReturnValue(httpError(503));
+        await nextPoll(fixture);
+        queryParamMap.next(convertToParamMap({ tab: 'results' }));
+        await fixture.whenStable();
+
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(2);
+        expect(condorcetQuestion(fixture).question().ballotPatterns).toBeNull();
+        expect(testId(fixture, 'vote-condorcet-ballots-unavailable')).not.toBeNull();
       });
 
       it('retains stale ballots after a failed refresh and recovers with the same tally', async () => {
@@ -972,9 +1015,8 @@ describe('VoteDetailComponent', () => {
       const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
       await fixture.whenStable();
 
-      expect(squashed(testId(fixture, 'vote-condorcet-outcome-message'))).toBe(
-        'Candidate C is the winner, having defeated all other candidates in head-to-head matchups.'
-      );
+      expect(squashed(testId(fixture, 'vote-condorcet-outcome-heading'))).toBe('Candidate C won');
+      expect(squashed(testId(fixture, 'vote-condorcet-outcome-message'))).toBe('Preferred over every other option in head-to-head comparisons.');
       // Angular drops inter-element whitespace, so standings rows compare with all whitespace removed.
       const compact = (value: string): string => value.replace(/\s+/g, '');
       expect(['choice-c', 'choice-a', 'choice-b'].map((id) => compact(squashed(testId(fixture, `vote-condorcet-standing-${id}`))))).toEqual(
@@ -1047,9 +1089,8 @@ describe('VoteDetailComponent', () => {
         TestBed.tick();
         fixture.detectChanges();
         expect(read(fixture, 'isVoteClosed')).toBe(true);
-        expect(squashed(testId(fixture, 'vote-condorcet-outcome-message'))).toBe(
-          'Candidate C is the winner, having defeated all other candidates in head-to-head matchups.'
-        );
+        expect(squashed(testId(fixture, 'vote-condorcet-outcome-heading'))).toBe('Candidate C won');
+        expect(squashed(testId(fixture, 'vote-condorcet-outcome-message'))).toBe('Preferred over every other option in head-to-head comparisons.');
         expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Winner: Candidate C');
       });
     });

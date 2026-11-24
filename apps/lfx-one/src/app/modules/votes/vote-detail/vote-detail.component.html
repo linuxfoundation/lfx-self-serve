@@ -229,7 +229,7 @@
 
     <lfx-vote-cast-drawer [(visible)]="castDrawerVisible" [voteId]="voteData.uid" [listVote]="voteData" (voteSubmitted)="onVoteSubmitted($event)" />
 
-    <!-- Full Results tab breakdown: generic option bars or ranked distributions, plus the vote-level abstain row. -->
+    <!-- Full Results tab breakdown: generic option bars, ranked distributions or the Condorcet IRV layout, plus the vote-level abstain row. -->
     <ng-template #resultsBody>
       @if (loadingVoteResults()) {
         <div class="flex flex-col gap-3" data-testid="vote-detail-results-loading">
@@ -268,7 +268,7 @@
               [questionNumber]="condorcetQuestions().length > 1 ? idx + 1 : undefined"
               [isClosed]="showRankedOutcome()"
               [isEnded]="isEnded()"
-              [isActive]="isActive()"
+              [isDraft]="!isActive() && !isEnded()"
               [ballotsLoading]="condorcetBallotsLoading()"
               [ballotsStale]="condorcetBallotsStale()"
               [ballotsConfirming]="condorcetBallotsConfirming()"

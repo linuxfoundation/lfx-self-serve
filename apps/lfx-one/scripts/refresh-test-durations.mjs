@@ -109,4 +109,3 @@ function readLogDir(directory) {
   if (names.length === 0) throw new Error(`No .log or .txt files in ${directory}.`);
   return { logs: names.map((name) => readFileSync(join(directory, name), 'utf8')), source: `local logs (${names.length} files)`, sha: undefined };
 }
-

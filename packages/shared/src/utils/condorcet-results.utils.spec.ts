@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { CondorcetOutcome, VoteVoterStatus } from '../enums/poll.enum';
+import { CondorcetOutcome, PollType, VoteVoterStatus } from '../enums/poll.enum';
 import type {
   CondorcetMatrixEntry,
   IrvRoundSummary,
@@ -13,6 +13,7 @@ import type {
   VoteVoter,
 } from '../interfaces/poll.interface';
 import { buildCondorcetQuestionViews, buildCondorcetSummaryLines, condorcetBallotsMatchResults } from './condorcet-results.utils';
+import { buildRankedQuestionViews } from './vote-results.utils';
 
 const CHOICES = [
   { choice_id: 'a', choice_text: 'Candidate A' },
@@ -136,6 +137,63 @@ describe('buildCondorcetQuestionViews', () => {
     expect(v.pairwise).toHaveLength(3);
   });
 
+  it('orders IRV survivors by final counts when the service winner has no table row', () => {
+    const q = question({
+      ranked_choice_winner_info: { poll_choices: [{ choice_id: 'x', choice_text: 'Service candidate' }], condorcet_irv_used_for_eliminations: true },
+      irv_round_summary: [
+        {
+          round_number: 1,
+          votes: [
+            { choice_id: 'a', vote_count: 1 },
+            { choice_id: 'b', vote_count: 3 },
+            { choice_id: 'c', vote_count: 2 },
+          ],
+          total_votes: 6,
+          exhausted_votes: 0,
+          threshold: 4,
+          message: '',
+        },
+      ],
+    });
+    const detail = view(q);
+    expect(detail.outcome).toBe(CondorcetOutcome.IRV_WINNER);
+    expect(detail.winnerNames).toEqual(['Service candidate']);
+    expect(detail.standings.map(({ choiceId, rank, isWinner }) => [choiceId, rank, isWinner])).toEqual([
+      ['b', 1, false],
+      ['c', 2, false],
+      ['a', 3, false],
+    ]);
+  });
+
+  it.each([false, true])('keeps a partial tie when a service winner is absent from configured and ranked choices (IRV: %s)', (usedIrv) => {
+    const q = question({
+      question: { question_id: 'q1', prompt: 'Who should chair the board?', type: 'single_choice', choices: CHOICES.slice(0, 2) },
+      ranked_choice_votes: rankedVotes([]).slice(0, 2),
+      ranked_choice_winner_info: winners(['a', 'c'], usedIrv),
+    });
+    const detail = view(q);
+    const [present] = buildRankedQuestionViews(results(q), PollType.CONDORCET_IRV);
+    expect(detail.outcome).toBe(CondorcetOutcome.TIE);
+    expect(detail.winnerNames).toEqual(['Candidate A', 'Candidate C']);
+    expect(detail.candidates.map(({ choiceId }) => choiceId)).toEqual(['a', 'b']);
+    expect(buildCondorcetSummaryLines([detail], true)[0].text).toBe('Tied: Candidate A and Candidate C');
+    expect(present.outcome?.result).toBe('tie');
+    expect(present.outcome?.winnerTexts).toEqual(detail.winnerNames);
+    expect(present.standings.filter(({ label }) => label === 'tied').map(({ choiceId }) => choiceId)).toEqual(['a', 'c']);
+  });
+
+  it('preserves configured names across Results, Overview, Present and ballot patterns', () => {
+    const q = question({ ranked_choice_winner_info: { poll_choices: [{ choice_id: 'a', choice_text: 'Stale service name' }] } });
+    const detail = view(q, [ballot('1', ['a', 'b'])]);
+    const [present] = buildRankedQuestionViews(results(q), PollType.CONDORCET_IRV);
+    expect(detail.winnerNames).toEqual(['Candidate A']);
+    expect(detail.standings[0].choiceText).toBe('Candidate A');
+    expect(detail.candidates[0].choiceText).toBe('Candidate A');
+    expect(detail.ballotPatterns?.[0].ranking).toEqual(['Candidate A', 'Candidate B']);
+    expect(buildCondorcetSummaryLines([detail], true)[0].text).toBe('Winner: Candidate A');
+    expect(present.outcome?.winnerTexts).toEqual(detail.winnerNames);
+  });
+
   it('orders every table by question.choices, whatever order ranked_choice_votes arrive in', () => {
     const q = question();
     q.ranked_choice_votes = [...(q.ranked_choice_votes ?? [])].reverse();
@@ -178,6 +236,38 @@ describe('buildCondorcetQuestionViews', () => {
     ]);
   });
 
+  it('uses reverse-only matchups consistently for pairwise cells and standings', () => {
+    const q = question({
+      ranked_choice_votes: [
+        {
+          choice_id: 'a',
+          rank_counts: [],
+          condorcet_matrix: [
+            { choice_id: 'a', other_choice_id: 'b', choice_id_wins: 2, other_choice_id_wins: 3, result: '' },
+            { choice_id: 'a', other_choice_id: 'c', choice_id_wins: 3, other_choice_id_wins: 2, result: '' },
+          ],
+        },
+        {
+          choice_id: 'c',
+          rank_counts: [],
+          condorcet_matrix: [{ choice_id: 'c', other_choice_id: 'b', choice_id_wins: 2, other_choice_id_wins: 3, result: '' }],
+        },
+      ],
+      ranked_choice_winner_info: winners(['b']),
+    });
+    const v = view(q);
+    expect(v.pairwise.find((row) => row.candidate.choiceId === 'b')?.cells).toEqual([
+      { value: '3–2', result: 'win' },
+      { value: '—', result: 'self' },
+      { value: '3–2', result: 'win' },
+    ]);
+    expect(v.standings.map(({ choiceId, rank, winCount, isWinner }) => ({ choiceId, rank, winCount, isWinner }))).toEqual([
+      { choiceId: 'b', rank: 1, winCount: 2, isWinner: true },
+      { choiceId: 'a', rank: 2, winCount: 1, isWinner: false },
+      { choiceId: 'c', rank: 3, winCount: 0, isWinner: false },
+    ]);
+  });
+
   it('ranks Condorcet standings by head-to-head wins with competition ranking', () => {
     // A and B tie each other and each beat C → 1, 1, 3.
     const q = question({
@@ -192,22 +282,6 @@ describe('buildCondorcetQuestionViews', () => {
       ['Candidate A', 1, 1, 2, true, true],
       ['Candidate B', 1, 1, 2, true, true],
       ['Candidate C', 3, 0, 2, false, false],
-    ]);
-  });
-
-  it('counts a head-to-head win stored only under the opponent, as the pairwise table does', () => {
-    // Upstream normally emits each pair from both sides; here every pair arrives on its column's row only.
-    const q = question();
-    q.ranked_choice_votes = (q.ranked_choice_votes ?? []).map((rcv) => ({
-      ...rcv,
-      condorcet_matrix: rcv.condorcet_matrix?.filter((entry) => entry.choice_id > entry.other_choice_id),
-    }));
-    const v = view(q);
-    expect(v.pairwise[0].cells[1]).toEqual({ value: '3–2', result: 'win' });
-    expect(v.standings.map((s) => [s.choiceId, s.rank, s.winCount])).toEqual([
-      ['a', 1, 2],
-      ['b', 2, 1],
-      ['c', 3, 0],
     ]);
   });
 
@@ -267,7 +341,7 @@ describe('buildCondorcetQuestionViews', () => {
     ]);
   });
 
-  it('breaks an IRV survivor tie on final-round votes head-to-head', () => {
+  it.each(['complete', 'mirrored', 'missing'])('shares the IRV survivor head-to-head tiebreaker with Present (%s pair)', (pair) => {
     const q = question({
       ranked_choice_winner_info: winners(['a'], true),
       // B and C both hold 2 votes in the final round; C beats B head-to-head.
@@ -291,10 +365,60 @@ describe('buildCondorcetQuestionViews', () => {
         },
       ],
     });
+    for (const rcv of q.ranked_choice_votes ?? []) {
+      rcv.condorcet_matrix = rcv.condorcet_matrix?.filter((entry) => {
+        if (pair === 'complete') return true;
+        if (entry.choice_id === 'b' && entry.other_choice_id === 'c') return false;
+        return pair !== 'missing' || entry.choice_id !== 'c' || entry.other_choice_id !== 'b';
+      });
+    }
+    const [present] = buildRankedQuestionViews(results(q), PollType.CONDORCET_IRV);
+    const [irv] = buildRankedQuestionViews(results(q), PollType.INSTANT_RUNOFF_VOTE);
+    const detail = view(q);
+    expect(present.standings.map(({ choiceId, rank }) => [choiceId, rank])).toEqual(detail.standings.map(({ choiceId, rank }) => [choiceId, rank]));
+    expect(irv.standings.map(({ choiceId }) => choiceId)).toEqual(['a', 'b', 'c']);
+    if (pair === 'missing') {
+      expect(detail.standings.map(({ choiceId }) => choiceId)).toEqual(['a', 'b', 'c']);
+      return;
+    }
     expect(view(q).standings.map((s) => [s.choiceId, s.rank])).toEqual([
       ['a', 1],
       ['c', 2],
       ['b', 3],
+    ]);
+  });
+
+  it('ranks every option first, in question order, when the service returns every option after IRV rounds', () => {
+    const q = question({
+      ranked_choice_winner_info: winners(['a', 'b', 'c'], true),
+      // A Condorcet cycle (A > B > C > A) with tied first choices: upstream appends the tie round and returns everyone.
+      ranked_choice_votes: rankedVotes([
+        ['a', 'b', 2, 1],
+        ['b', 'c', 2, 1],
+        ['c', 'a', 2, 1],
+      ]),
+      irv_round_summary: [
+        {
+          round_number: 1,
+          votes: [
+            { choice_id: 'a', vote_count: 1 },
+            { choice_id: 'b', vote_count: 1 },
+            { choice_id: 'c', vote_count: 1 },
+          ],
+          total_votes: 3,
+          exhausted_votes: 0,
+          threshold: 2,
+          message: '',
+          eliminated_choice_id: '',
+        },
+      ],
+    });
+    const v = view(q);
+    expect(v.outcome).toBe(CondorcetOutcome.NO_WINNER);
+    expect(v.standings.map((s) => [s.choiceId, s.rank, s.isWinner, s.eliminatedInRound])).toEqual([
+      ['a', 1, false, null],
+      ['b', 1, false, null],
+      ['c', 1, false, null],
     ]);
   });
 
@@ -364,6 +488,17 @@ describe('buildCondorcetQuestionViews', () => {
     ]);
   });
 
+  it.each(['empty', 'omitted'])('groups user_choice ballots when ranked_user_choice is %s', (rankedState) => {
+    const fallback = ballot('fallback', ['b', 'a', 'c']);
+    const answer = fallback.poll_answers![0];
+    answer.user_choice = answer.ranked_user_choice;
+    answer.ranked_user_choice = [];
+    if (rankedState === 'omitted') Reflect.deleteProperty(answer, 'ranked_user_choice');
+    expect(view(question(), [fallback, ballot('ranked', ['b', 'a', 'c'])]).ballotPatterns).toEqual([
+      { key: 'b\u0000a\u0000c', count: 2, ranking: ['Candidate B', 'Candidate A', 'Candidate C'] },
+    ]);
+  });
+
   it('keeps ballot pattern keys stable when counts reorder them or candidate names change', () => {
     const ballots = [ballot('1', ['b', 'a', 'c']), ballot('2', ['a', 'b'])];
     const before = view(question(), ballots).ballotPatterns!;
@@ -376,16 +511,40 @@ describe('buildCondorcetQuestionViews', () => {
     ]);
   });
 
-  it('reads a ranking stored in user_choice when ranked_user_choice is empty', () => {
-    const fromUserChoice = ballot('1', []);
-    const answer = fromUserChoice.poll_answers![0];
-    answer.user_choice = [
-      { choice_id: 'c', choice_text: 'stored c', choice_rank: 2 },
-      { choice_id: 'b', choice_text: 'stored b', choice_rank: 1 },
-    ];
-    expect(view(question(), [fromUserChoice, ballot('2', ['b', 'c'])]).ballotPatterns).toEqual([
-      { key: 'b\u0000c', count: 2, ranking: ['Candidate B', 'Candidate C'] },
-    ]);
+  it.each([false, true])('keeps Results and Present outcome/standing labels aligned for every candidate returned (IRV: %s)', (usedIrv) => {
+    const q = question({
+      ranked_choice_winner_info: winners(['a', 'b', 'c'], usedIrv),
+      irv_round_summary: [
+        {
+          round_number: 1,
+          votes: CHOICES.map(({ choice_id }) => ({ choice_id, vote_count: 1 })),
+          total_votes: 3,
+          exhausted_votes: 0,
+          threshold: 2,
+          message: '',
+        },
+      ],
+    });
+    const detail = view(q);
+    const [present] = buildRankedQuestionViews(results(q), PollType.CONDORCET_IRV);
+    expect(detail.outcome).toBe(CondorcetOutcome.NO_WINNER);
+    expect(present.outcome?.result).toBe('none');
+    expect(present.outcome?.winnerTexts).toEqual([]);
+    expect(present.standings.map(({ choiceId, rank, label }) => ({ choiceId, rank, label }))).toEqual(
+      detail.standings.map(({ choiceId, rank }) => ({ choiceId, rank, label: null }))
+    );
+    expect(buildCondorcetSummaryLines([detail], true)[0].text).toBe('No winner');
+  });
+
+  it.each([
+    { pollType: PollType.INSTANT_RUNOFF_VOTE, result: 'tie', label: 'tied' },
+    { pollType: PollType.MEEK_STV, result: 'winner', label: 'elected' },
+  ])('preserves $pollType outcomes when every candidate is returned', ({ pollType, result, label }) => {
+    const q = question({ ranked_choice_winner_info: winners(['a', 'b', 'c'], true) });
+    const [present] = buildRankedQuestionViews(results(q), pollType);
+    expect(present.outcome?.result).toBe(result);
+    expect(present.outcome?.winnerTexts).toEqual(['Candidate A', 'Candidate B', 'Candidate C']);
+    expect(present.standings.map((row) => row.label)).toEqual([label, label, label]);
   });
 
   it('marks ballot patterns unavailable when no ballots are provided', () => {

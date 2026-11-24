@@ -1830,6 +1830,30 @@ export interface CondorcetQuestionView {
   ballotPatterns: CondorcetBallotPatternRow[] | null;
 }
 
+/** Context for polling a named Condorcet vote's ballots on the Results tab (#5969). */
+export interface CondorcetBallotsKey {
+  uid: string;
+  /** Whether Results is active; inactive keys retain eligibility so privacy changes invalidate cached ballots */
+  active: boolean;
+  /** Vote detail refresh tick, bumped after a ballot is cast from the page */
+  tick: number;
+  /** Voting ended and final totals were released; starts the bounded ballot-confirmation window */
+  closed: boolean;
+  /** A draft has no ballots, and the voters endpoint refuses it, so the read is skipped */
+  draft: boolean;
+}
+
+/** The latest named-ballot read for a Condorcet vote and the vote it belongs to (#5969). */
+export interface CondorcetBallotsRead {
+  uid: string;
+  /** Null when the first read for this vote failed */
+  voters: VoteVoter[] | null;
+  /** The latest refresh failed; any retained ballots may be out of date */
+  stale: boolean;
+  /** The bounded final ballot-confirmation window is still running */
+  confirming: boolean;
+}
+
 /**
  * Terminal decision for a cursor-pagination page-jump walk
  * @description Discriminated union returned by resolveCursorWalkOutcome:
