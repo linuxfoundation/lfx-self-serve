@@ -385,6 +385,11 @@ export class CommitteeMembersManagerComponent implements OnInit {
   }
 
   public openEditMemberDialog(member: CommitteeMemberWithState): void {
+    // Validate edits against the same live settings as additions, not the persisted snapshot.
+    const committee = this.committee();
+    const orgOverrides = this.organizationRequirements();
+    const effectiveCommittee = committee && orgOverrides ? { ...committee, ...orgOverrides } : committee;
+
     const dialogRef = this.dialogService.open(MemberFormComponent, {
       header: 'Edit Member',
       width: '700px',
@@ -394,7 +399,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
         isEditing: true,
         wizardMode: true, // Don't call API, return data instead
         member: member,
-        committee: this.committee(),
+        committee: effectiveCommittee,
       },
     }) as DynamicDialogRef;
 

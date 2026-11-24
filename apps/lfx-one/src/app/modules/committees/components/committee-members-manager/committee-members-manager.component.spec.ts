@@ -666,6 +666,40 @@ describe('CommitteeMembersManagerComponent', () => {
       );
     });
 
+    it.each([true, false])('uses live requirements (%s) when editing a staged member', async (enabled) => {
+      const requirements = { enable_voting: enabled, business_email_required: enabled };
+      await setupStateOnly({
+        organizationRequirements: requirements,
+        memberUpdates: { toAdd: [SELF_REQUEST], toUpdate: [], toDelete: [], toInvite: [] },
+      });
+      const persistedCommittee = { ...GROUP, enable_voting: !enabled, business_email_required: !enabled };
+      component.committee.set(persistedCommittee);
+      const member = component.membersWithState().find((row) => row.email === SELF_REQUEST.email)!;
+
+      component.openEditMemberDialog(member);
+
+      expect(dialogService.open).toHaveBeenCalledWith(
+        MemberFormComponent,
+        expect.objectContaining({
+          data: expect.objectContaining({ isEditing: true, wizardMode: true, member, committee: { ...GROUP, ...requirements } }),
+        })
+      );
+      expect(component.committee()).toBe(persistedCommittee);
+    });
+
+    it('keeps saved requirements when editing without live overrides', async () => {
+      await setupStateOnly();
+      const persistedCommittee = { ...GROUP, enable_voting: true, business_email_required: true };
+      component.committee.set(persistedCommittee);
+
+      component.openEditMemberDialog(component.membersWithState()[0]);
+
+      expect(dialogService.open).toHaveBeenCalledWith(
+        MemberFormComponent,
+        expect.objectContaining({ data: expect.objectContaining({ committee: persistedCommittee }) })
+      );
+    });
+
     it.each([
       ['an existing member, ignoring case', { ...SELF_USER, email: 'EXISTING@example.com' }, {}],
       ['a staged invitation', SELF_USER, { memberUpdates: { toAdd: [], toUpdate: [], toDelete: [], toInvite: [{ invitee_email: ' Self@Example.com ' }] } }],

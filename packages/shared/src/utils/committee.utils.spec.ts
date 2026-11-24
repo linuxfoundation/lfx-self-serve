@@ -521,6 +521,16 @@ describe('buildSelfMemberRequest', () => {
       { email: 'self@example.com', first_name: 'Alt', last_name: 'Person' },
     ],
     [
+      'trimmed fallback names when the OIDC names are whitespace-only',
+      { ...user, given_name: ' \t', family_name: '\u00a0 ', first_name: ' Alt ', last_name: ' Person ' },
+      { email: 'self@example.com', first_name: 'Alt', last_name: 'Person' },
+    ],
+    [
+      'empty names when neither source contains a usable name',
+      { ...user, given_name: ' ', family_name: '\t', first_name: ' ', last_name: '' },
+      { email: 'self@example.com', first_name: '', last_name: '' },
+    ],
+    [
       'trimmed whitespace',
       { email: ' self@example.com ', given_name: ' Self ', family_name: ' User ' },
       { email: 'self@example.com', first_name: 'Self', last_name: 'User' },

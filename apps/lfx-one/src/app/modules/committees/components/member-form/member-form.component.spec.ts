@@ -54,4 +54,14 @@ describe('MemberFormComponent prefill', () => {
     const { component } = setup({ wizardMode: true, prefill: { email: 'self@example.com', first_name: 'Self', last_name: 'User' } });
     expect(component.form().value).toEqual(expect.objectContaining({ email: 'self@example.com', first_name: 'Self', last_name: 'User' }));
   });
+
+  it('keeps existing member details instead of the prefill when editing', () => {
+    const { component } = setup({
+      isEditing: true,
+      wizardMode: true,
+      member: { email: 'member@example.com', first_name: 'Existing', last_name: 'Member' },
+      prefill: { email: 'self@example.com', first_name: 'Self', last_name: 'User' },
+    });
+    expect(component.form().value).toEqual(expect.objectContaining({ email: 'member@example.com', first_name: 'Existing', last_name: 'Member' }));
+  });
 });

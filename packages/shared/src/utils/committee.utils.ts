@@ -398,8 +398,8 @@ export function buildSelfMemberRequest(
   if (!user || !email) return null;
   return {
     email,
-    first_name: (user.given_name || user.first_name || '').trim(),
-    last_name: (user.family_name || user.last_name || '').trim(),
+    first_name: user.given_name?.trim() || user.first_name?.trim() || '',
+    last_name: user.family_name?.trim() || user.last_name?.trim() || '',
   };
 }
 
