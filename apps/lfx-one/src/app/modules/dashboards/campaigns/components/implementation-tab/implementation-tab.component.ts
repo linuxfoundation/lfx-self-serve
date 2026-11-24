@@ -57,6 +57,8 @@ import {
   isCreativeAssetMimeType,
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
+  LINKEDIN_CALL_TO_ACTION_OPTIONS,
+  LINKEDIN_VARIANT_FIELD_LIMITS,
   LINKEDIN_MAX_VARIANTS,
   LINKEDIN_MIN_VARIANTS,
   TWITTER_IMAGE_MAX_BYTES,
@@ -914,6 +916,26 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see linkedInTargetingEditEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInTargetingEditAvailable = computed<boolean>(() => this.linkedInTargetingEditEnabled() === true);
+
+  /**
+   * Whether each LinkedIn variant offers an ad name and description (`CampaignListResult.linkedInVariantCopyEnabled`,
+   * #5764 rows 16–17). `null` (unknown) hides them, so the form never sends a field the deployment would refuse.
+   */
+  public readonly linkedInVariantCopyEnabled = input<boolean | null>(null);
+
+  /** @see linkedInVariantCopyEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInVariantCopyAvailable = computed<boolean>(() => this.linkedInVariantCopyEnabled() === true);
+
+  /** Whether each LinkedIn variant offers a call to action (`CampaignListResult.linkedInCallToActionEnabled`, #5764 row 16). */
+  public readonly linkedInCallToActionEnabled = input<boolean | null>(null);
+
+  /** @see linkedInCallToActionEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInCallToActionAvailable = computed<boolean>(() => this.linkedInCallToActionEnabled() === true);
+
+  /** The calls to action the variant editor offers. */
+  protected readonly linkedInCallToActionOptions = LINKEDIN_CALL_TO_ACTION_OPTIONS;
+  /** The ad name and description limits, for the counters. */
+  protected readonly linkedInVariantFieldLimits = LINKEDIN_VARIANT_FIELD_LIMITS;
 
   /**
    * Whether the LinkedIn section reads the create's ad account from campaign-service and may offer a
@@ -5426,7 +5448,7 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
   /** Edit one LinkedIn variant's intro text or headline. */
-  protected onLinkedInVariantTextChange(key: string, field: 'introText' | 'headline', value: string): void {
+  protected onLinkedInVariantTextChange(key: string, field: 'introText' | 'headline' | 'name' | 'description' | 'callToAction', value: string): void {
     this.linkedInVariants.update((variants) => variants.map((variant) => (variant.key === key ? { ...variant, [field]: value } : variant)));
     this.emitDraft();
   }
@@ -7744,7 +7766,10 @@ export class ImplementationTabComponent implements OnInit {
    * field. The tab-only fields (`key`, the asset's name and brief) are never sent.
    */
   private linkedInVariantsSent(): LinkedInCreativeVariant[] {
-    return linkedInVariantsForCreate(this.linkedInVariants(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '');
+    return linkedInVariantsForCreate(this.linkedInVariants(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '', {
+      copy: this.linkedInVariantCopyAvailable(),
+      callToAction: this.linkedInCallToActionAvailable(),
+    });
   }
 
   /**
@@ -8574,6 +8599,9 @@ export class ImplementationTabComponent implements OnInit {
       geoTargetCount: this.linkedInGeoTargets().length,
       variantCount: this.linkedInVariants().length,
       variantTextInvalid: this.linkedInVariantTextInvalid(),
+      // Only fields the create sends can hold it: a hidden name or description goes nowhere.
+      variantFieldsInvalid:
+        this.linkedInVariantCopyAvailable() && this.linkedInVariantViews().some((view) => view.nameError !== '' || view.descriptionError !== ''),
       removalsHeld: this.linkedInTargetingRemovalsHeld(),
       targetingEditAvailable: this.linkedInTargetingEditAvailable(),
       profileLoaded: this.linkedInSelectedTargetingProfile() !== null,

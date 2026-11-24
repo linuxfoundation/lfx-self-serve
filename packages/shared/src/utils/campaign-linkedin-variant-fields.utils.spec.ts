@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { normalizeLinkedInCreativeName } from './campaign-linkedin.utils';
-import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from './campaign-linkedin-variant-fields.utils';
+import { compactLinkedInVariantFields, linkedInVariantFieldErrors, linkedInVariantFieldsRefusal } from './campaign-linkedin-variant-fields.utils';
 
 const ON = { copy: true, callToAction: true };
 const ad = (fields: Record<string, unknown>) => ({ introText: 'Join us', headline: 'Summit', ...fields });
@@ -72,5 +72,20 @@ describe('normalizeLinkedInCreativeName', () => {
     ['   ', ''],
   ])('normalizes %j to %j', (raw, expected) => {
     expect(normalizeLinkedInCreativeName(raw)).toBe(expected);
+  });
+});
+
+describe('linkedInVariantFieldErrors', () => {
+  it.each([
+    ['no fields', [{}, {}], ['', ''], ['', '']],
+    ['distinct names', [{ name: 'A' }, { name: 'B' }], ['', ''], ['', '']],
+    ['the same name once normalized', [{ name: 'Ad  A' }, { name: ' Ad A' }], ['', 'Ad 1 already has this name. Give each ad its own name.'], ['', '']],
+    ['blank names', [{ name: ' ' }, { name: '' }], ['', ''], ['', '']],
+    ['a name over 255', [{ name: 'n'.repeat(256) }], ['The ad name can be at most 255 characters.'], ['']],
+    ['a description over 300', [{ description: 'd'.repeat(301) }], [''], ['The description can be at most 300 characters.']],
+  ])('%s', (_name, variants, names, descriptions) => {
+    const errors = linkedInVariantFieldErrors(variants);
+    expect(errors.map((e) => e.name)).toEqual(names);
+    expect(errors.map((e) => e.description)).toEqual(descriptions);
   });
 });

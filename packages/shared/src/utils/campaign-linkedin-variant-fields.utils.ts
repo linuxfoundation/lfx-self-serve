@@ -100,3 +100,24 @@ export function compactLinkedInVariantFields(variant: Record<string, unknown>): 
   if (typeof callToAction === 'string' && callToActionToken(callToAction) !== '') out.callToAction = callToActionToken(callToAction);
   return out;
 }
+
+/**
+ * Why each variant's ad name or description cannot be sent, for the Implement tab (#5764 rows 16–17): over
+ * campaign-service's limits once normalized, or a name another variant already has. `''` for none. The create route
+ * refuses the same, so Create is held while any is set.
+ */
+export function linkedInVariantFieldErrors(variants: readonly { name?: string; description?: string }[]): { name: string; description: string }[] {
+  const seen = new Map<string, number>();
+  return variants.map((variant, index) => {
+    const name = normalizeLinkedInCreativeName(variant.name ?? '');
+    let nameError = '';
+    if (Array.from(name).length > LINKEDIN_VARIANT_FIELD_LIMITS.name) {
+      nameError = `The ad name can be at most ${LINKEDIN_VARIANT_FIELD_LIMITS.name} characters.`;
+    } else if (name !== '' && seen.has(name)) {
+      nameError = `Ad ${(seen.get(name) ?? 0) + 1} already has this name. Give each ad its own name.`;
+    }
+    if (name !== '' && !seen.has(name)) seen.set(name, index);
+    const tooLong = linkedInCreativeTextLength(variant.description ?? '') > LINKEDIN_VARIANT_FIELD_LIMITS.description;
+    return { name: nameError, description: tooLong ? `The description can be at most ${LINKEDIN_VARIANT_FIELD_LIMITS.description} characters.` : '' };
+  });
+}

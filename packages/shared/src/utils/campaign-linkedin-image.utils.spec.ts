@@ -95,6 +95,15 @@ describe('linkedInVariantViews', () => {
     ...over,
   });
 
+  it('shows the ad name, description and call to action, with their errors', () => {
+    const [a, b] = linkedInVariantViews(
+      input({ variants: [variant('a', { name: 'Same', description: 'Talks', callToAction: 'REGISTER' }), variant('b', { name: 'Same' })] })
+    );
+    expect(a).toMatchObject({ name: 'Same', description: 'Talks', callToAction: 'REGISTER', descriptionLength: 5, nameError: '', descriptionError: '' });
+    expect(b.nameError).toContain('already has this name');
+    expect(b).toMatchObject({ description: '', callToAction: '' });
+  });
+
   it('shows copy lengths and refusals', () => {
     const [view] = linkedInVariantViews(input({ variants: [variant('a', { introText: 'x'.repeat(601), headline: ' ' })] }));
     expect(view.introTextLength).toBe(601);

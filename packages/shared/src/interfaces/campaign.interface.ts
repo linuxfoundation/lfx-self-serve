@@ -1935,6 +1935,18 @@ export interface LinkedInVariantDraft {
   imageAssetName: string;
   /** The brief the upload was made for. */
   imageAssetBriefId: string;
+  /** The ad's name (#5764 row 17), `''` or absent for none. Absent on a draft saved before it existed. */
+  name?: string;
+  /** The article description (#5764 row 16), `''` or absent for none. */
+  description?: string;
+  /** One of `LINKEDIN_CALL_TO_ACTION_LABELS`, `''` or absent for none. */
+  callToAction?: string;
+}
+
+/** One call to action the LinkedIn variant editor offers: campaign-service's label and how it reads. */
+export interface LinkedInCallToActionOption {
+  value: string;
+  label: string;
 }
 
 export interface LinkedInTargetingStrategy {
@@ -2198,6 +2210,8 @@ export interface LinkedInCreateRefusalInput {
   accountInCatalog: boolean;
   accountSelectionAvailable: boolean;
   createAccountStatus: LinkedInCreateAccountState['status'];
+  /** An ad name or description the create would send but campaign-service would refuse (#5764 rows 16–17). */
+  variantFieldsInvalid?: boolean;
 }
 
 export interface LinkedInCampaignCreateRequest {
@@ -8263,6 +8277,14 @@ export interface LinkedInVariantView {
   headlineLength: number;
   introTextError: string;
   headlineError: string;
+  /** The ad name, description and call to action as edited (#5764 rows 16–17), `''` for none. */
+  name: string;
+  description: string;
+  callToAction: string;
+  descriptionLength: number;
+  /** Why the name or description cannot be sent (too long, or a name another variant has), or `''`. */
+  nameError: string;
+  descriptionError: string;
   /** "Uploading image…", "Uploaded: <name>", or `''`. */
   imageStatusMessage: string;
   imageUploading: boolean;
