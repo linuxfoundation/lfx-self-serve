@@ -17,7 +17,7 @@ import type {
   VoteResultsSummaryLine,
   VoteVoter,
 } from '../interfaces/poll.interface';
-import { joinNames } from './vote-results.utils';
+import { joinNames, rankedAnswerChoices } from './vote-results.utils';
 
 /**
  * Builds the Condorcet IRV results view for each question (#5969), a port of PCC's condorcet-poll-result derivations
@@ -53,6 +53,25 @@ export function buildCondorcetSummaryLines(views: CondorcetQuestionView[], isClo
   });
 }
 
+/**
+ * A stable signature of every question's per-choice rank counts (#5969)
+ * @description A voter who revises a ranking leaves `num_votes_cast` unchanged but moves at least one rank count, so
+ * this tells a caller when named ballots must be read again. Choices are sorted, because upstream's
+ * `ranked_choice_votes` order is unstable.
+ * @param results - VoteResultsResponse from the results API
+ * @returns The same string for the same rank counts
+ */
+export function buildCondorcetRankingsSignature(results: VoteResultsResponse): string {
+  return (results.poll_results ?? [])
+    .map((pr) => {
+      const choices = (pr.ranked_choice_votes ?? [])
+        .map((rcv) => `${rcv.choice_id}=${(rcv.rank_counts ?? []).map((rc) => `${rc.rank}:${rc.count}`).join(',')}`)
+        .sort();
+      return `${pr.question.question_id}(${choices.join(';')})`;
+    })
+    .join('|');
+}
+
 function buildQuestionView(pr: PollQuestionResult, ballots: VoteVoter[] | null): CondorcetQuestionView {
   const rankedVotes = pr.ranked_choice_votes ?? [];
   const textById = new Map((pr.question.choices ?? []).map((choice) => [choice.choice_id, choice.choice_text]));
@@ -72,7 +91,7 @@ function buildQuestionView(pr: PollQuestionResult, ballots: VoteVoter[] | null):
   }
 
   const matrix = buildMatrix(pr);
-  const winCounts = new Map(candidates.map((candidate) => [candidate.choiceId, countHeadToHeadWins(candidate.choiceId, matrix)]));
+  const winCounts = new Map(candidates.map((candidate) => [candidate.choiceId, countHeadToHeadWins(candidate.choiceId, candidates, matrix)]));
   const totalMatchups = matrix.size > 0 ? Math.max(candidates.length - 1, 0) : 0;
 
   const winnerIds = [...new Set((pr.ranked_choice_winner_info?.poll_choices ?? []).map((choice) => choice.choice_id))];
@@ -136,8 +155,13 @@ function pairwiseCounts(rowId: string, colId: string, matrix: Map<string, Map<st
   return mirror ? [mirror.other_choice_id_wins, mirror.choice_id_wins] : [0, 0];
 }
 
-function countHeadToHeadWins(choiceId: string, matrix: Map<string, Map<string, CondorcetMatrixEntry>>): number {
-  return [...(matrix.get(choiceId)?.values() ?? [])].filter((entry) => entry.choice_id_wins > entry.other_choice_id_wins).length;
+/** Head-to-head wins over every other candidate, read through `pairwiseCounts` so a one-sided pair counts like the pairwise table. */
+function countHeadToHeadWins(choiceId: string, candidates: CondorcetCandidate[], matrix: Map<string, Map<string, CondorcetMatrixEntry>>): number {
+  return candidates.filter((other) => {
+    if (other.choiceId === choiceId) return false;
+    const [wins, losses] = pairwiseCounts(choiceId, other.choiceId, matrix);
+    return wins > losses;
+  }).length;
 }
 
 function buildPairwise(candidates: CondorcetCandidate[], matrix: Map<string, Map<string, CondorcetMatrixEntry>>): CondorcetPairwiseRow[] {
@@ -262,9 +286,8 @@ function buildBallotPatterns(questionId: string, ballots: VoteVoter[], textById:
   const patterns = new Map<string, CondorcetBallotPatternRow>();
   for (const ballot of ballots) {
     if (ballot.status !== VoteVoterStatus.VOTED) continue;
-    const ranked = [...(ballot.poll_answers?.find((answer) => answer.question_id === questionId)?.ranked_user_choice ?? [])].sort(
-      (a, b) => (a.choice_rank ?? 0) - (b.choice_rank ?? 0)
-    );
+    const answer = ballot.poll_answers?.find((pollAnswer) => pollAnswer.question_id === questionId);
+    const ranked = answer ? rankedAnswerChoices(answer) : [];
     if (!ranked.length) continue;
     const key = ranked.map((choice) => choice.choice_id).join('\u0000');
     const existing = patterns.get(key);

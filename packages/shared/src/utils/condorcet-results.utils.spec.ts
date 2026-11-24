@@ -12,7 +12,7 @@ import type {
   VoteResultsResponse,
   VoteVoter,
 } from '../interfaces/poll.interface';
-import { buildCondorcetQuestionViews, buildCondorcetSummaryLines } from './condorcet-results.utils';
+import { buildCondorcetQuestionViews, buildCondorcetRankingsSignature, buildCondorcetSummaryLines } from './condorcet-results.utils';
 
 const CHOICES = [
   { choice_id: 'a', choice_text: 'Candidate A' },
@@ -167,6 +167,22 @@ describe('buildCondorcetQuestionViews', () => {
       ['Candidate A', 1, 1, 2, true, true],
       ['Candidate B', 1, 1, 2, true, true],
       ['Candidate C', 3, 0, 2, false, false],
+    ]);
+  });
+
+  it('counts a head-to-head win stored only under the opponent, as the pairwise table does', () => {
+    // Upstream normally emits each pair from both sides; here every pair arrives on its column's row only.
+    const q = question();
+    q.ranked_choice_votes = (q.ranked_choice_votes ?? []).map((rcv) => ({
+      ...rcv,
+      condorcet_matrix: rcv.condorcet_matrix?.filter((entry) => entry.choice_id > entry.other_choice_id),
+    }));
+    const v = view(q);
+    expect(v.pairwise[0].cells[1]).toEqual({ value: '3–2', result: 'win' });
+    expect(v.standings.map((s) => [s.choiceId, s.rank, s.winCount])).toEqual([
+      ['a', 1, 2],
+      ['b', 2, 1],
+      ['c', 3, 0],
     ]);
   });
 
@@ -335,9 +351,44 @@ describe('buildCondorcetQuestionViews', () => {
     ]);
   });
 
+  it('reads a ranking stored in user_choice when ranked_user_choice is empty', () => {
+    const fromUserChoice = ballot('1', []);
+    const answer = fromUserChoice.poll_answers![0];
+    answer.user_choice = [
+      { choice_id: 'c', choice_text: 'stored c', choice_rank: 2 },
+      { choice_id: 'b', choice_text: 'stored b', choice_rank: 1 },
+    ];
+    expect(view(question(), [fromUserChoice, ballot('2', ['b', 'c'])]).ballotPatterns).toEqual([
+      { key: 'b\u0000c', count: 2, ranking: ['Candidate B', 'Candidate C'] },
+    ]);
+  });
+
   it('marks ballot patterns unavailable when no ballots are provided', () => {
     expect(view(question(), null).ballotPatterns).toBeNull();
     expect(view(question(), []).ballotPatterns).toEqual([]);
+  });
+});
+
+describe('buildCondorcetRankingsSignature', () => {
+  it('ignores the order ranked_choice_votes arrive in', () => {
+    const q = question();
+    const reordered = question({ ranked_choice_votes: [...(q.ranked_choice_votes ?? [])].reverse() });
+    expect(buildCondorcetRankingsSignature(results(reordered))).toBe(buildCondorcetRankingsSignature(results(q)));
+  });
+
+  it('changes when a revised ranking moves rank counts without changing the ballot count', () => {
+    // One voter moves A from 2nd to 1st and B from 1st to 2nd; num_votes_cast stays 5.
+    const revised = question({
+      ranked_choice_votes: rankedVotes(
+        [
+          ['a', 'b', 4, 1],
+          ['a', 'c', 4, 1],
+          ['b', 'c', 3, 2],
+        ],
+        { a: [2, 3, 0], b: [2, 2, 1], c: [1, 0, 4] }
+      ),
+    });
+    expect(buildCondorcetRankingsSignature(results(revised))).not.toBe(buildCondorcetRankingsSignature(results(question())));
   });
 });
 

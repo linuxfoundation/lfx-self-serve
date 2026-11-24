@@ -53,6 +53,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildCondorcetQuestionViews,
+  buildCondorcetRankingsSignature,
   buildCondorcetSummaryLines,
   buildRankedQuestionViews,
   buildVoteResultsQuestions,
@@ -321,7 +322,7 @@ export class VoteDetailComponent {
   /** Condorcet IRV gets its own results layout (#5969); Instant Runoff and Meek STV keep the ranked distributions. */
   protected readonly isCondorcetPoll: Signal<boolean> = computed(() => this.vote()?.poll_type === PollType.CONDORCET_IRV);
   /** Which vote's named ballots to read for the Condorcet ballot ranking distribution — a manager on a named vote only (#5969). */
-  private readonly condorcetBallotsKey: Signal<{ uid: string; tick: number; votesCast: number; closed: boolean; draft: boolean } | null> =
+  private readonly condorcetBallotsKey: Signal<{ uid: string; tick: number; votesCast: number; rankings: string; closed: boolean; draft: boolean } | null> =
     this.initCondorcetBallotsKey();
   /** The latest ballots read and the vote it belongs to; `voters` is null when the read failed. */
   private readonly condorcetBallotsRead: Signal<{ uid: string; voters: VoteVoter[] | null } | null> = this.initCondorcetBallotsRead();
@@ -845,12 +846,13 @@ export class VoteDetailComponent {
 
   /**
    * A manager of a named Condorcet vote reads the voters list on the Results tab once its results load, again whenever
-   * the results poll reports a different ballot count or the vote finalizes, and after a ballot from this page, so its
-   * ballot orderings match its other tables. Pseudo-anonymous votes return participation-only rows, and voters can't
-   * read ballots at all, so neither gets a key and the table gives way to a note (#5969). A draft has no ballots and
-   * GET /api/votes/:uid/voters refuses it (409), so it skips the read, just as `showVotersTab` hides the Voters tab.
+   * the results poll reports a different ballot count or different rank counts (a revised ranking keeps the count) or
+   * the vote finalizes, and after a ballot from this page, so its ballot orderings match its other tables.
+   * Pseudo-anonymous votes return participation-only rows, and voters can't read ballots at all, so neither gets a key
+   * and the table gives way to a note (#5969). A draft has no ballots and GET /api/votes/:uid/voters refuses it (409),
+   * so it skips the read, just as `showVotersTab` hides the Voters tab.
    */
-  private initCondorcetBallotsKey(): Signal<{ uid: string; tick: number; votesCast: number; closed: boolean; draft: boolean } | null> {
+  private initCondorcetBallotsKey(): Signal<{ uid: string; tick: number; votesCast: number; rankings: string; closed: boolean; draft: boolean } | null> {
     return computed(() => {
       const uid = this.vote()?.uid;
       const results = this.voteResults();
@@ -864,20 +866,34 @@ export class VoteDetailComponent {
         this.activeTab() !== 'results'
       )
         return null;
-      return { uid, tick: this.refreshTick(), votesCast: results.num_votes_cast, closed: this.isVoteClosed(), draft: !this.showVotersTab() };
+      return {
+        uid,
+        tick: this.refreshTick(),
+        votesCast: results.num_votes_cast,
+        rankings: buildCondorcetRankingsSignature(results),
+        closed: this.isVoteClosed(),
+        draft: !this.showVotersTab(),
+      };
     });
   }
 
   /**
    * A failed first read settles with null voters, so it ends the loading state and shows the "not available" note;
-   * a failed re-read of the same vote keeps its last ballots.
+   * a failed re-read of the same vote keeps its last ballots. Leaving the Results tab (a null key) keeps them too, so a
+   * failed read on returning still has them.
    */
   private initCondorcetBallotsRead(): Signal<{ uid: string; voters: VoteVoter[] | null } | null> {
     let last: { uid: string; voters: VoteVoter[] | null } | null = null;
     return toSignal(
       toObservable(this.condorcetBallotsKey).pipe(
         distinctUntilChanged(
-          (a, b) => a?.uid === b?.uid && a?.tick === b?.tick && a?.votesCast === b?.votesCast && a?.closed === b?.closed && a?.draft === b?.draft
+          (a, b) =>
+            a?.uid === b?.uid &&
+            a?.tick === b?.tick &&
+            a?.votesCast === b?.votesCast &&
+            a?.rankings === b?.rankings &&
+            a?.closed === b?.closed &&
+            a?.draft === b?.draft
         ),
         switchMap((key) => {
           if (!key) return of(null);
@@ -891,7 +907,7 @@ export class VoteDetailComponent {
           );
         }),
         tap((read) => {
-          last = read;
+          if (read) last = read;
         })
       ),
       { initialValue: null }

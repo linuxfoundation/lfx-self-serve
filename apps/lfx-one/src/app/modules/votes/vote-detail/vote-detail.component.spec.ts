@@ -532,6 +532,25 @@ describe('VoteDetailComponent', () => {
       expect(condorcetQuestion(fixture).question().ballotPatterns).toHaveLength(1);
     });
 
+    it('keeps the ballots read before leaving Results when the read on returning fails', async () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+      await fixture.whenStable();
+      expect(condorcetQuestion(fixture).question().ballotPatterns).toHaveLength(1);
+
+      queryParamMap.next(convertToParamMap({ tab: 'overview' }));
+      await fixture.whenStable();
+      voteService.getVoteVoters.mockReturnValue(httpError(503));
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      await fixture.whenStable();
+
+      expect(voteService.getVoteVoters).toHaveBeenCalledTimes(2);
+      expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ key: 'choice-no\u0000choice-yes', count: 2, ranking: ['No', 'Yes'] }]);
+      expect(testId(fixture, 'vote-condorcet-ballots-unavailable')).toBeNull();
+      expect(log).toHaveBeenCalledWith('Failed to load Condorcet ballots', { status: 503 });
+    });
+
     it.each([
       { name: 'a pseudo-anonymous vote', manager: true, vote: { pseudo_anonymity: true } },
       { name: 'a vote with no privacy flag', manager: true, vote: { pseudo_anonymity: undefined } },
@@ -589,6 +608,8 @@ describe('VoteDetailComponent', () => {
       expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([]);
       expect(testId(fixture, 'vote-condorcet-ballots-empty')).not.toBeNull();
       expect(testId(fixture, 'vote-condorcet-ballots-unavailable')).toBeNull();
+      expect(testId(fixture, 'vote-condorcet-not-open')).not.toBeNull();
+      expect(testId(fixture, 'vote-condorcet-in-progress')).toBeNull();
     });
 
     describe('live refresh', () => {
@@ -649,6 +670,27 @@ describe('VoteDetailComponent', () => {
           { key: 'choice-yes\u0000choice-no', count: 2, ranking: ['Yes', 'No'] },
           { key: 'choice-no\u0000choice-yes', count: 1, ranking: ['No', 'Yes'] },
         ]);
+      });
+
+      it('re-reads the ballots when a revised ranking changes the rank counts but not the ballot count', async () => {
+        const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(1);
+
+        // The only voter moves Yes to first: num_votes_cast stays 1 while both choices' rank counts change.
+        const revised = liveResults(1);
+        revised.poll_results[0] = {
+          ...revised.poll_results[0],
+          ranked_choice_votes: revised.poll_results[0].ranked_choice_votes?.map((rcv) => ({
+            ...rcv,
+            rank_counts: rcv.rank_counts.map((rc) => ({ ...rc, count: rc.count + (rcv.choice_id === 'choice-yes' ? 1 : -1) })),
+          })),
+        };
+        voteService.getVoteResults.mockReturnValue(of(revised));
+        voteService.getVoteVoters.mockReturnValue(of([laterBallot('ballot-1')]));
+        await nextPoll(fixture);
+
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(2);
+        expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ key: 'choice-yes\u0000choice-no', count: 1, ranking: ['Yes', 'No'] }]);
       });
 
       it('keeps the last ballots when a refresh read fails', async () => {

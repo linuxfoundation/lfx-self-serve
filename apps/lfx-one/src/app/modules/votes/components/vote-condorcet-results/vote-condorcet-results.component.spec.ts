@@ -150,6 +150,15 @@ describe('VoteCondorcetResultsComponent', () => {
     expect(byTestId(el, 'vote-condorcet-outcome-message')).not.toBeNull();
   });
 
+  it('says a vote that has not opened yet is not open, never in progress', () => {
+    fixture.componentRef.setInput('isActive', false);
+    const el = render(question(), false);
+    expect(text(byTestId(el, 'vote-condorcet-not-open'))).toBe("This vote hasn't opened yet. Results will appear once voting starts.");
+    expect(byTestId(el, 'vote-condorcet-in-progress')).toBeNull();
+    expect(byTestId(el, 'vote-condorcet-outcome-message')).toBeNull();
+    expect(byTestId(el, 'vote-condorcet-standings')).toBeNull();
+  });
+
   it('renders pairwise cells with icons and screen-reader results', () => {
     const el = render(question());
     const rows = byTestId(el, 'vote-condorcet-pairwise')?.querySelectorAll('tbody tr') ?? [];

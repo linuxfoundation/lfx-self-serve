@@ -20,6 +20,11 @@
         <i class="fa-light fa-clock mt-0.5" aria-hidden="true"></i>
         <span>Voting has ended. The final outcome will appear once the final totals are confirmed.</span>
       </p>
+    } @else if (!isClosed() && !isActive()) {
+      <p class="flex items-start gap-2 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600" data-testid="vote-condorcet-not-open">
+        <i class="fa-light fa-clock mt-0.5" aria-hidden="true"></i>
+        <span>This vote hasn't opened yet. Results will appear once voting starts.</span>
+      </p>
     } @else if (!isClosed()) {
       <p class="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800" data-testid="vote-condorcet-in-progress">
         <i class="fa-light fa-clock mt-0.5" aria-hidden="true"></i>

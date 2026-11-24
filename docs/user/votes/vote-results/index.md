@@ -4,7 +4,7 @@ description: How to see live and final results, abstentions, ranked questions, c
 audience: [all]
 product_area: Votes
 tags: [votes, results, abstain, comments, ranked, condorcet, tallies, voters]
-last_updated: 2026-11-23
+last_updated: 2026-11-24
 intercom_collection: Votes
 ---
 
@@ -82,7 +82,7 @@ A Condorcet IRV vote shows its own results for each question. The winner comes f
 - **Ballot Ranking Distribution** shows each distinct order in which voters ranked the candidates, and how many ballots used it, most common first. Only managers of a named vote see this table. On a pseudo-anonymous vote, or for voters, it says **Ballot-by-ballot rankings aren't available for this vote.**
 - **Candidate Rank Summary** shows how many voters placed each candidate at each rank (**1st**, **2nd**, and so on). Its counts are not links to individual ballots. Managers of a named vote can still view individual ballots on the **Voters** tab.
 
-While the vote is open, the outcome and standings are replaced by **The vote is currently in progress. Final results will be available once voting has ended.** After voting ends, until the final totals load, they are replaced by **Voting has ended. The final outcome will appear once the final totals are confirmed.** The pairwise, ballot and rank tables show the counts so far. While the Results tab is open, the ballot table refreshes when more ballots arrive and again when the results become final; opening the tab reads the ballots again.
+Before the vote opens, the outcome and standings are replaced by **This vote hasn't opened yet. Results will appear once voting starts.** While the vote is open, they are replaced by **The vote is currently in progress. Final results will be available once voting has ended.** After voting ends, until the final totals load, they are replaced by **Voting has ended. The final outcome will appear once the final totals are confirmed.** The pairwise, ballot and rank tables show the counts so far. While the Results tab is open, the ballot table refreshes when more ballots arrive or a voter changes their ranking, and again when the results become final; opening the tab reads the ballots again.
 
 ### Pseudo-anonymous votes
 

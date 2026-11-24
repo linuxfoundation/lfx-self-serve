@@ -11,8 +11,8 @@ import { OrdinalPipe } from '@pipes/ordinal.pipe';
 /**
  * Condorcet IRV results for one question (#5969), ported from PCC's condorcet-poll-result: how the voting service
  * decided the winner, standings, the pairwise comparison table, the ballot ranking distribution and the candidate rank
- * summary. Until the vote is closed the outcome and standings give way to an in-progress note (or, once voting has
- * ended, a finalizing note); the tables show live counts.
+ * summary. Until the vote is closed the outcome and standings give way to an in-progress note (a not-open note for a
+ * draft or a vote that hasn't opened, a finalizing note once voting has ended); the tables show live counts.
  */
 @Component({
   selector: 'lfx-vote-condorcet-results',
@@ -28,6 +28,8 @@ export class VoteCondorcetResultsComponent {
   public readonly isClosed = input.required<boolean>();
   /** Voting has ended; until `isClosed`, the final results are still being confirmed. */
   public readonly isEnded = input<boolean>(false);
+  /** Voting is open; a vote that is neither open, ended nor closed (a draft) hasn't opened yet. */
+  public readonly isActive = input<boolean>(true);
   /** Named ballots are still loading, so the ballot section waits instead of saying they aren't available. */
   public readonly ballotsLoading = input<boolean>(false);
 
