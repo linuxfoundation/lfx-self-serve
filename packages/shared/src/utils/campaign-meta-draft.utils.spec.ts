@@ -9,6 +9,7 @@ import {
   copyMetaAudienceTargeting,
   metaDraftFields,
   metaDraftRestore,
+  metaPendingDraftFields,
   metaImageDraftFields,
   metaImageDraftRestore,
   metaInstagramDsaPatch,
@@ -217,5 +218,24 @@ describe('copyMetaAudienceTargeting', () => {
     expect(copy.genders).not.toBe(source.genders);
     expect(copy.customAudiences).not.toBe(source.customAudiences);
     expect(copy.excludedCustomAudiences).not.toBe(source.excludedCustomAudiences);
+  });
+});
+
+describe('metaPendingDraftFields', () => {
+  it('keeps only the foundation-scoped fields a waiting draft carries, with their project stamps', () => {
+    const fields = metaDraftFields({ ...state, foundation: 'tlf' });
+    expect(metaPendingDraftFields(draft(fields))).toEqual({
+      metaObjective: fields.metaObjective,
+      metaAudienceTargeting: fields.metaAudienceTargeting,
+      metaAudienceTargetingProject: 'tlf',
+      metaAdOptions: fields.metaAdOptions,
+      metaAdOptionsProject: 'tlf',
+      metaLeadFormId: fields.metaLeadFormId,
+      metaLeadFormProject: 'tlf',
+    });
+  });
+
+  it('adds nothing for a draft saved before those fields shipped', () => {
+    expect(metaPendingDraftFields(draft({ metaPixelId: '1' }))).toEqual({});
   });
 });

@@ -478,6 +478,7 @@ import {
   metaCreateRefusal,
   metaDraftFields,
   metaDraftRestore,
+  metaPendingDraftFields,
   metaDsaCountries,
   metaDsaFieldError,
   metaEffectiveGeoTargets,
@@ -9411,6 +9412,8 @@ export class ImplementationTabComponent implements OnInit {
         budgetUsd: this.metaBudgetUsd(),
         lifetimeBudget: this.metaLifetimeBudget(),
       }),
+      // A draft still waiting for its foundation keeps its foundation-scoped choices in what is saved (#6107).
+      ...(this.pendingMetaDraft === null ? {} : metaPendingDraftFields(this.pendingMetaDraft)),
       // Microsoft's four (LFXV2-3312), snapshotted rather than referenced for the same reason as
       // the Meta block: the parent must hold a value, not a live view of a signal this component
       // is about to destroy. The two ARRAYS are carried because they have a real editor here —

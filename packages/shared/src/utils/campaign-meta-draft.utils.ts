@@ -111,6 +111,27 @@ export function metaInstagramDsaPatch(draft: MetaDraftSnapshot): MetaDraftRestor
   return patch;
 }
 
+/** The draft fields that belong to one foundation: what a draft restored before the foundation is known must not lose. */
+const META_FOUNDATION_SCOPED_DRAFT_KEYS = [
+  'metaObjective',
+  'metaAudienceTargeting',
+  'metaAudienceTargetingProject',
+  'metaAdOptions',
+  'metaAdOptionsProject',
+  'metaLeadFormId',
+  'metaLeadFormProject',
+] as const;
+
+/**
+ * The foundation-scoped fields of a draft still waiting for its foundation (#6107), laid over every draft the tab
+ * emits meanwhile. The parent saves what the tab emits, so without them a tab closed before the foundation resolves
+ * would save the form, audiences and ad choices as cleared. Only what the waiting draft carries; with their
+ * original project stamps, so a reopen restores them under that foundation only.
+ */
+export function metaPendingDraftFields(pending: MetaDraftSnapshot): Partial<MetaDraftSnapshot> {
+  return Object.fromEntries(META_FOUNDATION_SCOPED_DRAFT_KEYS.filter((key) => pending[key] !== undefined).map((key) => [key, pending[key]]));
+}
+
 /**
  * What a restored draft sets on the Meta form. Each field only when the draft carries it: a draft saved
  * before a field shipped leaves the seeded value standing (`?? 'traffic'` would silently downgrade a

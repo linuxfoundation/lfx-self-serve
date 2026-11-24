@@ -165,14 +165,43 @@ describe('ImplementationTabComponent meta lead form', () => {
     restored.componentRef.setInput('metaLeadFormsEnabled', true);
     restored.componentRef.setInput('draft', saved);
     restored.componentRef.setInput('briefData', brief());
+    let resaved: CampaignImplementationDraft | null = null;
+    restored.componentInstance.draftChange.subscribe((d: CampaignImplementationDraft) => (resaved = d));
     restored.detectChanges();
     await restored.whenStable();
+    // Saved meanwhile with its form and stamp, so a tab left before the foundation resolves loses nothing.
+    expect(resaved).toMatchObject({ metaObjective: 'leads', metaLeadFormId: '111', metaLeadFormProject: 'tlf' });
 
     context.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
     restored.detectChanges();
     await restored.whenStable();
     expect(c(restored)['metaObjective']()).toBe('leads');
     expect(c(restored)['metaLeadFormId']()).toBe('111');
+  });
+
+  it('keeps a form choice made before the foundation is known over the waiting draft', STATE_ONLY, async () => {
+    const f = await mount(true);
+    let saved: CampaignImplementationDraft | null = null;
+    f.componentInstance.draftChange.subscribe((d: CampaignImplementationDraft) => (saved = d));
+    c(f)['onMetaLeadFormChange']('111');
+    f.detectChanges();
+    await f.whenStable();
+    f.destroy();
+
+    const context = TestBed.inject(ProjectContextService);
+    context.clearFoundation(false);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
+    restored.componentRef.setInput('metaLeadFormsEnabled', true);
+    restored.componentRef.setInput('draft', saved);
+    restored.componentRef.setInput('briefData', brief());
+    restored.detectChanges();
+    await restored.whenStable();
+
+    c(restored)['onMetaLeadFormChange']('333');
+    context.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
+    restored.detectChanges();
+    await restored.whenStable();
+    expect(c(restored)['metaLeadFormId']()).toBe('333');
   });
 
   it('does not carry a draft waiting for the foundation into another brief', STATE_ONLY, async () => {
