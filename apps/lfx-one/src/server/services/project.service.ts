@@ -5,6 +5,7 @@ import {
   CLASSIFICATION_TO_EMAIL_TYPES,
   DOCUMENT_DELETE_TYPES,
   DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
+  DOCUMENT_UPDATE_TYPES,
   DOCUMENT_UPSTREAM_PATH_SEGMENTS,
   EMAIL_CAMPAIGN_LIMIT,
   EVENT_GROWTH_TOP_EVENTS_LIMIT,
@@ -151,8 +152,10 @@ import {
   UniqueContributorsDailyResponse,
   UniqueContributorsWeeklyResponse,
   UniqueContributorsWeeklyRow,
+  UpdateDocumentRequest,
   UpdateProjectStaffRequest,
   UploadProjectDocumentRequest,
+  UpstreamDocumentRecord,
   AuditUserProfile,
   CommitteeDocumentQueryResult,
   CommitteeLinkQueryResult,
@@ -200,6 +203,7 @@ import {
   ResourceNotFoundError,
   ServiceValidationError,
 } from '../errors';
+import { buildDocumentUpdateBody } from '../helpers/document-update.helper';
 import { assertMergedRecordValid, mergeFormationRecord, validateFormationRecordBody } from '../helpers/formation-record.helper';
 import { checkFormationTeamMembership } from '../helpers/formation-team.helper';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
@@ -8245,6 +8249,59 @@ export class ProjectService {
   }
 
   /**
+   * Renames and/or moves a project folder, link or uploaded file. The upstream update replaces every editable field, so the
+   * record is read first, with its ETag, and what is not changing is carried over; the ETag makes the write fail with a
+   * conflict if the record changed in between. `X-Sync` makes the write wait for the indexer, which the Documents tab lists
+   * from, so a refresh straight after shows the change. A name another record holds, or a folder that is not the project's,
+   * is refused upstream and passed on as it is.
+   * @param documentType 'folder', 'link' or 'file' — determines which upstream endpoint to call
+   */
+  public async updateProjectDocument(
+    req: Request,
+    projectId: string,
+    documentId: string,
+    documentType: ProjectDocumentType,
+    changes: UpdateDocumentRequest
+  ): Promise<ProjectDocument> {
+    // Defense-in-depth: the controller validates this too, but an unknown type must never fall through to another resource's path.
+    if (!DOCUMENT_UPDATE_TYPES.includes(documentType)) {
+      throw ServiceValidationError.forField('type', `Unsupported document type: ${documentType}. Must be one of: ${DOCUMENT_UPDATE_TYPES.join(', ')}.`, {
+        operation: 'update_project_document',
+        service: 'project_service',
+      });
+    }
+
+    const resourcePath = `/projects/${projectId}/${DOCUMENT_UPSTREAM_PATH_SEGMENTS[documentType]}/${documentId}`;
+
+    // Step 1: Fetch the record with its ETag
+    const { data: current, etag } = await this.etagService.fetchWithETag<UpstreamDocumentRecord>(
+      req,
+      'LFX_V2_SERVICE',
+      resourcePath,
+      'update_project_document'
+    );
+
+    // Step 2: Replace it with the change applied, guarded by the ETag
+    const updated = await this.etagService.updateWithETag<ProjectFolder | ProjectLink | ProjectDocumentUpstreamResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      resourcePath,
+      etag,
+      buildDocumentUpdateBody(documentType, current, changes),
+      'update_project_document',
+      { 'X-Sync': 'true' }
+    );
+
+    logger.debug(req, 'update_project_document', `Project ${documentType} updated successfully`, {
+      project_uid: projectId,
+      document_uid: documentId,
+      document_type: documentType,
+    });
+
+    return this.toUpdatedProjectDocument(documentType, updated);
+  }
+
+  /**
    * Get keyword performance data from Snowflake Platinum tables.
    * Queries PAID_ADS_KEYWORD_PERFORMANCE (daily grain, aggregated) and
    * PAID_ADS_KEYWORD_ATTRIBUTION (monthly grain, aggregated) for attributed revenue.
@@ -9447,5 +9504,52 @@ export class ProjectService {
         clientMessage: DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
       });
     }
+  }
+
+  /** Maps the record an upstream update returns to the shape the Documents tab lists, by the type that was updated. */
+  private toUpdatedProjectDocument(documentType: ProjectDocumentType, updated: ProjectFolder | ProjectLink | ProjectDocumentUpstreamResponse): ProjectDocument {
+    if (documentType === 'folder') {
+      const folder = updated as ProjectFolder;
+      return {
+        uid: folder.uid,
+        type: 'folder',
+        name: folder.name,
+        created_at: folder.created_at,
+        updated_at: folder.updated_at,
+        uploaded_by: resolveAuditUserDisplayName(folder.created_by, folder.created_by_username),
+        project_uid: folder.project_uid,
+      };
+    }
+
+    if (documentType === 'link') {
+      const link = updated as ProjectLink;
+      return {
+        uid: link.uid,
+        type: 'link',
+        name: link.name,
+        url: link.url,
+        description: link.description,
+        created_at: link.created_at,
+        updated_at: link.updated_at,
+        uploaded_by: resolveAuditUserDisplayName(link.created_by, link.created_by_username),
+        parent_uid: link.folder_uid,
+        project_uid: link.project_uid,
+      };
+    }
+
+    const file = updated as ProjectDocumentUpstreamResponse;
+    return {
+      uid: file.uid,
+      type: 'file',
+      name: file.name,
+      description: file.description,
+      file_size: file.file_size,
+      mime_type: file.content_type,
+      created_at: file.created_at,
+      updated_at: file.updated_at,
+      uploaded_by: resolveAuditUserDisplayName(file.created_by, file.uploaded_by_username),
+      parent_uid: file.folder_uid,
+      project_uid: file.project_uid,
+    };
   }
 }

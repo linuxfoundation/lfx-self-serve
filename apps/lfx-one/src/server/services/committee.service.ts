@@ -5,6 +5,7 @@ import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
   COMMITTEE_DOCUMENT_DELETE_TYPES,
+  DOCUMENT_UPDATE_TYPES,
   DOCUMENT_UPSTREAM_PATH_SEGMENTS,
   MEMBER_IMPORT_BULK_TIMEOUT_MS,
   PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
@@ -47,13 +48,16 @@ import {
   ProjectSettings,
   QueryServiceCountResponse,
   QueryServiceResponse,
+  UpdateDocumentRequest,
   UploadCommitteeDocumentRequest,
+  UpstreamDocumentRecord,
 } from '@lfx-one/shared/interfaces';
 import { canGroupGrantSocialListening, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
 import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { buildDocumentUpdateBody } from '../helpers/document-update.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources, FetchAllQueryResourcesOptions } from '../helpers/query-service.helper';
@@ -101,6 +105,8 @@ interface CommitteeDocumentUpstreamResponse {
   file_size: number;
   content_type: string;
   description?: string;
+  /** The folder the file sits in; absent at the root. */
+  folder_uid?: string;
   committee_uid?: string;
   created_at?: string;
   updated_at?: string;
@@ -2367,6 +2373,59 @@ export class CommitteeService {
   }
 
   /**
+   * Renames and/or moves a committee folder, link or uploaded file. The upstream update replaces every editable field, so
+   * the record is read first, with its ETag, and what is not changing is carried over; the ETag makes the write fail with a
+   * conflict if the record changed in between. `X-Sync` makes the write wait for the indexer, which is what uploaded files
+   * are listed from, so a refresh straight after shows the change. A name another record holds, or a folder that is not
+   * the committee's, is refused upstream and passed on as it is.
+   * @param documentType 'folder', 'link' or 'file' — determines which upstream endpoint to call
+   */
+  public async updateCommitteeDocument(
+    req: Request,
+    committeeId: string,
+    documentId: string,
+    documentType: ProjectDocumentType,
+    changes: UpdateDocumentRequest
+  ): Promise<CommitteeDocument> {
+    // Defense-in-depth: the controller validates this too, but an unknown type must never fall through to another resource's path.
+    if (!DOCUMENT_UPDATE_TYPES.includes(documentType)) {
+      throw ServiceValidationError.forField('type', `Unsupported document type: ${documentType}. Must be one of: ${DOCUMENT_UPDATE_TYPES.join(', ')}.`, {
+        operation: 'update_committee_document',
+        service: 'committee_service',
+      });
+    }
+
+    const resourcePath = `/committees/${committeeId}/${DOCUMENT_UPSTREAM_PATH_SEGMENTS[documentType]}/${documentId}`;
+
+    // Step 1: Fetch the record with its ETag
+    const { data: current, etag } = await this.etagService.fetchWithETag<UpstreamDocumentRecord>(
+      req,
+      'LFX_V2_SERVICE',
+      resourcePath,
+      'update_committee_document'
+    );
+
+    // Step 2: Replace it with the change applied, guarded by the ETag
+    const updated = await this.etagService.updateWithETag<CommitteeFolder | CommitteeLink | CommitteeDocumentUpstreamResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      resourcePath,
+      etag,
+      buildDocumentUpdateBody(documentType, current, changes),
+      'update_committee_document',
+      { 'X-Sync': 'true' }
+    );
+
+    logger.debug(req, 'update_committee_document', `Committee ${documentType} updated successfully`, {
+      committee_uid: committeeId,
+      document_uid: documentId,
+      document_type: documentType,
+    });
+
+    return this.toUpdatedCommitteeDocument(documentType, updated);
+  }
+
+  /**
    * Strict single-committee mailing-list check — unlike {@link getMailingListCountByCommittee}
    * (fail-open-to-false via the batch/Promise.allSettled path, acceptable for a cosmetic list
    * badge), this propagates a query-service failure instead of silently reporting "no mailing
@@ -3015,5 +3074,55 @@ export class CommitteeService {
       return [];
     }
     return pending.filter((invite) => invite.committee_uid === trimmedResourceUid);
+  }
+
+  /** Maps the record an upstream update returns to the shape the Documents tab lists, by the type that was updated. */
+  private toUpdatedCommitteeDocument(
+    documentType: ProjectDocumentType,
+    updated: CommitteeFolder | CommitteeLink | CommitteeDocumentUpstreamResponse
+  ): CommitteeDocument {
+    if (documentType === 'folder') {
+      const folder = updated as CommitteeFolder;
+      return {
+        uid: folder.uid,
+        type: 'folder',
+        name: folder.name,
+        created_at: folder.created_at,
+        updated_at: folder.updated_at,
+        uploaded_by: resolveAuditUserDisplayName(folder.created_by, folder.created_by_username),
+        committee_uid: folder.committee_uid,
+      };
+    }
+
+    if (documentType === 'link') {
+      const link = updated as CommitteeLink;
+      return {
+        uid: link.uid,
+        type: 'link',
+        name: link.name,
+        url: link.url,
+        description: link.description,
+        created_at: link.created_at,
+        updated_at: link.updated_at,
+        uploaded_by: resolveAuditUserDisplayName(link.created_by, link.created_by_username),
+        parent_uid: link.folder_uid,
+        committee_uid: link.committee_uid,
+      };
+    }
+
+    const file = updated as CommitteeDocumentUpstreamResponse;
+    return {
+      uid: file.uid,
+      type: 'file',
+      name: file.name,
+      description: file.description,
+      file_size: file.file_size,
+      mime_type: file.content_type,
+      created_at: file.created_at,
+      updated_at: file.updated_at,
+      uploaded_by: resolveAuditUserDisplayName(file.created_by, file.uploaded_by_username),
+      parent_uid: file.folder_uid,
+      committee_uid: file.committee_uid,
+    };
   }
 }

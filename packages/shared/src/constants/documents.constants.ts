@@ -19,6 +19,15 @@ export const DOCUMENT_DELETE_TYPES: readonly ProjectDocumentType[] = ['file', 'l
  */
 export const COMMITTEE_DOCUMENT_DELETE_TYPES: readonly ProjectDocumentType[] = ['file', 'link'];
 
+/** Group and project document types a writer can rename or move from the Documents tab. */
+export const DOCUMENT_UPDATE_TYPES: readonly ProjectDocumentType[] = ['file', 'link', 'folder'];
+
+/** Longest name the committee service accepts when a group file, link or folder is updated; a longer one is refused here with a 400. */
+export const COMMITTEE_DOCUMENT_NAME_MAX_LENGTH: Record<ProjectDocumentType, number> = { file: 500, link: 500, folder: 200 };
+
+/** Longest name the project service accepts when a project file, link or folder is updated. */
+export const PROJECT_DOCUMENT_NAME_MAX_LENGTH = 255;
+
 /** Upstream path segment each group/project document type lives under (`/committees/{id}/folders/{uid}`, `/projects/{id}/documents/{uid}`). */
 export const DOCUMENT_UPSTREAM_PATH_SEGMENTS: Record<ProjectDocumentType, string> = {
   folder: 'folders',

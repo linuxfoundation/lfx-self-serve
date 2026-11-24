@@ -77,6 +77,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
   );
   return {
     COMMITTEE_DOCUMENT_DELETE_TYPES: documentConstants.COMMITTEE_DOCUMENT_DELETE_TYPES,
+    DOCUMENT_UPDATE_TYPES: documentConstants.DOCUMENT_UPDATE_TYPES,
     DOCUMENT_UPSTREAM_PATH_SEGMENTS: documentConstants.DOCUMENT_UPSTREAM_PATH_SEGMENTS,
     SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
     CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
@@ -439,6 +440,127 @@ describe('CommitteeService — deleteCommitteeDocument', () => {
     await expect(service.deleteCommitteeDocument(req, 'committee-1', 'doc-1', 'meeting' as never)).rejects.toMatchObject({ statusCode: 400 });
     expect(fetchWithETag).not.toHaveBeenCalled();
     expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+});
+
+describe('CommitteeService — updateCommitteeDocument', () => {
+  const FOLDER_A = '3f2a8c1e-5b7d-4e69-9a0f-1c2d3e4f5a6b';
+  const FOLDER_B = '9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+  let service: CommitteeService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    fetchWithETag.mockReset();
+    updateWithETag.mockReset();
+    resolveAuditUserDisplayName.mockReset();
+    resolveAuditUserDisplayName.mockReturnValue('Resolved Display Name');
+    updateWithETag.mockImplementation((_req: unknown, _svc: string, _path: string, _etag: string, body: Record<string, unknown>) =>
+      Promise.resolve({ uid: 'doc-1', committee_uid: 'committee-1', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-02-02T00:00:00Z', ...body })
+    );
+    service = new CommitteeService();
+  });
+
+  it.each([
+    ['link', '/committees/committee-1/links/doc-1', { name: 'Old', url: 'https://example.com', description: 'A link', folder_uid: FOLDER_A }],
+    ['file', '/committees/committee-1/documents/doc-1', { name: 'Old', description: 'A file', folder_uid: FOLDER_A }],
+    ['folder', '/committees/committee-1/folders/doc-1', { name: 'Old' }],
+  ] as const)('renames a %s through its own upstream path, with the fetched ETag and X-Sync', async (type, path, current) => {
+    fetchWithETag.mockResolvedValue({ data: current, etag: 'etag-1' });
+
+    await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', type, { name: 'New' });
+
+    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'update_committee_document');
+    expect(updateWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'etag-1', expect.objectContaining({ name: 'New' }), 'update_committee_document', {
+      'X-Sync': 'true',
+    });
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('carries the description, url and folder over on a link rename', async () => {
+    fetchWithETag.mockResolvedValue({ data: { name: 'Old', url: 'https://example.com', description: 'A link', folder_uid: FOLDER_A }, etag: 'etag-1' });
+
+    await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'link', { name: 'New' });
+
+    expect(updateWithETag.mock.calls[0][4]).toEqual({ name: 'New', url: 'https://example.com', description: 'A link', folder_uid: FOLDER_A });
+  });
+
+  it('moves a file into another folder and keeps its name and description', async () => {
+    fetchWithETag.mockResolvedValue({ data: { name: 'Charter', description: 'A file', folder_uid: FOLDER_A }, etag: 'etag-1' });
+
+    await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'file', { parent_uid: FOLDER_B });
+
+    expect(updateWithETag.mock.calls[0][4]).toEqual({ name: 'Charter', description: 'A file', folder_uid: FOLDER_B });
+  });
+
+  it('moves a link to the root by leaving the folder out of the body', async () => {
+    fetchWithETag.mockResolvedValue({ data: { name: 'Old', url: 'https://example.com', folder_uid: FOLDER_A }, etag: 'etag-1' });
+
+    await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'link', { parent_uid: null });
+
+    expect(JSON.parse(JSON.stringify(updateWithETag.mock.calls[0][4]))).toEqual({ name: 'Old', url: 'https://example.com' });
+  });
+
+  it('maps what the upstream update returns to the document shape the tab lists, with the audit name resolved', async () => {
+    fetchWithETag.mockResolvedValue({ data: { name: 'Old', url: 'https://example.com', folder_uid: FOLDER_A }, etag: 'etag-1' });
+    updateWithETag.mockResolvedValue({
+      uid: 'doc-1',
+      committee_uid: 'committee-1',
+      name: 'New',
+      url: 'https://example.com',
+      folder_uid: FOLDER_A,
+      created_by: { name: 'Ada Lovelace' },
+      updated_at: '2026-02-02T00:00:00Z',
+    });
+
+    const link = await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'link', { name: 'New' });
+
+    expect(link).toMatchObject({
+      uid: 'doc-1',
+      type: 'link',
+      name: 'New',
+      url: 'https://example.com',
+      parent_uid: FOLDER_A,
+      committee_uid: 'committee-1',
+      uploaded_by: 'Resolved Display Name',
+    });
+    expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Ada Lovelace' }, undefined);
+  });
+
+  it('maps a renamed folder and a moved file', async () => {
+    fetchWithETag.mockResolvedValue({ data: { name: 'Old' }, etag: 'etag-1' });
+    const folder = await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'folder', { name: 'Reports' });
+    expect(folder).toMatchObject({ uid: 'doc-1', type: 'folder', name: 'Reports', committee_uid: 'committee-1' });
+
+    updateWithETag.mockResolvedValue({
+      uid: 'doc-1',
+      committee_uid: 'committee-1',
+      name: 'Charter',
+      file_size: 12,
+      content_type: 'application/pdf',
+      folder_uid: FOLDER_B,
+    });
+    const file = await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'file', { parent_uid: FOLDER_B });
+    expect(file).toMatchObject({ type: 'file', name: 'Charter', file_size: 12, mime_type: 'application/pdf', parent_uid: FOLDER_B });
+  });
+
+  it('passes a conflict (a name another record holds, or a stale ETag) on as it is', async () => {
+    fetchWithETag.mockResolvedValue({ data: { name: 'Old' }, etag: 'etag-1' });
+    updateWithETag.mockRejectedValue({ statusCode: 409, message: 'document with the same name already exists for this committee' });
+
+    await expect(service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'file', { name: 'Taken' })).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it('does not write when the record cannot be read', async () => {
+    fetchWithETag.mockRejectedValue({ statusCode: 404 });
+
+    await expect(service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'file', { name: 'New' })).rejects.toMatchObject({ statusCode: 404 });
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown document type before any upstream call', async () => {
+    await expect(service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'meeting' as never, { name: 'New' })).rejects.toMatchObject({ statusCode: 400 });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(updateWithETag).not.toHaveBeenCalled();
   });
 });
 

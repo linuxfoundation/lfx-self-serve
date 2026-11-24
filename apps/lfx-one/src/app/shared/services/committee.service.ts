@@ -30,6 +30,7 @@ import {
   MyPendingApplication,
   PaginatedResponse,
   QueryServiceCountResponse,
+  UpdateDocumentRequest,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
 import { catchError, map, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
@@ -449,6 +450,20 @@ export class CommitteeService {
   public deleteCommitteeDocument(committeeId: string, documentId: string, documentType: CommitteeDocumentType): Observable<void> {
     const params = new HttpParams().set('type', documentType);
     return this.http.delete<void>(`/api/committees/${committeeId}/documents/${documentId}`, { params }).pipe(take(1));
+  }
+
+  /**
+   * Renames and/or moves a group folder, link or uploaded file. `parent_uid: null` moves it to the root; a field left out is
+   * left as it is. The BFF answers 409 when another document in the group already has the name.
+   */
+  public updateCommitteeDocument(
+    committeeId: string,
+    documentId: string,
+    documentType: CommitteeDocumentType,
+    changes: UpdateDocumentRequest
+  ): Observable<CommitteeDocument> {
+    const params = new HttpParams().set('type', documentType);
+    return this.http.patch<CommitteeDocument>(`/api/committees/${committeeId}/documents/${documentId}`, changes, { params }).pipe(take(1));
   }
 
   // ── My Committees ─────────────────────────────────────────────────────────

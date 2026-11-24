@@ -59,6 +59,7 @@ router.post('/:id/documents/upload', express.raw({ type: '*/*', limit: '100mb' }
 );
 // Stream a committee document file binary back to the browser with Content-Disposition.
 router.get('/:id/documents/:documentId/download', (req, res, next) => committeeController.downloadCommitteeDocument(req, res, next));
+router.patch('/:id/documents/:documentId', (req, res, next) => committeeController.updateCommitteeDocument(req, res, next));
 router.delete('/:id/documents/:documentId', (req, res, next) => committeeController.deleteCommitteeDocument(req, res, next));
 
 // ── Join / Leave / Application routes ────────────────────────────────────────
