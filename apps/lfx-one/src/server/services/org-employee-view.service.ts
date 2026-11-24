@@ -9,6 +9,7 @@ import {
   MEMBER_BENEFIT_ACTIVE_MEMBERSHIP_STATUSES,
   MEMBER_BENEFIT_ACTIVE_STATUS_FILTERS,
   MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS,
+  ORG_LENS_EMPLOYEE_VIEW_MEMBER_INDEX_MAX_STALE_MS,
 } from '@lfx-one/shared/constants';
 import type {
   OrgEmployeeViewDenial,
@@ -130,8 +131,11 @@ export class OrgEmployeeViewService {
   /** Shared by every instance: the read gate, identity controller, navigation service and slug resolver each construct their own service, and one page's calls must share a single lookup. */
   private static readonly cache = new Map<string, { expiresAt: number; outcome: Promise<EmployeeViewOutcome> }>();
 
-  /** Per process: the active LF member companies by registered domain. Shared by every instance, like {@link cache}. */
-  private static memberIndex: { expiresAt: number; value: Promise<Map<string, OrgLensEmployeeViewGrant[]>> } | null = null;
+  /** Per process: the active member companies by domain, being loaded or loaded. Shared by every instance, like {@link cache}. */
+  private static memberIndex: { expiresAt: number; settled: boolean; value: Promise<Map<string, OrgLensEmployeeViewGrant[]>> } | null = null;
+
+  /** The last index that loaded successfully, served while a newer one refreshes so no caller waits on a full re-read. */
+  private static lastGoodIndex: { index: Map<string, OrgLensEmployeeViewGrant[]>; at: number } | null = null;
 
   private readonly workHistory: CdpService;
   private readonly emailVerification: EmailVerificationService;
@@ -159,6 +163,7 @@ export class OrgEmployeeViewService {
   public static clearCache(): void {
     OrgEmployeeViewService.cache.clear();
     OrgEmployeeViewService.memberIndex = null;
+    OrgEmployeeViewService.lastGoodIndex = null;
   }
 
   /**
@@ -359,17 +364,39 @@ export class OrgEmployeeViewService {
     return [...companies.values()].sort((a, b) => a.orgName.localeCompare(b.orgName) || a.orgUid.localeCompare(b.orgUid));
   }
 
-  /** The cached domain -> member companies index; concurrent misses share one load and a failure is never kept. */
+  /**
+   * The domain -> member companies index. Reading every active membership takes several requests, so it is held per process and
+   * refreshed in the background: while a refresh runs (or after one failed) the last good index is served, for at most
+   * {@link ORG_LENS_EMPLOYEE_VIEW_MEMBER_INDEX_MAX_STALE_MS}, so only the very first load of a process can wait. Concurrent misses
+   * share one load, and a failed load is never kept as the answer.
+   */
   private getMemberCompanyIndex(req: Request): Promise<Map<string, OrgLensEmployeeViewGrant[]>> {
-    const cached = OrgEmployeeViewService.memberIndex;
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    const now = Date.now();
+    const { memberIndex: current, lastGoodIndex: lastGood } = OrgEmployeeViewService;
+    const usableStale = lastGood && now - lastGood.at < ORG_LENS_EMPLOYEE_VIEW_MEMBER_INDEX_MAX_STALE_MS ? lastGood.index : null;
+
+    if (current && current.expiresAt > now) {
+      // Fresh, or a refresh in flight: a settled entry is the answer, a pending one is waited on only when there is nothing to serve.
+      return current.settled || !usableStale ? current.value : Promise.resolve(usableStale);
+    }
 
     const value = this.loadMemberCompanyIndex(req);
-    const entry = { expiresAt: Date.now() + MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS, value };
+    const entry = { expiresAt: now + MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS, settled: false, value };
     OrgEmployeeViewService.memberIndex = entry;
-    value.catch(() => {
-      if (OrgEmployeeViewService.memberIndex === entry) OrgEmployeeViewService.memberIndex = null;
-    });
+    value.then(
+      (index) => {
+        entry.settled = true;
+        OrgEmployeeViewService.lastGoodIndex = { index, at: Date.now() };
+      },
+      () => {
+        if (OrgEmployeeViewService.memberIndex === entry) OrgEmployeeViewService.memberIndex = null;
+      }
+    );
+    if (usableStale) {
+      // A failed background refresh must not surface as an unhandled rejection, and the caller is served the previous index.
+      value.catch(() => undefined);
+      return Promise.resolve(usableStale);
+    }
     return value;
   }
 
