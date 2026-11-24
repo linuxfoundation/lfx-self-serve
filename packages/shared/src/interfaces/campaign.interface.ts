@@ -2183,6 +2183,12 @@ export interface LinkedInCampaignCreateRequest {
   targetingProfileEdit?: LinkedInTargetingProfileEdit;
 }
 
+/** A `linkedInConfig` the create route refuses for its keys (#5764): the field to name, and why. Never echoes a caller key. */
+export interface LinkedInConfigKeyRefusal {
+  field: string;
+  message: string;
+}
+
 export interface LinkedInCampaignCreateResult {
   platform: 'linkedin-ads';
   campaignGroupName: string;

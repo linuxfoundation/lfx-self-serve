@@ -1320,9 +1320,9 @@ export class CampaignController {
         return;
       }
 
-      // Any LinkedIn key the create route does not check is refused first, whatever the flags (#5764):
-      // `buildLinkedInConfig` forwards the rest of `linkedInConfig` as it comes, and campaign-service decodes
-      // keys ignoring case. See `linkedInConfigKeyRefusal`.
+      // Any top-level or variant LinkedIn key the create route does not check is refused before any LinkedIn
+      // read or create, whatever the flags (#5764): `buildLinkedInConfig` forwards the rest of `linkedInConfig`
+      // as it comes, and campaign-service decodes keys ignoring case. See `linkedInConfigKeyRefusal`.
       const linkedInKeyRefusal = linkedInConfigKeyRefusal(body?.linkedInConfig);
       if (linkedInKeyRefusal !== null) {
         throw ServiceValidationError.forField(linkedInKeyRefusal.field, linkedInKeyRefusal.message, {
@@ -9654,7 +9654,7 @@ export class CampaignController {
    *    configured, as before.
    *
    * 4. Every other key goes out as it came, which is safe only because `createCampaign` has already refused any key
-   *    outside `LINKEDIN_CONFIG_REQUEST_KEYS` (`linkedInConfigKeyRefusal`, #5764).
+   *    outside the request's own top-level and variant fields (`linkedInConfigKeyRefusal`, #5764).
    */
   private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;

@@ -12,7 +12,8 @@ import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
 // The LinkedIn daily cap (#5774): an optional `dailyCapUsd` beside a lifetime budget, forwarded to
 // campaign-service (linuxfoundation/lfx-v2-campaign-service#607) only when its rules hold, and refused
-// rather than dropped when the legacy creator would serve.
+// rather than dropped when the legacy creator would serve. The `linkedInConfig` key allow-list (#5764) shares
+// this harness, in its own describe at the end.
 const { createCampaigns, loadBrief, loadBriefById, legacyCreate, isServerFeatureEnabled, logger, linkedInConfig } = vi.hoisted(() => ({
   createCampaigns: vi.fn(),
   loadBrief: vi.fn(),

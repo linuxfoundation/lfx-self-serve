@@ -1,12 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { LinkedInConfigKeyRefusal } from '../interfaces/campaign.interface';
+
 /**
  * The `linkedInConfig` keys a create may carry, spelled exactly (`LinkedInCampaignCreateRequest`). campaign-service
  * reads more than these (#552, #582, #585, #586, #588, #589), each behind its own flag there. Each one joins this list in
  * the self-serve PR that checks it, so none reaches campaign-service unchecked first.
  */
-export const LINKEDIN_CONFIG_REQUEST_KEYS = [
+const LINKEDIN_CONFIG_REQUEST_KEYS = [
   'eventName',
   'eventSlug',
   'dates',
@@ -29,13 +31,7 @@ export const LINKEDIN_CONFIG_REQUEST_KEYS = [
 ] as const;
 
 /** The `linkedInConfig.variants[i]` keys a create may carry, spelled exactly (`LinkedInCreativeVariant`). */
-export const LINKEDIN_VARIANT_REQUEST_KEYS = ['introText', 'headline', 'imageUrn', 'imageAssetId'] as const;
-
-/** One `linkedInConfig` the create route refuses for its keys: the field to name, and why. Never echoes a caller key. */
-export interface LinkedInConfigKeyRefusal {
-  field: string;
-  message: string;
-}
+const LINKEDIN_VARIANT_REQUEST_KEYS = ['introText', 'headline', 'imageUrn', 'imageAssetId'] as const;
 
 /** A key as Go's `encoding/json` matches it: Unicode case folding, which upper-casing first catches (`ſ` is `s`). */
 function foldKey(key: string): string {
@@ -60,9 +56,11 @@ function keyRefusalIn(record: Record<string, unknown>, known: readonly string[],
 /**
  * Why `raw`'s keys cannot be sent, or `null` (#5764). The create route used to forward `linkedInConfig` as it came, so any
  * field campaign-service reads (its targeting, objective, conversions, Text Ads, a variant's call to action or video) went
- * past every check here, and a differently cased known key past the checks that read it by exact spelling. Now any key
- * outside {@link LINKEDIN_CONFIG_REQUEST_KEYS}, or a variant key outside {@link LINKEDIN_VARIANT_REQUEST_KEYS}, is refused
- * whatever the flags. A variant that is not an object is left to campaign-service, as before.
+ * past every check here, and a differently cased known key past the checks that read it by exact spelling. Now any top-level
+ * key outside {@link LINKEDIN_CONFIG_REQUEST_KEYS}, or a variant key outside {@link LINKEDIN_VARIANT_REQUEST_KEYS}, is
+ * refused whatever the flags. Only those two levels are walked: the keys inside `bidding`, `geoTargets[i]` and
+ * `targetingProfileEdit` are left to the checks that read them. A variant that is not an object is left to
+ * campaign-service, as before.
  */
 export function linkedInConfigKeyRefusal(raw: unknown): LinkedInConfigKeyRefusal | null {
   const config = plainRecord(raw);
