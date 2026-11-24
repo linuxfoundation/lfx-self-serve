@@ -43,8 +43,6 @@ You can see how the selected company takes part in Linux Foundation foundations 
 - **Dashboard**, the Company Overview, shows the company's involvement and its foundations and projects
 - **Memberships** shows the company's foundation memberships and, for each one, its key contacts, board and committee seats, and agreements
 - **Projects** shows the projects in the company's shared workspaces, its influence on each one, how it ranks against other companies, and how each company's leaderboard score breaks down
-- **Crowdfunding Initiatives** shows the crowdfunding initiatives run on behalf of the company, if you are an Admin granted directly on it
-- **Crowdfunding Donations** shows the crowdfunding donations made on behalf of the company
 - Under **Company Engagement**:
   - **People** shows the company's employees and their board and committee seats, key contact roles, code contributions, events and training. Its **Company Lens Access** tab shows who has been granted access directly on the company and lets an Admin add, change or remove that access
   - **Code Contributions** shows the repositories the company's contributors worked in and each of their commits
@@ -52,6 +50,8 @@ You can see how the selected company takes part in Linux Foundation foundations 
   - **Training & Certification** shows the courses and certifications the company's people enrolled in or completed
   - **Meetings** shows how the company's employees take part in project meetings and how that adds to its influence on each project
   - **Groups** shows the working groups and committees where the company's employees hold seats, and who holds them
+  - **Crowdfunding Initiatives** shows the crowdfunding initiatives run on behalf of the company, if you are an Admin granted directly on it
+  - **Crowdfunding Donations** shows the crowdfunding donations made on behalf of the company
 - **EasyCLA** lets you view the corporate CLAs the company holds and, as a CLA Manager named on one, manage it
 - **Company Profile** shows the company's logo, description, website, employees, industry, sector and addresses and, if you can edit the company, lets you change its logo, description, website, Crunchbase profile, number of employees, industry and sector
 

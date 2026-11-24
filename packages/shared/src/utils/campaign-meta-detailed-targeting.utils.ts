@@ -2,24 +2,50 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  DEFAULT_META_OBJECTIVE,
   META_AUDIENCE_TARGETING_OFF_MESSAGE,
   META_BEHAVIOR_TARGETING_OFF_MESSAGE,
   META_CUSTOM_AUDIENCE_ID_PATTERN,
+  META_DEVICE_PLATFORMS,
+  META_DEVICE_TARGETING_OFF_MESSAGE,
   META_INTEREST_TARGETING_OFF_MESSAGE,
   META_LOCALE_TARGETING_OFF_MESSAGE,
   META_MAX_DETAILED_TARGETING_IDS,
   META_MAX_LOCALES,
+  META_MAX_USER_OS,
+  META_OS_TARGETING_OFF_MESSAGE,
+  META_TARGETING_KINDS,
   META_TARGETING_QUERY_MAX_LENGTH,
   META_TARGETING_QUERY_MIN_LENGTH,
+  META_TARGETING_SEARCH_BUSY_MESSAGE,
+  META_TARGETING_SEARCH_FAILED_MESSAGE,
+  META_TARGETING_SEARCH_NO_MATCH_MESSAGE,
+  META_TARGETING_SEARCH_PENDING_MESSAGE,
+  META_TARGETING_SEARCH_TOO_SHORT_MESSAGE,
   META_TARGETING_SEARCH_TYPES,
+  META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE,
+  META_USER_OS_VERSIONS,
 } from '../constants/campaign.constants';
-import type { MetaConfigRefusal, MetaDetailedTargeting, MetaTargetingFlags, MetaTargetingSearchType } from '../interfaces/campaign.interface';
+import type {
+  CampaignMetaAudienceTargetingBlock,
+  MetaConfigRefusal,
+  MetaDetailedTargeting,
+  MetaDetailedTargetingBlockInput,
+  MetaDetailedTargetingPicks,
+  MetaTargetingFlags,
+  MetaTargetingKind,
+  MetaTargetingPick,
+  MetaTargetingSearchChoice,
+  MetaTargetingSearchOption,
+  MetaTargetingSearchType,
+  MetaUserOsValue,
+} from '../interfaces/campaign.interface';
 import { metaConfigRecord } from './campaign-meta-ad-options.utils';
 
 /**
- * Meta detailed targeting (#5904 row 4): interests, behaviors, work positions and languages in
- * `metaConfig.targeting`. One set of rules for the create route (which answers a refusal with a 400) and, later,
- * the Implement tab, mirroring campaign-service's `checkMetaTargeting` and `normalizeDetailedTargeting`
+ * Meta detailed targeting in `metaConfig.targeting`: interests, behaviors, work positions and languages (#5904 row 4),
+ * and devices and operating systems (row 6). One set of rules for the create route (which answers a refusal with a 400) and the
+ * Implement tab, mirroring campaign-service's `checkMetaTargeting` and `normalizeDetailedTargeting`
  * (linuxfoundation/lfx-v2-campaign-service#612).
  */
 
@@ -41,7 +67,7 @@ function isSet(value: unknown): boolean {
 /** Whether `raw` sets any detailed field, so the audience flag is not needed for it alone. */
 export function metaTargetingHasDetailedFields(raw: unknown): boolean {
   const record = metaConfigRecord(raw);
-  return [...ID_FIELDS.map(([key]) => key), 'locales'].some((key) => isSet(record?.[key]));
+  return [...ID_FIELDS.map(([key]) => key), 'locales', 'devicePlatforms', 'userOs'].some((key) => isSet(record?.[key]));
 }
 
 /** Whether `raw` sets any of the six audience fields. */
@@ -66,6 +92,8 @@ export function metaTargetingFlagRefusal(raw: unknown, flags: MetaTargetingFlags
   if (set('behaviors') && !flags.behavior) return { field: `${FIELD}.behaviors`, message: META_BEHAVIOR_TARGETING_OFF_MESSAGE };
   if (set('workPositions') && !flags.behavior) return { field: `${FIELD}.workPositions`, message: META_BEHAVIOR_TARGETING_OFF_MESSAGE };
   if (set('locales') && !flags.locale) return { field: `${FIELD}.locales`, message: META_LOCALE_TARGETING_OFF_MESSAGE };
+  if (set('devicePlatforms') && !flags.device) return { field: `${FIELD}.devicePlatforms`, message: META_DEVICE_TARGETING_OFF_MESSAGE };
+  if (set('userOs') && !flags.os) return { field: `${FIELD}.userOs`, message: META_OS_TARGETING_OFF_MESSAGE };
   return null;
 }
 
@@ -99,8 +127,9 @@ export function metaDetailedTargetingRefusal(raw: unknown): MetaConfigRefusal | 
 }
 
 /**
- * The detailed fields a create sends for an ACCEPTED block ({@link metaDetailedTargetingRefusal} is `null`), or
- * `null` when it sets none: ids trimmed and de-duplicated in first-seen order, empty lists dropped.
+ * The detailed fields a create sends for an ACCEPTED block ({@link metaDetailedTargetingRefusal} and
+ * {@link metaDeviceOsRefusal} are `null`), or `null` when it sets none: ids trimmed, devices lower-cased, OS values in
+ * Meta's spelling, each list de-duplicated in first-seen order, empty lists dropped.
  */
 export function compactMetaDetailedTargeting(raw: unknown): MetaDetailedTargeting | null {
   const record = metaConfigRecord(raw);
@@ -115,6 +144,23 @@ export function compactMetaDetailedTargeting(raw: unknown): MetaDetailedTargetin
   if (Array.isArray(locales)) {
     const keys = [...new Set(locales.filter((key): key is number => typeof key === 'number'))];
     if (keys.length > 0) out.locales = keys;
+  }
+  const devices = record?.['devicePlatforms'];
+  if (Array.isArray(devices)) {
+    const keys = [...new Set(devices.filter((d): d is string => typeof d === 'string').map((d) => d.trim().toLowerCase()))];
+    if (keys.length > 0) out.devicePlatforms = keys;
+  }
+  const userOs = record?.['userOs'];
+  if (Array.isArray(userOs)) {
+    const values = [
+      ...new Set(
+        userOs
+          .map(parseMetaUserOs)
+          .filter((v): v is MetaUserOsValue => v !== null)
+          .map((v) => v.canonical)
+      ),
+    ];
+    if (values.length > 0) out.userOs = values;
   }
   return Object.keys(out).length > 0 ? out : null;
 }
@@ -137,4 +183,224 @@ export function metaTargetingQueryRefusal(type: unknown, query: unknown): string
 /** Narrows a checked search type ({@link metaTargetingQueryRefusal} is `null`). */
 export function isMetaTargetingSearchType(value: unknown): value is MetaTargetingSearchType {
   return typeof value === 'string' && (META_TARGETING_SEARCH_TYPES as readonly string[]).includes(value);
+}
+
+/** No picks in any list: a fresh object each time, so one caller's edit never reaches another's. */
+export function emptyMetaDetailedTargetingPicks(): MetaDetailedTargetingPicks {
+  return { interests: [], behaviors: [], workPositions: [] };
+}
+
+/** The lists the picker shows for this deployment: interests on the interest flag, behaviors and job titles on the behavior flag. */
+export function metaTargetingKindsShown(flags: Pick<MetaTargetingFlags, 'interest' | 'behavior'>): MetaTargetingKind[] {
+  return META_TARGETING_KINDS.filter((kind) => (kind.type === 'interest' ? flags.interest : flags.behavior));
+}
+
+/**
+ * What the picker sends for a typed query: trimmed and cut to the upstream maximum (in code points), or `''`,
+ * meaning "do not search", while it is shorter than the minimum or holds a control character.
+ */
+export function metaTargetingSearchQuery(raw: string): string {
+  const query = [...raw.trim()].slice(0, META_TARGETING_QUERY_MAX_LENGTH).join('').trim();
+  return metaTargetingQueryRefusal(META_TARGETING_SEARCH_TYPES[0], query) === null ? query : '';
+}
+
+/** `picks` with `option` added at the end; the same array when it is already there, the list is full, or its id is not a Meta id. */
+export function metaTargetingPicksWith(picks: MetaTargetingPick[], option: Pick<MetaTargetingSearchOption, 'id' | 'name'>): MetaTargetingPick[] {
+  const id = option.id.trim();
+  if (!META_CUSTOM_AUDIENCE_ID_PATTERN.test(id) || picks.length >= META_MAX_DETAILED_TARGETING_IDS || picks.some((pick) => pick.id === id)) return picks;
+  return [...picks, { id, name: option.name.trim() || id }];
+}
+
+/** `picks` without the one whose id is `id`. */
+export function metaTargetingPicksWithout(picks: MetaTargetingPick[], id: string): MetaTargetingPick[] {
+  return picks.filter((pick) => pick.id !== id);
+}
+
+/** The search rows as the picker lists them: an already-picked row, or any row once the list is full, is shown but disabled. */
+export function metaTargetingSearchChoices(options: MetaTargetingSearchOption[], picks: MetaTargetingPick[]): MetaTargetingSearchChoice[] {
+  const picked = new Set(picks.map((pick) => pick.id));
+  const full = picks.length >= META_MAX_DETAILED_TARGETING_IDS;
+  return options.map((option) => ({ ...option, disabled: full || picked.has(option.id) }));
+}
+
+/** What a failed targeting search tells the user, from its HTTP status (`0` when there is none). */
+export function metaTargetingSearchFailure(status: number): string {
+  if (status === 503) return META_TARGETING_SEARCH_BUSY_MESSAGE;
+  if (status === 404) return META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE;
+  return META_TARGETING_SEARCH_FAILED_MESSAGE;
+}
+
+/**
+ * What a list's search popup says while it has no rows: that it is searching, why the search failed, that the
+ * typed text cannot be searched (`refused`: too short after trimming, or holding a control character), or that
+ * nothing matched.
+ */
+export function metaTargetingSearchEmptyMessage(refused: boolean, pending: boolean, failure: string | null): string {
+  if (pending) return META_TARGETING_SEARCH_PENDING_MESSAGE;
+  if (failure !== null) return failure;
+  if (refused) return META_TARGETING_SEARCH_TOO_SHORT_MESSAGE;
+  return META_TARGETING_SEARCH_NO_MATCH_MESSAGE;
+}
+
+/** Which flag each list needs: interests the interest flag, behaviors and job titles the behavior flag. */
+function kindFlag(kind: MetaTargetingKind, interestEnabled: boolean | null, behaviorEnabled: boolean | null): boolean | null {
+  return kind.type === 'interest' ? interestEnabled : behaviorEnabled;
+}
+
+/**
+ * The picks a saved draft carries, or `undefined` when it carries none or not as a record (a draft saved before row
+ * 4). The draft is persisted JSON, so each list keeps only well-formed picks: a Meta id and a string name,
+ * de-duplicated in first-seen order and capped at {@link META_MAX_DETAILED_TARGETING_IDS}.
+ */
+export function metaDetailedTargetingPicksFromDraft(raw: unknown): MetaDetailedTargetingPicks | undefined {
+  const record = metaConfigRecord(raw);
+  if (record === null || record === undefined) return undefined;
+  const picks = emptyMetaDetailedTargetingPicks();
+  for (const { key } of META_TARGETING_KINDS) {
+    const list = record[key];
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      const entry = metaConfigRecord(item);
+      const id = entry?.['id'];
+      const name = entry?.['name'];
+      if (typeof id !== 'string' || typeof name !== 'string') continue;
+      picks[key] = metaTargetingPicksWith(picks[key], { id, name });
+    }
+  }
+  return picks;
+}
+
+/** A copy of `picks`, so the parent's draft never holds a live view of the tab's signal. */
+export function copyMetaDetailedTargetingPicks(picks: MetaDetailedTargetingPicks): MetaDetailedTargetingPicks {
+  return { interests: [...picks.interests], behaviors: [...picks.behaviors], workPositions: [...picks.workPositions] };
+}
+
+/**
+ * The detailed fields a Meta create sends, or `null` when none: the ids of each list whose flag is an explicit yes.
+ * A list whose flag is not a yes is never sent; {@link metaDetailedTargetingBlock} holds Create while it has picks.
+ */
+export function metaDetailedTargetingForCreate(
+  picks: MetaDetailedTargetingPicks,
+  interestEnabled: boolean | null,
+  behaviorEnabled: boolean | null
+): MetaDetailedTargeting | null {
+  const out: MetaDetailedTargeting = {};
+  for (const kind of META_TARGETING_KINDS) {
+    if (kindFlag(kind, interestEnabled, behaviorEnabled) === true) out[kind.key] = picks[kind.key].map((pick) => pick.id);
+  }
+  return compactMetaDetailedTargeting(out);
+}
+
+/** `picks` with every list this deployment answered no to emptied: the Clear past an `unsupported` block, whose lists are hidden. An unanswered list is kept, since it may yet be sendable. */
+export function metaDetailedTargetingPicksSendable(
+  picks: MetaDetailedTargetingPicks,
+  interestEnabled: boolean | null,
+  behaviorEnabled: boolean | null
+): MetaDetailedTargetingPicks {
+  const out = copyMetaDetailedTargetingPicks(picks);
+  for (const kind of META_TARGETING_KINDS) {
+    if (kindFlag(kind, interestEnabled, behaviorEnabled) === false) out[kind.key] = [];
+  }
+  return out;
+}
+
+/**
+ * Why Create is held for detailed targeting the draft holds but the request cannot carry, or `null`: the audience
+ * block's states (`metaAudienceTargetingBlock`). Held rather than dropped, since targeting changes who the campaign
+ * reaches. `unsupported` (a list's flag answered no) offers Clear, since that list is hidden; while an answer is
+ * out or failed, only waiting or Retry, since the picks may well be sendable once it answers.
+ */
+export function metaDetailedTargetingBlock(input: MetaDetailedTargetingBlockInput): CampaignMetaAudienceTargetingBlock | null {
+  const held = META_TARGETING_KINDS.filter((kind) => input.picks[kind.key].length > 0 && kindFlag(kind, input.interestEnabled, input.behaviorEnabled) !== true);
+  if (held.length === 0) return null;
+  if (held.some((kind) => kindFlag(kind, input.interestEnabled, input.behaviorEnabled) === false)) {
+    return {
+      kind: 'unsupported',
+      message: 'Some Meta detailed targeting on this brief is not available on this deployment, so it cannot be sent. Clear it to create the campaign.',
+    };
+  }
+  if (input.createCapabilityRead === 'pending') {
+    return {
+      kind: 'pending',
+      message: 'Checking whether you can send Meta detailed targeting. Create waits for the answer so the targeting on this brief is not dropped.',
+    };
+  }
+  if (!input.briefId) return { kind: 'unsaved', message: "Meta detailed targeting can't be checked until this brief is saved. Save the brief." };
+  return {
+    kind: 'failed',
+    message: 'Could not confirm that you can send Meta detailed targeting, so Create waits rather than dropping the targeting on this brief. Retry the check.',
+  };
+}
+
+/** A Meta `user_os` value, case-insensitively: the family, then an optional minimum version or version range. */
+const USER_OS_PATTERN = /^(ios|android)(?:_ver_([0-9]+\.[0-9]+)_(?:(and_above)|to_([0-9]+\.[0-9]+)))?$/i;
+
+/**
+ * A Meta `user_os` value parsed into its canonical spelling, or `null` when it is not one of the reference's formats
+ * with a listed version (a range must run from a lower to a higher listed version). campaign-service's `parseUserOS`.
+ */
+export function parseMetaUserOs(raw: unknown): MetaUserOsValue | null {
+  if (typeof raw !== 'string') return null;
+  const match = USER_OS_PATTERN.exec(raw.trim());
+  if (!match) return null;
+  const family = match[1].toLowerCase() === 'ios' ? 'iOS' : 'Android';
+  const [, , from, andAbove, to] = match;
+  if (from === undefined) return { canonical: family, family, versioned: false };
+  const versions = META_USER_OS_VERSIONS[family];
+  if (!versions.includes(from)) return null;
+  if (andAbove !== undefined) return { canonical: `${family}_ver_${from}_and_above`, family, versioned: true };
+  if (!versions.includes(to) || versions.indexOf(to) <= versions.indexOf(from)) return null;
+  return { canonical: `${family}_ver_${from}_to_${to}`, family, versioned: true };
+}
+
+/**
+ * Why `raw`'s device and operating-system targeting cannot be sent (#5904 row 6), or `null`: campaign-service's
+ * rules. Devices are `mobile` or `desktop` (matched ignoring case). Desktop alone cannot serve the Audience Network
+ * placement, which is mobile only. OS values must be Meta's formats, at most 10 distinct, with no version of one
+ * family beside the other family. An OS list cannot be combined with desktop alone, and the awareness objective takes
+ * no OS version. `objective` and `placements` are the rest of `metaConfig`.
+ */
+export function metaDeviceOsRefusal(raw: unknown, objective: unknown, placements: unknown): MetaConfigRefusal | null {
+  const record = metaConfigRecord(raw);
+  const devices = record?.['devicePlatforms'];
+  const deviceField = `${FIELD}.devicePlatforms`;
+  let devicesSent: string[] = [];
+  if (devices !== undefined && devices !== null) {
+    const known = META_DEVICE_PLATFORMS as readonly string[];
+    if (!Array.isArray(devices) || devices.some((d) => typeof d !== 'string' || !known.includes(d.trim().toLowerCase()))) {
+      return { field: deviceField, message: 'Devices must be mobile, desktop, or both.' };
+    }
+    devicesSent = [...new Set(devices.map((d: string) => d.trim().toLowerCase()))];
+  }
+  const desktopOnly = devicesSent.length === 1 && devicesSent[0] === 'desktop';
+  if (desktopOnly && metaConfigRecord(placements)?.['audienceNetwork'] === true) {
+    return {
+      field: deviceField,
+      message: 'Desktop only cannot use the Audience Network placement, which serves in mobile apps. Add mobile or turn Audience Network off.',
+    };
+  }
+  const userOs = record?.['userOs'];
+  if (userOs === undefined || userOs === null) return null;
+  const osField = `${FIELD}.userOs`;
+  if (!Array.isArray(userOs)) return { field: osField, message: 'Operating systems must be a list of Meta user_os values.' };
+  const parsed = userOs.map(parseMetaUserOs);
+  if (parsed.some((v) => v === null)) {
+    return { field: osField, message: 'Operating systems must be iOS or Android, optionally with a minimum version or a version range Meta lists.' };
+  }
+  const values = parsed as MetaUserOsValue[];
+  if (new Set(values.map((v) => v.canonical)).size > META_MAX_USER_OS) {
+    return { field: osField, message: `Choose at most ${META_MAX_USER_OS} operating systems.` };
+  }
+  const versioned = values.find((v) => v.versioned);
+  if (versioned && values.some((v) => v.family !== versioned.family)) {
+    return { field: osField, message: `A version of ${versioned.family} cannot be combined with the other platform. Drop the version or the other platform.` };
+  }
+  if (values.length > 0 && desktopOnly) {
+    return { field: osField, message: 'Operating systems target mobile devices, so they cannot be combined with desktop only. Add mobile or remove them.' };
+  }
+  const resolved = typeof objective === 'string' && objective.trim() !== '' ? objective.trim().toLowerCase() : DEFAULT_META_OBJECTIVE;
+  if (resolved === 'awareness' && versioned) {
+    return { field: osField, message: 'The awareness objective can target iOS or Android but not an OS version.' };
+  }
+  return null;
 }

@@ -9,6 +9,7 @@ import {
   DRAFT_VOTE_DEFAULT_DURATION_DAYS,
   DRAFT_VOTE_PLACEHOLDER_QUESTION,
   VOTE_COMMENT_RESPONSE_MAX_LENGTH,
+  VOTE_DEFAULT_CLOSE_DAYS,
   VOTE_DEFAULT_CLOSE_TIME,
   VOTE_TITLE_MAX_LENGTH,
 } from '../constants/poll.constants';
@@ -58,6 +59,7 @@ import type {
   VoteBallotChangeEligibility,
   VoteBallotQuestionView,
   VoteBallotSubmission,
+  VoteBasicsDefaults,
   VoteCastFormPrefill,
   VoteFormValue,
   VoteParticipationStatusCounts,
@@ -317,6 +319,39 @@ export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now(), 
     timezone,
     close_date: toZonedDateCarrier(resetDate, timezone),
     close_time: VOTE_DEFAULT_CLOSE_TIME,
+  };
+}
+
+/**
+ * Computes the close date a new vote's form starts with (#6104)
+ * @description {@link VOTE_DEFAULT_CLOSE_DAYS} days after `nowMs`, read on the calendar of `timezone`. When that
+ * day is a Saturday or Sunday it moves forward to the following Monday, so the vote stays open at least that long.
+ * The weekday comes from the zoned carrier, so it is the form timezone's weekday, not the browser's.
+ * @param nowMs - Current time in epoch ms, injectable for deterministic tests
+ * @param timezone - IANA zone the form's close date is interpreted in
+ * @returns Date carrier (local noon) on the default close day, as the form's `close_date` control expects
+ */
+export function getDefaultVoteCloseDate(nowMs: number, timezone: string): Date {
+  const closeDate = addDays(toZonedDateCarrier(new Date(nowMs), timezone), VOTE_DEFAULT_CLOSE_DAYS);
+  const weekday = closeDate.getDay();
+  if (weekday === 6) {
+    return addDays(closeDate, 2);
+  }
+  if (weekday === 0) {
+    return addDays(closeDate, 1);
+  }
+  return closeDate;
+}
+
+/**
+ * Builds the title and description a new vote is prefilled with once a group is selected (#6104)
+ * @param groupName - Display name of the selected group
+ * @returns The `<Group> Vote` title, clamped to {@link VOTE_TITLE_MAX_LENGTH}, and a description naming the group
+ */
+export function buildVoteBasicsDefaults(groupName: string): VoteBasicsDefaults {
+  return {
+    title: truncateToUtf16Units(`${groupName} Vote`, VOTE_TITLE_MAX_LENGTH),
+    description: `Members of the ${groupName} are asked to vote on the question(s) below. Please review the options and cast your ballot before the vote closes.`,
   };
 }
 

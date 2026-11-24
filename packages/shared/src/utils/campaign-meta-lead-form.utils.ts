@@ -5,6 +5,7 @@ import {
   DEFAULT_META_OBJECTIVE,
   META_LEAD_FORM_CALL_TO_ACTIONS,
   META_LEAD_FORM_ID_PATTERN,
+  META_LEAD_FORM_INACTIVE_REFUSAL,
   META_LEAD_FORM_UNAVAILABLE_REFUSAL,
   META_OBJECTIVE_LABELS,
   META_SELECTABLE_OBJECTIVES,
@@ -14,6 +15,8 @@ import type {
   MetaLeadFormChoice,
   MetaLeadFormDraft,
   MetaLeadFormOption,
+  MetaFoundationChange,
+  MetaLeadFormPickerState,
   MetaLeadFormPickerView,
   MetaLeadFormRestore,
   MetaObjective,
@@ -148,4 +151,22 @@ export function metaLeadFormRestore(saved: { objective: MetaObjective; leadFormI
 export function metaLeadFormPickerView(choices: readonly MetaLeadFormChoice[], heldId: string): MetaLeadFormPickerView {
   const heldIdUnlisted = heldId !== '' && !choices.some((choice) => choice.value === heldId);
   return { empty: choices.length === 0, select: choices.length > 0 || heldIdUnlisted, heldIdUnlisted };
+}
+
+/**
+ * Why the held lead form holds Create once the Page's forms are read, or `null` (#6107): a form the list shows
+ * but as not ACTIVE (archived, deleted, or an id campaign-service would refuse) cannot be sent, so it is refused
+ * here with a clear message rather than at create. A held id the list does not show at all is left alone: the
+ * picker keeps it visible and campaign-service decides, as before.
+ */
+export function metaHeldLeadFormRefusal(picker: MetaLeadFormPickerState, heldId: string): string | null {
+  if (picker.status !== 'loaded' || heldId === '') return null;
+  const held = picker.choices.find((choice) => choice.value === heldId);
+  return held?.disabled ? META_LEAD_FORM_INACTIVE_REFUSAL : null;
+}
+
+/** How the foundation changed from `previous` to `next` (see {@link MetaFoundationChange}). */
+export function metaFoundationChange(previous: string, next: string): MetaFoundationChange {
+  if (previous === next) return 'same';
+  return previous === '' ? 'resolved' : 'switched';
 }

@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { META_LEAD_FORM_PICKER_REASONS } from '@lfx-one/shared/constants';
+import { META_LEAD_FORM_INACTIVE_REFUSAL, META_LEAD_FORM_PICKER_REASONS } from '@lfx-one/shared/constants';
 import type { MetaLeadFormsResult } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { Observable, of, throwError } from 'rxjs';
@@ -12,7 +12,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MetaLeadFormPickerComponent } from './meta-lead-form-picker.component';
 
 // The rules (which forms can be picked, how others are labelled) are tested in campaign-meta-lead-form.utils.spec.ts;
-// this spec only checks the wiring: the read reaches the picker, a pick reaches the model, a failed read offers the typed box.
+// this spec only checks the wiring: the read reaches the picker, a pick reaches the model, a failed read offers the typed box,
+// and a held form the read shows as inactive is reported to the tab (#6107).
 const FORMS: MetaLeadFormsResult = {
   pageId: '100000000000001',
   forms: [
@@ -61,6 +62,20 @@ describe('MetaLeadFormPickerComponent', () => {
     expect(fixture.componentInstance.leadFormId()).toBe('111');
     handlers()['onPick']('');
     expect(fixture.componentInstance.leadFormId()).toBe('');
+  });
+
+  it('reports a held form the Page lists as inactive', () => {
+    const reported: (string | null)[] = [];
+    fixture.componentInstance.heldRefusalChange.subscribe((refusal) => reported.push(refusal));
+    fixture.componentRef.setInput('projectSlug', 'tlf');
+    fixture.componentRef.setInput('leadFormId', '222');
+    fixture.detectChanges();
+
+    expect(reported.at(-1)).toBe(META_LEAD_FORM_INACTIVE_REFUSAL);
+
+    handlers()['onPick']('111');
+    fixture.detectChanges();
+    expect(reported.at(-1)).toBeNull();
   });
 
   it('offers a typed form id when the forms cannot be read', () => {

@@ -3,9 +3,14 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { META_LEAD_FORM_INACTIVE_REFUSAL } from '../constants/campaign.constants';
+import type { MetaLeadFormPickerState } from '../interfaces/campaign.interface';
+
 import {
   hasMetaLeadFormKeyVariant,
   metaCallToActionAllowedWithLeadForm,
+  metaFoundationChange,
+  metaHeldLeadFormRefusal,
   metaLeadFormChoices,
   metaLeadFormDraftRefusal,
   metaLeadFormForObjective,
@@ -175,5 +180,37 @@ describe('metaLeadFormPickerView', () => {
   it('keeps a held id visible when the Page has no forms, and shows only the empty text otherwise', () => {
     expect(metaLeadFormPickerView([], '999')).toEqual({ empty: true, select: true, heldIdUnlisted: true });
     expect(metaLeadFormPickerView([], '')).toEqual({ empty: true, select: false, heldIdUnlisted: false });
+  });
+});
+
+describe('metaHeldLeadFormRefusal', () => {
+  const loaded = (choices: MetaLeadFormPickerState['choices']): MetaLeadFormPickerState => ({ status: 'loaded', choices, reason: null });
+  const active = { value: '1234567890123456', label: 'KubeCon NA interest', disabled: false };
+  const archived = { value: '2234567890123456', label: 'Old form (archived)', disabled: true };
+
+  it.each([
+    // A held form the list shows as not active cannot be sent.
+    [loaded([active, archived]), '2234567890123456', META_LEAD_FORM_INACTIVE_REFUSAL],
+    // An active one, none held, or one the list does not show at all: nothing to say here.
+    [loaded([active, archived]), '1234567890123456', null],
+    [loaded([active, archived]), '', null],
+    [loaded([active]), '9234567890123456', null],
+    // Nothing is known until the list has loaded.
+    [{ status: 'loading', choices: [], reason: null }, '2234567890123456', null],
+    [{ status: 'unavailable', choices: [], reason: 'x' }, '2234567890123456', null],
+  ] as [MetaLeadFormPickerState, string, string | null][])('%j holding %j: %j', (picker, heldId, expected) => {
+    expect(metaHeldLeadFormRefusal(picker, heldId)).toBe(expected);
+  });
+});
+
+describe('metaFoundationChange', () => {
+  it.each([
+    ['', 'tlf', 'resolved'],
+    ['tlf', 'cncf', 'switched'],
+    ['tlf', '', 'switched'],
+    ['tlf', 'tlf', 'same'],
+    ['', '', 'same'],
+  ])('%j to %j is %s', (previous, next, expected) => {
+    expect(metaFoundationChange(previous, next)).toBe(expected);
   });
 });

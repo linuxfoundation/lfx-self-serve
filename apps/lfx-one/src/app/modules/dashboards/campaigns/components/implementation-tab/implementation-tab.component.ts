@@ -59,7 +59,6 @@ import {
   LINKEDIN_GEO_RESOLVE_MAP,
   LINKEDIN_IMAGE_MAX_BYTES,
   LINKEDIN_MAX_VARIANTS,
-  LINKEDIN_MIN_DAILY_BUDGET_USD,
   LINKEDIN_MIN_VARIANTS,
   TWITTER_IMAGE_MAX_BYTES,
   TWITTER_IMAGE_TOO_LARGE_MESSAGE,
@@ -245,7 +244,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ProjectContextService } from '@services/project-context.service';
 import { extractFieldOrEnvelopeMessage, isBffValidationError, serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { catchError, filter, from, map, merge, Observable, of, scan, skip, startWith, Subscription, switchMap, take, tap, timer } from 'rxjs';
+import { catchError, filter, from, map, merge, Observable, of, pairwise, scan, startWith, Subscription, switchMap, take, tap, timer } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -363,7 +362,9 @@ import type {
   LinkedInAccount,
   LinkedInCreateAccountOption,
   LinkedInCreateAccountState,
+  LinkedInCampaignCreateRequest,
   LinkedInCreativeVariant,
+  LinkedInDailyCapInput,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
   LinkedInTargetingProfileConfig,
@@ -383,6 +384,9 @@ import type {
   RedditVideoGoal,
   StoredCreativeAsset,
   MetaAudienceTargetingDraft,
+  MetaDetailedTargetingPicks,
+  MetaDeliveryDraft,
+  MetaDeviceOsDraft,
   MetaAdOptionKey,
   MetaAdOptions,
   MetaAdOptionView,
@@ -460,7 +464,17 @@ import {
   isReversedCampaignFlight,
   joinAsSentenceList,
   linkedInCreativeTextLength,
+  linkedInAccountFields,
+  linkedInCreateRefusal,
+  linkedInDailyCapError,
+  linkedInDailyCapField,
+  linkedInEffectiveAccount,
   linkedInTargetingAfterRemovals,
+  linkedInTargetingEdit,
+  linkedInTargetingEmptyWarning,
+  linkedInTargetingRemovalsHeld,
+  linkedInVariantImageForBrief,
+  linkedInVariantsForCreate,
   linkedInVariantTextError,
   metaAcceptedGeos,
   metaAdOptionsBlock,
@@ -473,14 +487,35 @@ import {
   metaAudienceTargetingBlock,
   metaAudienceTargetingCapabilities,
   metaAudienceTargetingRefusal,
+  emptyMetaDetailedTargetingPicks,
+  metaDetailedTargetingBlock,
+  metaDetailedTargetingForCreate,
+  metaDetailedTargetingPicksSendable,
+  metaDetailedTargetingRefusal,
+  emptyMetaDeliveryDraft,
+  metaAdScheduleRefusal,
+  metaDeliveryApplicable,
+  metaDeliveryBlock,
+  metaDeliveryClearLabel,
+  metaDeliveryForCreate,
+  metaDeliverySendable,
+  emptyMetaDeviceOsDraft,
+  metaDeviceOsBlock,
+  metaDeviceOsClearLabel,
+  metaDeviceOsError,
+  metaDeviceOsForCreate,
+  metaDeviceOsSendable,
+  metaFrequencyCapRefusal,
   metaBasicsRefusal,
   metaBriefSeed,
   metaCreateRefusal,
   metaDraftFields,
   metaDraftRestore,
+  metaPendingDraftFields,
   metaDsaCountries,
   metaDsaFieldError,
   metaEffectiveGeoTargets,
+  metaFoundationChange,
   metaGeoIsIneligible,
   metaHasPlacement,
   metaImageAssetBlock,
@@ -510,7 +545,6 @@ import {
   metaVariantsWithImage,
   parseNegativeKeywordInput,
   resolveLinkedInTargetingProfileId,
-  roundUsdToCentsLikeGo,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -521,6 +555,9 @@ import { CampaignBiddingControlComponent } from '../campaign-bidding-control/cam
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
 import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
+import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
+import { MetaDeviceOsOptionsComponent } from '../meta-device-os-options/meta-device-os-options.component';
+import { MetaDetailedTargetingComponent } from '../meta-detailed-targeting/meta-detailed-targeting.component';
 import { MetaLeadFormPickerComponent } from '../meta-lead-form-picker/meta-lead-form-picker.component';
 import { CampaignGoogleDemographicsPanelComponent } from '../campaign-google-demographics-panel/campaign-google-demographics-panel.component';
 import { CampaignGoogleExclusionsPanelComponent } from '../campaign-google-exclusions-panel/campaign-google-exclusions-panel.component';
@@ -604,6 +641,9 @@ let linkedInVariantKeySequence = 0;
     CampaignBiddingControlComponent,
     CampaignGoogleDemographicTargetingComponent,
     MetaAudienceTargetingComponent,
+    MetaDetailedTargetingComponent,
+    MetaDeliveryOptionsComponent,
+    MetaDeviceOsOptionsComponent,
     MetaLeadFormPickerComponent,
     CampaignGoogleDemographicsPanelComponent,
     CampaignGoogleExclusionsPanelComponent,
@@ -767,7 +807,7 @@ export class ImplementationTabComponent implements OnInit {
    * picker named another. So on an explicit yes the selector is replaced, and the account gate below
    * does not block on it. With account selection on (`linkedInAccountSelectionAvailable`) the
    * replacement reads the account from campaign-service and, for `global_marketing_ops`, offers a
-   * choice, sent as `selectedAdAccountId` only for a non-default pick (`linkedInAdAccountField`); the
+   * choice, sent as `selectedAdAccountId` only for a non-default pick (`linkedInAccountFields`); the
    * server forwards it only when campaign-service lists it as a grant, and refuses it otherwise. Otherwise it is a read-only line. `false` or unknown
    * keeps the selector: the legacy creator still reads the chosen account.
    */
@@ -1028,6 +1068,39 @@ export class ImplementationTabComponent implements OnInit {
    */
   public readonly metaLeadFormsEnabled = input<boolean | null>(null);
   protected readonly metaLeadFormsAvailable = computed<boolean>(() => this.metaLeadFormsEnabled() === true);
+
+  /**
+   * Whether this deployment sends Meta interests (#5904 row 4) — `CampaignListResult.metaInterestTargetingEnabled`,
+   * behind `LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING`. Deployment-wide; `null` while unanswered.
+   */
+  public readonly metaInterestTargetingEnabled = input<boolean | null>(null);
+  /** The same for Meta behaviors and job titles — `CampaignListResult.metaBehaviorTargetingEnabled`. */
+  public readonly metaBehaviorTargetingEnabled = input<boolean | null>(null);
+  /**
+   * Whether this deployment sends a Meta ad schedule (#5904 row 5) — `CampaignListResult.metaAdScheduleEnabled`, behind
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE`. Deployment-wide; `null` while unanswered.
+   */
+  public readonly metaAdScheduleEnabled = input<boolean | null>(null);
+  /** The same for the Meta frequency cap — `CampaignListResult.metaFrequencyCapEnabled`. */
+  public readonly metaFrequencyCapEnabled = input<boolean | null>(null);
+  /** The schedule is offered on its explicit yes and a lifetime budget, which Meta needs for one. */
+  protected readonly metaAdScheduleShown = computed<boolean>(() => this.metaAdScheduleEnabled() === true && this.metaLifetimeBudget());
+  /** The cap is offered on its explicit yes and the awareness objective, the only one Meta takes it on. */
+  protected readonly metaFrequencyCapShown = computed<boolean>(() => this.metaFrequencyCapEnabled() === true && this.metaObjective() === 'awareness');
+  /**
+   * Whether this deployment sends Meta devices (#5904 row 6) — `CampaignListResult.metaDeviceTargetingEnabled`, behind
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING`. Deployment-wide; `null` while unanswered.
+   */
+  public readonly metaDeviceTargetingEnabled = input<boolean | null>(null);
+  /** The same for Meta operating systems — `CampaignListResult.metaOsTargetingEnabled`. */
+  public readonly metaOsTargetingEnabled = input<boolean | null>(null);
+  /** Whether either device or OS group is offered: each only on its explicit yes. */
+  protected readonly metaDeviceOsShown = computed<boolean>(() => this.metaDeviceTargetingEnabled() === true || this.metaOsTargetingEnabled() === true);
+
+  /** Whether any detailed-targeting list is offered: each only on an explicit yes. */
+  protected readonly metaDetailedTargetingAvailable = computed<boolean>(
+    () => this.metaInterestTargetingEnabled() === true || this.metaBehaviorTargetingEnabled() === true
+  );
 
   /**
    * Whether this deployment can SEARCH Google's geo target table for postal-code targets —
@@ -1614,10 +1687,23 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly step = signal<ImplementationStep>('form');
   /** The Meta audience targeting as edited in `lfx-meta-audience-targeting` (#5905); kept whatever the capability says, like the DSA fields. */
   protected readonly metaAudienceTargeting = signal<MetaAudienceTargetingDraft>(this.defaultMetaAudienceTargeting());
+  /** The Meta interests, behaviors and job titles as picked in `lfx-meta-detailed-targeting` (#5904 row 4), kept whatever the flags say. */
+  protected readonly metaDetailedTargeting = signal<MetaDetailedTargetingPicks>(emptyMetaDetailedTargetingPicks());
+  /** The Meta ad schedule and frequency cap as edited in `lfx-meta-delivery-options` (#5904 row 5); `null` is unset. */
+  protected readonly metaDelivery = signal<MetaDeliveryDraft>(emptyMetaDeliveryDraft());
+  /** The Meta devices and operating systems as ticked in `lfx-meta-device-os-options` (#5904 row 6); empty is Meta's default. */
+  protected readonly metaDeviceOs = signal<MetaDeviceOsDraft>(emptyMetaDeviceOsDraft());
   /** The Meta call to action, conversion event and optimization goal as chosen (#5934); an absent key is "Not set". */
   protected readonly metaAdOptions = signal<MetaAdOptions>({});
   /** The Meta Instant Form picked or typed in `lfx-meta-lead-form-picker` (#5940); blank is none. Sent only under `leads`. */
   protected readonly metaLeadFormId = signal('');
+  /** Why the picker's held form cannot be sent once the Page's forms are read (#6107), or `null`; set by the picker. */
+  protected readonly metaLeadFormHeldRefusal = signal<string | null>(null);
+  /**
+   * A draft restored while the foundation was still unknown (#6107): its foundation-scoped Meta choices (targeting,
+   * ad options, lead form) could not be matched yet, so they are applied when the foundation first resolves.
+   */
+  private pendingMetaDraft: CampaignImplementationDraft | null = null;
   protected readonly creationProgress = signal<string[]>([]);
   protected readonly results = signal<CampaignCreateResult[]>([]);
   /**
@@ -3427,6 +3513,73 @@ export class ImplementationTabComponent implements OnInit {
     () => metaAudienceTargetingRefusal(this.metaAudienceTargetingRequested())?.message ?? null
   );
 
+  /** The detailed fields the create carries (#5904 row 4): each list only on its explicit yes. */
+  private readonly metaDetailedTargetingRequested = computed(() =>
+    metaDetailedTargetingForCreate(this.metaDetailedTargeting(), this.metaInterestTargetingEnabled(), this.metaBehaviorTargetingEnabled())
+  );
+  /** Why Create is held for picks in a list the request cannot carry, or `null`: {@link metaAudienceTargetingBlock}'s states. */
+  protected readonly metaDetailedTargetingBlock = computed(() =>
+    metaDetailedTargetingBlock({
+      picks: this.metaDetailedTargeting(),
+      interestEnabled: this.metaInterestTargetingEnabled(),
+      behaviorEnabled: this.metaBehaviorTargetingEnabled(),
+      createCapabilityRead: this.createCapabilityRead(),
+      briefId: this.briefPersistence().briefId,
+    })
+  );
+  /** The ad schedule and frequency cap the create carries (#5904 row 5): each only on its explicit yes. */
+  private readonly metaDeliveryRequested = computed(() =>
+    metaDeliveryForCreate(this.metaDelivery(), this.metaAdScheduleEnabled(), this.metaFrequencyCapEnabled())
+  );
+  /** Why Create is held for a schedule or cap the request cannot carry, or `null`: {@link metaAudienceTargetingBlock}'s states. */
+  protected readonly metaDeliveryBlock = computed(() =>
+    metaDeliveryBlock({
+      draft: this.metaDelivery(),
+      adScheduleEnabled: this.metaAdScheduleEnabled(),
+      frequencyCapEnabled: this.metaFrequencyCapEnabled(),
+      createCapabilityRead: this.createCapabilityRead(),
+      briefId: this.briefPersistence().briefId,
+    })
+  );
+  /** What the block's Clear clears, named: only the options this deployment answered no to. */
+  protected readonly metaDeliveryClearLabel = computed<string>(() =>
+    metaDeliveryClearLabel(this.metaDelivery(), this.metaAdScheduleEnabled(), this.metaFrequencyCapEnabled())
+  );
+  /** Why the schedule or cap cannot be sent, or `null`: the create route's own rules, on this budget mode and objective. */
+  protected readonly metaDeliveryError = computed<string | null>(() => {
+    const raw = { ...this.metaDeliveryRequested(), lifetimeBudget: this.metaLifetimeBudget(), objective: this.metaObjective() };
+    return (metaAdScheduleRefusal(raw) ?? metaFrequencyCapRefusal(raw))?.message ?? null;
+  });
+  /** The devices and operating systems the create carries (#5904 row 6): each list only on its explicit yes. */
+  private readonly metaDeviceOsRequested = computed(() =>
+    metaDeviceOsForCreate(this.metaDeviceOs(), this.metaDeviceTargetingEnabled(), this.metaOsTargetingEnabled())
+  );
+  /** Why Create is held for devices or systems the request cannot carry, or `null`: {@link metaAudienceTargetingBlock}'s states. */
+  protected readonly metaDeviceOsBlock = computed(() =>
+    metaDeviceOsBlock({
+      draft: this.metaDeviceOs(),
+      deviceEnabled: this.metaDeviceTargetingEnabled(),
+      osEnabled: this.metaOsTargetingEnabled(),
+      createCapabilityRead: this.createCapabilityRead(),
+      briefId: this.briefPersistence().briefId,
+    })
+  );
+  /** What the block's Clear clears, named: only the lists this deployment answered no to. */
+  protected readonly metaDeviceOsClearLabel = computed<string>(() =>
+    metaDeviceOsClearLabel(this.metaDeviceOs(), this.metaDeviceTargetingEnabled(), this.metaOsTargetingEnabled())
+  );
+  /**
+   * Why the devices or systems cannot be sent, or `null`: the create route's own rule, on this objective and every
+   * placement. Shown and holding Create rather than cleared, so turning Audience Network on never silently widens a
+   * desktop-only ad set.
+   */
+  protected readonly metaDeviceOsError = computed<string | null>(() => metaDeviceOsError(this.metaDeviceOs(), this.metaObjective(), this.metaPlacements()));
+
+  /** Why the detailed fields cannot be sent, or `null`: the create route's own rules. */
+  protected readonly metaDetailedTargetingError = computed<string | null>(
+    () => metaDetailedTargetingRefusal(this.metaDetailedTargetingRequested())?.message ?? null
+  );
+
   /** Whether the Meta create carries manual bidding, a link-click bid cap that refuses LANDING_PAGE_VIEWS (#5934). */
   private readonly metaManualBidding = computed<boolean>(() => this.biddingField('meta-ads').bidding?.strategy === 'manual');
   /** The Meta ad choice dropdowns offered (#5934): each only on an explicit yes and where the objective fits. */
@@ -3448,7 +3601,9 @@ export class ImplementationTabComponent implements OnInit {
         leadFormId: this.metaLeadFormId(),
         manualBidding: this.metaManualBidding(),
         callToAction: this.metaAdOptions().callToAction,
-      })?.message ?? null
+      })?.message ??
+      // A held form the Page now lists as inactive (#6107): refused here rather than at create.
+      (this.metaLeadFormRequested() ? this.metaLeadFormHeldRefusal() : null)
   );
   protected readonly metaAdOptionsBlock: Signal<CampaignBiddingCapabilityBlock | null> = this.initMetaAdOptionsBlock();
 
@@ -3921,44 +4076,9 @@ export class ImplementationTabComponent implements OnInit {
     // The first ad's copy over Google's display width; the message is under Headlines or Descriptions.
     if (googleSelected && (this.googleFirstAdHeadlinesError() !== null || this.googleFirstAdDescriptionsError() !== null))
       return "Google Ads: the first ad's headlines or descriptions are too wide.";
-    if (linkedInSelected && this.linkedInBudgetUsd() < 1) return 'LinkedIn Ads: set a budget of at least $1.';
-    // A daily cap campaign-service would refuse (#5774); the message is under the field.
-    if (linkedInSelected && this.linkedInDailyCapError() !== null) return 'LinkedIn Ads: fix the daily cap.';
-    if (linkedInSelected && this.linkedInGeoTargets().length === 0) return 'LinkedIn Ads: add at least one location.';
-    if (linkedInSelected && this.linkedInVariants().length === 0) return 'LinkedIn Ads: add at least one ad variant.';
-    if (linkedInSelected && this.linkedInVariants().length > LINKEDIN_MAX_VARIANTS)
-      return `LinkedIn Ads: remove ad variants until there are at most ${LINKEDIN_MAX_VARIANTS}.`;
-    // An intro text or headline campaign-service would refuse (blank) or cut short (over its limit).
-    if (linkedInSelected && this.linkedInVariantTextInvalid()) return 'LinkedIn Ads: fix the ad variant text.';
-    // Removals the create cannot carry (#5546) — the legacy creator would drop them, and without the
-    // profile catalogue they cannot be applied — are a block rather than a silent revert to the
-    // profile as configured.
-    if (linkedInSelected && this.linkedInTargetingRemovalsHeld()) {
-      if (!this.linkedInTargetingEditAvailable()) return 'LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.';
-      if (!this.linkedInSelectedTargetingProfile())
-        return "LinkedIn Ads: the targeting profile's details have not loaded. Reload the page, or reset the targeting profile.";
-    }
-    // The account must be one the CATALOG confirms, not merely a non-empty string.
-    //
-    // `ngOnInit`'s reconciliation only runs on a successful response, so it cannot cover the two
-    // windows either side of it: before the request returns, and permanently if it fails. In both
-    // the restored id is still on the form while `linkedInAccounts()` is empty, so a create would
-    // dispatch an account nothing has verified and the selector is not displaying — the same
-    // divergence the reconciliation closes, reached where it does not run.
-    //
-    // Membership is the test rather than "loading finished", because a failed fetch leaves
-    // loading false with an empty catalog, which is exactly when this matters most. It also
-    // covers the blank id for free. The gate is scoped to LinkedIn, so a Google-only or
-    // Reddit-only create is unaffected by an ad-account endpoint being down.
-    // Skipped when the connection decides the account (#5809): the selector is not shown, and the
-    // create does not send the account, so its catalog cannot block a create it has no part in.
-    if (linkedInSelected && !this.linkedInAccountSetByConnection() && !this.linkedInAccounts().some((a) => a.accountId === this.linkedInAccountId()))
-      return 'LinkedIn Ads: choose an ad account.';
-    // While the ad account read is in flight the picker is not shown yet, so a create would go to the
-    // default before the operator could see or change it (#5809). A failed read does not block: the
-    // create then sends no account and goes to the default, as it did before account selection.
-    if (linkedInSelected && this.linkedInAccountSelectionAvailable() && this.linkedInCreateAccount().status === 'loading')
-      return 'LinkedIn Ads: the ad account is still loading.';
+    // The LinkedIn section's own rules (#5980): `linkedInCreateRefusal` holds them, in order.
+    const linkedInRefusal = linkedInSelected ? this.linkedInCreateRefusalNow() : null;
+    if (linkedInRefusal !== null) return linkedInRefusal;
     // Budget, then no usable geo at all (which would let the server default to US). Reddit's budget
     // and geo come next, before the rest of the Meta form, so the Meta checks are split in two.
     const metaBasics = metaSelected ? metaBasicsRefusal(this.metaBudgetUsd(), this.metaEffectiveGeoTargets()) : null;
@@ -3992,6 +4112,12 @@ export class ImplementationTabComponent implements OnInit {
           instagramDsaInvalid: !!(this.metaInstagramUserIdError() || this.metaDsaBeneficiaryError() || this.metaDsaPayorError()),
           audienceTargetingBlock: this.metaAudienceTargetingBlock()?.message ?? null,
           audienceTargetingError: this.metaAudienceTargetingError(),
+          detailedTargetingBlock: this.metaDetailedTargetingBlock()?.message ?? null,
+          detailedTargetingError: this.metaDetailedTargetingError(),
+          deliveryBlock: this.metaDeliveryBlock()?.message ?? null,
+          deliveryError: this.metaDeliveryError(),
+          deviceOsBlock: this.metaDeviceOsBlock()?.message ?? null,
+          deviceOsError: this.metaDeviceOsError(),
           adOptionsBlock: this.metaAdOptionsBlock()?.message ?? null,
           adOptionsError: this.metaAdOptionsError(),
           leadFormError: this.metaLeadFormError(),
@@ -4951,16 +5077,26 @@ export class ImplementationTabComponent implements OnInit {
       }
     });
 
-    // skip(1) drops the emission toObservable fires immediately on subscribe — ngOnInit already
-    // runs the initial load, so only later foundation switches should refetch the ad-account list
-    // and the targeting-profile catalogue. Both serve the same ConfigMap for every project, but each
+    // pairwise() absorbs the emission toObservable fires immediately on subscribe — ngOnInit already
+    // runs the initial load, so only later foundation changes refetch the ad-account list and the
+    // targeting-profile catalogue. metaFoundationChange tells the foundation first becoming known
+    // (restore the pending draft) from a real switch (reset the Meta choices). Both serve the same ConfigMap for every project, but each
     // route is gated per project by requireCampaignManager, which can 403 for a foundation the
     // caller doesn't manage.
     toObservable(this.activeFoundationSlug)
-      .pipe(skip(1), takeUntilDestroyed())
-      .subscribe(() => {
+      .pipe(pairwise(), takeUntilDestroyed())
+      .subscribe(([previous, next]) => {
+        const change = metaFoundationChange(previous, next);
+        if (change === 'same') return;
         this.loadLinkedInAccounts();
         this.loadLinkedInTargetingProfiles();
+        // The foundation first becoming known is not a switch (#6107): nothing was chosen under another one, so a
+        // draft restored while it was unknown gets its foundation-scoped choices now, instead of losing them.
+        if (change === 'resolved') {
+          this.restorePendingMetaDraft();
+          return;
+        }
+        this.pendingMetaDraft = null;
         // The brief survives a foundation switch, but its Meta audience targeting does not: custom audience
         // ids belong to the previous foundation's ad account, and the capabilities are re-read for this one.
         this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
@@ -5630,15 +5766,21 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onMetaLifetimeBudgetChange(event: Event): void {
     this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
+    // Meta schedules only lifetime budgets, so a daily budget clears the schedule rather than hiding it (#5904 row 5).
+    this.dropInapplicableMetaDelivery();
     this.emitDraft();
   }
 
   protected onMetaObjectiveChange(event: Event): void {
+    // A choice made while the foundation is unknown wins over the draft still waiting for it (#6107).
+    this.pendingMetaDraft = null;
     this.metaObjective.set((event.target as HTMLSelectElement).value as MetaObjective);
     // A conversion event or optimization goal the new objective does not take is cleared, not kept hidden (#5934).
     this.dropInapplicableMetaAdOptions();
     // Only `leads` carries a lead form, so leaving it clears the form (#5940).
     this.metaLeadFormId.set(metaLeadFormForObjective(this.metaObjective(), this.metaLeadFormId()));
+    // Only awareness takes a frequency cap, so leaving it clears the cap (#5904 row 5).
+    this.dropInapplicableMetaDelivery();
     // Every Meta mutation emits. These signals are invisible to `campaignForm.valueChanges`, so
     // without this the parent's draft never learns the edit and a tab switch reverts it.
     this.emitDraft();
@@ -5659,18 +5801,26 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected onMetaAudienceTargetingChange(targeting: MetaAudienceTargetingDraft): void {
+    this.pendingMetaDraft = null;
     this.metaAudienceTargeting.set(targeting);
     this.emitDraft();
   }
 
   /** One Meta ad choice (#5934); the empty "Not set" option removes the key, so nothing is sent. */
   protected onMetaAdOptionChange(key: MetaAdOptionKey, value: string | null): void {
+    this.pendingMetaDraft = null;
     this.metaAdOptions.update((options) => metaAdOptionsWithChoice(options, key, value));
     this.emitDraft();
   }
 
+  /** The picker's report on the held form (#6107): not a draft field, so nothing is emitted. */
+  protected onMetaLeadFormHeldRefusal(refusal: string | null): void {
+    this.metaLeadFormHeldRefusal.set(refusal);
+  }
+
   /** The lead form picked or typed in `lfx-meta-lead-form-picker` (#5940). Signal-backed like the other Meta fields, so it emits. */
   protected onMetaLeadFormChange(leadFormId: string): void {
+    this.pendingMetaDraft = null;
     this.metaLeadFormId.set(leadFormId);
     this.emitDraft();
   }
@@ -5684,6 +5834,38 @@ export class ImplementationTabComponent implements OnInit {
   /** Back to Meta's defaults: the way past an `unsupported` {@link metaAudienceTargetingBlock}, whose section is hidden. */
   protected clearMetaAudienceTargeting(): void {
     this.onMetaAudienceTargetingChange(this.defaultMetaAudienceTargeting());
+  }
+
+  protected onMetaDeliveryChange(delivery: MetaDeliveryDraft): void {
+    this.metaDelivery.set(delivery);
+    this.emitDraft();
+  }
+
+  /** Clears each option this deployment answered no to: the way past an `unsupported` {@link metaDeliveryBlock}, whose control is hidden. */
+  protected clearUnsendableMetaDelivery(): void {
+    this.onMetaDeliveryChange(metaDeliverySendable(this.metaDelivery(), this.metaAdScheduleEnabled(), this.metaFrequencyCapEnabled()));
+  }
+
+  protected onMetaDeviceOsChange(deviceOs: MetaDeviceOsDraft): void {
+    this.metaDeviceOs.set(deviceOs);
+    this.emitDraft();
+  }
+
+  /** Clears each list this deployment answered no to: the way past an `unsupported` {@link metaDeviceOsBlock}, whose group is hidden. */
+  protected clearUnsendableMetaDeviceOs(): void {
+    this.onMetaDeviceOsChange(metaDeviceOsSendable(this.metaDeviceOs(), this.metaDeviceTargetingEnabled(), this.metaOsTargetingEnabled()));
+  }
+
+  protected onMetaDetailedTargetingChange(picks: MetaDetailedTargetingPicks): void {
+    this.metaDetailedTargeting.set(picks);
+    this.emitDraft();
+  }
+
+  /** Empties the lists this deployment does not send: the way past an `unsupported` {@link metaDetailedTargetingBlock}, whose lists are hidden. */
+  protected clearUnsendableMetaDetailedTargeting(): void {
+    this.onMetaDetailedTargetingChange(
+      metaDetailedTargetingPicksSendable(this.metaDetailedTargeting(), this.metaInterestTargetingEnabled(), this.metaBehaviorTargetingEnabled())
+    );
   }
 
   protected onMetaPixelIdInput(event: Event): void {
@@ -6663,17 +6845,17 @@ export class ImplementationTabComponent implements OnInit {
               lifetimeBudget: this.linkedInLifetimeBudget(),
               // Only beside a lifetime budget and only when set (#5774), so a create without a cap
               // sends exactly what it always did.
-              ...this.linkedInDailyCapField(),
+              ...linkedInDailyCapField(this.linkedInDailyCapInput()),
               startDate: form.startDate,
               endDate: form.endDate,
               geoTargets: this.linkedInGeoTargets(),
               targetingProfile: this.linkedInTargetingProfile(),
               // Only when something was removed, so an untouched profile sends what it always did.
               ...this.linkedInTargetingEditField(),
-              variants: this.linkedInVariantsForCreate(),
+              variants: this.linkedInVariantsSent(),
               // The legacy creator reads the form's account. When the connection decides it, only a
               // chosen non-default account is sent, as `selectedAdAccountId` (#5809).
-              ...(this.linkedInAccountSetByConnection() ? this.linkedInAdAccountField() : { adAccountId: this.linkedInAccountId() }),
+              ...this.linkedInAccountFieldsNow(),
               ...this.biddingField('linkedin-ads'),
             },
           }
@@ -6760,6 +6942,8 @@ export class ImplementationTabComponent implements OnInit {
               ...this.metaTargetingField(),
               // Only the choices this deployment confirmed; any other holds Create ({@link metaAdOptionsBlock}).
               ...this.metaAdOptionsField(),
+              // Only the schedule and cap this deployment confirmed; any other holds Create ({@link metaDeliveryBlock}).
+              ...this.metaDeliveryRequested(),
               // Only under `leads` for a caller who may send one; `canSubmit` has already refused a missing or bad form (#5940).
               ...(this.metaLeadFormRequested() ? { leadFormId: this.metaLeadFormId().trim() } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
@@ -7553,26 +7737,17 @@ export class ImplementationTabComponent implements OnInit {
   }
   /**
    * The LinkedIn variants as sent: each variant's copy as edited, carrying its OWN uploaded image
-   * when that goes out (`linkedInVariantImageSent`). The asset replaces any `imageUrn` the plan named,
+   * when that goes out (`linkedInVariantsForCreate` in `campaign-linkedin-form.utils`). The asset replaces any `imageUrn` the plan named,
    * since campaign-service refuses a variant carrying both; a variant with neither sends no image
    * field. The tab-only fields (`key`, the asset's name and brief) are never sent.
    */
-  private linkedInVariantsForCreate(): LinkedInCreativeVariant[] {
-    return this.linkedInVariants().map((variant) => {
-      const { introText, headline } = variant;
-      if (this.linkedInVariantImageSent(variant)) return { introText, headline, imageAssetId: variant.imageAssetId };
-      return variant.imageUrn ? { introText, headline, imageUrn: variant.imageUrn } : { introText, headline };
-    });
-  }
-
-  /** Whether a variant's upload goes out: the upload capability is an explicit yes and the asset was made for the open brief. */
-  private linkedInVariantImageSent(variant: LinkedInVariantDraft): boolean {
-    return this.linkedInAssetUploadAvailable() && this.linkedInVariantImageForThisBrief(variant);
+  private linkedInVariantsSent(): LinkedInCreativeVariant[] {
+    return linkedInVariantsForCreate(this.linkedInVariants(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '');
   }
 
   /** Whether the variant holds an upload made for the brief now open — the only one sent. */
   private linkedInVariantImageForThisBrief(variant: LinkedInVariantDraft): boolean {
-    return variant.imageAssetId !== '' && variant.imageAssetBriefId === (this.briefPersistence().briefId ?? '');
+    return linkedInVariantImageForBrief(variant, this.briefPersistence().briefId ?? '');
   }
 
   /**
@@ -7603,27 +7778,15 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   private initLinkedInTargetingProfileEdit(): Signal<LinkedInTargetingProfileEdit | null> {
-    return computed(() => {
-      const profile = this.linkedInSelectedTargetingProfile();
-      const effective = this.linkedInEffectiveTargeting();
-      if (!profile || !effective) return null;
-      if (effective.skills.length === profile.skills.length && effective.groups.length === profile.groups.length) return null;
-      return { id: profile.id, skills: effective.skills, groups: effective.groups };
-    });
+    return computed(() => linkedInTargetingEdit(this.linkedInSelectedTargetingProfile(), this.linkedInEffectiveTargeting()));
   }
 
   private initLinkedInTargetingRemovalsHeld(): Signal<boolean> {
-    return computed(() => {
-      const removals = this.linkedInTargetingRemovals();
-      return !!removals && removals.skills.length + removals.groups.length > 0;
-    });
+    return computed(() => linkedInTargetingRemovalsHeld(this.linkedInTargetingRemovals()));
   }
 
   private initLinkedInTargetingEmptyWarning(): Signal<boolean> {
-    return computed(() => {
-      const effective = this.linkedInEffectiveTargeting();
-      return !!effective && this.linkedInTargetingProfileEdit() !== null && effective.skills.length === 0 && effective.groups.length === 0;
-    });
+    return computed(() => linkedInTargetingEmptyWarning(this.linkedInEffectiveTargeting(), this.linkedInTargetingProfileEdit()));
   }
 
   private initLinkedInVariantViews(): Signal<LinkedInVariantView[]> {
@@ -8449,32 +8612,46 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   private initLinkedInEffectiveAccount(): Signal<LinkedInCreateAccountOption | null> {
-    return computed(() => {
-      const account = this.linkedInCreateAccount().account;
-      if (!account) return null;
-      const fallback: LinkedInCreateAccountOption = { accountId: account.accountId, orgId: account.orgId, label: account.label, isDefault: true };
-      const defaultAccount = account.accounts.find((a) => a.isDefault) ?? fallback;
-      if (!account.canChoose) return defaultAccount;
-      return account.accounts.find((a) => a.accountId === this.linkedInChosenAccountId()) ?? defaultAccount;
+    return computed(() => linkedInEffectiveAccount(this.linkedInCreateAccount().account, this.linkedInChosenAccountId()));
+  }
+
+  /** The inputs `linkedInDailyCapError` and `linkedInDailyCapField` read (#5774). */
+  private linkedInDailyCapInput(): LinkedInDailyCapInput {
+    return {
+      capUsd: this.linkedInDailyCapUsd(),
+      lifetimeBudget: this.linkedInLifetimeBudget(),
+      available: this.linkedInDailyCapAvailable(),
+      budgetUsd: this.linkedInBudgetUsd(),
+    };
+  }
+
+  /** The account fields a create sends (#5809); see `linkedInAccountFields`. */
+  private linkedInAccountFieldsNow(): Pick<LinkedInCampaignCreateRequest, 'adAccountId' | 'selectedAdAccountId'> {
+    return linkedInAccountFields({
+      setByConnection: this.linkedInAccountSetByConnection(),
+      selectionAvailable: this.linkedInAccountSelectionAvailable(),
+      effectiveAccount: this.linkedInEffectiveAccount(),
+      canChoose: this.linkedInCanChooseAccount(),
+      legacyAccountId: this.linkedInAccountId(),
     });
   }
 
-  /**
-   * `{ selectedAdAccountId }` only for a chosen account that is NOT the default (#5809). A field of its
-   * own, so the server can tell a pick from the legacy `adAccountId` this form still carries, which it
-   * ignores on this road. While campaign-service's account selection is on it refuses ANY `adAccountId`,
-   * the default included, from a caller without `global_marketing_ops`, so the default is sent as nothing.
-   */
-  private linkedInAdAccountField(): { selectedAdAccountId?: string } {
-    const account = this.linkedInEffectiveAccount();
-    if (!this.linkedInAccountSelectionAvailable() || !this.linkedInCanChooseAccount() || !account || account.isDefault) return {};
-    return { selectedAdAccountId: account.accountId };
-  }
-
-  /** `{ dailyCapUsd }` when a cap is set beside a lifetime budget on a deployment that offers it (#5774), else nothing. */
-  private linkedInDailyCapField(): { dailyCapUsd?: number } {
-    const cap = this.linkedInDailyCapUsd();
-    return this.linkedInDailyCapAvailable() && this.linkedInLifetimeBudget() && cap !== null ? { dailyCapUsd: cap } : {};
+  /** Why the LinkedIn section holds Create now, or `null`; see `linkedInCreateRefusal`. */
+  private linkedInCreateRefusalNow(): string | null {
+    return linkedInCreateRefusal({
+      budgetUsd: this.linkedInBudgetUsd(),
+      dailyCapError: this.linkedInDailyCapError(),
+      geoTargetCount: this.linkedInGeoTargets().length,
+      variantCount: this.linkedInVariants().length,
+      variantTextInvalid: this.linkedInVariantTextInvalid(),
+      removalsHeld: this.linkedInTargetingRemovalsHeld(),
+      targetingEditAvailable: this.linkedInTargetingEditAvailable(),
+      profileLoaded: this.linkedInSelectedTargetingProfile() !== null,
+      accountSetByConnection: this.linkedInAccountSetByConnection(),
+      accountInCatalog: this.linkedInAccounts().some((a) => a.accountId === this.linkedInAccountId()),
+      accountSelectionAvailable: this.linkedInAccountSelectionAvailable(),
+      createAccountStatus: this.linkedInCreateAccount().status,
+    });
   }
 
   private loadLinkedInAccounts(): void {
@@ -8827,6 +9004,8 @@ export class ImplementationTabComponent implements OnInit {
     // Each field only when the draft carries it; targeting, ad options and the lead form only under their own
     // foundation; the objective after the lead form rule. See `metaDraftRestore`.
     const metaRestore = metaDraftRestore(draft, this.metaObjective(), this.activeFoundationSlug());
+    // Foundation-scoped choices cannot be matched while the foundation is unknown; keep the draft for when it resolves.
+    this.pendingMetaDraft = this.activeFoundationSlug() === '' ? draft : null;
     this.metaObjective.set(metaRestore.objective);
     if (metaRestore.placements !== undefined) this.metaPlacements.set(metaRestore.placements);
     if (metaRestore.pixelId !== undefined) this.metaPixelId.set(metaRestore.pixelId);
@@ -8835,11 +9014,18 @@ export class ImplementationTabComponent implements OnInit {
     // still saw blanks (PR #4483 review). The emit cannot loop: `applyDraft` runs only while `seeding`.
     if (Object.keys(metaRestore.instagramDsaPatch).length > 0) this.metaInstagramDsaForm.patchValue(metaRestore.instagramDsaPatch);
     if (metaRestore.audienceTargeting !== undefined) this.metaAudienceTargeting.set(metaRestore.audienceTargeting);
+    if (metaRestore.detailedTargeting !== undefined) this.metaDetailedTargeting.set(metaRestore.detailedTargeting);
     if (metaRestore.adOptions !== undefined) this.metaAdOptions.set(metaRestore.adOptions);
     if (metaRestore.leadFormId !== null) this.metaLeadFormId.set(metaRestore.leadFormId);
     if (metaRestore.geoTargets !== undefined) this.metaGeoTargets.set(metaRestore.geoTargets);
     if (metaRestore.budgetUsd !== undefined) this.metaBudgetUsd.set(metaRestore.budgetUsd);
     if (metaRestore.lifetimeBudget !== undefined) this.metaLifetimeBudget.set(metaRestore.lifetimeBudget);
+    // After the budget mode and objective, so only what they can carry is restored (#5904 row 5).
+    if (metaRestore.delivery !== undefined) {
+      this.metaDelivery.set(metaDeliveryApplicable(metaRestore.delivery, this.metaLifetimeBudget(), this.metaObjective()));
+    }
+    // As saved, even when the rules now refuse it, so its error shows and holds Create (#5904 row 6).
+    if (metaRestore.deviceOs !== undefined) this.metaDeviceOs.set(metaRestore.deviceOs);
 
     // Same present-only rule, for the same reason: an older draft omits these, and absence there
     // means "keep what the brief seeded".
@@ -9373,12 +9559,17 @@ export class ImplementationTabComponent implements OnInit {
         dsaBeneficiary: this.metaInstagramDsaDraft().dsaBeneficiary,
         dsaPayor: this.metaInstagramDsaDraft().dsaPayor,
         audienceTargeting: this.metaAudienceTargeting(),
+        detailedTargeting: this.metaDetailedTargeting(),
+        delivery: this.metaDelivery(),
+        deviceOs: this.metaDeviceOs(),
         adOptions: this.metaAdOptions(),
         leadFormId: this.metaLeadFormId(),
         foundation: this.activeFoundationSlug(),
         budgetUsd: this.metaBudgetUsd(),
         lifetimeBudget: this.metaLifetimeBudget(),
       }),
+      // A draft still waiting for its foundation keeps its foundation-scoped choices in what is saved (#6107).
+      ...(this.pendingMetaDraft === null ? {} : metaPendingDraftFields(this.pendingMetaDraft)),
       // Microsoft's four (LFXV2-3312), snapshotted rather than referenced for the same reason as
       // the Meta block: the parent must hold a value, not a live view of a signal this component
       // is about to destroy. The two ARRAYS are carried because they have a real editor here —
@@ -9748,13 +9939,18 @@ export class ImplementationTabComponent implements OnInit {
 
   /** Meta: objective, placements, pixel, Instagram/DSA, budget and its mode, image URL; geos and variants until the brief's Meta copy seeds them. */
   private resetMetaFields(): void {
+    // A draft still waiting for the foundation belongs to the previous brief (#6107).
+    this.pendingMetaDraft = null;
     this.metaObjective.set(DEFAULT_META_OBJECTIVE);
     this.metaPlacements.set({ ...META_DEFAULT_PLACEMENTS });
     this.metaPixelId.set('');
     // Another brief's payor and beneficiary must never reach a live create.
     this.metaInstagramDsaForm.reset();
-    // Another brief's audiences must never reach a live create either, nor its Meta ad choices.
+    // Another brief's audiences must never reach a live create either, nor its detailed targeting or Meta ad choices.
     this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
+    this.metaDetailedTargeting.set(emptyMetaDetailedTargetingPicks());
+    this.metaDelivery.set(emptyMetaDeliveryDraft());
+    this.metaDeviceOs.set(emptyMetaDeviceOsDraft());
     this.metaAdOptions.set({});
     this.metaLeadFormId.set('');
     this.metaBudgetUsd.set(DEFAULT_META_BUDGET_USD);
@@ -10221,18 +10417,7 @@ export class ImplementationTabComponent implements OnInit {
    * or no lifetime budget, is never an error.
    */
   private initLinkedInDailyCapError(): Signal<string | null> {
-    return computed((): string | null => {
-      const cap = this.linkedInDailyCapUsd();
-      // Not offered, or no lifetime budget: nothing is sent, so nothing can be wrong.
-      if (cap === null || !this.linkedInLifetimeBudget() || !this.linkedInDailyCapAvailable()) return null;
-      if (!Number.isFinite(cap)) return 'Enter the daily cap in US dollars, or leave it empty for no cap.';
-      // Rounded exactly as campaign-service rounds both amounts, ties to the even cent.
-      const rounded = roundUsdToCentsLikeGo(cap);
-      if (rounded < LINKEDIN_MIN_DAILY_BUDGET_USD) return `The daily cap must be at least $${LINKEDIN_MIN_DAILY_BUDGET_USD}, LinkedIn's daily minimum.`;
-      const total = roundUsdToCentsLikeGo(this.linkedInBudgetUsd());
-      if (rounded > total) return "The daily cap can't be more than the lifetime budget.";
-      return null;
-    });
+    return computed(() => linkedInDailyCapError(this.linkedInDailyCapInput()));
   }
 
   private initGoogleSearchKeywordsError(): Signal<string | null> {
@@ -14144,10 +14329,17 @@ export class ImplementationTabComponent implements OnInit {
     return bidding === null ? {} : { bidding };
   }
 
-  /** `metaConfig.targeting` for the request, or nothing when it asks for nothing. `canSubmit` has already refused a bad one. */
+  /**
+   * `metaConfig.targeting` for the request: the audience fields, the detailed ones (#5904 row 4) and the devices and
+   * operating systems (row 6) in one block, or nothing when it asks for nothing. `canSubmit` has already refused a bad one.
+   */
   private metaTargetingField(): Pick<MetaCampaignCreateRequest, 'targeting'> {
-    const targeting = compactMetaAudienceTargeting(this.metaAudienceTargetingRequested());
-    return targeting ? { targeting } : {};
+    const targeting = {
+      ...compactMetaAudienceTargeting(this.metaAudienceTargetingRequested()),
+      ...this.metaDetailedTargetingRequested(),
+      ...this.metaDeviceOsRequested(),
+    };
+    return Object.keys(targeting).length > 0 ? { targeting } : {};
   }
 
   /** The Meta ad choices for the request: each only on an explicit yes, "Not set" never sent. */
@@ -14155,9 +14347,30 @@ export class ImplementationTabComponent implements OnInit {
     return metaAdOptionsForCreate(this.metaAdOptions(), this.metaAdOptionsEnabled());
   }
 
+  /** Clears the schedule off a daily budget and the cap off any objective but awareness (#5904 row 5). */
+  private dropInapplicableMetaDelivery(): void {
+    this.metaDelivery.update((delivery) => metaDeliveryApplicable(delivery, this.metaLifetimeBudget(), this.metaObjective()));
+  }
+
   /** Clears each Meta ad choice the current objective does not take (#5934). */
   private dropInapplicableMetaAdOptions(): void {
     this.metaAdOptions.update((options) => metaAdOptionsForObjective(options, this.metaObjective()));
+  }
+
+  /**
+   * Applies the foundation-scoped Meta choices of a draft restored while the foundation was unknown (#6107), with
+   * the same rules as a restore (`metaDraftRestore`): only what was chosen under this foundation, the lead form last.
+   */
+  private restorePendingMetaDraft(): void {
+    const draft = this.pendingMetaDraft;
+    this.pendingMetaDraft = null;
+    if (draft === null) return;
+    const restore = metaDraftRestore(draft, this.metaObjective(), this.activeFoundationSlug());
+    if (restore.audienceTargeting !== undefined) this.metaAudienceTargeting.set(restore.audienceTargeting);
+    if (restore.adOptions !== undefined) this.metaAdOptions.set(restore.adOptions);
+    this.metaObjective.set(restore.objective);
+    if (restore.leadFormId !== null) this.metaLeadFormId.set(restore.leadFormId);
+    this.emitDraft();
   }
 
   private defaultMetaAudienceTargeting(): MetaAudienceTargetingDraft {

@@ -426,3 +426,52 @@ describe('VoteBasicsComponent — voting method (#2921)', () => {
     expect(element('vote-basics-min-voters-warning')).toBeNull();
   });
 });
+
+describe('VoteBasicsComponent — prefilled hints (#6104)', () => {
+  let fixture: ComponentFixture<VoteBasicsComponent>;
+
+  const element = (selector: string): HTMLElement | null => fixture.nativeElement.querySelector(selector);
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [VoteBasicsComponent],
+      providers: [provideRouter([]), provideNoopAnimations()],
+    })
+      .overrideComponent(VoteBasicsComponent, {
+        remove: { imports: [CommitteeSelectorComponent] },
+        add: { imports: [StubCommitteeSelectorComponent] },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(VoteBasicsComponent);
+    const form = buildForm();
+    fixture.componentRef.setInput('form', form);
+    fixture.componentRef.setInput('formValue', signal(form.getRawValue()));
+  });
+
+  it('renders no hint while neither field holds a seeded default', async () => {
+    await fixture.whenStable();
+
+    expect(element('[data-testid="vote-title-prefilled-hint"]')).toBeNull();
+    expect(element('[data-testid="vote-description-prefilled-hint"]')).toBeNull();
+    expect(element('input#vote-title, #vote-title input')?.getAttribute('aria-describedby')).toBeNull();
+    expect(element('textarea')?.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('renders each hint only for its prefilled field and wires it to the field', async () => {
+    fixture.componentRef.setInput('prefilledTitle', true);
+    await fixture.whenStable();
+
+    expect(element('[data-testid="vote-title-prefilled-hint"]')?.textContent?.trim()).toBe('Pre-filled for this group — edit freely.');
+    expect(element('[data-testid="vote-description-prefilled-hint"]')).toBeNull();
+    expect(element('input#vote-title, #vote-title input')?.getAttribute('aria-describedby')).toBe('vote-title-prefilled-hint');
+
+    fixture.componentRef.setInput('prefilledTitle', false);
+    fixture.componentRef.setInput('prefilledDescription', true);
+    await fixture.whenStable();
+
+    expect(element('[data-testid="vote-title-prefilled-hint"]')).toBeNull();
+    expect(element('[data-testid="vote-description-prefilled-hint"]')?.textContent?.trim()).toBe('Pre-filled for this group — edit freely.');
+    expect(element('textarea')?.getAttribute('aria-describedby')).toBe('vote-description-prefilled-hint');
+  });
+});

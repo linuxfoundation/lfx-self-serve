@@ -9,6 +9,7 @@ import {
   copyMetaAudienceTargeting,
   metaDraftFields,
   metaDraftRestore,
+  metaPendingDraftFields,
   metaImageDraftFields,
   metaImageDraftRestore,
   metaInstagramDsaPatch,
@@ -25,6 +26,9 @@ const state: MetaDraftState = {
   dsaBeneficiary: 'CNCF',
   dsaPayor: 'The Linux Foundation',
   audienceTargeting: { ...DEFAULT_META_AUDIENCE_TARGETING, ageMin: 25, customAudiences: ['1001'] },
+  detailedTargeting: { interests: [{ id: '6003', name: 'Open source' }], behaviors: [], workPositions: [] },
+  delivery: { adSchedule: { days: [1, 5], startMinute: 540, endMinute: 1020 }, frequencyCap: null },
+  deviceOs: { devicePlatforms: ['mobile'], userOs: ['iOS'] },
   adOptions: { conversionEvent: 'LEAD' },
   leadFormId: '',
   foundation: 'tlf',
@@ -44,6 +48,11 @@ describe('metaDraftFields', () => {
       metaDsaPayor: 'The Linux Foundation',
       metaAudienceTargeting: { ...DEFAULT_META_AUDIENCE_TARGETING, ageMin: 25, customAudiences: ['1001'] },
       metaAudienceTargetingProject: 'tlf',
+      metaDetailedTargeting: { interests: [{ id: '6003', name: 'Open source' }], behaviors: [], workPositions: [] },
+      metaAdSchedule: { days: [1, 5], startMinute: 540, endMinute: 1020 },
+      metaFrequencyCap: null,
+      metaDevicePlatforms: ['mobile'],
+      metaUserOs: ['iOS'],
       metaAdOptions: { conversionEvent: 'LEAD' },
       metaAdOptionsProject: 'tlf',
       metaLeadFormId: '',
@@ -60,6 +69,9 @@ describe('metaDraftFields', () => {
     expect(fields.metaAdOptions).not.toBe(state.adOptions);
     expect(fields.metaAudienceTargeting).not.toBe(state.audienceTargeting);
     expect(fields.metaAudienceTargeting?.customAudiences).not.toBe(state.audienceTargeting.customAudiences);
+    expect(fields.metaDetailedTargeting?.interests).not.toBe(state.detailedTargeting.interests);
+    expect(fields.metaAdSchedule?.days).not.toBe(state.delivery.adSchedule?.days);
+    expect(fields.metaDevicePlatforms).not.toBe(state.deviceOs.devicePlatforms);
   });
 });
 
@@ -112,6 +124,9 @@ describe('metaDraftRestore', () => {
       pixelId: '554433',
       instagramDsaPatch: { instagramUserId: '17841400000000000', dsaBeneficiary: 'CNCF', dsaPayor: 'The Linux Foundation' },
       audienceTargeting: { ...DEFAULT_META_AUDIENCE_TARGETING, ageMin: 25, customAudiences: ['1001'] },
+      detailedTargeting: { interests: [{ id: '6003', name: 'Open source' }], behaviors: [], workPositions: [] },
+      delivery: { adSchedule: { days: [1, 5], startMinute: 540, endMinute: 1020 }, frequencyCap: null },
+      deviceOs: { devicePlatforms: ['mobile'], userOs: ['iOS'] },
       adOptions: { conversionEvent: 'LEAD' },
       leadFormId: '',
       geoTargets: ['US', 'DE'],
@@ -125,6 +140,8 @@ describe('metaDraftRestore', () => {
     const restored = metaDraftRestore(saved, 'traffic', 'cncf');
     expect(restored.audienceTargeting).toBeUndefined();
     expect(restored.adOptions).toBeUndefined();
+    // Meta's taxonomy is the same for every ad account, so detailed targeting is kept.
+    expect(restored.detailedTargeting?.interests).toEqual([{ id: '6003', name: 'Open source' }]);
     expect(restored.leadFormId).toBe('');
     expect(restored.objective).not.toBe('leads');
   });
@@ -217,5 +234,24 @@ describe('copyMetaAudienceTargeting', () => {
     expect(copy.genders).not.toBe(source.genders);
     expect(copy.customAudiences).not.toBe(source.customAudiences);
     expect(copy.excludedCustomAudiences).not.toBe(source.excludedCustomAudiences);
+  });
+});
+
+describe('metaPendingDraftFields', () => {
+  it('keeps only the foundation-scoped fields a waiting draft carries, with their project stamps', () => {
+    const fields = metaDraftFields({ ...state, foundation: 'tlf' });
+    expect(metaPendingDraftFields(draft(fields))).toEqual({
+      metaObjective: fields.metaObjective,
+      metaAudienceTargeting: fields.metaAudienceTargeting,
+      metaAudienceTargetingProject: 'tlf',
+      metaAdOptions: fields.metaAdOptions,
+      metaAdOptionsProject: 'tlf',
+      metaLeadFormId: fields.metaLeadFormId,
+      metaLeadFormProject: 'tlf',
+    });
+  });
+
+  it('adds nothing for a draft saved before those fields shipped', () => {
+    expect(metaPendingDraftFields(draft({ metaPixelId: '1' }))).toEqual({});
   });
 });

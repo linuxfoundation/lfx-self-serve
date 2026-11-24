@@ -5,6 +5,8 @@ import { DEFAULT_META_AUDIENCE_TARGETING } from '../constants/campaign.constants
 import type {
   MetaDraftSnapshot,
   MetaAudienceTargetingDraft,
+  MetaDeliveryDraft,
+  MetaDeviceOsDraft,
   MetaDraftRestore,
   MetaDraftState,
   MetaImageDraftRestore,
@@ -13,6 +15,9 @@ import type {
 } from '../interfaces/campaign.interface';
 import { compactMetaAdOptions, metaAdOptionsForObjective } from './campaign-meta-ad-options.utils';
 import { metaAcceptedGeos } from './campaign-meta-form.utils';
+import { copyMetaDeliveryDraft, metaDeliveryFromDraft } from './campaign-meta-delivery.utils';
+import { copyMetaDetailedTargetingPicks, metaDetailedTargetingPicksFromDraft } from './campaign-meta-detailed-targeting.utils';
+import { copyMetaDeviceOsDraft, metaDeviceOsFromDraft } from './campaign-meta-device-os.utils';
 import { metaLeadFormRestore } from './campaign-meta-lead-form.utils';
 
 /**
@@ -43,6 +48,11 @@ export function metaDraftFields(
   | 'metaDsaPayor'
   | 'metaAudienceTargeting'
   | 'metaAudienceTargetingProject'
+  | 'metaDetailedTargeting'
+  | 'metaAdSchedule'
+  | 'metaFrequencyCap'
+  | 'metaDevicePlatforms'
+  | 'metaUserOs'
   | 'metaAdOptions'
   | 'metaAdOptionsProject'
   | 'metaLeadFormId'
@@ -61,6 +71,9 @@ export function metaDraftFields(
     metaDsaPayor: s.dsaPayor,
     metaAudienceTargeting: copyMetaAudienceTargeting(s.audienceTargeting),
     metaAudienceTargetingProject: s.foundation,
+    metaDetailedTargeting: copyMetaDetailedTargetingPicks(s.detailedTargeting),
+    ...deliveryFields(s.delivery),
+    ...deviceOsFields(s.deviceOs),
     metaAdOptions: { ...s.adOptions },
     metaAdOptionsProject: s.foundation,
     metaLeadFormId: s.leadFormId,
@@ -111,6 +124,57 @@ export function metaInstagramDsaPatch(draft: MetaDraftSnapshot): MetaDraftRestor
   return patch;
 }
 
+/** The draft fields that belong to one foundation: what a draft restored before the foundation is known must not lose. */
+const META_FOUNDATION_SCOPED_DRAFT_KEYS = [
+  'metaObjective',
+  'metaAudienceTargeting',
+  'metaAudienceTargetingProject',
+  'metaAdOptions',
+  'metaAdOptionsProject',
+  'metaLeadFormId',
+  'metaLeadFormProject',
+] as const;
+
+/**
+ * The foundation-scoped fields of a draft still waiting for its foundation (#6107), laid over every draft the tab
+ * emits meanwhile. The parent saves what the tab emits, so without them a tab closed before the foundation resolves
+ * would save the form, audiences and ad choices as cleared. Only what the waiting draft carries; with their
+ * original project stamps, so a reopen restores them under that foundation only.
+ */
+export function metaPendingDraftFields(pending: MetaDraftSnapshot): Partial<MetaDraftSnapshot> {
+  return Object.fromEntries(META_FOUNDATION_SCOPED_DRAFT_KEYS.filter((key) => pending[key] !== undefined).map((key) => [key, pending[key]]));
+}
+
+/** The delivery options as the draft saves them: each `null` when unset. */
+function deliveryFields(delivery: MetaDeliveryDraft): Pick<MetaDraftSnapshot, 'metaAdSchedule' | 'metaFrequencyCap'> {
+  const copy = copyMetaDeliveryDraft(delivery);
+  return { metaAdSchedule: copy.adSchedule, metaFrequencyCap: copy.frequencyCap };
+}
+
+/** The delivery options a draft restores, under any foundation, or nothing for a draft saved before row 5. */
+function deliveryRestore(draft: MetaDraftSnapshot): Pick<MetaDraftRestore, 'delivery'> {
+  const delivery = metaDeliveryFromDraft(draft.metaAdSchedule, draft.metaFrequencyCap);
+  return delivery === undefined ? {} : { delivery };
+}
+
+/** The devices and operating systems as the draft saves them: each list as ticked, empty when none. */
+function deviceOsFields(deviceOs: MetaDeviceOsDraft): Pick<MetaDraftSnapshot, 'metaDevicePlatforms' | 'metaUserOs'> {
+  const copy = copyMetaDeviceOsDraft(deviceOs);
+  return { metaDevicePlatforms: copy.devicePlatforms, metaUserOs: copy.userOs };
+}
+
+/** The devices and operating systems a draft restores, under any foundation, or nothing for a draft saved before row 6. */
+function deviceOsRestore(draft: MetaDraftSnapshot): Pick<MetaDraftRestore, 'deviceOs'> {
+  const deviceOs = metaDeviceOsFromDraft(draft.metaDevicePlatforms, draft.metaUserOs);
+  return deviceOs === undefined ? {} : { deviceOs };
+}
+
+/** The detailed targeting a draft restores, under any foundation (Meta's taxonomy is global), or nothing for a draft without it. */
+function detailedTargetingRestore(raw: unknown): Pick<MetaDraftRestore, 'detailedTargeting'> {
+  const picks = metaDetailedTargetingPicksFromDraft(raw);
+  return picks === undefined ? {} : { detailedTargeting: picks };
+}
+
 /**
  * What a restored draft sets on the Meta form. Each field only when the draft carries it: a draft saved
  * before a field shipped leaves the seeded value standing (`?? 'traffic'` would silently downgrade a
@@ -130,6 +194,9 @@ export function metaDraftRestore(draft: MetaDraftSnapshot, currentObjective: Met
     ...(draft.metaAudienceTargeting !== undefined && draft.metaAudienceTargetingProject === activeFoundation
       ? { audienceTargeting: copyMetaAudienceTargeting({ ...DEFAULT_META_AUDIENCE_TARGETING, ...draft.metaAudienceTargeting }) }
       : {}),
+    ...detailedTargetingRestore(draft.metaDetailedTargeting),
+    ...deliveryRestore(draft),
+    ...deviceOsRestore(draft),
     ...(draft.metaAdOptions !== undefined && draft.metaAdOptionsProject === activeFoundation
       ? { adOptions: metaAdOptionsForObjective(compactMetaAdOptions(draft.metaAdOptions), objective) }
       : {}),

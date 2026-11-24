@@ -6,12 +6,35 @@ import { describe, expect, it } from 'vitest';
 import {
   META_AUDIENCE_TARGETING_OFF_MESSAGE,
   META_BEHAVIOR_TARGETING_OFF_MESSAGE,
+  META_DEVICE_TARGETING_OFF_MESSAGE,
   META_INTEREST_TARGETING_OFF_MESSAGE,
   META_LOCALE_TARGETING_OFF_MESSAGE,
+  META_OS_TARGETING_OFF_MESSAGE,
+  META_TARGETING_SEARCH_BUSY_MESSAGE,
+  META_TARGETING_SEARCH_FAILED_MESSAGE,
+  META_TARGETING_SEARCH_NO_MATCH_MESSAGE,
+  META_TARGETING_SEARCH_PENDING_MESSAGE,
+  META_TARGETING_SEARCH_TOO_SHORT_MESSAGE,
+  META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE,
 } from '../constants/campaign.constants';
-import type { MetaTargetingFlags } from '../interfaces/campaign.interface';
+import type { MetaTargetingFlags, MetaTargetingPick, MetaTargetingSearchOption } from '../interfaces/campaign.interface';
 import {
   compactMetaDetailedTargeting,
+  metaDeviceOsRefusal,
+  parseMetaUserOs,
+  copyMetaDetailedTargetingPicks,
+  metaDetailedTargetingBlock,
+  metaDetailedTargetingForCreate,
+  metaDetailedTargetingPicksFromDraft,
+  metaDetailedTargetingPicksSendable,
+  emptyMetaDetailedTargetingPicks,
+  metaTargetingKindsShown,
+  metaTargetingPicksWith,
+  metaTargetingPicksWithout,
+  metaTargetingSearchChoices,
+  metaTargetingSearchEmptyMessage,
+  metaTargetingSearchFailure,
+  metaTargetingSearchQuery,
   isMetaTargetingSearchType,
   metaDetailedTargetingRefusal,
   metaTargetingFlagRefusal,
@@ -21,7 +44,7 @@ import {
 } from './campaign-meta-detailed-targeting.utils';
 
 const ids = (n: number): string[] => Array.from({ length: n }, (_, i) => String(6003 + i));
-const allOn: MetaTargetingFlags = { audience: true, interest: true, behavior: true, locale: true };
+const allOn: MetaTargetingFlags = { audience: true, interest: true, behavior: true, locale: true, device: true, os: true };
 
 describe('which fields a block sets', () => {
   it.each([
@@ -55,6 +78,10 @@ describe('metaTargetingFlagRefusal', () => {
     [{ behaviors: ['6004'] }, { ...allOn, behavior: false }, ['metaConfig.targeting.behaviors', META_BEHAVIOR_TARGETING_OFF_MESSAGE]],
     [{ workPositions: ['105'] }, { ...allOn, behavior: false }, ['metaConfig.targeting.workPositions', META_BEHAVIOR_TARGETING_OFF_MESSAGE]],
     [{ locales: [6] }, { ...allOn, locale: false }, ['metaConfig.targeting.locales', META_LOCALE_TARGETING_OFF_MESSAGE]],
+    // Devices and operating systems (#5904 row 6), each on its own flag, and detailed-only like the rest.
+    [{ devicePlatforms: ['mobile'] }, { ...allOn, device: false }, ['metaConfig.targeting.devicePlatforms', META_DEVICE_TARGETING_OFF_MESSAGE]],
+    [{ userOs: ['iOS'] }, { ...allOn, os: false }, ['metaConfig.targeting.userOs', META_OS_TARGETING_OFF_MESSAGE]],
+    [{ devicePlatforms: ['mobile'], userOs: ['iOS'] }, { ...allOn, audience: false }, null],
     // A field that is off but not set is no reason to refuse; an empty list is not set.
     [{ interests: ['6003'] }, { ...allOn, behavior: false, locale: false }, null],
     [{ interests: ['6003'], behaviors: [] }, { ...allOn, behavior: false }, null],
@@ -138,5 +165,195 @@ describe('metaTargetingQueryRefusal', () => {
   it('narrows the search type', () => {
     expect(isMetaTargetingSearchType('work_position')).toBe(true);
     expect(isMetaTargetingSearchType('industry')).toBe(false);
+  });
+});
+
+describe('the detailed-targeting picker rules', () => {
+  const pick = (id: string, name = `Name ${id}`): MetaTargetingPick => ({ id, name });
+  const option = (id: string): MetaTargetingSearchOption => ({ id, name: `Name ${id}`, path: [] });
+  const full = Array.from({ length: 25 }, (_, i) => pick(String(1000 + i)));
+
+  it('starts every list empty, with a fresh object each time', () => {
+    expect(emptyMetaDetailedTargetingPicks()).toEqual({ interests: [], behaviors: [], workPositions: [] });
+    expect(emptyMetaDetailedTargetingPicks()).not.toBe(emptyMetaDetailedTargetingPicks());
+  });
+
+  it.each([
+    [{ interest: true, behavior: true }, ['interests', 'behaviors', 'workPositions']],
+    [{ interest: true, behavior: false }, ['interests']],
+    [{ interest: false, behavior: true }, ['behaviors', 'workPositions']],
+    [{ interest: false, behavior: false }, []],
+  ])('shows the lists %j turns on', (flags, keys) => {
+    expect(metaTargetingKindsShown(flags).map((kind) => kind.key)).toEqual(keys);
+  });
+
+  it.each([
+    ['  devops  ', 'devops'],
+    ['k', ''],
+    ['  k ', ''],
+    ['a\u0007b', ''],
+    ['x'.repeat(120), 'x'.repeat(100)],
+    ['😀'.repeat(101), '😀'.repeat(100)],
+  ])('searches %j as %j', (raw, query) => {
+    expect(metaTargetingSearchQuery(raw)).toBe(query);
+  });
+
+  it('adds a pick once, trimmed, and keeps its name', () => {
+    expect(metaTargetingPicksWith([], { id: ' 6003 ', name: ' Open source ' })).toEqual([{ id: '6003', name: 'Open source' }]);
+    expect(metaTargetingPicksWith([], { id: '6003', name: ' ' })).toEqual([{ id: '6003', name: '6003' }]);
+  });
+
+  it.each([
+    ['already picked', [pick('6003')], '6003'],
+    ['not a Meta id', [], '06003'],
+    ['the list is full', full, '6003'],
+  ])('leaves the list alone when the option is %s', (_case, picks, id) => {
+    expect(metaTargetingPicksWith(picks, option(id))).toBe(picks);
+  });
+
+  it('removes a pick by id', () => {
+    expect(metaTargetingPicksWithout([pick('1'), pick('2')], '1')).toEqual([pick('2')]);
+  });
+
+  it('disables a picked row, and every row once the list is full', () => {
+    expect(metaTargetingSearchChoices([option('1'), option('2')], [pick('1')]).map((c) => c.disabled)).toEqual([true, false]);
+    expect(metaTargetingSearchChoices([option('9')], full).map((c) => c.disabled)).toEqual([true]);
+  });
+
+  it.each([
+    [503, META_TARGETING_SEARCH_BUSY_MESSAGE],
+    [404, META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE],
+    [500, META_TARGETING_SEARCH_FAILED_MESSAGE],
+    [0, META_TARGETING_SEARCH_FAILED_MESSAGE],
+  ])('explains a failed search (status %i)', (status, message) => {
+    expect(metaTargetingSearchFailure(status)).toBe(message);
+  });
+
+  it.each([
+    ['searching', false, true, null, META_TARGETING_SEARCH_PENDING_MESSAGE],
+    ['failed', false, false, 'Busy', 'Busy'],
+    ['refused', true, false, null, META_TARGETING_SEARCH_TOO_SHORT_MESSAGE],
+    ['answered with nothing', false, false, null, META_TARGETING_SEARCH_NO_MATCH_MESSAGE],
+  ])('says what an empty popup means when the search %s', (_case, refused, pending, failure, message) => {
+    expect(metaTargetingSearchEmptyMessage(refused, pending, failure)).toBe(message);
+  });
+});
+
+describe('the detailed-targeting create rules', () => {
+  const picks = {
+    interests: [{ id: '6003', name: 'Open source' }],
+    behaviors: [{ id: '6004', name: 'Early adopters' }],
+    workPositions: [{ id: '105', name: 'Engineer' }],
+  };
+  const none = emptyMetaDetailedTargetingPicks();
+
+  it.each([
+    ['not a record', 'x', undefined],
+    ['null', null, undefined],
+    ['an empty record', {}, none],
+    [
+      'well-formed picks, dropping a bad id, a missing name, a repeat and a non-list',
+      {
+        interests: [{ id: '6003', name: 'Open source' }, { id: '06003', name: 'Bad' }, { id: '7' }, { id: '6003', name: 'Again' }],
+        behaviors: 'x',
+        workPositions: [{ id: ' 105 ', name: 'Engineer' }],
+      },
+      { interests: [{ id: '6003', name: 'Open source' }], behaviors: [], workPositions: [{ id: '105', name: 'Engineer' }] },
+    ],
+  ])('reads a saved draft holding %s', (_case, raw, expected) => {
+    expect(metaDetailedTargetingPicksFromDraft(raw)).toEqual(expected);
+  });
+
+  it('caps a saved list at 25', () => {
+    const raw = { interests: Array.from({ length: 30 }, (_, i) => ({ id: String(100 + i), name: `N${i}` })) };
+    expect(metaDetailedTargetingPicksFromDraft(raw)?.interests).toHaveLength(25);
+  });
+
+  it('copies every list', () => {
+    const copy = copyMetaDetailedTargetingPicks(picks);
+    expect(copy).toEqual(picks);
+    expect(copy.interests).not.toBe(picks.interests);
+  });
+
+  it.each([
+    [true, true, { interests: ['6003'], behaviors: ['6004'], workPositions: ['105'] }],
+    [true, false, { interests: ['6003'] }],
+    [null, true, { behaviors: ['6004'], workPositions: ['105'] }],
+    [false, null, null],
+  ])('sends the lists whose flag is a yes (interest %s, behavior %s)', (interest, behavior, expected) => {
+    expect(metaDetailedTargetingForCreate(picks, interest, behavior)).toEqual(expected);
+  });
+
+  it('sends nothing for empty lists', () => {
+    expect(metaDetailedTargetingForCreate(none, true, true)).toBeNull();
+  });
+
+  it('clears only the lists this deployment answered no to', () => {
+    expect(metaDetailedTargetingPicksSendable(picks, true, false)).toEqual({ ...none, interests: picks.interests });
+    expect(metaDetailedTargetingPicksSendable(picks, null, false)).toEqual({ ...none, interests: picks.interests });
+  });
+
+  const block = (over: Partial<Parameters<typeof metaDetailedTargetingBlock>[0]>) =>
+    metaDetailedTargetingBlock({ picks, interestEnabled: true, behaviorEnabled: true, createCapabilityRead: 'ready', briefId: 'b-1', ...over })?.kind ?? null;
+
+  it.each([
+    ['every held list is sendable', {}, null],
+    ['nothing is picked in an unsendable list', { picks: { ...none, interests: picks.interests }, behaviorEnabled: false }, null],
+    ['a held list answered no', { behaviorEnabled: false }, 'unsupported'],
+    ['a no wins over an unanswered list', { interestEnabled: null, behaviorEnabled: false, createCapabilityRead: 'pending' }, 'unsupported'],
+    ['the answer is still out', { interestEnabled: null, createCapabilityRead: 'pending' }, 'pending'],
+    ['the brief is unsaved', { interestEnabled: null, briefId: null }, 'unsaved'],
+    ['the answer failed', { interestEnabled: null, createCapabilityRead: 'failed' }, 'failed'],
+  ] as const)('holds Create when %s', (_case, over, kind) => {
+    expect(block(over)).toBe(kind);
+  });
+});
+
+describe('parseMetaUserOs', () => {
+  it.each([
+    ['iOS', 'iOS', false],
+    [' android ', 'Android', false],
+    ['IOS_ver_8.0_and_above', 'iOS_ver_8.0_and_above', true],
+    ['Android_ver_4.0_to_7.0', 'Android_ver_4.0_to_7.0', true],
+  ])('reads %j as %s', (raw, canonical, versioned) => {
+    expect(parseMetaUserOs(raw)).toMatchObject({ canonical, versioned });
+  });
+
+  it.each([['Windows'], ['iOS_ver_8.1_and_above'], ['Android_ver_7.0_to_4.0'], ['Android_ver_4.0_to_4.0'], ['iOS_ver_8.0'], [7]])('refuses %j', (raw) => {
+    expect(parseMetaUserOs(raw)).toBeNull();
+  });
+});
+
+describe('metaDeviceOsRefusal', () => {
+  it.each([
+    ['mobile only', { devicePlatforms: ['Mobile'] }, 'traffic', {}, null],
+    ['both devices with iOS and Android', { devicePlatforms: ['mobile', 'desktop'], userOs: ['iOS', 'Android'] }, 'traffic', {}, null],
+    ['desktop only without Audience Network', { devicePlatforms: ['desktop'] }, 'traffic', { audienceNetwork: false }, null],
+    ['a device that is not one', { devicePlatforms: ['tablet'] }, 'traffic', {}, 'devicePlatforms'],
+    ['desktop only with Audience Network', { devicePlatforms: ['desktop'] }, 'traffic', { audienceNetwork: true }, 'devicePlatforms'],
+    ['an OS Meta does not list', { userOs: ['Windows'] }, 'traffic', {}, 'userOs'],
+    ['a version beside the other family', { userOs: ['iOS_ver_8.0_and_above', 'Android'] }, 'traffic', {}, 'userOs'],
+    ['an OS with desktop only', { devicePlatforms: ['desktop'], userOs: ['iOS'] }, 'traffic', {}, 'userOs'],
+    ['an OS version on awareness', { userOs: ['iOS_ver_8.0_and_above'] }, 'awareness', {}, 'userOs'],
+    ['an OS family on awareness', { userOs: ['iOS'] }, 'awareness', {}, null],
+    [
+      'eleven OS values',
+      { userOs: ['iOS', ...['2.0', '3.0', '4.0', '4.3', '5.0', '6.0', '7.0', '8.0', '9.0'].map((v) => `iOS_ver_${v}_and_above`), 'iOS_ver_2.0_to_3.0'] },
+      'traffic',
+      {},
+      'userOs',
+    ],
+  ])('answers %s', (_case, raw, objective, placements, field) => {
+    const refusal = metaDeviceOsRefusal(raw, objective, placements);
+    expect(refusal === null ? null : refusal.field.replace('metaConfig.targeting.', '')).toBe(field);
+  });
+});
+
+describe('compactMetaDetailedTargeting with devices and operating systems', () => {
+  it('sends devices lower-cased and de-duplicated, and OS values in Meta spelling', () => {
+    expect(compactMetaDetailedTargeting({ devicePlatforms: ['Mobile', 'mobile'], userOs: ['ios', 'IOS', 'android_ver_4.0_and_above'] })).toEqual({
+      devicePlatforms: ['mobile'],
+      userOs: ['iOS', 'Android_ver_4.0_and_above'],
+    });
   });
 });

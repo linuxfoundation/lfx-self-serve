@@ -27,6 +27,11 @@ import type {
   MetaAudienceGender,
   MetaAudienceTargetingDraft,
   MetaCustomAudienceListView,
+  MetaAdSchedule,
+  MetaAdScheduleDayOption,
+  MetaDeviceOsOption,
+  MetaFrequencyCap,
+  MetaTargetingKind,
   CampaignKeyword,
   CampaignLabelOption,
   CampaignNegativeKeywordMatchType,
@@ -965,11 +970,59 @@ export const META_CUSTOM_AUDIENCE_ID_PATTERN = /^[1-9][0-9]*$/;
 export const META_MAX_DETAILED_TARGETING_IDS = 25;
 /** At most this many distinct `locales` (Meta `adlocale` keys). */
 export const META_MAX_LOCALES = 50;
+/** The Meta device platforms a create may name (#5904 row 6; campaign-service#612). */
+export const META_DEVICE_PLATFORMS = ['mobile', 'desktop'] as const;
+/** The device checkboxes the Implement tab offers, as a create sends them. */
+export const META_DEVICE_PLATFORM_OPTIONS: readonly MetaDeviceOsOption[] = [
+  { value: 'mobile', label: 'Mobile' },
+  { value: 'desktop', label: 'Desktop' },
+];
+/** The operating-system checkboxes the Implement tab offers: the two families, in Meta's `user_os` spelling, no versions (v1). */
+export const META_OS_FAMILY_OPTIONS: readonly MetaDeviceOsOption[] = [
+  { value: 'iOS', label: 'iOS' },
+  { value: 'Android', label: 'Android' },
+];
+/** At most this many distinct Meta `user_os` values. */
+export const META_MAX_USER_OS = 10;
+/** The OS versions Meta's Advanced Targeting reference lists, per family, as campaign-service checks them. */
+export const META_USER_OS_VERSIONS: Readonly<Record<'iOS' | 'Android', readonly string[]>> = {
+  iOS: ['2.0', '3.0', '4.0', '4.3', '5.0', '6.0', '7.0', '8.0', '9.0'],
+  Android: ['2.0', '2.1', '2.2', '2.3', '3.0', '3.1', '3.2', '4.0', '4.1', '4.2', '4.3', '4.4', '5.0', '5.1', '6.0', '7.0', '7.1', '8.0'],
+};
+/** A Meta frequency cap's impressions and days are each 1–90, as Meta documents them (#5904 row 5; campaign-service#612). */
+export const META_FREQUENCY_CAP_MIN = 1;
+export const META_FREQUENCY_CAP_MAX = 90;
+/** A Meta ad schedule is whole hours (multiples of 60) of a 1440-minute day, days 0 (Sunday) to 6 (Saturday). */
+export const META_AD_SCHEDULE_MINUTES_PER_DAY = 1440;
+export const META_AD_SCHEDULE_STEP_MINUTES = 60;
+export const META_AD_SCHEDULE_MAX_DAY = 6;
+/** The ad schedule's day toggles, in Meta's numbering, Monday first as most calendars show a week. */
+export const META_AD_SCHEDULE_DAY_OPTIONS: readonly MetaAdScheduleDayOption[] = [
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+  { value: 0, label: 'Sun' },
+];
+/** What turning the ad schedule on starts from: weekdays, 09:00 to 17:00. */
+export const DEFAULT_META_AD_SCHEDULE: MetaAdSchedule = { days: [1, 2, 3, 4, 5], startMinute: 540, endMinute: 1020 };
+/** What turning the frequency cap on starts from: 2 impressions per person every 7 days. */
+export const DEFAULT_META_FREQUENCY_CAP: MetaFrequencyCap = { maxImpressions: 2, intervalDays: 7 };
 /** The Meta targeting search's kinds, as campaign-service names them. */
 export const META_TARGETING_SEARCH_TYPES = ['interest', 'behavior', 'work_position'] as const;
 /** A targeting search query is 2–100 characters after trimming, as campaign-service checks it. */
 export const META_TARGETING_QUERY_MIN_LENGTH = 2;
 export const META_TARGETING_QUERY_MAX_LENGTH = 100;
+/** How long the Implement tab's targeting search waits after the last keystroke before it asks Meta. */
+export const META_TARGETING_SEARCH_DEBOUNCE_MS = 300;
+/** The detailed-targeting lists the Implement tab offers, in order, with the search kind behind each. */
+export const META_TARGETING_KINDS: readonly MetaTargetingKind[] = [
+  { type: 'interest', key: 'interests', label: 'Interests' },
+  { type: 'behavior', key: 'behaviors', label: 'Behaviors' },
+  { type: 'work_position', key: 'workPositions', label: 'Job titles' },
+];
 export const META_AUDIENCE_GENDERS: readonly MetaAudienceGender[] = ['male', 'female'];
 /** The custom-audience lists the Implement tab offers, in order. */
 export const META_CUSTOM_AUDIENCE_LISTS: readonly MetaCustomAudienceListView[] = [
@@ -1027,6 +1080,8 @@ export const META_LEAD_FORM_PICKER_REASONS = {
 /** Why a `leads` draft holding a form is held when lead forms are off for this caller or foundation (#5940). */
 export const META_LEAD_FORM_UNAVAILABLE_REFUSAL = "Lead forms aren't available for this foundation. Choose another objective.";
 export const META_LEAD_FORM_PICKER_LOADING = "Loading the Page's lead forms…";
+/** Why a held lead form (restored, or kept after its status changed) holds Create once the Page's forms show it is not ACTIVE (#6107). */
+export const META_LEAD_FORM_INACTIVE_REFUSAL = 'This lead form is no longer active on the Facebook Page. Choose another one.';
 export const META_LEAD_FORM_PICKER_EMPTY = 'This Facebook Page has no lead forms. Create one in Meta Ads Manager, then reload.';
 
 /**
@@ -1681,6 +1736,23 @@ export const META_BEHAVIOR_TARGETING_OFF_MESSAGE =
   'Meta behavior and job title targeting is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for Meta languages while language targeting is off on this deployment. */
 export const META_LOCALE_TARGETING_OFF_MESSAGE = 'Meta language targeting is not available on this deployment. Reload the page, then create again without it.';
+/** The 400 a create gets for Meta device targeting while it is off on this deployment. */
+export const META_DEVICE_TARGETING_OFF_MESSAGE = 'Meta device targeting is not available on this deployment. Reload the page, then create again without it.';
+/** The 400 a create gets for Meta operating-system targeting while it is off on this deployment. */
+export const META_OS_TARGETING_OFF_MESSAGE =
+  'Meta operating system targeting is not available on this deployment. Reload the page, then create again without it.';
+/** The 400 a create gets for a Meta ad schedule while scheduling is off on this deployment. */
+export const META_AD_SCHEDULE_OFF_MESSAGE = 'Meta ad scheduling is not available on this deployment. Reload the page, then create again without it.';
+/** The 400 a create gets for a Meta frequency cap while it is off on this deployment. */
+export const META_FREQUENCY_CAP_OFF_MESSAGE = 'The Meta frequency cap is not available on this deployment. Reload the page, then create again without it.';
+/** A targeting search refused with a 404: the search is off on this deployment. */
+export const META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE = 'Meta targeting search is not available on this deployment.';
+/** A targeting search that failed for any other reason. */
+export const META_TARGETING_SEARCH_FAILED_MESSAGE = "Meta search didn't answer. Search again.";
+/** What the targeting search popup says while it waits, when the typed text cannot be searched, and when nothing matched. */
+export const META_TARGETING_SEARCH_PENDING_MESSAGE = 'Searching…';
+export const META_TARGETING_SEARCH_TOO_SHORT_MESSAGE = `Type at least ${META_TARGETING_QUERY_MIN_LENGTH} characters, on one line.`;
+export const META_TARGETING_SEARCH_NO_MATCH_MESSAGE = 'Nothing matches. Try another word.';
 /** The 503 a Meta targeting search gets when Meta or campaign-service cannot answer it (a throttle is not retried upstream). */
 export const META_TARGETING_SEARCH_BUSY_MESSAGE = "Meta targeting search isn't available right now. Wait a few seconds, then search again.";
 /**

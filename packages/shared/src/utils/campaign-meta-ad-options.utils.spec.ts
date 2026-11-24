@@ -14,6 +14,7 @@ import {
   metaAdOptionsWithChoice,
   metaAdOptionsWithoutUnsupported,
   metaConfigRecord,
+  metaConfigKeyVariant,
 } from './campaign-meta-ad-options.utils';
 
 describe('metaAdOptionsRefusal', () => {
@@ -147,5 +148,21 @@ describe('metaAdOptionsBlock', () => {
       metaAdOptionsBlock({ optimizationGoal: 'LINK_CLICKS', callToAction: 'SIGN_UP' }, { callToAction: false, optimizationGoal: false }, 'ready', 'brief-1')
         ?.message
     ).toBe('This deployment cannot send the Meta call to action, optimization goal on this brief. Clear it to create the campaign.');
+  });
+});
+
+describe('metaConfigKeyVariant', () => {
+  it.each([
+    [{ targeting: {}, objective: 'traffic', placements: { audienceNetwork: true } }, null],
+    [{ Targeting: {} }, 'metaConfig.targeting'],
+    [{ OBJECTIVE: 'awareness' }, 'metaConfig.objective'],
+    [{ lifetimebudget: true }, 'metaConfig.lifetimeBudget'],
+    // Go folds U+017F (long s) to s, which lower-casing alone misses.
+    [{ ['adſchedule']: {} }, 'metaConfig.adSchedule'],
+    [{ placements: { AudienceNetwork: true } }, 'metaConfig.placements.audienceNetwork'],
+    [{ variants: [], geoTargets: [] }, null],
+    [null, null],
+  ])('finds the field %j sends under another spelling: %s', (raw, field) => {
+    expect(metaConfigKeyVariant(raw)).toBe(field);
   });
 });
