@@ -107,7 +107,7 @@ function buildQuestionView(pr: PollQuestionResult, ballots: VoteVoter[] | null):
   const outcome = resolveOutcome(winnerIds.length, candidates.length, usedIrv);
   // Every candidate returned is no winner (PCC parity), so nobody is marked as a winner.
   const winners = new Set(outcome === CondorcetOutcome.NO_WINNER ? [] : winnerIds);
-  const winnerNames = candidates.filter((candidate) => winners.has(candidate.choiceId)).map((candidate) => candidate.choiceText);
+  const winnerNames = winnerIds.filter((id) => winners.has(id)).map((id) => textById.get(id) ?? id);
   const isTie = outcome === CondorcetOutcome.TIE;
 
   const standings = usedIrv

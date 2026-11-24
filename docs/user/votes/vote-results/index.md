@@ -82,7 +82,7 @@ Managers, invited voters with access to final results, and the **Present** view 
 
 ### Condorcet IRV results
 
-A Condorcet IRV vote shows its own results for each question. The winner comes from the voting service; it is not simply the candidate with the most first choices.
+A Condorcet IRV vote shows its own results for each question. The winner comes from the voting service; it is not simply the candidate with the most first choices. The final outcome and Overview summary use the service's winner name even if that candidate is missing from the results tables. If no name is available, they show the candidate's choice ID instead.
 
 - **Final Voting Outcome** says how the result was decided. If one candidate beat every other candidate head-to-head, the heading reads **Condorcet IRV – Final Voting Outcome** and names that candidate as the winner. If no candidate did, the heading reads **Instant Runoff Voting (IRV) – Final Voting Outcome** and explains that instant-runoff elimination decided the winner. A tie names the tied candidates and says no single winner can be determined. If no winner could be determined, it says so.
 - **Standings** lists every candidate in order, with the winner marked **Winner** and tied winners marked **Tied**. When head-to-head wins decided the result, each candidate shows how many head-to-head matchups they won. When instant-runoff elimination decided it, eliminated candidates show the round they were eliminated in, latest first.

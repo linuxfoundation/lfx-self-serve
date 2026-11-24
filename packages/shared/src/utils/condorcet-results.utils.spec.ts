@@ -111,6 +111,31 @@ describe('buildCondorcetQuestionViews', () => {
     expect(v.usedIrv).toBe(usedIrv);
   });
 
+  it.each([
+    { usedIrv: false, choiceText: 'Service candidate', label: 'Service candidate', outcome: CondorcetOutcome.CONDORCET_WINNER },
+    { usedIrv: true, choiceText: 'Service candidate', label: 'Service candidate', outcome: CondorcetOutcome.IRV_WINNER },
+    { usedIrv: false, choiceText: '', label: 'x', outcome: CondorcetOutcome.CONDORCET_WINNER },
+    { usedIrv: true, choiceText: '', label: 'x', outcome: CondorcetOutcome.IRV_WINNER },
+  ])('labels an unmatched service winner: $outcome, "$choiceText"', ({ usedIrv, choiceText, label, outcome }) => {
+    const v = view(
+      question({
+        ranked_choice_winner_info: {
+          poll_choices: [
+            { choice_id: 'x', choice_text: choiceText },
+            { choice_id: 'x', choice_text: choiceText },
+          ],
+          condorcet_irv_used_for_eliminations: usedIrv,
+        },
+      })
+    );
+    expect(v.outcome).toBe(outcome);
+    expect(v.winnerNames).toEqual([label]);
+    expect(buildCondorcetSummaryLines([v], true)[0].text).toBe(`Winner: ${label}`);
+    expect(v.candidates.map((candidate) => candidate.choiceId)).toEqual(['a', 'b', 'c']);
+    expect(v.rankSummary).toHaveLength(3);
+    expect(v.pairwise).toHaveLength(3);
+  });
+
   it('orders every table by question.choices, whatever order ranked_choice_votes arrive in', () => {
     const q = question();
     q.ranked_choice_votes = [...(q.ranked_choice_votes ?? [])].reverse();
