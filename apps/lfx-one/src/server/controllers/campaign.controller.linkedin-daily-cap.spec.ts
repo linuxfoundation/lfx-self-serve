@@ -231,6 +231,20 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
     ]);
   });
 
+  it('hands the legacy creator the corrected Germany while the cutover is dark', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => !(CUTOVER_FLAGS as unknown[]).includes(flag));
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', geoTargets: [{ label: 'Germany', urn: 'urn:li:geo:101165590' }] });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect((legacyCreate.mock.calls[0][1] as { linkedInConfig: { geoTargets: unknown } }).linkedInConfig.geoTargets).toEqual([
+      { label: 'Germany', urn: 'urn:li:geo:101282230' },
+    ]);
+  });
+
   // A variant's ad name, description and call to action (#5764 rows 16–17); the rules are table rows in
   // `campaign-linkedin-variant-fields.utils.spec.ts`.
   const variant = { introText: 'Join us', headline: 'Summit' };

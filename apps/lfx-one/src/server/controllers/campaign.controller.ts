@@ -1333,6 +1333,11 @@ export class CampaignController {
           service: 'campaign_controller',
         });
       }
+      // Germany and the United Kingdom as the old shared map resolved them, corrected in the request itself (LFXV2-2665),
+      // so the legacy creator, which is handed `req.body` while the cutover is off, targets the right country too.
+      if (body?.linkedInConfig && 'geoTargets' in body.linkedInConfig) {
+        body.linkedInConfig.geoTargets = correctLinkedInGeoTargets(body.linkedInConfig.geoTargets);
+      }
       // A variant's ad name, description and call to action (#5764 rows 16–17): refused, never dropped, while this
       // deployment cannot send them, and held to campaign-service's rules. See `linkedInVariantFieldsRefusal`.
       const linkedInVariantRefusal = linkedInVariantFieldsRefusal(body?.linkedInConfig, {
