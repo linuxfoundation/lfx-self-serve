@@ -12,6 +12,7 @@ import type {
   VoteSummaryRecipientOutcome,
   VoteVoterStatusFilter,
 } from '../interfaces/poll.interface';
+import { lfxColors } from './colors.constants';
 
 /** Rolling deadline window shared by personal and management vote summaries. */
 export const VOTES_STATS_WINDOW_DAYS = 7;
@@ -40,6 +41,19 @@ export const VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT = 200;
 
 /** Comments the vote detail Overview previews before linking to the Comments tab (#4448). */
 export const VOTE_OVERVIEW_COMMENT_PREVIEW_LIMIT = 3;
+
+/** Most common Condorcet ballot orders shown before expanding the full breakdown (#6112). */
+export const VOTE_CONDORCET_BALLOT_PREVIEW_LIMIT = 5;
+
+/** Rank-position colors, not winner/loser colors; counts and rank labels accompany every segment (#6112). */
+export const VOTE_CONDORCET_RANK_COLORS = [
+  lfxColors.blue[600],
+  lfxColors.violet[400],
+  lfxColors.amber[400],
+  lfxColors.gray[400],
+  lfxColors.blue[300],
+  lfxColors.gray[600],
+];
 
 /**
  * Response header carrying the BFF-stamped create-completion time (epoch ms) on POST /api/votes (GH-2826);

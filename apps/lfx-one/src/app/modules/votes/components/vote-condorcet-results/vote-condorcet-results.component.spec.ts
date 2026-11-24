@@ -75,26 +75,25 @@ describe('VoteCondorcetResultsComponent', () => {
     {
       name: 'a Condorcet winner',
       overrides: {},
-      heading: 'Condorcet IRV – Final Voting Outcome',
-      message: 'Candidate A is the winner, having defeated all other candidates in head-to-head matchups.',
+      heading: 'Candidate A won',
+      message: 'Preferred over every other option in head-to-head comparisons.',
     },
     {
       name: 'an IRV winner',
       overrides: { outcome: CondorcetOutcome.IRV_WINNER, winnerNames: ['Candidate B'], usedIrv: true },
-      heading: 'Instant Runoff Voting (IRV) – Final Voting Outcome',
-      message:
-        'No candidate beat every other candidate head-to-head, so instant-runoff elimination decided the result. Candidate B is declared the winner after the IRV elimination process.',
+      heading: 'Candidate B won',
+      message: 'No option beat every other option head-to-head, so instant-runoff elimination decided the result.',
     },
     {
       name: 'a tie',
       overrides: { outcome: CondorcetOutcome.TIE, winnerNames: ['Candidate A', 'Candidate B'], usedIrv: true },
-      heading: 'Instant Runoff Voting (IRV) – Final Voting Outcome',
+      heading: 'Tie — no single winner',
       message: 'There is a tie between Candidate A and Candidate B. No single winner can be determined.',
     },
     {
       name: 'no winner',
       overrides: { outcome: CondorcetOutcome.NO_WINNER, winnerNames: [], usedIrv: true },
-      heading: 'Instant Runoff Voting (IRV) – Final Voting Outcome',
+      heading: 'No winner determined',
       message: 'No winner could be determined.',
     },
   ])('explains $name', ({ overrides, heading, message }) => {
@@ -168,7 +167,7 @@ describe('VoteCondorcetResultsComponent', () => {
     const rows = Array.from(byTestId(el, 'vote-condorcet-ballots')?.querySelectorAll('tbody tr') ?? []);
     expect(rows.map((row) => Array.from(row.children).map((cell) => text(cell)))).toEqual([
       ['3', 'Candidate A', 'Candidate B'],
-      ['2', 'Candidate B', ''],
+      ['2', 'Candidate B', 'Not ranked'],
     ]);
     expect(byTestId(el, 'vote-condorcet-ballots-unavailable')).toBeNull();
   });
@@ -226,12 +225,128 @@ describe('VoteCondorcetResultsComponent', () => {
   it('renders the candidate rank summary with ordinal headers', () => {
     const el = render(question({ ranks: [1, 2, 3, 11, 12, 22] }));
     const summary = byTestId(el, 'vote-condorcet-rank-summary');
-    expect(Array.from(summary?.querySelectorAll('thead th') ?? []).map((th) => text(th))).toEqual(['Candidates', '1st', '2nd', '3rd', '11th', '12th', '22nd']);
+    expect(Array.from(summary?.querySelectorAll('thead th') ?? []).map((th) => text(th))).toEqual(['Options', '1st', '2nd', '3rd', '11th', '12th', '22nd']);
     const rows = Array.from(summary?.querySelectorAll('tbody tr') ?? []);
     expect(rows.map((row) => Array.from(row.children).map((cell) => text(cell)))).toEqual([
       ['Candidate A', '3', '2'],
       ['Candidate B', '2', '3'],
     ]);
+  });
+
+  it('places preference distributions before the collapsed ballot breakdown', () => {
+    const el = render(question());
+    const ids = Array.from(el.querySelectorAll('section')).map((section) => section.getAttribute('data-testid'));
+    expect(ids).toEqual([
+      'vote-condorcet-outcome',
+      'vote-condorcet-standings',
+      'vote-condorcet-pairwise',
+      'vote-condorcet-rank-summary',
+      'vote-condorcet-ballots',
+    ]);
+    const details = byTestId(el, 'vote-condorcet-ballots-details') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    byTestId(el, 'vote-condorcet-ballots-toggle')!.click();
+    expect(details.open).toBe(true);
+    byTestId(el, 'vote-condorcet-ballots-toggle')!.click();
+    expect(details.open).toBe(false);
+  });
+
+  it('previews five ballot orders, expands all, and returns to the preview', () => {
+    const patterns = Array.from({ length: 7 }, (_, index) => ({
+      key: `synthetic-pattern-${index}`,
+      count: 7 - index,
+      ranking: ['Candidate A'],
+    }));
+    const el = render(question({ ballotPatterns: patterns }));
+    const rows = () => byTestId(el, 'vote-condorcet-ballots')!.querySelectorAll('tbody tr');
+    const toggle = byTestId(el, 'vote-condorcet-ballots-show-all') as HTMLButtonElement;
+    expect(rows()).toHaveLength(5);
+    expect(toggle.type).toBe('button');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(el.querySelector(`[id="${toggle.getAttribute('aria-controls')}"]`)).not.toBeNull();
+    toggle.click();
+    fixture.detectChanges();
+    expect(rows()).toHaveLength(7);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    toggle.click();
+    fixture.detectChanges();
+    expect(rows()).toHaveLength(5);
+  });
+
+  it('does not offer show all when there are at most five orders', () => {
+    const el = render(question());
+    expect(byTestId(el, 'vote-condorcet-ballots-show-all')).toBeNull();
+  });
+
+  it('normalizes each preference bar within ballots ranking that option, with exact counts as text', () => {
+    const el = render(
+      question({
+        rankSummary: [
+          { candidate: A, counts: [1, 3] },
+          { candidate: B, counts: [0, 2] },
+        ],
+      })
+    );
+    const a = byTestId(el, 'vote-condorcet-preference-a')!;
+    const b = byTestId(el, 'vote-condorcet-preference-b')!;
+    expect(text(a)).toContain('Ranked on 4 ballots');
+    expect(text(b)).toContain('Ranked on 2 ballots');
+    expect(text(a).replace(/\s/g, '')).toContain('1st:12nd:3');
+    const widths = (row: HTMLElement) => Array.from(row.querySelectorAll('[aria-hidden="true"] > span')).map((segment) => (segment as HTMLElement).style.width);
+    expect(widths(a)).toEqual(['25%', '75%']);
+    expect(widths(b)).toEqual(['0%', '100%']);
+    expect(text(byTestId(el, 'vote-condorcet-rank-summary'))).toContain('Ballots omitting the option and abstentions are not included.');
+    expect(a.querySelector('.h-5')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('handles zero rankings without NaN or a false filled bar', () => {
+    const el = render(question({ rankSummary: [{ candidate: A, counts: [0, 0] }] }));
+    const row = byTestId(el, 'vote-condorcet-preference-a')!;
+    expect(text(row)).toContain('No rankings recorded for this option.');
+    expect(Array.from(row.querySelectorAll('[aria-hidden="true"] > span')).map((segment) => (segment as HTMLElement).style.width)).toEqual(['0%', '0%']);
+    expect(row.innerHTML).not.toMatch(/NaN|Infinity/);
+  });
+
+  it('keeps the service winner when another option has more first choices', () => {
+    const el = render(
+      question({
+        rankSummary: [
+          { candidate: A, counts: [1, 4] },
+          { candidate: B, counts: [4, 1] },
+        ],
+      })
+    );
+    expect(text(byTestId(el, 'vote-condorcet-outcome-heading'))).toBe('Candidate A won');
+    expect(text(byTestId(el, 'vote-condorcet-method-explanation'))).toContain('First-choice votes alone do not decide a Condorcet result.');
+    expect(text(byTestId(el, 'vote-condorcet-winner-matchups'))).toContain('Candidate A vs Candidate B');
+  });
+
+  it('never highlights winner matchups or a trophy before closure or for an IRV fallback', () => {
+    const el = render(question(), false);
+    expect(text(byTestId(el, 'vote-condorcet-outcome-heading'))).toBe('Voting in progress');
+    expect(byTestId(el, 'vote-condorcet-winner-matchups')).toBeNull();
+    expect(el.querySelector('.fa-trophy')).toBeNull();
+    render(question({ usedIrv: true, outcome: CondorcetOutcome.IRV_WINNER }));
+    expect(byTestId(el, 'vote-condorcet-winner-matchups')).toBeNull();
+    expect(text(byTestId(el, 'vote-condorcet-outcome'))).toContain('Instant-runoff fallback');
+  });
+
+  it('omits the focused matchup summary when the matrix is unavailable', () => {
+    const el = render(
+      question({
+        pairwise: [
+          {
+            candidate: A,
+            cells: [
+              { value: '—', result: 'self' },
+              { value: '0–0', result: 'neutral' },
+            ],
+          },
+        ],
+      })
+    );
+    expect(byTestId(el, 'vote-condorcet-winner-matchups')).toBeNull();
+    expect(text(byTestId(el, 'vote-condorcet-outcome-heading'))).toBe('Candidate A won');
   });
 
   it('numbers the question heading only when asked', () => {

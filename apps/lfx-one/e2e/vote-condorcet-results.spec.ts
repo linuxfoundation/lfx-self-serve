@@ -139,6 +139,7 @@ test.describe('Condorcet ballot result states', () => {
     await page.route(`**/api/votes/${VOTE_UID}/voters`, (route) => fulfillJson(route, []));
     await openResults(page, new URL(baseURL!).origin);
     await expect(page.getByTestId('vote-condorcet-ballots-empty')).toBeVisible({ timeout: RENDER_TIMEOUT });
+    await page.getByTestId('vote-condorcet-rank-counts-toggle').click();
     for (const width of [390, 1440]) {
       await page.setViewportSize({ width, height: 844 });
       for (const id of ['vote-condorcet-pairwise', 'vote-condorcet-rank-summary']) {

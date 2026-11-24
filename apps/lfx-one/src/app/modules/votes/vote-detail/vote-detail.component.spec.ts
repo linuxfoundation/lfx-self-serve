@@ -493,7 +493,8 @@ describe('VoteDetailComponent', () => {
       expect(question.winnerNames).toEqual(['No']);
       expect(question.ballotPatterns).toEqual([{ key: 'choice-no\u0000choice-yes', count: 2, ranking: ['No', 'Yes'] }]);
       expect(condorcetQuestion(fixture).isClosed()).toBe(true);
-      expect(testId(fixture, 'vote-condorcet-outcome-message')?.textContent).toContain('No is the winner');
+      expect(testId(fixture, 'vote-condorcet-outcome-heading')?.textContent).toContain('No won');
+      expect(testId(fixture, 'vote-condorcet-outcome-message')?.textContent).toContain('Preferred over every other option');
       expect(voteService.getVoteVoters).toHaveBeenCalledWith('vote-1');
     });
 
