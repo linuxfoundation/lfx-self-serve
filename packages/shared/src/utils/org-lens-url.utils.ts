@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CDP_COMPANY_ID_RESERVED_PATTERN,
   ORG_ACCOUNT_ID_PATTERN,
   ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM,
   ORG_EASYCLA_PATH,
@@ -98,7 +99,9 @@ export function orgRollUpAccount(rootUid: string, familyName?: string | null): A
  * True when the (already lowercased) segment is shaped like a slug, is not a reserved page name, and
  * is not shaped like an SFID — the resolver classifies SFID syntax first, so a published slug that
  * happens to look like one (`0014100000mgaaaaaa`) would resolve as an account id, not as this slug;
- * such an organization is addressed by its real SFID instead. Does not mean the org exists — only
+ * such an organization is addressed by its real SFID instead. A CDP id (a crowd.dev organization UUID) is
+ * never a slug either: `/company/{CDP id}` is a CDP company page (spec 062 FR-024), so an organization
+ * whose slug has that shape is addressed by its SFID. Does not mean the org exists — only
  * that a lookup is worth making. Uses `=== true`, not `in`: a plain-object `in` test also matches
  * `Object.prototype` keys (`'constructor' in {}` is true).
  */
@@ -107,6 +110,7 @@ export function isOrgSlugSegment(segment: string): boolean {
     ORG_SLUG_SEGMENT_PATTERN.test(segment) &&
     !isOrgAccountIdSegment(segment) &&
     !ORG_ROLLUP_SEGMENT_RESERVED_PATTERN.test(segment) &&
+    !CDP_COMPANY_ID_RESERVED_PATTERN.test(segment) &&
     ORG_LENS_PAGE_SEGMENTS[segment] !== true
   );
 }

@@ -3,6 +3,7 @@
 
 import type { Signal, WritableSignal } from '@angular/core';
 import type { Subject } from 'rxjs';
+import type { CdpCompanyItem } from './cdp-company.interface';
 
 /** Selector row. Spec 002: the org account id (18-char SFID) is the canonical identifier; `uid` and `accountId` both carry it. */
 export interface OrgItem {
@@ -564,4 +565,21 @@ export interface AccessAwareOrgsCacheEntry {
   familyRoots: [string, OrgFamilyRoot][];
   /** Stored with a `failed` staff check so a short-TTL hit renders the reference that was logged; a `failed` entry without it (or with `isStaff: true` or `isContractor: true`) fails the shape guard. */
   correlationId?: string;
+}
+
+/** One CDP row in the org selector: the search item plus the logo fallback initial, computed once when mapped. */
+export interface OrgSelectorCdpRow extends CdpCompanyItem {
+  initial: string;
+}
+
+/**
+ * The org selector's CDP group for the current search term (spec 062, FR-021–FR-023): `loading` until the CDP
+ * search settles, then its rows, or `unavailable` when the read missed its deadline, failed, or its list was stale.
+ */
+export interface OrgSelectorCdpGroup {
+  /** The trimmed term the group answers; the group renders only while it is still the search box's term. */
+  term: string;
+  status: 'loading' | 'settled';
+  items: OrgSelectorCdpRow[];
+  unavailable: boolean;
 }

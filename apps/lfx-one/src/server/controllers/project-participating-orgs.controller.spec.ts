@@ -4,11 +4,11 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getSummary, getPage, getExportRows, getOrgLensReadableAccountIds } = vi.hoisted(() => ({
+const { getSummary, getPage, getExportRows, getOrgLensLinks } = vi.hoisted(() => ({
   getSummary: vi.fn(),
   getPage: vi.fn(),
   getExportRows: vi.fn(),
-  getOrgLensReadableAccountIds: vi.fn(),
+  getOrgLensLinks: vi.fn(),
 }));
 
 vi.mock('../services/project-participating-orgs.service', () => ({
@@ -16,7 +16,7 @@ vi.mock('../services/project-participating-orgs.service', () => ({
     public getSummary = getSummary;
     public getPage = getPage;
     public getExportRows = getExportRows;
-    public getOrgLensReadableAccountIds = getOrgLensReadableAccountIds;
+    public getOrgLensLinks = getOrgLensLinks;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -67,6 +67,7 @@ async function call(handler: Handler, query: Record<string, unknown>) {
 
 const member: ProjectParticipatingOrg = {
   participantKey: '001SYNTHMEMBERAAAA',
+  organizationId: null,
   accountId: '001SYNTHMEMBERAAAA',
   name: 'Synthetic, Member',
   logoUrl: null,
@@ -154,7 +155,7 @@ describe('ProjectParticipatingOrgsController.getOrgLensLinks', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    getOrgLensReadableAccountIds.mockResolvedValue([A]);
+    getOrgLensLinks.mockResolvedValue({ readableAccountIds: [A], cdpCompanyIds: [] });
   });
 
   it.each([
@@ -171,14 +172,14 @@ describe('ProjectParticipatingOrgsController.getOrgLensLinks', () => {
     const error = next.mock.calls[0][0];
     expect(error).toBeInstanceOf(ServiceValidationError);
     expect(error.validationErrors[0].field).toBe('accountIds');
-    expect(getOrgLensReadableAccountIds).not.toHaveBeenCalled();
+    expect(getOrgLensLinks).not.toHaveBeenCalled();
   });
 
   it('dedupes the ids and answers the readable subset, uncacheable', async () => {
     const { res } = await call('getOrgLensLinks', { accountIds: ` ${A},${B},${A}` });
 
-    expect(getOrgLensReadableAccountIds).toHaveBeenCalledWith(expect.anything(), [A, B]);
-    expect(res.json).toHaveBeenCalledWith({ readableAccountIds: [A] });
+    expect(getOrgLensLinks).toHaveBeenCalledWith(expect.anything(), { accountIds: [A, B], nonMemberAccountIds: [], cdpIds: [] });
+    expect(res.json).toHaveBeenCalledWith({ readableAccountIds: [A], cdpCompanyIds: [] });
     expect(res.headers['Cache-Control']).toBe('private, no-store');
   });
 });

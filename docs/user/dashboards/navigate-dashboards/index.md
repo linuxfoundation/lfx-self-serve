@@ -4,7 +4,7 @@ description: How to switch lenses and use the LFX Self Serve dashboard effective
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, lens, navigation, company, employer]
-last_updated: 2026-11-23
+last_updated: 2026-11-24
 intercom_collection: Dashboards
 ---
 
@@ -41,7 +41,7 @@ The **Foundation** lens (`/foundation/overview`) is available to board members, 
 
 ## Project lens
 
-The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics. **Participating companies** (`/project/participating-orgs`) lists the companies contributing to the project. LF Staff see it on every project; executive directors see it for a foundation they direct and for projects directly under it (projects nested deeper don't show the link, though the page itself still opens from its address). Other roles don't see the page.
+The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics. **Participating companies** (`/project/participating-orgs`) lists the companies contributing to the project. LF Staff see it on every project; executive directors see it for a foundation they direct and for projects directly under it (projects nested deeper don't show the link, though the page itself still opens from its address). Other roles don't see the page. A member company's name links to its membership page when you can open the company in the Company lens; a non-member's name links to its Company lens home when you can open it there; for LF Staff, a company seen only in open source activity links to its [CDP company](../../company/cdp-companies/) page. Any other name is plain text.
 
 ## Company lens
 

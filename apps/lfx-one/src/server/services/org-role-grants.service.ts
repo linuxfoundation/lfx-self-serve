@@ -3,7 +3,9 @@
 
 import {
   ACCESS_CHECK_BATCH_SIZE,
+  CDP_GLOBAL_ORG_ADMINS_TEAM_ID,
   LF_CONTRACTOR_TEAM_ID,
+  LF_STAFF_TEAM_ID,
   LF_TEAM_IDS,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
   ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS,
@@ -40,6 +42,7 @@ import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/ut
 import { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { AccessCheckService } from './access-check.service';
 import { LaunchDarklyServerService } from './launchdarkly-server.service';
 import { logger } from './logger.service';
@@ -49,11 +52,25 @@ import { cacheKeyNamespace, valkeyService } from './valkey.service';
 /**
  * #3077 — every team that can read every organization, whatever grant gives it that read: plain
  * `auditor` (`LF_TEAM_IDS`) or the `global_org_admin` relation (`ORG_ADMIN_TEAM_IDS`). Org Lens search
- * and the switcher follow this list (`RoleGrantsResponse.isStaff`); it is never a read gate. Built here,
- * not in the shared package, so neither team name reaches the browser bundle: a top-level spread in a
- * shared module survives tree-shaking. A new team joins one of the two source lists, never this one.
+ * and the switcher follow this list (`RoleGrantsResponse.isStaff`); it is never a read gate (the one
+ * company-wide read gate built from team membership is the CDP audience below, which does not use this
+ * list). Built here, not in the shared package, so neither team name reaches the browser bundle: a
+ * top-level spread in a shared module survives tree-shaking. A new team joins one of the two source
+ * lists, never this one.
  */
 const ORG_WIDE_READ_TEAM_IDS = [...LF_TEAM_IDS, ...ORG_ADMIN_TEAM_IDS] as const;
+
+/**
+ * Spec 062 FR-010 — the CDP company audience: `lf-staff`, plus the one global org admins team while the
+ * `OrgLensCdpGlobalOrgAdmins` server switch is on (DR-040), and nothing else. Unlike `ORG_WIDE_READ_TEAM_IDS`
+ * this IS a read gate (the gate of record for CDP companies, an ADR-0043 amendment): `requireCdpAudience` asks
+ * the authorizer for `team:<id>#member` on exactly these ids in one strict batch. Composed from the dedicated
+ * `CDP_GLOBAL_ORG_ADMINS_TEAM_ID` literal, never from `ORG_ADMIN_TEAM_IDS` or `LF_TEAM_IDS`, so a team added to
+ * either source list (Org Lens search) never silently joins it; `global-org-auditors` is never in it.
+ */
+export function cdpAudienceTeamIds(): readonly string[] {
+  return isServerFeatureEnabled(ServerFeatureFlag.OrgLensCdpGlobalOrgAdmins) ? [LF_STAFF_TEAM_ID, CDP_GLOBAL_ORG_ADMINS_TEAM_ID] : [LF_STAFF_TEAM_ID];
+}
 
 /** Loads caller role grants from b2b_org_settings (FR-018a "what can I see" pattern; spec 022 data-model.md). */
 export class OrgRoleGrantsService {
@@ -792,6 +809,8 @@ export class OrgRoleGrantsService {
    * `b2b_org:<uid>#auditor` directly. It is a separate list from
    * `PersonaDetectionService.checkLFStaff` (`LF_STAFF_TEAM_ID`), with separate
    * consumers: that one gates non-Org-Lens surfaces, so widening either must not widen the other.
+   * The CDP company read gate (spec 062) is the one team-membership read gate, and it uses neither:
+   * `resolveCdpAudience` runs its own strict batch over `cdpAudienceTeamIds()`.
    *
    * No permission semantics live here: the relation is defined in the FGA model and this only reads the
    * authorizer's answer, which is why it does not conflict with the gateway-enforced-authorization

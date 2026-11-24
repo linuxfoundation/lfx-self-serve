@@ -86,6 +86,12 @@ export const PROJECT_PARTICIPATING_ORGS_NO_ORG_LENS_ACCESS_TOOLTIP = "Ask the co
 /** Query param carrying the comma-separated member account ids of the shown page for the Org Lens links read. */
 export const PROJECT_PARTICIPATING_ORGS_LINKS_ACCOUNT_IDS_PARAM = 'accountIds';
 
+/** Query param carrying the comma-separated non-member account ids of the shown page for the links read (spec 062 FR-040). */
+export const PROJECT_PARTICIPATING_ORGS_LINKS_NON_MEMBER_ACCOUNT_IDS_PARAM = 'nonMemberAccountIds';
+
+/** Query param carrying the comma-separated CDP ids (Unidentified rows' crowd.dev organization ids) of the shown page (spec 062 FR-040). */
+export const PROJECT_PARTICIPATING_ORGS_LINKS_CDP_IDS_PARAM = 'cdpIds';
+
 /** 503 copy when the authorizer cannot decide the project gate. */
 export const PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE = 'Unable to verify access to this project right now. Please try again.';
 

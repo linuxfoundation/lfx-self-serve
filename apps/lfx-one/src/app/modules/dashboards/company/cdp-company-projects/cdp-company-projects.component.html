@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-cdp-company-section-frame
+  sectionKey="projects"
+  [state]="section.state()"
+  [emptyState]="section.emptyState()"
+  [companyName]="section.companyName()"
+  (retry)="section.retry()">
+  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+    <lfx-table [value]="rows()" sortField="activities" [sortOrder]="-1" data-testid="cdp-company-projects-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col">Project</th>
+          <th scope="col" class="text-right">Contributors (2 years)</th>
+          <th scope="col" class="text-right">Activities (2 years)</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-row>
+        <tr data-testid="cdp-company-projects-row">
+          <td class="font-medium text-gray-900">{{ row.projectName }}</td>
+          <td class="text-right">{{ row.contributors | number }}</td>
+          <td class="text-right">{{ row.activities | number }}</td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  </lfx-card>
+</lfx-cdp-company-section-frame>

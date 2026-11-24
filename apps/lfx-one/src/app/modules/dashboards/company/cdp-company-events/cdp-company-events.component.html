@@ -1,0 +1,35 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-cdp-company-section-frame
+  sectionKey="events"
+  [state]="section.state()"
+  [emptyState]="section.emptyState()"
+  [companyName]="section.companyName()"
+  (retry)="section.retry()">
+  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+    <lfx-table [value]="rows()" sortField="eventDate" [sortOrder]="-1" data-testid="cdp-company-events-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col">Event</th>
+          <th scope="col">Date</th>
+          <th scope="col" class="text-right">Attendees</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-row>
+        <tr data-testid="cdp-company-events-row">
+          <td class="font-medium text-gray-900">{{ row.eventName }}</td>
+          <td>
+            @if (row.eventDate) {
+              {{ row.eventDate | date: 'mediumDate' : 'UTC' }}
+            } @else {
+              <span class="text-gray-400">&mdash;</span>
+            }
+          </td>
+          <td class="text-right">{{ row.attendees | number }}</td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  </lfx-card>
+  <p class="text-xs text-gray-500" data-testid="cdp-company-events-note">Events attended by at least 5 people from this company in the last 5 years.</p>
+</lfx-cdp-company-section-frame>

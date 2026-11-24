@@ -160,6 +160,9 @@ export class SnowflakeService {
           });
 
           const startTime = Date.now();
+          // Set when this query's own timeout fires (below); read by the catch so a caller that set
+          // `expectTimeout` can have its own deadline miss left out of the breaker count.
+          let timedOut = false;
 
           try {
             // ensurePool is inside try so a pool-creation failure during a HALF_OPEN
@@ -184,7 +187,6 @@ export class SnowflakeService {
             // connection at once, without executing, when it finally arrives. A statement is kept
             // for cancelling only while not `completed` (`complete` may fire synchronously, before
             // `execute` returns), so a statement that finished is never cancelled.
-            let timedOut = false;
             let runningStatement: Pick<RowStatement, 'cancel'> | undefined;
             const executePromise = pool.use(
               (connection: Connection) =>
@@ -271,6 +273,8 @@ export class SnowflakeService {
             const poolQueueFull = isPoolQueueFullError(error);
             const invalidRowCount = isInvalidRowCountError(error);
             const valueConversion = isValueConversionError(error);
+            // Only a miss of this query's own timer: a timeout reported by the SDK or the pool is a Snowflake fault.
+            const expectedTimeout = options?.expectTimeout === true && timedOut;
 
             if (expectedMissing || expectedInvalidIdentifier) {
               span.setStatus({ code: SpanStatusCode.OK });
@@ -295,6 +299,16 @@ export class SnowflakeService {
                 sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
                 err: error,
               });
+            } else if (expectedTimeout) {
+              // The caller set a deadline it expects to miss (spec 062 DR-043): the miss says the statement was slower
+              // than that caller can wait, not that Snowflake is down, so it frees the HALF_OPEN probe slot without
+              // booking a failure. Logged at warning by the caller, which knows why it set the deadline.
+              span.setStatus({
+                code: SpanStatusCode.ERROR,
+                message: error instanceof Error ? error.message : String(error),
+              });
+              span.setAttribute('snowflake.expected_timeout', true);
+              this.releaseProbe();
             } else if (poolQueueFull) {
               // Local backpressure: the query never reached Snowflake, so counting it would let a
               // traffic burst open the breaker and fail every query for the reset window. Not logged

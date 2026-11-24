@@ -8,15 +8,20 @@ import { ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
 import { Account, DisplayOrgItem, OrgItem, OrgRelatedCompanyRow, OrgRollUpFamily, OrgRollUpSetOrg, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, orgRollUpAccount } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { CdpCompanyService } from '@services/cdp-company.service';
 import { LensService } from '@services/lens.service';
 import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgSelectorComponent } from './org-selector.component';
+
+// Spec 062: CDP search stays off here — the selector never asks unless the audience is `available`.
+const cdpCompanyServiceStub = { availability: () => of('unavailable'), search: () => of({ items: [] }) };
 
 /**
  * What a pick in the selector does to the selection and to the address (spec 050 US2 — FR-013,
@@ -65,6 +70,7 @@ describe('OrgSelectorComponent.selectItem', () => {
       imports: [OrgSelectorComponent],
       providers: [
         provideNoopAnimations(),
+        { provide: CdpCompanyService, useValue: cdpCompanyServiceStub },
         { provide: OrgClaOnlyAccessService, useValue: { noteAddressed, isClaOnly: () => false } },
         {
           provide: AccountContextService,
@@ -119,7 +125,7 @@ describe('OrgSelectorComponent.selectItem', () => {
             parentNameByUid: signal(new Map<string, string>()),
           },
         },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnNotFound } },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnNotFound, isOnCdpCompanyPage: () => false } },
         // Spec 053: the FR-010 list-incomplete notice reads this service; a stub keeps the spec off HttpClient.
         { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retrying, retry } },
       ],
@@ -301,6 +307,7 @@ describe('OrgSelectorComponent navbar card', () => {
       imports: [OrgSelectorComponent],
       providers: [
         provideNoopAnimations(),
+        { provide: CdpCompanyService, useValue: cdpCompanyServiceStub },
         {
           provide: AccountContextService,
           useValue: {
@@ -351,7 +358,10 @@ describe('OrgSelectorComponent navbar card', () => {
             claManagerLookupFailed: signal(false),
           },
         },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: vi.fn(), isOnNotFound: vi.fn(() => false) } },
+        {
+          provide: OrgLensNavigationService,
+          useValue: { navigateToSelectedOrg: vi.fn(), isOnNotFound: vi.fn(() => false), isOnCdpCompanyPage: () => false },
+        },
         { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retrying: signal(false), retry: vi.fn() } },
         { provide: LensService, useValue: { previewingMenuLens: signal(false) } },
       ],
@@ -517,6 +527,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
       imports: [OrgSelectorComponent],
       providers: [
         provideNoopAnimations(),
+        { provide: CdpCompanyService, useValue: cdpCompanyServiceStub },
         {
           provide: AccountContextService,
           useValue: {
@@ -570,7 +581,15 @@ describe('OrgSelectorComponent family roll-ups', () => {
             parentNameByUid: signal(new Map<string, string>()),
           },
         },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: navigateSpy, navigateToRollUpHome: rollUpHomeSpy, isOnNotFound: onNotFound } },
+        {
+          provide: OrgLensNavigationService,
+          useValue: {
+            navigateToSelectedOrg: navigateSpy,
+            navigateToRollUpHome: rollUpHomeSpy,
+            isOnNotFound: onNotFound,
+            isOnCdpCompanyPage: () => false,
+          },
+        },
         { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retrying: signal(false), retry: vi.fn() } },
         { provide: LensService, useValue: { previewingMenuLens: signal(false) } },
       ],

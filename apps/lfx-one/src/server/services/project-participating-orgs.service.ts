@@ -6,21 +6,28 @@ import {
   PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS,
   PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE,
   PROJECT_PARTICIPATING_ORGS_PAGE_SIZE,
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
 } from '@lfx-one/shared/constants';
 
+import { resolveCdpAudience } from '../helpers/cdp-audience.helper';
 import { toIsoDate } from '../helpers/date-format.helper';
 import { filterConfirmedReadableAccountIds } from '../helpers/org-analytics-access.helper';
 import { resolveLfxOnePlatinumSchema } from '../helpers/snowflake-schema.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
+import { CdpCompanyService } from './cdp-company.service';
 import { logger } from './logger.service';
+import { MicroserviceProxyService } from './microservice-proxy.service';
 import { SnowflakeService } from './snowflake.service';
 import { withProjectParticipatingOrgsCache } from './valkey.service';
 
 import type {
+  B2bOrgIndexedDoc,
   MembershipTierClass,
   ProjectParticipatingOrg,
   ProjectParticipatingOrgsExportFilters,
+  ProjectParticipatingOrgsLinksQuery,
+  ProjectParticipatingOrgsOrgLensLinksResponse,
   ProjectParticipatingOrgsPage,
   ProjectParticipatingOrgsPageRow,
   ProjectParticipatingOrgsQuery,
@@ -30,10 +37,11 @@ import type {
   ProjectParticipatingOrgsSortField,
   ProjectParticipatingOrgsSummary,
   ProjectParticipatingOrgsSummaryRow,
+  QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
-const ORG_COLUMNS = `participant_key, account_id, participant_name, participant_logo_url, is_unidentified, is_member,
+const ORG_COLUMNS = `participant_key, account_id, organization_id, participant_name, participant_logo_url, is_unidentified, is_member,
           membership_tier_class, tier_rank, commits, commits_prev, commits_change, contributors, contributors_prev,
           contributors_change`;
 
@@ -55,6 +63,8 @@ const SORT_DIRECTIONS: Record<ProjectParticipatingOrgsSortDirection, string> = {
 /** Reads Project Lens → Participating Organizations from the lf-dbt project_lens tables. */
 export class ProjectParticipatingOrgsService {
   private readonly snowflakeService: SnowflakeService;
+  private readonly microserviceProxy = new MicroserviceProxyService();
+  private readonly cdpCompanyService = new CdpCompanyService();
 
   public constructor() {
     this.snowflakeService = SnowflakeService.getInstance();
@@ -95,6 +105,24 @@ export class ProjectParticipatingOrgsService {
       offset,
     ];
     return withProjectParticipatingOrgsCache(slug, 'page', discriminator, () => this.fetchPage(req, slug, { ...query, pageSize, offset }), isPage);
+  }
+
+  /**
+   * Spec 062 FR-040, DR-041 — which of the shown page's companies the caller can open, decided per caller and never
+   * cached here. Three independent lookups, each dropping only the links it decides when it fails:
+   * - member account ids: the caller's confirmed access roster (unchanged);
+   * - non-member account ids: one batched `b2b_org` read of the Company Lens index with the caller's own token — the
+   *   read `/company/{segment}` resolves through — so an access grant on an account with no indexed company never links;
+   * - CDP ids: only after the strict CDP audience check passes (never while impersonating), from one bound read of the
+   *   addressable CDP companies. Outside the audience the answer is `[]` with the same shape (FR-012).
+   */
+  public async getOrgLensLinks(req: Request, query: ProjectParticipatingOrgsLinksQuery): Promise<ProjectParticipatingOrgsOrgLensLinksResponse> {
+    const [members, nonMembers, cdpCompanyIds] = await Promise.all([
+      this.getOrgLensReadableAccountIds(req, query.accountIds),
+      this.getIndexedNonMemberAccountIds(req, query.nonMemberAccountIds),
+      this.getAddressableCdpIds(req, query.cdpIds),
+    ]);
+    return { readableAccountIds: [...members, ...nonMembers], cdpCompanyIds };
   }
 
   /**
@@ -150,6 +178,61 @@ export class ProjectParticipatingOrgsService {
     const rows = result.rows.filter((row) => !!row.PARTICIPANT_KEY);
     const truncated = rows.length > PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS;
     return { rows: rows.slice(0, PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS).map(mapOrg), truncated };
+  }
+
+  /**
+   * The given non-member account ids the caller reads from the Company Lens index (`b2b_org`, caller's token, chunked as
+   * the role-grants lookup), in request order. A failed chunk drops only its own ids (DR-041).
+   */
+  private async getIndexedNonMemberAccountIds(req: Request, accountIds: string[]): Promise<string[]> {
+    if (accountIds.length === 0) return [];
+
+    const chunks: string[][] = [];
+    for (let i = 0; i < accountIds.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      chunks.push(accountIds.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+    const settled = await Promise.allSettled(
+      chunks.map((chunk) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'b2b_org',
+          tags: chunk.map((uid) => `b2b_org_uid:${uid}`),
+          // query-service's Goa parameter is `page_size`; each chunk is within its MaxPageSize.
+          page_size: chunk.length,
+        })
+      )
+    );
+
+    const indexed = new Set<string>();
+    for (const result of settled) {
+      if (result.status === 'rejected') {
+        logger.warning(req, 'get_project_participating_orgs_org_lens_links', 'Company index read failed; non-member links disabled for these rows', {
+          err: result.reason,
+        });
+        continue;
+      }
+      for (const resource of result.value?.resources ?? []) {
+        // query-service returns `resource.id` as `<type>:<uid>`; account ids carry no colon.
+        const uid = resource.id?.slice(resource.id.indexOf(':') + 1);
+        if (uid && resource.data) indexed.add(uid);
+      }
+    }
+    return accountIds.filter((id) => indexed.has(id));
+  }
+
+  /** The given CDP ids that are addressable CDP companies, for a caller in the CDP audience only; `[]` otherwise or on failure. */
+  private async getAddressableCdpIds(req: Request, cdpIds: string[]): Promise<string[]> {
+    if (cdpIds.length === 0) return [];
+    try {
+      const audience = await resolveCdpAudience(req);
+      if (audience.status !== 'in') return [];
+      return await this.cdpCompanyService.filterAddressableCdpIds(cdpIds);
+    } catch (error) {
+      logger.warning(req, 'get_project_participating_orgs_org_lens_links', 'CDP company read failed; CDP links disabled for this page', {
+        cdp_count: cdpIds.length,
+        err: error,
+      });
+      return [];
+    }
   }
 
   private async fetchSummary(req: Request, slug: string, range: ProjectParticipatingOrgsRange): Promise<ProjectParticipatingOrgsSummary | null> {
@@ -292,13 +375,15 @@ function orderBy(prefix: string, sort: ProjectParticipatingOrgsSortField, dir: P
 function mapOrg(row: ProjectParticipatingOrgsRow): ProjectParticipatingOrg {
   const isMember = row.IS_MEMBER === true;
   const accountId = row.ACCOUNT_ID || null;
+  const isUnidentified = row.IS_UNIDENTIFIED === true;
 
   return {
     participantKey: row.PARTICIPANT_KEY as string,
     accountId,
+    organizationId: isUnidentified ? row.ORGANIZATION_ID?.trim() || null : null,
     name: row.PARTICIPANT_NAME?.trim() || (row.PARTICIPANT_KEY as string),
     logoUrl: row.PARTICIPANT_LOGO_URL || null,
-    isUnidentified: row.IS_UNIDENTIFIED === true,
+    isUnidentified,
     isMember,
     membershipTierClass: isMember ? ((row.MEMBERSHIP_TIER_CLASS as MembershipTierClass | null) ?? null) : null,
     commits: Number(row.COMMITS ?? 0),

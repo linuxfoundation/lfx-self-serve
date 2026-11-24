@@ -4,6 +4,7 @@
 import { inject, Injectable } from '@angular/core';
 import { ActivatedRouteSnapshot, Router, UrlTree } from '@angular/router';
 import {
+  CDP_COMPANY_ID_RESERVED_PATTERN,
   ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_PARAMS_RESET,
@@ -116,14 +117,30 @@ export class OrgLensNavigationService {
   }
 
   /**
+   * True on a CDP company page (`/company/{CDP id}/…`, spec 062). Like the dead end, its address names no selected
+   * company, so re-picking the selection there is still a way out, to that company's home.
+   */
+  public isOnCdpCompanyPage(): boolean {
+    const segments = this.currentPrimarySegments();
+    return segments[0] === ORG_LENS_URL_ROOT && !!segments[1] && CDP_COMPANY_ID_RESERVED_PATTERN.test(segments[1]);
+  }
+
+  /**
    * True when the router's current address names an organization — `/org/{segment}/…` where the
-   * segment is not a page name and not the not-found dead end. On such a page the selection may
+   * segment is not a page name, not the not-found dead end and not a CDP company (spec 062, which names
+   * no B2B company, so the org list may still default the selection there). On such a page the selection may
    * only change by a switch that re-addresses it; a default written from the org list would leave
    * the address naming one organization and the page rendering another (spec 050 FR-013/FR-022).
    */
   public isOnAddressedPage(): boolean {
     const segments = this.currentPrimarySegments();
-    return segments[0] === ORG_LENS_URL_ROOT && !!segments[1] && ORG_LENS_PAGE_SEGMENTS[segments[1]] !== true && !this.isNotFoundAddress(segments);
+    return (
+      segments[0] === ORG_LENS_URL_ROOT &&
+      !!segments[1] &&
+      ORG_LENS_PAGE_SEGMENTS[segments[1]] !== true &&
+      !this.isNotFoundAddress(segments) &&
+      !CDP_COMPANY_ID_RESERVED_PATTERN.test(segments[1])
+    );
   }
 
   /**
@@ -198,6 +215,13 @@ export class OrgLensNavigationService {
       // Legacy `/org/{page}/…`: insert the organization.
       child = segments.slice(1);
       canonicalizes = true;
+    } else if (CDP_COMPANY_ID_RESERVED_PATTERN.test(segments[1])) {
+      // A CDP company page (spec 062): its sections are not company pages, so only the viewer's own pick leaves it,
+      // for the picked company's home, and Back returns to the CDP page. A default never touches it.
+      if (intent !== 'switch') {
+        return;
+      }
+      child = [this.orgLensHomePage()];
     } else {
       // `/org/{organization}/…`: a switch swaps the organization and keeps the page; a default
       // leaves an addressed organization alone.

@@ -861,6 +861,22 @@
       pointer-events: none;
     }
 
+    // Spec 062 FR-025 — a section this context never offers: greyed like a disabled item but still hoverable and
+    // focusable, so its reason tooltip can show. Not a control: no hover highlight.
+    &.is-unavailable {
+      opacity: 0.5;
+      cursor: not-allowed;
+
+      &:hover {
+        background: none;
+        color: theme('colors.gray.300');
+
+        .lfxn__item-icon {
+          color: inherit;
+        }
+      }
+    }
+
     &:focus-visible {
       outline: 2px solid var(--color-azure-azure-500);
       outline-offset: -2px;

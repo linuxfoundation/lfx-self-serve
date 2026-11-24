@@ -8,6 +8,8 @@
 export interface ProjectParticipatingOrgsRow {
   PARTICIPANT_KEY: string | null;
   ACCOUNT_ID: string | null;
+  /** crowd.dev organization id; set on Unidentified rows (spec 062 FR-040). */
+  ORGANIZATION_ID: string | null;
   PARTICIPANT_NAME: string | null;
   PARTICIPANT_LOGO_URL: string | null;
   IS_UNIDENTIFIED: boolean | null;

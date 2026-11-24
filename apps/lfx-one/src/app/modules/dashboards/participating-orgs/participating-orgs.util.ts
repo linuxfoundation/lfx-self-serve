@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CDP_COMPANY_ID_PATTERN,
+  CDP_COMPANY_ROUTE_PREFIX,
   LENS_DEFAULT_ROUTES,
   ORG_ACCOUNT_ID_PATTERN,
   PROJECT_PARTICIPATING_ORGS_CHANGE_TONE_CLASSES,
@@ -10,6 +12,8 @@ import {
 } from '@lfx-one/shared/constants';
 import type {
   ProjectParticipatingOrg,
+  ProjectParticipatingOrgsLinks,
+  ProjectParticipatingOrgsLinksQuery,
   ProjectParticipatingOrgsPage,
   ProjectParticipatingOrgChangeTone,
   ProjectParticipatingOrgMetricVm,
@@ -18,39 +22,49 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { orgUrlSegment } from '@lfx-one/shared/utils';
 
-/** A page's canonical member account ids, deduplicated and sorted, so the same members in another order compare equal. */
-export function memberAccountIdsOf(page: ProjectParticipatingOrgsPage): string[] {
-  const ids = page.rows.flatMap((row) => (row.isMember && row.accountId && ORG_ACCOUNT_ID_PATTERN.test(row.accountId) ? [row.accountId] : []));
-  return [...new Set(ids)].sort();
+/** Ids of one page the links read asks about, each deduplicated and sorted so the same rows in another order compare equal. */
+export function linksIdsOf(page: ProjectParticipatingOrgsPage): ProjectParticipatingOrgsLinksQuery {
+  const accountIds = new Set<string>();
+  const nonMemberAccountIds = new Set<string>();
+  const cdpIds = new Set<string>();
+  for (const row of page.rows) {
+    if (row.accountId && ORG_ACCOUNT_ID_PATTERN.test(row.accountId)) {
+      (row.isMember ? accountIds : nonMemberAccountIds).add(row.accountId);
+    } else if (row.isUnidentified && row.organizationId && CDP_COMPANY_ID_PATTERN.test(row.organizationId)) {
+      cdpIds.add(row.organizationId);
+    }
+  }
+  return { accountIds: [...accountIds].sort(), nonMemberAccountIds: [...nonMemberAccountIds].sort(), cdpIds: [...cdpIds].sort() };
 }
 
-/** Identity of one Org Lens links question: the project and the member set asked about. */
-export function linksKey(slug: string, accountIds: readonly string[]): string {
-  return `${slug}|${accountIds.join(',')}`;
+/** Identity of one links question: the project and the member, non-member and CDP ids asked about. */
+export function linksKey(slug: string, ids: ProjectParticipatingOrgsLinksQuery): string {
+  return `${slug}|${ids.accountIds.join(',')}|${ids.nonMemberAccountIds.join(',')}|${ids.cdpIds.join(',')}`;
 }
 
 /**
- * Decorate a wire row for the table. Only a member the viewer can open in Org Lens (`readableAccountIds`) gets a
- * link — to the company's membership page for this project's parent foundation; it falls back to the no-access hint
- * when either half of the address is missing, so a link is never built to a page that cannot resolve. While the
- * viewer's access is still loading (`readableAccountIds` null) a member name renders plain, with no hint yet.
+ * Decorate a wire row for the table (spec 062 FR-040, DR-041, DR-042). A member the viewer can open in Company Lens
+ * links to its membership page for this project's parent foundation, and falls back to the no-access hint when either
+ * half of that address is missing. A non-member the viewer can read links to its Company Lens home; an Unidentified
+ * company that is an addressable CDP company links to its CDP page. Anything else renders plain, with no hint. While
+ * the viewer's links are still loading (`links` null) every name renders plain, with no hint yet.
  */
 export function decorateParticipatingOrgRow(
   row: ProjectParticipatingOrg,
   foundationSlug: string | null,
-  readableAccountIds: ReadonlySet<string> | null
+  links: ProjectParticipatingOrgsLinks | null
 ): ProjectParticipatingOrgRowVm {
-  const readable = row.isMember && row.accountId !== null && !!readableAccountIds?.has(row.accountId);
-  const segment = readable && foundationSlug ? orgUrlSegment({ uid: row.accountId }) : null;
-  const orgLensLink = segment && foundationSlug ? [LENS_DEFAULT_ROUTES.org, segment, 'memberships', foundationSlug] : null;
+  // Built from the account id alone, so it is null for any id Company Lens cannot address — never a link to nowhere.
+  const segment = row.accountId === null ? null : orgUrlSegment({ uid: row.accountId });
+  const kind = nameKind(row, segment, foundationSlug, links);
   const tier = row.isMember ? row.membershipTierClass : null;
   return {
     participantKey: row.participantKey,
     name: row.name,
     logoUrl: row.logoUrl,
     initial: row.name.trim().charAt(0).toUpperCase() || '?',
-    nameKind: nameKind(row, orgLensLink !== null, readableAccountIds === null),
-    orgLensLink,
+    nameKind: kind,
+    orgLensLink: nameLink(row, segment, foundationSlug, kind),
     membershipLabel: row.isMember ? `${tier ?? ''} Member`.trim() : null,
     membershipBadgeClass: row.isMember
       ? ((tier && PROJECT_PARTICIPATING_ORGS_TIER_BADGE_CLASSES[tier]) ?? PROJECT_PARTICIPATING_ORGS_TIER_BADGE_DEFAULT_CLASS)
@@ -60,10 +74,32 @@ export function decorateParticipatingOrgRow(
   };
 }
 
-function nameKind(row: ProjectParticipatingOrg, linked: boolean, accessPending: boolean): ProjectParticipatingOrgNameKind {
-  if (linked) return 'org-lens-link';
-  if (row.isMember && !accessPending) return 'no-access';
+function nameKind(
+  row: ProjectParticipatingOrg,
+  segment: string | null,
+  foundationSlug: string | null,
+  links: ProjectParticipatingOrgsLinks | null
+): ProjectParticipatingOrgNameKind {
+  if (!links) return 'plain';
+  if (row.isMember) {
+    return segment && foundationSlug && row.accountId !== null && links.readable.has(row.accountId) ? 'org-lens-link' : 'no-access';
+  }
+  if (segment && row.accountId !== null && links.readable.has(row.accountId)) return 'org-lens-home-link';
+  if (row.isUnidentified && row.organizationId !== null && links.cdpCompanyIds.has(row.organizationId)) return 'cdp-link';
   return 'plain';
+}
+
+function nameLink(row: ProjectParticipatingOrg, segment: string | null, foundationSlug: string | null, kind: ProjectParticipatingOrgNameKind): string[] | null {
+  switch (kind) {
+    case 'org-lens-link':
+      return [LENS_DEFAULT_ROUTES.org, segment ?? '', 'memberships', foundationSlug ?? ''];
+    case 'org-lens-home-link':
+      return [LENS_DEFAULT_ROUTES.org, segment ?? ''];
+    case 'cdp-link':
+      return ['/', CDP_COMPANY_ROUTE_PREFIX, row.organizationId ?? ''];
+    default:
+      return null;
+  }
 }
 
 /** Whole-percent change from the modeled fraction; "New" from a zero baseline, "—" with no comparison (All Time, zero-to-zero). */

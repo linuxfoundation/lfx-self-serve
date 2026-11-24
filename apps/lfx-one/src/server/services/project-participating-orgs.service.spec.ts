@@ -161,6 +161,7 @@ describe('ProjectParticipatingOrgsService.getPage', () => {
         {
           participantKey: MEMBER_A,
           accountId: MEMBER_A,
+          organizationId: null,
           name: 'Synthetic Member A',
           logoUrl: null,
           isUnidentified: false,

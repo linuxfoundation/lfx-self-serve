@@ -103,6 +103,9 @@ export const LF_STAFF_TEAM_ID = 'lf-staff';
  *
  * Never a read gate: `assertOrgLensRead` asks the authorizer for `b2b_org:<uid>#auditor` directly,
  * so an explicitly-granted contractor still reads that org — this list only drives the affordance.
+ * The CDP company exception (spec 062 FR-010) is a read gate built from team membership, but not from
+ * this list: it is `LF_STAFF_TEAM_ID` plus `CDP_GLOBAL_ORG_ADMINS_TEAM_ID` (server-only `cdpAudienceTeamIds()`),
+ * so `global-org-auditors` never reads CDP companies.
  */
 export const LF_TEAM_IDS = ['lf-staff', 'global-org-auditors'] as const;
 
@@ -119,6 +122,16 @@ export const LF_TEAM_IDS = ['lf-staff', 'global-org-auditors'] as const;
  * joins `LF_TEAM_IDS` (plain `auditor`) or this list.
  */
 export const ORG_ADMIN_TEAM_IDS = ['global_org_admin'] as const;
+
+/**
+ * Spec 062 FR-010, DR-040, DR-046 — the one global org admins team the CDP company audience admits (behind the
+ * `OrgLensCdpGlobalOrgAdmins` server switch). Deliberately its own literal, NOT derived from `ORG_ADMIN_TEAM_IDS`:
+ * that list drives Org Lens search and grows whenever a company-wide team joins it, and a team added there must not
+ * silently join the CDP audience — FR-010 admits exactly `lf-staff` and this team, and DR-046's privacy conditions
+ * (a named owner who reviews additions) were met for this team alone. A second CDP team needs its own decision.
+ * Kept a plain literal so the browser bundle drops it; only the server composes the audience.
+ */
+export const CDP_GLOBAL_ORG_ADMINS_TEAM_ID = 'global_org_admin';
 
 /**
  * #2961 — OpenFGA team id for LF contractors. Read by the role-grants lookup only to tell a contractor

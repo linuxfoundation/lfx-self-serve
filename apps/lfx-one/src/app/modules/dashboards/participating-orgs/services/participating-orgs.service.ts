@@ -11,9 +11,13 @@ import {
   PROJECT_PARTICIPATING_ORGS_EXPORT_TRUNCATED_HEADER,
   PROJECT_PARTICIPATING_ORGS_EXPORT_TRUNCATED_MESSAGE,
   PROJECT_PARTICIPATING_ORGS_LINKS_ACCOUNT_IDS_PARAM,
+  PROJECT_PARTICIPATING_ORGS_LINKS_CDP_IDS_PARAM,
+  PROJECT_PARTICIPATING_ORGS_LINKS_NON_MEMBER_ACCOUNT_IDS_PARAM,
 } from '@lfx-one/shared/constants';
 import type {
   ProjectParticipatingOrgsExportFilters,
+  ProjectParticipatingOrgsLinks,
+  ProjectParticipatingOrgsLinksQuery,
   ProjectParticipatingOrgsOrgLensLinksResponse,
   ProjectParticipatingOrgsPage,
   ProjectParticipatingOrgsQuery,
@@ -57,18 +61,26 @@ export class ParticipatingOrgsService {
   }
 
   /**
-   * The page's member companies the viewer can open in Org Lens. Browser only: on the server it emits `null`
-   * (links pending), so server rendering never waits on the per-caller access check. A failed read yields no links.
+   * Which of the page's companies the viewer can open (spec 062 FR-040): members and non-members by account id, and
+   * Unidentified companies by CDP id. Browser only: on the server it emits `null` (links pending), so server rendering
+   * never waits on the per-caller check. Nothing to ask yields no links; a failed read yields no links either.
    */
-  public getOrgLensReadableAccountIds(slug: string, accountIds: string[]): Observable<ReadonlySet<string> | null> {
+  public getOrgLensLinks(slug: string, ids: ProjectParticipatingOrgsLinksQuery): Observable<ProjectParticipatingOrgsLinks | null> {
     if (!isPlatformBrowser(this.platformId)) return of(null);
-    if (accountIds.length === 0) return of(new Set<string>());
-    const params = strictHttpParams().set(PROJECT_PARTICIPATING_ORGS_LINKS_ACCOUNT_IDS_PARAM, accountIds.join(','));
+    if (ids.accountIds.length === 0 && ids.nonMemberAccountIds.length === 0 && ids.cdpIds.length === 0) return of(NO_LINKS);
+    let params = strictHttpParams();
+    if (ids.accountIds.length > 0) params = params.set(PROJECT_PARTICIPATING_ORGS_LINKS_ACCOUNT_IDS_PARAM, ids.accountIds.join(','));
+    if (ids.nonMemberAccountIds.length > 0)
+      params = params.set(PROJECT_PARTICIPATING_ORGS_LINKS_NON_MEMBER_ACCOUNT_IDS_PARAM, ids.nonMemberAccountIds.join(','));
+    if (ids.cdpIds.length > 0) params = params.set(PROJECT_PARTICIPATING_ORGS_LINKS_CDP_IDS_PARAM, ids.cdpIds.join(','));
     return this.http.get<ProjectParticipatingOrgsOrgLensLinksResponse>(`${baseUrl(slug)}/org-lens-links`, { params }).pipe(
-      map((response) => new Set(response.readableAccountIds)),
+      map((response) => ({
+        readable: new Set(Array.isArray(response?.readableAccountIds) ? response.readableAccountIds : []),
+        cdpCompanyIds: new Set(Array.isArray(response?.cdpCompanyIds) ? response.cdpCompanyIds : []),
+      })),
       catchError((error: unknown) => {
-        console.error('[participating-orgs] getOrgLensReadableAccountIds failed', { slug, error });
-        return of(new Set<string>());
+        console.error('[participating-orgs] getOrgLensLinks failed', { slug, error });
+        return of(NO_LINKS);
       })
     );
   }
@@ -108,6 +120,9 @@ export class ParticipatingOrgsService {
     this.messageService.add({ severity, summary, detail });
   }
 }
+
+/** No company on the page links: nothing was asked, or the read failed. */
+const NO_LINKS: ProjectParticipatingOrgsLinks = { readable: new Set<string>(), cdpCompanyIds: new Set<string>() };
 
 function baseUrl(slug: string): string {
   return `/api/projects/${encodeURIComponent(slug)}/participating-orgs`;

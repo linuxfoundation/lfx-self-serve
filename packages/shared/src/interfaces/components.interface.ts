@@ -494,6 +494,11 @@ export interface SidebarMenuItem {
   badgeSeverity?: BadgeSeverityOptions['severity'];
   /** Whether item is disabled */
   disabled?: boolean;
+  /**
+   * Why a disabled item is unavailable (e.g. "Not available for CDP companies", spec 062 FR-025). A disabled item with no
+   * link and no command renders as a greyed, non-interactive row that states this reason.
+   */
+  disabledReason?: string;
   /** Command to execute on click */
   command?: () => void;
   /** Child menu items for nested navigation */
