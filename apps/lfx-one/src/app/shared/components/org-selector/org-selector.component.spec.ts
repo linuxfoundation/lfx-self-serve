@@ -8,6 +8,7 @@ import { CDP_COMPANY_SEARCH_DEBOUNCE_MS, ROLLUP_ACCOUNT_NAME } from '@lfx-one/sh
 import { Account, DisplayOrgItem, OrgItem, OrgRelatedCompanyRow, OrgRollUpFamily, OrgRollUpSetOrg, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, orgRollUpAccount } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { CdpCompanyContextService } from '@services/cdp-company-context.service';
 import { CdpCompanyService } from '@services/cdp-company.service';
 import { LensService } from '@services/lens.service';
 import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
@@ -143,6 +144,46 @@ describe('OrgSelectorComponent.selectItem', () => {
     expect(el.querySelector('[data-testid="org-selector-trigger-logo-fallback"]')?.textContent?.trim()).toBe('No logo');
     expect(el.querySelector('.fa-building')).toBeNull();
   });
+
+  it.each(['default', 'navbar'] as const)(
+    'shows the CDP company with its tag and no role on a CDP page, then the stored company once the page is left (%s)',
+    (variant) => {
+      fixture.componentRef.setInput('variant', variant);
+      (TestBed.inject(OrgRoleGrantsService).writerSet as WritableSignal<Set<string>>).set(new Set([UID_A]));
+      const context = TestBed.inject(CdpCompanyContextService);
+      const el: HTMLElement = fixture.nativeElement;
+      const text = (testId: string) => el.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? null;
+      const cdpId = '1a2b3c4d-0000-4000-8000-000000000001';
+
+      fixture.detectChanges();
+      expect(text('org-selector-trigger-name')).toBe('Acme');
+      expect(el.querySelector('[data-testid="org-selector-trigger-role-badge"]')).not.toBeNull();
+
+      // Still loading (as on the server render): no name, tag or role yet.
+      context.enter(cdpId);
+      fixture.detectChanges();
+      expect(text('org-selector-trigger-name')).toBe('');
+      expect(el.querySelector('[data-testid="org-selector-trigger-cdp-tag"]')).toBeNull();
+      expect(el.querySelector('[data-testid="org-selector-trigger-role-badge"]')).toBeNull();
+
+      context.settle(cdpId, {
+        state: 'ok',
+        company: { cdpId, name: 'Example Labs', lastActiveMonth: '2026-10' },
+        sections: [],
+      });
+      fixture.detectChanges();
+      expect(text('org-selector-trigger-name')).toBe('Example Labs');
+      expect(text('org-selector-trigger-cdp-tag')).toBe('CDP');
+      expect(el.querySelector('[data-testid="org-selector-trigger-role-badge"]')).toBeNull();
+      expect(setAccount).not.toHaveBeenCalled();
+
+      context.leave(cdpId);
+      fixture.detectChanges();
+      expect(text('org-selector-trigger-name')).toBe('Acme');
+      expect(el.querySelector('[data-testid="org-selector-trigger-cdp-tag"]')).toBeNull();
+      expect(el.querySelector('[data-testid="org-selector-trigger-role-badge"]')).not.toBeNull();
+    }
+  );
 
   it('selects another organization and re-addresses the page as a switch', () => {
     const selected = vi.fn();

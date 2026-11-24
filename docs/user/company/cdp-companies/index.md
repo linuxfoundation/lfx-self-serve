@@ -19,7 +19,7 @@ You find one with the company switcher search, as LF staff.
 3. Companies with a company account are listed first, as they always are. Below them, a **CDP companies** group lists up to 20 CDP companies whose name matches, each tagged **CDP**. The group may show a loading line for a moment after the other results appear. When only CDP companies match, the list above the group says **No companies with a company account found**.
 4. Select a CDP company to open its **Dashboard**.
 
-Selecting a CDP company does not change the company you have selected in the switcher. If the group says **CDP search unavailable**, the CDP list could not be read right now or is out of date; try again later. The other results are not affected.
+Selecting a CDP company does not change the company you have selected in the switcher. While a CDP company page is open, the switcher card shows that company with the **CDP** tag and no role; when you leave the page, it shows your selected company again. If the group says **CDP search unavailable**, the CDP list could not be read right now or is out of date; try again later. The other results are not affected.
 
 On a Project lens **Participating companies** page, LF staff can also open a CDP company by selecting its name in the list.
 

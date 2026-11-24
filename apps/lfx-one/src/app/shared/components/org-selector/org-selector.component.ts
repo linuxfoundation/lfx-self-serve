@@ -46,10 +46,12 @@ import {
   OrgRollUpSelectorRow,
   OrgRollUpSetOrg,
   OrgSelectorCdpGroup,
+  OrgSelectorCdpTrigger,
   OrgSelectorRow,
 } from '@lfx-one/shared/interfaces';
 import { orgRollUpAccount, resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { CdpCompanyContextService } from '@services/cdp-company-context.service';
 import { CdpCompanyService } from '@services/cdp-company.service';
 import { ElementIdService } from '@services/element-id.service';
 import { LensService } from '@services/lens.service';
@@ -79,6 +81,7 @@ export class OrgSelectorComponent {
   private readonly lensService = inject(LensService);
   private readonly router = inject(Router);
   private readonly cdpCompanyService = inject(CdpCompanyService);
+  private readonly cdpCompanyContext = inject(CdpCompanyContextService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly claOnlyAccess = inject(OrgClaOnlyAccessService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
@@ -131,8 +134,27 @@ export class OrgSelectorComponent {
   protected readonly selectedAccount: Signal<Account> = this.accountContextService.selectedAccount;
   protected readonly selectedAccountUid: Signal<string | null> = computed(() => this.selectedAccount().uid ?? null);
 
-  protected readonly displayName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Select Company');
-  protected readonly displayLogo: Signal<string> = computed(() => this.selectedAccount().logoUrl ?? '');
+  /**
+   * On a CDP company page the trigger card shows that company (name, logo and the "CDP" tag, no role) rather than the
+   * selected B2B company, which stays selected and comes back when the viewer leaves. Read from the CDP context the
+   * page shell fills from the address before its first render, so the server and the browser show the same card. An
+   * address that opened no CDP page (an outsider, an unknown id) keeps the B2B card, as the sidebar does.
+   */
+  protected readonly cdpTrigger: Signal<OrgSelectorCdpTrigger | null> = computed(() => {
+    const context = this.cdpCompanyContext.context();
+    if (!context) return null;
+    if (!context.settled) return { name: '', logoUrl: '', pending: true };
+    const company = context.page?.company;
+    return company ? { name: company.name, logoUrl: company.logoUrl ?? '', pending: false } : null;
+  });
+  /** A selected roll-up as the trigger shows it: never on a CDP page, which shows the CDP company instead. */
+  protected readonly triggerShowsRollUp: Signal<boolean> = computed(() => !this.cdpTrigger() && this.accountContextService.isRollUp());
+
+  protected readonly displayName: Signal<string> = computed(() => {
+    const cdp = this.cdpTrigger();
+    return cdp ? cdp.name : this.selectedAccount().accountName || 'Select Company';
+  });
+  protected readonly displayLogo: Signal<string> = computed(() => this.cdpTrigger()?.logoUrl ?? this.selectedAccount().logoUrl ?? '');
 
   private readonly searchRollUpRows: Signal<OrgRollUpSelectorRow[]> = computed(() => this.initSearchRollUpRows());
 

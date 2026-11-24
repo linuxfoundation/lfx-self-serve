@@ -583,3 +583,13 @@ export interface OrgSelectorCdpGroup {
   items: OrgSelectorCdpRow[];
   unavailable: boolean;
 }
+
+/**
+ * What the org selector's trigger card shows on a CDP company page instead of the selected B2B company. `pending` while
+ * the page has not answered yet (also the server render), so the card carries no name, logo or tag until it does.
+ */
+export interface OrgSelectorCdpTrigger {
+  name: string;
+  logoUrl: string;
+  pending: boolean;
+}
