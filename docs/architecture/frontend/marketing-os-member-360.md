@@ -139,9 +139,11 @@ the project's writer grant, reads the stored hash-checked run, and assembles its
 tabs on demand, without a Key Contact column. It accepts no client-supplied tabs and
 does not persist the XLSX blob.
 
-The Summary is a width-bounded QBR canvas with metadata, a tier table/bar chart,
-optional movers, the complete watchlist, team action counts and data coverage;
-large watchlists continue vertically. Ranking dates are real date cells; values,
+The Summary is a one-page QBR canvas with metadata, a tier table/bar chart,
+optional movers, the watchlist, team action counts and data coverage. The
+watchlist shows the 15 lowest-scoring members renewing within 120 days; when
+more qualify, one line under it gives the count of the rest and points to
+Member Ranking, which lists every member. Ranking dates are real date cells; values,
 scores and contact counts remain numbers with currency/decimal/integer formats.
 A single category-block heat scale accompanies engagement, renewal, tier and
 priority highlighting. The workbook and result page read renewal thresholds and
