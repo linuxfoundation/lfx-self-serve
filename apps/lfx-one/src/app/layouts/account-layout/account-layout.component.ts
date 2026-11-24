@@ -111,8 +111,9 @@ export class AccountLayoutComponent {
   }
 
   private initIsLanding(): Signal<boolean> {
-    // The landing page is the shell's empty-path child; read once each navigation has activated it.
-    const atLanding = () => this.route.firstChild?.snapshot.routeConfig?.path === '';
+    // The landing page is the shell's empty-path child. The child's snapshot is only assigned once it activates, after this
+    // layout is built, so it may be missing at first; each NavigationEnd reads it again.
+    const atLanding = () => this.route.firstChild?.snapshot?.routeConfig?.path === '';
     return toSignal(
       this.router.events.pipe(
         filter((event) => event instanceof NavigationEnd),

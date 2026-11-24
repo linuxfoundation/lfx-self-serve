@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID, signal } from '@angular/core';
+import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, Event as RouterEvent, NavigationEnd, provideRouter, Router } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { PROFILE_AUTH_ERROR_MESSAGES } from '@lfx-one/shared/constants';
 import { AccountUnsavedChangesService } from '@services/account-unsaved-changes.service';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
@@ -211,5 +212,42 @@ describe('AccountLayoutComponent', () => {
     await setup();
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: PROFILE_AUTH_ERROR_MESSAGES['profile_auth_failed'] }));
+  });
+});
+
+describe('AccountLayoutComponent — with the real router', () => {
+  @Component({ selector: 'lfx-test-page', template: '' })
+  class TestPageComponent {}
+
+  it('builds on the way in from another page, then reads the landing state once the child has activated', async () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([
+          { path: 'profile', component: TestPageComponent },
+          {
+            path: 'account',
+            component: AccountLayoutComponent,
+            children: [
+              { path: '', component: TestPageComponent },
+              { path: 'identities', component: TestPageComponent },
+            ],
+          },
+        ]),
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: UserService, useValue: { impersonating: signal(false), user: signal(null) } },
+        { provide: NavbarCollapseService, useValue: { railAtAnyWidth: signal(true) } },
+        { provide: MessageService, useValue: { add: vi.fn(), messageObserver: of(), clearObserver: of() } },
+        { provide: AccountUnsavedChangesService, useValue: { dirty: signal(false), saving: signal(false), save: vi.fn(), revert: vi.fn() } },
+      ],
+    });
+    const harness = await RouterTestingHarness.create('/profile');
+
+    await harness.navigateByUrl('/account');
+    expect(harness.routeNativeElement?.ownerDocument.querySelector('[data-testid="account-layout-nav"]')).toBeNull();
+
+    await harness.navigateByUrl('/account/identities');
+    expect(harness.routeNativeElement?.ownerDocument.querySelector('[data-testid="account-layout-nav"]')).not.toBeNull();
   });
 });
