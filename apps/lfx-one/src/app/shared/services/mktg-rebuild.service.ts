@@ -55,7 +55,7 @@ export class MktgRebuildService {
 
   private watch(chain: MktgRebuildResponse): Observable<MktgRebuildResponse> {
     return defer(() => {
-      const activeStep = new Subject<number>();
+      const activeStep = new Subject<number | null>();
       const unreachable = new BehaviorSubject(false);
       let failures = 0;
       // A check that cannot reach the server is tried again by itself: jittered backoff from the poll interval up to the
@@ -86,19 +86,25 @@ export class MktgRebuildService {
           );
         }, 1),
         tap((current) => {
-          // The step first, so a good read that shows a new step restarts the deadline before the outage is declared over.
-          activeStep.next(current.steps.findIndex((step) => step.status !== 'draft'));
+          // The step first: a good read that shows a new step, or a chain that is no longer running (null), cancels a
+          // deadline held back by an outage before the outage is declared over, so that read is never called a timeout.
+          activeStep.next(current.status === 'running' ? current.steps.findIndex((step) => step.status !== 'draft') : null);
           unreachable.next(failures > 0);
           this.retrying.set(failures > 0);
         }),
         takeUntil(
           activeStep.pipe(
             distinctUntilChanged(),
-            // Each active step gets a fresh deadline; same-step progress/retries never extend it.
-            switchMap(() => timer(MKTG_RUN_POLL.timeoutMs)),
-            // A deadline that passes while the server cannot be reached waits for the next good read: being offline is not
-            // the step taking too long, and the read that ends the outage may show the step finished.
-            switchMap(() => unreachable.pipe(filter((failing) => !failing))),
+            // Each active step gets a fresh deadline; same-step progress/retries never extend it. A deadline that passes
+            // while the server cannot be reached is held until the next good read, since being offline is not the step
+            // taking too long. The hold sits inside the step's own switchMap, so only a good read that still shows the
+            // same step running releases it as a timeout; a step change or an ended chain drops it.
+            switchMap(() =>
+              timer(MKTG_RUN_POLL.timeoutMs).pipe(
+                switchMap(() => unreachable.pipe(filter((failing) => !failing))),
+                take(1)
+              )
+            ),
             mergeMap(() => throwError(() => new Error(MKTG_NOT_AVAILABLE_TEXT.rebuildTimeout)))
           )
         ),

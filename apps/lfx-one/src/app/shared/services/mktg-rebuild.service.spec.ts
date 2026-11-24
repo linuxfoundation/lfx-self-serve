@@ -149,6 +149,55 @@ describe('MktgRebuildService sequential HTTP flow', () => {
     expect(service.retrying()).toBe(false);
     vi.restoreAllMocks();
   });
+  it.each(['next step', 'complete', 'questions', 'same step'] as const)(
+    'after an outage past the step deadline, a good read showing %s is a timeout only when the same step still runs',
+    async (shown) => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+      const updates: MktgRebuildResponse[] = [];
+      const failed = vi.fn();
+      service.run({ project: 'synthetic-project', frameworkRevisionId: 'framework' }).subscribe({ next: (value) => updates.push(value), error: failed });
+      http.expectOne(`${MKTG_REBUILD_API_PATH}/start`).flush(initial());
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      http.expectOne(`${MKTG_REBUILD_API_PATH}/result`).error(new ProgressEvent('error'));
+      for (let elapsed = 0; elapsed < MKTG_RUN_POLL.timeoutMs + MKTG_POLL_MAX_BACKOFF_MS; elapsed += MKTG_POLL_MAX_BACKOFF_MS) {
+        await vi.advanceTimersByTimeAsync(MKTG_POLL_MAX_BACKOFF_MS);
+        http.match(`${MKTG_REBUILD_API_PATH}/result`).forEach((request) => request.error(new ProgressEvent('error')));
+      }
+      expect(failed).not.toHaveBeenCalled();
+      window.dispatchEvent(new Event('online'));
+      const read = http.expectOne(`${MKTG_REBUILD_API_PATH}/result`);
+      const next = initial();
+      if (shown === 'same step') {
+        read.flush(next);
+        expect(failed).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('took too long') }));
+        expect(service.retrying()).toBe(false);
+        vi.restoreAllMocks();
+        return;
+      }
+      if (shown === 'next step') {
+        next.steps[0].status = 'draft';
+        read.flush(next);
+        next.steps[1].status = 'running';
+        http.expectOne(`${MKTG_REBUILD_API_PATH}/advance`).flush(next);
+        // The new step has its own full deadline: it is still watched just short of it, and times out at it.
+        await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs - MKTG_RUN_POLL.intervalMs);
+        expect(failed).not.toHaveBeenCalled();
+        http.match(`${MKTG_REBUILD_API_PATH}/result`);
+        await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+        expect(failed).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('took too long') }));
+      } else {
+        if (shown === 'complete') next.steps.forEach((step) => (step.status = 'draft'));
+        else next.steps[0] = { ...next.steps[0], status: 'questions', questionsId: 'q1', questions: [] };
+        read.flush({ ...next, status: shown });
+        expect(updates.at(-1)?.status).toBe(shown);
+        await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
+        expect(failed).not.toHaveBeenCalled();
+      }
+      expect(service.retrying()).toBe(false);
+      vi.restoreAllMocks();
+    }
+  );
   it.each([false, true])('resets the deadline only when the active step changes (%s)', async (changeStep) => {
     const failed = vi.fn();
     service.run({ project: 'synthetic-project', frameworkRevisionId: 'framework' }).subscribe({ error: failed });
