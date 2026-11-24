@@ -131,14 +131,13 @@
               <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-3 text-left font-semibold text-gray-900">
                 <span class="block w-32 break-words whitespace-normal sm:w-40">{{ row.candidate.choiceText }}</span>
               </th>
-              @for (cell of row.cells; track $index; let i = $index) {
+              @for (cell of row.cells; track $index) {
                 <td
                   class="whitespace-nowrap px-3 py-3 text-gray-700"
                   [class.bg-emerald-50]="cell.result === 'win'"
                   [class.bg-red-50]="cell.result === 'loss'"
                   [class.bg-amber-50]="cell.result === 'tie'"
                   [class.bg-gray-50]="cell.result === 'self'"
-                  [attr.title]="row.candidate.choiceText + ' vs ' + q.candidates[i].choiceText + ': ' + cell.value + ' (row preference–column preference)'"
                   [attr.data-result]="cell.result">
                   <span class="flex items-center gap-2">
                     {{ cell.value }}
@@ -292,7 +291,7 @@
                   [attr.aria-controls]="'vote-condorcet-ballot-orders-' + q.questionId"
                   (click)="showAllBallots.set(!showAllBallots())"
                   data-testid="vote-condorcet-ballots-show-all">
-                  {{ showAllBallots() ? 'Show five most common' : 'Show all rankings' }}
+                  {{ showAllBallots() ? 'Show ' + ballotPreviewLimit + ' most common' : 'Show all rankings' }}
                 </button>
               </div>
             }

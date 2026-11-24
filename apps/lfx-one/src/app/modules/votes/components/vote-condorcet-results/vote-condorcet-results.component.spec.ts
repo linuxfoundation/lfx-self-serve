@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { VOTE_CONDORCET_BALLOT_PREVIEW_LIMIT } from '@lfx-one/shared/constants';
 import { CondorcetOutcome } from '@lfx-one/shared/enums';
 import { CondorcetQuestionView } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -314,9 +315,11 @@ describe('VoteCondorcetResultsComponent', () => {
     fixture.detectChanges();
     expect(rows()).toHaveLength(7);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(text(toggle)).toBe(`Show ${VOTE_CONDORCET_BALLOT_PREVIEW_LIMIT} most common`);
     toggle.click();
     fixture.detectChanges();
     expect(rows()).toHaveLength(5);
+    expect(text(toggle)).toBe('Show all rankings');
   });
 
   it('does not offer show all when there are at most five orders', () => {
