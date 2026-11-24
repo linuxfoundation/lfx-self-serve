@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { VoteBallotSubmission, VoteLinkBallot, VoteLinkBallotState } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteBallotFormComponent } from './vote-ballot-form.component';
 
@@ -120,6 +120,24 @@ describe('VoteBallotFormComponent (#4363)', () => {
 
     expect((byId('vote-link-rank-up-c-a') as HTMLButtonElement).disabled).toBe(true);
     expect((byId('vote-link-rank-down-c-c') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('drags a ranked card from anywhere on it, but never from its arrow buttons', async () => {
+    await render(baseBallot({ poll_type: 'condorcet_irv' }));
+
+    const card = byId('vote-link-rank-c-a') as HTMLElement;
+    expect(card.querySelector('.cdk-drag-handle')).toBeNull();
+    expect(card.classList.contains('cursor-grab')).toBe(true);
+    expect(card.classList.contains('active:cursor-grabbing')).toBe(true);
+    expect(card.classList.contains('select-none')).toBe(true);
+
+    const cardPress = vi.fn();
+    card.addEventListener('mousedown', cardPress);
+    card.addEventListener('touchstart', cardPress);
+    const downButton = byId('vote-link-rank-down-c-a') as HTMLElement;
+    downButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    downButton.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    expect(cardPress).not.toHaveBeenCalled();
   });
 
   it('emits an abstention without answers and still sends comments', async () => {

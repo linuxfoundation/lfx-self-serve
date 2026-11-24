@@ -64,6 +64,9 @@ export const VOTE_BALLOT_READ_RETRY_COUNT = 3;
 /** Delay between own-ballot 404 retries; authorization and other failures are never retried. */
 export const VOTE_BALLOT_READ_RETRY_DELAY_MS = 1000;
 
+/** Ranked-choice ballot drag start delay: touch needs a short hold so swipes still scroll; mouse starts immediately. */
+export const VOTE_RANKED_CHOICE_DRAG_START_DELAY = { touch: 200, mouse: 0 };
+
 /**
  * TTL for the recently-opened-vote carrier (GH-2730): how long after a successful enable the votes
  * list merges the known-open status over stale index rows while the search index catches up.

@@ -670,6 +670,9 @@ describe('VoteCastDrawerComponent — locked review of a final ballot (#4331)', 
     expect(el('vote-cast-add-rank-r2')).toBeNull();
     expect(el('vote-cast-unrank-r1')).toBeNull();
     expect(el('vote-cast-rank-r3')?.classList.contains('cdk-drag-disabled')).toBe(true);
+    expect(el('vote-cast-rank-r3')?.classList.contains('cursor-not-allowed')).toBe(true);
+    expect(el('vote-cast-rank-r3')?.classList.contains('cursor-grab')).toBe(false);
+    expect(el('vote-cast-rank-r3')?.classList.contains('select-none')).toBe(false);
     expect((el('vote-cast-rank-up-r1') as HTMLButtonElement).disabled).toBe(true);
     expect((el('vote-cast-rank-down-r3') as HTMLButtonElement).disabled).toBe(true);
 
@@ -1576,6 +1579,27 @@ describe('VoteCastDrawerComponent — mobile layout (#4148)', () => {
       expect(el(id)?.className).toContain('min-w-[44px]');
     }
     expect(el('vote-cast-rank-c1')?.querySelector('span.break-words')).toBeTruthy();
+  });
+
+  it('drags an editable ranked card from anywhere on it, but never from its arrow buttons', async () => {
+    await setup(vi.fn().mockReturnValue(of(RANKED)));
+
+    await openWithoutListVote();
+
+    const card = el('vote-cast-rank-c2') as HTMLElement;
+    expect(card.querySelector('.cdk-drag-handle')).toBeNull();
+    expect(card.classList.contains('cursor-grab')).toBe(true);
+    expect(card.classList.contains('active:cursor-grabbing')).toBe(true);
+    expect(card.classList.contains('select-none')).toBe(true);
+    expect(card.classList.contains('cursor-move')).toBe(false);
+
+    const cardPress = vi.fn();
+    card.addEventListener('mousedown', cardPress);
+    card.addEventListener('touchstart', cardPress);
+    const upButton = el('vote-cast-rank-up-c2') as HTMLElement;
+    upButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    upButton.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    expect(cardPress).not.toHaveBeenCalled();
   });
 
   it('submits the same ranked_choices payload whether reordered by arrow buttons or by drag', async () => {

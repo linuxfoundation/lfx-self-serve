@@ -145,12 +145,15 @@
                         <div
                           cdkDrag
                           [cdkDragDisabled]="ballotReadOnly() || abstain()"
+                          [cdkDragStartDelay]="rankedDragStartDelay"
                           class="flex items-center gap-2 p-2 sm:p-3 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
-                          [class.cursor-move]="!ballotReadOnly() && !abstain()"
+                          [class.cursor-grab]="!ballotReadOnly() && !abstain()"
+                          [class.active:cursor-grabbing]="!ballotReadOnly() && !abstain()"
+                          [class.select-none]="!ballotReadOnly() && !abstain()"
                           [class.cursor-not-allowed]="ballotReadOnly() || abstain()"
                           [attr.data-testid]="'vote-cast-rank-' + choice.choice_id">
                           @if (!ballotReadOnly()) {
-                            <i cdkDragHandle class="fa-light fa-grip-vertical text-slate-400" aria-hidden="true"></i>
+                            <i class="fa-light fa-grip-vertical text-slate-400" aria-hidden="true"></i>
                           }
                           <span class="flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-sm font-semibold flex-shrink-0">
                             {{ i + 1 }}
@@ -159,6 +162,8 @@
                           <button
                             type="button"
                             (click)="moveRank(question.question_id, i, i - 1)"
+                            (mousedown)="$event.stopPropagation()"
+                            (touchstart)="$event.stopPropagation()"
                             [disabled]="ballotReadOnly() || i === 0 || abstain()"
                             class="flex items-center justify-center min-w-[44px] min-h-[44px] flex-shrink-0 text-slate-500 hover:text-slate-700 disabled:opacity-30"
                             [attr.data-testid]="'vote-cast-rank-up-' + choice.choice_id"
@@ -168,6 +173,8 @@
                           <button
                             type="button"
                             (click)="moveRank(question.question_id, i, i + 1)"
+                            (mousedown)="$event.stopPropagation()"
+                            (touchstart)="$event.stopPropagation()"
                             [disabled]="ballotReadOnly() || i === (rankedOrderByQuestion().get(question.question_id)?.length ?? 0) - 1 || abstain()"
                             class="flex items-center justify-center min-w-[44px] min-h-[44px] flex-shrink-0 text-slate-500 hover:text-slate-700 disabled:opacity-30"
                             [attr.data-testid]="'vote-cast-rank-down-' + choice.choice_id"
@@ -178,6 +185,8 @@
                             <button
                               type="button"
                               (click)="toggleRankedChoice(question.question_id, choice.choice_id)"
+                              (mousedown)="$event.stopPropagation()"
+                              (touchstart)="$event.stopPropagation()"
                               [disabled]="abstain()"
                               class="flex items-center justify-center min-w-[44px] min-h-[44px] flex-shrink-0 text-slate-500 hover:text-slate-700 disabled:opacity-30"
                               [attr.data-testid]="'vote-cast-rank-remove-' + choice.choice_id"
