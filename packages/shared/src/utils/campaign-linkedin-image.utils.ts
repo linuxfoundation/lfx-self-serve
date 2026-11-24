@@ -18,6 +18,7 @@ import type {
 } from '../interfaces/campaign.interface';
 import { linkedInCreativeTextLength, linkedInVariantTextError } from './campaign-linkedin.utils';
 import { linkedInVariantImageForBrief } from './campaign-linkedin-form.utils';
+import { linkedInVariantFieldErrors } from './campaign-linkedin-variant-fields.utils';
 
 /**
  * The Implement tab's LinkedIn variant and image rules (#5547, #5980): the one upload slot, the picker, the image notice
@@ -120,6 +121,7 @@ export function linkedInVariantViews(input: LinkedInVariantViewsInput): LinkedIn
   const pickerBlocked = !briefId || input.briefSaving;
   const orphaned = linkedInImageUploadOrphaned(slot, variants);
   const slotIndex = variants.findIndex((variant) => variant.key === slot.variantKey);
+  const fieldErrors = linkedInVariantFieldErrors(variants, input.eventName ?? '');
   return variants.map((variant, index): LinkedInVariantView => {
     const ownsSlot = slot.variantKey === variant.key;
     const imageUploading = ownsSlot && uploading;
@@ -136,6 +138,12 @@ export function linkedInVariantViews(input: LinkedInVariantViewsInput): LinkedIn
       headlineLength: linkedInCreativeTextLength(variant.headline),
       introTextError: linkedInVariantTextError('introText', variant.introText) ?? '',
       headlineError: linkedInVariantTextError('headline', variant.headline) ?? '',
+      name: variant.name ?? '',
+      description: variant.description ?? '',
+      callToAction: variant.callToAction ?? '',
+      descriptionLength: linkedInCreativeTextLength(variant.description ?? ''),
+      nameError: fieldErrors[index].name,
+      descriptionError: fieldErrors[index].description,
       imageStatusMessage,
       imageUploading,
       imageHeld: variant.imageAssetId !== '',

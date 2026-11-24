@@ -4149,6 +4149,39 @@
                   [hint]="view.headlineLength + '/' + linkedInCharLimits.headline + ' characters'"
                   [attr.data-testid]="'implementation-linkedin-variant-headline-' + i" />
 
+                <!-- The ad's name and description (#5764 rows 16–17), offered only on an explicit yes from
+                     `linkedInVariantCopyAvailable()`; left empty, the ad keeps "<event> | variant-N" and no description. -->
+                @if (linkedInVariantCopyAvailable()) {
+                  <lfx-ui-input
+                    label="Ad name (optional)"
+                    size="small"
+                    [value]="view.name"
+                    (valueChange)="onLinkedInVariantTextChange(view.key, 'name', $event)"
+                    [error]="view.nameError"
+                    hint="Shown in Campaign Manager and reporting. Each ad needs its own name."
+                    [attr.data-testid]="'implementation-linkedin-variant-name-' + i" />
+                  <lfx-ui-textarea
+                    label="Description (optional)"
+                    [value]="view.description"
+                    (valueChange)="onLinkedInVariantTextChange(view.key, 'description', $event)"
+                    [error]="view.descriptionError"
+                    [hint]="view.descriptionLength + '/' + linkedInVariantFieldLimits.description + ' characters'"
+                    [attr.data-testid]="'implementation-linkedin-variant-description-' + i" />
+                }
+                @if (linkedInCallToActionAvailable()) {
+                  <lfx-ui-select
+                    label="Call to action"
+                    size="small"
+                    [value]="view.callToAction"
+                    (valueChange)="onLinkedInVariantTextChange(view.key, 'callToAction', $event ?? '')"
+                    [attr.data-testid]="'implementation-linkedin-variant-cta-' + i">
+                    <lfx-ui-option value="" label="No button" />
+                    @for (option of linkedInCallToActionOptions; track option.value) {
+                      <lfx-ui-option [value]="option.value" [label]="option.label" />
+                    }
+                  </lfx-ui-select>
+                }
+
                 <!-- The variant's own image. LinkedIn takes no image URL, so the upload is the whole control,
                      offered only on an explicit yes from `linkedInAssetUploadAvailable()`. -->
                 @if (linkedInAssetUploadAvailable()) {

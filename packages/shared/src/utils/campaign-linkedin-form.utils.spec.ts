@@ -129,6 +129,21 @@ describe('linkedInVariantsForCreate', () => {
   ])('sends %s', (_name, draft, uploadAvailable, image) => {
     expect(linkedInVariantsForCreate([draft], uploadAvailable, 'b1')).toEqual([{ introText: 'Join us', headline: 'Summit', ...image }]);
   });
+
+  const withFields = variant({ name: 'Ad A', description: 'Talks', callToAction: 'REGISTER' });
+  it.each([
+    ['nothing on a deployment that sends none', { copy: false, callToAction: false }, {}],
+    ['the name and description', { copy: true, callToAction: false }, { name: 'Ad A', description: 'Talks' }],
+    ['the call to action', { copy: false, callToAction: true }, { callToAction: 'REGISTER' }],
+    ['all three', { copy: true, callToAction: true }, { name: 'Ad A', description: 'Talks', callToAction: 'REGISTER' }],
+  ])('sends %s', (_name, fields, expected) => {
+    expect(linkedInVariantsForCreate([withFields], true, 'b1', fields)).toEqual([{ introText: 'Join us', headline: 'Summit', ...expected }]);
+  });
+
+  it('sends no blank name, description or call to action', () => {
+    const blank = variant({ name: ' ', description: '', callToAction: '' });
+    expect(linkedInVariantsForCreate([blank], true, 'b1', { copy: true, callToAction: true })).toEqual([{ introText: 'Join us', headline: 'Summit' }]);
+  });
 });
 
 describe('linkedInCreateRefusal', () => {
@@ -155,6 +170,7 @@ describe('linkedInCreateRefusal', () => {
     ['no variant', { variantCount: 0 }, 'LinkedIn Ads: add at least one ad variant.'],
     ['16 variants', { variantCount: 16 }, 'LinkedIn Ads: remove ad variants until there are at most 15.'],
     ['bad variant text', { variantTextInvalid: true }, 'LinkedIn Ads: fix the ad variant text.'],
+    ['a bad ad name or description', { variantFieldsInvalid: true }, 'LinkedIn Ads: fix the ad name or description.'],
     ['removals without the capability', { removalsHeld: true }, 'LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.'],
     [
       'removals without the profile',

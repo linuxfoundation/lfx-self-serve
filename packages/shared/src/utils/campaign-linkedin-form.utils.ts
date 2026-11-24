@@ -14,6 +14,7 @@ import type {
   LinkedInTargetingProfileConfig,
   LinkedInTargetingProfileEdit,
   LinkedInVariantDraft,
+  LinkedInVariantFieldsEnabled,
 } from '../interfaces/campaign.interface';
 import { roundUsdToCentsLikeGo } from './campaign-linkedin.utils';
 
@@ -107,12 +108,33 @@ export function linkedInVariantImageForBrief(variant: LinkedInVariantDraft, brie
  * campaign-service refuses a variant carrying both. A variant with neither sends no image field. The tab-only fields
  * (`key`, the asset's name and brief) are never sent.
  */
-export function linkedInVariantsForCreate(variants: readonly LinkedInVariantDraft[], uploadAvailable: boolean, briefId: string): LinkedInCreativeVariant[] {
+export function linkedInVariantsForCreate(
+  variants: readonly LinkedInVariantDraft[],
+  uploadAvailable: boolean,
+  briefId: string,
+  fields: LinkedInVariantFieldsEnabled = { copy: false, callToAction: false }
+): LinkedInCreativeVariant[] {
   return variants.map((variant) => {
     const { introText, headline } = variant;
-    if (uploadAvailable && linkedInVariantImageForBrief(variant, briefId)) return { introText, headline, imageAssetId: variant.imageAssetId };
-    return variant.imageUrn ? { introText, headline, imageUrn: variant.imageUrn } : { introText, headline };
+    const optional = linkedInVariantOptionalFields(variant, fields);
+    if (uploadAvailable && linkedInVariantImageForBrief(variant, briefId)) return { introText, headline, imageAssetId: variant.imageAssetId, ...optional };
+    return variant.imageUrn ? { introText, headline, imageUrn: variant.imageUrn, ...optional } : { introText, headline, ...optional };
   });
+}
+
+/**
+ * A variant's ad name, description and call to action as a create sends them (#5764 rows 16–17): only on a deployment
+ * that sends each (`fields`), and only when set. A blank one is not set, as campaign-service reads it.
+ */
+function linkedInVariantOptionalFields(
+  variant: LinkedInVariantDraft,
+  fields: LinkedInVariantFieldsEnabled
+): Pick<LinkedInCreativeVariant, 'name' | 'description' | 'callToAction'> {
+  const out: Pick<LinkedInCreativeVariant, 'name' | 'description' | 'callToAction'> = {};
+  if (fields.copy && (variant.name ?? '').trim() !== '') out.name = variant.name;
+  if (fields.copy && (variant.description ?? '').trim() !== '') out.description = variant.description;
+  if (fields.callToAction && (variant.callToAction ?? '') !== '') out.callToAction = variant.callToAction;
+  return out;
 }
 
 /** Why the LinkedIn section holds Create, or `null`. The first failing check wins; each message names its fix. */
@@ -125,6 +147,8 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
   if (input.variantCount > LINKEDIN_MAX_VARIANTS) return `LinkedIn Ads: remove ad variants until there are at most ${LINKEDIN_MAX_VARIANTS}.`;
   // An intro text or headline campaign-service would refuse (blank) or cut short (over its limit).
   if (input.variantTextInvalid) return 'LinkedIn Ads: fix the ad variant text.';
+  // An ad name or description campaign-service would refuse or cut (#5764 rows 16–17); the message is under the field.
+  if (input.variantFieldsInvalid) return 'LinkedIn Ads: fix the ad name or description.';
   // Removals the create cannot carry (#5546): the legacy creator would drop them, and without the profile catalogue
   // they cannot be applied. A block rather than a silent revert to the profile as configured.
   if (input.removalsHeld) {

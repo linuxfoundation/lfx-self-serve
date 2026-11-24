@@ -817,6 +817,7 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
     canSubmit: () => boolean;
     addLinkedInVariant(): void;
     removeLinkedInVariant(key: string): void;
+    onLinkedInVariantTextChange(key: string, field: string, value: string): void;
     submit(): void;
   }
   const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
@@ -947,6 +948,56 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect((q(f, 'implementation-linkedin-variant-intro-0')?.querySelector('textarea') as HTMLTextAreaElement).value).toBe('First intro');
       expect((q(f, 'implementation-linkedin-variant-headline-1')?.querySelector('input') as HTMLInputElement).value).toBe('Second headline');
       expect(submitVariants(f)).toEqual(briefVariants());
+    });
+
+    // The ad name, description and call to action (#5764 rows 16–17); the rules are rows in
+    // `campaign-linkedin-variant-fields.utils.spec.ts` and `campaign-linkedin-form.utils.spec.ts`.
+    it('offers the ad name, description and call to action only on an explicit yes, and sends them as set', async () => {
+      const f = (await mount(null)).fixture;
+      expect(q(f, 'implementation-linkedin-variant-name-0')).toBeNull();
+      expect(q(f, 'implementation-linkedin-variant-cta-0')).toBeNull();
+
+      f.componentRef.setInput('linkedInVariantCopyEnabled', true);
+      f.componentRef.setInput('linkedInCallToActionEnabled', true);
+      f.detectChanges();
+      type(f, 'implementation-linkedin-variant-name-1', 'Ad two');
+      type(f, 'implementation-linkedin-variant-description-1', 'Two days of talks');
+      at(f).onLinkedInVariantTextChange(at(f).linkedInVariants()[1].key, 'callToAction', 'REGISTER');
+
+      expect(submitVariants(f)).toEqual([
+        { introText: 'First intro', headline: 'First headline' },
+        {
+          introText: 'Second intro',
+          headline: 'Second headline',
+          imageUrn: 'urn:li:image:C4D10AQ',
+          name: 'Ad two',
+          description: 'Two days of talks',
+          callToAction: 'REGISTER',
+        },
+      ]);
+    });
+
+    it('holds Create, with the reason under the field, while two ads share a name', async () => {
+      const f = (await mount(null)).fixture;
+      f.componentRef.setInput('linkedInVariantCopyEnabled', true);
+      fillForm(f);
+      type(f, 'implementation-linkedin-variant-name-0', 'Same name');
+      type(f, 'implementation-linkedin-variant-name-1', 'Same name');
+
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: fix the ad name or description.');
+      expect(q(f, 'implementation-linkedin-variant-name-1')?.textContent).toContain('Ad 1 already has this name.');
+      type(f, 'implementation-linkedin-variant-name-1', 'Other name');
+      expect(at(f).createBlockedReason()).not.toBe('LinkedIn Ads: fix the ad name or description.');
+    });
+
+    it("holds Create while a name equals another ad's default, built from the stored brief's event name", async () => {
+      const f = (await mount(null)).fixture;
+      f.componentRef.setInput('linkedInVariantCopyEnabled', true);
+      fillForm(f);
+      // The brief's event is "KubeCon EU 2026"; ad 2 is left unnamed, so campaign-service names it "KubeCon EU 2026 | variant-2".
+      type(f, 'implementation-linkedin-variant-name-0', 'KubeCon EU 2026 | variant-2');
+
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: fix the ad name or description.');
     });
 
     it('sends the intro text and headline as edited, on that variant only', async () => {

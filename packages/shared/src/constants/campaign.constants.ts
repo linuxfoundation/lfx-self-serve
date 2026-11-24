@@ -23,15 +23,6 @@ import type {
   CampaignEmailTypeOption,
   CampaignFunnelStage,
   CampaignGoalOption,
-  MetaAdOptionField,
-  MetaAudienceGender,
-  MetaAudienceTargetingDraft,
-  MetaCustomAudienceListView,
-  MetaAdSchedule,
-  MetaAdScheduleDayOption,
-  MetaDeviceOsOption,
-  MetaFrequencyCap,
-  MetaTargetingKind,
   CampaignKeyword,
   CampaignLabelOption,
   CampaignNegativeKeywordMatchType,
@@ -64,11 +55,21 @@ import type {
   GoogleDisplayDemographics,
   KeywordActionOutcome,
   KeywordActionPlatform,
+  LinkedInCallToActionOption,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
+  MetaAdOptionField,
+  MetaAdSchedule,
+  MetaAdScheduleDayOption,
+  MetaAudienceGender,
+  MetaAudienceTargetingDraft,
+  MetaCustomAudienceListView,
+  MetaDeviceOsOption,
+  MetaFrequencyCap,
   MetaObjective,
   MetaObjectiveParams,
   MetaPlacement,
+  MetaTargetingKind,
   MicrosoftKeywordsWindow,
   MicrosoftKeywordsWindowOption,
   MonitorConnectionPlatform,
@@ -818,6 +819,29 @@ export const LINKEDIN_CALL_TO_ACTION_LABELS = [
   'BUY_NOW',
   'SHOP_NOW',
 ] as const;
+
+/** How each of `LINKEDIN_CALL_TO_ACTION_LABELS` reads in the LinkedIn variant editor; a missing or misspelt label fails type-checking. */
+const LINKEDIN_CALL_TO_ACTION_TEXT: Record<(typeof LINKEDIN_CALL_TO_ACTION_LABELS)[number], string> = {
+  APPLY: 'Apply',
+  DOWNLOAD: 'Download',
+  VIEW_QUOTE: 'View quote',
+  LEARN_MORE: 'Learn more',
+  SIGN_UP: 'Sign up',
+  SUBSCRIBE: 'Subscribe',
+  REGISTER: 'Register',
+  JOIN: 'Join',
+  ATTEND: 'Attend',
+  REQUEST_DEMO: 'Request demo',
+  SEE_MORE: 'See more',
+  BUY_NOW: 'Buy now',
+  SHOP_NOW: 'Shop now',
+};
+
+/** The calls to action the LinkedIn variant editor offers, in `LINKEDIN_CALL_TO_ACTION_LABELS` order. */
+export const LINKEDIN_CALL_TO_ACTION_OPTIONS: readonly LinkedInCallToActionOption[] = LINKEDIN_CALL_TO_ACTION_LABELS.map((value) => ({
+  value,
+  label: LINKEDIN_CALL_TO_ACTION_TEXT[value],
+}));
 
 /**
  * The longest LinkedIn ad name and description, in runes after campaign-service's normalization (`maxCreativeNameLen`,
