@@ -159,7 +159,7 @@ describe('choices', () => {
     ['seniorities', 10],
     ['jobFunctions', 26],
     ['staffCountRanges', 9],
-    ['interfaceLocales', 25],
+    ['interfaceLocales', 21],
   ] as const)('lists every fixed %s value', (facet, count) => {
     expect(linkedInTargetingStaticChoices(facet, {})).toHaveLength(count);
   });

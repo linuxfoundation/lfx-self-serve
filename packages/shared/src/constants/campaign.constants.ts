@@ -1049,22 +1049,24 @@ export const LINKEDIN_TARGETING_STATIC_VALUES: Readonly<Record<LinkedInTargeting
     urn,
     name: ['1 employee', '2–10', '11–50', '51–200', '201–500', '501–1,000', '1,001–5,000', '5,001–10,000', '10,001+'][index],
   })),
+  // The interface locales LinkedIn accepts for ads targeting, with its names: the live
+  // `adTargetingEntities?q=adTargetingFacet&facet=urn:li:adTargetingFacet:interfaceLocales` answer (26 Nov 2026).
+  // LinkedIn's older docs table differs (Finnish, Thai, Tagalog, Ukrainian and Chinese are not offered for targeting).
   interfaceLocales: (
     [
       ['ar_AE', 'Arabic'],
-      ['zh_CN', 'Chinese (Simplified)'],
-      ['zh_TW', 'Chinese (Traditional)'],
       ['cs_CZ', 'Czech'],
       ['da_DK', 'Danish'],
       ['nl_NL', 'Dutch'],
       ['en_US', 'English'],
       ['fr_FR', 'French'],
       ['de_DE', 'German'],
+      ['hi_IN', 'Hindi'],
       ['in_ID', 'Indonesian'],
       ['it_IT', 'Italian'],
       ['ja_JP', 'Japanese'],
       ['ko_KR', 'Korean'],
-      ['ms_MY', 'Malay'],
+      ['ms_MY', 'Malaysian'],
       ['no_NO', 'Norwegian'],
       ['pl_PL', 'Polish'],
       ['pt_BR', 'Portuguese'],
@@ -1072,10 +1074,7 @@ export const LINKEDIN_TARGETING_STATIC_VALUES: Readonly<Record<LinkedInTargeting
       ['ru_RU', 'Russian'],
       ['es_ES', 'Spanish'],
       ['sv_SE', 'Swedish'],
-      ['tl_PH', 'Tagalog'],
-      ['th_TH', 'Thai'],
       ['tr_TR', 'Turkish'],
-      ['uk_UA', 'Ukrainian'],
     ] as const
   ).map(([locale, name]) => ({ urn: `urn:li:locale:${locale}`, name })),
 };
