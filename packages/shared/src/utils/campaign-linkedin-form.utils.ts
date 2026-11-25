@@ -17,6 +17,7 @@ import type {
   LinkedInVariantFieldsEnabled,
 } from '../interfaces/campaign.interface';
 import { linkedInCreativeTextLength, normalizeLinkedInCreativeName, roundUsdToCentsLikeGo } from './campaign-linkedin.utils';
+import { linkedInTextAdsCreateRefusal } from './campaign-linkedin-text-ads-form.utils';
 
 /**
  * The Implement tab's LinkedIn form rules (#5980): the daily cap, the targeting edit, the ad account, the variants a
@@ -144,12 +145,18 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
   // A daily cap campaign-service would refuse (#5774); the message is under the field.
   if (input.dailyCapError !== null) return 'LinkedIn Ads: fix the daily cap.';
   if (input.geoTargetCount === 0) return 'LinkedIn Ads: add at least one location.';
-  if (input.variantCount === 0) return 'LinkedIn Ads: add at least one ad variant.';
-  if (input.variantCount > LINKEDIN_MAX_VARIANTS) return `LinkedIn Ads: remove ad variants until there are at most ${LINKEDIN_MAX_VARIANTS}.`;
-  // An intro text or headline campaign-service would refuse (blank) or cut short (over its limit).
-  if (input.variantTextInvalid) return 'LinkedIn Ads: fix the ad variant text.';
-  // An ad name or description campaign-service would refuse or cut (#5764 rows 16–17); the message is under the field.
-  if (input.variantFieldsInvalid) return 'LinkedIn Ads: fix the ad name or description.';
+  if (input.textAds) {
+    // Text Ads (#5764 row 19) take the variants' place: the create sends none.
+    const textAdsRefusal = linkedInTextAdsCreateRefusal(input.textAds);
+    if (textAdsRefusal !== null) return textAdsRefusal;
+  } else {
+    if (input.variantCount === 0) return 'LinkedIn Ads: add at least one ad variant.';
+    if (input.variantCount > LINKEDIN_MAX_VARIANTS) return `LinkedIn Ads: remove ad variants until there are at most ${LINKEDIN_MAX_VARIANTS}.`;
+    // An intro text or headline campaign-service would refuse (blank) or cut short (over its limit).
+    if (input.variantTextInvalid) return 'LinkedIn Ads: fix the ad variant text.';
+    // An ad name or description campaign-service would refuse or cut (#5764 rows 16–17); the message is under the field.
+    if (input.variantFieldsInvalid) return 'LinkedIn Ads: fix the ad name or description.';
+  }
   // Removals the create cannot carry (#5546): the legacy creator would drop them, and without the profile catalogue
   // they cannot be applied. A block rather than a silent revert to the profile as configured.
   if (input.removalsHeld) {

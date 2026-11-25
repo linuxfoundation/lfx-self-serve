@@ -176,6 +176,13 @@ describe('linkedInCreateRefusal', () => {
     ['16 variants', { variantCount: 16 }, 'LinkedIn Ads: remove ad variants until there are at most 15.'],
     ['bad variant text', { variantTextInvalid: true }, 'LinkedIn Ads: fix the ad variant text.'],
     ['a bad ad name or description', { variantFieldsInvalid: true }, 'LinkedIn Ads: fix the ad name or description.'],
+    // Text Ads (#5764 row 19) replace the variant checks: no variants is fine, and their own refusal wins.
+    ['Text Ads with no variants', { variantCount: 0, textAds: { count: 1, textInvalid: false, manualBid: true } }, null],
+    [
+      'Text Ads without a manual bid',
+      { textAds: { count: 1, textInvalid: false, manualBid: false } },
+      'LinkedIn Ads: Text Ads need a manual bid. Choose manual bidding and set a maximum cost per click.',
+    ],
     ['removals without the capability', { removalsHeld: true }, 'LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.'],
     [
       'removals without the profile',

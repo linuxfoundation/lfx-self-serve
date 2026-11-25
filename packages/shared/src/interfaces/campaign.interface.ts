@@ -1445,6 +1445,13 @@ export interface CampaignImplementationDraft {
   linkedInImageUploadFailedMessage?: string;
   linkedInImageUploadFailedBriefId?: string;
   /**
+   * The LinkedIn ad format chosen (#5764 row 19) and the Text Ads as edited. Restored only when present, so a draft
+   * written before Text Ads keeps the single-image default. The format is restored whatever the flags; the Implement
+   * tab sends text only while `linkedInTextAdsEnabled` is on.
+   */
+  linkedInFormat?: LinkedInAdFormat;
+  linkedInTextAds?: LinkedInTextAdDraft[];
+  /**
    * The X section as edited: the daily budget and the authored tweet's copy as RAW text, so a
    * blank budget stays blank rather than turning into 0, and the tweet image upload on the LinkedIn
    * upload fields' terms above. All optional and restored only when present, so a draft written
@@ -1965,6 +1972,30 @@ export interface LinkedInCreativeVariant {
   callToAction?: string;
 }
 
+/** One LinkedIn Text Ad as the Implement tab edits it (#5764 row 19). `key` is the tab's own and is never sent. */
+export interface LinkedInTextAdDraft {
+  key: string;
+  headline: string;
+  description: string;
+}
+
+/** One text ad as the editor shows it: the copy, its length after normalization, and the error under each field (`''` for none). */
+export interface LinkedInTextAdView extends LinkedInTextAdDraft {
+  headlineLength: number;
+  descriptionLength: number;
+  headlineError: string;
+  descriptionError: string;
+}
+
+/** What the Text Ads add to the LinkedIn create refusal (#5764 row 19), given only while Text Ads are chosen. */
+export interface LinkedInTextAdsRefusalInput {
+  count: number;
+  /** A headline or description is blank or over its limit. */
+  textInvalid: boolean;
+  /** The LinkedIn bid is manual, which Text Ads require. */
+  manualBid: boolean;
+}
+
 /**
  * One LinkedIn Text Ad (#5764 row 19, campaign-service #586): a headline and description on LinkedIn's desktop right
  * rail, sent in `LinkedInCampaignCreateRequest.textAds` with `format: 'text'`.
@@ -2274,6 +2305,8 @@ export interface LinkedInCreateRefusalInput {
   createAccountStatus: LinkedInCreateAccountState['status'];
   /** An ad name or description the create would send but campaign-service would refuse (#5764 rows 16–17). */
   variantFieldsInvalid?: boolean;
+  /** Present only while Text Ads are chosen (#5764 row 19): they replace the variant checks. */
+  textAds?: LinkedInTextAdsRefusalInput;
 }
 
 export interface LinkedInCampaignCreateRequest {
@@ -2997,6 +3030,8 @@ export type LinkedInDraftSnapshot = Pick<
   | 'linkedInImageUploadPendingBriefId'
   | 'linkedInImageUploadFailedMessage'
   | 'linkedInImageUploadFailedBriefId'
+  | 'linkedInFormat'
+  | 'linkedInTextAds'
 >;
 
 /** The LinkedIn signals `linkedInDraftFields` snapshots into the draft (#5980): budget, cap, variants and the upload slot. */
@@ -3010,6 +3045,9 @@ export interface LinkedInDraftState {
   uploadPendingBriefId: string;
   uploadError: string;
   uploadFailedBriefId: string;
+  /** The ad format chosen and the Text Ads as edited (#5764 row 19). */
+  format: LinkedInAdFormat;
+  textAds: readonly LinkedInTextAdDraft[];
 }
 
 /** What a restored draft does to the LinkedIn section (#5980): values to set, and at most one upload step for the component to run. */
@@ -3023,6 +3061,8 @@ export interface LinkedInDraftRestore {
   uploadVariantKey: string;
   failedUpload?: { message: string; briefId: string };
   pendingUpload?: { name: string; briefId: string };
+  format?: LinkedInAdFormat;
+  textAds?: LinkedInTextAdDraft[];
 }
 
 /** What a brief's LinkedIn copy seeds (#5980): variants, geos and profile, and a lifetime budget when the strategy names one. */
@@ -7786,8 +7826,8 @@ export interface CampaignListResult {
   linkedInCallToActionEnabled: boolean;
   /**
    * Whether a LinkedIn create may be a Text Ads campaign (`format: 'text'` with `textAds`, #5764 row 19). Needs the
-   * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS`, which follows campaign-service's
-   * own `LINKEDIN_ADS_TEXT_ADS_ENABLED`.
+   * campaign-service create path with bidding (`canCreateWithBidding`, since a text create carries a manual bid) AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS`, which follows campaign-service's own `LINKEDIN_ADS_TEXT_ADS_ENABLED`.
    */
   linkedInTextAdsEnabled: boolean;
   /**

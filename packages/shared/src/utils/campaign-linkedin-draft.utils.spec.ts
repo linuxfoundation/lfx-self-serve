@@ -49,7 +49,15 @@ describe('linkedInDraftFields', () => {
     uploadPendingBriefId: 'b1',
     uploadError: 'Too big.',
     uploadFailedBriefId: '',
+    format: 'text',
+    textAds: [{ key: 'text-ad-1', headline: 'h', description: 'd' }],
   };
+
+  it('carries the format and a copy of each text ad', () => {
+    const fields = linkedInDraftFields(state);
+    expect(fields).toMatchObject({ linkedInFormat: 'text', linkedInTextAds: state.textAds });
+    expect(fields.linkedInTextAds?.[0]).not.toBe(state.textAds[0]);
+  });
 
   it('carries the budget pair and cap as held, and copies each variant', () => {
     const fields = linkedInDraftFields(state);
@@ -70,6 +78,23 @@ describe('linkedInDraftFields', () => {
 describe('linkedInDraftRestore', () => {
   it('restores nothing an older draft omits, and empty removals and slot', () => {
     expect(linkedInDraftRestore(draft({}))).toEqual({ targetingRemovals: { skills: [], groups: [] }, uploadVariantKey: '' });
+  });
+
+  it.each([
+    ['text', { format: 'text' }],
+    ['single_image', { format: 'single_image' }],
+    ['an unknown format', {}],
+  ])('restores the format %s', (format, expected) => {
+    // @ts-expect-error -- a stored draft is replayed from JSON, so an unknown format is possible
+    const restore = linkedInDraftRestore(draft({ linkedInFormat: format === 'an unknown format' ? 'video' : format }));
+    expect(restore.format).toBe((expected as { format?: string }).format);
+  });
+
+  it('restores a copy of each text ad', () => {
+    const textAds = [{ key: 'text-ad-1', headline: 'h', description: 'd' }];
+    const restore = linkedInDraftRestore(draft({ linkedInTextAds: textAds }));
+    expect(restore.textAds).toEqual(textAds);
+    expect(restore.textAds?.[0]).not.toBe(textAds[0]);
   });
 
   it.each([
