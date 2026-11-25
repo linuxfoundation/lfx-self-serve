@@ -182,13 +182,14 @@ test.describe('Mobile voting flow (#4148)', () => {
 
     await expect(page.getByTestId(`votes-card-${VOTE_UID}`)).toBeVisible({ timeout: RENDER_TIMEOUT });
     await expect(page.getByTestId('votes-status-tabs')).toBeVisible();
-    // Counts are the point of "stay visible": both pills show (1) and sit inside the phone viewport.
-    for (const [pill, label] of [
-      ['filter-pill-all', /^All\s*\(1\)$/],
-      ['filter-pill-active', /^Active\s*\(1\)$/],
+    // Counts are the point of "stay visible": both pills show a 1 badge and sit inside the phone viewport.
+    for (const [pill, label, accessibleName] of [
+      ['filter-pill-all', /^All\s*1$/, 'All, 1 vote'],
+      ['filter-pill-active', /^Active\s*1$/, 'Active, 1 vote'],
     ] as const) {
       const locator = page.getByTestId(pill);
       await expect(locator).toHaveText(label);
+      await expect(locator).toHaveAttribute('aria-label', accessibleName);
       const box = await locator.boundingBox();
       expect(box, `${pill} must be laid out`).not.toBeNull();
       expect(box!.x).toBeGreaterThanOrEqual(0);

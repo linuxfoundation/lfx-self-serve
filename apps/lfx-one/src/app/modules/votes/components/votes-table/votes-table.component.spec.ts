@@ -129,25 +129,28 @@ describe('VotesTableComponent — status tab counts', () => {
   function pills(): HTMLButtonElement[] {
     return Array.from(fixture.nativeElement.querySelectorAll('[data-testid="votes-status-tabs"] [data-testid^="filter-pill-"]'));
   }
-  const labels = (): string[] => pills().map((pill) => pill.textContent!.trim());
+  // Visible text with whitespace collapsed, so a pill with a count badge reads e.g. "Active 3".
+  const labels = (): string[] => pills().map((pill) => pill.textContent!.replace(/\s+/g, ' ').trim());
+  const badges = (): (string | null)[] => pills().map((pill) => pill.querySelector('[data-testid^="filter-pills-count-"]')?.textContent?.trim() ?? null);
   const accessibleNames = (): (string | null)[] => pills().map((pill) => pill.getAttribute('aria-label'));
 
-  it('appends positive counts and leaves a confirmed zero as the plain label', () => {
-    expect(labels()).toEqual(['All (5)', 'Active (3)', 'Draft', 'Ended (2)']);
-    expect(accessibleNames()).toEqual(labels());
+  it('shows positive counts as badges and leaves a confirmed zero as the plain label', () => {
+    expect(labels()).toEqual(['All 5', 'Active 3', 'Draft', 'Ended 2']);
+    expect(badges()).toEqual(['5', '3', null, '2']);
+    expect(accessibleNames()).toEqual(['All, 5 votes', 'Active, 3 votes', 'Draft', 'Ended, 2 votes']);
   });
 
   it('keeps a count of exactly 1 visible beside zero totals', async () => {
     host.counts.set({ all: 1, active: 0, disabled: 1, ended: 0 });
     await settle();
-    expect(labels()).toEqual(['All (1)', 'Active', 'Draft (1)', 'Ended']);
-    expect(accessibleNames()).toEqual(labels());
+    expect(labels()).toEqual(['All 1', 'Active', 'Draft 1', 'Ended']);
+    expect(accessibleNames()).toEqual(['All, 1 vote', 'Active', 'Draft, 1 vote', 'Ended']);
   });
 
   it('omits the Draft tab when the view does not expose drafts', async () => {
     host.showDraft.set(false);
     await settle();
-    expect(labels()).toEqual(['All (5)', 'Active (3)', 'Ended (2)']);
+    expect(labels()).toEqual(['All 5', 'Active 3', 'Ended 2']);
   });
 
   it('renders unavailable counts as plain labels without a placeholder', async () => {
@@ -155,7 +158,8 @@ describe('VotesTableComponent — status tab counts', () => {
     await settle();
     expect(labels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
     expect(accessibleNames()).toEqual(labels());
-    expect(fixture.nativeElement.querySelector('[data-testid="votes-status-tabs"]').textContent).not.toMatch(/[–(]/);
+    expect(badges()).toEqual([null, null, null, null]);
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-status-tabs"]').textContent).not.toMatch(/[–(\d]/);
   });
 
   it('follows count updates from loading to positive to zero and back to loading', async () => {
@@ -165,8 +169,8 @@ describe('VotesTableComponent — status tab counts', () => {
 
     host.counts.set({ all: 4, active: 1, disabled: 2, ended: 1 });
     await settle();
-    expect(labels()).toEqual(['All (4)', 'Active (1)', 'Draft (2)', 'Ended (1)']);
-    expect(accessibleNames()).toEqual(labels());
+    expect(labels()).toEqual(['All 4', 'Active 1', 'Draft 2', 'Ended 1']);
+    expect(accessibleNames()).toEqual(['All, 4 votes', 'Active, 1 vote', 'Draft, 2 votes', 'Ended, 1 vote']);
 
     host.counts.set({ all: 0, active: 0, disabled: 0, ended: 0 });
     await settle();
@@ -227,13 +231,13 @@ describe('VotesTableComponent — status tab counts on initial load', () => {
     await fixture.whenStable();
     const pills = (): HTMLButtonElement[] =>
       Array.from(fixture.nativeElement.querySelectorAll('[data-testid="votes-status-tabs"] [data-testid^="filter-pill-"]'));
-    expect(pills().map((pill) => pill.textContent!.trim())).toEqual(['All', 'Active', 'Draft', 'Ended']);
+    expect(pills().map((pill) => pill.textContent!.replace(/\s+/g, ' ').trim())).toEqual(['All', 'Active', 'Draft', 'Ended']);
     expect(pills().map((pill) => pill.getAttribute('aria-label'))).toEqual(['All', 'Active', 'Draft', 'Ended']);
 
     fixture.componentInstance.counts.set({ all: 2, active: 2, disabled: 0, ended: 0 });
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(pills().map((pill) => pill.textContent!.trim())).toEqual(['All (2)', 'Active (2)', 'Draft', 'Ended']);
+    expect(pills().map((pill) => pill.textContent!.replace(/\s+/g, ' ').trim())).toEqual(['All 2', 'Active 2', 'Draft', 'Ended']);
   });
 });
 

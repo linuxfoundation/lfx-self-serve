@@ -443,8 +443,20 @@ export interface FilterPillOption {
   ariaLabel?: string;
   /** Optional accent for the default `pill` variant; omitted pills keep the blue selected style */
   color?: FilterPillColor;
-  /** Optional count shown as a small badge beside the label; omitted (or 0) renders none */
+  /** Optional count shown as a small badge beside the label (default `pill` variant only); omitted (or 0) renders none */
   count?: number;
+}
+
+/** Render-ready state for one default-variant filter pill, derived from a {@link FilterPillOption} */
+export interface FilterPillView {
+  /** Pill button classes for the option's color and selection state */
+  classes: string;
+  /** Count badge classes for the option's color and selection state */
+  badgeClasses: string;
+  /** Positive count to show as a badge, or null for none */
+  count: number | null;
+  /** Accessible name: `ariaLabel`, else the full label with the count appended when one shows */
+  ariaLabel: string;
 }
 
 /** Accent colors a filter pill can take */
