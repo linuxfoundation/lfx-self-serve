@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SHARE_KIT_HEADING_FONTS, SHARE_KIT_PLATFORMS, SHARE_KIT_TABS } from '../constants/share-kit.constants';
+import { SHARE_KIT_HEADING_FONTS, SHARE_KIT_MEMBER_OFFER_STATUSES, SHARE_KIT_PLATFORMS, SHARE_KIT_TABS } from '../constants/share-kit.constants';
 
 /** A social platform the share kit writes posts for. */
 export type ShareKitPlatform = (typeof SHARE_KIT_PLATFORMS)[number];
@@ -10,7 +10,10 @@ export type ShareKitPlatform = (typeof SHARE_KIT_PLATFORMS)[number];
 export type ShareKitTab = (typeof SHARE_KIT_TABS)[number];
 
 /** What a copy button copied, as reported to analytics. */
-export type ShareKitCopyKind = ShareKitPlatform | 'newsletter' | 'cfp_invite';
+export type ShareKitCopyKind = ShareKitPlatform | 'newsletter' | 'cfp_invite' | 'member_code';
+
+/** What the page can tell a visitor about the member discount. */
+export type ShareKitMemberOfferStatus = (typeof SHARE_KIT_MEMBER_OFFER_STATUSES)[number];
 
 /** Registration call to action. */
 export interface ShareKitRegistration {
@@ -75,6 +78,30 @@ export interface ShareKitCfp {
   /** Invitation text to copy, without the link — the page appends the tracked CFP link. */
   invitation: string;
   guide?: ShareKitCfpGuide;
+}
+
+/**
+ * Public description of a member-only discount. The code itself is not here: it comes from the
+ * `SHARE_KIT_MEMBER_CODES` secret and is only ever sent to signed-in employees of a member company.
+ */
+export interface ShareKitMemberBenefit {
+  /** Membership whose companies qualify: the project slug of its project memberships, e.g. `tlf`. */
+  membershipSlug: string;
+  /** Membership name shown to visitors, e.g. "AAIF". */
+  membershipName: string;
+  /** What members get, e.g. "20% off registration". */
+  discountLabel: string;
+  /** Where a non-member company can learn about joining (https). */
+  joinUrl: string;
+}
+
+/** The member discount as the endpoint returns it for this visitor. */
+export interface ShareKitMemberOffer {
+  status: ShareKitMemberOfferStatus;
+  /** Present only when `status` is `eligible`. */
+  code?: string;
+  /** The visitor's member company, when `status` is `eligible`. */
+  companyName?: string;
 }
 
 /** Image used for link previews (Open Graph / Twitter). */
@@ -148,6 +175,18 @@ export interface ShareKitContent {
   cfp?: ShareKitCfp;
   ogImage?: ShareKitOgImage;
   theme?: ShareKitTheme;
+  memberBenefit?: ShareKitMemberBenefit;
+}
+
+/** A remembered membership answer for one user and membership: the member company's name, or null when not a member. */
+export interface ShareKitMembershipCacheEntry {
+  expiresAt: number;
+  companyName: string | null;
+}
+
+/** The share kit endpoint's response: the content, plus the member offer for this visitor when the kit has one. */
+export interface ShareKitResponse extends ShareKitContent {
+  memberOffer?: ShareKitMemberOffer;
 }
 
 /** A post as the share kit page shows it for the selected platform: text with its tracked link, and its length. */
@@ -168,7 +207,7 @@ export interface ShareKitPageState {
   loading: boolean;
   error: boolean;
   notFound: boolean;
-  shareKit: ShareKitContent | null;
+  shareKit: ShareKitResponse | null;
 }
 
 /** Result of validating one content file: the parsed content, or readable problems for the PR author. */

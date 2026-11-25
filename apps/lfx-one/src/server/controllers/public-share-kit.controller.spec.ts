@@ -5,6 +5,9 @@ import type { ShareKitContent } from '@lfx-one/shared/interfaces';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
+// The real offer service pulls in the membership lookup's dependencies; every test passes its own stub.
+vi.mock('../services/share-kit-member-offer.service', () => ({ ShareKitMemberOfferService: vi.fn() }));
+
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -14,6 +17,7 @@ import { EVENT_SHARE_KIT_FLAG } from '@lfx-one/shared/constants';
 
 import { ContentUnavailableError, ResourceNotFoundError } from '../errors';
 import { LaunchDarklyServerService } from '../services/launchdarkly-server.service';
+import type { ShareKitMemberOfferService } from '../services/share-kit-member-offer.service';
 import { ShareKitService } from '../services/share-kit.service';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { PublicShareKitController } from './public-share-kit.controller';
@@ -30,13 +34,19 @@ function buildReqRes(eventSlug: string): { req: Request; res: Response & { json:
 describe('PublicShareKitController.getShareKit', () => {
   let controller: PublicShareKitController;
   let isFlagEnabled: Mock;
+  let resolveOffer: Mock;
 
   beforeEach(() => {
     vi.clearAllMocks();
     (getEffectiveUsername as Mock).mockReturnValue(null);
     isFlagEnabled = vi.fn().mockResolvedValue(true);
     const service = new ShareKitService({ kits: new Map([['example-summit-2027', kit]]), invalid: new Set(['broken-event']) });
-    controller = new PublicShareKitController(service, { isFlagEnabled } as unknown as LaunchDarklyServerService);
+    resolveOffer = vi.fn().mockResolvedValue(undefined);
+    controller = new PublicShareKitController(
+      service,
+      { resolveOffer } as unknown as ShareKitMemberOfferService,
+      { isFlagEnabled } as unknown as LaunchDarklyServerService
+    );
   });
 
   it('404s every kit while the flag is off', async () => {
@@ -47,6 +57,7 @@ describe('PublicShareKitController.getShareKit', () => {
     expect(res.json).not.toHaveBeenCalled();
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
     expect(res.setHeader).not.toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
+    expect(resolveOffer).not.toHaveBeenCalled();
   });
 
   it('evaluates signed-out visitors as one anonymous context and lets shared caches keep the answer', async () => {
@@ -97,5 +108,14 @@ describe('PublicShareKitController.getShareKit', () => {
     const error = next.mock.calls[0][0];
     expect(error).toBeInstanceOf(ContentUnavailableError);
     expect(error.statusCode).toBe(500);
+  });
+
+  it('adds the visitor member offer and forbids shared caching', async () => {
+    resolveOffer.mockResolvedValue({ status: 'eligible', code: 'EXAMPLE20', companyName: 'Acme Motors' });
+    const { req, res, next } = buildReqRes('example-summit-2027');
+    await controller.getShareKit(req, res, next);
+    expect(res.json).toHaveBeenCalledWith({ ...kit, memberOffer: { status: 'eligible', code: 'EXAMPLE20', companyName: 'Acme Motors' } });
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+    expect(res.setHeader).toHaveBeenCalledWith('Vary', 'Cookie');
   });
 });

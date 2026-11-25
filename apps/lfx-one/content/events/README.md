@@ -21,6 +21,28 @@ The folder name is the event slug (lowercase letters, digits and hyphens) and mu
 
 Every kit is behind the `event-share-kit` LaunchDarkly flag (`EVENT_SHARE_KIT_FLAG`). While it is off, the page shows "not found" for every event. Turn it on for named LFIDs first to check a kit in production, then for everyone. Signed-out visitors are one audience, so they get it all at once, and can take up to five minutes to see a change. No deploy is needed either way. Remove the flag once the feature is stable.
 
+## Member discount
+
+A kit can describe a member-only discount in `memberBenefit` (membership slug, display name, discount label and a join link). The code itself never goes in this repository: it is read from the `SHARE_KIT_MEMBER_CODES` environment variable, a JSON object of event slug to code set from the deployment's secret store, and is only sent to a signed-in visitor whose verified email belongs to an active member company of that membership. With no code configured for an event, the page shows no offer.
+
+To set or rotate codes:
+
+1. Add the JSON to the environment's secret store under a key such as `SHARE_KIT_MEMBER_CODES`, for example `{"agntcon-mcpcon-na-2027": "CODE"}`.
+2. Bind it in that environment's Helm values. The chart only sets the variables listed under `environment`; it does not load the whole secret:
+
+   ```yaml
+   environment:
+     SHARE_KIT_MEMBER_CODES:
+       valueFrom:
+         secretKeyRef:
+           name: <the environment's app secret>
+           key: SHARE_KIT_MEMBER_CODES
+   ```
+
+3. Restart the pods (`kubectl rollout restart deployment/lfx-self-serve`, or let the Argo CD sync roll them). Each pod reads the variable once, on the first share kit request, so a changed secret only takes effect after a restart.
+
+A company that joins or leaves is reflected within about 15 minutes: a signed-in visitor's membership answer is reused for five minutes, and the membership list it comes from is refreshed every ten (`MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS`).
+
 ## Checking a change
 
 `yarn workspace lfx-one-ui test:server src/server/services/share-kit.service.spec.ts` validates every file in this folder and fails with the field and problem for anything invalid. CI runs the same check, so an invalid file fails the PR rather than production.

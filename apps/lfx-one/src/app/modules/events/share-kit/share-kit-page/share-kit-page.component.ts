@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DOCUMENT, isPlatformBrowser, isPlatformServer, PlatformLocation } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser, isPlatformServer, NgTemplateOutlet, PlatformLocation } from '@angular/common';
 import { Component, computed, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
@@ -50,7 +50,7 @@ import { PublicShareKitService } from '../services/public-share-kit.service';
 /** Public event share kit (#6059): copy-ready posts, graphics and a CFP invitation, rendered from repo-owned content. */
 @Component({
   selector: 'lfx-share-kit-page',
-  imports: [AppFooterComponent, UiButtonComponent, UiSkeletonComponent, UiTabsComponent, ShareKitCopyCardComponent],
+  imports: [AppFooterComponent, NgTemplateOutlet, UiButtonComponent, UiSkeletonComponent, UiTabsComponent, ShareKitCopyCardComponent],
   templateUrl: './share-kit-page.component.html',
 })
 export class ShareKitPageComponent {
@@ -147,6 +147,13 @@ export class ShareKitPageComponent {
   protected readonly registerUrl = computed(() => this.pageLink(this.kit()?.registration.url, 'register'));
   protected readonly cfpUrl = computed(() => this.pageLink(this.kit()?.cfp?.url, 'cfp-details'));
   protected readonly guideUrl = computed(() => this.pageLink(this.kit()?.cfp?.guide?.url, 'cfp-guide'));
+  // Member discount (#6061): the benefit is public copy; the offer (and its code) is decided per visitor by the server.
+  protected readonly memberBenefit = computed(() => this.kit()?.memberBenefit ?? null);
+  protected readonly memberOffer = computed(() => this.kit()?.memberOffer ?? null);
+  protected readonly signInUrl = computed(() => {
+    const kit = this.kit();
+    return kit ? `/login?returnTo=${encodeURIComponent(`/events/${kit.eventSlug}/share-kit`)}` : '/login';
+  });
 
   public constructor() {
     const settled$ = toObservable(this.state).pipe(filter((state) => !state.loading));

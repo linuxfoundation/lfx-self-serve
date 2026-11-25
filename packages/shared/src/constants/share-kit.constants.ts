@@ -87,3 +87,22 @@ export const SHARE_KIT_HEADING_FONT_STACKS = {
 
 /** WCAG AA contrast for normal text, required between each themed text colour and its background. */
 export const SHARE_KIT_MIN_TEXT_CONTRAST = 4.5;
+
+/** What the page can tell a visitor about the member discount (#6061). */
+export const SHARE_KIT_MEMBER_OFFER_STATUSES = ['sign_in', 'not_member', 'eligible', 'unavailable'] as const;
+
+/**
+ * Environment variable holding member discount codes as JSON keyed by event slug, e.g. `{"<eventSlug>":"<code>"}`.
+ * Set from the deployment's secret store: codes never live in this public repo.
+ */
+export const SHARE_KIT_MEMBER_CODES_ENV = 'SHARE_KIT_MEMBER_CODES';
+
+/**
+ * How long a signed-in visitor's membership answer is reused, in milliseconds. The answer comes from a membership list
+ * that is itself cached for `MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS` (10 minutes), so a company that joins or leaves is
+ * reflected after at most the sum of the two, about 15 minutes.
+ */
+export const SHARE_KIT_MEMBERSHIP_CACHE_MS = 5 * 60 * 1000;
+
+/** Upper bound on remembered membership answers per process; the cache is emptied when it is reached. */
+export const SHARE_KIT_MEMBERSHIP_CACHE_MAX_ENTRIES = 5000;

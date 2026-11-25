@@ -77,6 +77,7 @@
               </a>
               <span class="text-[14px]" data-testid="share-kit-early-bird">{{ priceLine() }}</span>
             </div>
+            <ng-container [ngTemplateOutlet]="memberOfferBlock" />
           </div>
           <!-- Decorative shapes in the theme's colours, after the event graphic. Hidden below lg and from assistive tech. -->
           <div class="relative hidden min-h-[300px] lg:block" aria-hidden="true" data-testid="share-kit-shapes">
@@ -116,6 +117,7 @@
               <span class="text-sm text-gray-600" data-testid="share-kit-early-bird">Early-bird pricing through {{ earlyBird() }}.</span>
             }
           </div>
+          <ng-container [ngTemplateOutlet]="memberOfferBlock" />
         </section>
       }
 
@@ -275,3 +277,51 @@
   <!-- Outside the state branches so cookie settings stay reachable on loading, not-found and error views too. -->
   <lfx-app-footer />
 </div>
+
+<!-- Member discount (#6061), shown in either hero: the code is only ever in the response for a signed-in employee of a member company. -->
+<ng-template #memberOfferBlock>
+  @if (memberBenefit(); as benefit) {
+    @if (memberOffer(); as offer) {
+      <div class="flex max-w-[640px] flex-col gap-3 rounded-lg border-l-4 border-blue-600 bg-blue-50 px-4 py-3" data-testid="share-kit-member-offer">
+        <p class="text-sm font-semibold text-gray-900">{{ benefit.membershipName }} members get {{ benefit.discountLabel }}.</p>
+        @switch (offer.status) {
+          @case ('eligible') {
+            <lfx-share-kit-copy-card
+              heading="Your member code"
+              [sensitive]="true"
+              [buttonVariant]="copyButtonVariant()"
+              [text]="offer.code ?? ''"
+              copyLabel="Copy code"
+              testId="share-kit-member-code"
+              (copied)="onCopied('member_code')" />
+            <p class="text-sm text-gray-700" data-testid="share-kit-member-eligible">
+              Enter it when you register.
+              @if (offer.companyName) {
+                {{ offer.companyName }} is a {{ benefit.membershipName }} member.
+              }
+            </p>
+          }
+          @case ('sign_in') {
+            <p class="text-sm text-gray-700" data-testid="share-kit-member-sign-in">
+              <a [href]="signInUrl()" class="font-medium text-blue-700 underline-offset-2 hover:underline">Sign in</a>
+              with your work email to see your member code.
+            </p>
+          }
+          @case ('not_member') {
+            <p class="text-sm text-gray-700" data-testid="share-kit-member-not-member">
+              Your company isn't a {{ benefit.membershipName }} member yet.
+              <a [href]="benefit.joinUrl" target="_blank" rel="noopener" class="font-medium text-blue-700 underline-offset-2 hover:underline"
+                >Learn about joining</a
+              >
+            </p>
+          }
+          @default {
+            <p class="text-sm text-gray-700" data-testid="share-kit-member-unavailable">
+              We couldn't check your membership right now. Refresh the page to try again.
+            </p>
+          }
+        }
+      </div>
+    }
+  }
+</ng-template>

@@ -308,3 +308,21 @@ export const newsletterGuestRateLimiter = rateLimit({
   message: { error: 'Too many attempts. Please wait a few minutes and try again.', code: 'RATE_LIMITED' },
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? ''),
 });
+
+/**
+ * Rate limiter for signed-in share kit reads (#6061).
+ *
+ * `publicApiRateLimiter` skips share kit reads because the page's SSR fetch arrives over loopback. A
+ * signed-in read also runs a membership lookup for the member discount, so those are metered per user
+ * here (the SSR fetch forwards the visitor's session cookie, so `sub` is the real visitor). Anonymous
+ * reads trigger no lookup and are skipped. In-process MemoryStore: per pod, like `aiRateLimiter`.
+ */
+export const shareKitMemberRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute window
+  max: 30, // limit each signed-in user to 30 share kit reads per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => !req.oidc?.user?.['sub'],
+  keyGenerator: (req) => String(req.oidc?.user?.['sub']),
+  message: { error: 'Too many requests, please try again later.', code: 'RATE_LIMITED' },
+});

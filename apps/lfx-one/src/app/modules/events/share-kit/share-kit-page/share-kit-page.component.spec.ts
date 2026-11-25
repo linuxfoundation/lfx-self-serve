@@ -239,4 +239,45 @@ describe('ShareKitPageComponent', () => {
     await setup(throwError(() => new HttpErrorResponse({ status: 500 })));
     expect(text('share-kit-error')).toContain("This share kit isn't available right now.");
   });
+
+  describe('member offer', () => {
+    const memberBenefit = {
+      membershipSlug: 'example-foundation',
+      membershipName: 'Example',
+      discountLabel: '20% off registration',
+      joinUrl: 'https://example.org/join',
+    };
+
+    it('shows the code to an eligible member and tracks the copy without it', async () => {
+      const page = await setup(of({ ...kit, memberBenefit, memberOffer: { status: 'eligible' as const, code: 'EXAMPLE20', companyName: 'Acme Motors' } }));
+      expect(text('share-kit-member-code-text')).toBe('EXAMPLE20');
+      expect(text('share-kit-member-eligible')).toContain('Acme Motors is a Example member.');
+      page.onCopied('member_code');
+      expect(trackEvent).toHaveBeenCalledWith('share_kit_copy', { event_slug: 'example-summit-2027', foundation: 'example-foundation', kind: 'member_code' });
+      expect(JSON.stringify(trackEvent.mock.calls)).not.toContain('EXAMPLE20');
+    });
+
+    it('asks anonymous visitors to sign in, returning to the kit', async () => {
+      await setup(of({ ...kit, memberBenefit, memberOffer: { status: 'sign_in' as const } }));
+      const link = fixture.nativeElement.querySelector('[data-testid="share-kit-member-sign-in"] a') as HTMLAnchorElement;
+      expect(link.getAttribute('href')).toBe('/login?returnTo=%2Fevents%2Fexample-summit-2027%2Fshare-kit');
+      expect(fixture.nativeElement.querySelector('[data-testid="share-kit-member-code"]')).toBeNull();
+    });
+
+    it('points a non-member company to the join page', async () => {
+      await setup(of({ ...kit, memberBenefit, memberOffer: { status: 'not_member' as const } }));
+      expect(text('share-kit-member-not-member')).toContain("Your company isn't a Example member yet.");
+    });
+
+    it('withholds the code and explains when the membership check failed', async () => {
+      await setup(of({ ...kit, memberBenefit, memberOffer: { status: 'unavailable' as const } }));
+      expect(fixture.nativeElement.querySelector('[data-testid="share-kit-member-unavailable"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="share-kit-member-code"]')).toBeNull();
+    });
+
+    it('shows no offer when the kit has no member benefit', async () => {
+      await setup();
+      expect(fixture.nativeElement.querySelector('[data-testid="share-kit-member-offer"]')).toBeNull();
+    });
+  });
 });

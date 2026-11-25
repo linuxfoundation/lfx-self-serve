@@ -76,6 +76,14 @@ describe('ShareKitCopyCardComponent', () => {
     clearSpy.mockRestore();
   });
 
+  it('masks sensitive text from Datadog Session Replay', () => {
+    fixture.detectChanges();
+    expect(el('').hasAttribute('data-dd-privacy')).toBe(false);
+    fixture.componentRef.setInput('sensitive', true);
+    fixture.detectChanges();
+    expect(el('').getAttribute('data-dd-privacy')).toBe('mask');
+  });
+
   it('flags a post over the platform limit', () => {
     fixture.componentRef.setInput('length', 301);
     fixture.componentRef.setInput('limit', 300);
