@@ -45,17 +45,19 @@ interface PageHandlers {
 describe('ShareKitPageComponent', () => {
   let fixture: ComponentFixture<ShareKitPageComponent>;
   let trackEvent: ReturnType<typeof vi.fn>;
+  let trackPage: ReturnType<typeof vi.fn>;
   let getShareKit: ReturnType<typeof vi.fn>;
 
   async function setup(response = of(kit)): Promise<PageHandlers> {
     trackEvent = vi.fn();
+    trackPage = vi.fn();
     getShareKit = vi.fn(() => response);
     await TestBed.configureTestingModule({
       imports: [ShareKitPageComponent],
       providers: [
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ eventSlug: 'example-summit-2027' })) } },
         { provide: PublicShareKitService, useValue: { getShareKit } },
-        { provide: PlausibleService, useValue: { trackEvent } },
+        { provide: PlausibleService, useValue: { trackEvent, trackPage, ready: signal(true) } },
         { provide: UserService, useValue: { authenticated: signal(false) } },
       ],
     }).compileComponents();
@@ -68,6 +70,40 @@ describe('ShareKitPageComponent', () => {
   const text = (testId: string): string => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? '';
 
   beforeEach(() => TestBed.resetTestingModule());
+
+  it('sends one pageview with the kit foundation once the kit loads', async () => {
+    await setup();
+    expect(trackPage).toHaveBeenCalledTimes(1);
+    expect(trackPage).toHaveBeenCalledWith({ foundation: 'example-foundation', foundation_name: 'Example Foundation' });
+  });
+
+  it('points canonical and og:url at the kit and clears an inherited noindex', async () => {
+    const robots = document.createElement('meta');
+    robots.setAttribute('name', 'robots');
+    robots.setAttribute('content', 'noindex');
+    document.head.appendChild(robots);
+    await setup();
+    const canonical = document.head.querySelector('link[rel="canonical"]')?.getAttribute('href') ?? '';
+    expect(canonical.endsWith('/events/example-summit-2027/share-kit')).toBe(true);
+    expect(document.head.querySelector('meta[property="og:url"]')?.getAttribute('content')).toBe(canonical);
+    expect(document.head.querySelector('meta[name="robots"]')).toBeNull();
+  });
+
+  it('tags the CFP invitation link as cfp whatever platform the Share tab is on', async () => {
+    const page = await setup();
+    page.selectPlatform('x');
+    (fixture.componentInstance as unknown as { tab: { set(value: string): void } }).tab.set('cfp');
+    fixture.detectChanges();
+    const invitation = text('share-kit-cfp-invitation-text');
+    expect(invitation).toContain('utm_medium=cfp');
+    expect(invitation).not.toContain('utm_medium=x');
+  });
+
+  it('marks a missing kit noindex and drops the canonical link', async () => {
+    await setup(throwError(() => new HttpErrorResponse({ status: 404 })));
+    expect(document.head.querySelector('meta[name="robots"]')?.getAttribute('content')).toBe('noindex');
+    expect(document.head.querySelector('link[rel="canonical"]')).toBeNull();
+  });
 
   it('renders the hero with dates, venue and a tracked register link', async () => {
     await setup();
