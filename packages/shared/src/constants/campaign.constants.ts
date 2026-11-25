@@ -901,8 +901,9 @@ export const LINKEDIN_STAFF_COUNT_RANGES = [
 
 /**
  * The facets `linkedInConfig.targeting` accepts, campaign-service's `targetingFacets`: each value's shape (a pattern,
- * or `LINKEDIN_STAFF_COUNT_RANGES`), whether LinkedIn takes it only under `include`, and whether it is an employer list
- * (compared by id, capped at `LINKEDIN_TARGETING_LIMITS.employerValues`). Ids are numeric with no leading zero.
+ * or `null` for `LINKEDIN_STAFF_COUNT_RANGES`) and whether LinkedIn takes it only under `include`. Ids are numeric with
+ * no leading zero. `employers` is recognised by its key, not by an attribute here: its values compare by id and are
+ * capped at `LINKEDIN_TARGETING_LIMITS.employerValues` (see `linkedInTargetingRefusal`).
  */
 export const LINKEDIN_TARGETING_FACETS: Readonly<Record<string, { pattern: RegExp | null; includeOnly: boolean }>> = {
   skills: { pattern: /^urn:li:skill:[1-9][0-9]{0,18}$/, includeOnly: false },

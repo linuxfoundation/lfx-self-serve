@@ -4,7 +4,11 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { LINKEDIN_AUDIENCES_RESTRICTED_CODE, LINKEDIN_TARGETING_PROFILE_EDIT_FIELD } from '@lfx-one/shared/constants';
+import {
+  LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
+  LINKEDIN_AUDIENCES_RESTRICTED_CODE,
+  LINKEDIN_TARGETING_PROFILE_EDIT_FIELD,
+} from '@lfx-one/shared/constants';
 import type { LinkedInRuntimeConfig } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
@@ -309,5 +313,20 @@ describe('CampaignController LinkedIn custom targeting (#5764)', () => {
     expect(vi.mocked(next).mock.calls[0]?.[0]).toMatchObject({ code: LINKEDIN_AUDIENCES_RESTRICTED_CODE });
     expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).toHaveBeenCalledWith(expect.anything(), 'tlf');
     expect(createCampaigns).not.toHaveBeenCalled();
+  });
+
+  it('refuses an ad segment when the check cannot be made, and sends one for a caller who holds the relation', async () => {
+    const segment = { include: [{ audienceMatchingSegments: ['urn:li:adSegment:6'] }] };
+    vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockRejectedValueOnce(new Error('access-check unavailable'));
+
+    const unverified = await create({ targetingProfile: 'cloud-native', targeting: segment });
+
+    expect(vi.mocked(unverified.next).mock.calls[0]?.[0]).toMatchObject({ code: LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE });
+    expect(createCampaigns).not.toHaveBeenCalled();
+
+    const allowed = await create({ targetingProfile: 'cloud-native', targeting: segment });
+
+    expect(allowed.next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()['targeting']).toEqual(segment);
   });
 });
