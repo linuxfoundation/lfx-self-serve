@@ -14,6 +14,7 @@ describe('linkedInConfigKeyRefusal', () => {
     [null, null],
     [{ ...config, variants: 'none' }, null],
     [{ ...config, variants: [null, 'text'] }, null],
+    [{ ...config, format: 'text', textAds: [{ headline: 'h', description: 'd', imageUrn: 'urn:li:image:1' }, null] }, null],
   ])('accepts %j', (raw, expected) => {
     expect(linkedInConfigKeyRefusal(raw)).toBe(expected);
   });
@@ -27,6 +28,8 @@ describe('linkedInConfigKeyRefusal', () => {
     [{ ...config, ['ſelectedAdAccountId']: '1' }, 'linkedInConfig.selectedAdAccountId'],
     [{ ...config, variants: [variant, { ...variant, videoAssetId: 'v1' }] }, 'linkedInConfig.variants[1]'],
     [{ ...config, variants: [{ ...variant, ImageUrn: 'urn:li:image:1' }] }, 'linkedInConfig.variants[0].imageUrn'],
+    [{ ...config, textAds: [{ headline: 'h', descripton: 'd' }] }, 'linkedInConfig.textAds[0]'],
+    [{ ...config, textAds: [{ Headline: 'h' }] }, 'linkedInConfig.textAds[0].headline'],
   ])('refuses %j, naming %s', (raw, field) => {
     expect(linkedInConfigKeyRefusal(raw)?.field).toBe(field);
   });

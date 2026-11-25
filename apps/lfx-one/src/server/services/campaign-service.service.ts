@@ -923,6 +923,16 @@ export function canSetLinkedInCallToAction(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may be a Text Ads campaign (#5764 row 19, campaign-service #586). Needs the campaign-service
+ * create path with bidding (`canCreateWithBidding`), since a text create must carry a manual bid, AND
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS`, which follows campaign-service's own `LINKEDIN_ADS_TEXT_ADS_ENABLED`:
+ * campaign-service refuses the format while that is off, and the legacy creator ignores it.
+ */
+export function canSetLinkedInTextAds(): boolean {
+  return canCreateWithBidding() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInTextAds);
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -1150,6 +1160,7 @@ export class CampaignServiceClient {
         linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
         linkedInVariantCopyEnabled: canSetLinkedInVariantCopy(),
         linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
+        linkedInTextAdsEnabled: canSetLinkedInTextAds(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1237,6 +1248,7 @@ export class CampaignServiceClient {
       linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
       linkedInVariantCopyEnabled: canSetLinkedInVariantCopy(),
       linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
+      linkedInTextAdsEnabled: canSetLinkedInTextAds(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),

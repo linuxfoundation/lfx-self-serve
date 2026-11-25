@@ -853,6 +853,28 @@ export const LINKEDIN_VARIANT_FIELD_LIMITS = {
   description: 300,
 } as const;
 
+/**
+ * The ad formats a LinkedIn create may name (#5764 row 19), campaign-service's `FormatSingleImage` and `FormatText`
+ * (`internal/platform/linkedin/text_ads.go`, #586). Omitted is the single-image default.
+ */
+export const LINKEDIN_AD_FORMATS = ['single_image', 'text'] as const;
+
+/**
+ * LinkedIn Text Ads limits (#5764 row 19), campaign-service's `TextAdHeadlineMaxChars`, `TextAdDescriptionMaxChars`
+ * and `maxTextAds`: characters after the creative normalization, and text ads per campaign.
+ */
+export const LINKEDIN_TEXT_AD_LIMITS = {
+  headline: 25,
+  description: 75,
+  ads: 100,
+} as const;
+
+/** The keys one LinkedIn text ad may carry, spelled exactly (`LinkedInTextAd`). */
+export const LINKEDIN_TEXT_AD_REQUEST_KEYS = ['headline', 'description', 'imageUrn', 'imageAssetId'] as const;
+
+/** An Images-API image URN as campaign-service accepts it (`imageURNRE`, `internal/platform/linkedin/targeting.go`). */
+export const LINKEDIN_IMAGE_URN_PATTERN = /^urn:li:image:[A-Za-z0-9_-]+$/;
+
 export const META_CHAR_LIMITS = {
   primaryText: 125,
   headline: 40,

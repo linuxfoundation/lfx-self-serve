@@ -12,6 +12,7 @@ import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.ut
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
 import { correctLinkedInGeoTargets, linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
 import { linkedInGeoSearchLocations, linkedInGeoSearchQueryRefusal } from '@lfx-one/shared/utils/campaign-linkedin-geo.utils';
+import { linkedInTextAdAssetField, linkedInTextAdsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-text-ads.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
 import {
   googleAdScheduleRefusal,
@@ -420,6 +421,7 @@ import {
   canChooseLinkedInAdAccount,
   canEditLinkedInTargeting,
   canSetLinkedInCallToAction,
+  canSetLinkedInTextAds,
   canSetLinkedInDailyCap,
   canSetLinkedInVariantCopy,
   canSearchGoogleGeoTargets,
@@ -1352,6 +1354,15 @@ export class CampaignController {
       });
       if (linkedInVariantRefusal !== null) {
         throw ServiceValidationError.forField(linkedInVariantRefusal.field, linkedInVariantRefusal.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // LinkedIn Text Ads (#5764 row 19): refused, never dropped, while this deployment cannot send them, and held to
+      // campaign-service's rules. See `linkedInTextAdsRefusal`.
+      const linkedInTextAdsRefused = linkedInTextAdsRefusal(body?.linkedInConfig, canSetLinkedInTextAds());
+      if (linkedInTextAdsRefused !== null) {
+        throw ServiceValidationError.forField(linkedInTextAdsRefused.field, linkedInTextAdsRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });
@@ -7038,13 +7049,19 @@ export class CampaignController {
     );
   }
 
-  /** `unservedMetaAssetField`'s LinkedIn sibling: the first `linkedInConfig.variants[i].imageAssetId` this deployment cannot honour. */
+  /**
+   * `unservedMetaAssetField`'s LinkedIn sibling: the first `linkedInConfig.variants[i].imageAssetId`, or else
+   * `linkedInConfig.textAds[i].imageAssetId` (#5764 row 19), this deployment cannot honour.
+   */
   private unservedLinkedInAssetField(body: CampaignCreateRequest): string | null {
     if (canUseLinkedInCreativeAssets()) return null;
     const config: unknown = body?.linkedInConfig;
-    if (config === null || typeof config !== 'object' || !('variants' in config) || !Array.isArray(config.variants)) return null;
-    const index = config.variants.findIndex((variant: unknown) => variant !== null && typeof variant === 'object' && 'imageAssetId' in variant);
-    return index === -1 ? null : `linkedInConfig.variants[${index}].imageAssetId`;
+    if (config === null || typeof config !== 'object') return null;
+    if ('variants' in config && Array.isArray(config.variants)) {
+      const index = config.variants.findIndex((variant: unknown) => variant !== null && typeof variant === 'object' && 'imageAssetId' in variant);
+      if (index !== -1) return `linkedInConfig.variants[${index}].imageAssetId`;
+    }
+    return linkedInTextAdAssetField(config);
   }
 
   /**
@@ -9731,13 +9748,16 @@ export class CampaignController {
    *    configured, as before.
    *
    * 4. Every other key goes out as it came, which is safe only because `createCampaign` has already refused any key
-   *    outside the request's own top-level and variant fields (`linkedInConfigKeyRefusal`, #5764).
+   *    outside the request's own top-level, variant and text ad fields (`linkedInConfigKeyRefusal`, #5764).
    *
    * 5. A variant's ad name, description and call to action go out only as `compactLinkedInVariantFields` checked and
    *    compacted them (#5764 rows 16–17): the name normalized, the call to action upper-cased, a blank one dropped.
    *
    * 6. `geoTargets` goes out with the Germany and United Kingdom URNs the old shared map resolved wrongly corrected,
    *    and a repeat dropped (`correctLinkedInGeoTargets`, LFXV2-2665), for a stale tab or a direct caller.
+   *
+   * 7. `format` and `textAds` (#5764 row 19) go out as they came, once `linkedInTextAdsRefusal` passed them:
+   *    campaign-service normalizes each text ad's copy itself, as it does a variant's.
    */
   private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;

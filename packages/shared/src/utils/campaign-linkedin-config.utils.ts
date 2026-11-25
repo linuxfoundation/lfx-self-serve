@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LINKEDIN_GEO_URN_CORRECTIONS } from '../constants/campaign.constants';
+import { LINKEDIN_GEO_URN_CORRECTIONS, LINKEDIN_TEXT_AD_REQUEST_KEYS } from '../constants/campaign.constants';
 import type { LinkedInConfigKeyRefusal } from '../interfaces/campaign.interface';
 
 /**
@@ -29,6 +29,8 @@ const LINKEDIN_CONFIG_REQUEST_KEYS = [
   'selectedAdAccountId',
   'bidding',
   'targetingProfileEdit',
+  'format',
+  'textAds',
 ] as const;
 
 /** The `linkedInConfig.variants[i]` keys a create may carry, spelled exactly (`LinkedInCreativeVariant`). */
@@ -58,21 +60,28 @@ function keyRefusalIn(record: Record<string, unknown>, known: readonly string[],
  * Why `raw`'s keys cannot be sent, or `null` (#5764). The create route used to forward `linkedInConfig` as it came, so any
  * field campaign-service reads (its targeting, objective, conversions, Text Ads, a variant's call to action or video) went
  * past every check here, and a differently cased known key past the checks that read it by exact spelling. Now any top-level
- * key outside {@link LINKEDIN_CONFIG_REQUEST_KEYS}, or a variant key outside {@link LINKEDIN_VARIANT_REQUEST_KEYS}, is
- * refused whatever the flags. Only those two levels are walked: the keys inside `bidding`, `geoTargets[i]` and
- * `targetingProfileEdit` are left to the checks that read them. A variant that is not an object is left to
- * campaign-service, as before.
+ * key outside {@link LINKEDIN_CONFIG_REQUEST_KEYS}, a variant key outside {@link LINKEDIN_VARIANT_REQUEST_KEYS}, or a text
+ * ad key outside `LINKEDIN_TEXT_AD_REQUEST_KEYS` (#5764 row 19) is refused whatever the flags. Only those levels are
+ * walked: the keys inside `bidding`, `geoTargets[i]` and `targetingProfileEdit` are left to the checks that read them. A
+ * variant or text ad that is not an object is left to the checks that read it, as before.
  */
 export function linkedInConfigKeyRefusal(raw: unknown): LinkedInConfigKeyRefusal | null {
   const config = plainRecord(raw);
   if (!config) return null;
   const top = keyRefusalIn(config, LINKEDIN_CONFIG_REQUEST_KEYS, 'linkedInConfig');
   if (top !== null) return top;
-  const variants = config['variants'];
-  if (!Array.isArray(variants)) return null;
-  for (const [index, item] of variants.entries()) {
-    const variant = plainRecord(item);
-    const refusal = variant ? keyRefusalIn(variant, LINKEDIN_VARIANT_REQUEST_KEYS, `linkedInConfig.variants[${index}]`) : null;
+  return (
+    listKeyRefusal(config['variants'], LINKEDIN_VARIANT_REQUEST_KEYS, 'linkedInConfig.variants') ??
+    listKeyRefusal(config['textAds'], LINKEDIN_TEXT_AD_REQUEST_KEYS, 'linkedInConfig.textAds')
+  );
+}
+
+/** Why an entry of `list` carries a key outside `known`, or `null`. An entry that is not an object is left to the checks that read it. */
+function listKeyRefusal(list: unknown, known: readonly string[], path: string): LinkedInConfigKeyRefusal | null {
+  if (!Array.isArray(list)) return null;
+  for (const [index, item] of list.entries()) {
+    const entry = plainRecord(item);
+    const refusal = entry ? keyRefusalIn(entry, known, `${path}[${index}]`) : null;
     if (refusal !== null) return refusal;
   }
   return null;
