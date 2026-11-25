@@ -8,9 +8,14 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: vi.fn(() => null) }));
+
+import { EVENT_SHARE_KIT_FLAG } from '@lfx-one/shared/constants';
 
 import { ContentUnavailableError, ResourceNotFoundError } from '../errors';
+import { LaunchDarklyServerService } from '../services/launchdarkly-server.service';
 import { ShareKitService } from '../services/share-kit.service';
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { PublicShareKitController } from './public-share-kit.controller';
 
 const kit = { eventSlug: 'example-summit-2027', title: 'Example Summit' } as ShareKitContent;
@@ -24,42 +29,69 @@ function buildReqRes(eventSlug: string): { req: Request; res: Response & { json:
 
 describe('PublicShareKitController.getShareKit', () => {
   let controller: PublicShareKitController;
+  let isFlagEnabled: Mock;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    (getEffectiveUsername as Mock).mockReturnValue(null);
+    isFlagEnabled = vi.fn().mockResolvedValue(true);
     const service = new ShareKitService({ kits: new Map([['example-summit-2027', kit]]), invalid: new Set(['broken-event']) });
-    controller = new PublicShareKitController(service);
+    controller = new PublicShareKitController(service, { isFlagEnabled } as unknown as LaunchDarklyServerService);
   });
 
-  it('returns the kit for a known slug', () => {
+  it('404s every kit while the flag is off', async () => {
+    isFlagEnabled.mockResolvedValue(false);
     const { req, res, next } = buildReqRes('example-summit-2027');
-    controller.getShareKit(req, res, next);
-    expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith(kit);
-  });
-
-  it('never includes a member code in the response', () => {
-    const { req, res, next } = buildReqRes('example-summit-2027');
-    controller.getShareKit(req, res, next);
-    expect(res.json.mock.calls[0][0]).not.toHaveProperty('memberOffer');
-  });
-
-  it('404s an unknown slug', () => {
-    const { req, res, next } = buildReqRes('unknown-event');
-    controller.getShareKit(req, res, next);
+    await controller.getShareKit(req, res, next);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ResourceNotFoundError);
     expect(res.json).not.toHaveBeenCalled();
   });
 
-  it('404s a malformed slug without looking it up', () => {
+  it('evaluates signed-out visitors as one anonymous context and lets shared caches keep the answer', async () => {
+    const { req, res, next } = buildReqRes('example-summit-2027');
+    await controller.getShareKit(req, res, next);
+    expect(isFlagEnabled).toHaveBeenCalledWith(req, EVENT_SHARE_KIT_FLAG, false, { key: 'anonymous-share-kit-visitor', anonymous: true });
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
+    expect(res.setHeader).toHaveBeenCalledWith('Vary', 'Cookie');
+  });
+
+  it('evaluates signed-in visitors by username and keeps their answer out of shared caches', async () => {
+    (getEffectiveUsername as Mock).mockReturnValue('staff-user');
+    const { req, res, next } = buildReqRes('example-summit-2027');
+    await controller.getShareKit(req, res, next);
+    expect(isFlagEnabled).toHaveBeenCalledWith(req, EVENT_SHARE_KIT_FLAG, false, undefined);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+  });
+
+  it('returns the kit for a known slug', async () => {
+    const { req, res, next } = buildReqRes('example-summit-2027');
+    await controller.getShareKit(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(kit);
+  });
+
+  it('never includes a member code in the response', async () => {
+    const { req, res, next } = buildReqRes('example-summit-2027');
+    await controller.getShareKit(req, res, next);
+    expect(res.json.mock.calls[0][0]).not.toHaveProperty('memberOffer');
+  });
+
+  it('404s an unknown slug', async () => {
+    const { req, res, next } = buildReqRes('unknown-event');
+    await controller.getShareKit(req, res, next);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ResourceNotFoundError);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('404s a malformed slug without looking it up', async () => {
     const { req, res, next } = buildReqRes('../etc');
-    controller.getShareKit(req, res, next);
+    await controller.getShareKit(req, res, next);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ResourceNotFoundError);
   });
 
-  it('500s a slug whose content failed validation', () => {
+  it('500s a slug whose content failed validation', async () => {
     const { req, res, next } = buildReqRes('broken-event');
-    controller.getShareKit(req, res, next);
+    await controller.getShareKit(req, res, next);
     const error = next.mock.calls[0][0];
     expect(error).toBeInstanceOf(ContentUnavailableError);
     expect(error.statusCode).toBe(500);

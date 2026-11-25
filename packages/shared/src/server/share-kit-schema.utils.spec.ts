@@ -80,10 +80,28 @@ describe('validateShareKitContent', () => {
     expect(validateShareKitContent(kit).problems.join('\n')).toContain('post ids must be unique');
   });
 
+  it('accepts posts that exactly fill X and Bluesky once the link is added', () => {
+    const kit = validKit();
+    kit['posts'] = [{ id: 'invite', title: 'Invite', text: { linkedin: 'Hi', x: 'a'.repeat(255), bluesky: 'a'.repeat(258) } }];
+    expect(validateShareKitContent(kit).ok).toBe(true);
+  });
+
   it('rejects an X post too long to fit with its link', () => {
     const kit = validKit();
-    kit['posts'] = [{ id: 'invite', title: 'Invite', text: { linkedin: 'Hi', x: 'a'.repeat(241), bluesky: 'Hi' } }];
-    expect(validateShareKitContent(kit).ok).toBe(false);
+    kit['posts'] = [{ id: 'invite', title: 'Invite', text: { linkedin: 'Hi', x: 'a'.repeat(256), bluesky: 'Hi' } }];
+    expect(validateShareKitContent(kit).problems.join('\n')).toContain('281 of 280 characters');
+  });
+
+  it('uses X weighting, so CJK text counts twice', () => {
+    const kit = validKit();
+    kit['posts'] = [{ id: 'invite', title: 'Invite', text: { linkedin: 'Hi', x: '漢'.repeat(130), bluesky: 'Hi' } }];
+    expect(validateShareKitContent(kit).problems.join('\n')).toContain('285 of 280 characters');
+  });
+
+  it('rejects a Bluesky post too long to fit with its link', () => {
+    const kit = validKit();
+    kit['posts'] = [{ id: 'invite', title: 'Invite', text: { linkedin: 'Hi', x: 'Hi', bluesky: 'a'.repeat(259) } }];
+    expect(validateShareKitContent(kit).problems.join('\n')).toContain('301 of 300 characters');
   });
 
   it('requires eventSlug to match its folder name', () => {

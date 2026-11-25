@@ -3,6 +3,7 @@
 
 import { SHARE_KIT_PLATFORM_LIMITS, SHARE_KIT_UTM_SOURCE } from '../constants/share-kit.constants';
 import { ShareKitLinkTracking, ShareKitPlatform } from '../interfaces/share-kit.interface';
+import { twitterWeightedLength } from './campaign-twitter.utils';
 
 /**
  * Adds the share kit's tracking parameters to a link so clicks and registrations can be attributed
@@ -23,10 +24,13 @@ export function composeShareKitPost(text: string, link: string): string {
 }
 
 /**
- * Length of a composed post as the platform counts it: X counts links as 23 characters and Bluesky's app
- * shortens pasted links to about 40, so the link's own length only counts on LinkedIn.
+ * Length of a composed post as the platform counts it. X uses its weighted count (CJK and most emoji count
+ * twice, every link 23), Bluesky's app shortens pasted links to about 40, and LinkedIn counts the link in full.
  */
 export function countShareKitPostLength(text: string, link: string, platform: ShareKitPlatform): number {
+  if (platform === 'x') {
+    return twitterWeightedLength(composeShareKitPost(text, link));
+  }
   const { linkLength } = SHARE_KIT_PLATFORM_LIMITS[platform];
   return [...text.trim()].length + 2 + (linkLength ?? [...link].length);
 }

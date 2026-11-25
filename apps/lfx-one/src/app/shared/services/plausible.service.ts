@@ -26,8 +26,9 @@ export class PlausibleService {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly lensService = inject(LensService);
 
-  // Routes whose owning component fires `trackPage()` itself once async context resolves.
-  private static readonly deferredPageviewPattern = /^\/meetings\/\d+(-\d{13})?$/;
+  // Routes whose owning component fires `trackPage()` itself once async context resolves: meeting pages, and
+  // share kits, whose foundation comes from the loaded kit rather than the visitor's project context.
+  private static readonly deferredPageviewPattern = /^\/meetings\/\d+(-\d{13})?$|^\/events\/[a-z0-9-]+\/share-kit\/?$/;
 
   private scriptLoaded = false;
   private readonly analyticsReady = signal(false);

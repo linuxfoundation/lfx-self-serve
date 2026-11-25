@@ -64,6 +64,18 @@ describe('ShareKitCopyCardComponent', () => {
     expect(document.getSelection()?.toString()).toContain('Join us.');
   });
 
+  it('clears its status timer when destroyed', async () => {
+    setClipboard(() => Promise.resolve());
+    const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
+    fixture.detectChanges();
+    el('-copy').querySelector('button')?.click();
+    await fixture.whenStable();
+    clearSpy.mockClear();
+    fixture.destroy();
+    expect(clearSpy).toHaveBeenCalledTimes(1);
+    clearSpy.mockRestore();
+  });
+
   it('flags a post over the platform limit', () => {
     fixture.componentRef.setInput('length', 301);
     fixture.componentRef.setInput('limit', 300);
