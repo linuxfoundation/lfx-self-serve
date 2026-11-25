@@ -61,8 +61,7 @@ export const ACCOUNT_ROUTES: Routes = [
       {
         path: 'individual-enrollment',
         title: 'Individual Enrollment',
-        loadComponent: () =>
-          import('../profile/individual-enrollment/profile-individual-enrollment.component').then((m) => m.ProfileIndividualEnrollmentComponent),
+        loadComponent: () => import('./individual-enrollment/account-individual-enrollment.component').then((m) => m.AccountIndividualEnrollmentComponent),
       },
       {
         path: 'clas',

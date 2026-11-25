@@ -1,0 +1,154 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<div class="flex flex-col gap-[20px]" data-testid="account-enrollment">
+  @let state = displayState();
+  @switch (state.kind) {
+    @case ('loading') {
+      <div
+        class="flex flex-col gap-[12px] rounded-ui-md bg-ui-background-100 p-[24px] shadow-small"
+        aria-hidden="true"
+        data-testid="account-enrollment-loading">
+        <lfx-ui-skeleton width="40%" height="24px" />
+        <lfx-ui-skeleton width="100%" height="64px" />
+        <lfx-ui-skeleton width="70%" />
+      </div>
+    }
+    @case ('error') {
+      <lfx-ui-empty-state
+        size="small"
+        icon="fa-light fa-circle-exclamation"
+        heading="Could not load enrollment products"
+        [description]="state.message || 'We could not load your enrollment products. Please retry.'"
+        data-testid="account-enrollment-error" />
+    }
+    @case ('loaded') {
+      @for (card of cards(); track card.item.productId) {
+        @let item = card.item;
+        @let membership = item.membership;
+        <lfx-account-card [heading]="item.productName" [subtitle]="card.subtitle" testId="account-enrollment-card">
+          @if (item.projectLogo) {
+            <img accountCardLeading [src]="item.projectLogo" alt="" class="h-[40px] w-[40px] flex-none object-contain" />
+          }
+          @if (membership) {
+            <lfx-ui-badge accountCardTitleSuffix [tone]="statusTone[item.displayStatus]" variant="line" size="sm" data-testid="account-enrollment-status">
+              {{ item.displayStatus }}
+            </lfx-ui-badge>
+          }
+          @switch (card.action) {
+            @case ('auto-renew') {
+              <lfx-ui-button
+                accountCardActions
+                variant="secondary"
+                size="small"
+                [loading]="item.pending"
+                [disabled]="impersonating()"
+                (click)="onToggleAutoRenew(item, !membership?.autoRenew)"
+                data-testid="account-enrollment-toggle-auto-renew">
+                {{ membership?.autoRenew ? 'Disable auto-renew' : 'Enable auto-renew' }}
+              </lfx-ui-button>
+            }
+            @case ('renew') {
+              <lfx-ui-button
+                accountCardActions
+                size="small"
+                [href]="impersonating() ? null : item.renewHref"
+                [disabled]="impersonating()"
+                data-testid="account-enrollment-renew">
+                Renew My Enrollment
+              </lfx-ui-button>
+            }
+            @case ('repurchase') {
+              <lfx-ui-button
+                accountCardActions
+                size="small"
+                [href]="impersonating() ? null : item.enrollHref"
+                [disabled]="impersonating()"
+                data-testid="account-enrollment-repurchase">
+                Repurchase
+              </lfx-ui-button>
+            }
+          }
+
+          @if (card.figures.length > 0) {
+            <!-- One row of figures with dividers; two by two when the card is narrow. -->
+            <div class="@container">
+              <dl
+                class="m-0 grid grid-cols-2 border-y border-ui-neutral-200 @[560px]:grid-flow-col @[560px]:grid-cols-none @[560px]:auto-cols-fr"
+                data-testid="account-enrollment-figures">
+                @for (figure of card.figures; track figure.label) {
+                  <div
+                    class="flex min-w-0 flex-col gap-[8px] border-ui-neutral-200 px-[16px] py-[12px] [&:nth-child(even)]:border-l [&:nth-child(n+3)]:border-t [&:nth-child(odd)]:pl-0 @[560px]:first:pl-0 @[560px]:[&:nth-child(n)]:border-t-0 @[560px]:[&:nth-child(n)]:pl-[16px] @[560px]:[&:nth-child(n+2)]:border-l"
+                    data-testid="account-enrollment-figure">
+                    <dt class="inline-flex items-center gap-[6px] whitespace-nowrap text-[12px] font-medium leading-[16px] text-ui-neutral-500">
+                      <i class="fa-light text-[12px]" [class]="figure.icon" aria-hidden="true"></i>{{ figure.label }}
+                    </dt>
+                    <dd class="m-0 truncate text-[16px] leading-[24px] text-ui-neutral-900" [title]="figure.value">{{ figure.value }}</dd>
+                  </div>
+                }
+              </dl>
+            </div>
+          }
+
+          @if (item.benefits.length > 0) {
+            <div class="flex flex-col gap-[8px]" data-testid="account-enrollment-benefits">
+              <span class="text-[14px] font-semibold leading-[20px] text-ui-neutral-900">Benefits:</span>
+              <ul class="m-0 flex flex-col gap-[6px] pl-[20px] text-[14px] leading-[20px] text-ui-neutral-700">
+                @for (benefit of item.benefits; track benefit) {
+                  <li>{{ benefit }}</li>
+                }
+              </ul>
+            </div>
+          }
+
+          @if (!membership) {
+            <!-- Full-bleed footer band, out to the card's 24px padding. -->
+            <div
+              class="-mx-[24px] -mb-[24px] flex flex-row flex-wrap items-center justify-between gap-x-[40px] gap-y-[16px] bg-ui-accent-50 px-[24px] py-[16px] text-[14px] leading-[20px] text-ui-neutral-700 shadow-[inset_0_1px_0] shadow-ui-accent-100"
+              data-testid="account-enrollment-enroll">
+              <span class="min-w-0 flex-[1_1_280px]">Become an Individual Supporter to support the Linux Foundation’s work and unlock member benefits.</span>
+              <lfx-ui-button [href]="impersonating() ? null : item.enrollHref" [disabled]="impersonating()" data-testid="account-enrollment-enroll-button">
+                {{ card.enrollLabel }}
+              </lfx-ui-button>
+            </div>
+          }
+        </lfx-account-card>
+      } @empty {
+        <lfx-ui-empty-state
+          size="small"
+          icon="fa-light fa-id-card"
+          heading="No enrollment products available"
+          description="There are no individual enrollment products at this time."
+          data-testid="account-enrollment-empty" />
+      }
+    }
+  }
+</div>
+
+<ng-template #autoRenewDialog let-ref="dialogRef">
+  @let change = pendingAutoRenew();
+  <lfx-ui-modal
+    [heading]="change.enable ? 'Enable auto-renew?' : 'Disable auto-renew?'"
+    [width]="480"
+    closable
+    data-testid="account-enrollment-auto-renew-dialog">
+    <p class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700" data-testid="account-enrollment-auto-renew-text">
+      @if (change.enable) {
+        This will enable auto-renew for your membership. Your next payment will be charged on
+        <strong class="font-semibold text-ui-neutral-900">{{ change.endDate | date: 'mediumDate' : 'UTC' }}</strong
+        >.
+      } @else {
+        This will disable auto-renew for your membership. Your current membership will expire on
+        <strong class="font-semibold text-ui-neutral-900">{{ change.endDate | date: 'mediumDate' : 'UTC' }}</strong
+        >.
+      }
+    </p>
+    <ng-container modalActions>
+      <lfx-ui-button data-autofocus variant="secondary" (click)="ref.close(false)" data-testid="account-enrollment-auto-renew-cancel">Cancel</lfx-ui-button>
+      <lfx-ui-button (click)="ref.close(true)" data-testid="account-enrollment-auto-renew-confirm">
+        {{ change.enable ? 'Enable auto-renew' : 'Disable auto-renew' }}
+      </lfx-ui-button>
+    </ng-container>
+  </lfx-ui-modal>
+</ng-template>
