@@ -455,6 +455,7 @@ describe('OrgTrainingGroupsTableComponent', () => {
           provideNoopAnimations(),
           { provide: OrgLensTrainingService, useValue: trainingService },
           { provide: PersonDetailDrawerService, useValue: { open: drawerOpen } },
+          { provide: OrgLensViewModeService, useValue: { isEmployeeView: signal(false) } },
         ],
       }).compileComponents();
       const fixture = TestBed.createComponent(OrgTrainingGroupsTableComponent);

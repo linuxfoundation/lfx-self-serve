@@ -622,7 +622,7 @@ describe('OrgProjectDetailComponent — all employee view', () => {
             getEcosystemBoard: vi.fn(() => of({ rows: [], total: 0 })),
             getLeaderboardBreakdown: vi.fn(() => of(null)),
             getCardDrawer: vi.fn(() => of(null)),
-            getCardRoster: vi.fn(() => of(null)),
+            getCardRoster: vi.fn(() => of({ rows: [], total: 0 })),
           },
         },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn(), close: vi.fn() } },
