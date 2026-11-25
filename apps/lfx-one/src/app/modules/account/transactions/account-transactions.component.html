@@ -1,0 +1,85 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<lfx-account-card [heading]="copy.heading" testId="account-transactions">
+  <!-- The tabs turn into a select once the card is 704px wide or less: 656px inside its 24px padding. -->
+  <div class="flex flex-col gap-[16px] @container">
+    <div class="hidden @[657px]:block">
+      <lfx-ui-tabs
+        size="small"
+        idPrefix="account-transactions"
+        [ariaLabel]="copy.tabsLabel"
+        [tabs]="tabs"
+        [value]="activeTab()"
+        (valueChange)="onTabChange($event)"
+        data-testid="account-transactions-tabs" />
+    </div>
+    <div class="@[657px]:hidden">
+      <lfx-ui-select
+        size="small"
+        [ariaLabel]="copy.tabsLabel"
+        [value]="activeTab()"
+        (valueChange)="onTabChange($event ?? 'all')"
+        data-testid="account-transactions-select">
+        @for (tab of tabs; track tab.value) {
+          <lfx-ui-option [value]="tab.value" [label]="tab.label" />
+        }
+      </lfx-ui-select>
+    </div>
+
+    <div
+      role="tabpanel"
+      class="flex flex-col gap-[12px]"
+      [id]="'account-transactions-panel-' + activeTab()"
+      [attr.aria-labelledby]="'account-transactions-tab-' + activeTab()"
+      data-testid="account-transactions-panel">
+      @if (loading()) {
+        <div class="flex flex-col gap-[12px]" aria-hidden="true" data-testid="account-transactions-loading">
+          @for (line of [1, 2, 3]; track line) {
+            <lfx-ui-skeleton width="100%" height="40px" />
+          }
+        </div>
+      } @else if (filteredTransactions().length === 0) {
+        <lfx-ui-empty-state
+          size="small"
+          icon="fa-light fa-receipt"
+          [heading]="copy.emptyTitle"
+          [description]="copy.emptyText"
+          data-testid="account-transactions-empty" />
+      } @else {
+        <!-- Narrow screens scroll the table sideways from 560px. -->
+        <lfx-ui-table
+          class="[&_table]:min-w-[560px]"
+          [label]="copy.heading"
+          rowKey="id"
+          [columns]="columns"
+          [rows]="tableRows()"
+          data-testid="account-transactions-table">
+          <ng-template lfxUiTableCell="name" let-row>
+            <span class="flex min-w-0 flex-col gap-[2px]" [attr.data-testid]="'account-transactions-name-' + row.id">
+              <span class="text-[14px] leading-[20px] text-ui-neutral-900">{{ row.row.transaction.name }}</span>
+              <span class="text-[12px] leading-[16px] text-ui-neutral-500">Order ID: {{ row.row.transaction.orderId }}</span>
+            </span>
+          </ng-template>
+          <ng-template lfxUiTableCell="date" let-row>
+            <span class="whitespace-nowrap">{{ row.row.transaction.createdDate | date: 'mediumDate' }}</span>
+          </ng-template>
+          <ng-template lfxUiTableCell="type" let-row>
+            @if (row.row.typeLabel; as label) {
+              <lfx-ui-badge variant="outline" size="sm" [attr.data-testid]="'account-transactions-type-' + row.id">{{ label }}</lfx-ui-badge>
+            } @else {
+              <span class="text-ui-neutral-400"><span aria-hidden="true">—</span><span class="sr-only">No type</span></span>
+            }
+          </ng-template>
+          <ng-template lfxUiTableCell="value" let-row>
+            <span class="whitespace-nowrap font-medium tabular-nums text-ui-neutral-900" [attr.data-testid]="'account-transactions-value-' + row.id">{{
+              row.row.transaction.netRevenue | currency: 'USD'
+            }}</span>
+          </ng-template>
+        </lfx-ui-table>
+        <lfx-ui-pagination [total]="filteredTransactions().length" [pageSize]="copy.pageSize" [(page)]="page" />
+      }
+    </div>
+  </div>
+</lfx-account-card>

@@ -59,3 +59,10 @@ export interface TransactionRow {
   PROJECT_ID: string | null;
   PROJECT_NAME: string | null;
 }
+
+/** A row of the Account & Settings Transactions table: the transaction and what its type badge says. */
+export interface AccountTransactionRow {
+  transaction: Transaction;
+  /** The type's label, or `null` when the transaction has no type. */
+  typeLabel: string | null;
+}
