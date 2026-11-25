@@ -97,6 +97,12 @@ describe('choices', () => {
 
   it('leaves out search answers already picked', () => {
     expect(linkedInTargetingSearchChoices([skill(1), skill(2)], [skill(1)])).toEqual([skill(2)]);
+    // An employer is one identity under either spelling, as the create compares it.
+    const company = { urn: 'urn:li:company:42', name: 'Acme' };
+    const organization = { urn: 'urn:li:organization:42', name: 'Acme' };
+    expect(linkedInTargetingSearchChoices([organization, { urn: 'urn:li:organization:43', name: 'Other' }], [company])).toEqual([
+      { urn: 'urn:li:organization:43', name: 'Other' },
+    ]);
   });
 
   it.each([

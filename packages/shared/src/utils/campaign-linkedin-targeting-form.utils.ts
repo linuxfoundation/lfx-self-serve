@@ -95,13 +95,22 @@ export function linkedInTargetingMergedPicks(...groups: LinkedInTargetingFacetPi
   return merged;
 }
 
-/** Search results not yet picked under the facet. */
+/**
+ * A value's identity as the create compares it: an employer by its id, since `urn:li:company:<n>` and
+ * `urn:li:organization:<n>` are one employer to `linkedInTargetingRefusal`; any other value by its URN.
+ */
+function pickIdentity(urn: string): string {
+  const employer = /^urn:li:(?:company|organization):(\d+)$/.exec(urn);
+  return employer ? `employer:${employer[1]}` : urn;
+}
+
+/** Search results not yet picked under the facet (employers compared by id). */
 export function linkedInTargetingSearchChoices(
   entities: readonly LinkedInTargetingEntity[],
   picked: readonly LinkedInTargetingEntity[] = []
 ): LinkedInTargetingEntity[] {
-  const urns = new Set(picked.map((pick) => pick.urn));
-  return entities.filter((entity) => !urns.has(entity.urn));
+  const taken = new Set(picked.map((pick) => pickIdentity(pick.urn)));
+  return entities.filter((entity) => !taken.has(pickIdentity(entity.urn)));
 }
 
 /** What a failed search says: LinkedIn busy (503), or failed otherwise. */
