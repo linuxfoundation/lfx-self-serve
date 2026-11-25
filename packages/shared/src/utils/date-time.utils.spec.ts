@@ -12,6 +12,7 @@ import {
   formatIsoDateShortLabel,
   formatMemberSince,
   formatMemberSinceDate,
+  formatYearMonth,
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
@@ -69,6 +70,19 @@ describe('formatIsoDateLabel', () => {
   // time — a day early for anyone west of Greenwich.
   it('does not drift across time zones', () => {
     expect(formatIsoDateLabel('2026-01-01')).toBe('Jan 1, 2026');
+  });
+});
+
+describe('formatYearMonth', () => {
+  it.each([
+    ['2026-03-01', 'Mar 2026'],
+    ['2026-03-01T00:00:00Z', 'Mar 2026'],
+    ['2026-12-31T23:59:59Z', 'Dec 2026'],
+    ['2026-13-01', ''],
+    ['March 2026', ''],
+    [undefined, ''],
+  ])('formats %s as %j', (value, expected) => {
+    expect(formatYearMonth(value)).toBe(expected);
   });
 });
 

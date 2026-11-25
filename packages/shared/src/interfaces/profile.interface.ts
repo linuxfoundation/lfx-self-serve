@@ -4,6 +4,7 @@
 import type { Signal } from '@angular/core';
 
 import type { ACCOUNT_SETTINGS_SECTIONS, PERSONAL_INFORMATION_FIELD_LIMITS } from '../constants/profile.constants';
+import type { Badge } from './badge.interface';
 import type { UserMetadata } from './user-profile.interface';
 
 /**
@@ -864,6 +865,15 @@ export interface CdpProjectAffiliation {
   contributionCount: number;
   roles: CdpProjectAffiliationRole[];
   affiliations: CdpProjectAffiliationEntry[];
+}
+
+/** A badge as the Profile page's Recognitions section shows it (#6084). */
+export interface ProfileRecognitionItem {
+  badge: Badge;
+  /** The Credly link, or null when it isn't an http(s) URL. */
+  href: string | null;
+  /** "Mon YYYY" the badge was issued. */
+  issued: string;
 }
 
 /** What the Profile page's openprofile card knows of the public profile (#6083): `unknown` when the read failed. */
