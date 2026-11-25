@@ -6,7 +6,7 @@
 import type { OrgLensTimeRange, OrgTrainingGroupBy, OrgTrainingStatsQuery, OrgTrainingTabId } from '@lfx-one/shared/interfaces';
 import { orgLensTimeRangeDays } from '@lfx-one/shared/utils';
 
-export const ORG_TRAINING_PAIRS_TABLE = 'ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_PAIRS';
+export const ORG_TRAINING_PAIRS_TABLE = 'ANALYTICS_DEV.LF_AOPEYEMI_PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_PAIRS';
 
 /** Pair attribute column each filter narrows (all bound as params, never inlined). */
 const FILTER_COLUMNS = {
