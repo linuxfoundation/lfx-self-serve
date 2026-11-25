@@ -1,0 +1,767 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import '@angular/compiler';
+
+import type { RoleGrantsResponse } from '@lfx-one/shared/interfaces';
+import type { Request } from 'express';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { getEffectiveUsername, getEffectiveEmail, resolveVerifiedUserEmails, generateM2MToken, loggerWarning } = vi.hoisted(() => ({
+  loggerWarning: vi.fn(),
+  generateM2MToken: vi.fn(),
+  getEffectiveUsername: vi.fn(() => 'employee'),
+  getEffectiveEmail: vi.fn((): string | null => 'dev@acme-motors.example'),
+  resolveVerifiedUserEmails: vi.fn(),
+}));
+
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => getEffectiveUsername(), getEffectiveEmail: () => getEffectiveEmail() }));
+vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken }));
+vi.mock('../helpers/user-emails.helper', () => ({ resolveVerifiedUserEmails }));
+vi.mock('./logger.service', () => ({ logger: { info: vi.fn(), warning: loggerWarning, error: vi.fn(), debug: vi.fn() } }));
+
+const { OrgEmployeeViewService, normalizeCompanyName } = await import('./org-employee-view.service');
+
+const ORG_UID = '0016100000ACMEAAA1';
+const OTHER_UID = '0016100000OTHERAAA1';
+
+const req = (): Request => ({ path: '/api/orgs/x/lens/overview' }) as unknown as Request;
+
+interface Doc {
+  name?: string;
+  slug?: string;
+  primary_domain?: string;
+  domain_aliases?: string[];
+  is_member?: boolean;
+}
+/** A work-history entry: present unless `endDate` is given. */
+function job(organization: string, startDate = 'Jan 2024', endDate?: string) {
+  return { id: `we-${organization}`, organization, jobTitle: 'Engineer', startDate, endDate, source: 'manual' as const };
+}
+
+const acme: Doc = { name: 'Acme Motors', is_member: true, primary_domain: 'acme-motors.example' };
+
+/** The company fixtures as active (or, for `is_member: false`, expired) Linux Foundation memberships, the shape the index reads. */
+function page(entries: [string, Doc][]) {
+  return {
+    resources: entries.map(([uid, doc]) => ({
+      id: `project_membership:m-${uid}`,
+      type: 'project_membership',
+      data: {
+        uid: `m-${uid}`,
+        b2b_org_uid: uid,
+        project_slug: 'tlf',
+        status: doc.is_member === false ? 'expired' : 'active',
+        company_name: doc.name,
+        company_domain: doc.primary_domain,
+      },
+    })),
+  };
+}
+
+/** A second active member, so an index whose only subject is excluded is still a non-empty (valid) index. */
+const other: [string, Doc] = [OTHER_UID, { name: 'Other Works', is_member: true, primary_domain: 'other-works.example' }];
+
+interface Setup {
+  /** The individual work history; an Error is an outage. */
+  experiences?: unknown;
+  orgs?: [string, Doc][] | Error;
+  emails?: string[] | Error;
+  auditor?: boolean | Error;
+  grants?: [string, unknown][];
+  staff?: boolean;
+}
+
+function build(opts: Setup = {}) {
+  const orgs = opts.orgs ?? [[ORG_UID, acme]];
+  const experiences = opts.experiences === undefined ? [job('Acme Motors')] : opts.experiences;
+  const workHistory = {
+    getWorkExperiencesForKnownUser: vi
+      .fn()
+      .mockImplementation(() => (experiences instanceof Error ? Promise.reject(experiences) : Promise.resolve(experiences))),
+  };
+  const proxy = { proxyRequest: vi.fn().mockImplementation(() => (orgs instanceof Error ? Promise.reject(orgs) : Promise.resolve(page(orgs)))) };
+  resolveVerifiedUserEmails.mockImplementation(() =>
+    opts.emails instanceof Error ? Promise.reject(opts.emails) : Promise.resolve(opts.emails ?? ['dev@acme-motors.example'])
+  );
+  const accessCheck = {
+    checkSingleAccessStrict: vi
+      .fn()
+      .mockImplementation(() => (opts.auditor instanceof Error ? Promise.reject(opts.auditor) : Promise.resolve(opts.auditor ?? false))),
+  };
+  const roster = { resolved: new Map(opts.grants ?? []), isStaff: opts.staff ?? false, upstreamFailed: false, degraded: false, staffCheck: 'ok' };
+  const roleGrants = { getAccessAwareOrgs: vi.fn().mockResolvedValue(roster) };
+  const svc = new OrgEmployeeViewService({
+    roleGrants: roleGrants as never,
+    workHistory: workHistory as never,
+    emailVerification: {} as never,
+    proxy: proxy as never,
+    accessCheck: accessCheck as never,
+  });
+  return { svc, workHistory, proxy, accessCheck, roleGrants };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  OrgEmployeeViewService.clearCache();
+  getEffectiveUsername.mockReturnValue('employee');
+  getEffectiveEmail.mockReturnValue('dev@acme-motors.example');
+  generateM2MToken.mockResolvedValue('m2m-token');
+});
+
+describe('normalizeCompanyName', () => {
+  it.each([
+    ['The Linux Foundation', 'linux foundation'],
+    ['Linux Foundation', 'linux foundation'],
+    ['Acme Motors, Inc.', 'acme motors'],
+    ['ACME  Motors LLC', 'acme motors'],
+    ['Zürich & Sons Ltd', 'zurich and sons'],
+    ['Inc', 'inc'],
+    ['', ''],
+  ])('%s -> %s', (input, expected) => {
+    expect(normalizeCompanyName(input)).toBe(expected);
+  });
+
+  it('handles null and undefined', () => {
+    expect(normalizeCompanyName(null)).toBe('');
+    expect(normalizeCompanyName(undefined)).toBe('');
+  });
+});
+
+describe('OrgEmployeeViewService.resolve', () => {
+  it('admits a caller with a validated email on a member company domain and that company as a present employer in their work history, using no CDP organization id or engagement data', async () => {
+    const { svc, workHistory } = build();
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: true, org: { orgUid: ORG_UID, orgName: 'Acme Motors', orgSlug: null } });
+    expect(workHistory.getWorkExperiencesForKnownUser).toHaveBeenCalledWith(expect.anything(), 'employee');
+  });
+
+  it('names the company when no uid is asked for', async () => {
+    const { svc } = build();
+
+    await expect(svc.resolve(req(), null)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+  });
+
+  it('matches the work-history employer name to the company name loosely', async () => {
+    const { svc } = build({ experiences: [job('the ACME motors, inc.')] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('denies a caller with no work history, without asking the query service', async () => {
+    const { svc, proxy } = build({ experiences: [] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-employer' });
+    expect(proxy.proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('denies a caller whose only matching job has ended', async () => {
+    const { svc } = build({ experiences: [job('Acme Motors', 'Jan 2020', 'Dec 2025')] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-employer' });
+  });
+
+  it('denies when no present employer is the company the email names', async () => {
+    const { svc } = build({ experiences: [job('Elsewhere Corp')] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'employer-mismatch' });
+  });
+
+  it('denies a caller with no validated email, without asking the query service', async () => {
+    const { svc, proxy } = build({ emails: [] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+    expect(proxy.proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('never treats a personal mailbox provider as an employer', async () => {
+    const { svc, proxy } = build({ emails: ['dev@gmail.example'] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+    expect(proxy.proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('never treats the Linux.com forwarding alias as an employer', async () => {
+    const { svc, proxy } = build({ emails: [`dev@${'linux'}.com`, `dev@mail.${'linux'}.com`] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+    expect(proxy.proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('denies when the email matches no active-member company', async () => {
+    const { svc } = build({ orgs: [other] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+  });
+
+  it('reads the active Linux Foundation memberships and matches the address domain, parent domains included', async () => {
+    const { svc, proxy } = build({ emails: ['dev@eng.acme-motors.example'] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+
+    expect(proxy.proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      expect.objectContaining({
+        type: 'project_membership',
+        filters_or: ['status:Active', 'status:active', 'status:Purchased', 'status:purchased'],
+      }),
+      undefined,
+      undefined,
+      { bearerToken: 'm2m-token' }
+    );
+  });
+
+  it('reads the membership index once for any number of addresses, and drops no candidate domain', async () => {
+    const many = Array.from({ length: 25 }, (_v, i) => `dev@corp-${i}.example`);
+    const { svc, proxy } = build({ emails: [...many, 'dev@acme-motors.example'] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+    expect(proxy.proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one membership read between different callers, and never keeps a failed one', async () => {
+    const first = build();
+    await first.svc.resolve(req(), ORG_UID);
+    getEffectiveUsername.mockReturnValue('colleague');
+    const second = build();
+    await second.svc.resolve(req(), ORG_UID);
+    expect(second.proxy.proxyRequest).not.toHaveBeenCalled();
+
+    OrgEmployeeViewService.clearCache();
+    const failing = build({ orgs: new Error('query-service down') });
+    getEffectiveUsername.mockReturnValue('third');
+    await expect(failing.svc.resolve(req(), ORG_UID)).rejects.toBeInstanceOf(Error);
+    failing.proxy.proxyRequest.mockResolvedValue(page([[ORG_UID, acme]]));
+    await expect(failing.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('serves the previous membership index while an expired one refreshes, and never waits on the refresh', async () => {
+    vi.useFakeTimers();
+    try {
+      const { svc, proxy } = build();
+      await svc.resolve(req(), ORG_UID);
+
+      vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+      let release: (value: unknown) => void = () => undefined;
+      proxy.proxyRequest.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+      getEffectiveUsername.mockReturnValue('colleague');
+
+      await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+      expect(proxy.proxyRequest).toHaveBeenCalledTimes(2);
+
+      release(page([[ORG_UID, acme]]));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('indexes a company website only when it is a bare host, never one that names a path on another host', async () => {
+    const bare = ['acme-motors.example', 'https://www.acme-motors.example/', 'HTTP://Acme-Motors.example'];
+    for (const website of bare) {
+      OrgEmployeeViewService.clearCache();
+      const { svc } = build({ orgs: [[ORG_UID, { name: 'Acme Motors', is_member: true, primary_domain: website }], other] });
+      await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+    }
+
+    for (const website of ['acme-motors.example/en', 'https://acme-motors.example/team?x=1', 'acme-motors.example#about', 'https://acme-motors.example/a/b']) {
+      OrgEmployeeViewService.clearCache();
+      const { svc } = build({ orgs: [[ORG_UID, { name: 'Acme Motors', is_member: true, primary_domain: website }], other] });
+      await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+    }
+  });
+
+  it('rejects, never denies, when active memberships load but none has a usable company domain', async () => {
+    const { svc } = build({ orgs: [[ORG_UID, { name: 'Acme Motors', is_member: true }]] });
+
+    await expect(svc.resolve(req(), ORG_UID)).rejects.toMatchObject({ code: 'EMPLOYEE_VIEW_MEMBER_INDEX_UNAVAILABLE' });
+  });
+
+  it('does not let a slower, older refresh replace a newer index', async () => {
+    vi.useFakeTimers();
+    try {
+      const { svc, proxy } = build();
+      await svc.resolve(req(), ORG_UID);
+
+      const releases: ((value: unknown) => void)[] = [];
+      proxy.proxyRequest.mockImplementation(() => new Promise((resolve) => releases.push(resolve)));
+      getEffectiveUsername.mockReturnValue('colleague');
+      vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+      await svc.resolve(req(), ORG_UID); // refresh A starts (served stale)
+      getEffectiveUsername.mockReturnValue('third');
+      vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+      await svc.resolve(req(), ORG_UID); // refresh B starts, A is still pending
+
+      const newer = page([[ORG_UID, acme], other]);
+      const older = page([[ORG_UID, acme]]);
+      releases[1](newer);
+      await vi.advanceTimersByTimeAsync(0);
+      releases[0](older);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const last = (OrgEmployeeViewService as unknown as { lastGoodIndex: { index: Map<string, unknown> } }).lastGoodIndex;
+      expect([...last.index.keys()].sort()).toEqual(['acme-motors.example', 'other-works.example']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('backs off after a failed refresh instead of re-reading everything on the next request', async () => {
+    vi.useFakeTimers();
+    try {
+      const { svc, proxy } = build();
+      await svc.resolve(req(), ORG_UID);
+
+      proxy.proxyRequest.mockRejectedValue(new Error('query-service down'));
+      vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+      getEffectiveUsername.mockReturnValue('colleague');
+      await svc.resolve(req(), ORG_UID);
+      await vi.advanceTimersByTimeAsync(0);
+      const callsAfterFailure = proxy.proxyRequest.mock.calls.length;
+
+      getEffectiveUsername.mockReturnValue('third');
+      await svc.resolve(req(), ORG_UID);
+      expect(proxy.proxyRequest.mock.calls.length).toBe(callsAfterFailure);
+
+      vi.setSystemTime(Date.now() + 31 * 1000);
+      getEffectiveUsername.mockReturnValue('fourth');
+      await svc.resolve(req(), ORG_UID);
+      expect(proxy.proxyRequest.mock.calls.length).toBeGreaterThan(callsAfterFailure);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps serving the previous index when a refresh fails, until it is too old', async () => {
+    vi.useFakeTimers();
+    try {
+      const { svc, proxy } = build();
+      await svc.resolve(req(), ORG_UID);
+
+      proxy.proxyRequest.mockRejectedValue(new Error('query-service down'));
+      vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+      getEffectiveUsername.mockReturnValue('colleague');
+      await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+
+      vi.setSystemTime(Date.now() + 61 * 60 * 1000);
+      getEffectiveUsername.mockReturnValue('third');
+      await expect(svc.resolve(req(), ORG_UID)).rejects.toBeInstanceOf(Error);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-checks every returned membership, and ignores one that is not an active membership', async () => {
+    const unrelated = build({ orgs: [[ORG_UID, { name: 'Acme Motors', is_member: true, primary_domain: 'unrelated.example' }]] });
+    await expect(unrelated.svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+
+    OrgEmployeeViewService.clearCache();
+    const lapsed = build({ orgs: [[ORG_UID, { ...acme, is_member: false }], other] });
+    await expect(lapsed.svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+  });
+
+  it('counts an active member of any foundation, not only the Linux Foundation project', async () => {
+    const { svc, proxy } = build();
+    proxy.proxyRequest.mockResolvedValue({
+      resources: page([[ORG_UID, acme]]).resources.map((resource) => ({ ...resource, data: { ...resource.data, project_slug: 'cncf' } })),
+    });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+    expect(proxy.proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      expect.not.objectContaining({ filters_all: expect.anything() }),
+      undefined,
+      undefined,
+      expect.anything()
+    );
+  });
+
+  it('matches the registered domain on the membership, and does not match a domain alias (denies, never admits)', async () => {
+    const { svc } = build({ emails: ['dev@eng.acme-group.example'] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+  });
+
+  it('denies a company other than the one the email and profile name, so editing the URL opens nothing', async () => {
+    const { svc } = build();
+
+    await expect(svc.resolve(req(), OTHER_UID)).resolves.toEqual({ eligible: false, reason: 'other-company' });
+  });
+
+  describe('with several companies the email and work history both name', () => {
+    const zeta = { name: 'Zeta Holdings', is_member: true, primary_domain: 'zeta-holdings.example' };
+    const both: [string, Doc][] = [
+      [ORG_UID, acme],
+      [OTHER_UID, zeta],
+    ];
+    const emails = ['dev@acme-motors.example', 'dev@zeta-holdings.example'];
+
+    it('grants only the company whose present entry has the most recent start date, and cuts the other off', async () => {
+      const { svc } = build({ orgs: both, emails, experiences: [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Mar 2025')] });
+
+      await expect(svc.resolve(req(), null)).resolves.toMatchObject({ eligible: true, org: { orgUid: OTHER_UID } });
+      await expect(svc.resolve(req(), OTHER_UID)).resolves.toMatchObject({ eligible: true });
+      await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'other-company' });
+    });
+
+    it('compares the start dates, not the order of the entries', async () => {
+      const { svc } = build({ orgs: both, emails, experiences: [job('Zeta Holdings', 'Mar 2025'), job('Acme Motors', 'Jun 2025')] });
+
+      await expect(svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+    });
+
+    it('considers only companies the email also names: the other present employer does not compete', async () => {
+      const { svc } = build({
+        orgs: both,
+        emails: ['dev@acme-motors.example'],
+        experiences: [job('Acme Motors', 'Jan 2020'), job('Zeta Holdings', 'Nov 2026')],
+      });
+
+      await expect(svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+    });
+
+    it('ignores an ended entry even if it is the most recent: only present entries compete', async () => {
+      const { svc } = build({ orgs: both, emails, experiences: [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Nov 2026', 'Nov 2026')] });
+
+      await expect(svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+    });
+
+    it('uses the latest start when two entries name the same company', async () => {
+      const { svc } = build({
+        orgs: both,
+        emails,
+        experiences: [job('Acme Motors', 'Jan 2020'), job('The Acme Motors Inc', 'Sep 2025'), job('Zeta Holdings', 'Mar 2025')],
+      });
+
+      await expect(svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+    });
+
+    it('follows a change of employer at the next lookup: nothing is pinned', async () => {
+      const first = build({ orgs: both, emails, experiences: [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Mar 2025')] });
+      await expect(first.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: OTHER_UID } });
+
+      OrgEmployeeViewService.clearCache();
+      const left = build({ orgs: both, emails, experiences: [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Mar 2025', 'Dec 2025')] });
+      await expect(left.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+    });
+
+    it('resolves a tie on start date to the first company in stable order (name, then uid)', async () => {
+      const { svc } = build({ orgs: both, emails, experiences: [job('Zeta Holdings', 'Jan 2025'), job('Acme Motors', 'Jan 2025')] });
+
+      await expect(svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+    });
+  });
+
+  it('reports no slug (a membership carries none), so the company is reached by its id', async () => {
+    const { svc } = build();
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID, orgSlug: null } });
+  });
+
+  it('reads companies with the BFF machine token, not the caller token', async () => {
+    const { svc, proxy } = build();
+
+    await svc.resolve(req(), ORG_UID);
+
+    expect(proxy.proxyRequest.mock.calls[0][7]).toEqual({ bearerToken: 'm2m-token' });
+  });
+
+  it.each([
+    ['the work-history read', { experiences: new Error('cdp down') }],
+    ['the verified email lookup', { emails: new Error('auth-service down') }],
+    ['the company lookup', { orgs: new Error('query-service down') }],
+  ])('rejects, never denies, when %s fails', async (_label, setup) => {
+    const { svc } = build(setup as Setup);
+
+    await expect(svc.resolve(req(), ORG_UID)).rejects.toBeInstanceOf(Error);
+  });
+
+  it('rejects, and does not keep a denial, when the machine token cannot be minted', async () => {
+    generateM2MToken.mockRejectedValueOnce(new Error('auth0 down'));
+    const { svc } = build();
+
+    await expect(svc.resolve(req(), ORG_UID)).rejects.toBeInstanceOf(Error);
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it.each([
+    ['a missing resources array', {}],
+    ['a null body', null],
+    ['a null resources array', { resources: null }],
+  ])('rejects, and does not keep a denial, on a company lookup that answers %s', async (_label, body) => {
+    const { svc, proxy } = build();
+    // The page fetch retries a 5xx, so the malformed answer must persist for the whole retry budget.
+    proxy.proxyRequest.mockResolvedValue(body);
+
+    await expect(svc.resolve(req(), ORG_UID)).rejects.toMatchObject({ code: 'EMPLOYEE_VIEW_LOOKUP_INVALID_RESPONSE' });
+    // Not cached as "not an employee": once the upstream answers properly, the next attempt succeeds.
+    proxy.proxyRequest.mockResolvedValue(page([[ORG_UID, acme]]));
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('rejects, never denies, when the membership read has no active members at all, and warns', async () => {
+    const { svc } = build({ orgs: [] });
+
+    await expect(svc.resolve(req(), ORG_UID)).rejects.toMatchObject({ code: 'EMPLOYEE_VIEW_MEMBER_INDEX_UNAVAILABLE' });
+    expect(loggerWarning).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.stringContaining('no active members'), expect.anything());
+  });
+
+  it('shares ONE lookup between the specific-company and unscoped calls of one page', async () => {
+    const { svc, workHistory } = build();
+
+    await Promise.all([svc.resolve(req(), ORG_UID), svc.resolve(req(), null), svc.resolveReduced(req()), svc.resolve(req(), OTHER_UID)]);
+
+    expect(workHistory.getWorkExperiencesForKnownUser).toHaveBeenCalledTimes(1);
+    expect(resolveVerifiedUserEmails).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one lookup across separately constructed services, as the gate, controller, navigation and resolver each build their own', async () => {
+    const a = build();
+    const b = build();
+
+    await Promise.all([a.svc.resolve(req(), ORG_UID), b.svc.resolve(req(), null)]);
+
+    expect(a.workHistory.getWorkExperiencesForKnownUser.mock.calls.length + b.workHistory.getWorkExperiencesForKnownUser.mock.calls.length).toBe(1);
+  });
+
+  it('resolves for the effective user, never the impersonating admin', async () => {
+    getEffectiveUsername.mockReturnValue('impersonated-user');
+    const { svc, workHistory } = build();
+
+    await svc.resolve(req(), ORG_UID);
+
+    expect(workHistory.getWorkExperiencesForKnownUser).toHaveBeenCalledWith(expect.anything(), 'impersonated-user');
+    expect(resolveVerifiedUserEmails).toHaveBeenCalledWith(expect.anything(), expect.anything(), { strict: true });
+  });
+
+  it('denies a request with no effective username', async () => {
+    getEffectiveUsername.mockReturnValue(null as never);
+    const { svc } = build();
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: false });
+  });
+});
+
+describe('OrgEmployeeViewService.resolveReduced', () => {
+  it('reports the company for a caller who is employee-only', async () => {
+    const { svc, accessCheck } = build();
+
+    await expect(svc.resolveReduced(req())).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+    expect(accessCheck.checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: ORG_UID, access: 'auditor' });
+  });
+
+  it('does not publish an employee-only flag for a caller who also holds the auditor entitlement (they resolve full)', async () => {
+    const { svc } = build({ auditor: true });
+
+    await expect(svc.resolveReduced(req())).resolves.toEqual({
+      eligible: false,
+      reason: 'holds-full-access',
+      org: { orgUid: ORG_UID, orgName: 'Acme Motors', orgSlug: null },
+    });
+  });
+
+  it('rejects, never publishes, when the authorizer cannot answer', async () => {
+    const { svc } = build({ auditor: new Error('authorizer down') });
+
+    await expect(svc.resolveReduced(req())).rejects.toBeInstanceOf(Error);
+  });
+
+  it('asks the authorizer nothing for a caller who is not eligible', async () => {
+    const { svc, accessCheck } = build({ experiences: [] });
+
+    await expect(svc.resolveReduced(req())).resolves.toMatchObject({ eligible: false });
+    expect(accessCheck.checkSingleAccessStrict).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgEmployeeViewService.getRoleGrantEmployeeView', () => {
+  const grants = (overrides: Partial<RoleGrantsResponse> = {}): RoleGrantsResponse => ({
+    writers: [],
+    auditors: [],
+    cascadingWriters: [],
+    cascadingAuditors: [],
+    username: 'employee',
+    loaded_at: '2026-11-17T00:00:00.000Z',
+    isStaff: false,
+    degraded: false,
+    lookupOutcome: 'ok',
+    staffCheck: 'ok',
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'] = 'true';
+  });
+
+  it('reports the company for a grant-less employee', async () => {
+    const { svc } = build();
+
+    await expect(svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({
+      employeeView: { orgUid: ORG_UID, orgName: 'Acme Motors', orgSlug: null },
+    });
+  });
+
+  it('needs no affiliation verdict, so a contractor takes the same path', async () => {
+    const { svc } = build();
+
+    await expect(svc.getRoleGrantEmployeeView(req(), grants({ isContractor: true }))).resolves.toMatchObject({ employeeView: { orgUid: ORG_UID } });
+  });
+
+  it.each([
+    ['a grant holder', grants({ writers: [ORG_UID] })],
+    ['LF staff', grants({ isStaff: true })],
+    ['a partial roster', grants({ lookupOutcome: 'partial' })],
+  ])('asks nothing for %s', async (_label, g) => {
+    const { svc, workHistory } = build();
+
+    await expect(svc.getRoleGrantEmployeeView(req(), g)).resolves.toEqual({});
+    expect(workHistory.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
+  });
+
+  it('publishes the full-access company, not an employee view, for a caller who also holds the auditor entitlement', async () => {
+    const { svc } = build({ auditor: true });
+
+    await expect(svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({ fullAccessOrgUid: ORG_UID });
+  });
+
+  it('reports a failed lookup as failed, so the client can offer Retry, and answers nothing for a caller who does not qualify', async () => {
+    const failing = build({ experiences: new Error('cdp down') });
+    await expect(failing.svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({ employeeViewLookup: 'failed' });
+
+    OrgEmployeeViewService.clearCache();
+    const none = build({ experiences: [] });
+    await expect(none.svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({});
+  });
+
+  it('is a no-op with the flag off', async () => {
+    process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'] = '';
+    const { svc, workHistory } = build();
+
+    await expect(svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({});
+    expect(workHistory.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgEmployeeViewService entry rule: no grants and not staff', () => {
+  it('denies a caller who holds a grant without looking at work history or emails', async () => {
+    const { svc, workHistory } = build({ grants: [[OTHER_UID, { roleSource: 'direct-writer' }]] });
+
+    await expect(svc.resolveReduced(req())).resolves.toEqual({ eligible: false, reason: 'has-grants' });
+    expect(workHistory.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
+  });
+
+  it('denies LF staff without looking at work history', async () => {
+    const { svc, workHistory } = build({ staff: true });
+
+    await expect(svc.resolveReduced(req())).resolves.toEqual({ eligible: false, reason: 'has-grants' });
+    expect(workHistory.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
+  });
+
+  it('answers a retriable 503 when the roster could not be read, never a denial', async () => {
+    const { svc, roleGrants } = build();
+    roleGrants.getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), isStaff: false, upstreamFailed: true, degraded: false, staffCheck: 'ok' });
+
+    await expect(svc.resolveReduced(req())).rejects.toMatchObject({ statusCode: 503, code: 'ROLE_GRANTS_UNAVAILABLE' });
+  });
+});
+
+describe('OrgEmployeeViewService consumer mail and logging', () => {
+  it('never treats a consumer ISP mailbox as an employer', async () => {
+    const { svc, proxy } = build({ emails: [`dev@${'comcast'}.net`] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+    expect(proxy.proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgEmployeeViewService cache', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('keeps one caller’s answer apart from another’s', async () => {
+    const first = build({ experiences: [job('Acme Motors')] });
+    getEffectiveUsername.mockReturnValue('alice');
+    await expect(first.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+
+    const second = build({ experiences: [] });
+    getEffectiveUsername.mockReturnValue('bob');
+    await expect(second.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: false });
+    getEffectiveUsername.mockReturnValue('alice');
+    await expect(second.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('never shares an entry between sessions of one user that verified different emails', async () => {
+    const { svc, workHistory } = build();
+
+    getEffectiveEmail.mockReturnValue('old@acme-motors.example');
+    await svc.resolve(req(), ORG_UID);
+    getEffectiveEmail.mockReturnValue('current@acme-motors.example');
+    await svc.resolve(req(), ORG_UID);
+    await svc.resolve(req(), ORG_UID);
+
+    // One compute per distinct session email; the repeat for the same email is served from its own entry.
+    expect(workHistory.getWorkExperiencesForKnownUser).toHaveBeenCalledTimes(2);
+  });
+
+  it('recomputes after the TTL', async () => {
+    vi.useFakeTimers();
+    const { svc, workHistory } = build();
+
+    await svc.resolve(req(), ORG_UID);
+    vi.setSystemTime(Date.now() + 61_000);
+    await svc.resolve(req(), ORG_UID);
+
+    expect(workHistory.getWorkExperiencesForKnownUser).toHaveBeenCalledTimes(2);
+  });
+
+  it('evicts the oldest entry once the cache is full', async () => {
+    const { svc, workHistory } = build();
+    for (let i = 0; i <= 1000; i++) {
+      getEffectiveUsername.mockReturnValue(`user-${i}`);
+      await svc.resolve(req(), ORG_UID);
+    }
+    workHistory.getWorkExperiencesForKnownUser.mockClear();
+
+    getEffectiveUsername.mockReturnValue('user-1000');
+    await svc.resolve(req(), ORG_UID);
+    expect(workHistory.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
+    getEffectiveUsername.mockReturnValue('user-0');
+    await svc.resolve(req(), ORG_UID);
+    expect(workHistory.getWorkExperiencesForKnownUser).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('OrgEmployeeViewService.getRoleGrantEmployeeView budget', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('answers a failed lookup, not a hang, when work history never answers', async () => {
+    process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'] = 'true';
+    vi.useFakeTimers();
+    const { svc, workHistory } = build();
+    workHistory.getWorkExperiencesForKnownUser.mockImplementation(() => new Promise(() => undefined));
+
+    const pending = svc.getRoleGrantEmployeeView(req(), {
+      writers: [],
+      auditors: [],
+      cascadingWriters: [],
+      cascadingAuditors: [],
+      username: 'employee',
+      loaded_at: '2026-11-17T00:00:00.000Z',
+      isStaff: false,
+      degraded: false,
+      lookupOutcome: 'ok',
+      staffCheck: 'ok',
+    } as RoleGrantsResponse);
+    await vi.advanceTimersByTimeAsync(5_100);
+
+    await expect(pending).resolves.toEqual({ employeeViewLookup: 'failed' });
+  });
+});

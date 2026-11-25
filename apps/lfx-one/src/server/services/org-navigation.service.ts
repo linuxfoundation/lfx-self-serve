@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP, ORG_CATALOGUE_SEARCH_MIN_CHARS, ORG_LENS_ROLLUP_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import {
+  ORG_AFFILIATION_LOOKUP_TIMEOUT_MS,
+  ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP,
+  ORG_CATALOGUE_SEARCH_MIN_CHARS,
+  ORG_LENS_ROLLUP_ENABLED_FLAG,
+} from '@lfx-one/shared/constants';
 import {
   B2bOrgIndexedDoc,
   GetOrgItemsParams,
@@ -15,11 +20,14 @@ import {
 import { filterOrgItemsByName, sortOrgItemsByName } from '@lfx-one/shared/utils/org-selector.utils';
 import { Request } from 'express';
 
+import { isOrgLensEmployeeViewEnabled } from '../helpers/org-lens-employee-view-flag.helper';
+import { MicroserviceError } from '../errors/microservice.error';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { LaunchDarklyServerService } from './launchdarkly-server.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { claOnlyEntryApplies, claOnlyListApplies, ClaOnlyOrg, OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
+import { OrgEmployeeViewService } from './org-employee-view.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
 /** Spec 022 — server-side org-selector data source. Renders the access-aware list per `01-my-orgs-by-access.ipynb` (data-model.md D-001…D-005). Typeahead filters the resolved set in-process: the set is direct grants (≤ ORG_ROLE_GRANTS_HARD_CAP) plus their cascading children (≤ ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP per direct parent), so it is finite but not strictly ≤500 — in practice it stays small enough for in-memory filter/sort. */
@@ -27,11 +35,13 @@ export class OrgNavigationService {
   private readonly orgRoleGrants: OrgRoleGrantsService;
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly claOnlyOrgs: OrgClaOnlyOrgsService;
+  private readonly employeeView: OrgEmployeeViewService;
 
   public constructor() {
     this.orgRoleGrants = new OrgRoleGrantsService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.claOnlyOrgs = new OrgClaOnlyOrgsService();
+    this.employeeView = new OrgEmployeeViewService();
   }
 
   public async getOrgItems(req: Request, params: GetOrgItemsParams): Promise<OrgItemsResponse> {
@@ -161,16 +171,92 @@ export class OrgNavigationService {
       return { items: [], next_page_token: null, upstream_failed: accessFailed, total: 0 };
     }
 
-    const { orgs, failed } = await this.claOnlyOrgs.listOrgs(req);
-    const items = this.toClaOnlyItems(orgs);
+    const { orgs, failed: claOnlyFailed } = await this.claOnlyOrgs.listOrgs(req);
+    const { item: employeeViewItem, failed: employeeViewFailed } = await this.getEmployeeViewItem(req);
+    const failed = claOnlyFailed || employeeViewFailed;
+    // Proven employee (or authorizer full) access supersedes CLA-only classification for the same company: a CLA-only row opens EasyCLA alone and
+    // redirects every other page there, which would lock a qualifying employee out of the view they earned. The caller's own
+    // CLA Manager scope is untouched — EasyCLA's gate still asks it independently.
+    // The employee lookup answered (ran and did not fail), so these CLA-only rows are conclusive about the employee view.
+    const employeeViewChecked = isOrgLensEmployeeViewEnabled(req) && !employeeViewFailed;
+    const items = [
+      ...this.toClaOnlyItems(orgs, employeeViewChecked).filter((item) => item.uid !== employeeViewItem?.uid),
+      ...(employeeViewItem ? [employeeViewItem] : []),
+    ];
     const shown = this.applySelectedUidPin(sortOrgItemsByName(filterOrgItemsByName(items, name), name), items, selectedUid, pageToken);
 
-    logger.debug(req, 'build_org_items', 'Built CLA-only org items', { item_count: shown.length, cla_only_count: items.length, cla_only_failed: failed });
+    logger.debug(req, 'build_org_items', 'Built CLA-only org items', {
+      item_count: shown.length,
+      cla_only_count: items.length,
+      cla_only_failed: failed,
+      employee_view: employeeViewItem?.employeeView === true,
+      full_access: employeeViewItem?.fullAccess === true,
+    });
 
     return { items: shown, next_page_token: null, upstream_failed: accessFailed || failed, total: shown.length };
   }
 
-  private toClaOnlyItems(orgs: ClaOnlyOrg[]): OrgItem[] {
+  /**
+   * Epic #5845 — the caller's all employee view company as a selector row, for a caller who holds nothing. Nothing when
+   * the flag is off or they do not qualify; a lookup that could not answer is reported as `failed` so the list says
+   * "could not load" instead of "no companies".
+   */
+  private async getEmployeeViewItem(req: Request): Promise<{ item: OrgItem | null; failed: boolean }> {
+    if (!isOrgLensEmployeeViewEnabled(req)) {
+      return { item: null, failed: false };
+    }
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      // Bounded like the role-grants lookup: this rides the selector list the page waits for, so a cold membership index or a slow
+      // work-history read must not hold CLA-only rows that are already resolved. The lookup keeps running (and stays cached) for a retry;
+      // (an abandoned race input is still handled by `Promise.race`, so a late failure is not an unhandled rejection).
+      const verdict = await Promise.race([
+        this.employeeView.resolveReduced(req),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new MicroserviceError(`Employee-view lookup exceeded ${ORG_AFFILIATION_LOOKUP_TIMEOUT_MS}ms budget`, 504, 'EMPLOYEE_VIEW_LOOKUP_TIMEOUT', {
+                  operation: 'build_org_items',
+                  service: 'LFX_V2_SERVICE',
+                })
+              ),
+            ORG_AFFILIATION_LOOKUP_TIMEOUT_MS
+          );
+        }),
+      ]);
+      // An authorizer-only reader who also qualifies is listed as a FULL company (`fullAccess`), never employee-view and never
+      // CLA-only: the client cannot see authorizer entitlements, so the row is how it learns the company opens in full.
+      const listed = verdict.eligible || verdict.reason === 'holds-full-access';
+      const org = listed ? verdict.org : undefined;
+      if (!org) {
+        return { item: null, failed: false };
+      }
+      return {
+        item: {
+          uid: org.orgUid,
+          accountId: org.orgUid,
+          name: org.orgName,
+          logoUrl: null,
+          primaryDomain: null,
+          parentName: null,
+          status: null,
+          // The company's slug when known (the interim membership lookup carries none, so this is null and the row is addressed by id).
+          slug: org.orgSlug ?? null,
+          isAssigned: true,
+          ...(verdict.eligible ? { employeeView: true } : { fullAccess: true }),
+        },
+        failed: false,
+      };
+    } catch (error) {
+      logger.warning(req, 'build_org_items', 'Employee-view lookup failed; listing no employee-view company', { err: error });
+      return { item: null, failed: true };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private toClaOnlyItems(orgs: ClaOnlyOrg[], employeeViewChecked = false): OrgItem[] {
     return orgs.map(
       (org): OrgItem => ({
         uid: org.uid,
@@ -183,6 +269,7 @@ export class OrgNavigationService {
         slug: null,
         isAssigned: true,
         claOnly: true,
+        ...(employeeViewChecked ? { employeeViewChecked: true } : {}),
       })
     );
   }

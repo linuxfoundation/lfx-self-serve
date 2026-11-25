@@ -30,6 +30,7 @@ import type {
   OrgTrainingGroupsResponse,
   OrgTrainingStats,
   OrgTrainingStatsQuery,
+  OrgLensReadQualification,
 } from '@lfx-one/shared/interfaces';
 import {
   hasOrgTrainingFilter,
@@ -42,7 +43,6 @@ import type { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { toIsoTimestamp } from '../helpers/date-format.helper';
-import type { OrgLensReadQualification } from '../helpers/org-lens-read-access.helper';
 import {
   buildOrgTrainingPairsCte,
   ORG_TRAINING_GROUP_SQL,
