@@ -955,4 +955,23 @@ describe('AudienceBuilderProxyService newsletter brands and issues', () => {
     expect(email.suppressionLists).toEqual([]);
     expect(email.listsUnavailable, 'a failed list read rendered as "None recorded"').toBe(true);
   });
+
+  it("keeps a list's unresolved flag: a failed read is not a list to reuse", async () => {
+    proxyRequest.mockResolvedValue({
+      emails: [
+        {
+          email_id: '9003',
+          email_name: 'Synthetic Foundation Newsletter - August 2026',
+          hubspot_url: '',
+          included_lists: [{ list_id: '11', name: 'Synthetic Subscribers', missing: false, unresolved: true }],
+          suppression_lists: [{ list_id: '12', name: 'Synthetic Unsubscribed', missing: false, unresolved: false }],
+        },
+      ],
+    });
+
+    const [email] = await service.getBrandNewsletters(req, 'tlf', 'Synthetic Foundation', 3);
+
+    expect(email.includedLists[0].unresolved).toBe(true);
+    expect(email.suppressionLists[0].unresolved).toBeUndefined();
+  });
 });

@@ -255,7 +255,9 @@ function slugifyForBrief(value: string): string {
     .toLowerCase()
     .normalize('NFKD')
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+    // One hyphen at most at each end: the line above collapses every run to one. `-+` here was
+    // polynomial on a long run (CodeQL js/polynomial-redos) for no difference in the result.
+    .replace(/^-|-$/g, '')
     .slice(0, 100);
 }
 

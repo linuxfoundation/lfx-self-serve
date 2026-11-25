@@ -550,6 +550,11 @@ export class AudienceBuilderTabComponent {
    * row the operator unticked does not tick itself again on a later reload of the same run.
    */
   private readonly suppressionSeeded = signal(false);
+  /**
+   * Whether the operator has ticked or unticked the current-registrants row themselves this run. Until
+   * they do, its tick follows the send's stage (see `followStageForRegistrantsSuppression`).
+   */
+  private registrantsSuppressionTouched = false;
 
   // === State: preview & compose ===
   protected readonly previewing = signal(false);
@@ -1828,6 +1833,11 @@ export class AudienceBuilderTabComponent {
       .pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.reconcileRegistrantsEdition());
 
+    // The stage can change after the rows were seeded (same event, another send).
+    toObservable(this.emailStage)
+      .pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.followStageForRegistrantsSuppression());
+
     // "What this audience means": once the selection settles, describe each selected list the tab
     // has not described yet -- one request for a burst of ticks, never one per tick. Read-only, and
     // only while this tab is the one on screen with a usable connection.
@@ -2189,6 +2199,9 @@ export class AudienceBuilderTabComponent {
     // for an empty list id) except the current-registrants row whose list is created on attach,
     // stored as '' until a reload fills its id in.
     if (list !== undefined) {
+      if (list.category === 'current_registrants') {
+        this.registrantsSuppressionTouched = true;
+      }
       this.toggle(this.suppression, key, list.listId);
     }
   }
@@ -3927,6 +3940,7 @@ export class AudienceBuilderTabComponent {
     this.exclusion.set(new Map());
     // The next run's suppression rows are pre-ticked afresh.
     this.suppressionSeeded.set(false);
+    this.registrantsSuppressionTouched = false;
     this.loadedRegistrantsEdition.set('');
     this.composeResult.set(null);
     this.composeDispatch.set(null);
@@ -4160,6 +4174,37 @@ export class AudienceBuilderTabComponent {
       },
       { injector: this.injector }
     );
+  }
+
+  /**
+   * Re-applies the stage default to the current-registrants row when the send's stage changes after
+   * the rows were seeded: unticked for Post-Event (the send is written FOR the registrants), ticked
+   * otherwise. Seeding runs once per discovery run, and the run survives a stage change on the same
+   * event, so without this a send moved to Post-Event still excluded the people it was written for.
+   * A row the operator ticked or unticked themselves is left as they set it.
+   */
+  private followStageForRegistrantsSuppression(): void {
+    if (!this.suppressionSeeded() || this.registrantsSuppressionTouched) {
+      return;
+    }
+    const postEvent = this.emailStage() === 'Post-Event';
+    const next = new Map(this.suppression());
+    let changed = false;
+    this.suppressionLists()
+      .filter((list) => list.category === 'current_registrants' && (list.listId !== '' || list.willCreate === true))
+      .forEach((list) => {
+        if (postEvent && next.has(list.key)) {
+          next.delete(list.key);
+          changed = true;
+        } else if (!postEvent && !next.has(list.key) && !this.inclusion().has(list.listId)) {
+          next.set(list.key, list.listId);
+          changed = true;
+        }
+      });
+    if (changed) {
+      this.suppression.set(next);
+      this.invalidatePreview();
+    }
   }
 }
 

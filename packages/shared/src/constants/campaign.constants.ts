@@ -5072,6 +5072,13 @@ export const CAMPAIGN_NEWSLETTER_SUGGESTION_KIND_LABELS: Readonly<Record<Campaig
   post: 'Post',
 };
 
+/**
+ * How long the campaigns page reuses a brand's previous-issue read and the newsletter-brand list.
+ * Long enough to cover the planner and Implement asking for the same brand in one sitting, short
+ * enough that an issue sent in HubSpot meanwhile appears without a browser reload.
+ */
+export const CAMPAIGN_NEWSLETTER_CACHE_TTL_MS = 5 * 60 * 1000;
+
 /** The suggestion kinds a newsletter suggestion may carry, derived from the labels so the two cannot drift; anything else is dropped. */
 export const CAMPAIGN_NEWSLETTER_SUGGESTION_KINDS: ReadonlySet<CampaignNewsletterSuggestionKind> = new Set(
   Object.keys(CAMPAIGN_NEWSLETTER_SUGGESTION_KIND_LABELS) as CampaignNewsletterSuggestionKind[]

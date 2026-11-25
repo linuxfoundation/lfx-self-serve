@@ -119,6 +119,8 @@ interface WireListBrief {
   name: string;
   size?: number;
   missing: boolean;
+  /** Upstream-required since campaign-service #403: the list READ failed, which says nothing about the list. */
+  unresolved?: boolean;
   resolved_from_legacy_id?: string;
   hubspot_url?: string;
 }
@@ -396,6 +398,7 @@ function toListBrief(wire: WireListBrief): AudienceListBrief {
     name: wire.name,
     size: wire.size,
     missing: wire.missing,
+    ...(wire.unresolved === true ? { unresolved: true } : {}),
     resolvedFromLegacyId: wire.resolved_from_legacy_id,
     hubspotUrl: httpHref(wire.hubspot_url) || undefined,
   };

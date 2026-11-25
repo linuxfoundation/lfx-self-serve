@@ -26,6 +26,7 @@ import {
   MONITOR_ACCOUNT_SOURCE_CONNECTION,
   MONITOR_ACCOUNT_SOURCE_LEGACY,
   MONITOR_ACCOUNT_SOURCE_PARAM,
+  CAMPAIGN_NEWSLETTER_CACHE_TTL_MS,
 } from '@lfx-one/shared/constants';
 import {
   AudienceAttachExistingRequest,
@@ -183,9 +184,9 @@ import { SseService } from './sse.service';
 export class CampaignService {
   private readonly http = inject(HttpClient);
   /** Brand-newsletter reads, keyed project|brand|limit. See getAudienceBrandNewsletters. */
-  private readonly brandNewsletterCache = new Map<string, Observable<AudienceLastSentEmail[]>>();
+  private readonly brandNewsletterCache = new Map<string, { read: Observable<AudienceLastSentEmail[]>; at: number }>();
   /** Newsletter-brand listings, keyed by project. See getAudienceNewsletterBrands. */
-  private readonly newsletterBrandsCache = new Map<string, Observable<AudienceNewsletterBrand[]>>();
+  private readonly newsletterBrandsCache = new Map<string, { read: Observable<AudienceNewsletterBrand[]>; at: number }>();
   /** Each owner's latest creative-asset upload, kept until its answer is taken up or it is cancelled: see `uploadCreativeAsset`. */
   private readonly creativeAssetUploads = new Map<
     CreativeAssetUploadOwner,
@@ -1249,13 +1250,14 @@ export class CampaignService {
    * newsletter surface clones the newest and offers all of them as content references.
    */
   public getAudienceBrandNewsletters(projectSlug: string, brand: string, limit?: number): Observable<AudienceLastSentEmail[]> {
-    // Cached per project, brand and limit for the page's lifetime: the read walks the portal (tens
-    // of seconds), and the planner and Implement both ask for the same brand within a minute. A
-    // failed read is dropped from the cache so the next ask retries.
+    // Cached per project, brand and limit for CAMPAIGN_NEWSLETTER_CACHE_TTL_MS: the read walks the
+    // portal (tens of seconds), and the planner and Implement both ask for the same brand within a
+    // minute. Not for the service's (root) lifetime: an issue sent in HubSpot meanwhile must show up
+    // without a browser reload. A failed read is dropped from the cache so the next ask retries.
     const key = `${projectSlug}|${brand.trim().toLowerCase()}|${limit ?? ''}`;
     const cached = this.brandNewsletterCache.get(key);
-    if (cached) {
-      return cached;
+    if (cached && Date.now() - cached.at < CAMPAIGN_NEWSLETTER_CACHE_TTL_MS) {
+      return cached.read;
     }
     let params = new HttpParams().set('project', projectSlug).set('brand', brand);
     if (limit !== undefined) {
@@ -1269,7 +1271,7 @@ export class CampaignService {
       }),
       shareReplay({ bufferSize: 1, refCount: false })
     );
-    this.brandNewsletterCache.set(key, read);
+    this.brandNewsletterCache.set(key, { read, at: Date.now() });
     return read;
   }
 
@@ -1281,8 +1283,8 @@ export class CampaignService {
   /** The brands that have sent a HubSpot newsletter, most recent first. Cached per project, like the above. */
   public getAudienceNewsletterBrands(projectSlug: string): Observable<AudienceNewsletterBrand[]> {
     const cached = this.newsletterBrandsCache.get(projectSlug);
-    if (cached) {
-      return cached;
+    if (cached && Date.now() - cached.at < CAMPAIGN_NEWSLETTER_CACHE_TTL_MS) {
+      return cached.read;
     }
     const params = new HttpParams().set('project', projectSlug);
     const read = this.http.get<AudienceNewsletterBrand[]>('/api/campaigns/audience-builder/newsletter-brands', { params }).pipe(
@@ -1293,7 +1295,7 @@ export class CampaignService {
       }),
       shareReplay({ bufferSize: 1, refCount: false })
     );
-    this.newsletterBrandsCache.set(projectSlug, read);
+    this.newsletterBrandsCache.set(projectSlug, { read, at: Date.now() });
     return read;
   }
 

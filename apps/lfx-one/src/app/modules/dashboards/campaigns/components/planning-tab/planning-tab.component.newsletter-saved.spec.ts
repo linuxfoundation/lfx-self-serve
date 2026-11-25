@@ -11,7 +11,7 @@ import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { PlanningTabComponent } from './planning-tab.component';
 
@@ -72,9 +72,12 @@ describe('PlanningTabComponent newsletter issue with a saved brief', () => {
   const internals = (): Internals => fixture.componentInstance as unknown as Internals;
   const notes = (): string => internals().briefForm.controls['sourceText'].value as string;
 
-  /** Past the brand read's and the saved-brief lookup's 500ms debounce. */
+  /**
+   * Past the brand read's and the saved-brief lookup's 500ms debounce, on fake timers: waiting it
+   * out in real time cost 650ms a call and put this file far over the per-file runtime budget.
+   */
   const settle = async (): Promise<void> => {
-    await new Promise((resolve) => setTimeout(resolve, 650));
+    await vi.advanceTimersByTimeAsync(650);
     await fixture.whenStable();
     fixture.detectChanges();
   };
@@ -109,12 +112,18 @@ describe('PlanningTabComponent newsletter issue with a saved brief', () => {
     projectContextService.setRouteLensKind('foundation');
     projectContextService.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
 
+    // Before the component exists, so every debounce it schedules runs on the fake clock.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
     fixture = TestBed.createComponent(PlanningTabComponent);
     fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
     fixture.componentRef.setInput('deliveryType', 'newsletter');
     fixture.componentRef.setInput('emailStage', 'Newsletter');
     fixture.detectChanges();
     await fixture.whenStable();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('fills an untouched notes box from the saved brief and ticks the issues it was styled on', async () => {

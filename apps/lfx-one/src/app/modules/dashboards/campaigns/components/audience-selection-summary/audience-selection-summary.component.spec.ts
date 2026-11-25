@@ -112,6 +112,14 @@ describe('AudienceSelectionSummaryComponent', () => {
     expect(text(host, 'campaigns-audience-meaning-list-7')).toContain('could not be read');
   });
 
+  it('reads a list the describe call did not answer for as unreadable, not as a partial description', () => {
+    const unanswered: AudienceListDescription = { listId: '8', name: '', hubspotUrl: '', status: 'unreadable', summary: '', match: 'any', groups: [], complete: false };
+    const host = render({ includes: [item('8', unanswered, 'Unanswered list')] });
+
+    expect(text(host, 'campaigns-audience-meaning-list-8')).toContain('Its rules could not be read');
+    expect(host.textContent).not.toContain('names but does not spell out');
+  });
+
   it('groups the standard suppressions into one disclosure', () => {
     const host = render({ includes: [item('1', described('1'))], standardExcludes: [item('90', described('90')), item('91', described('91'))] });
 

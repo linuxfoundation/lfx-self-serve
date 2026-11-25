@@ -522,6 +522,27 @@ describe('CampaignsComponent — newsletter issue', () => {
       expect(internals().newsletterAudienceState()).toBe('suggested');
     });
 
+    it("does not reuse a list whose read failed: its id may be an unrecovered one", STATE_ONLY, async () => {
+      const service = TestBed.inject(CampaignService);
+      vi.spyOn(service, 'persistBrief').mockReturnValue(of({ enabled: true, briefId: 'brief-nl', etag: '"1"', created: true, approved: true }));
+      vi.spyOn(service, 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy: copy() }));
+      vi.spyOn(service, 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [] }));
+      vi.spyOn(service, 'getAudienceBrandNewsletters').mockReturnValue(
+        of([{ ...previousIssue, includedLists: [{ ...previousIssue.includedLists[0], unresolved: true }] }])
+      );
+      const searchAudienceLists = vi.spyOn(service, 'searchAudienceLists').mockReturnValue(of([]));
+      vi.spyOn(service, 'getAudienceSuppressionLists').mockReturnValue(of({ lists: [] } as unknown as AudienceSuppressionListsResult));
+      const attachExistingAudience = vi.spyOn(service, 'attachExistingAudience');
+
+      select('newsletter');
+      internals().onEmailProceedFromPlanning(newsletterBrief);
+      await vi.waitFor(() => expect(searchAudienceLists).toHaveBeenCalled());
+      await fixture.whenStable();
+
+      expect(attachExistingAudience).not.toHaveBeenCalled();
+      expect(internals().newsletterAudienceState()).toBe('suggested');
+    });
+
     it('attaches nothing when the stored audience cannot be read, and offers to try again', async () => {
       const service = TestBed.inject(CampaignService);
       vi.spyOn(service, 'persistBrief').mockReturnValue(of({ enabled: true, briefId: 'brief-nl', etag: '"1"', created: true, approved: true }));

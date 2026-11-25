@@ -77,7 +77,7 @@ export class AudienceSelectionSummaryComponent {
 
   private initAnyIncomplete(): Signal<boolean> {
     return computed(() =>
-      [...this.includes(), ...this.standardExcludes(), ...this.otherExcludes()].some((item) => item.description !== null && !item.description.complete)
+      [...this.includes(), ...this.standardExcludes(), ...this.otherExcludes()].some((item) => this.hasShownSummary(item) && !item.description?.complete)
     );
   }
 
@@ -89,11 +89,21 @@ export class AudienceSelectionSummaryComponent {
         const processingType = (item.description?.processingType ?? '').toUpperCase();
         return {
           item,
+          shownDescription: this.hasShownSummary(item) ? item.description : null,
           kindLabel: AUDIENCE_LIST_PROCESSING_TYPE_LABELS[processingType] ?? '',
           expandable: ruleCount > 1,
           ruleCount,
         };
       })
     );
+  }
+
+  /**
+   * Whether an item carries a description worth showing. A list the describe call did not answer for
+   * is recorded with an empty summary so it is not asked for again; it is "could not be read", not a
+   * described list with a blank rules line, and its `complete: false` is not a partial description.
+   */
+  private hasShownSummary(item: AudienceSelectionSummaryItem): item is AudienceSelectionSummaryItem & { description: NonNullable<AudienceSelectionSummaryItem['description']> } {
+    return item.description !== null && item.description.summary.trim() !== '';
   }
 }

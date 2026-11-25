@@ -112,7 +112,7 @@
       }
     </div>
 
-    @if (row.item.description; as description) {
+    @if (row.shownDescription; as description) {
       <p class="text-xs text-gray-700" [attr.data-testid]="'campaigns-audience-meaning-summary-' + row.item.listId">{{ description.summary }}</p>
       @if (row.expandable) {
         <details class="text-xs text-gray-700" [attr.data-testid]="'campaigns-audience-meaning-rules-toggle-' + row.item.listId">

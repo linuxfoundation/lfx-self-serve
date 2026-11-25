@@ -9899,6 +9899,11 @@ export interface AudienceListBrief {
   name: string;
   size?: number;
   missing: boolean;
+  /**
+   * The read of this list failed (a throttle, a timeout), so whether it exists is unknown. Never
+   * true together with `missing`. A list in this state is not reused automatically.
+   */
+  unresolved?: boolean;
   resolvedFromLegacyId?: string;
   /** Deep link to the list in HubSpot; absent when the list no longer resolves. */
   hubspotUrl?: string;
@@ -10060,6 +10065,11 @@ export interface AudienceSelectionSummaryItem {
 /** A summary item as the "What this audience means" panel renders it. */
 export interface AudienceSelectionSummaryRow {
   item: AudienceSelectionSummaryItem;
+  /**
+   * The description to show, or null when there is none to show: not read yet, or a placeholder for
+   * a list the describe call did not answer for (it carries no summary), which reads as "could not be read".
+   */
+  shownDescription: AudienceListDescription | null;
   /** HubSpot's processingType in HubSpot's own words ("Active list"); '' when unknown. */
   kindLabel: string;
   /** Whether the rules are worth expanding: more than the one sentence the summary already says. */

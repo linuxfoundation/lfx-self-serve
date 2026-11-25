@@ -9044,7 +9044,8 @@ export class CampaignsComponent {
       const named = typeof templateId === 'string' && templateId !== '';
       const previous = named ? issues.find((email) => email.emailId === templateId) : issues[0];
       const readable = previous !== undefined && previous.listsUnavailable !== true;
-      const resolves = (list: { missing?: boolean; listId: string }): boolean => !list.missing && list.listId !== '';
+      // Unresolved is a failed READ, not a list: its id may be an unrecovered legacy one, so it is not reused either.
+      const resolves = (list: { missing?: boolean; unresolved?: boolean; listId: string }): boolean => !list.missing && list.unresolved !== true && list.listId !== '';
       const include = readable ? previous.includedLists.filter(resolves) : [];
       const exclude = readable ? previous.suppressionLists.filter(resolves) : [];
       // Reused automatically only when EVERY list the previous issue recorded still resolves. With
