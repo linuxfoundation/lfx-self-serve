@@ -44,7 +44,7 @@ import { socialListeningAccessGuard } from './shared/guards/social-listening-acc
 import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
 import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavailable-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
-import { cfOrgDonationsGuard } from './shared/guards/org-lens-flag.guard';
+import { cfOrgDonationsTabGuard } from './shared/guards/org-lens-flag.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
@@ -106,40 +106,46 @@ function orgLensPageRoutes(): Routes {
       ],
     },
     {
-      // Initiatives attributed to the organization (#348): the My Initiatives page and detail scoped by `data.lens`.
-      // Componentless parent so both children share its data.
-      path: 'initiatives',
-      data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your company.', icon: 'fa-light fa-box-dollar' },
-      // The crowdfunding list and stats take one `orgUid`, so the roll-up redirects (#4415). The page is hidden entirely
-      // in the all employee view (epic #5845): the route redirects to Overview and the API refuses an employee.
+      // One Crowdfunding page for the company (#5838): Initiatives (#348) and Donations (#415) as tabs under a shared
+      // header. Componentless parent; the shell renders the header and tab bar, each tab is a child route.
+      path: 'crowdfunding',
+      data: { lens: 'org', title: 'Crowdfunding', description: 'Crowdfunding initiatives and donations for your company.', icon: 'fa-light fa-box-dollar' },
+      // Both tabs take one `orgUid`, so the roll-up redirects (#4415).
+      // Hidden entirely in the all employee view (epic #5845): the route redirects to Overview and the API refuses an employee.
       canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard()],
       children: [
         {
+          // The bare address has no tab child: the shell lands on the viewer's first tab once their grants have loaded.
           path: '',
-          loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
+          loadComponent: () => import('./modules/crowdfunding/org-crowdfunding/org-crowdfunding.component').then((m) => m.OrgCrowdfundingComponent),
+          children: [
+            {
+              // `data` sits on each tab: a child of a component route only inherits it from an empty-path parent.
+              path: 'initiatives',
+              data: { lens: 'org', title: 'Crowdfunding', embedded: true },
+              loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
+            },
+            {
+              // Dark-launched behind `cf-org-donations`.
+              path: 'donations',
+              canMatch: [cfOrgDonationsTabGuard],
+              data: { lens: 'org', title: 'Crowdfunding', embedded: true },
+              loadComponent: () => import('./modules/crowdfunding/org-donations/org-donations.component').then((m) => m.OrgDonationsComponent),
+            },
+            // The flag is off, so the Donations tab declined to match: land on Initiatives rather than leave Crowdfunding.
+            { path: 'donations', redirectTo: 'initiatives' },
+          ],
         },
         {
-          path: ':slug',
+          path: 'initiatives/:slug',
           data: { title: 'Initiative' },
           loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
         },
       ],
     },
-    {
-      // Crowdfunding donations matched to the organization (#415), dark-launched behind `cf-org-donations`.
-      path: 'donations',
-      canMatch: [cfOrgDonationsGuard],
-      // `/api/crowdfunding/org-donations` takes one organization, so the roll-up redirects (#4415). Hidden entirely in the
-      // all employee view (epic #5845): the route redirects to Overview and the API refuses an employee.
-      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard()],
-      data: {
-        lens: 'org',
-        title: 'Donations',
-        description: 'Crowdfunding donations made on behalf of your company.',
-        icon: 'fa-light fa-hand-holding-heart',
-      },
-      loadComponent: () => import('./modules/crowdfunding/org-donations/org-donations.component').then((m) => m.OrgDonationsComponent),
-    },
+    // The pages before they became tabs (#5838): keep every old link, including an initiative's detail page.
+    { path: 'initiatives', redirectTo: 'crowdfunding/initiatives' },
+    { path: 'donations', redirectTo: 'crowdfunding/donations' },
     {
       path: 'overview',
       data: {
