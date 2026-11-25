@@ -143,10 +143,10 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
   if (input.geoTargetCount === 0) return 'LinkedIn Ads: add at least one location.';
   // A Text Ads choice this deployment no longer offers is held rather than sent as single image ads (#5764 row 19).
   if (input.textAdsUnavailable) return 'LinkedIn Ads: Text Ads are not available right now. Choose single image ads as the ad format.';
-  // Likewise video ads (#5764 row 18): held rather than sent as single image ads.
   // Text Ads chosen beside lead generation (campaign-service#664), which has no Text Ads: change the format, before the
   // Text Ads checks below ask for the manual bid lead generation refuses.
   if (input.textAdsWithLeadGen) return 'LinkedIn Ads: lead generation campaigns have no Text Ads. Choose single image or video ads as the ad format.';
+  // Likewise video ads (#5764 row 18): held rather than sent as single image ads.
   if (input.videoAdsUnavailable) return 'LinkedIn Ads: video ads are not available right now. Choose single image ads as the ad format.';
   // Custom targeting this deployment no longer offers is held rather than sent as the profile, a wider audience (#5764 rows 8–11).
   if (input.customTargetingUnavailable) return 'LinkedIn Ads: custom targeting is not available right now. Choose a targeting profile.';
