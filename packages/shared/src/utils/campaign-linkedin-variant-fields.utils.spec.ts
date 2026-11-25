@@ -103,6 +103,12 @@ describe('linkedInVariantFieldErrors', () => {
     ],
     ['its own default name', [{ name: 'KubeCon EU 2026 | variant-1' }], 'KubeCon EU 2026', ['']],
     ['any name while the event name is blank', [{ name: ' | variant-2' }, {}], '', ['', '']],
+    [
+      'a default name with the event trimmed as Go trims it',
+      [{ name: 'Summit | variant-2' }, {}],
+      '\u0085Summit',
+      ['Ad 2 already has this name. Give each ad its own name.', ''],
+    ],
   ])('catches %s', (_name, variants, eventName, names) => {
     expect(linkedInVariantFieldErrors(variants, eventName).map((e) => e.name)).toEqual(names);
   });

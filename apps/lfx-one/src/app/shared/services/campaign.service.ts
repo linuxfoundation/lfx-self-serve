@@ -90,6 +90,7 @@ import {
   GoogleAdsConversionActionsResult,
   GoogleAdsGeoTargetSearchOptions,
   GoogleAdsGeoTargetSearchResult,
+  LinkedInGeoSearchResult,
   GoogleAdsAudienceReadType,
   GoogleAdsAudiencesResult,
   GoogleAdsUserListsResult,
@@ -801,6 +802,16 @@ export class CampaignService {
    */
   public getTwitterAdsAccounts(projectSlug: string): Observable<TwitterAdsAccountsResult> {
     return this.http.get<TwitterAdsAccountsResult>('/api/campaigns/twitter/accounts', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Search LinkedIn locations for the Implement tab's location picker (#5545): campaign-service's targeting typeahead,
+   * `facet=locations`, answered as geo targets ready to add. Unflagged.
+   */
+  public searchLinkedInGeoTargets(projectSlug: string, query: string): Observable<LinkedInGeoSearchResult> {
+    // `strictHttpParams`, because the query is user-typed text (see `searchGoogleAdsGeoTargets`).
+    const params = strictHttpParams().set('project', projectSlug).set('q', query);
+    return this.http.get<LinkedInGeoSearchResult>('/api/campaigns/linkedin/geo-targets', { params });
   }
 
   /**

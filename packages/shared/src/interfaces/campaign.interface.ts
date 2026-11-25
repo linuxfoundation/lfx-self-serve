@@ -1916,6 +1916,18 @@ export interface LinkedInGeoSearchResult {
   locations: LinkedInGeoTarget[];
 }
 
+/** One row of the Implement tab's LinkedIn location search: a location, `disabled` once it is already a target. */
+export interface LinkedInGeoSearchOption extends LinkedInGeoTarget {
+  disabled: boolean;
+}
+
+/** Where the LinkedIn location search stands: its rows, and whether it failed or is still waiting. */
+export interface LinkedInGeoSearchState {
+  locations: LinkedInGeoTarget[];
+  failed: boolean;
+  pending: boolean;
+}
+
 export interface LinkedInCreativeVariant {
   introText: string;
   headline: string;

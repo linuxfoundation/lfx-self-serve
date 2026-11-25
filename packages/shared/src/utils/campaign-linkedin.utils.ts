@@ -27,7 +27,7 @@ export function normalizeLinkedInCreativeText(text: string): string {
  * `trim()` differs both ways (it keeps U+0085 and drops U+FEFF), which would let copy through that
  * campaign-service then blanks or cuts.
  */
-function goTrimSpace(text: string): string {
+export function goTrimSpace(text: string): string {
   // An index scan rather than an anchored regex, whose trailing `[…]+$` backtracks polynomially on a
   // long run of spaces (CodeQL js/polynomial-redos).
   let start = 0;

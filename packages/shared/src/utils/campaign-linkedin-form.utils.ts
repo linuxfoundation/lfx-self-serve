@@ -16,7 +16,7 @@ import type {
   LinkedInVariantDraft,
   LinkedInVariantFieldsEnabled,
 } from '../interfaces/campaign.interface';
-import { roundUsdToCentsLikeGo } from './campaign-linkedin.utils';
+import { linkedInCreativeTextLength, normalizeLinkedInCreativeName, roundUsdToCentsLikeGo } from './campaign-linkedin.utils';
 
 /**
  * The Implement tab's LinkedIn form rules (#5980): the daily cap, the targeting edit, the ad account, the variants a
@@ -131,8 +131,9 @@ function linkedInVariantOptionalFields(
   fields: LinkedInVariantFieldsEnabled
 ): Pick<LinkedInCreativeVariant, 'name' | 'description' | 'callToAction'> {
   const out: Pick<LinkedInCreativeVariant, 'name' | 'description' | 'callToAction'> = {};
-  if (fields.copy && (variant.name ?? '').trim() !== '') out.name = variant.name;
-  if (fields.copy && (variant.description ?? '').trim() !== '') out.description = variant.description;
+  // Blank as campaign-service reads it: the normalized name, and the description's normalized length.
+  if (fields.copy && normalizeLinkedInCreativeName(variant.name ?? '') !== '') out.name = variant.name;
+  if (fields.copy && linkedInCreativeTextLength(variant.description ?? '') > 0) out.description = variant.description;
   if (fields.callToAction && (variant.callToAction ?? '') !== '') out.callToAction = variant.callToAction;
   return out;
 }

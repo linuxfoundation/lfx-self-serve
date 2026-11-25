@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { linkedInGeoSearchLocations, linkedInGeoSearchQueryRefusal } from './campaign-linkedin-geo.utils';
+import { linkedInGeoSearchLocations, linkedInGeoSearchOptions, linkedInGeoSearchQueryRefusal, linkedInGeoSearchQueryText } from './campaign-linkedin-geo.utils';
 
 describe('linkedInGeoSearchQueryRefusal', () => {
   it.each([
@@ -44,5 +44,26 @@ describe('linkedInGeoSearchLocations', () => {
     ['a value that is not a list', 'none'],
   ])('drops %s', (_name, raw) => {
     expect(linkedInGeoSearchLocations(raw)).toEqual([]);
+  });
+});
+
+describe('linkedInGeoSearchQueryText', () => {
+  it.each([
+    ['  Berlin ', 'Berlin'],
+    ['\u0085Berlin', 'Berlin'],
+    ['x'.repeat(120), 'x'.repeat(100)],
+  ])('%j → %j', (typed, expected) => {
+    expect(linkedInGeoSearchQueryText(typed)).toBe(expected);
+  });
+});
+
+describe('linkedInGeoSearchOptions', () => {
+  it('marks a location already targeted as disabled', () => {
+    const berlin = { urn: 'urn:li:geo:103035651', label: 'Berlin, Germany' };
+    const us = { urn: 'urn:li:geo:103644278', label: 'United States' };
+    expect(linkedInGeoSearchOptions([berlin, us], [us])).toEqual([
+      { ...berlin, disabled: false },
+      { ...us, disabled: true },
+    ]);
   });
 });

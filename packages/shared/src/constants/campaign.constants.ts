@@ -3825,6 +3825,9 @@ export const DEFAULT_MICROSOFT_KEYWORDS_WINDOW: MicrosoftKeywordsWindow = 'last_
  */
 export const LINKEDIN_GEO_SEARCH_BOUNDS = { minQueryLength: 2, maxQueryLength: 100 } as const;
 
+/** How long the Implement tab's LinkedIn location search waits after the last keystroke, as Google's picker does. */
+export const LINKEDIN_GEO_SEARCH_DEBOUNCE_MS = 400;
+
 /** A LinkedIn geo URN as campaign-service accepts it in `linkedInConfig.geoTargets` (`internal/platform/linkedin/targeting.go`). */
 export const LINKEDIN_GEO_URN_PATTERN = /^urn:li:geo:[0-9]+$/;
 
