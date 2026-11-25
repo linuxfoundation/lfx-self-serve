@@ -82,8 +82,15 @@ export class PersonDetailDrawerService {
   private readonly _keyContactsRequested = signal(false);
   /** The organization the open context was supplied under; roles handed over by an opener belong to it alone. */
   private readonly _openedOrgUid = signal<string | null | undefined>(undefined);
+  /** The selection the drawer was opened under; an opener's own organization (a roll-up row's company) holds only while it stays selected. */
+  private readonly _openedSelectedUid = signal<string | null | undefined>(undefined);
+  private readonly selectedUid = computed(() => this.accountContext.selectedAccount().uid);
+  private readonly openerOrganization = computed(() => {
+    const organization = this._activeContext()?.organization;
+    return organization && this._openedSelectedUid() === this.selectedUid() ? organization : null;
+  });
 
-  public readonly orgUid = computed(() => this.accountContext.selectedAccount().uid);
+  public readonly orgUid = computed(() => this.openerOrganization()?.accountId ?? this.selectedUid());
   // Activity, addresses and roles are separate requests off the same key, so none waits on another.
   private readonly detailRequest = computed(() => ({ orgUid: this.orgUid(), context: this._activeContext() }));
   /**
@@ -235,8 +242,8 @@ export class PersonDetailDrawerService {
   public readonly primaryCompanyEmail = computed<string | null>(() => this.currentEmails()?.primaryEmail ?? null);
   /** The listed addresses known only from a key-contact record. */
   public readonly keyContactRecordEmails = computed<string[]>(() => this.currentEmails()?.keyContactRecordEmails ?? []);
-  /** The selected organization's display name, for the address copy; `company` when it has none yet. */
-  public readonly companyName = computed(() => this.accountContext.selectedAccount().accountName?.trim() || 'company');
+  /** The display name of the organization the person is read under, for the address copy; `company` when it has none yet. */
+  public readonly companyName = computed(() => (this.openerOrganization()?.name ?? this.accountContext.selectedAccount().accountName)?.trim() || 'company');
 
   /** Supplied roles win over the fetch, the way `governanceSeats` does for Governance. */
   public readonly keyContacts = computed<OrgKeyContactAssignment[]>(() => this.suppliedKeyContacts() ?? this.currentKeyContacts()?.assignments ?? []);
@@ -262,9 +269,10 @@ export class PersonDetailDrawerService {
   public open(context: PersonDrawerContext): void {
     const tab = context.defaultTab ?? 'events';
     this._keyContactsRequested.set(tab === 'key-contacts');
-    this._openedOrgUid.set(this.orgUid());
+    this._openedSelectedUid.set(this.selectedUid());
     this._activeTab.set(tab);
     this._activeContext.set(context);
+    this._openedOrgUid.set(this.orgUid());
   }
 
   public close(): void {

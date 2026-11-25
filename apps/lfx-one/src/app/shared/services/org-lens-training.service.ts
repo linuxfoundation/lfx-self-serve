@@ -5,7 +5,12 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_TRAINING_FILTER_KEYS, ORG_TRAINING_VIEW_QUERY_PARAMS } from '@lfx-one/shared/constants';
+import {
+  ORG_LENS_TIME_RANGE_QUERY_PARAM,
+  ORG_TRAINING_COMPANY_QUERY_PARAM,
+  ORG_TRAINING_FILTER_KEYS,
+  ORG_TRAINING_VIEW_QUERY_PARAMS,
+} from '@lfx-one/shared/constants';
 import type {
   OrgLensTimeRange,
   OrgTrainingFilterOptions,
@@ -19,15 +24,18 @@ import type {
 import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { Observable } from 'rxjs';
 
-/** HTTP client of the shared Training / Trainees view: one stats call, one filter-options call and the group-by table. */
+/**
+ * HTTP client of the shared Training / Trainees view: one stats call, one filter-options call and the group-by table.
+ * `orgUid` may be a family roll-up key; `company` then narrows the stats and groups to one organization of the roll-up.
+ */
 @Injectable({
   providedIn: 'root',
 })
 export class OrgLensTrainingService {
   private readonly http = inject(HttpClient);
 
-  public getTrainingStats(orgUid: string, query: OrgTrainingStatsQuery): Observable<OrgTrainingStats> {
-    return this.http.get<OrgTrainingStats>(`${this.baseUrl(orgUid)}/stats`, { params: this.queryParams(query) });
+  public getTrainingStats(orgUid: string, query: OrgTrainingStatsQuery, company = ''): Observable<OrgTrainingStats> {
+    return this.http.get<OrgTrainingStats>(`${this.baseUrl(orgUid)}/stats`, { params: this.queryParams(query, company) });
   }
 
   public getFilterOptions(orgUid: string, range: OrgLensTimeRange): Observable<OrgTrainingFilterOptions> {
@@ -37,7 +45,9 @@ export class OrgLensTrainingService {
   }
 
   public getGroups(orgUid: string, query: OrgTrainingStatsQuery, params: OrgTrainingGroupsParams): Observable<OrgTrainingGroupsResponse> {
-    let httpParams = this.queryParams(query).set('groupBy', params.groupBy).set('tab', params.tab);
+    let httpParams = this.queryParams(query, params.company ?? '')
+      .set('groupBy', params.groupBy)
+      .set('tab', params.tab);
     if (params.searchQuery) httpParams = httpParams.set('search', params.searchQuery);
     if (params.sortField) httpParams = httpParams.set('sortField', params.sortField);
     if (params.sortOrder) httpParams = httpParams.set('sortOrder', params.sortOrder);
@@ -52,7 +62,7 @@ export class OrgLensTrainingService {
     query: OrgTrainingStatsQuery,
     params: OrgTrainingGroupEmployeesParams
   ): Observable<OrgTrainingGroupEmployeesResponse> {
-    const httpParams = this.queryParams(query)
+    const httpParams = this.queryParams(query, params.company?.accountId ?? '')
       .set('groupBy', params.groupBy)
       .set('groupValue', params.groupValue)
       .set('tab', params.tab)
@@ -65,9 +75,10 @@ export class OrgLensTrainingService {
     return `/api/orgs/${encodeURIComponent(orgUid)}/lens/training`;
   }
 
-  /** Range plus every filter that is set; an unset filter is left off the URL. */
-  private queryParams(query: OrgTrainingStatsQuery): HttpParams {
+  /** Range plus every filter that is set, and the company when one is picked; an unset filter is left off the URL. */
+  private queryParams(query: OrgTrainingStatsQuery, company: string): HttpParams {
     let httpParams = strictHttpParams().set(ORG_LENS_TIME_RANGE_QUERY_PARAM, query.range);
+    if (company) httpParams = httpParams.set(ORG_TRAINING_COMPANY_QUERY_PARAM, company);
     for (const key of ORG_TRAINING_FILTER_KEYS) {
       const value = query[key];
       if (value !== null) httpParams = httpParams.set(ORG_TRAINING_VIEW_QUERY_PARAMS[key], value);

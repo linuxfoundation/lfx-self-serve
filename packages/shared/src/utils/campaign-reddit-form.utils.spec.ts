@@ -114,7 +114,7 @@ describe('stale objective and call to action', () => {
 });
 
 describe('redditCreateRefusal', () => {
-  const ok: RedditCreateRefusalInput = { budgetUsd: 50, geoTargetCount: 1, videoGoalError: null, videoPostError: null };
+  const ok: RedditCreateRefusalInput = { budgetUsd: 50, geoTargetCount: 1, videoGoalError: null, videoPostError: null, conversionEventBlock: null };
 
   it.each([
     ['nothing wrong', {}, null],
@@ -122,6 +122,7 @@ describe('redditCreateRefusal', () => {
     ['no geo', { geoTargetCount: 0 }, 'Reddit Ads: add a location, or a country code.'],
     ['a goal error', { videoGoalError: 'x' }, 'Reddit Ads: fix the Video Views goal.'],
     ['a post error', { videoPostError: 'x' }, 'Reddit Ads: Video Views needs a video post.'],
+    ['a held conversion event', { conversionEventBlock: 'Use Purchase.' }, 'Reddit Ads: Use Purchase.'],
     ['a budget and a geo error, budget first', { budgetUsd: 0, geoTargetCount: 0 }, 'Reddit Ads: set a budget Reddit accepts.'],
   ])('%s', (_name, over, expected) => {
     expect(redditCreateRefusal({ ...ok, ...over })).toBe(expected);

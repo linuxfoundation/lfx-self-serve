@@ -15,7 +15,11 @@
       <div class="flex flex-col gap-0.5 min-w-0">
         <h2 class="text-base font-semibold text-gray-900 truncate" data-testid="org-training-group-employees-title">{{ heading() }}</h2>
         <p class="text-sm text-gray-500 truncate" data-testid="org-training-group-employees-subtitle">
-          {{ label() }} &middot; {{ pairCount() | number }} {{ statusLabel().toLowerCase() }} (person-course pairs)
+          {{ label() }}
+          @if (companyName()) {
+            &middot; {{ companyName() }}
+          }
+          &middot; {{ pairCount() | number }} {{ statusLabel().toLowerCase() }} (person-course pairs)
         </p>
       </div>
     </div>

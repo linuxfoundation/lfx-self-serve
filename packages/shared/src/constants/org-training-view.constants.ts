@@ -20,6 +20,12 @@ export const ORG_TRAINING_VIEW_QUERY_PARAMS = {
 /** Roll-up only: narrows the Training reads to one organization of the family, and names the company a roll-up drawer opens for. */
 export const ORG_TRAINING_COMPANY_QUERY_PARAM = 'company';
 
+/** Roll-up only: the groups table's totals count each person and pair once over the family, so they can be less than the sum of the rows. */
+export const ORG_TRAINING_ROLL_UP_TOTALS_NOTE = 'A person in more than one company is counted once in the totals.';
+
+export const ORG_TRAINING_PAGE_DESCRIPTION = 'Training enrollments and certifications across your company.';
+export const ORG_TRAINING_ROLL_UP_PAGE_DESCRIPTION = 'Training enrollments and certifications across your companies.';
+
 export const ORG_TRAINING_DEFAULT_GROUP_BY: OrgTrainingGroupBy = 'course';
 
 /** Group-by dropdown options of the Training page. */

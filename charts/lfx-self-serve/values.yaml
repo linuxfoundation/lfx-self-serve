@@ -693,6 +693,16 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS:
     value:
 
+  # Reddit conversion event (#6108 row 2): offers the pixel event a `conversions` campaign optimizes toward on the
+  # Implement tab, sent as `redditConfig.conversionEvent` (default PURCHASE, which is left out).
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_CONVERSION_EVENT_ENABLED` on
+  # and the create pipeline on. Off (the default), the picker is hidden and the create route refuses the field with a
+  # 400, never dropping it. A field only, so turning it back off strands nothing. Order: set campaign-service's flag and
+  # pass its live probe, THEN this. Keep it off until then. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT:
+    value:
+
   # Offers a stored-image LIBRARY in each Google creative image slot (Demand Gen, Performance Max
   # and Display): upload a PNG/JPEG into the brief's library (the same library REDDIT_ASSETS and
   # META_ASSETS upload into), or pick a stored image that fits the slot's aspect ratio and minimum
@@ -794,6 +804,17 @@ environment:
   # the format with a 400, never dropping it. A field only, so turning it back off strands nothing. Order: set
   # campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS:
+    value:
+
+  # LinkedIn video ads, LF's "Motion" (#5764 row 18): accepts `linkedInConfig.variants[i].videoAssetId`, an MP4
+  # uploaded to the brief, which makes the campaign a SINGLE_VIDEO one. Every ad carries a video or none does.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 DEPLOYED with `LINKEDIN_ADS_VIDEO_ENABLED`
+  # on, the create pipeline on, and LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS on (the video is a brief asset). Off
+  # (the default), the create route refuses the field with a 400, never dropping it. A field only, so turning it back
+  # off strands nothing. Order: set campaign-service's flag and pass its paused video probe, THEN this. Same accepted
+  # values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO:
     value:
 
   # LinkedIn custom targeting (#5764 rows 8–11): accepts `linkedInConfig.targeting`, the campaign's own include

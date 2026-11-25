@@ -19,8 +19,10 @@ import {
 } from '@lfx-one/shared/utils/campaign-linkedin-targeting-lookup.utils';
 import { linkedInConfigNamesConversions, linkedInConversionRules, linkedInObjectiveRefusal } from '@lfx-one/shared/utils/campaign-linkedin-objective.utils';
 import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
+import { redditConversionEventRefusal } from '@lfx-one/shared/utils/campaign-reddit-conversion-event.utils';
 import { linkedInTextAdAssetField, linkedInTextAdsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-text-ads.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
+import { linkedInVideoVariantsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-video.utils';
 import {
   googleAdScheduleRefusal,
   googleAdsDevicesOn,
@@ -445,6 +447,7 @@ import {
   canSetLinkedInTextAds,
   canSetLinkedInDailyCap,
   canSetLinkedInVariantCopy,
+  canSetLinkedInVideoAds,
   canSearchGoogleGeoTargets,
   canSetMetaAudienceTargeting,
   canSetMetaCallToAction,
@@ -459,6 +462,7 @@ import {
   canSetMetaAdSchedule,
   canSetMetaFrequencyCap,
   canSetMetaOptimizationGoal,
+  canSetRedditConversionEvent,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
@@ -1349,6 +1353,19 @@ export class CampaignController {
         return;
       }
 
+      // The Reddit conversion event (#6108 row 2): refused, never dropped, while this deployment cannot send it, and held
+      // to campaign-service's rules (`checkRedditConversionEvent`). See `redditConversionEventRefusal`.
+      const redditConversionEventRefused = redditConversionEventRefusal(body?.redditConfig, canSetRedditConversionEvent());
+      if (redditConversionEventRefused !== null) {
+        next(
+          ServiceValidationError.forField(redditConversionEventRefused.field, redditConversionEventRefused.message, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
       // Any top-level or variant LinkedIn key the create route does not check is refused before any LinkedIn
       // read or create, whatever the flags (#5764): `buildLinkedInConfig` forwards the rest of `linkedInConfig`
       // as it comes, and campaign-service decodes keys ignoring case. See `linkedInConfigKeyRefusal`.
@@ -1384,6 +1401,15 @@ export class CampaignController {
       const linkedInTextAdsRefused = linkedInTextAdsRefusal(body?.linkedInConfig, canSetLinkedInTextAds());
       if (linkedInTextAdsRefused !== null) {
         throw ServiceValidationError.forField(linkedInTextAdsRefused.field, linkedInTextAdsRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // LinkedIn video ads (#5764 row 18): refused, never dropped, while this deployment cannot send them, and held to
+      // campaign-service's rules. See `linkedInVideoVariantsRefusal`.
+      const linkedInVideoRefused = linkedInVideoVariantsRefusal(body?.linkedInConfig, canSetLinkedInVideoAds());
+      if (linkedInVideoRefused !== null) {
+        throw ServiceValidationError.forField(linkedInVideoRefused.field, linkedInVideoRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });
@@ -10002,6 +10028,9 @@ export class CampaignController {
    *
    * 9. `objective` and `conversions` (#5764 rows 2 and 4) go out as they came, once `linkedInObjectiveRefusal` passed
    *    them: campaign-service drops repeated conversion rule ids itself.
+   *
+   * 10. A variant's `videoAssetId` (#5764 row 18) goes out as it came, once `linkedInVideoVariantsRefusal` passed it:
+   *    campaign-service trims it itself.
    */
   private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;

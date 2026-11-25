@@ -30,6 +30,7 @@ import type {
   MICROSOFT_KEYWORDS_WINDOWS,
   MONITOR_DATE_RANGE_OPTIONS,
   REDDIT_CALL_TO_ACTIONS,
+  REDDIT_CONVERSION_EVENTS,
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
 } from '../constants/campaign.constants';
@@ -421,6 +422,15 @@ export interface CreativeSlotCoverageState {
 /** One of the concrete video optimization goals Reddit accepts — see `REDDIT_VIDEO_GOALS`. */
 export type RedditVideoGoal = (typeof REDDIT_VIDEO_GOALS)[number];
 
+/** A pixel event a Reddit `conversions` campaign may optimize toward (#6108 row 2) — see `REDDIT_CONVERSION_EVENTS`. */
+export type RedditConversionEvent = (typeof REDDIT_CONVERSION_EVENTS)[number];
+
+/** Why part of `redditConfig` cannot be sent: the field it names (`redditConfig.conversionEvent`) and a sentence. Never echoes a caller value. */
+export interface RedditConfigRefusal {
+  field: string;
+  message: string;
+}
+
 /**
  * What `redditCreateRefusal` reads (#5980): the Reddit section's state as the Implement tab holds it, one flat object of
  * plain values, like `LinkedInCreateRefusalInput`.
@@ -431,6 +441,8 @@ export interface RedditCreateRefusalInput {
   geoTargetCount: number;
   videoGoalError: string | null;
   videoPostError: string | null;
+  /** Why the conversion event cannot be sent yet (`redditConversionEventBlock`), or `null`. */
+  conversionEventBlock: string | null;
 }
 
 /** The three inputs needed to author a promoted post, once a creator has decided to author one. */
@@ -1417,6 +1429,11 @@ export interface CampaignImplementationDraft {
    */
   redditVideoGoal?: RedditVideoGoal | '';
   /**
+   * The Reddit conversion event (#6108 row 2), kept whatever the objective and the capability say, as the video goal is;
+   * only the REQUEST is gated on them. A non-default event the capability no longer confirms holds Create, never dropped.
+   */
+  redditConversionEvent?: RedditConversionEvent;
+  /**
    * The Meta ad image, on the same terms as the Reddit image fields above: a pasted URL, or an
    * upload made for ONE brief (its asset id, file name and brief), plus an upload still in flight
    * and a failed upload's reason, so a tab switch neither loses the image nor lifts the block a
@@ -2042,6 +2059,13 @@ export interface LinkedInCreativeVariant {
    * (`resolveLinkedInImages`, `internal/dispatch/linkedin_creative.go`).
    */
   imageAssetId?: string;
+  /**
+   * An MP4 uploaded to the brief, which makes this a video ad, LF's "Motion" (#5764 row 18, campaign-service #586).
+   * campaign-service uploads it through LinkedIn's Videos API and creates a SINGLE_VIDEO campaign. Every variant of a
+   * campaign carries one or none does; a video variant carries no image and no description. See
+   * `linkedInVideoVariantsRefusal`.
+   */
+  videoAssetId?: string;
   /**
    * The ad's name in Campaign Manager and reporting (#5764 row 17, campaign-service #589). Omitted keeps
    * "<event> | variant-N". No two variants of one campaign may share one. Only on the campaign-service road.
@@ -2739,6 +2763,12 @@ export interface RedditCampaignCreateRequest {
    * only with that objective, and blocks the create until one is chosen.
    */
   videoGoal?: RedditVideoGoal;
+  /**
+   * The pixel event a `conversions` campaign optimizes toward (#6108 row 2, campaign-service #549), one of
+   * `REDDIT_CONVERSION_EVENTS`; absent is PURCHASE. Only while `CampaignListResult.redditConversionEventEnabled`, and
+   * only with the conversions objective: the create route refuses it otherwise, never dropping it.
+   */
+  conversionEvent?: RedditConversionEvent;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
 }
@@ -3340,7 +3370,7 @@ export interface LinkedInBriefSeed {
   lifetimeBudgetUsd?: number;
 }
 
-/** The Reddit keys of the Implement tab draft that `redditDraftRestore` reads (#5980). Every one is optional. */
+/** The Reddit keys of the Implement tab draft that `redditDraftFields` writes and `redditDraftRestore` reads (#5980). Every one is optional. */
 export type RedditDraftSnapshot = Pick<
   CampaignImplementationDraft,
   | 'redditBudgetUsd'
@@ -3357,6 +3387,7 @@ export type RedditDraftSnapshot = Pick<
   | 'redditImageUploadFailedMessage'
   | 'redditImageUploadFailedBriefId'
   | 'redditVideoGoal'
+  | 'redditConversionEvent'
 >;
 
 /** The Reddit values `redditDraftFields` snapshots into the draft (#5980): the typed fields, the pixel and the image upload slot. */
@@ -3375,6 +3406,7 @@ export interface RedditDraftState {
   uploadError: string;
   uploadFailedBriefId: string;
   videoGoal: RedditVideoGoal | '';
+  conversionEvent: RedditConversionEvent;
 }
 
 /** What a restored draft does to the Reddit section (#5980): values to set, and at most one upload step for the component to run. */
@@ -3391,6 +3423,7 @@ export interface RedditDraftRestore {
   /** Resume an upload the draft recorded as still running. */
   pendingUpload?: { name: string; briefId: string };
   videoGoal?: RedditVideoGoal | '';
+  conversionEvent?: RedditConversionEvent;
 }
 
 /** The Reddit lists a brief seeds (#5980): the variants and the four targeting lists. */
@@ -3409,6 +3442,7 @@ export interface RedditBriefReset extends RedditBriefSeed {
   callToAction: '';
   objective: RedditObjective;
   videoGoal: '';
+  conversionEvent: RedditConversionEvent;
   budgetUsd: number;
 }
 
@@ -8077,6 +8111,12 @@ export interface CampaignListResult {
    */
   redditConversionPixelEnabled: boolean;
   /**
+   * Whether a Reddit `conversions` create may carry `redditConfig.conversionEvent` (#6108 row 2). Needs the
+   * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT`, which follows
+   * campaign-service's own `REDDIT_CONVERSION_EVENT_ENABLED`.
+   */
+  redditConversionEventEnabled: boolean;
+  /**
    * Whether the Google creative section may offer a stored-image LIBRARY — uploading images to the
    * brief and naming them by asset id in the Google creative fields.
    *
@@ -8169,6 +8209,12 @@ export interface CampaignListResult {
    * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS`, which follows campaign-service's own `LINKEDIN_ADS_TEXT_ADS_ENABLED`.
    */
   linkedInTextAdsEnabled: boolean;
+  /**
+   * Whether a LinkedIn variant may carry a `videoAssetId`, a video ad (#5764 row 18). Needs the LinkedIn creative asset
+   * path (`canUseLinkedInCreativeAssets`) AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO`, which follows
+   * campaign-service's own `LINKEDIN_ADS_VIDEO_ENABLED`.
+   */
+  linkedInVideoAdsEnabled: boolean;
   /**
    * Whether a LinkedIn create may carry its own `targeting` (#5764 rows 8–11). Needs the campaign-service create path
    * AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING`, which follows campaign-service's own

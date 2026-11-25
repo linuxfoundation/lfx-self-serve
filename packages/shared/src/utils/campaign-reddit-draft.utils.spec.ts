@@ -25,6 +25,7 @@ describe('redditDraftFields', () => {
     uploadError: 'Too big.',
     uploadFailedBriefId: '',
     videoGoal: 'VIDEO_VIEW_15S',
+    conversionEvent: 'SIGN_UP',
   };
 
   it('carries every typed value, the pixel and the upload slot as held', () => {
@@ -43,6 +44,7 @@ describe('redditDraftFields', () => {
       redditImageUploadFailedMessage: '',
       redditImageUploadFailedBriefId: '',
       redditVideoGoal: 'VIDEO_VIEW_15S',
+      redditConversionEvent: 'SIGN_UP',
     });
   });
 
@@ -74,6 +76,7 @@ describe('redditDraftRestore', () => {
           redditImageUrl: 'https://cdn.example.org/promo.png',
           redditCallToAction: 'Shop Now',
           redditVideoGoal: 'VIDEO_VIEW_15S',
+          redditConversionEvent: 'LEAD',
         })
       )
     ).toEqual({
@@ -83,6 +86,7 @@ describe('redditDraftRestore', () => {
       imageUrl: 'https://cdn.example.org/promo.png',
       callToAction: 'Shop Now',
       videoGoal: 'VIDEO_VIEW_15S',
+      conversionEvent: 'LEAD',
     });
   });
 
@@ -145,6 +149,7 @@ describe('redditBriefReset', () => {
       callToAction: '',
       objective: DEFAULT_REDDIT_OBJECTIVE,
       videoGoal: '',
+      conversionEvent: 'PURCHASE',
       budgetUsd: DEFAULT_REDDIT_BUDGET_USD,
       variants: [],
       subreddits: [],
