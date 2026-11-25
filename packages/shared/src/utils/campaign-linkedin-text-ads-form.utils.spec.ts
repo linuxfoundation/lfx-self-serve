@@ -52,7 +52,12 @@ describe('linkedInTextAdViews', () => {
 });
 
 describe('linkedInTextAdViews image state', () => {
-  const withImage = (key: string, briefId = 'brief-1'): LinkedInTextAdDraft => ({ ...ad(key), imageAssetId: 'asset-1', imageAssetName: 'logo.png', imageAssetBriefId: briefId });
+  const withImage = (key: string, briefId = 'brief-1'): LinkedInTextAdDraft => ({
+    ...ad(key),
+    imageAssetId: 'asset-1',
+    imageAssetName: 'logo.png',
+    imageAssetBriefId: briefId,
+  });
   const image = (over: Partial<LinkedInTextAdImageInput> = {}): LinkedInTextAdImageInput => ({
     slot: { variantKey: '', status: 'idle', failedBriefId: '', error: '' },
     briefId: 'brief-1',
@@ -66,10 +71,25 @@ describe('linkedInTextAdViews image state', () => {
   it.each([
     ['no image', [ad('a')], image(), { imageStatusMessage: '', imageHeld: false, imagePickerDisabled: false, imageBlock: null }],
     ['an upload for this brief', [withImage('a')], image(), { imageStatusMessage: 'Uploaded: logo.png', imageHeld: true, imageBlock: null }],
-    ['an upload running', [ad('a')], image({ slot: { variantKey: 'a', status: 'uploading', failedBriefId: '', error: '' } }), { imageStatusMessage: 'Uploading image…', imageUploading: true }],
+    [
+      'an upload running',
+      [ad('a')],
+      image({ slot: { variantKey: 'a', status: 'uploading', failedBriefId: '', error: '' } }),
+      { imageStatusMessage: 'Uploading image…', imageUploading: true },
+    ],
     ['an unsaved brief', [ad('a')], image({ briefId: '' }), { imagePickerDisabled: true }],
-    ['an upload for another brief', [withImage('a', 'brief-0')], image(), { imageStatusMessage: '', imageBlock: expect.objectContaining({ kind: 'otherBrief' }) }],
-    ['uploads switched off', [withImage('a')], image({ uploadEnabled: false }), { imageBlock: expect.objectContaining({ kind: 'unsupported', message: expect.stringContaining('text ad 1') }) }],
+    [
+      'an upload for another brief',
+      [withImage('a', 'brief-0')],
+      image(),
+      { imageStatusMessage: '', imageBlock: expect.objectContaining({ kind: 'otherBrief' }) },
+    ],
+    [
+      'uploads switched off',
+      [withImage('a')],
+      image({ uploadEnabled: false }),
+      { imageBlock: expect.objectContaining({ kind: 'unsupported', message: expect.stringContaining('text ad 1') }) },
+    ],
     [
       'a failed upload',
       [ad('a')],
@@ -111,7 +131,12 @@ describe('linkedInTextAdImageSizeRefusal', () => {
 });
 
 describe('linkedInTextAdsForCreate', () => {
-  const withImage = (briefId: string): LinkedInTextAdDraft => ({ ...ad('a', ' Summit ', 'Go'), imageAssetId: 'asset-1', imageAssetName: 'x.png', imageAssetBriefId: briefId });
+  const withImage = (briefId: string): LinkedInTextAdDraft => ({
+    ...ad('a', ' Summit ', 'Go'),
+    imageAssetId: 'asset-1',
+    imageAssetName: 'x.png',
+    imageAssetBriefId: briefId,
+  });
 
   it.each([
     ['the copy as typed, without the key', ad('a', ' Summit ', 'Go'), true, 'brief-1', { headline: ' Summit ', description: 'Go' }],
