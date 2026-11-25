@@ -1980,9 +1980,11 @@ export class ImplementationTabComponent implements OnInit {
   private readonly linkedInTargetCostAwaitingCapability = computed<boolean>(() =>
     linkedInTargetCostPending(this.linkedInTargetCostOfferInput(), this.linkedInObjectiveDraft())
   );
-  /** The objective picker is mounted while it shows the objective or the target cost. */
+  /** The target cost field is on screen while it is offered, and while a typed one waits on the capability, so it can be cleared. */
+  protected readonly linkedInTargetCostFieldShown = computed<boolean>(() => this.linkedInTargetCostShown() || this.linkedInTargetCostAwaitingCapability());
+  /** The objective picker is mounted while it shows the objective or the target cost field. */
   protected readonly linkedInObjectivePickerShown = computed<boolean>(
-    () => linkedInObjectiveShown(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable()) || this.linkedInTargetCostShown()
+    () => linkedInObjectiveShown(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable()) || this.linkedInTargetCostFieldShown()
   );
 
   /**

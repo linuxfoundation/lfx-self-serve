@@ -56,11 +56,11 @@ After the campaign is created, you can change its lifetime budget on the **Optim
 
 ## Target cost
 
-With automatic bidding, you can set an optional **Target cost (USD)** under the LinkedIn bidding choice. LinkedIn treats it as the target cost per result on automatic bidding, in USD. For example, 17.88. Leave it empty for no target.
+With automatic bidding, you can set an optional **Target cost (USD)** under the LinkedIn bidding choice. It is sent with automatic bidding as the campaign's unit cost, in USD; how LinkedIn applies it is still being confirmed. For example, 17.88. Leave it empty for no target.
 
 The target must be more than 0, no more than 1,000,000 and use at most two decimal places. Otherwise a message appears under it and **Create** stays disabled until you fix or clear it.
 
-The box is only there with automatic bidding, and only where your deployment supports a target cost. Switch to manual bidding and the target is not sent. If you typed a target and the campaign settings are still loading, **Create** waits until they load, so the campaign is never created without the target you entered.
+The box is only there with automatic bidding, and only where your deployment supports a target cost. Switch to manual bidding and the target is not sent. If you typed a target and the campaign settings are still loading, **Create** waits until they load, so the campaign is never created without the target you entered. If they can't be loaded, clear the target cost to continue.
 
 ## Locations
 

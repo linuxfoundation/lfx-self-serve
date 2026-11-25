@@ -26,7 +26,7 @@
       type="text"
       inputmode="decimal"
       placeholder="Optional, e.g. 17.88"
-      hint="LinkedIn treats it as the target cost per result on automatic bidding, in USD."
+      hint="Optional, in USD. Sent with automatic bidding as the campaign's unit cost."
       [value]="draft().targetCost ?? ''"
       (valueChange)="onTargetCostChange($event)"
       [error]="targetCostError() ?? ''"

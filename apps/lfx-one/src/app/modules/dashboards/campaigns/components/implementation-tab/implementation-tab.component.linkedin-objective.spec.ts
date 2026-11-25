@@ -144,6 +144,22 @@ describe('ImplementationTabComponent linkedin objective', () => {
     expect(createCampaign.mock.calls.at(-1)?.[0]['linkedInConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 5 });
   });
 
+  it('holds a typed target cost, keeping its field, while the bidding and target cost capabilities are both unread', STATE_ONLY, async () => {
+    const { f } = await mount();
+    f.componentRef.setInput('biddingEnabled', null);
+    f.componentRef.setInput('linkedInTargetCostEnabled', null);
+    const typed = { ...emptyLinkedInObjectiveDraft(), targetCost: '17.88' };
+    c(f)['onLinkedInObjectiveDraftChange'](typed);
+    expect(c(f)['linkedInTargetCostFieldShown']()).toBe(true);
+    expect(c(f)['createBlockedReason']()).toBe(linkedInTargetCostCreateRefusal(typed, false, true));
+
+    f.componentRef.setInput('biddingEnabled', true);
+    f.componentRef.setInput('linkedInTargetCostEnabled', true);
+    expect(c(f)['createBlockedReason']()).toBeNull();
+    c(f)['submit']();
+    expect(createCampaign.mock.calls.at(-1)?.[0]['linkedInConfig']['bidding']).toEqual({ strategy: 'automatic', targetAmount: 17.88 });
+  });
+
   it('holds Create, never dropping the choice, for rules of another ad account and while the capability is off', STATE_ONLY, async () => {
     const { f } = await mount();
     c(f)['onLinkedInObjectiveDraftChange'](DRAFT);

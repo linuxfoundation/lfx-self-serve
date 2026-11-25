@@ -124,7 +124,7 @@ describe('the Implement tab target cost', () => {
     ['capability unread, nothing typed', null, true, undefined, undefined, false],
     ['capability unread, blank', null, true, undefined, '  ', false],
     ['capability unread, manual bidding', null, true, 'manual', '17.88', false],
-    ['capability unread, no Bidding control', null, false, undefined, '17.88', false],
+    ['capability unread, bidding unread too (both load together)', null, false, undefined, '17.88', true],
     ['capability on', true, true, undefined, '17.88', false],
     ['capability off', false, true, undefined, '17.88', false],
   ] as const)('pending: %s → %s', (_name, enabled, biddingAvailable, strategy, typed, expected) => {
