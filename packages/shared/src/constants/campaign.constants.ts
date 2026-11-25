@@ -1047,6 +1047,25 @@ export const LINKEDIN_LEAD_FORMS_FAILED_MESSAGE = "LinkedIn lead gen forms didn'
 export const LINKEDIN_LEAD_FORM_OWNER_MESSAGE = 'The lead gen form was picked for another LinkedIn ad account. Pick a form again.';
 
 /**
+ * The coded 403 and 503 of each LinkedIn ad account resource answered on `global_marketing_ops`: audience segments,
+ * conversion rules and Lead Gen Forms. Read by the campaign controller's `requireLinkedInAudienceAccess`.
+ */
+export const LINKEDIN_MARKETING_OPS_ACCESS_ERRORS = {
+  audiences: {
+    restricted: { code: LINKEDIN_AUDIENCES_RESTRICTED_CODE, message: LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE },
+    unavailable: { code: LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE, message: LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE },
+  },
+  conversions: {
+    restricted: { code: LINKEDIN_CONVERSIONS_RESTRICTED_CODE, message: LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE },
+    unavailable: { code: LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE, message: LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE },
+  },
+  leadForms: {
+    restricted: { code: LINKEDIN_LEAD_FORMS_RESTRICTED_CODE, message: LINKEDIN_LEAD_FORMS_RESTRICTED_MESSAGE },
+    unavailable: { code: LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE, message: LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE },
+  },
+} as const;
+
+/**
  * The facets campaign-service's targeting typeahead searches for `linkedInConfig.targeting` (`search-linkedin-ads-targeting-entities`,
  * #585): its `locations` answer `geoTargets`, and seniorities, job functions, company sizes, locales and segments are
  * not searched (segments come from `GET /api/campaigns/linkedin/audiences`).
