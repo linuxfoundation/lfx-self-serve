@@ -10,8 +10,11 @@
     </lfx-ui-note>
   }
   <section class="flex flex-col border-b border-gray-200 pb-[32px]" aria-labelledby="profile-hero-name" data-testid="profile-hero">
-    <!-- The cover bleeds 24px past each side of the column. -->
-    <div class="-mx-[24px] h-[140px] rounded-[16px] bg-gradient-to-b from-white to-blue-100" aria-hidden="true" data-testid="profile-hero-cover"></div>
+    <!-- The cover bleeds 24px past each side of the column; on phones the 20px gutter leaves no room, so it stays inside. -->
+    <div
+      class="-mx-[24px] h-[140px] max-[640px]:mx-0 rounded-[16px] bg-gradient-to-b from-white to-blue-100"
+      aria-hidden="true"
+      data-testid="profile-hero-cover"></div>
 
     <div
       class="group relative z-[1] -mt-[96px] ml-[24px] size-[120px] rounded-full bg-white p-[6px] shadow-small max-[640px]:ml-0"

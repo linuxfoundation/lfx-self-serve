@@ -79,6 +79,7 @@ import {
 } from 'rxjs';
 
 import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
+import { ProfileSavedFieldsService } from './profile-saved-fields.service';
 
 @Injectable({
   providedIn: 'root',
@@ -87,6 +88,7 @@ export class UserService {
   private readonly http = inject(HttpClient);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly savedFields = inject(ProfileSavedFieldsService);
 
   public authenticated: WritableSignal<boolean> = signal<boolean>(false);
   public user: WritableSignal<User | null> = signal<User | null>(null);
@@ -271,10 +273,14 @@ export class UserService {
 
   /**
    * Update user profile metadata via unified NATS endpoint
-   * Only sends user_metadata - username and email are extracted from OIDC claim on backend
+   * Only sends user_metadata - username and email are extracted from OIDC claim on backend.
+   * Every editor saves through here, so each successful save is recorded for the pages that lay saves over a stale GET.
    */
   public updateUserProfile(data: ProfileUpdateRequest): Observable<any> {
-    return this.http.patch('/api/profile', data).pipe(take(1));
+    return this.http.patch('/api/profile', data).pipe(
+      take(1),
+      tap(() => this.savedFields.record(data.user_metadata ?? {}))
+    );
   }
 
   /**
@@ -282,7 +288,12 @@ export class UserService {
    * Content-Type (the backend parses this with express.raw, not multipart/form-data).
    */
   public uploadProfilePicture(file: File): Observable<ProfilePictureUploadResponse> {
-    return this.http.post<ProfilePictureUploadResponse>('/api/profile/picture-upload', file, { headers: { 'Content-Type': file.type } }).pipe(take(1));
+    return this.http.post<ProfilePictureUploadResponse>('/api/profile/picture-upload', file, { headers: { 'Content-Type': file.type } }).pipe(
+      take(1),
+      tap((response) => {
+        if (response.public_url) this.savedFields.record({ picture: response.public_url });
+      })
+    );
   }
 
   // Public-profile visibility methods (LFXV2-2629)

@@ -5,11 +5,12 @@ import { ApplicationRef, PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
 import { MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS } from '@lfx-one/shared/constants';
-import { CombinedProfile, EnrichedIdentity, Meeting, MeetingRsvp, MeetingSelfGuest, PastMeeting, User } from '@lfx-one/shared/interfaces';
+import { CombinedProfile, EnrichedIdentity, Meeting, MeetingRsvp, MeetingSelfGuest, PastMeeting, User, UserMetadata } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { defer, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ProfileSavedFieldsService } from './profile-saved-fields.service';
 import { UserService } from './user.service';
 
 /**
@@ -1131,6 +1132,28 @@ describe('UserService', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe('profile saves (#6082)', () => {
+    it('records each successful save and uploaded photo, whichever editor made it', () => {
+      const http = TestBed.inject(HttpClient) as unknown as { patch: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn> };
+      http.patch.mockReturnValue(of({}));
+      http.post.mockReturnValue(of({ public_url: 'https://cdn.example/ada.png' }));
+
+      service.updateUserProfile({ user_metadata: { job_title: 'Architect' } as UserMetadata }).subscribe();
+      service.uploadProfilePicture(new File(['x'], 'ada.png', { type: 'image/png' })).subscribe();
+
+      expect(TestBed.inject(ProfileSavedFieldsService).fields()).toEqual({ job_title: 'Architect', picture: 'https://cdn.example/ada.png' });
+    });
+
+    it('records nothing for a save that failed', () => {
+      const http = TestBed.inject(HttpClient) as unknown as { patch: ReturnType<typeof vi.fn> };
+      http.patch.mockReturnValue(throwError(() => new Error('boom')));
+
+      service.updateUserProfile({ user_metadata: { job_title: 'Architect' } as UserMetadata }).subscribe({ error: () => undefined });
+
+      expect(TestBed.inject(ProfileSavedFieldsService).fields()).toEqual({});
     });
   });
 
