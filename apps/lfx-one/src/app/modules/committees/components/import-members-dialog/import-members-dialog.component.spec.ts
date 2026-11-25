@@ -457,7 +457,14 @@ describe('ImportMembersDialogComponent', () => {
       query('import-members-submit-btn')?.querySelector('button')?.click();
 
       expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith([
-        { email: 'ada@example.com', first_name: 'First', last_name: 'Last', createOptions: { skipNotification: true }, pendingInviteUids: ['invite-1'] },
+        {
+          email: 'ada@example.com',
+          first_name: 'First',
+          last_name: 'Last',
+          createOptions: { skipNotification: true },
+          pendingInviteUids: ['invite-1'],
+          importSource: 'csv',
+        },
       ]);
       expectNothingWritten();
       expect(committeeService.revokeCommitteeInvite).not.toHaveBeenCalled();
@@ -489,6 +496,7 @@ describe('ImportMembersDialogComponent', () => {
           last_name: 'Last',
           createOptions: { skipNotification: !notify },
           pendingInviteUids: ['invite-1', 'invite-2'],
+          importSource: 'csv',
         },
       ]);
       expectNothingWritten();
@@ -527,6 +535,7 @@ describe('ImportMembersDialogComponent', () => {
           voting: { status: 'Observer' },
           createOptions: { skipNotification: true },
           pendingInviteUids: [],
+          importSource: 'csv',
         },
       ]);
       expectNothingWritten();
@@ -561,6 +570,7 @@ describe('ImportMembersDialogComponent', () => {
         voting: { status: 'Observer' },
         createOptions: { skipNotification: true },
         pendingInviteUids: [],
+        importSource: 'csv',
       });
       expectNothingWritten();
     });

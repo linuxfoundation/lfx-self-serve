@@ -10,12 +10,14 @@ import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
+  CommitteeMember,
   CommitteeMemberBulkCreateResult,
   CreateCommitteeMemberRequest,
   ImpersonationTransition,
   MemberImportRow,
   MemberImportRunInput,
   MemberImportSettlement,
+  MemberImportStagedRunInput,
 } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { Observable, Subject } from 'rxjs';
@@ -534,6 +536,178 @@ describe('CommitteeMemberImportService', () => {
       expect(beforeUnload(add)).toHaveLength(2);
       switchUser('synthetic-replacement');
       expect(beforeUnload(remove)).toHaveLength(2);
+    });
+  });
+
+  describe('runStaged (wizard, #5529)', () => {
+    let settled: MemberImportSettlement[];
+    let delivered: MemberImportRow[][];
+    let completed: boolean;
+
+    function staged(
+      count: number,
+      patch: Partial<MemberImportStagedRunInput> = {},
+      inviteUids: (index: number) => string[] = () => []
+    ): MemberImportStagedRunInput {
+      return {
+        committeeUid: 'group-a',
+        committeeName: 'Group group-a',
+        skipNotification: false,
+        members: Array.from({ length: count }, (_, index) => ({ payload: { email: `staged${index}@example.com` }, pendingInviteUids: inviteUids(index) })),
+        ...patch,
+      };
+    }
+
+    function run(stagedInput: MemberImportStagedRunInput): void {
+      service.runStaged(stagedInput).subscribe({ next: (rows) => delivered.push(rows), complete: () => (completed = true) });
+    }
+
+    beforeEach(() => {
+      settled = [];
+      delivered = [];
+      completed = false;
+      service.settlements$.subscribe((settlement) => settled.push(settlement));
+    });
+
+    it('sends chunks of 25 one request at a time, then emits every settled row once and completes', () => {
+      run(staged(30));
+      expect(pending).toHaveLength(1);
+      expect(pending[0].members).toHaveLength(25);
+      expect(delivered).toHaveLength(0);
+
+      respond(0);
+      expect(pending).toHaveLength(2);
+      expect(pending[1].members).toHaveLength(5);
+      respond(1);
+
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]).toHaveLength(30);
+      expect(delivered[0].every((row) => row.status === 'added')).toBe(true);
+      expect(completed).toBe(true);
+    });
+
+    it('does not start before subscription', () => {
+      const run$ = service.runStaged(staged(1));
+      expect(pending).toHaveLength(0);
+      run$.subscribe();
+      expect(pending).toHaveLength(1);
+    });
+
+    it('passes the notification choice through and carries the created member', () => {
+      run(staged(1, { skipNotification: true }));
+      expect(committeeService.bulkCreateCommitteeMembers).toHaveBeenCalledWith('group-a', [{ email: 'staged0@example.com' }], { skipNotification: true });
+      const member = { uid: 'member-0', email: 'staged0@example.com' } as CommitteeMember;
+      pending[0].response.next({
+        results: [{ index: 0, email: 'staged0@example.com', status: 'added', retryable: false, member_uid: 'member-0', member }],
+        added: 1,
+        skipped: 0,
+        failed: 0,
+      });
+      pending[0].response.complete();
+      expect(delivered[0][0]).toMatchObject({ status: 'added', member });
+    });
+
+    it("revokes each of a row's pending invitations and keeps it added when one revoke fails", () => {
+      run(staged(1, {}, () => ['invite-1', 'invite-2']));
+      respond(0);
+      expect(committeeService.revokeCommitteeInvite).toHaveBeenCalledTimes(1);
+      revokes[0].error(new HttpErrorResponse({ status: 500 }));
+      expect(committeeService.revokeCommitteeInvite).toHaveBeenNthCalledWith(2, 'group-a', 'invite-2');
+      revokes[1].next();
+      revokes[1].complete();
+
+      expect(committeeService.revokeCommitteeInvite).toHaveBeenNthCalledWith(1, 'group-a', 'invite-1');
+      expect(delivered[0][0]).toMatchObject({ status: 'added', cleanupWarning: expect.stringContaining('could not be revoked') });
+    });
+
+    it('pauses on a 429 and resubmits the throttled rows', () => {
+      vi.useFakeTimers();
+      run(staged(2));
+      pending[0].response.error(new HttpErrorResponse({ status: 429, headers: new HttpHeaders({ 'Retry-After': '1' }) }));
+      expect(pending).toHaveLength(1);
+      vi.advanceTimersByTime(1000);
+      expect(pending).toHaveLength(2);
+      expect(pending[1].members).toHaveLength(2);
+      respond(1);
+      expect(delivered[0].map((row) => row.status)).toEqual(['added', 'added']);
+    });
+
+    it('stops later chunks after a 403 and reports their rows unsent', () => {
+      run(staged(30));
+      pending[0].response.error(new HttpErrorResponse({ status: 403 }));
+      expect(pending).toHaveLength(1);
+      expect(delivered[0]).toHaveLength(30);
+      expect(delivered[0].every((row) => row.status === 'not_submitted')).toBe(true);
+      expect(completed).toBe(true);
+    });
+
+    it('reports a lost response that resubmission finds already a member as skipped with its member UID', () => {
+      vi.useFakeTimers();
+      run(staged(1));
+      pending[0].response.error(new HttpErrorResponse({ status: 0 }));
+      vi.advanceTimersByTime(600_000);
+      expect(pending).toHaveLength(2);
+      pending[1].response.next({
+        results: [{ index: 0, email: 'staged0@example.com', status: 'skipped', reason: 'already_member', retryable: false, member_uid: 'existing-0' }],
+        added: 0,
+        skipped: 1,
+        failed: 0,
+      });
+      pending[1].response.complete();
+      expect(delivered[0][0]).toMatchObject({ status: 'skipped', conflict: true, memberUid: 'existing-0' });
+    });
+
+    it('never announces a wizard run or shows it as the group report', () => {
+      run(staged(1));
+      expect(service.summaries().size).toBe(0);
+      expect(service.getRun('group-a')).toBeUndefined();
+      respond(0);
+      expect(settled).toHaveLength(0);
+      expect(toast).not.toHaveBeenCalled();
+      expect(service.getRun('group-a')).toBeUndefined();
+    });
+
+    it('neither blocks nor is blocked by a Members-tab import of the same group', () => {
+      run(staged(1));
+      expect(service.start(input('group-a', readyRows(1)))).toBe(true);
+      expect(service.summaries().get('group-a')).toMatchObject({ phase: 'importing' });
+      run(staged(1));
+      expect(pending).toHaveLength(3);
+
+      respond(0);
+      respond(2);
+      expect(delivered).toHaveLength(2);
+      expect(service.getRun('group-a')).toMatchObject({ status: 'importing' });
+      respond(1);
+      expect(service.getRun('group-a')).toMatchObject({ status: 'settled' });
+    });
+
+    it('installs the leave warning while a wizard run is writing', () => {
+      const add = vi.spyOn(window, 'addEventListener');
+      const remove = vi.spyOn(window, 'removeEventListener');
+      run(staged(1));
+      TestBed.tick();
+      const handler = add.mock.calls.find(([type]) => type === 'beforeunload')?.[1];
+      expect(handler).toBeDefined();
+      respond(0);
+      TestBed.tick();
+      expect(remove).toHaveBeenCalledWith('beforeunload', handler);
+    });
+
+    it('completes without emitting when the user changes mid-run, and sends nothing without a user', () => {
+      run(staged(30));
+      switchUser('synthetic-replacement');
+      expect(completed).toBe(true);
+      respond(0);
+      expect(pending).toHaveLength(1);
+      expect(delivered).toHaveLength(0);
+
+      switchUser(null);
+      completed = false;
+      run(staged(1));
+      expect(completed).toBe(true);
+      expect(pending).toHaveLength(1);
+      expect(delivered).toHaveLength(0);
     });
   });
 });

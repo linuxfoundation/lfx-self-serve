@@ -179,6 +179,9 @@ export interface CommitteeMemberBulkCreateResult {
   failed: number;
 }
 
+/** Client-only origin of a staged wizard member that came from a CSV import (#5529). */
+export type StagedMemberImportSource = 'csv';
+
 /** Client-only wizard state. Strip these options before sending the native member request body. */
 export interface StagedCommitteeMemberRequest extends CreateCommitteeMemberRequest {
   createOptions?: CreateCommitteeMemberOptions;
@@ -186,6 +189,8 @@ export interface StagedCommitteeMemberRequest extends CreateCommitteeMemberReque
   isSelfAddition?: boolean;
   /** Matching pending invitations to revoke only after this member is successfully created. */
   pendingInviteUids?: string[];
+  /** Client-only origin: CSV-imported rows are saved through the bulk member endpoint (#5529). */
+  importSource?: StagedMemberImportSource;
 }
 
 /**
@@ -248,6 +253,8 @@ export interface CommitteeMemberWithState extends CommitteeMember {
   /** Retains self-add origin through wizard step remounts, independently of CSV notification choices. */
   isSelfAddition?: boolean;
   pendingInviteUids?: string[];
+  /** Client-only CSV origin, retained through edits and step remounts so the wizard saves the row in bulk. */
+  importSource?: StagedMemberImportSource;
 }
 
 /**
@@ -289,6 +296,8 @@ export interface MemberOperationResult {
   createdMember?: CommitteeMember;
   /** Creation succeeded, but at least one matching pending invitation could not be revoked. */
   cleanupWarning?: boolean;
+  /** An imported `add` that found the person already in the group; its CSV details were not applied (#5529). */
+  alreadyMember?: boolean;
 }
 
 /**

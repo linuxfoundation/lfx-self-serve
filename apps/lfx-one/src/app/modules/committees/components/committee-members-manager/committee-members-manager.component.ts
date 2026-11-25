@@ -423,6 +423,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
             createOptions: m.isSelfAddition && !sameEmail ? undefined : m.createOptions,
             isSelfAddition: m.isSelfAddition && sameEmail ? true : undefined,
             pendingInviteUids: sameEmail ? m.pendingInviteUids : undefined,
+            importSource: m.importSource,
           } as CommitteeMemberWithState;
         }
         return m;
@@ -663,6 +664,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
       createOptions: memberData.createOptions,
       isSelfAddition: memberData.isSelfAddition,
       pendingInviteUids: memberData.pendingInviteUids,
+      importSource: memberData.importSource,
     };
   }
 
@@ -899,6 +901,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
             ...(m.createOptions ? { createOptions: m.createOptions } : {}),
             ...(m.isSelfAddition ? { isSelfAddition: true } : {}),
             ...(pendingInviteUids ? { pendingInviteUids } : {}),
+            ...(m.importSource ? { importSource: m.importSource } : {}),
           };
         }),
       toUpdate: members
@@ -917,7 +920,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
   private getImportedInviteUids(member: CommitteeMemberWithState): string[] | undefined {
     const invites = this.importInvites();
     // Self-add uses its fresh lookup; only CSV rows are re-matched against the import snapshot.
-    if (member.isSelfAddition || !member.createOptions || !invites) {
+    if (member.importSource !== 'csv' || !invites) {
       return member.pendingInviteUids;
     }
     const email = member.email.trim().toLowerCase();

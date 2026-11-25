@@ -13,7 +13,7 @@ import {
   MEMBER_IMPORT_VOTING_COLUMNS,
 } from '../constants/member-import.constants';
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { CommitteeMemberBulkCreateRowResult } from '../interfaces/member.interface';
+import type { CommitteeMember, CommitteeMemberBulkCreateRowResult } from '../interfaces/member.interface';
 import type { MemberImportCells, MemberImportGroupRules, MemberImportRow } from '../interfaces/member-import.interface';
 import { rowsToCsv } from './file.utils';
 import {
@@ -713,8 +713,23 @@ describe('classifyMemberImportBulkResult', () => {
     expect(patch.reason).toContain('imported details may not have been applied');
   });
 
+  it('carries the created member on an added row', () => {
+    const member = { uid: 'member-1', email: 'ada@example.com' } as CommitteeMember;
+    expect(classifyMemberImportBulkResult(result({ status: 'added', member_uid: 'member-1', member }), row)).toMatchObject({ status: 'added', member });
+  });
+
+  it.each([false, true])('carries the existing member UID on an already-member row (uncertain: %s)', (uncertain) => {
+    const patch = classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'already_member', member_uid: 'existing-member' }), {
+      ...row,
+      uncertain,
+    });
+    expect(patch).toMatchObject({ status: 'skipped', memberUid: 'existing-member' });
+  });
+
   it('skips a duplicate within the request', () => {
-    expect(classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'duplicate_in_request' }), row)).toMatchObject({ status: 'skipped' });
+    const patch = classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'duplicate_in_request' }), row);
+    expect(patch).toMatchObject({ status: 'skipped' });
+    expect(patch.memberUid).toBeUndefined();
   });
 
   it('fails an invalid row for good with the upstream message', () => {
