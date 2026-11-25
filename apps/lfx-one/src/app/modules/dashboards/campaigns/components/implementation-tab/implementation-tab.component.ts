@@ -377,6 +377,8 @@ import type {
   LinkedInImageSlot,
   LinkedInVariantDraft,
   LinkedInAdFormat,
+  LinkedInTargeting,
+  LinkedInTargetingDraft,
   LinkedInTextAdDraft,
   LinkedInTextAdImageInput,
   LinkedInVariantView,
@@ -485,6 +487,9 @@ import {
   linkedInTextAdImageSizeRefusal,
   linkedInTextAdViews,
   linkedInTextAdsForCreate,
+  emptyLinkedInTargetingDraft,
+  linkedInTargetingDraftRefusal,
+  linkedInTargetingForCreate,
   newLinkedInTextAdDraft,
   linkedInCanAddVariant,
   linkedInCanRemoveVariant,
@@ -587,6 +592,7 @@ import {
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
 import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
+import { LinkedInTargetingEditorComponent } from '../linkedin-targeting-editor/linkedin-targeting-editor.component';
 import { LinkedInTextAdsEditorComponent } from '../linkedin-text-ads-editor/linkedin-text-ads-editor.component';
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
 import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
@@ -692,6 +698,7 @@ let linkedInVariantKeySequence = 0;
     UiOptionComponent,
     UiSelectComponent,
     UiTextareaComponent,
+    LinkedInTargetingEditorComponent,
     LinkedInTextAdsEditorComponent,
   ],
   // Component-scoped so the "create another" confirmation (#4983) needs nothing from the host; the app
@@ -963,6 +970,12 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see linkedInTextAdsEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInTextAdsAvailable = computed<boolean>(() => this.linkedInTextAdsEnabled() === true);
+
+  /** Whether the LinkedIn section offers custom targeting (`CampaignListResult.linkedInTargetingEnabled`, #5764 rows 8–11). */
+  public readonly linkedInTargetingEnabled = input<boolean | null>(null);
+
+  /** @see linkedInTargetingEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInTargetingAvailable = computed<boolean>(() => this.linkedInTargetingEnabled() === true);
 
   /** The calls to action the variant editor offers. */
   protected readonly linkedInCallToActionOptions = LINKEDIN_CALL_TO_ACTION_OPTIONS;
@@ -1874,6 +1887,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInTextAds = signal<LinkedInTextAdDraft[]>([]);
   /** Whether this create is a Text Ads campaign: chosen, and offered by this deployment. */
   protected readonly linkedInTextAdsSelected = computed<boolean>(() => this.linkedInTextAdsAvailable() && this.linkedInFormat() === 'text');
+  /** Whether custom targeting replaces the targeting profile (#5764 rows 8–11), carried in the draft. */
+  protected readonly linkedInCustomTargeting = signal(false);
+  /** The custom targeting clauses and exclusions as edited (#5764 rows 8–11), carried in the draft. */
+  protected readonly linkedInTargetingDraft = signal<LinkedInTargetingDraft>(emptyLinkedInTargetingDraft());
+  /** Whether this create sends custom targeting: chosen, and offered by this deployment. */
+  protected readonly linkedInCustomTargetingSelected = computed<boolean>(() => this.linkedInTargetingAvailable() && this.linkedInCustomTargeting());
   protected readonly linkedInBudgetUsd = signal(DEFAULT_LINKEDIN_BUDGET_USD);
   protected readonly linkedInLifetimeBudget = signal(false);
   /** The optional daily cap beside a lifetime budget (#5774). null is no cap; cleared when the lifetime budget is turned off. */
@@ -5262,6 +5281,8 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected setLinkedInTargetingProfile(profile: LinkedInTargetingProfile): void {
+    // A profile replaces custom targeting (#5764 rows 8–11); the form write below saves the draft.
+    this.linkedInCustomTargeting.set(false);
     // Another profile reseeds the facets: removals were made against the one being left. Compared
     // as campaign-service resolves them, so `custom` to `cloud-native` (the same facets) keeps them.
     const current = this.campaignForm.controls.linkedInTargetingProfile.value;
@@ -5469,6 +5490,18 @@ export class ImplementationTabComponent implements OnInit {
   protected onLinkedInFormatChange(format: LinkedInAdFormat): void {
     this.linkedInFormat.set(format);
     if (format === 'text' && this.linkedInTextAds().length === 0) this.linkedInTextAds.set([newLinkedInTextAdDraft([])]);
+    this.emitDraft();
+  }
+
+  /** Turn custom targeting on in place of the targeting profile (#5764 rows 8–11). */
+  protected onLinkedInCustomTargetingOn(): void {
+    this.linkedInCustomTargeting.set(true);
+    this.emitDraft();
+  }
+
+  /** The custom targeting editor's draft as edited (#5764 rows 8–11). */
+  protected onLinkedInTargetingDraftChange(draft: LinkedInTargetingDraft): void {
+    this.linkedInTargetingDraft.set(draft);
     this.emitDraft();
   }
 
@@ -6990,8 +7023,9 @@ export class ImplementationTabComponent implements OnInit {
               endDate: form.endDate,
               geoTargets: this.linkedInGeoTargets(),
               targetingProfile: this.linkedInTargetingProfile(),
-              // Only when something was removed, so an untouched profile sends what it always did.
-              ...this.linkedInTargetingEditField(),
+              // Custom targeting (#5764 rows 8–11) in place of a profile edit; otherwise the edit, only when
+              // something was removed, so an untouched profile sends what it always did.
+              ...this.linkedInTargetingField(),
               // Text Ads (#5764 row 19) send their ads and no variants; otherwise the variants as today.
               ...this.linkedInCreativesField(),
               // The legacy creator reads the form's account. When the connection decides it, only a
@@ -8670,6 +8704,16 @@ export class ImplementationTabComponent implements OnInit {
       });
   }
 
+  /**
+   * `{ targeting }` while custom targeting is chosen and offered (#5764 rows 8–11), which replaces the profile and so
+   * never goes with a profile edit; else the profile edit field.
+   */
+  private linkedInTargetingField(): { targeting?: LinkedInTargeting; targetingProfileEdit?: LinkedInTargetingProfileEdit } {
+    if (!this.linkedInCustomTargetingSelected()) return this.linkedInTargetingEditField();
+    const targeting = linkedInTargetingForCreate(this.linkedInTargetingDraft());
+    return targeting ? { targeting } : {};
+  }
+
   /** `{ targetingProfileEdit }` when the operator removed something from the selected profile, else nothing. */
   private linkedInTargetingEditField(): { targetingProfileEdit?: LinkedInTargetingProfileEdit } {
     const edit = this.linkedInTargetingProfileEdit();
@@ -8763,6 +8807,9 @@ export class ImplementationTabComponent implements OnInit {
       createAccountStatus: this.linkedInCreateAccount().status,
       // Text Ads chosen but no longer offered: held, never sent as single image ads instead (#5764 row 19).
       textAdsUnavailable: this.linkedInFormat() === 'text' && !this.linkedInTextAdsAvailable(),
+      customTargetingUnavailable: this.linkedInCustomTargeting() && !this.linkedInTargetingAvailable(),
+      // Custom targeting (#5764 rows 8–11) holds Create while its clauses cannot be sent, and replaces the profile checks.
+      ...(this.linkedInCustomTargetingSelected() ? { customTargeting: { refusal: linkedInTargetingDraftRefusal(this.linkedInTargetingDraft()) } } : {}),
       // Text Ads replace the variant checks while chosen (#5764 row 19); they need a manual bid.
       ...(this.linkedInTextAdsSelected()
         ? {
@@ -9219,6 +9266,9 @@ export class ImplementationTabComponent implements OnInit {
     // The format and Text Ads as edited (#5764 row 19), present-only.
     if (linkedInRestore.format) this.linkedInFormat.set(linkedInRestore.format);
     if (linkedInRestore.textAds) this.linkedInTextAds.set(linkedInRestore.textAds);
+    // Custom targeting and its clauses as edited (#5764 rows 8–11), present-only.
+    if (linkedInRestore.customTargeting !== undefined) this.linkedInCustomTargeting.set(linkedInRestore.customTargeting);
+    if (linkedInRestore.targetingDraft) this.linkedInTargetingDraft.set(linkedInRestore.targetingDraft);
     // The LinkedIn upload, on the Meta upload's terms above, for the variant it was chosen for.
     this.linkedInImageUploadVariantKey.set(linkedInRestore.uploadVariantKey);
     if (linkedInRestore.failedUpload) this.failLinkedInImageUpload(linkedInRestore.failedUpload.message, linkedInRestore.failedUpload.briefId);
@@ -9741,6 +9791,8 @@ export class ImplementationTabComponent implements OnInit {
         uploadFailedBriefId: this.linkedInImageUploadFailedBriefId(),
         format: this.linkedInFormat(),
         textAds: this.linkedInTextAds(),
+        customTargeting: this.linkedInCustomTargeting(),
+        targetingDraft: this.linkedInTargetingDraft(),
       }),
       redditBudgetUsd: this.redditBudgetUsd(),
       redditObjective: this.redditObjective(),
@@ -10083,6 +10135,8 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInVariants.set([]);
     this.linkedInFormat.set('single_image');
     this.linkedInTextAds.set([]);
+    this.linkedInCustomTargeting.set(false);
+    this.linkedInTargetingDraft.set(emptyLinkedInTargetingDraft());
     this.campaignForm.patchValue({
       linkedInAccountId: untracked(() => this.linkedInAccounts())[0]?.accountId ?? '',
       linkedInGeoTargets: [],

@@ -1,0 +1,58 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3" data-testid="linkedin-targeting-editor">
+  <p class="text-xs text-gray-500" data-testid="linkedin-targeting-editor-hint">
+    People must match ALL clauses; within a clause, ANY value. This replaces the targeting profile, in the chosen locations.
+  </p>
+  <!-- Keyed per clause (clauseKeys), so removing one drops its own group and the rest keep theirs. -->
+  @for (clause of draft().clauses; track clauseKeys()[$index]; let i = $index) {
+    <fieldset class="flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'linkedin-targeting-editor-clause-' + i">
+      <legend class="float-left text-xs font-medium text-gray-700">Clause {{ i + 1 }}</legend>
+      <lfx-linkedin-targeting-facet-group
+        [projectSlug]="projectSlug()"
+        placement="include"
+        [testId]="'linkedin-targeting-editor-clause-' + i + '-facets'"
+        [unavailable]="draft().exclude"
+        [picks]="clause"
+        (picksChange)="onClauseChange(i, $event)" />
+      <lfx-button
+        class="self-start"
+        label="Remove clause"
+        icon="fa-light fa-trash"
+        size="small"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="draft().clauses.length <= 1"
+        [ariaLabel]="'Remove clause ' + (i + 1)"
+        (onClick)="removeClause(i)"
+        [attr.data-testid]="'linkedin-targeting-editor-remove-clause-' + i" />
+    </fieldset>
+  }
+  <lfx-button
+    class="self-start"
+    [label]="'Add clause (' + draft().clauses.length + '/' + maxClauses + ')'"
+    icon="fa-light fa-plus"
+    size="small"
+    severity="secondary"
+    [outlined]="true"
+    [disabled]="!canAddClause()"
+    (onClick)="addClause()"
+    data-testid="linkedin-targeting-editor-add-clause" />
+
+  <fieldset class="flex flex-col gap-2 rounded-md border border-gray-200 p-3" data-testid="linkedin-targeting-editor-exclude">
+    <legend class="float-left text-xs font-medium text-gray-700">Exclude</legend>
+    <p class="text-xs text-gray-500">People who match ANY of these are left out.</p>
+    <lfx-linkedin-targeting-facet-group
+      [projectSlug]="projectSlug()"
+      placement="exclude"
+      testId="linkedin-targeting-editor-exclude-facets"
+      [unavailable]="included()"
+      [picks]="draft().exclude"
+      (picksChange)="onExcludeChange($event)" />
+  </fieldset>
+
+  @if (refusal(); as message) {
+    <p role="alert" class="text-xs text-red-600" data-testid="linkedin-targeting-editor-error">{{ message }}</p>
+  }
+</div>
