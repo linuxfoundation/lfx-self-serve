@@ -279,6 +279,17 @@ describe('OrgRoleGrantsService addressed full access', () => {
     expect(service.employeeViewOrgUids().has(UID)).toBe(true);
   });
 
+  it('drops the role-grants employee company when a fresh answer names another one (role-grants A, then addressed B)', async () => {
+    const OTHER = '0014100000OtherAAAA';
+    await answer({ ...grants, employeeView: { orgUid: UID } });
+    expect(service.employeeViewOrgUids().has(UID)).toBe(true);
+
+    service.noteEmployeeViewAddressed(OTHER, true);
+
+    expect(service.employeeViewOrgUids().has(UID)).toBe(false);
+    expect(service.employeeViewOrgUids().has(OTHER)).toBe(true);
+  });
+
   it('clears every reduced-mode source for a company a later answer says is CLA-only, and leaves other companies alone', async () => {
     const OTHER = '0014100000OtherAAAA';
     await answer({ ...grants, employeeView: { orgUid: UID }, fullAccessOrgUid: OTHER });

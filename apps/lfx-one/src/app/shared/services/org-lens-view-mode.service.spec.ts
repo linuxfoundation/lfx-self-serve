@@ -21,6 +21,7 @@ describe('OrgLensViewModeService', () => {
   let isStaff: WritableSignal<boolean>;
   let claManagerOrgSet: WritableSignal<Set<string>>;
   let claManagerLookupFailed: WritableSignal<boolean>;
+  let lookupOutcome: WritableSignal<string>;
   let selected: WritableSignal<{ uid: string }>;
 
   beforeEach(() => {
@@ -31,6 +32,7 @@ describe('OrgLensViewModeService', () => {
     isStaff = signal(false);
     claManagerOrgSet = signal(new Set<string>());
     claManagerLookupFailed = signal(false);
+    lookupOutcome = signal('ok');
     selected = signal({ uid: ACME });
 
     TestBed.configureTestingModule({
@@ -61,6 +63,7 @@ describe('OrgLensViewModeService', () => {
             isStaff,
             claManagerOrgSet,
             claManagerLookupFailed,
+            lookupOutcome,
             auditorSet: signal(new Set<string>()),
             inheritedWriterSet: signal(new Set<string>()),
             inheritedAuditorSet: signal(new Set<string>()),
@@ -171,6 +174,13 @@ describe('OrgLensViewModeService', () => {
       expect(service.managesSelectedCompanyClas()).toBe(true);
       expect(service.hiddenPages()).not.toContain('easycla');
       expect(service.hiddenPages()).toContain('initiatives');
+    });
+
+    it('keeps EasyCLA open when the whole role-grants request failed, which also leaves the scope set empty and unknown', () => {
+      employeeViewOrgUid.set(ACME);
+      lookupOutcome.set('failed');
+
+      expect(TestBed.inject(OrgLensViewModeService).hiddenPages()).not.toContain('easycla');
     });
 
     it('does not carry a CLA scope on another company over to the selected one', () => {

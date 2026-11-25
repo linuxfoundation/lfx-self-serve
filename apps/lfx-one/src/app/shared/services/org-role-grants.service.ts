@@ -164,6 +164,9 @@ export class OrgRoleGrantsService {
     }
     const current = this.addressedEmployeeViewUidsInternal();
     if (employeeView) {
+      // The role-grants company is superseded the same way; the next role-grants answer restores it if the server still names it.
+      const granted = this.employeeViewOrgUidInternal();
+      if (granted !== null && granted !== uid) this.employeeViewOrgUidInternal.set(null);
       // A caller has one employer, so a positive answer for a company replaces any earlier addressed employee company: otherwise both stay
       // addressable and the earlier one renders pages whose APIs now refuse it.
       if (current.size === 1 && current.has(uid)) return;

@@ -46,7 +46,10 @@ export class OrgLensViewModeService {
    * failed is unknown, not a denial: the page stays open and the server decides, so a manager is never locked out by an outage.
    */
   public readonly managesSelectedCompanyClas: Signal<boolean> = computed(
-    () => this.roleGrants.claManagerLookupFailed() || this.roleGrants.claManagerOrgSet().has(this.accountContext.selectedAccount().uid ?? '')
+    () =>
+      this.roleGrants.claManagerLookupFailed() ||
+      this.roleGrants.lookupOutcome() === 'failed' ||
+      this.roleGrants.claManagerOrgSet().has(this.accountContext.selectedAccount().uid ?? '')
   );
 
   /** The pages the current mode hides (none in the full view), the one list the nav and the route guards share. */

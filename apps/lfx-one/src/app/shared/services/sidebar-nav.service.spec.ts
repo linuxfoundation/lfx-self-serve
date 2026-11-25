@@ -221,6 +221,7 @@ describe('SidebarNavService', () => {
             inheritedAuditorSet: signal(new Set<string>()),
             claManagerOrgSet,
             claManagerLookupFailed: signal(false),
+            lookupOutcome: signal('ok'),
             employeeViewLookupFailed: signal(false),
             employeeViewOrgUid: signal<string | null>(null),
             employeeViewOrgUids,

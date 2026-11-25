@@ -3,7 +3,7 @@
 
 import { computed, inject, Injectable, Injector, Signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
-import { Account, OrgItem } from '@lfx-one/shared/interfaces';
+import { Account, NamedOrganization, OrgItem } from '@lfx-one/shared/interfaces';
 import { filter, map, Observable, of, shareReplay, switchMap, take, timeout } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
@@ -21,15 +21,6 @@ import { PersonaService } from './persona.service';
  * parameter is allowed to do. Holding it in one service is what makes "names but does not grant"
  * a single implementation rather than a convention two components separately honour.
  */
-/** A catalogue organization resolved from an address, with the access answers its row carries. */
-interface NamedOrganization {
-  account: Account;
-  claOnly: boolean;
-  employeeViewChecked?: boolean;
-  employeeView?: boolean;
-  fullAccess?: boolean;
-}
-
 @Injectable({ providedIn: 'root' })
 export class OrgClaReturnService {
   /**
