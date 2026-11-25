@@ -4669,6 +4669,11 @@ export const REDDIT_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE =
 /** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
 export const REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE';
 export const REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Reddit custom audiences could not be verified. Try again in a few minutes.';
+/** The 403 and 503 a Reddit custom-audience read or create answers, shaped like `LINKEDIN_MARKETING_OPS_ACCESS_ERRORS`. */
+export const REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS = {
+  restricted: { code: REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE, message: REDDIT_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE },
+  unavailable: { code: REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE, message: REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE },
+} as const;
 
 /**
  * The `REDDIT_OBJECTIVE_PARAMS` row for an objective, or a refusal.

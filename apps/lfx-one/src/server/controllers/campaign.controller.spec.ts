@@ -38,6 +38,7 @@ import {
   MAX_SPONSORS,
   META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE,
   META_LEAD_FORMS_RESTRICTED_CODE,
+  REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
   REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE,
 } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
@@ -12995,15 +12996,20 @@ describe('CampaignController.createCampaign Reddit custom audiences', () => {
     ]);
   });
 
-  it('refuses a caller without global_marketing_ops on the project with the coded 403, creating nothing', async () => {
+  it.each<[string, boolean | Error, string]>([
+    ['refused (403)', false, REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE],
+    ['unverifiable (503)', new Error('fga-sync unreachable'), REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE],
+  ])('answers the coded error when global_marketing_ops is %s, creating nothing', async (_case, access, code) => {
     isServerFeatureEnabled.mockImplementation(() => true);
-    vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValueOnce(false);
+    const check = vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict);
+    if (access instanceof Error) check.mockRejectedValueOnce(access);
+    else check.mockResolvedValueOnce(access);
 
     await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(createCampaigns).not.toHaveBeenCalled();
-    expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).toHaveBeenCalledWith(expect.anything(), 'tlf');
-    expect(vi.mocked(next).mock.calls[0][0]).toMatchObject({ code: REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE });
+    expect(check).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(vi.mocked(next).mock.calls[0][0]).toMatchObject({ code });
   });
 
   it('forwards both lists untouched for a caller holding global_marketing_ops once the flag is on', async () => {

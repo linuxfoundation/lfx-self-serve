@@ -395,10 +395,7 @@ import {
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
   META_CUSTOM_AUDIENCES_RESTRICTED_CODE,
-  REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
-  REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
-  REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE,
-  REDDIT_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE,
+  REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS,
   LINKEDIN_MARKETING_OPS_ACCESS_ERRORS,
   LINKEDIN_GEO_SEARCH_BUSY_MESSAGE,
   LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
@@ -1390,7 +1387,7 @@ export class CampaignController {
         });
       }
       if (redditConfigNamesCustomAudiences(body?.redditConfig)) {
-        await this.requireRedditCustomAudienceAccess(req, projectSlug, 'campaign_create', 'the Reddit custom audiences');
+        await this.requireMarketingOpsAccess(req, projectSlug, 'campaign_create', 'the Reddit custom audiences', REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS);
       }
 
       // Any top-level or variant LinkedIn key the create route does not check is refused before any LinkedIn
@@ -5369,7 +5366,7 @@ export class CampaignController {
       return;
     }
     try {
-      await this.requireRedditCustomAudienceAccess(req, projectSlug, operation, 'the Reddit custom audience read');
+      await this.requireMarketingOpsAccess(req, projectSlug, operation, 'the Reddit custom audience read', REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS);
       const startTime = logger.startOperation(req, operation, { viaCampaignService: true, searched: query.q !== undefined });
       const result: RedditCustomAudiencesResult | null = redditCustomAudiencesFromPayload(
         await this.campaignServiceClient.listRedditCustomAudiences(req, projectSlug),
@@ -6967,9 +6964,29 @@ export class CampaignController {
 
   /**
    * Throws unless the caller holds `global_marketing_ops` on `projectSlug`, the relation campaign-service answers a
-   * LinkedIn audience segment (#5764 rows 8–11), a conversion rule (row 4) and a Lead Gen Form (campaign-service#664) on:
-   * a coded 403 when refused, a coded 503 when it cannot be checked. `kind` picks the codes and messages
-   * (`LINKEDIN_MARKETING_OPS_ACCESS_ERRORS`).
+   * resource of a shared ad account on: a coded 403 (`errors.restricted`) when refused, a coded 503
+   * (`errors.unavailable`) when it cannot be checked.
+   */
+  private async requireMarketingOpsAccess(
+    req: Request,
+    projectSlug: string,
+    operation: string,
+    subject: string,
+    errors: { restricted: { code: string; message: string }; unavailable: { code: string; message: string } }
+  ): Promise<void> {
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, subject);
+    if (access === 'denied') {
+      throw new AuthorizationError(errors.restricted.message, { operation, service: 'campaign_controller', path: req.path, code: errors.restricted.code });
+    }
+    if (access === 'unverified') {
+      const { message, code } = errors.unavailable;
+      throw new MicroserviceError(message, 503, code, { operation, service: 'campaign_controller', path: req.path, clientMessage: message });
+    }
+  }
+
+  /**
+   * {@link requireMarketingOpsAccess} for a LinkedIn audience segment (#5764 rows 8–11), a conversion rule (row 4) or a
+   * Lead Gen Form (campaign-service#664). `kind` picks the codes and messages (`LINKEDIN_MARKETING_OPS_ACCESS_ERRORS`).
    */
   private async requireLinkedInAudienceAccess(
     req: Request,
@@ -6978,40 +6995,7 @@ export class CampaignController {
     subject: string,
     kind: keyof typeof LINKEDIN_MARKETING_OPS_ACCESS_ERRORS = 'audiences'
   ): Promise<void> {
-    const errors = LINKEDIN_MARKETING_OPS_ACCESS_ERRORS[kind];
-    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, subject);
-    if (access === 'denied') {
-      throw new AuthorizationError(errors.restricted.message, { operation, service: 'campaign_controller', path: req.path, code: errors.restricted.code });
-    }
-    if (access === 'unverified') {
-      const { message, code } = errors.unavailable;
-      throw new MicroserviceError(message, 503, code, { operation, service: 'campaign_controller', clientMessage: message });
-    }
-  }
-
-  /**
-   * Throws unless the caller holds `global_marketing_ops` on `projectSlug`, the relation campaign-service answers a Reddit
-   * custom audience on, for the read and the create (#6108 row 1, campaign-service#549): a coded 403 when refused, a
-   * coded 503 when it cannot be checked.
-   */
-  private async requireRedditCustomAudienceAccess(req: Request, projectSlug: string, operation: string, subject: string): Promise<void> {
-    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, subject);
-    if (access === 'denied') {
-      throw new AuthorizationError(REDDIT_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE, {
-        operation,
-        service: 'campaign_controller',
-        path: req.path,
-        code: REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE,
-      });
-    }
-    if (access === 'unverified') {
-      throw new MicroserviceError(REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE, 503, REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE, {
-        operation,
-        service: 'campaign_controller',
-        path: req.path,
-        clientMessage: REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
-      });
-    }
+    await this.requireMarketingOpsAccess(req, projectSlug, operation, subject, LINKEDIN_MARKETING_OPS_ACCESS_ERRORS[kind]);
   }
 
   /**
