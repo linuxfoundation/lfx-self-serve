@@ -645,7 +645,7 @@ export class AccountSettingsComponent {
       .pipe(finalize(() => this.sendingReset.set(false)))
       .subscribe({
         next: (response) => {
-          this.showPasswordResetResult(true, response.message || 'Password reset email has been sent to your registered email address!');
+          this.showPasswordResetResult(true, response.message || 'Password reset email has been sent to your registered email address!', response.email);
         },
         error: (error: HttpErrorResponse) => {
           if (error.error?.error === 'management_token_required' && error.error?.authorize_url) {
@@ -712,8 +712,12 @@ export class AccountSettingsComponent {
   // PASSWORD PROTECTED METHODS
   // ══════════════════════════════════════════
 
-  /** Shows how sending the reset link went, under the button. Account & Settings › Password shows it as a toast. */
-  protected showPasswordResetResult(success: boolean, message: string): void {
+  /**
+   * Shows how sending the reset link went, under the button. Account & Settings › Password shows it as a toast naming `email`,
+   * the primary the server confirmed, when there is one.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the subclass's toast reads it
+  protected showPasswordResetResult(success: boolean, message: string, email?: string): void {
     this.resetResultSuccess.set(success);
     this.resetResultMessage.set(message);
   }

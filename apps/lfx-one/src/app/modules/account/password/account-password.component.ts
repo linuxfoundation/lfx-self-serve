@@ -6,7 +6,6 @@ import { Component, computed, inject, Signal } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { ACCOUNT_PASSWORD_COPY, ACCOUNT_PASSWORD_STRENGTH_TONES } from '@lfx-one/shared/constants';
 import { AccountPasswordCriterion, UiBadgeTone } from '@lfx-one/shared/interfaces';
-import { UserService } from '@services/user.service';
 import { AccountCardComponent } from '@shared/components/account-card/account-card.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -14,7 +13,6 @@ import { UiInputComponent } from '@shared/uikit/input/input.component';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { catchError, map, of, take } from 'rxjs';
 
 import { AccountSettingsComponent } from '../../settings/account-settings/account-settings.component';
 
@@ -32,7 +30,6 @@ import { AccountSettingsComponent } from '../../settings/account-settings/accoun
 })
 export class AccountPasswordComponent extends AccountSettingsComponent {
   private readonly toasts = inject(MessageService);
-  private readonly users = inject(UserService);
 
   protected readonly copy = ACCOUNT_PASSWORD_COPY;
   protected readonly strengthTone: Signal<UiBadgeTone> = computed(() => ACCOUNT_PASSWORD_STRENGTH_TONES[this.passwordStrength().label]);
@@ -45,22 +42,13 @@ export class AccountPasswordComponent extends AccountSettingsComponent {
     else this.toggleConfirmPasswordVisibility();
   }
 
-  protected override showPasswordResetResult(success: boolean, message: string): void {
+  protected override showPasswordResetResult(success: boolean, message: string, email?: string): void {
     if (!success) {
       this.toasts.add({ severity: 'error', summary: 'Error', detail: message });
       return;
     }
-    // The link goes to the current primary, which can differ from the address the session signed in with.
-    this.users
-      .getUserEmails()
-      .pipe(
-        take(1),
-        map((emails) => emails?.primary_email || this.copy.resetSentFallbackEmail),
-        catchError(() => of(this.copy.resetSentFallbackEmail))
-      )
-      .subscribe((email) =>
-        this.toasts.add({ severity: 'success', summary: this.copy.resetSentSummary.replace('{email}', email), detail: this.copy.resetSentDetail })
-      );
+    const recipient = email || this.copy.resetSentFallbackEmail;
+    this.toasts.add({ severity: 'success', summary: this.copy.resetSentSummary.replace('{email}', recipient), detail: this.copy.resetSentDetail });
   }
 
   private initCriteria(): Signal<AccountPasswordCriterion[]> {

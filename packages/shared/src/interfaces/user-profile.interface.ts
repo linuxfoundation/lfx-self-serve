@@ -165,6 +165,12 @@ export interface ChangePasswordRequest {
   new_password: string;
 }
 
+/** What sending a password reset link returns: `email` is the primary the auth service confirmed, when it could. */
+export interface PasswordResetLinkResponse {
+  message: string;
+  email?: string;
+}
+
 /**
  * Request to send password reset email
  */

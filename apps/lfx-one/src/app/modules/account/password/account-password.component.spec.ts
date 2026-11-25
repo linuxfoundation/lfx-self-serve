@@ -7,7 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute } from '@angular/router';
 import { ACCOUNT_PASSWORD_COPY, ACCOUNT_SETTINGS_SECTIONS } from '@lfx-one/shared/constants';
-import { EmailManagementData } from '@lfx-one/shared/interfaces';
+import { PasswordResetLinkResponse } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -21,10 +21,8 @@ import { AccountPasswordComponent } from './account-password.component';
 @Component({ selector: 'lfx-test-account-password', template: '', providers: [DialogService] })
 class StatePasswordComponent extends AccountPasswordComponent {}
 
-const EMAILS = { primary_email: 'ada@lovelace.example', alternate_emails: [] } as unknown as EmailManagementData;
-
 describe('AccountPasswordComponent', () => {
-  function setup(reset$: Observable<{ message: string }> = of({ message: 'sent' }), emails$: Observable<EmailManagementData | null> = of(EMAILS)) {
+  function setup(reset$: Observable<PasswordResetLinkResponse> = of({ message: 'sent', email: 'ada@lovelace.example' })) {
     const add = vi.fn();
     TestBed.configureTestingModule({
       providers: [
@@ -33,7 +31,7 @@ describe('AccountPasswordComponent', () => {
         { provide: ActivatedRoute, useValue: { snapshot: { data: { embedded: true, section: ACCOUNT_SETTINGS_SECTIONS.PASSWORD } }, fragment: of(null) } },
         {
           provide: UserService,
-          useValue: { impersonating: signal(false), getUserEmails: vi.fn(() => emails$), sendPasswordResetEmail: vi.fn(() => reset$) },
+          useValue: { impersonating: signal(false), sendPasswordResetEmail: vi.fn(() => reset$) },
         },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
         { provide: ConfirmationService, useValue: {} },
@@ -66,7 +64,7 @@ describe('AccountPasswordComponent', () => {
     expect(page['criteria']().every((criterion) => criterion.met)).toBe(true);
   });
 
-  it('confirms a sent reset link in a toast naming the current primary address', async () => {
+  it('confirms a sent reset link in a toast naming the primary the server confirmed', async () => {
     const { add } = setup();
     const page = await state();
 
@@ -80,11 +78,8 @@ describe('AccountPasswordComponent', () => {
     expect(page.resetResultMessage()).toBe('');
   });
 
-  it('says “your primary email” when it can’t tell which address the link went to', async () => {
-    const { add } = setup(
-      of({ message: 'sent' }),
-      throwError(() => new Error('down'))
-    );
+  it('says “your primary email” when the server can’t confirm which address the link went to', async () => {
+    const { add } = setup(of({ message: 'sent' }));
     const page = await state();
 
     page.onSendPasswordReset();

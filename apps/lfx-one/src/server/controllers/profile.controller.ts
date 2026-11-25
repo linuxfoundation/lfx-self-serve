@@ -52,6 +52,7 @@ import {
   IdentitiesPrimaryEmail,
   IdentityDisplayState,
   LinuxAliasData,
+  PasswordResetLinkResponse,
   ProfileAuthStatus,
   ProfilePictureUploadResponse,
   ProfileUpdateRequest,
@@ -1281,9 +1282,16 @@ export class ProfileController {
         );
       }
 
+      // The link goes to the primary on file. Named only when the auth service confirms it, never from the session,
+      // which can predate a change of primary.
+      const userSub = getEffectiveSub(req);
+      const confirmed = userSub ? await this.emailVerificationService.getUserEmails(req, userSub) : null;
+
       logger.success(req, 'send_password_reset_email', startTime);
 
-      res.json({ message: 'A password reset link has been sent to the primary email on file.' });
+      const body: PasswordResetLinkResponse = { message: 'A password reset link has been sent to the primary email on file.' };
+      if (confirmed?.primary_email) body.email = confirmed.primary_email;
+      res.json(body);
     } catch (error) {
       next(error);
     }

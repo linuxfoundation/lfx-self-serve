@@ -1322,6 +1322,30 @@ describe('ProfileController.sendPasswordResetEmail', () => {
     expect(emailVerificationSvc.sendPasswordResetLink).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
+
+  it('names the primary the auth service confirms once the link is sent', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    emailVerificationSvc.sendPasswordResetLink.mockResolvedValue({ success: true });
+    getEffectiveSubMock.mockReturnValue('auth0|user123');
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'ada@lovelace.example', alternate_emails: [] });
+    const res = buildRes();
+
+    await controller.sendPasswordResetEmail(buildReq(), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith({ message: 'A password reset link has been sent to the primary email on file.', email: 'ada@lovelace.example' });
+  });
+
+  it('names no address when the auth service can’t confirm the primary', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    emailVerificationSvc.sendPasswordResetLink.mockResolvedValue({ success: true });
+    getEffectiveSubMock.mockReturnValue('auth0|user123');
+    emailVerificationSvc.getUserEmails.mockResolvedValue(null);
+    const res = buildRes();
+
+    await controller.sendPasswordResetEmail(buildReq(), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith({ message: 'A password reset link has been sent to the primary email on file.' });
+  });
 });
 
 describe('ProfileController.startProfileAuth — returnTo allowlist', () => {

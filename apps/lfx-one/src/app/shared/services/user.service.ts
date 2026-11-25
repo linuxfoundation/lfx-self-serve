@@ -32,6 +32,7 @@ import {
   MeetingRegistrationRemovalResult,
   MeetingRsvp,
   MeetingSelfGuest,
+  PasswordResetLinkResponse,
   PastMeeting,
   ProfileAuthStatus,
   ProfilePictureUploadResponse,
@@ -376,8 +377,8 @@ export class UserService {
   /**
    * Send password reset email for current authenticated user
    */
-  public sendPasswordResetEmail(): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>('/api/profile/reset-password', {}).pipe(take(1));
+  public sendPasswordResetEmail(): Observable<PasswordResetLinkResponse> {
+    return this.http.post<PasswordResetLinkResponse>('/api/profile/reset-password', {}).pipe(take(1));
   }
 
   /**
