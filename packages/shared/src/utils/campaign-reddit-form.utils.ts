@@ -89,5 +89,7 @@ export function redditCreateRefusal(input: RedditCreateRefusalInput): string | n
   if (input.videoGoalError !== null) return 'Reddit Ads: fix the Video Views goal.';
   // Video Views without a post would build an image-post ad or no ad, never a video view.
   if (input.videoPostError !== null) return 'Reddit Ads: Video Views needs a video post.';
+  // A non-default conversion event this deployment has not confirmed: held, never dropped (`redditConversionEventBlock`).
+  if (input.conversionEventBlock !== null) return `Reddit Ads: ${input.conversionEventBlock}`;
   return null;
 }

@@ -311,6 +311,18 @@ export enum ServerFeatureFlag {
   CampaignServiceRedditAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS',
 
   /**
+   * Reddit conversion event (#6108 row 2): accept `redditConfig.conversionEvent`, the pixel event a `conversions`
+   * campaign optimizes toward (campaign-service #549), and offer its picker on the Implement tab.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_CONVERSION_EVENT_ENABLED` on,
+   * since campaign-service refuses the field with a 400 otherwise, and is only meaningful while the create cutover is on
+   * (`cutoverOwnsCreate`): the legacy creator ignores it. Off (the default), the picker is hidden and the create route
+   * refuses the field with a 400, never dropping it. Keep it off until campaign-service's flag is on and its live probe
+   * has passed. A request field only, so flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceRedditConversionEvent = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT',
+
+  /**
    * Offers a stored-image LIBRARY in each Google creative image slot — upload an image into the
    * brief's library, or pick a stored one that fits the slot — sent as `{ imageAssetId }` entries in
    * the slot's own array beside any pasted image URLs (`demandGenCreative.logoImages`,

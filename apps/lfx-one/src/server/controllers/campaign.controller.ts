@@ -19,6 +19,7 @@ import {
 } from '@lfx-one/shared/utils/campaign-linkedin-targeting-lookup.utils';
 import { linkedInConfigNamesConversions, linkedInConversionRules, linkedInObjectiveRefusal } from '@lfx-one/shared/utils/campaign-linkedin-objective.utils';
 import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
+import { redditConversionEventRefusal } from '@lfx-one/shared/utils/campaign-reddit-conversion-event.utils';
 import { linkedInTextAdAssetField, linkedInTextAdsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-text-ads.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
 import {
@@ -459,6 +460,7 @@ import {
   canSetMetaAdSchedule,
   canSetMetaFrequencyCap,
   canSetMetaOptimizationGoal,
+  canSetRedditConversionEvent,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
@@ -1342,6 +1344,19 @@ export class CampaignController {
       if (redditPixelRefusal !== null) {
         next(
           ServiceValidationError.forField('redditConfig.conversionPixelId', redditPixelRefusal, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // The Reddit conversion event (#6108 row 2): refused, never dropped, while this deployment cannot send it, and held
+      // to campaign-service's rules (`checkRedditConversionEvent`). See `redditConversionEventRefusal`.
+      const redditConversionEventRefused = redditConversionEventRefusal(body?.redditConfig, canSetRedditConversionEvent());
+      if (redditConversionEventRefused !== null) {
+        next(
+          ServiceValidationError.forField(redditConversionEventRefused.field, redditConversionEventRefused.message, {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
