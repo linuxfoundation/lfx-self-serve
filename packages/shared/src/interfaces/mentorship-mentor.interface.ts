@@ -263,9 +263,20 @@ export interface MentorshipMentorInvitationResponse {
   decision: MentorshipMentorInviteDecision;
 }
 
-/** Body of `POST /api/mentorship/mentor/invites/accept|decline`: the signed token from the invite email. */
+/** Body of `POST /api/mentorship/mentor/invites/details|accept|decline`: the signed token from the invite email. */
 export interface MentorshipMentorInviteResponseRequest {
   token: string;
+}
+
+/** Upstream `GET /v1/mentor-invites/{token}`: the program an open invitation is for. */
+export interface MentorshipUpstreamMentorInvite {
+  program_id: string;
+  program_name: string;
+}
+
+/** What `POST /api/mentorship/mentor/invites/details` returns: the invited program's name, empty when upstream has none. */
+export interface MentorshipMentorInviteDetails {
+  programName: string;
 }
 
 /** What the invite page shows: the choice, the outcome, or why the link cannot be used. */

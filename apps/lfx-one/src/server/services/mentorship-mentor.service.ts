@@ -13,6 +13,7 @@ import {
   MentorshipMentorApplicationNoteUpdate,
   MentorshipMentorHasProfileResponse,
   MentorshipMentorInviteDecision,
+  MentorshipMentorInviteDetails,
   MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
   MentorshipMentoringHistoryEntry,
@@ -28,6 +29,7 @@ import {
   MentorshipUpstreamListResponse,
   MentorshipUpstreamMentorDetail,
   MentorshipUpstreamMentoredProgram,
+  MentorshipUpstreamMentorInvite,
   MentorshipUpstreamProgram,
   MentorshipUpstreamProgramApplicationRow,
   MentorshipUpstreamProgramMembership,
@@ -218,12 +220,11 @@ export class MentorshipMentorService {
   /**
    * Accepts or declines a mentor invitation with the token from the invite email. Upstream checks the
    * token belongs to the caller (403 otherwise) and answers 400 when it is expired, malformed, or the
-   * invitation was already answered; both pass through. Upstream takes the token in the path, so a
-   * failure is rethrown with it redacted from the path and operation the error log records.
+   * invitation was already answered; both pass through, with the token redacted from the error log.
    */
   public async respondToMentorInvite(req: Request, token: string, decision: MentorshipMentorInviteDecision): Promise<void> {
-    try {
-      await proxyMentorshipRequest<unknown>(
+    await this.withInviteTokenRedacted(token, () =>
+      proxyMentorshipRequest<unknown>(
         this.microserviceProxy,
         req,
         `${MENTORSHIP_MENTOR_INVITES_PATH}/${encodeURIComponent(token)}/${decision}`,
@@ -231,23 +232,28 @@ export class MentorshipMentorService {
         undefined,
         undefined,
         `${MENTORSHIP_MENTOR_INVITES_PATH}/redacted/${decision}`
-      );
-    } catch (error) {
-      if (!(error instanceof MicroserviceError)) {
-        throw error;
-      }
-      const redact = (value?: string) => value?.split(token).join('redacted');
-      throw new MicroserviceError(error.message, error.statusCode, error.code, {
-        operation: redact(error.operation),
-        service: error.service,
-        path: redact(error.path),
-        errorBody: error.errorBody,
-        originalMessage: error.originalMessage,
-        originalError: error.originalError,
-        transportFailure: error.transportFailure,
-        clientMessage: error.clientMessage,
-      });
-    }
+      )
+    );
+  }
+
+  /**
+   * Names the program the invite email's token is for, so the invite page can show it before the answer.
+   * Upstream makes the same checks as an answer (400 for an expired, malformed or answered invitation, 403 for
+   * another account's) and both pass through, with the token redacted as for an answer.
+   */
+  public async getMentorInvite(req: Request, token: string): Promise<MentorshipMentorInviteDetails> {
+    const invite = await this.withInviteTokenRedacted(token, () =>
+      proxyMentorshipRequest<MentorshipUpstreamMentorInvite>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_MENTOR_INVITES_PATH}/${encodeURIComponent(token)}`,
+        'GET',
+        undefined,
+        undefined,
+        `${MENTORSHIP_MENTOR_INVITES_PATH}/redacted`
+      )
+    );
+    return { programName: invite?.program_name?.trim() ?? '' };
   }
 
   /**
@@ -570,6 +576,31 @@ export class MentorshipMentorService {
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 404) return undefined;
       throw error;
+    }
+  }
+
+  /**
+   * Runs a call whose upstream path carries the invite token. Upstream takes the token in the path, so a failure
+   * is rethrown with it redacted from the path and operation the error log records.
+   */
+  private async withInviteTokenRedacted<T>(token: string, call: () => Promise<T>): Promise<T> {
+    try {
+      return await call();
+    } catch (error) {
+      if (!(error instanceof MicroserviceError)) {
+        throw error;
+      }
+      const redact = (value?: string) => value?.split(token).join('redacted');
+      throw new MicroserviceError(error.message, error.statusCode, error.code, {
+        operation: redact(error.operation),
+        service: error.service,
+        path: redact(error.path),
+        errorBody: error.errorBody,
+        originalMessage: error.originalMessage,
+        originalError: error.originalError,
+        transportFailure: error.transportFailure,
+        clientMessage: error.clientMessage,
+      });
     }
   }
 }

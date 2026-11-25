@@ -18,9 +18,17 @@ describe('MentorInviteComponent', () => {
   let fixture: ComponentFixture<MentorInviteComponent>;
   let respondToMentorInvite: ReturnType<typeof vi.fn>;
   let hasMentorProfile: ReturnType<typeof vi.fn>;
+  let getMentorInvite: ReturnType<typeof vi.fn>;
 
   const build = (
-    options: { link?: string | null; respond?: Observable<void>; queryParamMap?: Observable<ParamMap>; hasProfile?: boolean; platform?: string } = {}
+    options: {
+      link?: string | null;
+      respond?: Observable<void>;
+      queryParamMap?: Observable<ParamMap>;
+      hasProfile?: boolean;
+      platform?: string;
+      invite?: Observable<{ programName: string }>;
+    } = {}
   ): void => {
     const {
       link = token,
@@ -28,9 +36,11 @@ describe('MentorInviteComponent', () => {
       queryParamMap = of(convertToParamMap(link === null ? {} : { token: link })),
       hasProfile = true,
       platform = 'browser',
+      invite = of({ programName: '' }),
     } = options;
     respondToMentorInvite = vi.fn(() => respond);
     hasMentorProfile = vi.fn(() => of({ hasProfile }));
+    getMentorInvite = vi.fn(() => invite);
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -38,7 +48,7 @@ describe('MentorInviteComponent', () => {
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
-        { provide: MentorshipMentorService, useValue: { respondToMentorInvite, hasMentorProfile } },
+        { provide: MentorshipMentorService, useValue: { respondToMentorInvite, hasMentorProfile, getMentorInvite } },
         { provide: ActivatedRoute, useValue: { queryParamMap } },
         { provide: PLATFORM_ID, useValue: platform },
       ],
@@ -60,6 +70,46 @@ describe('MentorInviteComponent', () => {
 
     expect(byTestId('mentorship-mentor-invite-title')?.textContent).toContain("You've been invited to mentor");
     expect(respondToMentorInvite).not.toHaveBeenCalled();
+  });
+
+  it('names the invited program once the browser has read it, through to the answer', () => {
+    build({ invite: of({ programName: 'Open Source Mentorship' }) });
+
+    expect(getMentorInvite).toHaveBeenCalledWith(token);
+    expect(byTestId('mentorship-mentor-invite-program-name')?.textContent).toContain('Open Source Mentorship');
+    expect(byTestId('mentorship-mentor-invite-description')?.textContent).toContain('invited you to join Open Source Mentorship as a mentor');
+
+    click('mentorship-mentor-invite-accept-button');
+    expect(byTestId('mentorship-mentor-invite-accepted')?.textContent).toContain("You're now a mentor on Open Source Mentorship.");
+  });
+
+  it('names the program on a decline too', () => {
+    build({ invite: of({ programName: 'Open Source Mentorship' }) });
+
+    click('mentorship-mentor-invite-decline-button');
+    expect(byTestId('mentorship-mentor-invite-declined')?.textContent).toContain("We've let the admins of Open Source Mentorship know.");
+  });
+
+  it.each([
+    ['the read fails', httpError(403)],
+    ['the program has no name', of({ programName: '' })],
+  ])('keeps the generic copy when %s, and still answers', (_label, invite) => {
+    build({ invite });
+
+    expect(byTestId('mentorship-mentor-invite-program-name')).toBeNull();
+    expect(byTestId('mentorship-mentor-invite-description')?.textContent).toContain('The invitation email names the program.');
+    expect(byTestId('mentorship-mentor-invite-confirm')).not.toBeNull();
+
+    click('mentorship-mentor-invite-accept-button');
+    expect(byTestId('mentorship-mentor-invite-accepted')?.textContent).toContain("You're now a mentor on the program.");
+  });
+
+  it('does not read the program on the server, or for an unusable link', () => {
+    build({ platform: 'server' });
+    expect(getMentorInvite).not.toHaveBeenCalled();
+
+    build({ link: 'no-signature' });
+    expect(getMentorInvite).not.toHaveBeenCalled();
   });
 
   it('points someone with no mentor profile to create one, without blocking the answer', () => {

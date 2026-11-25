@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -13,7 +13,7 @@ import { MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE } from '@lfx-one/shared/c
 import { MentorshipMentorInviteDecision, MentorshipMentorInviteState } from '@lfx-one/shared/interfaces';
 import { isMentorshipMentorInviteToken } from '@lfx-one/shared/utils';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
-import { distinctUntilChanged, map, of, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, map, of, startWith, switchMap, tap } from 'rxjs';
 
 /**
  * Landing page for the link in the mentor invite email: `/mentorship/mentor/invites?token=<token>`.
@@ -22,7 +22,8 @@ import { distinctUntilChanged, map, of, tap } from 'rxjs';
  * does, so the page asks first and only POSTs on Accept or Decline. Upstream checks the token is
  * the signed-in user's, or for an invitation sent by email that the signed-in LF account uses the
  * address, so another account sees the forbidden state. Someone with no mentor profile yet is
- * pointed to create one first; it never blocks the answer.
+ * pointed to create one first; it never blocks the answer. The page names the invited program once
+ * the browser has read it; until then, or when the read fails, the copy says "the program".
  */
 @Component({
   selector: 'lfx-mentorship-mentor-invite',
@@ -47,6 +48,16 @@ export class MentorInviteComponent {
    * failure as no profile); true until then, and on the server, whose read goes out without the session cookie.
    */
   protected readonly hasProfile: Signal<boolean> = this.initHasProfile();
+  /** The invited program's name, or empty until the browser's read returns it (never on the server, or after a failed read). */
+  protected readonly programName: Signal<string> = this.initProgramName();
+  protected readonly acceptedSubtitle = computed(() => {
+    const name = this.programName();
+    return name ? `You're now a mentor on ${name}.` : "You're now a mentor on the program.";
+  });
+  protected readonly declinedSubtitle = computed(() => {
+    const name = this.programName();
+    return name ? `We've let the admins of ${name} know.` : "We've let the program admins know.";
+  });
   protected readonly state = computed<MentorshipMentorInviteState>(
     () => this.submission() ?? (isMentorshipMentorInviteToken(this.token()) ? 'confirm' : 'invalid-link')
   );
@@ -86,6 +97,28 @@ export class MentorInviteComponent {
   private initHasProfile(): Signal<boolean> {
     if (!isPlatformBrowser(this.platformId)) return toSignal(of(true), { initialValue: true });
     return toSignal(this.mentorService.hasMentorProfile().pipe(map((response) => response.hasProfile)), { initialValue: true });
+  }
+
+  /**
+   * Reads the program name for each usable link. The read's failure is not shown: Accept or Decline reports why
+   * the link cannot be used, as before the page named the program.
+   */
+  private initProgramName(): Signal<string> {
+    if (!isPlatformBrowser(this.platformId)) return toSignal(of(''), { initialValue: '' });
+    return toSignal(
+      toObservable(this.token).pipe(
+        switchMap((token) =>
+          isMentorshipMentorInviteToken(token)
+            ? this.mentorService.getMentorInvite(token).pipe(
+                map((invite) => invite.programName),
+                catchError(() => of('')),
+                startWith('')
+              )
+            : of('')
+        )
+      ),
+      { initialValue: '' }
+    );
   }
 
   /** Shows an outcome only on the link it was made from. */

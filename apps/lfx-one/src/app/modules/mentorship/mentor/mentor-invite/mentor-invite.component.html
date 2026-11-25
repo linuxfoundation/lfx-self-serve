@@ -7,10 +7,20 @@
       <lfx-card data-testid="mentorship-mentor-invite-confirm">
         <div class="flex flex-col gap-6">
           <div class="flex flex-col gap-2">
-            <h1 class="text-xl font-semibold text-gray-900" data-testid="mentorship-mentor-invite-title">You've been invited to mentor</h1>
-            <p class="text-sm text-gray-500">
-              A program admin invited you to join their mentorship program as a mentor. The invitation email names the program. Accept to join it, or decline to
-              let the program admins know you can't take part.
+            <h1 class="text-xl font-semibold text-gray-900" data-testid="mentorship-mentor-invite-title">
+              You've been invited to mentor
+              @if (programName()) {
+                <span data-testid="mentorship-mentor-invite-program-name">{{ programName() }}</span>
+              }
+            </h1>
+            <p class="text-sm text-gray-500" data-testid="mentorship-mentor-invite-description">
+              @if (programName()) {
+                A program admin invited you to join {{ programName() }} as a mentor. Accept to join it, or decline to let the program admins know you can't take
+                part.
+              } @else {
+                A program admin invited you to join their mentorship program as a mentor. The invitation email names the program. Accept to join it, or decline
+                to let the program admins know you can't take part.
+              }
             </p>
           </div>
           <div class="flex flex-wrap justify-end gap-3">
@@ -46,7 +56,7 @@
             <lfx-empty-state
               icon="fa-light fa-circle-check"
               title="Invitation accepted"
-              subtitle="You're now a mentor on the program."
+              [subtitle]="acceptedSubtitle()"
               ctaLabel="Go to My Programs"
               [ctaRoute]="programsRoute" />
           }
@@ -54,7 +64,7 @@
             <lfx-empty-state
               icon="fa-light fa-circle-check"
               title="Invitation declined"
-              subtitle="We've let the program admins know."
+              [subtitle]="declinedSubtitle()"
               ctaLabel="Back to Mentorship"
               [ctaRoute]="programsRoute" />
           }

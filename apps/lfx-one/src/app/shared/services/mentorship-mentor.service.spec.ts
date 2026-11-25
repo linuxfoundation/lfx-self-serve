@@ -289,6 +289,19 @@ describe('MentorshipMentorService — read error mapping', () => {
       expect(service.mentorRequestsRevision()).toBe(revision + 1);
     });
 
+    it('reads the invited program with the token in the body, and leaves the cache alone', () => {
+      const revision = service.mentorRequestsRevision();
+      let programName = '';
+      service.getMentorInvite('payload.sig').subscribe((invite) => (programName = invite.programName));
+
+      const req = http.expectOne('/api/mentorship/mentor/invites/details');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ token: 'payload.sig' });
+      req.flush({ programName: 'Open Source Mentorship' });
+      expect(programName).toBe('Open Source Mentorship');
+      expect(service.mentorRequestsRevision()).toBe(revision);
+    });
+
     it.each(['accept', 'decline'] as const)('answers an invitation by its encoded id with %s, and clears the cache', (decision) => {
       const revision = service.mentorRequestsRevision();
       service.respondToMentorInvitation('member/1', decision).subscribe();

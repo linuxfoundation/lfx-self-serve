@@ -243,6 +243,7 @@ describe('MentorshipMentorController', () => {
       ['getMentorRequests', 'getMentorRequests'],
       ['requestToMentor', 'requestToMentor'],
       ['withdrawMentorRequest', 'withdrawMentorRequest'],
+      ['getMentorInvite', 'getMentorInvite'],
       ['acceptMentorInvite', 'respondToMentorInvite'],
       ['declineMentorInvite', 'respondToMentorInvite'],
       ['acceptMentorInvitation', 'respondToMentorInvitation'],
@@ -290,6 +291,35 @@ describe('MentorshipMentorController', () => {
 
       expect(respond).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    });
+
+    it('reads the invite with the trimmed token and returns the program name', async () => {
+      const read = vi.spyOn(MentorshipMentorService.prototype, 'getMentorInvite').mockResolvedValue({ programName: 'Open Source Mentorship' });
+
+      await controller.getMentorInvite(buildWriteReq({ token: ` ${INVITE_TOKEN} ` }), res, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), INVITE_TOKEN);
+      expect(res.json).toHaveBeenCalledWith({ programName: 'Open Source Mentorship' });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, {}, { token: 'no-signature' }, { token: 42 }])('rejects the invite read body %j before calling the service', async (requestBody) => {
+      const read = vi.spyOn(MentorshipMentorService.prototype, 'getMentorInvite');
+
+      await controller.getMentorInvite(buildWriteReq(requestBody), res, next);
+
+      expect(read).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    });
+
+    it('passes an invite read failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipMentorService.prototype, 'getMentorInvite').mockRejectedValue(error);
+
+      await controller.getMentorInvite(buildWriteReq({ token: INVITE_TOKEN }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.json).not.toHaveBeenCalled();
     });
 
     it.each([undefined, {}, { token: '' }, { token: 'no-signature' }, { token: 'a.b/c' }, { token: `${'a'.repeat(512)}.b` }, { token: 42 }])(

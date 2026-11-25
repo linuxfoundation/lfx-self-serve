@@ -404,6 +404,26 @@ describe('MentorshipMentorService mentor requests', () => {
     expect(JSON.stringify((failure as InstanceType<typeof MicroserviceError>).getLogContext())).not.toContain('SECRET');
   });
 
+  it('reads the invite with the token escaped into the path and returns the trimmed program name', async () => {
+    proxyRequest.mockResolvedValueOnce({ program_id: 'prog-1', program_name: ' Open Source Mentorship ' });
+
+    await expect(service.getMentorInvite(buildReq(), 'payload.sig-_')).resolves.toEqual({ programName: 'Open Source Mentorship' });
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/mentor-invites/payload.sig-_', 'GET', undefined, undefined);
+  });
+
+  it('keeps the invite token out of the path a failed read logs', async () => {
+    const token = 'payload.SECRET-sig';
+    const path = `/mentorship/v1/mentor-invites/${token}`;
+    proxyRequest.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { error: 'forbidden' }, 'LFX_V2_SERVICE', path, `get_${path.replace(/\//g, '_')}`)
+    );
+
+    const failure = await service.getMentorInvite(buildReq(), token).catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ statusCode: 403, path: '/mentorship/v1/mentor-invites/redacted' });
+    expect(JSON.stringify((failure as InstanceType<typeof MicroserviceError>).getLogContext())).not.toContain('SECRET');
+  });
+
   it('keeps the invite token out of the provisioning log for a first-time user', async () => {
     const token = 'payload.SECRET-sig';
     proxyRequest.mockRejectedValueOnce(upstreamError(401, { error: 'local user is not provisioned' }));
