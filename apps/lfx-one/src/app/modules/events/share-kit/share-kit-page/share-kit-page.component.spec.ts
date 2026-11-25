@@ -173,7 +173,7 @@ describe('ShareKitPageComponent', () => {
 
   it('renders the hero with dates, venue and a tracked register link', async () => {
     await setup();
-    expect(text('share-kit-when-where')).toBe('April 28 and 29, 2027 · Example Hall, Example City');
+    expect(text('share-kit-when-where')).toBe('April 28–29, 2027 · Example Hall, Example City');
     expect(text('share-kit-early-bird')).toBe('Early-bird pricing through February 28.');
     const register = fixture.nativeElement.querySelector('[data-testid="share-kit-register"] a') as HTMLAnchorElement;
     const params = new URL(register.href).searchParams;
@@ -194,6 +194,26 @@ describe('ShareKitPageComponent', () => {
     expect(text('share-kit-post-invite-text')).toContain('utm_medium=x');
     expect(text('share-kit-post-invite-count')).toBe(`${'X text.'.length + 2 + 23} / 280 characters`);
     expect(trackEvent).toHaveBeenCalledWith('share_kit_platform_tab', { event_slug: 'example-summit-2027', kind: 'x' });
+  });
+
+  it('switches platform from the toggle buttons and marks the pressed one', async () => {
+    await setup();
+    const button = (value: string): HTMLButtonElement => fixture.nativeElement.querySelector(`[data-testid="share-kit-platform-${value}"]`);
+    expect(button('linkedin').getAttribute('aria-pressed')).toBe('true');
+    button('bluesky').click();
+    fixture.detectChanges();
+    expect(button('bluesky').getAttribute('aria-pressed')).toBe('true');
+    expect(button('linkedin').getAttribute('aria-pressed')).toBe('false');
+    expect(text('share-kit-post-invite-link')).toContain('utm_medium=bluesky');
+  });
+
+  it('gives the newsletter blurb its own tab, with the tracked link highlighted', async () => {
+    await setup();
+    expect(fixture.nativeElement.querySelector('[data-testid="share-kit-blurb"]')).toBeNull();
+    (fixture.componentInstance as unknown as { tab: { set(value: string): void } }).tab.set('newsletter');
+    fixture.detectChanges();
+    expect(text('share-kit-blurb-text')).toContain('Blurb text.');
+    expect(text('share-kit-blurb-link')).toContain('utm_medium=newsletter');
   });
 
   it('tracks copies with the platform and post id', async () => {
@@ -266,7 +286,7 @@ describe('ShareKitPageComponent', () => {
     it('shows the code to an eligible member and tracks the copy without it', async () => {
       const page = await setup(of({ ...kit, memberBenefit, memberOffer: { status: 'eligible' as const, code: 'EXAMPLE20', companyName: 'Acme Motors' } }));
       expect(text('share-kit-member-code-text')).toBe('EXAMPLE20');
-      expect(text('share-kit-member-eligible')).toContain('Acme Motors is a Example member.');
+      expect(text('share-kit-member-eligible')).toContain('Acme Motors is a member of Example.');
       page.onCopied('member_code');
       expect(trackEvent).toHaveBeenCalledWith('share_kit_copy', { event_slug: 'example-summit-2027', foundation: 'example-foundation', kind: 'member_code' });
       expect(JSON.stringify(trackEvent.mock.calls)).not.toContain('EXAMPLE20');
@@ -276,12 +296,17 @@ describe('ShareKitPageComponent', () => {
       await setup(of({ ...kit, memberBenefit, memberOffer: { status: 'sign_in' as const } }));
       const link = fixture.nativeElement.querySelector('[data-testid="share-kit-member-sign-in"] a') as HTMLAnchorElement;
       expect(link.getAttribute('href')).toBe('/login?returnTo=%2Fevents%2Fexample-summit-2027%2Fshare-kit');
+      expect(link.textContent?.trim()).toBe('Sign In to See Your Code');
+      expect(text('share-kit-member-heading')).toBe('Example Members Get 20% off registration');
       expect(fixture.nativeElement.querySelector('[data-testid="share-kit-member-code"]')).toBeNull();
     });
 
     it('points a non-member company to the join page', async () => {
       await setup(of({ ...kit, memberBenefit, memberOffer: { status: 'not_member' as const } }));
-      expect(text('share-kit-member-not-member')).toContain("Your company isn't a Example member yet.");
+      expect(text('share-kit-member-not-member')).toContain("Your company isn't a member of Example yet.");
+      const join = fixture.nativeElement.querySelector('[data-testid="share-kit-member-not-member"] a') as HTMLAnchorElement;
+      expect(join.textContent?.trim()).toBe('Learn About Membership');
+      expect(join.getAttribute('href')).toBe('https://example.org/join');
     });
 
     it('withholds the code and explains when the membership check failed', async () => {

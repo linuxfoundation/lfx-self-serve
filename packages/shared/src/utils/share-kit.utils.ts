@@ -44,7 +44,7 @@ function parseIsoDay(day: string): { year: number; month: number; date: number }
 
 /**
  * Formats an event's dates for display without time-zone shifts:
- * "April 28, 2027", "April 28 and 29, 2027", "April 28–30, 2027", "April 30 – May 2, 2027", "December 31, 2027 – January 2, 2028".
+ * "April 28, 2027", "April 28–29, 2027", "April 28–30, 2027", "April 30 – May 2, 2027", "December 31, 2027 – January 2, 2028".
  */
 export function formatShareKitDateRange(startDate: string, endDate: string): string {
   const start = parseIsoDay(startDate);
@@ -60,9 +60,6 @@ export function formatShareKitDateRange(startDate: string, endDate: string): str
   }
   if (start.date === end.date) {
     return `${startMonth} ${start.date}, ${start.year}`;
-  }
-  if (end.date - start.date === 1) {
-    return `${startMonth} ${start.date} and ${end.date}, ${start.year}`;
   }
   return `${startMonth} ${start.date}–${end.date}, ${start.year}`;
 }

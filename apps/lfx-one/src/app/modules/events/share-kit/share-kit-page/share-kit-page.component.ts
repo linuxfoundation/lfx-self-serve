@@ -101,6 +101,18 @@ export class ShareKitPageComponent {
     };
   });
   protected readonly copyButtonVariant = computed((): UiButtonVariant => (this.theme() ? 'primary' : 'secondary'));
+  // The member box sits inside the hero: on a branded hero it is a tint of the hero text colour, otherwise the LFX info box.
+  protected readonly memberBoxClasses = computed(() =>
+    this.theme()
+      ? 'mt-3 flex max-w-[560px] flex-col gap-[10px] rounded-[12px] border border-[color-mix(in_srgb,var(--sk-hero-text)_25%,transparent)] bg-[color-mix(in_srgb,var(--sk-hero-text)_10%,transparent)] px-[18px] py-4 text-[var(--sk-hero-text)]'
+      : 'flex max-w-[640px] flex-col gap-[10px] rounded-lg border-l-4 border-blue-600 bg-blue-50 px-4 py-3 text-gray-900'
+  );
+  protected readonly memberTextClasses = computed(() => (this.theme() ? 'text-[14px]' : 'text-[14px] text-gray-700'));
+  protected readonly memberButtonClasses = computed(() =>
+    this.theme()
+      ? 'inline-flex min-h-[38px] items-center self-start rounded-lg border border-[var(--sk-hero-text)] px-[14px] text-[14px] font-semibold text-[var(--sk-hero-text)] hover:bg-[color-mix(in_srgb,var(--sk-hero-text)_12%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sk-hero-text)]'
+      : 'inline-flex min-h-[38px] items-center self-start rounded-lg border border-blue-600 bg-white px-[14px] text-[14px] font-semibold text-blue-700 hover:bg-blue-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
+  );
   protected readonly headerLabel = computed(() => {
     const kit = this.kit();
     return kit ? `${kit.foundationName} · ${kit.title} Share Kit` : '';
@@ -131,18 +143,22 @@ export class ShareKitPageComponent {
     (this.kit()?.graphics ?? []).map((graphic) => ({ ...graphic, local: graphic.url.startsWith('/') }))
   );
   protected readonly posts: Signal<ShareKitPostView[]> = this.initPosts();
+  protected readonly blurbLink = computed(() => {
+    const kit = this.kit();
+    return kit ? buildShareKitTrackedUrl(kit.newsletterBlurb.url, { medium: 'newsletter', campaign: kit.eventSlug, content: 'blurb' }) : '';
+  });
   protected readonly blurb = computed(() => {
     const kit = this.kit();
-    if (!kit) return '';
-    const link = buildShareKitTrackedUrl(kit.newsletterBlurb.url, { medium: 'newsletter', campaign: kit.eventSlug, content: 'blurb' });
-    return `${kit.newsletterBlurb.text.trim()}\n\nEvent details: ${link}`;
+    return kit ? `${kit.newsletterBlurb.text.trim()}\n\nEvent details: ${this.blurbLink()}` : '';
+  });
+  // The invitation is sent to colleagues, not posted to the platform picked on the Social Posts tab.
+  protected readonly cfpInvitationLink = computed(() => {
+    const kit = this.kit();
+    return kit?.cfp ? buildShareKitTrackedUrl(kit.cfp.url, { medium: 'cfp', campaign: kit.eventSlug, content: 'cfp-invite' }) : '';
   });
   protected readonly cfpInvitation = computed(() => {
-    const kit = this.kit();
-    if (!kit?.cfp) return '';
-    // The invitation is sent to colleagues, not posted to the platform picked on the Share tab.
-    const link = buildShareKitTrackedUrl(kit.cfp.url, { medium: 'cfp', campaign: kit.eventSlug, content: 'cfp-invite' });
-    return composeShareKitPost(kit.cfp.invitation, link);
+    const cfp = this.kit()?.cfp;
+    return cfp ? composeShareKitPost(cfp.invitation, this.cfpInvitationLink()) : '';
   });
   protected readonly registerUrl = computed(() => this.pageLink(this.kit()?.registration.url, 'register'));
   protected readonly cfpUrl = computed(() => this.pageLink(this.kit()?.cfp?.url, 'cfp-details'));
@@ -212,7 +228,7 @@ export class ShareKitPageComponent {
         filter((slug): slug is string => !!slug),
         distinctUntilChanged(),
         switchMap((slug, index) => {
-          // Another kit may lack the section that was open (Graphics, CFP), so a new slug starts on the Share tab.
+          // Another kit may lack the section that was open (Graphics, CFP), so a new slug starts on the Social Posts tab.
           if (index > 0) this.tab.set('share');
           // The server already rendered this kit; refetching could only swap a good page for an error.
           if (index === 0 && transferred) {
@@ -250,7 +266,7 @@ export class ShareKitPageComponent {
   private initTabs(): Signal<UiTabItem[]> {
     return computed(() => {
       const kit = this.kit();
-      const available: Record<ShareKitTab, boolean> = { share: true, graphics: (kit?.graphics.length ?? 0) > 0, cfp: !!kit?.cfp };
+      const available: Record<ShareKitTab, boolean> = { share: true, newsletter: true, graphics: (kit?.graphics.length ?? 0) > 0, cfp: !!kit?.cfp };
       return SHARE_KIT_TABS.filter((value) => available[value]).map((value) => ({ value, label: SHARE_KIT_TAB_LABELS[value] }));
     });
   }
@@ -264,7 +280,7 @@ export class ShareKitPageComponent {
       return kit.posts.map((post) => {
         const link = buildShareKitTrackedUrl(kit.registration.url, { medium: platform, campaign: kit.eventSlug, content: post.id });
         const text = post.text[platform];
-        return { id: post.id, title: post.title, text: composeShareKitPost(text, link), length: countShareKitPostLength(text, link, platform), limit };
+        return { id: post.id, title: post.title, text: composeShareKitPost(text, link), link, length: countShareKitPostLength(text, link, platform), limit };
       });
     });
   }

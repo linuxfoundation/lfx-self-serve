@@ -25,13 +25,14 @@ export const SHARE_KIT_PLATFORM_LIMITS = {
 } as const;
 
 /** Sections of the public share kit page, in tab order. */
-export const SHARE_KIT_TABS = ['share', 'graphics', 'cfp'] as const;
+export const SHARE_KIT_TABS = ['share', 'newsletter', 'graphics', 'cfp'] as const;
 
 /** Display names for each section tab. */
 export const SHARE_KIT_TAB_LABELS = {
-  share: 'Share the event',
+  share: 'Social Posts',
+  newsletter: 'Newsletter',
   graphics: 'Graphics',
-  cfp: 'Call for proposals',
+  cfp: 'Call for Proposals',
 } as const;
 
 /** `utm_source` on every link the share kit hands out. */
