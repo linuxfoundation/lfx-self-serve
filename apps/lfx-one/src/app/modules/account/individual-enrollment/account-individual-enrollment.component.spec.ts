@@ -40,15 +40,15 @@ const ITEM = {
 class StateEnrollmentComponent extends AccountIndividualEnrollmentComponent {}
 
 describe('AccountIndividualEnrollmentComponent', () => {
-  function setup(items: IndividualEnrollment[]) {
-    const closed = of(true);
+  function setup(items: IndividualEnrollment[], options: { confirm?: boolean; impersonating?: boolean } = {}) {
+    const closed = of(options.confirm ?? true);
     const open = vi.fn(() => ({ closed }));
     const updateAutoRenew = vi.fn(() => of({}));
     TestBed.configureTestingModule({
       providers: [
         provideNoopAnimations(),
         { provide: EnrollmentService, useValue: { getEnrollments: () => of({ kind: 'loaded', items }), updateAutoRenew } },
-        { provide: UserService, useValue: { impersonating: signal(false) } },
+        { provide: UserService, useValue: { impersonating: signal(options.impersonating ?? false) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: UiModalService, useValue: { open } },
       ],
@@ -119,6 +119,34 @@ describe('AccountIndividualEnrollmentComponent', () => {
     expect(open).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ role: 'alertdialog' }));
     expect(page['pendingAutoRenew']()).toEqual({ enable: false, endDate: '2099-01-12' });
     expect(updateAutoRenew).toHaveBeenCalledWith('m-1', false);
+  });
+
+  it('leaves auto-renew alone when the dialog is cancelled', async () => {
+    const { updateAutoRenew } = setup([ITEM], { confirm: false });
+    const fixture = TestBed.createComponent(AccountIndividualEnrollmentComponent);
+    await fixture.whenStable();
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="account-enrollment-toggle-auto-renew"] button')?.click();
+
+    expect(updateAutoRenew).not.toHaveBeenCalled();
+  });
+
+  it('turns every action into a disabled button, with no link, while impersonating', async () => {
+    const soon = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+    const { open } = setup(
+      [ITEM, { ...ITEM, productId: 'soon', membership: { ...MEMBERSHIP, autoRenew: false, endDate: soon } }, { ...ITEM, productId: 'none', membership: null }],
+      { impersonating: true }
+    );
+    const fixture = TestBed.createComponent(AccountIndividualEnrollmentComponent);
+    await fixture.whenStable();
+    const host = fixture.nativeElement as HTMLElement;
+
+    for (const testId of ['account-enrollment-toggle-auto-renew', 'account-enrollment-renew', 'account-enrollment-enroll-button']) {
+      const action = host.querySelector(`[data-testid="${testId}"]`) as HTMLElement;
+      expect(action.querySelector('a')).toBeNull();
+      expect(action.querySelector('button')?.disabled).toBe(true);
+    }
+    host.querySelector<HTMLButtonElement>('[data-testid="account-enrollment-toggle-auto-renew"] button')?.click();
+    expect(open).not.toHaveBeenCalled();
   });
 
   it('renders the card with its status, figures, benefits and action', async () => {

@@ -81,3 +81,9 @@ export interface AccountEnrollmentCard {
   action: AccountEnrollmentAction | null;
   enrollLabel: string;
 }
+
+/** The auto-renew change the Account & Settings confirm dialog asks about: on or off, and the date it takes effect from. */
+export interface AccountEnrollmentAutoRenewChange {
+  enable: boolean;
+  endDate: string;
+}

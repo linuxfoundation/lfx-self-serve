@@ -7,6 +7,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AccountCardComponent } from '@components/account-card/account-card.component';
 import {
   AccountEnrollmentAction,
+  AccountEnrollmentAutoRenewChange,
   AccountEnrollmentCard,
   AccountEnrollmentFigure,
   DisplayEnrollment,
@@ -47,10 +48,17 @@ export class AccountIndividualEnrollmentComponent extends ProfileIndividualEnrol
     Expired: 'danger',
     'Not Enrolled': 'neutral',
   };
+  // Dividers and padding of each figure by its place: one row on a wide card, two by two on a narrow one.
+  protected readonly figureCellClasses: readonly string[] = [
+    'pl-0',
+    'border-l',
+    'border-t pl-0 @[560px]:border-l @[560px]:border-t-0 @[560px]:pl-[16px]',
+    'border-l border-t @[560px]:border-t-0',
+  ];
+  /** The change the auto-renew dialog asks about. */
+  protected readonly pendingAutoRenew = signal<AccountEnrollmentAutoRenewChange>({ enable: false, endDate: '' });
   /** The enrollments as cards: subtitle, figures and the one action each shows. */
   protected readonly cards: Signal<AccountEnrollmentCard[]> = this.initCards();
-  /** The change the auto-renew dialog asks about. */
-  protected readonly pendingAutoRenew = signal<{ enable: boolean; endDate: string }>({ enable: false, endDate: '' });
 
   // The design's confirmation, in place of the hub's PrimeNG one; the update itself is the hub's.
   protected override onToggleAutoRenew(item: DisplayEnrollment, newValue: boolean): void {

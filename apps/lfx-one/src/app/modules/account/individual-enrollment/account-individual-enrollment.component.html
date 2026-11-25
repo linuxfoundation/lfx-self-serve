@@ -77,14 +77,15 @@
               <dl
                 class="m-0 grid grid-cols-2 border-y border-ui-neutral-200 @[560px]:grid-flow-col @[560px]:grid-cols-none @[560px]:auto-cols-fr"
                 data-testid="account-enrollment-figures">
-                @for (figure of card.figures; track figure.label) {
+                @for (figure of card.figures; track figure.label; let index = $index) {
                   <div
-                    class="flex min-w-0 flex-col gap-[8px] border-ui-neutral-200 px-[16px] py-[12px] [&:nth-child(even)]:border-l [&:nth-child(n+3)]:border-t [&:nth-child(odd)]:pl-0 @[560px]:first:pl-0 @[560px]:[&:nth-child(n)]:border-t-0 @[560px]:[&:nth-child(n)]:pl-[16px] @[560px]:[&:nth-child(n+2)]:border-l"
+                    class="flex min-w-0 flex-col gap-[8px] border-ui-neutral-200 px-[16px] py-[12px]"
+                    [class]="figureCellClasses[index]"
                     data-testid="account-enrollment-figure">
                     <dt class="inline-flex items-center gap-[6px] whitespace-nowrap text-[12px] font-medium leading-[16px] text-ui-neutral-500">
                       <i class="fa-light text-[12px]" [class]="figure.icon" aria-hidden="true"></i>{{ figure.label }}
                     </dt>
-                    <dd class="m-0 truncate text-[16px] leading-[24px] text-ui-neutral-900" [title]="figure.value">{{ figure.value }}</dd>
+                    <dd class="m-0 truncate text-[16px] leading-[24px] text-ui-neutral-900">{{ figure.value }}</dd>
                   </div>
                 }
               </dl>
