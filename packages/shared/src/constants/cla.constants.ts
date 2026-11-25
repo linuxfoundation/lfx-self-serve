@@ -169,6 +169,19 @@ const CLA_MANAGER_REQUEST_RECEIPT = {
   recorded: { summary: 'Request recorded', detail: 'The request was recorded, but no CLA manager email could be delivered.' },
 } as const;
 
+/** Copy for Account & Settings › CLAs and its CCLA request dialog (#6077). */
+export const ACCOUNT_CLAS_COPY = {
+  subtitle:
+    'Your signed ICLAs (Individual CLA) and CCLA coverage (Corporate CLA), matched to your Identities. Already-connected GitLab accounts are matched too. New GitLab linking is coming soon.',
+  subtitleGitlabOpen: 'Your signed ICLAs (Individual CLA) and CCLA coverage (Corporate CLA), matched to your Identities, including GitLab accounts.',
+  emptyTitle: 'No CLAs on file yet',
+  emptyText: 'We haven’t found any signed ICLAs or CCLA coverage for your linked identities.',
+  footerLink: 'Link your email or GitHub accounts',
+  footerLinkGitlabOpen: 'Link your email, GitHub or GitLab accounts',
+  requestTitles: { approval: 'Request CCLA approval', removal: 'Request removal from CCLA', contact: 'Contact CLA manager' },
+  messagePlaceholder: 'Add context for the CLA manager',
+} as const;
+
 /** v17 `mgrCopy` — titles also used as DialogService headers by the kebab factory. */
 export const CLA_MANAGER_MODAL_COPY = {
   approval: {

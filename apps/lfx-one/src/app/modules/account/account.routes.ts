@@ -66,7 +66,7 @@ export const ACCOUNT_ROUTES: Routes = [
       {
         path: 'clas',
         title: 'CLAs',
-        loadComponent: () => import('../profile/clas/profile-clas.component').then((m) => m.ProfileClasComponent),
+        loadComponent: () => import('./clas/account-clas.component').then((m) => m.AccountClasComponent),
       },
       {
         path: 'transactions',
