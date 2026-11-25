@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { LinkedInConfigKeyRefusal } from '../interfaces/campaign.interface';
-import { goTrimSpace } from './campaign-linkedin.utils';
+import { goTrimSpace, linkedInCreativeTextLength } from './campaign-linkedin.utils';
 
 /**
  * LinkedIn video ads (#5764 row 18), mirroring campaign-service's synchronous checks (`checkVariantsShape` in
@@ -79,7 +79,9 @@ export function linkedInVideoRefusal(raw: unknown, enabled: boolean): LinkedInCo
     if (isSet(variant['imageUrn']) || isSet(variant['imageAssetId'])) {
       return { field: `${path}.videoAssetId`, message: `Ad ${index + 1} has a video and an image. A video ad carries no image; remove one.` };
     }
-    if (typeof variant['description'] === 'string' && goTrimSpace(variant['description']) !== '') {
+    // The same test the forwarder uses: `compactLinkedInVariantFields` drops a description that normalizes to nothing
+    // (a lone dash, for example), so campaign-service never sees it and accepts the video.
+    if (typeof variant['description'] === 'string' && linkedInCreativeTextLength(variant['description']) > 0) {
       return { field: `${path}.description`, message: `Ad ${index + 1} is a video ad, which has no description. Remove it.` };
     }
   }

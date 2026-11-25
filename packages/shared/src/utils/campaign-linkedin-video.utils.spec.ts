@@ -19,6 +19,7 @@ describe('linkedInVideoRefusal', () => {
     ['an id without dashes', { variants: [{ ...video, videoAssetId: id.replace(/-/g, '') }] }],
     ['an id with spaces around it', { variants: [{ ...video, videoAssetId: ` ${id}\n` }] }],
     ['blank images and description beside a video', { variants: [{ ...video, imageUrn: '', imageAssetId: null, description: '  ' }] }],
+    ['a description that normalizes to nothing (a lone dash) beside a video', { variants: [{ ...video, description: '\u2014' }] }],
     ['a name and call to action beside a video', { variants: [{ ...video, name: 'Teaser', callToAction: 'REGISTER' }] }],
     ['variants that are not a list', { variants: 'none' }],
     ['not an object', null],
