@@ -194,6 +194,12 @@ describe('linkedInCreateRefusal', () => {
       { customTargetingUnavailable: true },
       'LinkedIn Ads: custom targeting is not available right now. Choose a targeting profile.',
     ],
+    // Lead generation has no Text Ads: change the format, never "add a manual bid", which lead generation refuses.
+    [
+      'Text Ads beside lead generation',
+      { textAdsWithLeadGen: true, textAds: { count: 1, textInvalid: false, manualBid: false } },
+      'LinkedIn Ads: lead generation campaigns have no Text Ads. Choose single image or video ads as the ad format.',
+    ],
     ['Text Ads with no variants', { variantCount: 0, textAds: { count: 1, textInvalid: false, manualBid: true } }, null],
     [
       'Text Ads without a manual bid',

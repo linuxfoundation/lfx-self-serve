@@ -27,6 +27,7 @@ import { catchError, distinctUntilChanged, EMPTY, of, startWith, switchMap } fro
 import { ProfileVisibilityDrawerComponent } from '../components/profile-visibility-drawer/profile-visibility-drawer.component';
 import { ProfileVisibilityDrawerService } from '../components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { ProfileAsideComponent } from './profile-aside/profile-aside.component';
+import { ProfileInvolvementComponent } from './profile-involvement/profile-involvement.component';
 import { ProfileRecognitionsComponent } from './profile-recognitions/profile-recognitions.component';
 
 /**
@@ -37,7 +38,14 @@ import { ProfileRecognitionsComponent } from './profile-recognitions/profile-rec
   selector: 'lfx-profile-page',
   // Cancels the main layout's page padding: the page sets its own gutters.
   host: { class: 'block -mx-5 md:-mx-8' },
-  imports: [UiButtonComponent, UiNoteComponent, ProfileAsideComponent, ProfileRecognitionsComponent, ProfileVisibilityDrawerComponent],
+  imports: [
+    UiButtonComponent,
+    UiNoteComponent,
+    ProfileAsideComponent,
+    ProfileRecognitionsComponent,
+    ProfileInvolvementComponent,
+    ProfileVisibilityDrawerComponent,
+  ],
   // The page owns its profile, the Flow C return for a photo upload that left for authorization, and the Open Profile drawer.
   providers: [AccountProfileService, ProfileAuthReturnService, ProfileVisibilityDrawerService],
   templateUrl: './profile-page.component.html',
