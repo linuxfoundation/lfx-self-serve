@@ -5203,6 +5203,8 @@ describe('PlanningTabComponent newsletter mode', () => {
     generate(): void;
     newsletterReferences: { set(v: unknown[]): void };
     newsletterReferencesState: { set(v: string): void };
+    newsletterReferencesBrand: { set(v: string): void };
+    selectedReferenceIds(): string[];
     onToggleNewsletterReference(id: string): void;
   }
 
@@ -5271,7 +5273,33 @@ describe('PlanningTabComponent newsletter mode', () => {
     fill('OpenSSF', '', 'Scorecard v5 released');
     expect(internals().canGenerate()).toBe(false);
     fill('OpenSSF', 'November 2026', 'Scorecard v5 released');
+    // Not until the brand's previous issues have been read for THIS brand (the lookup settles 500 ms
+    // after the last keystroke): until then the loaded issues are another brand's.
+    expect(internals().canGenerate()).toBe(false);
+    internals().newsletterReferencesBrand.set('OpenSSF');
     expect(internals().canGenerate()).toBe(true);
+  });
+
+  it("never sends or generates with another brand's previous issues while the new brand is being read", () => {
+    fill('OpenSSF', 'November 2026', 'Scorecard v5 released');
+    const email = (emailId: string) => ({
+      emailId,
+      emailName: `OpenSSF Newsletter ${emailId}`,
+      sentAt: '',
+      hubspotUrl: '',
+      includedLists: [],
+      suppressionLists: [],
+    });
+    internals().newsletterReferencesBrand.set('OpenSSF');
+    internals().newsletterReferences.set([email('30')]);
+    internals().newsletterReferencesState.set('loaded');
+    expect(internals().selectedReferenceIds()).toEqual(['30']);
+
+    fill('CNCF', 'November 2026', 'Scorecard v5 released');
+    fixture.detectChanges();
+
+    expect(internals().selectedReferenceIds()).toEqual([]);
+    expect(internals().canGenerate()).toBe(false);
   });
 
   it('sends the issue, the notes and the ticked previous issues, newest first', async () => {
@@ -5284,6 +5312,7 @@ describe('PlanningTabComponent newsletter mode', () => {
       includedLists: [],
       suppressionLists: [],
     });
+    internals().newsletterReferencesBrand.set('OpenSSF');
     internals().newsletterReferences.set([email('30'), email('20'), email('10')]);
     internals().newsletterReferencesState.set('loaded');
     internals().onToggleNewsletterReference('20');

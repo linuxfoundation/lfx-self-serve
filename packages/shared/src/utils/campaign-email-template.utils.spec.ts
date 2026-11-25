@@ -203,3 +203,19 @@ describe('isSentEmailTemplate', () => {
     expect(isSentEmailTemplate({ id: 'x' })).toBe(false);
   });
 });
+
+describe('edition aliases', () => {
+  it('reads an abbreviated event name as its full edition name too', () => {
+    const scope = deriveEmailTemplateScope(details('KubeCon + CloudNativeCon NA 2026'));
+    expect(scope?.editionTerms).toEqual(expect.arrayContaining(['na', 'north america']));
+    expect(namesEditionPlace(row('KubeCon North America 2026 | Last Chance'), scope as CampaignEmailTemplateScope)).toBe(true);
+  });
+
+  it('does not read the pronoun "us" as the United States, in a name or a subject', () => {
+    const scope = deriveEmailTemplateScope(details('KubeCon + CloudNativeCon North America 2026', 'Salt Lake City', 'US')) as CampaignEmailTemplateScope;
+    expect(namesEditionPlace(row('KubeCon Europe 2026', 'PUBLISHED', 'Join us in Amsterdam'), scope)).toBe(false);
+    expect(namesEditionPlace(row('Join us at KubeCon Europe 2026'), scope)).toBe(false);
+    // In capitals it is the abbreviation, and still names the edition.
+    expect(namesEditionPlace(row('KubeCon US 2026 | Agenda'), scope)).toBe(true);
+  });
+});

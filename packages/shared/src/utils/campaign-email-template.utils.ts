@@ -9,6 +9,7 @@ import {
   EMAIL_TEMPLATE_EXCLUDED_STATE_PARTS,
   EMAIL_TEMPLATE_GENERIC_WORDS,
   EMAIL_TEMPLATE_NEWSLETTER_PATTERN,
+  EMAIL_TEMPLATE_PROSE_ABBREVIATIONS,
   EMAIL_TEMPLATE_REGION_ABBREVIATIONS,
   EMAIL_TEMPLATE_REGION_PHRASES,
   EMAIL_TEMPLATE_SCOPE_MAX_PHRASES,
@@ -76,7 +77,9 @@ export function deriveEmailTemplateScope(
   let year = '';
 
   // Split on the separators events use between brands: "+", "&", "|", "/", ":", dashes and commas.
-  for (const segment of source.split(/\s*(?:\+|&|\||\/|:|,|\s[–—-]\s)\s*/u)) {
+  // No `\s*` around the separators: overlapping with the spaced dash it made the pattern polynomial
+  // on long runs of whitespace (CodeQL js/polynomial-redos). Each segment is trimmed instead.
+  for (const segment of source.split(/[+&|/:,]|\s[–—-]\s/u).map((part) => part.trim())) {
     const words = segment.split(/[^\p{L}\p{N}]+/u).filter((w) => w !== '');
     if (words.length === 0) {
       continue;
@@ -136,9 +139,17 @@ export function deriveEmailTemplateScope(
   if (country !== '') {
     editionTerms.add(normalizeTemplateText(country));
   }
+  // Both ways: a full name brings its abbreviations ("north america" -> "na"), and an abbreviation
+  // brings its full name and that name's other abbreviations ("na" -> "north america"), so an event
+  // named "... NA 2026" still recognises the "... North America 2026" templates.
   for (const term of [...editionTerms]) {
-    for (const abbreviation of EMAIL_TEMPLATE_REGION_ABBREVIATIONS[term] ?? []) {
-      editionTerms.add(abbreviation);
+    for (const [full, abbreviations] of Object.entries(EMAIL_TEMPLATE_REGION_ABBREVIATIONS)) {
+      if (term === full || abbreviations.includes(term)) {
+        editionTerms.add(full);
+        for (const abbreviation of abbreviations) {
+          editionTerms.add(abbreviation);
+        }
+      }
     }
   }
 
@@ -235,7 +246,15 @@ export function classifyEmailTemplate(template: HubSpotMarketingEmail, scope: Ca
  */
 export function namesEditionPlace(template: HubSpotMarketingEmail, scope: CampaignEmailTemplateScope): boolean {
   const text = `${normalizeTemplateText(template.name)} ${normalizeTemplateText(template.subject)}`.trim();
-  return scope.editionTerms.some((term) => containsTemplatePhrase(text, term));
+  const raw = `${template.name ?? ''} ${template.subject ?? ''}`;
+  return scope.editionTerms.some((term) =>
+    EMAIL_TEMPLATE_PROSE_ABBREVIATIONS.has(term) ? namesAbbreviationInCapitals(raw, term) : containsTemplatePhrase(text, term)
+  );
+}
+
+/** Whether `raw` carries `abbreviation` as a whole word in capitals ("US", not the pronoun "us"). */
+function namesAbbreviationInCapitals(raw: string, abbreviation: string): boolean {
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${abbreviation.toUpperCase()}(?=$|[^\\p{L}\\p{N}])`, 'u').test(raw);
 }
 
 /** Whether a template went out (or is booked to), which makes it a proven design to clone. */

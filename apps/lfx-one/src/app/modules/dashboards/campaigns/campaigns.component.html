@@ -1496,7 +1496,11 @@
                         } @else if (emailAudience()?.status === 'building') {
                           The audience is unconfirmed — reconcile the lists it created before staging.
                         } @else if (emailAudience()?.status !== 'built') {
-                          The audience failed — compose it again on the Audience tab before staging.
+                          @if (isNewsletter()) {
+                            The recipients could not be attached. See Send audience above to set them again.
+                          } @else {
+                            The audience failed — compose it again on the Audience tab before staging.
+                          }
                         } @else if (emailCopyState() === 'generating' || abTestCopyState() === 'generating') {
                           Wait for the copy to finish generating before staging.
                         } @else if (sequenceLocksSingleSend()) {

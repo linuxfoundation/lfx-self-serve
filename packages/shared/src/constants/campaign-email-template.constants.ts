@@ -49,6 +49,12 @@ export const EMAIL_TEMPLATE_REGION_ABBREVIATIONS: Readonly<Record<string, readon
 };
 
 /**
+ * Region abbreviations that are also ordinary English words ("Join us in Amsterdam"). They name an
+ * edition only when written in capitals ("US"), never in lower-case prose.
+ */
+export const EMAIL_TEMPLATE_PROSE_ABBREVIATIONS: ReadonlySet<string> = new Set(['us']);
+
+/**
  * Words that cannot identify a brand on their own. A segment made only of these ("Summit",
  * "Open Source") is not searched for, because it would match every summit in the portal.
  */

@@ -427,12 +427,24 @@ export class PlanningTabComponent implements OnInit {
   protected readonly suggestionMaxUrls = CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS;
   /** Previous issues the operator unticked; every other loaded issue is a reference. */
   protected readonly excludedReferenceIds = signal<ReadonlySet<string>>(new Set<string>());
-  /** The references sent with the brief, newest first; the first is the issue's clone template. */
+  /**
+   * The brand the loaded references were read for. The lookup waits for the brand to settle, so
+   * for a moment after an edit the loaded issues are another brand's: they must not be sent, nor
+   * pick the clone template, until the new brand's read replaces them.
+   */
+  protected readonly newsletterReferencesBrand = signal('');
+  /** Whether the brand field has moved away from the brand the loaded references belong to. */
+  protected readonly newsletterReferencesStale = computed(
+    () => this.isNewsletter() && (this.newsletterBrandValue() ?? '').trim() !== this.newsletterReferencesBrand()
+  );
+  /** The references sent with the brief, newest first; the first is the issue's clone template. None while stale. */
   protected readonly selectedReferenceIds = computed(() =>
-    this.newsletterReferences()
-      .filter((email) => !this.excludedReferenceIds().has(email.emailId))
-      .slice(0, CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT)
-      .map((email) => email.emailId)
+    this.newsletterReferencesStale()
+      ? []
+      : this.newsletterReferences()
+          .filter((email) => !this.excludedReferenceIds().has(email.emailId))
+          .slice(0, CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT)
+          .map((email) => email.emailId)
   );
   /** The previous-issue picker's rows: each issue with its send day, its tick and the template mark. */
   protected readonly newsletterReferenceRows = computed(() => {
@@ -1019,7 +1031,8 @@ export class PlanningTabComponent implements OnInit {
         this.newsletterSlug() !== '' &&
         (this.sourceTextValue() ?? '').trim() !== '' &&
         !this.sourceTextTooLong() &&
-        this.newsletterReferencesState() !== 'loading'
+        this.newsletterReferencesState() !== 'loading' &&
+        !this.newsletterReferencesStale()
       );
     }
     return this.isEmailLike() || this.selectedPlatforms().size > 0;
@@ -1035,6 +1048,8 @@ export class PlanningTabComponent implements OnInit {
 
   // === Private State ===
   private briefSubscription: Subscription | null = null;
+  /** The suggestions read in flight, cancelled when a newer one starts or the brand or foundation changes. */
+  private suggestionsRequest: Subscription | null = null;
 
   /**
    * The active foundation slug, coalesced to `''` when there is no context.
@@ -1185,6 +1200,12 @@ export class PlanningTabComponent implements OnInit {
           // Cleared before the read, not when it answers: until then the ticked ids are the
           // previous key's, and Generate would send them.
           this.newsletterReferences.set([]);
+          this.newsletterReferencesBrand.set(brand);
+          // The previous brand's suggestions, and any read of them still in flight, go too.
+          this.suggestionsRequest?.unsubscribe();
+          this.suggestionsRequest = null;
+          this.suggestions.set([]);
+          this.suggestionsState.set('idle');
           if (!isNewsletter || brand === '' || project === '' || !isPlatformBrowser(this.platformId)) {
             this.newsletterReferencesState.set('idle');
             return of<AudienceLastSentEmail[]>([]);
@@ -1542,17 +1563,27 @@ export class PlanningTabComponent implements OnInit {
     this.rememberSuggestionSources(brand, urls.join(', '));
     this.suggestionsState.set('loading');
     this.suggestionsError.set('');
-    this.campaignService
+    // One read at a time, and only its own brand's: an answer that lands after the operator moved
+    // to another brand or foundation would put unrelated offers in front of the new notes.
+    this.suggestionsRequest?.unsubscribe();
+    const isCurrent = (): boolean => (this.newsletterBrandValue() ?? '').trim() === brand && this.activeFoundationSlug() === project;
+    this.suggestionsRequest = this.campaignService
       .suggestNewsletterItems(project, { urls, brand })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
+          if (!isCurrent()) {
+            return;
+          }
           this.suggestions.set(result.items);
           this.suggestionsFailedUrls.set(result.failedUrls);
           this.suggestionsState.set('loaded');
         },
         error: (error: unknown) => {
           console.error('Failed to read newsletter suggestions:', error);
+          if (!isCurrent()) {
+            return;
+          }
           this.suggestions.set([]);
           this.suggestionsState.set('failed');
           this.suggestionsError.set('The pages could not be read. Check the links and try again.');
