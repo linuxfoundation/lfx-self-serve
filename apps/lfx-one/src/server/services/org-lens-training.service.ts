@@ -42,8 +42,8 @@ import type { OrgLensReadQualification } from '../helpers/org-lens-read-access.h
 import {
   buildOrgTrainingPairsCte,
   ORG_TRAINING_GROUP_SQL,
+  ORG_TRAINING_PAIRS_TABLE,
   orgTrainingParamSignature,
-  orgTrainingRangePredicate,
   orgTrainingStatusPredicate,
   orgTrainingTabPredicate,
 } from '../helpers/org-training-pairs.sql';
@@ -58,7 +58,7 @@ interface OrgTrainingPairStatsRow {
   CERTIFICATIONS: number;
   CERTIFIED_PEOPLE: number;
   TRAININGS_COMPLETED: number;
-  COURSES_IN_PROGRESS: number;
+  CERTIFIED_PAIRS: number;
   PEOPLE_IN_TRAINING: number;
 }
 
@@ -91,7 +91,6 @@ interface OrgTrainingGroupSqlRow {
   PEOPLE: number;
   COURSES_TAKEN: number;
   COMPLETED: number;
-  IN_PROGRESS: number;
   LEVEL: string | null;
   FOUNDATION: string | null;
 }
@@ -148,7 +147,7 @@ export class OrgLensTrainingService {
       const unfiltered = await this.cached(
         qualification,
         accountId,
-        `training-stats:v6:${orgTrainingFiltersSignature({ range: query.range, foundation: null, project: null, course: null, level: null, format: null })}`,
+        `training-stats:v7:${orgTrainingFiltersSignature({ range: query.range, foundation: null, project: null, course: null, level: null, format: null })}`,
         () => this.fetchTrainingStats(accountId, { range: query.range, foundation: null, project: null, course: null, level: null, format: null }),
         isTrainingStats
       );
@@ -157,7 +156,7 @@ export class OrgLensTrainingService {
     return this.cached(
       qualification,
       accountId,
-      `training-stats:v6:${orgTrainingFiltersSignature(query)}`,
+      `training-stats:v7:${orgTrainingFiltersSignature(query)}`,
       () => this.fetchTrainingStats(accountId, query),
       isTrainingStats
     );
@@ -168,7 +167,7 @@ export class OrgLensTrainingService {
     return this.cached(
       qualification,
       accountId,
-      `training-filter-options:v1:${range}`,
+      `training-filter-options:v2:${range}`,
       async () => {
         const { cte, binds } = buildOrgTrainingPairsCte(accountId, { range, foundation: null, project: null, course: null, level: null, format: null });
         const sql = `
@@ -254,7 +253,7 @@ export class OrgLensTrainingService {
     const raw = await this.cached(
       qualification,
       accountId,
-      `training-group-employees:v1:${orgTrainingFiltersSignature(query)}:${groupBy}:${orgTrainingParamSignature([groupValue])}:${tab}:${status}`,
+      `training-group-employees:v2:${orgTrainingFiltersSignature(query)}:${groupBy}:${orgTrainingParamSignature([groupValue])}:${tab}:${status}`,
       () => this.fetchGroupEmployees(accountId, query, params),
       isGroupEmployeesRaw
     );
@@ -283,7 +282,7 @@ export class OrgLensTrainingService {
     return this.cached(
       qualification,
       accountId,
-      `training-groups:v1:${orgTrainingFiltersSignature(query)}:${groupBy}:${tab}`,
+      `training-groups:v2:${orgTrainingFiltersSignature(query)}:${groupBy}:${tab}`,
       () => this.fetchGroups(accountId, query, groupBy, tab),
       isGroupsRaw
     );
@@ -293,10 +292,7 @@ export class OrgLensTrainingService {
    * Whether every filter the request sets names a value the org's people-list training rows carry. A value the org never
    * carries (another org's value kept across an org switch, a stale shared URL) is not an error: the callers answer it with
    * the zero payload before any stats/groups/drawer cache key or statement exists, which keeps that key space bounded by
-   * the org's own values. The set is the DISTINCT raw row values over all time, not the options of a range or the resolved
-   * pair attributes: a pair's attribute is the greatest value of its in-range rows, so a value that only some rows carry
-   * (a `Beginner` row of a pair that resolves to `Intermediate` all-time) is a value the dropdown of a narrower range offers
-   * and must be accepted. A value valid for the org with no rows in the selected range is served as zero data by the normal path.
+   * the org's own values. A value valid for the org with no rows in the selected range is served as zero data by the normal path.
    */
   private async carriesOnlyKnownFilters(accountId: string, query: OrgTrainingStatsQuery, qualification: OrgLensReadQualification): Promise<boolean> {
     const requested = ORG_TRAINING_FILTER_KEYS.filter((filter) => query[filter] !== null);
@@ -311,23 +307,26 @@ export class OrgLensTrainingService {
     return this.cached(
       qualification,
       accountId,
-      'training-filter-known:v1',
+      'training-filter-known:v2',
       async () => {
-        // rows_in_range of the all-time query: the exact row set every range's pairs are resolved from.
-        const { cte, binds } = buildOrgTrainingPairsCte(accountId, { range: 'all', foundation: null, project: null, course: null, level: null, format: null });
         const sql = `
-          WITH ${cte}
-          SELECT 'foundation' AS FILTER_KEY, FOUNDATION_ID AS FILTER_VALUE FROM rows_in_range
+          WITH known_pairs AS (
+            SELECT FOUNDATION_ID, PROJECT_ID, COURSE_NAME, COURSE_LEVEL, COURSE_FORMAT
+            FROM ${ORG_TRAINING_PAIRS_TABLE}
+            WHERE ACCOUNT_ID = ?
+              AND IS_ON_PEOPLE_LIST
+          )
+          SELECT 'foundation' AS FILTER_KEY, FOUNDATION_ID AS FILTER_VALUE FROM known_pairs
           UNION
-          SELECT 'project', PROJECT_ID FROM rows_in_range
+          SELECT 'project', PROJECT_ID FROM known_pairs
           UNION
-          SELECT 'course', COURSE_NAME FROM rows_in_range
+          SELECT 'course', COURSE_NAME FROM known_pairs
           UNION
-          SELECT 'level', COURSE_LEVEL FROM rows_in_range
+          SELECT 'level', COURSE_LEVEL FROM known_pairs
           UNION
-          SELECT 'format', COURSE_FORMAT FROM rows_in_range
+          SELECT 'format', COURSE_FORMAT FROM known_pairs
         `;
-        const result = await this.snowflakeService.execute<OrgTrainingKnownValueRow>(sql, binds);
+        const result = await this.snowflakeService.execute<OrgTrainingKnownValueRow>(sql, [accountId]);
         return buildKnownFilterValues(result.rows);
       },
       isKnownFilterValues
@@ -339,43 +338,38 @@ export class OrgLensTrainingService {
     const pairsSql = `
       WITH ${cte}
       SELECT
-        COUNT(DISTINCT PERSON_KEY)                                                                       AS PEOPLE,
-        COUNT(*)                                                                                         AS COURSES_TAKEN,
-        COUNT_IF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')})                          AS CERTIFICATIONS,
+        COUNT(DISTINCT PERSON_KEY)                                                                         AS PEOPLE,
+        COUNT(DISTINCT PAIR_KEY)                                                                           AS COURSES_TAKEN,
+        COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')}, PAIR_KEY, NULL))   AS CERTIFICATIONS,
         COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')}, PERSON_KEY, NULL)) AS CERTIFIED_PEOPLE,
-        COUNT_IF(IS_CERTIFIED AND ${orgTrainingTabPredicate('trainings')})                               AS TRAININGS_COMPLETED,
-        COUNT_IF(NOT IS_CERTIFIED)                                                                       AS COURSES_IN_PROGRESS,
-        COUNT(DISTINCT IFF(NOT IS_CERTIFIED, PERSON_KEY, NULL))                                          AS PEOPLE_IN_TRAINING
+        COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('trainings')}, PAIR_KEY, NULL))        AS TRAININGS_COMPLETED,
+        COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL))                                                  AS CERTIFIED_PAIRS,
+        COUNT(DISTINCT IFF(NOT IS_CERTIFIED, PERSON_KEY, NULL))                                            AS PEOPLE_IN_TRAINING
       FROM f
     `;
 
     // Learners the warehouse attributes to the org outside its people list (lfx-self-serve#4287): counted only while no filter
     // is set, like their list, and null (not counted) otherwise; a key that also has people-list rows is that person.
     // They are never added to the people-list numbers: every other metric reads the people-list pairs `f`.
-    const inRange = orgTrainingRangePredicate(query.range);
     const outsideSql = `
       SELECT COUNT(DISTINCT PERSON_KEY) AS PEOPLE
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
+      FROM ${ORG_TRAINING_PAIRS_TABLE}
       WHERE ACCOUNT_ID = ?
+        AND TIME_RANGE = ?
         AND NOT IS_ON_PEOPLE_LIST
-        AND STATUS IN ('Enrolled', 'Certified')
-        AND ACTIVITY_TS IS NOT NULL
-        ${inRange}
         AND PERSON_KEY NOT IN (
           SELECT PERSON_KEY
-          FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
+          FROM ${ORG_TRAINING_PAIRS_TABLE}
           WHERE ACCOUNT_ID = ?
+            AND TIME_RANGE = ?
             AND IS_ON_PEOPLE_LIST
-            AND STATUS IN ('Enrolled', 'Certified')
-            AND ACTIVITY_TS IS NOT NULL
-            ${inRange}
         )
     `;
 
     // One build time for every range of the account.
     const asOfSql = `
       SELECT MAX(DBT_RUN_AT) AS AS_OF
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
+      FROM ${ORG_TRAINING_PAIRS_TABLE}
       WHERE ACCOUNT_ID = ?
     `;
 
@@ -391,7 +385,7 @@ export class OrgLensTrainingService {
     const [pairsResult, outsideResult, asOfResult, rosterResult] = await Promise.all([
       this.snowflakeService.execute<OrgTrainingPairStatsRow>(pairsSql, binds),
       includeOutside
-        ? this.snowflakeService.execute<OrgTrainingCountRow>(outsideSql, [accountId, accountId])
+        ? this.snowflakeService.execute<OrgTrainingCountRow>(outsideSql, [accountId, query.range, accountId, query.range])
         : Promise.resolve({ rows: [] as OrgTrainingCountRow[] }),
       this.snowflakeService.execute<OrgTrainingAsOfRow>(asOfSql, [accountId]),
       this.snowflakeService.execute<OrgTrainingRosterMembersRow>(rosterSql, [accountId]),
@@ -417,7 +411,7 @@ export class OrgLensTrainingService {
       certifiedPeople: pairs?.CERTIFIED_PEOPLE ?? 0,
       trainingsCompleted,
       completionRatePct: orgTrainingCompletionRatePct({ coursesTaken, certifications, trainingsCompleted }),
-      coursesInProgress: pairs?.COURSES_IN_PROGRESS ?? 0,
+      coursesInProgress: coursesTaken - (pairs?.CERTIFIED_PAIRS ?? 0),
       peopleInTraining: pairs?.PEOPLE_IN_TRAINING ?? 0,
     };
   }
@@ -437,10 +431,9 @@ export class OrgLensTrainingService {
       SELECT
         ${group.key}                    AS GROUP_KEY,
         ${group.label}                  AS GROUP_LABEL,
-        COUNT(DISTINCT PERSON_KEY)      AS PEOPLE,
-        COUNT(*)                        AS COURSES_TAKEN,
-        COUNT_IF(IS_CERTIFIED)          AS COMPLETED,
-        COUNT_IF(NOT IS_CERTIFIED)      AS IN_PROGRESS,
+        COUNT(DISTINCT PERSON_KEY)                        AS PEOPLE,
+        COUNT(DISTINCT PAIR_KEY)                          AS COURSES_TAKEN,
+        COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL)) AS COMPLETED,
         MAX(COURSE_LEVEL)               AS LEVEL,
         MAX(FOUNDATION_NAME)            AS FOUNDATION
       FROM f
@@ -451,17 +444,16 @@ export class OrgLensTrainingService {
     const totalsSql = `
       WITH ${cte}
       SELECT
-        COUNT(DISTINCT PERSON_KEY)      AS PEOPLE,
-        COUNT(*)                        AS COURSES_TAKEN,
-        COUNT_IF(IS_CERTIFIED)          AS COMPLETED,
-        COUNT_IF(NOT IS_CERTIFIED)      AS IN_PROGRESS
+        COUNT(DISTINCT PERSON_KEY)                        AS PEOPLE,
+        COUNT(DISTINCT PAIR_KEY)                          AS COURSES_TAKEN,
+        COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL)) AS COMPLETED
       FROM f
       WHERE ${tabPredicate}
     `;
 
     const [rowsResult, totalsResult] = await Promise.all([
       this.snowflakeService.execute<OrgTrainingGroupSqlRow>(rowsSql, binds),
-      this.snowflakeService.execute<{ PEOPLE: number; COURSES_TAKEN: number; COMPLETED: number; IN_PROGRESS: number }>(totalsSql, binds),
+      this.snowflakeService.execute<{ PEOPLE: number; COURSES_TAKEN: number; COMPLETED: number }>(totalsSql, binds),
     ]);
 
     const rows: OrgTrainingGroupRow[] = rowsResult.rows.map((row) => {
@@ -472,10 +464,9 @@ export class OrgLensTrainingService {
         people: row.PEOPLE || 0,
         coursesTaken: row.COURSES_TAKEN || 0,
         completed: row.COMPLETED || 0,
-        inProgress: row.IN_PROGRESS || 0,
+        inProgress: (row.COURSES_TAKEN || 0) - (row.COMPLETED || 0),
         level: groupBy === 'course' ? (row.LEVEL ?? null) : null,
         foundation: groupBy === 'course' || groupBy === 'project' ? (row.FOUNDATION ?? null) : null,
-        // ORG_PEOPLE_TRAINING carries no logo column.
         logoUrl: null,
       };
     });
@@ -487,7 +478,7 @@ export class OrgLensTrainingService {
         people: totals?.PEOPLE ?? 0,
         coursesTaken: totals?.COURSES_TAKEN ?? 0,
         completed: totals?.COMPLETED ?? 0,
-        inProgress: totals?.IN_PROGRESS ?? 0,
+        inProgress: (totals?.COURSES_TAKEN ?? 0) - (totals?.COMPLETED ?? 0),
       },
     };
   }
@@ -505,15 +496,14 @@ export class OrgLensTrainingService {
 
     const countSql = `
       WITH ${cte}
-      SELECT COUNT(*) AS TOTAL, ${group.label} AS GROUP_LABEL
+      SELECT COUNT(DISTINCT PAIR_KEY) AS TOTAL, ${group.label} AS GROUP_LABEL
       FROM f
       WHERE ${where}
     `;
     // Identity from the all-time, all-projects ORG_PEOPLE_ALL_RANGES row of each current employee (IS_FORMER = FALSE), the
     // read People › Trainees uses, so the roster matches the pair count for any range. ORG_PEOPLE_ALL would drop members
     // whose only training is older than its 12-month engagement gate or reaches them through a merged learner. That row is
-    // unique per (account, person); one row per person however many pairs. No other training query joins ORG_PEOPLE_ALL:
-    // stats, options and groups read ORG_PEOPLE_TRAINING alone.
+    // unique per (account, person); one row per person however many pairs. No other training query joins ORG_PEOPLE_ALL.
     const namesSql = `
       WITH ${cte}
       SELECT
