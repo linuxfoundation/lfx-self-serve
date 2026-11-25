@@ -211,6 +211,19 @@ describe('OrgCrowdfundingComponent (#5838)', () => {
     expect(router.url).toBe('/crowdfunding/initiatives');
   });
 
+  it('moves a non-writer off Donations to Initiatives when the flag closes while they are on it', async () => {
+    donationsEnabled.set(true);
+    const harness = await open('/crowdfunding/donations');
+    const router = TestBed.inject(Router);
+    expect(router.url).toBe('/crowdfunding/donations');
+
+    donationsEnabled.set(false);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(router.url).toBe('/crowdfunding/initiatives');
+  });
+
   it('shows no tabs, and no New Initiative, while the grants are still loading', async () => {
     writerSet.set(new Set([ORG_UID]));
     grantsLoaded.set(false);

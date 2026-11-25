@@ -83,7 +83,11 @@ export class OrgCrowdfundingComponent {
       const requested = this.route.snapshot.queryParamMap.get('tab');
       return tabs.find((tab) => tab.id === requested)?.id ?? tabs[0]?.id ?? 'initiatives';
     }
-    return tabs.length > 0 && !tabs.some((tab) => tab.id === active) ? tabs[0].id : null;
+    if (tabs.some((tab) => tab.id === active)) return null;
+    // A tab the viewer cannot use moves to their first, or to Initiatives when they have none (its page explains the missing
+    // access), so a Donations panel never stays mounted once the flag closes under a non-writer.
+    const fallback = tabs[0]?.id ?? 'initiatives';
+    return fallback === active ? null : fallback;
   });
 
   constructor() {
