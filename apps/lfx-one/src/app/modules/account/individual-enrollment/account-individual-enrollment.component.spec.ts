@@ -127,6 +127,17 @@ describe('AccountIndividualEnrollmentComponent', () => {
     expect(updateAutoRenew).toHaveBeenCalledWith('m-1', false);
   });
 
+  it('still asks, without a date, when the membership has no end date', async () => {
+    const { open, updateAutoRenew } = setup([{ ...ITEM, membership: { ...MEMBERSHIP, endDate: '' } }]);
+    const fixture = TestBed.createComponent(AccountIndividualEnrollmentComponent);
+    await fixture.whenStable();
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="account-enrollment-toggle-auto-renew"] button')?.click();
+
+    expect(open).toHaveBeenCalled();
+    expect(fixture.componentInstance['pendingAutoRenew']()).toEqual({ enable: false, endDate: '' });
+    expect(updateAutoRenew).toHaveBeenCalledWith('m-1', false);
+  });
+
   it('leaves auto-renew alone when the dialog is cancelled', async () => {
     const { updateAutoRenew } = setup([ITEM], { confirm: false });
     const fixture = TestBed.createComponent(AccountIndividualEnrollmentComponent);

@@ -64,7 +64,8 @@ export class AccountIndividualEnrollmentComponent extends ProfileIndividualEnrol
   protected override onToggleAutoRenew(item: DisplayEnrollment, newValue: boolean): void {
     if (!item.membership || this.isPending(item)) return;
     const membershipId = item.membership.id;
-    this.pendingAutoRenew.set({ enable: newValue, endDate: this.formatDay(item.membership.endDate) });
+    // The server sends a missing end date as '', which can't be formatted; the dialog then leaves the date out.
+    this.pendingAutoRenew.set({ enable: newValue, endDate: item.membership.endDate ? this.formatDay(item.membership.endDate) : '' });
     this.modal
       .open<boolean>(this.autoRenewDialog(), { role: 'alertdialog', describedBy: true, autoFocus: '[data-autofocus] button' })
       .closed.pipe(take(1), takeUntilDestroyed(this.destroyRef))
