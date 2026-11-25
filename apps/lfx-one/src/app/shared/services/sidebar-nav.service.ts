@@ -295,18 +295,22 @@ export class SidebarNavService {
     // EasyCLA is single-organization too: a corporate CLA belongs to one company, so its requests
     // need a concrete organization and `/org/family-{id}/easycla` could only error (#4415, Copilot).
     const items = this.accountContext.isRollUp() ? base : this.withEasyclaNavItem(base);
-    // Initiatives (#348) follows a direct writer grant on the selected organization — CF lists an
-    // organization's initiatives to its writers only, and b2b_org writer access does not cascade from a parent.
-    const initiativesItems = this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '') ? [this.orgInitiativesNavItem()] : [];
-    // Donations (#415) is dark-launched behind `cf-org-donations` and shown to every org viewer, like the other org
-    // pages: CF lists them to auditors, which the lens route already requires. The page shows a 403 state otherwise.
-    // Crowdfunding Donations is single-organization too: `/api/crowdfunding/org-donations` takes an
-    // `orgUid` its SFID validator refuses the sentinel for, so `/org/family-{id}/donations` only errors (#4415, Copilot).
-    const donationsItems = this.isCfOrgDonationsEnabled() && !this.accountContext.isRollUp() ? [this.orgDonationsNavItem()] : [];
-    // Both close the Company Engagement section, right below Groups.
-    const withInitiatives = this.placeAfterOrgGroups(items, [...initiativesItems, ...donationsItems]);
+    // One Crowdfunding page (#5838) with an Initiatives (#348) and a Donations (#415) tab. Initiatives follows a direct
+    // writer grant on the selected organization — CF lists an organization's initiatives to its writers only, and
+    // b2b_org writer access does not cascade from a parent. Donations is dark-launched behind `cf-org-donations` and
+    // shown to every org viewer: CF lists them to auditors, which the lens route already requires. Both tabs are
+    // single-organization — the CF endpoints take one `orgUid` their SFID validator refuses the sentinel for, so
+    // `/org/family-{id}/crowdfunding` only errors (#4415, Copilot) — and the link shows when either tab is available.
+    const hasInitiatives = this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '');
+    const hasDonations = this.isCfOrgDonationsEnabled();
+    // The all employee view hides both tabs' pages (`initiatives`, `donations`), so it hides their one link too.
+    const hiddenPages = this.orgLensViewMode.hiddenPages();
+    const crowdfundingHidden = hiddenPages.includes('initiatives') && hiddenPages.includes('donations');
+    const crowdfundingItems = (hasInitiatives || hasDonations) && !this.accountContext.isRollUp() && !crowdfundingHidden ? [this.orgCrowdfundingNavItem()] : [];
+    // The link closes the Company Engagement section, right below Groups.
+    const withCrowdfunding = this.placeAfterOrgGroups(items, crowdfundingItems);
     // ROI Metrics sits in the LF Staff Only section, which closes the menu.
-    const withStaffSection = this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
+    const withStaffSection = this.showsOrgLfStaffOnlySection() ? [...withCrowdfunding, this.orgLfStaffOnlySection()] : withCrowdfunding;
     return withoutEmployeeViewHiddenPages(withStaffSection, this.orgLensViewMode.hiddenPages());
   });
 
@@ -973,18 +977,13 @@ export class SidebarNavService {
     items: [this.orgRoiNavItem()],
   }));
 
-  private readonly orgInitiativesNavItem: Signal<SidebarMenuItem> = computed(() => ({
-    label: 'Crowdfunding Initiatives',
+  private readonly orgCrowdfundingNavItem: Signal<SidebarMenuItem> = computed(() => ({
+    label: 'Crowdfunding',
     icon: 'fa-light fa-box-dollar',
-    routerLink: this.orgLensNavigation.orgLensPath('initiatives'),
-    testId: 'sidebar-org-initiatives',
-  }));
-
-  private readonly orgDonationsNavItem: Signal<SidebarMenuItem> = computed(() => ({
-    label: 'Crowdfunding Donations',
-    icon: 'fa-light fa-hand-holding-heart',
-    routerLink: this.orgLensNavigation.orgLensPath('donations'),
-    testId: 'sidebar-org-donations',
+    routerLink: this.orgLensNavigation.orgLensPath('crowdfunding'),
+    // Stays lit on the Donations tab and on an initiative's detail page.
+    activeOnSubpaths: true,
+    testId: 'sidebar-org-crowdfunding',
   }));
 
   private readonly orgEasyclaNavItem: Signal<SidebarMenuItem> = computed(() => ({

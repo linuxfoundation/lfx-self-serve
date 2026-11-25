@@ -4,7 +4,7 @@ description: View the crowdfunding donations made on behalf of a company in the 
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, donations, company, lens]
-last_updated: 2026-11-10
+last_updated: 2026-11-17
 intercom_collection: Crowdfunding
 ---
 
@@ -18,11 +18,11 @@ Anyone who can view the selected company in the **Company** lens.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Switch to the **Company** lens and select the company.
-3. Select **Crowdfunding Donations** from the left navigation sidebar.
+3. Select **Crowdfunding** from the left navigation sidebar, then open the **Donations** tab.
 
 ## What the page shows
 
-The page header reads **Donations**, with the description "Donations on LFX Crowdfunding made on behalf of" followed by the company name. Each row shows:
+The page header reads **Crowdfunding — {company name}**, shared with the **Initiatives** tab, and the **Donations** tab lists the donations on LFX Crowdfunding made on behalf of the company. Each row shows:
 
 - **Initiative** — the initiative donated to, tagged **Recurring** for a recurring donation. Select the name to open the initiative on the public crowdfunding site in a new tab
 - **Date** — when the donation was made
