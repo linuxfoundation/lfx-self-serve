@@ -2036,12 +2036,14 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly linkedInImageUploadVariantKey = signal('');
   /**
-   * The one LinkedIn upload belongs to no variant or text ad on screen: the brief re-seeded the variants (new
-   * keys) while it ran. It is not cancelled, because a draft restore that follows the re-seed brings
-   * that variant back and the upload lands on it; until then it holds no picker and not Create.
+   * The one LinkedIn upload belongs to no ad the chosen format shows: the brief re-seeded the variants (new
+   * keys) while it ran, or it is for the other format (#5764 row 19). It is not cancelled, because a draft
+   * restore that follows the re-seed brings that variant back, or a switch back to its format brings its
+   * editor back, and the upload lands on it; until then it holds no picker and not Create. The same rule the
+   * variant and text ad views apply, each to its own list, so a picker that looks enabled always takes a pick.
    */
   private readonly linkedInImageUploadOrphaned = computed(() =>
-    linkedInImageUploadOrphaned(this.linkedInImageSlot(), [...this.linkedInVariants(), ...this.linkedInTextAds()])
+    linkedInImageUploadOrphaned(this.linkedInImageSlot(), this.linkedInTextAdsSelected() ? this.linkedInTextAds() : this.linkedInVariants())
   );
   protected readonly linkedInImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
   private readonly linkedInImageUploadPendingName = signal('');
@@ -4243,7 +4245,8 @@ export class ImplementationTabComponent implements OnInit {
     if (this.redditImageAssetBlock() !== null) return 'Reddit Ads: resolve the image notice.';
     if (this.metaImageAssetBlock() !== null) return 'Meta Ads: resolve the image notice.';
     if (this.googleImageAssetBlock() !== null) return 'Google Ads: resolve the image notice.';
-    // A Text Ads create sends no variants (#5764 row 19), so a variant image it would not send holds nothing.
+    // The first variant's image block, or text ad's while Text Ads are chosen (#5764 row 19); an image for the ads the
+    // chosen format hides is not sent and holds nothing (see `linkedInImageAssetBlock`).
     if (this.linkedInImageAssetBlock() !== null) return 'LinkedIn Ads: resolve the image notice.';
     if (this.twitterImageAssetBlock() !== null) return 'X: resolve the image notice.';
     if (this.microsoftImageAssetBlock() !== null) return 'Microsoft Ads: resolve the image notice.';
@@ -4300,10 +4303,9 @@ export class ImplementationTabComponent implements OnInit {
     // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
     if (this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading' && this.googleImageUploadInReach())
       return 'Waiting for the Google Ads image upload to finish.';
-    // Not for an orphaned upload, whose image has no variant to land on and no Cancel on screen, nor for one in the ads
-    // the chosen format hides (#5764 row 19): the create does not send them, and their editor with its Cancel is hidden.
+    // Not for an orphaned upload, whose image has no ad on screen to land on and no Cancel: that includes one for the
+    // ads the chosen format hides (#5764 row 19), which the create does not send.
     if (
-      this.linkedInImageUploadInReach() &&
       linkedInImageUploadHoldsCreate(
         this.showLinkedInSection(),
         this.linkedInAssetUploadAvailable(),
@@ -7969,13 +7971,6 @@ export class ImplementationTabComponent implements OnInit {
   /** Set (or, with `''`, clear) one text ad's upload (#5764 row 19). */
   private setLinkedInTextAdImage(key: string, imageAssetId: string, imageAssetName: string, imageAssetBriefId: string): void {
     this.linkedInTextAds.update((ads) => ads.map((ad) => (ad.key === key ? { ...ad, imageAssetId, imageAssetName, imageAssetBriefId } : ad)));
-  }
-
-  /** Whether the one LinkedIn upload is for an ad the chosen format shows: a text ad while Text Ads are chosen, else a variant. */
-  private linkedInImageUploadInReach(): boolean {
-    const key = this.linkedInImageUploadVariantKey();
-    const holders: readonly { key: string }[] = this.linkedInTextAdsSelected() ? this.linkedInTextAds() : this.linkedInVariants();
-    return holders.some((holder) => holder.key === key);
   }
 
   private initLinkedInTextAdImageInput(): Signal<LinkedInTextAdImageInput> {

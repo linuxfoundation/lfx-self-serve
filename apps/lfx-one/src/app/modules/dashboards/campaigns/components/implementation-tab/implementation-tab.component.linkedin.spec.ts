@@ -1302,6 +1302,20 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(at(f).createBlockedReason()).toBeNull();
     });
 
+    it('lets a variant take a pick after switching back from Text Ads with a failed text ad image', STATE_ONLY, async () => {
+      const f = await textAdsWithImage({ width: 120, height: 120 });
+      const c = f.componentInstance as unknown as {
+        linkedInVariants(): { key: string }[];
+        onLinkedInFormatChange(format: string): void;
+        onLinkedInVariantImageFileChange(key: string, event: Event): void;
+      };
+      c.onLinkedInFormatChange('single_image');
+      const file = png();
+      c.onLinkedInVariantImageFileChange(c.linkedInVariants()[0].key, { target: { files: [file], value: '' } } as unknown as Event);
+
+      expect(uploadCreativeAsset).toHaveBeenCalledWith(file, 'tlf', BRIEF_ID, 'linkedin');
+    });
+
     it.each([
       ['an oversized image', () => png(5_000_001)],
       ['a file that is not a PNG or JPEG', () => new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' })],
