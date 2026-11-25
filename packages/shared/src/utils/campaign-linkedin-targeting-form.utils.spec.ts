@@ -12,6 +12,7 @@ import {
 import type { LinkedInTargetingDraft, LinkedInTargetingEntity, LinkedInTargetingFacetPicks } from '../interfaces/campaign.interface';
 import {
   emptyLinkedInTargetingDraft,
+  linkedInTargetingMergedPicks,
   linkedInTargetingCanAddClause,
   linkedInTargetingDraftFromStored,
   linkedInTargetingDraftRefusal,
@@ -104,6 +105,19 @@ describe('choices', () => {
     [0, LINKEDIN_TARGETING_SEARCH_FAILED_MESSAGE],
   ])('says why a search answered %s', (status, message) => {
     expect(linkedInTargetingSearchFailure(status)).toBe(message);
+  });
+});
+
+describe('linkedInTargetingMergedPicks', () => {
+  const go = { urn: 'urn:li:skill:1', name: 'Go' };
+  const senior = { urn: 'urn:li:seniority:4', name: 'Senior' };
+
+  it('merges every group per facet, so the exclusions can leave out what a clause includes', () => {
+    expect(linkedInTargetingMergedPicks({ skills: [go] }, { seniorities: [senior] }, {})).toEqual({ skills: [go], seniorities: [senior] });
+    expect(linkedInTargetingStaticChoices('seniorities', linkedInTargetingMergedPicks({}, { seniorities: [senior] })).map((c) => c.urn)).not.toContain(
+      senior.urn
+    );
+    expect(linkedInTargetingMergedPicks()).toEqual({});
   });
 });
 

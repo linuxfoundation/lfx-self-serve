@@ -82,6 +82,19 @@ export function linkedInTargetingStaticChoices(facet: LinkedInTargetingEditorFac
   return values.filter((value) => !picked.has(value.urn));
 }
 
+/**
+ * Every value picked across `groups`, per facet. The exclusions are offered without what a clause already includes, so
+ * the editor never builds a value both included and excluded, which the create refuses.
+ */
+export function linkedInTargetingMergedPicks(...groups: LinkedInTargetingFacetPicks[]): LinkedInTargetingFacetPicks {
+  const merged: LinkedInTargetingFacetPicks = {};
+  for (const { key } of LINKEDIN_TARGETING_EDITOR_FACETS) {
+    const picks = groups.flatMap((group) => group[key] ?? []);
+    if (picks.length > 0) merged[key] = picks;
+  }
+  return merged;
+}
+
 /** Search results not yet picked under the facet. */
 export function linkedInTargetingSearchChoices(
   entities: readonly LinkedInTargetingEntity[],

@@ -22,6 +22,7 @@ import {
   linkedInTargetingFacetsToAdd,
   linkedInTargetingPicksWith,
   linkedInTargetingPicksWithout,
+  linkedInTargetingMergedPicks,
   linkedInTargetingSearchChoices,
   linkedInTargetingSearchEmptyMessage,
   linkedInTargetingSearchFailure,
@@ -50,6 +51,8 @@ export class LinkedInTargetingFacetGroupComponent {
   public readonly placement = input<LinkedInTargetingPlacement>('include');
   /** The `data-testid` prefix of this group's elements. */
   public readonly testId = input.required<string>();
+  /** Values this group must not offer: for the exclusions, everything a clause already includes. */
+  public readonly unavailable = input<LinkedInTargetingFacetPicks>({});
 
   public readonly picks = model.required<LinkedInTargetingFacetPicks>();
 
@@ -72,9 +75,11 @@ export class LinkedInTargetingFacetGroupComponent {
       picks: picks[facet.key] ?? [],
     }));
   });
+  /** What is picked here or unavailable, so neither is offered again. */
+  private readonly taken = computed<LinkedInTargetingFacetPicks>(() => linkedInTargetingMergedPicks(this.picks(), this.unavailable()));
   protected readonly staticChoices = computed<LinkedInTargetingEntity[]>(() => {
     const facet = this.facet();
-    return facet && !facet.searchable ? linkedInTargetingStaticChoices(facet.key, this.picks()) : [];
+    return facet && !facet.searchable ? linkedInTargetingStaticChoices(facet.key, this.taken()) : [];
   });
 
   /** The latest typed query; `equal: () => false` so a repeated query searches again after a failure. */
@@ -84,7 +89,7 @@ export class LinkedInTargetingFacetGroupComponent {
   protected readonly searchChoices = computed<LinkedInTargetingEntity[]>(() => {
     const facet = this.facet();
     const search = this.search();
-    return facet && search.facet === facet.key ? linkedInTargetingSearchChoices(search.entities, this.picks()[facet.key]) : [];
+    return facet && search.facet === facet.key ? linkedInTargetingSearchChoices(search.entities, this.taken()[facet.key]) : [];
   });
   protected readonly searchFailure = computed<string | null>(() => this.search().failure);
   protected readonly searchEmptyMessage = computed<string>(() => {
