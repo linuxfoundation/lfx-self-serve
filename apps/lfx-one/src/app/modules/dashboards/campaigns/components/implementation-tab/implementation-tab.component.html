@@ -4187,18 +4187,23 @@
             {{ linkedInImageAssetBlockMessage() }}
           </div>
 
-          <!-- The ad format (#5764 row 19), offered on an explicit yes from `linkedInTextAdsAvailable()`, and kept on screen
-               while a Text Ads choice can no longer be sent, so the operator can switch back. -->
-          @if (linkedInTextAdsAvailable() || linkedInFormat() === 'text') {
+          <!-- The ad format (#5764 rows 18–19), offered on an explicit yes from `linkedInTextAdsAvailable()` or
+               `linkedInVideoAdsAvailable()`, and kept on screen while a choice can no longer be sent, so the operator can switch back. -->
+          @if (linkedInTextAdsAvailable() || linkedInVideoAdsAvailable() || linkedInFormat() !== 'single_image') {
             <lfx-ui-select
               label="Ad format"
               size="small"
               [value]="linkedInFormat()"
-              (valueChange)="onLinkedInFormatChange($event === 'text' ? 'text' : 'single_image')"
-              hint="Text ads are a headline and description on LinkedIn's desktop right rail. They need a manual bid."
+              (valueChange)="onLinkedInFormatSelect($event)"
+              [hint]="linkedInFormatHint()"
               data-testid="implementation-linkedin-format">
               <lfx-ui-option value="single_image" label="Single image ads" />
-              <lfx-ui-option value="text" label="Text ads" />
+              @if (linkedInVideoAdsAvailable() || linkedInFormat() === 'video') {
+                <lfx-ui-option value="video" label="Video ads" />
+              }
+              @if (linkedInTextAdsAvailable() || linkedInFormat() === 'text') {
+                <lfx-ui-option value="text" label="Text ads" />
+              }
             </lfx-ui-select>
           }
 
@@ -4252,13 +4257,16 @@
                       [error]="view.nameError"
                       hint="Shown in Campaign Manager and reporting. Each ad needs its own name."
                       [attr.data-testid]="'implementation-linkedin-variant-name-' + i" />
-                    <lfx-ui-textarea
-                      label="Description (optional)"
-                      [value]="view.description"
-                      (valueChange)="onLinkedInVariantTextChange(view.key, 'description', $event)"
-                      [error]="view.descriptionError"
-                      [hint]="view.descriptionLength + '/' + linkedInVariantFieldLimits.description + ' characters'"
-                      [attr.data-testid]="'implementation-linkedin-variant-description-' + i" />
+                    <!-- A video ad has no description (#5764 row 18): it belongs to an article, and campaign-service refuses one beside a video. -->
+                    @if (!linkedInVideoSelected()) {
+                      <lfx-ui-textarea
+                        label="Description (optional)"
+                        [value]="view.description"
+                        (valueChange)="onLinkedInVariantTextChange(view.key, 'description', $event)"
+                        [error]="view.descriptionError"
+                        [hint]="view.descriptionLength + '/' + linkedInVariantFieldLimits.description + ' characters'"
+                        [attr.data-testid]="'implementation-linkedin-variant-description-' + i" />
+                    }
                   }
                   @if (linkedInCallToActionAvailable()) {
                     <lfx-ui-select
@@ -4274,9 +4282,50 @@
                     </lfx-ui-select>
                   }
 
-                  <!-- The variant's own image. LinkedIn takes no image URL, so the upload is the whole control,
+                  <!-- The variant's own video (#5764 row 18), in place of its image while video ads are chosen. The view's
+                     upload fields then describe the video (`linkedInVariantViews` with `media: 'video'`). -->
+                  @if (linkedInVideoSelected()) {
+                    <div class="flex flex-col gap-1" [attr.data-testid]="'implementation-linkedin-variant-video-upload-' + i">
+                      <label class="text-xs font-medium text-gray-700" [attr.for]="'linkedin-variant-video-file-' + i">Video</label>
+                      <input
+                        [id]="'linkedin-variant-video-file-' + i"
+                        type="file"
+                        [attr.accept]="linkedInVideoAccept"
+                        (change)="onLinkedInVariantVideoFileChange(view.key, $event)"
+                        [disabled]="view.imagePickerDisabled"
+                        [attr.aria-describedby]="'linkedin-variant-video-hint-' + i + ' linkedin-variant-video-status-' + i"
+                        [attr.aria-invalid]="view.imageError ? 'true' : null"
+                        class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                        [attr.data-testid]="'implementation-linkedin-variant-video-file-' + i" />
+                      <p [id]="'linkedin-variant-video-hint-' + i" class="text-xs text-gray-500">
+                        MP4, from 75 KB up to 30 MB. Every ad in a video campaign needs its own video. {{ view.imagePickerNote }}
+                      </p>
+                      <p
+                        [id]="'linkedin-variant-video-status-' + i"
+                        class="text-xs text-gray-700"
+                        [attr.data-testid]="'implementation-linkedin-variant-video-status-' + i">
+                        {{ view.imageStatusMessage }}
+                      </p>
+                      @if (view.imageUploading || view.imageHeld) {
+                        <div>
+                          <lfx-button
+                            [label]="view.imageUploading ? 'Cancel upload' : 'Remove uploaded video'"
+                            size="small"
+                            severity="secondary"
+                            [text]="true"
+                            (onClick)="onLinkedInVariantVideoRemove(view.key)"
+                            [attr.data-testid]="'implementation-linkedin-variant-video-remove-' + i" />
+                        </div>
+                      }
+                      @if (view.imageError) {
+                        <p role="alert" class="text-xs text-red-600" [attr.data-testid]="'implementation-linkedin-variant-video-error-' + i">
+                          {{ view.imageError }}
+                        </p>
+                      }
+                    </div>
+                  } @else if (linkedInAssetUploadAvailable()) {
+                    <!-- The variant's own image. LinkedIn takes no image URL, so the upload is the whole control,
                      offered only on an explicit yes from `linkedInAssetUploadAvailable()`. -->
-                  @if (linkedInAssetUploadAvailable()) {
                     <div class="flex flex-col gap-1" [attr.data-testid]="'implementation-linkedin-variant-image-upload-' + i">
                       <label class="text-xs font-medium text-gray-700" [attr.for]="'linkedin-variant-image-file-' + i">Image</label>
                       <input

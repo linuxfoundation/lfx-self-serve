@@ -119,6 +119,27 @@ describe('linkedInVariantViews', () => {
     expect(linkedInVariantViews(input(over)).map((v) => v.imagePickerDisabled)).toEqual([disabled, disabled]);
   });
 
+  // Video ads (#5764 row 18): the same slot and notices, read from each variant's video.
+  it("describes each variant's video, not its image, while video ads are chosen", () => {
+    const withVideo = variant('a', { imageAssetId: 'img', imageAssetBriefId: 'b1', videoAssetId: 'vid', videoAssetName: 'promo.mp4', videoAssetBriefId: 'b1' });
+    const [a, b] = linkedInVariantViews(input({ media: 'video', variants: [withVideo, variant('b')], slot: slot({ variantKey: 'b', status: 'uploading' }) }));
+    expect(a).toMatchObject({ imageStatusMessage: 'Uploaded: promo.mp4', imageHeld: true, imagePickerNote: 'Finish or remove the video for variant 2 first.' });
+    expect(b).toMatchObject({ imageStatusMessage: 'Uploading video…', imageHeld: false });
+  });
+
+  it('holds Create for a video made for another brief, or one this deployment cannot send', () => {
+    const other = variant('a', { videoAssetId: 'vid', videoAssetBriefId: 'b0' });
+    expect(linkedInVariantViews(input({ media: 'video', variants: [other] }))[0].imageBlock).toMatchObject({
+      kind: 'otherBrief',
+      message: expect.stringContaining('The video for LinkedIn variant 1'),
+    });
+    const held = variant('a', { videoAssetId: 'vid', videoAssetBriefId: 'b1' });
+    expect(linkedInVariantViews(input({ media: 'video', uploadEnabled: false, variants: [held] }))[0].imageBlock).toMatchObject({
+      kind: 'unsupported',
+      message: expect.stringContaining('LinkedIn video ads are not available'),
+    });
+  });
+
   it("holds the other pickers while one variant's upload runs, and names it", () => {
     const [a, b] = linkedInVariantViews(input({ slot: slot({ variantKey: 'a', status: 'uploading' }) }));
     expect(a).toMatchObject({ imageUploading: true, imageStatusMessage: 'Uploading image…', imagePickerDisabled: false, imagePickerNote: '' });

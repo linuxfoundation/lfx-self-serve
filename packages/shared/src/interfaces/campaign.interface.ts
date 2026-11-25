@@ -11,6 +11,7 @@ import type {
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
   CREATIVE_ASSET_MIME_TYPES,
+  CREATIVE_ASSET_UPLOAD_MIME_TYPES,
   GOOGLE_ADS_AGE_RANGE_MAP,
   GOOGLE_ADS_AUDIENCE_READ_TYPES,
   GOOGLE_ADS_DEMAND_GEN_DEVICES,
@@ -147,6 +148,9 @@ export type RedditCallToAction = (typeof REDDIT_CALL_TO_ACTIONS)[number];
 /** An image type a creative-asset upload accepts — see `CREATIVE_ASSET_MIME_TYPES`. */
 export type CreativeAssetMimeType = (typeof CREATIVE_ASSET_MIME_TYPES)[number];
 
+/** A type the creative-asset upload route accepts: an image, or the MP4 video (#5764 row 18) — see `CREATIVE_ASSET_UPLOAD_MIME_TYPES`. */
+export type CreativeAssetUploadMimeType = (typeof CREATIVE_ASSET_UPLOAD_MIME_TYPES)[number];
+
 /** Where an image upload in the create form stands; a finished upload is its asset id being set. */
 export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
 /**
@@ -167,7 +171,8 @@ export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'google'
  */
 export interface CreativeAssetUploadResult {
   id: string;
-  mimeType: CreativeAssetMimeType;
+  /** The verified type: an image, or `video/mp4` for a LinkedIn video ad (#5764 row 18). */
+  mimeType: CreativeAssetUploadMimeType;
   byteSize: number;
   checksum: string;
   created: boolean;
@@ -1449,9 +1454,9 @@ export interface CampaignImplementationDraft {
   /**
    * The LinkedIn ad format chosen (#5764 row 19) and the Text Ads as edited. Restored only when present, so a draft
    * written before Text Ads keeps the single-image default. The format is restored whatever the flags; the Implement
-   * tab sends text only while `linkedInTextAdsEnabled` is on.
+   * tab sends text only while `linkedInTextAdsEnabled` is on, and video (#5764 row 18) only while `linkedInVideoAdsEnabled` is.
    */
-  linkedInFormat?: LinkedInAdFormat;
+  linkedInFormat?: LinkedInAdFormatChoice;
   linkedInTextAds?: LinkedInTextAdDraft[];
   /**
    * Whether custom targeting replaces the targeting profile (#5764 rows 8–11), and the clauses as edited. Restored only
@@ -2158,6 +2163,13 @@ export interface LinkedInVariantDraft {
   description?: string;
   /** One of `LINKEDIN_CALL_TO_ACTION_LABELS`, `''` or absent for none. */
   callToAction?: string;
+  /**
+   * The MP4 uploaded for this variant (#5764 row 18), its file name and the brief it was made for; `''` or absent for
+   * none. Sent, in place of any image and the description, only while video ads are chosen and offered.
+   */
+  videoAssetId?: string;
+  videoAssetName?: string;
+  videoAssetBriefId?: string;
 }
 
 /** One call to action the LinkedIn variant editor offers: campaign-service's label and how it reads. */
@@ -2433,6 +2445,10 @@ export interface LinkedInCreateRefusalInput {
   textAds?: LinkedInTextAdsRefusalInput;
   /** Text Ads are chosen but this deployment no longer offers them (#5764 row 19). */
   textAdsUnavailable?: boolean;
+  /** Video ads are chosen but this deployment no longer offers them (#5764 row 18). */
+  videoAdsUnavailable?: boolean;
+  /** Present only while video ads are chosen (#5764 row 18): an ad with no video for the open brief. */
+  videoMissing?: boolean;
   /**
    * Present only while custom targeting is on (#5764 rows 8–11): why its clauses cannot be sent, or `null`. Custom
    * targeting replaces the profile, so profile removals then hold nothing.
@@ -2631,6 +2647,13 @@ export interface LinkedInVariantFieldsEnabled {
 
 /** A LinkedIn ad format (#5764 row 19): one of `LINKEDIN_AD_FORMATS`. */
 export type LinkedInAdFormat = (typeof LINKEDIN_AD_FORMATS)[number];
+
+/**
+ * The LinkedIn ad format the Implement tab offers: a request format, or `video` (#5764 row 18). A video campaign is not
+ * a request `format`: it is the single-image request with a `videoAssetId` on every variant, which campaign-service
+ * creates as SINGLE_VIDEO.
+ */
+export type LinkedInAdFormatChoice = LinkedInAdFormat | 'video';
 
 export interface LinkedInCampaignCreateResult {
   platform: 'linkedin-ads';
@@ -3311,8 +3334,8 @@ export interface LinkedInDraftState {
   uploadPendingBriefId: string;
   uploadError: string;
   uploadFailedBriefId: string;
-  /** The ad format chosen and the Text Ads as edited (#5764 row 19). */
-  format: LinkedInAdFormat;
+  /** The ad format chosen (#5764 rows 18–19) and the Text Ads as edited. */
+  format: LinkedInAdFormatChoice;
   textAds: readonly LinkedInTextAdDraft[];
   /** Whether custom targeting is on, and its clauses as edited (#5764 rows 8–11). */
   customTargeting: boolean;
@@ -3332,7 +3355,7 @@ export interface LinkedInDraftRestore {
   uploadVariantKey: string;
   failedUpload?: { message: string; briefId: string };
   pendingUpload?: { name: string; briefId: string };
-  format?: LinkedInAdFormat;
+  format?: LinkedInAdFormatChoice;
   textAds?: LinkedInTextAdDraft[];
   customTargeting?: boolean;
   targetingDraft?: LinkedInTargetingDraft;
@@ -8838,6 +8861,11 @@ export interface LinkedInVariantViewsInput {
   capabilityRead: CampaignCapabilityReadState;
   /** The stored brief's event name, which campaign-service builds an unnamed ad's default name from (#5764 row 17). */
   eventName?: string;
+  /**
+   * `video` while video ads are chosen (#5764 row 18): each view's upload fields then describe the variant's video, and
+   * `uploadEnabled` is `linkedInVideoAdsEnabled`. Absent, they describe its image.
+   */
+  media?: 'image' | 'video';
 }
 
 /** `CampaignLinkedInImageAssetBlock`'s X sibling, for the authored tweet's image, with the same kinds. */

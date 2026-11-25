@@ -43,6 +43,7 @@ import type {
   CampaignToggleAction,
   CampaignToggleStatus,
   CreativeAssetMimeType,
+  CreativeAssetUploadMimeType,
   CreativeAssetQueueItemStatus,
   CreativeAssetQueueStatusView,
   GoogleCreativeEitherOrRule,
@@ -4242,6 +4243,59 @@ export const CREATIVE_ASSET_TOO_LARGE_MESSAGE = 'The image is larger than 10 MB.
 /** Shown, and answered by the BFF, when a file is not one of `CREATIVE_ASSET_MIME_TYPES`. */
 export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can be uploaded.';
 
+/**
+ * The video type a creative-asset upload accepts (#5764 row 18): campaign-service's `MimeTypeMP4`, checked structurally
+ * there (`validateMP4Upload`). Only a LinkedIn video ad consumes one here, so the BFF admits it only while
+ * `canSetLinkedInVideoAds()`. Kept apart from `CREATIVE_ASSET_MIME_TYPES`, which every image slot and the image library
+ * check against.
+ */
+export const CREATIVE_ASSET_VIDEO_MIME_TYPE = 'video/mp4';
+
+/** Every type the creative-asset upload route parses: the images and the MP4 video. */
+export const CREATIVE_ASSET_UPLOAD_MIME_TYPES = [...CREATIVE_ASSET_MIME_TYPES, CREATIVE_ASSET_VIDEO_MIME_TYPE] as const;
+
+/**
+ * The largest video this app uploads as a creative asset, in bytes (30 MiB): campaign-service's own decoded ceiling for
+ * any asset. Images keep `CREATIVE_ASSET_MAX_BYTES`, so a 30 MiB PNG is still refused. The BFF buffers the video and a
+ * base64 body a third larger, about 70 MiB at most for one upload, and only on the upload route.
+ */
+export const CREATIVE_ASSET_VIDEO_MAX_BYTES = 30 * 1024 * 1024;
+
+/** Shown, and answered by the BFF, when a video exceeds `CREATIVE_ASSET_VIDEO_MAX_BYTES`. */
+export const CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE = 'The video is larger than 30 MB. Choose a smaller MP4.';
+
+/** Shown, and answered by the BFF, when a video is not an MP4, or is one while this deployment takes no video. */
+export const CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE = 'Only MP4 videos can be uploaded.';
+
+/**
+ * The smallest video LinkedIn takes as a video ad, in bytes (75 KiB): campaign-service's `linkedin.MinVideoBytes`, which
+ * it checks only at dispatch, after the campaign exists. The Implement tab refuses a smaller one before uploading.
+ */
+export const LINKEDIN_VIDEO_MIN_BYTES = 75 * 1024;
+
+/** Shown when a LinkedIn video is under `LINKEDIN_VIDEO_MIN_BYTES`. */
+export const LINKEDIN_VIDEO_TOO_SMALL_MESSAGE = 'LinkedIn video ads need a video of at least 75 KB. Choose a longer or higher-quality MP4.';
+
+/**
+ * The ftyp major brands campaign-service accepts as MP4 (`mp4MajorBrands`, `internal/service/creative_asset_video.go`).
+ * QuickTime (`qt  `) and the HEIF/AVIF still-image brands also open with ftyp and are refused.
+ */
+export const CREATIVE_ASSET_MP4_MAJOR_BRANDS: readonly string[] = [
+  'isom',
+  'iso2',
+  'iso3',
+  'iso4',
+  'iso5',
+  'iso6',
+  'mp41',
+  'mp42',
+  'avc1',
+  'M4V ',
+  'mmp4',
+  'dash',
+  'MSNV',
+];
+
 /** A library upload's refusal when campaign-service answers 409: the brief's count or byte quota is spent. */
 export const CREATIVE_ASSET_QUOTA_MESSAGE = "This brief's image library is full. Delete an image it no longer needs, then try again.";
 
@@ -4413,6 +4467,28 @@ export function sniffCreativeAssetMimeType(bytes: unknown): CreativeAssetMimeTyp
   if (bytes.length >= png.length && png.every((b, i) => bytes[i] === b)) return 'image/png';
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
   return null;
+}
+
+/**
+ * The upload type the leading bytes actually are, or `null`: an image as `sniffCreativeAssetMimeType` reads it, or an
+ * MP4, which opens with an ftyp box whose major brand is one of `CREATIVE_ASSET_MP4_MAJOR_BRANDS`. Only the opening box
+ * is read; campaign-service walks the whole file and refuses a truncated one with a readable 400.
+ */
+export function sniffCreativeAssetUploadMimeType(bytes: unknown): CreativeAssetUploadMimeType | null {
+  const image = sniffCreativeAssetMimeType(bytes);
+  if (image !== null || !(bytes instanceof Uint8Array) || bytes.length < 12) return image;
+  const ascii = (from: number) => String.fromCharCode(...bytes.subarray(from, from + 4));
+  return ascii(4) === 'ftyp' && CREATIVE_ASSET_MP4_MAJOR_BRANDS.includes(ascii(8)) ? CREATIVE_ASSET_VIDEO_MIME_TYPE : null;
+}
+
+/** Whether a declared MIME type is one `CREATIVE_ASSET_UPLOAD_MIME_TYPES` admits: an image or the MP4 video. */
+export function isCreativeAssetUploadMimeType(value: unknown): value is CreativeAssetUploadMimeType {
+  return typeof value === 'string' && (CREATIVE_ASSET_UPLOAD_MIME_TYPES as readonly string[]).includes(value);
+}
+
+/** The largest upload of `type`, in bytes: `CREATIVE_ASSET_VIDEO_MAX_BYTES` for the video, `CREATIVE_ASSET_MAX_BYTES` otherwise. */
+export function creativeAssetUploadMaxBytes(type: CreativeAssetUploadMimeType): number {
+  return type === CREATIVE_ASSET_VIDEO_MIME_TYPE ? CREATIVE_ASSET_VIDEO_MAX_BYTES : CREATIVE_ASSET_MAX_BYTES;
 }
 
 /** Whether a declared MIME type is one `CREATIVE_ASSET_MIME_TYPES` admits. */

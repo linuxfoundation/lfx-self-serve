@@ -115,6 +115,7 @@ import type {
   CampaignToggleStatus,
   CreativeAssetLibrary,
   CreativeAssetMimeType,
+  CreativeAssetUploadMimeType,
   CreativeAssetPlan,
   CreativeAssetUploadResult,
   CreativeSlotAssignment,
@@ -2686,7 +2687,7 @@ export class CampaignServiceClient {
     req: Request,
     projectSlug: string,
     briefId: string,
-    contentType: CreativeAssetMimeType,
+    contentType: CreativeAssetUploadMimeType,
     image: Buffer
   ): Promise<CreativeAssetUploadResult> {
     const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/creative-assets`;
@@ -2717,7 +2718,8 @@ export class CampaignServiceClient {
       asset.id.length > 0 &&
       typeof asset.brief_id === 'string' &&
       asset.brief_id.toLowerCase() === briefId.toLowerCase() &&
-      isCreativeAssetMimeType(asset.mime_type) &&
+      // The type stored must be the type sent: an MP4 named as an image, or the reverse, would fail the create later.
+      asset.mime_type === contentType &&
       typeof asset.byte_size === 'number' &&
       typeof asset.checksum === 'string';
     if (!usable) {
@@ -2736,7 +2738,7 @@ export class CampaignServiceClient {
 
     return {
       id: asset.id,
-      mimeType: asset.mime_type as CreativeAssetMimeType,
+      mimeType: contentType,
       byteSize: asset.byte_size,
       checksum: asset.checksum,
       // The STATUS is authoritative upstream (201 stored, 200 already existed); `created` mirrors it.

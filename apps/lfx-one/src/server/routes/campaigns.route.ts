@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CREATIVE_ASSET_MAX_BYTES, CREATIVE_ASSET_MIME_TYPES, CREATIVE_ASSET_TOO_LARGE_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_MIME_TYPES,
+  CREATIVE_ASSET_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_VIDEO_MAX_BYTES,
+  CREATIVE_ASSET_VIDEO_MIME_TYPE,
+  CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE,
+} from '@lfx-one/shared/constants';
 import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { AudienceBuilderController } from '../controllers/audience-builder.controller';
@@ -28,8 +35,10 @@ import {
  */
 function handleCreativeAssetParseError(err: unknown, req: Request, _res: Response, next: NextFunction): void {
   if (err && typeof err === 'object' && (err as { type?: string }).type === 'entity.too.large') {
+    // Each type has its own parser and limit (see the route), so the message names the one that was exceeded.
+    const video = req.is(CREATIVE_ASSET_VIDEO_MIME_TYPE) === CREATIVE_ASSET_VIDEO_MIME_TYPE;
     next(
-      new MicroserviceError(CREATIVE_ASSET_TOO_LARGE_MESSAGE, 413, 'PAYLOAD_TOO_LARGE', {
+      new MicroserviceError(video ? CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE : CREATIVE_ASSET_TOO_LARGE_MESSAGE, 413, 'PAYLOAD_TOO_LARGE', {
         operation: 'campaign_upload_creative_asset',
         service: 'campaign_controller',
         path: req.path,
@@ -148,13 +157,16 @@ router.post('/brief/:briefId/approve', (req, res, next) => campaignController.ap
 // campaign-service arm, which reads only the project's own campaigns (#4837).
 router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
-// An image for the brief, stored by campaign-service and named by asset id in a platform's
-// creative config — `redditConfig.imageAssetId` (decision D3), and the Google creative fields. The
-// body is the raw PNG/JPEG bytes, buffered here (at most CREATIVE_ASSET_MAX_BYTES) so the upstream
-// JSON body can be sent with a declared Content-Length.
+// An image or video for the brief, stored by campaign-service and named by asset id in a platform's
+// creative config — `redditConfig.imageAssetId` (decision D3), the Google creative fields, and a
+// LinkedIn video ad's `videoAssetId` (#5764 row 18). The body is the raw bytes, buffered here so the
+// upstream JSON body can be sent with a declared Content-Length. One parser per kind, each with its
+// own limit: a PNG/JPEG at most CREATIVE_ASSET_MAX_BYTES, an MP4 at most CREATIVE_ASSET_VIDEO_MAX_BYTES.
+// Each parser skips a body of the other's type, and only this route gets the larger video limit.
 router.post(
   '/brief/creative-assets',
   express.raw({ type: [...CREATIVE_ASSET_MIME_TYPES], limit: CREATIVE_ASSET_MAX_BYTES }),
+  express.raw({ type: CREATIVE_ASSET_VIDEO_MIME_TYPE, limit: CREATIVE_ASSET_VIDEO_MAX_BYTES }),
   handleCreativeAssetParseError,
   (req: Request, res: Response, next: NextFunction) => campaignController.uploadCreativeAsset(req, res, next)
 );
