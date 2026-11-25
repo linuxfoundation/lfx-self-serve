@@ -203,4 +203,23 @@ describe('GET /api/campaigns/linkedin/targeting-entities', () => {
     expect((await fetch(`${baseUrl}/api/campaigns/linkedin/targeting-entities?project=tlf&facet=skills&q=kube`)).status).toBe(404);
     expect(svcSearch).not.toHaveBeenCalled();
   });
+
+  it('maps a LinkedIn throttle to the coded 503 and an unreadable body to a 502', async () => {
+    const { MicroserviceError } = await import('../errors');
+    svcSearch.mockRejectedValueOnce(new MicroserviceError('throttled', 503, 'SERVICE_UNAVAILABLE', {}));
+    svcSearch.mockResolvedValueOnce({ facet: 'skills' });
+    const search = (): Promise<Response> => fetch(`${baseUrl}/api/campaigns/linkedin/targeting-entities?project=tlf&facet=skills&q=kube`);
+
+    const throttled = await search();
+    expect(throttled.status).toBe(503);
+    expect(await throttled.json()).toMatchObject({ code: 'LINKEDIN_TARGETING_SEARCH_UNAVAILABLE' });
+    expect((await search()).status).toBe(502);
+  });
+
+  it('refuses a short query and a malformed account id with a 400, with no upstream call', async () => {
+    expect((await fetch(`${baseUrl}/api/campaigns/linkedin/targeting-entities?project=tlf&facet=skills&q=k`)).status).toBe(400);
+    expect((await fetch(`${baseUrl}/api/campaigns/linkedin/audiences?project=tlf&accountId=act_1`)).status).toBe(400);
+    expect(svcSearch).not.toHaveBeenCalled();
+    expect(svcList).not.toHaveBeenCalled();
+  });
 });
