@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Signal } from '@angular/core';
+import type { Signal, Type } from '@angular/core';
 import type { UiBadgeTone } from './uikit.interface';
 
 import type {
@@ -1482,4 +1482,14 @@ export interface AccountClaRow {
 export interface AccountClaRequestDialogData {
   agreement: MyClaAgreement;
   mode: ClaManagerRequestMode;
+}
+
+/**
+ * One step of the Account & Settings "Sign a CLA" dialog (#6077): the step component it shows, and the dialog config and ref
+ * the hub's signing flow gave that step. The config and ref types are the app's dialog types.
+ */
+export interface AccountSignDialogStep<C = unknown, R = unknown> {
+  component: Type<unknown>;
+  config: C;
+  ref: R;
 }

@@ -14,6 +14,9 @@ export const CLA_GROUP_SEARCH_DEBOUNCE_MS = 250;
  */
 export const CLA_GROUP_SEARCH_MIN_CHARS = 3;
 
+/** What a "Sign a CLA" step can put focus on: an enabled field or button. */
+export const ACCOUNT_SIGN_DIALOG_FOCUSABLE = 'input:not([disabled]):not([aria-disabled="true"]), button:not([disabled])';
+
 /** Stands in for a result the producer could name neither by project nor by CLA group (FR-008). */
 export const UNNAMED_CLA_GROUP = 'Unnamed CLA group';
 

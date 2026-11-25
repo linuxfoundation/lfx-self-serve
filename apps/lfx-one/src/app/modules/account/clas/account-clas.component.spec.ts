@@ -11,11 +11,14 @@ import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { Observable, of, throwError } from 'rxjs';
+import { NEVER, Observable, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AccountClasComponent } from './account-clas.component';
 import { AccountClaRequestDialogComponent } from './request-dialog/account-cla-request-dialog.component';
+import { AccountSignClaDialogComponent } from './sign-dialog/account-sign-cla-dialog.component';
+import { AccountSignDialogHostService } from './sign-dialog/account-sign-dialog-host.service';
+import { AccountClaGroupStepComponent } from './sign-dialog/steps/account-cla-group-step.component';
 
 const ICLA: MyClaAgreement = { id: 'icla', kind: 'ICLA', claGroupName: 'Project One', signedOn: '2022-01-01T18:40:42Z', status: 'valid', pdfAvailable: true };
 const CCLA: MyClaAgreement = {
@@ -31,7 +34,11 @@ const CCLA: MyClaAgreement = {
 };
 
 /** State-only page: no template, so these tests cost no render. Providers are not inherited, so the page's own is repeated. */
-@Component({ selector: 'lfx-test-account-clas', template: '', providers: [DialogService] })
+@Component({
+  selector: 'lfx-test-account-clas',
+  template: '',
+  providers: [AccountSignDialogHostService, { provide: DialogService, useExisting: AccountSignDialogHostService }],
+})
 class StateClasComponent extends AccountClasComponent {}
 
 describe('AccountClasComponent', () => {
@@ -45,7 +52,10 @@ describe('AccountClasComponent', () => {
       agreements === 'error'
         ? throwError(() => new Error('down'))
         : of({ agreements, identity: { matchedUserIds: agreements.length ? 1 : 0, unmatched: !agreements.length, githubLinked: true } });
-    const open = vi.fn<(content: unknown, config: unknown, overrides: ModalOverrides) => { closed: Observable<undefined> }>(() => ({ closed: of(undefined) }));
+    const open = vi.fn<(content: unknown, config: unknown, overrides: ModalOverrides) => { closed: Observable<undefined>; close: () => void }>(() => ({
+      closed: of(undefined),
+      close: vi.fn(),
+    }));
     TestBed.configureTestingModule({
       providers: [
         provideNoopAnimations(),
@@ -128,6 +138,27 @@ describe('AccountClasComponent', () => {
 
     expect(open).not.toHaveBeenCalled();
     expect(fixture.componentInstance['signDisabledReason']()).toBe('Sign CLA — unavailable while impersonating another user');
+  });
+
+  it('signs in the one "Sign a CLA" dialog, starting with the account search step', async () => {
+    const { open } = setup([ICLA]);
+    const dialog = { closed: NEVER, close: vi.fn() };
+    open.mockReturnValueOnce(dialog);
+    const fixture = TestBed.createComponent(StateClasComponent);
+    await fixture.whenStable();
+    fixture.componentInstance['openSignDialog']();
+
+    expect(open).toHaveBeenCalledWith(
+      AccountSignClaDialogComponent,
+      expect.objectContaining({ autoFocus: 'dialog' }),
+      expect.objectContaining({ closePredicate: expect.any(Function) })
+    );
+    const host = fixture.debugElement.injector.get(AccountSignDialogHostService);
+    expect(host.step()?.component).toBe(AccountClaGroupStepComponent);
+    expect(host.step()?.config.data).toEqual({ agreements: [ICLA] });
+
+    fixture.destroy();
+    expect(dialog.close).toHaveBeenCalled();
   });
 
   it('shows the agreements in a table, with the identities link below', async () => {

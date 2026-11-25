@@ -28,6 +28,7 @@ import { DialogService, DynamicDialogConfig, DynamicDialogRef } from 'primeng/dy
 
 import { ProfileClasComponent } from '../../profile/clas/profile-clas.component';
 import { AccountClaRequestDialogComponent } from './request-dialog/account-cla-request-dialog.component';
+import { AccountSignDialogHostService } from './sign-dialog/account-sign-dialog-host.service';
 
 /**
  * Account & Settings › CLAs (#6077, behind the profile redesign flag). It keeps the hub tab's loading, rows, downloads and signing
@@ -48,8 +49,9 @@ import { AccountClaRequestDialogComponent } from './request-dialog/account-cla-r
     UiTableComponent,
     UiTableCellDirective,
   ],
-  // The hub tab opens its signing steps with PrimeNG's DialogService. Toasts go to the app's own, as the account pages do.
-  providers: [DialogService],
+  // The hub's signing flow opens a PrimeNG dialog per step; here they all run in one "Sign a CLA" uikit dialog, so any other
+  // hub dialog must open through `this.modal`, as `openRequest` does. Toasts go to the app's own, as the account pages do.
+  providers: [AccountSignDialogHostService, { provide: DialogService, useExisting: AccountSignDialogHostService }],
   templateUrl: './account-clas.component.html',
 })
 export class AccountClasComponent extends ProfileClasComponent {
@@ -67,6 +69,12 @@ export class AccountClasComponent extends ProfileClasComponent {
   protected readonly accountRows: Signal<AccountClaRow[]> = this.initAccountRows();
   /** The table's rows: the agreement id it keys on, and the prepared row the cells show. */
   protected readonly tableRows: Signal<Record<string, unknown>[]> = computed(() => this.accountRows().map((row) => ({ id: row.row.id, cla: row })));
+
+  public constructor() {
+    super();
+    // While the flow looks up linked accounts between steps, the dialog stays open and says so.
+    inject(AccountSignDialogHostService).holdOpenWhile(this.starting);
+  }
 
   /** Opens the CCLA request dialog for a row: approval, removal, or a message to its managers. */
   protected openRequest(agreement: MyClaAgreement, mode: ClaManagerRequestMode): void {
