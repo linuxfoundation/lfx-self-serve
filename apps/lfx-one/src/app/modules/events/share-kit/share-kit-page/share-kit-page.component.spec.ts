@@ -269,6 +269,12 @@ describe('ShareKitPageComponent', () => {
       expect(text('share-kit-member-not-member')).toContain("Your company isn't a Example member yet.");
     });
 
+    it('withholds the code and explains when the membership check failed', async () => {
+      await setup(of({ ...kit, memberBenefit, memberOffer: { status: 'unavailable' as const } }));
+      expect(fixture.nativeElement.querySelector('[data-testid="share-kit-member-unavailable"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="share-kit-member-code"]')).toBeNull();
+    });
+
     it('shows no offer when the kit has no member benefit', async () => {
       await setup();
       expect(fixture.nativeElement.querySelector('[data-testid="share-kit-member-offer"]')).toBeNull();
