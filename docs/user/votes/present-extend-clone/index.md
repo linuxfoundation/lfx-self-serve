@@ -4,7 +4,7 @@ description: How to present a vote on screen, extend its deadline, send the resu
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, present, extend, clone, summary, qr-code, deadline]
-last_updated: 2026-11-03
+last_updated: 2026-11-24
 intercom_collection: Votes
 ---
 
@@ -37,13 +37,17 @@ After you confirm, the presenter switches to the final results within a few seco
 
 You can also close an open vote from the votes list: select **⋮ → Close vote** on its row. It asks the same question. After you confirm, the row shows as ended and a **Vote closed** message appears; if the vote can't be closed, LFX shows the reason and the row stays as it was.
 
+Closing keeps the vote and its results. To delete an open vote and all its responses instead, use [Cancel vote](../manage-votes/#cancel-an-active-vote).
+
 ### Leave the presenter
 
 While the vote is open, **Exit** (or **Esc**) asks **Leave the presenter? The vote stays open.** Select **Leave** to go to the vote's page, or **Stay** to keep presenting. Pressing **Esc** or clicking outside the question also keeps you on the presenter. The same goes for the questions from **Close vote** and **Send ballots now**: **Esc** only dismisses the question. If you dismiss the question, focus goes back to the button you used. After you close the vote, focus moves to **Exit**.
 
 ### After the vote ends
 
-The same page switches to the final results: the tally for each question, abstentions when the vote allowed them, turnout (how many cast a vote out of those eligible, and how many didn't), and when the vote closed.
+The same page switches to the final results: the tally for each question, abstentions when the vote allowed them, turnout (how many cast a vote out of those eligible, and how many didn't), and when the vote closed. For a ranked vote, each question shows its winner banner and standings above the rank breakdown, as described in [Ranked questions](../vote-results/#ranked-questions).
+
+For Condorcet IRV, the presenter and the vote's page use the same outcome interpretation. If the voting service returns every option without selecting a winner, both say no winner could be determined rather than marking every option **Tied**. A tie among only some options still names and marks those options **Tied**, including a service-selected option missing from the result tables. For instant-runoff fallback, both views order remaining non-winning options by final-round vote counts and use their head-to-head comparison when counts match. Configured option names are kept even if the service supplies different winner text.
 
 If results are still being finalized, the presenter keeps tallies, abstentions, and turnout hidden and checks again for a limited time. A failed check during that wait does not interrupt the finalizing message or stop the remaining checks. If results are still unavailable after the automatic checks stop, exit and reopen the presenter to try again.
 
@@ -103,7 +107,7 @@ If you try to send before the vote has closed, LFX says the vote hasn't closed y
 
 ## Delete a draft
 
-Drafts have no **⋮** menu. Select **Delete** on the draft's row and confirm. Deleting can't be undone. See [Manage Votes](../manage-votes/#edit-or-delete-a-draft).
+Drafts have no **⋮** menu. Select **Delete** on the draft's row and confirm. Deleting can't be undone. See [Manage Votes](../manage-votes/#edit-or-delete-a-draft). To delete a vote that is already open, use [Cancel vote](../manage-votes/#cancel-an-active-vote).
 
 ## Related
 

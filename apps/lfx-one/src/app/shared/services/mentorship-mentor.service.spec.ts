@@ -109,6 +109,14 @@ describe('MentorshipMentorService — read error mapping', () => {
     expect(result).toEqual({ hasProfile: false });
   });
 
+  it('passes a failed profile check through for the invite page, rather than reading it as no profile', () => {
+    let status = 0;
+    service.checkMentorProfile().subscribe({ error: (err: HttpErrorResponse) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/mentor/has-profile').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(status).toBe(503);
+  });
+
   describe('registerMentorProfile', () => {
     const request: MentorshipMentorRegisterRequest = {
       introduction: '<p>Test intro</p>',
@@ -289,6 +297,19 @@ describe('MentorshipMentorService — read error mapping', () => {
       expect(service.mentorRequestsRevision()).toBe(revision + 1);
     });
 
+    it('reads the invited program with the token in the body, and leaves the cache alone', () => {
+      const revision = service.mentorRequestsRevision();
+      let programName = '';
+      service.getMentorInvite('payload.sig').subscribe((invite) => (programName = invite.programName));
+
+      const req = http.expectOne('/api/mentorship/mentor/invites/details');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ token: 'payload.sig' });
+      req.flush({ programId: 'prog-1', programName: 'Open Source Mentorship' });
+      expect(programName).toBe('Open Source Mentorship');
+      expect(service.mentorRequestsRevision()).toBe(revision);
+    });
+
     it.each(['accept', 'decline'] as const)('answers an invitation by its encoded id with %s, and clears the cache', (decision) => {
       const revision = service.mentorRequestsRevision();
       service.respondToMentorInvitation('member/1', decision).subscribe();
@@ -331,6 +352,14 @@ describe('MentorshipMentorService — read error mapping', () => {
       expect(req.request.body).toEqual({ status });
       req.flush(null, { status: 204, statusText: 'No Content' });
       expect(completed).toBe(true);
+    });
+
+    it('sends the reason with a request for changes', () => {
+      service.reviewMenteeTask('tsk-1', 'incomplete', 'Add tests.').subscribe();
+
+      const req = http.expectOne('/api/mentorship/mentor/tasks/tsk-1/review');
+      expect(req.request.body).toEqual({ status: 'incomplete', reason: 'Add tests.' });
+      req.flush(null, { status: 204, statusText: 'No Content' });
     });
 
     it('propagates a failed review as the raw HttpErrorResponse', () => {

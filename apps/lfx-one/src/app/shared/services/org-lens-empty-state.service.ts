@@ -9,6 +9,7 @@ import { concat, distinctUntilChanged, map, of, switchMap, take } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
+import { OrgLensViewModeService } from './org-lens-view-mode.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
@@ -20,7 +21,7 @@ import { PersonaService } from './persona.service';
  * incomplete roll-up must not veto an organization that is present. So the order is
  *
  *   1. caller holds the selected organization (or is in a company-wide team, or reaches it only as its
- *      CLA Manager — M3)                                       → render the page (`null`)
+ *      CLA Manager — M3, or through the all employee view — #5845) → render the page (`null`)
  *   2. lookup failed outright (roster never loaded)             → `could-not-load`
  *   3. lookup partial (or the M3 CLA-manager lookup failed)
  *      AND caller holds nothing loaded                          → `could-not-load`
@@ -54,6 +55,7 @@ export class OrgLensEmptyStateService {
   private readonly persona = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claOnlyAccess = inject(OrgClaOnlyAccessService);
+  private readonly viewMode = inject(OrgLensViewModeService);
 
   /**
    * Generation of the list fetch the last `retry()` started, or `null` before any. `orgNavigation.loading`
@@ -69,7 +71,15 @@ export class OrgLensEmptyStateService {
    * the page must ask the server whether it is readable. `null` for everyone else.
    */
   private readonly contractorProbeUid: Signal<string | null> = computed(() => {
-    if (!this.roleGrants.loaded() || !this.roleGrants.isContractor() || this.selectedHeld() || this.selectedClaOnly()) {
+    if (
+      !this.roleGrants.loaded() ||
+      !this.roleGrants.isContractor() ||
+      this.selectedHeld() ||
+      this.selectedClaOnly() ||
+      this.viewMode.isEmployeeView() ||
+      this.viewMode.isFullAccessReader() ||
+      this.selectionAwaitsClaOnlyRows()
+    ) {
       return null;
     }
     const uid = this.accountContext.selectedAccount().uid;
@@ -101,8 +111,21 @@ export class OrgLensEmptyStateService {
     return uid !== null && !(probe?.uid === uid && probe.admitted !== undefined);
   });
 
-  /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, pages render a skeleton, never a state. */
-  public readonly settled: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending());
+  private readonly selectionAwaitsClaOnlyRows: Signal<boolean> = computed(() => {
+    if (!this.orgNavigation.selectionUndecided()) {
+      return false;
+    }
+    const uid = this.accountContext.selectedAccount().uid || this.orgNavigation.firstPagePinnedUid();
+    return !!uid && !isOrgRollUpSegment(uid) && !this.selectedHeld() && !this.selectedClaOnly();
+  });
+
+  /**
+   * Grants and persona have answered, an owed contractor read check has answered, and the selection is
+   * not waiting on a grant holder's CLA-only rows; before this, pages render a skeleton, never a state.
+   */
+  public readonly settled: Signal<boolean> = computed(
+    () => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending() && !this.selectionAwaitsClaOnlyRows()
+  );
 
   /**
    * The page can leave its skeleton: `settled`, and the caller's org list has loaded when they have one.
@@ -171,14 +194,22 @@ export class OrgLensEmptyStateService {
   private readonly selectedClaOnly: Signal<boolean> = computed(() => this.claOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid));
 
   /** FR-010 — the list is a lower bound but the page still renders: show the switcher notice, not a page state. */
-  public readonly listIncomplete: Signal<boolean> = computed(() => this.settled() && this.roleGrants.lookupOutcome() === 'partial' && this.selectedHeld());
+  public readonly listIncomplete: Signal<boolean> = computed(
+    () =>
+      this.settled() &&
+      (this.selectedHeld() || this.selectedClaOnly() || this.viewMode.isEmployeeView() || this.viewMode.isFullAccessReader()) &&
+      (this.roleGrants.lookupOutcome() === 'partial' ||
+        this.claOnlyAccess.lookupFailed() ||
+        (!this.roleGrants.isStaff() && this.orgNavigation.upstreamFailed()))
+  );
 
   /** The page-level state to render, or `null` when the page itself should render. */
   public readonly pageState: Signal<OrgLensEmptyStateName | null> = computed(() => {
     if (!this.settled()) {
       return null;
     }
-    if (this.selectedHeld() || this.selectedClaOnly()) {
+    // Epic #5845 — the all employee view opens the selected company read-only, so the page renders (redacted by the server).
+    if (this.selectedHeld() || this.selectedClaOnly() || this.viewMode.isEmployeeView() || this.viewMode.isFullAccessReader()) {
       return null;
     }
     const holdsAnything = this.accountContext.hasOrgSelectorAccess();

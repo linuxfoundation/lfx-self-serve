@@ -228,6 +228,9 @@ export class CommitteeViewComponent {
    * through navigation state; anything outside `COMMITTEE_BACK_PATHS` falls back to the Groups list.
    */
   protected readonly backPath: string = this.resolveBackPath(this.router.getCurrentNavigation()?.extras?.state?.['backPath']);
+  // The foundation or project a meetings list was scoped to, so Back restores it even after the group page switched to a sub-project.
+  private readonly backProject: string | null = this.resolveBackProject(this.router.getCurrentNavigation()?.extras?.state?.['backProject']);
+  private readonly backLens: 'foundation' | 'project' | null = this.resolveBackLens(this.router.getCurrentNavigation()?.extras?.state?.['backLens']);
 
   // Set when a server-side read is denied and the terminal decision is left to the client. Only
   // one read is ever in flight (switchMap), so a plain field is enough.
@@ -672,6 +675,8 @@ export class CommitteeViewComponent {
 
   public constructor() {
     this.initAutoSelectInitialTab();
+    // The group page survives tab switches; cancellation completion must not depend on the Votes tab's outputs.
+    this.voteService.voteCancellationCompleted$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.onVotesRefreshed());
 
     // Re-fetch votes while a just-opened vote still shows "Counting invitations…" (GH-4078) so its
     // real participation count appears without a manual reload; stops once the carrier window ends.
@@ -802,6 +807,12 @@ export class CommitteeViewComponent {
   public goBack(): void {
     if (this.fromMeLens) {
       this.lensService.setLens('me');
+    }
+    if (this.backProject && this.backLens) {
+      // Restore the lens first: the flat route redirects by the active lens, and the group page may have moved it.
+      this.lensService.setLens(this.backLens);
+      this.router.navigate([this.backPath], { queryParams: { project: this.backProject } });
+      return;
     }
     this.router.navigate([this.backPath]);
   }
@@ -1368,7 +1379,7 @@ export class CommitteeViewComponent {
     }
 
     const ref = this.dialogService.open(AcceptInviteOrganizationDialogComponent, {
-      header: 'Confirm Organization',
+      header: 'Confirm Company',
       width: '32rem',
       modal: true,
       closable: true,
@@ -2025,6 +2036,16 @@ export class CommitteeViewComponent {
     const username = this.userService.viewerUsername()?.toLowerCase();
     if (!email && !username) return false;
     return auditors?.some((u) => (email && u.email?.toLowerCase() === email) || (username && u.username?.toLowerCase() === username)) ?? false;
+  }
+
+  /** Accepts a `backProject` navigation-state value only when it looks like a project slug. */
+  private resolveBackProject(value: unknown): string | null {
+    return typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value) ? value : null;
+  }
+
+  /** Accepts a `backLens` navigation-state value only for the two lenses a scoped list can be on. */
+  private resolveBackLens(value: unknown): 'foundation' | 'project' | null {
+    return value === 'foundation' || value === 'project' ? value : null;
   }
 
   /** Accepts a `backPath` navigation-state value only when it is an allowed list route. */

@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
 import { LensService } from './lens.service';
+import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgLensNavigationService } from './org-lens-navigation.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
@@ -44,6 +45,7 @@ describe('OrgNavigationService default selection', () => {
   let pinSelection: ReturnType<typeof vi.fn>;
   // #2961 — set per test; an LF contractor's empty list is explained by the page, not the toast.
   const isContractor = signal(false);
+  const isStaff = signal(false);
   let clearAccount: ReturnType<typeof vi.fn>;
   let writerSet: WritableSignal<Set<string>>;
   let auditorSet: WritableSignal<Set<string>>;
@@ -51,6 +53,10 @@ describe('OrgNavigationService default selection', () => {
   let inheritedAuditorSet: WritableSignal<Set<string>>;
   let grantsLoaded: WritableSignal<boolean>;
   let grantsError: WritableSignal<string | null>;
+  let claManagerOrgSet: WritableSignal<Set<string>>;
+  let claManagerLookupFailed: WritableSignal<boolean>;
+  let noteEmployeeViewAddressed: ReturnType<typeof vi.fn>;
+  let noteFullAccessAddressed: ReturnType<typeof vi.fn>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let isOnAddressedPage: ReturnType<typeof vi.fn>;
   let isRollUp: ReturnType<typeof vi.fn>;
@@ -66,12 +72,17 @@ describe('OrgNavigationService default selection', () => {
     pinSelection = vi.fn();
     clearAccount = vi.fn(() => selectedAccount.set(placeholder));
     isContractor.set(false);
+    isStaff.set(false);
     writerSet = signal(new Set<string>());
     auditorSet = signal(new Set<string>());
     inheritedWriterSet = signal(new Set<string>());
     inheritedAuditorSet = signal(new Set<string>());
     grantsLoaded = signal(true);
     grantsError = signal<string | null>(null);
+    claManagerOrgSet = signal(new Set<string>());
+    claManagerLookupFailed = signal(false);
+    noteEmployeeViewAddressed = vi.fn();
+    noteFullAccessAddressed = vi.fn();
     navigateToSelectedOrg = vi.fn();
     isOnAddressedPage = vi.fn(() => false);
     isRollUp = vi.fn(() => false);
@@ -86,7 +97,7 @@ describe('OrgNavigationService default selection', () => {
         {
           provide: OrgRoleGrantsService,
           useValue: {
-            isStaff: signal(false),
+            isStaff,
             isContractor,
             degraded: signal(false),
             writerSet,
@@ -95,6 +106,15 @@ describe('OrgNavigationService default selection', () => {
             inheritedAuditorSet,
             loaded: grantsLoaded,
             error: grantsError,
+            claManagerOrgSet,
+            claManagerLookupFailed,
+            employeeViewLookupFailed: signal(false),
+            employeeViewOrgUid: signal<string | null>(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            fullAccessOrgUid: signal<string | null>(null),
+            fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
+            noteEmployeeViewAddressed,
+            noteFullAccessAddressed,
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnAddressedPage } },
@@ -149,13 +169,13 @@ describe('OrgNavigationService default selection', () => {
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
 
     // The first navigation is cancelled by a redirect that is already in flight: still not idle.
-    events.next(new NavigationCancel(1, '/org/roi', 'redirected'));
+    events.next(new NavigationCancel(1, '/company/roi', 'redirected'));
     await settle();
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
 
     // The router clears its current navigation only after emitting NavigationEnd (in the
     // transition's finalize) — the idle check must therefore run after the event, not during it.
-    events.next(new NavigationEnd(2, '/org/people', '/org/people'));
+    events.next(new NavigationEnd(2, '/company/people', '/company/people'));
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
     inFlight.mockReturnValue(null);
     await settle();
@@ -179,7 +199,7 @@ describe('OrgNavigationService default selection', () => {
 
     inFlight.mockReturnValue(null);
     // A skipped navigation is a settle event too.
-    events.next(new NavigationSkipped(3, '/org/people', 'same url'));
+    events.next(new NavigationSkipped(3, '/company/people', 'same url'));
     await settle();
 
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
@@ -466,7 +486,7 @@ describe('OrgNavigationService default selection', () => {
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
   });
 
-  // A restored selection on a legacy `/org/{page}` is the same uncopyable bar as a default's, so it is
+  // A restored selection on a legacy `/company/{page}` is the same uncopyable bar as a default's, so it is
   // written the same way — as a default, which is a no-op on an addressed page or the dead end.
   it('keeps a restored selection that is on the page and writes it into a legacy address as a default', () => {
     selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'beta' });
@@ -525,6 +545,82 @@ describe('OrgNavigationService default selection', () => {
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
   });
 
+  // M3: a restored CLA-only selection skips the path guard's resolver once its slug is known, so the
+  // listed row is what the CLA-only shell reads when the role-grants lookup disagrees with org-items.
+  describe('a restored CLA-only selection (#5557)', () => {
+    const claOnlyB = (): OrgItem => item(UID_B, 'Beta', { slug: null, claOnly: true });
+    const restoreB = (): void => selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B });
+
+    it('records the row as CLA-only when the role-grants lookup failed to list it', () => {
+      claManagerLookupFailed.set(true);
+      restoreB();
+
+      bootstrapWith([item(UID_A, 'Acme'), claOnlyB()]);
+
+      expect(TestBed.inject(OrgClaOnlyAccessService).isClaOnly(UID_B)).toBe(true);
+    });
+
+    it('clears an earlier CLA-only note when the listed row is not CLA-only', () => {
+      const access = TestBed.inject(OrgClaOnlyAccessService);
+      access.noteAddressed(UID_B, true);
+      restoreB();
+
+      bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
+
+      expect(access.isClaOnly(UID_B)).toBe(false);
+    });
+
+    it('lets a held grant win over the CLA-only row', () => {
+      writerSet.set(new Set([UID_B]));
+      restoreB();
+
+      bootstrapWith([item(UID_A, 'Acme'), claOnlyB()]);
+
+      expect(TestBed.inject(OrgClaOnlyAccessService).isClaOnly(UID_B)).toBe(false);
+    });
+
+    it('records a CLA-only row chosen as the default', () => {
+      claManagerLookupFailed.set(true);
+
+      bootstrapWith([claOnlyB()]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+      expect(TestBed.inject(OrgClaOnlyAccessService).isClaOnly(UID_B)).toBe(true);
+    });
+  });
+
+  // #5845 — a restored selection the held list does not list is restored from its own row when that row is an
+  // employee-view or full-access company, and the row's answers are recorded before the address is written.
+  describe('a restored all-employee-view or full-access selection (#5845)', () => {
+    const restoreFirstPage = (rows: OrgItem[]): void => {
+      service.resetAndReload(UID_B);
+      http.expectOne((req) => req.url === '/api/nav/org-items').flush(page(rows));
+      TestBed.tick();
+    };
+
+    it('restores a full-access row the caller holds no grant on, and records it before the address is written', () => {
+      restoreFirstPage([item(UID_A, 'Acme', { slug: null }), item(UID_B, 'Beta', { slug: null, fullAccess: true })]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+      expect(setAccount).not.toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+      expect(noteFullAccessAddressed).toHaveBeenCalledWith(UID_B, true);
+    });
+
+    it('restores an employee-view row the same way', () => {
+      restoreFirstPage([item(UID_A, 'Acme', { slug: null }), item(UID_B, 'Beta', { slug: null, employeeView: true })]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+      expect(noteEmployeeViewAddressed).toHaveBeenCalledWith(UID_B, true);
+      expect(noteFullAccessAddressed).toHaveBeenCalledWith(UID_B, false);
+    });
+
+    it('does not restore an ordinary unheld row from the pin', () => {
+      restoreFirstPage([item(UID_A, 'Acme', { slug: null }), item(UID_B, 'Beta', { slug: null })]);
+
+      expect(setAccount).not.toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+    });
+  });
+
   // A pre-spec-002 selection keyed by accountId rather than uid still finds its own row; that is a
   // default selection of the *same* organization, and takes the default path like any other.
   it('falls back to the row matching the restored accountId, still as a default', () => {
@@ -535,6 +631,272 @@ describe('OrgNavigationService default selection', () => {
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, slug: 'beta' }));
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+  });
+
+  // M3 (#5557): a grant holder's held page lands without waiting on the CLA Manager lookup; their
+  // CLA-only rows follow from one `cla_only=1` request per reload and are listed after the held rows.
+  describe('deferred CLA-only rows', () => {
+    const UID_C = '0014100000MgcCCCCC';
+    const isMainRequest = (req: { url: string; params: { has: (name: string) => boolean } }) => req.url === '/api/nav/org-items' && !req.params.has('cla_only');
+    const isClaOnlyRequest = (req: { url: string; params: { get: (name: string) => string | null } }) =>
+      req.url === '/api/nav/org-items' && req.params.get('cla_only') === '1';
+    const hinted = (items: OrgItem[], upstreamFailed = false): OrgItemsResponse => ({
+      items,
+      next_page_token: null,
+      upstream_failed: upstreamFailed,
+      cla_only_deferred: true,
+    });
+    const claOnlyRow = (uid: string, name: string): OrgItem => item(uid, name, { slug: null, claOnly: true });
+    const bootstrapHinted = (items: OrgItem[]): void => {
+      service.resetAndReload();
+      http.expectOne(isMainRequest).flush(hinted(items));
+    };
+    const flushClaOnly = (items: OrgItem[], upstreamFailed = false): void => {
+      http.expectOne(isClaOnlyRequest).flush({ items, next_page_token: null, upstream_failed: upstreamFailed, total: items.length });
+      TestBed.tick();
+    };
+
+    it('asks for the CLA-only rows once a hinted first page lands, and not otherwise', () => {
+      bootstrapWith([item(UID_A, 'Acme')]);
+      http.expectNone(isClaOnlyRequest);
+
+      bootstrapHinted([item(UID_A, 'Acme')]);
+      expect(service.claOnlyPending()).toBe(true);
+      flushClaOnly([]);
+      expect(service.claOnlyPending()).toBe(false);
+    });
+
+    it('serves every later search from the one request, filtered by the term the held page was fetched with', async () => {
+      vi.useFakeTimers();
+      try {
+        bootstrapHinted([item(UID_A, 'Acme')]);
+        flushClaOnly([claOnlyRow(UID_C, 'Gamma Labs'), claOnlyRow(UID_B, 'Beta Labs')]);
+        expect(service.items().map((row) => row.uid)).toEqual([UID_A, UID_B, UID_C]);
+
+        service.setSearchTerm('gam');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(1000);
+        // The CLA-only rows follow the term the displayed held page answered, not the live input.
+        expect(service.items().map((row) => row.uid)).toEqual([UID_A, UID_B, UID_C]);
+        http.expectOne(isMainRequest).flush(hinted([]));
+        TestBed.tick();
+
+        http.expectNone(isClaOnlyRequest);
+        expect(service.items().map((row) => row.uid)).toEqual([UID_C]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps the CLA-only rows filtered by a search whose request failed', async () => {
+      vi.useFakeTimers();
+      try {
+        bootstrapHinted([item(UID_A, 'Acme')]);
+        flushClaOnly([claOnlyRow(UID_C, 'Gamma Labs'), claOnlyRow(UID_B, 'Beta Labs')]);
+
+        service.setSearchTerm(' gam ');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(1000);
+        http.expectOne(isMainRequest).flush('down', { status: 502, statusText: 'Bad Gateway' });
+        TestBed.tick();
+
+        expect(service.items().map((row) => row.uid)).toEqual([UID_C]);
+        expect(service.upstreamFailed()).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('lists a held organization once, as held, when the CLA-only answer also names it', () => {
+      bootstrapHinted([item(UID_B, 'Beta'), item(UID_A, 'Acme')]);
+      flushClaOnly([claOnlyRow(UID_A, 'Acme'), claOnlyRow(UID_C, 'Gamma')]);
+
+      expect(service.items().map((row) => [row.uid, row.claOnly === true])).toEqual([
+        [UID_B, false],
+        [UID_A, false],
+        [UID_C, true],
+      ]);
+    });
+
+    it.each([
+      ['the CLA-only request fails', () => http.expectOne(isClaOnlyRequest).flush('down', { status: 502, statusText: 'Bad Gateway' })],
+      ['the CLA-only lookup reports a failure', () => flushClaOnly([], true)],
+    ])('reports the list incomplete when %s, keeping the held rows', (_label, fail) => {
+      bootstrapHinted([item(UID_A, 'Acme')]);
+      expect(service.upstreamFailed()).toBe(false);
+
+      fail();
+
+      expect(service.upstreamFailed()).toBe(true);
+      expect(service.items().map((row) => row.uid)).toEqual([UID_A]);
+    });
+
+    it('drops a CLA-only answer requested before a reload', () => {
+      bootstrapHinted([item(UID_A, 'Acme')]);
+      const stale = http.expectOne(isClaOnlyRequest);
+
+      service.resetAndReload();
+      stale.flush({ items: [claOnlyRow(UID_C, 'Gamma')], next_page_token: null, upstream_failed: true, total: 1 });
+
+      expect(service.items().map((row) => row.uid)).not.toContain(UID_C);
+      expect(service.upstreamFailed()).toBe(false);
+      http.expectOne(isMainRequest).flush(hinted([item(UID_A, 'Acme')]));
+      flushClaOnly([claOnlyRow(UID_B, 'Beta')]);
+      expect(service.items().map((row) => row.uid)).toEqual([UID_A, UID_B]);
+    });
+
+    it('waits for the CLA-only rows before deciding a restored selection the held page lacks, then keeps it', () => {
+      selectedAccount.set({ ...placeholder, uid: UID_C, accountId: UID_C });
+
+      bootstrapHinted([item(UID_A, 'Acme')]);
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+
+      flushClaOnly([claOnlyRow(UID_C, 'Gamma')]);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(setIndexedSlug).toHaveBeenCalledWith(null);
+      expect(TestBed.inject(OrgClaOnlyAccessService).isClaOnly(UID_C)).toBe(true);
+      expect(pinSelection).toHaveBeenCalledWith('default');
+      expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+    });
+
+    describe('a cookie-restored CLA-only company that is not yet the selected account (#5804)', () => {
+      beforeEach(() => {
+        writerSet.set(new Set([UID_A]));
+      });
+
+      it('waits for the CLA-only rows instead of defaulting to the first held organization, then keeps it', () => {
+        service.resetAndReload(UID_C);
+        const held = http.expectOne(isMainRequest);
+        expect(held.request.params.get('selected_uid')).toBe(UID_C);
+        held.flush(hinted([item(UID_A, 'Acme')]));
+        TestBed.tick();
+        const selectedBeforeClaOnlyRows = setAccount.mock.calls.map(([account]) => (account as Account).uid);
+        expect(service.firstPagePinnedUid()).toBe(UID_C);
+        expect(service.selectionUndecided()).toBe(true);
+
+        flushClaOnly([claOnlyRow(UID_C, 'Gamma')]);
+
+        expect(selectedBeforeClaOnlyRows).toEqual([]);
+        expect(setAccount).not.toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+        expect(selectedAccount().uid).toBe(UID_C);
+        expect(TestBed.inject(OrgClaOnlyAccessService).isClaOnly(UID_C)).toBe(true);
+        expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+      });
+
+      it('still defaults to the held organization when the cookie names a company the CLA-only rows do not list', () => {
+        service.resetAndReload(UID_C);
+        http.expectOne(isMainRequest).flush(hinted([item(UID_A, 'Acme')]));
+        flushClaOnly([claOnlyRow(UID_B, 'Beta')]);
+
+        expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+      });
+
+      it('leaves a pinned held organization to the authority-first default', () => {
+        auditorSet.set(new Set([UID_B]));
+
+        service.resetAndReload(UID_B);
+        http.expectOne(isMainRequest).flush(hinted([item(UID_B, 'Beta'), item(UID_A, 'Acme')]));
+        flushClaOnly([]);
+
+        expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+        expect(setAccount).not.toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+      });
+    });
+
+    it('defaults as today when the CLA-only request fails for a restored selection the held page lacks', () => {
+      selectedAccount.set({ ...placeholder, uid: UID_C, accountId: UID_C });
+
+      bootstrapHinted([item(UID_A, 'Acme')]);
+      http.expectOne(isClaOnlyRequest).flush('down', { status: 502, statusText: 'Bad Gateway' });
+      TestBed.tick();
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+    });
+
+    it('picks the default from the held page without waiting', () => {
+      bootstrapHinted([item(UID_A, 'Acme')]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+      flushClaOnly([]);
+    });
+
+    it('waits for the CLA-only rows before treating an empty held page as no access', () => {
+      const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+
+      bootstrapHinted([]);
+      expect(add).not.toHaveBeenCalled();
+      expect(clearAccount).not.toHaveBeenCalled();
+
+      flushClaOnly([claOnlyRow(UID_C, 'Gamma')]);
+
+      expect(add).not.toHaveBeenCalled();
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_C }));
+    });
+
+    describe("a grant holder's undecided selection (#5744)", () => {
+      beforeEach(() => {
+        writerSet.set(new Set([UID_A]));
+        selectedAccount.set({ ...placeholder, uid: UID_C, accountId: UID_C });
+      });
+
+      it('is undecided before any page is requested, and while the first page is in flight', () => {
+        expect(service.selectionUndecided()).toBe(true);
+
+        service.resetAndReload();
+        expect(service.selectionUndecided()).toBe(true);
+
+        http.expectOne(isMainRequest).flush(hinted([item(UID_A, 'Acme')]));
+        expect(service.selectionUndecided()).toBe(true);
+        flushClaOnly([]);
+      });
+
+      it('stays undecided after the CLA-only rows land, until the selection is recorded from them', () => {
+        bootstrapHinted([item(UID_A, 'Acme')]);
+        http.expectOne(isClaOnlyRequest).flush({ items: [claOnlyRow(UID_C, 'Gamma')], next_page_token: null, upstream_failed: false, total: 1 });
+
+        expect(service.claOnlyPending()).toBe(false);
+        expect(service.selectionUndecided()).toBe(true);
+
+        TestBed.tick();
+
+        expect(TestBed.inject(OrgClaOnlyAccessService).isClaOnly(UID_C)).toBe(true);
+        expect(service.selectionUndecided()).toBe(false);
+      });
+
+      it('is never undecided for staff or for a caller who holds no grant', () => {
+        isStaff.set(true);
+        expect(service.selectionUndecided()).toBe(false);
+
+        isStaff.set(false);
+        writerSet.set(new Set());
+        expect(service.selectionUndecided()).toBe(false);
+      });
+
+      it('treats a CLA-only request that never answers as failed: it decides the selection and reports the list incomplete', async () => {
+        vi.useFakeTimers();
+        try {
+          bootstrapHinted([item(UID_A, 'Acme')]);
+          const hung = http.expectOne(isClaOnlyRequest);
+
+          await vi.advanceTimersByTimeAsync(9_999);
+          expect(service.claOnlyPending()).toBe(true);
+          expect(service.selectionUndecided()).toBe(true);
+
+          await vi.advanceTimersByTimeAsync(1);
+          TestBed.tick();
+
+          expect(hung.cancelled).toBe(true);
+          expect(service.claOnlyPending()).toBe(false);
+          expect(service.upstreamFailed()).toBe(true);
+          expect(service.selectionUndecided()).toBe(false);
+          expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+    });
   });
 
   // Spec 053 Retry. The bootstrap's semantics on an empty or non-matching first page — clear the

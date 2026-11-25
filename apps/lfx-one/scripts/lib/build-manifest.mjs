@@ -36,7 +36,7 @@ const DOCS_TAXONOMY_ORDER = [
   'profile',
   'account',
   'permissions',
-  'organization',
+  'company',
   'roi',
   'crowdfunding',
   'social-listening',

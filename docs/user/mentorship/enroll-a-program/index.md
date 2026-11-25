@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, program-admin, enroll, program, logo, terms, prerequisites, review]
 last_generated: 2026-10-26
-last_updated: 2026-11-09
+last_updated: 2026-11-24
 intercom_collection: Mentorship
 ---
 
@@ -41,17 +41,19 @@ The rest of the step is in three sections:
 | **Code of Conduct**                               | **Code of Conduct URL** | No       | If you leave it empty, the listing defaults to the Contributor Covenant                                                                                             |
 | **Program Design**                                | **Program Logo**        | Yes      | JPG or PNG, 420 × 420 px, max 2 MB. Select **Browse** to pick the file                                                                                              |
 
+**Repository URL**, **Website URL** and **Code of Conduct URL** take a full web address. If you type one without `https://`, such as `github.com/org/repo`, it is added when you leave the field. You cannot continue while a link is not a valid web address.
+
 If your project has no CII Project ID yet, **Apply for CII** opens the CII Best Practices site.
 
 ## Step 2 — Program Setup
 
 Define the skills mentees need and the term schedule.
 
-| Field                                             | Notes                                                                  |
-| ------------------------------------------------- | ---------------------------------------------------------------------- |
-| **Required and/or desirable skills and training** | Include non-technical areas your program could benefit from            |
-| **Program Terms**                                 | Standard periods, or a custom term. A term name is up to 50 characters |
-| **Open terms**                                    | At most **4** open terms at once                                       |
+| Field                                             | Notes                                                       |
+| ------------------------------------------------- | ----------------------------------------------------------- |
+| **Required and/or desirable skills and training** | Include non-technical areas your program could benefit from |
+| **Program Terms**                                 | Name (up to 50 characters), months and application dates    |
+| **Open terms**                                    | At most **4** open terms at once                            |
 
 ## Step 3 — Prerequisites
 

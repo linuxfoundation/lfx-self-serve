@@ -54,7 +54,7 @@ export class EventsSummarySectionComponent {
       // Sourced from COMPANIES_COUNT_YTD on MARKETING_EVENT_OVERVIEW, which counts the
       // organizations attendees work for — not the ones that sponsored. That makes it an
       // attendance metric despite the name.
-      label: 'Total Organizations',
+      label: 'Total Companies',
       icon: 'fa-light fa-building',
       iconClass: 'bg-blue-100 text-blue-600',
       split: 'attendance',
@@ -130,7 +130,7 @@ export class EventsSummarySectionComponent {
   protected readonly subheading = computed(() => {
     switch (this.eventsSplit()) {
       case 'attendance':
-        return 'Registrations, attendees, and the organizations they represent';
+        return 'Registrations, attendees, and the companies they represent';
       case 'sponsorship':
         return 'Sponsorship revenue';
       default:

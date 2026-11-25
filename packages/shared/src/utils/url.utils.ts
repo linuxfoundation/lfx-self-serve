@@ -99,6 +99,11 @@ export function isRelativeInAppPath(value: string): boolean {
   return value.startsWith('/') && !value.startsWith('//');
 }
 
+/** True for a link click the browser should handle itself: not the main button, or with a modifier key for a new tab or window. */
+export function isModifiedClick(event: { button: number; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }): boolean {
+  return event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey;
+}
+
 /**
  * Trailing characters that are almost never part of an intended URL when found at the end
  * of a regex match — sentence punctuation and quotes (e.g. `Visit https://example.com.`
@@ -330,12 +335,12 @@ export function normalizeToUrl(input: string): string | null {
  * Strips both the query string and the fragment before matching, so a bare prefix
  * check does not misclassify sibling routes (`/profiles`, `/profile-old`), and a fragment
  * (e.g. `/profile/settings#developer-settings`) does not defeat the match.
+ * Bare `/profile` is not the hub: the hub always moves on to a tab, and with the profile redesign on it is the Profile page.
  * @param url - The router URL (may include `?query` and/or `#fragment`)
- * @returns true when the path is exactly `/profile` or under `/profile/`
+ * @returns true when the path is under `/profile/`
  */
 export function isProfileHubPath(url: string): boolean {
-  const path = url.split(/[?#]/)[0];
-  return path === '/profile' || path.startsWith('/profile/');
+  return url.split(/[?#]/)[0].startsWith('/profile/');
 }
 /**
  * Wildcard-DNS services that resolve a spelled-out address to that address.
@@ -1009,4 +1014,15 @@ export function isMentorshipMentorInvitePath(url: string): boolean {
   const path = url.split(/[?#]/)[0];
   const normalized = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
   return normalized === '/mentorship/mentor/invites';
+}
+
+/** Joins router-style segments (with or without slashes) into one app URL. */
+export function toAppUrl(segments: readonly string[], queryParams?: Record<string, string>): string {
+  const path = segments
+    .flatMap((segment) => segment.split('/'))
+    .filter(Boolean)
+    .map(encodeURIComponent)
+    .join('/');
+  const query = new URLSearchParams(queryParams).toString();
+  return `/${path}${query ? `?${query}` : ''}`;
 }

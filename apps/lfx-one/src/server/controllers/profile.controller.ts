@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ACCOUNT_BASE_PATH,
+  ACCOUNT_IDENTITIES_PATH,
+  ACCOUNT_LINUX_EMAIL_PATH,
+  ACCOUNT_PERSONAL_INFORMATION_PATH,
   ALLOWED_AVATAR_MIME_TYPES,
   AUTH0_LINKED_ONLY_IDENTITY_COMBOS,
   AUTH0_TO_CDP_PROVIDER_MAP,
@@ -48,6 +52,7 @@ import {
   IdentitiesPrimaryEmail,
   IdentityDisplayState,
   LinuxAliasData,
+  PasswordResetLinkResponse,
   ProfileAuthStatus,
   ProfilePictureUploadResponse,
   ProfileUpdateRequest,
@@ -135,6 +140,10 @@ export class ProfileController {
     // Not a profile page, but it embeds the same Add-identity dialog, so a mentor who links an
     // account mid-registration has to come back to the form instead of the Identities tab.
     '/mentorship/mentor',
+    // Account & Settings pages that start Flow C from their own address (the redesign flag, #6067).
+    ACCOUNT_IDENTITIES_PATH,
+    ACCOUNT_LINUX_EMAIL_PATH,
+    ACCOUNT_PERSONAL_INFORMATION_PATH,
   ]);
 
   private auth0Service: Auth0Service = new Auth0Service();
@@ -347,7 +356,7 @@ export class ProfileController {
           res.status(403).json({
             error: 'management_token_required',
             message: 'Profile authorization required',
-            authorize_url: '/api/profile/auth/start?returnTo=/profile',
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.accountPageReturnTo(req, ACCOUNT_PERSONAL_INFORMATION_PATH, ProfileController.profileDefaultReturnTo))}`,
           });
           return;
         }
@@ -474,7 +483,7 @@ export class ProfileController {
           res.status(403).json({
             error: 'management_token_required',
             message: 'Profile authorization required',
-            authorize_url: '/api/profile/auth/start?returnTo=/profile',
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.accountPageReturnTo(req, ACCOUNT_PERSONAL_INFORMATION_PATH, ProfileController.profileDefaultReturnTo))}`,
           });
           return;
         }
@@ -646,9 +655,9 @@ export class ProfileController {
         res.status(403).json({
           error: 'management_token_required',
           message: 'Profile authorization required to change the primary email',
-          // Static legacy path (not `referer`, which is the settings page itself and carries no
-          // fragment) — profile.routes.ts's redirectTo re-attaches #email-settings on return.
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(PROFILE_EMAILS_PATH)}`,
+          // From the settings page, a static legacy path (its `referer` carries no fragment): profile.routes.ts's
+          // redirectTo re-attaches #email-settings on return. From Personal information, that page.
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.accountPageReturnTo(req, ACCOUNT_PERSONAL_INFORMATION_PATH, PROFILE_EMAILS_PATH))}`,
         });
         return;
       }
@@ -962,6 +971,12 @@ export class ProfileController {
         // Re-authorization is only offered when Flow C is actually configured; otherwise there's no
         // authorizeUrl to send the client to and it falls back to the "try again later" copy.
         const canReauth = forwardAuthRequired && this.profileAuthService.isProfileAuthConfigured();
+        // A null forwardTo during impersonation is this handler's own choice (above), not a read
+        // failure or a genuinely unset forward — say so explicitly in the response rather than
+        // relying solely on the client's separately-sourced impersonation signal to tell the two
+        // apart. An admin inspecting this response directly (as happened in
+        // linuxfoundation/lfx-self-serve-ops#2006) has no other way to know why forwardTo is null.
+        const forwardUnavailableDuringImpersonation = isImpersonating(req);
 
         logger.success(req, 'get_linux_alias', startTime, { state: 'claimed' });
         res.json({
@@ -971,6 +986,7 @@ export class ProfileController {
           email,
           forwardTo: forward?.target_email ?? null,
           primaryEmail,
+          ...(forwardUnavailableDuringImpersonation ? { forwardUnavailableDuringImpersonation: true } : {}),
           ...(forwardAuthRequired
             ? {
                 forwardAuthRequired: true,
@@ -1266,9 +1282,16 @@ export class ProfileController {
         );
       }
 
+      // The link goes to the primary on file. Named only when the auth service confirms it, never from the session,
+      // which can predate a change of primary.
+      const userSub = getEffectiveSub(req);
+      const confirmed = userSub ? await this.emailVerificationService.getUserEmails(req, userSub) : null;
+
       logger.success(req, 'send_password_reset_email', startTime);
 
-      res.json({ message: 'A password reset link has been sent to the primary email on file.' });
+      const body: PasswordResetLinkResponse = { message: 'A password reset link has been sent to the primary email on file.' };
+      if (confirmed?.primary_email) body.email = confirmed.primary_email;
+      res.json(body);
     } catch (error) {
       next(error);
     }
@@ -1931,8 +1954,11 @@ export class ProfileController {
         return;
       }
 
-      // Only profile-layout returns consume support context; other allowed pages have no consumer.
-      const isProfileReturn = returnTo === ProfileController.profileDefaultReturnTo || returnTo.startsWith(`${ProfileController.profileDefaultReturnTo}/`);
+      // Only the Profile & Account hub and Account & Settings consume support context; other allowed pages have no consumer.
+      const isProfileReturn =
+        returnTo === ProfileController.profileDefaultReturnTo ||
+        returnTo.startsWith(`${ProfileController.profileDefaultReturnTo}/`) ||
+        returnTo.startsWith(`${ACCOUNT_BASE_PATH}/`);
       const supportHandle =
         emailStatus === EMAIL_CALLBACK_ALREADY_LINKED_STATUS && pending && isProfileReturn
           ? await linkedEmailSupportService.issue(currentUserSub, pending.email)
@@ -2272,9 +2298,9 @@ export class ProfileController {
             success: false,
             error: 'management_token_required',
             message: 'Profile authorization required',
-            // Static legacy path (not `referer`, which is the settings page itself and carries no
-            // fragment) — profile.routes.ts's redirectTo re-attaches #email-settings on return.
-            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(PROFILE_EMAILS_PATH)}`,
+            // From the settings page, a static legacy path (its `referer` carries no fragment): profile.routes.ts's
+            // redirectTo re-attaches #email-settings on return. From Account & Settings › Identities, that page.
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.accountPageReturnTo(req, ACCOUNT_IDENTITIES_PATH, PROFILE_EMAILS_PATH))}`,
           });
           return;
         }
@@ -3094,6 +3120,14 @@ export class ProfileController {
       default:
         return { status: 502, message: 'Failed to claim the alias. Please try again.' };
     }
+  }
+
+  /**
+   * Where a Flow C round trip returns: the given Account & Settings page when the change started there (#6072, #6074), otherwise
+   * the page that hosted the change before. Only that page is taken from the Referer, so the hub's destinations stay as they were.
+   */
+  private accountPageReturnTo(req: Request, page: string, fallback: string): string {
+    return this.normalizeReturnTo(req.headers['referer'], fallback) === page ? page : fallback;
   }
 
   private normalizeProfileReturnTo(raw: unknown): string {

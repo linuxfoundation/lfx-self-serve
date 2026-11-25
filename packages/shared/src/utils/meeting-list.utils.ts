@@ -3,6 +3,8 @@
 
 import {
   DEFAULT_MEETING_TYPE_CONFIG,
+  MEETING_GROUP_TYPE_OTHER,
+  MEETING_GROUP_TYPE_PATTERNS,
   MEETING_TYPE_CONFIGS,
   MEETING_VISIBILITY_INFO,
   MEETINGS_HOME_FILTER_CHIP_LABELS,
@@ -22,7 +24,10 @@ import type {
   MeetingHomeRowProject,
   MeetingHomeRowType,
   MeetingOccurrence,
+  MeetingPageCancelledLink,
   MeetingResponseFilter,
+  MeetingRollupFilterOptions,
+  MeetingRollupGroupOption,
   MeetingRsvp,
   MeetingsHomeFilters,
   MeetingVisibilityInfo,
@@ -39,6 +44,7 @@ import {
   getMeetingOrganizerDisplayName,
   getUpcomingMeetingStartTime,
   isMeetingInviteResponsesEnabled,
+  isMeetingOccurrenceCancelled,
   isMeetingOrganizedByViewer,
   MEETING_END_BUFFER_MS,
   normalizeUsername,
@@ -48,6 +54,7 @@ import {
 } from './meeting.utils';
 import { getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
 import { getRsvpTimestampMs, isSameOccurrenceId, selectApplicableRsvp } from './rsvp-calculator.util';
+import { toAppUrl } from './url.utils';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -94,6 +101,40 @@ export function expandMeetingOccurrences(meetings: readonly Meeting[], now: Date
   }
 
   return rows.sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
+}
+
+/** One date of an upcoming meeting as a home row, as the list builds it; null when it has no valid start or is cancelled. */
+export function toUpcomingMeetingHomeRow(meeting: Meeting, occurrence: MeetingOccurrence | null): MeetingHomeRow | null {
+  return buildUpcomingRow(meeting, occurrence, true);
+}
+
+/**
+ * The cancelled date or series a meeting link names: a `?occurrence=` start that is a cancelled date, or a series whose
+ * every listed date is cancelled. Null for a running date, no `?occurrence=`, or a one-time meeting.
+ * @param requestedStartMs The `?occurrence=` value (a start in ms), or null.
+ */
+export function getMeetingPageCancelledLink(meeting: Meeting, requestedStartMs: number | null): MeetingPageCancelledLink | null {
+  const occurrences = meeting.occurrences ?? [];
+  if (!meeting.recurrence || !occurrences.length) return null;
+  if (!getActiveOccurrences(occurrences, meeting.cancelled_occurrences).length) return { kind: 'series', cancelledStart: null };
+  const requested = requestedStartMs === null ? undefined : occurrences.find((occurrence) => Date.parse(occurrence.start_time) === requestedStartMs);
+  return requested && isMeetingOccurrenceCancelled(requested, meeting.cancelled_occurrences)
+    ? { kind: 'occurrence', cancelledStart: requested.start_time }
+    : null;
+}
+
+/** A series whose every date is cancelled as one home row, with its series fields; null without a valid start. */
+export function toCancelledSeriesHomeRow(meeting: Meeting): MeetingHomeRow | null {
+  if (!meeting.start_time || Number.isNaN(Date.parse(meeting.start_time))) return null;
+  return {
+    key: meeting.id,
+    meeting,
+    occurrence: null,
+    title: meeting.title,
+    occurrenceId: null,
+    startTime: meeting.start_time,
+    durationMinutes: meeting.duration,
+  };
 }
 
 /** A past meeting as a home row, or null when it has no valid start. */
@@ -162,7 +203,8 @@ export function groupMeetingsByDayBucket(
 
 /**
  * Applies search and filters to a tab's rows (AND).
- * @description Search is a case-insensitive substring over the title and committee names. Hide declined
+ * @description Search is a case-insensitive substring over the title and committee names. Group type reads each group's
+ * category from `groupCategories` (committee UID to category), else from its name. Hide declined
  * drops a series when every one of its rows in `rows` is declined, so pass the tab's unfiltered rows. It never hides a
  * meeting the viewer organizes ({@link isMeetingHomeOrganizer}) and is ignored while the RSVP filter is "Not going".
  */
@@ -170,7 +212,8 @@ export function filterMeetingsHome(
   rows: readonly MeetingHomeRow[],
   filters: MeetingsHomeFilters,
   search: string,
-  viewerUsername: string | null
+  viewerUsername: string | null,
+  groupCategories: ReadonlyMap<string, string> = new Map()
 ): MeetingHomeRow[] {
   const query = search.trim().toLowerCase();
   const declinedSeries = filters.hideDeclined && filters.rsvp !== 'declined' ? findDeclinedSeries(rows) : null;
@@ -179,6 +222,8 @@ export function filterMeetingsHome(
     const meeting = row.meeting;
     if (query && !matchesMeetingSearch(row, query)) return false;
     if (!matchesEntityFilters(meeting, filters)) return false;
+    if (filters.group && !(meeting.committees ?? []).some((committee) => committee.uid === filters.group)) return false;
+    if (filters.groupType && !getMeetingGroupTypes(meeting, groupCategories).includes(filters.groupType)) return false;
     if (filters.meetingType && meeting.meeting_type?.trim().toLowerCase() !== filters.meetingType.toLowerCase()) return false;
     if (!matchesRsvpFilter(row, filters.rsvp)) return false;
     if (filters.organizedByMe && !isMeetingHomeOrganizer(meeting, viewerUsername)) return false;
@@ -198,24 +243,52 @@ export function isMeetingHomeOrganizer(meeting: Meeting, viewerUsername: string 
 
 /** Number of applied filters, for the Filters button badge. Search does not count. */
 export function countAppliedMeetingFilters(filters: MeetingsHomeFilters): number {
-  return [filters.foundation, filters.project, filters.meetingType, filters.rsvp !== 'all', filters.organizedByMe, filters.hideDeclined].filter(Boolean).length;
+  return [
+    filters.foundation,
+    filters.project,
+    filters.group,
+    filters.groupType,
+    filters.meetingType,
+    filters.rsvp !== 'all',
+    filters.organizedByMe,
+    filters.hideDeclined,
+  ].filter(Boolean).length;
 }
 
 /**
- * One chip per applied filter, in popover order, keyed like "Project:"; foundation and project chips take the name from `rows`, else the UID.
- * The Foundation/Project chip reads "Foundation:" when its pick is a foundation.
+ * One chip per applied filter, in popover order, keyed like "Project:"; foundation, project and group chips take the name from
+ * `scopeOptions`, then `rows`, else the UID. The Foundation/Project chip reads "Foundation:" when its pick is a foundation, except in a
+ * project or foundation lens (`projectScope`).
  */
-export function buildMeetingFilterChips(filters: MeetingsHomeFilters, rows: readonly MeetingHomeRow[]): MeetingFilterChip[] {
+export function buildMeetingFilterChips(
+  filters: MeetingsHomeFilters,
+  rows: readonly MeetingHomeRow[],
+  projectScope = false,
+  scopeOptions?: Pick<MeetingRollupFilterOptions, 'projects' | 'groups'>
+): MeetingFilterChip[] {
   const chips: MeetingFilterChip[] = [];
   const meetingOf = (uid: string) => rows.find((row) => row.meeting.project_uid === uid)?.meeting;
-  const nameOf = (uid: string): string => meetingOf(uid)?.project_name || uid;
+  const nameOf = (uid: string): string => scopeOptions?.projects.find((project) => project.uid === uid)?.name || meetingOf(uid)?.project_name || uid;
+  const groupNameOf = (uid: string): string =>
+    scopeOptions?.groups.find((group) => group.uid === uid)?.name ||
+    rows
+      .flatMap((row) => row.meeting.committees ?? [])
+      .find((committee) => committee.uid === uid && committee.name?.trim())
+      ?.name?.trim() ||
+    uid;
 
   if (filters.foundation) {
     chips.push({ key: 'foundation', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS.foundation}:`, label: nameOf(filters.foundation) });
   }
   if (filters.project) {
-    const kind = meetingOf(filters.project)?.is_foundation ? 'foundation' : 'project';
+    const kind = !projectScope && meetingOf(filters.project)?.is_foundation ? 'foundation' : 'project';
     chips.push({ key: 'project', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS[kind]}:`, label: nameOf(filters.project) });
+  }
+  if (filters.group) {
+    chips.push({ key: 'group', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS.group}:`, label: groupNameOf(filters.group) });
+  }
+  if (filters.groupType) {
+    chips.push({ key: 'groupType', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS.groupType}:`, label: filters.groupType });
   }
   if (filters.meetingType) {
     chips.push({ key: 'meetingType', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS.meetingType}:`, label: filters.meetingType });
@@ -399,6 +472,24 @@ export function getMeetingGroupNames(meeting: Pick<Meeting, 'committees'>): stri
   return [...new Set(names)];
 }
 
+/** A group's type: its category when it has one, else read from its name by {@link MEETING_GROUP_TYPE_PATTERNS}. */
+export function getMeetingGroupType(name: string, category?: string | null): string {
+  const set = category?.trim();
+  if (set) return set;
+  return MEETING_GROUP_TYPE_PATTERNS.find(({ pattern }) => pattern.test(name))?.type ?? MEETING_GROUP_TYPE_OTHER;
+}
+
+/** Category of each group that has one, by committee UID. */
+export function getMeetingGroupCategories(groups: readonly Pick<MeetingRollupGroupOption, 'uid' | 'category'>[]): Map<string, string> {
+  return new Map(groups.flatMap((group) => (group.category?.trim() ? [[group.uid, group.category.trim()] as const] : [])));
+}
+
+/** Types of the groups a meeting belongs to, without repeats; categories come from `groupCategories` by committee UID. */
+export function getMeetingGroupTypes(meeting: Pick<Meeting, 'committees'>, groupCategories: ReadonlyMap<string, string>): string[] {
+  const types = (meeting.committees ?? []).map((committee) => getMeetingGroupType(committee.name ?? '', groupCategories.get(committee.uid)));
+  return [...new Set(types)];
+}
+
 /** "Organized by" avatars: owner or creator first ("You" for the viewer), then the other `organizers` by username. */
 export function getMeetingHomeRowOrganizers(
   meeting: Pick<Meeting, 'created_by' | 'owner' | 'organizers'>,
@@ -510,15 +601,4 @@ function getWeekdayIndex(start: string, timeZone: string | null | undefined): nu
   } catch {
     return date.getDay();
   }
-}
-
-/** Joins router-style segments (with or without slashes) into one app URL. */
-function toAppUrl(segments: readonly string[], queryParams?: Record<string, string>): string {
-  const path = segments
-    .flatMap((segment) => segment.split('/'))
-    .filter(Boolean)
-    .map(encodeURIComponent)
-    .join('/');
-  const query = new URLSearchParams(queryParams).toString();
-  return `/${path}${query ? `?${query}` : ''}`;
 }

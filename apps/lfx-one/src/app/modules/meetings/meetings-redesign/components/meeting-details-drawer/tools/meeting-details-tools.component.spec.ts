@@ -11,6 +11,7 @@ import { canViewMeetingGuests, hasMeetingFullAccess } from '@lfx-one/shared/util
 import { MeetingType } from '@lfx-one/shared/enums';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
+import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { NEVER, of, Subject, throwError } from 'rxjs';
@@ -52,6 +53,7 @@ describe('MeetingDetailsToolsComponent', () => {
   let fixture: ComponentFixture<MeetingDetailsToolsComponent>;
   let meeting: WritableSignal<Meeting>;
   let state: WritableSignal<MeetingDetailsState>;
+  let signedIn: WritableSignal<boolean>;
   let pastMeetingId: WritableSignal<string | null>;
   let tab: WritableSignal<string>;
   let canViewGuests: WritableSignal<boolean>;
@@ -95,6 +97,7 @@ describe('MeetingDetailsToolsComponent', () => {
   beforeEach(() => {
     meeting = signal(MEETING);
     state = signal<MeetingDetailsState>('far');
+    signedIn = signal(true);
     pastMeetingId = signal<string | null>(null);
     canViewGuests = signal(true);
     tab = signal('agenda');
@@ -138,12 +141,16 @@ describe('MeetingDetailsToolsComponent', () => {
       state,
       organizer: computed(() => meeting().organizer === true),
       fullAccess: computed(() => hasMeetingFullAccess(meeting(), { organizer: meeting().organizer === true, member: !!meeting().invited })),
+      signedIn,
+      signIn: vi.fn(),
+      signedInAccess: computed(() => signedIn() && hasMeetingFullAccess(meeting(), { organizer: meeting().organizer === true, member: !!meeting().invited })),
       pastMeetingId,
       tab,
       canViewGuests,
       participantsVersion,
       refreshParticipants,
       removedRegistrantUids: removedUids,
+      savedRsvps: confirmed,
     };
 
     TestBed.configureTestingModule({
@@ -154,6 +161,7 @@ describe('MeetingDetailsToolsComponent', () => {
         {
           provide: UserService,
           useValue: {
+            authenticated: signal(true),
             viewerUsername: signal('synthetic-viewer'),
             user: signal({ email: 'viewer@acme.example' }),
             confirmedMeetingRsvps: () => confirmed(),
@@ -165,6 +173,7 @@ describe('MeetingDetailsToolsComponent', () => {
         { provide: MeetingDetailsSource, useValue: { applySummaryChange, hostRef: { closed, close: closeDialog } } },
         { provide: MeetingsHomeDialogsService, useValue: { openSummary, openTranscript, openRecording, copyRecordingLink } },
         { provide: UiModalService, useValue: { open: modalOpen } },
+        { provide: UiDrawerContext, useValue: {} },
       ],
     });
   });
@@ -304,11 +313,13 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
     });
 
-    it('hides the counts on a restricted meeting, where sharing is locked off', async () => {
+    // #5438: an invite-only meeting can opt in from the composer, so its guests see the counts.
+    it('shows the counts on a restricted meeting that shares its guests', async () => {
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([registrant('reg-a', 'accepted')]));
       await renderGuest({ show_meeting_attendees: true, restricted: true });
 
-      expect(find('meeting-details-rsvp')).toBeNull();
-      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
+      expect(meetingService['getMyMeetingRegistrants']).toHaveBeenCalled();
+      expect(find('meeting-details-rsvp')).not.toBeNull();
     });
 
     it('hides the counts once the date has ended', async () => {
@@ -475,6 +486,22 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(find('meeting-details-tools-card')).toBeNull();
       expect(text('meeting-details-private')).toContain('This is a private meeting');
       expect(meetingService['getPastMeetingSummary']).not.toHaveBeenCalled();
+    });
+
+    it('asks a signed-out visitor to sign in instead of loading tools', async () => {
+      signedIn.set(false);
+      await render({}, 'ended');
+
+      expect(find('meeting-details-tools-card')).toBeNull();
+      expect(text('meeting-details-sign-in-past')).toContain('Sign in to view meeting details');
+      expect(meetingService['getPastMeetingSummary']).not.toHaveBeenCalled();
+    });
+
+    it('leaves the private notice to the agenda on a page', async () => {
+      TestBed.overrideProvider(UiDrawerContext, { useValue: null });
+      await render({ invited: false }, 'ended');
+
+      expect(find('meeting-details-private')).toBeNull();
     });
   });
 });

@@ -21,11 +21,14 @@
   <lfx-committee-settings
     [form]="form"
     [showHeader]="false"
+    [category]="settingsCategory()"
     [showSlackWebhook]="slackWebhookEnabled()"
     [slackWebhookInputVisible]="slackWebhookInputVisible()"
     [slackWebhookConfigured]="slackWebhookConfigured()"
     [slackWebhookRemovalStaged]="slackWebhookRemovalStaged()"
     [impersonating]="impersonating()"
+    [showSsoGroupName]="true"
+    [ssoGroupName]="committee().sso_group_name"
     (startEditingSlackWebhookUrl)="editingSlackWebhookUrl.set(true)"
     (removeSlackWebhookStaged)="slackWebhookRemovalStaged.set(true)"
     (cancelEditingSlackWebhookUrl)="editingSlackWebhookUrl.set(false); slackWebhookRemovalStaged.set(false)">
@@ -236,7 +239,8 @@
               [siblingCandidates]="associatedMailingLists()"
               [lockedBySibling]="refreshingMl() || (drawerSavingCount() > 0 && !savingMlUids().has(ml.uid))"
               (updated)="onSyncSettingsUpdated($event)"
-              (savingChange)="onSyncSettingsSavingChange(ml.uid, $event)" />
+              (savingChange)="onSyncSettingsSavingChange(ml.uid, $event)"
+              (syncApplied)="onSyncApplied($event)" />
           } @else {
             <span class="text-xs text-gray-500">You don't have permission to manage this list's sync settings.</span>
           }

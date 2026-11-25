@@ -8,22 +8,26 @@ import { Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { RecurrenceType } from '@lfx-one/shared/enums';
 import {
+  BatchRegistrantOperationResponse,
   Meeting,
   MeetingDetailsState,
   MeetingHomeRow,
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingRegistrant,
+  MeetingRegistrantWithState,
   MeetingRsvp,
+  MeetingSelfGuest,
   PastMeetingParticipant,
 } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { NEVER, of, Subject, throwError } from 'rxjs';
+import { BehaviorSubject, NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
@@ -100,7 +104,11 @@ describe('MeetingDetailsGuestsComponent', () => {
   let dialogClosed: Subject<void>;
   let confirmedRsvps: WritableSignal<MeetingRsvp[]>;
   let toastShow: ReturnType<typeof vi.fn>;
-  let refreshList: ReturnType<typeof vi.fn>;
+  let refreshList: ReturnType<typeof vi.fn<() => void>>;
+  let markSelfInvited: ReturnType<typeof vi.fn>;
+  let selfGuest$: BehaviorSubject<MeetingSelfGuest | null>;
+  let hostSelfInvite: WritableSignal<readonly string[] | undefined>;
+  let hostRows: WritableSignal<MeetingHomeRow[]>;
 
   const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   const all = (testId: string): HTMLElement[] => Array.from(fixture.nativeElement.querySelectorAll(`[data-testid="${testId}"]`));
@@ -123,10 +131,15 @@ describe('MeetingDetailsGuestsComponent', () => {
     participantsVersion = signal(0);
     removedUids = signal(new Set<string>());
     removedIds = signal(new Set<string>());
+    selfGuest$ = new BehaviorSubject<MeetingSelfGuest | null>(null);
+    hostSelfInvite = signal(undefined);
+    hostRows = signal([]);
     meetingService = {
       getMeetingDetail: vi.fn(() => of(current())),
       getMyMeetingRegistrants: vi.fn(() => of(registrants)),
       clearRemovalIfReinvited: vi.fn(),
+      clearRemovedRegistration: vi.fn(() => removedIds.set(new Set())),
+      stripMetadata: vi.fn((id: string, guest: MeetingRegistrantWithState) => MeetingService.prototype.stripMetadata.call({}, id, guest)),
       getPastMeetingParticipants: vi.fn(() =>
         of([
           { uid: 'p-1', first_name: 'Ada', last_name: 'Lane', email: 'ada@acme.example', host: false, is_attended: false, is_invited: true },
@@ -141,6 +154,7 @@ describe('MeetingDetailsGuestsComponent', () => {
     confirmedRsvps = signal([]);
     toastShow = vi.fn();
     refreshList = vi.fn();
+    markSelfInvited = vi.fn();
 
     TestBed.configureTestingModule({
       imports: [MeetingDetailsGuestsComponent],
@@ -159,10 +173,15 @@ describe('MeetingDetailsGuestsComponent', () => {
             hosts,
             guestCount,
             removedRegistrantUids: removedUids,
+            savedRsvps: confirmedRsvps,
             listedSelfRegistrantUids,
             pastMeetingId: signal('synthetic-past-id'),
             participantsVersion,
             refreshList,
+            refreshParticipants: vi.fn(() => {
+              participantsVersion.update((version) => version + 1);
+              refreshList();
+            }),
           },
         },
         { provide: MeetingService, useValue: meetingService },
@@ -170,10 +189,12 @@ describe('MeetingDetailsGuestsComponent', () => {
         {
           provide: UserService,
           useValue: {
+            authenticated: signal(true),
             viewerUsername: signal('viewer'),
             user: signal({ email: 'bo@acme.example' }),
             refreshUserMeetings: vi.fn(),
             confirmedMeetingRsvps: () => confirmedRsvps(),
+            getMeetingSelfGuest: vi.fn(() => selfGuest$),
           },
         },
         MeetingsHomeEditService,
@@ -182,7 +203,10 @@ describe('MeetingDetailsGuestsComponent', () => {
         { provide: UiToastService, useValue: { show: toastShow } },
         { provide: Router, useValue: { navigate: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
-        { provide: MeetingDetailsSource, useValue: { hostRef: { close: closeDialog, closed: dialogClosed } } },
+        {
+          provide: MeetingDetailsSource,
+          useValue: { hostRef: { close: closeDialog, closed: dialogClosed }, markSelfInvited, selfInviteOf: () => hostSelfInvite(), upcomingRows: hostRows },
+        },
       ],
     });
   });
@@ -652,8 +676,60 @@ describe('MeetingDetailsGuestsComponent', () => {
       expect(meetingService['deleteMeetingRegistrants']).not.toHaveBeenCalled();
     });
 
+    it('reports the reason a rejected host change gives', async () => {
+      meetingService['getChangedFields'] = vi.fn(() => ({}));
+      meetingService['updateMeetingRegistrants'] = vi.fn(() =>
+        throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'Hosts must have a Zoom account.' } }))
+      );
+      await render();
+      component()['toggleHost'](cy);
+
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', description: 'Hosts must have a Zoom account.' }));
+    });
+
+    it('reports the reason a rejected removal gives', async () => {
+      meetingService['deleteMeetingRegistrants'] = vi.fn(() =>
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 400,
+              error: {
+                successes: [],
+                failures: [{ input: 'r-3', error: { message: 'Committee members cannot be removed.' } }],
+                summary: { total: 1, successful: 0, failed: 1 },
+              },
+            })
+        )
+      );
+      await render();
+      confirmWith(true);
+      component()['confirmRemove'](cy);
+      await fixture.whenStable();
+
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', description: 'Committee members cannot be removed.' }));
+    });
+
+    it('keeps the fallback when every removal failed on an upstream server error', async () => {
+      const failure = { message: 'upstream exploded', details: { statusCode: 503 } };
+      meetingService['deleteMeetingRegistrants'] = vi.fn(() =>
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 400,
+              error: { successes: [], failures: [{ input: 'r-3', error: failure }], summary: { total: 1, successful: 0, failed: 1 } },
+            })
+        )
+      );
+      await render();
+      confirmWith(true);
+      component()['confirmRemove'](cy);
+      await fixture.whenStable();
+
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', description: 'Failed to remove guest. Please try again.' }));
+    });
+
     it('keeps the row when the removal fails', async () => {
-      meetingService['deleteMeetingRegistrants'] = vi.fn(() => throwError(() => new Error('boom')));
+      meetingService['deleteMeetingRegistrants'] = vi.fn(() => throwError(() => new HttpErrorResponse({ status: 503 })));
       await render();
       confirmWith(true);
       component()['confirmRemove'](cy);
@@ -661,6 +737,429 @@ describe('MeetingDetailsGuestsComponent', () => {
 
       expect(all('meeting-details-guests-row')).toHaveLength(3);
       expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', description: 'Failed to remove guest. Please try again.' }));
+    });
+  });
+
+  describe('add myself (#5798)', () => {
+    const SELF: MeetingSelfGuest = {
+      email: 'pat.doe@acme-motors.example',
+      first_name: 'Pat',
+      last_name: 'Doe',
+      job_title: 'Engineer',
+      org_name: 'Acme Motors',
+      username: 'viewer',
+      avatar_url: 'https://avatars.example/pat.png',
+      matchEmails: ['pat.doe@acme-motors.example', 'pat@vendor-corp.example'],
+    };
+    const added: MeetingRegistrant = {
+      ...registrants[2],
+      uid: 'self-1',
+      email: SELF.email,
+      first_name: SELF.first_name,
+      last_name: SELF.last_name,
+      username: SELF.username,
+      avatar_url: SELF.avatar_url,
+      occurrence_id: null,
+    };
+    const success: BatchRegistrantOperationResponse<MeetingRegistrant> = {
+      summary: { successful: 1, failed: 0, total: 1 },
+      successes: [added],
+      failures: [],
+    };
+    const clickSelf = () => query('meeting-details-guests-add-self')?.querySelector('button')?.click();
+    const recurring = () => {
+      current.set(meeting({ recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 }, occurrences: [OCCURRENCE] } as Partial<Meeting>));
+      occurrence.set(OCCURRENCE);
+    };
+
+    beforeEach(() => {
+      selfGuest$.next(SELF);
+      TestBed.inject(UserService).user.update((user) => (user ? { ...user, email: 'pat@vendor-corp.example' } : null));
+      meetingService['addMeetingRegistrants'] = vi.fn(() => of(success));
+    });
+
+    it.each([false, true])('offers the action with an empty list: %s', async (empty) => {
+      if (empty) meetingService['getMyMeetingRegistrants'].mockReturnValue(of([]));
+      await render();
+      expect(query('meeting-details-guests-add-self')?.textContent).toContain('Add myself');
+      clickSelf();
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+      expect(names()).toContain('Pat Doe (You)');
+      expect(guestCount()).toBe(empty ? 1 : 4);
+      expect(listedSelfRegistrantUids()).toContain('self-1');
+    });
+
+    it('sends the preferred email and profile details as a direct, non-host guest, and restores focus', async () => {
+      await render();
+      clickSelf();
+      await fixture.whenStable();
+      expect(meetingService['addMeetingRegistrants']).toHaveBeenCalledWith('synthetic-meeting', [
+        {
+          meeting_id: 'synthetic-meeting',
+          email: SELF.email,
+          first_name: 'Pat',
+          last_name: 'Doe',
+          host: false,
+          job_title: 'Engineer',
+          org_name: 'Acme Motors',
+          username: 'viewer',
+          avatar_url: SELF.avatar_url,
+        },
+      ]);
+      expect(modalOpen).not.toHaveBeenCalled();
+      expect(refreshList).toHaveBeenCalled();
+      expect(markSelfInvited).toHaveBeenCalledWith('synthetic-meeting', ['self-1']);
+      expect(document.activeElement).toBe(query('meeting-details-guests-add')?.querySelector('button'));
+    });
+
+    it.each([' Pat@Vendor-Corp.example ', 'PAT.DOE@ACME-MOTORS.EXAMPLE'])('hides for a listed alias, even behind a filter: %s', async (email) => {
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([{ ...registrants[1], email }]));
+      await render();
+      component()['setDraft']('role', 'host');
+      component()['apply'](vi.fn());
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+    });
+
+    it('hides when the user is listed under another address with their LFID, as the "You" row shows', async () => {
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([{ ...registrants[1], email: 'work@acme-motors.example', username: 'Viewer' }]));
+      await render();
+      expect(names()).toContain(`${registrants[1].first_name} ${registrants[1].last_name} (You)`);
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+    });
+
+    it.each(['invitee', 'ended', 'hidden', 'loading', 'error', 'missing name', 'missing identity'])('does not offer or submit for %s', async (condition) => {
+      if (condition === 'invitee') organizer.set(false);
+      if (condition === 'ended') state.set('ended');
+      if (condition === 'hidden') canViewGuests.set(false);
+      if (condition === 'loading') meetingService['getMyMeetingRegistrants'].mockReturnValue(NEVER);
+      if (condition === 'error') meetingService['getMyMeetingRegistrants'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      if (condition === 'missing name') selfGuest$.next({ ...SELF, last_name: '' });
+      if (condition === 'missing identity') selfGuest$.next(null);
+      await render();
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+      component()['addSelf']();
+      expect(meetingService['addMeetingRegistrants']).not.toHaveBeenCalled();
+      if (condition === 'invitee' || condition === 'ended') expect(TestBed.inject(UserService).getMeetingSelfGuest).not.toHaveBeenCalled();
+    });
+
+    it('prevents a second submit while the first is pending', async () => {
+      const response = new Subject<BatchRegistrantOperationResponse<MeetingRegistrant>>();
+      meetingService['addMeetingRegistrants'].mockReturnValue(response);
+      await render();
+      clickSelf();
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')?.querySelector('button')?.disabled).toBe(true);
+      component()['addSelf']();
+      expect(meetingService['addMeetingRegistrants']).toHaveBeenCalledTimes(1);
+      response.next(success);
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+    });
+
+    it('hides and blocks self-add while another entry point owns the shared pending guard', async () => {
+      await render();
+      const invite = TestBed.inject(MeetingSelfInviteService);
+      const response = new Subject<void>();
+      invite.withPendingInvite$('synthetic-meeting', () => response).subscribe();
+      await fixture.whenStable();
+
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+      component()['addSelf']();
+      expect(meetingService['addMeetingRegistrants']).not.toHaveBeenCalled();
+
+      response.complete();
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).not.toBeNull();
+    });
+
+    it.each([[], ['self-1']])('honors a confirmed host self-invite while this drawer roster is stale: %j', async (...uids) => {
+      await render();
+      expect(query('meeting-details-guests-add-self')).not.toBeNull();
+      expect(TestBed.inject(MeetingSelfInviteService).isPending('synthetic-meeting')).toBe(false);
+      hostSelfInvite.set(uids);
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+      component()['addSelf']();
+      expect(meetingService['addMeetingRegistrants']).not.toHaveBeenCalled();
+
+      // Feed confirmation can precede a fresh drawer roster; it still must not allow a duplicate.
+      hostRows.set([row({ ...current(), invited: true, my_registrant_ids: ['self-1'] })]);
+      hostSelfInvite.set(undefined);
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+
+      removedIds.set(new Set(['synthetic-meeting']));
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).not.toBeNull();
+    });
+
+    it.each(['success', 'failure'])('keeps a confirmed write alive after destruction and skips late %s view updates', async (outcome) => {
+      const response = new Subject<BatchRegistrantOperationResponse<MeetingRegistrant>>();
+      meetingService['addMeetingRegistrants'].mockReturnValue(response);
+      await render();
+      clickSelf();
+      const refreshParticipants = TestBed.inject(MeetingDetailsContext).refreshParticipants;
+      vi.mocked(refreshParticipants).mockClear();
+      toastShow.mockClear();
+      fixture.destroy();
+
+      expect(response.observed).toBe(true);
+      const invite = TestBed.inject(MeetingSelfInviteService);
+      expect(invite.isPending('synthetic-meeting')).toBe(true);
+      const competingWrite = vi.fn(() => of(success));
+      invite.withPendingInvite$('synthetic-meeting', competingWrite).subscribe();
+      invite.add$('synthetic-meeting').subscribe();
+      expect(competingWrite).not.toHaveBeenCalled();
+      expect(meetingService['addMeetingRegistrants']).toHaveBeenCalledTimes(1);
+      if (outcome === 'success') {
+        response.next(success);
+        expect(meetingService['clearRemovedRegistration']).toHaveBeenCalledWith('synthetic-meeting');
+        expect(markSelfInvited).toHaveBeenCalledWith('synthetic-meeting', ['self-1']);
+      } else {
+        response.error(new HttpErrorResponse({ status: 503 }));
+      }
+      expect(response.observed).toBe(false);
+      expect(invite.isPending('synthetic-meeting')).toBe(false);
+      expect(refreshParticipants).not.toHaveBeenCalled();
+      expect(toastShow).not.toHaveBeenCalled();
+    });
+
+    it('does not update a replacement meeting when a self-add finishes late', async () => {
+      const response = new Subject<BatchRegistrantOperationResponse<MeetingRegistrant>>();
+      meetingService['addMeetingRegistrants'].mockReturnValue(response);
+      await render();
+      clickSelf();
+      current.set(meeting({ id: 'replacement-meeting' }));
+      await fixture.whenStable();
+      const refreshParticipants = TestBed.inject(MeetingDetailsContext).refreshParticipants;
+      vi.mocked(refreshParticipants).mockClear();
+      toastShow.mockClear();
+      response.next(success);
+      await fixture.whenStable();
+
+      expect(meetingService['clearRemovedRegistration']).toHaveBeenCalledWith('synthetic-meeting');
+      expect(refreshParticipants).not.toHaveBeenCalled();
+      expect(toastShow).not.toHaveBeenCalled();
+      expect(query('meeting-details-guests-add-self')).not.toBeNull();
+    });
+
+    it.each(['network', 'batch'])('keeps the button and supports retry after a %s failure', async (failure) => {
+      const failed = { ...success, summary: { successful: 0, failed: 1, total: 1 }, successes: [] };
+      const response = failure === 'network' ? throwError(() => new HttpErrorResponse({ status: 503 })) : of(failed);
+      meetingService['addMeetingRegistrants'].mockReturnValueOnce(response);
+      await render();
+      clickSelf();
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).not.toBeNull();
+      expect(guestCount()).toBe(3);
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
+      expect(markSelfInvited).not.toHaveBeenCalled();
+      clickSelf();
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+    });
+
+    it('does not invite when the recurring scope choice is cancelled', async () => {
+      recurring();
+      modalOpen.mockReturnValueOnce({ closed: of(undefined), close: vi.fn() });
+      await render();
+      clickSelf();
+      expect(modalOpen).toHaveBeenCalled();
+      expect(meetingService['addMeetingRegistrants']).not.toHaveBeenCalled();
+      expect(closeDialog).not.toHaveBeenCalled();
+    });
+
+    it('invites to the whole recurring series when chosen', async () => {
+      recurring();
+      modalOpen.mockReturnValueOnce({ closed: of('all'), close: vi.fn() });
+      await render();
+      clickSelf();
+      expect(meetingService['addMeetingRegistrants']).toHaveBeenCalledWith('synthetic-meeting', [
+        expect.not.objectContaining({ occurrence_id: expect.anything() }),
+      ]);
+    });
+
+    it('invites only the selected occurrence with a seconds-based id', async () => {
+      recurring();
+      occurrence.set({ ...OCCURRENCE, occurrence_id: '2525245200000' });
+      modalOpen.mockReturnValueOnce({ closed: of('occurrence'), close: vi.fn() });
+      meetingService['addMeetingRegistrants'].mockReturnValue(of({ ...success, successes: [{ ...added, occurrence_id: OCCURRENCE.occurrence_id }] }));
+      await render();
+      clickSelf();
+      expect(meetingService['addMeetingRegistrants']).toHaveBeenCalledWith('synthetic-meeting', [expect.objectContaining({ occurrence_id: '2525245200' })]);
+      await fixture.whenStable();
+      occurrence.set({ ...OCCURRENCE, occurrence_id: '2525850000', start_time: '2050-01-15T09:00:00.000Z' });
+      await fixture.whenStable();
+      // Like the composer, eligibility is meeting-wide, even when the invitation targets just one date.
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+      expect(names()).toContain('Pat Doe (You)');
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([...registrants, { ...added, occurrence_id: OCCURRENCE.occurrence_id }]));
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+      expect(guestCount()).toBe(4);
+    });
+
+    it('renders the real scope dialog and confirms the radio choice through its buttons', async () => {
+      recurring();
+      const modal = TestBed.runInInjectionContext(() => new UiModalService());
+      modalOpen.mockImplementationOnce((template) => modal.open(template));
+      await render();
+      clickSelf();
+      await fixture.whenStable();
+      const dialog = document.querySelector<HTMLElement>('[data-testid="meeting-details-guests-self-scope"]');
+      expect(dialog).not.toBeNull();
+      expect(dialog?.querySelector('[role="combobox"]')?.textContent).toContain('2050');
+      dialog?.querySelector<HTMLInputElement>('[data-testid="meeting-details-guests-self-scope-all"] input')?.click();
+      await fixture.whenStable();
+      dialog?.querySelector<HTMLButtonElement>('[data-testid="meeting-details-guests-self-scope-confirm"] button')?.click();
+      await fixture.whenStable();
+      expect(meetingService['addMeetingRegistrants']).toHaveBeenCalledWith('synthetic-meeting', [
+        expect.not.objectContaining({ occurrence_id: expect.anything() }),
+      ]);
+      expect(document.querySelector('[data-testid="meeting-details-guests-self-scope"]')).toBeNull();
+    });
+
+    it('rechecks permission when the scope dialog closes', async () => {
+      recurring();
+      const closed = new Subject<string>();
+      modalOpen.mockReturnValueOnce({ closed, close: vi.fn() });
+      await render();
+      clickSelf();
+      component()['addSelf']();
+      expect(modalOpen).toHaveBeenCalledTimes(1);
+      organizer.set(false);
+      closed.next('all');
+      expect(meetingService['addMeetingRegistrants']).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['self-1', null],
+      ['self-1', OCCURRENCE.occurrence_id],
+      ['', null],
+      ['', OCCURRENCE.occurrence_id],
+    ] as const)('retires an acknowledged self-add after external deletion, returned UID: %s, scope: %s', async (uid, occurrenceId) => {
+      recurring();
+      modalOpen.mockReturnValueOnce({ closed: of(occurrenceId ? 'occurrence' : 'all'), close: vi.fn() });
+      meetingService['addMeetingRegistrants'].mockReturnValue(of({ ...success, successes: [{ ...added, uid, occurrence_id: occurrenceId }] }));
+      await render();
+      clickSelf();
+      await fixture.whenStable();
+      expect(guestCount()).toBe(4);
+
+      // An otherwise successful but still stale roster must preserve the unacknowledged addition.
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(guestCount()).toBe(4);
+
+      const indexed = {
+        ...added,
+        email: ` ${SELF.email.toUpperCase()} `,
+        occurrence_id: null,
+        occurrence: occurrenceId ? String(Number(occurrenceId) * 1000) : '',
+      };
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([...registrants, indexed]));
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(guestCount()).toBe(4);
+      expect(listedSelfRegistrantUids()).toEqual(['self-1']);
+
+      // A deletion elsewhere sets no local tombstone. The next complete roster is authoritative.
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of(registrants));
+      occurrence.set({ ...OCCURRENCE, occurrence_id: '2525850000', start_time: '2050-01-15T09:00:00.000Z' });
+      await fixture.whenStable();
+      expect(guestCount()).toBe(3);
+      expect(names()).not.toContain('Pat Doe (You)');
+      expect(listedSelfRegistrantUids()).toEqual([]);
+      expect(query('meeting-details-guests-add-self')).not.toBeNull();
+    });
+
+    it.each([null, '2525850000'])('keeps a UID-less hint when the indexed invite targets another scope: %s', async (otherScope) => {
+      recurring();
+      modalOpen.mockReturnValueOnce({ closed: of('occurrence'), close: vi.fn() });
+      meetingService['addMeetingRegistrants'].mockReturnValue(of({ ...success, successes: [] }));
+      await render();
+      clickSelf();
+      await fixture.whenStable();
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([...registrants, { ...added, occurrence_id: null, occurrence: otherScope }]));
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(guestCount()).toBe(5);
+
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of(registrants));
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(guestCount()).toBe(4);
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+    });
+
+    it('keeps an unacknowledged self-add through a failed roster reload', async () => {
+      await render();
+      clickSelf();
+      await fixture.whenStable();
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of(registrants));
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(guestCount()).toBe(4);
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+    });
+
+    it.each([false, true])('does not resurrect a removed self-add after re-inviting, indexed before removal: %s', async (indexed) => {
+      await render();
+      clickSelf();
+      await fixture.whenStable();
+      expect(guestCount()).toBe(4);
+      if (indexed) {
+        meetingService['getMyMeetingRegistrants'].mockReturnValue(of([...registrants, added]));
+        participantsVersion.update((version) => version + 1);
+        await fixture.whenStable();
+        expect(guestCount()).toBe(4);
+      }
+      // Actual Remove Myself sets the meeting-level marker, not the context's per-row marker.
+      removedIds.set(new Set(['synthetic-meeting']));
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).not.toBeNull();
+      expect(guestCount()).toBe(3);
+      const reinvited = { ...added, uid: 'self-2' };
+      meetingService['addMeetingRegistrants'].mockReturnValue(of({ ...success, successes: [reinvited] }));
+      clickSelf();
+      await fixture.whenStable();
+      expect(guestCount()).toBe(4);
+      expect(names().filter((name) => name === 'Pat Doe (You)')).toHaveLength(1);
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([...registrants, reinvited]));
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(guestCount()).toBe(4);
+      expect(listedSelfRegistrantUids()).toEqual(['self-2']);
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+    });
+
+    it('does not send row writes with an invented UID when a successful batch omits details', async () => {
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([]));
+      meetingService['addMeetingRegistrants'].mockReturnValue(of({ ...success, successes: [] }));
+      await render();
+      clickSelf();
+      await fixture.whenStable();
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+      expect(query('meeting-details-guests-actions')).toBeNull();
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([added]));
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(guestCount()).toBe(1);
+      expect(query('meeting-details-guests-actions')).not.toBeNull();
+      removedIds.set(new Set(['synthetic-meeting']));
+      await fixture.whenStable();
+      clickSelf();
+      await fixture.whenStable();
+      // The old indexed UID cannot hide the replacement while its response also lacks a UID.
+      expect(guestCount()).toBe(1);
+      expect(names()).toEqual(['Pat Doe (You)']);
+      expect(query('meeting-details-guests-add-self')).toBeNull();
     });
   });
 });

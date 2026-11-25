@@ -27,632 +27,655 @@
   <div class="flex flex-col lg:flex-row lg:gap-8">
     <!-- LEFT: Table of Contents (outer stretches to row height, inner sticks); hidden below lg — a
          3-item jump list has little value on a phone where the sections are a short scroll apart -->
-    <div class="hidden lg:block w-auto shrink-0 pr-10">
-      <div class="sticky top-24 flex flex-col gap-3">
-        <p class="text-xs font-medium text-gray-400 uppercase tracking-wide">On this page</p>
+    @if (!section) {
+      <div class="hidden lg:block w-auto shrink-0 pr-10">
+        <div class="sticky top-24 flex flex-col gap-3">
+          <p class="text-xs font-medium text-gray-400 uppercase tracking-wide">On this page</p>
 
-        <div class="flex flex-col gap-1">
-          <button
-            type="button"
-            (click)="selectSection('email-settings')"
-            class="text-left px-2 py-1.5 text-[13px] font-medium rounded-lg transition-colors whitespace-nowrap block"
-            [ngClass]="activeSection() === 'email-settings' ? 'text-blue-500 bg-blue-50' : 'text-slate-600 hover:text-blue-500 hover:bg-blue-50'"
-            data-testid="toc-email-settings">
-            Email Settings
-          </button>
-          <button
-            type="button"
-            (click)="selectSection('password')"
-            class="text-left px-2 py-1.5 text-[13px] font-medium rounded-lg transition-colors whitespace-nowrap block"
-            [ngClass]="activeSection() === 'password' ? 'text-blue-500 bg-blue-50' : 'text-slate-600 hover:text-blue-500 hover:bg-blue-50'"
-            data-testid="toc-password">
-            Password
-          </button>
-          <button
-            type="button"
-            (click)="selectSection('developer-settings')"
-            class="text-left px-2 py-1.5 text-[13px] font-medium rounded-lg transition-colors whitespace-nowrap block"
-            [ngClass]="activeSection() === 'developer-settings' ? 'text-blue-500 bg-blue-50' : 'text-slate-600 hover:text-blue-500 hover:bg-blue-50'"
-            data-testid="toc-developer-settings">
-            Developer Settings
-          </button>
+          <div class="flex flex-col gap-1">
+            <button
+              type="button"
+              (click)="selectSection('email-settings')"
+              class="text-left px-2 py-1.5 text-[13px] font-medium rounded-lg transition-colors whitespace-nowrap block"
+              [ngClass]="activeSection() === 'email-settings' ? 'text-blue-500 bg-blue-50' : 'text-slate-600 hover:text-blue-500 hover:bg-blue-50'"
+              data-testid="toc-email-settings">
+              Email Settings
+            </button>
+            <button
+              type="button"
+              (click)="selectSection('password')"
+              class="text-left px-2 py-1.5 text-[13px] font-medium rounded-lg transition-colors whitespace-nowrap block"
+              [ngClass]="activeSection() === 'password' ? 'text-blue-500 bg-blue-50' : 'text-slate-600 hover:text-blue-500 hover:bg-blue-50'"
+              data-testid="toc-password">
+              Password
+            </button>
+            <button
+              type="button"
+              (click)="selectSection('developer-settings')"
+              class="text-left px-2 py-1.5 text-[13px] font-medium rounded-lg transition-colors whitespace-nowrap block"
+              [ngClass]="activeSection() === 'developer-settings' ? 'text-blue-500 bg-blue-50' : 'text-slate-600 hover:text-blue-500 hover:bg-blue-50'"
+              data-testid="toc-developer-settings">
+              Developer Settings
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    }
 
-    <!-- RIGHT: Content Sections -->
+    <!-- RIGHT: Content Sections; one section alone on its Account & Settings page -->
     <div class="flex-1 flex flex-col gap-12">
       <!-- ════════════════════════════════════ -->
       <!-- SECTION 1: EMAIL SETTINGS           -->
       <!-- ════════════════════════════════════ -->
-      <div id="email-settings" class="flex flex-col gap-6 scroll-mt-20" data-testid="section-email-settings">
-        <div>
-          <h2 id="email-settings-heading" class="text-base font-bold text-slate-900 mb-1" data-testid="email-settings-heading">Email Settings</h2>
-          <p class="text-sm text-slate-500 leading-normal">Manage your email addresses. All email addresses are verified before they can be used.</p>
-        </div>
-
-        @if (emailLoading()) {
-          <div class="flex flex-col gap-2 items-center justify-center py-12" data-testid="email-settings-loading">
-            <i class="fa-light fa-circle-notch fa-spin text-4xl text-blue-400"></i>
-            <span class="ml-3 text-gray-600">Loading email settings...</span>
+      @if (!section || section === sections.EMAIL_SETTINGS) {
+        <div id="email-settings" class="flex flex-col gap-6 scroll-mt-20" data-testid="section-email-settings">
+          <div>
+            <h2 id="email-settings-heading" class="text-base font-bold text-slate-900 mb-1" data-testid="email-settings-heading">Email Settings</h2>
+            <p class="text-sm text-slate-500 leading-normal">Manage your email addresses. All email addresses are verified before they can be used.</p>
           </div>
-        } @else {
-          <div class="flex flex-col gap-6">
-            <!-- Meeting-invite validation error (address not an active, verified record upstream) -->
-            @if (meetingInviteError()) {
-              <lfx-message severity="error" [closable]="true" (onClose)="dismissMeetingInviteError()" data-testid="meeting-invite-error-banner">
-                <ng-template #content>
-                  <p class="text-sm">
-                    {{ meetingInviteError() }} If you believe this is an error,
-                    <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="meeting-invite-error-support-button">
-                      contact support</button
-                    >.
-                  </p>
-                </ng-template>
-              </lfx-message>
-            }
 
-            <!-- Meeting-invite lookup failed: which address receives invitations is unknown -->
-            @if (meetingInviteLoadFailed()) {
-              <lfx-message severity="warn" data-testid="meeting-invite-load-failed-banner">
-                <ng-template #content>
-                  <p class="text-sm">We couldn't load your meeting-invitation email. Reload the page to try again.</p>
-                </ng-template>
-              </lfx-message>
-            } @else if (orphanedInviteEmail()) {
-              <!-- Stored override matches none of the listed addresses -->
-              <lfx-message severity="warn" data-testid="meeting-invite-orphaned-banner">
-                <ng-template #content>
-                  <p class="text-sm">
-                    Meeting invitations are going to {{ orphanedInviteEmail() }}, which isn't one of the addresses listed here. Choose an address below or
-                    <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="meeting-invite-orphaned-support-button">
-                      contact support</button
-                    >.
-                  </p>
-                </ng-template>
-              </lfx-message>
-            }
+          @if (emailLoading()) {
+            <div class="flex flex-col gap-2 items-center justify-center py-12" data-testid="email-settings-loading">
+              <i class="fa-light fa-circle-notch fa-spin text-4xl text-blue-400"></i>
+              <span class="ml-3 text-gray-600">Loading email settings...</span>
+            </div>
+          } @else {
+            <div class="flex flex-col gap-6">
+              <!-- Meeting-invite validation error (address not an active, verified record upstream) -->
+              @if (meetingInviteError()) {
+                <lfx-message severity="error" [closable]="true" (onClose)="dismissMeetingInviteError()" data-testid="meeting-invite-error-banner">
+                  <ng-template #content>
+                    <p class="text-sm">
+                      {{ meetingInviteError() }} If you believe this is an error,
+                      <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="meeting-invite-error-support-button">
+                        contact support</button
+                      >.
+                    </p>
+                  </ng-template>
+                </lfx-message>
+              }
 
-            <!-- Email Addresses Card -->
-            <div class="bg-white rounded-lg shadow-sm p-6" data-testid="email-list-card">
-              <h3 class="text-sm font-semibold text-slate-900 mb-4">Email Addresses</h3>
+              <!-- Meeting-invite lookup failed: which address receives invitations is unknown -->
+              @if (meetingInviteLoadFailed()) {
+                <lfx-message severity="warn" data-testid="meeting-invite-load-failed-banner">
+                  <ng-template #content>
+                    <p class="text-sm">We couldn't load your meeting-invitation email. Reload the page to try again.</p>
+                  </ng-template>
+                </lfx-message>
+              } @else if (orphanedInviteEmail()) {
+                <!-- Stored override matches none of the listed addresses -->
+                <lfx-message severity="warn" data-testid="meeting-invite-orphaned-banner">
+                  <ng-template #content>
+                    <p class="text-sm">
+                      Meeting invitations are going to {{ orphanedInviteEmail() }}, which isn't one of the addresses listed here. Choose an address below or
+                      <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="meeting-invite-orphaned-support-button">
+                        contact support</button
+                      >.
+                    </p>
+                  </ng-template>
+                </lfx-message>
+              }
 
-              <div class="flex flex-col gap-3 mb-6">
-                @for (emailItem of emailsWithMetadata(); track emailItem.email) {
-                  <div
-                    class="flex items-center justify-between p-3 border border-slate-200 rounded-md"
-                    [ngClass]="emailItem.isPrimary ? 'bg-blue-50 border-blue-200' : 'bg-white'"
-                    [attr.data-testid]="'email-row-' + emailItem.email">
-                    <div class="flex items-center gap-3 flex-1 min-w-0">
-                      <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 flex-wrap">
-                          <span class="text-sm text-slate-900 truncate">{{ emailItem.email }}</span>
+              <!-- Email Addresses Card -->
+              <div class="bg-white rounded-lg shadow-sm p-6" data-testid="email-list-card">
+                <h3 class="text-sm font-semibold text-slate-900 mb-4">Email Addresses</h3>
+
+                <div class="flex flex-col gap-3 mb-6">
+                  @for (emailItem of emailsWithMetadata(); track emailItem.email) {
+                    <div
+                      class="flex items-center justify-between p-3 border border-slate-200 rounded-md"
+                      [ngClass]="emailItem.isPrimary ? 'bg-blue-50 border-blue-200' : 'bg-white'"
+                      [attr.data-testid]="'email-row-' + emailItem.email">
+                      <div class="flex items-center gap-3 flex-1 min-w-0">
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-sm text-slate-900 truncate">{{ emailItem.email }}</span>
+                            @if (emailItem.isPrimary) {
+                              <lfx-badge severity="success" value="Primary" size="small" data-testid="primary-badge"></lfx-badge>
+                            }
+                            @if (emailItem.isMeetingInvite) {
+                              <lfx-badge severity="success" value="Meeting Invites" size="small" data-testid="meeting-invites-badge"></lfx-badge>
+                            }
+                            @if (emailItem.verified) {
+                              <span
+                                class="px-2 py-0.5 bg-green-500 text-white rounded text-[11px] font-medium flex items-center gap-1"
+                                data-testid="verified-badge">
+                                <i class="fa-light fa-check text-[10px]"></i>
+                                Verified
+                              </span>
+                            }
+                          </div>
                           @if (emailItem.isPrimary) {
-                            <lfx-badge severity="success" value="Primary" size="small" data-testid="primary-badge"></lfx-badge>
-                          }
-                          @if (emailItem.isMeetingInvite) {
-                            <lfx-badge severity="success" value="Meeting Invites" size="small" data-testid="meeting-invites-badge"></lfx-badge>
-                          }
-                          @if (emailItem.verified) {
-                            <span
-                              class="px-2 py-0.5 bg-green-500 text-white rounded text-[11px] font-medium flex items-center gap-1"
-                              data-testid="verified-badge">
-                              <i class="fa-light fa-check text-[10px]"></i>
-                              Verified
-                            </span>
+                            <span class="text-xs text-slate-500">Used for account communications</span>
                           }
                         </div>
-                        @if (emailItem.isPrimary) {
-                          <span class="text-xs text-slate-500">Used for account communications</span>
+                      </div>
+                      <div class="flex items-center gap-2 ml-3 shrink-0">
+                        @if ((menuItemsMap().get(emailItem.email) ?? []).length > 0) {
+                          <div class="relative inline-block">
+                            <lfx-button
+                              icon="fa-solid fa-ellipsis-vertical"
+                              [text]="true"
+                              [rounded]="true"
+                              size="small"
+                              [disabled]="impersonating()"
+                              [ariaLabel]="
+                                impersonating() ? 'This action is unavailable while impersonating another user' : 'Email actions for ' + emailItem.email
+                              "
+                              styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
+                              (onClick)="emailMenu.toggle($event)"
+                              [attr.data-testid]="'email-menu-' + emailItem.email" />
+                            <lfx-menu #emailMenu [model]="menuItemsMap().get(emailItem.email) ?? []" [popup]="true" appendTo="body" />
+                          </div>
                         }
                       </div>
                     </div>
-                    <div class="flex items-center gap-2 ml-3 shrink-0">
-                      @if ((menuItemsMap().get(emailItem.email) ?? []).length > 0) {
-                        <div class="relative inline-block">
-                          <lfx-button
-                            icon="fa-solid fa-ellipsis-vertical"
-                            [text]="true"
-                            [rounded]="true"
-                            size="small"
-                            [disabled]="impersonating()"
-                            [ariaLabel]="
-                              impersonating() ? 'This action is unavailable while impersonating another user' : 'Email actions for ' + emailItem.email
-                            "
-                            styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
-                            (onClick)="emailMenu.toggle($event)"
-                            [attr.data-testid]="'email-menu-' + emailItem.email" />
-                          <lfx-menu #emailMenu [model]="menuItemsMap().get(emailItem.email) ?? []" [popup]="true" appendTo="body" />
-                        </div>
-                      }
-                    </div>
-                  </div>
-                }
+                  }
 
-                @if (allEmails().length === 0) {
-                  <p class="text-sm text-slate-500 text-center py-4" data-testid="no-emails-message">No email addresses found.</p>
-                }
-              </div>
+                  @if (allEmails().length === 0) {
+                    <p class="text-sm text-slate-500 text-center py-4" data-testid="no-emails-message">No email addresses found.</p>
+                  }
+                </div>
 
-              <!-- Add Email (OTP Flow) — visible read-only while impersonating (submit disabled) -->
-              <div class="mt-4 pt-4 border-t border-slate-200">
-                @if (!otpStep()) {
-                  <!-- Step 1: Enter email -->
-                  <label class="block text-sm font-medium text-slate-700 mb-1">Add New Email Address</label>
-                  <form [formGroup]="addEmailForm" (ngSubmit)="sendVerificationCode()" class="flex gap-3" data-testid="add-email-form">
-                    <div class="flex-1">
-                      <lfx-input-text
-                        control="email"
-                        [form]="addEmailForm"
-                        placeholder="Enter email address"
-                        type="email"
-                        size="small"
-                        styleClass="w-full"
-                        data-testid="add-email-input">
-                      </lfx-input-text>
-                      @if (addEmailForm.get('email')?.invalid && addEmailForm.get('email')?.touched) {
-                        <div class="text-red-600 text-xs mt-1" data-testid="add-email-error">Please enter a valid email address</div>
-                      }
-                    </div>
-                    <lfx-button
-                      size="small"
-                      type="submit"
-                      [label]="sendingCode() ? 'Requesting code…' : 'Send Code'"
-                      icon="fa-light fa-envelope"
-                      severity="info"
-                      [disabled]="addEmailForm.invalid || sendingCode() || impersonating()"
-                      [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
-                      [loading]="sendingCode()"
-                      data-testid="send-code-button">
-                    </lfx-button>
-                  </form>
-                  <p class="text-xs text-slate-500 mt-1">If this address can be added to your account, we'll send a 6-digit verification code to it.</p>
-                } @else {
-                  <!-- Step 2: Enter OTP -->
-                  <div class="flex flex-col gap-3" data-testid="otp-step">
-                    <div>
-                      <p class="text-sm font-medium text-slate-700">Enter verification code</p>
-                      <p class="text-xs text-slate-500 mt-0.5">
-                        If this address can be added to your account, a 6-digit code has been sent to <strong>{{ pendingEmail() }}</strong
-                        >. Enter it below to verify and add the address.
-                      </p>
-                    </div>
-                    <form [formGroup]="otpForm" (ngSubmit)="verifyAndLink()" class="flex flex-col gap-3 sm:flex-row sm:items-start" data-testid="otp-form">
+                <!-- Add Email (OTP Flow) — visible read-only while impersonating (submit disabled) -->
+                <div class="mt-4 pt-4 border-t border-slate-200">
+                  @if (!otpStep()) {
+                    <!-- Step 1: Enter email -->
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Add New Email Address</label>
+                    <form [formGroup]="addEmailForm" (ngSubmit)="sendVerificationCode()" class="flex gap-3" data-testid="add-email-form">
                       <div class="flex-1">
                         <lfx-input-text
-                          control="otp"
-                          [form]="otpForm"
-                          placeholder="Enter 6-digit code"
-                          type="text"
+                          control="email"
+                          [form]="addEmailForm"
+                          placeholder="Enter email address"
+                          type="email"
                           size="small"
                           styleClass="w-full"
-                          data-testid="otp-input">
+                          data-testid="add-email-input">
                         </lfx-input-text>
+                        @if (addEmailForm.get('email')?.invalid && addEmailForm.get('email')?.touched) {
+                          <div class="text-red-600 text-xs mt-1" data-testid="add-email-error">Please enter a valid email address</div>
+                        }
                       </div>
                       <lfx-button
                         size="small"
                         type="submit"
-                        label="Verify"
-                        icon="fa-light fa-check"
-                        [severity]="showResendSupport() ? 'secondary' : 'info'"
-                        [disabled]="otpForm.invalid || verifyingOtp() || impersonating()"
+                        [label]="sendingCode() ? 'Requesting code…' : 'Send Code'"
+                        icon="fa-light fa-envelope"
+                        severity="info"
+                        [disabled]="addEmailForm.invalid || sendingCode() || impersonating()"
                         [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
-                        [loading]="verifyingOtp()"
-                        data-testid="verify-otp-button">
-                      </lfx-button>
-                      <lfx-button
-                        size="small"
-                        type="button"
-                        label="Use a different email"
-                        severity="secondary"
-                        variant="outlined"
-                        [disabled]="sendingCode() || verifyingOtp()"
-                        (onClick)="changeEmail()"
-                        data-testid="change-email-button">
+                        [loading]="sendingCode()"
+                        data-testid="send-code-button">
                       </lfx-button>
                     </form>
-                    @if (!showResendSupport()) {
-                      <button
-                        type="button"
-                        class="text-xs text-blue-500 enabled:hover:underline disabled:text-slate-400 disabled:cursor-not-allowed self-start"
-                        [disabled]="sendingCode() || resendCooldown() > 0 || impersonating()"
-                        [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
-                        (click)="sendVerificationCode()"
-                        data-testid="resend-code-link">
-                        @if (sendingCode()) {
-                          Requesting code…
-                        } @else if (resendCooldown() > 0) {
-                          Resend code in {{ resendCooldown() }}s
-                        } @else {
-                          Resend code
-                        }
-                      </button>
-                    }
-                    @if (linkedConflict()) {
-                      <div
-                        class="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3"
-                        role="alert"
-                        data-testid="linked-email-support-callout">
-                        <div class="flex flex-col gap-1">
-                          <p class="text-sm font-semibold text-amber-900">{{ linkedSupportTitle }}</p>
-                          <p class="text-xs text-amber-900">{{ linkedSupportDetail }}</p>
+                    <p class="text-xs text-slate-500 mt-1">Confirm you own the email address before we check whether it can be linked to your account.</p>
+                  } @else {
+                    <!-- Step 2: Enter OTP -->
+                    <div class="flex flex-col gap-3" data-testid="otp-step">
+                      <div>
+                        <p class="text-sm font-medium text-slate-700">Enter verification code</p>
+                        <p class="text-xs text-slate-500 mt-0.5">
+                          Check <strong>{{ pendingEmail() }}</strong> for a 6-digit verification code. {{ verificationInstructions }}
+                        </p>
+                      </div>
+                      <form [formGroup]="otpForm" (ngSubmit)="verifyAndLink()" class="flex flex-col gap-3 sm:flex-row sm:items-start" data-testid="otp-form">
+                        <div class="flex-1">
+                          <lfx-input-text
+                            control="otp"
+                            [form]="otpForm"
+                            placeholder="Enter 6-digit code"
+                            type="text"
+                            size="small"
+                            styleClass="w-full"
+                            data-testid="otp-input">
+                          </lfx-input-text>
                         </div>
                         <lfx-button
-                          type="button"
-                          lfxOpenIntercom
-                          [intercomMessage]="linkedSupportMessage()"
-                          label="Contact support"
-                          severity="primary"
                           size="small"
-                          data-testid="linked-email-support-button" />
-                      </div>
-                    } @else if (showResendSupport()) {
-                      <div class="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3" role="status" data-testid="resend-support-callout">
-                        <div class="flex flex-col gap-1">
-                          <p class="text-sm font-semibold text-blue-900">{{ resendSupportTitle }}</p>
-                          <p class="text-xs text-blue-900">{{ resendSupportMessage }}</p>
+                          type="submit"
+                          label="Verify"
+                          icon="fa-light fa-check"
+                          [severity]="showResendSupport() ? 'secondary' : 'info'"
+                          [disabled]="otpForm.invalid || verifyingOtp() || impersonating()"
+                          [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
+                          [loading]="verifyingOtp()"
+                          data-testid="verify-otp-button">
+                        </lfx-button>
+                        <lfx-button
+                          size="small"
+                          type="button"
+                          label="Use a different email"
+                          severity="secondary"
+                          variant="outlined"
+                          [disabled]="sendingCode() || verifyingOtp()"
+                          (onClick)="changeEmail()"
+                          data-testid="change-email-button">
+                        </lfx-button>
+                      </form>
+                      @if (!showResendSupport()) {
+                        <button
+                          type="button"
+                          class="text-xs text-blue-500 enabled:hover:underline disabled:text-slate-400 disabled:cursor-not-allowed self-start"
+                          [disabled]="sendingCode() || resendCooldown() > 0 || impersonating()"
+                          [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
+                          (click)="sendVerificationCode()"
+                          data-testid="resend-code-link">
+                          @if (sendingCode()) {
+                            Requesting code…
+                          } @else if (resendCooldown() > 0) {
+                            Resend code in {{ resendCooldown() }}s
+                          } @else {
+                            Resend code
+                          }
+                        </button>
+                      }
+                      @if (linkedConflict()) {
+                        <div
+                          class="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3"
+                          role="alert"
+                          data-testid="linked-email-support-callout">
+                          <div class="flex flex-col gap-1">
+                            <p class="text-sm font-semibold text-amber-900">{{ linkedSupportTitle }}</p>
+                            <p class="text-xs text-amber-900">{{ linkedSupportDetail }}</p>
+                          </div>
+                          <lfx-button
+                            type="button"
+                            lfxOpenIntercom
+                            [intercomMessage]="linkedSupportMessage()"
+                            label="Contact support"
+                            severity="primary"
+                            size="small"
+                            data-testid="linked-email-support-button" />
                         </div>
-                        <lfx-button type="button" lfxOpenIntercom label="Contact support" severity="primary" size="small" data-testid="resend-support-button" />
-                      </div>
-                    } @else {
-                      <div class="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="otp-support-hint">
-                        <i class="fa-light fa-circle-info mt-0.5 shrink-0 text-sm text-blue-600" aria-hidden="true"></i>
-                        <div class="flex flex-col items-start gap-1">
-                          <p class="text-sm font-semibold text-blue-900">{{ codeNotReceivedTitle }}</p>
-                          <p class="text-xs text-blue-900">{{ codeNotReceivedHint }}</p>
-                          <button type="button" lfxOpenIntercom class="text-xs font-medium text-blue-900 underline" data-testid="otp-support-button">
-                            Contact support
-                          </button>
+                      } @else if (showResendSupport()) {
+                        <div class="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3" role="status" data-testid="resend-support-callout">
+                          <div class="flex flex-col gap-1">
+                            <p class="text-sm font-semibold text-blue-900">{{ resendSupportTitle }}</p>
+                            <p class="text-xs text-blue-900">{{ resendSupportMessage }}</p>
+                          </div>
+                          <lfx-button
+                            type="button"
+                            lfxOpenIntercom
+                            label="Contact support"
+                            severity="primary"
+                            size="small"
+                            data-testid="resend-support-button" />
                         </div>
-                      </div>
-                    }
-                  </div>
-                }
+                      } @else {
+                        <div class="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="otp-support-hint">
+                          <i class="fa-light fa-circle-info mt-0.5 shrink-0 text-sm text-blue-600" aria-hidden="true"></i>
+                          <div class="flex flex-col items-start gap-1">
+                            <p class="text-sm font-semibold text-blue-900">{{ codeNotReceivedTitle }}</p>
+                            <p class="text-xs text-blue-900">{{ codeNotReceivedHint }}</p>
+                            <button type="button" lfxOpenIntercom class="text-xs font-medium text-blue-900 underline" data-testid="otp-support-button">
+                              Contact support
+                            </button>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
               </div>
             </div>
-          </div>
-        }
-      </div>
+          }
+        </div>
+      }
 
       <!-- ════════════════════════════════════ -->
       <!-- SECTION 2: PASSWORD                 -->
       <!-- ════════════════════════════════════ -->
-      <div id="password" class="flex flex-col gap-6 pt-8 border-t border-slate-200 scroll-mt-20" data-testid="section-password">
-        <div>
-          <h2 id="password-heading" class="text-base font-bold text-slate-900 mb-1" data-testid="password-heading">Password</h2>
-          <p class="text-sm text-slate-500 leading-normal">Keep your account secure by using a strong password and enabling two-factor authentication.</p>
-        </div>
+      @if (!section || section === sections.PASSWORD) {
+        <div id="password" class="flex flex-col gap-6 scroll-mt-20" [ngClass]="{ 'pt-8 border-t border-slate-200': !section }" data-testid="section-password">
+          <div>
+            <h2 id="password-heading" class="text-base font-bold text-slate-900 mb-1" data-testid="password-heading">Password</h2>
+            <p class="text-sm text-slate-500 leading-normal">Keep your account secure by using a strong password and enabling two-factor authentication.</p>
+          </div>
 
-        <!-- Two-Column Layout -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <!-- Left Column: Change Password -->
-          <div class="bg-white rounded-lg shadow-sm p-6" data-testid="change-password-card">
-            <h3 class="text-sm font-semibold text-slate-900 mb-6">Change Password</h3>
+          <!-- Two-Column Layout -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Left Column: Change Password -->
+            <div class="bg-white rounded-lg shadow-sm p-6" data-testid="change-password-card">
+              <h3 class="text-sm font-semibold text-slate-900 mb-6">Change Password</h3>
 
-            <form [formGroup]="passwordForm" (ngSubmit)="onChangePassword()">
-              <div class="flex flex-col gap-4 mb-6">
-                <!-- Current Password -->
-                <div>
-                  <label for="current-password" class="block text-sm font-medium text-slate-900 mb-2">Current Password</label>
-                  <div class="relative">
-                    <lfx-input-text
-                      size="small"
-                      [form]="passwordForm"
-                      control="currentPassword"
-                      id="current-password"
-                      [type]="showCurrentPassword() ? 'text' : 'password'"
-                      placeholder="Enter your current password"
-                      styleClass="w-full pr-10"
-                      data-testid="current-password-input">
-                    </lfx-input-text>
+              <form [formGroup]="passwordForm" (ngSubmit)="onChangePassword()">
+                <div class="flex flex-col gap-4 mb-6">
+                  <!-- Current Password -->
+                  <div>
+                    <label for="current-password" class="block text-sm font-medium text-slate-900 mb-2">Current Password</label>
+                    <div class="relative">
+                      <lfx-input-text
+                        size="small"
+                        [form]="passwordForm"
+                        control="currentPassword"
+                        id="current-password"
+                        [type]="showCurrentPassword() ? 'text' : 'password'"
+                        placeholder="Enter your current password"
+                        styleClass="w-full pr-10"
+                        data-testid="current-password-input">
+                      </lfx-input-text>
+                      <button
+                        type="button"
+                        (click)="toggleCurrentPasswordVisibility()"
+                        class="absolute inset-y-0 right-0 pr-3 flex items-center"
+                        data-testid="current-password-toggle"
+                        [attr.aria-label]="showCurrentPassword() ? 'Hide current password' : 'Show current password'">
+                        <i [class]="showCurrentPassword() ? 'fa-light fa-eye-slash' : 'fa-light fa-eye'" class="text-slate-400 hover:text-slate-900"></i>
+                      </button>
+                    </div>
                     <button
                       type="button"
-                      (click)="toggleCurrentPasswordVisibility()"
-                      class="absolute inset-y-0 right-0 pr-3 flex items-center"
-                      data-testid="current-password-toggle"
-                      [attr.aria-label]="showCurrentPassword() ? 'Hide current password' : 'Show current password'">
-                      <i [class]="showCurrentPassword() ? 'fa-light fa-eye-slash' : 'fa-light fa-eye'" class="text-slate-400 hover:text-slate-900"></i>
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    (click)="onSendPasswordReset()"
-                    [disabled]="sendingReset() || impersonating()"
-                    [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
-                    class="text-xs text-blue-500 hover:underline mt-1 disabled:opacity-50"
-                    data-testid="forgot-password-link">
-                    {{ sendingReset() ? 'Sending reset link...' : 'Forgot your password? Start the account recovery process.' }}
-                  </button>
-                </div>
-
-                <!-- New Password -->
-                <div>
-                  <label for="new-password" class="block text-sm font-medium text-slate-900 mb-2">New Password</label>
-                  <div class="relative">
-                    <lfx-input-text
-                      size="small"
-                      [form]="passwordForm"
-                      control="newPassword"
-                      id="new-password"
-                      [type]="showNewPassword() ? 'text' : 'password'"
-                      placeholder="Enter your new password"
-                      styleClass="w-full pr-10"
-                      data-testid="new-password-input">
-                    </lfx-input-text>
-                    <button
-                      type="button"
-                      (click)="toggleNewPasswordVisibility()"
-                      class="absolute inset-y-0 right-0 pr-3 flex items-center"
-                      data-testid="new-password-toggle"
-                      [attr.aria-label]="showNewPassword() ? 'Hide new password' : 'Show new password'">
-                      <i [class]="showNewPassword() ? 'fa-light fa-eye-slash' : 'fa-light fa-eye'" class="text-slate-400 hover:text-slate-900"></i>
+                      (click)="onSendPasswordReset()"
+                      [disabled]="sendingReset() || impersonating()"
+                      [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
+                      class="text-xs text-blue-500 hover:underline mt-1 disabled:opacity-50"
+                      data-testid="forgot-password-link">
+                      {{ sendingReset() ? 'Sending reset link...' : 'Forgot your password? Start the account recovery process.' }}
                     </button>
                   </div>
 
-                  <!-- Password Strength Indicator -->
-                  @if (newPasswordSignal()) {
-                    <div class="mt-2" data-testid="password-strength-indicator">
-                      <div class="flex items-center gap-2 mb-1">
-                        <span class="text-xs font-medium text-slate-700">Password Strength:</span>
-                        <span
-                          class="text-xs font-semibold"
-                          [ngClass]="{
-                            'text-red-500': passwordStrength().label === 'weak',
-                            'text-amber-500': passwordStrength().label === 'fair',
-                            'text-blue-500': passwordStrength().label === 'good',
-                            'text-emerald-500': passwordStrength().label === 'strong',
-                          }"
-                          data-testid="password-strength-label">
-                          {{ passwordStrengthLabel() }}
-                        </span>
-                      </div>
+                  <!-- New Password -->
+                  <div>
+                    <label for="new-password" class="block text-sm font-medium text-slate-900 mb-2">New Password</label>
+                    <div class="relative">
+                      <lfx-input-text
+                        size="small"
+                        [form]="passwordForm"
+                        control="newPassword"
+                        id="new-password"
+                        [type]="showNewPassword() ? 'text' : 'password'"
+                        placeholder="Enter your new password"
+                        styleClass="w-full pr-10"
+                        data-testid="new-password-input">
+                      </lfx-input-text>
+                      <button
+                        type="button"
+                        (click)="toggleNewPasswordVisibility()"
+                        class="absolute inset-y-0 right-0 pr-3 flex items-center"
+                        data-testid="new-password-toggle"
+                        [attr.aria-label]="showNewPassword() ? 'Hide new password' : 'Show new password'">
+                        <i [class]="showNewPassword() ? 'fa-light fa-eye-slash' : 'fa-light fa-eye'" class="text-slate-400 hover:text-slate-900"></i>
+                      </button>
+                    </div>
 
-                      <div class="bg-slate-50 rounded-lg p-3 flex flex-col gap-1" data-testid="password-requirements">
-                        <p class="text-xs font-medium text-slate-700 mb-2">Requirements (must meet at least 3 of 4 criteria):</p>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-1 text-xs">
-                          <div class="flex items-center gap-1">
-                            <i
-                              [class]="passwordStrength().requirements.minLength ? 'fa-light fa-check text-emerald-600' : 'fa-light fa-times text-red-600'"></i>
-                            <span [ngClass]="passwordStrength().requirements.minLength ? 'text-emerald-700' : 'text-red-700'">At least 8 characters</span>
-                          </div>
-                          <div class="flex items-center gap-1">
-                            <i
-                              [class]="
-                                passwordStrength().requirements.hasLowercase ? 'fa-light fa-check text-emerald-600' : 'fa-light fa-times text-red-600'
-                              "></i>
-                            <span [ngClass]="passwordStrength().requirements.hasLowercase ? 'text-emerald-700' : 'text-red-700'"> Lowercase letter (a-z) </span>
-                          </div>
-                          <div class="flex items-center gap-1">
-                            <i
-                              [class]="
-                                passwordStrength().requirements.hasUppercase ? 'fa-light fa-check text-emerald-600' : 'fa-light fa-times text-red-600'
-                              "></i>
-                            <span [ngClass]="passwordStrength().requirements.hasUppercase ? 'text-emerald-700' : 'text-red-700'"> Uppercase letter (A-Z) </span>
-                          </div>
-                          <div class="flex items-center gap-1">
-                            <i
-                              [class]="
-                                passwordStrength().requirements.hasNumbers ? 'fa-light fa-check text-emerald-600' : 'fa-light fa-times text-red-600'
-                              "></i>
-                            <span [ngClass]="passwordStrength().requirements.hasNumbers ? 'text-emerald-700' : 'text-red-700'">Number (0-9)</span>
-                          </div>
-                          <div class="flex items-center gap-1">
-                            <i
-                              [class]="
-                                passwordStrength().requirements.hasSpecialChars ? 'fa-light fa-check text-emerald-600' : 'fa-light fa-times text-red-600'
-                              "></i>
-                            <span [ngClass]="passwordStrength().requirements.hasSpecialChars ? 'text-emerald-700' : 'text-red-700'">
-                              Special character (!&#64;#$%^&amp;*)
-                            </span>
+                    <!-- Password Strength Indicator -->
+                    @if (newPasswordSignal()) {
+                      <div class="mt-2" data-testid="password-strength-indicator">
+                        <div class="flex items-center gap-2 mb-1">
+                          <span class="text-xs font-medium text-slate-700">Password Strength:</span>
+                          <span
+                            class="text-xs font-semibold"
+                            [ngClass]="{
+                              'text-red-500': passwordStrength().label === 'weak',
+                              'text-amber-500': passwordStrength().label === 'fair',
+                              'text-blue-500': passwordStrength().label === 'good',
+                              'text-emerald-500': passwordStrength().label === 'strong',
+                            }"
+                            data-testid="password-strength-label">
+                            {{ passwordStrengthLabel() }}
+                          </span>
+                        </div>
+
+                        <div class="bg-slate-50 rounded-lg p-3 flex flex-col gap-1" data-testid="password-requirements">
+                          <p class="text-xs font-medium text-slate-700 mb-2">Requirements (must meet at least 3 of 4 criteria):</p>
+                          <div class="grid grid-cols-1 md:grid-cols-2 gap-1 text-xs">
+                            <div class="flex items-center gap-1">
+                              <i
+                                [class]="
+                                  passwordStrength().requirements.minLength ? 'fa-light fa-check text-emerald-600' : 'fa-light fa-times text-red-600'
+                                "></i>
+                              <span [ngClass]="passwordStrength().requirements.minLength ? 'text-emerald-700' : 'text-red-700'">At least 8 characters</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                              <i
+                                [class]="
+                                  passwordStrength().requirements.hasLowercase ? 'fa-light fa-check text-emerald-600' : 'fa-light fa-times text-red-600'
+                                "></i>
+                              <span [ngClass]="passwordStrength().requirements.hasLowercase ? 'text-emerald-700' : 'text-red-700'">
+                                Lowercase letter (a-z)
+                              </span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                              <i
+                                [class]="
+                                  passwordStrength().requirements.hasUppercase ? 'fa-light fa-check text-emerald-600' : 'fa-light fa-times text-red-600'
+                                "></i>
+                              <span [ngClass]="passwordStrength().requirements.hasUppercase ? 'text-emerald-700' : 'text-red-700'">
+                                Uppercase letter (A-Z)
+                              </span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                              <i
+                                [class]="
+                                  passwordStrength().requirements.hasNumbers ? 'fa-light fa-check text-emerald-600' : 'fa-light fa-times text-red-600'
+                                "></i>
+                              <span [ngClass]="passwordStrength().requirements.hasNumbers ? 'text-emerald-700' : 'text-red-700'">Number (0-9)</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                              <i
+                                [class]="
+                                  passwordStrength().requirements.hasSpecialChars ? 'fa-light fa-check text-emerald-600' : 'fa-light fa-times text-red-600'
+                                "></i>
+                              <span [ngClass]="passwordStrength().requirements.hasSpecialChars ? 'text-emerald-700' : 'text-red-700'">
+                                Special character (!&#64;#$%^&amp;*)
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  }
-                </div>
-
-                <!-- Confirm Password -->
-                <div>
-                  <label for="confirm-password" class="block text-sm font-medium text-slate-900 mb-2">Confirm New Password</label>
-                  <div class="relative">
-                    <lfx-input-text
-                      size="small"
-                      [form]="passwordForm"
-                      control="confirmPassword"
-                      id="confirm-password"
-                      [type]="showConfirmPassword() ? 'text' : 'password'"
-                      placeholder="Confirm your new password"
-                      styleClass="w-full pr-10"
-                      data-testid="confirm-password-input">
-                    </lfx-input-text>
-                    <button
-                      type="button"
-                      (click)="toggleConfirmPasswordVisibility()"
-                      class="absolute inset-y-0 right-0 pr-3 flex items-center"
-                      data-testid="confirm-password-toggle"
-                      [attr.aria-label]="showConfirmPassword() ? 'Hide confirm password' : 'Show confirm password'">
-                      <i [class]="showConfirmPassword() ? 'fa-light fa-eye-slash' : 'fa-light fa-eye'" class="text-slate-400 hover:text-slate-900"></i>
-                    </button>
+                    }
                   </div>
-                  @if (passwordForm.errors?.['passwordMismatch'] && passwordForm.get('confirmPassword')?.touched) {
-                    <p class="text-red-600 text-xs mt-1" data-testid="password-mismatch-error">Passwords do not match</p>
+
+                  <!-- Confirm Password -->
+                  <div>
+                    <label for="confirm-password" class="block text-sm font-medium text-slate-900 mb-2">Confirm New Password</label>
+                    <div class="relative">
+                      <lfx-input-text
+                        size="small"
+                        [form]="passwordForm"
+                        control="confirmPassword"
+                        id="confirm-password"
+                        [type]="showConfirmPassword() ? 'text' : 'password'"
+                        placeholder="Confirm your new password"
+                        styleClass="w-full pr-10"
+                        data-testid="confirm-password-input">
+                      </lfx-input-text>
+                      <button
+                        type="button"
+                        (click)="toggleConfirmPasswordVisibility()"
+                        class="absolute inset-y-0 right-0 pr-3 flex items-center"
+                        data-testid="confirm-password-toggle"
+                        [attr.aria-label]="showConfirmPassword() ? 'Hide confirm password' : 'Show confirm password'">
+                        <i [class]="showConfirmPassword() ? 'fa-light fa-eye-slash' : 'fa-light fa-eye'" class="text-slate-400 hover:text-slate-900"></i>
+                      </button>
+                    </div>
+                    @if (passwordForm.errors?.['passwordMismatch'] && passwordForm.get('confirmPassword')?.touched) {
+                      <p class="text-red-600 text-xs mt-1" data-testid="password-mismatch-error">Passwords do not match</p>
+                    }
+                  </div>
+                </div>
+
+                <!-- Form Actions (visible but disabled while impersonating — password changes act on the real account) -->
+                <div class="flex justify-end gap-3">
+                  <lfx-button type="button" variant="outlined" label="Reset" size="small" (onClick)="clearPasswordForm()" data-testid="password-reset-button">
+                  </lfx-button>
+                  <lfx-button
+                    type="submit"
+                    severity="info"
+                    label="Change Password"
+                    [loading]="changingPassword()"
+                    [disabled]="passwordForm.invalid || changingPassword() || impersonating()"
+                    [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
+                    size="small"
+                    data-testid="password-submit-button">
+                  </lfx-button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Right Column: Account Recovery + 2FA -->
+            <div class="flex flex-col gap-6">
+              <!-- Account Recovery -->
+              <div id="account-recovery" class="bg-white rounded-lg shadow-sm p-6 scroll-mt-20" data-testid="account-recovery-card">
+                <h3 class="text-sm font-semibold text-slate-900 mb-6">Account Recovery</h3>
+                <div class="flex flex-col gap-3">
+                  <div class="flex justify-start">
+                    <lfx-button
+                      type="button"
+                      severity="secondary"
+                      variant="outlined"
+                      size="small"
+                      icon="fa-light fa-envelope"
+                      [label]="sendingReset() ? 'Sending...' : 'Send Reset Link'"
+                      [loading]="sendingReset()"
+                      [disabled]="sendingReset() || impersonating()"
+                      [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
+                      (onClick)="onSendPasswordReset()"
+                      data-testid="send-reset-link-button">
+                    </lfx-button>
+                  </div>
+                  @if (resetResultMessage()) {
+                    <p class="text-xs" [ngClass]="resetResultSuccess() ? 'text-emerald-600' : 'text-red-600'" data-testid="reset-result-message">
+                      {{ resetResultMessage() }}
+                    </p>
                   }
                 </div>
               </div>
 
-              <!-- Form Actions (visible but disabled while impersonating — password changes act on the real account) -->
-              <div class="flex justify-end gap-3">
-                <lfx-button type="button" variant="outlined" label="Reset" size="small" (onClick)="clearPasswordForm()" data-testid="password-reset-button">
-                </lfx-button>
-                <lfx-button
-                  type="submit"
-                  severity="info"
-                  label="Change Password"
-                  [loading]="changingPassword()"
-                  [disabled]="passwordForm.invalid || changingPassword() || impersonating()"
-                  [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
-                  size="small"
-                  data-testid="password-submit-button">
-                </lfx-button>
-              </div>
-            </form>
-          </div>
+              <!-- Two-Factor Authentication -->
+              <div class="bg-white rounded-lg shadow-sm p-6" data-testid="two-factor-card">
+                <h3 class="text-sm font-semibold text-slate-900 mb-6">Two-Factor Authentication</h3>
 
-          <!-- Right Column: Account Recovery + 2FA -->
-          <div class="flex flex-col gap-6">
-            <!-- Account Recovery -->
-            <div id="account-recovery" class="bg-white rounded-lg shadow-sm p-6 scroll-mt-20" data-testid="account-recovery-card">
-              <h3 class="text-sm font-semibold text-slate-900 mb-6">Account Recovery</h3>
-              <div class="flex flex-col gap-3">
+                <!-- Warning Banner -->
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+                  <div class="flex gap-3">
+                    <i class="fa-light fa-shield flex-shrink-0 mt-0.5 text-amber-500"></i>
+                    <p class="text-sm text-amber-900 leading-normal">Two-factor authentication settings are currently unavailable.</p>
+                  </div>
+                </div>
+
                 <div class="flex justify-start">
                   <lfx-button
                     type="button"
                     severity="secondary"
-                    variant="outlined"
                     size="small"
-                    icon="fa-light fa-envelope"
-                    [label]="sendingReset() ? 'Sending...' : 'Send Reset Link'"
-                    [loading]="sendingReset()"
-                    [disabled]="sendingReset() || impersonating()"
-                    [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
-                    (onClick)="onSendPasswordReset()"
-                    data-testid="send-reset-link-button">
+                    icon="fa-light fa-shield-check"
+                    label="Set up 2FA"
+                    [disabled]="true"
+                    data-testid="setup-2fa-button">
                   </lfx-button>
                 </div>
-                @if (resetResultMessage()) {
-                  <p class="text-xs" [ngClass]="resetResultSuccess() ? 'text-emerald-600' : 'text-red-600'" data-testid="reset-result-message">
-                    {{ resetResultMessage() }}
-                  </p>
-                }
-              </div>
-            </div>
-
-            <!-- Two-Factor Authentication -->
-            <div class="bg-white rounded-lg shadow-sm p-6" data-testid="two-factor-card">
-              <h3 class="text-sm font-semibold text-slate-900 mb-6">Two-Factor Authentication</h3>
-
-              <!-- Warning Banner -->
-              <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
-                <div class="flex gap-3">
-                  <i class="fa-light fa-shield flex-shrink-0 mt-0.5 text-amber-500"></i>
-                  <p class="text-sm text-amber-900 leading-normal">Two-factor authentication settings are currently unavailable.</p>
-                </div>
-              </div>
-
-              <div class="flex justify-start">
-                <lfx-button
-                  type="button"
-                  severity="secondary"
-                  size="small"
-                  icon="fa-light fa-shield-check"
-                  label="Set up 2FA"
-                  [disabled]="true"
-                  data-testid="setup-2fa-button">
-                </lfx-button>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      }
       <!-- ════════════════════════════════════ -->
       <!-- SECTION 3: DEVELOPER SETTINGS       -->
       <!-- ════════════════════════════════════ -->
-      <div id="developer-settings" class="flex flex-col gap-6 pt-8 border-t border-slate-200 scroll-mt-20" data-testid="section-developer-settings">
-        <div>
-          <h2 id="developer-settings-heading" class="text-base font-bold text-slate-900 mb-1" data-testid="developer-settings-heading">Developer Settings</h2>
-          @if (insightsPublicApiEnabled()) {
-            <p class="text-sm text-slate-500 leading-normal" data-testid="developer-settings-description">
-              Your API tokens provide programmatic access to LFX services.
-            </p>
-          } @else {
-            <p class="text-sm text-slate-500 leading-normal" data-testid="developer-settings-description">
-              Your API token provides programmatic access to LFX services.
-            </p>
-          }
-        </div>
-
-        <!-- Security Guidelines Info Banner -->
-        <div class="p-4 rounded-xl bg-blue-50 border border-blue-100 shadow-sm">
-          <div class="flex gap-3">
-            <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-              <i class="fa-light fa-shield-check w-5 h-5 text-blue-500 flex items-center justify-center"></i>
-            </div>
-            <div class="flex flex-col gap-2">
-              <h4 class="text-sm text-slate-900 font-semibold leading-normal">Security Guidelines</h4>
-              <ul class="flex flex-col gap-1 list-disc list-inside">
-                @if (insightsPublicApiEnabled()) {
-                  <li class="text-sm text-slate-600 leading-normal">The Personal Access Token is short-lived and automatically regenerated by the system.</li>
-                  <li class="text-sm text-slate-600 leading-normal">Never share a token publicly. Keep it secure.</li>
-                  <li class="text-sm text-slate-600 leading-normal">Never commit a token to version control.</li>
-                  <li class="text-sm text-slate-600 leading-normal">
-                    Give each integration its own LFX Insights API token, so you can revoke one without affecting the others.
-                  </li>
-                } @else {
-                  <li class="text-sm text-slate-600 leading-normal">This token is short-lived and automatically regenerated by the system.</li>
-                  <li class="text-sm text-slate-600 leading-normal">Never share it publicly. Keep this token secure.</li>
-                  <li class="text-sm text-slate-600 leading-normal">Never commit this token to version control.</li>
-                }
-              </ul>
-            </div>
+      @if (!section || section === sections.DEVELOPER_SETTINGS) {
+        <div
+          id="developer-settings"
+          class="flex flex-col gap-6 scroll-mt-20"
+          [ngClass]="{ 'pt-8 border-t border-slate-200': !section }"
+          data-testid="section-developer-settings">
+          <div>
+            <h2 id="developer-settings-heading" class="text-base font-bold text-slate-900 mb-1" data-testid="developer-settings-heading">Developer Settings</h2>
+            @if (insightsPublicApiEnabled()) {
+              <p class="text-sm text-slate-500 leading-normal" data-testid="developer-settings-description">
+                Your API tokens provide programmatic access to LFX services.
+              </p>
+            } @else {
+              <p class="text-sm text-slate-500 leading-normal" data-testid="developer-settings-description">
+                Your API token provides programmatic access to LFX services.
+              </p>
+            }
           </div>
-        </div>
 
-        <!-- API Token Card -->
-        <div class="bg-white rounded-lg shadow-sm p-6" data-testid="api-token-card">
-          <h3 class="text-sm font-semibold text-slate-900 mb-6">API Token</h3>
-
-          @if (loadingToken()) {
-            <div class="flex items-center justify-center py-4" data-testid="developer-token-loading">
-              <i class="fa-light fa-circle-notch fa-spin text-2xl text-blue-400"></i>
-              <span class="ml-3 text-gray-600">Loading token...</span>
-            </div>
-          } @else if (developerToken()) {
-            <div class="border border-slate-200 rounded-lg p-4">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3 flex-1 min-w-0">
-                  <i class="fa-light fa-key text-slate-500 flex-shrink-0"></i>
-                  <div class="flex-1 min-w-0">
-                    <h4 class="text-sm text-slate-900 mb-0.5">Personal Access Token</h4>
-                    <p class="text-[13px] text-slate-500 font-mono truncate" data-testid="developer-token-value">
-                      {{ maskedToken() }}
-                    </p>
-                  </div>
-                </div>
-                <div class="flex gap-2 ml-4 flex-shrink-0">
-                  <lfx-button
-                    type="button"
-                    severity="secondary"
-                    variant="outlined"
-                    size="small"
-                    label="Show"
-                    (onClick)="openTokenPopup('API Token', developerToken())"
-                    data-testid="developer-token-show-button">
-                  </lfx-button>
-                  <lfx-button
-                    type="button"
-                    severity="info"
-                    size="small"
-                    [label]="tokenCopied() ? 'Copied!' : 'Copy'"
-                    (onClick)="copyToken(developerToken())"
-                    data-testid="developer-token-copy-button">
-                  </lfx-button>
-                </div>
+          <!-- Security Guidelines Info Banner -->
+          <div class="p-4 rounded-xl bg-blue-50 border border-blue-100 shadow-sm">
+            <div class="flex gap-3">
+              <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                <i class="fa-light fa-shield-check w-5 h-5 text-blue-500 flex items-center justify-center"></i>
+              </div>
+              <div class="flex flex-col gap-2">
+                <h4 class="text-sm text-slate-900 font-semibold leading-normal">Security Guidelines</h4>
+                <ul class="flex flex-col gap-1 list-disc list-inside">
+                  @if (insightsPublicApiEnabled()) {
+                    <li class="text-sm text-slate-600 leading-normal">The Personal Access Token is short-lived and automatically regenerated by the system.</li>
+                    <li class="text-sm text-slate-600 leading-normal">Never share a token publicly. Keep it secure.</li>
+                    <li class="text-sm text-slate-600 leading-normal">Never commit a token to version control.</li>
+                    <li class="text-sm text-slate-600 leading-normal">
+                      Give each integration its own LFX Insights API token, so you can revoke one without affecting the others.
+                    </li>
+                  } @else {
+                    <li class="text-sm text-slate-600 leading-normal">This token is short-lived and automatically regenerated by the system.</li>
+                    <li class="text-sm text-slate-600 leading-normal">Never share it publicly. Keep this token secure.</li>
+                    <li class="text-sm text-slate-600 leading-normal">Never commit this token to version control.</li>
+                  }
+                </ul>
               </div>
             </div>
-          } @else {
-            <div class="text-center py-4" data-testid="developer-token-unavailable">
-              <i class="fa-light fa-exclamation-triangle text-2xl text-amber-500 mb-2"></i>
-              <p class="text-sm text-slate-600">API token is currently unavailable.</p>
-            </div>
-          }
+          </div>
 
-          @if (insightsPublicApiEnabled()) {
-            <div class="mt-6 pt-6 border-t border-slate-200">
-              <lfx-insights-tokens />
-            </div>
-          }
+          <!-- API Token Card -->
+          <div class="bg-white rounded-lg shadow-sm p-6" data-testid="api-token-card">
+            <h3 class="text-sm font-semibold text-slate-900 mb-6">API Token</h3>
+
+            @if (loadingToken()) {
+              <div class="flex items-center justify-center py-4" data-testid="developer-token-loading">
+                <i class="fa-light fa-circle-notch fa-spin text-2xl text-blue-400"></i>
+                <span class="ml-3 text-gray-600">Loading token...</span>
+              </div>
+            } @else if (developerToken()) {
+              <div class="border border-slate-200 rounded-lg p-4">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-3 flex-1 min-w-0">
+                    <i class="fa-light fa-key text-slate-500 flex-shrink-0"></i>
+                    <div class="flex-1 min-w-0">
+                      <h4 class="text-sm text-slate-900 mb-0.5">Personal Access Token</h4>
+                      <p class="text-[13px] text-slate-500 font-mono truncate" data-testid="developer-token-value">
+                        {{ maskedToken() }}
+                      </p>
+                    </div>
+                  </div>
+                  <div class="flex gap-2 ml-4 flex-shrink-0">
+                    <lfx-button
+                      type="button"
+                      severity="secondary"
+                      variant="outlined"
+                      size="small"
+                      label="Show"
+                      (onClick)="openTokenPopup('API Token', developerToken())"
+                      data-testid="developer-token-show-button">
+                    </lfx-button>
+                    <lfx-button
+                      type="button"
+                      severity="info"
+                      size="small"
+                      [label]="tokenCopied() ? 'Copied!' : 'Copy'"
+                      (onClick)="copyToken(developerToken())"
+                      data-testid="developer-token-copy-button">
+                    </lfx-button>
+                  </div>
+                </div>
+              </div>
+            } @else {
+              <div class="text-center py-4" data-testid="developer-token-unavailable">
+                <i class="fa-light fa-exclamation-triangle text-2xl text-amber-500 mb-2"></i>
+                <p class="text-sm text-slate-600">API token is currently unavailable.</p>
+              </div>
+            }
+
+            @if (insightsPublicApiEnabled()) {
+              <div class="mt-6 pt-6 border-t border-slate-200">
+                <lfx-insights-tokens />
+              </div>
+            }
+          </div>
         </div>
-      </div>
+      }
       <div id="scroll-end-sentinel" data-testid="scroll-end-sentinel" class="h-px" aria-hidden="true"></div>
     </div>
   </div>

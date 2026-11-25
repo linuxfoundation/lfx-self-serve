@@ -19,6 +19,7 @@ import {
 import type {
   OrgAllEmployeeCompanyEmailFilter,
   OrgAllEmployeeEmploymentFilter,
+  OrgAllEmployeeKeyContactFilter,
   OrgAllEmployeeRow,
   OrgAllEmployeesResponse,
   OrgCodeFilterValues,
@@ -999,7 +1000,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       };
 
       beforeEach(async () => {
-        await mount('browser', '/?employment=current');
+        await mount('browser', '/?tab=employees');
         snowflake$.next(
           response(
             [
@@ -1034,8 +1035,125 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         expect(await search('gracehopper')).toEqual(['org-people-all-employees-row-p-username']);
       });
 
-      it('lists everyone for a query that is only spaces or invisible characters', async () => {
-        expect(await search(' \u200B ')).toHaveLength(5);
+      it('lists everyone and hides Clear filters for effective-empty queries', async () => {
+        const clear = (): Element | null => el().querySelector('[data-testid="org-people-all-employees-clear-filters"]');
+        expect(await search('JOSE')).toEqual(['org-people-all-employees-row-p-accent']);
+        expect(clear()).not.toBeNull();
+
+        for (const term of ['', '   ', '\u3000', '\u200B', ' \u200B ', '\u0085', '\u00AD', '\u0301']) {
+          expect(await search(term)).toHaveLength(5);
+          expect(clear()).toBeNull();
+        }
+      });
+
+      it('retains the active-filter state when another filter accompanies an effective-empty query', async () => {
+        fixture.componentInstance['filterForm'].controls.activity.setValue('events');
+
+        expect(await search(' \u200B ')).toEqual([]);
+        expect(el().querySelector('[data-testid="org-people-all-employees-empty"]')?.textContent).toContain('No employees match the current filters.');
+        expect(el().querySelector('[data-testid="org-people-all-employees-clear-filters"]')).not.toBeNull();
+      });
+    });
+
+    it('keeps the organization-empty wording for effective-empty queries', async () => {
+      await mount('browser', '/?tab=employees');
+      snowflake$.next(response([], 0));
+      snowflake$.complete();
+      live$.next(response([], 0));
+      live$.complete();
+      former$.next(response([], 0));
+      former$.complete();
+      await settle();
+
+      const search = async (term: string): Promise<void> => {
+        fixture.componentInstance['filterForm'].controls.search.setValue(term);
+        await settle();
+      };
+      const empty = (): string | null | undefined => el().querySelector('[data-testid="org-people-all-employees-empty"]')?.textContent;
+
+      await search('no matching person');
+      expect(empty()).toContain('No employees match the current filters.');
+
+      for (const term of ['', '\u200B', ' \u200B ', '\u0085', '\u00AD', '\u0301']) {
+        await search(term);
+        expect(rowKeys()).toEqual([]);
+        expect(empty()).toContain('No employees found for this company.');
+        expect(el().querySelector('[data-testid="org-people-all-employees-clear-filters"]')).toBeNull();
+      }
+    });
+
+    describe('searching by name order and LF username (lfx-self-serve#5687)', () => {
+      const search = async (term: string): Promise<string[]> => {
+        const input = el().querySelector<HTMLInputElement>('[data-test="org-people-all-employees-search-input"]');
+        if (!input) throw new Error('All Employees search input is missing');
+        input.value = term;
+        input.dispatchEvent(new Event('input'));
+        await settle();
+        return rowKeys().sort();
+      };
+
+      beforeEach(async () => {
+        await mount('browser', '/?employment=current');
+        snowflake$.next(
+          response(
+            [
+              // Given name first, family name last, as the warehouse stores it.
+              row('p-cjk', '\u660E\u534E \u674E', { commitsCount: 1 }),
+              row('p-three-part', 'Juan Carlos P\u00E9rez', { commitsCount: 1 }),
+              row('p-stored-parts', 'Mei', { firstName: 'Mei', lastName: 'Chen', commitsCount: 1 }),
+              row('p-greek', 'ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', { firstName: 'ΝΙΚΟΣ', lastName: 'ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', commitsCount: 1 }),
+              row('p-greek-mixed', 'ΑΝΔΡΕΑΣ\u200BΝΙΚΟΛΑΟΣ ΓΕΩΡΓΙΟΣ', { commitsCount: 1 }),
+              // Ignore legacy GitHub metadata from an older server; only the person's existing searchable fields match.
+              Object.assign(row('p-github', 'Mary Somerville', { lfUsername: 'msomerville', commitsCount: 0, eventsCount: 1 }), {
+                githubUsernames: ['example-gh-user'],
+              }),
+              row('p-other', 'Alan Turing', { commitsCount: 1 }),
+            ],
+            7
+          )
+        );
+        snowflake$.complete();
+        former$.next(response([], 0));
+        former$.complete();
+        await settle();
+      });
+
+      it('finds a name searched family name first, with or without a space', async () => {
+        expect(await search('\u674E\u660E\u534E')).toEqual(['org-people-all-employees-row-p-cjk']);
+        expect(await search('\u674E \u660E\u534E')).toEqual(['org-people-all-employees-row-p-cjk']);
+      });
+
+      it('finds a three-part name from any starting part, ignoring accents and spaces', async () => {
+        expect(await search('p\u00E9rez juan carlos')).toEqual(['org-people-all-employees-row-p-three-part']);
+        expect(await search('perezjuancarlos')).toEqual(['org-people-all-employees-row-p-three-part']);
+      });
+
+      it('finds both stored-name orders when the display name contains only the given name', async () => {
+        for (const query of ['Mei Chen', 'meichen', 'Chen Mei', 'chenmei']) {
+          expect(await search(query)).toEqual(['org-people-all-employees-row-p-stored-parts']);
+        }
+      });
+
+      it('finds spaced and compact Greek names in original and rotated order', async () => {
+        for (const query of ['ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', 'ΝΙΚΟΣΝΙΚΟΛΑΟΣΠΑΠΑΣ', 'ΠΑΠΑΣ ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ', 'ΠΑΠΑΣΝΙΚΟΣΝΙΚΟΛΑΟΣ']) {
+          expect(await search(query)).toEqual(['org-people-all-employees-row-p-greek']);
+        }
+      });
+
+      it('finds an exact Greek display name with mixed separators and no stored name parts', async () => {
+        expect(await search('ΑΝΔΡΕΑΣ\u200BΝΙΚΟΛΑΟΣ ΓΕΩΡΓΙΟΣ')).toEqual(['org-people-all-employees-row-p-greek-mixed']);
+      });
+
+      it('does not search GitHub usernames even when a legacy response includes them', async () => {
+        expect(await search('example-gh-user')).toEqual([]);
+        expect(await search('EXAMPLE-GH')).toEqual([]);
+        expect(await search('msomerville')).toEqual(['org-people-all-employees-row-p-github']);
+      });
+
+      it('still applies the other filters to an LF username match', async () => {
+        fixture.componentInstance['filterForm'].controls.activity.setValue('code');
+
+        expect(await search('msomerville')).toEqual([]);
       });
     });
 
@@ -1584,6 +1702,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         activity: 'all',
         employment: 'all',
         companyEmail: 'all',
+        keyContact: 'all',
         range: '730d',
         projectScope: FILTERS.projectScope,
         metric: FILTERS.metric,
@@ -1796,8 +1915,8 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     it('reads the Insights organization by default for the stored, live and former rosters', async () => {
       await mount('browser', '/?tab=employees');
 
-      const labelled = el().querySelector('[data-test="org-people-all-employees-org-scope-filter"] [aria-label="Organization scope"]');
-      expect(labelled?.textContent?.trim()).toBe('Insights organization');
+      const labelled = el().querySelector('[data-test="org-people-all-employees-org-scope-filter"] [aria-label="Company scope"]');
+      expect(labelled?.textContent?.trim()).toBe('Insights company');
       expect(orgScopeControl().value).toBe('insights');
       expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
       expect(getDirectory).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
@@ -1866,7 +1985,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await answer();
 
       expect(orgScopeControl().value).toBe('insights');
-      expect(codeNote()).toContain('Every organization related to the company');
+      expect(codeNote()).toContain('Every company related to this one');
     });
   });
 
@@ -1994,6 +2113,81 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await settle();
 
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-many', 'org-people-all-employees-row-p-one', 'org-people-all-employees-row-p-none']);
+    });
+  });
+  // lfx-self-serve#5628 — the Key Contact filter reads the roles already on each row; nothing is fetched.
+  describe('in the browser, with the key contact filter', () => {
+    const answer = async (): Promise<void> => {
+      snowflake$.next(
+        response(
+          [
+            row('p-none', 'Ada Lovelace'),
+            row('p-bill', 'Alan Turing', { keyContactRoles: ['Billing Contact'] }),
+            row('p-many', 'Grace Hopper', { keyContactRoles: ['Billing Contact', 'Legal Contact'] }),
+            row('p-odd', 'Barbara Liskov', { keyContactRoles: ['Procurement Contact'] }),
+          ],
+          4
+        )
+      );
+      snowflake$.complete();
+      await settle();
+    };
+    const keyContactControl = (): FormControl<OrgAllEmployeeKeyContactFilter> =>
+      (fixture.componentInstance as unknown as { filterForm: FormGroup<{ keyContact: FormControl<OrgAllEmployeeKeyContactFilter> }> }).filterForm.controls
+        .keyContact;
+    const ids = (): string[] =>
+      rowKeys()
+        .map((key) => key.replace('org-people-all-employees-row-', ''))
+        .sort();
+
+    beforeEach(() => getFormerEmployees.mockImplementation(() => of(response([], 0))));
+
+    it('lists everyone by default, and narrows by any, none and each role', async () => {
+      await mount('browser');
+      await answer();
+      expect(ids()).toEqual(['p-bill', 'p-many', 'p-none', 'p-odd']);
+
+      for (const [value, expected] of [
+        ['any', ['p-bill', 'p-many', 'p-odd']],
+        ['none', ['p-none']],
+        ['Billing Contact', ['p-bill', 'p-many']],
+        ['Legal Contact', ['p-many']],
+        ['Technical Contact', []],
+      ] as const) {
+        keyContactControl().setValue(value);
+        await settle();
+        expect(ids()).toEqual([...expected]);
+      }
+    });
+
+    it('writes ?keyContact= on change, drops the default, reads it on load, and clears it with the other filters', async () => {
+      await mount('browser', '/?keyContact=Legal%20Contact');
+      await answer();
+      expect(keyContactControl().value).toBe('Legal Contact');
+      expect(ids()).toEqual(['p-many']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-more-filters-toggle"]')?.textContent).toContain('1');
+
+      keyContactControl().setValue('Billing Contact');
+      await settle();
+      expect(TestBed.inject(Router).url).toContain('keyContact=Billing%20Contact');
+
+      keyContactControl().setValue('all');
+      await settle();
+      expect(TestBed.inject(Router).url).not.toContain('keyContact');
+
+      keyContactControl().setValue('none');
+      await settle();
+      (fixture.componentInstance as unknown as { clearFilters(): void }).clearFilters();
+      await settle();
+      expect(TestBed.inject(Router).url).not.toContain('keyContact');
+      expect(keyContactControl().value).toBe('all');
+    });
+
+    it('falls back to every row for an unknown ?keyContact= value', async () => {
+      await mount('browser', '/?keyContact=Janitor');
+      await answer();
+      expect(keyContactControl().value).toBe('all');
+      expect(ids()).toHaveLength(4);
     });
   });
   // A rolling deploy serves this bundle against pods that predate the field, and requests are not

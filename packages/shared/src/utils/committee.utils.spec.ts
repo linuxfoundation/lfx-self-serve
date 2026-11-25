@@ -14,19 +14,23 @@ import { describe, expect, it } from 'vitest';
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { Committee, CommitteeMember, GroupsEngagementStats } from '../interfaces';
-import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL } from '../constants/committees.constants';
+import type { Committee, CommitteeMember, CreateCommitteeMemberRequest, GroupsEngagementStats } from '../interfaces';
+import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL, SSO_GROUP_NAME_PENDING_LABEL } from '../constants/committees.constants';
 import { CommitteeMemberRole } from '../enums/committee-member.enum';
 import {
   buildCommitteeCreateQueryParams,
+  canGroupGrantSocialListening,
   buildEngagementStatCards,
   buildParentCommitteeOptions,
+  buildSelfMemberRequest,
   canManageCommitteeMembers,
   canViewCommitteeRoster,
   committeeRouteIdMatches,
   getCommitteeMailingListLink,
+  getGroupChannels,
   countVotingReps,
   getEditableCommitteeCategories,
+  getMissingCommitteeMemberRequirements,
   getGroupCommands,
   getGroupEditLink,
   getSelectableCommitteeCategories,
@@ -34,7 +38,9 @@ import {
   resolveCommitteeMemberPermission,
   resolveGroupsCardRoleSeverity,
   resolveJoinModeSeverity,
+  resolveSsoGroupNameDisplay,
   resolveTypeDisplay,
+  selfMemberNeedsDetails,
 } from './committee.utils';
 
 /** Minimal committee builder — only the fields the resolver reads. */
@@ -178,6 +184,37 @@ describe('committeeRouteIdMatches', () => {
     expect(committeeRouteIdMatches(null, committee({ uid }))).toBe(false);
     expect(committeeRouteIdMatches(uid, null)).toBe(false);
     expect(committeeRouteIdMatches('cncf-toc', committee({ uid }))).toBe(false);
+  });
+});
+
+describe('resolveSsoGroupNameDisplay', () => {
+  it.each([
+    ['public only', { public: true, sso_group_enabled: false }],
+    ['SSO only', { public: false, sso_group_enabled: true }],
+    ['both public and SSO', { public: true, sso_group_enabled: true }],
+  ])('shows the saved name when %s', (_description, toggles) => {
+    expect(resolveSsoGroupNameDisplay(toggles, 'example-wg')).toEqual({ value: 'example-wg', pending: false });
+  });
+
+  it.each([
+    ['both toggles off', { public: false, sso_group_enabled: false }],
+    ['both toggles null', { public: null, sso_group_enabled: null }],
+    ['no toggles', {}],
+  ])('hides the line when %s, even with a saved name', (_description, toggles) => {
+    expect(resolveSsoGroupNameDisplay(toggles, 'example-wg')).toBeNull();
+  });
+
+  it.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['empty', ''],
+    ['blank', '   '],
+  ])('shows the pending label when the name is %s', (_description, name) => {
+    expect(resolveSsoGroupNameDisplay({ public: true }, name)).toEqual({ value: SSO_GROUP_NAME_PENDING_LABEL, pending: true });
+  });
+
+  it('trims surrounding whitespace from a saved name', () => {
+    expect(resolveSsoGroupNameDisplay({ sso_group_enabled: true }, '  example-wg  ')).toEqual({ value: 'example-wg', pending: false });
   });
 });
 
@@ -501,6 +538,89 @@ describe('countVotingReps', () => {
   });
 });
 
+describe('buildSelfMemberRequest', () => {
+  const user = { email: 'self@example.com', given_name: 'Self', family_name: 'User' };
+
+  it.each([
+    ['a null user', null, null],
+    ['an empty email', { ...user, email: '  ' }, null],
+    [
+      'the given and family names over the alternative fields',
+      { ...user, first_name: 'Other', last_name: 'Name' },
+      { email: 'self@example.com', first_name: 'Self', last_name: 'User' },
+    ],
+    [
+      'the first and last name fallback',
+      { ...user, given_name: '', family_name: '', first_name: 'Alt', last_name: 'Person' },
+      { email: 'self@example.com', first_name: 'Alt', last_name: 'Person' },
+    ],
+    [
+      'trimmed fallback names when the OIDC names are whitespace-only',
+      { ...user, given_name: ' \t', family_name: '\u00a0 ', first_name: ' Alt ', last_name: ' Person ' },
+      { email: 'self@example.com', first_name: 'Alt', last_name: 'Person' },
+    ],
+    [
+      'empty names when neither source contains a usable name',
+      { ...user, given_name: ' ', family_name: '\t', first_name: ' ', last_name: '' },
+      { email: 'self@example.com', first_name: '', last_name: '' },
+    ],
+    [
+      'trimmed whitespace',
+      { email: ' self@example.com ', given_name: ' Self ', family_name: ' User ' },
+      { email: 'self@example.com', first_name: 'Self', last_name: 'User' },
+    ],
+  ])('returns the expected request for %s', (_description, input, expected) => {
+    expect(buildSelfMemberRequest(input)).toEqual(expected);
+  });
+});
+
+describe('selfMemberNeedsDetails', () => {
+  const names = { first_name: 'Self', last_name: 'User' };
+  const none = { business_email_required: false, enable_voting: false };
+
+  it.each([
+    ['complete names and no requirements', names, none, false],
+    ['a blank last name', { ...names, last_name: ' ' }, none, true],
+    ['a business email requirement', names, { ...none, business_email_required: true }, true],
+    ['voting enabled', names, { ...none, enable_voting: true }, true],
+  ])('with %s returns the expected result', (_description, request, requirements, expected) => {
+    expect(selfMemberNeedsDetails(request, requirements)).toBe(expected);
+  });
+});
+
+describe('getMissingCommitteeMemberRequirements', () => {
+  const business = { business_email_required: true, enable_voting: false };
+  const voting = { business_email_required: false, enable_voting: true };
+  const company = { name: 'Example Company', website: 'https://company.example' };
+  const complete = { organization: company, role: { name: CommitteeMemberRole.CHAIR }, voting: { status: CommitteeMemberVotingStatus.OBSERVER } };
+
+  it.each([
+    ['no requirements', {}, { business_email_required: false, enable_voting: false }, []],
+    ['missing company', {}, business, ['company name and HTTPS website']],
+    ['blank company name', { organization: { ...company, name: ' ' } }, business, ['company name and HTTPS website']],
+    ['missing company website', { organization: { name: company.name } }, business, ['company name and HTTPS website']],
+    ['non-HTTPS company website', { organization: { ...company, website: 'http://company.example' } }, business, ['company name and HTTPS website']],
+    ['complete business details', { organization: company }, business, []],
+    ['missing voting details', {}, voting, ['company name and HTTPS website', 'role', 'voting status']],
+    ['missing role', { ...complete, role: null }, voting, ['role']],
+    ['missing voting status', { ...complete, voting: null }, voting, ['voting status']],
+    ['legacy voting status', { ...complete, voting: { status: CommitteeMemberVotingStatus.NONE } }, voting, ['voting status']],
+    ['complete voting details', complete, voting, []],
+  ] as const)('reports %s', (_description, member, requirements, expected) => {
+    expect(getMissingCommitteeMemberRequirements(member, requirements)).toEqual(expected);
+  });
+
+  it.each([
+    CommitteeMemberVotingStatus.VOTING_REP,
+    CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP,
+    CommitteeMemberVotingStatus.OBSERVER,
+    CommitteeMemberVotingStatus.EMERITUS,
+  ])('accepts the existing member-form voting choice %s', (status) => {
+    const member: CreateCommitteeMemberRequest = { email: 'self@example.com', ...complete, voting: { status } };
+    expect(getMissingCommitteeMemberRequirements(member, voting)).toEqual([]);
+  });
+});
+
 describe('buildEngagementStatCards', () => {
   const stats: GroupsEngagementStats = {
     active_members: 12,
@@ -735,5 +855,51 @@ describe('getGroupEditLink', () => {
 
   it('falls back to the flat edit path with no query params for an unenriched payload', () => {
     expect(getGroupEditLink({ uid: 'g-1' })).toEqual({ commands: ['/groups', 'g-1', 'edit'], queryParams: {} });
+  });
+});
+
+describe('getGroupChannels', () => {
+  const base = { uid: 'c1', is_foundation: false };
+
+  it('is empty without a mailing list or chat channel', () => {
+    expect(getGroupChannels(base)).toEqual([]);
+  });
+
+  it('mails the address when the group has one, named by the address', () => {
+    expect(getGroupChannels({ ...base, mailing_list: 'dev@lists.example.org' })).toEqual([
+      expect.objectContaining({ kind: 'mailing-list', tooltip: 'dev@lists.example.org', href: 'mailto:dev@lists.example.org', newTab: false, link: null }),
+    ]);
+  });
+
+  it('links the list in the app instead of mailing an address that is unsafe in a mailto link', () => {
+    const [channel] = getGroupChannels({ ...base, mailing_list: 'dev?cc=x@lists.example.org', mailing_lists: [{ uid: 'ml-1', group_name: 'dev' }] });
+    expect(channel).toEqual(expect.objectContaining({ href: '/project/mailing-lists/ml-1', tooltip: 'dev' }));
+  });
+
+  it('links an associated list in the app, named by the list', () => {
+    const [channel] = getGroupChannels({ ...base, mailing_lists: [{ uid: 'ml-1', group_name: 'dev' }] });
+    expect(channel).toEqual(
+      expect.objectContaining({ kind: 'mailing-list', tooltip: 'dev', ariaLabel: 'Mailing list: dev', href: '/project/mailing-lists/ml-1' })
+    );
+    expect(channel.link?.commands).toEqual(['/', 'project', 'mailing-lists', 'ml-1']);
+  });
+
+  it('tells Slack, Discord and other chat apart by host, after the mailing list', () => {
+    const kinds = (chat: string) => getGroupChannels({ ...base, mailing_list: 'a@lists.example.org', chat_channel: chat }).map((c) => c.kind);
+    expect(kinds('https://acme.slack.com/archives/C1')).toEqual(['mailing-list', 'slack']);
+    expect(kinds('https://discord.gg/abc')).toEqual(['mailing-list', 'discord']);
+    expect(kinds('https://chat.example.org/room')).toEqual(['mailing-list', 'chat']);
+  });
+
+  it('shows no chat button for an invalid chat URL', () => {
+    expect(getGroupChannels({ ...base, chat_channel: 'javascript:alert(1)' })).toEqual([]);
+  });
+});
+
+describe('canGroupGrantSocialListening', () => {
+  it('is true only for Board groups', () => {
+    expect(canGroupGrantSocialListening('Board')).toBe(true);
+    expect(canGroupGrantSocialListening('Working Group')).toBe(false);
+    expect(canGroupGrantSocialListening(undefined)).toBe(false);
   });
 });

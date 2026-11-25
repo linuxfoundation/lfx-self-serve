@@ -3,7 +3,7 @@
 
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { inject, Provider, Signal } from '@angular/core';
-import { MeetingDetailsDrawerData, MeetingDetailsTab, MeetingHomeRow, PastMeetingSummary } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingDetailsDrawerData, MeetingDetailsTab, MeetingHomeRow, MeetingOccurrence, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 
@@ -21,6 +21,24 @@ export abstract class MeetingDetailsSource {
   public abstract readonly upcomingRows: Signal<MeetingHomeRow[]>;
   /** The dialog the details live in, closed by flows that leave them; null when they are not in one. */
   public abstract readonly hostRef: DialogRef | null;
+  /** Opens the subscription to the meeting's project calendar; the drawer offers none. */
+  public readonly subscribeToCalendar?: (meeting: Meeting) => void;
+  /** Moves on from a date just cancelled; the drawer closes instead. */
+  public readonly occurrenceCancelled?: (meeting: Meeting, occurrence: MeetingOccurrence) => void;
+  /** True once, when Join may open Zoom by itself as the page loads; the drawer never does. */
+  public readonly claimJoinOnLoad?: () => boolean;
+  /** False when the host knows the viewer lacks full access, such as a passcode guest; the details then show no agenda or tools. */
+  public readonly fullAccess?: boolean;
+  /** Takes guest details in place to join with another email address; the drawer links to the meeting page instead. */
+  public readonly guestJoinInPlace?: boolean;
+  /** The server's answer to whether the join window is open, for a passcode guest's copy, which has no start time. */
+  public readonly canJoin?: Signal<boolean>;
+  /** Marks the viewer invited in the host's list after a self-add there, until its feed lists the new registration. */
+  public readonly markSelfInvited?: (meetingId: string, registrantUids: readonly string[]) => void;
+  /** A confirmed self-invite awaiting the host's feed; [] is a successful add without a returned UID. */
+  public readonly selfInviteOf?: (meetingId: string) => readonly string[] | undefined;
+  /** Refreshes unindexed self-invites and restarts the host's bounded confirmation reads. */
+  public readonly retrySelfInvites?: () => void;
   /** Shows another row, such as an upcoming date picked from a past one. */
   public abstract open(row: MeetingHomeRow): void;
   /** Mirrors a summary edit into the host's list. */
@@ -42,6 +60,9 @@ export function provideMeetingDetailsDrawerSource(): Provider {
         hostRef: inject(DialogRef),
         open: data.open,
         applySummaryChange: (key, summary) => store.applySummaryChange(key, summary),
+        markSelfInvited: (meetingId, registrantUids) => store.markSelfInvited(meetingId, registrantUids),
+        selfInviteOf: (meetingId) => store.selfInviteOf(meetingId),
+        retrySelfInvites: () => store.retrySelfInvites(),
       };
     },
   };

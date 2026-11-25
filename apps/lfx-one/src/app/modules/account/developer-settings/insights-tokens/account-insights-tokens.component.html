@@ -1,0 +1,127 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<lfx-account-card [heading]="copy.insightsTitle" testId="account-insights-tokens">
+  @if (!loading() && canCreate() && hasTokens()) {
+    <lfx-ui-button
+      accountCardActions
+      variant="secondary"
+      size="small"
+      icon="fa-light fa-plus"
+      [disabled]="impersonating()"
+      (click)="openCreateDialog()"
+      data-testid="account-insights-tokens-new">
+      New token
+    </lfx-ui-button>
+  }
+  <p accountCardSubtitle class="m-0 mt-[2px] text-pretty text-[12px] leading-[18px] text-ui-neutral-500" data-testid="account-insights-tokens-subtitle">
+    Tokens for accessing the LFX Insights API. Pull project health and contribution data into your own dashboards, reports, and tools. Learn more in
+    <a
+      [href]="docsUrl"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="font-medium text-ui-accent-500 hover:underline hover:underline-offset-[3px] focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ui-focus"
+      data-testid="account-insights-tokens-docs"
+      >LFX Insights docs</a
+    >.
+  </p>
+
+  @if (loading()) {
+    <div class="flex flex-col gap-[12px]" aria-hidden="true" data-testid="account-insights-tokens-loading">
+      @for (row of [1, 2]; track row) {
+        <lfx-ui-skeleton width="100%" height="52px" />
+      }
+    </div>
+  } @else if (eligibilityCheckFailed()) {
+    <lfx-ui-note variant="warning" label="We couldn't check if you are eligible" announce data-testid="account-insights-tokens-eligibility-error">
+      LFX Insights API tokens are unavailable right now. Please try again in a few minutes.
+      <lfx-ui-button note-action variant="secondary" size="tiny" (click)="load()" data-testid="account-insights-tokens-eligibility-retry">Retry</lfx-ui-button>
+    </lfx-ui-note>
+  } @else if (!canCreate()) {
+    <lfx-ui-note
+      variant="violet"
+      icon="fa-light fa-lock"
+      label="LFX Insights API tokens aren't enabled for your account yet"
+      data-testid="account-insights-tokens-locked">
+      If you don't have access to LFX Insights API tokens and would like to, reach out to
+      <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="account-insights-tokens-support">LFX Support</button>.
+    </lfx-ui-note>
+  } @else if (loadError()) {
+    <lfx-ui-note variant="error" announce data-testid="account-insights-tokens-error">
+      We couldn't load your LFX Insights API tokens.
+      <lfx-ui-button note-action variant="secondary" size="tiny" (click)="load()" data-testid="account-insights-tokens-retry">Retry</lfx-ui-button>
+    </lfx-ui-note>
+  } @else if (hasTokens()) {
+    <ul class="m-0 flex list-none flex-col p-0" data-testid="account-insights-tokens-list">
+      @for (item of items(); track item.token.uid) {
+        <li
+          class="flex min-h-[52px] flex-row items-center gap-[12px] py-[10px] shadow-[inset_0_-1px_0] shadow-ui-neutral-alpha-100 last:shadow-none"
+          [attr.data-testid]="'account-insights-tokens-row-' + item.token.uid">
+          <span class="flex min-w-0 flex-1 flex-col gap-[2px]">
+            <span
+              class="break-words text-[14px] font-medium leading-[20px]"
+              [class.text-ui-neutral-900]="!item.expired"
+              [class.text-ui-neutral-500]="item.expired">
+              {{ item.token.name }}
+            </span>
+            <span class="break-all font-mono text-[12px] leading-[16px] text-ui-neutral-500">{{ item.maskedValue }}</span>
+            <span class="text-[12px] leading-[16px] text-ui-neutral-500" [attr.data-testid]="'account-insights-tokens-meta-' + item.token.uid">
+              Created {{ item.token.createdAt | date: 'd MMM y' }} ·
+              @if (item.expired) {
+                <span class="font-medium text-ui-danger-700">Expired {{ item.token.expiresAt | date: 'd MMM y' }}</span>
+              } @else {
+                {{ item.lastUsedLabel }} · Expires
+                @if (item.token.expiresAt) {
+                  {{ item.token.expiresAt | date: 'd MMM y' }}
+                } @else {
+                  never
+                }
+              }
+            </span>
+          </span>
+          @if (item.expired) {
+            <lfx-ui-button
+              variant="tertiary"
+              size="small"
+              [loading]="revokingUid() === item.token.uid"
+              [disabled]="revokingUid() !== null || impersonating()"
+              [ariaLabel]="'Remove ' + item.token.name"
+              (click)="remove(item.token)"
+              [attr.data-testid]="'account-insights-tokens-remove-' + item.token.uid">
+              Remove
+            </lfx-ui-button>
+          } @else {
+            <lfx-ui-button
+              variant="secondary"
+              size="small"
+              [loading]="revokingUid() === item.token.uid"
+              [disabled]="revokingUid() !== null || impersonating()"
+              [ariaLabel]="'Revoke ' + item.token.name"
+              (click)="confirmRevoke(item.token)"
+              [attr.data-testid]="'account-insights-tokens-revoke-' + item.token.uid">
+              Revoke
+            </lfx-ui-button>
+          }
+        </li>
+      }
+    </ul>
+  } @else {
+    <lfx-ui-empty-state
+      size="small"
+      icon="fa-light fa-key"
+      [heading]="copy.emptyTitle"
+      [description]="copy.emptyText"
+      data-testid="account-insights-tokens-empty">
+      <lfx-ui-button
+        empty-state-action
+        variant="secondary"
+        icon="fa-light fa-plus"
+        [disabled]="impersonating()"
+        (click)="openCreateDialog()"
+        data-testid="account-insights-tokens-empty-new">
+        New token
+      </lfx-ui-button>
+    </lfx-ui-empty-state>
+  }
+</lfx-account-card>

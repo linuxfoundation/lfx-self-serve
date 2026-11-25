@@ -206,7 +206,7 @@
           tooltipPosition="top"
           aria-label="Resend my invitation"
           [disabled]="resendingInvite()"
-          (click)="resendInvite()"
+          (click)="confirmResendInvite()"
           data-testid="dashboard-meeting-card-resend-button">
           <i class="fa-light fa-paper-plane text-xs" aria-hidden="true"></i>
         </button>
@@ -217,12 +217,15 @@
         <button
           type="button"
           [cdkCopyToClipboard]="meetingDetailClipboardUrl()"
-          class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500"
-          pTooltip="Copy meeting link"
+          (cdkCopyToClipboardCopied)="onLinkCopied($event)"
+          class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+          [class.text-gray-500]="!linkCopied()"
+          [class.text-emerald-600]="linkCopied()"
+          [pTooltip]="linkCopied() ? 'Copied!' : 'Copy meeting link'"
           tooltipPosition="top"
-          aria-label="Copy meeting link"
+          [attr.aria-label]="linkCopied() ? 'Meeting link copied' : 'Copy meeting link'"
           data-testid="dashboard-meeting-card-copy-button">
-          <i class="fa-light fa-clone text-xs"></i>
+          <i class="fa-light text-xs" [class.fa-clone]="!linkCopied()" [class.fa-check]="linkCopied()" aria-hidden="true"></i>
         </button>
       } @placeholder {
         <div class="shrink-0 w-7 h-7" aria-hidden="true"></div>
@@ -293,4 +296,7 @@
         data-testid="dashboard-meeting-card-join-button" />
     }
   </div>
+
+  <!-- Confirmation Dialog -->
+  <p-confirmDialog />
 </div>

@@ -633,13 +633,13 @@ describe('AccountSettingsComponent — resend escalation (#4695)', () => {
     vi.useRealTimers();
   });
 
-  it('words the complete email flow conditionally before and after a generic successful send', async () => {
+  it('distinguishes inbox ownership from account linking before and after a generic successful send (#5793)', async () => {
     const response$ = new Subject<SendEmailVerificationResponse>();
     const { component, fixture, root } = await setup(() => response$);
 
     expect(component.otpStep()).toBe(false);
-    expect(normalizedText(root)).toContain("If this address can be added to your account, we'll send a 6-digit verification code to it.");
-    expect(normalizedText(root)).not.toContain('A 6-digit verification code will be sent to the new address');
+    expect(normalizedText(root)).toContain('Confirm you own the email address before we check whether it can be linked to your account.');
+    expect(normalizedText(root)).not.toContain('already linked');
 
     response$.next({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
     response$.complete();
@@ -647,8 +647,11 @@ describe('AccountSettingsComponent — resend escalation (#4695)', () => {
 
     expect(component.otpStep()).toBe(true);
     const otpStep = root.querySelector('[data-testid="otp-step"]');
-    expect(normalizedText(otpStep)).toContain('If this address can be added to your account, a 6-digit code has been sent to new-address@example.test');
-    expect(normalizedText(otpStep)).not.toContain("we'll send a 6-digit code");
+    expect(normalizedText(otpStep)).toContain(
+      'Check new-address@example.test for a 6-digit verification code. Enter it to confirm you own this address. We’ll then check whether it can be linked to your account.'
+    );
+    expect(normalizedText(otpStep)).not.toContain('If this address can be added');
+    expect(normalizedText(otpStep)).not.toContain('already linked');
     expect(normalizedText(root.querySelector('[data-testid="otp-support-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
     expect(normalizedText(root.querySelector('[data-testid="otp-support-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_TITLE);
     expect(root.querySelector('[data-testid="resend-support-callout"]')).toBeNull();
@@ -1022,5 +1025,69 @@ describe('AccountSettingsComponent — linked email support callout (#5511)', ()
 
     expect(component.linkedConflict()).toBe(false);
     expect(root.querySelector('[data-testid="linked-email-support-callout"]')).toBeNull();
+  });
+});
+
+describe('AccountSettingsComponent — one section per Account & Settings page (#6067)', () => {
+  let getUserEmails: ReturnType<typeof vi.fn>;
+  let getDeveloperTokenInfo: ReturnType<typeof vi.fn>;
+
+  async function render(data: Record<string, unknown>): Promise<HTMLElement> {
+    getUserEmails = vi.fn(() => of<EmailManagementData>({ primary_email: 'primary@example.test', alternate_emails: [] }));
+    getDeveloperTokenInfo = vi.fn(() => of({ token: '' }));
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'server' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data }, fragment: of(null) } },
+        {
+          provide: UserService,
+          useValue: {
+            impersonating: signal(false),
+            getUserEmails,
+            getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+            getDeveloperTokenInfo,
+          },
+        },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
+      ],
+    });
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  const shown = (root: HTMLElement): string[] =>
+    ['section-email-settings', 'section-password', 'section-developer-settings', 'toc-email-settings'].filter((id) =>
+      root.querySelector(`[data-testid="${id}"]`)
+    );
+
+  it('shows all three sections and the contents list without a section', async () => {
+    expect(shown(await render({ embedded: true }))).toEqual(['section-email-settings', 'section-password', 'section-developer-settings', 'toc-email-settings']);
+  });
+
+  it('shows only its own section, with no divider above it, on a single-section page', async () => {
+    const root = await render({ embedded: true, section: 'password' });
+
+    expect(shown(root)).toEqual(['section-password']);
+    expect(root.querySelector('[data-testid="section-password"]')?.classList.contains('border-t')).toBe(false);
+  });
+
+  it("loads only its own section's data on a single-section page", async () => {
+    await render({ embedded: true, section: 'password' });
+    expect(getUserEmails).not.toHaveBeenCalled();
+    expect(getDeveloperTokenInfo).not.toHaveBeenCalled();
+
+    TestBed.resetTestingModule();
+    await render({ embedded: true, section: 'developer-settings' });
+    expect(getUserEmails).not.toHaveBeenCalled();
+    expect(getDeveloperTokenInfo).toHaveBeenCalledTimes(1);
+
+    TestBed.resetTestingModule();
+    await render({ embedded: true, section: 'email-settings' });
+    expect(getUserEmails).toHaveBeenCalledTimes(1);
+    expect(getDeveloperTokenInfo).not.toHaveBeenCalled();
   });
 });

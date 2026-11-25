@@ -82,6 +82,24 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     await fixture.whenStable();
   });
 
+  it('saves Members Can View Social Listening as on for a Board group', () => {
+    component.form.controls.members_can_view_social_listening.setValue(true);
+
+    component.saveSettings();
+
+    expect(updateCommittee.mock.calls[0][1].members_can_view_social_listening).toBe(true);
+  });
+
+  it('saves Members Can View Social Listening as off when the group is not a Board', () => {
+    component.form.controls.members_can_view_social_listening.setValue(true);
+    component.form.controls.category.setValue('Working Group');
+
+    // Skip the Change Group Type confirmation and save as if it were accepted.
+    (component as unknown as { persistSettings: () => void }).persistSettings();
+
+    expect(updateCommittee.mock.calls[0][1].members_can_view_social_listening).toBe(false);
+  });
+
   it('omits chat_webhook_url from the save payload when the control is pristine', () => {
     component.saveSettings();
 
@@ -1126,6 +1144,58 @@ describe('CommitteeSettingsTabComponent — release-before-activate sequencing (
     calls['ml-B'].complete();
 
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Partial Success' }));
+  });
+
+  it('still releases the AUTO_MAILING_LIST_TO_COMMITTEE slot before a sibling activates into it, even when the releasing list switches straight to the other auto mode', async () => {
+    // ml-A gives up the single ML→C slot by switching straight to C→ML (not MANUAL) — this must stay
+    // a release so ml-B's claim on that slot runs after it, same as the MANUAL case above.
+    const listA = makeMl({ uid: 'ml-A', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE }] });
+    const listB = makeMl({ uid: 'ml-B', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.MANUAL }] });
+    await createFixture([listA, listB]);
+
+    (component as any).saveMailingListAssociation(
+      new Set(['ml-A', 'ml-B']),
+      new Set(['ml-A', 'ml-B']),
+      new Map([
+        ['ml-A', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST],
+        ['ml-B', MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE],
+      ])
+    );
+
+    expect(updateMailingList).toHaveBeenCalledWith('ml-A', expect.objectContaining({ sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }));
+    expect(updateMailingList).not.toHaveBeenCalledWith('ml-B', expect.anything());
+
+    calls['ml-A'].next({});
+    calls['ml-A'].complete();
+
+    expect(updateMailingList).toHaveBeenCalledWith('ml-B', expect.objectContaining({ sync_mode: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE }));
+  });
+
+  it('does not race a list switching from AUTO_COMMITTEE_TO_MAILING_LIST straight to AUTO_MAILING_LIST_TO_COMMITTEE against a sibling releasing to MANUAL in the same save (cursor/greptile/copilot/lfx-one #5790 round 2 review)', async () => {
+    // ml-A only needs the cToMlUid conflict cleared, not an ML→C slot release — leaving C→ML is not the
+    // single-slot direction, so this must NOT be batched into the parallel release phase alongside ml-B.
+    const listA = makeMl({ uid: 'ml-A', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }] });
+    const listB = makeMl({ uid: 'ml-B', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }] });
+    await createFixture([listA, listB]);
+
+    (component as any).saveMailingListAssociation(
+      new Set(['ml-A', 'ml-B']),
+      new Set(['ml-A', 'ml-B']),
+      new Map([
+        ['ml-A', MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE],
+        ['ml-B', MailingListSyncMode.MANUAL],
+      ])
+    );
+
+    // ml-B's release must go out immediately, but ml-A's activation must wait for it to resolve —
+    // if ml-A is wrongly routed into the release phase, it fires here too, before ml-B's release lands.
+    expect(updateMailingList).toHaveBeenCalledWith('ml-B', expect.objectContaining({ sync_mode: MailingListSyncMode.MANUAL }));
+    expect(updateMailingList).not.toHaveBeenCalledWith('ml-A', expect.anything());
+
+    calls['ml-B'].next({});
+    calls['ml-B'].complete();
+
+    expect(updateMailingList).toHaveBeenCalledWith('ml-A', expect.objectContaining({ sync_mode: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE }));
   });
 });
 

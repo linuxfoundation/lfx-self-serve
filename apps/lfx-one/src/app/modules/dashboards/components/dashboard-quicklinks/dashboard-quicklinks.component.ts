@@ -5,8 +5,6 @@ import { Component, computed, inject, Signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DashboardQuickLink } from '@lfx-one/shared/interfaces';
 import { MeetingCreateMenuComponent } from '@app/modules/meetings/meeting-composer/meeting-create-menu.component';
-import { FeatureFlagService } from '@services/feature-flag.service';
-import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { ProjectContextService } from '@services/project-context.service';
 
 @Component({
@@ -15,24 +13,14 @@ import { ProjectContextService } from '@services/project-context.service';
   templateUrl: './dashboard-quicklinks.component.html',
 })
 export class DashboardQuicklinksComponent {
-  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly projectContextService = inject(ProjectContextService);
 
   private readonly createMeetingMenu = viewChild<MeetingCreateMenuComponent>('createMeetingMenu');
 
   /**
-   * Whether meetings v2 is the create surface for this user.
-   * @description Read as a signal so the row settles on its own once LaunchDarkly resolves, and
-   * defaulted to `false` so a slow or unreachable provider leaves the pre-v2 link in place rather
-   * than a dropdown into a composer this user isn't targeted for. See `MEETING_V2_ENABLED_FLAG`.
-   */
-  protected readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(this.featureFlagService);
-
-  /**
    * Whether the create dropdown is showing, for the trigger's `aria-expanded`.
-   * @description Goes through the view query rather than the template's own reference because the
-   * menu is only in the tree while the flag is on, and a reference declared inside a control-flow
-   * block isn't in scope for the button outside it.
+   * @description Goes through the same view query the "Create meeting" link's `command` toggles, so
+   * the trigger's state and the menu it opens always come from one instance.
    */
   protected readonly createMenuOpen = computed(() => this.createMeetingMenu()?.isOpen() ?? false);
 
@@ -45,10 +33,8 @@ export class DashboardQuicklinksComponent {
 
   /**
    * Every quick link this section can offer, before the per-link permission filter.
-   * @description A computed rather than a static array because the meetings v2 flag switches what
-   * the "Create meeting" row *does*. The template already renders either shape — a `command` link as
-   * a button, a `route` link as an anchor — so the gate is a data-level choice and no markup has to
-   * know which one it got.
+   * @description The template renders either shape — a `command` link as a button, a `route` link
+   * as an anchor — so no markup has to know which kind of link it got.
    */
   protected readonly links: Signal<DashboardQuickLink[]> = this.initLinks();
 
@@ -81,34 +67,25 @@ export class DashboardQuicklinksComponent {
   }
 
   /**
-   * The "Create meeting" row, on whichever side of the meetings v2 flag this user is on.
-   * @description With v2 on, it opens the same Create Meeting dropdown the meetings dashboard's
-   * button opens, over the dashboard rather than routing to `/meetings/create` — that URL redirects
+   * The "Create meeting" row.
+   * @description Opens the same Create Meeting dropdown the meetings dashboard's button opens, over the dashboard rather than routing to `/meetings/create` — that URL redirects
    * to the meetings list, so going through it would push the dashboard the organizer is reading out
    * from under them. The dropdown rather than the quick dialog directly, because creating a meeting
    * always starts by choosing a type or Advanced, and this link is one create entry point among
    * several, so it shouldn't be the one that quietly picks both on the organizer's behalf.
    *
-   * With v2 off, it is the plain `/meetings/create` link this row carried before the composer
-   * existed — that route still renders the pre-v2 wizard, so the row behaves exactly as it does on
-   * `main`.
-   *
-   * Permission is the same on both sides: meeting-authoring permission, not writer permission, since
+   * Gated on meeting-authoring permission, not writer permission, since
    * a meeting coordinator who isn't a project writer can create meetings and gating this on
    * `canWrite` hid the link from them.
    */
   private meetingCreateLink(): DashboardQuickLink {
-    const shared = {
+    return {
       label: 'Create meeting',
       icon: 'fa-light fa-calendar',
       visible: () => this.projectContextService.canWriteMeetings(),
       testId: 'create-meeting',
+      command: (event: Event) => this.createMeetingMenu()?.toggle(event),
+      hasPopup: 'menu',
     };
-
-    if (!this.meetingsV2Enabled()) {
-      return { ...shared, route: ['/meetings', 'create'] };
-    }
-
-    return { ...shared, command: (event: Event) => this.createMeetingMenu()?.toggle(event), hasPopup: 'menu' };
   }
 }

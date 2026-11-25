@@ -170,7 +170,7 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
     const fixture = TestBed.createComponent(OrgOverviewInvolvementComponent);
     fixture.componentInstance.openTraining();
 
-    expect(navigate).toHaveBeenCalledWith(['/org', 'acme', 'training']);
+    expect(navigate).toHaveBeenCalledWith(['/company', 'acme', 'training']);
     navigate.mockRestore();
   });
 
@@ -344,7 +344,7 @@ describe('OrgOverviewInvolvementComponent Education cards in the template', () =
     for (const card of cards.filter((entry) => entry.clickable)) {
       navigate.mockClear();
       card.dispatchEvent(new Event('cardClick'));
-      expect(navigate).toHaveBeenCalledWith(['/org', 'acme', 'training']);
+      expect(navigate).toHaveBeenCalledWith(['/company', 'acme', 'training']);
     }
     navigate.mockRestore();
   });

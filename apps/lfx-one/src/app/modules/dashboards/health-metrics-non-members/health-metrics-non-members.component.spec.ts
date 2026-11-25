@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, output, signal } from '@angular/core';
+import { Component, model, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { HEALTH_METRICS_NON_MEMBERS_SECTIONS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject } from 'rxjs';
@@ -19,6 +19,7 @@ import { HealthMetricsNonMembersComponent } from './health-metrics-non-members.c
 /** Stands in for Company participation, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-non-members-orgs', template: '<div data-testid="non-members-orgs-stub"></div>' })
 class OrgsStubComponent {
+  public readonly filter = model<string>('all');
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -43,13 +44,19 @@ describe('HealthMetricsNonMembersComponent', () => {
   const originalScrollIntoView = Element.prototype.scrollIntoView;
   let fixture: ComponentFixture<HealthMetricsNonMembersComponent>;
 
-  async function setup(initialFragment: string | null = null): Promise<void> {
+  async function setup(initialFragment: string | null = null, queryParams: Record<string, string> = {}): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [HealthMetricsNonMembersComponent],
       providers: [
         HealthMetricsChromeService,
         { provide: UserService, useValue: { impersonating: signal(false) } },
-        { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            fragment: new BehaviorSubject<string | null>(initialFragment).asObservable(),
+            snapshot: { queryParamMap: convertToParamMap(queryParams) },
+          },
+        },
       ],
     })
       .overrideComponent(HealthMetricsNonMembersComponent, {
@@ -103,6 +110,23 @@ describe('HealthMetricsNonMembersComponent', () => {
       expect(fixture.nativeElement.querySelector(`[data-testid="non-members-sub-nav-${section.key}"]`).textContent).toContain(section.label);
     }
     expect(nav.querySelector('[role="tooltip"]')).toBeNull();
+  });
+
+  it("puts Company participation's All / Attends meetings / High fit switch in its card header and hands the pick to the section", async () => {
+    await setup(null, { nonFit: 'meetings' });
+    const controls = fixture.nativeElement.querySelector('[data-testid="non-members-controls-orgs"]') as HTMLElement;
+    const labels = [...controls.querySelectorAll('[data-testid^="non-members-orgs-filter-"]')].map((option) => option.textContent?.trim());
+
+    expect(labels).toEqual(['All', 'Attends meetings', 'High fit']);
+    expect(stub(OrgsStubComponent).filter()).toBe('meetings');
+
+    fixture.componentInstance['onOrgsFilterChange']('high-fit');
+    fixture.detectChanges();
+    expect(stub(OrgsStubComponent).filter()).toBe('high-fit');
+
+    fixture.componentInstance['onOrgsFilterChange']('medium-fit');
+    fixture.detectChanges();
+    expect(stub(OrgsStubComponent).filter()).toBe('all');
   });
 
   it('re-lands a held deep link once every data section settles, then releases it', async () => {

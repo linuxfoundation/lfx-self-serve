@@ -72,25 +72,28 @@
       >
     </div>
 
-    <table class="sr-only" data-testid="org-roi-value-drivers-table">
-      <caption>
-        Return from each value driver relative to a typical organization-project pair
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">Value driver</th>
-          <th scope="col">Difference from typical</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (bar of bars(); track bar.category) {
+    <!-- sr-only sits on a wrapper: a table ignores its 1px height and overflow, so it would keep its full height and stretch the page. -->
+    <div class="sr-only">
+      <table data-testid="org-roi-value-drivers-table">
+        <caption>
+          Return from each value driver relative to a typical company-project pair
+        </caption>
+        <thead>
           <tr>
-            <th scope="row">{{ bar.category }}</th>
-            <td>{{ bar.label }}</td>
+            <th scope="col">Value driver</th>
+            <th scope="col">Difference from typical</th>
           </tr>
-        }
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          @for (bar of bars(); track bar.category) {
+            <tr>
+              <th scope="row">{{ bar.category }}</th>
+              <td>{{ bar.label }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
 
     <div class="flex flex-col gap-2 text-sm text-gray-700" data-testid="org-roi-value-drivers-details">
       <h3 class="text-sm font-semibold text-gray-900" data-testid="org-roi-value-drivers-details-heading">Details</h3>

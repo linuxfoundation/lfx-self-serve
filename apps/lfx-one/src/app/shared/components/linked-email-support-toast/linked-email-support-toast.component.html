@@ -1,0 +1,18 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Separate key and corner keep the sticky support action clear of global notices and the Intercom launcher. -->
+<p-toast [key]="toastKey" position="bottom-left">
+  <ng-template let-message pTemplate="message">
+    <lfx-toast-message [message]="message">
+      <button
+        type="button"
+        lfxOpenIntercom
+        [intercomMessage]="message.data?.supportMessage"
+        class="toast-action"
+        data-testid="profile-linked-support-toast-button">
+        Contact support
+      </button>
+    </lfx-toast-message>
+  </ng-template>
+</p-toast>

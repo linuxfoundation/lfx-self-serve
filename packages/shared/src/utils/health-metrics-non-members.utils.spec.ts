@@ -8,11 +8,10 @@ import { HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED } from '../constants/h
 import {
   buildHealthMetricsNonMembersConversionView,
   buildHealthMetricsNonMembersOrgRows,
-  buildHealthMetricsNonMembersOrgsLowConfidence,
-  buildHealthMetricsNonMembersOrgsSummary,
-  buildHealthMetricsNonMembersPeopleCountLabel,
+  buildHealthMetricsNonMembersOtherMemberships,
   buildHealthMetricsNonMembersPersonRows,
   buildHealthMetricsNonMembersSubNavItems,
+  parseHealthMetricsNonMembersOrgsFilter,
 } from './health-metrics-non-members.utils';
 
 import type {
@@ -24,26 +23,23 @@ import type {
 const ORG: HealthMetricsNonMembersOrg = {
   accountId: '0014100000AcmeAAAA',
   accountName: 'Acme Motors',
+  logoUrl: 'https://logos.example/acme.png',
   lastEngagedDate: '2026-03-14',
   meetingsAttended: 12,
   distinctPeople: 3,
   contributions: 1840,
-  isNew: false,
-  membershipStatus: 'Non-member',
   fitBand: 'High',
+  otherMemberships: [{ foundationSlug: 'cncf', foundationName: 'Cloud Native Computing Foundation', tier: 'Gold Membership' }],
 };
 
 const CONVERSION: HealthMetricsNonMembersConversion = {
   measured: true,
-  entryTierName: 'Silver',
-  entryTierFeeUsd: 25000,
-  organizationsTracked: 412,
   highFitCount: 2,
   newCount: 37,
   estimatedPipelineUsd: 50000,
   warmest: [
-    { accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: 12, contributions: 400 },
-    { accountId: '0014100000VendAAAA', accountName: 'Vendor Corp', meetingsAttended: 1, contributions: 100 },
+    { accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', logoUrl: 'https://logos.example/acme.png', meetingsAttended: 12, contributions: 1400 },
+    { accountId: '0014100000VendAAAA', accountName: 'Vendor Corp', logoUrl: null, meetingsAttended: 1, contributions: 0 },
   ],
 };
 
@@ -53,6 +49,7 @@ const PERSON: HealthMetricsNonMembersPerson = {
   jobTitle: 'Staff Engineer',
   accountId: '0014100000AcmeAAAA',
   accountName: 'Acme Motors',
+  logoUrl: 'https://logos.example/acme.png',
   lastAttendedDate: '2026-03-14',
   meetingsAttended: 1240,
 };
@@ -68,157 +65,179 @@ describe('buildHealthMetricsNonMembersSubNavItems', () => {
 });
 
 describe('buildHealthMetricsNonMembersOrgRows', () => {
-  it('formats the counts and the last engaged date', () => {
+  it('formats the counts, the people under the meetings and the last engaged date under the name', () => {
     const [row] = buildHealthMetricsNonMembersOrgRows([ORG]);
 
     expect(row).toEqual({
       accountId: ORG.accountId,
       accountName: 'Acme Motors',
+      logoUrl: 'https://logos.example/acme.png',
+      lastEngagedLabel: 'Last engaged Mar 14, 2026',
+      otherMemberships: [{ key: 'cncf', label: 'CNCF', tierLabel: 'Gold membership' }],
       meetingsLabel: '12',
-      peopleLabel: '3',
+      peopleLabel: '3 people',
       contributionsLabel: '1,840',
-      lastEngagedLabel: 'Mar 14, 2026',
-      membershipLabel: 'Non-member',
       fitLabel: 'High',
-      fitDotClass: 'bg-emerald-600',
+      fitBadgeClass: 'bg-emerald-50 text-emerald-700',
     });
   });
 
-  it('renders a dash for a zero or NULL count or a missing date', () => {
-    const [row] = buildHealthMetricsNonMembersOrgRows([{ ...ORG, meetingsAttended: null, distinctPeople: null, contributions: 0, lastEngagedDate: null }]);
-
-    expect(row.meetingsLabel).toBe('—');
-    expect(row.peopleLabel).toBe('—');
-    expect(row.contributionsLabel).toBe('—');
-    expect(row.lastEngagedLabel).toBe('—');
+  it('shows the account id for a company whose name is blank once trimmed', () => {
+    expect(buildHealthMetricsNonMembersOrgRows([{ ...ORG, accountName: '   ' }])[0].accountName).toBe(ORG.accountId);
   });
 
-  it("shows the model's membership status and colours each fit band as the design does", () => {
-    const view = (overrides: Partial<HealthMetricsNonMembersOrg>) => buildHealthMetricsNonMembersOrgRows([{ ...ORG, ...overrides }])[0];
-
-    expect(view({ membershipStatus: 'Former member' }).membershipLabel).toBe('Former member');
-    expect(view({ fitBand: 'Medium' })).toMatchObject({ fitLabel: 'Medium', fitDotClass: 'bg-amber-500' });
-    expect(view({ fitBand: 'Low' })).toMatchObject({ fitLabel: 'Low', fitDotClass: 'bg-gray-400' });
-    expect(view({ fitBand: 'Unrated' })).toMatchObject({ fitLabel: 'Unrated', fitDotClass: 'bg-gray-400' });
-    expect(view({ fitBand: 'constructor' }).fitDotClass).toBe('bg-gray-400');
+  it('says one person in the singular', () => {
+    expect(buildHealthMetricsNonMembersOrgRows([{ ...ORG, distinctPeople: 1 }])[0].peopleLabel).toBe('1 person');
   });
 
-  it('falls back to Non-member and a dash, with no dot, when the model leaves them unset', () => {
-    const row = buildHealthMetricsNonMembersOrgRows([{ ...ORG, membershipStatus: null, fitBand: '  ' }])[0];
+  it('renders a dash with no people line for no meetings, a dash for no contributions, and no date line without a date', () => {
+    const [row] = buildHealthMetricsNonMembersOrgRows([{ ...ORG, meetingsAttended: 0, distinctPeople: 2, contributions: null, lastEngagedDate: null }]);
 
-    expect(row).toMatchObject({ membershipLabel: 'Non-member', fitLabel: '—', fitDotClass: null });
+    expect(row).toMatchObject({ meetingsLabel: '—', peopleLabel: '', contributionsLabel: '—', lastEngagedLabel: '' });
+  });
+
+  it('badges each scored fit band as the design colours it, and dashes anything else', () => {
+    const view = (fitBand: string | null) => buildHealthMetricsNonMembersOrgRows([{ ...ORG, fitBand }])[0];
+
+    expect(view('Medium')).toMatchObject({ fitLabel: 'Medium', fitBadgeClass: 'bg-amber-50 text-amber-800' });
+    expect(view(' Low ')).toMatchObject({ fitLabel: 'Low', fitBadgeClass: 'bg-red-50 text-red-700' });
+    for (const band of [null, '  ', 'Unrated', 'constructor']) expect(view(band)).toMatchObject({ fitLabel: '—', fitBadgeClass: null });
   });
 });
 
-describe('buildHealthMetricsNonMembersOrgsSummary', () => {
-  it('counts the organizations and the new ones', () => {
-    expect(buildHealthMetricsNonMembersOrgsSummary(1412, 37)).toBe('1,412 organizations · 37 new this period');
-    expect(buildHealthMetricsNonMembersOrgsSummary(1, 0)).toBe('1 organization · 0 new this period');
+describe('buildHealthMetricsNonMembersOtherMemberships', () => {
+  const membership = (foundationSlug: string, foundationName: string, tier: string | null) => ({ foundationSlug, foundationName, tier });
+
+  it('keeps one badge per foundation at its highest tier, Diamond to Silver first, then A–Z', () => {
+    const views = buildHealthMetricsNonMembersOtherMemberships([
+      membership('zeta-foundation', 'Zeta Foundation', 'Silver Membership'),
+      membership('cncf', 'Cloud Native Computing Foundation', 'Silver Membership'),
+      membership('cncf', 'Cloud Native Computing Foundation', 'Platinum Membership'),
+      membership('alpha-foundation', 'Alpha Foundation', 'Silver'),
+      membership('openssf', 'Open Source Security Foundation', 'Associate'),
+      membership('beta-foundation', 'Beta Foundation', 'Silver (100 - 499)'),
+    ]);
+
+    expect(views).toEqual([
+      { key: 'cncf', label: 'CNCF', tierLabel: 'Platinum membership' },
+      { key: 'alpha-foundation', label: 'Alpha Foundation', tierLabel: 'Silver membership' },
+      { key: 'beta-foundation', label: 'Beta Foundation', tierLabel: 'Silver (100 - 499) membership' },
+      { key: 'zeta-foundation', label: 'Zeta Foundation', tierLabel: 'Silver membership' },
+      { key: 'openssf', label: 'OpenSSF', tierLabel: 'Associate membership' },
+    ]);
+  });
+
+  it('runs every tier past Silver, and no tier, A–Z together', () => {
+    const views = buildHealthMetricsNonMembersOtherMemberships([
+      membership('zeta-foundation', 'Zeta Foundation', 'Associate'),
+      membership('beta-foundation', 'Beta Foundation', null),
+      membership('alpha-foundation', 'Alpha Foundation', 'Bronze'),
+      membership('gamma-foundation', 'Gamma Foundation', 'End User Supporter'),
+    ]);
+
+    expect(views.map((view) => view.label)).toEqual(['Alpha Foundation', 'Beta Foundation', 'Gamma Foundation', 'Zeta Foundation']);
+  });
+
+  it('keeps a foundation\'s highest tier by the full ranking, says "Membership" with no tier, and falls back to the slug with no name', () => {
+    const views = buildHealthMetricsNonMembersOtherMemberships([
+      membership('constructor', '', null),
+      membership('beta-foundation', 'Beta Foundation', 'Associate'),
+      membership('beta-foundation', 'Beta Foundation', 'End User Supporter'),
+    ]);
+
+    expect(views).toEqual([
+      { key: 'beta-foundation', label: 'Beta Foundation', tierLabel: 'Associate membership' },
+      { key: 'constructor', label: 'constructor', tierLabel: 'Membership' },
+    ]);
+  });
+
+  it('is empty for a company with no other membership', () => {
+    expect(buildHealthMetricsNonMembersOtherMemberships([])).toEqual([]);
   });
 });
 
-describe('buildHealthMetricsNonMembersOrgsLowConfidence', () => {
-  it('flags fewer than five active organizations, singular for one', () => {
-    expect(buildHealthMetricsNonMembersOrgsLowConfidence(4)).toBe('Only 4 active organizations — too early to rank by fit.');
-    expect(buildHealthMetricsNonMembersOrgsLowConfidence(1)).toBe('Only 1 active organization — too early to rank by fit.');
-  });
-
-  it('stays quiet at the threshold and above, and with no active organization', () => {
-    expect(buildHealthMetricsNonMembersOrgsLowConfidence(5)).toBeNull();
-    expect(buildHealthMetricsNonMembersOrgsLowConfidence(412)).toBeNull();
-    expect(buildHealthMetricsNonMembersOrgsLowConfidence(0)).toBeNull();
+describe('parseHealthMetricsNonMembersOrgsFilter', () => {
+  it('keeps a known cut and falls back to All', () => {
+    expect(parseHealthMetricsNonMembersOrgsFilter('meetings')).toBe('meetings');
+    expect(parseHealthMetricsNonMembersOrgsFilter('high-fit')).toBe('high-fit');
+    for (const value of [null, undefined, '', 'High', 'constructor']) expect(parseHealthMetricsNonMembersOrgsFilter(value)).toBe('all');
   });
 });
 
 describe('buildHealthMetricsNonMembersPersonRows', () => {
-  it('formats the meeting count and the last attended date, keeping the title', () => {
+  it('formats the meeting count and the last attended date, with the title under the name and the company logo', () => {
     expect(buildHealthMetricsNonMembersPersonRows([PERSON])).toEqual([
       {
         rowKey: '1',
         displayName: 'Jane Doe',
+        initials: '',
         jobTitle: 'Staff Engineer',
-        organizationLabel: 'Acme Motors',
+        companyLabel: 'Acme Motors',
+        hasCompany: true,
+        logoUrl: 'https://logos.example/acme.png',
         meetingsLabel: '1,240',
         lastAttendedLabel: 'Mar 14, 2026',
       },
     ]);
   });
 
-  it('drops a blank title and dashes a missing organization, count or date', () => {
+  it('drops a blank title and dashes a missing company, count or date', () => {
     const [row] = buildHealthMetricsNonMembersPersonRows([
       { ...PERSON, jobTitle: '  ', accountId: null, accountName: null, meetingsAttended: null, lastAttendedDate: null },
     ]);
 
-    expect(row.jobTitle).toBeNull();
-    expect(row.organizationLabel).toBe('—');
-    expect(row.meetingsLabel).toBe('—');
-    expect(row.lastAttendedLabel).toBe('—');
+    expect(row).toMatchObject({ jobTitle: '', companyLabel: '—', hasCompany: false, meetingsLabel: '—', lastAttendedLabel: '—' });
   });
 
-  it('falls back to the account id when the organization has no name', () => {
-    expect(buildHealthMetricsNonMembersPersonRows([{ ...PERSON, accountName: '' }])[0].organizationLabel).toBe('0014100000AcmeAAAA');
+  it('gives a one-word name one initial, and leaves longer names to the avatar', () => {
+    expect(buildHealthMetricsNonMembersPersonRows([{ ...PERSON, displayName: ' jane ' }])[0].initials).toBe('J');
+    expect(buildHealthMetricsNonMembersPersonRows([{ ...PERSON, displayName: 'Jane Q Doe' }])[0].initials).toBe('');
   });
-});
 
-describe('buildHealthMetricsNonMembersPeopleCountLabel', () => {
-  it('counts the engaged individuals', () => {
-    expect(buildHealthMetricsNonMembersPeopleCountLabel(1412)).toBe('1,412 engaged individuals');
-    expect(buildHealthMetricsNonMembersPeopleCountLabel(1)).toBe('1 engaged individual');
-    expect(buildHealthMetricsNonMembersPeopleCountLabel(null)).toBe('Engaged individuals not available');
+  it('falls back to the account id when the company has no name', () => {
+    expect(buildHealthMetricsNonMembersPersonRows([{ ...PERSON, accountName: ' ' }])[0]).toMatchObject({
+      companyLabel: '0014100000AcmeAAAA',
+      hasCompany: true,
+    });
   });
 });
 
 describe('buildHealthMetricsNonMembersConversionView', () => {
-  it('qualifies the estimate and counts the side stats', () => {
-    const view = buildHealthMetricsNonMembersConversionView(CONVERSION);
-
-    expect(view).toMatchObject({
-      measured: true,
-      summary: '412 organizations tracked',
-      pipelineValue: '$50K',
-      pipelineLabel: 'Estimated pipeline',
-      hasEstimate: true,
-    });
-    expect(view.side).toEqual([
-      { key: 'high-fit', label: 'High-fit organizations', value: '2' },
-      { key: 'new', label: 'New this period', value: '37' },
+  it('shows the pipeline as compact currency beside the high-fit and new counts, with no trend or description', () => {
+    expect(buildHealthMetricsNonMembersConversionView(CONVERSION).metrics).toEqual([
+      { key: 'pipeline', label: 'Estimated pipeline', value: '$50K' },
+      { key: 'high-fit', label: 'High-fit', value: '2' },
+      { key: 'new', label: 'New', value: '37' },
     ]);
   });
 
-  it('lists the warmest organizations with contributions, labelled with meetings', () => {
-    expect(buildHealthMetricsNonMembersConversionView(CONVERSION).warmest).toEqual([
-      { accountId: '0014100000AcmeAAAA', label: 'Acme Motors · 12 meetings', valueLabel: '400 contributions' },
-      { accountId: '0014100000VendAAAA', label: 'Vendor Corp · 1 meeting', valueLabel: '100 contributions' },
-    ]);
-  });
+  it('lists the warmest companies with their logos, dashing a zero, and sorting on the values shown', () => {
+    const [acme, vendor] = buildHealthMetricsNonMembersConversionView(CONVERSION).warmest;
 
-  it('says not enough data, never $0, when the foundation has no entry-tier fee', () => {
-    const view = buildHealthMetricsNonMembersConversionView({ ...CONVERSION, entryTierName: null, entryTierFeeUsd: null, estimatedPipelineUsd: null });
-
-    expect(view.pipelineValue).toBe('—');
-    expect(view.pipelineLabel).toBe('Estimated pipeline · not enough data');
-    expect(view.hasEstimate).toBe(false);
-  });
-
-  it('renders a NULL count as not available but keeps a real zero', () => {
-    const view = buildHealthMetricsNonMembersConversionView({
-      ...CONVERSION,
-      organizationsTracked: null,
-      highFitCount: 0,
-      newCount: null,
-      warmest: [{ accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: null, contributions: null }],
+    expect(acme).toEqual({
+      accountId: '0014100000AcmeAAAA',
+      accountName: 'Acme Motors',
+      logoUrl: 'https://logos.example/acme.png',
+      meetingsLabel: '12',
+      contributionsLabel: '1,400',
+      sortValues: { company: 'Acme Motors', meetings: 12, contributions: 1400 },
     });
-
-    expect(view.summary).toBe('Organizations tracked not available');
-    expect(view.side.map((stat) => stat.value)).toEqual(['0', 'not available']);
-    expect(view.warmest).toEqual([{ accountId: '0014100000AcmeAAAA', label: 'Acme Motors · not available', valueLabel: 'not available' }]);
+    expect(vendor).toMatchObject({ contributionsLabel: '—', sortValues: { contributions: null } });
   });
 
-  it('marks the unmeasured value as not measured, with a dashed, qualified estimate', () => {
-    const view = buildHealthMetricsNonMembersConversionView(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
+  it('dashes an unset figure, never 0, and keeps a real zero', () => {
+    const view = buildHealthMetricsNonMembersConversionView({ ...CONVERSION, estimatedPipelineUsd: null, highFitCount: 0, newCount: null });
 
-    expect(view.measured).toBe(false);
-    expect(view.warmest).toEqual([]);
-    expect(view).toMatchObject({ pipelineValue: '—', pipelineLabel: 'Estimated pipeline · not enough data', hasEstimate: false });
+    expect(view.metrics.map((metric) => metric.value)).toEqual(['—', '0', '—']);
+  });
+
+  it('dashes every figure with no conversion row but still lists the companies, and is empty only with neither', () => {
+    const unmeasured = buildHealthMetricsNonMembersConversionView({ ...HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED, warmest: CONVERSION.warmest });
+    expect(unmeasured.metrics.map((metric) => metric.value)).toEqual(['—', '—', '—']);
+    expect(unmeasured.warmest).toHaveLength(2);
+    expect(unmeasured.empty).toBe(false);
+
+    expect(buildHealthMetricsNonMembersConversionView(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED).empty).toBe(true);
+    expect(buildHealthMetricsNonMembersConversionView({ ...CONVERSION, warmest: [] }).empty).toBe(false);
   });
 });

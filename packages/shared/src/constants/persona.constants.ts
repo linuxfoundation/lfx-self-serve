@@ -5,6 +5,9 @@ import type { DevPersonaPreset, PersonaOption, PersonaType } from '../interfaces
 
 export const VALID_PERSONAS: ReadonlySet<string> = new Set<string>(['contributor', 'maintainer', 'board-member', 'executive-director']);
 
+/** The executive-director persona, for server policies that admit EDs by persona. */
+export const EXECUTIVE_DIRECTOR_PERSONA: PersonaType = 'executive-director';
+
 export const BOARD_SCOPED_PERSONAS: ReadonlySet<PersonaType> = new Set(['board-member', 'executive-director']);
 
 export const PROJECT_SCOPED_PERSONAS: ReadonlySet<PersonaType> = new Set(['maintainer', 'contributor']);
@@ -65,6 +68,9 @@ export const AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS = 15_000;
 export const PERSONAS_CACHE_TTL_MS = 15_000;
 
 export const ROOT_PROJECT_SLUG = 'ROOT';
+
+/** Most parents a project-ancestry climb follows (project → foundation → … → ROOT) before it gives up. */
+export const PROJECT_ANCESTRY_MAX_DEPTH = 6;
 export const ROOT_PROJECT_UID_CACHE_TTL_MS = 60 * 60 * 1000;
 
 /**

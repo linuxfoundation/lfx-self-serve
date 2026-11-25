@@ -3,6 +3,8 @@
 
 import { Component, computed, input, Signal } from '@angular/core';
 
+import { HEALTH_METRICS_TABLE_DASH } from '@lfx-one/shared/constants';
+
 import { HealthMetricsInfoTipComponent } from '../health-metrics-info-tip/health-metrics-info-tip.component';
 
 import type { HealthMetricsMetricItem, HealthMetricsMetricTrendTone } from '@lfx-one/shared/interfaces';
@@ -21,6 +23,9 @@ export class HealthMetricsMetricsRowComponent {
   public readonly items = input.required<readonly HealthMetricsMetricItem[]>();
   public readonly testId = input<string>('hm-metrics-row');
 
+  /** The dash an unset value reads, shared with the tables, so the muted state cannot drift from its producers. */
+  protected readonly dash = HEALTH_METRICS_TABLE_DASH;
+
   /** Trend ink: a rise, a fall, flat or not available, and plain context. */
   protected readonly trendClasses: Record<HealthMetricsMetricTrendTone, string> = {
     up: 'text-emerald-600',
@@ -31,6 +36,7 @@ export class HealthMetricsMetricsRowComponent {
   protected readonly leadClasses: Record<NonNullable<HealthMetricsMetricItem['descriptionLeadTone']>, string> = {
     up: 'text-emerald-600',
     down: 'text-red-600',
+    flat: 'text-gray-400',
   };
   protected readonly itemClasses: Signal<string[]> = this.initItemClasses();
 

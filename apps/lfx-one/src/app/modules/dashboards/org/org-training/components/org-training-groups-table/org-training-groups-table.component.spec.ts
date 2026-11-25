@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MAX_ORG_TRAINING_GROUP_EMPLOYEES } from '@lfx-one/shared/constants';
+import { MAX_ORG_TRAINING_GROUP_EMPLOYEES, ORG_TRAINING_ROLL_UP_TOTALS_NOTE } from '@lfx-one/shared/constants';
 import type {
   OrgTrainingGroupBy,
   OrgTrainingGroupEmployeesResponse,
@@ -163,7 +163,7 @@ describe('OrgTrainingGroupsTableComponent', () => {
 
     it.each([
       ['the range or filters change', 'query', { ...QUERY, range: '90d' }],
-      ['the organization switches', 'orgUid', 'org-2'],
+      ['the company switches', 'orgUid', 'org-2'],
     ])('hides the previous totals, the scope note and the tile text when %s, and shows the new ones once they arrive', async (_name, input, value) => {
       const { fixture, trainingService } = await render('certifications');
       expect(text('org-training-groups-totals-courses-taken')).toBe('20');
@@ -409,5 +409,138 @@ describe('OrgTrainingGroupsTableComponent', () => {
     await settle(fixture);
 
     expect(byTestId('org-training-group-employees-title')).toBeNull();
+  });
+
+  it('shows no Company column and no roll-up totals note on a single organization', async () => {
+    await render();
+
+    expect(byTestId('org-training-groups-company-header')).toBeNull();
+    expect(byTestId('org-training-group-company-Course One')).toBeNull();
+    expect(byTestId('org-training-groups-roll-up-totals-note')).toBeNull();
+    expect(byTestId('org-training-groups-totals')?.getAttribute('title')).not.toContain(ORG_TRAINING_ROLL_UP_TOTALS_NOTE);
+  });
+
+  describe('in a family roll-up', () => {
+    const ACME = { accountId: '001000000000000AAA', name: 'Acme' };
+    const ACME_LABS = { accountId: '001000000000000BBB', name: 'Acme Labs' };
+    const ROLL_UP_RESPONSE: OrgTrainingGroupsResponse = {
+      data: [
+        { ...ROW, organization: ACME },
+        { ...ROW, completed: 1, inProgress: 0, organization: ACME_LABS },
+      ],
+      total: 2,
+      totals: { people: 5, coursesTaken: 9, completed: 4, inProgress: 2 },
+    };
+    const acmeRow = `Course One::${ACME.accountId}`;
+    const labsRow = `Course One::${ACME_LABS.accountId}`;
+
+    async function renderRollUp(company: string | null = '') {
+      const drawerOpen = vi.fn();
+      const trainingService = {
+        getGroups: vi.fn(() => of(ROLL_UP_RESPONSE)),
+        getGroupEmployees: vi.fn(() => of(EMPLOYEES)),
+        getTrainingStats: vi.fn(() => of(null)),
+      };
+      await TestBed.configureTestingModule({
+        imports: [OrgTrainingGroupsTableComponent],
+        providers: [
+          provideNoopAnimations(),
+          { provide: OrgLensTrainingService, useValue: trainingService },
+          { provide: PersonDetailDrawerService, useValue: { open: drawerOpen } },
+        ],
+      }).compileComponents();
+      const fixture = TestBed.createComponent(OrgTrainingGroupsTableComponent);
+      fixture.componentRef.setInput('orgUid', 'family-001000000000000AAA');
+      fixture.componentRef.setInput('rollUp', true);
+      fixture.componentRef.setInput('company', company);
+      fixture.componentRef.setInput('query', QUERY);
+      fixture.componentRef.setInput('groupBy', 'course');
+      fixture.componentRef.setInput('tab', 'certifications');
+      await settle(fixture);
+      return { fixture, trainingService, drawerOpen };
+    }
+
+    it('shows one row per group value and company, with a Company column', async () => {
+      await renderRollUp();
+
+      expect(text('org-training-groups-company-header')).toBe('Company');
+      expect(text(`org-training-group-company-${acmeRow}`)).toBe('Acme');
+      expect(text(`org-training-group-company-${labsRow}`)).toBe('Acme Labs');
+      expect(text(`org-training-group-completed-${labsRow}`)).toBe('1');
+      expect(byTestId(`org-training-group-completed-button-${acmeRow}`)?.getAttribute('aria-label')).toBe('4 certified, Course One, Acme. Show people');
+    });
+
+    it('notes under the totals row that a person in more than one company is counted once', async () => {
+      await renderRollUp();
+
+      expect(text('org-training-groups-roll-up-totals-note')).toBe('A person in more than one company is counted once in the totals.');
+      expect(byTestId('org-training-groups-totals')?.getAttribute('title')).toContain(ORG_TRAINING_ROLL_UP_TOTALS_NOTE);
+      expect(text('org-training-groups-totals-people')).toBe('5');
+    });
+
+    it('reads every organization of the roll-up when no company is picked, and only the picked one otherwise', async () => {
+      const { fixture, trainingService } = await renderRollUp();
+      expect(trainingService.getGroups).toHaveBeenLastCalledWith(
+        'family-001000000000000AAA',
+        QUERY,
+        expect.not.objectContaining({ company: expect.anything() })
+      );
+
+      fixture.componentRef.setInput('company', ACME_LABS.accountId);
+      await settle(fixture);
+
+      expect(trainingService.getGroups).toHaveBeenLastCalledWith(
+        'family-001000000000000AAA',
+        QUERY,
+        expect.objectContaining({ company: ACME_LABS.accountId, offset: 0 })
+      );
+    });
+
+    it('reads nothing while the page cannot check the picked company yet', async () => {
+      const { trainingService } = await renderRollUp(null);
+
+      expect(trainingService.getGroups).not.toHaveBeenCalled();
+      expect(byTestId('org-training-groups-empty-title')).toBeNull();
+    });
+
+    it("opens the drawer for the row's company and names it", async () => {
+      const { fixture, trainingService } = await renderRollUp();
+
+      (document.querySelector(`[data-testid="org-training-group-completed-${labsRow}"] button`) as HTMLElement).click();
+      await settle(fixture);
+
+      expect(trainingService.getGroupEmployees).toHaveBeenCalledWith('family-001000000000000AAA', QUERY, {
+        groupBy: 'course',
+        groupValue: 'Course One',
+        tab: 'certifications',
+        status: 'completed',
+        company: ACME_LABS,
+      });
+      expect(text('org-training-group-employees-subtitle')).toContain('Course One');
+      expect(text('org-training-group-employees-subtitle')).toContain('Acme Labs');
+    });
+
+    it("opens a person under the row's company", async () => {
+      const { fixture, drawerOpen } = await renderRollUp();
+      (document.querySelector(`[data-testid="org-training-group-completed-${acmeRow}"] button`) as HTMLElement).click();
+      await settle(fixture);
+
+      (byTestId('org-training-group-employee-person-person-1') as HTMLElement).click();
+
+      expect(drawerOpen).toHaveBeenCalledWith(expect.objectContaining({ personKey: 'person-1', organization: ACME }));
+    });
+
+    it('states a failed read as an error, never as zeros', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const { fixture, trainingService } = await renderRollUp();
+      trainingService.getGroups.mockReturnValueOnce(throwError(() => new Error('down')));
+
+      fixture.componentRef.setInput('company', ACME.accountId);
+      await settle(fixture);
+
+      expect(byTestId('org-training-groups-error')).not.toBeNull();
+      expect(byTestId('org-training-groups-totals')).toBeNull();
+      error.mockRestore();
+    });
   });
 });

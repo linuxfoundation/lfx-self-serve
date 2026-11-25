@@ -5,7 +5,9 @@ import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import {
   HEALTH_METRICS_OVERVIEW_BLANK_COPY,
   HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE,
+  HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_FADE_PX,
   HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES,
+  HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES,
   HEALTH_METRICS_OVERVIEW_EVENT_PACE,
   HEALTH_METRICS_OVERVIEW_EVENT_STATUS,
   HEALTH_METRICS_OVERVIEW_EVENTS_INFO,
@@ -15,6 +17,7 @@ import {
   HEALTH_METRICS_OVERVIEW_KPI_MIN_HALF_WIDTH_PX,
   HEALTH_METRICS_OVERVIEW_KPI_MIN_ITEM_WIDTH_PX,
   HEALTH_METRICS_OVERVIEW_NEWSLETTER_ENGAGEMENT,
+  HEALTH_METRICS_OVERVIEW_NEWSLETTER_SCALE_MIN,
   HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE,
   HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS,
   HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY,
@@ -25,7 +28,9 @@ import {
 } from '../constants/health-metrics-overview.constants';
 import { HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
+import { HEALTH_METRICS_MEMBERS_RESERVED_TIERS } from '../constants/health-metrics-members.constants';
 import { formatIsoDateLabel, parseIsoDateAsUtcMidnight } from './date-time.utils';
+import { formatHealthMetricsPercent, resolveHealthMetricsMembersTier } from './health-metrics-table.utils';
 import { getHealthMetricsTrainingDeliveryTypeLabel } from './health-metrics-training.utils';
 import { formatCurrency, formatNumber } from './number.utils';
 
@@ -42,13 +47,20 @@ import type {
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsBlankCopy, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsMembersReservedTier } from '../interfaces/health-metrics-members.interface';
 import type {
+  HealthMetricsEventTrendEvent,
+  HealthMetricsOverviewBalanceRowView,
+  HealthMetricsOverviewBalanceSortKey,
   HealthMetricsOverviewBalanceView,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewBoardRowView,
-  HealthMetricsOverviewBoardSort,
+  HealthMetricsOverviewBoardSortKey,
   HealthMetricsOverviewBoardView,
   HealthMetricsOverviewChurn,
+  HealthMetricsOverviewChurnTier,
+  HealthMetricsOverviewChurnSortKey,
+  HealthMetricsOverviewChurnTierView,
   HealthMetricsOverviewChurnView,
   HealthMetricsOverviewCode,
   HealthMetricsOverviewCodeView,
@@ -58,14 +70,16 @@ import type {
   HealthMetricsOverviewEmptyStateCopy,
   HealthMetricsOverviewEngagementSplit,
   HealthMetricsOverviewEvent,
-  HealthMetricsOverviewEventDialogBadgeView,
   HealthMetricsOverviewEventDialogBadgesView,
+  HealthMetricsOverviewEventDialogBadgeView,
   HealthMetricsOverviewEventGaugeView,
-  HealthMetricsOverviewEventStatus,
   HealthMetricsOverviewEventRegistrationsView,
   HealthMetricsOverviewEventRowView,
   HealthMetricsOverviewEvents,
+  HealthMetricsOverviewEventsSortKey,
+  HealthMetricsOverviewEventStatus,
   HealthMetricsOverviewEventsView,
+  HealthMetricsOverviewEventTalksView,
   HealthMetricsOverviewGaugeCapView,
   HealthMetricsOverviewKpiStripLayout,
   HealthMetricsOverviewKpiView,
@@ -91,6 +105,7 @@ import type {
   HealthMetricsOverviewTrendView,
   HealthMetricsOverviewTrendWindow,
 } from '../interfaces/health-metrics-overview.interface';
+import type { HealthMetricsSortValue } from '../interfaces/health-metrics-table.interface';
 import type { HealthMetricsTrainingEnrollment } from '../interfaces/health-metrics-training.interface';
 
 const NOT_AVAILABLE = '—';
@@ -196,7 +211,7 @@ export function buildHealthMetricsOverviewNpsView(nps: HealthMetricsOverviewNps,
       range: row.range,
       dotClass: row.dotClass,
       countLabel: formatCount(row.count),
-      pctLabel: responses && row.count !== null ? formatShare(row.count / responses, false) : NOT_AVAILABLE,
+      pctLabel: responses && row.count !== null ? formatShare(row.count / responses) : NOT_AVAILABLE,
     })),
     noResponseLabel: formatCount(period?.noResponseCount),
   };
@@ -243,54 +258,70 @@ export function buildHealthMetricsOverviewChurnView(churn: HealthMetricsOverview
             : `${formatCount(totals.membershipsLostPriorYear)} last year`,
       },
     ],
-    tiers: (period?.tiers ?? []).map((tier) => ({
+    tiers: leadWithReservedTiers(period?.tiers ?? []).map(({ tier, label, reserved }, index, tiers) => ({
       key: tier.tier,
-      label: tier.label,
+      label,
+      tier: reserved,
       rateLabel: formatRatePct(tier.churnRatePct),
       rateWidthPct: clampPct(tier.churnRatePct ?? 0),
       lostLabel: formatCount(tier.membershipsLost),
       valueLabel: formatMoneyCompact(tier.valueLostUsd),
+      // Diamond, Platinum, Gold and Silver lead, then the rest in the view's rank; a Tier sort follows this order.
+      tierRank: tiers.length - index,
+      churnRatePct: tier.churnRatePct,
+      membershipsLost: tier.membershipsLost,
+      valueLostUsd: tier.valueLostUsd,
     })),
     overallPct: clampPct(rate ?? 0),
     overallLabel: `Overall churn ${formatRatePct(rate)}`,
   };
 }
 
-/** Overdue invoices today, split into the high and medium risk bands. */
-export function buildHealthMetricsOverviewBalanceView(balance: HealthMetricsOverviewOutstandingBalance): HealthMetricsOverviewBalanceView {
-  const high = balance.highRiskUsd ?? 0;
-  const medium = balance.mediumRiskUsd ?? 0;
+/** The period's overdue invoices, split into the high and medium risk bands. */
+export function buildHealthMetricsOverviewBalanceView(
+  balance: HealthMetricsOverviewOutstandingBalance,
+  range: HealthMetricsRange
+): HealthMetricsOverviewBalanceView {
+  const l2 = toHealthMetricsOverviewRange(range);
+  const period = balance.measured && l2 ? balance.periods[l2] : null;
+  const high = period?.highRiskUsd ?? 0;
+  const medium = period?.mediumRiskUsd ?? 0;
   // The view's share when it has one, otherwise the band's part of the two amounts.
   const share = (pct: number | null, amount: number): number => {
     if (pct !== null) return clampPct(pct * 100);
     return high + medium > 0 ? clampPct((amount / (high + medium)) * 100) : 0;
   };
-  const highMembers = balance.highRiskMembers;
+  const highMembers = period?.highRiskMembers ?? null;
 
   return {
-    isEmpty: !balance.measured || !balance.outstandingUsd,
-    isPaidInFull: balance.measured && balance.outstandingUsd === 0,
-    totalLabel: formatMoney(balance.outstandingUsd),
-    overdueMembersLabel: formatCount(balance.overdueMembers),
+    isEmpty: !period?.outstandingUsd,
+    isPaidInFull: period?.outstandingUsd === 0,
+    totalLabel: formatMoney(period?.outstandingUsd ?? null),
+    overdueMembersLabel: formatCount(period?.overdueMembers ?? null),
     atRiskLabel: formatMembers(highMembers),
+    showAtRisk: (highMembers ?? 0) > 0,
     rows: [
       {
         key: 'high',
         label: 'High risk',
         daysLabel: '90+ days',
         dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low,
-        widthPct: share(balance.highRiskSharePct, high),
-        membersLabel: formatCount(balance.highRiskMembers),
-        amountLabel: formatMoney(balance.highRiskUsd),
+        widthPct: share(period?.highRiskSharePct ?? null, high),
+        membersLabel: formatCount(period?.highRiskMembers ?? null),
+        amountLabel: formatMoney(period?.highRiskUsd ?? null),
+        members: period?.highRiskMembers ?? null,
+        amountUsd: period?.highRiskUsd ?? null,
       },
       {
         key: 'medium',
         label: 'Medium risk',
         daysLabel: '60–89 days',
         dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium,
-        widthPct: share(balance.mediumRiskSharePct, medium),
-        membersLabel: formatCount(balance.mediumRiskMembers),
-        amountLabel: formatMoney(balance.mediumRiskUsd),
+        widthPct: share(period?.mediumRiskSharePct ?? null, medium),
+        membersLabel: formatCount(period?.mediumRiskMembers ?? null),
+        amountLabel: formatMoney(period?.mediumRiskUsd ?? null),
+        members: period?.mediumRiskMembers ?? null,
+        amountUsd: period?.mediumRiskUsd ?? null,
       },
     ],
   };
@@ -334,7 +365,7 @@ export function buildHealthMetricsOverviewEventsView(
   };
 }
 
-/** The training total against its goal, and each program's share; the goal is modelled for YTD only. */
+/** The training total against the period's goal, and each program's share. */
 export function buildHealthMetricsOverviewTrainingView(
   enrollment: HealthMetricsTrainingEnrollment,
   range: HealthMetricsRange,
@@ -344,8 +375,9 @@ export function buildHealthMetricsOverviewTrainingView(
   const period = l2 ? enrollment.periods[l2] : null;
   const isRevenue = metric === 'revenue';
   const total = (isRevenue ? period?.totals.revenueUsd : period?.totals.enrollments) ?? null;
-  const goals = trainingGoal(enrollment, range, isRevenue);
+  const goals = trainingGoal(enrollment, l2, isRevenue);
   const goal = goals.goal;
+  const noGoal = l2 !== null && !goal;
   const format = (value: number | null): string => formatTrainingValue(value, isRevenue);
   const fraction = goals.progress ?? (goal && total !== null ? total / goal : 0);
   const metricLabel = isRevenue ? 'Revenue' : 'Enrollments';
@@ -364,10 +396,11 @@ export function buildHealthMetricsOverviewTrainingView(
     isEmpty: !enrollment.measured || !period || (!period.totals.enrollments && !period.totals.revenueUsd),
     totalLabel: format(total),
     metricLabel,
-    goalLabel: goal ? `${formatShare(fraction)} of ${format(goal)} goal` : null,
+    goalLabel: trainingGoalLabel(goal, noGoal, fraction, format),
+    noGoal,
     trackPath: trainingArcPath(1),
     progressPath: fraction > 0 ? trainingArcPath(Math.min(fraction, 1)) : '',
-    ariaLabel: goal ? `${metricLabel} ${format(total)} of ${format(goal)} goal` : `${metricLabel} ${format(total)}`,
+    ariaLabel: trainingAriaLabel(`${metricLabel} ${format(total)}`, goal, noGoal, format),
     items: programs.map((program) => ({
       key: program.key,
       label: program.label,
@@ -416,15 +449,14 @@ export function buildHealthMetricsOverviewNewsletterView(
     kpis: [
       {
         ...kpi('subscribers', 'Subscribers', formatCount(period?.subscribers)),
-        delta: buildPctDelta(
-          period?.subscribersGrowth ?? null,
-          true,
+        delta: withDeltaSuffix(
+          buildPctDelta(period?.subscribersGrowth ?? null, true),
           formatHealthMetricsNewsletterGrowthSince(period?.growthBaselineDate ?? null, getYearForRange(range))
         ),
       },
       kpi('sent', 'Newsletters sent', formatCount(period?.newslettersSent)),
-      kpi('open', 'Avg. open rate', formatShare(period?.avgOpenRate ?? null, false)),
-      kpi('cto', 'Avg. click-to-open rate', formatShare(period?.avgClickToOpenRate ?? null, false)),
+      kpi('open', 'Avg. open rate', formatShare(period?.avgOpenRate ?? null)),
+      kpi('cto', 'Avg. click-to-open rate', formatShare(period?.avgClickToOpenRate ?? null)),
     ],
     chart: buildNewsletterChart(newsletters, getYearForRange(range)),
     engagementBasis:
@@ -433,7 +465,7 @@ export function buildHealthMetricsOverviewNewsletterView(
         : '',
     engagement: buildNewsletterEngagement(period),
     mostEngaging: period?.mostEngagingName
-      ? { name: period.mostEngagingName, rateLabel: `${formatShare(period.mostEngagingClickToOpenRate, false)} click-to-open` }
+      ? { name: period.mostEngagingName, rateLabel: `${formatShare(period.mostEngagingClickToOpenRate)} click-to-open` }
       : null,
   };
 }
@@ -453,16 +485,18 @@ export function buildHealthMetricsOverviewBoardView(board: HealthMetricsOverview
       key: member.key,
       name: member.name,
       initials: buildInitials(member.name),
+      photoUrl: member.photoUrl ?? '',
       title: member.jobTitle ?? '',
       organization: member.organization ?? NOT_AVAILABLE,
       organizationInitial: member.organization?.charAt(0).toUpperCase() ?? '',
       logoUrl: member.logoUrl,
       attendedLabel: `${formatCount(attendance.attended ?? 0)} of ${formatCount(attendance.invited)}`,
-      pctLabel: formatShare(share, false),
+      pctLabel: formatShare(share),
       attendance: share,
       widthPct: clampPct(share * 100),
       barClass: attendanceFill(share),
       lastAttendedLabel: member.lastAttendedDate ? formatIsoDateLabel(member.lastAttendedDate) : NOT_AVAILABLE,
+      lastAttendedDate: member.lastAttendedDate,
     });
   }
 
@@ -479,25 +513,59 @@ export function buildHealthMetricsOverviewBoardView(board: HealthMetricsOverview
       {
         key: 'attendance',
         label: 'Average attendance',
-        value: formatShare(period?.avgAttendancePct ?? null, false),
+        value: formatShare(period?.avgAttendancePct ?? null),
         delta: buildPctDelta(period?.avgAttendanceChangePct ?? null, true),
         note: '',
       },
     ],
-    rows: sortHealthMetricsOverviewBoardRows(rows, 'att-asc'),
+    rows: orderHealthMetricsOverviewBoardRows(rows),
   };
 }
 
-/** The board table in the picked order; ties fall back to the name, then the row key. */
-export function sortHealthMetricsOverviewBoardRows(
-  rows: readonly HealthMetricsOverviewBoardRowView[],
-  sort: HealthMetricsOverviewBoardSort
-): HealthMetricsOverviewBoardRowView[] {
-  const byName = (a: HealthMetricsOverviewBoardRowView, b: HealthMetricsOverviewBoardRowView): number =>
-    a.name.localeCompare(b.name) || a.key.localeCompare(b.key);
-  const sign = sort.endsWith('asc') ? 1 : -1;
+/** A board row's sort value: the name, the company ("—" sorts last), the attendance share or the last meeting's date. */
+export function healthMetricsOverviewBoardSortValue(row: HealthMetricsOverviewBoardRowView, key: HealthMetricsOverviewBoardSortKey): HealthMetricsSortValue {
+  const values: Record<HealthMetricsOverviewBoardSortKey, HealthMetricsSortValue> = {
+    name: row.name,
+    org: row.organization,
+    att: row.attendance,
+    last: row.lastAttendedDate,
+  };
+  return values[key];
+}
 
-  return [...rows].sort((a, b) => (sort.startsWith('name') ? sign * byName(a, b) : sign * (a.attendance - b.attendance) || byName(a, b)));
+/** A churn tier's sort value; Tier follows the view's rank. */
+export function healthMetricsOverviewChurnSortValue(row: HealthMetricsOverviewChurnTierView, key: HealthMetricsOverviewChurnSortKey): HealthMetricsSortValue {
+  const values: Record<HealthMetricsOverviewChurnSortKey, HealthMetricsSortValue> = {
+    tier: row.tierRank,
+    rate: row.churnRatePct,
+    lost: row.membershipsLost,
+    value: row.valueLostUsd,
+  };
+  return values[key];
+}
+
+/** A balance band's sort value; Risk sorts by its label. */
+export function healthMetricsOverviewBalanceSortValue(
+  row: HealthMetricsOverviewBalanceRowView,
+  key: HealthMetricsOverviewBalanceSortKey
+): HealthMetricsSortValue {
+  const values: Record<HealthMetricsOverviewBalanceSortKey, HealthMetricsSortValue> = { risk: row.label, members: row.members, amount: row.amountUsd };
+  return values[key];
+}
+
+/** An event row's sort value: its name, its registrations or its accepted speaking proposals. */
+export function healthMetricsOverviewEventsSortValue(row: HealthMetricsOverviewEventRowView, key: HealthMetricsOverviewEventsSortKey): HealthMetricsSortValue {
+  const values: Record<HealthMetricsOverviewEventsSortKey, HealthMetricsSortValue> = {
+    event: row.name,
+    registrations: row.registrationsCount,
+    talks: row.acceptedTalks,
+  };
+  return values[key];
+}
+
+/** The default order: lowest attendance first, then the name and the row key, which a sort keeps for its ties. */
+function orderHealthMetricsOverviewBoardRows(rows: readonly HealthMetricsOverviewBoardRowView[]): HealthMetricsOverviewBoardRowView[] {
+  return [...rows].sort((a, b) => a.attendance - b.attendance || a.name.localeCompare(b.name) || a.key.localeCompare(b.key));
 }
 
 /** "Missing a meeting?" goes to PCC's add-past-meeting page for the foundation, by its Salesforce id. */
@@ -505,12 +573,19 @@ export function buildHealthMetricsOverviewAddPastMeetingUrl(pccUrl: string, foun
   return foundationSfid ? `${pccUrl}/project/${encodeURIComponent(foundationSfid)}/collaboration/meetings/manage-meeting?isPast=true` : null;
 }
 
+/** The event dialog body's mask: it fades out over 32px at each edge with more to scroll, and not at all otherwise. */
+export function buildHealthMetricsOverviewScrollFadeMask(fadeTop: boolean, fadeBottom: boolean): string {
+  const top = fadeTop ? HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_FADE_PX : 0;
+  const bottom = fadeBottom ? HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_FADE_PX : 0;
+  return `linear-gradient(to bottom, transparent 0, black ${top}px, black calc(100% - ${bottom}px), transparent 100%)`;
+}
+
 /**
  * One upcoming event's registration trend: its headline figures and the chart on a 600×220 canvas spanning the last
  * 180 days before the event. Either input may be missing, which leaves its parts out.
  */
 export function buildHealthMetricsOverviewTrendView(
-  row: HealthMetricsOverviewEvent,
+  row: HealthMetricsEventTrendEvent,
   headline: HealthMetricsEventsForecastEvent | null,
   series: HealthMetricsEventsForecastCurveSeries | null,
   window: HealthMetricsOverviewTrendWindow | null = null
@@ -529,7 +604,8 @@ export function buildHealthMetricsOverviewTrendView(
         tip: HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP,
       },
     ],
-    ...buildTrendChart(series, goal, window, false),
+    // Past its start day a running event's curve ends at day 0, which is not today.
+    ...buildTrendChart(series, goal, window, false, headline?.daysLeft !== null),
   };
 }
 
@@ -538,7 +614,7 @@ export function buildHealthMetricsOverviewTrendView(
  * final count adds each format's last day, which the formats share once registration closes.
  */
 export function buildHealthMetricsOverviewPastTrendView(
-  row: HealthMetricsOverviewEvent,
+  row: HealthMetricsEventTrendEvent,
   curve: HealthMetricsEventsForecastCurve | null,
   series: HealthMetricsEventsForecastCurveSeries | null,
   window: HealthMetricsOverviewTrendWindow | null = null
@@ -555,7 +631,7 @@ export function buildHealthMetricsOverviewPastTrendView(
       trendKpi('final', 'Final', formatCount(row.registrations)),
     ],
     // The event is over, so nothing is predicted and nothing marks today.
-    ...buildTrendChart(series, row.registrationsGoal, window, true),
+    ...buildTrendChart(series, row.registrationsGoal, window, true, false),
   };
 }
 
@@ -593,12 +669,15 @@ export function buildHealthMetricsOverviewSnapshotView(
   const days = HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS.find((option) => option.value === period)?.days ?? 7;
   const today = snapshot.today;
   const endHeader = today ? `${formatIsoDateLabel(shiftIsoDate(today, -1))} (today)` : '';
-  const rollingStartHeader = today ? formatIsoDateLabel(shiftIsoDate(today, -days)) : '';
+  const endHeaderShort = today ? `${formatIsoShortYearDate(shiftIsoDate(today, -1))} (today)` : '';
+  const rollingStart = today ? shiftIsoDate(today, -days) : '';
+  const rollingStartHeader = rollingStart ? formatIsoDateLabel(rollingStart) : '';
 
   const { weeks } = snapshot;
   const firstIndex = weeks.findIndex((week) => week.inPeriod[period]);
   const first = firstIndex >= 0 ? weeks[firstIndex] : null;
   const before = firstIndex > 0 ? weeks[firstIndex - 1] : null;
+  const registrationStart = first ? shiftIsoDate(first.weekStartDate, -1) : rollingStart;
   const latest = weeks.at(-1) ?? null;
   const weekly = (level: (week: HealthMetricsEventsSnapshotWeek) => number, delta: (week: HealthMetricsEventsSnapshotWeek) => number) => {
     const end = latest ? level(latest) : 0;
@@ -621,8 +700,10 @@ export function buildHealthMetricsOverviewSnapshotView(
     {
       key: 'registration',
       title: 'Registration',
-      startHeader: first ? formatIsoDateLabel(shiftIsoDate(first.weekStartDate, -1)) : rollingStartHeader,
+      startHeader: registrationStart ? formatIsoDateLabel(registrationStart) : '',
+      startHeaderShort: registrationStart ? formatIsoShortYearDate(registrationStart) : '',
       endHeader,
+      endHeaderShort,
       rows: [
         snapshotRow('registrations', 'Registrations', registrations, formatCount),
         snapshotRow(
@@ -639,7 +720,9 @@ export function buildHealthMetricsOverviewSnapshotView(
       key: 'sponsorship',
       title: 'Sponsorship',
       startHeader: rollingStartHeader,
+      startHeaderShort: rollingStart ? formatIsoShortYearDate(rollingStart) : '',
       endHeader,
+      endHeaderShort,
       rows: [
         ...packages.map((item) => snapshotRow(`package-${item.key}`, item.key, item, formatCount)),
         ...(packages.length ? [{ ...snapshotRow('totals', 'Totals', totals, formatCount), totals: true }] : []),
@@ -669,13 +752,14 @@ function trendKpi(key: string, label: string, value: string): HealthMetricsOverv
  * The trend chart over the visible span of the last 180 days, as the design draws it. It opens on a best fit (see
  * `fitTrendWindow`) and the reader can move it. The y scale fits the visible lines in at most 5 even steps (1, 2,
  * 2.5 or 5 times a power of ten), with the goal on it only when it sits near them. The prediction, its band and the
- * Today marker start at the last measured day; a past event has none of them.
+ * Today marker start at the last measured day; a past event has none of them, and a running event no Today.
  */
 function buildTrendChart(
   series: HealthMetricsEventsForecastCurveSeries | null,
   goal: number | null,
   requested: HealthMetricsOverviewTrendWindow | null,
-  isPast: boolean
+  isPast: boolean,
+  markToday: boolean
 ): Omit<HealthMetricsOverviewTrendView, 'kpis'> {
   const days = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
   const line = trendLines(series, isPast);
@@ -724,7 +808,7 @@ function buildTrendChart(
     const lower = [...samples].reverse().map(([day, current, prior]): [number, number] => [x(day), y(bottom(current, prior))]);
     return `${svgPath([...upper, ...lower])} Z`;
   };
-  const todayShown = !isPast && line.now !== null && line.now >= start && line.now <= end;
+  const todayShown = markToday && line.now !== null && line.now >= start && line.now <= end;
   const tickStep = trendTickStep(span);
   // Ticks count days to the event, on multiples of the step, from the nearest one inside the span's right edge.
   const firstTick = Math.ceil((days - end) / tickStep) * tickStep;
@@ -920,7 +1004,7 @@ function formatIsoMonth(iso: string): string {
 
 /**
  * One point per newsletter sent in the period's year, oldest first and evenly spaced, as the design spaces them. The
- * read only carries newsletters with engagement data. The scale tops out at the highest rate of either line, rounded up to the next 10%.
+ * read only carries newsletters with engagement data. The scale is 0–60%, growing in 10-point steps above that.
  */
 function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, year: number): HealthMetricsOverviewNewsletterChartView | null {
   const sends = newsletters.newsletters
@@ -930,7 +1014,7 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
 
   // Rounded to a tenth of a point first, so a peak of exactly 70% tops out at 70% rather than 80%.
   const peak = Math.round(Math.max(...sends.flatMap((send) => [send.openRate as number, send.clickRate ?? 0])) * 1000) / 1000;
-  const top = Math.min(1, Math.max(0.1, Math.ceil(peak * 10) / 10));
+  const top = Math.min(1, Math.max(HEALTH_METRICS_OVERVIEW_NEWSLETTER_SCALE_MIN, Math.ceil(peak * 10) / 10));
   const x = (index: number): number => (sends.length === 1 ? 300 : (index / (sends.length - 1)) * 600);
   const y = (rate: number): number => 200 - (Math.min(rate, top) / top) * 200;
   const points = sends.map((send, index) => {
@@ -942,39 +1026,61 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
   const openCoords = points.map((point): [number, number] => [point.x, point.openY]);
   const first = points[0];
   const last = points[points.length - 1];
-  const seenMonths = new Set<string>();
+  const xPct = (px: number): string => ((px / 600) * 100).toFixed(2);
+  const ticks = points.map((point) => ({
+    label: point.send.sentDate ? formatIsoMonth(point.send.sentDate) : '',
+    xPct: xPct(point.x),
+    month: point.send.sentDate?.slice(0, 7) ?? '',
+  }));
 
   return {
     openPath: path(openCoords),
     openAreaPath: first && last ? `${path(openCoords)} L${last.x.toFixed(1)} 200 L${first.x.toFixed(1)} 200 Z` : '',
     clickPath: path(points.filter((point) => point.clickY !== null).map((point): [number, number] => [point.x, point.clickY as number])),
-    points: points.map((point) => ({
-      key: point.send.key,
-      xPct: ((point.x / 600) * 100).toFixed(2),
-      openYPct: ((point.openY / 200) * 100).toFixed(2),
-      clickYPct: point.clickY === null ? '' : ((point.clickY / 200) * 100).toFixed(2),
-      tipAlign: tipAlign(point.x / 600),
-      label: [
-        point.send.name,
-        point.send.sentDate ? formatIsoDateLabel(point.send.sentDate) : '',
-        `open ${formatShare(point.open, false)}, click ${formatShare(point.click)}`,
-      ]
-        .filter(Boolean)
-        .join(' · '),
-    })),
-    ticks: points.flatMap((point) => {
-      const month = point.send.sentDate?.slice(0, 7) ?? '';
-      if (!month || seenMonths.has(month)) return [];
-      seenMonths.add(month);
-      return [{ label: formatIsoMonth(`${month}-01`), xPct: ((point.x / 600) * 100).toFixed(2) }];
+    points: points.map((point, index) => {
+      const parts = [point.send.name, point.send.sentDate ? formatIsoDateLabel(point.send.sentDate) : ''].filter(Boolean);
+      const open = formatShare(point.open);
+      // A rate under 1% reads to one decimal rather than rounding to a misleading 0%.
+      const click = formatShare(point.click);
+      return {
+        key: point.send.key,
+        xPct: xPct(point.x),
+        ...newsletterColumn((point.x / 600) * 100, points.length),
+        openYPct: ((point.openY / 200) * 100).toFixed(2),
+        clickYPct: point.clickY === null ? '' : ((point.clickY / 200) * 100).toFixed(2),
+        latest: index === points.length - 1,
+        ariaLabel: `${parts.join(', ')}: open rate ${open}, click rate ${click}`,
+        tip: {
+          title: parts.join(' · '),
+          rows: [
+            { label: 'Open rate', value: open, color: HEALTH_METRICS_OVERVIEW_STROKES.progress, separated: false, inline: true },
+            { label: 'Click rate', value: click, color: HEALTH_METRICS_OVERVIEW_STROKES.thisYear, separated: false, inline: true },
+          ],
+        },
+      };
     }),
+    ticks: ticks.map(({ label, xPct: tickX }) => ({ label, xPct: tickX })),
+    monthTicks: ticks.filter((tick, index) => tick.month && tick.month !== ticks[index - 1]?.month).map(({ label, xPct: tickX }) => ({ label, xPct: tickX })),
   };
 }
 
-/** A point near either edge opens its tooltip inward. */
-function tipAlign(fraction: number): HealthMetricsOverviewNewsletterPointView['tipAlign'] {
-  if (fraction < 0.2) return 'start';
-  return fraction > 0.8 ? 'end' : 'center';
+/**
+ * A newsletter's hover column: 1/N of the plot wide and centred on its points, as designed, but cut off at the plot's
+ * edges so an end column never covers the panel beside it. The points sit `pointOffsetPct` across it.
+ */
+function newsletterColumn(
+  centrePct: number,
+  count: number
+): Pick<HealthMetricsOverviewNewsletterPointView, 'columnLeftPct' | 'columnWidthPct' | 'pointOffsetPct'> {
+  const half = 50 / count;
+  const left = Math.max(0, centrePct - half);
+  const width = Math.min(100, centrePct + half) - left;
+  return { columnLeftPct: left.toFixed(2), columnWidthPct: width.toFixed(2), pointOffsetPct: (((centrePct - left) / width) * 100).toFixed(2) };
+}
+
+/** A change with muted context after it; no change shows neither. */
+function withDeltaSuffix(delta: HealthMetricsOverviewDelta | null, suffix: string): HealthMetricsOverviewDelta | null {
+  return delta && suffix ? { ...delta, suffix } : delta;
 }
 
 /** High / Medium / Low with the view's share of each; a level too small to see keeps a sliver of the bar. */
@@ -1151,33 +1257,61 @@ function buildSponsorshipView(revenue: number | null, goal: number | null, model
     goalLabel: hasGoal ? formatCurrency(goal) : '',
     widthPct: clampPct(progress * 100),
     barClass: progress >= 1 ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
-    progressLabel: hasGoal ? `${formatShare(progress, false)} reached · ${remainingLabel(remaining)}` : 'No goal set',
+    progressLabel: hasGoal ? `${formatShare(progress)} reached · ${remainingLabel(remaining)}` : 'No goal set',
   };
 }
 
 function buildEventRow(event: HealthMetricsOverviewEvent, isPast: boolean): HealthMetricsOverviewEventRowView {
-  const accepted = event.acceptedTalks ?? 0;
-  const proposals = event.totalProposals ?? 0;
-
   return {
     eventId: event.eventId,
     name: event.eventName,
     meta: buildHealthMetricsOverviewEventMeta(event),
     isPast,
     registrations: buildRegistrationsBar(event, isPast),
-    talks: {
-      hasProposals: proposals > 0,
-      countLabel: formatCount(accepted),
-      sideLabel: 'Received:',
-      sideValue: formatCount(proposals),
-      widthPct: proposals > 0 ? clampPct((accepted / proposals) * 100) : 0,
-      // No rule colors upcoming proposals yet, so they stay blue; past ones are green, as the design draws them.
-      barClass: isPast ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
-      neutral: false,
-      gauge: isPast ? { ...ACCENT_GAUGE, tone: 'level', level: 'high' } : ACCENT_GAUGE,
-      note: event.cfpStatus?.toLowerCase() === 'in review' ? 'CFP In Review' : 'N/A',
-    },
+    talks: buildTalksBar(event, isPast),
+    registrationsCount: event.registrations,
+    // An event with no proposals shows its call-for-proposals note, not a count, so it sorts as empty.
+    acceptedTalks: (event.totalProposals ?? 0) > 0 ? (event.acceptedTalks ?? 0) : null,
   };
+}
+
+/** Accepted speaking proposals out of those received; with none received, the stage of the call for proposals. */
+function buildTalksBar(event: HealthMetricsOverviewEvent, isPast: boolean): HealthMetricsOverviewEventTalksView {
+  const accepted = event.acceptedTalks ?? 0;
+  const proposals = event.totalProposals ?? 0;
+  const hasProposals = proposals > 0;
+  const note = event.cfpStatus?.toLowerCase() === 'in review' ? 'CFP In Review' : 'N/A';
+  // Past proposals are green, as the design draws them; upcoming ones take their pace, as registrations do.
+  const status = isPast
+    ? { barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high, statusLabel: null, gauge: { ...ACCENT_GAUGE, tone: 'level' as const, level: 'high' as const } }
+    : statusFields(paceStatus(event.proposalsCompScore));
+  const gauge = status.gauge;
+
+  return {
+    hasProposals,
+    countLabel: formatCount(accepted),
+    sideLabel: 'Received:',
+    sideValue: formatCount(proposals),
+    widthPct: hasProposals ? clampPct((accepted / proposals) * 100) : 0,
+    barClass: status.barClass,
+    statusLabel: hasProposals ? status.statusLabel : null,
+    neutral: false,
+    gauge,
+    note,
+    compactValue: hasProposals ? `${formatCount(accepted)} (Received: ${formatCount(proposals)})` : note,
+    // A row with no proposals keeps its gray line.
+    lineClass: hasProposals ? eventLineClass(gauge) : HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES.none,
+  };
+}
+
+/** The stacked list's line follows the status level alone, never the progress. */
+function eventLineClass(gauge: HealthMetricsOverviewEventGaugeView): string {
+  return gauge.tone === 'level' && gauge.level ? HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES[gauge.level] : HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES.none;
+}
+
+/** "620 (Goal: 1,000)" or "620 (No goal set)": a registrations figure with its side text in brackets. */
+function compactRegistrations(countLabel: string, sideLabel: string, sideValue: string): string {
+  return `${countLabel} (${[sideLabel, sideValue].filter(Boolean).join(' ')})`;
 }
 
 /**
@@ -1197,15 +1331,31 @@ function buildRegistrationsBar(event: HealthMetricsOverviewEvent, isPast: boolea
       neutral: true,
       statusLabel: null,
       gauge: { ...ACCENT_GAUGE, empty: true },
+      compactValue: compactRegistrations(countLabel, 'No goal set', ''),
+      lineClass: HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES.none,
     };
   }
-  const side = { countLabel, sideLabel: 'Goal:', sideValue: formatCount(goal), neutral: false };
+  const side = {
+    countLabel,
+    sideLabel: 'Goal:',
+    sideValue: formatCount(goal),
+    neutral: false,
+    compactValue: compactRegistrations(countLabel, 'Goal:', formatCount(goal)),
+  };
   if (event.registrations === null) {
-    return { ...side, widthPct: 0, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted, statusLabel: null, gauge: { ...ACCENT_GAUGE, unmeasured: true } };
+    return {
+      ...side,
+      widthPct: 0,
+      barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted,
+      statusLabel: null,
+      gauge: { ...ACCENT_GAUGE, unmeasured: true },
+      lineClass: HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES.none,
+    };
   }
 
   const share = event.registrations / goal;
-  return { ...side, widthPct: clampPct(share * 100), ...statusFields(isPast ? goalShareStatus(share) : paceStatus(event.compScore)) };
+  const status = statusFields(isPast ? goalShareStatus(share) : paceStatus(event.compScore));
+  return { ...side, widthPct: clampPct(share * 100), ...status, lineClass: eventLineClass(status.gauge) };
 }
 
 function statusFields(
@@ -1227,6 +1377,17 @@ function goalShareStatus(share: number): HealthMetricsOverviewEventStatus {
   return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.action;
 }
 
+/** Diamond, Platinum, Gold and Silver first, in that order, as the membership breakdown leads; the rest keep the view's rank. */
+function leadWithReservedTiers(
+  tiers: readonly HealthMetricsOverviewChurnTier[]
+): { tier: HealthMetricsOverviewChurnTier; label: string; reserved: HealthMetricsMembersReservedTier | null }[] {
+  const resolved = tiers.map((tier) => ({ tier, ...resolveHealthMetricsMembersTier(tier.label) }));
+  const reservedOrder = (entry: (typeof resolved)[number]): number =>
+    entry.reserved ? HEALTH_METRICS_MEMBERS_RESERVED_TIERS.indexOf(entry.reserved) : HEALTH_METRICS_MEMBERS_RESERVED_TIERS.length;
+  // A stable sort keeps the view's order among the unreserved tiers.
+  return [...resolved].sort((a, b) => reservedOrder(a) - reservedOrder(b));
+}
+
 /** "Dec 15, 2026", "Dec 8–10, 2026", "Nov 30 – Dec 2, 2026" or "Dec 30, 2026 – Jan 2, 2027". */
 function formatEventDates(start: string | null, end: string | null): string {
   if (!start) return '';
@@ -1240,15 +1401,26 @@ function formatEventDates(start: string | null, end: string | null): string {
   return `${monthDay(start)}–${Number(end.slice(8, 10))}, ${endYear}`;
 }
 
-/** The year's goal and its modelled progress, which the view carries for YTD only. */
+/** The period's goal and the view's progress against it; a past year with no goal reads as none set. */
 function trainingGoal(
   enrollment: HealthMetricsTrainingEnrollment,
-  range: HealthMetricsRange,
+  range: HealthMetricsL2Range | null,
   isRevenue: boolean
 ): { goal: number | null; progress: number | null } {
-  if (range !== 'YTD') return { goal: null, progress: null };
-  if (isRevenue) return { goal: enrollment.goals.revenueUsd, progress: enrollment.goals.revenueUsd ? enrollment.goals.revenueProgressYtd : null };
-  return { goal: enrollment.goals.enrollments, progress: enrollment.goals.enrollments ? enrollment.goals.enrollmentsProgressYtd : null };
+  const goals = range ? enrollment.goals[range] : null;
+  if (!goals) return { goal: null, progress: null };
+  if (isRevenue) return { goal: goals.revenueUsd, progress: goals.revenueUsd ? goals.revenueProgress : null };
+  return { goal: goals.enrollments, progress: goals.enrollments ? goals.enrollmentsProgress : null };
+}
+
+function trainingGoalLabel(goal: number | null, noGoal: boolean, fraction: number, format: (value: number | null) => string): string | null {
+  if (goal) return `${formatShare(fraction)} of ${format(goal)} goal`;
+  return noGoal ? 'No goal set' : null;
+}
+
+function trainingAriaLabel(base: string, goal: number | null, noGoal: boolean, format: (value: number | null) => string): string {
+  if (goal) return `${base} of ${format(goal)} goal`;
+  return noGoal ? `${base}, no goal set` : base;
 }
 
 function formatTrainingValue(value: number | null, isRevenue: boolean): string {
@@ -1352,12 +1524,20 @@ function snapshotRow(
 /** "+139 (74%)" against the start; no share when the start is zero. A change under one unit reads as none. */
 function snapshotChange(start: number, end: number, format: (value: number) => string): HealthMetricsOverviewSnapshotChangeView {
   const change = Math.round(end - start);
-  if (change === 0) return { label: 'No change', tone: 'neutral', icon: null };
+  if (change === 0) return { label: 'No change', tone: 'neutral', icon: null, inkClass: 'text-gray-500' };
 
   const share = start > 0 ? ` (${Math.abs(Math.round((change / start) * 100))}%)` : '';
   return change > 0
-    ? { label: `+${format(change)}${share}`, tone: 'success', icon: 'fa-solid fa-circle-arrow-up' }
-    : { label: `−${format(-change)}${share}`, tone: 'danger', icon: 'fa-solid fa-circle-arrow-down' };
+    ? { label: `+${format(change)}${share}`, tone: 'success', icon: 'fa-solid fa-circle-arrow-up', inkClass: 'text-emerald-600' }
+    : { label: `−${format(-change)}${share}`, tone: 'danger', icon: 'fa-solid fa-circle-arrow-down', inkClass: 'text-red-600' };
+}
+
+/** "Nov 6, 26": the Snapshot's phone headers shorten the year. */
+function formatIsoShortYearDate(iso: string): string {
+  const parsed = parseIsoDateAsUtcMidnight(iso);
+  if (!parsed) return iso;
+  const monthDay = parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return `${monthDay}, ${String(parsed.getUTCFullYear()).slice(-2)}`;
 }
 
 /** Whole dollars with separators, as the Snapshot shows money: `$4,575,877`. */
@@ -1391,14 +1571,13 @@ function formatMoneyCompact(value: number | null | undefined): string {
 
 /** A rate the view already carries as a percentage (0–100). */
 function formatRatePct(value: number | null | undefined): string {
-  return value === null || value === undefined ? NOT_AVAILABLE : `${Math.round(value)}%`;
+  return value === null || value === undefined ? NOT_AVAILABLE : formatHealthMetricsPercent(value);
 }
 
-/** A 0–1 share as a whole percentage; a share under 1% reads "<1%" unless `allowLessThanOne` is off. */
-function formatShare(value: number | null, allowLessThanOne = true): string {
+/** A 0–1 share as Health Metrics shows a percentage: whole from 1%, one decimal under it. */
+function formatShare(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return NOT_AVAILABLE;
-  const pct = value * 100;
-  return allowLessThanOne && pct > 0 && pct < 1 ? '<1%' : `${Math.round(pct)}%`;
+  return formatHealthMetricsPercent(value * 100);
 }
 
 function clampPct(value: number): number {

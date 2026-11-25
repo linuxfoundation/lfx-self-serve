@@ -246,6 +246,19 @@ describe('MktgDocumentStoreService', () => {
     request.flush({});
   });
 
+  it('sends the believed-current id with approval and restore, without a display name or revision body', () => {
+    const expectedCurrentId = `000001-${'b'.repeat(64)}`;
+    const expectedCurrentChangedAt = '2026-10-29T12:00:00.000Z';
+    service.approveRevision('proj-1', 'faq', 'living', REVISION_ID, { expectedCurrentId, expectedCurrentChangedAt }).subscribe();
+    const approve = http.expectOne((candidate) => candidate.url.endsWith(`/revisions/${REVISION_ID}/approve`));
+    expect(approve.request.body).toEqual({ expectedCurrentId, expectedCurrentChangedAt });
+    approve.flush({});
+    service.restoreRevision('proj-1', 'faq', 'living', REVISION_ID, { expectedCurrentId }).subscribe();
+    const restore = http.expectOne((candidate) => candidate.url.endsWith('/restore'));
+    expect(restore.request.body).toEqual({ project: 'proj-1', revisionId: REVISION_ID, expectedCurrentId });
+    restore.flush({});
+  });
+
   it('PATCHes only the run presentation link and project, not a revision or agent request', () => {
     service.saveLinkedinShareLink('proj-1', 'run-example', 'https://public.example/new').subscribe();
     const request = http.expectOne('/api/mktg-agents/linkedin-post/documents/run-example/share-link');

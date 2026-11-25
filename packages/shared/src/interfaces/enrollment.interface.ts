@@ -62,3 +62,28 @@ export interface DisplayEnrollment extends IndividualEnrollment {
 export type EnrollmentsStateOf<T> = { kind: 'loading' } | { kind: 'loaded'; items: T[] } | { kind: 'error'; message: string };
 export type EnrollmentsState = EnrollmentsStateOf<IndividualEnrollment>;
 export type DisplayEnrollmentsState = EnrollmentsStateOf<DisplayEnrollment>;
+
+/** One figure in the strip under an Account & Settings enrollment card's header (#6076), such as the price. */
+export interface AccountEnrollmentFigure {
+  label: string;
+  icon: string;
+  value: string;
+}
+
+/** The single top-right action of an Account & Settings enrollment card: auto-renew on or off, renew, or repurchase. */
+export type AccountEnrollmentAction = 'auto-renew' | 'renew' | 'repurchase';
+
+/** An enrollment as the Account & Settings Individual Enrollment page shows it (#6076). */
+export interface AccountEnrollmentCard {
+  item: DisplayEnrollment;
+  subtitle: string;
+  figures: AccountEnrollmentFigure[];
+  action: AccountEnrollmentAction | null;
+  enrollLabel: string;
+}
+
+/** The auto-renew change the Account & Settings confirm dialog asks about: on or off, and the date it takes effect from. */
+export interface AccountEnrollmentAutoRenewChange {
+  enable: boolean;
+  endDate: string;
+}

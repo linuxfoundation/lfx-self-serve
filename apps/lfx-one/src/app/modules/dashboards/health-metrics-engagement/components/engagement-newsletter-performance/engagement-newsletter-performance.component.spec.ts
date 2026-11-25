@@ -1,11 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, signal } from '@angular/core';
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
-import { ChartComponent } from '@components/chart/chart.component';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -16,21 +14,11 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 
 import { EngagementNewsletterPerformanceComponent } from './engagement-newsletter-performance.component';
 
-import type { ChartData } from 'chart.js';
 import type {
   HealthMetricsEngagementNewsletter,
   HealthMetricsEngagementNewsletterPerformance,
   HealthMetricsEngagementNewsletterPeriod,
 } from '@lfx-one/shared/interfaces';
-
-/** Chart.js needs a canvas jsdom does not have; the stub only records the datasets it is handed. */
-@Component({ selector: 'lfx-chart', template: '' })
-class ChartStubComponent {
-  public readonly type = input<string>('');
-  public readonly data = input<ChartData<'line'> | null>(null);
-  public readonly options = input<unknown>({});
-  public readonly height = input<string>('');
-}
 
 const YEAR = new Date().getFullYear();
 const PERIOD: HealthMetricsEngagementNewsletterPeriod = {
@@ -82,9 +70,7 @@ describe('EngagementNewsletterPerformanceComponent', () => {
         },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
       ],
-    })
-      .overrideComponent(EngagementNewsletterPerformanceComponent, { remove: { imports: [ChartComponent] }, add: { imports: [ChartStubComponent] } })
-      .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(EngagementNewsletterPerformanceComponent);
     fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
@@ -101,42 +87,55 @@ describe('EngagementNewsletterPerformanceComponent', () => {
     return query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
   }
 
-  function datasetLabels(): string[] {
-    const chart = fixture.debugElement.query(By.directive(ChartStubComponent))?.componentInstance as ChartStubComponent | undefined;
-    return (chart?.data()?.datasets ?? []).map((dataset) => dataset.label ?? '');
+  function legend(): string[] {
+    return [...(query('engagement-newsletter-performance-legend')?.querySelectorAll(':scope > span') ?? [])].map((span) => span.textContent?.trim() ?? '');
   }
 
-  it('shows the KPIs, charts each newsletter’s rates and lists them latest first', async () => {
+  it('shows the metrics row, charts each newsletter’s rates and lists them latest first', async () => {
     await render();
 
-    expect(text('engagement-newsletter-performance-subscribers')).toBe('1,490');
-    expect(text('engagement-newsletter-performance-growth')).toBe('+21% since Aug');
-    expect(text('engagement-newsletter-performance-kpi-click')).toBe('5.7%');
-    expect(datasetLabels()).toEqual(['Open rate', 'Click rate', 'Click-to-open rate']);
+    expect(text('engagement-newsletter-performance-metrics-subscribers-value')).toBe('1,490');
+    expect(text('engagement-newsletter-performance-metrics-subscribers-description')).toBe('+21% since Aug');
+    expect(text('engagement-newsletter-performance-metrics-sent-description')).toBe('96% delivered');
+    expect(text('engagement-newsletter-performance-metrics-click-value')).toBe('5.7%');
+    expect(text('engagement-newsletter-performance-metrics-click-description')).toBe('13% of opens');
+    expect(query('engagement-newsletter-performance-metrics-cto')).toBeNull();
+    expect(legend()).toEqual(['Open rate', 'Click rate', 'Click-to-open rate']);
+    expect(query('engagement-newsletter-performance-chart-line-cto')?.getAttribute('stroke-dasharray')).toBe('5 4');
+    // The click-to-open swatch is dashed like its line; the solid lines keep a solid swatch.
+    const swatch = (key: string, kind: string) =>
+      query(`engagement-newsletter-performance-legend-${key}`)?.querySelector(`[data-testid="engagement-newsletter-performance-legend-${kind}"]`);
+    expect(swatch('cto', 'swatch-dashed')?.className).toContain('border-dashed');
+    expect(swatch('cto', 'swatch')).toBeNull();
+    expect(swatch('open', 'swatch')).not.toBeNull();
+    expect(swatch('open', 'swatch-dashed')).toBeNull();
     const rows = [...fixture.nativeElement.querySelectorAll('[data-testid="engagement-newsletter-performance-table"] tbody tr')] as HTMLElement[];
     expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual([
       'engagement-newsletter-performance-row-n2',
       'engagement-newsletter-performance-row-n1',
     ]);
-    // Each cell's lines, joined with a space; textContent alone runs the stacked lines together.
+    // Each cell's text and its description, joined with a space.
     const latest = [...(query('engagement-newsletter-performance-row-n2')?.children ?? [])].map((cell) =>
-      [...cell.querySelectorAll('span')]
-        .filter((span) => !span.querySelector('span'))
-        .map((span) => span.textContent?.trim())
+      [
+        ...cell.querySelectorAll(
+          '[data-testid="health-metrics-cell-text"], [data-testid="health-metrics-cell-description"], [data-testid$="-open-rate"] > span:first-child'
+        ),
+      ]
+        .map((part) => part.textContent?.trim())
         .join(' ')
     );
     expect(latest).toEqual([`Monthly: Latest Sent Oct 26, ${YEAR}`, '1,490 61 failed', '647 997 total', '43%', '76 1,462 total', '5%', '12%']);
+    expect((query('engagement-newsletter-performance-row-n2-open-rate')?.querySelector('.bg-blue-500') as HTMLElement).style.width).toBe('43%');
     expect(verdicts).toEqual([false]);
   });
 
   it.each([
-    [0.5004, 60],
-    [0.7, 70],
-  ])('tops the rates axis at the next 10%% above the highest rate (%s → %s%%)', async (openRate, max) => {
+    [0.5004, '60%'],
+    [0.7, '70%'],
+  ])('tops the rates axis at the next 10%% above the peak open rate (%s → %s)', async (openRate, top) => {
     await render({ ...PERFORMANCE, newsletters: [{ ...LATEST, openRate }] });
 
-    const chart = fixture.debugElement.query(By.directive(ChartStubComponent)).componentInstance as ChartStubComponent;
-    expect((chart.options() as { scales: { y: { max: number } } }).scales.y.max).toBe(max);
+    expect(query('engagement-newsletter-performance-chart-y')?.querySelector('span')?.textContent).toBe(top);
   });
 
   it('switches the chart to recipients and unique opens, and keeps the choice in the URL', async () => {
@@ -146,7 +145,8 @@ describe('EngagementNewsletterPerformanceComponent', () => {
     fixture.componentInstance['onModeChange']('audience');
     fixture.detectChanges();
 
-    expect(datasetLabels()).toEqual(['Recipients', 'Unique opens']);
+    expect(legend()).toEqual(['Recipients', 'Unique opens']);
+    expect(query('engagement-newsletter-performance-modes')?.tagName).toBe('LFX-UI-SWITCH');
     expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { nlMode: 'audience' }, queryParamsHandling: 'merge' }));
   });
 
@@ -156,6 +156,46 @@ describe('EngagementNewsletterPerformanceComponent', () => {
     expect(query('engagement-newsletter-performance-chart')).toBeNull();
     expect(query('engagement-newsletter-performance-chart-empty')).not.toBeNull();
     expect(query('engagement-newsletter-performance-row-n2')).not.toBeNull();
+  });
+
+  it('opens on the latest send with the Newsletter arrow, and sorts a rate highest first, a newsletter with no engagement data last', async () => {
+    const quiet = { ...LATEST, key: 'n0', name: 'Monthly: Quiet', sentDate: `${YEAR}-08-01`, hasEngagementData: false };
+    await render({ ...PERFORMANCE, newsletters: [...PERFORMANCE.newsletters, quiet] });
+    const keys = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('[data-testid="engagement-newsletter-performance-table"] tbody tr')].map(
+        (row: Element) => row.getAttribute('data-testid') ?? ''
+      );
+    const header = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="engagement-newsletter-performance-sort-${key}"]`);
+
+    expect(header('newsletter').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+    expect(keys()).toEqual([
+      'engagement-newsletter-performance-row-n2',
+      'engagement-newsletter-performance-row-n1',
+      'engagement-newsletter-performance-row-n0',
+    ]);
+
+    (header('openRate').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(keys()).toEqual([
+      'engagement-newsletter-performance-row-n2',
+      'engagement-newsletter-performance-row-n1',
+      'engagement-newsletter-performance-row-n0',
+    ]);
+    (header('openRate').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(keys()).toEqual([
+      'engagement-newsletter-performance-row-n1',
+      'engagement-newsletter-performance-row-n2',
+      'engagement-newsletter-performance-row-n0',
+    ]);
+  });
+
+  it('pages ten newsletters at a time with the numbered pager', async () => {
+    const many = Array.from({ length: 12 }, (_, index) => ({ ...LATEST, key: `n${index}`, sentDate: `${YEAR}-0${(index % 9) + 1}-02` }));
+    await render({ ...PERFORMANCE, newsletters: many });
+
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="engagement-newsletter-performance-table"] tbody tr')).toHaveLength(10);
+    expect(text('ui-pagination-info')).toBe('Showing 1 to 10 of 12');
   });
 
   it('settles empty for a period with no newsletter sent', async () => {

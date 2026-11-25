@@ -36,6 +36,8 @@ import {
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   MAX_SPONSORS,
+  META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE,
+  META_LEAD_FORMS_RESTRICTED_CODE,
 } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
@@ -79,7 +81,9 @@ const {
   legacyUpdateStatus,
   isServerFeatureEnabled,
   logger,
+  svcGetLinkedInCreateAccount,
 } = vi.hoisted(() => ({
+  svcGetLinkedInCreateAccount: vi.fn(),
   saveBrief: vi.fn(),
   approveStoredBrief: vi.fn(),
   loadBrief: vi.fn(),
@@ -150,6 +154,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public searchHubSpotCampaigns = svcSearchHsCampaigns;
       public createHubSpotCampaign = svcCreateHsCampaign;
       public createSendWorkflow = svcCreateSendWorkflow;
+      public getLinkedInAdsCreateAccount = svcGetLinkedInCreateAccount;
     },
   };
 });
@@ -1083,6 +1088,8 @@ describe('CampaignController.createCampaign cutover', () => {
    *     ordinary profile selection fails with "not found in runtime config".
    */
   it('strips the legacy ad account and adds the runtime targeting catalogue for LinkedIn', async () => {
+    // Account selection (#5809) is the one flag that would forward the id; off here.
+    isServerFeatureEnabled.mockImplementation((flag: string) => flag !== ServerFeatureFlag.CampaignServiceLinkedInAccountSelection);
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
@@ -1100,6 +1107,105 @@ describe('CampaignController.createCampaign cutover', () => {
     // duplicate of it.
     expect(sent['targetingProfile']).toEqual({ id: 'cloud-native' });
     expect(sent['budgetUsd']).toBe(100);
+  });
+
+  /**
+   * #5809: only the picker's explicit `selectedAdAccountId` can name a LinkedIn ad account, forwarded as
+   * `adAccountId` once campaign-service's own `create-account` list names it as a grant and the caller
+   * holds `global_marketing_ops`. A pick that cannot be honoured is refused, never replaced by the
+   * default; the default is sent as nothing (an executive director would get a 403 for it); and the
+   * legacy `linkedin.json` `adAccountId` is never forwarded, so an account changes only by a choice.
+   */
+  describe('LinkedIn ad account with account selection on', () => {
+    const CREATE_ACCOUNT = {
+      account_id: '100000001',
+      org_id: '200000001',
+      label: 'Shared system account',
+      source: 'system',
+      status: 'active',
+      account_selection_enabled: true,
+      selectable_accounts: [
+        { account_id: '100000001', org_id: '200000001', label: 'Shared system account', default: true },
+        { account_id: '100000002', org_id: '200000002', label: 'Grant One', default: false },
+      ],
+    };
+    const marketingOps = vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict);
+
+    async function sendWith(linkedIn: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+      legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+      const linkedInBody = { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100, targetingProfile: { id: 'cloud-native' }, ...linkedIn } };
+      await controller.createCampaign(buildReq(linkedInBody, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['linkedInConfig'] as Record<string, unknown>) : null;
+    }
+
+    const refusal = (): { statusCode?: number; constructor: { name: string } } | undefined => vi.mocked(next).mock.calls[0]?.[0] as never;
+
+    beforeEach(() => {
+      svcGetLinkedInCreateAccount.mockResolvedValue(CREATE_ACCOUNT);
+      marketingOps.mockResolvedValue(true);
+    });
+
+    it.each([['100000002'], [' 100000002 ']])('forwards a picked grant %j for global_marketing_ops as adAccountId', async (given) => {
+      const sent = await sendWith({ selectedAdAccountId: given });
+
+      expect(svcGetLinkedInCreateAccount).toHaveBeenCalledWith(expect.anything(), 'tlf');
+      expect(sent?.['adAccountId']).toBe('100000002');
+      expect(sent).not.toHaveProperty('selectedAdAccountId');
+    });
+
+    it('sends nothing for a pick of the default account', async () => {
+      expect(await sendWith({ selectedAdAccountId: '100000001' })).not.toHaveProperty('adAccountId');
+    });
+
+    // An open tab's legacy linkedin.json id, even one that matches a grant, is not a choice.
+    it.each([['100000002'], ['507654321']])('never forwards the legacy adAccountId %j, and reads nothing for it', async (given) => {
+      const sent = await sendWith({ adAccountId: given });
+
+      expect(sent).not.toHaveProperty('adAccountId');
+      expect(svcGetLinkedInCreateAccount).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an account the list does not name', '507654321', CREATE_ACCOUNT],
+      ["a grant while campaign-service's selection is off", '100000002', { ...CREATE_ACCOUNT, account_selection_enabled: false }],
+      ['a malformed id', 'urn:li:sponsoredAccount:100000002', CREATE_ACCOUNT],
+    ])('refuses a pick of %s with a 400 rather than creating in the default', async (_label, given, answer) => {
+      svcGetLinkedInCreateAccount.mockResolvedValue(answer);
+
+      expect(await sendWith({ selectedAdAccountId: given })).toBeNull();
+      expect(refusal()).toBeInstanceOf(ServiceValidationError);
+    });
+
+    it('refuses a pick on a deployment with account selection off, reading nothing', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: string) => flag !== ServerFeatureFlag.CampaignServiceLinkedInAccountSelection);
+
+      expect(await sendWith({ selectedAdAccountId: '100000002' })).toBeNull();
+      expect(refusal()).toBeInstanceOf(ServiceValidationError);
+      expect(svcGetLinkedInCreateAccount).not.toHaveBeenCalled();
+    });
+
+    it('refuses a picked grant from a caller without global_marketing_ops with a 403', async () => {
+      marketingOps.mockResolvedValue(false);
+
+      expect(await sendWith({ selectedAdAccountId: '100000002' })).toBeNull();
+      expect(refusal()).toBeInstanceOf(AuthorizationError);
+    });
+
+    it('refuses with a 503 when the relation check cannot be made', async () => {
+      marketingOps.mockRejectedValueOnce(new Error('access check unavailable'));
+
+      expect(await sendWith({ selectedAdAccountId: '100000002' })).toBeNull();
+      expect(refusal()?.statusCode).toBe(503);
+    });
+
+    it('fails the create when the account list cannot be read', async () => {
+      const upstream = new Error('create-account unavailable');
+      svcGetLinkedInCreateAccount.mockRejectedValueOnce(upstream);
+
+      expect(await sendWith({ selectedAdAccountId: '100000002' })).toBeNull();
+      expect(refusal()).toBe(upstream);
+    });
   });
 
   /**
@@ -2319,6 +2425,427 @@ describe('CampaignController.createCampaign cutover', () => {
       const sent = envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>;
       expect(sent['startDate']).toBe('2026-01-01');
       expect(sent['endDate']).toBe('2026-02-01');
+    });
+  });
+
+  /**
+   * Meta audience targeting (#5905; linuxfoundation/lfx-v2-campaign-service#550): checked here, since the
+   * route has no body validator, compacted to what differs from Meta's defaults, and refused with a 400 while
+   * the flag is off (a tab opened while it was on must reload).
+   * Custom audiences name resources of the shared Meta ad account, so they need `global_marketing_ops`.
+   */
+  describe('meta audience targeting', () => {
+    const marketingOps = vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict);
+    const flagsWith = (targeting: boolean): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceMetaAudienceTargeting ? targeting : true));
+    };
+    async function sendWith(targeting: unknown): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = {
+        budgetUsd: 250,
+        lifetimeBudget: false,
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        geoTargets: ['US'],
+        variants: [{ primaryText: 'p', headline: 'h' }],
+        targeting,
+      };
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+    const refusal = (): unknown => vi.mocked(next).mock.calls[0]?.[0];
+
+    beforeEach(() => {
+      flagsWith(true);
+      marketingOps.mockResolvedValue(true);
+    });
+
+    it('refuses the block with a 400 while the flag is off, rather than creating without it', async () => {
+      flagsWith(false);
+
+      expect(await sendWith({ ageMin: 30, customAudiences: ['23850000000000001'] })).toBeNull();
+      const error = refusal() as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.toResponse()['errors'][0].field).toBe('metaConfig.targeting');
+      expect(marketingOps).not.toHaveBeenCalled();
+    });
+
+    it('forwards only what differs from the defaults', async () => {
+      const sent = await sendWith({
+        ageMin: 25,
+        ageMax: 65,
+        genders: ['male', 'female'],
+        customAudiences: [' 23850000000000001', '23850000000000001'],
+        excludedCustomAudiences: [],
+        advantageAudience: true,
+      });
+
+      expect(sent?.['targeting']).toEqual({ ageMin: 25, customAudiences: ['23850000000000001'], advantageAudience: true });
+      expect(marketingOps).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    });
+
+    it('sends no targeting at all when every field is its default, and asks nothing about the caller', async () => {
+      const sent = await sendWith({ ageMin: 18, ageMax: 65, genders: [], customAudiences: [], excludedCustomAudiences: [], advantageAudience: null });
+
+      expect(sent).not.toHaveProperty('targeting');
+      expect(marketingOps).not.toHaveBeenCalled();
+    });
+
+    // campaign-service reads advantageAudience as a tri-state: an explicit false sends 0, which is an
+    // instruction, so it is forwarded on its own and is allowed with any age range.
+    it.each([[{ advantageAudience: false }], [{ advantageAudience: false, ageMin: 40, ageMax: 50 }]])(
+      'forwards an explicit Advantage+ off: %j',
+      async (targeting) => {
+        expect((await sendWith(targeting))?.['targeting']).toEqual(targeting);
+      }
+    );
+
+    it('forwards age and gender from a caller without global_marketing_ops', async () => {
+      marketingOps.mockResolvedValue(false);
+
+      expect((await sendWith({ ageMax: 44, genders: ['female'] }))?.['targeting']).toEqual({ ageMax: 44, genders: ['female'] });
+    });
+
+    it.each([
+      ['an out-of-range age', { ageMin: 16 }, 'metaConfig.targeting.ageMin'],
+      ['ageMin above ageMax', { ageMin: 50, ageMax: 30 }, 'metaConfig.targeting.ageMin'],
+      ['an unknown gender', { genders: ['unknown'] }, 'metaConfig.targeting.genders'],
+      ['a non-numeric audience id', { customAudiences: ['act_1'] }, 'metaConfig.targeting.customAudiences'],
+      ['an id in both lists', { customAudiences: ['1001'], excludedCustomAudiences: ['1001'] }, 'metaConfig.targeting.excludedCustomAudiences'],
+      ['26 audiences', { excludedCustomAudiences: Array.from({ length: 26 }, (_, i) => String(1001 + i)) }, 'metaConfig.targeting.excludedCustomAudiences'],
+      ['Advantage+ with a narrowed age', { advantageAudience: true, ageMin: 30 }, 'metaConfig.targeting.advantageAudience'],
+    ])('refuses %s with a 400 naming the field, creating nothing', async (_label, targeting, field) => {
+      expect(await sendWith(targeting)).toBeNull();
+      const error = refusal() as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.toResponse()['errors'][0].field).toBe(field);
+    });
+
+    it('refuses custom audiences from a caller without global_marketing_ops with a 403', async () => {
+      marketingOps.mockResolvedValue(false);
+
+      expect(await sendWith({ excludedCustomAudiences: ['1001'] })).toBeNull();
+      expect(refusal()).toBeInstanceOf(AuthorizationError);
+    });
+
+    it('refuses custom audiences with a 503 when the relation check cannot be made', async () => {
+      marketingOps.mockRejectedValueOnce(new Error('access check unavailable'));
+
+      expect(await sendWith({ customAudiences: ['1001'] })).toBeNull();
+      expect((refusal() as MicroserviceError).statusCode).toBe(503);
+    });
+  });
+
+  /**
+   * Meta detailed targeting (#5904 row 4; linuxfoundation/lfx-v2-campaign-service#612): each field on its own flag,
+   * as campaign-service's `checkMetaTargeting`, so a block with only detailed fields passes while audience targeting
+   * is off; checked and compacted by the shared rules; merged with the audience fields into one `targeting`.
+   */
+  describe('meta detailed targeting', () => {
+    const flagsOff = (...off: ServerFeatureFlag[]): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => !off.includes(flag as ServerFeatureFlag));
+    };
+    async function sendWith(targeting: unknown, extra: Record<string, unknown> = {}): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = {
+        budgetUsd: 250,
+        lifetimeBudget: false,
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        geoTargets: ['US'],
+        variants: [{ primaryText: 'p', headline: 'h' }],
+        targeting,
+        ...extra,
+      };
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+    const refusal = (): unknown => vi.mocked(next).mock.calls[0]?.[0];
+    const refusedField = (): string | undefined => (refusal() as ServiceValidationError).toResponse()['errors'][0].field;
+
+    beforeEach(() => {
+      flagsOff();
+      vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValue(true);
+    });
+
+    it('forwards a detailed-only block, compacted, while audience targeting is off', async () => {
+      flagsOff(ServerFeatureFlag.CampaignServiceMetaAudienceTargeting);
+
+      expect((await sendWith({ interests: [' 6003020834693', '6003020834693'], locales: [6] }))?.['targeting']).toEqual({
+        interests: ['6003020834693'],
+        locales: [6],
+      });
+    });
+
+    it('merges the audience and detailed fields into one block', async () => {
+      expect((await sendWith({ ageMin: 25, workPositions: ['105'] }))?.['targeting']).toEqual({ ageMin: 25, workPositions: ['105'] });
+    });
+
+    it.each([
+      [ServerFeatureFlag.CampaignServiceMetaInterestTargeting, { interests: ['6003020834693'] }, 'metaConfig.targeting.interests'],
+      [ServerFeatureFlag.CampaignServiceMetaBehaviorTargeting, { workPositions: ['105'] }, 'metaConfig.targeting.workPositions'],
+    ])('refuses a field whose flag (%s) is off with a 400, rather than dropping it', async (flag, targeting, field) => {
+      flagsOff(flag);
+
+      expect(await sendWith(targeting)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+
+    it('refuses an id a create would refuse upstream with a 400 naming the field', async () => {
+      expect(await sendWith({ behaviors: ['06004'] })).toBeNull();
+      expect(refusedField()).toBe('metaConfig.targeting.behaviors');
+    });
+
+    // Devices and operating systems (#5904 row 6): their own flags, campaign-service's rules, Meta's spelling.
+    it('forwards devices and operating systems, normalized, while audience targeting is off', async () => {
+      flagsOff(ServerFeatureFlag.CampaignServiceMetaAudienceTargeting);
+
+      expect((await sendWith({ devicePlatforms: ['Mobile'], userOs: ['ios_ver_8.0_and_above'] }))?.['targeting']).toEqual({
+        devicePlatforms: ['mobile'],
+        userOs: ['iOS_ver_8.0_and_above'],
+      });
+    });
+
+    it.each([
+      [
+        'device targeting off',
+        [ServerFeatureFlag.CampaignServiceMetaDeviceTargeting],
+        { devicePlatforms: ['mobile'] },
+        {},
+        'metaConfig.targeting.devicePlatforms',
+      ],
+      ['OS targeting off', [ServerFeatureFlag.CampaignServiceMetaOsTargeting], { userOs: ['iOS'] }, {}, 'metaConfig.targeting.userOs'],
+      // The rules read the rest of metaConfig: an OS version on the awareness objective is refused.
+      ['an OS version on awareness', [], { userOs: ['iOS_ver_8.0_and_above'] }, { objective: 'awareness' }, 'metaConfig.targeting.userOs'],
+    ])('refuses %s with a 400 naming the field', async (_case, off, targeting, extra, field) => {
+      flagsOff(...off);
+
+      expect(await sendWith(targeting, extra)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+
+    it('refuses a targeting block under another spelling of its key, whatever the flags, rather than forwarding it unchecked', async () => {
+      expect(await sendWith(undefined, { Targeting: { userOs: ['iOS'] } })).toBeNull();
+      expect(refusedField()).toBe('metaConfig.targeting');
+    });
+  });
+
+  /**
+   * The Meta call to action, conversion event and optimization goal (#5934), one flag each: refused with a
+   * 400 while their flag is off (never dropped), checked by the tab's own rules, and sent upper-cased.
+   */
+  describe('meta ad options', () => {
+    const flagsWith = (off: ServerFeatureFlag[] = []): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => !off.includes(flag as ServerFeatureFlag));
+    };
+    async function sendWith(extra: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = {
+        budgetUsd: 250,
+        lifetimeBudget: false,
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        geoTargets: ['US'],
+        variants: [{ primaryText: 'p', headline: 'h' }],
+        ...extra,
+      };
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+    const refusedField = (): unknown => {
+      const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      return error.toResponse()['errors'][0].field;
+    };
+
+    beforeEach(() => flagsWith());
+
+    it.each([
+      [ServerFeatureFlag.CampaignServiceMetaCallToAction, { callToAction: 'SIGN_UP' }, 'metaConfig.callToAction'],
+      [ServerFeatureFlag.CampaignServiceMetaConversionEvent, { objective: 'conversions', pixelId: '1', conversionEvent: 'LEAD' }, 'metaConfig.conversionEvent'],
+      [ServerFeatureFlag.CampaignServiceMetaOptimizationGoal, { optimizationGoal: 'LINK_CLICKS' }, 'metaConfig.optimizationGoal'],
+    ])('refuses a field with a 400 while %s is off, rather than creating without it', async (flag, extra, field) => {
+      flagsWith([flag]);
+
+      expect(await sendWith(extra)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+
+    it('forwards the checked values upper-cased, and sends nothing for "Not set"', async () => {
+      const sent = await sendWith({
+        objective: 'conversions',
+        pixelId: '1',
+        callToAction: 'buy_tickets',
+        conversionEvent: 'COMPLETE_REGISTRATION',
+        optimizationGoal: '',
+      });
+
+      expect(sent).toMatchObject({ callToAction: 'BUY_TICKETS', conversionEvent: 'COMPLETE_REGISTRATION' });
+      expect(sent).not.toHaveProperty('optimizationGoal');
+      createCampaigns.mockClear();
+      expect(await sendWith({})).not.toHaveProperty('callToAction');
+    });
+
+    it.each([
+      ['a value outside the list', { callToAction: 'REGISTER_NOW' }, 'metaConfig.callToAction'],
+      ['a conversion event on traffic', { conversionEvent: 'LEAD' }, 'metaConfig.conversionEvent'],
+      ['an optimization goal on awareness', { objective: 'awareness', optimizationGoal: 'LINK_CLICKS' }, 'metaConfig.optimizationGoal'],
+      [
+        'landing page views with manual bidding',
+        { optimizationGoal: 'LANDING_PAGE_VIEWS', bidding: { strategy: 'manual', bidAmount: 1 } },
+        'metaConfig.optimizationGoal',
+      ],
+    ])('refuses %s with a 400 naming the field, creating nothing', async (_label, extra, field) => {
+      expect(await sendWith(extra)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+  });
+
+  /**
+   * The Meta ad schedule and frequency cap (#5904 row 5), one flag each: refused with a 400 while the flag is off or
+   * under another spelling of the key (never dropped), checked by the tab's own rules, and forwarded as checked.
+   */
+  describe('meta delivery options', () => {
+    const SCHEDULE = { days: [5, 1, 3, 1], startMinute: 540, endMinute: 1020 };
+    const CAP = { maxImpressions: 2, intervalDays: 7 };
+    const flagsWith = (off: ServerFeatureFlag[] = []): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => !off.includes(flag as ServerFeatureFlag));
+    };
+    async function sendWith(extra: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = {
+        budgetUsd: 250,
+        lifetimeBudget: true,
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        geoTargets: ['US'],
+        variants: [{ primaryText: 'p', headline: 'h' }],
+        ...extra,
+      };
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+    const refusedField = (): unknown => {
+      const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      return error.toResponse()['errors'][0].field;
+    };
+
+    beforeEach(() => flagsWith());
+
+    it.each([
+      [ServerFeatureFlag.CampaignServiceMetaAdSchedule, { adSchedule: SCHEDULE }, 'metaConfig.adSchedule'],
+      [ServerFeatureFlag.CampaignServiceMetaFrequencyCap, { objective: 'awareness', frequencyCap: CAP }, 'metaConfig.frequencyCap'],
+    ])('refuses a field with a 400 while %s is off, rather than creating without it', async (flag, extra, field) => {
+      flagsWith([flag]);
+
+      expect(await sendWith(extra)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+
+    it('forwards only the checked fields, the schedule days de-duplicated and sorted, and nothing when unset', async () => {
+      const sent = await sendWith({ objective: 'awareness', adSchedule: { ...SCHEDULE, extra: 1 }, frequencyCap: CAP });
+
+      expect(sent).toMatchObject({ adSchedule: { days: [1, 3, 5], startMinute: 540, endMinute: 1020 }, frequencyCap: CAP });
+      expect(sent?.['adSchedule']).not.toHaveProperty('extra');
+      createCampaigns.mockClear();
+      // A null is "not set": stripped, so the request never carries the raw value.
+      const plain = await sendWith({ adSchedule: null, frequencyCap: null });
+      expect(plain).not.toHaveProperty('adSchedule');
+      expect(plain).not.toHaveProperty('frequencyCap');
+    });
+
+    it.each([
+      ['a schedule on a daily budget', { lifetimeBudget: false, adSchedule: SCHEDULE }, 'metaConfig.adSchedule'],
+      ['a cap on traffic', { objective: 'traffic', frequencyCap: CAP }, 'metaConfig.frequencyCap'],
+      ['the schedule under another spelling, whatever the flag', { AdSchedule: SCHEDULE }, 'metaConfig.adSchedule'],
+    ])('refuses %s with a 400 naming the field, creating nothing', async (_label, extra, field) => {
+      expect(await sendWith(extra)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+  });
+
+  /**
+   * The Meta Instant Form of a `leads` create (#5940): refused with a 400 while its flag is off (never
+   * dropped), checked by the tab's own rules, answered on `global_marketing_ops`, and sent trimmed.
+   */
+  describe('meta lead form', () => {
+    async function sendWith(extra: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = {
+        budgetUsd: 250,
+        lifetimeBudget: false,
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        geoTargets: ['US'],
+        variants: [{ primaryText: 'p', headline: 'h' }],
+        objective: 'leads',
+        ...extra,
+      };
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+    const refusal = (): unknown => vi.mocked(next).mock.calls[0]?.[0];
+
+    beforeEach(() => {
+      isServerFeatureEnabled.mockImplementation(() => true);
+    });
+
+    it('refuses a form with a 400 while Meta lead forms are off, rather than creating a traffic campaign', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceMetaLeadForms);
+
+      expect(await sendWith({ leadFormId: '1234567890123456' })).toBeNull();
+      const error = refusal() as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.toResponse()['errors'][0].field).toBe('metaConfig.leadFormId');
+      expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
+    });
+
+    it('refuses another spelling of the key with a 400 whatever the flag, since campaign-service reads keys ignoring case', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceMetaLeadForms);
+
+      expect(await sendWith({ LeadFormId: '1234567890123456' })).toBeNull();
+      const error = refusal() as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.toResponse()['errors'][0].field).toBe('metaConfig.leadFormId');
+      expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
+    });
+
+    it('forwards the checked id trimmed, and sends nothing for "Not set"', async () => {
+      vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValueOnce(true);
+      expect(await sendWith({ leadFormId: ' 1234567890123456 ', callToAction: 'sign_up' })).toMatchObject({
+        leadFormId: '1234567890123456',
+        callToAction: 'SIGN_UP',
+      });
+      expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).toHaveBeenCalledWith(expect.anything(), 'tlf');
+      createCampaigns.mockClear();
+      expect(await sendWith({ leadFormId: '' })).not.toHaveProperty('leadFormId');
+    });
+
+    it.each([
+      ['an id that is not digits', { leadFormId: 'form-1' }, 'metaConfig.leadFormId'],
+      ['a form off leads', { leadFormId: '1', objective: 'traffic' }, 'metaConfig.leadFormId'],
+      ['a form with manual bidding', { leadFormId: '1', bidding: { strategy: 'manual', bidAmount: 1 } }, 'metaConfig.leadFormId'],
+      ['a call to action a form cannot carry', { leadFormId: '1', callToAction: 'BUY_TICKETS' }, 'metaConfig.callToAction'],
+    ])('refuses %s with a 400 naming the field, creating nothing', async (_label, extra, field) => {
+      expect(await sendWith(extra)).toBeNull();
+      const error = refusal() as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.toResponse()['errors'][0].field).toBe(field);
+    });
+
+    it('refuses a caller without global_marketing_ops with the coded 403, creating nothing', async () => {
+      vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValueOnce(false);
+
+      expect(await sendWith({ leadFormId: '1234567890123456' })).toBeNull();
+      expect(refusal()).toMatchObject({ code: META_LEAD_FORMS_RESTRICTED_CODE });
+    });
+
+    it('answers a check that cannot be made with the coded 503, creating nothing', async () => {
+      vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockRejectedValueOnce(new Error('access check unavailable'));
+
+      expect(await sendWith({ leadFormId: '1234567890123456' })).toBeNull();
+      expect(refusal()).toMatchObject({ code: META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE });
     });
   });
 
@@ -7001,8 +7528,8 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(refusalFrom()).toMatchObject({ field: 'demandGenVideoCreative', message: expect.stringContaining('not both') });
     });
 
-    // #1614 (F13): Google refused "Register" at adGroupAds:mutate, after the campaign existed, and
-    // campaign-service checks only the call to action's length, so the BFF holds it to the list.
+    // #1614 (F13): Google refused "Register" at adGroupAds:mutate, after the campaign existed. The BFF holds each ad's call to action to the list Google accepted for that ad (13 Nov probe), so
+    // an unaccepted one is refused before campaign-service creates anything.
     it.each([
       [
         'a Display call to action off the documented list',
@@ -7012,12 +7539,37 @@ describe('CampaignController.createCampaign cutover', () => {
         'a Display ad group call to action off the list',
         { campaignTypes: ['display'], displayAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us'], callToActionText: 'Register' } }] },
       ],
-      ['any Demand Gen image call to action', { campaignTypes: ['demand-gen'], demandGenCreative: { headlines: ['Join us'], callToActionText: 'Learn More' } }],
+      [
+        'a Demand Gen image call to action off its list',
+        { campaignTypes: ['demand-gen'], demandGenCreative: { headlines: ['Join us'], callToActionText: 'Register' } },
+      ],
+      [
+        'a Display-only call to action on a Demand Gen image ad',
+        { campaignTypes: ['demand-gen'], demandGenCreative: { headlines: ['Join us'], callToActionText: 'Install' } },
+      ],
     ])('refuses %s by name, creating nothing', async (_label, overrides) => {
       await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'callToActionText', message: expect.stringContaining('does not accept') });
+    });
+
+    it('sends a listed Demand Gen image call to action unchanged', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000005229', error: null });
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenCreative: { headlines: ['Join us'], callToActionText: 'Donate Now' } }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['demandGenCreative']).toMatchObject({
+        callToActionText: 'Donate Now',
+      });
     });
 
     it('sends a listed Display call to action unchanged', async () => {
@@ -10904,6 +11456,10 @@ describe('CampaignController.listBriefCampaigns', () => {
         googleDemandGenAudienceEnabled: conversions,
         googleDisplayAudiencesEnabled: conversions,
         googlePerformanceMaxAudienceSignalEnabled: conversions,
+        // Meta custom audiences (#5905) on the same relation; every flag is on here.
+        metaCustomAudiencesEnabled: conversions,
+        // Meta lead forms (#5940) on the same relation.
+        metaLeadFormsEnabled: conversions,
       })
     );
   });
@@ -10923,6 +11479,8 @@ describe('CampaignController.listBriefCampaigns', () => {
         googleDemandGenAudienceEnabled: null,
         googleDisplayAudiencesEnabled: null,
         googlePerformanceMaxAudienceSignalEnabled: null,
+        metaCustomAudiencesEnabled: null,
+        metaLeadFormsEnabled: null,
       })
     );
   });
@@ -10933,7 +11491,14 @@ describe('CampaignController.listBriefCampaigns', () => {
 
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: false, googleConversionActionsEnabled: false }));
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        googleAudienceSegmentsEnabled: false,
+        googleConversionActionsEnabled: false,
+        metaCustomAudiencesEnabled: false,
+        metaLeadFormsEnabled: false,
+      })
+    );
     expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
     expect(personaDetectionService.checkRootWriter).not.toHaveBeenCalled();
   });
@@ -12327,6 +12892,65 @@ describe('CampaignController.createCampaign Reddit conversion pixel', () => {
       | ServiceValidationError
       | undefined;
     expect(refusal?.toResponse()['errors']).not.toEqual(expect.arrayContaining([expect.objectContaining({ field: 'redditConfig.conversionPixelId' })]));
+  });
+});
+
+/**
+ * `redditConfig.conversionEvent` (#6108 row 2): refused, never dropped, while this deployment cannot send it, and
+ * forwarded as typed once it can. The rules themselves are table rows in `campaign-reddit-conversion-event.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit conversion event', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('refuses a conversion event while the flag is off, creating nothing', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditConversionEvent);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, objective: 'conversions', conversionEvent: 'LEAD' } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'redditConfig.conversionEvent',
+        message: 'Reddit conversion events are not enabled on this deployment. Reload the page and create again.',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+
+  it('forwards the conversion event untouched once the flag is on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, objective: 'conversions', conversionEvent: 'LEAD' } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']['conversionEvent']).toBe('LEAD');
+    expect(next).not.toHaveBeenCalled();
   });
 });
 

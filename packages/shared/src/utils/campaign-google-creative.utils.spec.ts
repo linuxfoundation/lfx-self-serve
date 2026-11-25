@@ -8,6 +8,7 @@ import {
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
+  GOOGLE_SHARED_CALLS_TO_ACTION,
 } from '../constants/campaign.constants';
 import type { GoogleCreativeFieldSpec } from '../interfaces/campaign.interface';
 import {
@@ -222,8 +223,46 @@ describe('googleCallToActionRefusal (#1614, F13)', () => {
     );
   });
 
-  it('refuses any Demand Gen image call to action, since Google documents none for it', () => {
-    expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: 'Learn More' } }, 'demand-gen')?.message).toContain('call to action');
+  it('passes a Demand Gen image call to action Google accepted, and refuses one it refused', () => {
+    expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: 'Learn More' } }, 'demand-gen')).toBeNull();
+    expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: 'Donate Now' } }, 'demand-gen')).toBeNull();
+    expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: 'Register' } }, 'demand-gen')?.message).toContain('"Register"');
+  });
+
+  it('offers the brief generator only calls to action both ads accept', () => {
+    expect(GOOGLE_SHARED_CALLS_TO_ACTION.map((option) => option.value)).toEqual([
+      'Apply Now',
+      'Book Now',
+      'Call Now',
+      'Contact Us',
+      'Download',
+      'Get Offer',
+      'Get Quote',
+      'Learn More',
+      'See More',
+      'Shop Now',
+      'Sign Up',
+      'Subscribe',
+      'Visit Site',
+    ]);
+  });
+
+  it('keeps the Display and Demand Gen image lists apart, as the 13 November probe found them', () => {
+    // Accepted on Display only.
+    for (const value of ['Install', 'Explore', 'Read More', 'Order Now', 'Try now']) {
+      expect(googleCallToActionRefusal({ displayCreative: { callToActionText: value } }, 'display')).toBeNull();
+      expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: value } }, 'demand-gen')).not.toBeNull();
+    }
+    // Accepted on Demand Gen only.
+    expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: 'Donate Now' } }, 'demand-gen')).toBeNull();
+    expect(googleCallToActionRefusal({ displayCreative: { callToActionText: 'Donate Now' } }, 'display')).not.toBeNull();
+    // Google refused the title-case spelling of this one on Display.
+    expect(googleCallToActionRefusal({ displayCreative: { callToActionText: 'Try Now' } }, 'display')).not.toBeNull();
+    // Refused on both.
+    for (const value of ['Register', 'Get Started', 'Watch Now', 'Buy Tickets', 'Join Now']) {
+      expect(googleCallToActionRefusal({ displayCreative: { callToActionText: value } }, 'display')).not.toBeNull();
+      expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: value } }, 'demand-gen')).not.toBeNull();
+    }
   });
 
   it('refuses an unlisted Demand Gen video call to action and passes a listed one', () => {

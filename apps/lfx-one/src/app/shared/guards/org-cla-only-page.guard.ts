@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { inject, Injector, PLATFORM_ID } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRouteSnapshot, CanActivateChildFn, NavigationStart, Router, UrlTree } from '@angular/router';
-import { ORG_CLA_ONLY_GRANTS_WAIT_MS, ORG_EASYCLA_PAGE_SEGMENT, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { ORG_CLA_ONLY_GRANTS_WAIT_MS, ORG_EASYCLA_PAGE_SEGMENT, ORG_LENS_URL_ROOT, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { filter, firstValueFrom, of, ReplaySubject, take, takeUntil, timeout } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
@@ -13,9 +13,9 @@ import { OrgClaOnlyAccessService } from '../services/org-cla-only-access.service
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 
 /**
- * M3 — on `/org/{segment}/…`, an organization the caller reaches only as its CLA Manager opens the
- * EasyCLA page and nothing else: any other page redirects to `/org/{segment}/easycla`. Runs after
- * `orgPathParamGuard` has adopted the addressed organization. UX only — the BFF refuses the data of
+ * M3 — on `/company/{segment}/…`, a company the caller reaches only as its CLA Manager opens the
+ * EasyCLA page and nothing else: any other page redirects to `/company/{segment}/easycla`. Runs after
+ * `orgPathParamGuard` has adopted the addressed company. UX only — the BFF refuses the data of
  * every non-CLA page for this caller regardless.
  */
 export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: ActivatedRouteSnapshot): Promise<boolean | UrlTree> => {
@@ -36,11 +36,12 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
   const roleGrants = inject(OrgRoleGrantsService);
   const injector = inject(Injector);
 
-  // `orgPathParamGuard` has already adopted the addressed organization; pin it so a later switch to
+  // `orgPathParamGuard` has already adopted the addressed company; pin it so a later switch to
   // another company is never judged by this navigation's answer.
   const uid = accountContext.selectedAccount().uid;
   const segment = page.parent?.paramMap.get(ORG_SEGMENT_PARAM) ?? null;
-  const claPage = (): UrlTree | null => (segment && claOnlyAccess.isClaOnly(uid) ? router.createUrlTree(['/org', segment, ORG_EASYCLA_PAGE_SEGMENT]) : null);
+  const claPage = (): UrlTree | null =>
+    segment && claOnlyAccess.isClaOnly(uid) ? router.createUrlTree([`/${ORG_LENS_URL_ROOT}`, segment, ORG_EASYCLA_PAGE_SEGMENT]) : null;
 
   // Watched from before the first await and replayed, so a navigation that starts during a wait still
   // cancels the late redirect below.

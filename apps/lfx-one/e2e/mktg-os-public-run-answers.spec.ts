@@ -129,16 +129,25 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
   if (lateConflict) {
     await expect(page.getByTestId('mktg-faq-view')).toContainText('Synthetic cross-device draft', { timeout: 20000 });
     releaseConflict();
-    await expect(page.getByTestId('mktg-document-view-answered-note')).toContainText('Another Writer already answered these — the agent is writing.');
+    // The landed document's complete read lists no such run any more: the late line is true when read — the asset is ready.
+    await expect(page.getByTestId('mktg-document-view-answered-note')).toContainText('Another Writer already answered these — the asset is ready.');
     expect(submitted).toHaveLength(1);
     await page.screenshot({ path: info.outputPath('late-conflict-on-landed-document.png'), fullPage: true });
     return;
   }
   await expect(page.getByTestId('mktg-document-view-run-steps')).toContainText('Writing');
   if (alreadyAnswered) {
-    await expect(page.getByTestId('mktg-run-progress-answered-note')).toHaveText('Another Writer already answered these — the agent is writing.');
+    await expect(page.getByTestId('mktg-run-progress-answered-note')).toHaveText(
+      'Another Writer already answered these — the agent is writing. Your draft is kept below.'
+    );
     // 144-E: the conflict lives above THIS run's writing progress, never a toast followed by a redirect.
     await expect(page).toHaveURL(waitingUrl);
+    // The lost send keeps what was typed under the notice, read-only: the box disabled with its text, Send gone.
+    const kept = page.getByTestId('mktg-run-questions-locked');
+    await expect(kept.locator('textarea[data-test="mktg-run-questions-answer-audience"]')).toBeDisabled();
+    await expect(kept.locator('textarea[data-test="mktg-run-questions-answer-audience"]')).toHaveValue('Synthetic project maintainers and contributors');
+    await expect(kept.getByTestId('mktg-run-questions-send')).toHaveCount(0);
+  } else {
     await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);
   }
   await page.getByTestId('mktg-run-public-progress').screenshot({ path: info.outputPath('03-settled-writing.png') });

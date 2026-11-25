@@ -165,7 +165,7 @@ async function initializeOpenFeature(): Promise<void> {
 
 ### Server-Side LaunchDarkly Variable
 
-`LD_SDK_KEY` is the LaunchDarkly **server-side** SDK key. It is a secret, read by the Express server only and never exposed to the browser (unlike `LD_CLIENT_ID`). `LaunchDarklyServerService` uses it to evaluate per-user flags for access checks, such as `insights-public-api-token-access` for Insights API tokens. Without it, server evaluations return their default (`false`), so nobody can use Insights API tokens until it is set. Store it in a secret, for example `valueFrom.secretKeyRef` in Kubernetes.
+`LD_SDK_KEY` is the LaunchDarkly **server-side** SDK key. It is a secret, read by the Express server only and never exposed to the browser (unlike `LD_CLIENT_ID`). `LaunchDarklyServerService` uses it to evaluate per-user flags for access checks, such as `insights-public-api-token-access` for Insights API tokens and `event-share-kit` for public event share kits. Without it, server evaluations return their default (`false`), so nobody can use Insights API tokens, and every share kit shows as not found, until it is set. Store it in a secret, for example `valueFrom.secretKeyRef` in Kubernetes.
 
 ### Server-Side Cache Variables
 

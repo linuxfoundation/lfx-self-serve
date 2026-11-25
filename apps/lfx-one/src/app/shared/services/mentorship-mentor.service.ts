@@ -7,6 +7,7 @@ import {
   MentorshipMentorApplicationNoteUpdate,
   MentorshipMentorHasProfileResponse,
   MentorshipMentorInviteDecision,
+  MentorshipMentorInviteDetails,
   MentorshipMentorInviteResponseRequest,
   MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
@@ -62,6 +63,16 @@ export class MentorshipMentorService {
         return of({ hasProfile: false });
       })
     );
+  }
+
+  /**
+   * As `hasMentorProfile`, but a failed check is logged and rethrown, for the invite page, which must not read a
+   * failure as "no profile".
+   */
+  public checkMentorProfile(): Observable<MentorshipMentorHasProfileResponse> {
+    return this.http
+      .get<MentorshipMentorHasProfileResponse>('/api/mentorship/mentor/has-profile')
+      .pipe(take(1), catchError(this.rethrowError('checkMentorProfile')));
   }
 
   /**
@@ -129,6 +140,14 @@ export class MentorshipMentorService {
     );
   }
 
+  /** Names the program the invite email's token is for. A failure is logged and rethrown, so the page can keep its generic copy. */
+  public getMentorInvite(token: string): Observable<MentorshipMentorInviteDetails> {
+    const body: MentorshipMentorInviteResponseRequest = { token };
+    return this.http
+      .post<MentorshipMentorInviteDetails>('/api/mentorship/mentor/invites/details', body)
+      .pipe(take(1), catchError(this.rethrowError('getMentorInvite')));
+  }
+
   /** Accepts or declines a mentor invitation with the token from the invite email. Failures propagate raw; a success drops the cached requests. */
   public respondToMentorInvite(token: string, decision: MentorshipMentorInviteDecision): Observable<void> {
     const body: MentorshipMentorInviteResponseRequest = { token };
@@ -178,11 +197,12 @@ export class MentorshipMentorService {
   }
 
   /**
-   * Approves (`complete`) or requests changes on (`incomplete`) a mentee's submitted task. Failures propagate as the
-   * raw `HttpErrorResponse`; a 409 means the task is no longer awaiting review.
+   * Approves (`complete`) or requests changes on (`incomplete`) a mentee's submitted task; a request for changes
+   * carries the reason the mentee is emailed. Failures propagate as the raw `HttpErrorResponse`; a 409 means the task
+   * is no longer awaiting review.
    */
-  public reviewMenteeTask(taskId: string, status: MentorshipMentorTaskReviewDecision): Observable<void> {
-    const body: MentorshipMentorTaskReviewUpdate = { status };
+  public reviewMenteeTask(taskId: string, status: MentorshipMentorTaskReviewDecision, reason?: string): Observable<void> {
+    const body: MentorshipMentorTaskReviewUpdate = reason ? { status, reason } : { status };
     return this.http.patch<void>(`/api/mentorship/mentor/tasks/${encodeURIComponent(taskId)}/review`, body).pipe(take(1));
   }
 

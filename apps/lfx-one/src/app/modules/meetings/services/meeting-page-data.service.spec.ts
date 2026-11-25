@@ -1,15 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, inject, makeStateKey, PLATFORM_ID, signal, Signal, TransferState } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
-import { Meeting, PublicMeetingProject } from '@lfx-one/shared';
+import { Meeting, MeetingJoinPageState, PublicMeetingProject } from '@lfx-one/shared';
+import { TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject, of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BehaviorSubject, defer, Observable, of, Subject, throwError } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingPageDataService } from './meeting-page-data.service';
 
@@ -20,6 +22,25 @@ class TestHostComponent {
 }
 
 const project = { uid: 'p1', name: 'Project', slug: 'project' } as PublicMeetingProject;
+const stateKey = makeStateKey<MeetingJoinPageState>('meetingJoinState');
+const failureSeed: MeetingJoinPageState = {
+  meeting: null,
+  loadedViaPastMeetingId: false,
+  pastMeetingFullAccess: false,
+  liveMeetingFullAccess: false,
+  liveMeetingCanJoin: false,
+  meetingLoadFailed: true,
+};
+
+// A cold request that fails with each error in turn, then succeeds: `retry` resubscribes the request the way it re-sends an HTTP call.
+const failingThen = <T>(errors: HttpErrorResponse[], response: T): { request: Observable<T>; subscriptions: () => number } => {
+  let subscriptions = 0;
+  const request = defer(() => {
+    const error = errors[subscriptions++];
+    return error ? throwError(() => error) : of(response);
+  });
+  return { request, subscriptions: () => subscriptions };
+};
 
 describe('MeetingPageDataService', () => {
   let paramMap$: BehaviorSubject<ParamMap>;
@@ -115,6 +136,204 @@ describe('MeetingPageDataService', () => {
 
     expect(navigate).not.toHaveBeenCalled();
     expect(host.data.meetingLoadFailed()).toBe(true);
+  });
+
+  describe('server failure handoff and transient retry (#5907)', () => {
+    const live = { meeting: { id: '123', title: 'Live' }, project, full_access: true, can_join: false };
+    const past = { meeting: { id: '123-1700000000000', title: 'Past' }, project, full_access: true };
+    const unavailable = (): HttpErrorResponse => new HttpErrorResponse({ status: 503 });
+    // `debounceTime(0)` and the retry `timer` run on RxJS's interval scheduler, so only intervals are faked: `create()`'s
+    // real `setTimeout` flush still settles Angular, then virtual time starts the load and later the retry.
+    const start = async (): Promise<TestHostComponent> => {
+      const host = await create();
+      await vi.advanceTimersByTimeAsync(0);
+      return host;
+    };
+    const waitForRetry = (): Promise<unknown> => vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+    beforeEach(() => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }));
+
+    afterEach(() => {
+      TestBed.resetTestingModule();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    });
+
+    it('keeps the skeleton over a server failure seed while the browser fetch is pending, then shows the meeting', async () => {
+      const response$ = new Subject<typeof live>();
+      getPublicMeeting.mockReturnValue(response$.asObservable());
+      TestBed.inject(TransferState).set(stateKey, failureSeed);
+      const host = await start();
+
+      expect(host.meeting()).toBeUndefined();
+      expect(host.data.meetingLoadFailed()).toBe(false);
+
+      response$.next(live);
+      response$.complete();
+
+      expect(host.meeting()?.title).toBe('Live');
+      expect(host.data.meetingLoadFailed()).toBe(false);
+    });
+
+    it('shows the error when the browser fetch after a server failure seed also fails', async () => {
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+      TestBed.inject(TransferState).set(stateKey, failureSeed);
+      const host = await start();
+
+      expect(host.data.meetingLoadFailed()).toBe(true);
+    });
+
+    it('retries a transient failure once in the browser and shows the meeting', async () => {
+      const { request, subscriptions } = failingThen([unavailable()], live);
+      getPublicMeeting.mockReturnValue(request);
+      const host = await start();
+
+      expect(subscriptions()).toBe(1);
+      expect(host.data.meetingLoadFailed()).toBe(false);
+
+      await waitForRetry();
+
+      expect(subscriptions()).toBe(2);
+      expect(host.meeting()?.title).toBe('Live');
+      expect(host.data.meetingLoadFailed()).toBe(false);
+    });
+
+    it('shows the error once the retry fails too', async () => {
+      const { request, subscriptions } = failingThen([unavailable(), unavailable()], live);
+      getPublicMeeting.mockReturnValue(request);
+      const host = await start();
+      await waitForRetry();
+
+      expect(subscriptions()).toBe(2);
+      expect(host.data.meetingLoadFailed()).toBe(true);
+    });
+
+    it('sends a forbidden meeting to not-found without retrying', async () => {
+      const { request, subscriptions } = failingThen([new HttpErrorResponse({ status: 403 })], live);
+      getPublicMeeting.mockReturnValue(request);
+      await start();
+
+      expect(subscriptions()).toBe(1);
+      expect(navigate).toHaveBeenCalledWith(['/meetings/not-found']);
+    });
+
+    it('retries a transient failure on the past-meeting fallback', async () => {
+      getPublicMeeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      const { request, subscriptions } = failingThen([unavailable()], past);
+      getPublicPastMeeting.mockReturnValue(request);
+      const host = await start();
+      await waitForRetry();
+
+      expect(getPublicPastMeeting).toHaveBeenCalledTimes(1);
+      expect(subscriptions()).toBe(2);
+      expect(host.data.loadedViaPastMeetingId()).toBe(true);
+      expect(host.meeting()?.title).toBe('Past');
+    });
+
+    it('retries a transient failure on a {id}-{ms} past meeting', async () => {
+      paramMap$.next(convertToParamMap({ id: '123-1700000000000' }));
+      const { request, subscriptions } = failingThen([unavailable()], past);
+      getPublicPastMeeting.mockReturnValue(request);
+      const host = await start();
+
+      expect(subscriptions()).toBe(1);
+      expect(host.data.meetingLoadFailed()).toBe(false);
+
+      await waitForRetry();
+
+      expect(subscriptions()).toBe(2);
+      expect(getPublicMeeting).not.toHaveBeenCalled();
+      expect(host.meeting()?.title).toBe('Past');
+      expect(host.data.meetingLoadFailed()).toBe(false);
+    });
+
+    it('shows loading, not the error, while a refresh from the error and its retry run', async () => {
+      const { request, subscriptions } = failingThen([unavailable(), unavailable(), unavailable()], live);
+      getPublicMeeting.mockReturnValue(request);
+      const host = await start();
+      await waitForRetry();
+      expect(host.data.meetingLoadFailed()).toBe(true);
+
+      host.data.refresh();
+      expect(host.data.meetingLoadFailed()).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(subscriptions()).toBe(3);
+      expect(host.data.meetingLoadFailed()).toBe(false);
+
+      await waitForRetry();
+      expect(subscriptions()).toBe(4);
+      expect(host.meeting()?.title).toBe('Live');
+      expect(host.data.meetingLoadFailed()).toBe(false);
+    });
+
+    it('renders the skeleton on the server and hands the failure to the browser without retrying', async () => {
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+      const { request, subscriptions } = failingThen([unavailable()], live);
+      getPublicMeeting.mockReturnValue(request);
+      const host = await start();
+
+      expect(subscriptions()).toBe(1);
+      expect(host.data.meetingLoadFailed()).toBe(false);
+      expect(TestBed.inject(TransferState).get(stateKey, null)).toEqual(expect.objectContaining({ meeting: null, meetingLoadFailed: true }));
+    });
+  });
+
+  it('counts a load as a reload only once one was asked for', async () => {
+    const host = await create();
+    expect(host.data.reloadsDone()).toBe(0);
+
+    host.data.refresh();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(host.data.reloadsDone()).toBe(1);
+
+    host.data.reloadOnNextLoad();
+    expect(host.data.reloadsDone()).toBe(1);
+    queryParamMap$.next(convertToParamMap({ occurrence: '1' }));
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(host.data.reloadsDone()).toBe(2);
+  });
+
+  describe('claimJoinOnLoad', () => {
+    const openNow = (): void => {
+      const start = new Date(Date.now() - 5 * 60_000).toISOString();
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: { id: '123', title: 'Live', start_time: start, duration: 60 }, project, full_access: true, can_join: true })
+      );
+    };
+
+    it('allows Zoom to open once when the join window was open at load', async () => {
+      openNow();
+      const host = await create();
+
+      expect(host.data.claimJoinOnLoad()).toBe(true);
+      expect(host.data.claimJoinOnLoad()).toBe(false);
+    });
+
+    it.each([{ zoom_redirect: 'false' }, { action: 'leave' }])('never allows it with %o in the URL', async (params) => {
+      openNow();
+      queryParamMap$.next(convertToParamMap(params));
+      const host = await create();
+
+      expect(host.data.claimJoinOnLoad()).toBe(false);
+    });
+
+    it('decides again for another meeting the page moves to', async () => {
+      openNow();
+      const host = await create();
+      expect(host.data.claimJoinOnLoad()).toBe(true);
+
+      paramMap$.next(convertToParamMap({ id: '456' }));
+      await new Promise((resolve) => setTimeout(resolve));
+
+      expect(host.data.claimJoinOnLoad()).toBe(true);
+    });
+
+    it('never allows it when the window opened after load', async () => {
+      const host = await create();
+
+      expect(host.data.claimJoinOnLoad()).toBe(false);
+    });
   });
 
   it('resolves ?occurrence= to that active date', async () => {

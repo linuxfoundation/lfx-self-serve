@@ -42,6 +42,9 @@
     </div>
   </header>
   <section aria-label="LinkedIn drafting" class="flex flex-col gap-5 p-4 sm:px-[32px] sm:py-[24px]">
+    @if (loadRetrying()) {
+      <p role="status" class="text-xs text-gray-500" data-testid="mktg-linkedin-retrying">{{ retryingText }}</p>
+    }
     @if (loading() || checkingPending()) {
       <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-linkedin-loading" />
     } @else {
@@ -59,7 +62,6 @@
           data-testid="mktg-linkedin-error">
           <p>{{ error() }}</p>
           @if (runLookupFailed() || !writer() || (!saved() && !editing() && !setup())) {
-            <lfx-button label="Try again" size="small" (onClick)="reload.set(reload() + 1)" data-testid="mktg-linkedin-retry-load" />
             <lfx-button
               label="Open Documents"
               [routerLink]="documentsLink()"

@@ -4,6 +4,7 @@
 import { PollType, VoteVoterStatus } from '../enums/poll.enum';
 import type {
   VoteCommentAnonymityReason,
+  VoteMethodOption,
   VoteDetailTab,
   VoteDetailTabOption,
   VoteParticipationStatusFilter,
@@ -11,6 +12,7 @@ import type {
   VoteSummaryRecipientOutcome,
   VoteVoterStatusFilter,
 } from '../interfaces/poll.interface';
+import { lfxColors } from './colors.constants';
 
 /** Rolling deadline window shared by personal and management vote summaries. */
 export const VOTES_STATS_WINDOW_DAYS = 7;
@@ -40,6 +42,36 @@ export const VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT = 200;
 /** Comments the vote detail Overview previews before linking to the Comments tab (#4448). */
 export const VOTE_OVERVIEW_COMMENT_PREVIEW_LIMIT = 3;
 
+/** Most common Condorcet ballot orders shown before expanding the full breakdown (#6112). */
+export const VOTE_CONDORCET_BALLOT_PREVIEW_LIMIT = 5;
+
+/** Rank-position colors, not winner/loser colors; counts and rank labels accompany every segment (#6112). */
+export const VOTE_CONDORCET_RANK_COLORS = [
+  lfxColors.blue[600],
+  lfxColors.violet[400],
+  lfxColors.amber[400],
+  lfxColors.gray[400],
+  lfxColors.blue[300],
+  lfxColors.gray[600],
+];
+
+/** Runner-up standings rows the vote detail Overview outcome shows before pointing to the Results tab (#6124). */
+export const VOTE_OVERVIEW_STANDINGS_LIMIT = 3;
+
+/**
+ * How a ranked result was decided, worded once for the Results tab, the Overview and the presenter view (#6124), which
+ * must describe the same outcome in the same words.
+ */
+export const VOTE_RANKED_OUTCOME_EXPLANATIONS = {
+  condorcetWinner: 'Preferred over every other option in head-to-head comparisons.',
+  condorcetIrvFallback: 'No option beat every other option head-to-head, so instant-runoff elimination decided the result.',
+  meekStv: 'using Meek STV proportional counting.',
+  irvMajority: 'a majority of continuing ballots.',
+  irvMajorityRound: 'a majority of continuing ballots in round {round}.',
+  tie: 'No single winner could be determined.',
+  noWinner: 'No winner could be determined.',
+} as const;
+
 /**
  * Response header carrying the BFF-stamped create-completion time (epoch ms) on POST /api/votes (GH-2826);
  * the client echoes it verbatim as `create_completed_at` — the enable route's FGA tuple-propagation grace hint.
@@ -63,6 +95,9 @@ export const VOTE_BALLOT_READ_RETRY_COUNT = 3;
 /** Delay between own-ballot 404 retries; authorization and other failures are never retried. */
 export const VOTE_BALLOT_READ_RETRY_DELAY_MS = 1000;
 
+/** Ranked-choice ballot drag start delay: touch needs a short hold so swipes still scroll; mouse starts immediately. */
+export const VOTE_RANKED_CHOICE_DRAG_START_DELAY = { touch: 200, mouse: 0 } as const;
+
 /**
  * TTL for the recently-opened-vote carrier (GH-2730): how long after a successful enable the votes
  * list merges the known-open status over stale index rows while the search index catches up.
@@ -80,6 +115,12 @@ export const VOTE_REMINDER_INACTIVE = 'VOTE_REMINDER_INACTIVE';
 
 /** The voter list (#3911) rejects a draft or unrecognized-status vote with this state-conflict code. */
 export const VOTE_VOTERS_DRAFT = 'VOTE_VOTERS_DRAFT';
+
+/** Deleting (cancelling) a vote that has already ended is rejected with this state-conflict code (#5968). */
+export const VOTE_DELETE_ENDED = 'VOTE_DELETE_ENDED';
+
+/** Client message for a VOTE_DELETE_ENDED rejection: BFF-owned so upstream copy drift never reaches the user (#5968). */
+export const VOTE_DELETE_ENDED_MESSAGE = "This vote has already ended, so it can't be cancelled.";
 
 /** No reminders were sent because at least one selected recipient is no longer eligible. */
 export const VOTE_REMINDER_SELECTION_STALE = 'VOTE_REMINDER_SELECTION_STALE';
@@ -131,6 +172,8 @@ export const VOTE_DETAIL_RESULTS_POLL_OPTIONS = {
   intervalMs: 5000,
   backoffBaseMs: 5000,
   backoffMaxMs: 30000,
+  // Votes keeps its fixed 5/10/20/30 s retry cadence, as the presenter does; Marketing OS readers take the jittered default.
+  jitter: false,
 } as const;
 
 /** Detail managers: total final-results reads after closure, including held payloads and failed attempts. */
@@ -205,6 +248,25 @@ export const VOTE_METHOD_LABELS: Record<PollType, string> = {
   [PollType.MEEK_STV]: 'Meek STV',
 };
 
+/** Voting methods offered when creating a vote (#2921) — read by the Create Vote dropdown and the form's Voting Method select. */
+export const VOTE_METHOD_OPTIONS: VoteMethodOption[] = [
+  {
+    label: 'Plurality',
+    value: PollType.GENERIC,
+    icon: 'fa-light fa-check-to-slot',
+    description: 'Voters pick from the options; the option with the most votes wins.',
+  },
+  {
+    label: 'Condorcet IRV',
+    value: PollType.CONDORCET_IRV,
+    icon: 'fa-light fa-list-ol',
+    description: 'Voters rank the options. The winner beats every other option head-to-head; if none does, instant-runoff elimination decides.',
+  },
+];
+
+/** Fewest eligible voters a Condorcet IRV vote can be opened with — matches PCC's `minMembersValidator`. */
+export const VOTE_CONDORCET_MIN_ELIGIBLE_VOTERS = 3;
+
 /** Admin Mode ballot policy (#4331): only active impersonation is restricted, never an admin acting as themselves. */
 export const VOTE_IMPERSONATION_READ_ONLY_NOTICE = 'Ballots are read-only while impersonating another user. You cannot cast or change their vote.';
 export const VOTE_IMPERSONATION_PRIVATE_NOTICE =
@@ -262,6 +324,55 @@ export const VOTE_LINK_NOT_AWAITING_RESPONSE = 'not awaiting response';
 /** Upstream 400 message (lowercased substring) when an update hits a ballot with no response yet: switch to first submission. */
 export const VOTE_LINK_NOT_RESPONDED = 'not responded';
 
+/** Upstream 409 message (lowercased substring) when a ballot update hits a vote that makes submitted ballots final (#4723). */
+export const VOTE_CHANGE_NOT_ALLOWED = 'does not allow changing a submitted vote';
+
+/** Upstream 400 message (lowercased substring) when a ballot write hits a vote that has ended (#5964). */
+export const VOTE_UPSTREAM_ENDED = 'ended';
+
+/** Upstream 400 message (lowercased substring) when a vote link's voter was removed from the vote (#5964). */
+export const VOTE_UPSTREAM_REMOVED = 'removed';
+
+/** Verified upstream 400 message fragments rejecting ballot updates after voter removal or loss of committee membership (#5964). */
+export const VOTE_UPSTREAM_UPDATE_REMOVAL_MESSAGES = [
+  'vote cannot be updated for a removed voter',
+  'vote cannot be changed for a removed or missing voter',
+  'user is no longer in the committee for this poll',
+] as const;
+
+/** BFF 404 `code` when a ballot update finds the caller's voter row explicitly removed; missing rows keep generic `NOT_FOUND` (#5964). */
+export const VOTE_VOTER_REMOVED_ERROR_CODE = 'VOTE_VOTER_REMOVED';
+
+/** Shown when a ballot update is rejected because the vote has ended (#5964). */
+export const VOTE_BALLOT_ENDED_STATE = "This vote has ended, so your ballot can't be changed.";
+
+/** Shown when a ballot update is rejected because the caller was removed from the vote (#5964). */
+export const VOTE_BALLOT_REMOVED_STATE = "You're no longer a voter on this vote, so your ballot can't be changed.";
+
+/** Shown when a ballot update cannot find the caller's submitted ballot (#5964). */
+export const VOTE_BALLOT_NOT_FOUND = "We couldn't find your submitted ballot. Refresh the list and try again.";
+
+/** Shown when a ballot read or write is rate limited (429), so the voter knows to retry shortly (#5964). */
+export const VOTE_RATE_LIMITED_MESSAGE = 'Too many requests. Please wait a moment and try again.';
+
+/** Shown when the initial vote-link ballot read is throttled; refreshing cannot reuse the consumed token (#5964). */
+export const VOTE_LINK_RATE_LIMITED_READ_MESSAGE = 'Too many requests. Please wait a moment, then reopen your ballot link.';
+
+/** Vote-link requests allowed per IP per window: covers a shared office of voters plus reloads and retries (#5964). */
+export const VOTE_LINK_RATE_LIMIT_MAX = 300;
+
+/** Window for the vote-link rate limiter (#5964). */
+export const VOTE_LINK_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+/** Exact methods and mount-relative `/public/api` paths metered by the vote-link limiter instead of the public API limiter (#5964). */
+export const VOTE_LINK_RATE_LIMITED_REQUESTS = ['POST /votes/link-ballot', 'POST /votes/link-responses', 'PUT /votes/link-responses'] as const;
+
+/** Pre-submit notice on every first-submit surface when the vote makes submitted ballots final (#4723). */
+export const VOTE_BALLOT_FINAL_NOTICE = "Once you submit, your vote can't be changed.";
+
+/** Shown in place of a change action once a ballot on a vote that disallows changes is submitted (#4723). */
+export const VOTE_BALLOT_FINAL_STATE = "Your vote is final and can't be changed.";
+
 /** Close-vote confirmation (presenter and votes-table row menu): one copy so the two entry points never drift. */
 export const VOTE_CLOSE_CONFIRMATION = {
   header: 'Close vote',
@@ -269,5 +380,26 @@ export const VOTE_CLOSE_CONFIRMATION = {
   acceptLabel: 'Close vote',
   rejectLabel: 'Cancel',
   acceptButtonStyleClass: 'p-button-danger p-button-sm',
+  rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+} as const;
+
+/** Cancel-vote confirmation (votes-table row menu); the message names the vote, so the table supplies it. */
+export const VOTE_CANCEL_CONFIRMATION = {
+  header: 'Cancel vote',
+  acceptLabel: 'Cancel vote',
+  rejectLabel: 'Keep vote',
+  defaultFocus: 'reject',
+  acceptButtonStyleClass: 'p-button-danger p-button-sm',
+  rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+} as const;
+
+/** Last-voter confirmation (#4726) on every first-submit surface: one copy so the cast drawer, inline ballot and vote link never drift. */
+export const VOTE_LAST_VOTER_CONFIRMATION = {
+  header: 'Submitting will end this vote',
+  message: "You're the last member to respond, so submitting now ends the vote. You won't be able to change your choices, comments, or abstention afterward.",
+  acceptLabel: 'Submit and end vote',
+  rejectLabel: 'Go back',
+  defaultFocus: 'reject',
+  acceptButtonStyleClass: 'p-button-sm',
   rejectButtonStyleClass: 'p-button-outlined p-button-sm',
 } as const;

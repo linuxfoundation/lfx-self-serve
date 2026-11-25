@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { _IdGenerator } from '@angular/cdk/a11y';
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject, input, model, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { COMPOSITION_BUFFER_MODE, ControlValueAccessor, NgControl } from '@angular/forms';
-import { UiInputMode, UiInputSize, UiInputType } from '@lfx-one/shared/interfaces';
+import { UiInputCombobox, UiInputMode, UiInputSize, UiInputType } from '@lfx-one/shared/interfaces';
 
 import { UiErrorComponent } from '../error/error.component';
 
@@ -50,12 +50,14 @@ export class UiInputComponent implements ControlValueAccessor {
   public readonly rounded = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Disables the field. Forms can also disable it. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** Marks the field as required for assistive technology. */
+  /** Marks the field as required for assistive technology and adds a red asterisk to the visible label. */
   public readonly required = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Shows the value without letting it be edited; it stays focusable and is still read and submitted. */
   public readonly readonly = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Native `autocomplete` token, for example `email`. Empty leaves the browser default, so autofill and password managers keep working. */
   public readonly autocomplete = input<string>('');
+  /** Native `maxlength`, capping what can be typed or pasted; `null` leaves the field uncapped. */
+  public readonly maxlength = input<number | null>(null);
   /** Font Awesome class string for a leading icon, e.g. `fa-light fa-link`. */
   public readonly prefixIcon = input<string>('');
   /** Leading text such as `https://`. Shown after the icon when both are set. */
@@ -66,6 +68,8 @@ export class UiInputComponent implements ControlValueAccessor {
   public readonly suffixText = input<string>('');
   /** Gives the prefix and suffix a grey well with a divider. */
   public readonly affixStyled = input<boolean, unknown>(false, { transform: booleanAttribute });
+  /** Makes the field the combobox of a listbox beside it: its role, `aria-controls`, `aria-expanded` and `aria-activedescendant`. */
+  public readonly combobox = input<UiInputCombobox | null>(null);
   /** The current text. Supports two-way binding with `[(value)]`. */
   public readonly value = model<string>('');
 

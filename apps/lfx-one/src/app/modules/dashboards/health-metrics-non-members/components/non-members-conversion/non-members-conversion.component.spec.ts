@@ -19,15 +19,12 @@ import type { HealthMetricsNonMembersConversion } from '@lfx-one/shared/interfac
 function conversion(overrides: Partial<HealthMetricsNonMembersConversion> = {}): HealthMetricsNonMembersConversion {
   return {
     measured: true,
-    entryTierName: 'Silver',
-    entryTierFeeUsd: 25000,
-    organizationsTracked: 412,
     highFitCount: 2,
     newCount: 37,
     estimatedPipelineUsd: 50000,
     warmest: [
-      { accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: 12, contributions: 400 },
-      { accountId: '0014100000VendAAAA', accountName: 'Vendor Corp', meetingsAttended: 1, contributions: 100 },
+      { accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', logoUrl: 'https://logos.example/acme.png', meetingsAttended: 12, contributions: 400 },
+      { accountId: '0014100000VendAAAA', accountName: 'Vendor Corp', logoUrl: null, meetingsAttended: 1, contributions: 1200 },
     ],
     ...overrides,
   };
@@ -76,6 +73,16 @@ describe('NonMembersConversionComponent', () => {
     return query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
   }
 
+  function rowOrder(): string[] {
+    return [...fixture.nativeElement.querySelectorAll('[data-testid$="-name"] [data-testid="health-metrics-cell-text"]')].map(
+      (el) => (el as HTMLElement).textContent?.trim() ?? ''
+    );
+  }
+
+  function sortBy(key: string): void {
+    (query(`non-members-conversion-sort-${key}`)?.querySelector('button') as HTMLButtonElement).click();
+  }
+
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
@@ -90,51 +97,58 @@ describe('NonMembersConversionComponent', () => {
     expect(getNonMembersConversion).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD' });
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
-    expect(query('non-members-conversion-loading')).toBeNull();
+    expect(query('non-members-conversion-loading-metrics')).toBeNull();
   });
 
-  it('renders the qualified pipeline, side stats and summary', async () => {
+  it('shows the shared metrics row: compact pipeline, high-fit and new, with no trend or description', async () => {
     await render();
 
-    expect(text('non-members-conversion-pipeline-value')).toBe('$50K');
-    expect(text('non-members-conversion-pipeline-label')).toBe('Estimated pipeline');
-    expect(text('non-members-conversion-side-high-fit-value')).toBe('2');
-    expect(text('non-members-conversion-side-new-value')).toBe('37');
-    expect(text('non-members-conversion-summary')).toBe('412 organizations tracked');
+    expect(text('non-members-conversion-metrics-pipeline-label')).toBe('Estimated pipeline');
+    expect(text('non-members-conversion-metrics-pipeline-value')).toBe('$50K');
+    expect(text('non-members-conversion-metrics-high-fit-value')).toBe('2');
+    expect(text('non-members-conversion-metrics-new-value')).toBe('37');
+    expect(query('non-members-conversion-metrics-pipeline-trend')).toBeNull();
+    expect(query('non-members-conversion-summary')).toBeNull();
   });
 
-  it('shows the pipeline as a plain hero: no card, no tint, ink value', async () => {
+  it('lists the warmest companies under an uppercase sub-heading, with logos and a Contributions tip', async () => {
     await render();
 
-    const value = query('non-members-conversion-pipeline-value');
-    expect(value?.classList).toContain('text-gray-900');
-    expect(value?.closest('.bg-blue-50\\/40')).toBeNull();
+    expect(text('non-members-conversion-warmest')).toContain('Warmest companies');
+    const headers = [...(query('non-members-conversion-warmest-table')?.querySelectorAll('th') ?? [])].map((th) => th.textContent?.trim());
+    expect(headers).toEqual(['Company', 'Meetings attended', 'Contributions']);
+    expect(query('non-members-conversion-warm-0014100000AcmeAAAA-name')?.querySelector('[data-testid="health-metrics-cell-company"]')).not.toBeNull();
+    expect(text('non-members-conversion-warm-0014100000VendAAAA-contributions')).toBe('1,200');
+    expect(fixture.componentInstance['contributionsTip']).toContain('this company made');
   });
 
-  it('lists the warmest organizations as name and value, with no bar', async () => {
+  it('sorts the shown companies in the browser, never re-reading, and returns to the read order', async () => {
     await render();
+    expect(rowOrder()).toEqual(['Acme Motors', 'Vendor Corp']);
 
-    expect(text('non-members-conversion-warm-0')).toContain('Acme Motors · 12 meetings');
-    expect(text('non-members-conversion-warm-0-value')).toBe('400 contributions');
-    expect(text('non-members-conversion-warm-1')).toContain('Vendor Corp · 1 meeting');
-    expect(fixture.nativeElement.querySelector('[data-testid^="non-members-conversion-warm-"] [style*="width"]')).toBeNull();
+    sortBy('contributions');
+    await settle();
+    expect(rowOrder()).toEqual(['Vendor Corp', 'Acme Motors']);
+
+    sortBy('meetings');
+    await settle();
+    expect(rowOrder()).toEqual(['Acme Motors', 'Vendor Corp']);
+    sortBy('meetings');
+    await settle();
+    expect(rowOrder()).toEqual(['Vendor Corp', 'Acme Motors']);
+
+    expect(getNonMembersConversion).toHaveBeenCalledTimes(1);
   });
 
-  it('never shows a bare figure when the estimate is missing, and says a NULL count is not available', async () => {
-    await render(conversion({ estimatedPipelineUsd: null, newCount: null }));
+  it('dashes every figure in neutral-400 with no conversion row, and still lists the companies', async () => {
+    await render({ ...HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED, warmest: conversion().warmest });
 
-    expect(text('non-members-conversion-pipeline-value')).toBe('—');
-    expect(query('non-members-conversion-pipeline-value')?.classList).toContain('text-gray-400');
-    expect(query('non-members-conversion-pipeline-value')?.classList).not.toContain('text-gray-900');
-    expect(text('non-members-conversion-pipeline-label')).toBe('Estimated pipeline · not enough data');
-    expect(text('non-members-conversion-side-new-value')).toBe('not available');
-    expect(query('non-members-conversion-warmest')).not.toBeNull();
-  });
-
-  it('says no organization is high-fit when the warmest list is empty', async () => {
-    await render(conversion({ highFitCount: 0, warmest: [] }));
-
-    expect(query('non-members-conversion-warmest-empty')).not.toBeNull();
+    expect(verdicts).toEqual([false]);
+    for (const key of ['pipeline', 'high-fit', 'new']) {
+      expect(text(`non-members-conversion-metrics-${key}-value`)).toBe('—');
+      expect(query(`non-members-conversion-metrics-${key}-value`)?.className).toContain('text-gray-400');
+    }
+    expect(query('non-members-conversion-warmest-table')).not.toBeNull();
   });
 
   it('re-reads a period change', async () => {
@@ -149,12 +163,20 @@ describe('NonMembersConversionComponent', () => {
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
-  it('settles empty, with no body, when the foundation has no conversion row', async () => {
+  it('drops the sub-heading and table, keeping the figures, when no company was active', async () => {
+    await render(conversion({ warmest: [] }));
+
+    expect(verdicts).toEqual([false]);
+    expect(query('non-members-conversion-metrics')).not.toBeNull();
+    expect(query('non-members-conversion-warmest')).toBeNull();
+  });
+
+  it('settles empty, with no body, when the period has no conversion row and no active company', async () => {
     await render(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
 
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([true]);
-    expect(query('non-members-conversion-hero')).toBeNull();
+    expect(query('non-members-conversion-metrics')).toBeNull();
     expect(query('non-members-conversion-warmest')).toBeNull();
   });
 
@@ -171,7 +193,11 @@ describe('NonMembersConversionComponent', () => {
     await render();
 
     expect(getNonMembersConversion).not.toHaveBeenCalled();
-    expect(query('non-members-conversion-loading')).not.toBeNull();
+    // The metrics row's own shape and the table's own loading rows, not one block.
+    expect(query('non-members-conversion-loading-metrics')?.querySelectorAll('p-skeleton')).toHaveLength(6);
+    expect(query('non-members-conversion-loading-metrics')?.className).toContain('grid-cols-3');
+    expect(query('non-members-conversion-warmest-table')).not.toBeNull();
+    expect(query('non-members-conversion-metrics')).toBeNull();
     expect(lifecycle).toEqual(['reading']);
   });
 });

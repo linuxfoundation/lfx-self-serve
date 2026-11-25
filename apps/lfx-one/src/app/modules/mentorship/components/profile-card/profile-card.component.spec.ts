@@ -24,6 +24,7 @@ import {
   PROFILE_AUTH_ERROR_MESSAGES,
 } from '@lfx-one/shared/constants';
 import { CombinedProfile, EmailManagementData, EnrichedIdentity } from '@lfx-one/shared/interfaces';
+import { ProfileSavedFieldsService } from '@services/profile-saved-fields.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -376,6 +377,7 @@ describe('ProfileCardComponent', () => {
 
     expect(text('mentorship-profile-card-name')).toBe('Updated Lovelace');
     expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(TestBed.inject(ProfileSavedFieldsService).fields()).toEqual({ given_name: 'Updated' });
   });
 
   it('syncs the avatar and applies optimistic update when the drawer saves with a picture', () => {

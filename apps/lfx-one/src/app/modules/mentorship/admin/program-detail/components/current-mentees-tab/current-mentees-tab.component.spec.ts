@@ -1126,10 +1126,7 @@ describe('CurrentMenteesTabComponent', () => {
     });
 
     it.each([
-      [
-        'the mentee already holds an accepted mentorship',
-        "This application can't be accepted: the mentee is already accepted in another mentorship that hasn't ended.",
-      ],
+      ['the mentee already holds an accepted mentorship', "This application can't be accepted: the mentee is still accepted in another mentorship."],
       ['applications are not open for this term', "This application can't be accepted: the term is closed."],
       ['the program is hidden', "This application can't be accepted: the program is hidden. Unhide it, then try again."],
     ])('names the reason upstream gave for refusing an accept ("%s") without reloading', (reason, message) => {
@@ -1194,7 +1191,7 @@ describe('CurrentMenteesTabComponent', () => {
       confirmAction('app_5', 'undo-graduation', confirm);
       settle();
 
-      expect(detailOf(toast)).toBe("This graduation can't be undone: the mentee is already accepted in another mentorship that hasn't ended.");
+      expect(detailOf(toast)).toBe("This graduation can't be undone: the mentee is still accepted in another mentorship.");
       expect(getProgramMentees.mock.calls.length).toBe(reads);
     });
 

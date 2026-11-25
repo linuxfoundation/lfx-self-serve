@@ -3,9 +3,9 @@ title: Manage Terms
 description: How a Program Admin creates and manages the terms of an LFX Mentorship program.
 audience: [all]
 product_area: Mentorship
-tags: [mentorship, program-admin, terms, schedule, open, closed]
+tags: [mentorship, program-admin, terms, schedule, open, closed, application window]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-11-24
 intercom_collection: Mentorship
 ---
 
@@ -22,7 +22,7 @@ A **term** is a dated run of a program. Applications are always made to a term, 
 
 1. Open [app.lfx.dev/mentorship/admin](https://app.lfx.dev/mentorship/admin) and select the program.
 2. Go to the **Terms** tab.
-3. Create a term, choosing a standard period or defining a custom one. A term name is up to 50 characters.
+3. Select **Create Term**. Give the term a **Name** of up to 50 characters, pick its start and end month and year, and set its **Application Start Date** and **Application End Date**. Any name and months are allowed; many programs follow the usual Spring (March–May), Summer (June–August) and Fall (September–November) schedule.
 4. Edit or delete a term from its row. Deleting asks you to confirm, and is only offered while the term has no applications.
 5. Close a term from its row once it has no accepted applicants, or re-open a closed term that has not ended yet. Closing declines the term's pending applications (see below).
 
@@ -36,6 +36,13 @@ The tab is paged ten terms at a time.
 | **Closed** | The term is finished and takes no new applications |
 
 **Open does not by itself mean the term is accepting applications.** A term has its own application start and end dates, and the apply page checks those separately. A running term whose application window has ended stays **Open** but turns applicants away, so set the dates to define the window rather than relying on the status.
+
+## Application window
+
+- **Both dates count in full, in UTC.** Applications open at 00:00 UTC on the start date and close at the end of the end date, UTC.
+- **The window can run into the term**, but must close by the last day of the term's end month.
+- **A new term's application dates cannot be in the past.** When you edit a saved term, past dates are allowed, because the term may already be under way.
+- **Typical timing.** Programs usually open applications for about four weeks and choose mentees in the two weeks before the term starts.
 
 **Current Mentees** covers open terms; **Past Mentees** covers closed ones.
 

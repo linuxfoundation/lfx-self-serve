@@ -83,7 +83,7 @@ export class ProfileIndividualEnrollmentComponent {
     });
   }
 
-  private performAutoRenewUpdate(membershipId: string, newValue: boolean): void {
+  protected performAutoRenewUpdate(membershipId: string, newValue: boolean): void {
     this.pendingIds.update((s) => new Set([...s, membershipId]));
 
     // Optimistically reflect the confirmed value while the PATCH is in flight.

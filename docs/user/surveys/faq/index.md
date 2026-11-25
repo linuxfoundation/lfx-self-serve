@@ -38,7 +38,7 @@ They receive an email with a **Take Survey** button. The survey also appears on 
 
 ## Can I see individual responses?
 
-Yes, if you can manage the survey. Open the survey's **Results** and select the **Responses** tab. You see each recipient's name, organization, delivery status, score, and comment, and you can filter and search. If you are a group writer but not a project writer, open the survey from the group's **Surveys** tab. See [View Survey Results](../survey-results/).
+Yes, if you can manage the survey. Open the survey's **Results** and select the **Responses** tab. You see each recipient's name, company, delivery status, score, and comment, and you can filter and search. If you are a group writer but not a project writer, open the survey from the group's **Surveys** tab. See [View Survey Results](../survey-results/).
 
 ## Can I see results while the survey is open?
 

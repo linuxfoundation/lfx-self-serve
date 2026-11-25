@@ -301,6 +301,16 @@ describe('mapMentorshipAdminMentorRow', () => {
     expect(mapMentorshipAdminMentorRow(memberRow({ status }))).toMatchObject({ mentor: { status: 'pending' }, unknownStatus: true });
   });
 
+  it('marks an email invitation as awaiting an LF account and names it by its email', () => {
+    const { mentor } = mapMentorshipAdminMentorRow(
+      memberRow({ user_id: '', name: undefined, username: undefined, email: 'new.mentor@example.org', status: 'invited', pending_account: true })
+    );
+
+    expect(mentor).toMatchObject({ name: 'new.mentor@example.org', accountPending: true, status: 'invited' });
+    expect(mentor).not.toHaveProperty('userId');
+    expect(mapMentorshipAdminMentorRow(memberRow()).mentor).not.toHaveProperty('accountPending');
+  });
+
   it("keeps the mentor's user id only when it is a UUID", () => {
     expect(mapMentorshipAdminMentorRow(memberRow({ user_id: '6f1c2d3e-4a5b-4c6d-8e7f-901234567890' })).mentor.userId).toBe(
       '6f1c2d3e-4a5b-4c6d-8e7f-901234567890'
@@ -323,7 +333,6 @@ const termRow = (overrides: Partial<MentorshipUpstreamTermManagementRow> = {}): 
   program_id: 'p-1',
   name: 'Spring 2026',
   status: 'open',
-  active_users: 4,
   start_date_time: '2026-03-01T00:00:00Z',
   end_date_time: '2026-05-31T00:00:00Z',
   application_start_date: '2026-01-05T00:00:00Z',

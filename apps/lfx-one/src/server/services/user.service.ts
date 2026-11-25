@@ -280,7 +280,7 @@ export class UserService {
 
     // Validate organization if provided (basic length check)
     if (metadata?.organization && metadata.organization.length > 200) {
-      throw new Error('Organization name is too long');
+      throw new Error('Company name is too long');
     }
 
     // Validate job title if provided (basic length check)
@@ -547,59 +547,7 @@ export class UserService {
     // the pending-actions prerequisite queries. A successful empty lookup confirms null/[];
     // a failed lookup leaves both fields undefined. Unknown rows stay visible under All meetings
     // but do not enter response-specific filters unless the client retains a valid confirmed write.
-    const committeeMeetingIds = new Set<string>();
-    if (!options?.basic) {
-      const rawUsername = await getUsernameFromAuth(req);
-      const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-      const email = getEffectiveEmail(req) ?? '';
-
-      if ((email || username) && normalizedMeetings.length > 0) {
-        try {
-          const { userRsvps, activeRegistrants } = await this.fetchUserRsvpsAndRegistrants(req, email, username);
-          activeRegistrants.committeeMeetingIds.forEach((id) => committeeMeetingIds.add(id));
-
-          // Group all RSVPs per meeting so recurring series can be resolved against the
-          // occurrence the card is actually representing. Drop RSVPs whose `registrant_id` isn't
-          // in the active set; otherwise stale RSVPs from removed registrations would falsely
-          // mark meetings as "responded".
-          const rsvpsByMeeting = new Map<string, MeetingRsvp[]>();
-          for (const rsvp of userRsvps) {
-            if (!rsvp.meeting_id) continue;
-            if (!rsvp.registrant_id || !activeRegistrants.uids.has(rsvp.registrant_id)) continue;
-            const list = rsvpsByMeeting.get(rsvp.meeting_id);
-            if (list) list.push(rsvp);
-            else rsvpsByMeeting.set(rsvp.meeting_id, [rsvp]);
-          }
-
-          // Resolve each meeting's `my_rsvp` against its current/next occurrence via the shared
-          // resolver — same scope/precedence rules and seconds↔ms `occurrence_id` normalization
-          // used on the detail page. Non-recurring meetings resolve identically to before (no
-          // occurrence_id → single `all`-scoped row wins).
-          //
-          // Keep the newest series response when none applies to the current/next date.
-          // The dashboard checks scope before assigning a response filter; the pending-actions
-          // aggregation separately suppresses Set RSVP when any active-registrant response exists.
-          for (const meeting of normalizedMeetings) {
-            if (!meeting.id) continue;
-            meeting.my_registrant_ids = activeRegistrants.uidsByMeeting.get(meeting.id) ?? [];
-            const meetingRsvps = rsvpsByMeeting.get(meeting.id);
-            meeting.my_rsvps = meetingRsvps ?? [];
-            if (!meetingRsvps || meetingRsvps.length === 0) {
-              meeting.my_rsvp = null;
-              continue;
-            }
-            const occurrenceId = resolveRsvpOccurrenceId(meeting);
-            const candidates = meeting.recurrence && !occurrenceId ? meetingRsvps.filter((rsvp) => rsvp.scope === 'all') : meetingRsvps;
-            const applicable = selectApplicableRsvp(occurrenceId, candidates);
-            meeting.my_rsvp = applicable ?? selectApplicableRsvp(undefined, meetingRsvps);
-          }
-        } catch (error) {
-          logger.warning(req, 'get_user_meetings', 'RSVP enrichment failed, continuing without my_rsvp', {
-            err: error,
-          });
-        }
-      }
-    }
+    const committeeMeetingIds = options?.basic ? new Set<string>() : await this.attachViewerRsvps(req, normalizedMeetings, 'get_user_meetings');
 
     // Drop past meetings; recurring meetings survive if any occurrence is still active.
     // Basic mode powers pending-actions aggregation, where a completed meeting can't yield an
@@ -785,16 +733,10 @@ export class UserService {
 
     // No ids means the artifact lookups issue no requests.
     const pastMeetingIds = options?.includeArtifacts ? pastOnly.map((meeting) => meeting.id) : [];
-    const [withProjects, committeeNames, recordingUrls, primarySummaries] = await Promise.all([
+    const [withProjects, committeeNames, [recordingUrls, primarySummaries]] = await Promise.all([
       this.meetingService.getMeetingProjectName(req, pastOnly),
       this.meetingService.getCommitteeNameMap(req, pastOnly),
-      this.fetchPastMeetingArtifacts<PastMeetingRecording, string | null>(req, 'v1_past_meeting_recording', pastMeetingIds, ([recording]) =>
-        getLargestSessionShareUrl(recording ?? null)
-      ),
-      // selectPrimaryPastMeetingSummary reads only `data` from each item.
-      this.fetchPastMeetingArtifacts<PastMeetingSummary, PastMeetingSummary | null>(req, 'v1_past_meeting_summary', pastMeetingIds, (summaries) =>
-        selectPrimaryPastMeetingSummary(summaries.map((data) => ({ type: 'v1_past_meeting_summary', id: '', data })))
-      ),
+      this.fetchPastMeetingArtifactMaps(req, 'get_user_past_meetings', pastMeetingIds),
     ]);
     const enriched = this.withCommitteeNames(withProjects, committeeNames);
 
@@ -804,21 +746,65 @@ export class UserService {
 
     const accessed = await this.accessCheckService.addAccessToResources(req, withCreatedBy, 'v1_past_meeting', 'organizer');
     const withAccess = options?.includeAttendance ? await attachPastMeetingAttendanceSummaries(req, accessed) : accessed;
-    if (!options?.includeArtifacts) return withAccess;
-    for (const meeting of withAccess) {
-      const recordingUrl = recordingUrls.get(meeting.id);
-      meeting.has_recording = recordingUrl === undefined ? undefined : recordingUrl !== null;
-      // Sent with the feed so the home page copies it within the click (Safari drops clipboard access after an await).
-      if (recordingUrl) meeting.recording_share_url = recordingUrl;
-      meeting.has_ai_summary = primarySummaries.has(meeting.id) ? getPastMeetingSummaryContent(meeting, primarySummaries.get(meeting.id)) !== null : undefined;
-      // Only an organizer gets a summary that awaits approval, so the flag never reaches an invitee.
-      const summary = meeting.has_ai_summary ? primarySummaries.get(meeting.id) : null;
-      if (summary) {
-        meeting.ai_summary_awaiting_approval = isPastMeetingSummaryAwaitingApproval(summary);
-        meeting.ai_summary_uid = summary.uid;
-      }
-    }
+    if (options?.includeArtifacts) this.applyPastMeetingArtifacts(withAccess, recordingUrls, primarySummaries);
     return withAccess;
+  }
+
+  /**
+   * Sets `my_rsvp`, `my_rsvps` and `my_registrant_ids` on each meeting from the viewer's active registrations.
+   * @description Each meeting's response is resolved against its current/next occurrence with the meeting page's
+   * scope rules, falling back to the newest series response. A successful empty lookup confirms null/[]; a failed
+   * lookup, or no viewer identity, leaves the fields undefined so the client treats the response as unknown.
+   * @returns The ids of meetings the viewer is registered to through a committee; empty when the lookup fails
+   */
+  public async attachViewerRsvps(req: Request, meetings: Meeting[], operation: string): Promise<Set<string>> {
+    const committeeMeetingIds = new Set<string>();
+    const rawUsername = await getUsernameFromAuth(req);
+    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
+    const email = getEffectiveEmail(req) ?? '';
+    if ((!email && !username) || meetings.length === 0) return committeeMeetingIds;
+
+    try {
+      const { userRsvps, activeRegistrants } = await this.fetchUserRsvpsAndRegistrants(req, email, username);
+      activeRegistrants.committeeMeetingIds.forEach((id) => committeeMeetingIds.add(id));
+
+      // RSVPs of removed registrations would otherwise mark meetings as answered.
+      const rsvpsByMeeting = new Map<string, MeetingRsvp[]>();
+      for (const rsvp of userRsvps) {
+        if (!rsvp.meeting_id || !rsvp.registrant_id || !activeRegistrants.uids.has(rsvp.registrant_id)) continue;
+        const list = rsvpsByMeeting.get(rsvp.meeting_id);
+        if (list) list.push(rsvp);
+        else rsvpsByMeeting.set(rsvp.meeting_id, [rsvp]);
+      }
+
+      for (const meeting of meetings) {
+        if (!meeting.id) continue;
+        meeting.my_registrant_ids = activeRegistrants.uidsByMeeting.get(meeting.id) ?? [];
+        const meetingRsvps = rsvpsByMeeting.get(meeting.id);
+        meeting.my_rsvps = meetingRsvps ?? [];
+        if (!meetingRsvps || meetingRsvps.length === 0) {
+          meeting.my_rsvp = null;
+          continue;
+        }
+        const occurrenceId = resolveRsvpOccurrenceId(meeting);
+        const candidates = meeting.recurrence && !occurrenceId ? meetingRsvps.filter((rsvp) => rsvp.scope === 'all') : meetingRsvps;
+        meeting.my_rsvp = selectApplicableRsvp(occurrenceId, candidates) ?? selectApplicableRsvp(undefined, meetingRsvps);
+      }
+    } catch (error) {
+      logger.warning(req, operation, 'RSVP enrichment failed, continuing without my_rsvp', { err: error });
+    }
+    return committeeMeetingIds;
+  }
+
+  /**
+   * Sets `has_recording`, `recording_share_url`, `has_ai_summary` and the organizer's summary approval fields on each
+   * past meeting, keyed by `meeting_and_occurrence_id`. A failed lookup leaves the fields undefined.
+   */
+  public async attachPastMeetingArtifacts(req: Request, meetings: PastMeeting[], operation: string): Promise<void> {
+    const ids = [...new Set(meetings.map((meeting) => meeting.meeting_and_occurrence_id).filter((id): id is string => !!id))];
+    if (ids.length === 0) return;
+    const [recordingUrls, primarySummaries] = await this.fetchPastMeetingArtifactMaps(req, operation, ids);
+    this.applyPastMeetingArtifacts(meetings, recordingUrls, primarySummaries);
   }
 
   /**
@@ -1288,8 +1274,53 @@ export class UserService {
       });
   }
 
+  /** Looks up the recording share URL and primary AI summary of each past meeting occurrence; no ids issues no requests. */
+  private fetchPastMeetingArtifactMaps(
+    req: Request,
+    operation: string,
+    pastMeetingIds: string[]
+  ): Promise<[Map<string, string | null>, Map<string, PastMeetingSummary | null>]> {
+    return Promise.all([
+      this.fetchPastMeetingArtifacts<PastMeetingRecording, string | null>(req, operation, 'v1_past_meeting_recording', pastMeetingIds, ([recording]) =>
+        getLargestSessionShareUrl(recording ?? null)
+      ),
+      // selectPrimaryPastMeetingSummary reads only `data` from each item.
+      this.fetchPastMeetingArtifacts<PastMeetingSummary, PastMeetingSummary | null>(req, operation, 'v1_past_meeting_summary', pastMeetingIds, (summaries) =>
+        selectPrimaryPastMeetingSummary(summaries.map((data) => ({ type: 'v1_past_meeting_summary', id: '', data })))
+      ),
+    ]);
+  }
+
+  /** Writes looked-up artifacts onto past meetings by `meeting_and_occurrence_id`; ids missing from a map stay undefined. */
+  private applyPastMeetingArtifacts(
+    meetings: PastMeeting[],
+    recordingUrls: Map<string, string | null>,
+    primarySummaries: Map<string, PastMeetingSummary | null>
+  ): void {
+    for (const meeting of meetings) {
+      const key = meeting.meeting_and_occurrence_id ?? meeting.id;
+      const recordingUrl = recordingUrls.get(key);
+      meeting.has_recording = recordingUrl === undefined ? undefined : recordingUrl !== null;
+      // Sent with the feed so the home page copies it within the click (Safari drops clipboard access after an await).
+      if (recordingUrl) meeting.recording_share_url = recordingUrl;
+      meeting.has_ai_summary = primarySummaries.has(key) ? getPastMeetingSummaryContent(meeting, primarySummaries.get(key)) !== null : undefined;
+      // Only an organizer gets a summary that awaits approval, so the flag never reaches an invitee.
+      const summary = meeting.has_ai_summary ? primarySummaries.get(key) : null;
+      if (summary) {
+        meeting.ai_summary_awaiting_approval = isPastMeetingSummaryAwaitingApproval(summary);
+        meeting.ai_summary_uid = summary.uid;
+      }
+    }
+  }
+
   /** Maps past meeting ids to a value derived from their artifact rows via OR-tag batches; a failed batch's ids are omitted. */
-  private async fetchPastMeetingArtifacts<T, R>(req: Request, type: string, pastMeetingIds: string[], derive: (rows: T[]) => R): Promise<Map<string, R>> {
+  private async fetchPastMeetingArtifacts<T, R>(
+    req: Request,
+    operation: string,
+    type: string,
+    pastMeetingIds: string[],
+    derive: (rows: T[]) => R
+  ): Promise<Map<string, R>> {
     const values = new Map<string, R>();
     const batches: string[][] = [];
     for (let i = 0; i < pastMeetingIds.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
@@ -1326,7 +1357,7 @@ export class UserService {
           values.set(id, derive(rowsById.get(id) ?? []));
         }
       } catch (error) {
-        logger.warning(req, 'get_user_past_meetings', 'Past meeting artifact lookup failed, leaving its fields unset', {
+        logger.warning(req, operation, 'Past meeting artifact lookup failed, leaving its fields unset', {
           type,
           batch_size: batch.length,
           err: error,

@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [faq, mentorship, mentee, mentor, program-admin, applications, tasks]
 last_generated: 2026-10-26
-last_updated: 2026-11-09
+last_updated: 2026-11-24
 intercom_collection: Mentorship
 ---
 
@@ -71,7 +71,7 @@ Every Program Admin and mentor on that program can see your note. The mentee can
 
 ### When do I invite mentors?
 
-You invite mentors after the program is approved, from the **Mentors** tab. Search for the person in **Search and select mentors...** by name, LF username or full email address, pick them, and select **Invite**. Enrolling a program does not invite mentors. See [Manage a Program's Mentors](../manage-mentors/).
+You invite mentors after the program is approved, from the **Mentors** tab. Select **Invite mentor**, search for the person by name, LF username or full email address, select them, and select **Send invite**. Someone with no LF account yet can be invited by their email address. Enrolling a program does not invite mentors. See [Manage a Program's Mentors](../manage-mentors/).
 
 ### How many open terms can a program have?
 
@@ -106,6 +106,16 @@ Open the program and select **Hide Program** from the **⋯** menu. Only an appr
 ### What is the difference between Rejected and Declined?
 
 **Rejected** applies only to a program that was not approved during review. **Declined** applies to an application that was turned down, whether it was a mentee or a mentor application.
+
+## Getting help
+
+### How do I contact support?
+
+Use the support chat button at the bottom right of any LFX Self Serve page. You can also email [mentorship@linuxfoundation.org](mailto:mentorship@linuxfoundation.org).
+
+### How do I report a problem with someone's behavior?
+
+Email a breach of the [Standards of Excellence](https://mentorship.linuxfoundation.org/docs/getting-started/standards-of-excellence) to [mentorship@linuxfoundation.org](mailto:mentorship@linuxfoundation.org), with any evidence such as screenshots. Report harassment through the reporting process in the project's own Code of Conduct.
 
 ## Related sections
 

@@ -18,7 +18,12 @@ import {
   ProjectContext,
   SucceededMemberOperations,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, getSelectableCommitteeCategories } from '@lfx-one/shared/utils';
+import {
+  canGroupGrantSocialListening,
+  computeIsFoundation,
+  getMissingCommitteeMemberRequirements,
+  getSelectableCommitteeCategories,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -83,6 +88,8 @@ export class CommitteeManageComponent {
   public mode = signal<'create' | 'edit'>('create');
   public committeeId = signal<string | null>(null);
   public isEditMode = computed(() => this.mode() === 'edit');
+  // The detail stream observes route IDs only, so retain create-response requirements separately.
+  private readonly createdCommitteeRequirements = signal<Pick<Committee, 'enable_voting' | 'business_email_required'> | null>(null);
 
   // Initialize committee data
   public committee = this.initializeCommittee();
@@ -119,17 +126,21 @@ export class CommitteeManageComponent {
   public submitting = signal<boolean>(false);
 
   // Validation signals for template
-  private formValue = toSignal(this.form.valueChanges, { initialValue: this.form.value });
+  protected readonly formValue = toSignal(this.form.valueChanges, { initialValue: this.form.value });
   public readonly canProceed = computed(() => {
     this.formValue();
     return this.isStepValid(this.currentStep());
   });
-  // Live Step 3 draft, passed down so Step 4's invite dialog validates against what's about to be
-  // saved rather than a possibly-stale persisted committee (LFXV2-2606 review).
-  public readonly organizationRequirements = computed(() => ({
-    enable_voting: !!this.formValue().enable_voting,
-    business_email_required: !!this.formValue().business_email_required,
-  }));
+  // Edit mode saves the live Step 3 draft. Create-mode Done only saves members, so member
+  // dialogs and final validation must keep using the requirements returned by Create Group.
+  public readonly organizationRequirements = computed(() => {
+    const createdRequirements = this.createdCommitteeRequirements();
+    if (!this.isEditMode() && createdRequirements) return createdRequirements;
+    return {
+      enable_voting: !!this.formValue().enable_voting,
+      business_email_required: !!this.formValue().business_email_required,
+    };
+  });
   public readonly canGoNext = computed(() => this.currentStep() + 1 < this.totalSteps && this.canNavigateToStep(this.currentStep() + 1));
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
   public readonly isFirstStep = computed(() => this.currentStep() === 1);
@@ -158,7 +169,7 @@ export class CommitteeManageComponent {
     // cookie-restored last-visited project. The fallback covers BFF project-enrichment failure.
     // preferEntityKind: a foundation-owned group can be edited under a /project/* URL, so the
     // committee's own is_foundation (not the route prefix) picks the slot and re-points the route
-    // lens kind (mirror: meeting-manage post-GH-1432).
+    // lens kind (GH-1432).
     syncEntityProjectContext(this.committeeEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
     this.initCommitteeContextFallback();
     this.initCategoryFromUrl();
@@ -262,6 +273,8 @@ export class CommitteeManageComponent {
       return;
     }
 
+    if (this.isEditMode() && !this.validateStagedMemberRequirements()) return;
+
     this.submitting.set(true);
 
     const formValue = {
@@ -293,7 +306,7 @@ export class CommitteeManageComponent {
 
   public onDone(): void {
     const committeeUid = this.resolveCommitteeWriteUid();
-    if (!committeeUid || this.memberSaveDisabled()) {
+    if (!committeeUid || this.memberSaveDisabled() || !this.validateStagedMemberRequirements()) {
       return;
     }
 
@@ -353,6 +366,8 @@ export class CommitteeManageComponent {
       });
       return;
     }
+
+    if (!this.validateStagedMemberRequirements()) return;
 
     this.submitting.set(true);
 
@@ -440,8 +455,7 @@ export class CommitteeManageComponent {
   /**
    * Maps the loaded committee to the {@link EntityWithProject} shape consumed by
    * syncEntityProjectContext — pre-enrichment payloads can lack the project fields entirely,
-   * so absent values map to null there (mirror: meeting-manage's initializeMeetingEntityContext;
-   * Committee already carries `uid`, so no id remap is needed).
+   * so absent values map to null there (Committee already carries `uid`, so no id remap is needed).
    */
   private initializeCommitteeEntityContext(): Signal<EntityWithProject | null> {
     return computed(() => {
@@ -465,8 +479,7 @@ export class CommitteeManageComponent {
    * `project_uid` but no `project_slug`): resolve the project by uid and set context from it.
    * `getProject(uid, false)` — `current: false` so the fetch doesn't clobber ProjectService's
    * shared `project` state — resolves to null on failure, so a failed fallback leaves the
-   * (stale) context untouched rather than erroring the page. (Mirror: meeting-manage's
-   * initMeetingContextFallback, minus its fresh-detail last resort: `getCommitteeDetail` does
+   * (stale) context untouched rather than erroring the page. (There is no fresh-detail last resort: `getCommitteeDetail` does
    * support `skipCache`, but a refetch cannot recover a missing `project_slug` — the BFF's
    * committee enrichment resolves the project through the same relation-gated `/projects/:uid`
    * GET this fallback already tried, unlike meeting enrichment's ungated query-service lookup.)
@@ -546,7 +559,7 @@ export class CommitteeManageComponent {
    *
    * The leg is pending (undefined) until its first resolution, and the predicate stays
    * provisionally true while pending — writerGuard already authorized this navigation, so an
-   * unresolved leg is not an access-lost signal (mirror: meeting-manage's initWriteAccess).
+   * unresolved leg is not an access-lost signal.
    */
   private initWriteAccess(): Signal<boolean> {
     const editCommitteeId = this.route.snapshot.paramMap.get('id');
@@ -603,6 +616,7 @@ export class CommitteeManageComponent {
       join_mode: committee.join_mode || 'invite_only',
       member_visibility: committee.member_visibility || 'hidden',
       show_meeting_attendees: committee.show_meeting_attendees || false,
+      members_can_view_social_listening: committee.members_can_view_social_listening || false,
     });
   }
 
@@ -633,6 +647,7 @@ export class CommitteeManageComponent {
       join_mode: new FormControl('invite_only'),
       member_visibility: new FormControl('hidden'),
       show_meeting_attendees: new FormControl(false),
+      members_can_view_social_listening: new FormControl(false),
     });
   }
 
@@ -647,6 +662,23 @@ export class CommitteeManageComponent {
     return display_name;
   }
 
+  private validateStagedMemberRequirements(): boolean {
+    // Edit saves the live draft; Done in create mode only saves members of the already-created group.
+    const requirements = this.organizationRequirements();
+    const invalid = this.memberUpdates()
+      .toAdd.map((member) => ({ member, missing: getMissingCommitteeMemberRequirements(member, requirements) }))
+      .find(({ missing }) => missing.length > 0);
+    if (!invalid) return true;
+
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Member Details Required',
+      detail: `Edit ${invalid.member.email} on Add Members and complete: ${invalid.missing.join(', ')}. Your changes have not been saved.`,
+      life: 8000,
+    });
+    return false;
+  }
+
   private cleanFormData(formData: Record<string, unknown>): Record<string, unknown> {
     const cleaned: Record<string, unknown> = {};
 
@@ -659,10 +691,20 @@ export class CommitteeManageComponent {
       }
     });
 
+    // The toggle is hidden for non-Board groups, so never save a value the user can no longer see.
+    if ('members_can_view_social_listening' in cleaned) {
+      cleaned['members_can_view_social_listening'] =
+        canGroupGrantSocialListening(formData['category'] as string | undefined) && cleaned['members_can_view_social_listening'] === true;
+    }
+
     return cleaned;
   }
 
   private handleCreateSuccess(committee: Committee): void {
+    this.createdCommitteeRequirements.set({
+      enable_voting: committee.enable_voting ?? false,
+      business_email_required: committee.business_email_required ?? false,
+    });
     this.submitting.set(false);
     this.committeeId.set(committee.uid);
 
@@ -816,6 +858,7 @@ export class CommitteeManageComponent {
     if (memberUpdates.toAdd.length > 0) {
       for (const member of memberUpdates.toAdd) {
         const { createOptions, pendingInviteUids = [], ...payload } = member;
+        delete payload.isSelfAddition; // Client-only staging origin must not reach the native API.
         operations.push(
           this.createMemberOperation(
             'add',

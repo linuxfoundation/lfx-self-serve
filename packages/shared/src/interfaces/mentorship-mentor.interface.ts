@@ -226,20 +226,32 @@ export interface MentorshipUpstreamTaskCreate {
 /** A mentor's decision on a submitted task: `complete` approves it, `incomplete` sends it back for changes. */
 export type MentorshipMentorTaskReviewDecision = 'complete' | 'incomplete';
 
-/** Body of `PATCH /api/mentorship/mentor/tasks/:taskId/review`. Upstream has no field for a comment. */
+/**
+ * Body of `PATCH /api/mentorship/mentor/tasks/:taskId/review`. `reason` is required with `incomplete` and refused with
+ * `complete`: it says what to change, and upstream emails it to the mentee without storing it.
+ */
 export interface MentorshipMentorTaskReviewUpdate {
   status: MentorshipMentorTaskReviewDecision;
+  reason?: string;
 }
 
-/** Body of `PATCH /mentorship/v1/tasks/{id}/review`. */
+/** Body of `PATCH /mentorship/v1/tasks/{id}/review`. Upstream emails `reason` to an accepted mentee and does not store it. */
 export interface MentorshipUpstreamTaskReviewUpdate {
   status: MentorshipMentorTaskReviewDecision;
+  reason?: string;
 }
 
-/** What the mentor Tasks tab emits when a mentor approves a task or requests changes on it. */
+/** What the mentor Tasks tab emits when a mentor approves a task, or requests changes on it with a reason. */
 export interface MentorshipMentorTaskReviewRequest {
   taskId: string;
   status: MentorshipMentorTaskReviewDecision;
+  reason?: string;
+}
+
+/** Data for the Request Changes dialog: who and what the reason is about. */
+export interface MentorshipTaskChangesDialogData {
+  menteeName: string;
+  taskName: string;
 }
 
 /** What an invited mentor does with the invitation, on `/mentorship/mentor/invites` or in the profile edit drawer. */
@@ -251,10 +263,34 @@ export interface MentorshipMentorInvitationResponse {
   decision: MentorshipMentorInviteDecision;
 }
 
-/** Body of `POST /api/mentorship/mentor/invites/accept|decline`: the signed token from the invite email. */
+/** Body of `POST /api/mentorship/mentor/invites/details|accept|decline`: the signed token from the invite email. */
 export interface MentorshipMentorInviteResponseRequest {
   token: string;
 }
+
+/** Upstream `GET /v1/mentor-invites/{token}`: the program an open invitation is for. */
+export interface MentorshipUpstreamMentorInvite {
+  program_id: string;
+  program_name: string;
+}
+
+/** What `POST /api/mentorship/mentor/invites/details` returns: the invited program's id and name, each empty when upstream has none. */
+export interface MentorshipMentorInviteDetails {
+  programId: string;
+  programName: string;
+}
+
+/**
+ * The invite page's read of its invitation: the program once read, or why the link cannot be used when the read says
+ * so (`invalid-link` or `forbidden`); both null while reading, and after any other failure.
+ */
+export interface MentorshipMentorInviteRead {
+  details: MentorshipMentorInviteDetails | null;
+  failure: MentorshipMentorInviteState | null;
+}
+
+/** Where the invite page's mentor profile check stands: still checking, a profile found, none, or the check failed. */
+export type MentorshipMentorProfileCheck = 'checking' | 'found' | 'missing' | 'failed';
 
 /** What the invite page shows: the choice, the outcome, or why the link cannot be used. */
 export type MentorshipMentorInviteState = 'confirm' | 'submitting' | 'accepted' | 'declined' | 'invalid-link' | 'forbidden' | 'read-only' | 'error';
@@ -447,6 +483,11 @@ export interface MentorshipUpstreamUser {
   avatar_url?: string;
   created_on: string;
   updated_on: string;
+}
+
+/** A claim on one login's mentorship user refresh (`PUT /mentorship/v1/me`); `complete` records the refresh as done for the rest of the login. */
+export interface MentorshipSyncClaim {
+  complete(): Promise<void>;
 }
 
 /** One non-deleted term of a program on `GET /mentorship/v1/mentors/{id}`. Dates are RFC 3339 instants. */

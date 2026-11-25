@@ -8,8 +8,7 @@
 import { expect, Locator, Page, test } from '@playwright/test';
 
 import { MEETINGS_HOME_JOIN_URL, MEETINGS_HOME_RECORDING_URL, MEETINGS_HOME_SUMMARY_TEXT, MEETINGS_HOME_TITLES as TITLES } from './fixtures/mock-data';
-import { gotoMeetingsHome, homeRow, homeRows, homeToast, MEETINGS_HOME_TEST_OPTIONS, rightColumn } from './helpers/meetings-home.helper';
-import { stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
+import { gotoMeetingsHome, homeRow, homeRows, homeToast, MEETINGS_HOME_TEST_OPTIONS, openMeetingsSearch, rightColumn } from './helpers/meetings-home.helper';
 
 const UPCOMING_TITLES = [TITLES.next, TITLES.oneOff, TITLES.series, TITLES.series, TITLES.other];
 
@@ -76,6 +75,7 @@ test.describe('Meetings home page', () => {
     test('search narrows rows by title and committee, and no results offers Reset filters', async ({ page }) => {
       await gotoMeetingsHome(page);
 
+      await openMeetingsSearch(page);
       await search(page).fill('budget');
       await expect(rowTitles(page)).toHaveText([TITLES.oneOff]);
       await search(page).fill('governing');
@@ -86,7 +86,9 @@ test.describe('Meetings home page', () => {
       await expect(noResults).toContainText('No results found');
       await expect(noResults).toContainText('No meetings match your search');
       await page.getByTestId('meetings-home-no-results-reset').click();
-      await expect(search(page)).toHaveValue('');
+      // The reset clears the search and collapses it back into its button.
+      await expect(search(page)).toHaveCount(0);
+      await expect(page.getByTestId('meetings-redesign-search-button')).toBeVisible();
       await expect(rowTitles(page)).toHaveText(UPCOMING_TITLES);
     });
 
@@ -189,7 +191,6 @@ test.describe('Meetings home page', () => {
 
   test.describe('Organizer actions', () => {
     test('Edit on a one-off meeting opens the editor without asking for a scope', async ({ page }) => {
-      await stubMeetingsV2Flag(page, true);
       await gotoMeetingsHome(page, { organizer: true });
 
       await openRowAction(page, homeRow(page, TITLES.oneOff), 'Edit Meeting');
@@ -200,7 +201,6 @@ test.describe('Meetings home page', () => {
     });
 
     test('Edit on a recurring row asks for the scope, then edits the picked occurrence', async ({ page }) => {
-      await stubMeetingsV2Flag(page, true);
       await gotoMeetingsHome(page, { organizer: true });
 
       await openRowAction(page, seriesRowOn(page, '13'), 'Edit Meeting');

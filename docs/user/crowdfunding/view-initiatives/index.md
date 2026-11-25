@@ -38,9 +38,9 @@ When you have no initiatives, the empty list also offers **New Initiative**. If 
 
 ## Initiatives under other lenses
 
-The same page appears under the **Projects**, **Foundation**, and **Organization** lenses as **Crowdfunding Initiatives**, listing the initiatives run on behalf of the selected entity. Its description reads "Fundraising initiatives on LFX Crowdfunding run on behalf of" the entity, and it can show two extra states:
+The same page appears under the **Projects**, **Foundation**, and **Company** lenses as **Crowdfunding Initiatives**, listing the initiatives run on behalf of the selected entity. Its description reads "Fundraising initiatives on LFX Crowdfunding run on behalf of" the entity, and it can show two extra states:
 
-- **You don't have access to these initiatives** — only writers on the project or foundation, or Admins granted directly on the organization, can see the initiatives run on its behalf.
+- **You don't have access to these initiatives** — only writers on the project or foundation, or Admins granted directly on the company, can see the initiatives run on its behalf.
 - **Initiatives couldn't be loaded** — LFX Crowdfunding is temporarily unavailable. Select **Try again**.
 
 See [Lens-scoped Initiatives](../lens-initiatives/) for who can see these pages.
@@ -66,4 +66,4 @@ The initiative detail page opens, where you can review financials and manage the
 
 - [Manage Initiatives](../manage-initiatives/) — edit settings, archive, or activate an initiative from its detail page
 - [Initiatives](../my-initiatives/) — overview of the Initiatives section
-- [Lens-scoped Initiatives](../lens-initiatives/) — initiatives run on behalf of a project, foundation, or organization
+- [Lens-scoped Initiatives](../lens-initiatives/) — initiatives run on behalf of a project, foundation, or company

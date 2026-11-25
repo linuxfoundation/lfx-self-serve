@@ -5,6 +5,7 @@ import express, { Router } from 'express';
 
 import { ProjectController } from '../controllers/project.controller';
 import { ProjectParticipatingOrgsController } from '../controllers/project-participating-orgs.controller';
+import { requireExecutiveOrLFStaff } from '../middleware/require-dashboard-access.middleware';
 import { requireProjectParticipatingOrgsAccess } from '../middleware/require-project-participating-orgs-access.middleware';
 
 const router = Router();
@@ -25,15 +26,19 @@ router.get('/slugs', (req, res, next) => projectController.getProjectSlugs(req, 
 
 router.get('/:slug', (req, res, next) => projectController.getProjectBySlug(req, res, next));
 
-// ── Project Lens → Participating Organizations (#2091), flag + project#viewer gated ──
-router.get('/:slug/participating-orgs/summary', requireProjectParticipatingOrgsAccess, (req, res, next) =>
+// ── Project Lens → Participating Organizations (#2091), executive director / LF staff + project#viewer gated ──
+router.get('/:slug/participating-orgs/summary', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) =>
   participatingOrgsController.getSummary(req, res, next)
 );
-router.get('/:slug/participating-orgs/export', requireProjectParticipatingOrgsAccess, (req, res, next) => participatingOrgsController.export(req, res, next));
-router.get('/:slug/participating-orgs/org-lens-links', requireProjectParticipatingOrgsAccess, (req, res, next) =>
+router.get('/:slug/participating-orgs/export', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) =>
+  participatingOrgsController.export(req, res, next)
+);
+router.get('/:slug/participating-orgs/org-lens-links', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) =>
   participatingOrgsController.getOrgLensLinks(req, res, next)
 );
-router.get('/:slug/participating-orgs', requireProjectParticipatingOrgsAccess, (req, res, next) => participatingOrgsController.getList(req, res, next));
+router.get('/:slug/participating-orgs', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) =>
+  participatingOrgsController.getList(req, res, next)
+);
 
 router.get('/:uid/permissions', (req, res, next) => projectController.getProjectPermissions(req, res, next));
 
@@ -58,6 +63,7 @@ router.post('/:uid/documents/upload', express.raw({ type: '*/*', limit: '100mb' 
 );
 // Stream a project document file binary back to the browser with Content-Disposition.
 router.get('/:uid/documents/:documentId/download', (req, res, next) => projectController.downloadProjectDocument(req, res, next));
+router.patch('/:uid/documents/:documentId', (req, res, next) => projectController.updateProjectDocument(req, res, next));
 router.delete('/:uid/documents/:documentId', (req, res, next) => projectController.deleteProjectDocument(req, res, next));
 
 export default router;

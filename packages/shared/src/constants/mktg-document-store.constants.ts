@@ -10,10 +10,27 @@ import type { MktgArtifactIntakeMode } from '../interfaces/mktg-artifact.interfa
 import type { MktgDocumentType } from '../interfaces/mktg-document-store.interface';
 import type { MktgStoredDocumentRunState } from '../interfaces/mktg-document-run.interface';
 import { MKTG_AGENTS } from './mktg-os-agents.constants';
-import { MKTG_AGENT_INTAKES, MKTG_RUN_POLL } from './mktg-run.constants';
+import { MKTG_AGENT_INTAKES, MKTG_POLL_MAX_BACKOFF_MS, MKTG_RUN_POLL } from './mktg-run.constants';
 
 /** Documents API: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`, `POST …/runs/:runId/retry`, `POST …/runs/:runId/dismiss`. */
 export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
+
+/** A human selection moved since the writer's read; refresh metadata, never replay the write. */
+export const MKTG_APPROVED_CURRENT_CHANGED = 'MKTG_APPROVED_CURRENT_CHANGED';
+
+/** Product-approved selection-conflict copy; tokens are interpolated as text, never HTML. */
+export const MKTG_DOCUMENT_CURRENT_CONFLICT_COPY = {
+  approve: {
+    known: '<Name> approved v<N> a moment ago. Check v<N> before you approve a different version.',
+    unknown: 'Someone just approved a newer version. Check it before you approve this one.',
+  },
+  restore: {
+    known: '<Name> made v<N> the current version a moment ago. Check it before you switch.',
+    unknown: 'Someone just changed the current version. Check it before you switch.',
+  },
+  openKnown: 'Open v<N>',
+  openUnknown: 'Open the latest version',
+} as const;
 
 /** Private session-keyed starts. Key enumeration is full; HEAD/GET/Guild discovery uses the bounded newest-mtime window. */
 export const MKTG_STARTED_RUN_PREFIX = 'document-runs';
@@ -32,7 +49,7 @@ export const MKTG_STARTED_RUN_ATTEMPT_HISTORY_BYTES = 384;
 /** Schema tag stamped on every MktgStartedRunRecord in the private document store. */
 export const MKTG_STARTED_RUN_SCHEMA = 'mktg-started-run/v1';
 /** Automatic progress reads back off on availability failures, not on human questions pauses. */
-export const MKTG_DOCUMENT_PROGRESS_POLL = { maxBackoffMs: 8 * MKTG_RUN_POLL.intervalMs } as const;
+export const MKTG_DOCUMENT_PROGRESS_POLL = { maxBackoffMs: MKTG_POLL_MAX_BACKOFF_MS } as const;
 export const MKTG_STARTED_RUN_ID_REGEX = /^[0-9a-f]{64}$/;
 export const MKTG_STARTED_RUN_ATTEMPT_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
 /** Metadata within one attempt advances only; explicit retries have a newer retry-at. */

@@ -220,6 +220,7 @@ const stubProgramReads = (routes: Record<string, unknown>) =>
 
 const pageRoutes = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   [`${PROGRAM_PATH}/header`]: header,
+  [`${PROGRAM_PATH}/submitter`]: { lfid: 'janedoe', name: 'Jane Doe', email: 'jane.doe@example.org' },
   [`${PROGRAM_PATH}/management-summary`]: summary,
   [`${PROGRAM_PATH}/applications`]: { data: [], meta: { total: 7, limit: 1, offset: 0 } },
   [`${PROGRAM_PATH}/member-management`]: { data: [], meta: { total: 2, limit: 1, offset: 0 } },
@@ -259,6 +260,19 @@ describe('MentorshipAdminService.getProgramPage', () => {
       { id: 't1', name: 'Fall', status: 'open' },
       { id: 't0', name: 'Spring', status: 'closed' },
     ]);
+    expect(page.submitter).toEqual({ name: 'Jane Doe', email: 'jane.doe@example.org', avatarUrl: null });
+  });
+
+  it.each([
+    ['has none (404)', 404],
+    ['cannot be read', 503],
+  ])('shows the page without a submitter when the program %s', async (_case, statusCode) => {
+    stubProgramReads(pageRoutes({ [`${PROGRAM_PATH}/submitter`]: new MicroserviceError('Submitter read failed', statusCode, 'UPSTREAM') }));
+
+    const page = await service.getProgramPage(buildReq(), PROGRAM_ID);
+
+    expect(page.submitter).toBeNull();
+    expect(page.program).toMatchObject({ id: PROGRAM_ID, name: 'Grid' });
   });
 
   it('sends the one-row count reads and the largest terms page', async () => {
@@ -609,7 +623,6 @@ const termManagementRow = (id: string, overrides: Record<string, unknown> = {}) 
   program_id: PROGRAM_ID,
   name: 'Fall',
   status: 'open',
-  active_users: 1,
   created_on: '2026-01-01T00:00:00Z',
   updated_on: '2026-01-02T00:00:00Z',
   pending: 1,
@@ -766,6 +779,17 @@ describe('MentorshipAdminService.inviteProgramMentor', () => {
     expect(spy.mock.calls[0][2]).toBe(`${PROGRAM_PATH}/members`);
     expect(spy.mock.calls[0][3]).toBe('POST');
     expect(spy.mock.calls[0][5]).toEqual({ lfid: 'ada', member_type: 'mentor' });
+  });
+
+  it('posts an email in the body only, with no LFID, and never in the path', async () => {
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ id: 'mem_2', status: 'invited' } as never);
+
+    const memberId = await service.inviteProgramMentor(buildReq(), PROGRAM_ID, { email: 'new.mentor@example.org' });
+
+    expect(memberId).toBe('mem_2');
+    expect(spy.mock.calls[0][2]).toBe(`${PROGRAM_PATH}/members`);
+    expect(spy.mock.calls[0][4]).toBeUndefined();
+    expect(spy.mock.calls[0][5]).toEqual({ email: 'new.mentor@example.org', member_type: 'mentor' });
   });
 
   it.each([409, 422, 503])('passes an upstream %s on', async (status) => {
@@ -983,7 +1007,6 @@ describe('MentorshipAdminService term writes', () => {
     program_id: PROGRAM_ID,
     name: 'Fall 2026',
     status: 'open',
-    active_users: 0,
     created_on: '2026-06-01',
     updated_on: '2026-06-01',
   };

@@ -1,8 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
-<div class="flex flex-col gap-4" data-testid="non-members-conversion">
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[16px]" data-testid="non-members-conversion">
   @if (loadFailed()) {
     <lfx-empty-state
       variant="compact"
@@ -10,60 +10,82 @@
       title="Conversion opportunity unavailable"
       subtitle="We could not load the conversion opportunity for this foundation. Refresh the page to try again."
       data-testid="non-members-conversion-error" />
-  } @else if (loading()) {
-    <p-skeleton height="18rem" borderRadius="0.5rem" data-testid="non-members-conversion-loading" aria-hidden="true" />
   } @else if (!empty()) {
-    <span class="self-end rounded-full bg-blue-50 px-2.5 py-0.5 text-[12px] text-blue-700" data-testid="non-members-conversion-summary">{{
-      view().summary
-    }}</span>
-
-    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="non-members-conversion-hero">
-      <div class="flex flex-col gap-2" data-testid="non-members-conversion-pipeline">
-        <span
-          class="text-[24px] font-semibold leading-[1.2] tabular-nums"
-          [class.text-gray-900]="view().hasEstimate"
-          [class.text-gray-400]="!view().hasEstimate"
-          data-testid="non-members-conversion-pipeline-value"
-          >{{ view().pipelineValue }}</span
-        >
-        <span class="text-[12px] text-gray-500" data-testid="non-members-conversion-pipeline-label">{{ view().pipelineLabel }}</span>
-      </div>
-
-      <dl class="flex flex-wrap gap-7 pt-1" data-testid="non-members-conversion-side">
-        @for (stat of view().side; track stat.key) {
-          <div class="flex flex-col gap-0.5" [attr.data-testid]="'non-members-conversion-side-' + stat.key">
-            <dt class="text-[12px] text-gray-500">{{ stat.label }}</dt>
-            <dd
-              class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900"
-              [attr.data-testid]="'non-members-conversion-side-' + stat.key + '-value'">
-              {{ stat.value }}
-            </dd>
+    @if (loading()) {
+      <!-- The metrics row's own shape while it loads: three items, a label over a value, two per row on phones. -->
+      <div class="grid grid-cols-3 border-y border-gray-200 max-[640px]:grid-cols-2" aria-hidden="true" data-testid="non-members-conversion-loading-metrics">
+        @for (placeholder of metricPlaceholders; track placeholder) {
+          <div class="flex flex-col gap-[8px] py-[18px] pr-[24px]">
+            <p-skeleton width="6rem" height="0.9rem" />
+            <p-skeleton width="5rem" height="2.2rem" />
           </div>
         }
-      </dl>
-    </div>
+      </div>
+    } @else {
+      <lfx-health-metrics-metrics-row [items]="view().metrics" testId="non-members-conversion-metrics" />
+    }
 
-    <!-- Unmeasured has no high-fit set, so an empty list here would claim zero. -->
-    @if (view().measured) {
-      <div class="flex flex-col gap-3" data-testid="non-members-conversion-warmest">
-        <div class="flex flex-wrap items-baseline justify-between gap-2">
-          <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Warmest organizations</h4>
-          <span class="text-[12px] text-gray-400">attend meetings and contribute</span>
-        </div>
-        @if (view().warmest.length === 0) {
-          <p class="text-[13px] text-gray-500" data-testid="non-members-conversion-warmest-empty">No high-fit organization in the selected period.</p>
-        } @else {
-          <ul class="flex flex-col gap-[8px]">
-            @for (row of view().warmest; track row.accountId; let index = $index) {
-              <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-[16px]" [attr.data-testid]="'non-members-conversion-warm-' + index">
-                <span class="min-w-0 break-words text-gray-600">{{ row.label }}</span>
-                <span class="shrink-0 tabular-nums text-gray-900" [attr.data-testid]="'non-members-conversion-warm-' + index + '-value'">{{
-                  row.valueLabel
-                }}</span>
-              </li>
-            }
-          </ul>
-        }
+    <!-- No table empty state: with no active company there is nothing to rank, so the sub-heading and table drop out. The
+         table stays mounted while loading, for its own placeholder rows. -->
+    @if (loading() || warmestRows().length) {
+      <div class="flex flex-col gap-[10px]" data-testid="non-members-conversion-warmest">
+        <h3 class="m-0 mt-[4px] text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500">Warmest companies</h3>
+        <!-- The design's 520px minimum; a narrower card scrolls the table sideways. -->
+        <lfx-table
+          styleClass="hm-table"
+          [rowHover]="false"
+          [value]="warmestRows()"
+          [loading]="loading()"
+          [paginator]="false"
+          [tableStyle]="{ 'min-width': '520px' }"
+          data-testid="non-members-conversion-warmest-table">
+          <ng-template #header>
+            <tr>
+              <th scope="col" [attr.aria-sort]="sorting.headers().company.ariaSort">
+                <lfx-health-metrics-th
+                  label="Company"
+                  [sort]="sorting.headers().company.state"
+                  (sorted)="sorting.toggle('company')"
+                  data-testid="non-members-conversion-sort-company" />
+              </th>
+              <!-- Exact %: the design's 0.8 / 0.6 shares of its 3.4fr row, Company taking the rest; exact px: its column minimums. -->
+              <th scope="col" class="w-[24%] min-w-[130px]" [attr.aria-sort]="sorting.headers().meetings.ariaSort">
+                <lfx-health-metrics-th
+                  label="Meetings attended"
+                  [sort]="sorting.headers().meetings.state"
+                  (sorted)="sorting.toggle('meetings')"
+                  data-testid="non-members-conversion-sort-meetings" />
+              </th>
+              <th scope="col" class="w-[18%] min-w-[110px]" [attr.aria-sort]="sorting.headers().contributions.ariaSort">
+                <lfx-health-metrics-th
+                  label="Contributions"
+                  [tip]="contributionsTip"
+                  [sort]="sorting.headers().contributions.state"
+                  (sorted)="sorting.toggle('contributions')"
+                  data-testid="non-members-conversion-sort-contributions" />
+              </th>
+            </tr>
+          </ng-template>
+
+          <ng-template #body let-row>
+            <tr [attr.data-testid]="'non-members-conversion-warm-' + row.accountId">
+              <td>
+                <lfx-health-metrics-cell
+                  [text]="row.accountName"
+                  [lead]="{ kind: 'company', name: row.accountName, logoUrl: row.logoUrl }"
+                  [attr.data-testid]="'non-members-conversion-warm-' + row.accountId + '-name'" />
+              </td>
+              <td>
+                <lfx-health-metrics-cell [text]="row.meetingsLabel" [attr.data-testid]="'non-members-conversion-warm-' + row.accountId + '-meetings'" />
+              </td>
+              <td>
+                <lfx-health-metrics-cell
+                  [text]="row.contributionsLabel"
+                  [attr.data-testid]="'non-members-conversion-warm-' + row.accountId + '-contributions'" />
+              </td>
+            </tr>
+          </ng-template>
+        </lfx-table>
       </div>
     }
   }

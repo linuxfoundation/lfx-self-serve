@@ -3,14 +3,14 @@ title: Profile FAQ
 description: Frequently asked questions about your personal profile and public profile in LFX Self Serve.
 audience: [all]
 product_area: Profile
-tags: [profile, faq, about-me, photo, public-profile, visibility, lfid, username, linux foundation id]
-last_updated: 2026-11-06
+tags: [profile, faq, about-me, photo, public-profile, visibility, lfid, username, linux foundation id, search]
+last_updated: 2026-11-16
 intercom_collection: Profile
 ---
 
 ## Where do I edit my profile details?
 
-Open [**Profile & Account**](/profile) and select **Edit profile** in the profile panel on the right. A drawer opens where you can update your About Me, name, photo, job title, organization, primary email, location, and t-shirt size. Select **Save Changes** when done. Two of these are exceptions that save immediately when you make them — uploading a **photo** and choosing a **primary email** — so **Cancel** will not revert those two. See [Edit your profile](../edit-profile/).
+Open [**Profile & Account**](/profile) and select **Edit profile** in the profile panel on the right. A drawer opens where you can update your About Me, name, photo, job title, company, primary email, location, and t-shirt size. Select **Save Changes** when done. Two of these are exceptions that save immediately when you make them — uploading a **photo** and choosing a **primary email** — so **Cancel** will not revert those two. See [Edit your profile](../edit-profile/).
 
 ## What is my LFID, and where do I find it?
 
@@ -37,6 +37,10 @@ Your profile is private by default. Open [**Profile & Account**](/profile), sele
 ## Do I need a public profile to see my own contributions?
 
 No. Your contributions appear under **Project Involvement** on the **Work history & Affiliations** tab (`/profile/attributions`) whether your profile is public or private. **Profile visibility** and the section toggles in **Public profile settings** only control what visitors see at `app.lfx.dev/u/<username>`. If your contributions are missing there too, see [Why don't my GitHub contributions show up?](../../account/faq/#why-don-t-my-github-contributions-show-up).
+
+## Can I search for another person's profile?
+
+No. LFX Self Serve has no search for other people's profiles by name, email address, or GitHub username. If you know someone's LF username and their profile is public, you can open it at `app.lfx.dev/u/<username>`. A private profile shows a **Private Profile** message instead of its content. See [Your public profile](../public-profile/).
 
 ## My name is displaying incorrectly. How do I fix it?
 

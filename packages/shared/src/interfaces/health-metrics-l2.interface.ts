@@ -113,6 +113,8 @@ export interface HealthMetricsChartTipRowView {
   color: string | null;
   /** A rule above the row. */
   separated: boolean;
+  /** "Label: value" on one line with a semibold value, in place of the label and value at either end. */
+  inline?: boolean;
 }
 
 /** The shared chart popup: a title over label–value rows. */
@@ -150,6 +152,7 @@ export interface HealthMetricsMetricItem {
   description?: string;
   /** Coloured lead before the description, such as `+{N}%`. */
   descriptionLead?: string;
-  descriptionLeadTone?: 'up' | 'down';
+  /** `flat` greys a change too small to show, which is not movement. */
+  descriptionLeadTone?: 'up' | 'down' | 'flat';
   bar?: HealthMetricsMetricBar;
 }

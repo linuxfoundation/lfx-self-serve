@@ -404,6 +404,26 @@ describe('MentorshipMentorService mentor requests', () => {
     expect(JSON.stringify((failure as InstanceType<typeof MicroserviceError>).getLogContext())).not.toContain('SECRET');
   });
 
+  it('reads the invite with the token escaped into the path and returns the trimmed program id and name', async () => {
+    proxyRequest.mockResolvedValueOnce({ program_id: ' prog-1 ', program_name: ' Open Source Mentorship ' });
+
+    await expect(service.getMentorInvite(buildReq(), 'payload.sig-_')).resolves.toEqual({ programId: 'prog-1', programName: 'Open Source Mentorship' });
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/mentor-invites/payload.sig-_', 'GET', undefined, undefined);
+  });
+
+  it('keeps the invite token out of the path a failed read logs', async () => {
+    const token = 'payload.SECRET-sig';
+    const path = `/mentorship/v1/mentor-invites/${token}`;
+    proxyRequest.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { error: 'forbidden' }, 'LFX_V2_SERVICE', path, `get_${path.replace(/\//g, '_')}`)
+    );
+
+    const failure = await service.getMentorInvite(buildReq(), token).catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ statusCode: 403, path: '/mentorship/v1/mentor-invites/redacted' });
+    expect(JSON.stringify((failure as InstanceType<typeof MicroserviceError>).getLogContext())).not.toContain('SECRET');
+  });
+
   it('keeps the invite token out of the provisioning log for a first-time user', async () => {
     const token = 'payload.SECRET-sig';
     proxyRequest.mockRejectedValueOnce(upstreamError(401, { error: 'local user is not provisioned' }));
@@ -1166,6 +1186,16 @@ describe('MentorshipMentorService.reviewMenteeTask', () => {
     await expect(service.reviewMenteeTask(buildReq(), TASK_ID, status)).resolves.toBeUndefined();
     expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', TASK_PATH, 'GET', undefined, undefined);
     expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', REVIEW_PATH, 'PATCH', undefined, { status });
+  });
+
+  it('sends the reason with a request for changes', async () => {
+    proxyRequest.mockResolvedValueOnce(task('submitted')).mockResolvedValueOnce(task('incomplete'));
+
+    await expect(service.reviewMenteeTask(buildReq(), TASK_ID, 'incomplete', 'Add tests.')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', REVIEW_PATH, 'PATCH', undefined, {
+      status: 'incomplete',
+      reason: 'Add tests.',
+    });
   });
 
   it.each([

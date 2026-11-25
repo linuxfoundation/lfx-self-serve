@@ -30,6 +30,7 @@ import {
   MyPendingApplication,
   PaginatedResponse,
   QueryServiceCountResponse,
+  UpdateDocumentRequest,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
 import { catchError, map, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
@@ -143,8 +144,17 @@ export class CommitteeService {
    * still observe a stale result. Mirrors MeetingService.getMeetingDetail. `auditor: true` adds the
    * caller-scoped `committee#auditor` boolean (GH-2407) and caches under an `:aud`-suffixed key so the
    * payload never replays to a caller that didn't ask for it; writes evict both variants.
+   * `strictWriter: true` asks the BFF to fail rather than degrade `writer` to `false` when the access
+   * check cannot complete (#5731). That read always goes to the network and never touches the cache, so a
+   * transient failure cannot replay and an access probe never replaces an ordinary cached payload.
    */
-  public getCommitteeDetail(id: string, options?: { skipCache?: boolean; auditor?: boolean }): Observable<Committee> {
+  public getCommitteeDetail(id: string, options?: { skipCache?: boolean; auditor?: boolean; strictWriter?: boolean }): Observable<Committee> {
+    if (options?.strictWriter) {
+      const strictParams = new HttpParams().set('strict_writer', 'true');
+      return this.http.get<Committee>(`/api/committees/${encodeURIComponent(id)}`, {
+        params: options.auditor ? strictParams.set('auditor', 'true') : strictParams,
+      });
+    }
     const cacheKey = options?.auditor ? `${id}:aud` : id;
     const cached = this.lookupCommitteeDetailCache(cacheKey);
     if (!options?.skipCache && cached && Date.now() - cached.cachedAt < COMMITTEE_DETAIL_CACHE_TTL_MS) {
@@ -156,7 +166,8 @@ export class CommitteeService {
     const params = options?.auditor ? new HttpParams().set('auditor', 'true') : undefined;
     // Preserve the single-argument call shape when no params apply — existing callers (and their
     // cache-key/test expectations) pass no options object at all.
-    const get$ = params ? this.http.get<Committee>(`/api/committees/${id}`, { params }) : this.http.get<Committee>(`/api/committees/${id}`);
+    const url = `/api/committees/${encodeURIComponent(id)}`;
+    const get$ = params ? this.http.get<Committee>(url, { params }) : this.http.get<Committee>(url);
     const request$ = get$.pipe(
       tap({
         next: (committee) => this.aliasCommitteeDetailCache(cacheKey, committee),
@@ -201,7 +212,7 @@ export class CommitteeService {
   /**
    * Fetches a committee by ID without updating shared service state. Shares the short-TTL
    * detail cache via {@link getCommitteeDetail} so tap-free probes (writerGuard, committee
-   * sub-pages, meeting-manage's committee check) don't duplicate an in-flight detail fetch.
+   * sub-pages) don't duplicate an in-flight detail fetch.
    */
   public fetchCommittee(id: string): Observable<Committee> {
     return this.getCommitteeDetail(id);
@@ -342,6 +353,13 @@ export class CommitteeService {
     );
   }
 
+  /** Withdraws the caller's own pending application; {@link submitApplication} reopens the same record. */
+  public withdrawApplication(committeeId: string, applicationId: string): Observable<CommitteeJoinApplication> {
+    return this.http
+      .post<CommitteeJoinApplication>(`/api/committees/${encodeURIComponent(committeeId)}/applications/${encodeURIComponent(applicationId)}/withdraw`, null)
+      .pipe(take(1));
+  }
+
   /** Lists join applications for a committee (from query index). */
   public getCommitteeApplications(committeeId: string): Observable<CommitteeJoinApplication[]> {
     return this.http.get<CommitteeJoinApplication[]>(`/api/committees/${committeeId}/applications`).pipe(take(1));
@@ -434,6 +452,22 @@ export class CommitteeService {
     return this.http.delete<void>(`/api/committees/${committeeId}/documents/${documentId}`, { params }).pipe(take(1));
   }
 
+  /**
+   * Renames and/or moves a group folder, link or uploaded file. `parent_uid: null` moves it to the root; a field left out is
+   * left as it is. The BFF answers 409 when another document in the group already has the name.
+   */
+  public updateCommitteeDocument(
+    committeeId: string,
+    documentId: string,
+    documentType: CommitteeDocumentType,
+    changes: UpdateDocumentRequest
+  ): Observable<CommitteeDocument> {
+    const params = new HttpParams().set('type', documentType);
+    return this.http
+      .patch<CommitteeDocument>(`/api/committees/${encodeURIComponent(committeeId)}/documents/${encodeURIComponent(documentId)}`, changes, { params })
+      .pipe(take(1));
+  }
+
   // ── My Committees ─────────────────────────────────────────────────────────
 
   /**
@@ -459,6 +493,11 @@ export class CommitteeService {
         return of([]);
       })
     );
+  }
+
+  /** The caller's groups across every project, like {@link getMyCommittees}, but a failed request errors so the caller can show a failure state. */
+  public getMyCommitteesOrError(): Observable<MyCommittee[]> {
+    return this.http.get<MyCommittee[]>('/api/committees/my-committees');
   }
 
   /** Lightweight alternative to {@link getMyCommittees} — returns only UIDs. Use when only set-membership checks (e.g. member badges) are needed. */

@@ -1,0 +1,202 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<lfx-account-card heading="CLAs" testId="account-clas">
+  @if (!loading() && !error() && !isEmpty()) {
+    <lfx-ui-button
+      accountCardActions
+      variant="tertiary-accent"
+      size="small"
+      icon="fa-light fa-file-signature"
+      [loading]="starting()"
+      [disabled]="signDisabled()"
+      [ariaLabel]="signDisabledReason() ?? ''"
+      (click)="openSignDialog()"
+      data-testid="account-clas-sign">
+      Sign CLA
+    </lfx-ui-button>
+  }
+
+  <p accountCardSubtitle class="m-0 mt-[2px] text-pretty text-[12px] leading-[18px] text-ui-neutral-500" data-testid="account-clas-subtitle">
+    {{ gitlabLinkingDisabled ? copy.subtitle : copy.subtitleGitlabOpen }}
+    <a
+      routerLink="/docs/account/my-clas"
+      class="font-medium text-ui-accent-500 hover:underline hover:underline-offset-[3px] focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ui-focus"
+      data-testid="account-clas-learn-more"
+      >Learn more</a
+    >
+  </p>
+
+  @if (error()) {
+    <lfx-ui-empty-state
+      size="small"
+      icon="fa-light fa-triangle-exclamation"
+      heading="Couldn't load your CLAs"
+      description="Something went wrong loading your agreements. Please try again."
+      data-testid="account-clas-error">
+      <lfx-ui-button empty-state-action variant="secondary" icon="fa-light fa-arrow-rotate-left" (click)="retry()" data-testid="account-clas-retry">
+        Retry
+      </lfx-ui-button>
+    </lfx-ui-empty-state>
+  } @else if (loading()) {
+    <div class="flex flex-col gap-[12px]" aria-hidden="true" data-testid="account-clas-loading">
+      @for (line of [1, 2, 3]; track line) {
+        <lfx-ui-skeleton width="100%" height="40px" />
+      }
+    </div>
+  } @else if (isEmpty()) {
+    <lfx-ui-empty-state
+      size="small"
+      icon="fa-light fa-file-signature"
+      [heading]="copy.emptyTitle"
+      [description]="copy.emptyText"
+      data-testid="account-clas-empty">
+      <lfx-ui-button
+        empty-state-action
+        variant="secondary-accent"
+        icon="fa-light fa-file-signature"
+        [loading]="starting()"
+        [disabled]="signDisabled()"
+        [ariaLabel]="signDisabledReason() ?? ''"
+        (click)="openSignDialog()"
+        data-testid="account-clas-empty-sign">
+        Sign CLA
+      </lfx-ui-button>
+      <lfx-ui-button empty-state-action variant="secondary" icon="fa-light fa-fingerprint" [link]="identitiesPath" data-testid="account-clas-empty-identities">
+        Link identities
+      </lfx-ui-button>
+    </lfx-ui-empty-state>
+  } @else {
+    <!-- Narrow screens scroll the table sideways from 640px. -->
+    <lfx-ui-table class="[&_table]:min-w-[640px]" label="CLAs" rowKey="id" [columns]="columns" [rows]="tableRows()" data-testid="account-clas-table">
+      <ng-template lfxUiTableCell="project" let-row>
+        @if (row.cla; as cla) {
+          <span class="flex min-w-0 flex-row items-center gap-[12px]" [attr.data-testid]="'account-clas-project-' + cla.row.id">
+            <span class="grid h-[28px] w-[28px] flex-none place-items-center overflow-hidden rounded-ui-xs bg-ui-background-100 shadow-small">
+              @if (cla.row.agreement.projectLogo) {
+                <img [src]="cla.row.agreement.projectLogo" alt="" loading="lazy" class="h-full w-full object-contain" />
+              } @else {
+                <i class="fa-light fa-file-signature text-[12px] text-ui-neutral-400" aria-hidden="true"></i>
+              }
+            </span>
+            <span class="flex min-w-0 flex-col">
+              <span class="font-medium">{{ cla.row.agreement.projectName || cla.row.agreement.claGroupName }}</span>
+              @if (cla.row.agreement.projectName && cla.row.agreement.claGroupName) {
+                <span class="text-[12px] leading-[16px] text-ui-neutral-500">{{ cla.row.agreement.claGroupName }}</span>
+              }
+            </span>
+          </span>
+        }
+      </ng-template>
+
+      <ng-template lfxUiTableCell="type" let-row>
+        @if (row.cla; as cla) {
+          <!-- A long company name ends in an ellipsis inside the badge; the title shows it whole. -->
+          <lfx-ui-badge
+            variant="outline"
+            size="sm"
+            class="max-w-full [&_span]:truncate"
+            [attr.title]="cla.typeLabel"
+            [attr.data-testid]="'account-clas-type-' + cla.row.id">
+            <span>{{ cla.typeLabel }}</span>
+          </lfx-ui-badge>
+        }
+      </ng-template>
+
+      <ng-template lfxUiTableCell="status" let-row>
+        @if (row.cla; as cla) {
+          <span class="flex min-w-0 flex-col items-start gap-[2px]" [attr.data-testid]="'account-clas-status-' + cla.row.id">
+            @if (cla.row.status.plainText) {
+              <span class="text-ui-neutral-600">{{ cla.row.status.label }}</span>
+            } @else {
+              <lfx-ui-badge [tone]="cla.statusTone" size="sm">{{ cla.row.status.label }}</lfx-ui-badge>
+            }
+            @if (cla.row.status.note) {
+              <span class="max-w-full text-[12px] leading-[16px] text-ui-neutral-500">{{ cla.row.status.note }}</span>
+            }
+          </span>
+        }
+      </ng-template>
+
+      <ng-template lfxUiTableCell="signed" let-row>
+        @if (row.cla; as cla) {
+          <span class="flex min-w-0 flex-col" [attr.data-testid]="'account-clas-signed-' + cla.row.id">
+            <span>{{ cla.row.signedOnLabel }}</span>
+            @if (cla.row.signedAsLine) {
+              <span class="text-[12px] leading-[16px] text-ui-neutral-500">{{ cla.row.signedAsLine }}</span>
+            }
+          </span>
+        }
+      </ng-template>
+
+      <ng-template lfxUiTableCell="actions" let-row>
+        @if (row.cla; as cla) {
+          @if (cla.hasActions) {
+            <span class="flex justify-end">
+              <lfx-ui-button
+                variant="tertiary"
+                icon="fa-light fa-ellipsis"
+                iconOnly
+                [loading]="downloadingId() === cla.row.id"
+                [ariaLabel]="'More actions for ' + (cla.row.agreement.projectName || cla.row.agreement.claGroupName)"
+                [menu]="rowMenu"
+                menuAlign="end"
+                [attr.data-testid]="'account-clas-menu-' + cla.row.id" />
+              <ng-template #rowMenu>
+                <lfx-ui-menu ariaLabel="CLA actions">
+                  @if (cla.actions.download) {
+                    <lfx-ui-menu-item icon="fa-light fa-download" (triggered)="onDownload(cla.row.agreement)" data-testid="account-clas-download">
+                      Download PDF
+                    </lfx-ui-menu-item>
+                  }
+                  @if (cla.actions.requestApproval) {
+                    <lfx-ui-menu-item
+                      icon="fa-light fa-circle-check"
+                      [disabled]="impersonating()"
+                      disabledReason="Unavailable while impersonating another user"
+                      (triggered)="openRequest(cla.row.agreement, 'approval')"
+                      data-testid="account-clas-request-approval">
+                      Request CCLA approval
+                    </lfx-ui-menu-item>
+                  }
+                  @if (cla.actions.requestRemoval) {
+                    <lfx-ui-menu-item
+                      icon="fa-light fa-user-slash"
+                      [disabled]="impersonating()"
+                      disabledReason="Unavailable while impersonating another user"
+                      (triggered)="openRequest(cla.row.agreement, 'removal')"
+                      data-testid="account-clas-request-removal">
+                      Request removal from CCLA
+                    </lfx-ui-menu-item>
+                  }
+                  @if (cla.actions.contact) {
+                    <lfx-ui-menu-item
+                      icon="fa-light fa-address-book"
+                      [disabled]="impersonating()"
+                      disabledReason="Unavailable while impersonating another user"
+                      (triggered)="openRequest(cla.row.agreement, 'contact')"
+                      data-testid="account-clas-contact">
+                      Contact CLA manager
+                    </lfx-ui-menu-item>
+                  }
+                </lfx-ui-menu>
+              </ng-template>
+            </span>
+          }
+        }
+      </ng-template>
+    </lfx-ui-table>
+
+    <p class="m-0 flex flex-row flex-wrap items-center text-[12px] leading-[16px] text-ui-neutral-600" data-testid="account-clas-footer">
+      <i class="fa-light fa-eyes mr-[6px] text-[12px]" aria-hidden="true"></i>
+      Missing one?&nbsp;
+      <a
+        [routerLink]="identitiesPath"
+        class="font-medium text-ui-accent-500 hover:underline hover:underline-offset-[3px] focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ui-focus"
+        data-testid="account-clas-footer-link"
+        >{{ gitlabLinkingDisabled ? copy.footerLink : copy.footerLinkGitlabOpen }}</a
+      >
+    </p>
+  }
+</lfx-account-card>

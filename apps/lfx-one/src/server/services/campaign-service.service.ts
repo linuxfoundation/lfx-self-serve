@@ -37,11 +37,13 @@ import {
   googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
+  CREATIVE_ASSET_VIDEO_MIME_TYPE,
   isCreativeAssetMimeType,
   isGoogleAdsServableUrl,
   JOB_LOST_MESSAGE,
   MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+  LINKEDIN_AD_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
@@ -85,6 +87,12 @@ import type {
   CampaignServiceGoogleAdsGeoTargetSuggestions,
   CampaignServiceGoogleAdsAudiences,
   CampaignServiceGoogleAdsUserLists,
+  CampaignServiceMetaCustomAudiences,
+  CampaignServiceLinkedInAudiences,
+  CampaignServiceLinkedInConversions,
+  LinkedInTargetingSearchFacet,
+  CampaignServiceMetaLeadForms,
+  CampaignServiceLinkedInAdsCreateAccount,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
   CampaignSendWorkflowRequest,
@@ -108,6 +116,7 @@ import type {
   CampaignToggleStatus,
   CreativeAssetLibrary,
   CreativeAssetMimeType,
+  CreativeAssetUploadMimeType,
   CreativeAssetPlan,
   CreativeAssetUploadResult,
   CreativeSlotAssignment,
@@ -118,6 +127,7 @@ import type {
   HubSpotMarketingEmail,
   KeywordActionPlatform,
   LinkedInBriefCopy,
+  LinkedInCreateAccountRead,
   ListAudiencesResult,
   LinkedInCreativeVariant,
   MetaAdVariant,
@@ -127,6 +137,10 @@ import type {
   RedditAdVariant,
   RedditBriefCopy,
   StoredCreativeAsset,
+  StoredCreativeVideo,
+  CampaignServiceLinkedInTargetingEntities,
+  CampaignServiceMetaTargetingSearch,
+  MetaTargetingSearchType,
 } from '@lfx-one/shared/interfaces';
 import { MULTI_CAMPAIGN_PLATFORMS_ENV } from '../constants/campaign-multi.constants';
 import type { Request } from 'express';
@@ -702,6 +716,15 @@ export function canSetRedditConversionPixel(): boolean {
 }
 
 /**
+ * Whether a Reddit `conversions` create may carry `conversionEvent` (#6108 row 2, campaign-service #549). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT`, which follows campaign-service's
+ * own `REDDIT_CONVERSION_EVENT_ENABLED`: campaign-service refuses the field while that is off, and the legacy creator ignores it.
+ */
+export function canSetRedditConversionEvent(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditConversionEvent);
+}
+
+/**
  * Whether a Google create may reference uploaded images by asset id.
  *
  * Needs the campaign-service create path to serve the create AND the Google-assets flag. Unlike its
@@ -751,6 +774,128 @@ export function canUseLinkedInCreativeAssets(): boolean {
 }
 
 /**
+ * campaign-service's `get-linkedin-ads-create-account` answer (#581), checked and camel-cased. An unreadable
+ * default fails with 502 rather than naming an account the create does not use; a grant whose id is not the
+ * bare account number `adAccountId` takes, the default repeated, or a repeat is dropped rather than offered.
+ */
+export function toLinkedInCreateAccount(payload: CampaignServiceLinkedInAdsCreateAccount, operation: string): LinkedInCreateAccountRead {
+  if (typeof payload?.account_id !== 'string' || !LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(payload.account_id) || !Array.isArray(payload.selectable_accounts)) {
+    throw new MicroserviceError('campaign-service returned an unreadable LinkedIn create account.', 502, 'BAD_GATEWAY', {
+      operation,
+      service: 'campaign_service_client',
+    });
+  }
+  const label = (value: unknown, accountId: string): string => (typeof value === 'string' && value.trim() !== '' ? value : accountId);
+  const grants = payload.selectable_accounts
+    .filter(
+      (a, i, all) =>
+        typeof a?.account_id === 'string' &&
+        LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(a.account_id) &&
+        a.account_id !== payload.account_id &&
+        all.findIndex((other) => other?.account_id === a.account_id) === i
+    )
+    .map((a) => ({ accountId: a.account_id, orgId: typeof a.org_id === 'string' ? a.org_id : '', label: label(a.label, a.account_id), isDefault: false }));
+  return {
+    defaultAccount: {
+      accountId: payload.account_id,
+      orgId: typeof payload.org_id === 'string' ? payload.org_id : '',
+      label: label(payload.label, payload.account_id),
+      isDefault: true,
+    },
+    grants,
+    selectionEnabled: payload.account_selection_enabled === true,
+    source: payload.source === 'project' ? 'project' : 'system',
+  };
+}
+
+/**
+ * Whether a LinkedIn create may name its ad account in `linkedInConfig.adAccountId` (#5809), and
+ * whether `GET /api/campaigns/linkedin/create-account` answers.
+ *
+ * Needs the campaign-service create path AND the account-selection flag. The legacy creator reads
+ * the account from the mounted `linkedin.json`, which is unrelated to the project's connection, so
+ * with the cutover dark the field keeps being dropped. Whether a choice is actually offered also
+ * depends on campaign-service (`account_selection_enabled`) and on the caller holding
+ * `global_marketing_ops`; the controller decides those per request.
+ */
+export function canChooseLinkedInAdAccount(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInAccountSelection);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.targeting` (#5905), and whether
+ * `GET /api/campaigns/meta/custom-audiences` answers. Needs the campaign-service create path AND the
+ * audience-targeting flag: the legacy creator never reads the block. Whether the caller may name custom
+ * audiences (`global_marketing_ops`) the controller decides per request.
+ */
+export function canSetMetaAudienceTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaAudienceTargeting);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal` (#5934),
+ * one flag each, each also needing the campaign-service create path: the legacy creator never reads them.
+ */
+export function canSetMetaCallToAction(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaCallToAction);
+}
+export function canSetMetaConversionEvent(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaConversionEvent);
+}
+export function canSetMetaOptimizationGoal(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaOptimizationGoal);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.leadFormId`, and whether `GET /api/campaigns/meta/lead-forms`
+ * answers (#5940). Needs the campaign-service create path AND the lead-form flag: the legacy creator never
+ * reads the form. Whether the caller may use forms (`global_marketing_ops`) the controller decides per request.
+ */
+export function canSetMetaLeadForm(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaLeadForms);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.targeting.interests`, `behaviors` with `workPositions`, and
+ * `locales` (#5904 row 4), one flag each, each also needing the campaign-service create path.
+ */
+export function canSetMetaInterestTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaInterestTargeting);
+}
+export function canSetMetaBehaviorTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaBehaviorTargeting);
+}
+export function canSetMetaLocaleTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaLocaleTargeting);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.targeting.devicePlatforms` and `userOs` (#5904 row 6), one flag each,
+ * each also needing the campaign-service create path: the legacy creator never reads them.
+ */
+export function canSetMetaDeviceTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaDeviceTargeting);
+}
+export function canSetMetaOsTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaOsTargeting);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.adSchedule` and `frequencyCap` (#5904 row 5), one flag each, each also
+ * needing the campaign-service create path: the legacy creator never reads them.
+ */
+export function canSetMetaAdSchedule(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaAdSchedule);
+}
+export function canSetMetaFrequencyCap(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaFrequencyCap);
+}
+/** Whether `GET /api/campaigns/meta/targeting-search` answers: only while interests or behaviors can be sent. */
+export function canSearchMetaTargeting(): boolean {
+  return canSetMetaInterestTargeting() || canSetMetaBehaviorTargeting();
+}
+
+/**
  * Whether a LinkedIn create may carry `linkedInConfig.targetingProfileEdit` (#5546): the selected
  * targeting profile with entries removed.
  *
@@ -762,6 +907,85 @@ export function canUseLinkedInCreativeAssets(): boolean {
  */
 export function canEditLinkedInTargeting(): boolean {
   return cutoverOwnsCreate();
+}
+
+/**
+ * Whether a LinkedIn create may carry `linkedInConfig.dailyCapUsd` (#5774), a daily cap beside a
+ * lifetime budget. `cutoverOwnsCreate()` and nothing else, like `canEditLinkedInTargeting`: only
+ * campaign-service sends the cap (linuxfoundation/lfx-v2-campaign-service#607), and the LEGACY
+ * creator would drop it and spend without the cap.
+ */
+export function canSetLinkedInDailyCap(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
+ * Whether a LinkedIn variant may carry its ad `name` and `description` (#5764 row 17, campaign-service #588, #589).
+ * `cutoverOwnsCreate()` and nothing else, like `canSetLinkedInDailyCap`: campaign-service has taken both since v1.0.38
+ * with no flag of its own, and the LEGACY creator ignores them.
+ */
+export function canSetLinkedInVariantCopy(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
+ * Whether a LinkedIn variant may carry a `callToAction` (#5764 row 16, campaign-service #588). Needs the campaign-service
+ * create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CALL_TO_ACTION`, which follows campaign-service's own
+ * `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED`: campaign-service refuses the field while that is off.
+ */
+export function canSetLinkedInCallToAction(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInCallToAction);
+}
+
+/**
+ * Whether a LinkedIn create may be a Text Ads campaign (#5764 row 19, campaign-service #586). Needs the campaign-service
+ * create path with bidding (`canCreateWithBidding`), since a text create must carry a manual bid, AND
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS`, which follows campaign-service's own `LINKEDIN_ADS_TEXT_ADS_ENABLED`:
+ * campaign-service refuses the format while that is off, and the legacy creator ignores it.
+ */
+export function canSetLinkedInTextAds(): boolean {
+  return canCreateWithBidding() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInTextAds);
+}
+
+/**
+ * Whether a LinkedIn variant may carry a `videoAssetId`, a video ad (#5764 row 18, campaign-service #586). Needs the
+ * LinkedIn creative asset path (`canUseLinkedInCreativeAssets`, which includes the campaign-service create path), since
+ * the video is an asset uploaded to the brief, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO`, which follows
+ * campaign-service's own `LINKEDIN_ADS_VIDEO_ENABLED`: campaign-service refuses the field while that is off, and the
+ * legacy creator ignores it.
+ */
+export function canSetLinkedInVideoAds(): boolean {
+  return canUseLinkedInCreativeAssets() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInVideo);
+}
+
+/**
+ * Whether a LinkedIn create's automatic `bidding` may carry a `targetAmount`, its target cost
+ * (linuxfoundation/lfx-v2-campaign-service#674). Needs bidding (`canCreateWithBidding`, which includes the campaign-service
+ * create path), since the target travels inside `bidding`, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGET_COST`, which
+ * follows campaign-service's own `LINKEDIN_ADS_TARGET_COST_ENABLED`: campaign-service refuses the field while that is off,
+ * and the legacy creator ignores it.
+ */
+export function canSetLinkedInTargetCost(): boolean {
+  return canCreateWithBidding() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInTargetCost);
+}
+
+/**
+ * Whether a LinkedIn create may carry its own `targeting` (#5764 rows 8–11, campaign-service #552). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING`, which follows campaign-service's own
+ * `LINKEDIN_ADS_TARGETING_ENABLED`: campaign-service refuses the field while that is off, and the legacy creator ignores it.
+ */
+export function canSetLinkedInTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInTargeting);
+}
+
+/**
+ * Whether a LinkedIn create may carry `objective` and `conversions` (#5764 rows 2 and 4, campaign-service #552, #582).
+ * Needs the campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS`, which follows
+ * campaign-service's own `LINKEDIN_ADS_CONVERSIONS_ENABLED`: campaign-service refuses `conversions` while that is off, and
+ * the legacy creator ignores both. Bidding plays no part: only a manual bid needs it, and `bidding` is gated on its own.
+ */
+export function canSetLinkedInConversions(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInConversions);
 }
 
 /**
@@ -802,6 +1026,40 @@ export function canUseMicrosoftCreativeAssets(): boolean {
  * asset stored before it has none. A fabricated 0 would read to a slot matcher as "fails every
  * minimum", which is a different and wrong answer, so an absent or unusable value stays absent.
  */
+/** Raw bytes base64-encoded per chunk: a multiple of 3, so each chunk's encoding ends without padding and they join. */
+const UPLOAD_BASE64_CHUNK_BYTES = 3 * 256 * 1024;
+
+/**
+ * The `upload-creative-asset` JSON body, `{"content_type":…,"bytes":"<base64>"}`, written straight into one buffer of its
+ * final size. A 30 MiB video (#5764 row 18) would otherwise sit in memory four times over (the bytes, the base64 string,
+ * the JSON string and its UTF-8 buffer); this holds the bytes and the body, and one chunk's string at a time.
+ */
+export function creativeAssetUploadBody(contentType: CreativeAssetUploadMimeType, bytes: Buffer): Buffer {
+  const head = Buffer.from(`{"content_type":${JSON.stringify(contentType)},"bytes":"`, 'utf8');
+  const tail = Buffer.from('"}', 'utf8');
+  const encodedLength = Math.ceil(bytes.byteLength / 3) * 4;
+  const body = Buffer.allocUnsafe(head.byteLength + encodedLength + tail.byteLength);
+  let offset = head.copy(body, 0);
+  for (let start = 0; start < bytes.byteLength; start += UPLOAD_BASE64_CHUNK_BYTES) {
+    offset += body.write(bytes.subarray(start, start + UPLOAD_BASE64_CHUNK_BYTES).toString('base64'), offset, 'latin1');
+  }
+  tail.copy(body, offset);
+  return body;
+}
+
+/** A stored MP4 as the library lists it (#5764 row 18), or `null` when the entry is not one of this brief's. */
+function toStoredCreativeVideo(asset: CampaignServiceCreativeAsset | undefined, briefId: string): StoredCreativeVideo | null {
+  const usable =
+    typeof asset?.id === 'string' &&
+    asset.id.length > 0 &&
+    typeof asset.brief_id === 'string' &&
+    asset.brief_id.toLowerCase() === briefId.toLowerCase() &&
+    typeof asset.byte_size === 'number' &&
+    Number.isFinite(asset.byte_size) &&
+    typeof asset.checksum === 'string';
+  return usable ? { id: asset.id, byteSize: asset.byte_size, checksum: asset.checksum } : null;
+}
+
 function toStoredCreativeAsset(asset: CampaignServiceCreativeAsset | undefined, briefId: string): StoredCreativeAsset | null {
   const usable =
     typeof asset?.id === 'string' &&
@@ -983,16 +1241,37 @@ export class CampaignServiceClient {
         redditCreativeEnabled: canCreateRedditCreative(),
         redditAssetUploadEnabled: canUseRedditCreativeAssets(),
         redditConversionPixelEnabled: canSetRedditConversionPixel(),
+        redditConversionEventEnabled: canSetRedditConversionEvent(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
         linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
         linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
+        linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
+        linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
+        linkedInVariantCopyEnabled: canSetLinkedInVariantCopy(),
+        linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
+        linkedInTextAdsEnabled: canSetLinkedInTextAds(),
+        linkedInVideoAdsEnabled: canSetLinkedInVideoAds(),
+        linkedInTargetCostEnabled: canSetLinkedInTargetCost(),
+        linkedInTargetingEnabled: canSetLinkedInTargeting(),
+        linkedInConversionsEnabled: canSetLinkedInConversions(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
         twitterCreateEnabled: canCreateTwitter(),
         metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
+        metaAudienceTargetingEnabled: canSetMetaAudienceTargeting(),
+        metaCallToActionEnabled: canSetMetaCallToAction(),
+        metaConversionEventEnabled: canSetMetaConversionEvent(),
+        metaOptimizationGoalEnabled: canSetMetaOptimizationGoal(),
+        metaInterestTargetingEnabled: canSetMetaInterestTargeting(),
+        metaBehaviorTargetingEnabled: canSetMetaBehaviorTargeting(),
+        metaLocaleTargetingEnabled: canSetMetaLocaleTargeting(),
+        metaDeviceTargetingEnabled: canSetMetaDeviceTargeting(),
+        metaOsTargetingEnabled: canSetMetaOsTargeting(),
+        metaAdScheduleEnabled: canSetMetaAdSchedule(),
+        metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
         googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -1055,16 +1334,37 @@ export class CampaignServiceClient {
       redditCreativeEnabled: canCreateRedditCreative(),
       redditAssetUploadEnabled: canUseRedditCreativeAssets(),
       redditConversionPixelEnabled: canSetRedditConversionPixel(),
+      redditConversionEventEnabled: canSetRedditConversionEvent(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
       linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
       linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
+      linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
+      linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
+      linkedInVariantCopyEnabled: canSetLinkedInVariantCopy(),
+      linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
+      linkedInTextAdsEnabled: canSetLinkedInTextAds(),
+      linkedInVideoAdsEnabled: canSetLinkedInVideoAds(),
+      linkedInTargetCostEnabled: canSetLinkedInTargetCost(),
+      linkedInTargetingEnabled: canSetLinkedInTargeting(),
+      linkedInConversionsEnabled: canSetLinkedInConversions(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
       twitterCreateEnabled: canCreateTwitter(),
       metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
+      metaAudienceTargetingEnabled: canSetMetaAudienceTargeting(),
+      metaCallToActionEnabled: canSetMetaCallToAction(),
+      metaConversionEventEnabled: canSetMetaConversionEvent(),
+      metaOptimizationGoalEnabled: canSetMetaOptimizationGoal(),
+      metaInterestTargetingEnabled: canSetMetaInterestTargeting(),
+      metaBehaviorTargetingEnabled: canSetMetaBehaviorTargeting(),
+      metaLocaleTargetingEnabled: canSetMetaLocaleTargeting(),
+      metaDeviceTargetingEnabled: canSetMetaDeviceTargeting(),
+      metaOsTargetingEnabled: canSetMetaOsTargeting(),
+      metaAdScheduleEnabled: canSetMetaAdSchedule(),
+      metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -2447,11 +2747,11 @@ export class CampaignServiceClient {
     req: Request,
     projectSlug: string,
     briefId: string,
-    contentType: CreativeAssetMimeType,
+    contentType: CreativeAssetUploadMimeType,
     image: Buffer
   ): Promise<CreativeAssetUploadResult> {
     const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/creative-assets`;
-    const body = Buffer.from(JSON.stringify({ content_type: contentType, bytes: image.toString('base64') }), 'utf8');
+    const body = creativeAssetUploadBody(contentType, image);
 
     logger.debug(req, 'upload_creative_asset', 'Uploading creative asset to campaign-service', {
       brief_id: briefId,
@@ -2478,7 +2778,8 @@ export class CampaignServiceClient {
       asset.id.length > 0 &&
       typeof asset.brief_id === 'string' &&
       asset.brief_id.toLowerCase() === briefId.toLowerCase() &&
-      isCreativeAssetMimeType(asset.mime_type) &&
+      // The type stored must be the type sent: an MP4 named as an image, or the reverse, would fail the create later.
+      asset.mime_type === contentType &&
       typeof asset.byte_size === 'number' &&
       typeof asset.checksum === 'string';
     if (!usable) {
@@ -2491,13 +2792,13 @@ export class CampaignServiceClient {
         operation: 'upload_creative_asset',
         service: 'campaign_service_client',
         path,
-        clientMessage: 'The image upload could not be confirmed. Please try again.',
+        clientMessage: 'The upload could not be confirmed. Please try again.',
       });
     }
 
     return {
       id: asset.id,
-      mimeType: asset.mime_type as CreativeAssetMimeType,
+      mimeType: contentType,
       byteSize: asset.byte_size,
       checksum: asset.checksum,
       // The STATUS is authoritative upstream (201 stored, 200 already existed); `created` mirrors it.
@@ -2550,7 +2851,19 @@ export class CampaignServiceClient {
       Number.isFinite(list.bytes_used) &&
       typeof list.bytes_limit === 'number' &&
       Number.isFinite(list.bytes_limit);
-    const assets = countable ? list.assets.map((asset) => toStoredCreativeAsset(asset, briefId)) : [];
+    // A LinkedIn video (#5764 row 18) shares the brief's store but is no image any image slot can use, so it is listed
+    // apart, as `videos`, where it can be deleted to free the quota. `count` and `bytesUsed` stay upstream's.
+    const isVideo = (asset: CampaignServiceCreativeAsset | undefined) => asset?.mime_type === CREATIVE_ASSET_VIDEO_MIME_TYPE;
+    const assets = countable ? list.assets.filter((asset) => !isVideo(asset)).map((asset) => toStoredCreativeAsset(asset, briefId)) : [];
+    // An unusable video entry is dropped and logged rather than failing the read: the images every slot needs come first.
+    const listedVideos = countable ? list.assets.filter(isVideo).map((asset) => toStoredCreativeVideo(asset, briefId)) : [];
+    const videos = listedVideos.filter((video): video is StoredCreativeVideo => video !== null);
+    if (videos.length < listedVideos.length) {
+      logger.warning(req, 'list_creative_assets', 'Upstream listed a video entry this app cannot use; it is left out', {
+        brief_id: briefId,
+        dropped: listedVideos.length - videos.length,
+      });
+    }
     if (!countable || assets.some((asset) => asset === null)) {
       logger.warning(req, 'list_creative_assets', 'Upstream answered the asset list with an unusable body', {
         brief_id: briefId,
@@ -2567,6 +2880,7 @@ export class CampaignServiceClient {
 
     return {
       assets: assets as StoredCreativeAsset[],
+      videos,
       count: list.count,
       countLimit: list.count_limit,
       bytesUsed: list.bytes_used,
@@ -3281,43 +3595,76 @@ export class CampaignServiceClient {
   }
 
   /**
-   * The Google Ads account monitor (`monitor-google-ads-account`). Read through the project's OWN
-   * connection only, as the Meta monitor below is, so a project without one gets a 404. Unlike Meta,
-   * upstream returns only the campaigns campaign-service recorded for the project, and refuses with a
-   * 409 when one of them was created under a different customer than `accountId`.
+   * The Google Ads account monitor (`monitor-google-ads-account`). Upstream returns only the campaigns
+   * campaign-service recorded for the project, and refuses with a 409 `campaign_account_mismatch` when
+   * one of them was created under a different customer than the one read.
+   *
+   * `accountId` UNDEFINED omits `account_id` (#5622, campaign-service #592): upstream then reads the
+   * customer the project's campaigns were created under, through the project's own row when it is
+   * configured for that customer and otherwise the LF system account, and returns it as `account_id`
+   * (empty, with no campaigns, when the project has none). campaign-service before 1.0.36 requires
+   * `account_id` and answers its omission with a 400 `missing_field`.
    *
    * `days` is sent as given: upstream REJECTS a value outside 7–90 rather than clamping, so the
    * caller clamps (the controller does).
    */
-  public async getGoogleAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+  public async getGoogleAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string | undefined,
+    days: number
+  ): Promise<CampaignServiceAccountMonitor> {
     return this.getAccountMonitor(req, 'google-ads', projectSlug, accountId, days);
   }
 
   /**
    * The Meta Ads account monitor (`monitor-meta-ads-account`).
    *
-   * ACCOUNT-scoped, unlike every other read here: `projectSlug` selects whose stored connection
-   * reads the account — the project's OWN only, never the LF system fallback, so a project without
-   * one gets a 404 — and campaign-service refuses an `accountId` that connection is not bound to.
-   * Every campaign the credential sees on the account comes back, not only this project's.
+   * PROJECT-scoped: only the campaigns campaign-service recorded for the project come back, and a
+   * project with none gets an empty monitor. `accountId` is required upstream (an omitted one is
+   * refused here, before any request). It is read with the project's own connection when that is
+   * configured for it, and otherwise with the LF system credential, which reads only the account it
+   * is configured for (linuxfoundation/lfx-v2-campaign-service#616, from 1.0.37); any other account,
+   * for a project with no usable connection of its own, is a 404.
    *
    * `days` is sent as given: upstream REJECTS a value outside 7–90 rather than clamping, so the
    * caller clamps (the controller does).
    */
-  public async getMetaAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+  public async getMetaAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string | undefined,
+    days: number
+  ): Promise<CampaignServiceAccountMonitor> {
     return this.getAccountMonitor(req, 'meta-ads', projectSlug, accountId, days);
   }
 
   /**
-   * The LinkedIn Ads account monitor (`monitor-linkedin-ads-account`). Same scoping as
-   * `getMetaAdsAccountMonitor`. Its `pacing_pct` is deliberately unrounded upstream.
+   * The LinkedIn Ads account monitor (`monitor-linkedin-ads-account`). Its `pacing_pct` is
+   * deliberately unrounded upstream.
+   *
+   * PROJECT-scoped like Meta's. `accountId` is optional from campaign-service 1.0.37
+   * (linuxfoundation/lfx-v2-campaign-service#628, #5889): omitted, campaign-service reads the account
+   * the project's campaigns were created under, through the LF system credential when the project has
+   * no usable connection of its own, and names it as `account_id` (empty, with no campaigns, when the
+   * project has none recorded). An older campaign-service answers the omission with a 400 `missing_field`.
    */
-  public async getLinkedInAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+  public async getLinkedInAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string | undefined,
+    days: number
+  ): Promise<CampaignServiceAccountMonitor> {
     return this.getAccountMonitor(req, 'linkedin-ads', projectSlug, accountId, days);
   }
 
-  /** The Reddit Ads account monitor (`monitor-reddit-ads-account`). Same scoping as `getMetaAdsAccountMonitor`. */
-  public async getRedditAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+  /** The Reddit Ads account monitor (`monitor-reddit-ads-account`). Same scoping and account rules as `getMetaAdsAccountMonitor`. */
+  public async getRedditAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string | undefined,
+    days: number
+  ): Promise<CampaignServiceAccountMonitor> {
     return this.getAccountMonitor(req, 'reddit-ads', projectSlug, accountId, days);
   }
 
@@ -3439,6 +3786,27 @@ export class CampaignServiceClient {
   }
 
   /**
+   * The LinkedIn ad account a create for this project uses, and the accounts `linkedInConfig.adAccountId`
+   * may name (`get-linkedin-ads-create-account`, linuxfoundation/lfx-v2-campaign-service#581). A database
+   * read on campaign-service: nothing is sent to LinkedIn. Answered on `campaign_manager`. Failures are left
+   * to the caller.
+   */
+  public async getLinkedInAdsCreateAccount(req: Request, projectSlug: string): Promise<CampaignServiceLinkedInAdsCreateAccount> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A LinkedIn ad account read requires the project it belongs to.', {
+        operation: 'get_linkedin_ads_create_account',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInAdsCreateAccount>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/create-account`,
+      'GET'
+    );
+  }
+
+  /**
    * The user lists on the Google Ads account a create for this project uses (`list-google-ads-user-lists`,
    * linuxfoundation/lfx-v2-campaign-service#508), for the Implement tab's audience segment picker (#5244).
    * Upstream answers it on `global_marketing_ops` of the path project, the relation the BFF checks first;
@@ -3457,6 +3825,152 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/google-ads/user-lists`,
       'GET'
+    );
+  }
+
+  /**
+   * The custom audiences (lookalikes included) of the Meta ad account a create for this project uses
+   * (`list-meta-custom-audiences`, linuxfoundation/lfx-v2-campaign-service#550), for the Implement tab's
+   * Meta audience picker (#5905). `q`, when given, keeps names containing it, ignoring case. Upstream answers
+   * it on `global_marketing_ops` of the path project, the relation the BFF checks first; at most 500 sorted by
+   * name, with `truncated`. Failures are left to the caller, which falls back to typed ids.
+   */
+  public async listMetaCustomAudiences(req: Request, projectSlug: string, q?: string): Promise<CampaignServiceMetaCustomAudiences> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A custom audience read requires the project it belongs to.', {
+        operation: 'list_meta_custom_audiences',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceMetaCustomAudiences>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/meta-ads/custom-audiences`,
+      'GET',
+      q === undefined ? undefined : { q }
+    );
+  }
+
+  /**
+   * The Instant Forms of the Facebook Page a Meta create for this project uses (`list-meta-lead-forms`,
+   * linuxfoundation/lfx-v2-campaign-service#550), for the Implement tab's lead form picker (#5940). Every
+   * status is listed, sorted by name. Upstream answers it on `global_marketing_ops` of the path project, the
+   * relation the BFF checks first. Failures are left to the caller.
+   */
+  public async listMetaLeadForms(req: Request, projectSlug: string): Promise<CampaignServiceMetaLeadForms> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A lead form read requires the project it belongs to.', {
+        operation: 'list_meta_lead_forms',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceMetaLeadForms>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/meta-ads/lead-forms`,
+      'GET'
+    );
+  }
+
+  /**
+   * LinkedIn targeting entities matching `query` for one facet (`search-linkedin-ads-targeting-entities`, #585, #643):
+   * the Implement tab's location search uses `facet=locations` (#5545), and its targeting editor the other searchable
+   * facets (`LINKEDIN_TARGETING_SEARCH_FACETS`, #5764 rows 8–11). Unflagged upstream; answered on
+   * `campaign_manager` of the path project, with the project's LinkedIn connection or LF's system credential. At most
+   * 100 entities, cached upstream for 6 hours per facet and query. A LinkedIn throttle answers 503 and is not retried.
+   * Failures are left to the caller.
+   */
+  public async searchLinkedInTargetingEntities(
+    req: Request,
+    projectSlug: string,
+    facet: 'locations' | LinkedInTargetingSearchFacet,
+    query: string
+  ): Promise<CampaignServiceLinkedInTargetingEntities> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A targeting search requires the project it is made for.', {
+        operation: 'search_linkedin_targeting_entities',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInTargetingEntities>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/targeting-entities`,
+      'GET',
+      { facet, query }
+    );
+  }
+
+  /**
+   * The ad segments on the LinkedIn ad account a create for this project uses (`list-linkedin-ads-audiences`, #585), for
+   * the Implement tab's targeting editor (#5764 rows 8–11). Answered upstream only on `global_marketing_ops` of the
+   * path project; EXPIRED and FAILED segments are left out, and the rest come sorted by name. `accountId`, when given,
+   * names the ad account (sent as `account_id`; campaign-service refuses one the project cannot create in), and omitted
+   * it is the project's default account. Failures are left to the caller.
+   */
+  public async listLinkedInAudiences(req: Request, projectSlug: string, accountId?: string): Promise<CampaignServiceLinkedInAudiences> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'An audience read requires the project it is made for.', {
+        operation: 'list_linkedin_audiences',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInAudiences>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/audiences`,
+      'GET',
+      accountId === undefined ? undefined : { account_id: accountId }
+    );
+  }
+
+  /**
+   * The conversion rules on the LinkedIn ad account a create for this project uses (`list-linkedin-ads-conversions`,
+   * #552), for the Implement tab's conversion picker (#5764 row 4). Answered upstream only on `global_marketing_ops` of
+   * the path project; disabled rules are listed with `enabled: false`, all sorted by name. `accountId`, when given, names
+   * the ad account (sent as `account_id`), and omitted it is the project's default account. Failures are left to the
+   * caller.
+   */
+  public async listLinkedInConversions(req: Request, projectSlug: string, accountId?: string): Promise<CampaignServiceLinkedInConversions> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A conversion rule read requires the project it is made for.', {
+        operation: 'list_linkedin_conversions',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInConversions>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/conversions`,
+      'GET',
+      accountId === undefined ? undefined : { account_id: accountId }
+    );
+  }
+
+  /**
+   * One page of Meta's targeting taxonomy for the Implement tab's detailed-targeting picker (#5904 row 4):
+   * `search-meta-targeting-options` (linuxfoundation/lfx-v2-campaign-service#612), at most 50 options, cached
+   * upstream for an hour per query. Upstream answers it on `campaign_manager` of the path project, with the same
+   * credentials a create uses. A Meta throttle answers 503 and is not retried. Failures are left to the caller.
+   */
+  public async searchMetaTargetingOptions(
+    req: Request,
+    projectSlug: string,
+    type: MetaTargetingSearchType,
+    query: string
+  ): Promise<CampaignServiceMetaTargetingSearch> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A targeting search requires the project it is made for.', {
+        operation: 'search_meta_targeting_options',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceMetaTargetingSearch>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/meta-ads/targeting-search`,
+      'GET',
+      { type, query }
     );
   }
 
@@ -3552,10 +4066,11 @@ export class CampaignServiceClient {
     req: Request,
     provider: CampaignServiceMonitorProvider,
     projectSlug: string,
-    accountId: string,
+    accountId: string | undefined,
     days: number
   ): Promise<CampaignServiceAccountMonitor> {
-    if (projectSlug === '' || accountId === '') {
+    // Only Google Ads (#5622) and LinkedIn (#5889) may omit the account; every other monitor reads a named account.
+    if (projectSlug === '' || accountId === '' || (accountId === undefined && provider !== 'google-ads' && provider !== 'linkedin-ads')) {
       throw ServiceValidationError.forField(
         projectSlug === '' ? 'project' : 'accountKey',
         'An account monitor read requires both the project and the account it reads.',
@@ -3568,7 +4083,7 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/connection-${provider}/account-monitor`,
       'GET',
-      { account_id: accountId, days }
+      accountId === undefined ? { days } : { account_id: accountId, days }
     );
   }
 

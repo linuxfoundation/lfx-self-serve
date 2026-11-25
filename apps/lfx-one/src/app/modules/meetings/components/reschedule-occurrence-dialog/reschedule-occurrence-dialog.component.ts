@@ -12,7 +12,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
-import { MAX_CUSTOM_DURATION, MEETING_AGENDA_MAX_LENGTH, MIN_CUSTOM_DURATION, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
+import { MAX_MEETING_DURATION, MEETING_AGENDA_MAX_LENGTH, MIN_CUSTOM_DURATION, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
 import { Meeting, MeetingOccurrence, MeetingRescheduleOccurrenceResult, UpdateMeetingOccurrenceRequest } from '@lfx-one/shared/interfaces';
 import {
   combineDateTime,
@@ -55,9 +55,8 @@ export class RescheduleOccurrenceDialogComponent {
   // The occurrence endpoint takes no timezone, so the new time is always read in the series' own zone.
   public readonly timezone: string = this.meeting.timezone || getUserTimezone();
   public readonly minDuration = MIN_CUSTOM_DURATION;
-  // The opener sets the cap: `MAX_MEETING_DURATION` where meeting v2 is on, so a 10-hour meeting the v2
-  // composer saved can still be edited here; the pre-v2 `MAX_CUSTOM_DURATION` everywhere else.
-  public readonly maxDuration: number = this.config.data.maxDuration ?? MAX_CUSTOM_DURATION;
+  // Defaults to the composer's own cap, so a 10-hour meeting the composer saved can still be edited here.
+  public readonly maxDuration: number = this.config.data.maxDuration ?? MAX_MEETING_DURATION;
   public readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
   // YouTube uploads title the video from the meeting, so the series' shorter cap applies here too.
   public readonly titleMaxLength: number | null = this.meeting.youtube_upload_enabled ? YOUTUBE_MAX_MEETING_TITLE_LENGTH : null;

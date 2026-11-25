@@ -6,7 +6,15 @@ import { computed, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/
 import { TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, NavigationEnd, Router, UrlSerializer } from '@angular/router';
 import { ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
-import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgLensLookupOutcome, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
+import {
+  Account,
+  OrgCanonicalRecord,
+  OrgLensAccountContextResponse,
+  OrgLensLookupOutcome,
+  OrgLensStaffCheck,
+  OrgRollUpFamily,
+  OrgRollUpSetOrg,
+} from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,7 +27,7 @@ import { OrgRoleGrantsService } from './org-role-grants.service';
 import { OrgRollUpFamiliesService } from './org-roll-up-families.service';
 import { OrgRollUpFlagService } from './org-roll-up-flag.service';
 
-// Spec 050: the organization a `/org/{segment}/…` address names is adopted by the path-param guard
+// Spec 050: the organization a `/company/{segment}/…` address names is adopted by the path-param guard
 // before the persona refresh re-seeds organizations. That re-seed runs `initializeUserOrganizations`
 // again — with empty seeds for a staff viewer — and used to reset the selection to the placeholder
 // or a seed, i.e. the silent substitution deep links exist to remove (#2713 review).
@@ -38,6 +46,10 @@ describe('AccountContextService — address-adopted selection', () => {
     inheritedAuditorSet: WritableSignal<Set<string>>;
     isStaff: WritableSignal<boolean>;
     claManagerOrgSet: WritableSignal<Set<string>>;
+    employeeViewOrgUid: WritableSignal<string | null>;
+    employeeViewOrgUids: WritableSignal<ReadonlySet<string>>;
+    fullAccessOrgUid: WritableSignal<string | null>;
+    fullAccessOrgUids: WritableSignal<ReadonlySet<string>>;
   };
 
   beforeEach(() => {
@@ -49,6 +61,10 @@ describe('AccountContextService — address-adopted selection', () => {
       inheritedAuditorSet: signal(new Set<string>()),
       isStaff: signal(false),
       claManagerOrgSet: signal(new Set<string>()),
+      employeeViewOrgUid: signal<string | null>(null),
+      employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+      fullAccessOrgUid: signal<string | null>(null),
+      fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -65,7 +81,7 @@ describe('AccountContextService — address-adopted selection', () => {
         { provide: OrgRoleGrantsService, useValue: grants },
         {
           provide: OrgRollUpFamiliesService,
-          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false) },
+          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false), staffAnchor: signal(null), setStaffAnchor: vi.fn() },
         },
         { provide: OrgRollUpFlagService, useValue: { enabled: signal(true), unsettled: signal(false) } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
@@ -251,6 +267,26 @@ describe('AccountContextService — address-adopted selection', () => {
       grants.claManagerOrgSet.set(new Set([UID_A]));
       expect(service.hasOrgSelectorAccess()).toBe(true);
     });
+
+    it('is true for an all employee view company alone (#5845)', () => {
+      grants.employeeViewOrgUid.set(UID_A);
+      grants.employeeViewOrgUids.set(new Set([UID_A]));
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
+
+    it('is true for an addressed employee view company when role-grants never published one (#5845)', () => {
+      expect(service.hasOrgSelectorAccess()).toBe(false);
+
+      grants.employeeViewOrgUids.set(new Set([UID_A]));
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
+
+    it('is true for a company read in full through the authorizer alone (#5845)', () => {
+      expect(service.hasOrgSelectorAccess()).toBe(false);
+
+      grants.fullAccessOrgUids.set(new Set([UID_A]));
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
   });
 
   // lfx-self-serve#2570 (prod): the org-items default (or the guard's already-selected shortcut) pins
@@ -321,7 +357,7 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.isAdoptedFromAddress()).toBe(true);
     });
 
-    // Deliberate (lfx-self-serve#2793): the default write produces `/org/A/…`, whose guard shortcut
+    // Deliberate (lfx-self-serve#2793): the default write produces `/company/A/…`, whose guard shortcut
     // pins 'address'. Keeping the default kind there would let a later org-items reload re-default
     // the selection to B while the address still names A — spec 050's silent substitution.
     it('the guard shortcut upgrades a default pin to an address pin, so an addressed page cannot drift', () => {
@@ -411,11 +447,20 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
         { provide: AnalyticsService, useValue: { getOrgLensAccountContext } },
         {
           provide: OrgRoleGrantsService,
-          useValue: { writerSet: signal(new Set()), auditorSet: signal(new Set()), isStaff: signal(false), claManagerOrgSet: signal(new Set()) },
+          useValue: {
+            writerSet: signal(new Set()),
+            auditorSet: signal(new Set()),
+            isStaff: signal(false),
+            claManagerOrgSet: signal(new Set()),
+            employeeViewOrgUid: signal(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            fullAccessOrgUid: signal<string | null>(null),
+            fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
+          },
         },
         {
           provide: OrgRollUpFamiliesService,
-          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false) },
+          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false), staffAnchor: signal(null), setStaffAnchor: vi.fn() },
         },
         { provide: OrgRollUpFlagService, useValue: { enabled: signal(true), unsettled: signal(false) } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
@@ -516,7 +561,7 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
 /**
  * lfx-self-serve#4125 / #4133 — the family roll-up selection. It is a view mode keyed on the
  * family's top Salesforce account id rather than a `b2b_org` row, so it has to survive the cookie
- * round-trip, address as `/org/family-{root}/…`, and never reach an `:orgUid` endpoint.
+ * round-trip, address as `/company/family-{root}/…`, and never reach an `:orgUid` endpoint.
  *
  * Alpha is the top of the family and Bravo inherits from it, so the two are one family keyed on
  * Alpha — the shape the conglomerate case has in production. The families come from the server
@@ -550,8 +595,13 @@ describe('AccountContextService — family roll-up', () => {
     inheritedAuditorSet: WritableSignal<Set<string>>;
     isStaff: WritableSignal<boolean>;
     claManagerOrgSet: WritableSignal<Set<string>>;
+    employeeViewOrgUid: WritableSignal<string | null>;
+    employeeViewOrgUids: WritableSignal<ReadonlySet<string>>;
+    fullAccessOrgUid: WritableSignal<string | null>;
+    fullAccessOrgUids: WritableSignal<ReadonlySet<string>>;
     loaded: WritableSignal<boolean>;
     lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
+    staffCheck: WritableSignal<OrgLensStaffCheck>;
   };
   /** Each organization's Salesforce parent, as the server's family walk resolves it. */
   let familyParents: WritableSignal<Map<string, string>>;
@@ -566,6 +616,9 @@ describe('AccountContextService — family roll-up', () => {
     answered: WritableSignal<boolean>;
     incomplete: WritableSignal<boolean>;
     loading: WritableSignal<boolean>;
+    staffAnchor: WritableSignal<string | null>;
+    setStaffAnchor: ReturnType<typeof vi.fn>;
+    orgsByUid: WritableSignal<Map<string, OrgRollUpSetOrg>>;
   };
   /** The `org-lens-rollup-enabled` gate — on and settled unless a test says otherwise. */
   let rollUpFlag: { enabled: WritableSignal<boolean>; unsettled: WritableSignal<boolean> };
@@ -592,7 +645,7 @@ describe('AccountContextService — family roll-up', () => {
 
   beforeEach(() => {
     cookies = new Map();
-    routerUrl = `/org/${SEGMENT}/people`;
+    routerUrl = `/company/${SEGMENT}/people`;
     navigateByUrl = vi.fn();
     navigateSpy = vi.fn();
     currentNavigation = null;
@@ -607,8 +660,13 @@ describe('AccountContextService — family roll-up', () => {
       inheritedAuditorSet: signal(new Set<string>()),
       isStaff: signal(false),
       claManagerOrgSet: signal(new Set<string>()),
+      employeeViewOrgUid: signal<string | null>(null),
+      employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+      fullAccessOrgUid: signal<string | null>(null),
+      fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
       loaded: signal(true),
       lookupOutcome: signal<OrgLensLookupOutcome>('ok'),
+      staffCheck: signal<OrgLensStaffCheck>('ok'),
     };
     familyParents = signal(new Map([[UID_B, UID_A]]));
     familyNames = signal(new Map([[UID_A, 'Alpha']]));
@@ -620,6 +678,9 @@ describe('AccountContextService — family roll-up', () => {
       answered: signal(true),
       incomplete: signal(false),
       loading: signal(false),
+      staffAnchor: signal<string | null>(null),
+      setStaffAnchor: vi.fn((uid: string | null) => serverFamilies.staffAnchor.set(uid)),
+      orgsByUid: signal(new Map<string, OrgRollUpSetOrg>()),
     };
     rollUpFlag = { enabled: signal(true), unsettled: signal(false) };
     TestBed.configureTestingModule({
@@ -677,6 +738,331 @@ describe('AccountContextService — family roll-up', () => {
     expect(service.rollUpFamilies()).toEqual([{ rootUid: ROOT, name: 'Alpha', orgUids: expect.any(Array) }]);
   });
 
+  describe('LF staff anchor', () => {
+    const lastAnchor = (): unknown => serverFamilies.setStaffAnchor.mock.calls.at(-1)?.[0];
+    const OTHER = '0014100000MgoOOOOO';
+    const otherCo: Account = { accountId: OTHER, accountName: 'Other', membershipTier: '', uid: OTHER };
+
+    beforeEach(() => {
+      grants.isStaff.set(true);
+      familyNames.set(new Map([[ROOT, 'Alpha']]));
+    });
+
+    it('anchors on the selected company', () => {
+      service.setAccount(seedB);
+      TestBed.tick();
+
+      expect(lastAnchor()).toBe(UID_B);
+    });
+
+    it('anchors on the family top account while its roll-up is selected, so the option stays put', () => {
+      serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_A, UID_B] }]);
+      service.setAccount(seedB);
+      TestBed.tick();
+
+      expect(service.selectRollUp(ROOT)).toBe(true);
+      TestBed.tick();
+
+      expect(lastAnchor()).toBe(ROOT);
+    });
+
+    it('sends no anchor for a caller who is not staff', () => {
+      grants.isStaff.set(false);
+      service.setAccount(seedB);
+      TestBed.tick();
+
+      expect(serverFamilies.setStaffAnchor.mock.calls.every(([uid]) => uid === null)).toBe(true);
+    });
+
+    it('sends no anchor while the roll-up flag is off', () => {
+      rollUpFlag.enabled.set(false);
+      service.setAccount(seedB);
+      TestBed.tick();
+
+      expect(lastAnchor()).toBeNull();
+    });
+
+    it('keeps a restored staff roll-up selected through the family lookup, then confirms it', () => {
+      cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+      serverFamilies.unsettled.set(true);
+      serverFamilies.answered.set(false);
+      serverAnswer.set([]);
+      service.initializeUserOrganizations([]);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(true);
+      expect(lastAnchor()).toBe(ROOT);
+
+      serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_A, UID_B] }]);
+      serverFamilies.unsettled.set(false);
+      serverFamilies.answered.set(true);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(true);
+      expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+      expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: SEGMENT });
+    });
+
+    it('admits a roll-up address for staff with no company selected, so its family becomes the anchor', () => {
+      serverAnswer.set([]);
+      TestBed.tick();
+      serverFamilies.setStaffAnchor.mockImplementation((uid: string | null) => {
+        serverFamilies.staffAnchor.set(uid);
+        serverFamilies.unsettled.set(true);
+      });
+
+      expect(service.selectRollUp(ROOT)).toBe(false);
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(true);
+      expect(lastAnchor()).toBe(ROOT);
+
+      serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_A, UID_B] }]);
+      serverFamilies.unsettled.set(false);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(true);
+      expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+    });
+
+    it('refuses a roll-up address whose family the current answer already shows too small', () => {
+      serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_B] }]);
+      service.setAccount(seedB);
+      TestBed.tick();
+
+      expect(lastAnchor()).toBe(UID_B);
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(false);
+    });
+
+    it('holds a restored staff roll-up while the staff check cannot be made, then confirms it on retry', () => {
+      grants.isStaff.set(false);
+      grants.staffCheck.set('failed');
+      cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+      serverAnswer.set([]);
+      service.initializeUserOrganizations([]);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(true);
+      expect(lastAnchor()).toBeNull();
+      expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: SEGMENT });
+
+      grants.staffCheck.set('ok');
+      grants.isStaff.set(true);
+      serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_A, UID_B] }]);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(true);
+      expect(lastAnchor()).toBe(ROOT);
+      expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+      expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: SEGMENT });
+    });
+
+    it('swaps the offered roll-up for the family of a company in another family, and drops it for a standalone one', () => {
+      serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_A, UID_B] }]);
+      service.setAccount(seedB);
+      TestBed.tick();
+      expect(service.eligibleRollUpFamilies().map((family) => family.rootUid)).toEqual([ROOT]);
+
+      service.setAccount(otherCo);
+      TestBed.tick();
+      expect(lastAnchor()).toBe(OTHER);
+      serverAnswer.set([{ rootUid: OTHER, name: 'Other', orgUids: [OTHER] }]);
+
+      expect(service.eligibleRollUpFamilies()).toEqual([]);
+    });
+
+    describe('related companies (#5942)', () => {
+      const org = (uid: string, name: string): OrgRollUpSetOrg => ({ uid, accountId: uid, name, logoUrl: null });
+      const relatedUids = (): string[] => service.relatedCompanies().map((company) => company.uid);
+
+      beforeEach(() => {
+        serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_B, UID_A] }]);
+        serverFamilies.orgsByUid.set(
+          new Map([
+            [UID_A, org(UID_A, 'Zulu Holdings')],
+            [UID_B, org(UID_B, 'Bravo')],
+          ])
+        );
+      });
+
+      it('lists every company in the selected company’s family, top account first', () => {
+        service.setAccount(seedB);
+        TestBed.tick();
+
+        expect(relatedUids()).toEqual([UID_A, UID_B]);
+      });
+
+      it('lists the family while its roll-up is selected', () => {
+        service.setAccount(seedB);
+        TestBed.tick();
+        expect(service.selectRollUp(ROOT)).toBe(true);
+        TestBed.tick();
+
+        expect(relatedUids()).toEqual([UID_A, UID_B]);
+      });
+
+      it('lists nothing for a standalone company', () => {
+        service.setAccount(otherCo);
+        TestBed.tick();
+        serverAnswer.set([{ rootUid: OTHER, name: 'Other', orgUids: [OTHER] }]);
+
+        expect(relatedUids()).toEqual([]);
+      });
+
+      it('lists nothing while the answer for a newly selected company is still owed, then that company’s family', () => {
+        const OTHER_SUB = '0014100000MgsSSSSS';
+        serverAnswer.set([
+          { rootUid: ROOT, name: 'Alpha', orgUids: [UID_B, UID_A] },
+          { rootUid: OTHER, name: 'Other', orgUids: [OTHER, OTHER_SUB] },
+        ]);
+        serverFamilies.orgsByUid.update((orgs) => new Map([...orgs, [OTHER, org(OTHER, 'Other')], [OTHER_SUB, org(OTHER_SUB, 'Other Sub')]]));
+        service.setAccount(seedB);
+        TestBed.tick();
+        serverFamilies.setStaffAnchor.mockImplementation((uid: string | null) => {
+          serverFamilies.staffAnchor.set(uid);
+          serverFamilies.unsettled.set(true);
+        });
+
+        service.setAccount(otherCo);
+        TestBed.tick();
+        expect(relatedUids()).toEqual([]);
+
+        serverFamilies.unsettled.set(false);
+        expect(relatedUids()).toEqual([OTHER, OTHER_SUB]);
+      });
+
+      it('lists nothing for a caller who is not staff', () => {
+        grants.isStaff.set(false);
+        grants.inheritedWriterSet.set(new Set([UID_A, UID_B]));
+        service.setAccount(seedB);
+        TestBed.tick();
+
+        expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+        expect(relatedUids()).toEqual([]);
+      });
+    });
+
+    it('labels a roll-up picked from search with the family name it was offered under, until its family lands', () => {
+      serverAnswer.set([]);
+      TestBed.tick();
+
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true, name: 'Alpha Group' })).toBe(true);
+
+      expect(service.selectedAccount().accountName).toContain('Alpha Group');
+    });
+
+    it('keeps that label when the path guard re-admits the same roll-up without a name', () => {
+      serverAnswer.set([]);
+      TestBed.tick();
+      service.selectRollUp(ROOT, { admitWhilePending: true, name: 'Alpha Group' });
+
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
+
+      expect(service.selectedAccount().accountName).toContain('Alpha Group');
+    });
+
+    describe('when the anchor moves, the families stay unsettled until its answer lands', () => {
+      const alpha: OrgRollUpFamily = { rootUid: ROOT, name: 'Alpha', orgUids: [UID_A, UID_B] };
+      const refetchOnAnchor = (): void => {
+        serverFamilies.setStaffAnchor.mockImplementation((uid: string | null) => {
+          serverFamilies.staffAnchor.set(uid);
+          serverFamilies.unsettled.set(true);
+        });
+      };
+
+      it('admits an addressed roll-up of another family (Back, a link) while that family is fetched, then confirms it', () => {
+        serverAnswer.set([alpha]);
+        service.setAccount(seedB);
+        TestBed.tick();
+        expect(service.selectRollUp(ROOT)).toBe(true);
+        TestBed.tick();
+        service.setAccount(otherCo);
+        TestBed.tick();
+        serverAnswer.set([{ rootUid: OTHER, name: 'Other', orgUids: [OTHER] }]);
+        refetchOnAnchor();
+
+        expect(service.selectRollUp(ROOT)).toBe(false);
+        expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
+        expect(service.grantsUnsettled()).toBe(true);
+        TestBed.tick();
+
+        expect(service.isRollUp()).toBe(true);
+        expect(lastAnchor()).toBe(ROOT);
+
+        serverAnswer.set([alpha]);
+        serverFamilies.unsettled.set(false);
+        TestBed.tick();
+
+        expect(service.isRollUp()).toBe(true);
+        expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+      });
+
+      it("admits an addressed roll-up whose family another anchor's answer lists only by the caller's grants, then confirms it", () => {
+        serverAnswer.set([alpha]);
+        service.setAccount(seedB);
+        TestBed.tick();
+        expect(service.selectRollUp(ROOT)).toBe(true);
+        TestBed.tick();
+        service.setAccount(otherCo);
+        TestBed.tick();
+        serverAnswer.set([
+          { rootUid: ROOT, name: 'Alpha', orgUids: [UID_B] },
+          { rootUid: OTHER, name: 'Other', orgUids: [OTHER] },
+        ]);
+        refetchOnAnchor();
+
+        expect(service.selectRollUp(ROOT)).toBe(false);
+        expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
+        TestBed.tick();
+
+        expect(service.isRollUp()).toBe(true);
+        expect(lastAnchor()).toBe(ROOT);
+
+        serverAnswer.set([alpha]);
+        serverFamilies.unsettled.set(false);
+        TestBed.tick();
+
+        expect(service.isRollUp()).toBe(true);
+        expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+      });
+
+      it('still refuses an addressed roll-up once the anchored family has answered without it', () => {
+        serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_A] }]);
+        service.setAccount(seedA);
+        TestBed.tick();
+
+        expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(false);
+      });
+
+      it('holds a restored staff roll-up when the flag turns on after an unanchored answer', () => {
+        rollUpFlag.enabled.set(false);
+        rollUpFlag.unsettled.set(true);
+        cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+        serverAnswer.set([]);
+        service.initializeUserOrganizations([]);
+        TestBed.tick();
+        expect(service.isRollUp()).toBe(true);
+        refetchOnAnchor();
+
+        rollUpFlag.enabled.set(true);
+        rollUpFlag.unsettled.set(false);
+        expect(service.grantsUnsettled()).toBe(true);
+        TestBed.tick();
+
+        expect(service.isRollUp()).toBe(true);
+        expect(lastAnchor()).toBe(ROOT);
+
+        serverAnswer.set([alpha]);
+        serverFamilies.unsettled.set(false);
+        TestBed.tick();
+
+        expect(service.isRollUp()).toBe(true);
+        expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: SEGMENT });
+      });
+    });
+  });
+
   /**
    * lfx-self-serve#4126 — the server's families are the only grouping: it resolves each organization
    * to its family's top account, which the grant sets alone cannot.
@@ -694,7 +1080,7 @@ describe('AccountContextService — family roll-up', () => {
       expect(service.rollUpFamilies().map((family) => family.rootUid)).toEqual([UID_C]);
       expect(service.canSelectRollUpFor(UID_C)).toBe(true);
       expect(service.selectRollUp(UID_C)).toBe(true);
-      expect(service.selectedAccount().accountName).toBe('All Charlie Organizations');
+      expect(service.selectedAccount().accountName).toBe('All Charlie Companies');
     });
 
     // No client-side guess: a guess offers family keys the server may not use, and a restored
@@ -720,7 +1106,7 @@ describe('AccountContextService — family roll-up', () => {
       serverFamilies.unsettled.set(false);
       TestBed.tick();
 
-      expect(service.selectedAccount()).toEqual(expect.objectContaining({ uid: SEGMENT, accountName: 'All Alpha Organizations' }));
+      expect(service.selectedAccount()).toEqual(expect.objectContaining({ uid: SEGMENT, accountName: 'All Alpha Companies' }));
       expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: SEGMENT });
     });
 
@@ -735,7 +1121,7 @@ describe('AccountContextService — family roll-up', () => {
       expect(service.eligibleRollUpFamilies()).toEqual([]);
       expect(service.canSelectRollUpFor(ROOT)).toBe(false);
       expect(service.isRollUp()).toBe(true);
-      expect(service.selectedAccount().accountName).toBe('All Alpha Organizations');
+      expect(service.selectedAccount().accountName).toBe('All Alpha Companies');
     });
 
     // Retry reloads the grants; until the families answer that reload, the previous answer describes
@@ -915,7 +1301,7 @@ describe('AccountContextService — family roll-up', () => {
       TestBed.tick();
 
       expect(service.isRollUp()).toBe(true);
-      expect(service.selectedAccount()).toEqual(expect.objectContaining({ uid: SEGMENT, accountName: 'All Alpha Organizations' }));
+      expect(service.selectedAccount()).toEqual(expect.objectContaining({ uid: SEGMENT, accountName: 'All Alpha Companies' }));
     });
 
     // With the flag off the families feed nothing on screen, so the switcher must not carry their
@@ -976,7 +1362,7 @@ describe('AccountContextService — family roll-up', () => {
       expect(service.selectRollUp(UID_C)).toBe(true);
       expect(service.selectedRollUpRootUid()).toBe(UID_C);
       expect(service.selectedUrlSegment()).toBe(`family-${UID_C}`);
-      expect(service.selectedAccount().accountName).toBe('All Charlie Organizations');
+      expect(service.selectedAccount().accountName).toBe('All Charlie Companies');
       expect(service.rollUpOrganizationCount()).toBe(2);
     });
 
@@ -1011,7 +1397,7 @@ describe('AccountContextService — family roll-up', () => {
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
     service.initializeUserOrganizations([seedA, seedB]);
     expect(service.isRollUp()).toBe(true);
-    expect(service.selectedAccount().accountName).toBe('All Alpha Organizations');
+    expect(service.selectedAccount().accountName).toBe('All Alpha Companies');
   });
 
   /**
@@ -1183,13 +1569,13 @@ describe('AccountContextService — family roll-up', () => {
 
     expect(navigateByUrl).toHaveBeenCalledTimes(1);
     const [tree, extras] = navigateByUrl.mock.calls[0];
-    expect(TestBed.inject(UrlSerializer).serialize(tree)).toBe(`/org/${UID_A}/people`);
+    expect(TestBed.inject(UrlSerializer).serialize(tree)).toBe(`/company/${UID_A}/people`);
     expect(extras).toEqual({ replaceUrl: true });
   });
 
   // The roster selection names a person in the family, not in the organization it demotes to.
   it('drops the per-organization query state when it demotes, keeping the rest', () => {
-    routerUrl = `/org/${SEGMENT}/people?employees=jdoe&tab=board`;
+    routerUrl = `/company/${SEGMENT}/people?employees=jdoe&tab=board`;
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
     service.initializeUserOrganizations([seedA]);
@@ -1198,7 +1584,7 @@ describe('AccountContextService — family roll-up', () => {
     TestBed.tick();
 
     expect(navigateByUrl).toHaveBeenCalledTimes(1);
-    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/org/${UID_A}/people?tab=board`);
+    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/company/${UID_A}/people?tab=board`);
   });
 
   it('leaves the address alone when demoting away from an Org Lens page', () => {
@@ -1226,11 +1612,11 @@ describe('AccountContextService — family roll-up', () => {
     expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: UID_A });
   });
 
-  // Regression, PR #4415 review 4 (cursor). The guards admit `/org/Family-{root}/people` — the match
+  // Regression, PR #4415 review 4 (cursor). The guards admit `/company/Family-{root}/people` — the match
   // guard normalizes before testing and the roll-up branch returns without canonicalizing — so an
   // un-normalized check left a mixed-case address on its combined-view URL after demotion.
   it('re-points a mixed-case roll-up address', () => {
-    routerUrl = `/org/Family-${ROOT}/people`;
+    routerUrl = `/company/Family-${ROOT}/people`;
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
     service.initializeUserOrganizations([seedA]);
@@ -1239,7 +1625,7 @@ describe('AccountContextService — family roll-up', () => {
     TestBed.tick();
 
     expect(navigateByUrl).toHaveBeenCalledTimes(1);
-    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/org/${UID_A}/people`);
+    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/company/${UID_A}/people`);
   });
 
   /**
@@ -1262,12 +1648,12 @@ describe('AccountContextService — family roll-up', () => {
 
     // The navigation settles on the roll-up page.
     currentNavigation = null;
-    routerUrl = `/org/${SEGMENT}/people`;
-    routerEvents.next(new NavigationEnd(1, `/org/${SEGMENT}/people`, `/org/${SEGMENT}/people`));
+    routerUrl = `/company/${SEGMENT}/people`;
+    routerEvents.next(new NavigationEnd(1, `/company/${SEGMENT}/people`, `/company/${SEGMENT}/people`));
     await Promise.resolve();
 
     expect(navigateByUrl).toHaveBeenCalledTimes(1);
-    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/org/${UID_A}/people`);
+    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/company/${UID_A}/people`);
   });
 
   // The settled navigation may have re-selected the roll-up (a roll-up address the guard adopted
@@ -1288,8 +1674,8 @@ describe('AccountContextService — family roll-up', () => {
     expect(service.selectRollUp(ROOT)).toBe(true);
 
     currentNavigation = null;
-    routerUrl = `/org/${SEGMENT}/people`;
-    routerEvents.next(new NavigationEnd(2, `/org/${SEGMENT}/people`, `/org/${SEGMENT}/people`));
+    routerUrl = `/company/${SEGMENT}/people`;
+    routerEvents.next(new NavigationEnd(2, `/company/${SEGMENT}/people`, `/company/${SEGMENT}/people`));
     await Promise.resolve();
 
     expect(navigateByUrl).not.toHaveBeenCalled();
@@ -1462,13 +1848,30 @@ describe('AccountContextService — family roll-up', () => {
      * Copilot on PR #4415. The addressing case above kept a CLA-only organization, but the
      * fallback that picks one did not look at `claOnlyOrgUids` at all — so a caller sitting on
      * roll-up whose Org Lens grants had lapsed, with only a CLA-manager company left, demoted
-     * to `null` and landed on `/org/not-found` while still holding a page they could open.
+     * to `null` and landed on `/company/not-found` while still holding a page they could open.
      */
     it('falls back to a CLA-only organization rather than the not-found dead end', () => {
       // On the roll-up itself, so there is no concrete selection to keep; nothing but CLA-only left.
       service.selectRollUp(ROOT, { admitWhilePending: true });
       service.initializeUserOrganizations([]);
       claOnlyOrgUids.set(new Set([UID_A]));
+
+      expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
+    });
+
+    // #5845 — a company read in full through the authorizer alone (never in a grant set) is still a real address.
+    it('keeps a full-access company the caller is already addressing, and counts it as addressable', () => {
+      grants.fullAccessOrgUids.set(new Set([UID_A]));
+      service.adoptFromAddress({ accountId: UID_A, accountName: 'Alpha', membershipTier: '', uid: UID_A, slug: 'alpha-inc' });
+      service.initializeUserOrganizations([]);
+
+      expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
+    });
+
+    it('falls back to a full-access company rather than the not-found dead end', () => {
+      service.selectRollUp(ROOT, { admitWhilePending: true });
+      service.initializeUserOrganizations([]);
+      grants.fullAccessOrgUids.set(new Set([UID_A]));
 
       expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
     });
@@ -1501,7 +1904,7 @@ describe('AccountContextService — family roll-up', () => {
   /**
    * Regression, PR #4415 review 10 (high). On a cold a roll-up address deep link the grants have not
    * answered, so a caller with no persona seeds had nothing to be demoted to and the guard's only
-   * answer was `/org/not-found`: a dead end later grants cannot repair, since reconciliation stops
+   * answer was `/company/not-found`: a dead end later grants cannot repair, since reconciliation stops
    * once the roll-up is deselected.
    */
   it('admits a cold roll-up visit it cannot yet decide, rather than stranding the caller', () => {
@@ -1515,7 +1918,7 @@ describe('AccountContextService — family roll-up', () => {
   /**
    * Regression, PR #4415 review 12. The admission above and the reconciliation effect asked the same
    * question differently: the effect checked only "pending or eligible", so it demoted the visit it
-   * had just been admitted, queued `/org/not-found`, and — because reconciliation returns early once
+   * had just been admitted, queued `/company/not-found`, and — because reconciliation returns early once
    * the roll-up is deselected — the later grants could never undo it. The earlier specs missed it by
    * never flushing the effect while the answer was still unknown.
    */
@@ -1564,7 +1967,7 @@ describe('AccountContextService — family roll-up', () => {
    * Regression, PR #4415 review 11. The effect-driven demotion applied its fallback with a bare
    * `setAccount`, leaving it unpinned — so for a grant-only caller an empty persona re-seed between
    * the demotion and the router settling reset the selection to the placeholder, and the deferred
-   * re-point then read that placeholder and redirected to `/org/not-found` despite the grant.
+   * re-point then read that placeholder and redirected to `/company/not-found` despite the grant.
    */
   it('pins the effect-driven demotion fallback against an empty re-seed', () => {
     currentNavigation = { id: 1 };
@@ -1587,13 +1990,13 @@ describe('AccountContextService — family roll-up', () => {
 
     // So the deferred re-point addresses the organization, not the dead end.
     currentNavigation = null;
-    routerUrl = `/org/${SEGMENT}/people`;
-    routerEvents.next(new NavigationEnd(1, `/org/${SEGMENT}/people`, `/org/${SEGMENT}/people`));
+    routerUrl = `/company/${SEGMENT}/people`;
+    routerEvents.next(new NavigationEnd(1, `/company/${SEGMENT}/people`, `/company/${SEGMENT}/people`));
 
     return Promise.resolve().then(() => {
       expect(navigateSpy).not.toHaveBeenCalled();
       expect(navigateByUrl).toHaveBeenCalledTimes(1);
-      expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/org/${UID_B}/people`);
+      expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/company/${UID_B}/people`);
     });
   });
 });

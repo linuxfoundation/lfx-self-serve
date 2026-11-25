@@ -5,13 +5,14 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { inject, PLATFORM_ID } from '@angular/core';
 import { CanActivateFn, Router, UrlTree } from '@angular/router';
-import { ORG_LENS_SWITCH_PARAMS_RESET, ORG_NOT_FOUND_PATH, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { ORG_LENS_SWITCH_PARAMS_RESET, ORG_LENS_URL_ROOT, ORG_NOT_FOUND_PATH, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { Account } from '@lfx-one/shared/interfaces';
 import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment, orgRollUpRootUid, orgUrlSegment } from '@lfx-one/shared/utils';
 import { catchError, map, of } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
 import { OrgClaOnlyAccessService } from '../services/org-cla-only-access.service';
+import { OrgLensViewModeService } from '../services/org-lens-view-mode.service';
 import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
 
 /**
@@ -54,6 +55,7 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
   const accountContext = inject(AccountContextService);
   const resolver = inject(OrgSlugResolverService);
   const claOnlyAccess = inject(OrgClaOnlyAccessService);
+  const viewMode = inject(OrgLensViewModeService);
 
   const notFound = router.createUrlTree([ORG_NOT_FOUND_PATH]);
   /**
@@ -164,8 +166,13 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
         uid: resolved.uid,
         slug: resolved.slug,
       };
-      // M3: the selector may not list this organization (a grant holder reaches a CLA-only org by link only), so its CLA-only shell keys on this answer.
-      claOnlyAccess.noteAddressed(resolved.uid, resolved.claOnly === true);
+      claOnlyAccess.noteAddressed(resolved.uid, resolved.claOnly === true, resolved.employeeViewChecked === true);
+      // Epic #5845: the same for a company reached only through the all employee view.
+      // An unchecked CLA-only answer says nothing about the employee view, so it must not erase a held employee or full-access mode.
+      if (resolved.claOnly !== true || resolved.employeeViewChecked === true || resolved.employeeView === true) {
+        viewMode.noteAddressed(resolved.uid, resolved.employeeView === true);
+        viewMode.noteFullAccessAddressed(resolved.uid, resolved.fullAccess === true);
+      }
       accountContext.adoptFromAddress(account);
       // Spec 020 US4 — fire-and-forget canonical reconciliation fills display fields.
       void accountContext.refreshCanonicalRecord(account);
@@ -201,7 +208,7 @@ function canonicalizeAddress(router: Router, url: string, addressed: string, org
   }
   const tree = router.parseUrl(url);
   const primary = tree.root.children['primary'];
-  if (primary && primary.segments.length >= 2 && primary.segments[0].path === 'org') {
+  if (primary && primary.segments.length >= 2 && primary.segments[0].path === ORG_LENS_URL_ROOT) {
     primary.segments[1].path = canonical;
     primary.segments[1].parameters = {};
   }

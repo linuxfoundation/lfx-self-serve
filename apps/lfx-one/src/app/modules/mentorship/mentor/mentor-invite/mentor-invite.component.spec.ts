@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, ParamMap, provideRouter } from '@angular/router';
@@ -13,13 +14,36 @@ import { MentorInviteComponent } from './mentor-invite.component';
 
 describe('MentorInviteComponent', () => {
   const token = 'eyJwcm9ncmFtX2lkIjoicDEifQ.c2lnbmF0dXJl';
+  const programId = 'c0e2e378-0000-4000-8000-0000000000aa';
 
   let fixture: ComponentFixture<MentorInviteComponent>;
   let respondToMentorInvite: ReturnType<typeof vi.fn>;
+  let checkMentorProfile: ReturnType<typeof vi.fn>;
+  let getMentorInvite: ReturnType<typeof vi.fn>;
 
-  const build = (options: { link?: string | null; respond?: Observable<void>; queryParamMap?: Observable<ParamMap> } = {}): void => {
-    const { link = token, respond = of(undefined), queryParamMap = of(convertToParamMap(link === null ? {} : { token: link })) } = options;
+  const build = (
+    options: {
+      link?: string | null;
+      respond?: Observable<void>;
+      queryParamMap?: Observable<ParamMap>;
+      hasProfile?: boolean;
+      platform?: string;
+      invite?: Observable<{ programId: string; programName: string }>;
+      profile?: Observable<{ hasProfile: boolean }>;
+    } = {}
+  ): void => {
+    const {
+      link = token,
+      respond = of(undefined),
+      queryParamMap = of(convertToParamMap(link === null ? {} : { token: link })),
+      hasProfile = true,
+      platform = 'browser',
+      invite = of({ programId: '', programName: '' }),
+      profile = of({ hasProfile }),
+    } = options;
     respondToMentorInvite = vi.fn(() => respond);
+    checkMentorProfile = vi.fn(() => profile);
+    getMentorInvite = vi.fn(() => invite);
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -27,8 +51,9 @@ describe('MentorInviteComponent', () => {
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
-        { provide: MentorshipMentorService, useValue: { respondToMentorInvite } },
+        { provide: MentorshipMentorService, useValue: { respondToMentorInvite, checkMentorProfile, getMentorInvite } },
         { provide: ActivatedRoute, useValue: { queryParamMap } },
+        { provide: PLATFORM_ID, useValue: platform },
       ],
     });
 
@@ -46,8 +71,153 @@ describe('MentorInviteComponent', () => {
   it('asks before answering, and answers nothing when the link is opened', () => {
     build();
 
-    expect(byTestId('mentorship-mentor-invite-title')?.textContent).toContain("You've been invited to mentor");
+    expect(byTestId('mentorship-mentor-invite-title')?.textContent).toContain("You've been invited to be a mentor");
     expect(respondToMentorInvite).not.toHaveBeenCalled();
+  });
+
+  it('names the invited program once the browser has read it, through to the answer', () => {
+    build({ invite: of({ programId, programName: 'Open Source Mentorship' }) });
+
+    expect(getMentorInvite).toHaveBeenCalledWith(token);
+    // The name is bold in the description; the title stays the same for every program.
+    expect(byTestId('mentorship-mentor-invite-description')?.querySelector('strong')?.textContent).toBe('Open Source Mentorship');
+    expect(byTestId('mentorship-mentor-invite-title')?.textContent?.trim()).toBe("You've been invited to be a mentor");
+    expect(byTestId('mentorship-mentor-invite-description')?.textContent).toContain('invited you to join Open Source Mentorship as a mentor');
+
+    click('mentorship-mentor-invite-accept-button');
+    const accepted = byTestId('mentorship-mentor-invite-accepted');
+    expect(byTestId('mentorship-mentor-invite-accepted-message')?.textContent?.trim()).toBe("You're now a mentor on Open Source Mentorship.");
+    expect(accepted?.querySelector('strong')?.textContent).toBe('Open Source Mentorship');
+    expect(accepted?.querySelector('i')?.classList).toContain('!text-emerald-600');
+  });
+
+  it("links to the program's public page in a new tab", () => {
+    build({ invite: of({ programId, programName: 'Open Source Mentorship' }) });
+
+    const link = byTestId('mentorship-mentor-invite-view-program') as HTMLAnchorElement | null;
+    expect(link?.textContent).toContain('View program');
+    expect(link?.getAttribute('href')).toMatch(new RegExp(`/programs/${programId}$`));
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it.each([
+    ['the read fails', httpError(503)],
+    ['the program id is not a UUID', of({ programId: 'prog-1', programName: 'Open Source Mentorship' })],
+  ])('shows no View program link when %s', (_label, invite) => {
+    build({ invite });
+
+    expect(byTestId('mentorship-mentor-invite-view-program')).toBeNull();
+  });
+
+  it('names the program on a decline too', () => {
+    build({ invite: of({ programId, programName: 'Open Source Mentorship' }) });
+
+    click('mentorship-mentor-invite-decline-button');
+    expect(byTestId('mentorship-mentor-invite-declined-message')?.textContent?.trim()).toBe("We've let the admins of Open Source Mentorship know.");
+    expect(byTestId('mentorship-mentor-invite-declined')?.querySelector('strong')?.textContent).toBe('Open Source Mentorship');
+  });
+
+  it.each([
+    [400, 'mentorship-mentor-invite-invalid-link'],
+    [409, 'mentorship-mentor-invite-invalid-link'],
+    [403, 'mentorship-mentor-invite-forbidden'],
+  ])('shows a %i from the read at once, before the profile check can disable the answer', (status, testId) => {
+    build({ invite: httpError(status), hasProfile: false });
+
+    expect(byTestId(testId)).not.toBeNull();
+    expect(byTestId('mentorship-mentor-invite-confirm')).toBeNull();
+    expect(byTestId('mentorship-mentor-invite-profile-hint')).toBeNull();
+  });
+
+  it('keeps an answer in flight when the read fails after it', () => {
+    const read = new Subject<{ programId: string; programName: string }>();
+    build({ invite: read, respond: new Subject<void>() });
+
+    click('mentorship-mentor-invite-accept-button');
+    read.error(new HttpErrorResponse({ status: 403 }));
+    fixture.detectChanges();
+
+    expect(byTestId('mentorship-mentor-invite-forbidden')).toBeNull();
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.getAttribute('data-loading')).toBe('true');
+  });
+
+  it.each([
+    ['the read fails', httpError(503)],
+    ['the program has no name', of({ programId: '', programName: '' })],
+  ])('keeps the generic copy when %s, and still answers', (_label, invite) => {
+    build({ invite });
+
+    expect(byTestId('mentorship-mentor-invite-program-name')).toBeNull();
+    expect(byTestId('mentorship-mentor-invite-description')?.textContent).toContain('The invitation email names the program.');
+    expect(byTestId('mentorship-mentor-invite-confirm')).not.toBeNull();
+
+    click('mentorship-mentor-invite-accept-button');
+    expect(byTestId('mentorship-mentor-invite-accepted')?.textContent).toContain("You're now a mentor on the program.");
+  });
+
+  it('does not read the program on the server, or for an unusable link', () => {
+    build({ platform: 'server' });
+    expect(getMentorInvite).not.toHaveBeenCalled();
+
+    build({ link: 'no-signature' });
+    expect(getMentorInvite).not.toHaveBeenCalled();
+  });
+
+  it('points someone with no mentor profile to create one, and disables Accept and Decline', () => {
+    build({ hasProfile: false });
+
+    const hint = byTestId('mentorship-mentor-invite-profile-hint');
+    expect(hint?.textContent).toContain('You need a mentor profile to answer this invitation.');
+    expect(hint?.querySelector('a')?.getAttribute('href')).toBe('/mentorship/mentor');
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.querySelector('button')?.disabled).toBe(true);
+    expect(byTestId('mentorship-mentor-invite-decline-button')?.querySelector('button')?.disabled).toBe(true);
+
+    // The handler refuses too, so nothing but a confirmed profile sends an answer.
+    (fixture.componentInstance as unknown as { onRespond(decision: string): void }).onRespond('accept');
+    expect(respondToMentorInvite).not.toHaveBeenCalled();
+  });
+
+  it('offers Try again when the profile check fails, without claiming there is no profile', () => {
+    build({ profile: httpError(503) });
+
+    expect(byTestId('mentorship-mentor-invite-profile-check-failed')?.textContent).toContain("We couldn't check your mentor profile.");
+    expect(byTestId('mentorship-mentor-invite-profile-hint')).toBeNull();
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.querySelector('button')?.disabled).toBe(true);
+
+    checkMentorProfile.mockReturnValueOnce(of({ hasProfile: true }));
+    byTestId('mentorship-mentor-invite-profile-check-retry')?.click();
+    fixture.detectChanges();
+
+    expect(checkMentorProfile).toHaveBeenCalledTimes(2);
+    expect(byTestId('mentorship-mentor-invite-profile-check-failed')).toBeNull();
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.querySelector('button')?.disabled).toBe(false);
+  });
+
+  it('keeps Accept and Decline disabled until the profile check answers', () => {
+    const answer = new Subject<{ hasProfile: boolean }>();
+    build({ profile: answer });
+
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.querySelector('button')?.disabled).toBe(true);
+    expect(byTestId('mentorship-mentor-invite-profile-hint')).toBeNull();
+
+    answer.next({ hasProfile: true });
+    fixture.detectChanges();
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.querySelector('button')?.disabled).toBe(false);
+  });
+
+  it('neither reads the profile nor hints on the server, whose read goes out without the session cookie, and leaves the answer to the browser', () => {
+    build({ hasProfile: false, platform: 'server' });
+
+    expect(checkMentorProfile).not.toHaveBeenCalled();
+    expect(byTestId('mentorship-mentor-invite-profile-hint')).toBeNull();
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.querySelector('button')?.disabled).toBe(true);
+  });
+
+  it('shows no profile hint to someone who has a mentor profile', () => {
+    build();
+
+    expect(byTestId('mentorship-mentor-invite-profile-hint')).toBeNull();
   });
 
   it.each([

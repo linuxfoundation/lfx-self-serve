@@ -26,6 +26,7 @@ function orgRow(overrides: Partial<HealthMetricsEngagementOrgRow> = {}): HealthM
     lastEngagedDate: '2026-08-14',
     daysSinceLastEngaged: 39,
     lapsed: false,
+    logoUrl: '',
     periods: [
       { range: 'COMPLETED_YEAR_3', meetingsHeld: 30, meetingsTotal: 27, invitedCount: 27, attendedCount: 18, attendancePct: 0.67, avgReps: 1.4, sortRank: 3 },
       { range: 'COMPLETED_YEAR_2', meetingsHeld: 30, meetingsTotal: 27, invitedCount: 27, attendedCount: 19, attendancePct: 0.7, avgReps: 1.5, sortRank: 3 },
@@ -62,12 +63,14 @@ describe('EngagementOrgParticipationComponent', () => {
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: AnalyticsService, useValue: { getEngagementOrgParticipation } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
-        // The component reads its initial segment off the URL, and writes it back.
+        // The component writes its activity cut back to the URL.
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } } },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(EngagementOrgParticipationComponent);
+    // The page parses the cut off the URL and binds it in, before the first read.
+    if (queryParams['orgFilter']) fixture.componentRef.setInput('filter', queryParams['orgFilter']);
     if (onCounts) fixture.componentInstance.countsChange.subscribe(onCounts);
     fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
     // Subscribed before the first change detection, so the initial read's own pair is recorded.
@@ -90,10 +93,21 @@ describe('EngagementOrgParticipationComponent', () => {
     vi.useRealTimers();
   });
 
+  function query(testId: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  function setFilter(filter: string): void {
+    fixture.componentRef.setInput('filter', filter);
+    fixture.detectChanges();
+  }
+
   /** The search box is debounced, so a keystroke only reaches the filter once the pause elapses. */
   function typeSearch(term: string): void {
     vi.useFakeTimers();
-    fixture.componentInstance['searchForm'].controls.search.setValue(term);
+    fixture.componentInstance['searchText'].set(term);
+    // The search reaches its debounce through `toObservable`, which emits as effects flush.
+    TestBed.tick();
     vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS);
     fixture.detectChanges();
   }
@@ -103,20 +117,105 @@ describe('EngagementOrgParticipationComponent', () => {
 
     expect(getEngagementOrgParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     const row = fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]');
-    expect(row.textContent).toContain('Acme Motors');
-    expect(row.textContent).toContain('21 / 27');
-    expect(row.textContent).toContain('1.8');
-    expect(row.textContent).toContain('Aug 14, 2026');
+    const cells = row.querySelectorAll('td');
+    expect(cells[0].querySelector('[data-testid="health-metrics-cell-text"]')?.textContent).toBe('Acme Motors');
+    expect(cells[0].querySelector('[data-testid="health-metrics-cell-company"]')).not.toBeNull();
+    expect(cells[1].textContent?.trim()).toBe('Platinum');
+    expect(cells[1].querySelector('[data-testid="health-metrics-cell-tier"]')).not.toBeNull();
+    expect(cells[2].querySelector('[data-testid="health-metrics-progress-value"]')?.textContent?.trim()).toBe('21 of 27 (78%)');
+    expect((cells[2].querySelector('[data-testid="health-metrics-progress-fill"]') as HTMLElement).style.width).toBe('78%');
+    expect(cells[2].querySelector('[data-testid="health-metrics-progress-fill"]')?.className).toContain('bg-blue-500');
+    expect(cells[3].textContent?.trim()).toBe('1.8');
+    expect(cells[4].textContent?.trim()).toBe('Aug 14, 2026');
+    expect(query('engagement-org-participation-count')).toBeNull();
     expect(verdicts).toEqual([false]);
   });
 
-  // The placeholder and the icon give the box no accessible name, so the label has to.
-  it('names the search box for assistive tech', async () => {
+  it('searches with the small search field named for its company search', async () => {
     await render();
 
-    const label: HTMLLabelElement | null = fixture.nativeElement.querySelector('label[for="engagement-org-participation-search"]');
-    expect(label?.textContent?.trim()).toBe('Search organization');
-    expect(fixture.nativeElement.querySelector('input#engagement-org-participation-search')).not.toBeNull();
+    const search = query('engagement-org-participation-search') as HTMLElement;
+    expect(search.tagName).toBe('LFX-UI-SEARCH-INPUT');
+    expect(search.querySelector('input')?.getAttribute('placeholder')).toBe('Search company...');
+    expect(search.querySelector('input')?.getAttribute('aria-label')).toBe('Search company');
+  });
+
+  it('reads a non-member as "Non-member" in neutral-500, and dashes a company no meeting concerned with no bar', async () => {
+    const vendor = orgRow({ accountId: 'a-2', accountName: 'Vendor Corp', membershipTier: 'Non-Member', isMember: false });
+    vendor.periods[3] = { ...vendor.periods[3], meetingsTotal: 0, attendedCount: 0, attendancePct: null, avgReps: null };
+    await render(response({ rows: [vendor] }));
+
+    const cells = (query('engagement-org-participation-row-a-2') as HTMLElement).querySelectorAll('td');
+    expect(cells[1].textContent?.trim()).toBe('Non-member');
+    // On the text itself: the table's td rule would override a colour on the cell.
+    expect(cells[1].querySelector('[data-testid="health-metrics-cell-text"]')?.className).toContain('text-gray-500');
+    expect(cells[1].querySelector('[data-testid="health-metrics-cell-tier"]')).toBeNull();
+    expect(cells[2].textContent?.trim()).toBe('—');
+    expect(cells[2].querySelector('[data-testid="health-metrics-progress-fill"]')).toBeNull();
+    expect(cells[3].textContent?.trim()).toBe('—');
+  });
+
+  // A page picked against the previous read must not leave a shorter one blank.
+  it('shows the last page that has rows when the page is past the end of the loaded rows', async () => {
+    const rows = Array.from({ length: 13 }, (_, index) => orgRow({ accountId: `a-${index}`, accountName: `Company ${index}` }));
+    await render(response({ rows, counts: { orgs: 13, lapsedOrgs: 0 } }));
+
+    fixture.componentInstance['page'].set(5);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="engagement-org-participation-row-"]')).toHaveLength(3);
+  });
+
+  it('pages ten companies at a time with the numbered pager', async () => {
+    const rows = Array.from({ length: 23 }, (_, index) => orgRow({ accountId: `a-${index}`, accountName: `Company ${index}` }));
+    await render(response({ rows, counts: { orgs: 23, lapsedOrgs: 0 } }));
+
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="engagement-org-participation-row-"]')).toHaveLength(10);
+    expect(query('ui-pagination-info')?.textContent?.trim()).toBe('Showing 1 to 10 of 23');
+  });
+
+  it("keeps the view's rank under the default Meetings attended arrow, then sorts the whole list from page 1 on a picked column", async () => {
+    const ytd = (rank: number, attended: number) => [
+      {
+        range: 'YTD' as const,
+        meetingsHeld: 30,
+        meetingsTotal: 20,
+        invitedCount: 20,
+        attendedCount: attended,
+        attendancePct: attended / 20,
+        avgReps: 1,
+        sortRank: rank,
+      },
+    ];
+    // The view ranks Beta first even though Alpha attended more, so the default must not re-sort by the share.
+    const rows = [
+      orgRow({ accountId: 'b', accountName: 'Beta Labs', membershipTier: 'Silver', periods: ytd(1, 10) }),
+      orgRow({ accountId: 'a', accountName: 'Alpha Works', membershipTier: 'Gold', periods: ytd(2, 15) }),
+      ...Array.from({ length: 10 }, (_, index) =>
+        orgRow({ accountId: `n-${index}`, accountName: `Zed ${index}`, isMember: false, membershipTier: '', periods: ytd(3 + index, 1) })
+      ),
+    ];
+    await render(response({ rows, counts: { orgs: 12, lapsedOrgs: 0 } }));
+    const keys = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('[data-testid^="engagement-org-participation-row-"]')].map(
+        (row: Element) => row.getAttribute('data-testid') ?? ''
+      );
+    const header = (key: string): HTMLElement => query(`engagement-org-participation-sort-${key}`) as HTMLElement;
+
+    expect(keys().slice(0, 2)).toEqual(['engagement-org-participation-row-b', 'engagement-org-participation-row-a']);
+    expect(header('attended').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+
+    fixture.componentInstance['page'].set(1);
+    (header('membership').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    // Tiers rank highest first on the first click, non-members last, and the table is back on page 1.
+    expect(keys().slice(0, 2)).toEqual(['engagement-org-participation-row-a', 'engagement-org-participation-row-b']);
+    expect(fixture.componentInstance['page']()).toBe(0);
+
+    (header('company').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(keys().slice(0, 2)).toEqual(['engagement-org-participation-row-a', 'engagement-org-participation-row-b']);
+    expect(header('company').closest('th')?.getAttribute('aria-sort')).toBe('ascending');
   });
 
   // The period pill projects the loaded rows, so switching it must not cost another request.
@@ -128,58 +227,22 @@ describe('EngagementOrgParticipationComponent', () => {
     fixture.detectChanges();
 
     expect(getEngagementOrgParticipation).not.toHaveBeenCalled();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]').textContent).toContain('20 / 27');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]').textContent).toContain('20 of 27 (74%)');
   });
 
-  // The caption counts the whole foundation, not the filtered cut, so it comes off the response.
+  // The note counts the whole foundation, not the filtered cut, so it comes off the response.
   it('emits the scope counts for the sub-nav note, and nothing while a read is in flight', async () => {
     const emitted: unknown[] = [];
     await render(response({ counts: { orgs: 136, lapsedOrgs: 54 } }), (counts) => emitted.push(counts));
 
     expect(emitted).toEqual([null, { orgs: 136, lapsedOrgs: 54 }]);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('136 organizations · 54 lapsed');
   });
 
-  it('drops the lapsed part of the caption at zero', async () => {
-    await render(response({ counts: { orgs: 1, lapsedOrgs: 0 } }));
-
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('1 organization');
-  });
-
-  // The design's tier pill: blue for Platinum / Premier / Founding in any case, grey for every other tier.
-  it('pills the top tiers blue and every other tier grey', async () => {
-    await render(
-      response({
-        rows: [
-          orgRow({ accountId: 'a-1', membershipTier: 'Platinum' }),
-          orgRow({ accountId: 'a-2', membershipTier: 'founding' }),
-          orgRow({ accountId: 'a-3', membershipTier: 'Silver' }),
-          orgRow({ accountId: 'a-4', membershipTier: '' }),
-        ],
-        counts: { orgs: 4, lapsedOrgs: 0 },
-      })
-    );
-
-    const tier = (id: string) => fixture.nativeElement.querySelector(`[data-testid="engagement-org-participation-row-${id}-tier"]`) as HTMLElement | null;
-    expect(tier('a-1')?.textContent?.trim()).toBe('Platinum');
-    expect(tier('a-1')?.className).toContain('bg-blue-50');
-    expect(tier('a-1')?.className).toContain('text-blue-700');
-    expect(tier('a-1')?.className).toContain('rounded-full');
-    expect(tier('a-1')?.className).toContain('text-[12px]');
-    expect(tier('a-2')?.className).toContain('bg-blue-50');
-    expect(tier('a-3')?.className).toContain('bg-gray-100');
-    expect(tier('a-3')?.className).toContain('text-gray-600');
-    // No tier at all is an em dash, not an empty pill.
-    expect(tier('a-4')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-4"]').textContent).toContain('—');
-  });
-
-  // A view that reports no scope count has not measured zero organizations, and the table says so.
-  it('captions an unmeasured scope with an em dash rather than a confident zero', async () => {
+  // A view that reports no scope count has not measured zero companies.
+  it('reports no note counts for an unmeasured scope rather than a confident zero', async () => {
     const emitted: unknown[] = [];
     await render(response({ counts: null }), (counts) => emitted.push(counts));
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('\u2014');
     expect(emitted).toEqual([null, null]);
   });
 
@@ -205,28 +268,25 @@ describe('EngagementOrgParticipationComponent', () => {
     const rows = Array.from({ length: 60 }, (_, index) => orgRow({ accountId: `a-${index}`, accountName: `Org ${index}` }));
     await render(response({ rows, counts: { orgs: 60, lapsedOrgs: 0 } }));
 
-    fixture.componentInstance['first'].set(50);
+    fixture.componentInstance['page'].set(5);
     selectedFoundation.set({ slug: 'other' });
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(fixture.componentInstance['first']()).toBe(0);
+    expect(fixture.componentInstance['page']()).toBe(0);
   });
 
-  it('narrows to lapsed organizations on the segment, using the view flag rather than a date sum', async () => {
+  it('narrows to lapsed companies on the bound cut, using the view flag rather than a date sum', async () => {
     const lapsed = orgRow({ accountId: 'a-2', accountName: 'Vendor Corp', lapsed: true, lastEngagedDate: '2025-01-09' });
     await render(response({ rows: [orgRow(), lapsed], counts: { orgs: 2, lapsedOrgs: 1 } }));
 
-    fixture.componentInstance['onFilterChange']('lapsed');
-    fixture.detectChanges();
+    setFilter('lapsed');
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-2"]')).not.toBeNull();
-    // The caption still counts the foundation, not the cut — the segment narrows the table only.
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('2 organizations · 1 lapsed');
+    expect(query('engagement-org-participation-row-a-1')).toBeNull();
+    expect(query('engagement-org-participation-row-a-2')).not.toBeNull();
   });
 
-  it('restores the lapsed segment from the URL, so a deep link lands on the cut it named', async () => {
+  it('starts on the cut the page binds in from the URL', async () => {
     const lapsed = orgRow({ accountId: 'a-2', lapsed: true });
     await render(response({ rows: [orgRow(), lapsed], counts: { orgs: 2, lapsedOrgs: 1 } }), undefined, { orgFilter: 'lapsed' });
 
@@ -250,7 +310,8 @@ describe('EngagementOrgParticipationComponent', () => {
     await render(response({ rows: [orgRow(), orgRow({ accountId: 'a-2', accountName: 'Vendor Corp' })], counts: { orgs: 2, lapsedOrgs: 0 } }));
 
     vi.useFakeTimers();
-    fixture.componentInstance['searchForm'].controls.search.setValue('vendor');
+    fixture.componentInstance['searchText'].set('vendor');
+    TestBed.tick();
     vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS - 1);
     fixture.detectChanges();
 
@@ -267,23 +328,34 @@ describe('EngagementOrgParticipationComponent', () => {
     await render();
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
-    fixture.componentInstance['onFilterChange']('lapsed');
+    setFilter('lapsed');
     await fixture.whenStable();
 
     expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { orgFilter: 'lapsed' }, preserveFragment: true, replaceUrl: true }));
 
-    fixture.componentInstance['onFilterChange']('all');
+    setFilter('all');
     await fixture.whenStable();
 
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgFilter: null } }));
   });
 
-  // An unknown segment in the URL is not a segment — it must land on the default, not an empty table.
-  it('falls back to the all segment for an orgFilter value the table does not have', async () => {
-    await render(response(), undefined, { orgFilter: 'bogus' });
+  // A search and cut with no match offer to reset both, rather than leaving an empty table.
+  it('shows the no-match state with Reset filters, which clears the search and the cut', async () => {
+    await render(response({ rows: [orgRow()] }));
+    setFilter('lapsed');
 
-    expect(fixture.componentInstance['filter']()).toBe('all');
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]')).not.toBeNull();
+    const empty = query('engagement-org-participation-empty') as HTMLElement;
+    expect(empty.textContent).toContain('No companies match this filter');
+    expect(empty.textContent).toContain('No company in this scope matches the current search and activity filter.');
+
+    fixture.componentInstance['searchText'].set('acme');
+    (empty.querySelector('[data-testid="empty-state-reset-filters"]') as HTMLElement).click();
+    expect(fixture.componentInstance.filter()).toBe('all');
+    expect(fixture.componentInstance['searchText']()).toBe('');
+    // A cleared search skips the debounce, so the rows come back at once.
+    TestBed.tick();
+    fixture.detectChanges();
+    expect(query('engagement-org-participation-row-a-1')).not.toBeNull();
   });
 
   // A failed read renders no rows, and "no organizations" would state that absence as measured fact.

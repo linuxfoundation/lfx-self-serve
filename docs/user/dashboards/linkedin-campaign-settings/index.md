@@ -1,10 +1,32 @@
 ---
-title: LinkedIn targeting and ad variants
-description: See and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text and headline, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
+title: LinkedIn budget, targeting and ad variants
+description: Set a LinkedIn budget and an optional daily cap beside a lifetime budget, search for the locations a LinkedIn campaign targets, see and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text, headline, name and description, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
-tags: [campaigns, paid marketing, linkedin ads, sponsored content, targeting, member groups, skills, ad variants, intro text, headline, images, implement]
-last_updated: 2026-11-12
+tags:
+  [
+    campaigns,
+    paid marketing,
+    linkedin ads,
+    sponsored content,
+    budget,
+    daily cap,
+    target cost,
+    automatic bidding,
+    lifetime budget,
+    targeting,
+    locations,
+    member groups,
+    skills,
+    ad variants,
+    intro text,
+    headline,
+    ad name,
+    description,
+    images,
+    implement,
+  ]
+last_updated: 2026-11-26
 intercom_collection: Dashboards
 ---
 
@@ -15,6 +37,41 @@ When you create a LinkedIn campaign from the **Campaigns** page in the Foundatio
 1. Open **Campaigns** in the Foundation lens and choose **Paid Marketing**.
 2. Open the **Implement** tab for a brief that includes LinkedIn Ads.
 3. In the **LinkedIn Sponsored Content** section, scroll to **Ad variants**. The heading shows how many variants there are, out of the most you can have.
+
+## Ad account
+
+The **Ad Account** line in the LinkedIn section tells you where the campaign is created. It is set by the project's LinkedIn connection: the campaign goes into that connection's ad account, or into LF's shared LinkedIn account if the project has no LinkedIn connection of its own. You can't choose a different account here yet.
+
+## Budget
+
+The **LinkedIn Budget (USD)** box sets how much the campaign may spend. Leave **Lifetime budget** off and it is a daily budget (at least $10). Turn it on and it is the total for the whole campaign (at least $100).
+
+With **Lifetime budget** on, you can also set an optional **Daily cap (USD)**: the most LinkedIn spends on any one day. For example, a $1,000 lifetime budget with a $20 daily cap. The cap must be at least $10 and no more than the lifetime budget. Leave it empty for no cap.
+
+If the cap is under $10 or over the lifetime budget, a message appears under it and **Create** stays disabled with "LinkedIn Ads: fix the daily cap." Turning **Lifetime budget** off removes the cap.
+
+A campaign with a daily cap runs without its own end date in LinkedIn Campaign Manager. The event's campaign group stops it on the campaign's end date instead. If the event already has a campaign group that ends later than this campaign, or never ends, the create is refused.
+
+After the campaign is created, you can change its lifetime budget on the **Optimize** tab and the daily cap stays as it is. Keep **Budget pacing** on **Lifetime** there: switching a capped campaign to **Daily** is refused. A new lifetime budget below the daily cap is also refused; lower the cap first. To change the daily cap itself, use LinkedIn Campaign Manager.
+
+## Target cost
+
+With automatic bidding, you can set an optional **Target cost (USD)** under the LinkedIn bidding choice. It is sent with automatic bidding as the campaign's unit cost, in USD; how LinkedIn applies it is still being confirmed. For example, 17.88. Leave it empty for no target.
+
+The target must be more than 0, no more than 1,000,000 and use at most two decimal places. Otherwise a message appears under it and **Create** stays disabled until you fix or clear it.
+
+The box is only there with automatic bidding, and only where your deployment supports a target cost. Switch to manual bidding and the target is not sent. If you typed a target and the campaign settings are still loading, **Create** waits until they load, so the campaign is never created without the target you entered. If they can't be loaded, clear the target cost to continue.
+
+## Locations
+
+The LinkedIn section starts with the locations the brief recommends. To change them:
+
+- To add a location, type at least 2 characters of a country, region or city in the search box under the location list, then pick a result. A location you already added is listed but can't be picked again.
+- To remove a location, select the **x** on its chip.
+
+A campaign needs at least one location. While the list is empty, **Create** stays disabled with "LinkedIn Ads: add at least one location."
+
+The campaign name includes a region taken from the first location. Only the United States, India, Japan, Singapore, South Korea, Australia, Taiwan, Hong Kong, Germany and the United Kingdom have their own region in the name. Any other first location is named "Global".
 
 ## Edit a variant
 
@@ -28,6 +85,13 @@ Each variant has an **Intro text** box (the body of the post) and a **Headline**
 Spaces at the start and end are not counted. An em dash (—) or en dash (–) is sent as a comma and a space, and counted that way, so the count can differ from what you typed. A dash at the very start or end is dropped.
 
 Both fields are required. If a field is empty, holds only spaces or a single dash, or is over its limit, a message appears under it and **Create** stays disabled with "LinkedIn Ads: fix the ad variant text." Shorten or fill in the text to continue. Longer text is not cut for you.
+
+## Name and describe each ad
+
+Where your deployment supports it, each variant also has two optional fields:
+
+- **Ad name**: how the ad is listed in LinkedIn Campaign Manager and in reporting, up to 255 characters. Left empty, the ad is named after the event and its variant number, for example "KubeCon EU 2026 | variant-2". Each ad in a campaign needs its own name. If two variants have the same name, a message appears under the second one and **Create** stays disabled with "LinkedIn Ads: fix the ad name or description."
+- **Description**: the line shown under the headline in the ad, up to 300 characters, counted the way intro text and headlines are. Left empty, the ad has no description.
 
 ## Add or remove variants
 
@@ -72,7 +136,7 @@ In the chosen locations, LinkedIn shows the ads to members who are in any of the
 When targeting changes are available on your deployment, each group and skill has a remove button (×). Removing one takes it out of this campaign only. The profile itself does not change.
 
 - **Reset to profile** puts back everything you removed. It appears once you have removed something.
-- Choosing the other profile starts again from that profile's full list, so anything you removed is put back. If the brief chose a custom profile, it is shown as Cloud Native / CNCF. Choosing Cloud Native / CNCF then keeps your removals.
+- Choosing the other profile starts again from that profile's full list, so anything you removed is put back. If the brief chose a custom profile, neither button is selected, but the lists show Cloud Native / CNCF's groups and skills, which is what LinkedIn uses. Choosing Cloud Native / CNCF then keeps your removals.
 - If you remove every group and skill, a note says the campaign reaches everyone in those job functions in the chosen locations. You can still create the campaign.
 - You can't add groups or skills. Only entries already in the profile can be kept or removed.
 

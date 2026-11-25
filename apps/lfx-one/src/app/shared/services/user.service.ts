@@ -1,13 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { afterNextRender, computed, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
 import {
   CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS,
   EMAIL_LINKED_SUPPORT_HANDLE_PATTERN,
+  MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS,
   USER_MEETINGS_INCLUDE_ATTENDANCE,
   USER_PAST_MEETINGS_INCLUDE_ARTIFACTS,
 } from '@lfx-one/shared/constants';
@@ -29,6 +31,8 @@ import {
   MeetingInviteEmail,
   MeetingRegistrationRemovalResult,
   MeetingRsvp,
+  MeetingSelfGuest,
+  PasswordResetLinkResponse,
   PastMeeting,
   ProfileAuthStatus,
   ProfilePictureUploadResponse,
@@ -45,6 +49,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildDisplayName,
+  buildMeetingSelfGuest,
   currentEmployerFromWorkExperiences,
   isRsvpSupersededBy,
   resolveRsvpOccurrenceId,
@@ -57,6 +62,7 @@ import {
   combineLatest,
   distinctUntilChanged,
   EMPTY,
+  forkJoin,
   map,
   Observable,
   of,
@@ -73,6 +79,7 @@ import {
 } from 'rxjs';
 
 import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
+import { ProfileSavedFieldsService } from './profile-saved-fields.service';
 
 @Injectable({
   providedIn: 'root',
@@ -80,6 +87,8 @@ import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
 export class UserService {
   private readonly http = inject(HttpClient);
   private readonly messageService = inject(MessageService);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly savedFields = inject(ProfileSavedFieldsService);
 
   public authenticated: WritableSignal<boolean> = signal<boolean>(false);
   public user: WritableSignal<User | null> = signal<User | null>(null);
@@ -264,7 +273,8 @@ export class UserService {
 
   /**
    * Update user profile metadata via unified NATS endpoint
-   * Only sends user_metadata - username and email are extracted from OIDC claim on backend
+   * Only sends user_metadata - username and email are extracted from OIDC claim on backend.
+   * Not recorded here: each editor records its save after syncing it, which compares against the name from before the save.
    */
   public updateUserProfile(data: ProfileUpdateRequest): Observable<any> {
     return this.http.patch('/api/profile', data).pipe(take(1));
@@ -273,9 +283,15 @@ export class UserService {
   /**
    * Upload a new profile picture. Sent as raw bytes with the file's MIME type as
    * Content-Type (the backend parses this with express.raw, not multipart/form-data).
+   * Every editor uploads through here, so the new photo is recorded for the pages that lay saves over a stale GET.
    */
   public uploadProfilePicture(file: File): Observable<ProfilePictureUploadResponse> {
-    return this.http.post<ProfilePictureUploadResponse>('/api/profile/picture-upload', file, { headers: { 'Content-Type': file.type } }).pipe(take(1));
+    return this.http.post<ProfilePictureUploadResponse>('/api/profile/picture-upload', file, { headers: { 'Content-Type': file.type } }).pipe(
+      take(1),
+      tap((response) => {
+        if (response.public_url) this.savedFields.record({ picture: response.public_url });
+      })
+    );
   }
 
   // Public-profile visibility methods (LFXV2-2629)
@@ -370,8 +386,8 @@ export class UserService {
   /**
    * Send password reset email for current authenticated user
    */
-  public sendPasswordResetEmail(): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>('/api/profile/reset-password', {}).pipe(take(1));
+  public sendPasswordResetEmail(): Observable<PasswordResetLinkResponse> {
+    return this.http.post<PasswordResetLinkResponse>('/api/profile/reset-password', {}).pipe(take(1));
   }
 
   /**
@@ -670,6 +686,49 @@ export class UserService {
   }
 
   /**
+   * The logo of the named company in the signed-in user's work history, a current job's before a past one's. A quiet read like
+   * {@link getCurrentEmployerName}: a failure, a timeout or no match is a null, never a toast.
+   */
+  public getWorkHistoryLogo(company: string): Observable<string | null> {
+    const name = company.trim().toLowerCase();
+    return this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
+      take(1),
+      timeout(CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS),
+      map((experiences) => {
+        const matches = experiences.filter((experience) => experience.organizationLogo && experience.organization.trim().toLowerCase() === name);
+        return (matches.find((experience) => !experience.endDate) ?? matches[0])?.organizationLogo ?? null;
+      }),
+      catchError((error) => {
+        console.warn('[UserService] getWorkHistoryLogo failed; showing no logo', error);
+        return of(null);
+      })
+    );
+  }
+
+  /**
+   * The signed-in user as a meeting guest, for the guest editors' "Add myself" action. A quiet
+   * read like {@link getCurrentEmployerName}: the profile, meeting-invite email and employer
+   * lookups run in parallel, the first two each bounded by {@link MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS},
+   * and none toasts. A failed profile lookup falls back to the session claims. A failed
+   * meeting-invite email lookup gives `null` instead, as {@link getMeetingInviteEmail} asks: the
+   * preferred address is unknown, so the invite could go to the wrong one and the user could be
+   * listed under it already. `null` on the server, so SSR makes none of the calls, and when no
+   * source has an email.
+   */
+  public getMeetingSelfGuest(): Observable<MeetingSelfGuest | null> {
+    if (!isPlatformBrowser(this.platformId)) {
+      return of(null);
+    }
+
+    return forkJoin([
+      this.quietSelfGuestLookup(this.getCurrentUserProfile(), 'profile', 'falling back to the session claims'),
+      // Wrapped so a confirmed "no override" (`null` fields) stays distinct from a failed lookup.
+      this.quietSelfGuestLookup(this.getMeetingInviteEmail().pipe(map((inviteEmail) => ({ inviteEmail }))), 'meeting-invite email', 'not offering Add myself'),
+      this.getCurrentEmployerName(),
+    ]).pipe(map(([profile, invite, employerName]) => (invite ? buildMeetingSelfGuest(this.user(), profile, invite.inviteEmail, employerName) : null)));
+  }
+
+  /**
    * Get user's work experiences from CDP
    */
   public getWorkExperiences(): Observable<WorkExperienceEntry[]> {
@@ -898,5 +957,17 @@ export class UserService {
       const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? '') : '';
       return (first + last).toUpperCase();
     });
+  }
+
+  /** One source of {@link getMeetingSelfGuest}: first value only, time-bounded, `null` on failure. */
+  private quietSelfGuestLookup<T>(source: Observable<T>, label: string, outcome: string): Observable<T | null> {
+    return source.pipe(
+      take(1),
+      timeout(MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS),
+      catchError((error) => {
+        console.warn(`[UserService] getMeetingSelfGuest ${label} lookup failed; ${outcome}`, error);
+        return of(null);
+      })
+    );
   }
 }

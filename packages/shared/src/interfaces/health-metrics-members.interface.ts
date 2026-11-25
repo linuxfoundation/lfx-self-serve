@@ -12,9 +12,11 @@ import type {
   HEALTH_METRICS_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-members.constants';
 import type { FilterPillOption } from './dashboard-metric.interface';
+import type { HealthMetricsBarChartView } from './health-metrics-bar-chart.interface';
 import type { FilterOption } from './filter.interface';
 import type { HealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.interface';
-import type { HealthMetricsChartTipView, HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type { HealthMetricsChartTipView, HealthMetricsL2Range, HealthMetricsL2SubNavItem, HealthMetricsMetricItem } from './health-metrics-l2.interface';
+import type { HealthMetricsSortHeaderView, HealthMetricsSortValue, HealthMetricsTableSort } from './health-metrics-table.interface';
 
 /** Section key from the design's `M2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsMembersSectionKey = (typeof HEALTH_METRICS_MEMBERS_SECTIONS)[number]['key'];
@@ -60,9 +62,16 @@ export interface HealthMetricsMembersTierIcon {
 export interface HealthMetricsMembersBreakdownColumnView {
   year: number;
   label: string;
+  /** The column's key in the table's sort, `y{year}`. */
+  sortKey: string;
 }
 
 export type HealthMetricsMembersBreakdownRowKind = 'tier' | 'total';
+
+/** A year column's header as drawn: the column with its sort state. */
+export interface HealthMetricsMembersBreakdownHeaderView extends HealthMetricsMembersBreakdownColumnView {
+  header: HealthMetricsSortHeaderView;
+}
 
 /** One row of the table: a tier, or a total under the tiers. */
 export interface HealthMetricsMembersBreakdownRowView {
@@ -70,10 +79,10 @@ export interface HealthMetricsMembersBreakdownRowView {
   label: string;
   kind: HealthMetricsMembersBreakdownRowKind;
   icon: HealthMetricsMembersReservedTier | null;
-  /** Every other tier row is tinted, as the design stripes them. */
-  striped: boolean;
   /** One per year, in the columns' order. */
   cells: string[];
+  /** `tier` is the view's rank, highest-paying highest; `y{year}` that year's members. Totals carry none and stay last. */
+  sortValues: Record<string, HealthMetricsSortValue>;
 }
 
 /** The breakdown table's class strings, by row kind where they differ. */
@@ -157,8 +166,10 @@ export interface HealthMetricsMembersGrowthView {
   measured: boolean;
   /** The y axis's top label; the bottom is 0. */
   yMax: string;
-  /** Oldest year first, so the newest draws on top; the legend reads in the same order. */
+  /** Oldest year first, so the newest draws on top. */
   lines: HealthMetricsMembersGrowthLineView[];
+  /** The same lines, newest year first, as the design's legend reads. */
+  legend: HealthMetricsMembersGrowthLineView[];
   columns: HealthMetricsMembersGrowthColumnView[];
   ariaLabel: string;
 }
@@ -179,17 +190,26 @@ export interface HealthMetricsMembersDirectoryQuery {
   search: string;
   offset: number;
   pageSize: number;
+  /** A column the reader picked, sorted on the server across every page; `null` keeps the view's rank. */
+  sort: HealthMetricsTableSort<HealthMetricsMembersDirectorySortKey> | null;
 }
+
+/** The All members table's sortable columns. */
+export type HealthMetricsMembersDirectorySortKey = 'name' | 'membership' | 'renewal' | 'sponsorship' | 'engagement';
 
 /** One `MEMBERSHIP_DIRECTORY` row. Dates are ISO `YYYY-MM-DD`; `null` is not tracked, never zero. */
 export interface HealthMetricsMembersDirectoryMember {
   accountId: string;
   accountName: string;
+  /** The mapped company logo; empty falls back to the first letter. */
+  logoUrl: string;
   membershipTier: string | null;
   annualDuesUsd: number | null;
   engagementLevel: HealthMetricsMembersEngagementLevel | null;
   engagementScore: number | null;
   npsCategory: HealthMetricsMembersNpsCategory | null;
+  /** The member's latest NPS answer, 0–10 or the survey's score; `null` without one. */
+  npsScore: number | null;
   isAtRisk: boolean;
   renewalDate: string | null;
   renewalDuesUsd: number | null;
@@ -207,8 +227,6 @@ export interface HealthMetricsMembersDirectory {
   totalRecords: number;
   /** Every member of the foundation; the unfiltered count. */
   scopeTotal: number;
-  /** At-risk members across the whole foundation, whatever the filters. */
-  atRiskCount: number;
 }
 
 /** `GET /api/analytics/members-directory-tiers` — read once per foundation, not per page. */
@@ -226,29 +244,34 @@ export interface HealthMetricsMembersDirectoryTierOption extends FilterOption<st
   disabled?: boolean;
 }
 
-/** One member row as the directory table renders it. */
+/** One member row as the All members table renders it. */
 export interface HealthMetricsMembersDirectoryRowView {
   accountId: string;
-  accountName: string;
-  npsLabel: string | null;
-  npsClass: string;
+  name: string;
+  logoUrl: string;
   isAtRisk: boolean;
-  tierLabel: string;
-  duesLabel: string;
-  engagementLabel: string;
-  engagementDotClass: string;
-  scoreLabel: string;
-  renewsLabel: string;
+  /** "Promoter · NPS 9", "Promoter" or "No NPS response". */
+  npsLabel: string;
+  /** The description's leading dot, e.g. `fa-solid fa-circle-small text-emerald-500`. */
+  npsIconClass: string;
+  membershipLabel: string;
+  /** The tier icon for Diamond, Platinum, Gold and Silver. */
+  tier: HealthMetricsMembersReservedTier | null;
+  renewalLabel: string;
+  /** "{dues} dues" when the renewal dues differ from the annual dues; empty otherwise. */
   renewalDuesLabel: string;
-  lastEngagedLabel: string;
-  activity: HealthMetricsMembersDirectoryCellView[];
+  sponsorshipLabel: string;
+  /** `null` with no engagement level: the cell reads "—" and has no popup. */
+  engagement: HealthMetricsMembersDirectoryEngagementView | null;
 }
 
-/** An activity cell; `tracked` false renders the not-tracked dash, never 0. */
-export interface HealthMetricsMembersDirectoryCellView {
-  key: string;
+/** The Engagement badge and the popup it opens. */
+export interface HealthMetricsMembersDirectoryEngagementView {
+  /** "Low 2.3". */
   label: string;
-  tracked: boolean;
+  /** The badge's background and text classes. */
+  badgeClass: string;
+  tip: HealthMetricsChartTipView;
 }
 
 /** Each section's filter and page state in the URL; `null` clears a param the URL already carries. */
@@ -264,7 +287,7 @@ export interface HealthMetricsMembersQueryParams {
   boardCohort?: HealthMetricsMembersBoardCohort | null;
   boardPage?: number | null;
   npsAudience?: string | null;
-  churnMode?: HealthMetricsMembersChurnMode | null;
+  churnView?: HealthMetricsMembersChurnSection | null;
   churnPage?: number | null;
 }
 
@@ -283,12 +306,19 @@ export interface HealthMetricsMembersAtRiskQuery {
   bucket: HealthMetricsMembersAtRiskFilter;
   offset: number;
   pageSize: number;
+  /** A column the reader picked, sorted on the server across every page; `null` keeps the view's rank. */
+  sort: HealthMetricsTableSort<HealthMetricsMembersAtRiskSortKey> | null;
 }
 
-/** One at-risk member, in the view's own `sort_rank` order. Dates are ISO `YYYY-MM-DD`. */
+/** The at-risk table's sortable columns; the spacer has no header and does not sort. */
+export type HealthMetricsMembersAtRiskSortKey = 'company' | 'membership' | 'overdue' | 'age';
+
+/** One at-risk member, in the view's `sort_rank` order or the picked column's. Dates are ISO `YYYY-MM-DD`. */
 export interface HealthMetricsMembersAtRiskMember {
   accountId: string;
   accountName: string;
+  /** The mapped company logo; empty falls back to the first letter. */
+  logoUrl: string;
   membershipTier: string | null;
   outstandingBalanceUsd: number | null;
   daysOverdue: number | null;
@@ -299,17 +329,15 @@ export interface HealthMetricsMembersAtRiskMember {
 }
 
 /**
- * The hero, summed over every member 60+ days overdue whatever the bucket pill; with a bucket picked it exceeds the
- * table's total. `null` is a total the model left unset for a foundation with members at risk, never a zero.
+ * The outstanding balance, summed over every member 60+ days overdue whatever the bucket switch. `null` is a total the
+ * model left unset for a foundation with members at risk, never a zero.
  */
 export interface HealthMetricsMembersAtRiskSummary {
   outstandingBalanceUsd: number | null;
-  highRiskBalanceUsd: number | null;
-  mediumRiskBalanceUsd: number | null;
   memberCount: number | null;
 }
 
-/** One aging bar; always both buckets, whatever the selected pill. `null` is an unset model total, as in the summary. */
+/** One bucket's totals: 90+ days is High risk, 60–89 Medium. Always both, whatever the switch; `null` is an unset model total. */
 export interface HealthMetricsMembersAtRiskAging {
   bucket: HealthMetricsMembersAtRiskBucket;
   memberCount: number | null;
@@ -324,35 +352,24 @@ export interface HealthMetricsMembersAtRisk {
   aging: HealthMetricsMembersAtRiskAging[];
 }
 
-/** A bucket pill; `all` is "All at risk". */
+/** A bucket switch option; `all` is "All at risk". */
 export interface HealthMetricsMembersAtRiskFilterOption extends FilterPillOption {
   id: HealthMetricsMembersAtRiskFilter;
-}
-
-/** The hero as the section renders it. */
-export interface HealthMetricsMembersAtRiskSummaryView {
-  outstandingLabel: string;
-  highRiskLabel: string;
-  mediumRiskLabel: string;
-  memberCountLabel: string;
-}
-
-/** One aging bar as the section renders it; `widthPct` is against the larger bucket's balance. */
-export interface HealthMetricsMembersAtRiskAgingView {
-  bucket: HealthMetricsMembersAtRiskBucket;
-  label: string;
-  balanceLabel: string;
-  widthPct: number;
 }
 
 /** One at-risk row as the table renders it. */
 export interface HealthMetricsMembersAtRiskRowView {
   accountId: string;
-  accountName: string;
-  tierLabel: string;
+  name: string;
+  logoUrl: string;
+  /** "Last engaged {date}"; empty when there is none. */
+  lastEngagedLabel: string;
+  membershipLabel: string;
+  tier: HealthMetricsMembersReservedTier | null;
   overdueLabel: string;
   ageLabel: string;
-  lastEngagedLabel: string;
+  /** The age's dot: red at 90+ days, amber at 60–89; empty with no bucket. */
+  ageDotClass: string;
 }
 
 /** A `MEMBERSHIP_RENEWALS` window, each backed by the model's own `is_renewing_*` flag and foundation totals. */
@@ -369,27 +386,28 @@ export interface HealthMetricsMembersRenewalsQuery {
   window: HealthMetricsMembersRenewalsWindow;
   offset: number;
   pageSize: number;
+  /** A column the reader picked, sorted on the server across every page; `null` keeps the default, highest dues first. */
+  sort: HealthMetricsTableSort<HealthMetricsMembersRenewalsSortKey> | null;
 }
 
-/** One renewal inside the window, soonest first. Dates are ISO `YYYY-MM-DD`; `null` dues is not recorded, never $0. */
+/** The renewals table's sortable columns. */
+export type HealthMetricsMembersRenewalsSortKey = 'company' | 'membership' | 'date' | 'dues';
+
+/** One renewal inside the window, highest dues first. Dates are ISO `YYYY-MM-DD`; `null` dues is not recorded, never $0. */
 export interface HealthMetricsMembersRenewal {
   accountId: string;
   accountName: string;
+  /** The mapped company logo; empty falls back to the first letter. */
+  logoUrl: string;
   membershipTier: string | null;
   renewalDate: string | null;
-  daysUntilRenewal: number | null;
-  /** Already renewed; the model's window totals still count it. */
-  hasRenewed: boolean;
   duesUsd: number | null;
-  /** The renewal plus a concurrent risk signal (MEM-02); every other row carries no status. */
-  hasOutstandingBalance: boolean;
 }
 
-/** The hero over every renewal in the window. `valueUsd` sums the known dues; `withoutDuesCount` renewals have none on record. */
+/** The metrics over every renewal in the window; `valueUsd` sums the known dues only. */
 export interface HealthMetricsMembersRenewalsSummary {
   renewalCount: number | null;
   valueUsd: number | null;
-  withoutDuesCount: number | null;
 }
 
 export interface HealthMetricsMembersRenewals {
@@ -398,22 +416,15 @@ export interface HealthMetricsMembersRenewals {
   summary: HealthMetricsMembersRenewalsSummary;
 }
 
-/** The renewals hero as the section renders it; `coverageNote` is empty when every renewal has dues. */
-export interface HealthMetricsMembersRenewalsSummaryView {
-  valueLabel: string;
-  renewalCountLabel: string;
-  coverageNote: string;
-}
-
 /** One renewal row as the table renders it. */
 export interface HealthMetricsMembersRenewalRowView {
   accountId: string;
-  accountName: string;
-  tierLabel: string;
+  name: string;
+  logoUrl: string;
+  membershipLabel: string;
+  tier: HealthMetricsMembersReservedTier | null;
   renewalDateLabel: string;
   duesLabel: string;
-  hasOutstandingBalance: boolean;
-  hasRenewed: boolean;
 }
 
 /** `MEMBERSHIP_BOARD_ATTENDANCE`'s `attendance_cohort` values. */
@@ -431,7 +442,12 @@ export interface HealthMetricsMembersBoardAttendanceQuery {
   cohort: HealthMetricsMembersBoardCohort;
   offset: number;
   pageSize: number;
+  /** `null` keeps the newest meeting first. */
+  sort: HealthMetricsTableSort<HealthMetricsMembersBoardSortKey> | null;
 }
+
+/** The meetings table's sortable columns. */
+export type HealthMetricsMembersBoardSortKey = 'meeting' | 'date' | 'attendance';
 
 /** One cohort's period figures as the view carries them; every field is `null` when the period held no meeting. */
 export interface HealthMetricsMembersBoardCohortSummary {
@@ -441,8 +457,6 @@ export interface HealthMetricsMembersBoardCohortSummary {
   latestInvitedCount: number | null;
   meetingsInRangeCount: number | null;
   neverAttendedCount: number | null;
-  /** The view's level flag (one 90% line for both cohorts); read only when the share is missing. */
-  isBelowExpectedLevel: boolean | null;
 }
 
 /** One meeting occurrence of the cohort. `meetingDate` is ISO `YYYY-MM-DD`; `attendancePct` is 0–1. */
@@ -453,58 +467,30 @@ export interface HealthMetricsMembersBoardMeeting {
   attendedCount: number | null;
   invitedCount: number | null;
   attendancePct: number | null;
-  /** The view's latest meeting in the period — the one the hero reports. */
+  /** The view's latest meeting in the period, which the chart draws solid. */
   isLatestMeeting: boolean;
 }
 
-/** `cohorts` carries both cohorts so the hero can show the other one; `null` when the foundation has no row for it. */
+/** `cohorts` carries both cohorts so the metrics row can show the other one; `null` when the foundation has no row for it. */
 export interface HealthMetricsMembersBoardAttendance {
   cohorts: Record<HealthMetricsMembersBoardCohort, HealthMetricsMembersBoardCohortSummary | null>;
   /** The selected cohort's latest meetings in the period, oldest first, for the chart. */
   trend: HealthMetricsMembersBoardMeeting[];
-  /** One page of the selected cohort's meetings in the period, newest first. */
+  /** One page of the selected cohort's meetings in the period, in the query's sort (newest first by default). */
   rows: HealthMetricsMembersBoardMeeting[];
   totalRecords: number;
 }
 
-/** The latest meeting against its cohort's rule: below it (red or amber), or not. */
-export type HealthMetricsMembersBoardLatestTone = Extract<HealthMetricsEngagementAttendanceTone, 'low' | 'critical' | 'ok'>;
-
-/** The board hero as the section renders it. */
-export interface HealthMetricsMembersBoardSummaryView {
-  meetingsLabel: string;
-  latestPctLabel: string;
-  latestCaption: string;
-  isBelowExpectedLevel: boolean;
-  latestTone: HealthMetricsMembersBoardLatestTone;
-  latestTextClass: string;
-  otherCohortLabel: string;
-  otherCohortPctLabel: string;
-  attendedInvitedLabel: string;
-  neverAttendedLabel: string;
-  neverAttendedCount: number;
-}
-
-/** One meeting row as the table renders it; `ratePct` is a whole percent, `null` when unmeasured. */
+/** One meeting row as the table renders it; `attendancePct` is the shown percent, `null` when unmeasured. */
 export interface HealthMetricsMembersBoardMeetingRowView {
   meetingId: string;
-  committeeName: string;
+  /** The committee name, then the cohort's fallback ("Voting members" for a voting meeting), then "—". */
+  meetingName: string;
   dateLabel: string;
-  attendedLabel: string;
-  ratePct: number | null;
-  rateLabel: string;
-  rateFillClass: string;
-}
-
-/** One bar of the trend chart, oldest first; `pct` is a whole percent, `null` when unmeasured. */
-export interface HealthMetricsMembersBoardTrendBarView {
-  meetingId: string;
-  label: string;
-  dateLabel: string;
-  committeeName: string;
-  pct: number | null;
-  pctLabel: string;
-  isLatest: boolean;
+  /** "{attended}/{invited}・{pct}%". */
+  attendanceLabel: string;
+  attendancePct: number | null;
+  fillClass: string;
 }
 
 /** `GET /api/analytics/members-nps` — one audience's survey figures for a period; `null` picks the first audience. */
@@ -549,36 +535,15 @@ export interface HealthMetricsMembersNps {
   trend: HealthMetricsMembersNpsQuarter[];
 }
 
-/** The audience toggle over the hero; the id is the view's audience name. */
+/** The card header's audience switch; the id is the view's audience name. */
 export interface HealthMetricsMembersNpsAudienceOption extends FilterPillOption {
   id: string;
 }
 
-/** The note under the response distribution; `lead` is the bolded opening, when there is one. */
-export interface HealthMetricsMembersNpsFooterView {
-  isBelowFloor: boolean;
-  lead: string | null;
-  text: string;
-}
-
-/** The NPS hero as the section renders it; a missing score renders the dash and the not-enough caption. */
-export interface HealthMetricsMembersNpsSummaryView {
-  isUnscored: boolean;
-  /** A score on a flagged sample or a below-floor rate, rendered in amber. */
-  isLowConfidence: boolean;
-  scoreLabel: string;
-  /** `null` renders no change. */
-  changeLabel: string | null;
-  changeDirection: 'up' | 'down' | 'neutral';
-  caption: string;
-  respondedLabel: string;
-  rateLabel: string;
-  isRateBelowFloor: boolean;
-  /** The low-confidence banner, when the view flags the sample too small. */
-  lowSampleNote: string | null;
-  lastUpdatedLabel: string;
-  surveyedLabel: string;
-  footer: HealthMetricsMembersNpsFooterView;
+/** What the section hands the page for its header switch: the audiences in order and the one the figures belong to. */
+export interface HealthMetricsMembersNpsAudienceSwitch {
+  options: HealthMetricsMembersNpsAudienceOption[];
+  selected: string | null;
 }
 
 /** One segment of the response distribution; `widthPct` is its share of everyone surveyed. */
@@ -588,29 +553,6 @@ export interface HealthMetricsMembersNpsSegmentView {
   countLabel: string;
   widthPct: number;
   colorClass: string;
-}
-
-/** One wave of the trend chart; `ratePct` is a whole percent, `null` when unmeasured. */
-export interface HealthMetricsMembersNpsTrendPointView {
-  quarterStartDate: string;
-  label: string;
-  score: number | null;
-  scoreLabel: string;
-  /** The score as the tooltip and screen-reader table read it, noting a low-response wave. */
-  scoreDescription: string;
-  ratePct: number | null;
-  rateLabel: string;
-  isRateBelowFloor: boolean;
-  /** A score on a flagged sample or a below-floor rate, drawn as an amber bar. */
-  isLowConfidence: boolean;
-}
-
-/** The sentence under the trend: a score rising on a falling rate, a rate below the floor, or a rate holding. */
-export interface HealthMetricsMembersNpsTrendNote {
-  kind: 'diverging' | 'below-floor' | 'holding';
-  scoreChangeLabel: string;
-  fromRateLabel: string;
-  toRateLabel: string;
 }
 
 /** `GET /api/analytics/members-churn` — every year's churn; the section re-projects it per period client-side. */
@@ -655,7 +597,12 @@ export interface HealthMetricsMembersChurnDeparturesQuery {
   year: number;
   offset: number;
   pageSize: number;
+  /** A column the reader picked, sorted on the server across every page; `null` keeps the most dues lost first. */
+  sort: HealthMetricsTableSort<HealthMetricsMembersChurnDeparturesSortKey> | null;
 }
+
+/** The Members lost table's sortable columns. */
+export type HealthMetricsMembersChurnDeparturesSortKey = 'company' | 'membership' | 'dues' | 'lapsed' | 'engaged';
 
 /** One lost membership from `MEMBERSHIP_CHURNED_MEMBERS`, keyed by its term; dates are ISO `YYYY-MM-DD`. */
 export interface HealthMetricsMembersChurnDeparture {
@@ -663,6 +610,8 @@ export interface HealthMetricsMembersChurnDeparture {
   key: string;
   accountId: string;
   accountName: string;
+  /** The mapped company logo; empty falls back to the first letter. */
+  logoUrl: string;
   membershipTier: string | null;
   duesLostUsd: number | null;
   lapsedDate: string | null;
@@ -675,84 +624,65 @@ export interface HealthMetricsMembersChurnDepartures {
   totalRecords: number;
 }
 
-/** The toggle over the hero: revenue churn leads, logo churn counts each loss once. */
-export type HealthMetricsMembersChurnMode = 'revenue' | 'logo';
+/** The view switch under the metrics: the members lost, the loss by tier, or the trend. */
+export type HealthMetricsMembersChurnSection = 'members' | 'tiers' | 'trend';
 
-export interface HealthMetricsMembersChurnModeOption extends FilterPillOption {
-  id: HealthMetricsMembersChurnMode;
-}
-
-/** One figure beside the hero; `note` is the muted aside after the value. */
-export interface HealthMetricsMembersChurnSideView {
-  key: string;
+export interface HealthMetricsMembersChurnSectionOption {
+  id: HealthMetricsMembersChurnSection;
   label: string;
-  value: string;
-  note: string | null;
-  isLoss: boolean;
 }
 
-/** One tier of "Where the loss sits"; `shareWidthPct` keeps a visible stub for a tiny share. */
+/** The By tier table's sortable columns. */
+export type HealthMetricsMembersChurnTierSortKey = 'membership' | 'lost' | 'rate' | 'dues' | 'share';
+
+/** One tier of By tier; a rate at or over the high-rate line reads as a danger badge. */
 export interface HealthMetricsMembersChurnTierRowView {
-  tier: string;
+  key: string;
+  membershipLabel: string;
+  tier: HealthMetricsMembersReservedTier | null;
   lostLabel: string;
   rateLabel: string;
   isHighRate: boolean;
   duesLabel: string;
   shareLabel: string;
-  shareWidthPct: number;
+  sortValues: Record<HealthMetricsMembersChurnTierSortKey, HealthMetricsSortValue>;
 }
 
-/** The note under the tier table, set only when the tier that lost most members is not the one that lost most dues. */
-export interface HealthMetricsMembersChurnInversionView {
-  /** Bolded, e.g. "Silver lost 83 memberships". */
-  countLead: string;
-  /** Bolded, e.g. "Gold lost the money". */
-  duesLead: string;
-  text: string;
-}
-
-/** One year of the churn trend, oldest first; `value` is the mode's rate, `null` when unmeasured. */
+/** One year of the churn trend, oldest first; `value` is the year's revenue churn and `logoValue` its logo churn, `null` when unmeasured. */
 export interface HealthMetricsMembersChurnTrendPointView {
   year: number;
   label: string;
   value: number | null;
   valueLabel: string;
+  logoValue: number | null;
+  logoValueLabel: string;
   isSelected: boolean;
 }
 
-/** `#churn`, re-projected per period and mode from the every-year response. */
+/** `#churn`, re-projected per period from the every-year response. */
 export interface HealthMetricsMembersChurnView {
   /** Any year has churn figures. */
   measured: boolean;
   /** The selected period's year has churn figures. */
   yearMeasured: boolean;
   year: number;
-  /** The year lost at least one membership. */
-  hasChurn: boolean;
-  lostCount: number;
-  metaLabel: string;
-  heroLabel: string;
-  /** `null` renders no change: the prior year is not in the read. */
-  changeLabel: string | null;
-  /** A rise in churn is bad, so it renders red. */
-  changeTone: 'bad' | 'good' | 'neutral';
-  caption: string;
-  sides: HealthMetricsMembersChurnSideView[];
+  /** Revenue churn, logo churn and the dues lost, whatever the view switch. */
+  metrics: HealthMetricsMetricItem[];
+  /** Most dues lost first. */
   tiers: HealthMetricsMembersChurnTierRowView[];
-  inversion: HealthMetricsMembersChurnInversionView | null;
-  trendTitle: string;
-  trendSubtitle: string;
   trend: HealthMetricsMembersChurnTrendPointView[];
-  /** The selected year's churn rose on the year before, so its bar warns. */
-  trendRose: boolean;
+  /** Revenue churn as bars, the selected year solid, with logo churn as a dashed line on the same axis. */
+  trendChart: HealthMetricsBarChartView;
 }
 
-/** One lost membership in "Who left"; an organization appears once per lost term. */
+/** One lost membership in Members lost; an organization appears once per lost term. */
 export interface HealthMetricsMembersChurnDepartureRowView {
   key: string;
   accountId: string;
-  accountName: string;
-  tierLabel: string;
+  name: string;
+  logoUrl: string;
+  membershipLabel: string;
+  tier: HealthMetricsMembersReservedTier | null;
   duesLabel: string;
   lapsedLabel: string;
   lastEngagedLabel: string;

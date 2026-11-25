@@ -12,6 +12,7 @@ import { OrgSelectorComponent } from '@components/org-selector/org-selector.comp
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
 import {
+  ACCOUNT_BASE_PATH,
   CREATABLE_ARTIFACTS,
   LINKS_CONFIG,
   NAVBAR_BRAND_SITE,
@@ -25,9 +26,11 @@ import {
   NAVBAR_PEEK_RECHECK_DELAY_MS,
   NAVBAR_ROLE_PREPOSITIONS,
   NAVBAR_ROLE_STYLES,
+  NAVBAR_THEME_OPTIONS,
   BOARD_SCOPED_PERSONAS,
   PERSONA_OPTIONS,
   PERSONA_PRIORITY,
+  PROFILE_SETTINGS_PATH,
 } from '@lfx-one/shared/constants';
 import {
   CreatableArtifactConfig,
@@ -39,6 +42,7 @@ import {
   NavbarRoleMark,
   NavbarRoleProject,
   NavbarTabIndicator,
+  NavbarTheme,
   NavTooltipItem,
   NavTooltipPlacement,
   SidebarMenuItem,
@@ -50,12 +54,16 @@ import { ChangelogService } from '@services/changelog.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
+import { NavbarThemeService } from '@services/navbar-theme.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { LogoutLinkDirective } from '@shared/directives/logout-link.directive';
 import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
+import { injectProfileRedesignEnabled } from '@shared/utils/profile-redesign.util';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { filter, pairwise } from 'rxjs';
@@ -93,6 +101,8 @@ import { NavMenuBase } from './nav-menu-base.directive';
     NavTooltipDirective,
     OpenIntercomDirective,
     ScrollShadowDirective,
+    UiSwitchComponent,
+    UiSwitchOptionComponent,
   ],
   providers: [DialogService],
   templateUrl: './navbar.component.html',
@@ -102,9 +112,9 @@ import { NavMenuBase } from './nav-menu-base.directive';
     '[class.lfxn-host--dock]': '!mobile()',
     '[class.is-collapsed]': 'railVisible()',
     '[class.is-overlay]': '!mobile() && collapse.overlay()',
-    '[class.is-narrow]': '!mobile() && collapse.narrow()',
-    '[class.is-pinned]': '!mobile() && collapse.peekPinned()',
     '[class.is-animated]': '!mobile() && collapse.animated()',
+    // The light sidebar theme is desktop-only: the mobile drawer always stays dark.
+    '[class.is-light]': '!mobile() && sidebarTheme.light()',
   },
 })
 export class NavbarComponent extends NavMenuBase {
@@ -116,6 +126,7 @@ export class NavbarComponent extends NavMenuBase {
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   protected readonly createPermissionService = inject(CreatePermissionService);
   protected readonly collapse = inject(NavbarCollapseService);
+  protected readonly sidebarTheme = inject(NavbarThemeService);
   private readonly injector = inject(Injector);
 
   /** Whether the host layout shifts the navbar down to clear the impersonation banner (main layout only). */
@@ -201,6 +212,9 @@ export class NavbarComponent extends NavMenuBase {
    * visible panel and its live region, so screen readers never hear a state the panel hasn't shown.
    */
   protected readonly menuStateReady: Signal<boolean> = computed(() => this.hydrated() && this.lensLoaded() && !this.menuPending());
+  /** The profile redesign (#6067) splits the Me card's link and sends Settings to Account & Settings. */
+  protected readonly profileRedesignEnabled: Signal<boolean> = injectProfileRedesignEnabled(this.hydrated);
+  protected readonly accountPath = ACCOUNT_BASE_PATH;
 
   /** The no-access / lookup-failed state as the live region announces it: only once the visible panel shows it. */
   protected readonly announcedNoAccessState: Signal<'foundation' | 'project' | null> = computed(() =>
@@ -233,6 +247,9 @@ export class NavbarComponent extends NavMenuBase {
 
   // ── Me card ──────────────────────────────────────────────────────────────────────────────────
   protected readonly roleMarks: Signal<NavbarRoleMark[]> = this.initRoleMarks();
+
+  // ── Sidebar theme ────────────────────────────────────────────────────────────────────────────
+  protected readonly sidebarThemeOptions = NAVBAR_THEME_OPTIONS;
 
   // ── Rail actions ─────────────────────────────────────────────────────────────────────────────
   protected readonly canImpersonate = this.userService.canImpersonate;
@@ -286,11 +303,14 @@ export class NavbarComponent extends NavMenuBase {
   // ── Collapse / peek (desktop only) ───────────────────────────────────────────────────────────
   /** The panel shows as the slim rail. */
   protected readonly railVisible: Signal<boolean> = computed(() => !this.mobile() && this.collapse.visualCollapsed());
-  /** Docked to the rail (even while peeking): the footer actions then also live in the account menu. */
-  protected readonly railDocked: Signal<boolean> = computed(() => !this.mobile() && this.collapse.effectiveCollapsed());
+  /**
+   * The sidebar toggle shows on desktop, except over a narrow viewport's peek: the panel can't dock open there, so there is
+   * nothing to keep open. That peek closes as the pointer leaves, on an outside click, or on Escape.
+   */
+  protected readonly showSidebarToggle: Signal<boolean> = computed(() => !this.mobile() && (!this.collapse.narrow() || this.railVisible()));
   /** Rail tooltips open beside the trigger; the open panel's below it. */
   protected readonly headTooltipPlacement: Signal<NavTooltipPlacement> = computed(() => (this.railVisible() ? 'right' : 'bottom'));
-  /** The rail's toggle shows the sidebar over the page; from a peek it docks open (wide) or pins it (narrow); otherwise it closes the sidebar. */
+  /** The rail's toggle shows the sidebar over the page; from a peek it docks open; otherwise it closes the sidebar. */
   protected readonly toggleLabel: Signal<string> = computed(() => {
     if (this.railVisible()) return 'Show sidebar';
     return this.collapse.peek() ? 'Keep sidebar open' : 'Close sidebar';
@@ -324,17 +344,13 @@ export class NavbarComponent extends NavMenuBase {
   /**
    * The sidebar toggle. On the rail it peeks the panel open over the page, closing once the pointer leaves it — pinned on a
    * touch device, which has no pointer to leave, so an outside tap closes it instead. From an open panel it docks open or
-   * closed on wide viewports; on narrow ones, which can't dock open, it pins the peek and closes a pinned one. A keyboard
-   * press (no click count) keeps focus in the navbar; a pointer click drops it.
+   * closed; a narrow viewport's peek has no toggle ({@link showSidebarToggle}). A keyboard press (no click count) keeps focus
+   * in the navbar; a pointer click drops it.
    */
   protected onToggleClick(event: MouseEvent): void {
     const focus: NavbarMorphFocus = event.detail === 0 ? 'keyboard' : 'pointer';
     if (this.railVisible()) {
       this.morph(() => this.collapse.openPeek(this.collapse.touch()), focus);
-      return;
-    }
-    if (this.collapse.narrow()) {
-      this.morph(() => (this.collapse.peekPinned() ? this.collapse.closePeek() : this.collapse.openPeek(true)), focus);
       return;
     }
     if (this.collapse.peek()) {
@@ -389,7 +405,13 @@ export class NavbarComponent extends NavMenuBase {
   protected navigateToProfileSettings(): void {
     this.userMenu()?.hide();
     this.lensService.setLens('me');
-    this.router.navigate(['/profile/settings']);
+    // With the profile redesign, Settings opens the Account & Settings landing page.
+    this.router.navigate([this.profileRedesignEnabled() ? ACCOUNT_BASE_PATH : PROFILE_SETTINGS_PATH]);
+  }
+
+  /** The account menu's sidebar theme switch: applies and remembers the choice. The menu stays open. */
+  protected onSidebarThemeChange(theme: string | null): void {
+    if (theme === 'dark' || theme === 'light') this.sidebarTheme.setTheme(theme satisfies NavbarTheme);
   }
 
   protected openImpersonationDialog(): void {
@@ -432,7 +454,7 @@ export class NavbarComponent extends NavMenuBase {
       return;
     }
     this.lensService.commitMenuLens();
-    void this.router.navigate(this.orgLensNavigation.orgLensLink('overview'));
+    void this.router.navigate(this.orgLensNavigation.orgLensLink(this.orgLensNavigation.orgLensHomePage()));
   }
 
   protected openChangelogDrawer(): void {
@@ -475,15 +497,16 @@ export class NavbarComponent extends NavMenuBase {
   }
 
   /**
-   * Desktop only: restores the stored preference, then keeps a peek honest — it closes once the pointer has left the
-   * panel (tracked by position, since `:hover` goes stale after a popover or dialog closes), after an outside click or
-   * focus leaving it when pinned, on Escape, or on a navigation from it (from an unpinned peek, only once the pointer is off
-   * it) — but never while a menu or panel opened from it is still up.
+   * Desktop only: restores the stored preference on a reload, then keeps a peek honest — it closes once the pointer has
+   * left the panel (tracked by position, since `:hover` goes stale after a popover or dialog closes), after any outside
+   * click, when focus leaves a pinned peek, on Escape, or on a navigation from it (from an unpinned peek, only once the
+   * pointer is off it) — but never while a menu or panel opened from it is still up.
    */
   private initCollapse(): void {
     afterNextRender(() => {
       if (this.mobile()) return;
       this.collapse.init();
+      this.sidebarTheme.init();
       const doc = this.elementRef.nativeElement.ownerDocument;
       const panel = this.panelEl()?.nativeElement;
 
@@ -500,8 +523,10 @@ export class NavbarComponent extends NavMenuBase {
         this.pointerOnTooltip = false;
         if (this.collapse.peek() && !this.collapse.peekPinned()) this.schedulePeekClose(NAVBAR_PEEK_CLOSE_DELAY_MS);
       };
+      // A press outside closes any peek, pinned or not: one opened from the keyboard has no pointer position to leave from,
+      // and a narrow viewport's peek has no toggle to close it with.
       const onDown = (event: MouseEvent): void => {
-        if (!this.collapse.peekPinned() || this.navbarMenuOpen()) return;
+        if (!this.collapse.peek() || this.navbarMenuOpen()) return;
         const target = event.target instanceof Element ? event.target : null;
         if (target && (panel?.contains(target) || target.closest('.lfxn-tooltip'))) return;
         this.morph(() => this.collapse.closePeek());

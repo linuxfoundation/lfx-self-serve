@@ -4,7 +4,14 @@
 import { describe, expect, it } from 'vitest';
 
 import type { MyClaAgreement } from '../interfaces/cla.interface';
-import { canContactClaManager, canManageInCclaConsole, canRequestClaApproval, canRequestClaRemoval, cclaConsoleUrl } from './cla-manager-actions.utils';
+import {
+  canContactClaManager,
+  canManageInCclaConsole,
+  canRequestClaApproval,
+  canRequestClaRemoval,
+  cclaConsoleUrl,
+  claRowActions,
+} from './cla-manager-actions.utils';
 
 function agreement(overrides: Partial<MyClaAgreement> = {}): MyClaAgreement {
   return {
@@ -112,5 +119,26 @@ describe('cclaConsoleUrl', () => {
   it('falls back to the company dashboard when only a project id is present', () => {
     expect(cclaConsoleUrl(base, undefined, 'proj-sfid-1')).toBe(`${base}/company/dashboard`);
     expect(cclaConsoleUrl(base, '  ', 'proj-sfid-1')).toBe(`${base}/company/dashboard`);
+  });
+});
+
+describe('claRowActions', () => {
+  const none = { download: false, requestApproval: false, requestRemoval: false, contact: false };
+
+  it.each([
+    ['an ICLA with its PDF', agreement({ kind: 'ICLA', pdfAvailable: true }), { ...none, download: true }],
+    ['a CCLA with its PDF', agreement({ pdfAvailable: true }), { ...none, download: true }],
+    ['an ICLA without a PDF', agreement({ kind: 'ICLA' }), none],
+    ['an invalidated ICLA', agreement({ kind: 'ICLA', status: 'invalidated', pdfAvailable: true }), none],
+    ['a revoked CCLA', agreement({ status: 'revoked', pdfAvailable: true }), none],
+    ['a valid CCLA', agreement(), { ...none, requestRemoval: true, contact: true }],
+    [
+      'a CCLA off the approval list',
+      agreement({ status: 'needs_attention', statusReason: 'not_on_approval_list' }),
+      { ...none, requestApproval: true, requestRemoval: true, contact: true },
+    ],
+    ['an invalidated CCLA', agreement({ status: 'invalidated' }), { ...none, requestRemoval: true }],
+  ])('offers the right items for %s', (_case, row, expected) => {
+    expect(claRowActions(row)).toEqual(expected);
   });
 });

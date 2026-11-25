@@ -44,7 +44,7 @@ Select **Load more** to see older donations.
 
 ## Hide or show your name
 
-When you donate on LFX Crowdfunding you can choose to donate anonymously, and you can change that choice later from this page. An anonymous donation still appears, with its amount, everywhere donations are listed (the initiative's public page, the initiative team's financials, and an organization's donations list), but your name and email are replaced by **Anonymous**. If you donated on behalf of an organization, the organization's name and logo still show; only your name is hidden. Nobody but you can see that the donation is yours: here, in your own donation history, it shows an **Anonymous** tag so you can tell which of your donations are hidden.
+When you donate on LFX Crowdfunding you can choose to donate anonymously, and you can change that choice later from this page. An anonymous donation still appears, with its amount, everywhere donations are listed (the initiative's public page, the initiative team's financials, and a company's donations list), but your name and email are replaced by **Anonymous**. If you donated on behalf of a company, the company's name and logo still show; only your name is hidden. Nobody but you can see that the donation is yours: here, in your own donation history, it shows an **Anonymous** tag so you can tell which of your donations are hidden.
 
 To hide or show your name on a donation:
 

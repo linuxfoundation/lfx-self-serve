@@ -56,6 +56,10 @@ vi.mock('../middleware/require-marketing-access.middleware', () => ({
   requireGoogleConversionActionsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
   requireGoogleUserListsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
   requireGoogleAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireMetaCustomAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireMetaLeadFormsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireLinkedInAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireLinkedInConversionsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
 }));
 vi.mock('../services/logger.service', () => ({
   logger: {
@@ -72,12 +76,22 @@ vi.mock('../services/logger.service', () => ({
 const campaignsRouter = (await import('./campaigns.route')).default;
 const { apiErrorHandler } = await import('../middleware/error-handler.middleware');
 const { MicroserviceError } = await import('../errors/microservice.error');
-const { CREATIVE_ASSET_MAX_BYTES, CREATIVE_ASSET_TOO_LARGE_MESSAGE, CREATIVE_ASSET_WRONG_TYPE_MESSAGE } = await import('@lfx-one/shared/constants');
+const {
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_VIDEO_MAX_BYTES,
+  CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE,
+  CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
+} = await import('@lfx-one/shared/constants');
 const { ServerFeatureFlag } = await import('../helpers/server-feature-flag.helper');
 
 const BRIEF = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+/** An MP4's opening ftyp box (major brand `isom`); the BFF reads only this, campaign-service walks the rest. */
+const ftyp = (brand: string) => Buffer.concat([Buffer.from([0, 0, 0, 0x10]), Buffer.from(`ftyp${brand}`, 'latin1'), Buffer.alloc(4)]);
+const MP4 = ftyp('isom');
 const ASSET = { id: '3f2504e0-4f89-11d3-9a0c-0305e82c3301', mimeType: 'image/png', byteSize: PNG.byteLength, checksum: 'ab'.repeat(32), created: true };
 
 let server: Server;
@@ -158,6 +172,50 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
     expect(response.status).toBe(415);
     expect((await response.json()).error).toBe(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
     expect(uploadCreativeAsset).not.toHaveBeenCalled();
+  });
+
+  // LinkedIn video ads (#5764 row 18): an MP4 has its own parser and limit, and needs the video capability.
+  describe('an MP4 video', () => {
+    it('forwards an MP4 above the image limit, typed video/mp4', async () => {
+      uploadCreativeAsset.mockResolvedValue({ ...ASSET, mimeType: 'video/mp4' });
+      const video = Buffer.concat([MP4, Buffer.alloc(CREATIVE_ASSET_MAX_BYTES)]);
+
+      const response = await upload(video, 'video/mp4');
+
+      expect(response.status).toBe(201);
+      const [, , , contentType, bytes] = uploadCreativeAsset.mock.calls[0];
+      expect(contentType).toBe('video/mp4');
+      expect((bytes as Buffer).byteLength).toBe(video.byteLength);
+    });
+
+    it('refuses an MP4 over the video limit with a 413 and the video message', async () => {
+      const response = await upload(Buffer.concat([MP4, Buffer.alloc(CREATIVE_ASSET_VIDEO_MAX_BYTES)]), 'video/mp4');
+
+      expect(response.status).toBe(413);
+      expect((await response.json()).error).toBe(CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE);
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a QuickTime movie', ftyp('qt  ')],
+      ['image bytes', PNG],
+    ])('refuses %s declared as MP4 with a 415', async (_label, body) => {
+      const response = await upload(body, 'video/mp4');
+
+      expect(response.status).toBe(415);
+      expect((await response.json()).error).toBe(CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE);
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    });
+
+    it('refuses an MP4 while LinkedIn video ads are off without reading it, so even one over the limit is a 415', async () => {
+      isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInVideo);
+
+      const response = await upload(Buffer.concat([MP4, Buffer.alloc(CREATIVE_ASSET_VIDEO_MAX_BYTES)]), 'video/mp4');
+
+      expect(response.status).toBe(415);
+      expect((await response.json()).error).toBe(CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE);
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps a body-parser refusal other than size as a 4xx, not a 500', async () => {
@@ -294,6 +352,7 @@ describe('creative-asset library reads and prune', () => {
   const ASSET_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
   const LIBRARY = {
     assets: [{ id: ASSET_ID, projectId: 'tlf', briefId: BRIEF, mimeType: 'image/png', byteSize: 12, checksum: 'ab'.repeat(32) }],
+    videos: [],
     count: 1,
     countLimit: 100,
     bytesUsed: 12,

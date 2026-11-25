@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ORG_ACCESS_UNVERIFIABLE_MESSAGE,
   ORG_ACCOUNT_ID_PATTERN,
   ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS,
   ORG_SLUG_RESOLVE_NAMESPACE,
@@ -10,17 +11,20 @@ import {
   ORG_SLUG_RESOLVE_TTL_SECONDS,
   ORG_SLUG_SEGMENT_PATTERN,
 } from '@lfx-one/shared/constants';
-import { B2bOrgIndexedDoc, OrgResolveResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import { B2bOrgIndexedDoc, OrgLensEmployeeViewGrant, OrgResolveResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 // Deep import on purpose: the `@lfx-one/shared/utils` barrel pulls Angular-only utils into the Node
 // server bundle and its specs; this module is pure (same precedent as `impersonation.utils`).
 import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment } from '@lfx-one/shared/utils/org-lens-url.utils';
 import { Request } from 'express';
 
+import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { isOrgLensEmployeeViewEnabled } from '../helpers/org-lens-employee-view-flag.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
+import { OrgEmployeeViewService } from './org-employee-view.service';
 import { buildPerUserOrgKey, valkeyService } from './valkey.service';
 
 /** Cached shape: only unambiguous hits are stored, so a later call with a different `prefer` can never be answered from another call's tie-break. */
@@ -59,17 +63,19 @@ const OPERATION = 'resolve_org_segment';
 export class OrgSlugResolverService {
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly claOnlyOrgs: OrgClaOnlyOrgsService;
+  private readonly employeeView: OrgEmployeeViewService;
 
-  public constructor(microserviceProxy?: MicroserviceProxyService, claOnlyOrgs?: OrgClaOnlyOrgsService) {
+  public constructor(microserviceProxy?: MicroserviceProxyService, claOnlyOrgs?: OrgClaOnlyOrgsService, employeeView?: OrgEmployeeViewService) {
     this.microserviceProxy = microserviceProxy ?? new MicroserviceProxyService();
     this.claOnlyOrgs = claOnlyOrgs ?? new OrgClaOnlyOrgsService();
+    this.employeeView = employeeView ?? new OrgEmployeeViewService();
   }
 
   public async resolveSegment(req: Request, rawSegment: string, prefer?: string): Promise<OrgSegmentResolution> {
     const segment = normalizeOrgSegment(rawSegment);
     const segmentKind = this.classify(segment, req.path);
     if (prefer !== undefined && !ORG_ACCOUNT_ID_PATTERN.test(prefer)) {
-      throw ServiceValidationError.forField('prefer', 'Invalid organization identifier', {
+      throw ServiceValidationError.forField('prefer', 'Invalid company identifier', {
         operation: OPERATION,
         service: 'org_slug_resolver_service',
         path: req.path,
@@ -79,7 +85,11 @@ export class OrgSlugResolverService {
     if (segmentKind === 'sfid') {
       // A CLA Manager holds no Org Lens read, so query-service hides the org from them; their own
       // `cla-manager` scope is the second chance. SFID only — a CLA-only org is addressed by SFID.
-      const org = (await this.lookupByUid(req, segment)) ?? (await this.claOnlyOrgs.resolveOrg(req, segment));
+      const readable = await this.lookupByUid(req, segment);
+      if (readable) {
+        return { outcome: 'hit', org: readable, cache: 'bypass' };
+      }
+      const org = await this.resolveFallbackOrg(req, (employee) => employee.orgUid === segment, segment);
       return org ? { outcome: 'hit', org, cache: 'bypass' } : { outcome: 'miss', cache: 'bypass' };
     }
 
@@ -107,12 +117,32 @@ export class OrgSlugResolverService {
     if (key === null) cache = 'bypass';
     else if (fetched) cache = 'miss';
 
-    if (cached.outcome !== 'ambiguous') {
-      return { ...cached, cache };
+    if (cached.outcome === 'miss') {
+      // query-service hides a company the caller cannot read, so an employee-view company is a miss there. Never cached. Skipped while
+      // the employee companies carry no slug: nothing could match, and a failed lookup would turn this 404 into a 503.
+      const org = this.employeeView.providesSlugs ? await this.resolveFallbackOrg(req, (employee) => employee.orgSlug === segment, null) : null;
+      return org ? { outcome: 'hit', org, cache } : { ...cached, cache };
+    }
+    // The all employee view company is invisible to query-service, so it can share this slug with a company the caller CAN read. It must
+    // take part in uniqueness and in the preference: otherwise the readable company silently wins the employee company's own address.
+    const { employee, failed } = await this.employeeCandidateForSlug(req, segment);
+    if (cached.outcome === 'hit') {
+      if (failed && prefer && prefer !== cached.org.uid && !(await this.lookupByUid(req, prefer))) {
+        // The employee check could not answer, and the caller's current selection is a company query-service does not show them: it
+        // may be the all employee view company sharing this slug. Do not switch them to the readable one on a guess: answer a retriable
+        // 503 (not a 409 the client would keep as "not found" for the page's lifetime).
+        throw this.employeeViewUnavailable(undefined);
+      }
+      if (!employee || employee.orgUid === cached.org.uid) return { ...cached, cache };
+      if (prefer === employee.orgUid) return { outcome: 'hit', org: this.toEmployeeResolution(employee), cache };
+      return prefer === cached.org.uid ? { ...cached, cache } : { outcome: 'ambiguous', cache };
     }
 
     if (!prefer) {
       return { outcome: 'ambiguous', cache };
+    }
+    if (employee && prefer === employee.orgUid) {
+      return { outcome: 'hit', org: this.toEmployeeResolution(employee), cache };
     }
 
     // Tie-break: the caller's current selection wins iff query-service confirms the caller can
@@ -122,13 +152,123 @@ export class OrgSlugResolverService {
     if (preferred && preferred.slug === segment) {
       return { outcome: 'hit', org: preferred, cache };
     }
+    if (failed && !preferred) {
+      // The employee check could not answer and query-service does not show the caller their own selection, so it may be the all
+      // employee view company sharing this slug. A 409 would be kept by the client as "not found" for the page's lifetime: answer
+      // the retriable 503 instead.
+      throw this.employeeViewUnavailable(undefined);
+    }
     return { outcome: 'ambiguous', cache };
+  }
+
+  /**
+   * The all employee view company whose slug is `slug`, for the uniqueness check against a readable company. `employee` is null when
+   * the flag is off, the caller is not an employee, or the lookup cannot answer; `failed` says it could not answer (an error or the
+   * {@link ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS} budget, since this rides a page-blocking guard). Fail-soft on purpose: it only adds a
+   * possible collision, so a failed lookup leaves the readable company's answer standing rather than failing an admin's page, except
+   * where the caller's own selection could be the company that could not be checked.
+   */
+  private async employeeCandidateForSlug(req: Request, slug: string): Promise<{ employee: OrgLensEmployeeViewGrant | null; failed: boolean }> {
+    if (!isOrgLensEmployeeViewEnabled(req) || !this.employeeView.providesSlugs) return { employee: null, failed: false };
+    try {
+      const verdict = await this.resolveReducedWithinBudget(req, 'resolve_org_slug');
+      return { employee: verdict.eligible && verdict.org.orgSlug === slug ? verdict.org : null, failed: false };
+    } catch (error) {
+      logger.warning(req, 'resolve_employee_view_org', 'Could not check the employee-view company against a readable slug; keeping the readable answer', {
+        err: error,
+      });
+      return { employee: null, failed: true };
+    }
+  }
+
+  /**
+   * `resolveReduced` bounded by {@link ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS}: every employee-view lookup here rides the page-blocking
+   * address guard, so none may wait on a slow upstream past the resolver's budget. Expiry rejects with a typed 504 (the callers treat
+   * it like any other lookup failure); the lookup keeps running and its outcome stays cached for a retry.
+   */
+  private async resolveReducedWithinBudget(req: Request, operation: string): Promise<Awaited<ReturnType<OrgEmployeeViewService['resolveReduced']>>> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        this.employeeView.resolveReduced(req),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new MicroserviceError(`Employee-view lookup exceeded ${ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS}ms budget`, 504, 'EMPLOYEE_VIEW_LOOKUP_TIMEOUT', {
+                  operation,
+                  service: 'LFX_V2_SERVICE',
+                })
+              ),
+            ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** The structured retriable 503 for an employee-view lookup that could not answer, so the client retries instead of caching "not found". */
+  private employeeViewUnavailable(cause: unknown): MicroserviceError {
+    return new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'ROLE_GRANTS_UNAVAILABLE', {
+      operation: 'resolve_employee_view_org',
+      service: 'org_slug_resolver_service',
+      originalError: cause instanceof Error ? cause : undefined,
+    });
+  }
+
+  private toEmployeeResolution(employee: OrgLensEmployeeViewGrant): OrgResolveResponse {
+    return { uid: employee.orgUid, slug: employee.orgSlug ?? null, name: employee.orgName, employeeView: true };
+  }
+
+  /**
+   * The fallbacks for a company query-service does not show the caller, in order of precedence: the company they reach
+   * through the all employee view (epic #5845), then the one they manage CLAs for. Employee access comes first because it
+   * supersedes CLA-only classification — a caller who is both would otherwise open EasyCLA alone and be redirected
+   * from every other page. `matches` says whether the employee company is the one addressed.
+   *
+   * Null is a CONFIRMED miss. When the employee-view lookup cannot answer, the CLA-only answer still wins if it hits;
+   * otherwise this throws a structured 503 (`ROLE_GRANTS_UNAVAILABLE`), so an outage is never cached by the client as "not found".
+   */
+  private async resolveFallbackOrg(
+    req: Request,
+    matches: (employee: OrgLensEmployeeViewGrant) => boolean,
+    claOnlyUid: string | null
+  ): Promise<OrgResolveResponse | null> {
+    let employeeViewError: unknown;
+    const employeeViewRan = isOrgLensEmployeeViewEnabled(req);
+    if (employeeViewRan) {
+      try {
+        const verdict = await this.resolveReducedWithinBudget(req, 'resolve_employee_view_org');
+        if (verdict.eligible && matches(verdict.org)) {
+          return { uid: verdict.org.orgUid, slug: verdict.org.orgSlug ?? null, name: verdict.org.orgName, employeeView: true };
+        }
+        // An authorizer-only reader of this company is full: say so, and never fall through to CLA-only for it.
+        if (!verdict.eligible && verdict.reason === 'holds-full-access' && verdict.org && matches(verdict.org)) {
+          return { uid: verdict.org.orgUid, slug: verdict.org.orgSlug ?? null, name: verdict.org.orgName, fullAccess: true };
+        }
+      } catch (error) {
+        employeeViewError = error;
+        logger.warning(req, 'resolve_employee_view_org', 'Could not verify employee-view company', { err: error });
+      }
+    }
+    // A CLA-only org is addressed by SFID only.
+    const claOnly = claOnlyUid ? await this.claOnlyOrgs.resolveOrg(req, claOnlyUid) : null;
+    if (claOnly) {
+      // Conclusive about the employee view only when it ran and answered; after a failed lookup the client must not drop an employee mode.
+      return employeeViewRan && employeeViewError === undefined ? { ...claOnly, employeeViewChecked: true } : claOnly;
+    }
+    if (employeeViewError !== undefined) {
+      throw this.employeeViewUnavailable(employeeViewError);
+    }
+    return null;
   }
 
   private classify(segment: string, path: string): 'sfid' | 'slug' {
     if (isOrgAccountIdSegment(segment)) return 'sfid';
     if (isOrgSlugSegment(segment)) return 'slug';
-    throw ServiceValidationError.forField('segment', 'Invalid organization segment', {
+    throw ServiceValidationError.forField('segment', 'Invalid company segment', {
       operation: OPERATION,
       service: 'org_slug_resolver_service',
       path,

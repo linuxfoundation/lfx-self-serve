@@ -37,7 +37,7 @@ tags:
     implement,
     registration url,
   ]
-last_updated: 2026-11-11
+last_updated: 2026-11-16
 intercom_collection: Dashboards
 ---
 
@@ -122,7 +122,7 @@ The exclusions cover the whole campaign. If you switch to another campaign type,
 
 ## Display bidding
 
-A Display campaign can bid with **Maximize Clicks**, **Maximize Conversions**, the default, **Maximize Conversion Value** or **Target ROAS**. For now, Display has no target CPA: **Target CPA** is not offered as a strategy, and Maximize Conversions has no **Target CPA** box. Google Display doesn't accept a target CPA from LFX One yet, so a Display campaign bids on Maximize Conversions without one, and the bidding settings say so. A target CPA you entered on another campaign type is kept but not sent. If you chose Target CPA and then switch to Display, the campaign uses the Display default, Maximize Conversions, instead.
+A Display campaign can bid with **Maximize Clicks**, **Maximize Conversions** (the default), **Target CPA**, **Maximize Conversion Value** or **Target ROAS**. Target CPA needs a **Target CPA** in the account currency, and Maximize Conversions takes one optionally. Manual CPC is not offered on Display.
 
 ## Demand Gen bidding and languages
 
@@ -249,9 +249,11 @@ A note on each of these creative sections says the copy came from the brief, whi
 
 ### Call to action
 
-On a Display ad, **Call to action** is a list of the button texts Google documents for responsive display ads: Apply Now, Book Now, Contact Us, Download, Learn More, Install, Visit Site, Shop Now, Sign Up, Get Quote, Subscribe and See More. Leave it on **None** and Google chooses the button.
+**Call to action** is a list of the button texts Google Ads accepts for that ad. Google Ads refuses any other text, such as "Register" or "Get Started", and only after the campaign has been created. Leave it on **None** and Google chooses the button.
 
-On a Demand Gen image ad, **Call to action** offers only **None**, and Google chooses the button. Google documents no call-to-action values for this ad, and Google Ads refused "Register" there after the campaign was created. On a Demand Gen video ad, choose from the list described under [Demand Gen video ads](#demand-gen-video-ads).
+- **Display ad:** Apply Now, Book Now, Call Now, Contact Us, Download, Explore, Get Offer, Get Quote, Install, Learn More, Order Now, Read More, See More, Shop Now, Sign Up, Subscribe, Try now and Visit Site.
+- **Demand Gen image ad:** Apply Now, Book Now, Call Now, Contact Us, Donate Now, Download, Get Offer, Get Quote, Learn More, See More, Shop Now, Sign Up, Subscribe and Visit Site. The list is not the Display one: Install, Explore and Read More, for example, work only on Display, and Donate Now only on Demand Gen.
+- **Demand Gen video ad:** choose from the list described under [Demand Gen video ads](#demand-gen-video-ads).
 
 If a saved ad holds a call to action outside its list, a message under **Call to action** says so and **Create Campaign** stays unavailable until you choose one from the list or **None**.
 
@@ -304,7 +306,7 @@ When you choose **Video ad (YouTube)**, the section shows the video ad's fields:
 - **Long headlines**: 1 to 5, up to 90 characters each.
 - **Descriptions**: 1 to 5, up to 90 characters each.
 - **Business name**: required once you fill in any field, up to 25 characters.
-- **Call to action**: optional. Choose Sign up, Learn more, Book now, Visit site or Watch now, or leave it on None.
+- **Call to action**: optional. Choose Sign up, Learn more, Book now, Visit site, Watch now, Apply now, Contact us, Download, Get quote, Subscribe or Shop now, or leave it on None.
 - **Logo image (1:1)**: exactly one square logo of at least 128 x 128 pixels, as an `https://` link or from the brief's image library.
 
 In headlines, long headlines, descriptions and the business name, Chinese, Japanese, Korean and other full-width characters count as two, and a line can't repeat another in the same list, even in different capitals.

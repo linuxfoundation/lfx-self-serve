@@ -1,0 +1,64 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<lfx-ui-modal heading="Verify identity" [width]="480" closable data-testid="account-verify-identity-dialog">
+  <div
+    modalHeaderExtra
+    class="flex flex-row items-center gap-[10px] border-y border-ui-neutral-200 px-[24px] py-[16px]"
+    data-testid="account-verify-identity-context">
+    <span class="grid h-[28px] w-[28px] flex-none place-items-center rounded-ui-xs bg-ui-background-100 shadow-small" aria-hidden="true">
+      <i class="text-[14px] text-ui-neutral-700" [class]="identity.icon"></i>
+    </span>
+    <span class="flex min-w-0 flex-col">
+      <span class="truncate text-[14px] font-medium leading-[20px] text-ui-neutral-900" [title]="identity.identifier">{{ identity.identifier }}</span>
+      <span class="text-[12px] leading-[16px] text-ui-neutral-500">{{ providerLabel }}</span>
+    </span>
+  </div>
+
+  @if (!isEmail) {
+    <p class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700" data-testid="account-verify-identity-social">
+      Sign in to <strong class="font-semibold text-ui-neutral-900">{{ providerLabel }}</strong> with this account to confirm it’s yours. Its activity will then
+      count toward your affiliations and work history.
+    </p>
+  } @else if (!verification.codeSent()) {
+    <p class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700" data-testid="account-verify-identity-send-text">
+      We’ll send a 6-digit code to <strong class="font-semibold text-ui-neutral-900">{{ identity.identifier }}</strong> to confirm you own this address.
+    </p>
+    @if (verification.error()) {
+      <p class="m-0 text-[12px] leading-[16px] text-ui-danger-700" role="alert" data-testid="account-verify-identity-send-error">{{ verification.error() }}</p>
+    }
+  } @else {
+    <lfx-account-email-code-step [email]="identity.identifier" />
+  }
+
+  <ng-container modalActions>
+    @if (isEmail && verification.codeSent()) {
+      <!-- Pushed to the left edge, apart from Cancel and Verify. -->
+      <lfx-ui-button
+        class="mr-auto"
+        variant="tertiary-accent"
+        [disabled]="verification.resendCooldown() > 0 || verification.sending() || verification.showResendSupport()"
+        (click)="verification.resend(identity.identifier)"
+        data-testid="account-verify-identity-resend">
+        {{ verification.resendCooldown() > 0 ? 'Resend code in ' + verification.resendCooldown() + 's' : 'Resend code' }}
+      </lfx-ui-button>
+    }
+    <lfx-ui-button variant="secondary" (click)="dialogRef.close(false)" data-testid="account-verify-identity-cancel">Cancel</lfx-ui-button>
+    @if (!isEmail) {
+      <lfx-ui-button [icon]="identity.icon" (click)="continueWithProvider()" data-testid="account-verify-identity-continue">
+        Continue with {{ providerLabel }}
+      </lfx-ui-button>
+    } @else if (!verification.codeSent()) {
+      <lfx-ui-button [loading]="verification.sending()" (click)="sendCode()" data-testid="account-verify-identity-send">Send verification code</lfx-ui-button>
+    } @else {
+      <lfx-ui-button
+        [loading]="verification.verifying()"
+        [disabled]="!verification.codeComplete()"
+        (click)="verify()"
+        data-testid="account-verify-identity-verify">
+        Verify
+      </lfx-ui-button>
+    }
+  </ng-container>
+</lfx-ui-modal>

@@ -6,8 +6,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const PAST_MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParameterMock, enrichAttendanceMock, getEffectiveEmailMock } = vi.hoisted(() => ({
+const {
+  meetingSvc,
+  reconciliationSvc,
+  addAccessToResourceMock,
+  addAccessToResourcesMock,
+  validateUidParameterMock,
+  enrichAttendanceMock,
+  getEffectiveEmailMock,
+  attachArtifactsMock,
+  attachAttendanceSummariesMock,
+} = vi.hoisted(() => ({
   enrichAttendanceMock: vi.fn(),
+  attachArtifactsMock: vi.fn(),
+  attachAttendanceSummariesMock: vi.fn(),
   getEffectiveEmailMock: vi.fn<() => string | null>(() => null),
   meetingSvc: {
     getMeetings: vi.fn(),
@@ -19,6 +31,7 @@ const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParam
     reconcilePastMeetingParticipants: vi.fn(),
   },
   addAccessToResourceMock: vi.fn(),
+  addAccessToResourcesMock: vi.fn(),
   validateUidParameterMock: vi.fn(() => true),
 }));
 
@@ -34,12 +47,14 @@ vi.mock('@lfx-one/shared/utils', () => ({
 vi.mock('../helpers/validation.helper', () => ({
   validateUidParameter: validateUidParameterMock,
   validateRequiredParameter: vi.fn(() => true),
+  getStringQueryParam: vi.fn((req: { query: Record<string, unknown> }, name: string) => (typeof req.query[name] === 'string' ? req.query[name] : undefined)),
 }));
 // enrichMeetingsWithCreatedBy/stripHostKey aren't exercised by the reconcile path under test.
 vi.mock('../helpers/meeting.helper', () => ({
   enrichMeetingsWithCreatedBy: vi.fn(async (_req: unknown, meetings: unknown[]) => meetings),
   stripHostKey: vi.fn(),
 }));
+vi.mock('../helpers/meeting-attendance.helper', () => ({ attachPastMeetingAttendanceSummaries: attachAttendanceSummariesMock }));
 vi.mock('../services/meeting.service', () => ({
   MeetingService: vi.fn(function () {
     return meetingSvc;
@@ -52,12 +67,12 @@ vi.mock('../services/attendance-reconciliation.service', () => ({
 }));
 vi.mock('../services/access-check.service', () => ({
   AccessCheckService: vi.fn(function () {
-    return { addAccessToResource: addAccessToResourceMock };
+    return { addAccessToResource: addAccessToResourceMock, addAccessToResources: addAccessToResourcesMock };
   }),
 }));
 vi.mock('../services/user.service', () => ({
   UserService: vi.fn(function () {
-    return { enrichPastMeetingsWithUserAttendance: enrichAttendanceMock };
+    return { enrichPastMeetingsWithUserAttendance: enrichAttendanceMock, attachPastMeetingArtifacts: attachArtifactsMock };
   }),
 }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: getEffectiveEmailMock }));
@@ -205,6 +220,69 @@ describe('PastMeetingController.getPastMeetings — viewer attendance enrichment
     await controller.getPastMeetings(buildListReq(true, { include_viewer_attendance: 'true', name: 'weekly' }), buildRes(), vi.fn());
 
     expect(meetingSvc.getMeetings).toHaveBeenCalledWith(expect.anything(), { name: 'weekly' }, 'v1_past_meeting');
+  });
+});
+
+describe('PastMeetingController.getPastMeetings — meetings home include', () => {
+  let controller: PastMeetingController;
+  const meetings = [buildPastMeeting()];
+  const withSummary = [{ ...meetings[0], attendance_summary: { invited: 4, attended: 3 } }];
+  const listReq = (query: Record<string, string>): any => ({ ...buildReq(true), query });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PastMeetingController();
+    meetingSvc.getMeetings.mockResolvedValue({ data: meetings, page_token: 'next' });
+    attachArtifactsMock.mockResolvedValue(undefined);
+    attachAttendanceSummariesMock.mockResolvedValue(withSummary);
+    addAccessToResourcesMock.mockImplementation(async (_req: unknown, rows: { id: string }[]) => rows.map((row) => ({ ...row, organizer: true })));
+  });
+
+  it('checks organizer access on the occurrence key and keeps the row id', async () => {
+    meetingSvc.getMeetings.mockResolvedValue({
+      data: [{ ...meetings[0], id: 'past-uid-1', meeting_and_occurrence_id: 'm-1:1', organizer: false }],
+      page_token: undefined,
+    });
+    addAccessToResourcesMock.mockImplementation(async (_req: unknown, rows: { id: string }[]) =>
+      rows.map((row) => ({ ...row, organizer: row.id === 'm-1:1' }))
+    );
+
+    await controller.getPastMeetings(listReq({ include: 'attendance' }), buildRes(), vi.fn());
+
+    expect(addAccessToResourcesMock).toHaveBeenCalledWith(expect.anything(), [expect.objectContaining({ id: 'm-1:1' })], 'v1_past_meeting', 'organizer');
+    expect(attachAttendanceSummariesMock).toHaveBeenCalledWith(expect.anything(), [
+      expect.objectContaining({ id: 'past-uid-1', meeting_and_occurrence_id: 'm-1:1', organizer: true }),
+    ]);
+  });
+
+  it('adds artifacts and organizer attendance when both are included, without forwarding include upstream', async () => {
+    const res = buildRes();
+
+    await controller.getPastMeetings(listReq({ include: 'artifacts, attendance', name: 'weekly' }), res, vi.fn());
+
+    expect(meetingSvc.getMeetings).toHaveBeenCalledWith(expect.anything(), { name: 'weekly' }, 'v1_past_meeting');
+    const organized = [{ ...meetings[0], organizer: true }];
+    expect(attachArtifactsMock).toHaveBeenCalledWith(expect.anything(), organized, 'get_past_meetings');
+    expect(attachAttendanceSummariesMock).toHaveBeenCalledWith(expect.anything(), organized);
+    expect(res.json).toHaveBeenCalledWith({ data: withSummary, page_token: 'next' });
+  });
+
+  it('runs neither lookup without include', async () => {
+    const res = buildRes();
+
+    await controller.getPastMeetings(listReq({}), res, vi.fn());
+
+    expect(attachArtifactsMock).not.toHaveBeenCalled();
+    expect(attachAttendanceSummariesMock).not.toHaveBeenCalled();
+    expect(addAccessToResourcesMock).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ data: meetings, page_token: 'next' });
+  });
+
+  it('ignores unknown include values', async () => {
+    await controller.getPastMeetings(listReq({ include: 'everything' }), buildRes(), vi.fn());
+
+    expect(attachArtifactsMock).not.toHaveBeenCalled();
+    expect(attachAttendanceSummariesMock).not.toHaveBeenCalled();
   });
 });
 

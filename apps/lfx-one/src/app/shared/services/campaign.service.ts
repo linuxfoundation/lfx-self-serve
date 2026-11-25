@@ -90,6 +90,11 @@ import {
   GoogleAdsConversionActionsResult,
   GoogleAdsGeoTargetSearchOptions,
   GoogleAdsGeoTargetSearchResult,
+  LinkedInGeoSearchResult,
+  LinkedInAudiencesResult,
+  LinkedInConversionsResult,
+  LinkedInTargetingSearchFacet,
+  LinkedInTargetingSearchResult,
   GoogleAdsAudienceReadType,
   GoogleAdsAudiencesResult,
   GoogleAdsUserListsResult,
@@ -98,7 +103,12 @@ import {
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
+  MetaCustomAudiencesResult,
+  MetaLeadFormsResult,
+  MetaTargetingSearchResult,
+  MetaTargetingSearchType,
   LinkedInAccount,
+  LinkedInCreateAccountResult,
   LinkedInMonitorResponse,
   LinkedInTargetingProfileConfig,
   ListAudiencesResult,
@@ -191,9 +201,13 @@ export class CampaignService {
    * cancelled by the caller.
    */
   private readonly creativeAssetQueueAbort = new Subject<void>();
+  /** The stored creative asset being deleted and its brief (#5764 row 18), or `null`: see `deleteCreativeAsset`. */
+  private readonly creativeVideoDelete = signal<{ briefId: string; id: string } | null>(null);
 
   /** Every library upload item, in pick order. Each carries its brief; a reader shows only its own brief's. */
   public readonly creativeAssetUploadQueue = this.creativeAssetQueue.asReadonly();
+  /** The stored video being deleted and its brief (#5764 row 18), `null` when none is. */
+  public readonly creativeVideoDeleting = this.creativeVideoDelete.asReadonly();
 
   public constructor() {
     this.creativeAssetQueueWork
@@ -544,6 +558,26 @@ export class CampaignService {
   }
 
   /**
+   * Permanently delete one stored creative asset of the brief: a video the library lists (#5764 row 18). campaign-service
+   * answers 409 `creative_asset_in_use` while a live campaign could still need it, with its own remedy text.
+   *
+   * While the request runs, `creativeVideoDeleting` names it, and it is cleared however the request ends, including a
+   * caller that unsubscribes because it was destroyed. The Implement tab holds its video pickers on it, since an upload
+   * of identical bytes would answer with the asset being deleted.
+   */
+  public deleteCreativeAsset(projectSlug: string, briefId: string, assetId: string): Observable<void> {
+    return defer(() => {
+      const mine = { briefId, id: assetId };
+      this.creativeVideoDelete.set(mine);
+      return this.http
+        .delete<void>(`/api/campaigns/brief/creative-assets/${encodeURIComponent(assetId)}`, {
+          params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+        })
+        .pipe(finalize(() => this.creativeVideoDelete.update((current) => (current === mine ? null : current))));
+    });
+  }
+
+  /**
    * The brief's stored creative assets, each with the pixel dimensions recorded at upload (absent
    * for an asset stored before they were), plus the library's quota.
    *
@@ -648,6 +682,20 @@ export class CampaignService {
     return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts', { params: { project: projectSlug } });
   }
 
+  /**
+   * The LinkedIn ad account a create for the project uses and, for a caller holding `global_marketing_ops`,
+   * the other accounts it may choose (#5809). 404 unless account selection is on. A failure is logged and rethrown,
+   * so the caller decides the fallback.
+   */
+  public getLinkedInCreateAccount(projectSlug: string): Observable<LinkedInCreateAccountResult> {
+    return this.http.get<LinkedInCreateAccountResult>('/api/campaigns/linkedin/create-account', { params: { project: projectSlug } }).pipe(
+      catchError((error: unknown) => {
+        console.error('Failed to load the LinkedIn ad account:', error);
+        return throwError(() => error);
+      })
+    );
+  }
+
   /** The configured LinkedIn targeting profiles and the facet URNs each one targets (#5546). */
   public getLinkedInTargetingProfiles(projectSlug: string): Observable<LinkedInTargetingProfileConfig[]> {
     return this.http.get<LinkedInTargetingProfileConfig[]>('/api/campaigns/linkedin/targeting-profiles', { params: { project: projectSlug } }).pipe(
@@ -658,14 +706,18 @@ export class CampaignService {
     );
   }
 
+  /**
+   * `accountKey` null reads the panel through the LF system account (#5889): the BFF picks the
+   * account, so none is sent. The same holds for the Reddit and Meta reads below.
+   */
   public getLinkedInMonitorData(
     projectSlug: string,
-    accountKey: string,
+    accountKey: string | null,
     days: number = 30,
     accountSource: MonitorAccountSource | null = null
   ): Observable<LinkedInMonitorResponse> {
     return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', {
-      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(accountSource) },
+      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
     });
   }
 
@@ -675,12 +727,12 @@ export class CampaignService {
 
   public getRedditMonitorData(
     projectSlug: string,
-    accountKey: string,
+    accountKey: string | null,
     days: number = 30,
     accountSource: MonitorAccountSource | null = null
   ): Observable<RedditMonitorResponse> {
     return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', {
-      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(accountSource) },
+      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
     });
   }
 
@@ -735,6 +787,34 @@ export class CampaignService {
   }
 
   /**
+   * The custom audiences on the Meta ad account a create for this project uses, for the Implement tab's
+   * Meta audience targeting (#5905). A coded 403 without `global_marketing_ops` on the project, a coded
+   * 503 when that check cannot be made, and a 404 while Meta audience targeting is off.
+   */
+  public getMetaCustomAudiences(projectSlug: string): Observable<MetaCustomAudiencesResult> {
+    return this.http.get<MetaCustomAudiencesResult>('/api/campaigns/meta/custom-audiences', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The Instant Forms on the Facebook Page a Meta create for this project uses, for the Implement tab's lead form
+   * picker (#5940). A coded 403 without `global_marketing_ops` on the project, a 404 while Meta lead forms are off,
+   * and a 503 when Meta refuses the read or the Page holds more forms than campaign-service lists.
+   */
+  public getMetaLeadForms(projectSlug: string): Observable<MetaLeadFormsResult> {
+    return this.http.get<MetaLeadFormsResult>('/api/campaigns/meta/lead-forms', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Meta's interests, behaviors or job titles matching `query`, for the Implement tab's detailed targeting (#5904
+   * row 4). A 404 while the search is off on this deployment, and a 503 when Meta is busy or refuses the read.
+   */
+  public searchMetaTargetingOptions(projectSlug: string, type: MetaTargetingSearchType, query: string): Observable<MetaTargetingSearchResult> {
+    // Strict encoding: the default codec leaves `+` bare, which Express reads as a space, so `C++` would search `C`.
+    const params = strictHttpParams().set('project', projectSlug).set('type', type).set('query', query);
+    return this.http.get<MetaTargetingSearchResult>('/api/campaigns/meta/targeting-search', { params });
+  }
+
+  /**
    * Whether X creation is open on this deployment, with no brief — the Plan picker's answer before
    * one exists. `project` is not read by the answer, which is deployment-wide; it is what lets the
    * campaign-manager guard authorise a project-scoped caller, which refuses an unscoped request.
@@ -750,6 +830,50 @@ export class CampaignService {
    */
   public getTwitterAdsAccounts(projectSlug: string): Observable<TwitterAdsAccountsResult> {
     return this.http.get<TwitterAdsAccountsResult>('/api/campaigns/twitter/accounts', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Search LinkedIn locations for the Implement tab's location picker (#5545): campaign-service's targeting typeahead,
+   * `facet=locations`, answered as geo targets ready to add. Unflagged.
+   */
+  public searchLinkedInGeoTargets(projectSlug: string, query: string): Observable<LinkedInGeoSearchResult> {
+    // `strictHttpParams`, because the query is user-typed text (see `searchGoogleAdsGeoTargets`).
+    const params = strictHttpParams().set('project', projectSlug).set('q', query);
+    return this.http.get<LinkedInGeoSearchResult>('/api/campaigns/linkedin/geo-targets', { params });
+  }
+
+  /**
+   * Search one LinkedIn targeting facet for the Implement tab's custom targeting editor (#5764 rows 8–11): campaign-service's
+   * targeting typeahead. 404 while custom targeting is off on the server.
+   */
+  public searchLinkedInTargeting(projectSlug: string, facet: LinkedInTargetingSearchFacet, query: string): Observable<LinkedInTargetingSearchResult> {
+    // `strictHttpParams`, because the query is user-typed text (see `searchGoogleAdsGeoTargets`).
+    const params = strictHttpParams().set('project', projectSlug).set('facet', facet).set('q', query);
+    return this.http.get<LinkedInTargetingSearchResult>('/api/campaigns/linkedin/targeting-entities', { params });
+  }
+
+  /**
+   * The ad segments (matched and retargeting audiences) on the LinkedIn ad account a create uses, for the custom
+   * targeting editor (#5764 rows 8–11). `accountId` names a non-default account the caller chose; without it the
+   * default is read. A coded 403 for a caller without `global_marketing_ops` on the project, a coded 503 when that
+   * check cannot be made, and a 404 while custom targeting is off on the server.
+   */
+  public getLinkedInAudiences(projectSlug: string, accountId?: string): Observable<LinkedInAudiencesResult> {
+    // `strictHttpParams`, as the targeting search beside it, so every param is encoded the same way.
+    let params = strictHttpParams().set('project', projectSlug);
+    if (accountId) params = params.set('accountId', accountId);
+    return this.http.get<LinkedInAudiencesResult>('/api/campaigns/linkedin/audiences', { params });
+  }
+
+  /**
+   * The enabled conversion rules on the LinkedIn ad account a create uses, for the objective picker (#5764 row 4), with
+   * `accountId` as for `getLinkedInAudiences`. A coded 403 for a caller without `global_marketing_ops` on the project, a
+   * coded 503 when that check cannot be made, and a 404 while conversions are off on the server.
+   */
+  public getLinkedInConversions(projectSlug: string, accountId?: string): Observable<LinkedInConversionsResult> {
+    let params = strictHttpParams().set('project', projectSlug);
+    if (accountId) params = params.set('accountId', accountId);
+    return this.http.get<LinkedInConversionsResult>('/api/campaigns/linkedin/conversions', { params });
   }
 
   /**
@@ -774,12 +898,12 @@ export class CampaignService {
 
   public getMetaMonitorData(
     projectSlug: string,
-    accountKey: string,
+    accountKey: string | null,
     days: number = 30,
     accountSource: MonitorAccountSource | null = null
   ): Observable<MetaMonitorResponse> {
     return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', {
-      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(accountSource) },
+      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
     });
   }
 

@@ -20,6 +20,7 @@ import { logAiModelConfig } from './helpers/ai-model.helper';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { buildGwRuntimeConfig } from './helpers/gw-runtime-config.helper';
+import { withMentorshipLoginId } from './helpers/mentorship-api.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
 import { resolveStoredDisplayName } from './helpers/ssr-display-name.helper';
 import { resolveSsrFlags } from './helpers/ssr-flags.helper';
@@ -29,6 +30,7 @@ import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
 import { createBrowserAssetsMiddleware } from './middleware/browser-assets.middleware';
 import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
+import { redirectLegacyUrls } from './middleware/redirect-legacy-urls.middleware';
 import { endGatewazeSessionOnLogout } from './middleware/end-gatewaze-session-on-logout.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { openprofileRedirect } from './middleware/openprofile-redirect.middleware';
@@ -70,10 +72,12 @@ import publicNewslettersRouter from './routes/public-newsletters.route';
 import publicVotesRouter from './routes/public-votes.route';
 import publicProfileRouter from './routes/public-profile.route';
 import publicProjectsRouter from './routes/public-projects.route';
+import publicShareKitsRouter from './routes/public-share-kits.route';
 import rewardsRouter from './routes/rewards.route';
 import searchRouter from './routes/search.route';
 import sitemapRouter from './routes/sitemap.route';
 import socialListeningRouter from './routes/social-listening.route';
+import foundationParticipatingOrgsRouter from './routes/foundation-participating-orgs.route';
 import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
 import crowdfundingRouter from './routes/crowdfunding.route';
@@ -103,6 +107,7 @@ import {
   refreshExpiredSsrAccessToken,
 } from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
+import { checkBrowserBundleReady } from './utils/readiness';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
 import { resolvePersonaForSsr } from './utils/persona-helper';
 
@@ -219,9 +224,12 @@ app.get('/livez', (_req: Request, res: Response) => {
 });
 
 // Readiness endpoint for Kubernetes (LFXV2-1640).
-// Signals that this pod can accept HTTP traffic: Express is listening and the
-// Angular SSR engine loaded successfully (constructed at module load above —
-// a load failure crashes the process before reaching this point).
+// Signals that this pod can serve the app: Express is listening, the Angular
+// SSR engine loaded successfully (constructed at module load above — a load
+// failure crashes the process before reaching this point), and the browser
+// dist has the HTML shell plus the entry script and stylesheet (hashed or not).
+// checkBrowserBundleReady caches its first success, so a ready pod does no
+// filesystem work per probe.
 // Intentionally does NOT probe NATS / Snowflake / microservice-proxy: those
 // clients are lazy-initialized and report not-connected at startup even
 // though many SSR pages render fine without them. Per-feature dependency
@@ -232,6 +240,13 @@ app.get('/readyz', (_req: Request, res: Response) => {
     res.status(503).json({ status: 'shutting_down' });
     return;
   }
+
+  const bundle = checkBrowserBundleReady(browserDistFolder);
+  if (!bundle.ready) {
+    res.status(503).json({ status: 'not_ready', reason: bundle.reason });
+    return;
+  }
+
   res.status(200).json({ status: 'ready' });
 });
 
@@ -246,6 +261,12 @@ app.use(sitemapRouter);
 
 // Bundle misses terminate here, before OIDC can redirect an unavailable asset to SSO.
 app.use(createBrowserAssetsMiddleware(browserDistFolder));
+
+// Company Lens moved from `/org/…` to `/company/…` (#5064). Old bookmarks and already-sent emails hit this as a
+// full page load, so answer with a permanent redirect here, ahead of auth and SSR (the address carries nothing
+// to protect, and a viewer who is not signed in should land on the new address, then sign in to it). The
+// docs portal has no redirect mechanism, so the moved `/docs/organization/…` pages are redirected here too.
+app.use(redirectLegacyUrls);
 
 const httpLogger = pinoHttp({
   logger: serverLogger,
@@ -305,6 +326,9 @@ const authConfig: ConfigParams = {
   routes: {
     login: false,
   },
+  // Each login gets a new mentorship login id, so its first mentorship request refreshes the user's mentorship record from
+  // their current identity (see proxyMentorshipRequest). A same-user login would otherwise keep the session's custom keys.
+  afterCallback: (_req, _res, session) => withMentorshipLoginId(session),
   ...(sessionStoreEnabled && {
     session: {
       store: sessionStoreService,
@@ -408,6 +432,7 @@ app.use('/public/api/foundations', publicFoundationsRouter);
 app.use('/public/api/groups', publicGroupsRouter);
 app.use('/public/api/profile', publicProfileRouter);
 app.use('/public/api/projects', publicProjectsRouter);
+app.use('/public/api/events', publicShareKitsRouter);
 // The Gatewaze embed's stylesheet, scoped to the LFX chrome and cached by hashed name. Public:
 // the loader fetches it without credentials and the content is public (see the controller).
 app.use(GW_EMBED_STYLESHEET_ROUTE, gwEmbedStylesheetRouter);
@@ -429,8 +454,10 @@ app.use('/api/past-meetings', pastMeetingsRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/analytics', analyticsRouter);
-// Executive-dashboard Foundation Lens surface (ED + LF Staff) — the router applies requireDashboardAccess to every endpoint.
+// Foundation Lens Social Listening (ED, LF Staff, members of opted-in foundation groups) — the router applies requireSocialListeningAccess to every endpoint except the /access probe.
 app.use('/api/social-listening', socialListeningRouter);
+// Foundation Lens → Participating Companies (#5697): executive director or LF staff, like Health Metrics.
+app.use('/api/foundation-participating-orgs', foundationParticipatingOrgsRouter);
 app.use('/api/user', userRouter);
 app.use('/api/user', personaRouter);
 app.use('/api/nav', navigationRouter);
@@ -593,7 +620,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   }
 
   // After the impersonation override, so the flag context is the identity the browser evaluates.
-  const flags = auth.authenticated ? await resolveSsrFlags(req, auth.user) : {};
+  const flags = await resolveSsrFlags(req, auth.authenticated ? auth.user : null);
 
   const runtimeConfig: RuntimeConfig = {
     launchDarklyClientId: process.env['LD_CLIENT_ID'] || '',

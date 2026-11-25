@@ -1,0 +1,9 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-ui-modal [heading]="heading" [subtitle]="message" [width]="480" closable data-testid="discard-changes-modal">
+  <ng-container modalActions>
+    <lfx-ui-button data-autofocus variant="secondary" (click)="dialogRef.close(false)" data-testid="discard-changes-keep">Keep editing</lfx-ui-button>
+    <lfx-ui-button variant="danger" (click)="dialogRef.close(true)" data-testid="discard-changes-confirm">Discard changes</lfx-ui-button>
+  </ng-container>
+</lfx-ui-modal>

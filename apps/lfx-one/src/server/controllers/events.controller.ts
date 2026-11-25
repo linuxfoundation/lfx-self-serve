@@ -7,6 +7,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
+import { resolveEventRegistrant } from '../helpers/event-registrant.helper';
 import { getValidatedIsoDateQueryParam, parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CertificateService } from '../services/certificate.service';
@@ -19,6 +20,7 @@ import {
   VALID_MY_EVENT_STATUS_VALUES,
 } from '@lfx-one/shared/constants';
 import {
+  EventRegistrantIdentity,
   EventSortOrder,
   EventStatusFilter,
   GetEventOrganizationsOptions,
@@ -33,6 +35,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { EventsService } from '../services/events.service';
 import { PersonaDetectionService } from '../services/persona-detection.service';
+import { UserService } from '../services/user.service';
 import { getEffectiveEmail, getEffectiveName } from '../utils/auth-helper';
 
 export class EventsController {
@@ -40,6 +43,7 @@ export class EventsController {
   private readonly certificateService = new CertificateService();
   private readonly visaLetterService = new VisaLetterService();
   private readonly personaDetectionService = new PersonaDetectionService();
+  private readonly userService = new UserService();
 
   /**
    * GET /api/events
@@ -85,12 +89,13 @@ export class EventsController {
       }
 
       // Only discovery needs affiliations; resolve slugs server-side rather than trusting client scope.
-      let affiliatedProjectSlugs: string[] | undefined;
-      if (isPast === false && !registeredOnly) {
-        affiliatedProjectSlugs = await this.personaDetectionService.getAffiliatedProjectSlugs(req);
-      }
+      const needsAffiliations = isPast === false && !registeredOnly;
+      const [registrant, affiliatedProjectSlugs] = await Promise.all([
+        resolveEventRegistrant(req, this.userService, userEmail),
+        needsAffiliations ? this.personaDetectionService.getAffiliatedProjectSlugs(req) : Promise.resolve(undefined),
+      ]);
 
-      const response = await this.eventsService.getMyEvents(req, userEmail, {
+      const response = await this.eventsService.getMyEvents(req, registrant, {
         isPast,
         eventId,
         projectName,
@@ -210,10 +215,11 @@ export class EventsController {
 
       const registeredOnly = req.query['registeredOnly'] === 'true';
       // Affiliated discovery is unnecessary for My Registrations and Past.
-      let affiliatedProjectSlugs: string[] | undefined;
-      if (isPast === false && !registeredOnly) {
-        affiliatedProjectSlugs = await this.personaDetectionService.getAffiliatedProjectSlugs(req);
-      }
+      const needsAffiliations = isPast === false && !registeredOnly;
+      const [registrant, affiliatedProjectSlugs] = await Promise.all([
+        resolveEventRegistrant(req, this.userService, userEmail),
+        needsAffiliations ? this.personaDetectionService.getAffiliatedProjectSlugs(req) : Promise.resolve(undefined),
+      ]);
 
       const options: GetEventOrganizationsOptions = {
         projectName: req.query['projectName'] ? String(req.query['projectName']) : undefined,
@@ -222,7 +228,7 @@ export class EventsController {
         affiliatedProjectSlugs,
       };
 
-      const response = await this.eventsService.getEventOrganizations(req, userEmail, options);
+      const response = await this.eventsService.getEventOrganizations(req, registrant, options);
 
       logger.success(req, 'get_event_organizations', startTime, {
         result_count: response.data.length,
@@ -285,7 +291,9 @@ export class EventsController {
    *               sortField (string), pageSize (number), offset (number), sortOrder (ASC|DESC)
    */
   public async getVisaRequests(req: Request, res: Response, next: NextFunction): Promise<void> {
-    return this.handleEventRequestsEndpoint(req, res, next, 'get_visa_requests', (r, email, opts) => this.eventsService.getVisaRequests(r, email, opts));
+    return this.handleEventRequestsEndpoint(req, res, next, 'get_visa_requests', (r, registrant, opts) =>
+      this.eventsService.getVisaRequests(r, registrant, opts)
+    );
   }
 
   /**
@@ -295,20 +303,22 @@ export class EventsController {
    *               sortField (string), pageSize (number), offset (number), sortOrder (ASC|DESC)
    */
   public async getTravelFundRequests(req: Request, res: Response, next: NextFunction): Promise<void> {
-    return this.handleEventRequestsEndpoint(req, res, next, 'get_travel_fund_requests', (r, email, opts) =>
-      this.eventsService.getTravelFundRequests(r, email, opts)
+    return this.handleEventRequestsEndpoint(req, res, next, 'get_travel_fund_requests', (r, registrant, opts) =>
+      this.eventsService.getTravelFundRequests(r, registrant, opts)
     );
   }
 
   /**
    * GET /api/events/countries
    * Get distinct country names for upcoming events (for the location filter dropdown)
+   * Query params: requestType ('travel-fund' limits the list to events open for travel funding)
    */
   public async getUpcomingCountries(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_upcoming_countries', {});
+    const requestType = req.query['requestType'] === 'travel-fund' ? 'travel-fund' : undefined;
+    const startTime = logger.startOperation(req, 'get_upcoming_countries', { request_type: requestType });
 
     try {
-      const response: GetUpcomingCountriesResponse = await this.eventsService.getUpcomingCountries(req);
+      const response: GetUpcomingCountriesResponse = await this.eventsService.getUpcomingCountries(req, requestType);
 
       logger.success(req, 'get_upcoming_countries', startTime, { result_count: response.data.length });
 
@@ -346,10 +356,11 @@ export class EventsController {
       }
 
       const userName = getEffectiveName(req) || userEmail;
+      const registrant = await resolveEventRegistrant(req, this.userService, userEmail);
 
       const { pdf, fileName } = await this.certificateService.generateCertificate(req, {
         eventId,
-        userEmail,
+        registrant,
         userName,
       });
 
@@ -456,7 +467,8 @@ export class EventsController {
       }
 
       // Enforce the step 1 event picker rules server-side; the client-supplied eventId is not trusted.
-      if (!(await this.eventsService.isEligibleForEventRequest(req, userEmail, payload.eventId, 'visa'))) {
+      const registrant = await resolveEventRegistrant(req, this.userService, userEmail);
+      if (!(await this.eventsService.isEligibleForEventRequest(req, registrant, payload.eventId, 'visa'))) {
         throw ServiceValidationError.forField('eventId', 'You are not eligible to apply for a visa letter for this event', {
           operation: 'submit_visa_request_application',
         });
@@ -506,7 +518,8 @@ export class EventsController {
       }
 
       // Enforce the step 1 event picker rules server-side; the client-supplied eventId is not trusted.
-      if (!(await this.eventsService.isEligibleForEventRequest(req, userEmail, payload.eventId, 'travel-fund'))) {
+      // Travel fund eligibility is event-level and ignores the registrant, so skip the ID lookup.
+      if (!(await this.eventsService.isEligibleForEventRequest(req, { email: userEmail, userId: null }, payload.eventId, 'travel-fund'))) {
         throw ServiceValidationError.forField('eventId', 'You are not eligible to apply for travel funding for this event', {
           operation: 'submit_travel_fund_application',
         });
@@ -528,7 +541,7 @@ export class EventsController {
     res: Response,
     next: NextFunction,
     operationName: string,
-    fetchFn: (req: Request, userEmail: string, options: GetEventRequestsOptions) => Promise<VisaRequestsResponse | TravelFundRequestsResponse>
+    fetchFn: (req: Request, registrant: EventRegistrantIdentity, options: GetEventRequestsOptions) => Promise<VisaRequestsResponse | TravelFundRequestsResponse>
   ): Promise<void> {
     const startTime = logger.startOperation(req, operationName, {
       has_query: Object.keys(req.query).length > 0,
@@ -557,7 +570,8 @@ export class EventsController {
         sortOrder,
       };
 
-      const response = await fetchFn(req, userEmail, options);
+      const registrant = await resolveEventRegistrant(req, this.userService, userEmail);
+      const response = await fetchFn(req, registrant, options);
 
       logger.success(req, operationName, startTime, {
         result_count: response.data.length,

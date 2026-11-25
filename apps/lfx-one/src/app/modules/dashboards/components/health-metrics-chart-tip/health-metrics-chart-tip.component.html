@@ -10,15 +10,26 @@
     @if (row.separated) {
       <div class="mt-[8px] h-px bg-[var(--ui-neutral-alpha-200)]" data-testid="health-metrics-chart-tip-rule"></div>
     }
-    <div class="mt-[6px] flex items-center justify-between gap-[20px]" data-testid="health-metrics-chart-tip-row">
-      <!-- A long tier name wraps rather than spilling past the popup's edge. -->
-      <span class="inline-flex min-w-0 items-center gap-[6px] text-[12px] leading-[16px] text-gray-500">
+    @if (row.inline) {
+      <div class="mt-[6px] flex items-center gap-[6px]" data-testid="health-metrics-chart-tip-row">
         @if (row.color !== null) {
           <span class="h-[8px] w-[8px] flex-none rounded-full" [style.background]="row.color"></span>
         }
-        <span class="min-w-0">{{ row.label }}</span>
-      </span>
-      <span class="whitespace-nowrap text-right text-[12px] leading-[16px] text-gray-900">{{ row.value }}</span>
-    </div>
+        <span class="whitespace-nowrap text-[12px] leading-[16px] text-gray-500"
+          >{{ row.label }}: <strong class="font-semibold text-gray-900">{{ row.value }}</strong></span
+        >
+      </div>
+    } @else {
+      <div class="mt-[6px] flex items-center justify-between gap-[20px]" data-testid="health-metrics-chart-tip-row">
+        <!-- A long tier name wraps rather than spilling past the popup's edge. -->
+        <span class="inline-flex min-w-0 items-center gap-[6px] text-[12px] leading-[16px] text-gray-500">
+          @if (row.color !== null) {
+            <span class="h-[8px] w-[8px] flex-none rounded-full" [style.background]="row.color"></span>
+          }
+          <span class="min-w-0">{{ row.label }}</span>
+        </span>
+        <span class="whitespace-nowrap text-right text-[12px] leading-[16px] text-gray-900">{{ row.value }}</span>
+      </div>
+    }
   }
 </div>

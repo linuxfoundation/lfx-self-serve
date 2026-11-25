@@ -5,6 +5,7 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signa
 import { FormsModule, NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { environment } from '@environments/environment';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
@@ -15,7 +16,7 @@ import {
   EMAIL_RESEND_SUPPORT_MESSAGE,
   EMAIL_RESEND_SUPPORT_THRESHOLD,
   EMAIL_RESEND_SUPPORT_TITLE,
-  EMAIL_VERIFICATION_SENT_MESSAGE,
+  EMAIL_VERIFICATION_CODE_INSTRUCTIONS,
   IDENTITY_PROVIDER_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { AddAccountDialogData, AddAccountDialogResult, IdentityProvider, IdentityProviderOption } from '@lfx-one/shared/interfaces';
@@ -44,6 +45,8 @@ export class AddAccountDialogComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly existingProviders: IdentityProvider[] = this.config.data?.existingProviders ?? [];
+  // Staging and production retain the Coming soon state while dev validates the #4151 rollout.
+  public readonly gitlabLinkingDisabled = environment.production;
   public readonly providers: IdentityProviderOption[] = IDENTITY_PROVIDER_OPTIONS.filter((provider) => {
     if (provider.id === 'lfid') {
       return false;
@@ -77,7 +80,7 @@ export class AddAccountDialogComponent {
   public readonly codeNotReceivedHint = EMAIL_CODE_NOT_RECEIVED_HINT;
   public readonly codeNotReceivedTitle = EMAIL_CODE_NOT_RECEIVED_TITLE;
   public readonly resendSupportTitle = EMAIL_RESEND_SUPPORT_TITLE;
-  public readonly verificationSentMessage = EMAIL_VERIFICATION_SENT_MESSAGE;
+  public readonly verificationInstructions = EMAIL_VERIFICATION_CODE_INSTRUCTIONS;
   public readonly resendSupportMessage = EMAIL_RESEND_SUPPORT_MESSAGE;
 
   public onSelectProvider(provider: IdentityProviderOption): void {

@@ -35,13 +35,19 @@ import {
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { listAllMentorshipPages, proxyMentorshipRequest, withoutQueryInErrorPath } from '../helpers/mentorship-api.helper';
+import {
+  isMentorshipNotProvisionedError,
+  listMentorshipPagesWithoutProvisioning,
+  proxyMentorshipRequest,
+  withoutQueryInErrorPath,
+} from '../helpers/mentorship-api.helper';
 import {
   buildMentorshipUpstreamLfxProfileFields,
   buildMentorshipUpstreamProfileLinks,
   resolveMentorshipGithubProfileLink,
   resolveMentorshipPrimaryEmail,
 } from '../helpers/mentorship-lfx-profile.helper';
+import { readMentorshipProgramSubmitter } from '../helpers/mentorship-program-submitter.helper';
 
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
@@ -202,20 +208,25 @@ export class MentorshipService {
    * The catalog serves only pending and published programs and answers 404 for the rest, so on a 404
    * the plain program read (same `viewer` guard) tells a decided program from a missing one. A
    * rejected or hidden program comes back with its status and no details, which is all the page
-   * shows once a program is no longer pending; a missing one still ends in 404.
+   * shows once a program is no longer pending; a missing one still ends in 404. The submitter is read alongside, and
+   * shown in both cases; when that read fails the page shows no submitter.
    */
   public async getProgramReview(req: Request, programId: string): Promise<MentorshipProgramReview> {
     const path = `/mentorship/v1/programs/${encodeURIComponent(programId)}`;
     logger.debug(req, 'mentorship_get_program_review', 'Fetching program for review', { programId });
+    // Never rejects: a failed read leaves the page without its submitter.
+    const submitterRead = readMentorshipProgramSubmitter(this.microserviceProxy, req, programId, 'mentorship_get_program_review');
+    let review: MentorshipProgramReview;
     try {
       const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgramCatalog>(req, 'LFX_V2_SERVICE', `${path}/catalog`, 'GET');
-      return toProgramReview(program);
+      review = toProgramReview(program);
     } catch (error) {
       if (!(error instanceof MicroserviceError && error.statusCode === 404)) throw error;
       logger.debug(req, 'mentorship_get_program_review', 'Program not in the catalog, reading its status', { programId });
       const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgram>(req, 'LFX_V2_SERVICE', path, 'GET');
-      return toDecidedProgramReview(program);
+      review = toDecidedProgramReview(program);
     }
+    return { ...review, submitter: await submitterRead };
   }
 
   /**
@@ -247,9 +258,20 @@ export class MentorshipService {
    * the caller's. Only the keys that have a value are sent, so with no rows, or nothing to send, no
    * row is patched. A failed row propagates and leaves the rows after it unpatched; the card asks
    * the user to save again, which rewrites them all.
+   *
+   * The Profile & Account page calls this after every picture or name change, for people who never used Mentorship
+   * too, so the profiles are read without provisioning: a caller with no mentorship record holds no profile, and gets
+   * none of the records a provisioning read would create.
    */
   public async syncLfxProfileFields(req: Request, fields: MentorshipLfxProfileFields): Promise<number> {
-    const profiles = await listAllMentorshipPages<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_PROFILES_PATH);
+    let profiles: MentorshipUpstreamUserProfile[];
+    try {
+      profiles = await listMentorshipPagesWithoutProvisioning<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_PROFILES_PATH);
+    } catch (error) {
+      if (!isMentorshipNotProvisionedError(error)) throw error;
+      logger.debug(req, 'mentorship_sync_lfx_profile', 'Caller has no mentorship record, nothing to copy');
+      return 0;
+    }
     const targets = profiles.filter((profile) => profile.profile_type === 'mentor' || profile.profile_type === 'mentee');
     if (targets.length === 0) return 0;
 
@@ -287,7 +309,7 @@ export function isMentorshipProgramReviewDecision(value: unknown): value is Ment
 
 /**
  * Only what the review page shows; terms, mentors and the rest of the catalog item are not
- * forwarded. Links that are not http(s) URLs and a non-numeric CII id become `null`, so the page
+ * forwarded. The submitter is read separately and set by the caller. Links that are not http(s) URLs and a non-numeric CII id become `null`, so the page
  * never binds an unsafe or broken value.
  */
 function toProgramReview(program: MentorshipUpstreamProgramCatalog): MentorshipProgramReview {
@@ -303,11 +325,13 @@ function toProgramReview(program: MentorshipUpstreamProgramCatalog): MentorshipP
     codeOfConductUrl: toHttpUrl(program.code_of_conduct),
     ciiProjectId: isMentorshipCiiProjectId(ciiProjectId) ? ciiProjectId : null,
     skills: (program.skills ?? []).map((skill) => skill.trim()).filter((skill) => skill.length > 0),
+    createdOn: program.created_on ?? null,
+    submitter: null,
     hasDetails: true,
   };
 }
 
-/** A program the catalog does not serve (rejected or hidden): its status, without details. */
+/** A program the catalog does not serve (rejected or hidden): its status and submission date, without details. */
 function toDecidedProgramReview(program: MentorshipUpstreamProgram): MentorshipProgramReview {
   return {
     id: program.id,
@@ -320,6 +344,8 @@ function toDecidedProgramReview(program: MentorshipUpstreamProgram): MentorshipP
     codeOfConductUrl: null,
     ciiProjectId: null,
     skills: [],
+    createdOn: program.created_on ?? null,
+    submitter: null,
     hasDetails: false,
   };
 }

@@ -8,9 +8,17 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
-import { COMMITTEE_LABEL, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL, VOTE_RESPONSE_TYPES } from '@lfx-one/shared/constants';
+import {
+  COMMITTEE_LABEL,
+  VOTE_ELIGIBLE_PARTICIPANTS,
+  VOTE_LABEL,
+  VOTE_METHOD_LABELS,
+  VOTE_METHOD_OPTIONS,
+  VOTE_RESPONSE_TYPES,
+} from '@lfx-one/shared/constants';
+import { PollType } from '@lfx-one/shared/enums';
 import { CommitteeReference, VoteReviewCommentPrompt, VoteReviewQuestion } from '@lfx-one/shared/interfaces';
-import { combineDateTime, formatVoteDeadline, getLongTimezoneName, isNonBlankCommentPrompt } from '@lfx-one/shared/utils';
+import { combineDateTime, formatVoteDeadline, getLongTimezoneName, isNonBlankCommentPrompt, isRankedPollType } from '@lfx-one/shared/utils';
 import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
 import { TooltipModule } from 'primeng/tooltip';
 import { filter, switchMap } from 'rxjs';
@@ -43,10 +51,13 @@ export class VoteReviewComponent {
   public readonly committee: Signal<CommitteeReference | null> = this.initCommittee();
   public readonly eligibleParticipants: Signal<string> = this.initEligibleParticipants();
   public readonly eligibleParticipantsLabel: Signal<string> = this.initEligibleParticipantsLabel();
+  private readonly pollType: Signal<PollType> = this.initPollType();
+  public readonly methodLabel: Signal<string> = this.initMethodLabel();
   private readonly closeInstant: Signal<string> = this.initCloseInstant();
   public readonly closeDate: Signal<string> = this.initCloseDate();
   public readonly closeTimezoneName: Signal<string> = this.initCloseTimezoneName();
   public readonly allowAbstain: Signal<boolean> = this.initAllowAbstain();
+  public readonly allowVoteChange: Signal<boolean> = this.initAllowVoteChange();
   public readonly questions: Signal<VoteReviewQuestion[]> = this.initQuestions();
   public readonly commentPrompts: Signal<VoteReviewCommentPrompt[]> = this.initCommentPrompts();
 
@@ -55,7 +66,11 @@ export class VoteReviewComponent {
     this.editStep.emit(step);
   }
 
+  /** Ranked methods have no response type of their own — voters rank every option. */
   public getResponseTypeLabel(value: string): string {
+    if (isRankedPollType(this.pollType())) {
+      return 'Ranked';
+    }
     const option = this.responseTypeOptions.find((opt) => opt.value === value);
     return option ? option.label : value;
   }
@@ -108,6 +123,20 @@ export class VoteReviewComponent {
     });
   }
 
+  private initPollType(): Signal<PollType> {
+    return computed(() => {
+      this.formValue();
+      return (this.form().get('poll_type')?.value as PollType | undefined) ?? PollType.GENERIC;
+    });
+  }
+
+  private initMethodLabel(): Signal<string> {
+    return computed(() => {
+      const pollType = this.pollType();
+      return VOTE_METHOD_OPTIONS.find((option) => option.value === pollType)?.label ?? VOTE_METHOD_LABELS[pollType] ?? pollType;
+    });
+  }
+
   private initCloseInstant(): Signal<string> {
     return computed(() => {
       this.formValue();
@@ -135,6 +164,14 @@ export class VoteReviewComponent {
     return computed(() => {
       this.formValue();
       return !!this.form().get('allow_abstain')?.value;
+    });
+  }
+
+  private initAllowVoteChange(): Signal<boolean> {
+    return computed(() => {
+      this.formValue();
+      // Absent means allowed, matching the form default and legacy votes (#4723).
+      return this.form().get('allow_vote_change')?.value !== false;
     });
   }
 

@@ -1859,3 +1859,8 @@ export function getMeetingSelfRemovalNotes(options: { viaCommittee?: boolean; or
   if (options.viaCommittee) notes.push("You stay in the committee, but it won't invite you to this meeting again.");
   return notes;
 }
+
+/** The question of the Resend Your Invitation dialog shown before an invitee resends their own invite, with curly quotes. */
+export function getMeetingOwnResendQuestion(title: string): string {
+  return `Resend your invitation to “${title}”? We'll email it to your own address again.`;
+}

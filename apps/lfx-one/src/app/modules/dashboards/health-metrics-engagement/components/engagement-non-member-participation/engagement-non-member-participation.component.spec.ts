@@ -25,7 +25,7 @@ function nonMemberRow(overrides: Partial<HealthMetricsEngagementNonMemberRow> = 
   return {
     accountId: 'a-1',
     accountName: 'Acme Motors',
-    membershipStatus: 'Non-member',
+    logoUrl: '',
     periods: [
       { range: 'COMPLETED_YEAR_3', meetingsAttended: 3, distinctPeople: 1, sortRank: 4 },
       { range: 'COMPLETED_YEAR_2', meetingsAttended: 5, distinctPeople: 2, sortRank: 3 },
@@ -92,31 +92,34 @@ describe('EngagementNonMemberParticipationComponent', () => {
     await render();
 
     expect(getEngagementNonMemberParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme' });
-    const row = fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-row-a-1"]');
-    expect(row.textContent).toContain('Acme Motors');
-    expect(row.textContent).toContain('12');
-    expect(row.textContent).toContain('Non-member');
+    const cells = (fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-row-a-1"]') as HTMLElement).querySelectorAll('td');
+    expect(cells[0].querySelector('[data-testid="health-metrics-cell-text"]')?.textContent).toBe('Acme Motors');
+    expect(cells[0].querySelector('[data-testid="health-metrics-cell-company"]')).not.toBeNull();
+    expect(cells[1].textContent?.trim()).toBe('12');
     expect(verdicts).toEqual([false]);
   });
 
-  // The design's columns: no First seen or Last attended.
-  it('renders the organization, meetings, people and membership columns only', async () => {
+  // The design moves the caution above the table, as a small warning note.
+  it('warns above the table that company matching is provisional', async () => {
+    await render();
+
+    const caution = fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-caution"]') as HTMLElement;
+    expect(caution.tagName).toBe('LFX-UI-NOTE');
+    expect(caution.textContent?.trim()).toBe(
+      'Company matching is under validation, known members have previously appeared as non-members. Treat this list as provisional.'
+    );
+    expect(caution.compareDocumentPosition(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-table"]'))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+  });
+
+  // The design's columns: the Membership column is gone.
+  it('renders the company, meetings attended and people columns only', async () => {
     await render();
 
     const headers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-non-member-participation-table"] th')) as HTMLElement[];
-    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Organization', 'Meetings attended', 'People', 'Membership']);
-    expect(fixture.nativeElement.querySelectorAll('[data-testid="engagement-non-member-participation-row-a-1"] td')).toHaveLength(4);
-  });
-
-  it('shows membership as the small hollow-dot status, with the glyph hidden from assistive tech', async () => {
-    await render();
-
-    const status = fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-row-a-1-status"]') as HTMLElement;
-    expect(status.textContent?.replace(/\s+/g, ' ').trim()).toBe('○ Non-member');
-    expect(status.className).toContain('text-[12px]');
-    expect(status.className).toContain('text-gray-400');
-    expect(status.className).toContain('lg:whitespace-nowrap');
-    expect(status.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('○');
+    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Company', 'Meetings attended', 'People']);
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="engagement-non-member-participation-row-a-1"] td')).toHaveLength(3);
   });
 
   // The period pill re-projects the loaded rows, so switching it must not cost another request.
@@ -144,6 +147,25 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(names[1]).toContain('Acme Motors');
   });
 
+  it('marks the rank with the Meetings attended arrow and sorts the whole list from page 1 on a picked column', async () => {
+    const rows = [
+      nonMemberRow({ accountId: 'a-1', accountName: 'Acme Motors', periods: [{ range: 'YTD', meetingsAttended: 2, distinctPeople: 1, sortRank: 2 }] }),
+      nonMemberRow({ accountId: 'b-2', accountName: 'Vendor Corp', periods: [{ range: 'YTD', meetingsAttended: 9, distinctPeople: 4, sortRank: 1 }] }),
+    ];
+    await render(response({ rows, counts: periodCounts(2) }));
+    const header = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="engagement-non-member-participation-sort-${key}"]`);
+    const first = (): string => (fixture.nativeElement.querySelector('tbody tr') as HTMLElement).textContent ?? '';
+
+    expect(header('meetings').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+
+    fixture.componentInstance['page'].set(1);
+    (header('company').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['page']()).toBe(0);
+    expect(first()).toContain('Acme Motors');
+    expect(header('company').closest('th')?.getAttribute('aria-sort')).toBe('ascending');
+  });
+
   // Every row moves when the pill changes, so a reader left on page 8 would land on unrelated orgs.
   it('restarts paging when the period re-orders the table, without re-reading', async () => {
     const rows = Array.from({ length: 60 }, (_, index) =>
@@ -156,24 +178,20 @@ describe('EngagementNonMemberParticipationComponent', () => {
     await render(response({ rows, counts: periodCounts(60) }));
     getEngagementNonMemberParticipation.mockClear();
 
-    fixture.componentInstance['onTablePage']({ first: 50, rows: 25 });
-    expect(fixture.componentInstance['first']()).toBe(50);
+    fixture.componentInstance['page'].set(5);
+    fixture.detectChanges();
+    expect(fixture.componentInstance['page']()).toBe(5);
+    expect(fixture.nativeElement.querySelector('[data-testid="ui-pagination-info"]').textContent.trim()).toBe('Showing 51 to 60 of 60');
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     fixture.detectChanges();
 
-    expect(fixture.componentInstance['first']()).toBe(0);
+    expect(fixture.componentInstance['page']()).toBe(0);
     expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
   });
 
-  it('captions the selected period scope count', async () => {
-    await render(response({ counts: periodCounts(19, 33) }));
-
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('19 organizations');
-  });
-
-  // The view counts its scope per period, so the caption follows the pill without a re-read.
-  it('re-captions and re-settles when the period changes', async () => {
+  // Whether the period has any non-member moves with it, without a re-read.
+  it('re-settles when the period changes', async () => {
     await render(response({ counts: periodCounts(19, 33) }));
     getEngagementNonMemberParticipation.mockClear();
 
@@ -184,7 +202,6 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
     // The period re-settles too, since whether it has any non-member moves the section's height.
     expect(verdicts).toEqual([false, false]);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('33 organizations');
   });
 
   // The caption counts organizations that attended in the period, so the table lists the same ones.
@@ -219,25 +236,22 @@ describe('EngagementNonMemberParticipationComponent', () => {
 
     expect(verdicts).toEqual([true]);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-table"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('0 organizations');
   });
 
   // Null attendance and a null count are unmeasured, so the caption must not claim nobody attended.
-  it('settles empty, with no body, when attendance was not measured, captioning an em dash rather than zero', async () => {
+  it('settles empty, with no body, when attendance was not measured', async () => {
     const rows = [nonMemberRow({ periods: [{ range: 'YTD', meetingsAttended: null, distinctPeople: null, sortRank: null }] })];
     await render(response({ rows, counts: null }));
 
     expect(verdicts).toEqual([true]);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-table"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('—');
   });
 
-  // A view that reports no scope count has not measured zero organizations, and the table says so.
-  it('captions an unmeasured scope with an em dash rather than a confident zero, keeping its rows', async () => {
+  // Unmeasured scope counts do not hide the rows the view did return.
+  it('keeps its rows when the scope count is unmeasured', async () => {
     await render(response({ counts: null }));
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('—');
-    // Unmeasured counts only caption the rows; the table still has them, so the section is not empty.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-row-a-1"]')).not.toBeNull();
     expect(verdicts).toEqual([false]);
   });
 
@@ -283,7 +297,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
     const lifecycle: string[] = [];
     selectedFoundation.set(null);
     await render(response(), lifecycle);
-    fixture.componentInstance['onTablePage']({ first: 25, rows: 25 });
+    fixture.componentInstance['page'].set(1);
 
     selectedFoundation.set({ slug: 'globex' });
     await fixture.whenStable();
@@ -292,7 +306,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(getEngagementNonMemberParticipation).toHaveBeenCalledWith({ foundationSlug: 'globex' });
     expect(getEngagementNonMemberParticipation).toHaveBeenCalledTimes(1);
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
-    expect(fixture.componentInstance['first']()).toBe(0);
+    expect(fixture.componentInstance['page']()).toBe(0);
   });
 
   it('settles a foundation cleared after a read, rather than wedging on the skeleton', async () => {

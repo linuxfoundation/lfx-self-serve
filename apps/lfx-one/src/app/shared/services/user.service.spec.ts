@@ -1,14 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ApplicationRef } from '@angular/core';
+import { ApplicationRef, PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
-import { EnrichedIdentity, Meeting, MeetingRsvp, PastMeeting, User } from '@lfx-one/shared/interfaces';
+import { MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS } from '@lfx-one/shared/constants';
+import { CombinedProfile, EnrichedIdentity, Meeting, MeetingRsvp, MeetingSelfGuest, PastMeeting, User, UserMetadata } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { defer, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ProfileSavedFieldsService } from './profile-saved-fields.service';
 import { UserService } from './user.service';
 
 /**
@@ -1130,6 +1132,190 @@ describe('UserService', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe('profile saves (#6082)', () => {
+    it('records an uploaded photo, whichever editor uploaded it', () => {
+      const http = TestBed.inject(HttpClient) as unknown as { post: ReturnType<typeof vi.fn> };
+      http.post.mockReturnValue(of({ public_url: 'https://cdn.example/ada.png' }));
+
+      service.uploadProfilePicture(new File(['x'], 'ada.png', { type: 'image/png' })).subscribe();
+
+      expect(TestBed.inject(ProfileSavedFieldsService).fields()).toEqual({ picture: 'https://cdn.example/ada.png' });
+    });
+
+    it('leaves field saves for the editor to record after it syncs them', () => {
+      const http = TestBed.inject(HttpClient) as unknown as { patch: ReturnType<typeof vi.fn> };
+      http.patch.mockReturnValue(of({}));
+
+      service.updateUserProfile({ user_metadata: { given_name: 'Ada' } as UserMetadata }).subscribe();
+
+      expect(TestBed.inject(ProfileSavedFieldsService).fields()).toEqual({});
+    });
+  });
+
+  describe('getWorkHistoryLogo (#6082)', () => {
+    const logo = (company: string): { value: string | null | undefined; messages: ReturnType<typeof vi.fn> } => {
+      const result = { value: undefined as string | null | undefined, messages: vi.mocked(TestBed.inject(MessageService).add) };
+      service.getWorkHistoryLogo(company).subscribe((value) => (result.value = value));
+      return result;
+    };
+
+    it('matches the company however it is cased or spaced, a current job before a past one', () => {
+      httpGet.mockReturnValue(
+        of([
+          { organization: 'Acme Motors', organizationLogo: 'https://logos.example/past.png', endDate: 'Dec 2019' },
+          { organization: ' ACME MOTORS ', organizationLogo: 'https://logos.example/current.png' },
+        ])
+      );
+
+      expect(logo('acme motors ').value).toBe('https://logos.example/current.png');
+      expect(httpGet).toHaveBeenCalledWith('/api/profile/work-experiences');
+    });
+
+    it('takes a past job’s logo when the current one has none', () => {
+      httpGet.mockReturnValue(
+        of([{ organization: 'Acme Motors', organizationLogo: 'https://logos.example/past.png', endDate: 'Dec 2019' }, { organization: 'Acme Motors' }])
+      );
+
+      expect(logo('Acme Motors').value).toBe('https://logos.example/past.png');
+    });
+
+    it('returns null when no job matches', () => {
+      httpGet.mockReturnValue(of([{ organization: 'Vendor Corp', organizationLogo: 'https://logos.example/vendor.png' }]));
+
+      expect(logo('Acme Motors').value).toBeNull();
+    });
+
+    it('returns null without raising a toast, and logs, when the request fails', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      httpGet.mockReturnValue(throwError(() => new Error('boom')));
+
+      const { value, messages } = logo('Acme Motors');
+
+      expect(value).toBeNull();
+      expect(messages).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    });
+  });
+
+  describe('getMeetingSelfGuest (#5798)', () => {
+    const PROFILE: CombinedProfile = {
+      user: { id: 'auth0|1', email: 'primary@example.com', first_name: 'Pat', last_name: 'Doe', username: 'pdoe', created_at: '', updated_at: '' },
+      profile: { job_title: 'Engineer', organization: 'Profile Org', picture: 'https://avatars.example.com/pdoe.png' },
+    };
+
+    /** Answers each lookup by URL; `failing` URLs error instead. */
+    const respond = (failing: string[] = []): void => {
+      const responses: Record<string, unknown> = {
+        '/api/profile': PROFILE,
+        '/api/profile/emails/meeting-invite': { email_id: 'email-2', email: 'invites@example.com' },
+        '/api/profile/work-experiences': [{ organization: 'Employer Org', organizationId: 'org-1', startDate: 'Jan 2020', endDate: null }],
+      };
+      httpGet.mockImplementation((url: string) => (failing.includes(url) ? throwError(() => new Error('boom')) : of(responses[url])));
+    };
+
+    const lookup = (): MeetingSelfGuest | null | 'unset' => {
+      let result: MeetingSelfGuest | null | 'unset' = 'unset';
+      service.getMeetingSelfGuest().subscribe((value) => (result = value));
+      return result;
+    };
+
+    beforeEach(() => {
+      service.user.set({
+        email: 'session@example.com',
+        given_name: 'Session',
+        family_name: 'Name',
+        picture: 'https://avatars.example.com/session.png',
+        'https://sso.linuxfoundation.org/claims/username': 'pdoe',
+      } as User);
+    });
+
+    it('combines the profile, meeting-invite email and current employer', () => {
+      respond();
+
+      expect(lookup()).toEqual({
+        email: 'invites@example.com',
+        first_name: 'Pat',
+        last_name: 'Doe',
+        job_title: 'Engineer',
+        org_name: 'Employer Org',
+        username: 'pdoe',
+        avatar_url: 'https://avatars.example.com/pdoe.png',
+        matchEmails: ['invites@example.com', 'primary@example.com', 'session@example.com'],
+      });
+    });
+
+    it('falls back to the session names, without a toast, when the profile lookup fails', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      respond(['/api/profile']);
+
+      const guest = lookup() as MeetingSelfGuest;
+
+      expect(guest.first_name).toBe('Session');
+      expect(guest.last_name).toBe('Name');
+      expect(guest.email).toBe('invites@example.com');
+      expect(TestBed.inject(MessageService).add).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('invites the primary email when the user set no meeting-invite email', () => {
+      respond();
+      const answered = httpGet.getMockImplementation() as (url: string) => unknown;
+      httpGet.mockImplementation((url: string) => (url === '/api/profile/emails/meeting-invite' ? of({ email_id: null, email: null }) : answered(url)));
+
+      const guest = lookup() as MeetingSelfGuest;
+
+      expect(guest.email).toBe('primary@example.com');
+      expect(guest.matchEmails).toEqual(['primary@example.com', 'session@example.com']);
+    });
+
+    it('returns null, without a toast, when the meeting-invite lookup fails, since the invite address is unknown', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      respond(['/api/profile/emails/meeting-invite']);
+
+      expect(lookup()).toBeNull();
+      expect(TestBed.inject(MessageService).add).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('returns null when the meeting-invite lookup does not settle in time', () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        respond();
+        const answered = httpGet.getMockImplementation() as (url: string) => unknown;
+        httpGet.mockImplementation((url: string) => (url === '/api/profile/emails/meeting-invite' ? NEVER : answered(url)));
+
+        let result: MeetingSelfGuest | null | 'unset' = 'unset';
+        service.getMeetingSelfGuest().subscribe((value) => (result = value));
+        expect(result).toBe('unset');
+
+        vi.advanceTimersByTime(MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS);
+
+        expect(result).toBeNull();
+      } finally {
+        warn.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it('returns null on the server without making any request', () => {
+      TestBed.resetTestingModule();
+      httpGet = vi.fn();
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: PLATFORM_ID, useValue: 'server' },
+          { provide: HttpClient, useValue: { get: httpGet, post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
+          { provide: MessageService, useValue: { add: vi.fn() } },
+        ],
+      });
+      service = TestBed.inject(UserService);
+
+      expect(lookup()).toBeNull();
+      expect(httpGet).not.toHaveBeenCalled();
     });
   });
 });

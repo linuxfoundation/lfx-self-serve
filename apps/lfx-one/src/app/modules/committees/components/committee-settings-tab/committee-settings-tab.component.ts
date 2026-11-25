@@ -26,7 +26,7 @@ import {
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   WG_WEEKLY_BRIEF_SLACK_FLAG,
 } from '@lfx-one/shared/constants';
-import { getMailingListCommitteeSync } from '@lfx-one/shared/utils';
+import { canGroupGrantSocialListening, getMailingListCommitteeSync } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -209,6 +209,7 @@ export class CommitteeSettingsTabComponent {
     public: new FormControl(false),
     sso_group_enabled: new FormControl(false),
     show_meeting_attendees: new FormControl(false),
+    members_can_view_social_listening: new FormControl(false),
     chat_channel: new FormControl<string | null>(null),
     website: new FormControl<string | null>(null),
     // Write-only — never patched from the committee (Committee.has_slack_webhook is the only
@@ -363,6 +364,10 @@ export class CommitteeSettingsTabComponent {
   // `userService.impersonating()` directly, not on module input plumbing.
   public readonly impersonating = this.userService.impersonating;
 
+  // Category being edited (falls back to the saved one) — the Social Listening toggle is Board only.
+  public readonly editedCategory = toSignal(this.form.controls.category.valueChanges, { initialValue: this.form.controls.category.value });
+  public readonly settingsCategory = computed(() => this.editedCategory() || this.committee()?.category);
+
   // Whether the committee already has a Slack webhook configured — drives the settings card's Configured/Replace vs. empty-input display.
   public slackWebhookConfigured = computed(() => !!this.committee()?.has_slack_webhook);
 
@@ -431,6 +436,7 @@ export class CommitteeSettingsTabComponent {
           public: c.public || false,
           sso_group_enabled: c.sso_group_enabled || false,
           show_meeting_attendees: c.show_meeting_attendees || false,
+          members_can_view_social_listening: c.members_can_view_social_listening || false,
           chat_channel: c.chat_channel ?? null,
           website: c.website ?? null,
           ...(preserveWebhookEdit ? {} : { chat_webhook_url: null }),
@@ -576,6 +582,23 @@ export class CommitteeSettingsTabComponent {
 
     this.refreshingMl.set(true);
     this.refreshMl$.next();
+  }
+
+  // Mirrors openSyncPreviewDialog's own onClose handling (#5786) — the Auto Sync drawer card now owns
+  // the Sync Now dialog itself, but a reverse sync (mailing list → committee) still changes committee
+  // membership, so the same refresh/committeeUpdated behavior applies regardless of which entry point
+  // opened the dialog.
+  public onSyncApplied(result: MailingListSyncPreviewDialogResult): void {
+    // Same stale-committee guard as onSyncSettingsUpdated() above — the Sync Now dialog can likewise
+    // resolve after the user has switched committee context in the drawer, and without this check its
+    // refresh/committeeUpdated would land against the wrong committee (cursor Bugbot #5790 review).
+    if (this.autoSyncDrawerCommitteeUid !== undefined && this.committee()?.uid !== this.autoSyncDrawerCommitteeUid) {
+      return;
+    }
+    this.refreshMl$.next();
+    if (result.committeeChanged) {
+      this.committeeUpdated.emit();
+    }
   }
 
   // Re-fires the refresh that failed in initAssociatedMailingLists' catchError — the only recovery
@@ -771,6 +794,8 @@ export class CommitteeSettingsTabComponent {
         public: values.public ?? false,
         sso_group_enabled: values.sso_group_enabled ?? false,
         show_meeting_attendees: values.show_meeting_attendees ?? false,
+        members_can_view_social_listening:
+          canGroupGrantSocialListening(values.category || committee.category) && (values.members_can_view_social_listening ?? false),
         chat_channel: values.chat_channel || null,
         website: values.website || null,
         ...(chatWebhookUrlIncludedInSave ? { chat_webhook_url: values.chat_webhook_url || null } : {}),
@@ -1011,7 +1036,20 @@ export class CommitteeSettingsTabComponent {
         map(() => ({ uid, success: true })),
         catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
       );
-      if (explicitSyncMode && explicitSyncMode !== MailingListSyncMode.MANUAL) {
+      // Only leaving AUTO_MAILING_LIST_TO_COMMITTEE needs release-phase priority: it's the single-slot
+      // direction (cToMlUid blocks ML→C for everyone else while one list holds it), so a sibling
+      // claiming that slot must run after this list gives it up, same as moving to MANUAL. Leaving
+      // AUTO_COMMITTEE_TO_MAILING_LIST straight into the other auto mode does NOT need this treatment:
+      // routing it into releaseUpdates put it in the same parallel forkJoin as a sibling's own Manual
+      // release, so this list's ML→C activation could be validated before that sibling's release lands
+      // and fail the mixed-direction check — the exact regression this round's fix must not reintroduce
+      // (cursor/greptile/copilot/lfx-one #5790 round 2 review).
+      const releasesMlToCSlot =
+        currentlyOnThisCommittee && currentSyncMode === MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE && explicitSyncMode !== currentSyncMode;
+
+      if (releasesMlToCSlot) {
+        releaseUpdates.push({ uid, result$, releasesAutoSyncSlot: true });
+      } else if (explicitSyncMode && explicitSyncMode !== MailingListSyncMode.MANUAL) {
         activateUpdates.push({ uid, result$ });
       } else {
         const releasesAutoSyncSlot = currentlyOnThisCommittee && !!currentSyncMode && currentSyncMode !== MailingListSyncMode.MANUAL;

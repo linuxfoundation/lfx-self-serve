@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
-import { MAILING_LIST_SYNC_POLL_DEADLINE_MS } from '@lfx-one/shared/constants';
+import { GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS, MAILING_LIST_SYNC_POLL_DEADLINE_MS } from '@lfx-one/shared/constants';
 import { MailingListSyncMode, SyncMemberType } from '@lfx-one/shared/enums';
 import { MailingListSyncPreviewDialogData, SyncApplyJobStatus, SyncDiff, SyncDiffJobStatus, SyncJobResultEntry } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
@@ -185,42 +185,114 @@ afterEach(() => {
 });
 
 describe('MailingListSyncPreviewDialogComponent diff selection', () => {
-  it('loads the diff and selects everything by default', async () => {
+  it('loads the diff with every row unchecked by default', async () => {
     const { fixture } = await setup({});
 
-    expect(fixture.componentInstance.selectedAdds().map((a) => a.member_id)).toEqual(['add-1', 'add-2']);
-    expect(fixture.componentInstance.selectedRemoves().map((r) => r.member_id)).toEqual(['remove-1']);
-  });
-
-  it('excludes an add when its checkbox row is unchecked', async () => {
-    const { fixture } = await setup({});
-
-    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(false);
-
-    expect(fixture.componentInstance.selectedAdds().map((a) => a.member_id)).toEqual(['add-2']);
-    expect(fixture.componentInstance.selectedRemoves().map((r) => r.member_id)).toEqual(['remove-1']);
-  });
-
-  it('excludes a remove when its checkbox row is unchecked', async () => {
-    const { fixture } = await setup({});
-
-    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(false);
-
+    expect(fixture.componentInstance.selectedAdds()).toEqual([]);
     expect(fixture.componentInstance.selectedRemoves()).toEqual([]);
   });
 
-  it('disables Apply once every row is deselected', async () => {
+  it('includes an add once its checkbox row is checked', async () => {
     const { fixture } = await setup({});
 
-    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(false);
-    fixture.componentInstance.addCheckboxForm.get('add-2')?.setValue(false);
-    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(false);
+    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(true);
+
+    expect(fixture.componentInstance.selectedAdds().map((a) => a.member_id)).toEqual(['add-1']);
+    expect(fixture.componentInstance.selectedRemoves()).toEqual([]);
+  });
+
+  it('includes a remove once its checkbox row is checked', async () => {
+    const { fixture } = await setup({});
+
+    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(true);
+
+    expect(fixture.componentInstance.selectedRemoves().map((r) => r.member_id)).toEqual(['remove-1']);
+  });
+
+  it('keeps Apply disabled until a row is checked', async () => {
+    const { fixture } = await setup({});
     fixture.detectChanges();
 
     const applyBtn = fixture.nativeElement.querySelector('[data-testid="sync-preview-apply-btn"] button') as HTMLButtonElement;
     expect(applyBtn.disabled).toBe(true);
     expect(fixture.componentInstance.selectedAdds()).toEqual([]);
     expect(fixture.componentInstance.selectedRemoves()).toEqual([]);
+  });
+
+  it('enables Apply once a row is checked, and the Add/Remove tab counts reflect the full diff, not the selection', async () => {
+    const { fixture } = await setup({});
+
+    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(true);
+    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(true);
+    fixture.detectChanges();
+
+    const applyBtn = fixture.nativeElement.querySelector('[data-testid="sync-preview-apply-btn"] button') as HTMLButtonElement;
+    expect(applyBtn.disabled).toBe(false);
+    expect(fixture.componentInstance.tabOptions()).toEqual([
+      { id: 'adds', label: 'Add (2)' },
+      { id: 'removes', label: 'Remove (1)' },
+      { id: 'conflicts', label: 'Conflicts (0)' },
+    ]);
+  });
+
+  it('keeps the tab counts unchanged when a checked row is unchecked, but clears the selection and disables Apply', async () => {
+    const { fixture } = await setup({});
+
+    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(true);
+    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(true);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.selectedAdds().map((a) => a.member_id)).toEqual(['add-1']);
+    expect(fixture.componentInstance.selectedRemoves().map((r) => r.member_id)).toEqual(['remove-1']);
+    expect(fixture.componentInstance.tabOptions()).toEqual([
+      { id: 'adds', label: 'Add (2)' },
+      { id: 'removes', label: 'Remove (1)' },
+      { id: 'conflicts', label: 'Conflicts (0)' },
+    ]);
+
+    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(false);
+    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(false);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.selectedAdds()).toEqual([]);
+    expect(fixture.componentInstance.selectedRemoves()).toEqual([]);
+    expect(fixture.componentInstance.tabOptions()).toEqual([
+      { id: 'adds', label: 'Add (2)' },
+      { id: 'removes', label: 'Remove (1)' },
+      { id: 'conflicts', label: 'Conflicts (0)' },
+    ]);
+
+    const applyBtn = fixture.nativeElement.querySelector('[data-testid="sync-preview-apply-btn"] button') as HTMLButtonElement;
+    expect(applyBtn.disabled).toBe(true);
+  });
+});
+
+describe('MailingListSyncPreviewDialogComponent automation bot filtering', () => {
+  it('filters the groups.io automation bot out of adds, removes, and conflicts, case-insensitively', async () => {
+    const botEmail = GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS[0];
+    const diffWithBot: SyncDiff = {
+      ...DIFF,
+      adds: [...DIFF.adds, { email: botEmail.toUpperCase(), member_id: 'bot-add', member_type: SyncMemberType.COMMITTEE_MEMBER, name: 'Bot' }],
+      removes: [...DIFF.removes, { email: botEmail, member_id: 'bot-remove', member_type: SyncMemberType.MAILING_LIST_MEMBER }],
+      conflicts: [
+        {
+          committee_email: botEmail,
+          mailing_list_email: 'someone-else@example.org',
+          name: 'Bot Conflict',
+        },
+      ],
+    };
+
+    const { fixture } = await setup({ diff: diffWithBot });
+
+    expect(fixture.componentInstance.diff()?.adds.map((a) => a.member_id)).not.toContain('bot-add');
+    expect(fixture.componentInstance.diff()?.removes.map((r) => r.member_id)).not.toContain('bot-remove');
+    expect(fixture.componentInstance.diff()?.conflicts).toEqual([]);
+    expect(fixture.componentInstance.tabOptions()).toEqual([
+      { id: 'adds', label: 'Add (2)' },
+      { id: 'removes', label: 'Remove (1)' },
+      { id: 'conflicts', label: 'Conflicts (0)' },
+    ]);
   });
 });
 

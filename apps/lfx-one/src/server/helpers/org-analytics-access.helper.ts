@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_ACCESS_UNVERIFIABLE_MESSAGE, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import {
+  ORG_ACCESS_UNVERIFIABLE_MESSAGE,
+  ORG_ACCOUNT_ID_PATTERN,
+  ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE,
+  ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_MESSAGE,
+} from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
@@ -26,13 +31,24 @@ const roleGrants = new OrgRoleGrantsService();
  * field otherwise), so the id authorized here is byte-for-byte the id the handler queries.
  * Failure semantics are `assertOrgLensRead`'s: 403 when the caller has no access, 503 when it
  * could not be verified.
+ *
+ * The all employee view (epic #5845) is refused here by default: these rows are served from `/api/analytics/*`, where
+ * neither `blockEmployeeView` (it needs an `:orgUid` param) nor the per-route redaction tools apply, so an employee-only
+ * caller would read them unredacted. A route that has been reviewed and redacts for the employee view opts in with
+ * `{ allowEmployeeView: true }`.
  */
-export async function assertOrgAnalyticsRead(req: Request, accountId: string, operation: string): Promise<void> {
+export async function assertOrgAnalyticsRead(req: Request, accountId: string, operation: string, options: { allowEmployeeView?: boolean } = {}): Promise<void> {
   if (!ORG_ACCOUNT_ID_PATTERN.test(accountId)) {
-    throw ServiceValidationError.forField('accountId', 'Invalid organization account id format', { operation });
+    throw ServiceValidationError.forField('accountId', 'Invalid company account id format', { operation });
   }
 
-  await assertOrgLensRead(req, accountId, operation);
+  const qualification = await assertOrgLensRead(req, accountId, operation);
+  if (qualification === 'employee-view' && !options.allowEmployeeView) {
+    throw new MicroserviceError(ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_MESSAGE, 403, ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE, {
+      operation,
+      service: 'LFX_V2_SERVICE',
+    });
+  }
 }
 
 /**

@@ -18,6 +18,9 @@ import {
   CREATIVE_ASSET_MIME_TYPES,
   isCreativeAssetMimeType,
   sniffCreativeAssetMimeType,
+  sniffCreativeAssetUploadMimeType,
+  creativeAssetUploadMaxBytes,
+  isCreativeAssetUploadMimeType,
   BUDGET_WRITABLE_CAMPAIGN_PLATFORMS,
   DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS,
   CAMPAIGN_ALERT_THRESHOLDS,
@@ -70,7 +73,6 @@ import {
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY,
-  GOOGLE_CHANNELS_WITHOUT_TARGET_CPA,
   GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
@@ -698,17 +700,6 @@ describe('Google bidding catalogue', () => {
   it('keeps target roas off demand gen, as a strategy and as a target', () => {
     expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL['demand-gen']).not.toContain('target-roas');
     expect([...GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS]).toEqual(['demand-gen']);
-  });
-
-  /**
-   * Display's target CPA is withheld by LFX One, not refused by campaign-service's catalogue
-   * (linuxfoundation/lfx-v2-campaign-service#578): the catalogue keeps Target CPA on Display so the
-   * workaround comes out by deleting the one constant, and the constant names Display alone, since
-   * Search and Performance Max take the folded form and Demand Gen takes the standalone one.
-   */
-  it('withholds a target cpa on display alone, leaving the catalogue as upstream has it', () => {
-    expect([...GOOGLE_CHANNELS_WITHOUT_TARGET_CPA]).toEqual(['display']);
-    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL.display).toContain('target-cpa');
   });
 
   /**
@@ -1494,6 +1485,33 @@ describe('creative-asset upload allowlist', () => {
     expect(sniffCreativeAssetMimeType([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])).toBeNull();
     expect(sniffCreativeAssetMimeType('\x89PNG\r\n\x1a\n')).toBeNull();
     expect(sniffCreativeAssetMimeType(undefined)).toBeNull();
+  });
+
+  // LinkedIn video ads (#5764 row 18): an MP4 opens with an ftyp box whose major brand is an MP4 brand.
+  const ftyp = (brand: string) => new Uint8Array([0, 0, 0, 0x10, ...new TextEncoder().encode(`ftyp${brand}`), 0, 0, 0, 0]);
+  it.each([
+    ['an MP4 (isom)', ftyp('isom'), 'video/mp4'],
+    ['an MP4 (mp42)', ftyp('mp42'), 'video/mp4'],
+    ['a PNG', new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]), 'image/png'],
+    ['a QuickTime movie', ftyp('qt  '), null],
+    ['a HEIF image', ftyp('heic'), null],
+    ['a truncated ftyp box', ftyp('isom').subarray(0, 10), null],
+    [
+      'an MP4 whose ftyp box has a 64-bit size',
+      new Uint8Array([0, 0, 0, 1, ...new TextEncoder().encode('ftyp'), 0, 0, 0, 0, 0, 0, 0, 0x18, ...new TextEncoder().encode('isom')]),
+      'video/mp4',
+    ],
+    ['a plain array', [...ftyp('isom')], null],
+  ])('sniffs %s as %s for an upload', (_label, bytes, expected) => {
+    expect(sniffCreativeAssetUploadMimeType(bytes)).toBe(expected);
+  });
+
+  it('bounds each upload type by its own limit, a video at the upstream 30 MiB ceiling', () => {
+    expect(creativeAssetUploadMaxBytes('image/png')).toBe(CREATIVE_ASSET_MAX_BYTES);
+    expect(creativeAssetUploadMaxBytes('image/jpeg')).toBe(CREATIVE_ASSET_MAX_BYTES);
+    expect(creativeAssetUploadMaxBytes('video/mp4')).toBe(30 * 1024 * 1024);
+    expect(isCreativeAssetUploadMimeType('video/mp4')).toBe(true);
+    expect(isCreativeAssetMimeType('video/mp4')).toBe(false);
   });
 });
 

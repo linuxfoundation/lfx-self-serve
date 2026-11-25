@@ -386,7 +386,7 @@
 
                 <!-- Attendance Stats (past meetings) -->
                 @if (hasAttendanceData()) {
-                  <div class="flex items-center gap-4" data-testid="attendance-summary">
+                  <div class="flex flex-wrap items-center gap-2 sm:gap-4 min-w-0 max-w-full" data-testid="attendance-summary">
                     <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
                       <i class="fa-light fa-circle-check text-emerald-500 text-sm"></i>
                       <span class="text-sm font-semibold text-emerald-600">{{ attendedCount() }}</span>
@@ -407,9 +407,11 @@
 
                 <!-- Alert Banner -->
                 @if (isPastMeeting()) {
-                  <div class="bg-gray-50 border border-gray-300 rounded px-3 py-2 flex items-center gap-2" [attr.data-testid]="'meeting-alert-past'">
-                    <i class="fa-light fa-clock-rotate-left text-gray-500 text-base"></i>
-                    <p class="text-sm text-gray-700">This meeting has ended.</p>
+                  <div
+                    class="bg-gray-50 border border-gray-300 rounded px-3 py-2 flex items-center gap-2 min-w-0 max-w-full"
+                    [attr.data-testid]="'meeting-alert-past'">
+                    <i class="fa-light fa-clock-rotate-left text-gray-500 text-base shrink-0"></i>
+                    <p class="text-sm text-gray-700 min-w-0 break-words">This meeting has ended.</p>
                   </div>
                 } @else if (messageSeverity() === 'warn') {
                   <div class="bg-amber-50 border border-amber-500/50 rounded px-3 py-2 flex items-center gap-2" [attr.data-testid]="'meeting-alert-warn'">
@@ -510,7 +512,7 @@
                       size="small"
                       severity="secondary"
                       [loading]="resendingInvite()"
-                      (onClick)="resendInvite()"
+                      (onClick)="confirmResendInvite()"
                       data-testid="resend-invite-organizer-button">
                     </lfx-button>
                   }
@@ -548,7 +550,7 @@
                           size="small"
                           severity="secondary"
                           [loading]="resendingInvite()"
-                          (onClick)="resendInvite()"
+                          (onClick)="confirmResendInvite()"
                           data-testid="resend-invite-button">
                         </lfx-button>
                       }
@@ -978,7 +980,10 @@
           [myMeetingRegistrants]="true"
           [initialRegistrants]="registrants()"
           [initialRegistrantsLoading]="registrantsLoading()"
+          [initialRegistrantsFailed]="registrantsLoadFailed()"
           [visible]="showRegistrants()"
+          (selfAdded)="onSelfAdded($event.meeting_id)"
+          (selfRemoved)="onSelfRemoved($event)"
           (refreshRequested)="onRegistrantsRefreshRequested($event)">
         </lfx-meeting-registrants-display>
       </p-drawer>
@@ -1006,13 +1011,14 @@
           [primaryAction]="stickyBarAction()"
           [resending]="resendingInvite()"
           [suppressed]="stickyBarSuppressed()"
-          (resendInvite)="resendInvite()"
+          (resendInvite)="confirmResendInvite()"
           (subscribeCalendar)="onSubscribeCalendar()" />
       }
     </div>
   } @else {
-    <!-- Skeleton shown only for client-side navigations with no SSR-transferred state (GH-2041) —
-         the seeded first paint in `MeetingPageDataService.load()` means this never flashes on a fresh load. -->
+    <!-- Skeleton shown for client-side navigations with no SSR-transferred state (GH-2041), and on a fresh load whose
+         server fetch failed: the server renders it and the browser keeps it until its own fetch settles (#5907).
+         A successful server load seeds the first paint in `MeetingPageDataService.load()`, so it never flashes then. -->
     <div class="bg-gray-50 min-h-screen" role="status" aria-live="polite" data-testid="meeting-join-skeleton">
       <span class="sr-only">Loading meeting details…</span>
       <div class="container mx-auto py-6 px-8">

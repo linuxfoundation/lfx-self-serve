@@ -14,7 +14,7 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 
 import { NonMembersOrgsComponent } from './non-members-orgs.component';
 
-import type { HealthMetricsNonMembersOrg, HealthMetricsNonMembersOrgs } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsNonMembersOrg, HealthMetricsNonMembersOrgs, HealthMetricsNonMembersOrgsFilter } from '@lfx-one/shared/interfaces';
 
 const ACCOUNT_ID = '0014100000AcmeAAAA';
 
@@ -22,19 +22,22 @@ function org(overrides: Partial<HealthMetricsNonMembersOrg> = {}): HealthMetrics
   return {
     accountId: ACCOUNT_ID,
     accountName: 'Acme Motors',
+    logoUrl: 'https://logos.example/acme.png',
     lastEngagedDate: '2026-03-14',
     meetingsAttended: 42,
     distinctPeople: 9,
     contributions: 1840,
-    isNew: true,
-    membershipStatus: 'Non-member',
     fitBand: 'High',
+    otherMemberships: [
+      { foundationSlug: 'zeta-foundation', foundationName: 'Zeta Foundation', tier: 'Silver Membership' },
+      { foundationSlug: 'cncf', foundationName: 'Cloud Native Computing Foundation', tier: 'Gold Membership' },
+    ],
     ...overrides,
   };
 }
 
 function response(overrides: Partial<HealthMetricsNonMembersOrgs> = {}): HealthMetricsNonMembersOrgs {
-  return { rows: [org()], totalRecords: 1, scopeTotal: 1, newCount: 1, ...overrides };
+  return { rows: [org()], totalRecords: 1, scopeTotal: 1, ...overrides };
 }
 
 describe('NonMembersOrgsComponent', () => {
@@ -49,7 +52,8 @@ describe('NonMembersOrgsComponent', () => {
   async function render(
     payload: HealthMetricsNonMembersOrgs = response(),
     queryParams: Record<string, string> = {},
-    followUpPayload?: HealthMetricsNonMembersOrgs
+    followUpPayload?: HealthMetricsNonMembersOrgs,
+    initialFilter?: HealthMetricsNonMembersOrgsFilter
   ): Promise<void> {
     getNonMembersOrgs = vi
       .fn()
@@ -70,6 +74,8 @@ describe('NonMembersOrgsComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(NonMembersOrgsComponent);
+    // The page binds the cut it read from the URL before the section's first read.
+    if (initialFilter) fixture.componentRef.setInput('filter', initialFilter);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
       lifecycle.push('settled');
@@ -92,6 +98,22 @@ describe('NonMembersOrgsComponent', () => {
     return query(testId)?.textContent?.replace(/\s+/g, ' ').trim();
   }
 
+  function cell(column: string): HTMLElement | null {
+    return query(`non-members-orgs-row-${ACCOUNT_ID}-${column}`);
+  }
+
+  function cellText(column: string): string | undefined {
+    return cell(column)?.querySelector('[data-testid="health-metrics-cell-text"]')?.textContent?.trim();
+  }
+
+  function cellDescription(column: string): string | undefined {
+    return cell(column)?.querySelector('[data-testid="health-metrics-cell-description"]')?.textContent?.trim();
+  }
+
+  function sortBy(key: string): void {
+    (query(`non-members-orgs-sort-${key}`)?.querySelector('button') as HTMLButtonElement).click();
+  }
+
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
@@ -99,97 +121,130 @@ describe('NonMembersOrgsComponent', () => {
     verdicts = [];
   });
 
-  it('reads the selected foundation and period, renders the page, summary and note, and settles', async () => {
-    await render(response({ scopeTotal: 412, newCount: 37 }));
+  it('reads the selected foundation and period in the default order, renders the page and settles', async () => {
+    await render(response({ scopeTotal: 412, totalRecords: 412 }));
 
-    expect(getNonMembersOrgs).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', filter: 'all', search: '', offset: 0, pageSize: 10 });
-    expect(text(`non-members-orgs-row-${ACCOUNT_ID}-name`)).toBe('Acme Motors');
-    expect(text('non-members-orgs-count')).toBe('412 organizations · 37 new this period');
-    expect(text('non-members-orgs-provisional')).toContain('provisional');
+    expect(getNonMembersOrgs).toHaveBeenCalledWith({
+      foundationSlug: 'acme',
+      range: 'YTD',
+      filter: 'all',
+      search: '',
+      offset: 0,
+      pageSize: 10,
+      sort: null,
+    });
+    expect(cellText('name')).toBe('Acme Motors');
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
   });
 
-  it('renders an organization row with its counts and no channel chips', async () => {
+  it('draws the five columns, Meetings attended marked as the default order and Contributions with its tip', async () => {
     await render();
-    const cell = (key: string) => text(`non-members-orgs-row-${ACCOUNT_ID}-${key}`);
 
-    expect(query(`non-members-orgs-row-${ACCOUNT_ID}-channels`)).toBeNull();
-    expect(cell('meetings')).toBe('42');
-    expect(cell('people')).toBe('9');
-    expect(cell('contributions')).toBe('1,840');
-    expect(cell('last-engaged')).toBe('Mar 14, 2026');
-    expect(cell('membership')).toBe('○ Non-member');
-    expect(cell('fit')).toBe('High');
-    expect(query(`non-members-orgs-row-${ACCOUNT_ID}-fit`)?.querySelector('.bg-emerald-600')).not.toBeNull();
-  });
-
-  it('renders an unscored organization as a dash with no fit dot', async () => {
-    await render(response({ rows: [org({ fitBand: null })] }));
-
-    expect(text(`non-members-orgs-row-${ACCOUNT_ID}-fit`)).toBe('—');
-    expect(query(`non-members-orgs-row-${ACCOUNT_ID}-fit`)?.querySelector('.rounded-full')).toBeNull();
-  });
-
-  it('caps the search box at the length the read honours and keeps the all-time caveat out of the header', async () => {
-    await render();
-    const headers = [...(fixture.nativeElement as HTMLElement).querySelectorAll('th')].map((th) => th.textContent?.trim());
-    const input = fixture.nativeElement.querySelector('#non-members-orgs-search') as HTMLInputElement;
-
-    expect(input.maxLength).toBe(100);
-    expect(input.placeholder).toBe('Search organization…');
-    expect(headers).toEqual(['Organization', 'Membership', 'Meetings attended', 'People', 'Contributions', 'Last engaged', 'Fit']);
-  });
-
-  it('carries the design caution note and the all-time caveat in a small warning note', async () => {
-    await render();
-    const note = query('non-members-orgs-provisional');
-
-    expect(text('non-members-orgs-provisional')).toContain(
-      'Organization matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.'
+    const headers = [...(query('non-members-orgs-table')?.querySelectorAll('th') ?? [])].map((th) => th.textContent?.replace(/\s+/g, ' ').trim());
+    expect(headers).toEqual(['Company', 'Other memberships', 'Meetings attended', 'Contributions', 'Fit']);
+    expect(query('non-members-orgs-sort-meetings')?.parentElement?.getAttribute('aria-sort')).toBe('descending');
+    expect(fixture.componentInstance['contributionsTip']).toBe(
+      "Code contributions (commits and pull requests) this company made to the foundation's projects in the selected period."
     );
-    expect(note?.querySelector('[data-testid="health-metrics-footnote-note"]')).not.toBeNull();
-    expect(note?.querySelector('[data-testid="ui-note-icon"] i')?.classList).toContain('fa-triangle-exclamation');
-    expect(text('non-members-orgs-all-time')).toBe('Last engaged is all-time, not limited to the selected period.');
   });
 
-  it('flags fewer than five active organizations as too few to rank, between the count line and the table', async () => {
-    await render(response({ totalRecords: 4, scopeTotal: 4 }));
-    const chip = query('non-members-orgs-low-confidence');
+  it('renders a company the way the design draws it', async () => {
+    await render();
 
-    expect(text('non-members-orgs-low-confidence')?.replace('◐', '').trim()).toBe('Only 4 active organizations — too early to rank by fit.');
-    expect(chip?.classList).toContain('bg-amber-50');
-    expect(chip?.querySelector('[aria-hidden="true"]')?.textContent).toBe('◐');
-    expect(query('non-members-orgs-count')?.compareDocumentPosition(chip as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(chip?.compareDocumentPosition(query('non-members-orgs-table') as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(cell('name')?.querySelector('[data-testid="health-metrics-cell-company"]')).not.toBeNull();
+    expect(cellDescription('name')).toBe('Last engaged Mar 14, 2026');
+    expect(cellText('meetings')).toBe('42');
+    expect(cellDescription('meetings')).toBe('9 people');
+    expect(cellText('contributions')).toBe('1,840');
+    const badge = cell('fit')?.querySelector('span');
+    expect(badge?.textContent?.trim()).toBe('High');
+    expect(badge?.className).toContain('bg-emerald-50');
+    expect(badge?.className).toContain('text-emerald-700');
+    expect(badge?.className).toContain('h-[24px]');
   });
 
-  it('keeps the low-confidence chip singular for one organization', async () => {
-    await render(response({ scopeTotal: 1 }));
+  it('badges each other foundation, highest tier first, with the tier in its tooltip', async () => {
+    await render();
 
-    expect(text('non-members-orgs-low-confidence')?.replace('◐', '').trim()).toBe('Only 1 active organization — too early to rank by fit.');
+    const badges = [...(cell('memberships')?.querySelectorAll('lfx-ui-badge') ?? [])] as HTMLElement[];
+    expect(badges.map((badge) => badge.textContent?.trim())).toEqual(['CNCF', 'Zeta Foundation']);
+    expect(badges[0].getAttribute('tabindex')).toBe('0');
+    expect(badges[0].getAttribute('role')).toBe('img');
+    expect(badges[0].getAttribute('aria-label')).toBe('CNCF');
+    expect(badges[0].className).toContain('max-w-[170px]');
+    expect(fixture.componentInstance['rowViews']()[0].otherMemberships[0]).toEqual({ key: 'cncf', label: 'CNCF', tierLabel: 'Gold membership' });
   });
 
-  it('shows no low-confidence chip at five or more active organizations', async () => {
-    await render(response({ totalRecords: 5, scopeTotal: 5 }));
+  it('sorts Other memberships highest tier first on the first click', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }));
 
+    sortBy('memberships');
+    await settle();
+
+    expect(getNonMembersOrgs).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0, sort: { key: 'memberships', direction: 'desc' } }));
+  });
+
+  it('dashes a company with no meetings, contributions or score, with no people or date line', async () => {
+    await render(response({ rows: [org({ meetingsAttended: 0, contributions: null, fitBand: null, lastEngagedDate: null, otherMemberships: [] })] }));
+
+    expect(cellText('meetings')).toBe('—');
+    expect(cellDescription('meetings')).toBeUndefined();
+    expect(cellText('contributions')).toBe('—');
+    expect(cellDescription('name')).toBeUndefined();
+    expect(text(`non-members-orgs-row-${ACCOUNT_ID}-memberships`)).toBe('—');
+    expect(cell('memberships')?.querySelector('lfx-ui-badge')).toBeNull();
+    expect(text(`non-members-orgs-row-${ACCOUNT_ID}-fit`)).toBe('—');
+    expect(cell('fit')?.querySelector('[data-testid="health-metrics-cell-text"]')?.classList).toContain('text-gray-400');
+  });
+
+  it('searches company names from a box that fills the row, with no count line, footnote or rows-per-page choice', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }));
+
+    const search = query('non-members-orgs-search');
+    expect(search?.classList).toContain('w-full');
+    expect(search?.querySelector('input')?.placeholder).toBe('Search company…');
+    expect(search?.querySelector('input')?.maxLength).toBe(100);
+    expect(query('non-members-orgs-count')).toBeNull();
+    expect(query('non-members-orgs-provisional')).toBeNull();
     expect(query('non-members-orgs-low-confidence')).toBeNull();
+    expect(fixture.nativeElement.querySelector('lfx-ui-pagination')).not.toBeNull();
   });
 
-  it('renders a contributions-only organization with dashes', async () => {
-    await render(response({ rows: [org({ meetingsAttended: null, distinctPeople: null })] }));
-    const meetings = query(`non-members-orgs-row-${ACCOUNT_ID}-meetings`);
+  it('sorts on the server from page 1, keeping the cut', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }), { nonPage: '3' });
+    fixture.componentRef.setInput('filter', 'meetings');
+    await settle();
+    getNonMembersOrgs.mockClear();
 
-    expect(meetings?.textContent?.trim()).toBe('—');
-    expect(meetings?.classList).toContain('text-gray-400');
-    expect(text(`non-members-orgs-row-${ACCOUNT_ID}-people`)).toBe('—');
+    sortBy('fit');
+    await settle();
+
+    expect(getNonMembersOrgs).toHaveBeenLastCalledWith(expect.objectContaining({ filter: 'meetings', offset: 0, sort: { key: 'fit', direction: 'desc' } }));
+    expect(query('non-members-orgs-sort-fit')?.parentElement?.getAttribute('aria-sort')).toBe('descending');
+
+    sortBy('company');
+    await settle();
+    expect(getNonMembersOrgs).toHaveBeenLastCalledWith(expect.objectContaining({ sort: { key: 'company', direction: 'asc' } }));
   });
 
-  it('re-reads from page 1 when the filter changes, and writes it to the URL with the fragment kept', async () => {
+  it('reverses the default on Meetings attended, and returns to the default order a click later', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }));
+
+    sortBy('meetings');
+    await settle();
+    expect(getNonMembersOrgs).toHaveBeenLastCalledWith(expect.objectContaining({ sort: { key: 'meetings', direction: 'asc' } }));
+
+    sortBy('meetings');
+    await settle();
+    expect(getNonMembersOrgs).toHaveBeenLastCalledWith(expect.objectContaining({ sort: null }));
+  });
+
+  it('re-reads from page 1 when the header switch changes the cut, and writes it to the URL with the fragment kept', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }), { nonPage: '3' });
     getNonMembersOrgs.mockClear();
 
-    fixture.componentInstance['onFilterChange']('high-fit');
+    fixture.componentRef.setInput('filter', 'high-fit');
     await settle();
 
     expect(getNonMembersOrgs).toHaveBeenLastCalledWith(expect.objectContaining({ filter: 'high-fit', offset: 0 }));
@@ -203,20 +258,11 @@ describe('NonMembersOrgsComponent', () => {
     );
   });
 
-  it('ignores a filter id it does not know', async () => {
-    await render(response(), { nonFit: 'meetings' });
-
-    fixture.componentInstance['onFilterChange']('medium-fit');
-    await settle();
-
-    expect(getNonMembersOrgs).toHaveBeenLastCalledWith(expect.objectContaining({ filter: 'all' }));
-  });
-
   it('re-reads a debounced, trimmed search from page 1', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }), { nonPage: '2' });
     getNonMembersOrgs.mockClear();
 
-    fixture.componentInstance['searchForm'].controls.search.setValue('  acme ');
+    fixture.componentInstance['searchText'].set('  acme ');
     await new Promise((resolve) => setTimeout(resolve, 250));
     await settle();
 
@@ -225,43 +271,28 @@ describe('NonMembersOrgsComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { nonFit: null, nonSearch: 'acme', nonPage: null } }));
   });
 
-  it('shows the filtered count with a clear link that resets the filter and search in one read', async () => {
-    await render(response({ totalRecords: 16, scopeTotal: 412 }), { nonFit: 'meetings', nonSearch: 'acme' });
-
-    expect(text('non-members-orgs-count')).toBe('16 of 412 organizations match · clear');
-
-    getNonMembersOrgs.mockClear();
-    query('non-members-orgs-clear')?.click();
-    await settle();
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    await settle();
-
-    expect(getNonMembersOrgs).toHaveBeenCalledTimes(1);
-    expect(getNonMembersOrgs).toHaveBeenLastCalledWith(expect.objectContaining({ filter: 'all', search: '' }));
-  });
-
-  it('pages through the table, including a new page size, and writes the page to the URL', async () => {
+  it('pages through the table and writes the page to the URL', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }));
     getNonMembersOrgs.mockClear();
 
-    fixture.componentInstance['onTablePage']({ first: 50, rows: 25 });
+    fixture.componentInstance['page'].set(2);
     await settle();
 
-    expect(getNonMembersOrgs).toHaveBeenCalledWith(expect.objectContaining({ offset: 50, pageSize: 25 }));
+    expect(getNonMembersOrgs).toHaveBeenCalledWith(expect.objectContaining({ offset: 20, pageSize: 10 }));
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { nonFit: null, nonSearch: null, nonPage: 3 } }));
   });
 
-  it('starts on the filter, search and page the URL carries', async () => {
-    await render(response({ totalRecords: 80, scopeTotal: 80 }), { nonFit: 'meetings', nonSearch: 'acme', nonPage: '2' });
+  it('starts on the cut the page binds and the search and page the URL carries, in one read', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }), { nonFit: 'meetings', nonSearch: 'acme', nonPage: '2' }, undefined, 'meetings');
 
+    expect(getNonMembersOrgs).toHaveBeenCalledTimes(1);
     expect(getNonMembersOrgs).toHaveBeenCalledWith(expect.objectContaining({ filter: 'meetings', search: 'acme', offset: 10 }));
-    expect((fixture.nativeElement.querySelector('#non-members-orgs-search') as HTMLInputElement).value).toBe('acme');
   });
 
-  it('falls back to the defaults for URL values it cannot honour', async () => {
-    await render(response(), { nonFit: 'medium-fit', nonPage: '-2' });
+  it('falls back to the first page for a URL page it cannot honour', async () => {
+    await render(response(), { nonPage: '-2' });
 
-    expect(getNonMembersOrgs).toHaveBeenCalledWith(expect.objectContaining({ filter: 'all', offset: 0 }));
+    expect(getNonMembersOrgs).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }));
   });
 
   it('re-reads from page 1 when the period changes', async () => {
@@ -295,36 +326,45 @@ describe('NonMembersOrgsComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { nonFit: null, nonSearch: null, nonPage: 4 } }));
   });
 
-  it('settles empty, with no body, when no non-member organization is active in the period', async () => {
-    await render(response({ rows: [], totalRecords: 0, scopeTotal: 0, newCount: 0 }));
+  it('settles empty, with no body, when no non-member company is active in the period', async () => {
+    await render(response({ rows: [], totalRecords: 0, scopeTotal: 0 }));
 
     expect(verdicts).toEqual([true]);
-    expect(query('non-members-orgs-controls')).toBeNull();
+    expect(query('non-members-orgs-search')).toBeNull();
     expect(query('non-members-orgs-table')).toBeNull();
   });
 
-  it('keeps the controls and names the search when it matches nothing', async () => {
-    await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { nonSearch: 'zeta' });
+  it('keeps the search when the cut matches nothing, and Reset filters clears the search, the switch and the page, not the sort', async () => {
+    const noMatch = response({ rows: [], totalRecords: 0, scopeTotal: 40 });
+    await render(response({ totalRecords: 40, scopeTotal: 40 }), { nonSearch: 'zeta', nonPage: '2' }, noMatch);
+    fixture.componentRef.setInput('filter', 'high-fit');
+    sortBy('contributions');
+    await settle();
 
-    expect(text('non-members-orgs-no-match')).toBe('No organization matches “zeta”.');
-    expect(query('non-members-orgs-controls')).not.toBeNull();
+    expect(text('non-members-orgs-no-match')).toContain('No matching companies');
+    expect(text('non-members-orgs-no-match')).toContain('No company matches this search or filter.');
+    expect(query('non-members-orgs-search')).not.toBeNull();
     // A filter miss is not an empty period, so the shell must not take the section over.
-    expect(verdicts).toEqual([false]);
+    expect(verdicts.every((empty) => !empty)).toBe(true);
+
+    getNonMembersOrgs.mockClear();
+    (query('non-members-orgs-no-match')?.querySelector('[data-testid="empty-state-reset-filters"]') as HTMLElement).click();
+    await settle();
+
+    expect(getNonMembersOrgs).toHaveBeenCalledTimes(1);
+    expect(getNonMembersOrgs).toHaveBeenCalledWith(
+      expect.objectContaining({ filter: 'all', search: '', offset: 0, sort: { key: 'contributions', direction: 'desc' } })
+    );
+    expect(fixture.componentInstance.filter()).toBe('all');
   });
 
-  it('says the filter matches nothing when no search is set', async () => {
-    await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { nonFit: 'high-fit' });
-
-    expect(text('non-members-orgs-no-match')).toBe('No organization matches this filter.');
-  });
-
-  // A failed read must not render copy that asserts the foundation had no active organizations.
+  // A failed read must not render copy that asserts the foundation had no active companies.
   it('separates a failed read from an empty one, settling it', async () => {
     await render();
     lifecycle.length = 0;
     getNonMembersOrgs.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
-    fixture.componentInstance['onFilterChange']('meetings');
+    fixture.componentRef.setInput('filter', 'meetings');
     await settle();
 
     expect(query('non-members-orgs-error')).not.toBeNull();
@@ -338,6 +378,5 @@ describe('NonMembersOrgsComponent', () => {
 
     expect(getNonMembersOrgs).not.toHaveBeenCalled();
     expect(lifecycle).not.toContain('settled');
-    expect(text('non-members-orgs-count')).toBe('—');
   });
 });

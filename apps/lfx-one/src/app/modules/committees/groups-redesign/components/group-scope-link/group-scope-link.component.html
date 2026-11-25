@@ -1,0 +1,37 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. The link sits above a card's stretched name link. -->
+@if (project(); as project) {
+  @if (project.url; as url) {
+    <a
+      class="group/eyebrow relative z-[1] inline-flex max-w-full items-center gap-[6px] whitespace-nowrap text-[12px] leading-[16px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+      [class]="logo() ? 'text-gray-900' : 'text-gray-500'"
+      [href]="url"
+      [attr.aria-label]="project.label"
+      (click)="onClick($event, url)"
+      data-testid="group-scope-link">
+      @if (logo()) {
+        <lfx-meeting-project-logo [src]="project.logo" />
+      }
+      <span
+        class="min-w-0 truncate underline decoration-transparent underline-offset-[3px] transition-colors duration-150 group-hover/eyebrow:decoration-current group-focus-visible/eyebrow:decoration-current motion-reduce:transition-none"
+        [attr.title]="project.name"
+        >{{ project.name }}</span
+      >
+      <i
+        class="fa-light fa-arrow-up-right -ml-[3px] flex-none translate-x-[-3px] translate-y-[2px] text-[10px] opacity-0 transition duration-150 group-hover/eyebrow:translate-x-0 group-hover/eyebrow:translate-y-0 group-hover/eyebrow:opacity-100 group-focus-visible/eyebrow:translate-x-0 group-focus-visible/eyebrow:translate-y-0 group-focus-visible/eyebrow:opacity-100 motion-reduce:transition-none"
+        aria-hidden="true"></i>
+    </a>
+  } @else {
+    <span
+      class="inline-flex max-w-full items-center gap-[6px] text-[12px] leading-[16px]"
+      [class]="logo() ? 'text-gray-900' : 'text-gray-500'"
+      data-testid="group-scope-link">
+      @if (logo()) {
+        <lfx-meeting-project-logo [src]="project.logo" />
+      }
+      <span class="min-w-0 truncate" [attr.title]="project.name">{{ project.name }}</span>
+    </span>
+  }
+}

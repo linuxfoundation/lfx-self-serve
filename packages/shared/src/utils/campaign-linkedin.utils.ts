@@ -27,7 +27,7 @@ export function normalizeLinkedInCreativeText(text: string): string {
  * `trim()` differs both ways (it keeps U+0085 and drops U+FEFF), which would let copy through that
  * campaign-service then blanks or cuts.
  */
-function goTrimSpace(text: string): string {
+export function goTrimSpace(text: string): string {
   // An index scan rather than an anchored regex, whose trailing `[…]+$` backtracks polynomially on a
   // long run of spaces (CodeQL js/polynomial-redos).
   let start = 0;
@@ -52,6 +52,26 @@ function isGoSpace(code: number): boolean {
     code === 0x205f ||
     code === 0x3000
   );
+}
+
+/**
+ * A LinkedIn ad name as campaign-service sends it (`normalizeCreativeName`, #5764 row 17): Go's `strings.Fields` joined by
+ * one space, so every run of whitespace (a newline or tab included) becomes one space and the ends are trimmed. Dashes
+ * are kept, unlike ad copy. `''` means no name.
+ */
+export function normalizeLinkedInCreativeName(name: string): string {
+  const words: string[] = [];
+  let start = -1;
+  for (let i = 0; i <= name.length; i++) {
+    const space = i === name.length || isGoSpace(name.charCodeAt(i));
+    if (space && start !== -1) {
+      words.push(name.slice(start, i));
+      start = -1;
+    } else if (!space && start === -1) {
+      start = i;
+    }
+  }
+  return words.join(' ');
 }
 
 /**
@@ -94,4 +114,31 @@ export function linkedInTargetingAfterRemovals(profile: LinkedInTargetingProfile
     skills: profile.skills.filter((urn) => !removals.skills.includes(urn)),
     groups: profile.groups.filter((urn) => !removals.groups.includes(urn)),
   };
+}
+
+/**
+ * A US-dollar amount rounded to whole cents exactly as campaign-service puts it on the wire:
+ * `strconv.FormatFloat(x, 'f', 2, 64)`, which rounds the double's EXACT decimal value and breaks an
+ * exact tie to the even cent. `Math.round(x * 100) / 100` disagrees on such ties — 100.125 (exact in
+ * binary) is 100.12 in Go but 100.13 that way — so a limit judged with it can pass here and be refused
+ * upstream (#5774).
+ *
+ * `toFixed(60)` spells out the exact binary value of any amount from $1 up to 2^53 (such a double
+ * carries at most 52 fractional bits, so at most 52 decimal places), and the tie is then decided on
+ * that exact expansion. Below $1 the expansion can be cut short, which only matters for amounts every
+ * caller already refuses (LinkedIn's minimums are $10 and up). Non-finite input is returned unchanged for the caller to refuse.
+ */
+export function roundUsdToCentsLikeGo(amount: number): number {
+  if (!Number.isFinite(amount)) return amount;
+  if (Math.abs(amount) >= 1e15) return Math.round(amount * 100) / 100;
+  const sign = amount < 0 ? -1 : 1;
+  const [whole, fraction] = Math.abs(amount).toFixed(60).split('.');
+  let cents = BigInt(whole + fraction.slice(0, 2));
+  const rest = fraction.slice(2);
+  const firstDropped = rest.charCodeAt(0) - 48;
+  const restAfterFirstIsZero = /^0*$/.test(rest.slice(1));
+  if (firstDropped > 5 || (firstDropped === 5 && !restAfterFirstIsZero) || (firstDropped === 5 && restAfterFirstIsZero && cents % 2n === 1n)) {
+    cents += 1n;
+  }
+  return (sign * Number(cents)) / 100;
 }

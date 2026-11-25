@@ -195,6 +195,7 @@ describe('AnalyticsController.getMembersDirectory', () => {
       search: '',
       offset: 0,
       pageSize: HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_DIRECTORY_UNMEASURED);
   });
@@ -214,7 +215,21 @@ describe('AnalyticsController.getMembersDirectory', () => {
       search: 'a'.repeat(HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH),
       offset: 20,
       pageSize: 10,
+      sort: null,
     });
+  });
+
+  it('passes an allowed sort, and drops an unknown column or direction', async () => {
+    await call({ ...valid, sortKey: 'engagement', sortDir: 'asc' }, 'getMembersDirectory').promise;
+    expect(getDirectory).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: { key: 'engagement', direction: 'asc' } }));
+
+    for (const [sortKey, sortDir] of [
+      ['annual_dues_usd', 'desc'],
+      ['membership', 'sideways'],
+    ]) {
+      await call({ ...valid, sortKey, sortDir }, 'getMembersDirectory').promise;
+      expect(getDirectory).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
+    }
   });
 
   it('falls back to the default page size past the cap', async () => {
@@ -301,6 +316,7 @@ describe('AnalyticsController.getMembersAtRisk', () => {
       bucket: 'all',
       offset: 0,
       pageSize: HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED);
   });
@@ -308,7 +324,15 @@ describe('AnalyticsController.getMembersAtRisk', () => {
   it('passes the bucket and page', async () => {
     await call({ ...valid, bucket: '90_plus_days', offset: '10', pageSize: '10' }, 'getMembersAtRisk').promise;
 
-    expect(getAtRisk).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', bucket: '90_plus_days', offset: 10, pageSize: 10 });
+    expect(getAtRisk).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', bucket: '90_plus_days', offset: 10, pageSize: 10, sort: null });
+  });
+
+  it('passes an allowed sort, and drops an unknown column or direction', async () => {
+    await call({ ...valid, sortKey: 'age', sortDir: 'asc' }, 'getMembersAtRisk').promise;
+    expect(getAtRisk).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: { key: 'age', direction: 'asc' } }));
+
+    await call({ ...valid, sortKey: 'days_overdue', sortDir: 'asc' }, 'getMembersAtRisk').promise;
+    expect(getAtRisk).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
   });
 
   it('falls back to the default page size past the cap', async () => {
@@ -359,6 +383,7 @@ describe('AnalyticsController.getMembersRenewals', () => {
       window: '90_days',
       offset: 0,
       pageSize: HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED);
   });
@@ -366,7 +391,15 @@ describe('AnalyticsController.getMembersRenewals', () => {
   it('passes the window and the page', async () => {
     await call({ ...valid, window: 'this_year', offset: '10', pageSize: '10' }, 'getMembersRenewals').promise;
 
-    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', window: 'this_year', offset: 10, pageSize: 10 });
+    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', window: 'this_year', offset: 10, pageSize: 10, sort: null });
+  });
+
+  it('passes an allowed sort, and drops an unknown column or direction', async () => {
+    await call({ ...valid, sortKey: 'date', sortDir: 'desc' }, 'getMembersRenewals').promise;
+    expect(getRenewals).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: { key: 'date', direction: 'desc' } }));
+
+    await call({ ...valid, sortKey: 'dues', sortDir: 'up' }, 'getMembersRenewals').promise;
+    expect(getRenewals).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
   });
 
   it.each(['30_days', 'THIS_YEAR'])('rejects window %o', async (window) => {
@@ -421,6 +454,7 @@ describe('AnalyticsController.getMembersBoardAttendance', () => {
       cohort: 'board',
       offset: 0,
       pageSize: HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED);
   });
@@ -434,7 +468,16 @@ describe('AnalyticsController.getMembersBoardAttendance', () => {
       cohort: 'voting_members',
       offset: 10,
       pageSize: 10,
+      sort: null,
     });
+  });
+
+  it('passes an allowed sort and drops one it does not know', async () => {
+    await call({ ...valid, sortKey: 'attendance', sortDir: 'asc' }, 'getMembersBoardAttendance').promise;
+    expect(getBoardAttendance).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: { key: 'attendance', direction: 'asc' } }));
+
+    await call({ ...valid, sortKey: 'committee_name', sortDir: 'asc' }, 'getMembersBoardAttendance').promise;
+    expect(getBoardAttendance).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
   });
 
   it('falls back to the default page size past the cap', async () => {
@@ -579,8 +622,17 @@ describe('AnalyticsController.getMembersChurnDepartures', () => {
       year: 2025,
       offset: 0,
       pageSize: HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED);
+  });
+
+  it('passes an allowed sort, and drops an unknown column or direction', async () => {
+    await call({ ...valid, sortKey: 'lapsed', sortDir: 'asc' }, 'getMembersChurnDepartures').promise;
+    expect(getChurnDepartures).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: { key: 'lapsed', direction: 'asc' } }));
+
+    await call({ ...valid, sortKey: 'revenue_lost_usd', sortDir: 'asc' }, 'getMembersChurnDepartures').promise;
+    expect(getChurnDepartures).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
   });
 
   it('accepts a page within the cap and falls back past it', async () => {

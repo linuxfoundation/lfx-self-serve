@@ -25,6 +25,7 @@ function person(overrides: Partial<HealthMetricsNonMembersPerson> = {}): HealthM
     jobTitle: 'Staff Engineer',
     accountId: '0014100000AcmeAAAA',
     accountName: 'Acme Motors',
+    logoUrl: 'https://logos.example/acme.png',
     lastAttendedDate: '2026-03-14',
     meetingsAttended: 42,
     ...overrides,
@@ -90,6 +91,22 @@ describe('NonMembersPeopleComponent', () => {
     return query(testId)?.textContent?.replace(/\s+/g, ' ').trim();
   }
 
+  function cell(column: string): HTMLElement | null {
+    return query(`non-members-people-row-${ROW_KEY}-${column}`);
+  }
+
+  function cellText(column: string): string | undefined {
+    return cell(column)?.querySelector('[data-testid="health-metrics-cell-text"]')?.textContent?.trim();
+  }
+
+  function cellDescription(column: string): string | undefined {
+    return cell(column)?.querySelector('[data-testid="health-metrics-cell-description"]')?.textContent?.trim();
+  }
+
+  function sortBy(key: string): void {
+    (query(`non-members-people-sort-${key}`)?.querySelector('button') as HTMLButtonElement).click();
+  }
+
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
@@ -97,56 +114,94 @@ describe('NonMembersPeopleComponent', () => {
     verdicts = [];
   });
 
-  it('reads the selected foundation and period, renders the page and count, and settles', async () => {
-    await render(response({ totalRecords: 388, scopeTotal: 388 }));
+  it('reads the selected foundation and period in the default order, renders the page and settles', async () => {
+    await render(response({ scopeTotal: 214, totalRecords: 214 }));
 
-    expect(getNonMembersPeople).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', search: '', offset: 0, pageSize: 10 });
-    expect(text(`non-members-people-row-${ROW_KEY}-name`)).toBe('Jane Doe');
-    expect(text('non-members-people-count')).toBe('388 engaged individuals');
+    expect(getNonMembersPeople).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', search: '', offset: 0, pageSize: 10, sort: null });
+    expect(cellText('name')).toBe('Jane Doe');
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
   });
 
-  it('renders a person row with title, organization, meetings and last attended', async () => {
+  it('draws the four columns, with Meetings attended marked as the default order', async () => {
     await render();
-    const cell = (key: string) => text(`non-members-people-row-${ROW_KEY}-${key}`);
 
-    expect(cell('title')).toBe('Staff Engineer');
-    expect(cell('organization')).toBe('Acme Motors');
-    expect(cell('meetings')).toBe('42');
-    expect(cell('last-attended')).toBe('Mar 14, 2026');
+    const headers = [...(query('non-members-people-table')?.querySelectorAll('th') ?? [])].map((th) => th.textContent?.trim());
+    expect(headers).toEqual(['Person', 'Company', 'Meetings attended', 'Last attended']);
+    expect(query('non-members-people-sort-meetings')?.parentElement?.getAttribute('aria-sort')).toBe('descending');
   });
 
-  it('omits the title line when a person has none', async () => {
-    await render(response({ rows: [person({ jobTitle: null })] }));
-
-    expect(query(`non-members-people-row-${ROW_KEY}-title`)).toBeNull();
-    expect(text(`non-members-people-row-${ROW_KEY}-name`)).toBe('Jane Doe');
-  });
-
-  it('shows no contact details and renders rows as plain text, not links', async () => {
+  it('renders a person the way the design draws it', async () => {
     await render();
-    const row = query(`non-members-people-row-${ROW_KEY}`);
 
-    expect(row?.querySelector('a')).toBeNull();
-    expect(row?.textContent).not.toMatch(/@/);
+    expect(cell('name')?.querySelector('[data-testid="health-metrics-cell-person"]')).not.toBeNull();
+    expect(cellDescription('name')).toBe('Staff Engineer');
+    expect(cell('company')?.querySelector('[data-testid="health-metrics-cell-company"]')).not.toBeNull();
+    expect(cellText('company')).toBe('Acme Motors');
+    expect(cellText('meetings')).toBe('42');
+    expect(cellText('last-attended')).toBe('Mar 14, 2026');
+    expect(cell('last-attended')?.querySelector('[data-testid="health-metrics-cell-text"]')?.className).not.toContain('text-gray-400');
   });
 
-  it('caps the search box at the length the read honours and keeps the headers plain', async () => {
-    await render();
-    const headers = [...(fixture.nativeElement as HTMLElement).querySelectorAll('th')].map((th) => th.textContent?.trim());
-    const input = fixture.nativeElement.querySelector('#non-members-people-search') as HTMLInputElement;
+  it('gives a one-word name a single initial', async () => {
+    await render(response({ rows: [person({ displayName: 'Jane' })] }));
 
-    expect(input.maxLength).toBe(100);
-    expect(input.placeholder).toBe('Search person or organization…');
-    expect(headers).toEqual(['Person', 'Organization', 'Meetings attended', 'Last attended']);
+    expect(cell('name')?.querySelector('[data-testid="health-metrics-cell-person"]')?.textContent?.trim()).toBe('J');
   });
 
-  it('re-reads a debounced, trimmed search from page 1 and writes it to the URL with the fragment kept', async () => {
+  it('drops the description with no job title, and dashes a person with no company or date, with no logo', async () => {
+    await render(response({ rows: [person({ jobTitle: null, accountId: null, accountName: null, lastAttendedDate: null })] }));
+
+    expect(cellDescription('name')).toBeUndefined();
+    expect(cellText('company')).toBe('—');
+    expect(cell('company')?.querySelector('[data-testid="health-metrics-cell-company"]')).toBeNull();
+    expect(cellText('last-attended')).toBe('—');
+    expect(cell('last-attended')?.querySelector('[data-testid="health-metrics-cell-text"]')?.className).toContain('text-gray-400');
+  });
+
+  it('searches people and companies from a box that fills the row, with no count line or rows-per-page choice', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }));
+
+    const input = query('non-members-people-search')?.querySelector('input');
+    expect(query('non-members-people-search')?.classList).toContain('w-full');
+    expect(input?.placeholder).toBe('Search person or company…');
+    expect(input?.maxLength).toBe(100);
+    expect(query('non-members-people-count')).toBeNull();
+    expect(fixture.nativeElement.querySelector('lfx-ui-pagination')).not.toBeNull();
+  });
+
+  it('sorts on the server from page 1, keeping the search', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }), { nonPeoplePage: '3', nonPeopleSearch: 'acme' });
+    getNonMembersPeople.mockClear();
+
+    sortBy('last-attended');
+    await settle();
+    expect(getNonMembersPeople).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: 'acme', offset: 0, sort: { key: 'lastAttended', direction: 'desc' } })
+    );
+
+    sortBy('person');
+    await settle();
+    expect(getNonMembersPeople).toHaveBeenLastCalledWith(expect.objectContaining({ sort: { key: 'person', direction: 'asc' } }));
+  });
+
+  it('reverses the default on Meetings attended, and returns to the default order a click later', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }));
+
+    sortBy('meetings');
+    await settle();
+    expect(getNonMembersPeople).toHaveBeenLastCalledWith(expect.objectContaining({ sort: { key: 'meetings', direction: 'asc' } }));
+
+    sortBy('meetings');
+    await settle();
+    expect(getNonMembersPeople).toHaveBeenLastCalledWith(expect.objectContaining({ sort: null }));
+  });
+
+  it('re-reads a debounced, trimmed search from page 1, and writes it to the URL with the fragment kept', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }), { nonPeoplePage: '2' });
     getNonMembersPeople.mockClear();
 
-    fixture.componentInstance['searchForm'].controls.search.setValue('  jane ');
+    fixture.componentInstance['searchText'].set('  jane ');
     await new Promise((resolve) => setTimeout(resolve, 250));
     await settle();
 
@@ -154,55 +209,29 @@ describe('NonMembersPeopleComponent', () => {
     expect(getNonMembersPeople).toHaveBeenCalledWith(expect.objectContaining({ search: 'jane', offset: 0 }));
     expect(navigate).toHaveBeenLastCalledWith(
       [],
-      expect.objectContaining({
-        queryParams: { nonPeopleSearch: 'jane', nonPeoplePage: null },
-        queryParamsHandling: 'merge',
-        preserveFragment: true,
-        replaceUrl: true,
-      })
+      expect.objectContaining({ queryParams: { nonPeopleSearch: 'jane', nonPeoplePage: null }, preserveFragment: true, replaceUrl: true })
     );
   });
 
-  it('shows the matched count with a clear link that resets the search in one read', async () => {
-    await render(response({ totalRecords: 3, scopeTotal: 388 }), { nonPeopleSearch: 'jane' });
-
-    expect(text('non-members-people-count')).toBe('3 of 388 engaged individuals match · clear');
-
-    getNonMembersPeople.mockClear();
-    query('non-members-people-clear')?.click();
-    await settle();
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    await settle();
-
-    expect(getNonMembersPeople).toHaveBeenCalledTimes(1);
-    expect(getNonMembersPeople).toHaveBeenLastCalledWith(expect.objectContaining({ search: '' }));
-  });
-
-  it('keeps the matched count singular when one individual is in scope', async () => {
-    await render(response({ totalRecords: 1, scopeTotal: 1 }), { nonPeopleSearch: 'jane' });
-
-    expect(text('non-members-people-count')).toBe('1 of 1 engaged individual match · clear');
-  });
-
-  it('pages through the table, including a new page size, and writes the page to the URL', async () => {
+  it('pages through the table and writes the page to the URL', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }));
     getNonMembersPeople.mockClear();
 
-    fixture.componentInstance['onTablePage']({ first: 50, rows: 25 });
+    fixture.componentInstance['page'].set(2);
     await settle();
 
-    expect(getNonMembersPeople).toHaveBeenCalledWith(expect.objectContaining({ offset: 50, pageSize: 25 }));
+    expect(getNonMembersPeople).toHaveBeenCalledWith(expect.objectContaining({ offset: 20, pageSize: 10 }));
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { nonPeopleSearch: null, nonPeoplePage: 3 } }));
   });
 
-  it('starts on the search and page the URL carries', async () => {
+  it('starts on the search and page the URL carries, in one read', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }), { nonPeopleSearch: 'jane', nonPeoplePage: '2' });
 
+    expect(getNonMembersPeople).toHaveBeenCalledTimes(1);
     expect(getNonMembersPeople).toHaveBeenCalledWith(expect.objectContaining({ search: 'jane', offset: 10 }));
-    expect((fixture.nativeElement.querySelector('#non-members-people-search') as HTMLInputElement).value).toBe('jane');
   });
 
-  it('falls back to page 1 for a page the URL cannot honour', async () => {
+  it('falls back to the first page for a URL page it cannot honour', async () => {
     await render(response(), { nonPeoplePage: '-2' });
 
     expect(getNonMembersPeople).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }));
@@ -239,49 +268,48 @@ describe('NonMembersPeopleComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { nonPeopleSearch: null, nonPeoplePage: 4 } }));
   });
 
-  it('settles empty, with no body, when no non-member individual attended in the period', async () => {
+  it('settles empty, with no body, when nobody took part in the period', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 0 }));
 
     expect(verdicts).toEqual([true]);
-    expect(query('non-members-people-controls')).toBeNull();
+    expect(query('non-members-people-search')).toBeNull();
     expect(query('non-members-people-table')).toBeNull();
   });
 
-  // NULL is not zero: an unset model total keeps the rows and says it is not available.
-  it('keeps the rows when the model leaves the total unset', async () => {
-    await render(response({ totalRecords: 1, scopeTotal: null }));
+  it('keeps the table for an unset total, which is not zero', async () => {
+    await render(response({ scopeTotal: null }));
 
     expect(verdicts).toEqual([false]);
-    expect(text(`non-members-people-row-${ROW_KEY}-name`)).toBe('Jane Doe');
-    expect(text('non-members-people-count')).toBe('Engaged individuals not available');
+    expect(query('non-members-people-table')).not.toBeNull();
   });
 
-  it('drops the "of" total from the search line when the total is unset', async () => {
-    await render(response({ totalRecords: 3, scopeTotal: null }), { nonPeopleSearch: 'jane' });
+  it('keeps the search when it matches nothing, and Reset filters clears the search and the page, not the sort', async () => {
+    const noMatch = response({ rows: [], totalRecords: 0, scopeTotal: 40 });
+    await render(response({ totalRecords: 40, scopeTotal: 40 }), { nonPeopleSearch: 'zeta', nonPeoplePage: '2' }, noMatch);
+    sortBy('company');
+    await settle();
 
-    expect(text('non-members-people-count')).toBe('3 matches · clear');
+    expect(text('non-members-people-no-match')).toContain('No matching people');
+    expect(text('non-members-people-no-match')).toContain('No person matches this search.');
+    expect(query('non-members-people-search')).not.toBeNull();
+    // A search miss is not an empty period, so the shell must not take the section over.
+    expect(verdicts.every((empty) => !empty)).toBe(true);
+
+    getNonMembersPeople.mockClear();
+    (query('non-members-people-no-match')?.querySelector('[data-testid="empty-state-reset-filters"]') as HTMLElement).click();
+    await settle();
+
+    expect(getNonMembersPeople).toHaveBeenCalledTimes(1);
+    expect(getNonMembersPeople).toHaveBeenCalledWith(expect.objectContaining({ search: '', offset: 0, sort: { key: 'company', direction: 'asc' } }));
   });
 
-  it('keeps a single search match singular when the total is unset', async () => {
-    await render(response({ totalRecords: 1, scopeTotal: null }), { nonPeopleSearch: 'jane' });
-
-    expect(text('non-members-people-count')).toBe('1 match · clear');
-  });
-
-  it('keeps the controls and names the search when it matches nothing', async () => {
-    await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { nonPeopleSearch: 'zeta' });
-
-    expect(text('non-members-people-no-match')).toBe('No person or organization matches “zeta”.');
-    expect(query('non-members-people-controls')).not.toBeNull();
-  });
-
-  // A failed read must not render copy that asserts the foundation had no engaged individuals.
+  // A failed read must not render copy that asserts the foundation had no engaged people.
   it('separates a failed read from an empty one, settling it', async () => {
-    await render(response({ totalRecords: 80, scopeTotal: 80 }));
+    await render();
     lifecycle.length = 0;
     getNonMembersPeople.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
-    fixture.componentInstance['onTablePage']({ first: 10, rows: 10 });
+    sortBy('company');
     await settle();
 
     expect(query('non-members-people-error')).not.toBeNull();
@@ -295,6 +323,5 @@ describe('NonMembersPeopleComponent', () => {
 
     expect(getNonMembersPeople).not.toHaveBeenCalled();
     expect(lifecycle).not.toContain('settled');
-    expect(text('non-members-people-count')).toBe('—');
   });
 });

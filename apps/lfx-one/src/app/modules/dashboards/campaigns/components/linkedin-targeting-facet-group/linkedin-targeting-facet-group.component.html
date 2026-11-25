@@ -1,0 +1,91 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2" [attr.data-testid]="testId()">
+  @for (chip of chips(); track chip.key) {
+    <div class="flex flex-col gap-1" [attr.data-testid]="testId() + '-' + chip.key">
+      <span class="text-xs font-medium text-gray-700">{{ chip.label }}</span>
+      <div class="flex flex-wrap items-center gap-2">
+        @for (pick of chip.picks; track pick.urn) {
+          <span
+            class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+            [attr.data-testid]="testId() + '-' + chip.key + '-' + pick.urn">
+            {{ pick.name }}
+            <button
+              type="button"
+              (click)="onRemove(chip.key, pick.urn)"
+              class="ml-0.5 text-blue-600 hover:text-blue-800"
+              [attr.aria-label]="'Remove ' + pick.name"
+              [attr.data-testid]="testId() + '-remove-' + pick.urn">
+              <!-- text-[10px]: matches the Meta detailed targeting chip icon. -->
+              <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+            </button>
+          </span>
+        }
+      </div>
+    </div>
+  }
+
+  @if (facet(); as current) {
+    <div class="flex flex-wrap items-end gap-2">
+      <lfx-ui-select label="Facet" size="small" [value]="current.key" (valueChange)="onFacetChange($event)" [attr.data-testid]="testId() + '-facet'">
+        @for (option of facetsToAdd(); track option.key) {
+          <lfx-ui-option [value]="option.key" [label]="option.label" />
+        }
+      </lfx-ui-select>
+      @if (current.kind === 'search') {
+        <lfx-autocomplete
+          [form]="searchForm"
+          control="entity"
+          [inputId]="testId() + '-search'"
+          [suggestions]="searchChoices()"
+          optionLabel="name"
+          [placeholder]="'Search ' + current.label.toLowerCase()"
+          [delay]="0"
+          [forceSelection]="true"
+          [invalid]="searchFailure() !== null"
+          styleClass="w-72"
+          [dataTestId]="testId() + '-search-input'"
+          (completeMethod)="onSearch($event)"
+          (onSelect)="onSearchSelect($event)"
+          (onClear)="onSearchClear()"
+          class="block">
+          <ng-template #empty>
+            <span class="text-xs text-gray-500">{{ searchEmptyMessage() }}</span>
+          </ng-template>
+        </lfx-autocomplete>
+      } @else if (current.kind === 'static' || listChoices().length > 0) {
+        <!-- A segment facet shows its select only when it has segments to offer; segmentMessage says why not. -->
+        <lfx-ui-select
+          size="small"
+          [ariaLabel]="'Add ' + current.label.toLowerCase()"
+          [placeholder]="'Add ' + current.label.toLowerCase()"
+          [formControl]="staticControl"
+          (valueChange)="onStaticPick($event)"
+          [attr.data-testid]="testId() + '-' + current.kind">
+          @for (choice of listChoices(); track choice.urn) {
+            <lfx-ui-option [value]="choice.urn" [label]="choice.label" />
+          }
+        </lfx-ui-select>
+      }
+    </div>
+    @if (segmentMessage(); as message) {
+      <div class="flex flex-wrap items-center gap-2" aria-live="polite">
+        <p class="text-xs text-gray-500" [attr.data-testid]="testId() + '-segment-message'">{{ message }}</p>
+        @if (segments().status === 'unavailable') {
+          <lfx-button
+            label="Try again"
+            icon="fa-light fa-rotate-right"
+            size="small"
+            severity="secondary"
+            [text]="true"
+            (onClick)="segmentsRetry.emit()"
+            [attr.data-testid]="testId() + '-segment-retry'" />
+        }
+      </div>
+    }
+    @if (searchFailure(); as failure) {
+      <p role="alert" class="text-xs text-red-600" [attr.data-testid]="testId() + '-search-error'">{{ failure }}</p>
+    }
+  }
+</div>

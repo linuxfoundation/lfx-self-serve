@@ -120,6 +120,8 @@ export class VotePresenterComponent {
     intervalMs: VOTE_PRESENTER_POLL_INTERVAL_MS,
     backoffBaseMs: VOTE_PRESENTER_BACKOFF_BASE_MS,
     backoffMaxMs: VOTE_PRESENTER_BACKOFF_MAX_MS,
+    // The presenter keeps its fixed 5/10/20/30 s reconnect cadence (no jitter); Marketing OS readers take the jittered default.
+    jitter: false,
     enabled: this.isBrowser,
   });
   private readonly snapshot = computed<VotePresenterSnapshot | null>(() => {
@@ -197,7 +199,7 @@ export class VotePresenterComponent {
   protected readonly isRanked = computed(() => isRankedPollType(this.vote()?.poll_type));
   protected readonly stats = computed(() => computeVoteParticipationStats(this.results()));
   protected readonly questions: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.results(), true));
-  protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.results()));
+  protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.results(), this.vote()?.poll_type));
   /** Option rows for the Closed artboard's tally bars; the bar colour follows the result (winner, tie, other). */
   protected readonly tally: Signal<VotePresenterTallyQuestion[]> = computed(() =>
     this.questions().map((q) => ({

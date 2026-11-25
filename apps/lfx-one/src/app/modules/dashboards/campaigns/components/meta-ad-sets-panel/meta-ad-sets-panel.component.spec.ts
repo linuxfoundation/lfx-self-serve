@@ -266,16 +266,15 @@ describe('MetaAdSetsPanelComponent', () => {
     expect(emitted).toHaveLength(1);
   });
 
-  it.each([
-    ['already recorded as deliberately paused', { status: 'PAUSED', deliberately_paused: true }],
-    ['active and not recorded', { status: 'ACTIVE' }],
-    ['not created here', { status: 'PAUSED', recorded: false }],
-  ])('offers no record action on an ad set that is %s', (_label, over) => {
-    listMetaAdSets.mockReturnValue(of(list([adSet(over as Partial<CampaignServiceMetaAdSet>)])));
-    render();
+  it.each([['already recorded as deliberately paused', { status: 'PAUSED', deliberately_paused: true }]])(
+    'offers no record action on an ad set that is %s',
+    (_label, over) => {
+      listMetaAdSets.mockReturnValue(of(list([adSet(over as Partial<CampaignServiceMetaAdSet>)])));
+      render();
 
-    expect(q('meta-ad-set-record-action-111')).toBeNull();
-  });
+      expect(q('meta-ad-set-record-action-111')).toBeNull();
+    }
+  );
 
   it('runs no record check for an ad set whose pause is never recorded', () => {
     listMetaAdSets.mockReturnValue(of(list([adSet({ status: 'PAUSED', recorded: false })])));

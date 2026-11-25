@@ -7,6 +7,7 @@ import {
   ORG_ACCOUNT_ID_PATTERN,
   ORG_ROLE_GRANTS_CORRELATION_HEADER,
   ORG_ROLE_GRANTS_REFRESH_PARAM,
+  ORG_ROLL_UP_SET_ANCHOR_PARAM,
 } from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgResponse,
@@ -20,10 +21,12 @@ import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { OrgAffiliationService } from '../services/org-affiliation.service';
 import { OrgClaOnlyOrgsService } from '../services/org-cla-only-orgs.service';
+import { OrgEmployeeViewService } from '../services/org-employee-view.service';
 import { OrgLensAddressesService } from '../services/org-lens-addresses.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
@@ -37,6 +40,7 @@ export class OrgIdentityController {
   private readonly orgSlugResolver: OrgSlugResolverService;
   private readonly claOnlyOrgs: OrgClaOnlyOrgsService;
   private readonly affiliation: OrgAffiliationService;
+  private readonly employeeView: OrgEmployeeViewService;
 
   public constructor() {
     this.orgRoleGrantsService = new OrgRoleGrantsService();
@@ -44,6 +48,7 @@ export class OrgIdentityController {
     this.orgLensAddressesService = new OrgLensAddressesService();
     this.claOnlyOrgs = new OrgClaOnlyOrgsService();
     this.affiliation = new OrgAffiliationService();
+    this.employeeView = new OrgEmployeeViewService();
     this.orgSlugResolver = new OrgSlugResolverService(this.microserviceProxy, this.claOnlyOrgs);
   }
 
@@ -66,11 +71,13 @@ export class OrgIdentityController {
       const grants: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username, bypassCache);
       // Both run only for a caller who holds nothing, and neither can throw — a failed lookup reports
       // itself on the wire so the client can say "unknown" instead of asserting something wrong.
-      const [claManagerOrgs, affiliation] = await Promise.all([
+      // Epic #5845 — the all employee view rests on a verified company email and a present employer, so it runs alongside them.
+      const [claManagerOrgs, affiliation, employeeView] = await Promise.all([
         this.claOnlyOrgs.getRoleGrantClaManagerOrgs(req, grants),
         this.affiliation.getRoleGrantAffiliation(req, grants),
+        this.employeeView.getRoleGrantEmployeeView(req, grants),
       ]);
-      const result: RoleGrantsResponse = { ...grants, ...claManagerOrgs, ...affiliation };
+      const result: RoleGrantsResponse = { ...grants, ...claManagerOrgs, ...affiliation, ...employeeView };
 
       logger.success(req, 'get_org_role_grants', startTime, {
         writer_count: result.writers.length,
@@ -80,6 +87,8 @@ export class OrgIdentityController {
         affiliation_lookup: result.affiliation?.lookup,
         affiliation_has_employer: result.affiliation?.hasEmployer,
         affiliation_employer_is_member: result.affiliation?.employerIsMember,
+        employee_view: !!result.employeeView,
+        employee_view_lookup: result.employeeViewLookup,
         lookup_outcome: result.lookupOutcome,
         staff_check: result.staffCheck,
       });
@@ -111,12 +120,22 @@ export class OrgIdentityController {
       }
 
       const bypassCache = req.query[ORG_ROLE_GRANTS_REFRESH_PARAM] === '1';
-      const result: OrgRollUpSetResponse = await this.orgRoleGrantsService.getRollUpSet(req, username, bypassCache);
+      const anchor = getStringQueryParam(req, ORG_ROLL_UP_SET_ANCHOR_PARAM);
+      const anchorUid = anchor !== undefined && ORG_ACCOUNT_ID_PATTERN.test(anchor) ? anchor : null;
+      if (req.query[ORG_ROLL_UP_SET_ANCHOR_PARAM] !== undefined && anchorUid === null) {
+        throw ServiceValidationError.forField(ORG_ROLL_UP_SET_ANCHOR_PARAM, 'Invalid company id format', {
+          operation: 'get_org_roll_up_set',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+      const result: OrgRollUpSetResponse = await this.orgRoleGrantsService.getRollUpSet(req, username, bypassCache, anchorUid);
 
       logger.success(req, 'get_org_roll_up_set', startTime, {
         family_count: result.families.length,
         org_count: result.families.reduce((total, family) => total + family.orgs.length, 0),
         lookup_outcome: result.lookupOutcome,
+        anchored: anchorUid !== null,
       });
 
       res.setHeader('Cache-Control', 'no-store');
@@ -168,16 +187,23 @@ export class OrgIdentityController {
           has_prefer: !!prefer,
           status_code: 409,
         });
-        res.status(409).json({ error: 'Organization address is ambiguous' });
+        res.status(409).json({ error: 'Company address is ambiguous' });
         return;
       }
       logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'miss', cache, status_code: 404 });
-      res.status(404).json({ error: 'Organization not found' });
+      res.status(404).json({ error: 'Company not found' });
     } catch (error) {
       // Any query-service failure ⇒ 502 (FR-020: the client lets an SFID through and treats a slug
       // as not found). Query-service answers "no rows" with an empty 200, so an upstream 4xx — a
       // routing 404, a 409, a 429 — is a transport failure, never an answer about the address; only
       // the resolver's own outcomes (200/404/409) and local validation (400) may carry those codes.
+      // The one exception: the employee-view qualification could not be verified (epic #5845). That is a retriable 503 with
+      // its code, not a transport failure of query-service, so the client does not cache it as "not found".
+      if (error instanceof MicroserviceError && error.statusCode === 503 && error.code === 'ROLE_GRANTS_UNAVAILABLE') {
+        // The central handler answers with the error's own status and `{ error, code }` (plus its path), logging it once.
+        next(error);
+        return;
+      }
       if (error instanceof MicroserviceError) {
         logger.warning(req, 'resolve_org_segment', 'Upstream failure', { err: error, upstream_status: error.statusCode, outcome: 'upstream_error' });
         res.status(502).json({ error: 'Upstream query-service failure' });
@@ -196,7 +222,7 @@ export class OrgIdentityController {
 
       const record = await this.fetchCanonicalRecord(req, uid);
       if (!record) {
-        res.status(404).json({ error: 'Organization not found' });
+        res.status(404).json({ error: 'Company not found' });
         logger.success(req, 'get_org_canonical_record', startTime, { uid, status_code: 404 });
         return;
       }
@@ -219,7 +245,7 @@ export class OrgIdentityController {
       }
       // 404 → 404 with deliberate no-information-leak envelope.
       if (error instanceof MicroserviceError && error.statusCode === 404) {
-        res.status(404).json({ error: 'Organization not found' });
+        res.status(404).json({ error: 'Company not found' });
         return;
       }
       next(error);
@@ -234,7 +260,7 @@ export class OrgIdentityController {
       const uid = req.params['uid'];
       this.assertNonEmpty(uid, 'uid', 'update_org_canonical_record', req.path);
       if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
-        throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
+        throw ServiceValidationError.forField('uid', 'Invalid company identifier', {
           operation: 'update_org_canonical_record',
           service: 'org_identity_controller',
           path: req.path,
@@ -260,11 +286,11 @@ export class OrgIdentityController {
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 403) {
         logger.warning(req, 'update_org_canonical_record', 'Upstream rejected with 403', { err: error });
-        res.status(403).json({ error: 'You no longer have permission to edit this organization.' });
+        res.status(403).json({ error: 'You no longer have permission to edit this company.' });
         return;
       }
       if (error instanceof MicroserviceError && error.statusCode === 404) {
-        res.status(404).json({ error: 'Organization not found' });
+        res.status(404).json({ error: 'Company not found' });
         return;
       }
       if (error instanceof MicroserviceError && (error.statusCode >= 500 || error.statusCode === 408)) {
@@ -303,7 +329,7 @@ export class OrgIdentityController {
       const uid = req.params['uid'];
       this.assertNonEmpty(uid, 'uid', 'upload_org_logo', req.path);
       if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
-        throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
+        throw ServiceValidationError.forField('uid', 'Invalid company identifier', {
           operation: 'upload_org_logo',
           service: 'org_identity_controller',
           path: req.path,
@@ -373,16 +399,16 @@ export class OrgIdentityController {
       }
       if (error instanceof MicroserviceError && error.statusCode === 403) {
         logger.warning(req, 'upload_org_logo', 'Upstream rejected with 403', { err: error });
-        res.status(403).json({ error: 'You no longer have permission to edit this organization.' });
+        res.status(403).json({ error: 'You no longer have permission to edit this company.' });
         return;
       }
       if (error instanceof MicroserviceError && error.statusCode === 404) {
-        res.status(404).json({ error: 'Organization not found' });
+        res.status(404).json({ error: 'Company not found' });
         return;
       }
       if (error instanceof MicroserviceError && error.statusCode === 412) {
         logger.warning(req, 'upload_org_logo', 'Upstream rejected with 412 (org changed since the pre-upload fetch)', { err: error });
-        res.status(409).json({ error: 'This organization was updated elsewhere. Refresh the page and try again.' });
+        res.status(409).json({ error: 'This company was updated elsewhere. Refresh the page and try again.' });
         return;
       }
       if (error instanceof MicroserviceError && (error.statusCode >= 500 || error.statusCode === 408)) {
@@ -407,7 +433,7 @@ export class OrgIdentityController {
       const uid = req.params['uid'];
       this.assertNonEmpty(uid, 'uid', 'get_org_addresses', req.path);
       if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
-        throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
+        throw ServiceValidationError.forField('uid', 'Invalid company identifier', {
           operation: 'get_org_addresses',
           service: 'org_identity_controller',
           path: req.path,
@@ -450,7 +476,7 @@ export class OrgIdentityController {
     const uid = req.params['uid'] ?? req.params['id'];
     this.assertNonEmpty(uid, 'uid', 'get_org_canonical_record', req.path);
     if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
-      throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
+      throw ServiceValidationError.forField('uid', 'Invalid company identifier', {
         operation: 'get_org_canonical_record',
         service: 'org_identity_controller',
         path: req.path,

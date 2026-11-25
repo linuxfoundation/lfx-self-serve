@@ -11,6 +11,7 @@ import type {
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
   CREATIVE_ASSET_MIME_TYPES,
+  CREATIVE_ASSET_UPLOAD_MIME_TYPES,
   GOOGLE_ADS_AGE_RANGE_MAP,
   GOOGLE_ADS_AUDIENCE_READ_TYPES,
   GOOGLE_ADS_DEMAND_GEN_DEVICES,
@@ -24,9 +25,13 @@ import type {
   GOOGLE_BIDDING_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  LINKEDIN_AD_FORMATS,
+  LINKEDIN_OBJECTIVES,
+  LINKEDIN_TARGETING_SEARCH_FACETS,
   MICROSOFT_KEYWORDS_WINDOWS,
   MONITOR_DATE_RANGE_OPTIONS,
   REDDIT_CALL_TO_ACTIONS,
+  REDDIT_CONVERSION_EVENTS,
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
 } from '../constants/campaign.constants';
@@ -144,6 +149,9 @@ export type RedditCallToAction = (typeof REDDIT_CALL_TO_ACTIONS)[number];
 /** An image type a creative-asset upload accepts — see `CREATIVE_ASSET_MIME_TYPES`. */
 export type CreativeAssetMimeType = (typeof CREATIVE_ASSET_MIME_TYPES)[number];
 
+/** A type the creative-asset upload route accepts: an image, or the MP4 video (#5764 row 18) — see `CREATIVE_ASSET_UPLOAD_MIME_TYPES`. */
+export type CreativeAssetUploadMimeType = (typeof CREATIVE_ASSET_UPLOAD_MIME_TYPES)[number];
+
 /** Where an image upload in the create form stands; a finished upload is its asset id being set. */
 export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
 /**
@@ -164,7 +172,8 @@ export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'google'
  */
 export interface CreativeAssetUploadResult {
   id: string;
-  mimeType: CreativeAssetMimeType;
+  /** The verified type: an image, or `video/mp4` for a LinkedIn video ad (#5764 row 18). */
+  mimeType: CreativeAssetUploadMimeType;
   byteSize: number;
   checksum: string;
   created: boolean;
@@ -253,6 +262,29 @@ export interface StoredCreativeAsset {
 }
 
 /**
+ * A stored MP4 (#5764 row 18): listed apart from the images, which every image slot draws from, so it can be deleted to
+ * free the brief's quota. campaign-service records no file name or pixel size for it.
+ */
+export interface StoredCreativeVideo {
+  id: string;
+  byteSize: number;
+  checksum: string;
+}
+
+/** One stored video as the library lists it (#5764 row 18), and whether it may be deleted now. */
+export interface LinkedInStoredVideoRow {
+  id: string;
+  /** "Video 1 (ab12cd34)": the library's order and the checksum's start, since campaign-service records no file name. */
+  label: string;
+  byteSize: number;
+  /** Whether an ad on the tab names it, which offers "Remove from ads" and holds Delete. */
+  inUse: boolean;
+  deleteDisabled: boolean;
+  /** Why Delete is off, or `''`. */
+  note: string;
+}
+
+/**
  * A brief's creative-asset library plus its quota.
  *
  * The limits travel with the list rather than only in the 409 an upload returns, so a folder upload
@@ -260,7 +292,10 @@ export interface StoredCreativeAsset {
  * brief is full by sending file 51 and being refused.
  */
 export interface CreativeAssetLibrary {
+  /** The stored images. Never a video: every image slot and picker reads this list. */
   assets: StoredCreativeAsset[];
+  /** The stored videos (#5764 row 18), shown only so they can be deleted. `count` and `bytesUsed` include them. */
+  videos: StoredCreativeVideo[];
   count: number;
   countLimit: number;
   bytesUsed: number;
@@ -417,6 +452,29 @@ export interface CreativeSlotCoverageState {
 
 /** One of the concrete video optimization goals Reddit accepts — see `REDDIT_VIDEO_GOALS`. */
 export type RedditVideoGoal = (typeof REDDIT_VIDEO_GOALS)[number];
+
+/** A pixel event a Reddit `conversions` campaign may optimize toward (#6108 row 2) — see `REDDIT_CONVERSION_EVENTS`. */
+export type RedditConversionEvent = (typeof REDDIT_CONVERSION_EVENTS)[number];
+
+/** Why part of `redditConfig` cannot be sent: the field it names (`redditConfig.conversionEvent`) and a sentence. Never echoes a caller value. */
+export interface RedditConfigRefusal {
+  field: string;
+  message: string;
+}
+
+/**
+ * What `redditCreateRefusal` reads (#5980): the Reddit section's state as the Implement tab holds it, one flat object of
+ * plain values, like `LinkedInCreateRefusalInput`.
+ */
+export interface RedditCreateRefusalInput {
+  budgetUsd: number;
+  /** How many geo targets the request would carry (`redditEffectiveGeoTargets`). */
+  geoTargetCount: number;
+  videoGoalError: string | null;
+  videoPostError: string | null;
+  /** Why the conversion event cannot be sent yet (`redditConversionEventBlock`), or `null`. */
+  conversionEventBlock: string | null;
+}
 
 /** The three inputs needed to author a promoted post, once a creator has decided to author one. */
 export interface RedditAuthoredPostInput {
@@ -1254,6 +1312,34 @@ export interface CampaignImplementationDraft {
   metaInstagramUserId?: string;
   metaDsaBeneficiary?: string;
   metaDsaPayor?: string;
+  /** The Meta audience targeting as edited (#5905). Absent means the draft predates it. */
+  metaAudienceTargeting?: MetaAudienceTargetingDraft;
+  /**
+   * The foundation slug {@link metaAudienceTargeting} was edited under: restored only under the same one,
+   * because custom audience ids belong to the ad account that foundation's connection resolves to.
+   */
+  metaAudienceTargetingProject?: string;
+  /**
+   * The Meta interests, behaviors and job titles as picked (#5904 row 4), with names so a restored chip reads the
+   * same. Not stamped with a foundation: Meta's targeting taxonomy is the same for every ad account.
+   */
+  metaDetailedTargeting?: MetaDetailedTargetingPicks;
+  /** The Meta ad schedule as edited (#5904 row 5); `null` is none. Not foundation-scoped. Absent means the draft predates it. */
+  metaAdSchedule?: MetaAdSchedule | null;
+  /** The Meta frequency cap as edited (#5904 row 5); `null` is none. */
+  metaFrequencyCap?: MetaFrequencyCap | null;
+  /** The Meta devices as ticked (#5904 row 6): `mobile` and/or `desktop`. Not foundation-scoped. Absent means the draft predates it. */
+  metaDevicePlatforms?: string[];
+  /** The Meta operating systems as ticked (#5904 row 6): Meta `user_os` values, families only from the tab. */
+  metaUserOs?: string[];
+  /** The Meta call to action, conversion event and optimization goal as chosen (#5934); an absent key is "Not set". */
+  metaAdOptions?: MetaAdOptions;
+  /** The foundation slug {@link metaAdOptions} was chosen under: restored only under the same one, like the targeting. */
+  metaAdOptionsProject?: string;
+  /** The Meta lead form id as picked or typed (#5940); absent means the draft predates it. */
+  metaLeadFormId?: string;
+  /** The foundation slug {@link metaLeadFormId} was picked under: a form belongs to that foundation's Page, so restored only under the same one. */
+  metaLeadFormProject?: string;
   /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *
@@ -1275,6 +1361,8 @@ export interface CampaignImplementationDraft {
    */
   linkedInBudgetUsd?: number;
   linkedInLifetimeBudget?: boolean;
+  /** The optional daily cap beside a LinkedIn lifetime budget (#5774); null or absent is no cap. */
+  linkedInDailyCapUsd?: number | null;
   /**
    * The Reddit budget (LFXV2-3315, which named exactly this field).
    *
@@ -1372,6 +1460,11 @@ export interface CampaignImplementationDraft {
    */
   redditVideoGoal?: RedditVideoGoal | '';
   /**
+   * The Reddit conversion event (#6108 row 2), kept whatever the objective and the capability say, as the video goal is;
+   * only the REQUEST is gated on them. A non-default event the capability no longer confirms holds Create, never dropped.
+   */
+  redditConversionEvent?: RedditConversionEvent;
+  /**
    * The Meta ad image, on the same terms as the Reddit image fields above: a pasted URL, or an
    * upload made for ONE brief (its asset id, file name and brief), plus an upload still in flight
    * and a failed upload's reason, so a tab switch neither loses the image nor lifts the block a
@@ -1401,6 +1494,25 @@ export interface CampaignImplementationDraft {
   linkedInImageUploadPendingBriefId?: string;
   linkedInImageUploadFailedMessage?: string;
   linkedInImageUploadFailedBriefId?: string;
+  /**
+   * The LinkedIn ad format chosen (#5764 row 19) and the Text Ads as edited. Restored only when present, so a draft
+   * written before Text Ads keeps the single-image default. The format is restored whatever the flags; the Implement
+   * tab sends text only while `linkedInTextAdsEnabled` is on, and video (#5764 row 18) only while `linkedInVideoAdsEnabled` is.
+   */
+  linkedInFormat?: LinkedInAdFormatChoice;
+  linkedInTextAds?: LinkedInTextAdDraft[];
+  /**
+   * Whether custom targeting replaces the targeting profile (#5764 rows 8–11), and the clauses as edited. Restored only
+   * when present; the tab sends `targeting` only while `linkedInTargetingEnabled` is on.
+   */
+  linkedInCustomTargeting?: boolean;
+  linkedInTargetingDraft?: LinkedInTargetingDraft;
+  /**
+   * The LinkedIn objective and conversion rules as edited (#5764 rows 2 and 4). Restored only when present; the tab
+   * sends them only while `linkedInConversionsEnabled` is on, and holds Create while they are chosen and it is off. Its
+   * target cost (campaign-service#674) is sent only while offered, and otherwise kept but neither sent nor held.
+   */
+  linkedInObjectiveDraft?: LinkedInObjectiveDraft;
   /**
    * The X section as edited: the daily budget and the authored tweet's copy as RAW text, so a
    * blank budget stays blank rather than turning into 0, and the tweet image upload on the LinkedIn
@@ -1864,6 +1976,108 @@ export interface LinkedInGeoTarget {
   urn: string;
 }
 
+/** A LinkedIn geo target the old shared map resolved wrongly: its label, the URN it sent, and the URN it should send. */
+export interface LinkedInGeoUrnCorrection {
+  label: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * campaign-service's LinkedIn targeting typeahead (`search-linkedin-ads-targeting-entities`, #585, #643), as the wire
+ * carries it: up to 100 entities in LinkedIn's relevance order, de-duplicated by URN.
+ */
+export interface CampaignServiceLinkedInTargetingEntities {
+  facet: string;
+  entities: { urn: string; name: string }[];
+  entity_count: number;
+}
+
+/** A facet `GET /api/campaigns/linkedin/targeting-entities` searches (`LINKEDIN_TARGETING_SEARCH_FACETS`). */
+export type LinkedInTargetingSearchFacet = (typeof LINKEDIN_TARGETING_SEARCH_FACETS)[number];
+
+/** One LinkedIn targeting value a search or audience read offers: its URN and the name to show. */
+export interface LinkedInTargetingEntity {
+  urn: string;
+  name: string;
+}
+
+/** `GET /api/campaigns/linkedin/targeting-entities` (#5764 rows 8–11): the values of one facet matching a query. */
+export interface LinkedInTargetingSearchResult {
+  facet: LinkedInTargetingSearchFacet;
+  entities: LinkedInTargetingEntity[];
+}
+
+/** campaign-service's `list-linkedin-ads-audiences` body (`LinkedInAdsAudienceSegments`), as it sends it. */
+export interface CampaignServiceLinkedInAudiences {
+  account_id: string;
+  audiences: {
+    id: string;
+    urn: string;
+    name: string;
+    type: string;
+    status: string;
+    facet?: string;
+    approximate_member_count?: number;
+  }[];
+  audience_count: number;
+  truncated: boolean;
+}
+
+/** One ad segment the Implement tab may target, under the facet campaign-service names for its type. */
+export interface LinkedInAudienceSegment extends LinkedInTargetingEntity {
+  facet: LinkedInTargetingSegmentFacet;
+  type: string;
+  /** LinkedIn's segment status. Only `READY` serves; `BUILDING`, `UPDATING` and `ARCHIVED` are listed but will not. */
+  status: string;
+  approximateMemberCount: number | null;
+}
+
+/** `GET /api/campaigns/linkedin/audiences` (#5764 rows 8–11): the ad segments on the ad account a create uses. */
+export interface LinkedInAudiencesResult {
+  accountId: string;
+  audiences: LinkedInAudienceSegment[];
+}
+
+/** campaign-service's `list-linkedin-ads-conversions` body (`LinkedInAdsConversionRules`), as it sends it. */
+export interface CampaignServiceLinkedInConversions {
+  account_id: string;
+  conversions: { id: string; urn: string; name: string; type: string; enabled: boolean }[];
+  conversion_count: number;
+}
+
+/** One conversion rule a LinkedIn create may name in `linkedInConfig.conversions`. */
+export interface LinkedInConversionRule {
+  /** The rule's numeric id, exactly as `conversions` takes it. */
+  id: string;
+  name: string;
+  /** LinkedIn's conversion type, verbatim (e.g. `REGISTRATION`); empty when LinkedIn sent none. */
+  type: string;
+}
+
+/** `GET /api/campaigns/linkedin/conversions` (#5764 row 4): the enabled conversion rules on the ad account a create uses. */
+export interface LinkedInConversionsResult {
+  accountId: string;
+  conversions: LinkedInConversionRule[];
+}
+
+/** `GET /api/campaigns/linkedin/geo-targets` (#5545): the locations matching a query, ready to add as geo targets. */
+export interface LinkedInGeoSearchResult {
+  locations: LinkedInGeoTarget[];
+}
+
+/** One row of the Implement tab's LinkedIn location search: a location, `disabled` once it is already a target. */
+export interface LinkedInGeoSearchOption extends LinkedInGeoTarget {
+  disabled: boolean;
+}
+
+/** Where the LinkedIn location search stands: its rows, and whether it failed or is still waiting. */
+export interface LinkedInGeoSearchState {
+  locations: LinkedInGeoTarget[];
+  failed: boolean;
+  pending: boolean;
+}
+
 export interface LinkedInCreativeVariant {
   introText: string;
   headline: string;
@@ -1876,6 +2090,97 @@ export interface LinkedInCreativeVariant {
    * variant its own upload, and campaign-service uploads each distinct asset once
    * (`resolveLinkedInImages`, `internal/dispatch/linkedin_creative.go`).
    */
+  imageAssetId?: string;
+  /**
+   * An MP4 uploaded to the brief, which makes this a video ad, LF's "Motion" (#5764 row 18, campaign-service #586).
+   * campaign-service uploads it through LinkedIn's Videos API and creates a SINGLE_VIDEO campaign. Every variant of a
+   * campaign carries one or none does; a video variant carries no image and no description. See
+   * `linkedInVideoVariantsRefusal`.
+   */
+  videoAssetId?: string;
+  /**
+   * The ad's name in Campaign Manager and reporting (#5764 row 17, campaign-service #589). Omitted keeps
+   * "<event> | variant-N". No two variants of one campaign may share one. Only on the campaign-service road.
+   */
+  name?: string;
+  /** The article description under the headline (#5764 row 16, campaign-service #588), at most 300 characters. */
+  description?: string;
+  /** One of `LINKEDIN_CALL_TO_ACTION_LABELS` (campaign-service #588). Omitted sends no button. */
+  callToAction?: string;
+}
+
+/** One LinkedIn Text Ad as the Implement tab edits it (#5764 row 19). `key` is the tab's own and is never sent. */
+export interface LinkedInTextAdDraft {
+  key: string;
+  headline: string;
+  description: string;
+  /**
+   * The ad's 100x100 image uploaded to the brief, `''` or absent for none, and the file name and brief it was made for.
+   * Sent only when made for the open brief and the LinkedIn upload capability is an explicit yes. Absent on a draft saved
+   * before images existed.
+   */
+  imageAssetId?: string;
+  imageAssetName?: string;
+  imageAssetBriefId?: string;
+}
+
+/**
+ * One text ad as the editor shows it: the copy, its length after normalization, the error under each field (`''` for
+ * none), and the state of its own image, as `LinkedInVariantView` has it for a variant.
+ */
+export interface LinkedInTextAdView extends LinkedInTextAdDraft {
+  headlineLength: number;
+  descriptionLength: number;
+  headlineError: string;
+  descriptionError: string;
+  /** "Uploading image…", "Uploaded: <name>", or `''`. */
+  imageStatusMessage: string;
+  imageUploading: boolean;
+  /** Whether the ad holds an upload (for any brief), so Remove is offered. */
+  imageHeld: boolean;
+  /** Why this ad's last pick or upload failed, or `''`. */
+  imageError: string;
+  imagePickerDisabled: boolean;
+  /** Why the picker is disabled while another upload is running or failed, or `''`. */
+  imagePickerNote: string;
+  /** Why Create is blocked for this ad's image, or `null`. */
+  imageBlock: CampaignLinkedInImageAssetBlock | null;
+}
+
+/** What one LinkedIn image rule reads of a variant or text ad: its key, and its upload and the brief it was made for. */
+export interface LinkedInImageHolder {
+  key: string;
+  imageAssetId?: string;
+  imageAssetBriefId?: string;
+}
+
+/**
+ * The image state `linkedInTextAdViews` reads (#5764 row 19): the one LinkedIn upload slot, shared with the single
+ * image variants, and the brief and capability state, as `LinkedInVariantViewsInput` has them.
+ */
+export type LinkedInTextAdImageInput = Omit<LinkedInVariantViewsInput, 'variants' | 'eventName'>;
+
+/** What the Text Ads add to the LinkedIn create refusal (#5764 row 19), given only while Text Ads are chosen. */
+export interface LinkedInTextAdsRefusalInput {
+  count: number;
+  /** A headline or description is blank or over its limit. */
+  textInvalid: boolean;
+  /** The LinkedIn bid is manual, which Text Ads require. */
+  manualBid: boolean;
+}
+
+/**
+ * One LinkedIn Text Ad (#5764 row 19, campaign-service #586): a headline and description on LinkedIn's desktop right
+ * rail, sent in `LinkedInCampaignCreateRequest.textAds` with `format: 'text'`.
+ */
+export interface LinkedInTextAd {
+  /** At most 25 characters after normalization (`LINKEDIN_TEXT_AD_LIMITS`). */
+  headline: string;
+  /** At most 75 characters after normalization. */
+  description: string;
+  /** An existing `urn:li:image`. Never sent with `imageAssetId`. */
+  imageUrn?: string;
+  /** A 100x100 PNG or JPEG of at most 2 MB uploaded to the brief. Never sent with `imageUrn`. */
   imageAssetId?: string;
 }
 
@@ -1896,6 +2201,25 @@ export interface LinkedInVariantDraft {
   imageAssetName: string;
   /** The brief the upload was made for. */
   imageAssetBriefId: string;
+  /** The ad's name (#5764 row 17), `''` or absent for none. Absent on a draft saved before it existed. */
+  name?: string;
+  /** The article description (#5764 row 16), `''` or absent for none. */
+  description?: string;
+  /** One of `LINKEDIN_CALL_TO_ACTION_LABELS`, `''` or absent for none. */
+  callToAction?: string;
+  /**
+   * The MP4 uploaded for this variant (#5764 row 18), its file name and the brief it was made for; `''` or absent for
+   * none. Sent, in place of any image and the description, only while video ads are chosen and offered.
+   */
+  videoAssetId?: string;
+  videoAssetName?: string;
+  videoAssetBriefId?: string;
+}
+
+/** One call to action the LinkedIn variant editor offers: campaign-service's label and how it reads. */
+export interface LinkedInCallToActionOption {
+  value: string;
+  label: string;
 }
 
 export interface LinkedInTargetingStrategy {
@@ -2072,6 +2396,116 @@ export interface LinkedInRuntimeConfig {
 // Campaign Creation (Implementation Phase)
 // ---------------------------------------------------------------------------
 
+/** One LinkedIn ad account the create may use (#5809), camel-cased from campaign-service's `selectable_accounts`. */
+export interface LinkedInCreateAccountOption {
+  accountId: string;
+  /** The LinkedIn page the campaign's posts are authored by. Empty when the connection stores none. */
+  orgId: string;
+  label: string;
+  /** The account a create uses when `linkedInConfig.adAccountId` is omitted. */
+  isDefault: boolean;
+}
+
+/**
+ * `GET /api/campaigns/linkedin/create-account` (#5809): where a LinkedIn create for the project goes, and
+ * whether this caller may choose another account. `accounts` lists the default first and always holds it.
+ */
+export interface LinkedInCreateAccountResult {
+  /** The default account: where a create goes when it sends no `adAccountId`. */
+  accountId: string;
+  orgId: string;
+  label: string;
+  /** `project` (the project's own LinkedIn connection) or `system` (LF's shared connection). */
+  source: 'project' | 'system';
+  /**
+   * Whether this caller may name an account: campaign-service's account selection is on, there is more
+   * than the default to choose from, and the caller holds `global_marketing_ops` on the project.
+   */
+  canChoose: boolean;
+  accounts: LinkedInCreateAccountOption[];
+}
+
+/** campaign-service's LinkedIn create-account read (#5809), checked and camel-cased; see the server's `toLinkedInCreateAccount`. */
+export interface LinkedInCreateAccountRead {
+  defaultAccount: LinkedInCreateAccountOption;
+  /** The non-default accounts `adAccountId` may name, each once, as bare account numbers. */
+  grants: LinkedInCreateAccountOption[];
+  /** campaign-service's own `account_selection_enabled`. */
+  selectionEnabled: boolean;
+  source: 'project' | 'system';
+}
+
+/** Where the Implement tab's LinkedIn ad account read stands (#5809). `idle` while the read does not apply. */
+export interface LinkedInCreateAccountState {
+  status: 'idle' | 'loading' | 'ready' | 'failed';
+  account: LinkedInCreateAccountResult | null;
+}
+
+/** What `linkedInDailyCapError` and `linkedInDailyCapField` read (#5774): the cap beside a lifetime budget. */
+export interface LinkedInDailyCapInput {
+  capUsd: number | null;
+  lifetimeBudget: boolean;
+  /** Whether this deployment offers the cap (`linkedInDailyCapEnabled`). */
+  available: boolean;
+  budgetUsd: number;
+}
+
+/** What `linkedInAccountFields` reads (#5809) to choose the account fields a LinkedIn create sends. */
+export interface LinkedInAccountFieldsInput {
+  /** The connection decides the account (`linkedInAccountSetByConnection`), so the legacy `adAccountId` is not sent. */
+  setByConnection: boolean;
+  /** The account picker applies on this deployment (`linkedInAccountSelectionAvailable`). */
+  selectionAvailable: boolean;
+  /** The account the create goes to, from `linkedInEffectiveAccount`, or `null` when the read has no answer. */
+  effectiveAccount: LinkedInCreateAccountOption | null;
+  canChoose: boolean;
+  /** The legacy form's account, sent only when the connection does not decide it. */
+  legacyAccountId: string;
+}
+
+/**
+ * What `linkedInCreateRefusal` reads (#5980): the LinkedIn section's state as the Implement tab holds it. One flat
+ * object of plain values, like `MetaCreateRefusalInput`, so the rules are tested without the component.
+ */
+export interface LinkedInCreateRefusalInput {
+  budgetUsd: number;
+  dailyCapError: string | null;
+  geoTargetCount: number;
+  variantCount: number;
+  variantTextInvalid: boolean;
+  /** Targeting entries removed from the selected profile (#5546). */
+  removalsHeld: boolean;
+  targetingEditAvailable: boolean;
+  /** The selected profile's details are loaded, so removals can be applied. */
+  profileLoaded: boolean;
+  accountSetByConnection: boolean;
+  /** The legacy form's account is one the catalog lists. */
+  accountInCatalog: boolean;
+  accountSelectionAvailable: boolean;
+  createAccountStatus: LinkedInCreateAccountState['status'];
+  /** An ad name or description the create would send but campaign-service would refuse (#5764 rows 16–17). */
+  variantFieldsInvalid?: boolean;
+  /** Present only while Text Ads are chosen (#5764 row 19): they replace the variant checks. */
+  textAds?: LinkedInTextAdsRefusalInput;
+  /** Text Ads are chosen but this deployment no longer offers them (#5764 row 19). */
+  textAdsUnavailable?: boolean;
+  /** Video ads are chosen but this deployment no longer offers them (#5764 row 18). */
+  videoAdsUnavailable?: boolean;
+  /** Present only while video ads are chosen (#5764 row 18): an ad with no video for the open brief. */
+  videoMissing?: boolean;
+  /**
+   * Present only while custom targeting is on (#5764 rows 8–11): why its clauses cannot be sent, or `null`. Custom
+   * targeting replaces the profile, so profile removals then hold nothing.
+   */
+  customTargeting?: { refusal: string | null };
+  /** Custom targeting is on but this deployment no longer offers it (#5764 rows 8–11). */
+  customTargetingUnavailable?: boolean;
+  /** Why the objective or conversion rules chosen cannot be sent (#5764 rows 2 and 4), or `null`; see `linkedInObjectiveCreateRefusal`. */
+  objectiveRefusal?: string | null;
+  /** Why the target cost entered cannot be sent (campaign-service#674), or `null`; see `linkedInTargetCostCreateRefusal`. */
+  targetCostRefusal?: string | null;
+}
+
 export interface LinkedInCampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -2080,6 +2514,13 @@ export interface LinkedInCampaignCreateRequest {
   hsToken?: string;
   budgetUsd: number;
   lifetimeBudget: boolean;
+  /**
+   * Optional daily spending cap, in USD, beside a LIFETIME budget (#5774): campaign-service sends it
+   * as the campaign's dailyBudget next to its totalBudget (linuxfoundation/lfx-v2-campaign-service#607).
+   * Omitted means no cap. Only with `lifetimeBudget: true`; at least LinkedIn's $10 daily minimum and
+   * no more than `budgetUsd`.
+   */
+  dailyCapUsd?: number;
   startDate: string;
   endDate: string;
   geoTargets: LinkedInGeoTarget[];
@@ -2087,12 +2528,196 @@ export interface LinkedInCampaignCreateRequest {
   variants: LinkedInCreativeVariant[];
   project?: string;
   driveFolderUrl?: string;
+  /** The legacy creator's ad account, from `linkedin.json`. Never forwarded on the campaign-service road. */
   adAccountId?: string;
-  /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
-  bidding?: CampaignBiddingConfig;
+  /**
+   * The ad account picked in the Implement tab's account picker (#5809), sent only for a non-default pick.
+   * The server forwards it to campaign-service as `adAccountId` when it is a listed grant and the caller holds
+   * `global_marketing_ops`, and refuses the create otherwise, rather than creating in another account.
+   */
+  selectedAdAccountId?: string;
+  /** Optional bidding choice (#3299) — see {@link LinkedInBiddingConfig}. Omitted means automatic. */
+  bidding?: LinkedInBiddingConfig;
   /** The selected targeting profile with entries removed (#5546). Omitted when nothing was removed. */
   targetingProfileEdit?: LinkedInTargetingProfileEdit;
+  /**
+   * `'text'` creates a LinkedIn Text Ads campaign from `textAds` (#5764 row 19, campaign-service #586). Omitted, or
+   * `'single_image'`, is the single-image create from `variants`. Text needs manual bidding and an empty `variants`.
+   */
+  format?: LinkedInAdFormat;
+  /** The text ads of a `format: 'text'` create, 1 to 100. Only with that format. */
+  textAds?: LinkedInTextAd[];
+  /**
+   * The campaign's own LinkedIn targeting (#5764 rows 8–11, campaign-service #552). Set, it REPLACES `targetingProfile`,
+   * so it is refused with `targetingProfileEdit`. Only while `linkedInTargetingEnabled`.
+   */
+  targeting?: LinkedInTargeting;
+  /**
+   * The campaign's goal (#5764 row 2, campaign-service #582). Omitted lets `bidding` decide. `'conversions'` on automatic
+   * bidding needs `conversions`; `'traffic'` takes automatic bidding only. Only while `linkedInConversionsEnabled`.
+   */
+  objective?: LinkedInObjective;
+  /**
+   * Conversion rule ids on the campaign's ad account to associate once it exists (#5764 row 4, campaign-service #552),
+   * from `GET /api/campaigns/linkedin/conversions`. Only while `linkedInConversionsEnabled`, and only for a caller
+   * holding `global_marketing_ops` on the project.
+   */
+  conversions?: string[];
 }
+
+/** A goal `linkedInConfig.objective` may name (`LINKEDIN_OBJECTIVES`). */
+export type LinkedInObjective = (typeof LINKEDIN_OBJECTIVES)[number];
+
+/**
+ * Custom LinkedIn targeting in campaign-service's shape (`linkedin.Targeting`): `include` clauses are ANDed (after the
+ * geo clause) and the facets inside one clause are ORed; `exclude` facets are ORed. Each facet maps to LinkedIn URNs.
+ */
+export interface LinkedInTargeting {
+  include: Record<string, string[]>[];
+  exclude?: Record<string, string[]>;
+}
+
+/**
+ * A facet the Implement tab's custom targeting editor offers (#5764 rows 8–11): searched, picked from a fixed list, or
+ * an ad segment on the ad account.
+ */
+export type LinkedInTargetingEditorFacet = LinkedInTargetingSearchFacet | LinkedInTargetingStaticFacet | LinkedInTargetingSegmentFacet;
+
+/** A facet whose values are a fixed list rather than a search: seniorities, job functions, company sizes and interface languages. */
+export type LinkedInTargetingStaticFacet = 'seniorities' | 'jobFunctions' | 'staffCountRanges' | 'interfaceLocales';
+
+/** A facet whose values are ad segments (`urn:li:adSegment:<id>`) from `GET /api/campaigns/linkedin/audiences`. */
+export type LinkedInTargetingSegmentFacet = 'audienceMatchingSegments' | 'dynamicSegments';
+
+/** Where an editor facet's values come from: the targeting search, a fixed list, or the ad account's segments. */
+export type LinkedInTargetingFacetKind = 'search' | 'static' | 'segment';
+
+/** One editor facet: its key, the label shown, and where its values come from. */
+export interface LinkedInTargetingEditorFacetOption {
+  key: LinkedInTargetingEditorFacet;
+  label: string;
+  kind: LinkedInTargetingFacetKind;
+}
+
+/** The values picked for each facet of one clause or of the exclusions, with names so a restored chip reads the same. */
+export type LinkedInTargetingFacetPicks = Partial<Record<LinkedInTargetingEditorFacet, LinkedInTargetingEntity[]>>;
+
+/**
+ * Custom LinkedIn targeting as the Implement tab edits it (#5764 rows 8–11): the include clauses (ANDed; a clause's
+ * values ORed) and the exclusions. `linkedInTargetingForCreate` turns it into `linkedInConfig.targeting`.
+ */
+export interface LinkedInTargetingDraft {
+  clauses: LinkedInTargetingFacetPicks[];
+  exclude: LinkedInTargetingFacetPicks;
+  /**
+   * Whose ad account the segment picks were made for: the foundation and ad account, as `linkedInSegmentsOwnerKey`
+   * builds it (`null` once no segment is picked). Segments belong to one account, and every foundation's default
+   * account differs, so a create for another owner is held (`linkedInTargetingSegmentsAccountRefusal`). Never sent.
+   */
+  segmentsAccountId: string | null;
+}
+
+/** Where a facet's values go: an include clause or the exclusions. */
+export type LinkedInTargetingPlacement = 'include' | 'exclude';
+
+/** The state of the editor's typeahead for one facet: the values offered, and whether it is waiting or failed (the message). */
+export interface LinkedInTargetingSearchState {
+  facet: LinkedInTargetingSearchFacet | null;
+  entities: LinkedInTargetingEntity[];
+  pending: boolean;
+  failure: string | null;
+}
+
+/**
+ * The custom targeting editor's read of the ad account's segments (#5764 rows 8–11): loading, loaded, refused to a
+ * caller without `global_marketing_ops` (`restricted`), or failed (`unavailable`), with the message to show.
+ */
+export interface LinkedInAudiencesState {
+  status: 'loading' | 'loaded' | 'restricted' | 'unavailable';
+  audiences: LinkedInAudienceSegment[];
+  failure: string | null;
+}
+
+/** One ad segment the editor's segment select offers: its URN and name, and the label with its size and status. */
+export interface LinkedInTargetingSegmentChoice extends LinkedInTargetingEntity {
+  label: string;
+}
+
+/** A `linkedInConfig` the create route refuses for its keys (#5764): the field to name, and why. Never echoes a caller key. */
+export interface LinkedInConfigKeyRefusal {
+  field: string;
+  message: string;
+}
+
+/**
+ * The Implement tab's LinkedIn objective and conversion rules as edited (#5764 rows 2 and 4), and the automatic-bidding
+ * target cost beside them (linuxfoundation/lfx-v2-campaign-service#674), carried in the draft.
+ */
+export interface LinkedInObjectiveDraft {
+  /** The objective chosen, or `null`: none is sent, so the bidding decides, as every create did before. */
+  objective: LinkedInObjective | null;
+  /** The conversion rule ids picked, sent only with the `conversions` objective. */
+  conversions: string[];
+  /**
+   * Who the rules were picked for (`linkedInSegmentsOwnerKey`: the foundation and ad account), or `null` with none
+   * picked. Rules belong to one ad account, so a create for another owner is held. Never sent.
+   */
+  conversionsOwner: string | null;
+  /**
+   * The target cost as typed (USD), raw so a half-typed value survives a remount; absent or blank means no target. Sent
+   * as `bidding.targetAmount` only while `linkedInTargetCostOffered`; see `linkedInBiddingWithTargetCost`.
+   */
+  targetCost?: string;
+}
+
+/** What `linkedInTargetCostOffered` reads: whether the Implement tab offers a LinkedIn target cost now. */
+export interface LinkedInTargetCostOfferInput {
+  /** `CampaignListResult.linkedInTargetCostEnabled`, `null` until read. */
+  enabled: boolean | null;
+  /** The Bidding control is offered, so the create sends `bidding` at all. */
+  biddingAvailable: boolean;
+  /** LinkedIn's Bidding choice, or `undefined` while untouched (automatic). */
+  strategy: CampaignBiddingStrategy | undefined;
+}
+
+/**
+ * The objective picker's read of the ad account's conversion rules (#5764 row 4): loading, loaded, refused to a caller
+ * without `global_marketing_ops` (`restricted`), or failed (`unavailable`), with the message to show.
+ */
+export interface LinkedInConversionsState {
+  status: 'loading' | 'loaded' | 'restricted' | 'unavailable';
+  conversions: LinkedInConversionRule[];
+  failure: string | null;
+}
+
+/** What `linkedInObjectiveCreateRefusal` reads (#5764 rows 2 and 4): the draft, the capability, the create's owner and bidding. */
+export interface LinkedInObjectiveCreateInput {
+  draft: LinkedInObjectiveDraft;
+  /** `linkedInConversionsEnabled` is an explicit yes. */
+  available: boolean;
+  /** The owner the create uses now (`linkedInSegmentsOwnerKey`). */
+  owner: string;
+  /** The `bidding` the create sends, if any. */
+  bidding?: CampaignBiddingConfig;
+}
+
+/** Which of a LinkedIn variant's optional fields this deployment sends (#5764 rows 16–17). */
+export interface LinkedInVariantFieldsEnabled {
+  /** The ad name and description (`linkedInVariantCopyEnabled`). */
+  copy: boolean;
+  /** The call to action (`linkedInCallToActionEnabled`). */
+  callToAction: boolean;
+}
+
+/** A LinkedIn ad format (#5764 row 19): one of `LINKEDIN_AD_FORMATS`. */
+export type LinkedInAdFormat = (typeof LINKEDIN_AD_FORMATS)[number];
+
+/**
+ * The LinkedIn ad format the Implement tab offers: a request format, or `video` (#5764 row 18). A video campaign is not
+ * a request `format`: it is the single-image request with a `videoAssetId` on every variant, which campaign-service
+ * creates as SINGLE_VIDEO.
+ */
+export type LinkedInAdFormatChoice = LinkedInAdFormat | 'video';
 
 export interface LinkedInCampaignCreateResult {
   platform: 'linkedin-ads';
@@ -2208,6 +2833,12 @@ export interface RedditCampaignCreateRequest {
    * only with that objective, and blocks the create until one is chosen.
    */
   videoGoal?: RedditVideoGoal;
+  /**
+   * The pixel event a `conversions` campaign optimizes toward (#6108 row 2, campaign-service #549), one of
+   * `REDDIT_CONVERSION_EVENTS`; absent is PURCHASE. Only while `CampaignListResult.redditConversionEventEnabled`, and
+   * only with the conversions objective: the create route refuses it otherwise, never dropping it.
+   */
+  conversionEvent?: RedditConversionEvent;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
 }
@@ -2247,14 +2878,46 @@ export interface MetaBriefCopy {
   recommendedGeos: string[];
 }
 
+/** The Instagram account and DSA text as the operator typed it. */
+export interface MetaInstagramDsaInput {
+  instagramUserId: string;
+  dsaBeneficiary: string;
+  dsaPayor: string;
+}
+
+/** The Meta copy a brief seeds the form with: its variants and its eligible recommended geos. */
+export interface MetaBriefSeed {
+  variants: MetaAdVariant[];
+  geoTargets: string[];
+}
+
+/** The Meta state `metaCreateRefusal` (`campaign-meta-form.utils.ts`) reads. Each `string | null` is a section's message, `null` when clear. */
+export interface MetaCreateRefusalInput {
+  variants: readonly Pick<MetaAdVariant, 'primaryText' | 'headline'>[];
+  hasPlacement: boolean;
+  pixelValid: boolean;
+  /** Whether the Instagram id or either EU DSA disclosure has an error. */
+  instagramDsaInvalid: boolean;
+  audienceTargetingBlock: string | null;
+  audienceTargetingError: string | null;
+  detailedTargetingBlock: string | null;
+  detailedTargetingError: string | null;
+  deliveryBlock: string | null;
+  deliveryError: string | null;
+  deviceOsBlock: string | null;
+  deviceOsError: string | null;
+  adOptionsBlock: string | null;
+  adOptionsError: string | null;
+  leadFormError: string | null;
+}
+
 export type MetaObjective = 'awareness' | 'traffic' | 'engagement' | 'leads' | 'conversions';
 
 /**
- * Objectives deliberately withheld from the campaign objective selector.
+ * Objectives withheld from the objective selector unless a condition holds.
  *
- * `leads` dispatches as a website-traffic campaign (see `META_OBJECTIVE_PARAMS`), so offering it
- * would label a traffic campaign "Leads". LFXV2-2665 builds instant-form support and removes it
- * from this union.
+ * `leads` dispatches as a website-traffic campaign without a lead form (see `META_OBJECTIVE_PARAMS`),
+ * so it is offered only to a caller who may send one (`metaObjectiveChoices`, #5940).
  *
  * Declared as a type so `SelectableMetaObjective` can be DERIVED rather than restated: a new member
  * of `MetaObjective` is then a compile error in `META_SELECTABLE_OBJECTIVES` unless it is named
@@ -2293,6 +2956,17 @@ export interface MetaCampaignCreateRequest {
   variants: MetaAdVariant[];
   project?: string;
   objective?: MetaObjective;
+  /**
+   * When the ad set runs (#5904 row 5; campaign-service#612): one window of whole hours on the chosen days, in the
+   * Meta ad account's time zone. Needs `lifetimeBudget: true`. Sent ONLY when `CampaignListResult.metaAdScheduleEnabled`
+   * is a yes; the create route refuses it with a 400 otherwise.
+   */
+  adSchedule?: MetaAdSchedule;
+  /**
+   * At most `maxImpressions` impressions per person every `intervalDays` days (#5904 row 5), on the awareness objective
+   * only. Sent ONLY when `CampaignListResult.metaFrequencyCapEnabled` is a yes; the create route refuses it otherwise.
+   */
+  frequencyCap?: MetaFrequencyCap;
   placements?: Partial<MetaPlacement>;
   pixelId?: string;
   /**
@@ -2313,6 +2987,658 @@ export interface MetaCampaignCreateRequest {
   dsaPayor?: string;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
+  /**
+   * Ad set targeting: the audience fields (#5905; linuxfoundation/lfx-v2-campaign-service#550) and the detailed
+   * fields (#5904 row 4; campaign-service #612), each sent ONLY when its own capability is an explicit yes:
+   * `metaAudienceTargetingEnabled` for age, gender, custom audiences and Advantage+, `metaInterestTargetingEnabled`
+   * for `interests`, `metaBehaviorTargetingEnabled` for `behaviors` and `workPositions`, `metaLocaleTargetingEnabled`
+   * for `locales`. The create route refuses a field whose capability is off with a 400, so a tab opened while it
+   * was on must reload. A block with only detailed fields needs no audience capability.
+   */
+  targeting?: MetaTargeting;
+  /**
+   * The button on every ad (#5934; campaign-service #550), one of `META_CALL_TO_ACTIONS`. Absent means
+   * campaign-service's default, LEARN_MORE. Sent ONLY when `CampaignListResult.metaCallToActionEnabled` is
+   * an explicit yes; the create route refuses it with a 400 otherwise.
+   */
+  callToAction?: string;
+  /** The pixel event a `conversions` create optimizes toward, one of `META_CONVERSION_EVENTS`; absent is PURCHASE. Same gate, on `metaConversionEventEnabled`. */
+  conversionEvent?: string;
+  /** The ad set optimization goal of a `traffic` create, one of `META_OPTIMIZATION_GOALS`; absent is LINK_CLICKS. Same gate, on `metaOptimizationGoalEnabled`. */
+  optimizationGoal?: string;
+  /**
+   * An existing Instant Form on the connection's Page (#5940; campaign-service #550), for the `leads` objective
+   * only: campaign-service then creates a lead ad (OUTCOME_LEADS) instead of a website-traffic campaign. Sent
+   * ONLY when `CampaignListResult.metaLeadFormsEnabled` is an explicit yes; the create route refuses it with a
+   * 400 while the capability is off, and with a 403 for a caller without `global_marketing_ops`.
+   */
+  leadFormId?: string;
+}
+
+/** The three optional Meta ad choices of #5934, each a `metaConfig` key of its own. */
+export type MetaAdOptionKey = 'callToAction' | 'conversionEvent' | 'optimizationGoal';
+
+/** The Meta ad choices as edited or sent: an absent key is "Not set", which sends nothing and leaves campaign-service's default. */
+export type MetaAdOptions = Partial<Record<MetaAdOptionKey, string>>;
+
+/** One Meta ad choice as the Implement tab offers it and the create route checks it. */
+export interface MetaAdOptionField {
+  key: MetaAdOptionKey;
+  label: string;
+  /** Every value campaign-service accepts, upper case; the first is its default. */
+  values: readonly string[];
+  /** The objectives it applies to, or `null` for every objective. */
+  objectives: readonly MetaObjective[] | null;
+}
+
+/** One Meta ad choice's dropdown as the Implement tab renders it. */
+export interface MetaAdOptionView {
+  key: MetaAdOptionKey;
+  label: string;
+  /** The "Not set" option's text, naming campaign-service's default. */
+  notSetLabel: string;
+  options: { value: string; label: string; disabled: boolean }[];
+}
+
+/** A Meta gender campaign-service accepts in `metaConfig.targeting.genders`. */
+export type MetaAudienceGender = 'male' | 'female';
+
+/**
+ * `metaConfig.targeting`, the keys this app sends (campaign-service `docs/api-catalog.md`, `MetaConfig`).
+ * Every key is optional and an absent one is Meta's default: ages 18–65, every gender, no custom
+ * audience, Advantage+ audience as campaign-service decides it.
+ */
+export interface MetaAudienceTargeting {
+  ageMin?: number;
+  ageMax?: number;
+  genders?: MetaAudienceGender[];
+  /** Numeric Meta custom-audience ids (lookalikes included); needs `global_marketing_ops`. */
+  customAudiences?: string[];
+  excludedCustomAudiences?: string[];
+  /**
+   * Advantage+ audience (`targeting_automation.advantage_audience`), a tri-state as campaign-service reads
+   * it: absent is "not said" (campaign-service sends 0 only when an inclusion is set, else nothing), `false`
+   * always sends 0 and `true` sends 1. So an explicit `false` is an instruction, never a default.
+   */
+  advantageAudience?: boolean;
+}
+
+/**
+ * Meta detailed targeting (#5904 row 4; linuxfoundation/lfx-v2-campaign-service#612), carried in the same
+ * `metaConfig.targeting` block as {@link MetaAudienceTargeting}. Interests, behaviors and work positions are
+ * Meta taxonomy ids from the targeting search, sent as one `flexible_spec` entry (a person matching any one
+ * qualifies); locales are Meta `adlocale` keys, a hard constraint. Each field has its own campaign-service flag.
+ */
+export interface MetaDetailedTargeting {
+  interests?: string[];
+  behaviors?: string[];
+  workPositions?: string[];
+  locales?: number[];
+  /** `mobile` and/or `desktop` (#5904 row 6); one device restricts the ad set, both or none is Meta's default. */
+  devicePlatforms?: string[];
+  /** Meta `user_os` values (#5904 row 6): `iOS`, `Android`, or either with a listed minimum version or version range. */
+  userOs?: string[];
+}
+
+/** The whole `metaConfig.targeting` block a Meta create may send: the audience fields and the detailed ones. */
+export type MetaTargeting = MetaAudienceTargeting & MetaDetailedTargeting;
+
+/** Which Meta targeting fields this deployment accepts on create, one answer per campaign-service flag. */
+export interface MetaTargetingFlags {
+  audience: boolean;
+  interest: boolean;
+  behavior: boolean;
+  locale: boolean;
+  device: boolean;
+  os: boolean;
+}
+
+/** One Meta `user_os` value, parsed: its spelling as Meta takes it, its family, and whether it names a version. */
+export interface MetaUserOsValue {
+  canonical: string;
+  family: 'iOS' | 'Android';
+  versioned: boolean;
+}
+
+/** A kind the Meta targeting search answers (`GET /api/campaigns/meta/targeting-search?type=`). */
+export type MetaTargetingSearchType = 'interest' | 'behavior' | 'work_position';
+
+/** One option of the Meta targeting search, camel-cased from campaign-service's answer. */
+export interface MetaTargetingSearchOption {
+  id: string;
+  name: string;
+  /** The taxonomy path, e.g. ["Interests", "Technology"]; empty when Meta gives none. */
+  path: string[];
+  description?: string;
+  audienceSizeLowerBound?: number;
+  audienceSizeUpperBound?: number;
+  /** Set for work positions only. */
+  coverage?: number;
+}
+
+/** The BFF's answer for a Meta targeting search. */
+export interface MetaTargetingSearchResult {
+  type: MetaTargetingSearchType;
+  options: MetaTargetingSearchOption[];
+}
+
+/** A detailed-targeting id list on `metaConfig.targeting`. */
+export type MetaDetailedTargetingKey = 'interests' | 'behaviors' | 'workPositions';
+
+/** One detailed-targeting list the Implement tab offers: the search kind that fills it and the list it fills. */
+export interface MetaTargetingKind {
+  type: MetaTargetingSearchType;
+  key: MetaDetailedTargetingKey;
+  label: string;
+}
+
+/** One picked targeting option: the id sent, and the name kept so its chip reads the same after a restore. */
+export interface MetaTargetingPick {
+  id: string;
+  name: string;
+}
+
+/** The detailed-targeting picks of a Meta create, one list per kind. */
+export type MetaDetailedTargetingPicks = Record<MetaDetailedTargetingKey, MetaTargetingPick[]>;
+
+/** A search result row as the picker lists it: disabled when already picked or when its list is full. */
+export interface MetaTargetingSearchChoice extends MetaTargetingSearchOption {
+  disabled: boolean;
+}
+
+/** One search row as the detailed-targeting picker draws it, with its taxonomy path already joined. */
+export interface MetaDetailedTargetingChoiceView extends MetaTargetingSearchChoice {
+  pathLabel: string;
+}
+
+/** One detailed-targeting list as the picker draws it. */
+export interface MetaDetailedTargetingListView extends MetaTargetingKind {
+  picks: MetaTargetingPick[];
+  choices: MetaDetailedTargetingChoiceView[];
+  full: boolean;
+  /** What the search popup says while it has no rows. */
+  emptyMessage: string;
+  /** Why this list's last search failed, or `null`. */
+  failure: string | null;
+}
+
+/** The picker's targeting search: the kind it answers, its rows, whether it is waiting, and why it failed. */
+export interface MetaTargetingSearchState {
+  type: MetaTargetingSearchType | null;
+  options: MetaTargetingSearchOption[];
+  pending: boolean;
+  failure: string | null;
+}
+
+/**
+ * A Meta ad set schedule (#5904 row 5; campaign-service#612): it runs only on `days` (0 Sunday to 6 Saturday, Meta's
+ * numbering) between `startMinute` and `endMinute` of the day, whole hours with 0 <= start < end <= 1440, in the
+ * ad account's time zone. One window for every chosen day.
+ */
+export interface MetaAdSchedule {
+  days: number[];
+  startMinute: number;
+  endMinute: number;
+}
+
+/** A Meta frequency cap (#5904 row 5): at most `maxImpressions` impressions per person every `intervalDays` days, each 1–90. */
+export interface MetaFrequencyCap {
+  maxImpressions: number;
+  intervalDays: number;
+}
+
+/** The Meta delivery options a create sends, each only once checked. */
+export interface MetaDeliveryOptions {
+  adSchedule?: MetaAdSchedule;
+  frequencyCap?: MetaFrequencyCap;
+}
+
+/** The Meta delivery options as edited on the Implement tab (#5904 row 5): `null` is "not set". */
+export interface MetaDeliveryDraft {
+  adSchedule: MetaAdSchedule | null;
+  frequencyCap: MetaFrequencyCap | null;
+}
+
+/** The Meta devices and operating systems as ticked on the Implement tab (#5904 row 6); an empty list is Meta's default (all). */
+export interface MetaDeviceOsDraft {
+  devicePlatforms: string[];
+  userOs: string[];
+}
+
+/** One device or OS checkbox the Implement tab offers: the value a create sends and its label. */
+export interface MetaDeviceOsOption {
+  value: string;
+  label: string;
+}
+
+/** One device or OS checkbox as the options component draws it: on when the draft holds its value. */
+export interface MetaDeviceOsOptionView extends MetaDeviceOsOption {
+  on: boolean;
+}
+
+/** The Meta device and OS state `metaDeviceOsBlock` (`campaign-meta-device-os.utils.ts`) reads, as plain values. */
+export interface MetaDeviceOsBlockInput {
+  draft: MetaDeviceOsDraft;
+  /** `CampaignListResult.metaDeviceTargetingEnabled`: `null` while unanswered. */
+  deviceEnabled: boolean | null;
+  /** `CampaignListResult.metaOsTargetingEnabled`: `null` while unanswered. */
+  osEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
+/** One day toggle of the ad schedule: Meta's day number and its short label. */
+export interface MetaAdScheduleDayOption {
+  value: number;
+  label: string;
+}
+
+/** One day toggle as the delivery options component draws it: on when the schedule names the day. */
+export interface MetaAdScheduleDayView extends MetaAdScheduleDayOption {
+  on: boolean;
+}
+
+/** One hour of the ad schedule's start or end select: minutes of the day and a 24-hour label. */
+export interface MetaAdScheduleHourOption {
+  value: number;
+  label: string;
+}
+
+/** The Meta delivery state `metaDeliveryBlock` (`campaign-meta-delivery.utils.ts`) reads, as plain values. */
+export interface MetaDeliveryBlockInput {
+  draft: MetaDeliveryDraft;
+  /** `CampaignListResult.metaAdScheduleEnabled`: `null` while unanswered. */
+  adScheduleEnabled: boolean | null;
+  /** `CampaignListResult.metaFrequencyCapEnabled`: `null` while unanswered. */
+  frequencyCapEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
+/** Which Meta delivery options this deployment accepts on create, one answer per flag. */
+export interface MetaDeliveryFlags {
+  adSchedule: boolean;
+  frequencyCap: boolean;
+}
+
+/** campaign-service's raw answer for `search-meta-targeting-options` (snake_case, as on the wire). */
+export interface CampaignServiceMetaTargetingSearch {
+  type?: string;
+  options?: {
+    id?: unknown;
+    name?: unknown;
+    path?: unknown;
+    description?: unknown;
+    audience_size_lower_bound?: unknown;
+    audience_size_upper_bound?: unknown;
+    coverage?: unknown;
+  }[];
+  option_count?: number;
+}
+
+/**
+ * The Implement tab's Meta audience targeting as edited: every key present, defaults included, except
+ * `advantageAudience`, which stays absent until the operator ticks or unticks the box.
+ */
+export type MetaAudienceTargetingDraft = Required<Omit<MetaAudienceTargeting, 'advantageAudience'>> & Pick<MetaAudienceTargeting, 'advantageAudience'>;
+
+/** The Meta keys of the Implement tab draft: what the Meta draft helpers (`campaign-meta-draft.utils.ts`) read and write. */
+export type MetaDraftSnapshot = Pick<
+  CampaignImplementationDraft,
+  | 'metaObjective'
+  | 'metaPlacements'
+  | 'metaPixelId'
+  | 'metaGeoTargets'
+  | 'metaInstagramUserId'
+  | 'metaDsaBeneficiary'
+  | 'metaDsaPayor'
+  | 'metaAudienceTargeting'
+  | 'metaAudienceTargetingProject'
+  | 'metaDetailedTargeting'
+  | 'metaAdSchedule'
+  | 'metaFrequencyCap'
+  | 'metaDevicePlatforms'
+  | 'metaUserOs'
+  | 'metaAdOptions'
+  | 'metaAdOptionsProject'
+  | 'metaLeadFormId'
+  | 'metaLeadFormProject'
+  | 'metaBudgetUsd'
+  | 'metaLifetimeBudget'
+  | 'metaImageUrl'
+  | 'metaImageAssetId'
+  | 'metaImageAssetName'
+  | 'metaImageAssetBriefId'
+  | 'metaImageUploadPendingName'
+  | 'metaImageUploadPendingBriefId'
+  | 'metaImageUploadFailedMessage'
+  | 'metaImageUploadFailedBriefId'
+>;
+
+/** The Meta form's state `metaDraftFields` (`campaign-meta-draft.utils.ts`) snapshots into the Implement tab draft. */
+export interface MetaDraftState {
+  objective: MetaObjective;
+  placements: MetaPlacement;
+  pixelId: string;
+  geoTargets: readonly string[];
+  instagramUserId: string;
+  dsaBeneficiary: string;
+  dsaPayor: string;
+  audienceTargeting: MetaAudienceTargetingDraft;
+  detailedTargeting: MetaDetailedTargetingPicks;
+  delivery: MetaDeliveryDraft;
+  deviceOs: MetaDeviceOsDraft;
+  adOptions: MetaAdOptions;
+  leadFormId: string;
+  /** The foundation the choices were made under; targeting, ad options and the lead form restore only under it. */
+  foundation: string;
+  budgetUsd: number;
+  lifetimeBudget: boolean;
+}
+
+/** The Meta image state `metaImageDraftFields` snapshots into the draft. */
+export interface MetaImageDraftState {
+  imageUrl: string;
+  assetId: string;
+  assetName: string;
+  assetBriefId: string;
+  uploadPendingName: string;
+  uploadPendingBriefId: string;
+  uploadError: string;
+  uploadFailedBriefId: string;
+}
+
+/**
+ * What a restored draft sets on the Meta form. A field left `undefined` (or `leadFormId: null`) keeps the
+ * form's current value, which is how a draft saved before that field shipped leaves the brief's seed standing.
+ */
+export interface MetaDraftRestore {
+  /** Always set: the restored objective, after the lead form rule (`leads` without a form for this foundation falls back). */
+  objective: MetaObjective;
+  placements?: MetaPlacement;
+  pixelId?: string;
+  /** The Instagram id and DSA disclosures to patch, one emitting patch; empty when the draft carries none. */
+  instagramDsaPatch: Partial<Record<'instagramUserId' | 'dsaBeneficiary' | 'dsaPayor', string>>;
+  audienceTargeting?: MetaAudienceTargetingDraft;
+  detailedTargeting?: MetaDetailedTargetingPicks;
+  delivery?: MetaDeliveryDraft;
+  deviceOs?: MetaDeviceOsDraft;
+  adOptions?: MetaAdOptions;
+  /** `null` keeps the current form; `''` clears it. */
+  leadFormId: string | null;
+  geoTargets?: string[];
+  budgetUsd?: number;
+  lifetimeBudget?: boolean;
+}
+
+/** The LinkedIn keys of the Implement tab draft that `linkedInDraftRestore` reads (#5980). Every one is optional. */
+export type LinkedInDraftSnapshot = Pick<
+  CampaignImplementationDraft,
+  | 'linkedInTargetingRemovals'
+  | 'linkedInBudgetUsd'
+  | 'linkedInLifetimeBudget'
+  | 'linkedInDailyCapUsd'
+  | 'linkedInVariants'
+  | 'linkedInImageUploadVariantKey'
+  | 'linkedInImageUploadPendingName'
+  | 'linkedInImageUploadPendingBriefId'
+  | 'linkedInImageUploadFailedMessage'
+  | 'linkedInImageUploadFailedBriefId'
+  | 'linkedInFormat'
+  | 'linkedInTextAds'
+  | 'linkedInCustomTargeting'
+  | 'linkedInTargetingDraft'
+  | 'linkedInObjectiveDraft'
+>;
+
+/** The LinkedIn signals `linkedInDraftFields` snapshots into the draft (#5980): budget, cap, variants and the upload slot. */
+export interface LinkedInDraftState {
+  budgetUsd: number;
+  lifetimeBudget: boolean;
+  dailyCapUsd: number | null;
+  variants: readonly LinkedInVariantDraft[];
+  uploadVariantKey: string;
+  uploadPendingName: string;
+  uploadPendingBriefId: string;
+  uploadError: string;
+  uploadFailedBriefId: string;
+  /** The ad format chosen (#5764 rows 18–19) and the Text Ads as edited. */
+  format: LinkedInAdFormatChoice;
+  textAds: readonly LinkedInTextAdDraft[];
+  /** Whether custom targeting is on, and its clauses as edited (#5764 rows 8–11). */
+  customTargeting: boolean;
+  targetingDraft: LinkedInTargetingDraft;
+  /** The objective and conversion rules as edited (#5764 rows 2 and 4). */
+  objectiveDraft: LinkedInObjectiveDraft;
+}
+
+/** What a restored draft does to the LinkedIn section (#5980): values to set, and at most one upload step for the component to run. */
+export interface LinkedInDraftRestore {
+  /** Absent on a draft saved before #5546, which removed nothing: empty. */
+  targetingRemovals: LinkedInTargetingRemovals;
+  budgetUsd?: number;
+  lifetimeBudget?: boolean;
+  dailyCapUsd?: number | null;
+  variants?: LinkedInVariantDraft[];
+  uploadVariantKey: string;
+  failedUpload?: { message: string; briefId: string };
+  pendingUpload?: { name: string; briefId: string };
+  format?: LinkedInAdFormatChoice;
+  textAds?: LinkedInTextAdDraft[];
+  customTargeting?: boolean;
+  targetingDraft?: LinkedInTargetingDraft;
+  objectiveDraft?: LinkedInObjectiveDraft;
+}
+
+/** What a brief's LinkedIn copy seeds (#5980): variants, geos and profile, and a lifetime budget when the strategy names one. */
+export interface LinkedInBriefSeed {
+  variants: LinkedInVariantDraft[];
+  geoTargets: LinkedInGeoTarget[];
+  targetingProfile: LinkedInTargetingProfile;
+  lifetimeBudgetUsd?: number;
+}
+
+/** The Reddit keys of the Implement tab draft that `redditDraftFields` writes and `redditDraftRestore` reads (#5980). Every one is optional. */
+export type RedditDraftSnapshot = Pick<
+  CampaignImplementationDraft,
+  | 'redditBudgetUsd'
+  | 'redditObjective'
+  | 'redditPostUrl'
+  | 'redditImageUrl'
+  | 'redditCallToAction'
+  | 'redditConversionPixelId'
+  | 'redditImageAssetId'
+  | 'redditImageAssetName'
+  | 'redditImageAssetBriefId'
+  | 'redditImageUploadPendingName'
+  | 'redditImageUploadPendingBriefId'
+  | 'redditImageUploadFailedMessage'
+  | 'redditImageUploadFailedBriefId'
+  | 'redditVideoGoal'
+  | 'redditConversionEvent'
+>;
+
+/** The Reddit values `redditDraftFields` snapshots into the draft (#5980): the typed fields, the pixel and the image upload slot. */
+export interface RedditDraftState {
+  budgetUsd: number;
+  objective: RedditObjective;
+  postUrl: string;
+  imageUrl: string;
+  callToAction: RedditCallToAction | '';
+  conversionPixelId: string;
+  assetId: string;
+  assetName: string;
+  assetBriefId: string;
+  uploadPendingName: string;
+  uploadPendingBriefId: string;
+  uploadError: string;
+  uploadFailedBriefId: string;
+  videoGoal: RedditVideoGoal | '';
+  conversionEvent: RedditConversionEvent;
+}
+
+/** What a restored draft does to the Reddit section (#5980): values to set, and at most one upload step for the component to run. */
+export interface RedditDraftRestore {
+  budgetUsd?: number;
+  objective?: RedditObjective;
+  postUrl?: string;
+  imageUrl?: string;
+  callToAction?: RedditCallToAction | '';
+  conversionPixelId?: string;
+  asset?: { id: string; name: string; briefId: string };
+  /** Show a failed upload, as the draft recorded it. */
+  failedUpload?: { message: string; briefId: string };
+  /** Resume an upload the draft recorded as still running. */
+  pendingUpload?: { name: string; briefId: string };
+  videoGoal?: RedditVideoGoal | '';
+  conversionEvent?: RedditConversionEvent;
+}
+
+/** The Reddit lists a brief seeds (#5980): the variants and the four targeting lists. */
+export interface RedditBriefSeed {
+  variants: RedditAdVariant[];
+  subreddits: string[];
+  interests: string[];
+  keywords: string[];
+  geoTargets: string[];
+}
+
+/** The Reddit values a brief switch resets (#5980): the typed fields at their defaults, and the brief's lists empty. */
+export interface RedditBriefReset extends RedditBriefSeed {
+  postUrl: string;
+  imageUrl: string;
+  callToAction: '';
+  objective: RedditObjective;
+  videoGoal: '';
+  conversionEvent: RedditConversionEvent;
+  budgetUsd: number;
+}
+
+/** What a restored draft does to the Meta image: values to set, and at most one upload step for the component to run. */
+export interface MetaImageDraftRestore {
+  imageUrl?: string;
+  asset?: { id: string; name: string; briefId: string };
+  /** Show a failed upload, as the draft recorded it. */
+  failedUpload?: { message: string; briefId: string };
+  /** Resume an upload the draft recorded as still running. */
+  pendingUpload?: { name: string; briefId: string };
+}
+
+/** The two custom-audience lists of {@link MetaAudienceTargeting}. */
+export type MetaCustomAudienceListKey = 'customAudiences' | 'excludedCustomAudiences';
+
+/** One custom-audience list as the Implement tab renders it. */
+export interface MetaCustomAudienceListView {
+  key: MetaCustomAudienceListKey;
+  label: string;
+}
+
+/** One custom audience as a picker row or a chip: its id and the label it is shown with. */
+export interface MetaCustomAudienceChipView {
+  id: string;
+  label: string;
+}
+
+/** One custom-audience list with its current picks, as the Meta targeting component renders it. */
+export interface MetaCustomAudienceListState extends MetaCustomAudienceListView {
+  /** The box's label, with the count against the cap. */
+  heading: string;
+  chips: MetaCustomAudienceChipView[];
+}
+
+/** Why part of `metaConfig` cannot be sent: the field it names (`metaConfig.targeting.ageMin`, `metaConfig.callToAction`, ...) and a sentence. */
+export interface MetaConfigRefusal {
+  field: string;
+  message: string;
+}
+
+/** One custom audience on the Meta ad account a create uses, camel-cased from campaign-service's `meta-custom-audience`. */
+export interface MetaCustomAudienceOption {
+  id: string;
+  name: string;
+  /** Meta's kind, verbatim (CUSTOM, WEBSITE, LOOKALIKE, ...). */
+  subtype: string;
+  description: string | null;
+  approximateCountLowerBound: number | null;
+  approximateCountUpperBound: number | null;
+}
+
+/** The custom-audience read: the ad account, its audiences sorted by name, and whether more matched than were returned. */
+export interface MetaCustomAudiencesResult {
+  accountId: string;
+  audiences: MetaCustomAudienceOption[];
+  truncated: boolean;
+}
+
+/** One Instant Form of the Page a Meta create uses (#5940). Only an ACTIVE form passes a create. */
+export interface MetaLeadFormOption {
+  id: string;
+  name: string;
+  /** Meta's status, verbatim (ACTIVE, ARCHIVED, DELETED, DRAFT, ...). */
+  status: string;
+}
+
+/** The lead form read: the Facebook Page the forms were read from, and its forms sorted by name. */
+export interface MetaLeadFormsResult {
+  pageId: string;
+  forms: MetaLeadFormOption[];
+}
+
+/** One row of the Implement tab's lead form picker (#5940): only an ACTIVE form with a valid id can be picked. */
+export interface MetaLeadFormChoice {
+  value: string;
+  label: string;
+  disabled: boolean;
+}
+
+/** Where the lead form picker stands; `unavailable` carries the sentence the typed form id box is offered with. */
+export interface MetaLeadFormPickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  choices: MetaLeadFormChoice[];
+  reason: string | null;
+}
+
+/**
+ * How the Implement tab's foundation changed (#6107): `resolved` when it first becomes known (from `''`), which
+ * restores what a draft held for it; `switched` when it changes from one foundation to another, which resets the
+ * foundation-scoped Meta choices; `same` otherwise.
+ */
+export type MetaFoundationChange = 'resolved' | 'switched' | 'same';
+
+/** What a saved Implement-tab draft restores for the Meta lead form (#5940); `leadFormId` `null` keeps the current one. */
+export interface MetaLeadFormRestore {
+  objective: MetaObjective;
+  leadFormId: string | null;
+}
+/** What the lead form picker shows once the forms are read (#5940). */
+export interface MetaLeadFormPickerView {
+  /** The Page has no forms: show the empty text. */
+  empty: boolean;
+  /** Show the select: there are forms, or a held id the list does not show. */
+  select: boolean;
+  /** The held id is not in the list, so it gets its own option. */
+  heldIdUnlisted: boolean;
+}
+/** What the Implement tab's lead form check reads: the Meta draft as the screen holds it (#5940). */
+export interface MetaLeadFormDraft {
+  /** Whether this caller may send a lead form: `CampaignListResult.metaLeadFormsEnabled` is an explicit yes. */
+  leadFormsEnabled: boolean;
+  objective: MetaObjective;
+  /** The picked or typed form id; blank is none. */
+  leadFormId: string;
+  manualBidding: boolean;
+  /** The chosen call to action; absent or blank is "Not set". */
+  callToAction?: string;
+}
+
+/** Where the Meta custom-audience picker stands; `unavailable` carries the sentence the typed boxes are offered with. */
+export interface MetaCustomAudiencePickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  audiences: MetaCustomAudienceOption[];
+  truncated: boolean;
+  reason: string | null;
 }
 
 export interface MetaCampaignCreateResult {
@@ -2755,6 +4081,8 @@ export interface MetaMonitorResponse {
    * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
    */
   currency?: string;
+  /** Campaign-service path only: see `MonitorSystemAccountRead`. */
+  systemAccountRead?: MonitorSystemAccountRead;
 }
 
 export interface CampaignBriefRefineRequest {
@@ -2956,7 +4284,8 @@ export interface GoogleCreativeFieldSpec {
    * list as a select, the empty value sends nothing, and a value outside the list is refused before
    * the create. Every Google call to action is one: the Demand Gen video ad's takes a `CallToActionType`
    * from the short list campaign-service has probed (`demandGenVideoCallToActions`), and the responsive
-   * display ad's and Demand Gen image ad's take the text Google documents for them
+   * display ad's and Demand Gen image ad's take the text a 13 Nov 2026 validateOnly probe found Google
+   * accepts on each
    * (`GOOGLE_DISPLAY_CALLS_TO_ACTION`, `GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION`).
    */
   options?: readonly GoogleCreativeFieldOption[];
@@ -4689,11 +6018,27 @@ export interface CampaignMonitorResponse {
   actionItems: CampaignActionItem[];
   message?: string;
   /**
-   * Campaign-service path only: true when the amounts are the project's own connected account's,
-   * unconverted, in a currency nobody named — campaign-service sets no `currency` for Google. The
-   * legacy read is the LF's own USD account and leaves it unset.
+   * Campaign-service path only: true when the amounts are those of the account that was read (the
+   * project's own connection's, or the one its recorded campaigns were created under; see
+   * `googleAccountOrigin`), unconverted, in a currency nobody named — campaign-service sets no
+   * `currency` for Google. The legacy read is the LF's own USD account and leaves it unset.
    */
   amountsInAccountCurrency?: boolean;
+  /**
+   * Campaign-service path only: the Google Ads customer that was read. ABSENT on the legacy read, and
+   * on a campaign-service read that had no account to read (no campaigns recorded for the project).
+   */
+  accountId?: string;
+  /**
+   * Campaign-service path only: where the Google account that was read came from. `connection` is
+   * the project's own Google Ads connection; `recorded_campaigns` means the project has no connection
+   * with an account bound of its own and campaign-service read the customer its campaigns were
+   * created under, through the LF system account when needed (#5622, campaign-service #592).
+   *
+   * Unrelated to the `MonitorAccountSource` request marker (`accountSource`), which says where a
+   * client's account picker got its account; that marker is never set from this field.
+   */
+  googleAccountOrigin?: 'connection' | 'recorded_campaigns';
 }
 
 // ---------------------------------------------------------------------------
@@ -5214,6 +6559,29 @@ export interface CampaignServiceGoogleAdsConversionActions {
   conversion_action_count: number;
 }
 
+/** One account `linkedInConfig.adAccountId` may name (`LinkedinAdsSelectableAccount`, linuxfoundation/lfx-v2-campaign-service#581). */
+export interface CampaignServiceLinkedInAdsSelectableAccount {
+  account_id: string;
+  org_id: string;
+  label: string;
+  default: boolean;
+}
+
+/**
+ * campaign-service `GET /projects/{project_id}/linkedin-ads/create-account` (`campaign_manager`;
+ * linuxfoundation/lfx-v2-campaign-service#581): the account and organization page a LinkedIn create for the
+ * project uses when `linkedInConfig.adAccountId` is omitted, and the accounts it may name, the default first.
+ */
+export interface CampaignServiceLinkedInAdsCreateAccount {
+  account_id: string;
+  org_id: string;
+  label: string;
+  source: 'project' | 'system';
+  status: string;
+  account_selection_enabled: boolean;
+  selectable_accounts: CampaignServiceLinkedInAdsSelectableAccount[];
+}
+
 /** One element of campaign-service's user list read (`google-ads-user-list`, linuxfoundation/lfx-v2-campaign-service#508). */
 export interface CampaignServiceGoogleAdsUserList {
   resource_name: string;
@@ -5249,6 +6617,38 @@ export interface CampaignServiceGoogleAdsAudiences {
   audiences: CampaignServiceGoogleAdsAudience[];
   audience_count: number;
   truncated: boolean;
+}
+
+/** One element of campaign-service's custom-audience read (`meta-custom-audience`, linuxfoundation/lfx-v2-campaign-service#550). */
+export interface CampaignServiceMetaCustomAudience {
+  id: string;
+  name: string;
+  subtype: string;
+  description?: string;
+  approximate_count_lower_bound?: number;
+  approximate_count_upper_bound?: number;
+}
+
+/** campaign-service `GET /projects/{project_id}/meta-ads/custom-audiences` (`global_marketing_ops` on the project): at most 500, `truncated` when more matched. */
+export interface CampaignServiceMetaCustomAudiences {
+  account_id: string;
+  audiences: CampaignServiceMetaCustomAudience[];
+  audience_count: number;
+  truncated: boolean;
+}
+
+/** One element of campaign-service's `meta-lead-forms` read. */
+export interface CampaignServiceMetaLeadForm {
+  id: string;
+  name: string;
+  status: string;
+}
+
+/** campaign-service `GET /projects/{project_id}/meta-ads/lead-forms` (`global_marketing_ops` on the project): every form of the Page, at most 1000. */
+export interface CampaignServiceMetaLeadForms {
+  page_id: string;
+  forms: CampaignServiceMetaLeadForm[];
+  form_count: number;
 }
 
 /** campaign-service `GET /projects/{project_id}/google-ads/user-lists` (`global_marketing_ops` on the project; linuxfoundation/lfx-v2-campaign-service#508). */
@@ -5300,9 +6700,13 @@ export type MonitorConnectionPlatform = 'linkedin' | 'meta' | 'reddit' | 'micros
  * - `unavailable`: the connection could not be read, so neither of the above is known;
  * - `forbidden`: campaign-service refused the read (403). It authorizes every connection and monitor
  *   read with the project's `campaign_manager` relation, which a ROOT writer this app admits need not
- *   hold (#4837) — a standing refusal, so never reported as the retryable `unavailable`.
+ *   hold (#4837) — a standing refusal, so never reported as the retryable `unavailable`;
+ * - `system_account`: the project has no connection with an account bound of its own (`no_connection`
+ *   or `no_account` above), and campaign-service reads this platform's monitor through the LF system
+ *   account instead, scoped to the campaigns it recorded for the project (#5889). The tab reads the
+ *   monitor WITHOUT an account and the BFF picks it, so `accountId` and `label` are null.
  */
-export type MonitorConnectionState = 'connected' | 'no_connection' | 'no_account' | 'unavailable' | 'forbidden';
+export type MonitorConnectionState = 'connected' | 'no_connection' | 'no_account' | 'unavailable' | 'forbidden' | 'system_account';
 
 /** One platform's connection, as the Monitor tab's account picker consumes it. */
 export interface MonitorConnectionAccount {
@@ -5311,6 +6715,25 @@ export interface MonitorConnectionAccount {
   accountId: string | null;
   /** The connection's own label, else the account id. Set only when `state` is `connected`. */
   label: string | null;
+  /**
+   * Set only when `state` is `system_account`: the project's own state behind the fallback, so a
+   * refused system-account read shows the notice that state calls for ("connect" or "choose the
+   * ad account").
+   */
+  fallbackFrom?: 'no_connection' | 'no_account';
+}
+
+/**
+ * A LinkedIn, Reddit or Meta monitor read through the LF system account (#5889): the project has no
+ * connection with an account bound of its own, so campaign-service read the LF account its campaigns
+ * were created in, scoped to the campaigns it recorded for the project. ABSENT on a read through the
+ * project's own connection, and on the legacy path.
+ */
+export interface MonitorSystemAccountRead {
+  /** The ad account campaign-service read; NULL when it read none (no campaigns recorded for the project). */
+  accountId: string | null;
+  /** The panel's empty state when no campaign came back: no campaigns are recorded for the project yet. */
+  emptyMessage: string;
 }
 
 /**
@@ -5344,7 +6767,7 @@ export type MonitorDateRangeOption = (typeof MONITOR_DATE_RANGE_OPTIONS)[number]
  * switched off upstream, or `restricted` — the read was refused because its ad account is shared by
  * every foundation (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`).
  */
-export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected'> | 'metrics_disabled' | 'restricted';
+export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected' | 'system_account'> | 'metrics_disabled' | 'restricted';
 
 /** The empty state a Monitor panel renders in place of its data, with the action that resolves it. */
 export interface MonitorPanelNotice {
@@ -5834,6 +7257,8 @@ export interface LinkedInMonitorResponse {
    * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
    */
   currency?: string;
+  /** Campaign-service path only: see `MonitorSystemAccountRead`. */
+  systemAccountRead?: MonitorSystemAccountRead;
 }
 
 // ---------------------------------------------------------------------------
@@ -5909,6 +7334,8 @@ export interface RedditMonitorResponse {
    * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
    */
   currency?: string;
+  /** Campaign-service path only: see `MonitorSystemAccountRead`. */
+  systemAccountRead?: MonitorSystemAccountRead;
 }
 
 // ---------------------------------------------------------------------------
@@ -6754,6 +8181,12 @@ export interface CampaignListResult {
    */
   redditConversionPixelEnabled: boolean;
   /**
+   * Whether a Reddit `conversions` create may carry `redditConfig.conversionEvent` (#6108 row 2). Needs the
+   * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT`, which follows
+   * campaign-service's own `REDDIT_CONVERSION_EVENT_ENABLED`.
+   */
+  redditConversionEventEnabled: boolean;
+  /**
    * Whether the Google creative section may offer a stored-image LIBRARY — uploading images to the
    * brief and naming them by asset id in the Google creative fields.
    *
@@ -6814,6 +8247,64 @@ export interface CampaignListResult {
    */
   linkedInTargetingEditEnabled: boolean;
   /**
+   * Whether the LinkedIn section reads the create's ad account from campaign-service and, for a
+   * caller holding `global_marketing_ops`, offers choosing another (#5809), sent as
+   * `linkedInConfig.adAccountId`. `cutoverOwnsCreate()` AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION`. Whether this caller may choose is answered
+   * by `GET /api/campaigns/linkedin/create-account`, not here. Modelled on the client like the
+   * capabilities above.
+   */
+  linkedInAccountSelectionEnabled: boolean;
+  /**
+   * Whether the LinkedIn section may offer a daily cap beside a lifetime budget, sent as
+   * `linkedInConfig.dailyCapUsd` (#5774). `cutoverOwnsCreate()` and nothing else, like
+   * `linkedInTargetingEditEnabled`: only campaign-service sends the cap, and the legacy creator would
+   * drop it and spend uncapped.
+   */
+  linkedInDailyCapEnabled: boolean;
+  /**
+   * Whether a LinkedIn variant may carry its ad `name` and `description` (#5764 row 17). `cutoverOwnsCreate()` and nothing
+   * else, like `linkedInDailyCapEnabled`: campaign-service takes both unflagged, and the legacy creator ignores them.
+   */
+  linkedInVariantCopyEnabled: boolean;
+  /**
+   * Whether a LinkedIn variant may carry a `callToAction` (#5764 row 16). `cutoverOwnsCreate()` AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CALL_TO_ACTION`, which follows campaign-service's
+   * `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED`.
+   */
+  linkedInCallToActionEnabled: boolean;
+  /**
+   * Whether a LinkedIn create may be a Text Ads campaign (`format: 'text'` with `textAds`, #5764 row 19). Needs the
+   * campaign-service create path with bidding (`canCreateWithBidding`, since a text create carries a manual bid) AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS`, which follows campaign-service's own `LINKEDIN_ADS_TEXT_ADS_ENABLED`.
+   */
+  linkedInTextAdsEnabled: boolean;
+  /**
+   * Whether a LinkedIn variant may carry a `videoAssetId`, a video ad (#5764 row 18). Needs the LinkedIn creative asset
+   * path (`canUseLinkedInCreativeAssets`) AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO`, which follows
+   * campaign-service's own `LINKEDIN_ADS_VIDEO_ENABLED`.
+   */
+  linkedInVideoAdsEnabled: boolean;
+  /**
+   * Whether a LinkedIn create's automatic `bidding` may carry a `targetAmount`, its target cost
+   * (linuxfoundation/lfx-v2-campaign-service#674). Needs bidding (`canCreateWithBidding`), since the target travels inside
+   * `bidding`, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGET_COST`, which follows campaign-service's own
+   * `LINKEDIN_ADS_TARGET_COST_ENABLED`.
+   */
+  linkedInTargetCostEnabled: boolean;
+  /**
+   * Whether a LinkedIn create may carry its own `targeting` (#5764 rows 8–11). Needs the campaign-service create path
+   * AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING`, which follows campaign-service's own
+   * `LINKEDIN_ADS_TARGETING_ENABLED`.
+   */
+  linkedInTargetingEnabled: boolean;
+  /**
+   * Whether a LinkedIn create may carry `objective` and `conversions` (#5764 rows 2 and 4). Needs the campaign-service
+   * create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS`, which follows campaign-service's own
+   * `LINKEDIN_ADS_CONVERSIONS_ENABLED`.
+   */
+  linkedInConversionsEnabled: boolean;
+  /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.
    *
@@ -6866,6 +8357,57 @@ export interface CampaignListResult {
    * inputs and sends none of the three keys.
    */
   metaInstagramDsaEnabled: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.targeting` (#5905): age, gender and Advantage+
+   * audience for every campaign manager. `cutoverOwnsCreate()` AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING`. Optional, so a BFF that predates it reads
+   * as unanswered and the tab hides the section.
+   */
+  metaAudienceTargetingEnabled?: boolean;
+  /**
+   * Whether THIS caller may pick Meta custom audiences, through `GET /api/campaigns/meta/custom-audiences`,
+   * and send `customAudiences` / `excludedCustomAudiences`: {@link metaAudienceTargetingEnabled} AND
+   * `global_marketing_ops` on the listed project, the relation campaign-service checks (the Meta ad account
+   * is shared by every foundation). `null` when that check cannot be made. Optional, as above.
+   */
+  metaCustomAudiencesEnabled?: boolean | null;
+  /**
+   * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`
+   * (#5934), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION`,
+   * `..._META_CONVERSION_EVENT`, `..._META_OPTIMIZATION_GOAL`. Optional, so a BFF that predates them reads as unanswered.
+   */
+  metaCallToActionEnabled?: boolean;
+  metaConversionEventEnabled?: boolean;
+  metaOptimizationGoalEnabled?: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.targeting.interests`, `behaviors` with `workPositions`, and
+   * `locales` (#5904 row 4), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING`,
+   * `..._META_BEHAVIOR_TARGETING`, `..._META_LOCALE_TARGETING`. Deployment-wide (Meta taxonomy, no account
+   * resource). Optional, so a BFF that predates them reads as unanswered.
+   */
+  metaInterestTargetingEnabled?: boolean;
+  metaBehaviorTargetingEnabled?: boolean;
+  metaLocaleTargetingEnabled?: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.targeting.devicePlatforms` and `userOs` (#5904 row 6), one flag each:
+   * `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING` / `..._META_OS_TARGETING`.
+   */
+  metaDeviceTargetingEnabled?: boolean;
+  metaOsTargetingEnabled?: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.adSchedule` and `frequencyCap` (#5904 row 5), one flag each:
+   * `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE` / `..._META_FREQUENCY_CAP`. Deployment-wide.
+   */
+  metaAdScheduleEnabled?: boolean;
+  metaFrequencyCapEnabled?: boolean;
+  /**
+   * Whether THIS caller may offer the `leads` objective with an Instant Form, through
+   * `GET /api/campaigns/meta/lead-forms`, and send `metaConfig.leadFormId` (#5940): `cutoverOwnsCreate()` AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS` AND `global_marketing_ops` on the listed project, the relation
+   * campaign-service checks (a project without its own connection uses the shared LF Page). `null` when that
+   * check cannot be made. Optional, so a BFF that predates it reads as unanswered.
+   */
+  metaLeadFormsEnabled?: boolean | null;
   /**
    * Whether THIS caller may send Google audience segments (`audienceSegments` or
    * `campaignAudienceSegments`) on a create.
@@ -7085,6 +8627,17 @@ export interface CampaignBiddingConfig {
   bidAmount?: number;
 }
 
+/** `linkedInConfig.bidding`: {@link CampaignBiddingConfig} plus LinkedIn's own automatic-bidding target. */
+export interface LinkedInBiddingConfig extends CampaignBiddingConfig {
+  /**
+   * Automatic bidding's target cost, in USD like the budget (linuxfoundation/lfx-v2-campaign-service#674), sent to
+   * LinkedIn as the campaign's `unitCost` beside `MAX_CLICK` or `MAX_CONVERSION`. Omitted means no target. Refused with
+   * `strategy: "manual"`, and unless above zero, at most 1,000,000 and a whole number of cents. Only while
+   * `linkedInTargetCostEnabled`. See `linkedInTargetCostRefusal`.
+   */
+  targetAmount?: number;
+}
+
 /** One platform's Bidding control as edited. `bidAmount` is `null` until a number is entered. */
 export interface CampaignBiddingDraft {
   strategy: CampaignBiddingStrategy;
@@ -7178,6 +8731,43 @@ export interface CampaignGoogleAudienceSegmentsBlock {
 }
 
 /**
+ * Why Create is blocked for Meta audience targeting (#5905) the draft holds but the request cannot carry,
+ * on {@link CampaignGoogleAudienceSegmentsBlock}'s kinds: `unsupported` when this deployment answered no
+ * (`metaAudienceTargetingEnabled === false`), `restricted` when the caller answered no for custom audiences
+ * (`metaCustomAudiencesEnabled === false`), and the read's own states while either is unanswered.
+ */
+export interface CampaignMetaAudienceTargetingBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/** The Meta audience-targeting state `metaAudienceTargetingBlock` (`campaign-meta-audience-targeting.utils.ts`) reads, as plain values. */
+export interface MetaAudienceTargetingBlockInput {
+  /** The targeting the draft holds. */
+  targeting: MetaAudienceTargeting | null;
+  targetingEnabled: boolean | null;
+  customAudiencesEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
+/** The Meta detailed-targeting state `metaDetailedTargetingBlock` (`campaign-meta-detailed-targeting.utils.ts`) reads, as plain values. */
+export interface MetaDetailedTargetingBlockInput {
+  picks: MetaDetailedTargetingPicks;
+  /** `CampaignListResult.metaInterestTargetingEnabled`: `null` while unanswered. */
+  interestEnabled: boolean | null;
+  /** `CampaignListResult.metaBehaviorTargetingEnabled`, for behaviors and job titles: `null` while unanswered. */
+  behaviorEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
+/** The per-option capability answers for the Meta ad choices: `true` yes, `false` no, `null` or absent unanswered. */
+export type MetaAdOptionsEnabled = Partial<Record<MetaAdOptionKey, boolean | null>>;
+
+/**
  * Why Create is blocked for Demand Gen audiences (#5244) the draft still holds but the request cannot
  * carry. The kinds mean what they do on {@link CampaignGoogleAudienceSegmentsBlock}: `restricted` is an
  * explicit no from `CampaignListResult.googleDemandGenAudienceEnabled`, and `unsupported` the
@@ -7230,6 +8820,38 @@ export interface CampaignRedditImageAssetBlock {
   message: string;
 }
 
+/** The image a Reddit create carries: an uploaded asset, a pasted URL, or none. Never both. */
+export type RedditImageField = { imageAssetId: string } | { imageUrl: string } | Record<string, never>;
+
+/** The Reddit image state `redditImageAssetBlock` (`campaign-reddit-image.utils.ts`) reads, as plain values. */
+export interface RedditImageBlockInput {
+  /** Whether the Reddit section is shown (Reddit is a selected platform). */
+  showRedditSection: boolean;
+  /** The existing post's URL; while set, the asset is withheld by design and nothing blocks. */
+  postUrl: string;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+  assetId: string;
+  assetBriefId: string;
+  uploadStatus: CreativeAssetUploadStatus;
+  uploadFailedBriefId: string;
+  uploadError: string;
+  creativeEnabled: boolean | null;
+  assetUploadEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+}
+
+/** The Reddit state `redditNoAdWarning` (`campaign-reddit-image.utils.ts`) reads, as plain values. */
+export interface RedditNoAdWarningInput {
+  /** Whether the Reddit section is shown (Reddit is a selected platform). */
+  showRedditSection: boolean;
+  postUrl: string;
+  /** The image the request carries (`redditImageField`). */
+  image: RedditImageField;
+  /** Whether the authored-post controls (the image URL) are offered: an explicit yes. */
+  creativeAvailable: boolean;
+}
+
 /**
  * Why Create is blocked for an uploaded Meta image the draft still holds but the request cannot
  * carry. The kinds mean what they do on `CampaignRedditImageAssetBlock`.
@@ -7237,6 +8859,27 @@ export interface CampaignRedditImageAssetBlock {
 export interface CampaignMetaImageAssetBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
   message: string;
+}
+
+/** The image a Meta create puts on every variant: an uploaded asset, a pasted URL, or none. Never both. */
+export type MetaImageField = { imageAssetId: string } | { imageUrl: string } | Record<string, never>;
+
+/** The Meta image state `metaImageAssetBlock` (`campaign-meta-image.utils.ts`) reads, as plain values. */
+export interface MetaImageBlockInput {
+  /** Whether the Meta section is shown (Meta is a selected platform). */
+  showMetaSection: boolean;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+  assetId: string;
+  assetBriefId: string;
+  uploadStatus: CreativeAssetUploadStatus;
+  uploadFailedBriefId: string;
+  uploadError: string;
+  assetWithheld: boolean;
+  urlWithheld: boolean;
+  creativeEnabled: boolean | null;
+  assetUploadEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
 }
 
 /**
@@ -7269,6 +8912,14 @@ export interface LinkedInVariantView {
   headlineLength: number;
   introTextError: string;
   headlineError: string;
+  /** The ad name, description and call to action as edited (#5764 rows 16–17), `''` for none. */
+  name: string;
+  description: string;
+  callToAction: string;
+  descriptionLength: number;
+  /** Why the name or description cannot be sent (too long, or a name another variant has), or `''`. */
+  nameError: string;
+  descriptionError: string;
   /** "Uploading image…", "Uploaded: <name>", or `''`. */
   imageStatusMessage: string;
   imageUploading: boolean;
@@ -7281,6 +8932,40 @@ export interface LinkedInVariantView {
   imagePickerNote: string;
   /** Why Create is blocked for this variant's image, or `null`. */
   imageBlock: CampaignLinkedInImageAssetBlock | null;
+}
+
+/**
+ * The one LinkedIn image upload slot (#5547): the variant it belongs to (`''` for none), where it stands, and for a
+ * failed upload the brief it failed for and why. Read by the `campaign-linkedin-image.utils` rules (#5980).
+ */
+export interface LinkedInImageSlot {
+  variantKey: string;
+  status: CreativeAssetUploadStatus;
+  failedBriefId: string;
+  error: string;
+}
+
+/** What `linkedInVariantViews` reads (#5980): the variants, the upload slot, and the brief and capability state. */
+export interface LinkedInVariantViewsInput {
+  variants: readonly LinkedInVariantDraft[];
+  slot: LinkedInImageSlot;
+  /** The open brief's id, `''` while it is unsaved. */
+  briefId: string;
+  briefSaving: boolean;
+  /** Whether the pickers are held for another reason: a stored video being deleted (#5764 row 18). */
+  pickerHeld?: boolean;
+  /** Whether the LinkedIn section is shown; no image block applies while it is not. */
+  showSection: boolean;
+  /** `linkedInAssetUploadEnabled` as the page holds it: `null` while unknown. */
+  uploadEnabled: boolean | null;
+  capabilityRead: CampaignCapabilityReadState;
+  /** The stored brief's event name, which campaign-service builds an unnamed ad's default name from (#5764 row 17). */
+  eventName?: string;
+  /**
+   * `video` while video ads are chosen (#5764 row 18): each view's upload fields then describe the variant's video, and
+   * `uploadEnabled` is `linkedInVideoAdsEnabled`. Absent, they describe its image.
+   */
+  media?: 'image' | 'video';
 }
 
 /** `CampaignLinkedInImageAssetBlock`'s X sibling, for the authored tweet's image, with the same kinds. */

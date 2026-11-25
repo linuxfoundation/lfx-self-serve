@@ -22,7 +22,8 @@ export function member360TerminalResult(payloads: string[], contacts: (string | 
   const { rootDone, sessionEnded, failed, doneText: finalText, rootTaskEnded } = mktgOneOffTerminalFacts(payloads);
   // Root completion outranks an earlier error. Raw runtime error strings may
   // contain internal details; do not mistake them for the agent's own answer.
-  // A crashed root is terminal too: Guild's own root task status is ERROR/FAILED
+  // A crashed root is terminal too: Guild itself ended the root task (any status in
+  // MKTG_ONE_OFF_TERMINAL_TASK_STATUSES: done and failed ones alike, not only ERROR/FAILED)
   // and the last error has settled (no clock on the run, only on that error).
   if (rootDone || sessionEnded || (failed && rootTaskEnded && mktgRunFailureFromPayloads(payloads, now) !== null)) {
     const message = createMember360Redactor(contacts)(finalText).trim();

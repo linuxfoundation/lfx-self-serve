@@ -10,14 +10,14 @@ import {
   EVENT_REQUEST_SOURCE_TABLES,
   EVENT_SOURCE_BACKFILL,
   MY_EVENT_STATUS,
-  TRAVEL_FUND_LATEST_DEADLINE_AGG,
-  TRAVEL_FUND_OFFERED_AGG,
-  TRAVEL_FUND_OPEN_ENDED_AGG,
+  TRAVEL_FUND_EVENT_STATUSES,
+  TRAVEL_FUND_EVENTS_TABLE,
   VALID_EVENT_SORT_FIELDS,
   VALID_VISA_REQUEST_SORT_FIELDS,
   WHOLE_NUMBER_PATTERN,
 } from '@lfx-one/shared/constants';
 import {
+  EventRegistrantIdentity,
   EventRequestSourceTable,
   EventRow,
   EventSortOrder,
@@ -45,10 +45,11 @@ import {
   VisaRequestRow,
   VisaRequestsResponse,
 } from '@lfx-one/shared/interfaces';
-import { formatDateToUTC, isBackfillEventSource, normalizeToUrl } from '@lfx-one/shared/utils';
+import { dateOnlyToUtcMidnightIso, formatDateToUTC, isBackfillEventSource, isLocalDateOnlyString, normalizeToUrl } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
+import { registrantFilterSql } from '../helpers/event-registrant.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { UserService } from './user.service';
@@ -62,7 +63,7 @@ export class EventsService {
     this.userService = new UserService();
   }
 
-  public async getMyEvents(req: Request, userEmail: string, options: GetMyEventsOptions): Promise<MyEventsResponse> {
+  public async getMyEvents(req: Request, registrant: EventRegistrantIdentity, options: GetMyEventsOptions): Promise<MyEventsResponse> {
     const {
       isPast,
       eventId,
@@ -85,9 +86,11 @@ export class EventsService {
     const normalizedSortOrder: EventSortOrder = sortOrder === 'DESC' ? 'DESC' : 'ASC';
     const normalizedPageSize = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : 10;
     const normalizedOffset = Number.isInteger(offset) && offset >= 0 ? offset : 0;
+    const registrantFilter = registrantFilterSql(registrant);
 
     logger.debug(req, 'get_my_events', 'Building events query', {
       is_past: isPast,
+      has_user_id: !!registrant.userId,
       has_event_id: !!eventId,
       has_project_name: !!projectName,
       has_search_query: !!searchQuery,
@@ -164,7 +167,7 @@ export class EventsService {
             EVENT_URL,
             EVENT_REGISTRATION_URL
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-          WHERE LOWER(USER_EMAIL) = ?
+          WHERE ${registrantFilter.sql}
             AND NOT (${this.isPastEventSql()})
             AND REGISTRATION_STATUS = 'Accepted'
             ${eventIdFilter}
@@ -184,11 +187,11 @@ export class EventsService {
             IS_VISA_REQUEST_ACCEPTED,
             TRAVEL_FUND_END_TS
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-          WHERE LOWER(USER_EMAIL) = ?
+          WHERE ${registrantFilter.sql}
             AND NOT (${this.isPastEventSql()})
             AND REGISTRATION_STATUS = 'Accepted'
-          -- Registrations are keyed by case-sensitive email upstream, so LOWER() can match several per event; keep one, preferring Accepted.
-          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1)) = 1
+          -- Matching on ID or case-folded email can return several rows per event; keep one, preferring Accepted then attended.
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1), USER_ATTENDED DESC NULLS LAST) = 1
         ),
         combined AS (
           -- The subquery is load-bearing: QUALIFY written directly after UNION ALL binds to
@@ -248,8 +251,8 @@ export class EventsService {
       `;
 
       const affiliatedUpcomingBinds: string[] = [...(eventId ? [eventId] : []), ...slugs];
-      const registeredEventsBinds: string[] = [userEmail, ...(eventId ? [eventId] : [])];
-      const userRegBinds: string[] = [userEmail];
+      const registeredEventsBinds: string[] = [...registrantFilter.binds, ...(eventId ? [eventId] : [])];
+      const userRegBinds: string[] = [...registrantFilter.binds];
       const whereBinds: string[] = [
         ...(projectName ? [projectName] : []),
         ...(searchQuery ? [`%${searchQuery}%`] : []),
@@ -264,7 +267,7 @@ export class EventsService {
       logger.debug(req, 'get_my_events', 'Upcoming events query binds', {
         affiliated_project_slugs: slugs,
         affiliated_filter_active: hasAffiliatedSlugs,
-        user_email: '***',
+        has_user_id: !!registrant.userId,
         bind_count: binds.length,
       });
     } else {
@@ -306,11 +309,11 @@ export class EventsService {
           TRAVEL_FUND_END_TS,
           COUNT(*) OVER() AS TOTAL_RECORDS
         FROM (
-          -- Registrations are keyed by case-sensitive email upstream, so LOWER() can match several per event; keep one, preferring Accepted.
+          -- Matching on ID or case-folded email can return several rows per event; keep one, preferring Accepted then attended.
           SELECT *
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-          WHERE LOWER(USER_EMAIL) = ?
-          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1)) = 1
+          WHERE ${registrantFilter.sql}
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1), USER_ATTENDED DESC NULLS LAST) = 1
         )
         WHERE TRUE
           ${isPastFilter}
@@ -323,7 +326,7 @@ export class EventsService {
         LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
       `;
 
-      binds = [userEmail];
+      binds = [...registrantFilter.binds];
       if (eventId) binds.push(eventId);
       if (projectName) binds.push(projectName);
       if (searchQuery) binds.push(`%${searchQuery}%`);
@@ -359,7 +362,7 @@ export class EventsService {
 
   /**
    * Upcoming events that currently accept travel fund applications. Event-level and user-independent:
-   * any registration row flagged IS_TRAVEL_FUND_ACCEPTED qualifies the event, and the deadline must still be open.
+   * read from the events table, so an event qualifies before it has any registration.
    */
   public async getTravelFundEvents(req: Request, options: GetTravelFundEventsOptions): Promise<MyEventsResponse> {
     const { eventId, searchQuery, startDateFrom, startDateTo, country, pageSize, offset } = options;
@@ -379,36 +382,8 @@ export class EventsService {
     const startDateToFilter = startDateTo ? 'AND EVENT_START_DATE <= ?' : '';
     const countryFilter = country ? 'AND EVENT_COUNTRY = ?' : '';
 
-    // Window aggregates see every registrant's row for the event; QUALIFY then keeps one row per event.
+    // One row per event already; columns the events table lacks are NULL to keep the MyEventRow shape.
     const sql = `
-      WITH tf_events AS (
-        SELECT
-          EVENT_ID,
-          EVENT_NAME,
-          EVENT_START_DATE,
-          EVENT_END_DATE,
-          EVENT_LOCATION,
-          EVENT_CITY,
-          EVENT_COUNTRY,
-          PROJECT_ID,
-          PROJECT_NAME,
-          PROJECT_SLUG,
-          ACCOUNT_NAME,
-          ACCOUNT_LOGO_URL,
-          EVENT_SOURCE,
-          EVENT_URL,
-          EVENT_REGISTRATION_URL,
-          ${TRAVEL_FUND_OFFERED_AGG} OVER (PARTITION BY EVENT_ID) AS EVENT_OFFERS_TRAVEL_FUND,
-          ${this.travelFundDeadlineSql(' OVER (PARTITION BY EVENT_ID)')} AS EVENT_TRAVEL_FUND_END_TS
-        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-        WHERE NOT (${this.isPastEventSql()})
-          ${eventIdFilter}
-          ${searchQueryFilter}
-          ${startDateFromFilter}
-          ${startDateToFilter}
-          ${countryFilter}
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1
-      )
       SELECT
         EVENT_ID,
         EVENT_NAME,
@@ -419,10 +394,10 @@ export class EventsService {
         EVENT_COUNTRY,
         PROJECT_ID,
         PROJECT_NAME,
-        PROJECT_SLUG,
-        ACCOUNT_NAME,
-        ACCOUNT_LOGO_URL,
-        EVENT_SOURCE,
+        NULL AS PROJECT_SLUG,
+        NULL AS ACCOUNT_NAME,
+        NULL AS ACCOUNT_LOGO_URL,
+        SOURCE AS EVENT_SOURCE,
         EVENT_URL,
         EVENT_REGISTRATION_URL,
         NULL AS USER_ROLE,
@@ -435,10 +410,15 @@ export class EventsService {
         NULL AS USER_ATTENDED,
         FALSE AS IS_REGISTERED,
         FALSE AS IS_PAST_EVENT,
-        EVENT_TRAVEL_FUND_END_TS AS TRAVEL_FUND_END_TS,
+        TRAVEL_FUND_END_TS,
         COUNT(*) OVER() AS TOTAL_RECORDS
-      FROM tf_events
-      WHERE ${this.travelFundOpenSql('EVENT_OFFERS_TRAVEL_FUND', 'EVENT_TRAVEL_FUND_END_TS')}
+      FROM ${TRAVEL_FUND_EVENTS_TABLE}
+      WHERE ${this.travelFundOpenEventSql()}
+        ${eventIdFilter}
+        ${searchQueryFilter}
+        ${startDateFromFilter}
+        ${startDateToFilter}
+        ${countryFilter}
       ORDER BY EVENT_START_DATE ASC, EVENT_ID ASC
       LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
     `;
@@ -570,7 +550,11 @@ export class EventsService {
     return { data, total, pageSize: normalizedPageSize, offset: normalizedOffset };
   }
 
-  public async getEventOrganizations(req: Request, userEmail: string, options: GetEventOrganizationsOptions): Promise<MyEventOrganizationsResponse> {
+  public async getEventOrganizations(
+    req: Request,
+    registrant: EventRegistrantIdentity,
+    options: GetEventOrganizationsOptions
+  ): Promise<MyEventOrganizationsResponse> {
     const { projectName, isPast, affiliatedProjectSlugs, registeredOnly } = options;
 
     logger.debug(req, 'get_event_organizations', 'Building organizations query', {
@@ -581,6 +565,7 @@ export class EventsService {
 
     let sql: string;
     const binds: string[] = [];
+    const registrantFilter = registrantFilterSql(registrant);
 
     if (isPast === true) {
       // Past tab: return only foundations from the authenticated user's registered past events.
@@ -588,12 +573,12 @@ export class EventsService {
       sql = `
         SELECT DISTINCT PROJECT_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-        WHERE LOWER(USER_EMAIL) = ?
+        WHERE ${registrantFilter.sql}
           AND (${this.isPastEventSql()})
           ${projectNameFilter}
         ORDER BY PROJECT_NAME
       `;
-      binds.push(userEmail);
+      binds.push(...registrantFilter.binds);
       if (projectName) binds.push(projectName);
     } else {
       // Registered co-located events remain eligible; only affiliated discovery excludes them.
@@ -608,11 +593,11 @@ export class EventsService {
         SELECT DISTINCT PROJECT_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE NOT (${this.isPastEventSql()})
-          AND ((LOWER(USER_EMAIL) = ? AND REGISTRATION_STATUS = 'Accepted') ${affiliatedFilter})
+          AND ((${registrantFilter.sql} AND REGISTRATION_STATUS = 'Accepted') ${affiliatedFilter})
           ${projectNameFilter}
         ORDER BY PROJECT_NAME
       `;
-      binds.push(userEmail);
+      binds.push(...registrantFilter.binds);
       if (hasAffiliatedSlugs) binds.push(...slugs);
       if (projectName) binds.push(projectName);
     }
@@ -636,14 +621,21 @@ export class EventsService {
     return { data };
   }
 
-  public async getUpcomingCountries(req: Request): Promise<GetUpcomingCountriesResponse> {
-    logger.debug(req, 'get_upcoming_countries', 'Fetching distinct countries for upcoming events');
+  /** Countries for the location filter. For travel funding they come from the same events and rule as the picker list. */
+  public async getUpcomingCountries(req: Request, requestType?: RequestType): Promise<GetUpcomingCountriesResponse> {
+    logger.debug(req, 'get_upcoming_countries', 'Fetching distinct countries for upcoming events', { request_type: requestType });
+
+    const source =
+      requestType === 'travel-fund'
+        ? `${TRAVEL_FUND_EVENTS_TABLE}
+      WHERE ${this.travelFundOpenEventSql()}`
+        : `ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+      WHERE NOT (${this.isPastEventSql()})`;
 
     const sql = `
       SELECT DISTINCT EVENT_COUNTRY
-      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-      WHERE NOT (${this.isPastEventSql()})
-        AND EVENT_COUNTRY IS NOT NULL
+      FROM ${source}
+        AND NULLIF(TRIM(EVENT_COUNTRY), '') IS NOT NULL
       ORDER BY EVENT_COUNTRY
     `;
 
@@ -664,10 +656,10 @@ export class EventsService {
     return { data };
   }
 
-  public async getVisaRequests(req: Request, userEmail: string, options: GetEventRequestsOptions): Promise<VisaRequestsResponse> {
+  public async getVisaRequests(req: Request, registrant: EventRegistrantIdentity, options: GetEventRequestsOptions): Promise<VisaRequestsResponse> {
     return this.executeEventRequestsQuery(
       req,
-      userEmail,
+      registrant,
       options,
       EVENT_REQUEST_SOURCE_TABLES.VISA_LETTERS,
       'VL_REQUEST_STATUS',
@@ -676,11 +668,11 @@ export class EventsService {
     );
   }
 
-  public async getTravelFundRequests(req: Request, userEmail: string, options: GetEventRequestsOptions): Promise<TravelFundRequestsResponse> {
+  public async getTravelFundRequests(req: Request, registrant: EventRegistrantIdentity, options: GetEventRequestsOptions): Promise<TravelFundRequestsResponse> {
     // Travel funding does not require a registration, so requests are read from their own table rather than EVENT_REGISTRATIONS.
     return this.executeEventRequestsQuery(
       req,
-      userEmail,
+      registrant,
       options,
       EVENT_REQUEST_SOURCE_TABLES.TRAVEL_FUNDING,
       'TF_REQUEST_STATUS',
@@ -694,30 +686,29 @@ export class EventsService {
    * Travel funding is event-level (no registration needed); visa letters need the user's accepted registration.
    * Unlike the list queries, a Snowflake failure throws so a submit is never accepted or rejected on missing data.
    */
-  public async isEligibleForEventRequest(req: Request, userEmail: string, eventId: string, requestType: RequestType): Promise<boolean> {
+  public async isEligibleForEventRequest(req: Request, registrant: EventRegistrantIdentity, eventId: string, requestType: RequestType): Promise<boolean> {
     const isTravelFund = requestType === 'travel-fund';
+    const registrantFilter = registrantFilterSql(registrant);
 
     const sql = isTravelFund
       ? `
       SELECT 1 AS ELIGIBLE
-      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+      FROM ${TRAVEL_FUND_EVENTS_TABLE}
       WHERE EVENT_ID = ?
-        AND NOT (${this.isPastEventSql()})
-      GROUP BY EVENT_ID
-      HAVING ${this.travelFundOpenSql(TRAVEL_FUND_OFFERED_AGG, this.travelFundDeadlineSql())}
+        AND ${this.travelFundOpenEventSql()}
       LIMIT 1
     `
       : `
       SELECT 1 AS ELIGIBLE
       FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-      WHERE LOWER(USER_EMAIL) = ?
+      WHERE ${registrantFilter.sql}
         AND EVENT_ID = ?
         AND NOT (${this.isPastEventSql()})
         AND REGISTRATION_STATUS = 'Accepted' AND IS_VISA_REQUEST_ACCEPTED = TRUE
       LIMIT 1
     `;
 
-    const result = await this.snowflakeService.execute<{ ELIGIBLE: number }>(sql, isTravelFund ? [eventId] : [userEmail, eventId]);
+    const result = await this.snowflakeService.execute<{ ELIGIBLE: number }>(sql, isTravelFund ? [eventId] : [...registrantFilter.binds, eventId]);
     const eligible = result.rows.length > 0;
 
     logger.debug(req, 'check_event_request_eligibility', 'Checked event request eligibility', { event_id: eventId, request_type: requestType, eligible });
@@ -761,16 +752,22 @@ export class EventsService {
 
     const targetUrl = `${apiGwAudience.replace(/\/+$/, '')}/user-service/v1/users/${serverUserId}/visaletterrequests`;
 
+    // Converted up front so an impossible date (e.g. 1990-02-31) fails here instead of reaching user-service as null.
+    const birthDate = this.toUpstreamCalendarDate(req, 'birthDate', applicantInfo.birthDate);
+    const passportExpiryDate = this.toUpstreamCalendarDate(req, 'passportExpiryDate', applicantInfo.passportExpiryDate);
+
     const missingFields: string[] = [];
     if (!applicantInfo.attendeeType) missingFields.push('attendeeType');
     if (!applicantInfo.attendeeAccommodationPaidBy) missingFields.push('attendeeAccommodationPaidBy');
-    if (!applicantInfo.birthDate) missingFields.push('birthDate');
+    if (!birthDate) missingFields.push('birthDate');
     if (!applicantInfo.citizenshipCountry) missingFields.push('citizenshipCountry');
     if (!applicantInfo.passportNumber) missingFields.push('passportNumber');
     if (!applicantInfo.organizationID) missingFields.push('organizationID');
     if (!applicantInfo.embassyCity) missingFields.push('embassyCity');
+    // Optional, but a supplied value that doesn't convert is rejected rather than sent as null.
+    if (applicantInfo.passportExpiryDate && !passportExpiryDate) missingFields.push('passportExpiryDate');
     if (missingFields.length > 0) {
-      throw new MicroserviceError(`Missing required visa request fields: ${missingFields.join(', ')}`, 422, 'INVALID_REQUEST_FIELDS', {
+      throw new MicroserviceError(`Missing or invalid visa request fields: ${missingFields.join(', ')}`, 422, 'INVALID_REQUEST_FIELDS', {
         operation: 'submit_visa_request_application',
         errorBody: { missingFields },
       });
@@ -790,7 +787,7 @@ export class EventsService {
       attendeeAccommodationPaidBy: applicantInfo.attendeeAccommodationPaidBy,
       attendeeType: applicantInfo.attendeeType,
       birthCountry: applicantInfo.citizenshipCountry,
-      birthDate: formatDateToUTC(applicantInfo.birthDate),
+      birthDate,
       email: applicantInfo.email,
       eventID: eventID,
       firstName: applicantInfo.firstName,
@@ -804,9 +801,7 @@ export class EventsService {
       City: applicantInfo.embassyCity,
       ...(applicantInfo.company && { jobTitle: applicantInfo.company }),
       ...(applicantInfo.mailingAddress && { addressLine01: applicantInfo.mailingAddress }),
-      ...(applicantInfo.passportExpiryDate && {
-        passportExpiryDate: formatDateToUTC(applicantInfo.passportExpiryDate),
-      }),
+      ...(passportExpiryDate && { passportExpiryDate }),
     };
 
     logger.info(req, 'submit_visa_request_application', 'Calling API Gateway visa endpoint', {
@@ -1048,7 +1043,7 @@ export class EventsService {
 
   private async executeEventRequestsQuery(
     req: Request,
-    userEmail: string,
+    registrant: EventRegistrantIdentity,
     options: GetEventRequestsOptions,
     sourceTable: EventRequestSourceTable,
     statusColumn: string,
@@ -1075,6 +1070,7 @@ export class EventsService {
     const projectNameFilter = projectName ? 'AND PROJECT_NAME = ?' : '';
     const searchQueryFilter = searchQuery ? 'AND EVENT_NAME ILIKE ?' : '';
     const statusFilter = status ? `AND ${statusColumn} = ?` : '';
+    const registrantFilter = registrantFilterSql(registrant);
 
     const sql = `
       SELECT
@@ -1090,11 +1086,11 @@ export class EventsService {
         COALESCE(EVENT_END_DATE, EVENT_START_DATE) < CURRENT_DATE() AS EVENT_ENDED,
         COUNT(*) OVER() AS TOTAL_RECORDS
       FROM (
-        -- Both source tables are keyed by case-sensitive email upstream, so LOWER() can match several rows per event; keep the latest request.
+        -- Matching on ID or case-folded email can return several rows per event; keep the latest request.
         SELECT *
         FROM ${sourceTable}
         WHERE ${statusColumn} IS NOT NULL
-          AND LOWER(USER_EMAIL) = ?
+          AND ${registrantFilter.sql}
         QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY ${applicationDateColumn} DESC NULLS LAST) = 1
       )
       WHERE TRUE
@@ -1107,7 +1103,7 @@ export class EventsService {
       LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
     `;
 
-    const binds: string[] = [userEmail];
+    const binds: string[] = [...registrantFilter.binds];
     if (eventId) binds.push(eventId);
     if (projectName) binds.push(projectName);
     if (searchQuery) binds.push(`%${searchQuery}%`);
@@ -1163,14 +1159,16 @@ export class EventsService {
                  ELSE IS_PAST_EVENT END`;
   }
 
-  /** Latest deadline across flagged rows; NULL (open-ended) when any flagged row has no deadline. `over` makes it a window aggregate. */
-  private travelFundDeadlineSql(over = ''): string {
-    return `IFF(${TRAVEL_FUND_OPEN_ENDED_AGG}${over}, NULL, ${TRAVEL_FUND_LATEST_DEADLINE_AGG}${over})`;
-  }
-
-  /** Event offers travel funding and its deadline (among the flagged rows) is unset or still ahead. */
-  private travelFundOpenSql(offered: string, deadline: string): string {
-    return `${offered} AND (${deadline} IS NULL OR ${deadline} >= CURRENT_TIMESTAMP())`;
+  /**
+   * Event-level rule shared by the picker, its country filter and the submit check; valid only against TRAVEL_FUND_EVENTS_TABLE.
+   * Uses the table's EVENT_IS_PAST as-is: the backfill correction in isPastEventSql() is not needed, backfill events never offer funding.
+   */
+  private travelFundOpenEventSql(): string {
+    const statuses = TRAVEL_FUND_EVENT_STATUSES.map((status) => `'${status}'`).join(', ');
+    return `IS_TRAVEL_FUND_ACCEPTED = TRUE
+        AND EVENT_STATUS IN (${statuses})
+        AND EVENT_IS_PAST = FALSE
+        AND (TRAVEL_FUND_END_TS IS NULL OR TRAVEL_FUND_END_TS >= CURRENT_TIMESTAMP())`;
   }
 
   /** Status filter for the past events query (unqualified column names, no IS NULL support). */
@@ -1235,6 +1233,16 @@ export class EventsService {
       default:
         return { filter: '', binds: [] };
     }
+  }
+
+  // User-service keeps only the UTC day, so send the calendar day as UTC midnight. Tabs still running
+  // the old client send a local-midnight instant; keep accepting it so the submission isn't blocked.
+  private toUpstreamCalendarDate(req: Request, field: string, value: string | null): string | null {
+    // A date-only value is never sent through `new Date`, which rolls Feb 31 over to March 3.
+    if (!value || isLocalDateOnlyString(value)) return dateOnlyToUtcMidnightIso(value);
+
+    logger.warning(req, 'submit_visa_request_application', 'Visa date is not a YYYY-MM-DD calendar date; falling back to instant conversion', { field });
+    return formatDateToUTC(value);
   }
 
   private mapRowToVisaRequest(row: VisaRequestRow): VisaRequest {

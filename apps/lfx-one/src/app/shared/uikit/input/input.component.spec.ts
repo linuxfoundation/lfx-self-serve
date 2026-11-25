@@ -50,12 +50,33 @@ describe('UiInputComponent', () => {
     expect(field().getAttribute('aria-label')).toBeNull();
   });
 
+  it('marks a required field with a red asterisk that screen readers skip', async () => {
+    const mark = (): HTMLElement | null => host.querySelector('[data-testid="ui-input-required"]');
+    expect(mark()).toBeNull();
+
+    await set('required', true);
+
+    expect(mark()?.textContent).toBe(' *');
+    expect(mark()?.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('uses ariaLabel when there is no visible label', async () => {
     await set('label', '');
     await set('ariaLabel', 'Search projects');
 
     expect(host.querySelector('[data-testid="ui-input-label"]')).toBeNull();
     expect(field().getAttribute('aria-label')).toBe('Search projects');
+  });
+
+  it('acts as the combobox of a listbox beside it, keeping focus while the highlight moves', async () => {
+    expect(field().getAttribute('role')).toBeNull();
+
+    await set('combobox', { controls: 'results', expanded: true, activeDescendant: 'option-2' });
+
+    expect(field().getAttribute('role')).toBe('combobox');
+    expect(field().getAttribute('aria-controls')).toBe('results');
+    expect(field().getAttribute('aria-expanded')).toBe('true');
+    expect(field().getAttribute('aria-activedescendant')).toBe('option-2');
   });
 
   it('writes typed text to the value model', async () => {
@@ -127,6 +148,14 @@ describe('UiInputComponent', () => {
     await set('autocomplete', 'email');
 
     expect(field().getAttribute('autocomplete')).toBe('email');
+  });
+
+  it('caps the field at a max length only when one is set', async () => {
+    expect(field().hasAttribute('maxlength')).toBe(false);
+
+    await set('maxlength', 100);
+
+    expect(field().maxLength).toBe(100);
   });
 
   it('zeroes the input padding next to an unstyled affix only', async () => {

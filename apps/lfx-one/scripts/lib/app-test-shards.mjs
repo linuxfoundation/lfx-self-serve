@@ -1,6 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { readdirSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
+
 /** Parse a one-based shard such as 1/4. Reject typos rather than silently running a subset. */
 export function parseShard(value) {
   const match = /^([1-9]\d*)\/([1-9]\d*)$/.exec(value ?? '');
@@ -53,4 +56,14 @@ export function createAppTestShards(files, count, durations = {}) {
   }
   for (const shard of shards) shard.files.sort(comparePaths);
   return shards;
+}
+
+/** Every `*.spec.ts` under `directory`, as a POSIX path relative to `appRoot`. */
+export function discoverSpecs(directory, appRoot) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const full = join(directory, entry.name);
+    if (entry.isDirectory()) return discoverSpecs(full, appRoot);
+    if (entry.isFile() && entry.name.endsWith('.spec.ts')) return [relative(appRoot, full).split(sep).join('/')];
+    return [];
+  });
 }

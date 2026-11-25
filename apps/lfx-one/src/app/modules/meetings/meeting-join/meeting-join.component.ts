@@ -46,6 +46,7 @@ import {
   MeetingRegistrant,
   MeetingRemovalSource,
   MeetingRsvp,
+  MeetingSelfRegistrationRemovalEvent,
   OccurrenceNavItem,
   resolveOccurrenceRecurrence,
   PastMeetingAttachment,
@@ -58,11 +59,12 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION } from '@lfx-one/shared/constants';
+import { MAX_MEETING_DURATION } from '@lfx-one/shared/constants';
 import {
   applyAttachmentScopeOverrides,
   applyMeetingAttachmentChanges,
   canScopeAttachmentToOccurrence,
+  escapeHtml,
   filterAttachmentsForOccurrence,
   getAttachmentScope,
   getMeetingSelfRemovalMessage,
@@ -83,8 +85,6 @@ import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
-import { FeatureFlagService } from '@services/feature-flag.service';
-import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { OverlayStateService } from '@services/overlay-state.service';
@@ -93,7 +93,7 @@ import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
-import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
+import { openProjectIcalSubscribeDialog } from '@app/modules/committees/utils/ical-subscribe.util';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -176,13 +176,6 @@ export class MeetingJoinComponent implements OnInit {
   private readonly clipboard = inject(Clipboard);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly dialogService = inject(DialogService);
-  private readonly featureFlagService = inject(FeatureFlagService);
-  /**
-   * Whether meeting v2 is on for this user — read so the occurrence dialog allows the v2 composer's
-   * 10-hour duration, and defaulted off so a slow flag provider keeps the pre-v2 cap. See
-   * `MEETING_V2_ENABLED_FLAG`.
-   */
-  private readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(this.featureFlagService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly overlayState = inject(OverlayStateService);
   private readonly registrantsOverlayId = 'meeting-join-registrants-drawer';
@@ -258,11 +251,8 @@ export class MeetingJoinComponent implements OnInit {
   protected readonly stickyBarAction: Signal<'resend' | 'subscribe' | null> = this.initStickyBarAction();
   // The phone bar carries Resend Invite, so the page's own copy is hidden below `sm:` (like the inline Join) to avoid two.
   protected readonly stickyBarOffersResend: Signal<boolean> = computed(() => this.showStickyBar() && this.stickyBarAction() === 'resend');
-  // The project's public calendar feed, built the way the meetings dashboard's iCal Subscribe does.
-  protected readonly projectCalendarFeedUrl: Signal<string> = computed(() => {
-    const projectUid = this.project()?.uid || this.meeting()?.project_uid;
-    return projectUid ? `${environment.urls.home}/public/api/projects/${encodeURIComponent(projectUid)}/calendar.ics` : '';
-  });
+  // The project whose public calendar feed Subscribe opens.
+  protected readonly calendarProjectUid: Signal<string> = computed(() => this.project()?.uid || this.meeting()?.project_uid || '');
   // The bar yields to full-screen overlays (the guests drawer covers the viewport) and the materials drawer.
   protected readonly stickyBarSuppressed: Signal<boolean> = computed(() => this.showRegistrants() || this.materialsDrawerVisible());
   // "Join opens 11:50 AM", in the viewer's zone; the date is added when the window opens on a different day. Waits for the zone
@@ -407,6 +397,8 @@ export class MeetingJoinComponent implements OnInit {
   // skeleton on first paint instead of a premature "0 of 0" — cleared once the initial fetch
   // resolves, including the early-return branches that never issue a request (GH-1731).
   protected registrantsLoading: WritableSignal<boolean> = signal(true);
+  // A stale or empty fallback is not a confirmed roster for duplicate-sensitive guest actions.
+  protected readonly registrantsLoadFailed: WritableSignal<boolean> = signal(false);
   // Re-fires the registrants fetch (e.g. after a guest is added from the drawer).
   private registrantsRefresh$ = new BehaviorSubject<void>(undefined);
   // Snapshot of the roster size immediately before a refresh was requested — lets the refetch
@@ -636,19 +628,11 @@ export class MeetingJoinComponent implements OnInit {
 
   /** Opens the same iCal subscribe dialog the meetings dashboard uses, so the calendar stays in sync (webcal) instead of importing a snapshot. */
   public onSubscribeCalendar(): void {
-    const feedUrl = this.projectCalendarFeedUrl();
-    if (!feedUrl) {
+    const projectUid = this.calendarProjectUid();
+    if (!projectUid) {
       return;
     }
-    const name = this.project()?.name || 'Project';
-    this.dialogService.open(IcalSubscribeDialogComponent, {
-      header: `Subscribe — ${name}`,
-      width: '480px',
-      modal: true,
-      closable: true,
-      dismissableMask: true,
-      data: { feedUrl, name },
-    });
+    openProjectIcalSubscribeDialog(this.dialogService, projectUid, this.project()?.name || 'Project');
   }
 
   public handleCopyLink(): void {
@@ -683,7 +667,7 @@ export class MeetingJoinComponent implements OnInit {
       modal: true,
       closable: true,
       dismissableMask: false,
-      data: { meeting, occurrence, maxDuration: this.meetingsV2Enabled() ? MAX_MEETING_DURATION : MAX_CUSTOM_DURATION },
+      data: { meeting, occurrence, maxDuration: MAX_MEETING_DURATION },
     }) as DynamicDialogRef;
 
     dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
@@ -865,10 +849,49 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
+  /** Counts/roster refresh separately through refreshRequested; self-add also restores invitation controls. */
+  public onSelfAdded(meetingId: string): void {
+    if (this.meeting()?.id !== meetingId) return;
+    this.optimisticInvited.set(true);
+    this.meetingService.clearRemovedRegistration(meetingId);
+    this.userService.refreshUserMeetings(false);
+    this.pageData.refresh();
+  }
+
+  public onSelfRemoved(result: MeetingSelfRegistrationRemovalEvent): void {
+    const meetingId = result.meeting_id;
+    if (this.meeting()?.id !== meetingId) return;
+    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+    this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
+    const stillInvited = result.remaining_registrant_ids.length > 0;
+    this.optimisticInvited.set(stillInvited);
+    if (stillInvited) {
+      this.meetingService.rememberRemovedRegistrants(meetingId, result.removed_registrant_ids);
+      const occurrenceId = resolveRsvpOccurrenceId(this.meeting(), { occurrence: this.currentOccurrence() });
+      const current = this.currentUserRsvp();
+      const candidates = [...this.userService.confirmedMeetingRsvps(meetingId), ...(current ? [current] : [])].filter(
+        (rsvp) =>
+          !result.removed_registrant_ids.includes(rsvp.registrant_id) &&
+          this.userService.isMeetingRsvpCurrent(rsvp, this.meeting()) &&
+          (!this.meeting().recurrence || !!occurrenceId || rsvp.scope === 'all')
+      );
+      this.rsvpUpdateTrigger$.next(selectApplicableRsvp(occurrenceId, candidates));
+    } else {
+      this.rsvpUpdateTrigger$.next(null);
+      this.meetingService.markRegistrationRemoved(meetingId, result.removed_registrant_ids);
+    }
+    this.userService.refreshUserMeetings(false);
+    this.pageData.refresh();
+  }
+
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: getMeetingSelfRemovalMessage(this.meetingTitle(), { viaCommittee: this.meeting()?.invited_via_committee, organizer: this.meeting()?.organizer }),
+      // PrimeNG renders a confirmation message as HTML, so the title is escaped.
+      message: getMeetingSelfRemovalMessage(escapeHtml(this.meetingTitle()), {
+        viaCommittee: this.meeting()?.invited_via_committee,
+        organizer: this.meeting()?.organizer,
+      }),
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
@@ -878,8 +901,9 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
-  public resendInvite(): void {
-    this.inviteResend.resendOwn(this.meeting().id, this.currentOccurrence()?.occurrence_id);
+  /** Asks before resending, the same way Remove Myself asks before removing; nothing is sent unless the user confirms. */
+  public confirmResendInvite(): void {
+    this.inviteResend.confirmAndResendOwn(this.confirmationService, this.meeting().id, this.currentOccurrence()?.occurrence_id, this.meetingTitle());
   }
 
   /** Sets foundation context via ProjectContextService and opens /foundation/overview in a new tab. */
@@ -1016,7 +1040,7 @@ export class MeetingJoinComponent implements OnInit {
       }
       // The project feed lists public meetings only (private ones are not in it), restricted or not, so it is offered for those alone.
       const inPublicFeed = this.meeting()?.visibility === 'public';
-      return inPublicFeed && this.projectCalendarFeedUrl() ? 'subscribe' : null;
+      return inPublicFeed && this.calendarProjectUid() ? 'subscribe' : null;
     });
   }
 
@@ -1724,9 +1748,11 @@ export class MeetingJoinComponent implements OnInit {
             // No fetch will happen on this branch (unauthenticated, not allowed to see the guests, or
             // a past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.
             this.registrantsLoading.set(false);
+            this.registrantsLoadFailed.set(false);
             return of([] as MeetingRegistrant[]);
           }
           this.registrantsLoading.set(true);
+          this.registrantsLoadFailed.set(false);
           const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
           const allDatesOnly = isMeetingInviteResponsesEnabled(meeting) && !!meeting.recurrence && !occurrenceId;
           return this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId, false, allDatesOnly).pipe(
@@ -1743,6 +1769,7 @@ export class MeetingJoinComponent implements OnInit {
               this.registrantsRosterKey.set(this.buildRegistrantsRosterKey(meeting.id, occurrenceId));
             }),
             catchError((error) => {
+              this.registrantsLoadFailed.set(true);
               // A failed refetch for the SAME meeting+occurrence must not reach reconcileOptimisticPad
               // as an empty list — that would look like "the roster shrank to zero" and zero out a
               // pending pad for guests that were actually added. But if the last successful fetch

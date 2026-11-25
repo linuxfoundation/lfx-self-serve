@@ -12,7 +12,7 @@ import {
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
-  GOOGLE_DISPLAY_CALLS_TO_ACTION,
+  GOOGLE_SHARED_CALLS_TO_ACTION,
   googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
@@ -597,7 +597,7 @@ GOOGLE DEMAND GEN (key: "google_display" — runs on YouTube, Discover, Gmail, D
 - headlines: 5 variations, each ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.demandGenHeadline} characters (STRICT — the Demand Gen image ad takes ${GENERATED_GOOGLE_COPY_WIDTHS.demandGenHeadline})
 - descriptions: 5 variations, each ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.demandGenDescription} characters (STRICT)
 - business_name: ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.businessName} chars — use the event's parent organization (e.g. "CNCF" for KubeCon). Default to "Linux Foundation" only if no specific foundation is identifiable.
-- call_to_action: one of ${GOOGLE_DISPLAY_CALLS_TO_ACTION.map((option) => `"${option.value}"`).join(', ')} (exactly as written; Google Ads refuses any other text, "Register" included; used on Display ads only)
+- call_to_action: one of ${GOOGLE_SHARED_CALLS_TO_ACTION.map((option) => `"${option.value}"`).join(', ')} (exactly as written; Google Ads refuses any other text, "Register" included; used on the Demand Gen image ad and the Display ad)
 
 GOOGLE COPY RULES:
 - Write every headline and description as a complete phrase or sentence that ends inside its limit. Copy over the limit is cut at the last whole word that fits, so never write past it.

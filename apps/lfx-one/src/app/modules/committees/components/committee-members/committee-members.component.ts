@@ -23,6 +23,8 @@ import {
   COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS,
   COMMITTEE_INVITE_EXPIRY_TICK_MS,
   COMMITTEE_LABEL,
+  MEMBER_IMPORT_RECONCILE_INTERVAL_MS,
+  MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS,
   NO_VOTING_STATUS_LABEL,
 } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
@@ -45,7 +47,7 @@ import {
   FilterPillOption,
   JoinMode,
   MemberImportDialogData,
-  MemberImportDialogResult,
+  MemberImportRunSummary,
   TagSeverity,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -62,6 +64,8 @@ import {
   resolveCommitteeMemberPermission,
   toCommitteeEngagementWindow,
 } from '@lfx-one/shared/utils';
+import { CommitteeMemberImportDialogService } from '@services/committee-member-import-dialog.service';
+import { CommitteeMemberImportService } from '@services/committee-member-import.service';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -75,20 +79,25 @@ import {
   exhaustMap,
   filter,
   finalize,
+  first,
   forkJoin,
   map,
+  merge,
+  EMPTY,
   Observable,
   of,
   startWith,
+  switchMap,
   take,
   takeUntil,
   takeWhile,
+  tap,
   timer,
 } from 'rxjs';
+import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
-import { ImportMembersDialogComponent } from '../import-members-dialog/import-members-dialog.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
 import { RejectApplicationDialogComponent } from '../reject-application-dialog/reject-application-dialog.component';
 
@@ -112,6 +121,7 @@ import { RejectApplicationDialogComponent } from '../reject-application-dialog/r
     DynamicDialogModule,
     Skeleton,
     TooltipModule,
+    UiSpinnerComponent,
   ],
   providers: [ConfirmationService, DialogService],
   templateUrl: './committee-members.component.html',
@@ -123,6 +133,8 @@ export class CommitteeMembersComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
+  private readonly importService = inject(CommitteeMemberImportService);
+  private readonly importDialogService = inject(CommitteeMemberImportDialogService);
   private readonly destroyRef = inject(DestroyRef);
   /** Bound committee UID stream — created in the constructor injection context for reuse in async callbacks. */
   private readonly committeeUid$: Observable<string | null>;
@@ -208,6 +220,17 @@ export class CommitteeMembersComponent implements OnInit {
   // `writer from project`). No separate inherited check is needed here — a foundation-level
   // manager's `writer` flag is already true (LFXV2-2059).
   public readonly canManageMembers = computed(() => canManageCommitteeMembers(this.committee()));
+  /** This subject's retained CSV import for the shown group, for managers only (#5731). */
+  public readonly importSummary: Signal<MemberImportRunSummary | undefined> = computed(() => {
+    const committeeUid = this.committee()?.uid;
+    return committeeUid && this.canManageMembers() ? this.importService.getSummary(committeeUid) : undefined;
+  });
+  public readonly importButtonLabel: Signal<string> = computed(() => {
+    const summary = this.importSummary();
+    if (!summary) return 'Import Members';
+    return summary.phase === 'settled' ? 'View import report' : 'View import progress';
+  });
+  public readonly importBannerMessage: Signal<string> = this.initImportBannerMessage();
 
   /** Wall clock re-read every minute, so an invitation that expires while the tab is open is re-evaluated. */
   private readonly now = toSignal(timer(COMMITTEE_INVITE_EXPIRY_TICK_MS, COMMITTEE_INVITE_EXPIRY_TICK_MS).pipe(map(() => new Date())), {
@@ -327,6 +350,8 @@ export class CommitteeMembersComponent implements OnInit {
       }
       previousCommitteeUid = uid;
     });
+
+    this.initImportSettlementRefresh();
   }
 
   public ngOnInit(): void {
@@ -422,11 +447,16 @@ export class CommitteeMembersComponent implements OnInit {
 
   /**
    * Opens the CSV member import (GH-3849). Writers only — the authenticated member route still
-   * enforces access on every row. The dialog pins this committee; on close the roster refreshes
-   * (and polls for the cumulative added count) only if the page still shows the same group.
+   * enforces access on every row. While this group has a retained run, reopens its progress or report
+   * instead of starting another (#5731). Otherwise loads complete snapshots and opens a new preview,
+   * which pins this committee; the roster refreshes when an attempt settles, not when the dialog closes.
    */
   public openImportMembersDialog(): void {
     const committee = this.committee();
+    if (committee?.uid && this.importSummary()) {
+      this.importDialogService.openRun(committee.uid);
+      return;
+    }
     if (
       !committee?.uid ||
       !this.canManageMembers() ||
@@ -454,7 +484,8 @@ export class CommitteeMembersComponent implements OnInit {
       .subscribe({
         next: ({ members, invites }) => {
           if (this.committee()?.uid === committeeUid && this.canManageMembers()) {
-            this.openImportDialog({ committee, existingMembers: members, existingInvites: invites });
+            const data: MemberImportDialogData = { committee, existingMembers: members, existingInvites: invites };
+            this.importDialogService.openNew(data);
           }
         },
         error: (error: HttpErrorResponse) => {
@@ -470,6 +501,30 @@ export class CommitteeMembersComponent implements OnInit {
           });
         },
       });
+  }
+
+  /**
+   * Clears the settled report so a new import can start. It never undoes additions; a report with rows
+   * that could still be retried or have an unknown outcome asks first.
+   */
+  public dismissImportReport(): void {
+    const summary = this.importSummary();
+    if (!summary || summary.phase !== 'settled') return;
+    const committeeUid = summary.committeeUid;
+    if (summary.retryable === 0 && summary.unknown === 0) {
+      this.importService.dismiss(committeeUid);
+      return;
+    }
+    this.confirmationService.confirm({
+      message:
+        'Some rows have not been confirmed as added. Dismissing the report removes the option to retry them here. Members already added stay in the group.',
+      header: 'Dismiss Import Report',
+      acceptLabel: 'Dismiss report',
+      rejectLabel: 'Keep report',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => this.importService.dismiss(committeeUid),
+    });
   }
 
   public openInviteMemberDialog(): void {
@@ -780,53 +835,66 @@ export class CommitteeMembersComponent implements OnInit {
     });
   }
 
-  private openImportDialog(data: MemberImportDialogData): void {
-    const committeeUid = data.committee.uid;
-    const countBeforeImport = data.existingMembers.length;
-    const dialogRef = this.dialogService.open(ImportMembersDialogComponent, {
-      header: 'Import Members from CSV',
-      width: '960px',
-      breakpoints: { '1024px': '95vw' },
-      modal: true,
-      // The dialog's own controls return cumulative results and prevent closing during writes.
-      closable: false,
-      closeOnEscape: false,
-      dismissableMask: false,
-      data,
-    });
-    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MemberImportDialogResult | undefined) => {
-      // Confirm additions even if the page moved to another group; the toast names the imported group.
-      if (result && result.added > 0) {
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Members Added',
-          detail: `${result.added} ${result.added === 1 ? 'member' : 'members'} added to ${data.committee.name}. New members may take a moment to appear.`,
-          life: 6000,
-        });
-      }
-      if (!result || this.committee()?.uid !== committeeUid) {
-        return;
-      }
-      if (result.added > 0) {
-        this.refreshMembers();
-        this.pollUntilMemberAdded(countBeforeImport, result.added);
-      } else if (result.conflicts > 0 || result.uncertain) {
-        this.refreshMembers();
-      }
-    });
-  }
-
   private refreshMembers(): void {
     this.refresh.emit();
+  }
+
+  /** Live or retained settlements reconcile once per run/attempt after this scope's roster is ready. */
+  private initImportSettlementRefresh(): void {
+    const scope = computed(() => JSON.stringify([this.importService.viewerSubject(), this.committee()?.uid, this.canManageMembers()]));
+    const retained = computed(() => (this.membersReady() && !this.membersLoading() && !this.membersError() ? this.importSummary() : undefined));
+    const retained$ = toObservable(retained);
+    toObservable(scope)
+      .pipe(
+        switchMap((scopeKey) => {
+          const seen = new Set<string>();
+          return merge(this.importService.settlements$.pipe(map(({ summary }) => summary)), retained$).pipe(
+            filter(
+              (summary): summary is MemberImportRunSummary =>
+                !!summary &&
+                summary.phase === 'settled' &&
+                scope() === scopeKey &&
+                this.canManageMembers() &&
+                this.membersReady() &&
+                !this.membersLoading() &&
+                !this.membersError() &&
+                summary.committeeUid === this.committee()?.uid &&
+                !seen.has(`${summary.runId}:${summary.attempt}`)
+            ),
+            tap((summary) => {
+              seen.add(`${summary.runId}:${summary.attempt}`);
+              this.refreshMembers();
+            }),
+            switchMap((summary) => {
+              if (summary.added === 0 || this.members().length >= summary.reconciliationTarget) return EMPTY;
+              return timer(MEMBER_IMPORT_RECONCILE_INTERVAL_MS, MEMBER_IMPORT_RECONCILE_INTERVAL_MS).pipe(
+                exhaustMap(() =>
+                  this.committeeService.getCommitteeMembers(summary.committeeUid).pipe(
+                    catchError((error: unknown) => {
+                      console.error('Failed to refetch members after CSV import', { status: error instanceof HttpErrorResponse ? error.status : 0 });
+                      return of(null);
+                    })
+                  )
+                ),
+                take(MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS),
+                first((members) => members !== null && members.length >= summary.reconciliationTarget, null),
+                tap(() => this.refreshMembers())
+              );
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe();
   }
 
   /**
    * Polls getCommitteeMembers until the count reaches at least `countBefore + expected`,
    * absorbing the query-service indexing lag after a direct-add write (same pattern as
    * refreshCommitteeAfterMembershipChange in committee-view.component.ts).
-   * `expected` is the number of successfully added members from the dialog — using it instead
-   * of a fixed +1 avoids stopping the poll early in batch-add scenarios where multiple members
-   * are added at once but only the first one is indexed on the initial poll tick.
+   * Direct adds use their confirmed addition count as `expected`; CSV settlement passes the retained
+   * reconciliation target as `countBefore` with `expected = 0`, so reopening or retrying never adds
+   * earlier confirmed rows to the target twice.
    * Fires a final refreshMembers() when all new rows are detected, or gives up after 6 attempts.
    */
   private pollUntilMemberAdded(countBefore: number, expected = 1): void {
@@ -998,6 +1066,30 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   // Private initialization methods
+  /** Confirmed counts only; queued rows are never shown as added. */
+  private initImportBannerMessage(): Signal<string> {
+    return computed(() => {
+      const summary = this.importSummary();
+      if (!summary) return '';
+      const processed = `${summary.batchSettled} of ${summary.batchTotal} processed`;
+      switch (summary.phase) {
+        case 'importing':
+          return `Importing members from CSV: ${processed}.`;
+        case 'paused':
+          return `Importing members from CSV: ${processed}. Waiting for the service. We'll retry automatically.`;
+        case 'stopping':
+          return `Stopping the CSV import after the current batch: ${processed}.`;
+        default: {
+          const parts = [`${summary.added} added`];
+          if (summary.failed > 0) parts.push(`${summary.failed} failed`);
+          if (summary.unknown > 0) parts.push(`${summary.unknown} outcome unknown`);
+          if (summary.notSubmitted > 0) parts.push(`${summary.notSubmitted} not yet submitted`);
+          return `${summary.stopReason ? 'CSV import stopped' : 'CSV import finished'}: ${parts.join(', ')}.`;
+        }
+      }
+    });
+  }
+
   private initializeFilterForm(): FormGroup {
     return new FormGroup({
       search: new FormControl(''),
@@ -1106,7 +1198,7 @@ export class CommitteeMembersComponent implements OnInit {
         }
       });
 
-      const options: { label: string; value: string | null }[] = [{ label: 'All Organizations', value: null }];
+      const options: { label: string; value: string | null }[] = [{ label: 'All Companies', value: null }];
       Array.from(orgSet)
         .sort()
         .forEach((org) => {

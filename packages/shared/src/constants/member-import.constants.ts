@@ -63,8 +63,8 @@ export const MEMBER_IMPORT_COLUMNS = [
 /** Template guidance derives accepted values from the same configured options used by validation. */
 export const MEMBER_IMPORT_FIELDS: readonly MemberImportFieldDefinition[] = [
   { column: 'email', requiredWhen: 'always', votingOnly: false, description: 'Email address of the person to add.' },
-  { column: 'first_name', requiredWhen: 'never', votingOnly: false, description: 'Up to 100 characters.' },
-  { column: 'last_name', requiredWhen: 'never', votingOnly: false, description: 'Up to 100 characters.' },
+  { column: 'first_name', requiredWhen: 'always', votingOnly: false, description: 'Up to 100 characters.' },
+  { column: 'last_name', requiredWhen: 'always', votingOnly: false, description: 'Up to 100 characters.' },
   { column: 'job_title', requiredWhen: 'never', votingOnly: false, description: 'Up to 200 characters.' },
   { column: 'linkedin_profile', requiredWhen: 'never', votingOnly: false, description: 'Full LinkedIn profile URL, e.g. https://www.linkedin.com/in/…' },
   { column: 'organization_name', requiredWhen: 'organization', votingOnly: false, description: 'Up to 200 characters. Provide together with the website.' },
@@ -100,7 +100,7 @@ export const MEMBER_IMPORT_STATUS_DISPLAY: Readonly<Record<MemberImportRowStatus
   importing: { label: 'Adding…', severity: 'info' },
   added: { label: 'Added', severity: 'success' },
   failed: { label: 'Failed', severity: 'danger' },
-  waiting: { label: 'Waiting to resume', severity: 'warn' },
+  waiting: { label: 'Pending', severity: 'secondary' },
   not_submitted: { label: 'Not yet submitted', severity: 'secondary' },
 };
 
@@ -133,3 +133,9 @@ export const MEMBER_IMPORT_RETRY_AFTER_MAX_MS = 120_000;
 
 /** Shortest single automatic pause, so a zero or past Retry-After never resubmits immediately. */
 export const MEMBER_IMPORT_RETRY_AFTER_MIN_MS = 1_000;
+
+/** Refetches after an import settles while indexed member totals catch up to the run's confirmed target (#5731). */
+export const MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS = 6;
+
+/** Delay between reconciliation refetches. */
+export const MEMBER_IMPORT_RECONCILE_INTERVAL_MS = 400;

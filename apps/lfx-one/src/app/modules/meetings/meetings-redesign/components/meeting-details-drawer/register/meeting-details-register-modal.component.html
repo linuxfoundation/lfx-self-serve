@@ -9,7 +9,7 @@
     </p>
     <div class="grid grid-cols-1 gap-[16px] sm:grid-cols-2">
       <lfx-ui-input
-        label="First Name *"
+        label="First Name"
         placeholder="Enter first name"
         autocomplete="given-name"
         formControlName="first_name"
@@ -17,7 +17,7 @@
         [error]="errors().first_name"
         data-testid="meeting-details-register-first-name" />
       <lfx-ui-input
-        label="Last Name *"
+        label="Last Name"
         placeholder="Enter last name"
         autocomplete="family-name"
         formControlName="last_name"
@@ -26,7 +26,7 @@
         data-testid="meeting-details-register-last-name" />
       <lfx-ui-input
         class="sm:col-span-2"
-        label="Email *"
+        label="Email"
         type="email"
         placeholder="Enter email address"
         autocomplete="email"
@@ -42,12 +42,27 @@
         autocomplete="organization-title"
         formControlName="job_title"
         data-testid="meeting-details-register-job-title" />
-      <lfx-ui-input
+      <lfx-ui-combobox
         label="Company"
         placeholder="Enter company"
-        autocomplete="organization"
+        emptyText="Type your company name"
         formControlName="org_name"
-        data-testid="meeting-details-register-company" />
+        freeText
+        serverSearch
+        [loading]="orgSearching()"
+        (queryChange)="searchOrgs($event)"
+        data-testid="meeting-details-register-company">
+        @for (org of orgSuggestions(); track org.name + org.domain) {
+          <lfx-ui-option [value]="org.name" [label]="org.name">
+            <span class="flex min-w-0 flex-col">
+              <span class="truncate">{{ org.name }}</span>
+              @if (org.domain) {
+                <span class="copy-12 whitespace-normal break-all text-ui-neutral-600">{{ org.domain }}</span>
+              }
+            </span>
+          </lfx-ui-option>
+        }
+      </lfx-ui-combobox>
     </div>
   </form>
 

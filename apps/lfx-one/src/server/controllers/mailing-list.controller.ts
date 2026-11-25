@@ -71,6 +71,35 @@ export class MailingListController {
   }
 
   /**
+   * GET /mailing-lists/services/inherited?project_uid=
+   */
+  public async getInheritedServices(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = typeof req.query['project_uid'] === 'string' ? req.query['project_uid'] : '';
+    const startTime = logger.startOperation(req, 'get_inherited_groupsio_services', { project_uid: projectUid });
+
+    try {
+      if (!projectUid) {
+        next(
+          ServiceValidationError.forField('project_uid', 'project_uid is required', {
+            operation: 'get_inherited_groupsio_services',
+            service: 'mailing_list_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const services = await this.mailingListService.getInheritedServices(req, projectUid);
+
+      logger.success(req, 'get_inherited_groupsio_services', startTime, { project_uid: projectUid, service_count: services.length });
+
+      res.json(services);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /mailing-lists/services/:id
    */
   public async getServiceById(req: Request, res: Response, next: NextFunction): Promise<void> {

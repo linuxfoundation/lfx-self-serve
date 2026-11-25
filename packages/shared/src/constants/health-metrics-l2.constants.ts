@@ -13,6 +13,19 @@ export const HEALTH_METRICS_PROJECT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[
  */
 export const HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS = 30_000;
 
+/** Scroll distance in px past which the header compacts; it expands only back at the top. Past its ~40px shrink, so
+ *  the browser's scroll anchoring, which pulls the page back by that shrink, leaves it scrolled and still compact. */
+export const HEALTH_METRICS_HEADER_COMPACT_AFTER_PX = 64;
+
+/** More than the height in px the header gives up as it compacts (about 40px): a page with less scroll room stays expanded, so it can't flicker. */
+export const HEALTH_METRICS_HEADER_COMPACT_SHRINK_PX = 56;
+
+/** How long in ms the section offsets wait for the header's 0.25s compaction to settle before the scroll-spy follows. */
+export const HEALTH_METRICS_L2_OFFSET_SETTLE_MS = 100;
+
+/** How long in ms a section jump counts as in flight, so a header that settles meanwhile re-aims it. */
+export const HEALTH_METRICS_L2_JUMP_REAIM_MS = 1_000;
+
 /** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
 export const HEALTH_METRICS_L2_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
 

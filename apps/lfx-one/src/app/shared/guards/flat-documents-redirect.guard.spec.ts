@@ -51,8 +51,8 @@ describe('flatDocumentsRedirect', () => {
   it('keeps an org-lens user on the org lens instead of switching them to me', () => {
     activeLens = 'org';
 
-    expect(runRedirect()).toEqual({ redirected: '/org' });
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/org']);
+    expect(runRedirect()).toEqual({ redirected: '/company' });
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/company']);
   });
 
   it.each(['foundation', 'project'] as const)('keeps the %s documents page, including the query string', (lens) => {

@@ -5,11 +5,10 @@ import { Component, computed, inject, signal, Signal, WritableSignal } from '@an
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { MessageService } from 'primeng/api';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, skip, switchMap, tap } from 'rxjs';
 
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
@@ -22,15 +21,21 @@ import {
   DEFAULT_ORG_EVENTS_SCOPE,
   DEFAULT_ORG_EVENTS_TAB_ID,
   EMPTY_ORG_EVENTS_RESPONSE,
+  ORG_EVENTS_ALL_COMPANIES_LABEL,
   ORG_EVENTS_ALL_FOUNDATIONS_LABEL,
   ORG_EVENTS_COMPANY_EMAIL_CAPTION_PHRASE,
+  ORG_EVENTS_COMPANY_QUERY_PARAM,
   ORG_EVENTS_FOUNDATION_QUERY_PARAM,
+  ORG_EVENTS_PAGE_COPY,
   ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
   ORG_EVENTS_PARTICIPATION_LABEL,
   ORG_EVENTS_PARTICIPATION_OPTIONS,
   ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
   ORG_EVENTS_PARTICIPATION_TOOLTIP,
   ORG_EVENTS_PARTICIPATION_UPCOMING_NOTE,
+  ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE,
+  ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE,
+  ORG_EVENTS_ROLL_UP_PAGE_COPY,
   ORG_EVENTS_SCOPE_LABEL,
   ORG_EVENTS_SCOPE_OPTIONS,
   ORG_EVENTS_SCOPE_QUERY_PARAM,
@@ -46,12 +51,14 @@ import type {
   OrgDropdownOption,
   OrgEvent,
   OrgEventFoundationsResponse,
+  OrgEventsPageCopy,
   OrgEventsParticipation,
   OrgEventsResponse,
   OrgEventsScope,
   OrgEventsSummary,
   OrgEventStatFilterId,
   OrgEventsTabId,
+  OrgLensRowOrganization,
   OrgLensTimeRange,
   PageChangeEvent,
   SortChangeEvent,
@@ -62,9 +69,11 @@ import { EventsService } from '@services/events.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import {
+  readOrgEventsCompany,
   readOrgEventsFoundation,
   readOrgEventsParticipation,
   readOrgEventsScope,
+  syncOrgEventsCompanyWithUrl,
   syncOrgEventsFoundationWithUrl,
   syncOrgEventsParticipationWithUrl,
   syncOrgEventsScopeWithUrl,
@@ -102,7 +111,6 @@ export class OrgEventsDashboardComponent {
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
   private readonly eventsService = inject(EventsService);
-  private readonly messageService = inject(MessageService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
 
   // === Public injections ===
@@ -124,6 +132,7 @@ export class OrgEventsDashboardComponent {
     foundation: new FormControl<string>(readOrgEventsFoundation(this.route), { nonNullable: true }),
     participation: new FormControl<OrgEventsParticipation>(readOrgEventsParticipation(this.route), { nonNullable: true }),
     scope: new FormControl<OrgEventsScope>(readOrgEventsScope(this.route), { nonNullable: true }),
+    company: new FormControl<string>(readOrgEventsCompany(this.route), { nonNullable: true }),
   });
 
   // === WritableSignals ===
@@ -140,11 +149,18 @@ export class OrgEventsDashboardComponent {
   public readonly pastEventsPage = signal<PageChangeEvent>({ offset: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE });
   public readonly pastSortField = signal('EVENT_START_DATE');
   public readonly pastSortOrder = signal<'ASC' | 'DESC'>('DESC');
+  public readonly summaryLoadFailed = signal(false);
+  public readonly upcomingLoadFailed = signal(false);
+  public readonly pastLoadFailed = signal(false);
+  private readonly retryCount = signal(0);
+  private readonly servedOrganizations = signal<{ accountId: string; organizations: readonly OrgLensRowOrganization[] } | null>(null);
 
   // === Computed / toSignal ===
   // Debounced search feeds the server-side query so typing doesn't fire a request per keystroke.
   private readonly debouncedSearchTerm = toSignal(toObservable(this.searchTerm).pipe(debounceTime(300), distinctUntilChanged()), { initialValue: '' });
   public readonly companyName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
+  public readonly isRollUp = this.accountContext.isRollUp;
+  public readonly pageCopy: Signal<OrgEventsPageCopy> = computed(() => (this.isRollUp() ? ORG_EVENTS_ROLL_UP_PAGE_COPY : ORG_EVENTS_PAGE_COPY));
   // Spec 053 / #2961 — the page-level state replacing the page (`could-not-load`, `staff-check-failed`,
   // `contractor-no-grant`, `no-organization`), or null when the page renders.
   public readonly pageState = this.emptyState.pageState;
@@ -166,13 +182,33 @@ export class OrgEventsDashboardComponent {
   private readonly scope: Signal<OrgEventsScope> = toSignal(this.filterForm.controls.scope.valueChanges, {
     initialValue: this.filterForm.controls.scope.value,
   });
+  private readonly effectiveScope = computed<OrgEventsScope>(() => (this.isRollUp() ? DEFAULT_ORG_EVENTS_SCOPE : this.scope()));
+  private readonly company: Signal<string> = toSignal(this.filterForm.controls.company.valueChanges, {
+    initialValue: this.filterForm.controls.company.value,
+  });
+  private readonly currentServedOrganizations = computed<readonly OrgLensRowOrganization[] | null>(() => {
+    const served = this.servedOrganizations();
+    return this.isRollUp() && served?.accountId === this.accountContext.selectedAccount().accountId ? served.organizations : null;
+  });
+  public readonly effectiveCompany = computed(() => {
+    const company = this.company();
+    const served = this.currentServedOrganizations();
+    return company && served?.some((organization) => organization.accountId === company) ? company : '';
+  });
+  // Until the roll-up's companies are known, neither a picked Company nor All Companies can be checked.
+  private readonly companyUnresolved = computed(() => this.isRollUp() && this.currentServedOrganizations() === null);
+  public readonly companyOptions: Signal<OrgDropdownOption[]> = computed(() => [
+    { label: ORG_EVENTS_ALL_COMPANIES_LABEL, value: '' },
+    ...(this.currentServedOrganizations() ?? []).map((organization) => ({ label: organization.name, value: organization.accountId })),
+  ]);
   // Count reads registrations on the Upcoming tab, where no one has attended yet.
   private readonly effectiveParticipation = computed(() => effectiveOrgEventsParticipation(this.participation(), this.activeTab() === 'past'));
   // What the tiles and the foundation options read: not the tab, search or status.
   private readonly tileFilters = computed(() => ({
-    eventScope: this.scope(),
+    eventScope: this.effectiveScope(),
     foundation: this.foundation(),
     range: this.timeRange(),
+    company: this.effectiveCompany(),
   }));
   public readonly foundationsResponse: Signal<OrgEventFoundationsResponse | null> = this.initFoundationsResponse();
   public readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => [
@@ -190,10 +226,20 @@ export class OrgEventsDashboardComponent {
       this.selectedStatus() !== null ||
       this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE ||
       this.foundation() !== '' ||
+      this.company() !== '' ||
       this.participation() !== DEFAULT_ORG_EVENTS_PARTICIPATION ||
-      this.scope() !== DEFAULT_ORG_EVENTS_SCOPE
+      this.effectiveScope() !== DEFAULT_ORG_EVENTS_SCOPE
   );
-  public readonly eventsSummary: Signal<OrgEventsSummary | null> = this.initEventsSummary();
+  private readonly servedSummary: Signal<{ company: string; summary: OrgEventsSummary } | null> = this.initEventsSummary();
+  public readonly eventsSummary = computed<OrgEventsSummary | null>(() => {
+    const served = this.servedSummary();
+    return served && !this.companyUnresolved() && served.company === this.effectiveCompany() ? served.summary : null;
+  });
+  public readonly rollUpNotices = computed<string[]>(() => {
+    const coverage = this.isRollUp() ? this.eventsSummary()?.rollUp : undefined;
+    if (!coverage) return [];
+    return [...(coverage.excludedCount > 0 ? [ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE] : []), ...(!coverage.complete ? [ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE] : [])];
+  });
   public readonly upcomingAttendeesCaption = computed(() => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.registered} ${ORG_EVENTS_COMPANY_EMAIL_CAPTION_PHRASE}`);
   public readonly pastAttendeesCaption = computed(
     () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_COMPANY_EMAIL_CAPTION_PHRASE}`
@@ -205,8 +251,8 @@ export class OrgEventsDashboardComponent {
     sortField: this.upcomingSortField,
     sortOrder: this.upcomingSortOrder,
     loading: this.upcomingEventsLoading,
+    loadFailed: this.upcomingLoadFailed,
     isPast: false,
-    errorDetail: 'Failed to load upcoming events. Please try again.',
   });
   public readonly pastEvents: Signal<OrgEventsResponse> = this.initEventsPipeline({
     tab: 'past',
@@ -214,8 +260,8 @@ export class OrgEventsDashboardComponent {
     sortField: this.pastSortField,
     sortOrder: this.pastSortOrder,
     loading: this.pastEventsLoading,
+    loadFailed: this.pastLoadFailed,
     isPast: true,
-    errorDetail: 'Failed to load past events. Please try again.',
   });
   public readonly tabPillOptions = computed<FilterPillOption[]>(() => {
     const summary = this.eventsSummary();
@@ -240,6 +286,7 @@ export class OrgEventsDashboardComponent {
     syncOrgEventsFoundationWithUrl(this.filterForm.controls.foundation, this.route, this.router);
     syncOrgEventsParticipationWithUrl(this.filterForm.controls.participation, this.route, this.router);
     syncOrgEventsScopeWithUrl(this.filterForm.controls.scope, this.route, this.router);
+    syncOrgEventsCompanyWithUrl(this.filterForm.controls.company, this.route, this.router);
 
     // Count is disabled on the Upcoming tab (it always counts registrations); the picked value is kept for the Past tab.
     toObservable(this.isPastTab)
@@ -250,8 +297,7 @@ export class OrgEventsDashboardComponent {
         else control.disable({ emitEvent: false });
       });
 
-    // A foundation the options no longer offer (another "Show") is cleared once the options have loaded. An empty
-    // list proves nothing: the BFF answers an upstream failure with no options, so the pick is left alone.
+    // A foundation the options no longer offer (another "Show") is cleared once the options have loaded.
     toObservable(this.foundationsResponse)
       .pipe(
         filter((response): response is OrgEventFoundationsResponse => response !== null),
@@ -261,6 +307,20 @@ export class OrgEventsDashboardComponent {
         const selected = this.filterForm.controls.foundation.value;
         if (selected && response.data.length > 0 && !response.data.some((foundation) => foundation.id === selected))
           this.filterForm.controls.foundation.setValue('');
+      });
+
+    toObservable(
+      computed(() => ({
+        visible: this.contentVisible(),
+        rollUp: this.isRollUp(),
+        served: this.currentServedOrganizations(),
+        company: this.company(),
+      }))
+    )
+      .pipe(takeUntilDestroyed())
+      .subscribe(({ visible, rollUp, served, company }) => {
+        if (!visible || !company) return;
+        if (!rollUp || (served && !served.some((organization) => organization.accountId === company))) this.filterForm.controls.company.setValue('');
       });
   }
 
@@ -281,6 +341,7 @@ export class OrgEventsDashboardComponent {
         [ORG_EVENTS_FOUNDATION_QUERY_PARAM]: null,
         [ORG_EVENTS_PARTICIPATION_QUERY_PARAM]: null,
         [ORG_EVENTS_SCOPE_QUERY_PARAM]: null,
+        [ORG_EVENTS_COMPANY_QUERY_PARAM]: null,
       },
       queryParamsHandling: 'merge',
       replaceUrl: true,
@@ -312,6 +373,10 @@ export class OrgEventsDashboardComponent {
     this.activeDrawerEvent.set(event);
     this.attendeesDrawerVisible.set(false);
     this.speakersDrawerVisible.set(true);
+  }
+
+  public retryLoad(): void {
+    this.retryCount.update((count) => count + 1);
   }
 
   public onUpcomingPageChange(event: PageChangeEvent): void {
@@ -355,17 +420,31 @@ export class OrgEventsDashboardComponent {
     });
   }
 
-  private initEventsSummary(): Signal<OrgEventsSummary | null> {
+  private initEventsSummary(): Signal<{ company: string; summary: OrgEventsSummary } | null> {
     const query$ = toObservable(
       computed(() => {
         const accountId = this.contentVisible() ? this.accountContext.selectedAccount().accountId : null;
+        this.retryCount();
         return accountId ? { accountId, ...this.tileFilters() } : null;
       })
     );
     return toSignal(
       query$.pipe(
         filter((query): query is NonNullable<typeof query> => query !== null),
-        switchMap(({ accountId, ...params }) => this.eventsService.getOrgEventsSummary(accountId, params).pipe(catchError(() => of(null))))
+        tap(() => this.summaryLoadFailed.set(false)),
+        switchMap(({ accountId, ...params }) =>
+          this.eventsService.getOrgEventsSummary(accountId, params).pipe(
+            tap((summary) => {
+              if (summary.organizations) this.servedOrganizations.set({ accountId, organizations: summary.organizations });
+            }),
+            map((summary) => ({ company: params.company, summary })),
+            catchError((error: unknown) => {
+              console.error('Failed to load the events summary', error);
+              this.summaryLoadFailed.set(true);
+              return of(null);
+            })
+          )
+        )
       ),
       { initialValue: null }
     );
@@ -376,13 +455,21 @@ export class OrgEventsDashboardComponent {
     const query$ = toObservable(
       computed(() => {
         const accountId = this.contentVisible() ? this.accountContext.selectedAccount().accountId : null;
-        return accountId ? { accountId, eventScope: this.scope() } : null;
+        const retry = this.retryCount();
+        return accountId ? { accountId, eventScope: this.effectiveScope(), retry } : null;
       })
-    ).pipe(distinctUntilChanged((a, b) => a?.accountId === b?.accountId && a?.eventScope === b?.eventScope));
+    ).pipe(distinctUntilChanged((a, b) => a?.accountId === b?.accountId && a?.eventScope === b?.eventScope && a?.retry === b?.retry));
     return toSignal(
       query$.pipe(
         filter((query): query is NonNullable<typeof query> => query !== null),
-        switchMap(({ accountId, ...params }) => this.eventsService.getOrgEventFoundations(accountId, params).pipe(catchError(() => of(null))))
+        switchMap(({ accountId, eventScope }) =>
+          this.eventsService.getOrgEventFoundations(accountId, { eventScope }).pipe(
+            catchError((error: unknown) => {
+              console.error('Failed to load the event foundations', error);
+              return of(null);
+            })
+          )
+        )
       ),
       { initialValue: null }
     );
@@ -395,21 +482,26 @@ export class OrgEventsDashboardComponent {
     sortField: Signal<string>;
     sortOrder: Signal<'ASC' | 'DESC'>;
     loading: WritableSignal<boolean>;
+    loadFailed: WritableSignal<boolean>;
     isPast: boolean;
-    errorDetail: string;
   }): Signal<OrgEventsResponse> {
-    const { tab, page, sortField, sortOrder, loading, isPast, errorDetail } = opts;
+    const { tab, page, sortField, sortOrder, loading, loadFailed, isPast } = opts;
     return toSignal(
       toObservable(
         computed(() => {
           if (this.activeTab() !== tab) return null;
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId || !this.contentVisible()) return null;
+          this.retryCount();
+          let companyCheck: 'pending' | 'failed' | null = null;
+          if (this.companyUnresolved()) companyCheck = this.summaryLoadFailed() ? 'failed' : 'pending';
           return {
             accountId,
+            companyCheck,
             ...page(),
-            eventScope: this.scope(),
+            eventScope: this.effectiveScope(),
             foundation: this.foundation(),
+            company: this.effectiveCompany(),
             participation: this.effectiveParticipation(),
             // The Upcoming tab ignores the range, so a range pick does not refetch it.
             ...(isPast ? { range: this.timeRange() } : {}),
@@ -422,21 +514,27 @@ export class OrgEventsDashboardComponent {
       ).pipe(
         debounceTime(0),
         filter((params): params is NonNullable<typeof params> => params !== null),
-        tap(() => loading.set(true)),
-        switchMap(({ accountId, ...params }) =>
-          this.eventsService.getOrgEvents(accountId, { ...params, isPast }).pipe(
-            catchError(() => {
-              this.messageService.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: errorDetail,
-              });
+        tap(() => loadFailed.set(false)),
+        switchMap(({ accountId, companyCheck, ...params }) => {
+          loading.set(true);
+          if (companyCheck === 'pending') {
+            return of({ ...EMPTY_ORG_EVENTS_RESPONSE, pageSize: params.pageSize, offset: params.offset });
+          }
+          if (companyCheck === 'failed') {
+            loadFailed.set(true);
+            loading.set(false);
+            return of({ ...EMPTY_ORG_EVENTS_RESPONSE, pageSize: params.pageSize, offset: params.offset });
+          }
+          return this.eventsService.getOrgEvents(accountId, { ...params, isPast }).pipe(
+            catchError((error: unknown) => {
+              console.error(`Failed to load ${tab} events`, error);
+              loadFailed.set(true);
               const { pageSize, offset } = page();
               return of({ ...EMPTY_ORG_EVENTS_RESPONSE, pageSize, offset });
             }),
             finalize(() => loading.set(false))
-          )
-        )
+          );
+        })
       ),
       { initialValue: EMPTY_ORG_EVENTS_RESPONSE }
     );

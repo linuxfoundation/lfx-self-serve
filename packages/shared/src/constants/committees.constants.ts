@@ -2,9 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { BehavioralClassDisplayConfig, CommitteeCategoryInfo, CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
+import type {
+  BehavioralClassDisplayConfig,
+  CommitteeCategoryInfo,
+  CommitteeSettingsFeature,
+  CommitteeTab,
+  GroupBehavioralClass,
+  GroupsHomeFilters,
+  JoinMode,
+} from '../interfaces/committee.interface';
 import type { MeetingAllowedVotingStatus } from '../interfaces/meeting.interface';
+import type { UiTone } from '../interfaces/uikit.interface';
 import { lfxColors } from './colors.constants';
+import { SOCIAL_LISTENING_GROUP_CATEGORIES } from './social-listening.constants';
 
 // Re-export helper functions from utils for backward compatibility
 export {
@@ -507,13 +517,13 @@ export const COMMITTEE_FORM_STEPS = {
  * Inline note shown on feature toggles that gate-keep the org-name/URL join requirement.
  * Extracted to avoid the two copies drifting if the wording ever changes.
  */
-const ORG_REQUIRED_NOTE = 'Members joining this group will need to provide an organization name and URL.';
+const ORG_REQUIRED_NOTE = 'Members joining this group will need to provide a company name and URL.';
 
 /**
  * Committee settings features for Step 2 form
- * @description Feature toggles for committee settings (follows MEETING_FEATURES pattern)
+ * @description Feature toggles for committee settings
  */
-export const COMMITTEE_SETTINGS_FEATURES = [
+export const COMMITTEE_SETTINGS_FEATURES: CommitteeSettingsFeature[] = [
   {
     key: 'business_email_required',
     icon: 'fa-light fa-shield',
@@ -558,10 +568,26 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-users-rectangle',
     title: 'Show Meeting Attendees',
     description:
-      'Let guests see who else is invited, and who has accepted, on the meeting in LFX. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board and restricted meetings never share their guest list.',
+      'Let guests see who else is invited, and who has accepted, on the meeting in LFX. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board meetings never share their guest list.',
     color: lfxColors.blue[500],
   },
+  {
+    key: 'members_can_view_social_listening',
+    icon: 'fa-light fa-ear-listen',
+    title: 'Members Can View Social Listening',
+    description:
+      "Let this board's members view Social Listening for the whole foundation and filter it by project. Applies to the foundation's own boards, not its projects' groups. Executive Directors and LF staff always have access.",
+    color: lfxColors.violet[500],
+    categories: SOCIAL_LISTENING_GROUP_CATEGORIES,
+  },
 ];
+
+/**
+ * Shown as the SSO group name when a public or SSO-enabled group has no saved name yet.
+ * The committee service generates the name on the next save, so this mirrors PCC's
+ * "(auto-generated on save)" copy rather than guessing a slug.
+ */
+export const SSO_GROUP_NAME_PENDING_LABEL = 'Generated when you save';
 
 /**
  * Permission level options for committee member ACL dropdowns.
@@ -701,6 +727,31 @@ export const BEHAVIORAL_CLASS_CONFIG: Record<GroupBehavioralClass, BehavioralCla
     bgColor: 'bg-gray-50',
   },
 };
+
+/** Colour role of each behavioral class, matching the hues of {@link BEHAVIORAL_CLASS_CONFIG}; drives the Groups type tab dots. */
+export const BEHAVIORAL_CLASS_TONE: Record<GroupBehavioralClass, UiTone> = {
+  'governing-board': 'feature',
+  'oversight-committee': 'success',
+  'working-group': 'warning',
+  'special-interest-group': 'accent',
+  'ambassador-program': 'danger',
+  other: 'neutral',
+};
+
+/** Groups shown per batch on the redesigned Groups page; scrolling near the end shows the next batch. */
+export const GROUPS_HOME_PAGE_SIZE = 20;
+
+/** No filters applied on the redesigned Groups page. */
+export const GROUPS_HOME_DEFAULT_FILTERS: GroupsHomeFilters = { scope: null, voting: null };
+
+/** Width of the redesigned Groups page Filters popover above phone width, in px. */
+export const GROUPS_HOME_FILTERS_PANEL_WIDTH = 344;
+
+/** Navigation state for links from the redesigned Groups page, so the group page shows "Groups" as its back link. */
+export const GROUPS_HOME_LINK_STATE = { backLabel: 'Groups', fromMeLens: true } as const;
+
+/** How long Undo stays offered after a withdraw or decline on the Groups page. */
+export const GROUPS_HOME_UNDO_MS = 8000;
 
 /** Max concurrent create-invite requests when fanning out a bulk committee invite. */
 export const COMMITTEE_INVITE_CONCURRENCY = 5;

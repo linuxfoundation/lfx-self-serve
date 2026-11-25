@@ -32,9 +32,8 @@ import { OverlayStateService } from '@services/overlay-state.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, MEETING_CLOCK_TICK_MS } from '@lfx-one/shared/constants';
+import { MAX_MEETING_DURATION, MEETING_CLOCK_TICK_MS } from '@lfx-one/shared/constants';
 import { getTimezoneAbbreviation, getUserTimezone } from '@lfx-one/shared/utils';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { installMatchMediaShim } from '@shared/testing/header-test-providers';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -55,7 +54,6 @@ describe('MeetingJoinComponent', () => {
   const MEETING_JOIN_STATE_KEY = makeStateKey<MeetingJoinPageState>('meetingJoinState');
 
   let getPublicMeeting: ReturnType<typeof vi.fn>;
-  let meetingsV2Enabled: ReturnType<typeof signal<boolean>>;
   let getPublicPastMeeting: ReturnType<typeof vi.fn>;
   let getMyMeetingRegistrants: ReturnType<typeof vi.fn>;
   let getPastMeetingSummary: ReturnType<typeof vi.fn>;
@@ -148,14 +146,12 @@ describe('MeetingJoinComponent', () => {
     getMeetingRsvpForCurrentUser = vi.fn().mockReturnValue(of(null));
     removedIds = signal<ReadonlySet<string>>(new Set());
     toastAdd = vi.fn();
-    meetingsV2Enabled = signal(false);
 
     TestBed.configureTestingModule({
       imports: [MeetingJoinComponent],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
         {
           provide: ActivatedRoute,
           useValue: {
@@ -171,7 +167,7 @@ describe('MeetingJoinComponent', () => {
             },
           },
         },
-        { provide: Router, useValue: { navigate: vi.fn() } },
+        { provide: Router, useValue: { navigate: vi.fn(), getCurrentNavigation: vi.fn(() => null) } },
         {
           provide: MeetingService,
           useValue: {
@@ -186,7 +182,8 @@ describe('MeetingJoinComponent', () => {
             attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
             attachmentChanges: signal(new Map()),
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
-            clearRemovedRegistration: vi.fn(),
+            clearRemovedRegistration: vi.fn((id: string) => removedIds.update((ids) => new Set([...ids].filter((saved) => saved !== id)))),
+            rememberRemovedRegistrants: vi.fn(),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRsvpForCurrentUser,
             getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
@@ -241,6 +238,80 @@ describe('MeetingJoinComponent', () => {
     });
   });
 
+  it.each([false, true])('restores invitation controls after drawer self-add, previously removed: %s', async (previouslyRemoved) => {
+    if (previouslyRemoved) removedIds.set(new Set([MEETING_ID]));
+    const component = await createComponent();
+    expect(component.effectivelyInvited()).toBe(false);
+    const fetchesBefore = getPublicMeeting.mock.calls.length;
+
+    component.onSelfAdded(MEETING_ID);
+    // The page-data refresh uses the same real debounce timer as route changes.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(component.effectivelyInvited()).toBe(true);
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.canResendInvite()).toBe(true);
+    expect(removedIds().has(MEETING_ID)).toBe(false);
+    expect(TestBed.inject(MeetingService).clearRemovedRegistration).toHaveBeenCalledWith(MEETING_ID);
+    expect(TestBed.inject(UserService).refreshUserMeetings).toHaveBeenCalledExactlyOnceWith(false);
+    expect(getPublicMeeting.mock.calls.length).toBeGreaterThan(fetchesBefore);
+    expect(component.additionalRegistrantsCount()).toBe(0);
+  });
+
+  it('ignores a self-add event from a previously viewed meeting', async () => {
+    const component = await createComponent();
+    const fetchesBefore = getPublicMeeting.mock.calls.length;
+    component.onSelfAdded('another-meeting');
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.effectivelyInvited()).toBe(false);
+    expect(TestBed.inject(MeetingService).clearRemovedRegistration).not.toHaveBeenCalled();
+    expect(TestBed.inject(UserService).refreshUserMeetings).not.toHaveBeenCalled();
+    expect(getPublicMeeting).toHaveBeenCalledTimes(fetchesBefore);
+  });
+
+  it.each([false, true])('reconciles drawer self-row deletion, another registration remains: %s', async (remaining) => {
+    const component = await createComponent();
+    component.onSelfAdded(MEETING_ID);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await TestBed.inject(ApplicationRef).whenStable();
+    const result = { meeting_id: MEETING_ID, removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: remaining ? ['self-survivor'] : [] };
+    component.onSelfRemoved(result);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.effectivelyInvited()).toBe(remaining);
+    expect(component.canLeaveMeeting()).toBe(remaining);
+    expect(component.canResendInvite()).toBe(remaining);
+    expect(removedIds().has(MEETING_ID)).toBe(!remaining);
+    expect(TestBed.inject(UserService).clearConfirmedMeetingRsvps).toHaveBeenCalledWith(MEETING_ID, expect.any(String), result);
+    expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+  });
+
+  it('ignores a self-row deletion belonging to another meeting', async () => {
+    const component = await createComponent();
+    component.onSelfRemoved({ meeting_id: 'another-meeting', removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: [] });
+    expect(TestBed.inject(UserService).clearConfirmedMeetingRsvps).not.toHaveBeenCalled();
+  });
+
+  it('does not restore a surviving date-scoped RSVP when a recurring date is unresolved after drawer deletion', async () => {
+    getPublicMeeting.mockReturnValue(of({ meeting: buildMeeting({ recurrence: { type: 2, repeat_interval: 1 } }), project: buildProject() }));
+    const component = await createComponent();
+    const scoped = {
+      id: 'synthetic-survivor-rsvp',
+      meeting_id: MEETING_ID,
+      registrant_id: 'self-survivor',
+      response_type: 'accepted',
+      scope: 'single',
+      occurrence_id: '2525245200',
+      created_at: '2026-01-01T00:00:00Z',
+    } as MeetingRsvp;
+    vi.mocked(TestBed.inject(UserService).confirmedMeetingRsvps).mockReturnValue([scoped]);
+    component.onSelfRemoved({ meeting_id: MEETING_ID, removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: ['self-survivor'] });
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.currentUserRsvp()).toBeNull();
+    expect(component.effectivelyInvited()).toBe(true);
+  });
+
   it.each([
     ['composite route', '1-1700000000000'],
     ['upcoming lookup fallback', MEETING_ID],
@@ -278,6 +349,21 @@ describe('MeetingJoinComponent', () => {
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toEqual([]);
     expect((component as unknown as { registrantsLoading: () => boolean }).registrantsLoading()).toBe(false);
     expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
+  });
+
+  it('marks a failed roster as unconfirmed until a later fetch succeeds', async () => {
+    getMyMeetingRegistrants.mockReturnValue(throwError(() => new Error('roster fetch failed')));
+    const component = await createComponent();
+    const failed = () => (component as unknown as { registrantsLoadFailed: () => boolean }).registrantsLoadFailed();
+
+    expect(failed()).toBe(true);
+    expect((component as unknown as { registrantsLoading: () => boolean }).registrantsLoading()).toBe(false);
+
+    getMyMeetingRegistrants.mockReturnValue(of([]));
+    component.onRegistrantsRefreshRequested(0);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(failed()).toBe(false);
   });
 
   // The BFF returns no roster to an invitee when the organizer hides attendees, so the page must not
@@ -533,6 +619,7 @@ describe('MeetingJoinComponent', () => {
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(10);
     expect(component.additionalRegistrantsCount()).toBe(2);
     expect((component as unknown as { registrantsLoading: () => boolean }).registrantsLoading()).toBe(false);
+    expect((component as unknown as { registrantsLoadFailed: () => boolean }).registrantsLoadFailed()).toBe(true);
 
     // A follow-up refetch that actually observes growth is the only way to prove the pad above
     // isn't just a leftover value the failure path left untouched — it must still be able to
@@ -542,6 +629,7 @@ describe('MeetingJoinComponent', () => {
 
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(11);
     expect(component.additionalRegistrantsCount()).toBe(1);
+    expect((component as unknown as { registrantsLoadFailed: () => boolean }).registrantsLoadFailed()).toBe(false);
   });
 
   it("falls back to an empty roster instead of leaking a previous occurrence's roster when the refetch for a newly-selected occurrence fails", async () => {
@@ -708,17 +796,13 @@ describe('MeetingJoinComponent', () => {
       expect(component.canManageOccurrence()).toBe(false);
     });
 
-    it.each([
-      [false, MAX_CUSTOM_DURATION],
-      [true, MAX_MEETING_DURATION],
-    ])('caps the occurrence dialog by the meeting v2 flag (on: %s)', async (enabled, cap) => {
-      meetingsV2Enabled.set(enabled);
+    it('caps the occurrence dialog at the composer maximum duration', async () => {
       useRecurring();
       const { component, open } = await mountWithDialog();
 
       component.rescheduleCurrentOccurrence();
 
-      expect(open.mock.calls[0][1]?.data).toEqual(expect.objectContaining({ maxDuration: cap }));
+      expect(open.mock.calls[0][1]?.data).toEqual(expect.objectContaining({ maxDuration: MAX_MEETING_DURATION }));
     });
 
     it('moves the page to the new start and re-reads the series after a reschedule', async () => {
@@ -985,30 +1069,33 @@ describe('MeetingJoinComponent', () => {
       expect(seeded?.meetingLoadFailed).toBe(false);
     });
 
-    // Bot review follow-up on PR #2046 (copilot-pull-request-reviewer, cursor): the terminal-error
-    // branch wasn't seeded to `TransferState`, so hydration reintroduced the exact blank-flash bug
-    // this PR fixes — the client started `meetingLoadFailed` at `false` and tore down the
-    // SSR-rendered error view in favor of the skeleton.
-    it('persists the terminal-error branch to TransferState on the server on a non-navigating fetch failure', async () => {
+    // #5907: the server no longer renders a terminal error. It still seeds the failure to
+    // `TransferState` (so the browser knows the server could not load it), but renders the
+    // skeleton, and the browser's own fetch decides between the meeting and the error. Both sides
+    // paint the skeleton first, so hydration still never tears down the server DOM (GH-2041).
+    it('persists the failure seed on the server on a non-navigating fetch failure, but renders the skeleton instead of the error', async () => {
       TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
       getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
 
-      await createComponent();
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
       await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
 
       const transferState = TestBed.inject(TransferState);
       const seeded = transferState.get(MEETING_JOIN_STATE_KEY, null);
       expect(seeded?.meeting).toBeNull();
       expect(seeded?.meetingLoadFailed).toBe(true);
       expect(TestBed.inject(Router).navigate).not.toHaveBeenCalledWith(['/meetings/not-found']);
+      expect((fixture.componentInstance as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
     });
 
-    it('paints the error branch synchronously from a seeded terminal-error transfer state, with no skeleton flash, and holds it through the hydration refetch', async () => {
+    it('paints the skeleton from a seeded server failure, holds it through the hydration refetch, then shows the error when the refetch fails too', async () => {
       // Held open (not `throwError`, which settles synchronously on subscribe) so there is an
-      // observable in-flight window between the first paint and the refetch settling — otherwise
-      // the eager-clear-then-re-set both happen in one synchronous tick and the post-hydration
-      // assertions below would pass even if the eager-clear fix (GH-2041) were reverted
-      // (dealako review on #2046).
+      // observable in-flight window between the first paint and the refetch settling (dealako
+      // review on #2046).
       const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
       getPublicMeeting.mockReturnValue(refetch$);
 
@@ -1026,72 +1113,62 @@ describe('MeetingJoinComponent', () => {
       const fixture = TestBed.createComponent(MeetingJoinComponent);
       const component = fixture.componentInstance;
 
-      // Assert before any stabilization — this is exactly the race the bots flagged: the seed must
-      // be applied before the first CD pass, or the skeleton renders instead of the error view.
-      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
-
+      // The first paint matches the server's skeleton, so a load that may still succeed never flashes the error (#5907).
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(false);
       fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
 
-      // The refetch is still in flight here — the error view must hold, not flash to the skeleton,
-      // while the debounced pipeline is pending.
-      fixture.detectChanges();
-      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
-
-      // Now settle the refetch with the same terminal failure the seed recorded.
-      refetch$.error({ status: 500 });
-      await TestBed.inject(ApplicationRef).whenStable();
-
-      // Re-assert post-hydration: the debounced pipeline re-entering must not have cleared
-      // `meetingLoadFailed` before the refetch settled, nor fallen through to a stale/absent
-      // `meeting()` and rendered the skeleton.
-      fixture.detectChanges();
-      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
-    });
-
-    // Bot review follow-up on PR #2046 (cursor, copilot-pull-request-reviewer): a seeded
-    // terminal-error state never initialized `meetingRouteId`, so the first debounced hydration
-    // emission compared the real route id against the signal's initial `null`, read that as a
-    // navigation, and eagerly cleared `meetingLoadFailed` while the matching refetch was still in
-    // flight — flashing the skeleton until the refetch failed again.
-    it('holds the error branch, without an intermediate skeleton flash, through a real debounce flush of the matching hydration refetch', async () => {
-      const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
-      getPublicMeeting.mockReturnValue(refetch$);
-
-      const transferState = TestBed.inject(TransferState);
-      transferState.set(MEETING_JOIN_STATE_KEY, {
-        meeting: null,
-        loadedViaPastMeetingId: false,
-        pastMeetingFullAccess: false,
-        liveMeetingFullAccess: false,
-        liveMeetingCanJoin: false,
-        meetingLoadFailed: true,
-      });
-
-      await TestBed.compileComponents();
-      const fixture = TestBed.createComponent(MeetingJoinComponent);
-      const component = fixture.componentInstance;
-
-      // Flush the debounced pipeline's first emission with a real macrotask tick, not just
-      // `whenStable()` — this is the exact race the bots flagged.
+      // The refetch is still in flight after the debounced pipeline runs — the skeleton holds.
       await new Promise((resolve) => setTimeout(resolve, 0));
       fixture.detectChanges();
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
 
-      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
-
+      // Only the browser's own (non-transient) failure shows the error.
       refetch$.error({ status: 500 });
       await TestBed.inject(ApplicationRef).whenStable();
       fixture.detectChanges();
 
       expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
       expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+    });
+
+    // #5907: the reported flash — the server could not load the meeting, but the browser's refetch
+    // succeeds. The page must go straight from the skeleton to the meeting, with no error in between.
+    it('goes from the skeleton straight to the meeting when the hydration refetch after a seeded server failure succeeds', async () => {
+      const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockReturnValue(refetch$);
+
+      const transferState = TestBed.inject(TransferState);
+      transferState.set(MEETING_JOIN_STATE_KEY, {
+        meeting: null,
+        loadedViaPastMeetingId: false,
+        pastMeetingFullAccess: false,
+        liveMeetingFullAccess: false,
+        liveMeetingCanJoin: false,
+        meetingLoadFailed: true,
+      });
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
+
+      refetch$.next({ meeting: buildMeeting(), project: buildProject() });
+      refetch$.complete();
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(false);
+      expect(component.meeting()?.id).toBe(MEETING_ID);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
     });
 
@@ -1339,6 +1416,16 @@ describe('MeetingJoinComponent', () => {
       expect(confirm.mock.calls[0][0].message).toContain("it won't invite you to this meeting again");
     });
 
+    it('escapes the title, since PrimeNG renders the message as HTML', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: false, invited: true, title: 'TSC <EU/APAC> & sync' }));
+      const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+      const confirm = vi.spyOn(confirmation, 'confirm').mockReturnValue(confirmation);
+
+      fixture.componentInstance.confirmLeaveMeeting();
+
+      expect(confirm.mock.calls[0][0].message).toContain('"TSC &lt;EU/APAC&gt; &amp; sync"');
+    });
+
     it('offers it to an organizer who is also registered, and says they stay an organizer', async () => {
       const fixture = await createFixture(buildMeeting({ organizer: true, invited: true }));
       const confirmation = fixture.debugElement.injector.get(ConfirmationService);
@@ -1416,15 +1503,39 @@ describe('MeetingJoinComponent', () => {
       const RESEND_BUTTON = '[data-testid="resend-invite-button"]';
       const RESEND_ORGANIZER_BUTTON = '[data-testid="resend-invite-organizer-button"]';
 
-      it('offers the action to a signed-in invitee and resends to their own registration when clicked', async () => {
+      /** Takes over the dialog the component's own `ConfirmationService` would open; accepts it only when asked to. */
+      const answerResendConfirmation = (fixture: Awaited<ReturnType<typeof createFixture>>, accept: boolean) => {
+        const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+        return vi.spyOn(confirmation, 'confirm').mockImplementation((options) => {
+          if (accept) options.accept?.();
+          return confirmation;
+        });
+      };
+
+      it('offers the action to a signed-in invitee and resends to their own registration once confirmed', async () => {
         const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
         const button = fixture.nativeElement.querySelector(RESEND_BUTTON);
+        const confirm = answerResendConfirmation(fixture, true);
 
         expect(button).not.toBeNull();
-        fixture.componentInstance.resendInvite();
+        fixture.componentInstance.confirmResendInvite();
 
+        expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ header: 'Resend Your Invitation', acceptLabel: 'Resend', rejectLabel: 'Cancel' }));
+        expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
         expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, undefined);
         expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+      });
+
+      it('sends nothing when the viewer cancels the confirmation from the page button', async () => {
+        const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+        const confirm = answerResendConfirmation(fixture, false);
+
+        fixture.debugElement.query(By.css(RESEND_BUTTON)).triggerEventHandler('onClick', new MouseEvent('click'));
+        await TestBed.inject(ApplicationRef).whenStable();
+
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
+        expect(toastAdd).not.toHaveBeenCalled();
       });
 
       it('resends for the occurrence the page is showing, so the matching registration is chosen', async () => {
@@ -1438,7 +1549,8 @@ describe('MeetingJoinComponent', () => {
         );
 
         expect(fixture.componentInstance.currentOccurrence()?.occurrence_id).toBe('occ-next');
-        fixture.componentInstance.resendInvite();
+        answerResendConfirmation(fixture, true);
+        fixture.componentInstance.confirmResendInvite();
 
         expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, 'occ-next');
       });
@@ -1469,10 +1581,13 @@ describe('MeetingJoinComponent', () => {
         const pending$ = new Subject<{ message: string }>();
         resendMyMeetingInvitation.mockReturnValue(pending$);
         const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+        const confirm = answerResendConfirmation(fixture, true);
 
-        fixture.componentInstance.resendInvite();
-        fixture.componentInstance.resendInvite();
+        fixture.componentInstance.confirmResendInvite();
+        fixture.componentInstance.confirmResendInvite();
 
+        // The second click opens no second dialog while the first send is in flight.
+        expect(confirm).toHaveBeenCalledTimes(1);
         expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
         expect(fixture.componentInstance.resendingInvite()).toBe(true);
         pending$.next({ message: 'ok' });
@@ -1487,9 +1602,10 @@ describe('MeetingJoinComponent', () => {
           )
           .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'FORBIDDEN', error: 'upstream detail' } })));
         const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+        answerResendConfirmation(fixture, true);
 
-        fixture.componentInstance.resendInvite();
-        fixture.componentInstance.resendInvite();
+        fixture.componentInstance.confirmResendInvite();
+        fixture.componentInstance.confirmResendInvite();
 
         expect(toastAdd).toHaveBeenNthCalledWith(
           1,
@@ -2158,15 +2274,38 @@ describe('MeetingJoinComponent', () => {
     });
 
     describe('primary action', () => {
-      it("reuses the page's own self-resend (same handler, same toast), for the occurrence shown", async () => {
+      /** Takes over the dialog the page's own `ConfirmationService` would open; accepts it only when asked to. */
+      const answerResendConfirmation = (fixture: ComponentFixture<MeetingJoinComponent>, accept: boolean) => {
+        const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+        return vi.spyOn(confirmation, 'confirm').mockImplementation((options) => {
+          if (accept) options.accept?.();
+          return confirmation;
+        });
+      };
+
+      it("reuses the page's own confirmed self-resend (same dialog, same toast), for the occurrence shown", async () => {
         const fixture = await render();
+        const confirm = answerResendConfirmation(fixture, true);
 
         fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
         await settle();
 
+        expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ header: 'Resend Your Invitation' }));
         expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
         expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, undefined);
         expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+      });
+
+      it('sends nothing when the viewer cancels the confirmation from the bar', async () => {
+        const fixture = await render();
+        const confirm = answerResendConfirmation(fixture, false);
+
+        fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+        await settle();
+
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
+        expect(toastAdd).not.toHaveBeenCalled();
       });
 
       it.each([
@@ -2192,6 +2331,7 @@ describe('MeetingJoinComponent', () => {
       it('shows the same in-flight state as the page button while the resend is pending', async () => {
         resendMyMeetingInvitation.mockReturnValue(new Subject());
         const fixture = await render();
+        answerResendConfirmation(fixture, true);
 
         fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
         await settle();

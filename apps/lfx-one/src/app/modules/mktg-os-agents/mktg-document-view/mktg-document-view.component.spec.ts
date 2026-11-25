@@ -20,6 +20,8 @@ import {
   LINKEDIN_PROFILE_EDIT_ORIGINS,
   MKTG_DOCUMENT_TYPES,
   MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS,
+  MKTG_POLL_MAX_BACKOFF_MS,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
   MKTG_RUN_ACTIVE,
@@ -59,6 +61,7 @@ import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-d
 import { mktgSentenceCaseLabel } from '@lfx-one/shared/utils/mktg-navigation.utils';
 import { brandKitReportV2RulesFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2-rules.fixture';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { faqReportV2Envelope } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 // package-architecture.md § Import Patterns: fixtures are intentionally not re-exported by the production utils barrel.
@@ -130,7 +133,7 @@ describe('MktgDocumentViewComponent', () => {
 
   let harness: RouterTestingHarness;
   let subject: ReturnType<typeof signal<string>>;
-  const pending = { load: vi.fn(), waitForStorage: vi.fn(), clear: vi.fn() };
+  const pending = { load: vi.fn(), waitForStorage: vi.fn(), clear: vi.fn(), markWaitStarted: vi.fn((run) => run) };
   const print = { prepare: vi.fn(), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
 
   let resolveBrandKit: Mock;
@@ -201,6 +204,13 @@ describe('MktgDocumentViewComponent', () => {
   async function settle(): Promise<void> {
     await harness.fixture.whenStable();
     harness.detectChanges();
+  }
+
+  /** A return to the tab: the document reader debounces its wake, so the re-read starts only after that window. */
+  async function wake(): Promise<void> {
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((resolve) => setTimeout(resolve, VISIBILITY_POLL_WAKE_DEBOUNCE_MS));
+    await settle();
   }
 
   /** A Brand Kit revision's sidecar, as the store serves it: the kit's envelope without its Markdown. */
@@ -320,6 +330,7 @@ describe('MktgDocumentViewComponent', () => {
     subject = linkedSignal(() => viewer()?.sub ?? '');
     pending.load.mockReset().mockReturnValue(null);
     pending.waitForStorage.mockReset();
+    pending.markWaitStarted.mockReset().mockImplementation((run) => run);
     pending.clear.mockClear();
     print.prepare.mockReset().mockResolvedValue(undefined);
     print.printNow.mockReset();
@@ -720,6 +731,45 @@ describe('MktgDocumentViewComponent', () => {
     );
   });
 
+  it('sends the author who objects to the identity to their profile and then a new draft, never a content comment', async () => {
+    await renderLinkedin(linkedinResponse());
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    query('mktg-linkedin-identity-change-toggle')?.click();
+    await settle();
+    expect(query('mktg-linkedin-identity-change-draft')).toBeNull();
+    query('mktg-linkedin-identity-change-edit')?.querySelector('button')?.click();
+    expect(navigate).toHaveBeenCalledWith(
+      ['linkedin-post'],
+      expect.objectContaining({
+        queryParams: expect.objectContaining({ project: PROJECT.slug, profile: 'edit', revision: null, type: null, mode: 'new' }),
+        state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.redraft },
+      })
+    );
+    expect(navigate.mock.calls.at(-1)?.[1]).not.toHaveProperty('queryParamsHandling');
+  });
+
+  it('offers another writer a draft as themselves, since only the author can change the profile', async () => {
+    await renderLinkedin(linkedinResponse('', false));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    query('mktg-linkedin-identity-change-toggle')?.click();
+    await settle();
+    expect(query('mktg-linkedin-identity-change-panel')?.textContent).toContain("Example author's LinkedIn profile");
+    expect(query('mktg-linkedin-identity-change-edit')).toBeNull();
+    query('mktg-linkedin-identity-change-draft')?.querySelector('button')?.click();
+    expect(navigate).toHaveBeenCalledWith(
+      ['linkedin-post'],
+      expect.objectContaining({ queryParams: expect.objectContaining({ project: PROJECT.slug, profile: null, mode: 'new' }) })
+    );
+    expect(navigate.mock.calls.at(-1)?.[1]).not.toHaveProperty('state');
+  });
+
+  it('hides the identity action from a reader who cannot draft', async () => {
+    projectLookup.mockReturnValue(of({ writer: false }));
+    await renderLinkedin(linkedinResponse('', false));
+    expect(query('mktg-linkedin-document-author')).not.toBeNull();
+    expect(query('mktg-linkedin-identity-change')).toBeNull();
+  });
+
   it.each(['', '?mode=new', '?mode=old'])('Draft another explicitly restores last inputs independently of the current URL (%s)', async (urlQuery) => {
     await renderLinkedin(linkedinResponse(), urlQuery);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -811,22 +861,45 @@ describe('MktgDocumentViewComponent', () => {
     const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
     expect(component?.['loading']()).toBe(false);
     expect(component?.['view']()).not.toBeNull();
-    expect(component?.['refreshWarning']()).toContain('could not be checked');
+    expect(component?.['refreshWarning']()).toBe(MKTG_POLL_RETRYING_TEXT);
     expect(query('mktg-document-view-loading')).toBeNull();
   });
 
-  it('settles an unverified initial selected run to an error and Retry, never an old document body', async () => {
+  it('keeps the one plain line while the revision part of the read is partial, with the detail complete', async () => {
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), progressUnavailable: true }));
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    expect(component?.['loading']()).toBe(false);
+    expect(component?.['view']()).not.toBeNull();
+    const line = query('mktg-document-view-refresh-warning');
+    expect(line?.getAttribute('role')).toBe('status');
+    expect(line?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(query('mktg-document-view-error')).toBeNull();
+    // The next complete cycle clears it.
+    store.getRevision.mockReturnValue(of(revisionResponse(LATEST)));
+    await wake();
+    expect(component?.['refreshWarning']()).toBe('');
+    expect(query('mktg-document-view-refresh-warning')).toBeNull();
+  });
+
+  it('settles an unverified initial selected run to the one plain line with no Retry button, never an old document body', async () => {
     store.getDocument.mockReturnValue(of({ ...detail, progressUnavailable: true, runs: [] }));
     await render(`/documents/brand-kit/living?run=${started('writing').runId}`);
     const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
     expect(component?.['loading']()).toBe(false);
     expect(component?.['view']()).toBeNull();
-    expect(query('mktg-document-view-error')?.textContent).toContain('could not be verified');
-    expect(query('mktg-document-view-retry')).not.toBeNull();
+    // One quiet status line (WAI-ARIA live region, polite), never an alert box, for a check that keeps going.
+    const line = query('mktg-document-view-refresh-warning');
+    expect(line?.getAttribute('role')).toBe('status');
+    expect(line?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(query('mktg-document-view-error')).toBeNull();
+    expect(query('mktg-document-view-retry')).toBeNull();
     expect(query('mktg-document-view-brand-kit')).toBeNull();
   });
 
   it('renders a late already-answered notice on the landed document without replacing its body', async () => {
+    // A complete read listing no runs: the notice's run has landed. (A read without a runs list says nothing about it.)
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [] }));
     await render('/documents/brand-kit/living');
     const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
     const body = component?.['view']();
@@ -836,7 +909,153 @@ describe('MktgDocumentViewComponent', () => {
       message: 'Someone on your team already answered these — the agent is writing.',
     });
     await settle();
-    expect(query('mktg-document-view-answered-note')?.textContent).toContain('Someone on your team already answered these — the agent is writing.');
+    // The document has landed and the read carries no such run any more: the line is true when read — the asset is ready.
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('Someone on your team already answered these — the asset is ready.');
+    expect(component?.['view']()).toBe(body);
+  });
+
+  it('keeps the ready notice and its draft when the history still lists an older failed run', async () => {
+    const run = started('writing');
+    const questionsId = 'c'.repeat(64);
+    const olderFailed = { ...started('failed'), runId: 'a'.repeat(64), startedAt: '2026-10-18T08:00:00Z' };
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run, olderFailed] }));
+    await render('/documents/brand-kit/living');
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: run.runId,
+      questionsId,
+      message: 'Someone on your team already answered these — the agent is writing. Your draft is kept below.',
+      kept: { questionsId, questions: [], draft: { index: 0, answers: {}, dirty: true } },
+    });
+    await settle();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('the agent is writing');
+    // The run landed: closed runs leave the list, the older failed row stays in it. That row is history, not another run.
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [olderFailed] }));
+    await wake();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('Someone on your team already answered these — the asset is ready.');
+    expect(query('mktg-run-questions-locked')).not.toBeNull();
+    expect(TestBed.inject(MktgRunAnswersService).notice(PROJECT.uid, 'brand-kit', 'living')).not.toBeNull();
+  });
+
+  it('flips a notice heard while writing to the asset is ready once its run has landed, and not before', async () => {
+    const run = started('writing');
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run] }));
+    await render(`/documents/brand-kit/living?run=${run.runId}`);
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: run.runId,
+      questionsId: 'c'.repeat(64),
+      message: 'Synthetic writer already answered these — the agent is writing. Your draft is kept below.',
+    });
+    await settle();
+    // Still writing: the line stands as heard.
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('Synthetic writer already answered these — the agent is writing.');
+    // Landed (the run completed): the same line, true when read.
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [{ ...run, state: 'completed' as const }] }));
+    await wake();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain(
+      'Synthetic writer already answered these — the asset is ready. Your draft is kept below.'
+    );
+    // Gone from the active runs altogether: landed as well.
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [] }));
+    await wake();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('the asset is ready');
+  });
+
+  it('leaves a remembered notice as heard while run progress cannot be checked', async () => {
+    const run = started('writing');
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run] }));
+    await render(`/documents/brand-kit/living?run=${run.runId}`);
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: run.runId,
+      questionsId: 'c'.repeat(64),
+      message: 'Someone on your team already answered these — the agent is writing. Your draft is kept below.',
+    });
+    await settle();
+    // The unavailable reply carries no runs: that is not a landed run, and the line must not flap to "ready".
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [], progressUnavailable: true }));
+    await wake();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('the agent is writing. Your draft is kept below.');
+    expect(query('mktg-document-view-answered-note')?.textContent).not.toContain('the asset is ready');
+  });
+
+  it('keeps the notice while its run writes on, whatever newer failed or retired rows the history gains', async () => {
+    const run = started('writing');
+    const questionsId = 'c'.repeat(64);
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run] }));
+    await render('/documents/brand-kit/living');
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: run.runId,
+      questionsId,
+      message: 'Someone on your team already answered these — the agent is writing. Your draft is kept below.',
+      kept: { questionsId, questions: [], draft: { index: 0, answers: {}, dirty: true } },
+    });
+    await settle();
+    // A later start that failed at once, and a later one discarded: neither is a run this page follows.
+    const newerFailed = { ...started('failed'), runId: 'd'.repeat(64), startedAt: '2026-10-19T08:10:00Z' };
+    const newerDiscarded = { ...started('writing'), runId: 'e'.repeat(64), startedAt: '2026-10-19T08:11:00Z', state: 'discarded' as const };
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run, newerFailed, newerDiscarded] }));
+    await wake();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('the agent is writing. Your draft is kept below.');
+    expect(query('mktg-run-questions-locked')).not.toBeNull();
+    expect(TestBed.inject(MktgRunAnswersService).notice(PROJECT.uid, 'brand-kit', 'living')?.runId).toBe(run.runId);
+  });
+
+  it.each([
+    ['failed', (run: MktgDocumentRunProgress) => [{ ...run, state: 'failed' as const }]],
+    [
+      'was discarded',
+      (run: MktgDocumentRunProgress) => [{ ...run, state: 'discarded' as const, closedBy: 'Synthetic owner', closedAt: '2026-10-19T08:09:00Z' }],
+    ],
+    ['was superseded', (run: MktgDocumentRunProgress) => [{ ...run, state: 'superseded' as const, replacedBy: 'f'.repeat(64) }]],
+    [
+      'asks a newer round',
+      (run: MktgDocumentRunProgress) => [
+        { ...run, state: 'questions' as const, pendingQuestions: { questionsId: 'e'.repeat(64), askedAt: '2026-10-19T08:05:00Z', questions: [] } },
+      ],
+    ],
+    ['was replaced by a newer run started here', (run: MktgDocumentRunProgress) => [{ ...run, runId: 'f'.repeat(64), startedAt: '2026-10-19T08:10:00Z' }]],
+  ])('hides the remembered notice and its kept draft once the run %s', async (_case, runsAfter) => {
+    const run = started('writing');
+    const questionsId = 'c'.repeat(64);
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run] }));
+    await render('/documents/brand-kit/living');
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: run.runId,
+      questionsId,
+      message: 'Someone on your team already answered these — the agent is writing. Your draft is kept below.',
+      kept: { questionsId, questions: [], draft: { index: 0, answers: {}, dirty: true } },
+    });
+    await settle();
+    expect(query('mktg-document-view-answered-note')).not.toBeNull();
+    expect(query('mktg-run-questions-locked')).not.toBeNull();
+    store.getDocument.mockReturnValue(of({ ...detail, runs: runsAfter(run) }));
+    await wake();
+    expect(query('mktg-document-view-answered-note')).toBeNull();
+    expect(query('mktg-run-questions-locked')).toBeNull();
+    // A newer run observed here retires the remembered notice for good, as the run page does when it starts one.
+    if (_case.startsWith('was replaced')) expect(TestBed.inject(MktgRunAnswersService).notice(PROJECT.uid, 'brand-kit', 'living')).toBeNull();
+  });
+
+  it('keeps the typed draft read-only beside the produced revision when the remembered notice carries it', async () => {
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    const body = component?.['view']();
+    const questionsId = 'c'.repeat(64);
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: 'b'.repeat(64),
+      questionsId,
+      message: 'Someone on your team already answered these — the asset is ready. Your draft is kept below.',
+      kept: {
+        questionsId,
+        questions: [{ key: 'audience', label: 'Audience', question: 'Who is this for?', why: '', suggestedAnswer: 'Synthetic maintainers', basis: [] }],
+        draft: { index: 0, answers: { audience: 'Synthetic typed audience' }, dirty: true },
+      },
+    });
+    await settle();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('the asset is ready. Your draft is kept below.');
+    const box = query('mktg-run-questions-locked')?.querySelector('textarea') as HTMLTextAreaElement;
+    expect(box.disabled).toBe(true);
+    expect(box.value).toBe('Synthetic typed audience');
+    expect(query('mktg-run-questions-locked')?.querySelector('[data-testid="mktg-run-questions-send"]')).toBeNull();
     expect(component?.['view']()).toBe(body);
   });
 
@@ -1121,8 +1340,9 @@ describe('MktgDocumentViewComponent', () => {
       expect(store.getRevision).not.toHaveBeenCalled();
       if (resumable) {
         expect(pending.waitForStorage).toHaveBeenCalled();
-        expect(query('mktg-document-view-run-loading')?.getAttribute('aria-label')).toBe('Checking the run…');
-        expect(query('mktg-document-view-loading')).toBeNull();
+        // A generating one-off says so (Law 1), never the run skeleton.
+        expect(query('mktg-document-view-generating')?.textContent).toContain('Generating your report');
+        expect(query('mktg-document-view-run-loading')).toBeNull();
       } else {
         expect(pending.waitForStorage).not.toHaveBeenCalled();
         expect(query('mktg-document-view-error')).not.toBeNull();
@@ -1134,14 +1354,17 @@ describe('MktgDocumentViewComponent', () => {
       pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
       pending.waitForStorage.mockReturnValue(completed);
       await render('/documents/aeo-geo/run-012345678901234567890123');
-      expect(query('mktg-document-view-run-loading')?.getAttribute('aria-label')).toBe('Checking the run…');
-      expect(query('mktg-document-view-loading')).toBeNull();
+      // The generating block, with its copy, and not the ACK's run skeleton (pre-existing since #4594).
+      expect(query('mktg-document-view-generating')?.textContent).toContain('Generating your report');
+      expect(query('mktg-document-view-loading')?.getAttribute('role')).toBe('status');
+      expect(query('mktg-document-view-run-loading')).toBeNull();
       expect(query('mktg-document-view-document')).toBeNull();
       expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'aeo-geo', 'run-012345678901234567890123', false, undefined, true);
       completed.next();
       completed.complete();
       await settle();
-      expect(query('mktg-document-view-run-loading')).toBeNull();
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-loading')).toBeNull();
       expect(query('mktg-document-view-document')).not.toBeNull();
       expect(pending.clear).toHaveBeenCalledWith('proj-1', 'run-012345678901234567890123');
     });
@@ -1194,51 +1417,65 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-retry')).toBeNull();
     });
 
-    it.each(['timeout', 'stored-read-outage'])('Check again recovers a %s through a retained capability and a late stored report', async (failure) => {
-      const realPending = TestBed.runInInjectionContext(() => new MktgPendingDocumentService());
-      const ready = {
-        status: 'ready' as const,
-        persistence: { project: PROJECT.uid, content_sha256: 'a'.repeat(64), s3_key: 'synthetic/report.md', version: 1 },
-        documentMarkdown: '# Report',
-        version: 1,
-      };
-      const poll = vi.spyOn(realPending, 'poll');
-      const clear = vi.spyOn(realPending, 'clear');
-      if (failure === 'timeout') poll.mockReturnValueOnce(throwError(() => new TimeoutError())).mockReturnValue(of(ready));
-      else poll.mockReturnValue(of(ready));
-      pending.waitForStorage.mockImplementation(realPending.waitForStorage.bind(realPending));
-      pending.load.mockReturnValue({ agentId: 'aeo-geo', projectUid: PROJECT.uid, documentId: 'run-012345678901234567890123', phase: 'writing' });
-      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
-      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: failure === 'timeout' ? 404 : 503 })));
-      const envelope = aeoGeoEnvelopeFixture();
-      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
-      if (!type) throw new Error('Audit document type missing.');
-      store.getRevision.mockReturnValue(
-        of({
-          ...revisionResponse(LATEST),
-          type,
-          markdown: envelope.document_markdown,
-          aeoGeoReport: {
-            domain: envelope.domain,
-            report_filename: envelope.report_filename,
-            scores: envelope.scores,
-            overall_score: envelope.overall_score,
-            verdict: envelope.verdict,
-            report: envelope.report,
-          },
-        })
-      );
-      await render('/documents/aeo-geo/run-012345678901234567890123');
-      expect(query('mktg-document-view-retry')).not.toBeNull();
-      expect(query('mktg-document-view-error')?.textContent).toContain(failure === 'timeout' ? 'taking longer than expected' : 'not been stored yet');
-      expect(clear).not.toHaveBeenCalled();
-      query('mktg-document-view-retry')?.click();
-      await settle();
-      expect(query('mktg-document-view-report-summary')).not.toBeNull();
-      expect(query('mktg-document-view-retry')).toBeNull();
-      expect(pending.waitForStorage).toHaveBeenCalledTimes(failure === 'timeout' ? 2 : 1);
-      expect(pending.clear).toHaveBeenCalledWith(PROJECT.uid, 'run-012345678901234567890123');
-    });
+    it.each(['timeout', 'stored-read-outage'])(
+      'recovers a %s through a retained capability and a late stored report with no Check again button',
+      async (failure) => {
+        vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+        vi.spyOn(Math, 'random').mockReturnValue(0);
+        const realPending = TestBed.runInInjectionContext(() => new MktgPendingDocumentService());
+        const ready = {
+          status: 'ready' as const,
+          persistence: { project: PROJECT.uid, content_sha256: 'a'.repeat(64), s3_key: 'synthetic/report.md', version: 1 },
+          documentMarkdown: '# Report',
+          version: 1,
+        };
+        const poll = vi.spyOn(realPending, 'poll');
+        const clear = vi.spyOn(realPending, 'clear');
+        if (failure === 'timeout') poll.mockReturnValueOnce(throwError(() => new TimeoutError())).mockReturnValue(of(ready));
+        else poll.mockReturnValue(of(ready));
+        pending.waitForStorage.mockImplementation(realPending.waitForStorage.bind(realPending));
+        pending.load.mockReturnValue({ agentId: 'aeo-geo', projectUid: PROJECT.uid, documentId: 'run-012345678901234567890123', phase: 'writing' });
+        store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+        store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: failure === 'timeout' ? 404 : 503 })));
+        const envelope = aeoGeoEnvelopeFixture();
+        const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
+        if (!type) throw new Error('Audit document type missing.');
+        store.getRevision.mockReturnValue(
+          of({
+            ...revisionResponse(LATEST),
+            type,
+            markdown: envelope.document_markdown,
+            aeoGeoReport: {
+              domain: envelope.domain,
+              report_filename: envelope.report_filename,
+              scores: envelope.scores,
+              overall_score: envelope.overall_score,
+              verdict: envelope.verdict,
+              report: envelope.report,
+            },
+          })
+        );
+        await render('/documents/aeo-geo/run-012345678901234567890123');
+        expect(query('mktg-document-view-retry')).toBeNull();
+        if (failure === 'timeout') expect(query('mktg-document-view-error')?.textContent).toContain('taking longer than expected');
+        else {
+          // A transient outage is one quiet status line, not an error box, and offers no Run again.
+          expect(query('mktg-document-view-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+          expect(query('mktg-document-view-error')).toBeNull();
+          expect(query('mktg-document-view-run-again')).toBeNull();
+        }
+        expect(clear).not.toHaveBeenCalled();
+        // The audit's own deadline is final until the tab is next focused; a transient read outage is retried on the capped backoff.
+        if (failure === 'timeout') window.dispatchEvent(new Event('focus'));
+        else await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+        await settle();
+        expect(query('mktg-document-view-report-summary')).not.toBeNull();
+        expect(query('mktg-document-view-retry')).toBeNull();
+        expect(pending.waitForStorage).toHaveBeenCalledTimes(failure === 'timeout' ? 2 : 1);
+        expect(pending.clear).toHaveBeenCalledWith(PROJECT.uid, 'run-012345678901234567890123');
+        vi.useRealTimers();
+      }
+    );
 
     it('Run again explicitly clears the timed-out capability before leaving the document', async () => {
       store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
@@ -1325,13 +1562,135 @@ describe('MktgDocumentViewComponent', () => {
       expect(store.getRevision).toHaveBeenCalledWith(PROJECT.uid, 'aeo-geo', 'run-012345678901234567890123', OLDER.id);
     });
 
-    it('offers Check again after a stored report revision read fails transiently', async () => {
+    it('retries a transiently failed stored report revision read on its own, behind the one plain line and no Check again', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      vi.spyOn(Math, 'random').mockReturnValue(0);
       store.getRevision.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
       await render('/documents/aeo-geo/run-012345678901234567890123');
-      expect(query('mktg-document-view-error')?.textContent).toContain('The report could not be loaded. Check again.');
-      expect(query('mktg-document-view-retry')?.textContent).toContain('Check again');
+      expect(query('mktg-document-view-refresh-warning')?.getAttribute('role')).toBe('status');
+      expect(query('mktg-document-view-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-document-view-error')).toBeNull();
+      expect(query('mktg-document-view-run-again')).toBeNull();
+      expect(query('mktg-document-view-retry')).toBeNull();
       expect(pending.waitForStorage).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      expect(store.getRevision).toHaveBeenCalledTimes(2);
+      expect(query('mktg-document-view-refresh-warning')).toBeNull();
+      expect(query('mktg-document-view-error')).toBeNull();
+      expect(query('mktg-document-view-loading')).toBeNull();
+      expect(query('mktg-document-view-document')).not.toBeNull();
+      vi.useRealTimers();
     });
+
+    it('keeps the loading state through a transiently failed first read, and shows the audit as generating once the retry is answered', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
+      pending.waitForStorage.mockReturnValue(NEVER);
+      store.getDocument
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      // The read is still being retried: the page keeps loading behind the one line, it does not go blank.
+      expect(query('mktg-document-view-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-document-view-run-loading') ?? query('mktg-document-view-loading')).not.toBeNull();
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      // The server answered (the report is not stored yet): nothing is retrying, and the storage wait shows as loading.
+      expect(pending.waitForStorage).toHaveBeenCalledTimes(1);
+      expect(query('mktg-document-view-refresh-warning')).toBeNull();
+      expect(query('mktg-document-view-run-loading') ?? query('mktg-document-view-loading')).not.toBeNull();
+      expect(query('mktg-document-view-error')).toBeNull();
+      vi.useRealTimers();
+    });
+
+    it('drops the retrying line when a retried first read ends for good: the final error stands alone', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      store.getDocument
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-document-view-error')).toBeNull();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(2);
+      // Nothing is retrying beside a final error: one message, not two that contradict each other.
+      expect(query('mktg-document-view-error')).not.toBeNull();
+      expect(query('mktg-document-view-refresh-warning')).toBeNull();
+      expect(query('mktg-document-view-retry')).toBeNull();
+      vi.useRealTimers();
+    });
+
+    it('keeps a loaded report on screen through a transiently failed re-read on focus: one quiet line, no error box, no Run again', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-document')).not.toBeNull();
+      store.getRevision.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+      window.dispatchEvent(new Event('focus'));
+      await settle();
+      expect(store.getRevision).toHaveBeenCalledTimes(2);
+      // Last loaded content stays: the report is still mounted behind the one status line; nothing offers a new paid run.
+      expect(query('mktg-document-view-document')).not.toBeNull();
+      expect(query('mktg-document-view-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-document-view-error')).toBeNull();
+      expect(query('mktg-document-view-run-again')).toBeNull();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      expect(query('mktg-document-view-refresh-warning')).toBeNull();
+      vi.useRealTimers();
+    });
+
+    it.each([401, 403])('latches a refused stored report read (%s): a final line, and no wake sends the same credentials again', async (status) => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      store.getRevision.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-error')).not.toBeNull();
+      expect(query('mktg-document-view-refresh-warning')).toBeNull();
+      const reads = store.getRevision.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(2 * MKTG_POLL_MAX_BACKOFF_MS);
+      window.dispatchEvent(new Event('focus'));
+      await settle();
+      expect(store.getRevision).toHaveBeenCalledTimes(reads);
+      vi.useRealTimers();
+    });
+
+    it('anchors the storage wait where it starts: a run answered after 10 min of research is not "taking longer" at once, and a focus at anchor+590 s still ends at anchor+600 s', async () => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+      const realPending = TestBed.runInInjectionContext(() => new MktgPendingDocumentService());
+      pending.waitForStorage.mockImplementation(realPending.waitForStorage.bind(realPending));
+      // Saved 10 min ago (research and answers took that long); the wait is anchored now, on this first wait.
+      const run = {
+        agentId: 'aeo-geo',
+        projectUid: PROJECT.uid,
+        documentId: 'run-012345678901234567890123',
+        phase: 'writing' as const,
+        savedAt: new Date(Date.now() - MKTG_RUN_POLL.timeoutMs).toISOString(),
+      };
+      pending.load.mockReturnValue(run);
+      const anchor = new Date().toISOString();
+      pending.markWaitStarted.mockImplementation((pendingRun) => ({ ...pendingRun, waitStartedAt: anchor }));
+      store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      // The run never reports ready: only the deadline can end the wait.
+      vi.spyOn(realPending, 'poll').mockReturnValue(NEVER);
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(pending.markWaitStarted).toHaveBeenCalledWith(run);
+      expect(query('mktg-document-view-error')).toBeNull();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs - 10_000);
+      // A focus resubscribes the wait; the anchor is the persisted one, so the budget does not restart.
+      window.dispatchEvent(new Event('focus'));
+      await settle();
+      expect(query('mktg-document-view-error')).toBeNull();
+      await vi.advanceTimersByTimeAsync(10_000 + 1);
+      await settle();
+      expect(query('mktg-document-view-error')?.textContent).toContain('taking longer than expected');
+      vi.useRealTimers();
+    });
+
     it('preserves the missing-document code in the audit error copy without Check again', async () => {
       store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { code: 'MKTG_DOCUMENT_NOT_FOUND' } })));
       await render('/documents/aeo-geo/run-012345678901234567890123');
@@ -1339,12 +1698,35 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-retry')).toBeNull();
     });
 
-    it('leaves main’s load errors on the shared Retry path, not audit recovery', async () => {
+    it('leaves main’s terminal load errors on the shared error path with no Retry button, not audit recovery', async () => {
+      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 400 })));
+      await render('/documents/brand-kit/living');
+      expect(query('mktg-document-view-error')?.textContent).toContain('This revision is not available.');
+      expect(query('mktg-document-view-retry')).toBeNull();
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+    });
+
+    it('shows the one quiet line through a transiently failed first read of a living document, then the document, with no Retry button', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      // Jitter pinned at the floor: the retry waits exactly the healthy interval.
+      vi.spyOn(Math, 'random').mockReturnValue(0);
       store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
       await render('/documents/brand-kit/living');
-      expect(query('mktg-document-view-error')?.textContent).toContain('could not be loaded');
-      expect(query('mktg-document-view-retry')?.textContent).toContain('Retry');
+      // The progress reader is headless while this view loads: it reports its retrying state and the view shows the line itself.
+      const line = query('mktg-document-view-refresh-warning');
+      expect(line?.getAttribute('role')).toBe('status');
+      expect(line?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-document-view-error')).toBeNull();
+      expect(query('mktg-document-view-retry')).toBeNull();
       expect(pending.waitForStorage).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(2);
+      expect(query('mktg-document-view-refresh-warning')).toBeNull();
+      expect(query('mktg-document-view-error')).toBeNull();
+      expect(query('mktg-document-view-loading')).toBeNull();
+      expect(query('mktg-document-view-document')).not.toBeNull();
+      vi.useRealTimers();
     });
   });
 
@@ -1471,6 +1853,10 @@ describe('MktgDocumentViewComponent', () => {
         : "Member 360 couldn't finish this run.";
     expect(query('mktg-document-view-error')?.textContent).toContain(short);
     expect(query('mktg-document-view-error')?.textContent).not.toContain('Synthetic terminal explanation');
+    // The heading names the run: a failed Member 360 run has no revision, so no period to title it with.
+    expect(query('mktg-document-view-title-loading')).toBeNull();
+    expect(query('mktg-document-view-title')?.tagName).toBe('H1');
+    expect(query('mktg-document-view-title')?.textContent?.trim()).toBe("The Member 360 run wasn't finished");
     const details = query('member-360-failure-details');
     expect(details?.hasAttribute('open')).toBe(false);
     expect(query('member-360-failure-message')?.textContent?.trim()).toBe('Synthetic terminal explanation.');
@@ -1496,7 +1882,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.retryRun).not.toHaveBeenCalled();
   });
 
-  it('keeps a questions turn open with its feed and rechecks the same session on explicit refresh', async () => {
+  it('keeps a questions turn open with its feed and rechecks the same session on its own poll, with no Refresh button', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     store.getDocument.mockReturnValue(of(memberProgress('questions')));
 
     await render('/documents/member-360/run-0123456789abcdef01234567');
@@ -1508,11 +1895,13 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-run-activity-steps')?.textContent).toContain('Checking LFX');
     expect(query('mktg-document-view-error')).toBeNull();
     expect(query('mktg-document-view-intake-link')).toBeNull();
+    expect(query('mktg-document-view-paused-refresh')).toBeNull();
     store.getDocument.mockClear();
-    query('mktg-document-view-paused-refresh')?.querySelector('button')?.click();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
     await settle();
-    expect(store.getDocument).toHaveBeenCalledWith(PROJECT.uid, 'member-360', 'run-0123456789abcdef01234567', false);
+    expect(store.getDocument).toHaveBeenCalledWith(PROJECT.uid, 'member-360', 'run-0123456789abcdef01234567', true);
     expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   describe('workbook in the document header', () => {
@@ -1677,16 +2066,13 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-loading')).toBeNull();
   });
 
-  it('leaves an absent Member document read retryable without relying on a subject or browser cache', async () => {
+  it('settles an absent Member document read to its error with no Retry button, without relying on a subject or browser cache', async () => {
     viewer.set(undefined);
     store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
     await render('/documents/member-360/run-0123456789abcdef01234567');
     expect(query('mktg-document-view-loading')).toBeNull();
-    expect(query('mktg-document-view-retry')).not.toBeNull();
-    store.getDocument.mockReturnValue(of(memberProgress('writing')));
-    query('mktg-document-view-retry')?.querySelector('button')?.click();
-    await settle();
-    expect(query('mktg-document-view-run')).not.toBeNull();
+    expect(query('mktg-document-view-error')?.textContent).toContain('no such revision');
+    expect(query('mktg-document-view-retry')).toBeNull();
   });
 
   it('does not replace a prose document title with the typed document title', async () => {
@@ -2280,6 +2666,8 @@ describe('MktgDocumentViewComponent', () => {
 
   it('keeps a prepared run writing after its first metadata read fails, then resumes polling', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    // Jitter pinned at the floor: the retry waits exactly the healthy interval.
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     const pending = preparedPending();
     const events = new Subject<MktgGenerateProgress>();
     vi.mocked(TestBed.inject(MktgRunAttemptService).consume).mockReturnValue({ subject: 'synthetic-owner', pending });
@@ -2292,9 +2680,11 @@ describe('MktgDocumentViewComponent', () => {
     events.next(writingActivity());
     await settle();
     expect(progressReader().runState()).toBe('writing');
-    expect(progressReader()['warning']()).toContain('retrying');
-    expect(query('mktg-document-view-error')?.textContent).toContain('could not be verified');
-    expect(query('mktg-document-view-retry')).not.toBeNull();
+    expect(progressReader()['warning']()).toBe(MKTG_POLL_RETRYING_TEXT);
+    // The progress reader is headless here, so the view's one quiet status line is the only line; never an error box.
+    expect(query('mktg-document-view-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(query('mktg-document-view-error')).toBeNull();
+    expect(query('mktg-document-view-retry')).toBeNull();
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     await settle();
     expect(store.getDocument).toHaveBeenCalledTimes(2);
@@ -2392,7 +2782,8 @@ describe('MktgDocumentViewComponent', () => {
       expect(!!query('mktg-document-view-intake-link')).toBe(state === 'failed');
       expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
       if (state === 'questions') {
-        vi.advanceTimersByTime(3 * MKTG_RUN_POLL.intervalMs);
+        // The card polls the waiting state at the run page's interval, so a second browser sees new questions without a click.
+        vi.advanceTimersByTime(3 * MKTG_RUN_POLL.questionsIntervalMs);
         expect(store.getDocument).toHaveBeenCalledTimes(4);
         expect(progressReader().runState()).toBe('questions');
         expectEmptyStateHost();
@@ -2537,12 +2928,12 @@ describe('MktgDocumentViewComponent', () => {
     const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
     if (!component) throw new Error('Missing document receiver');
     expect(progress.observed).toBe(true);
-    expect(progressReader()['warning']()).toContain('retrying');
+    expect(progressReader()['warning']()).toBe(MKTG_POLL_RETRYING_TEXT);
     expect(query('mktg-document-view-refresh-progress')).toBeNull();
-    expect(query('mktg-document-view-error')?.textContent).toContain('could not be verified');
-    expect(query('mktg-document-view-retry')?.querySelector('button')?.disabled).toBe(true);
+    expect(query('mktg-document-view-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(query('mktg-document-view-error')).toBeNull();
+    expect(query('mktg-document-view-retry')).toBeNull();
     component['onRefreshProgress']();
-    component['retryLoad']();
     await settle();
     expect(progress.observed).toBe(true);
     expect(attempts.consume).toHaveBeenCalledTimes(1);
@@ -2778,32 +3169,42 @@ describe('MktgDocumentViewComponent', () => {
     }
   );
 
-  it.each(['metadata', 'body'])('bounds repeated %s failures together and manual refresh restores the loaded asset', async (failure) => {
-    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
-    store.getDocument.mockReturnValue(of({ ...detail, runs: [started('writing')] }));
-    await render('/documents/brand-kit/living');
-    if (failure === 'metadata') store.getDocument.mockReturnValue(of({ ...detail, runs: [started('writing')], progressUnavailable: true }));
-    else {
-      const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
-      component['localProgress'].set('writing'); // Creator's local pre-ACK body polling; a selected ACK intentionally redirects to its run.
+  it.each(['metadata', 'body'])(
+    'keeps checking through repeated %s failures at the capped backoff, never stops, and the line clears on a good read',
+    async (failure) => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      vi.spyOn(Math, 'random').mockReturnValue(1);
+      store.getDocument.mockReturnValue(of({ ...detail, runs: [started('writing')] }));
+      await render('/documents/brand-kit/living');
+      if (failure === 'metadata') store.getDocument.mockReturnValue(of({ ...detail, runs: [started('writing')], progressUnavailable: true }));
+      else {
+        const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+        component['localProgress'].set('writing'); // Creator's local pre-ACK body polling; a selected ACK intentionally redirects to its run.
+        await settle();
+        store.getRevision.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      }
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs);
       await settle();
-      store.getRevision.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      expect(progressReader()['warning']()).toBe(MKTG_POLL_RETRYING_TEXT);
+      // The headless progress reader renders no line, so the view shows the one quiet status line beside the loaded body.
+      expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-refresh-warning"]')).toHaveLength(1);
+      expect(query('mktg-document-view-refresh-warning')?.getAttribute('role')).toBe('status');
+      expect(query('mktg-document-view-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-document-view-error')).toBeNull();
+      expect(query('mktg-document-view-refresh-progress')).toBeNull();
+      expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Current');
+      const count = store.getDocument.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(MKTG_POLL_MAX_BACKOFF_MS);
+      expect(store.getDocument).toHaveBeenCalledTimes(count + 1);
+      store.getDocument.mockReturnValue(of(detail));
+      store.getRevision.mockReturnValue(of(revisionResponse(LATEST)));
+      await vi.advanceTimersByTimeAsync(MKTG_POLL_MAX_BACKOFF_MS);
+      await settle();
+      expect(progressReader()['warning']()).toBe('');
+      expect(query('mktg-document-view-refresh-warning')).toBeNull();
+      expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Current');
     }
-    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs);
-    await settle();
-    expect(progressReader()['warning']()).toContain('paused');
-    expect(query('mktg-document-view-refresh-warning')).toBeNull();
-    expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Current');
-    const count = store.getDocument.mock.calls.length;
-    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
-    expect(store.getDocument).toHaveBeenCalledTimes(count);
-    store.getDocument.mockReturnValue(of(detail));
-    store.getRevision.mockReturnValue(of(revisionResponse(LATEST)));
-    progressReader()['onRefreshProgress']();
-    await settle();
-    expect(progressReader()['warning']()).toBe('');
-    expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Current');
-  });
+  );
 
   it('retains an acknowledged current-pointer write when a later metadata poll fails', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
@@ -2817,7 +3218,7 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     expect(query('mktg-document-view-current-1')).not.toBeNull();
     expect(query('mktg-document-view-current-2')).toBeNull();
-    expect(progressReader()['warning']()).toContain('last loaded');
+    expect(progressReader()['warning']()).toBe(MKTG_POLL_RETRYING_TEXT);
   });
 
   it.each(['subject', 'null-context'])('clears private presentation and cancels polling on %s changes', async (change) => {
@@ -2937,7 +3338,10 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-viewed-make-current')?.textContent).toContain('Make current');
     query('mktg-document-view-viewed-make-current')?.click();
     await settle();
-    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', survivor.id);
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', survivor.id, {
+      expectedCurrentId: current.revisionId,
+      expectedCurrentChangedAt: current.changedAt,
+    });
     expect(query('mktg-document-view-viewed-make-current')).toBeNull();
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Current');
     expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 is now current.');
@@ -3163,7 +3567,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(select).toHaveBeenLastCalledWith(null);
   });
 
-  it('keeps the lower rail neutral until both reads answer, then reveals errors together in board order', async () => {
+  it('keeps the lower rail neutral until both reads answer, then reveals each card’s state together in board order', async () => {
     useFrameworkRevision();
     const loading = signal(true);
     const commentsError = signal('');
@@ -3201,7 +3605,10 @@ describe('MktgDocumentViewComponent', () => {
     listing.error(new HttpErrorResponse({ status: 503 }));
     await settle();
     expect(query('mktg-comments-loading')).toBeNull();
-    expect(query('mktg-downstream-error')).not.toBeNull();
+    // The downstream read cannot reach the server: its card shows the one grey line and the rail does not wait for it.
+    expect(query('mktg-downstream-retrying')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(query('mktg-downstream-error')).toBeNull();
+    expect(query('mktg-downstream-retry')).toBeNull();
     expect(query('mktg-comments-panel')).toBe(comments);
     expect(query('mktg-downstream-card')).toBe(downstream);
     expect(query('mktg-document-view-revision-2')).toBe(revision);
@@ -3517,7 +3924,10 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/faq/living?revision=${LATEST.id}`);
     expect(query('mktg-document-view-live-state')?.textContent).toBe('Ready — 1 gap.');
     query('mktg-document-view-approve')?.querySelector('button')?.click();
-    expect(dialog.open).toHaveBeenCalledWith(MktgApproveGapsDialogComponent, expect.objectContaining({ data: expect.objectContaining({ gaps: [question] }) }));
+    expect(dialog.open).toHaveBeenCalledWith(
+      MktgApproveGapsDialogComponent,
+      expect.objectContaining({ data: { report: expect.objectContaining({ gaps: [question] }), brandKit: false } })
+    );
     expect(store.approveRevision).not.toHaveBeenCalled();
     closed.next(false);
   });
@@ -3533,7 +3943,12 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-document-view-approve')?.querySelector('button')?.click();
     expect(dialog.open).toHaveBeenCalledExactlyOnceWith(
       MktgApproveGapsDialogComponent,
-      expect.objectContaining({ header: 'Approve with open gaps?', data: report, modal: true, templates: { footer: MktgApproveGapsFooterComponent } })
+      expect.objectContaining({
+        header: 'Approve with open gaps?',
+        data: { report, brandKit: false },
+        modal: true,
+        templates: { footer: MktgApproveGapsFooterComponent },
+      })
     );
     expect(store.approveRevision).not.toHaveBeenCalled();
     if (confirmed === 'navigate') {
@@ -3562,11 +3977,11 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-document-view-approve')?.querySelector('button')?.click();
     expect(dialog.open).toHaveBeenCalledExactlyOnceWith(
       MktgApproveGapsDialogComponent,
-      expect.objectContaining({ header: 'Approve this version?', data: expect.objectContaining(fields), modal: true })
+      expect.objectContaining({ header: 'Approve this version?', data: { report: expect.objectContaining(fields), brandKit: true }, modal: true })
     );
     expect(store.approveRevision).not.toHaveBeenCalled();
     closed.next(true);
-    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id, { expectedCurrentId: LATEST.id });
   });
 
   it('asks under the open-gaps header when only the v2 findings carry a failed source and the legacy fields are empty', async () => {
@@ -3577,6 +3992,27 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
     query('mktg-document-view-approve')?.querySelector('button')?.click();
     expect(dialog.open).toHaveBeenCalledExactlyOnceWith(MktgApproveGapsDialogComponent, expect.objectContaining({ header: 'Approve with open gaps?' }));
+    expect(store.approveRevision).not.toHaveBeenCalled();
+  });
+
+  it('asks under the open-gaps header for another agent’s real v2 report and hands the dialog its findings untouched (the FAQ, its gaps rewritten to the unanswered question)', async () => {
+    const faq = faqReportV2Envelope();
+    store.getRevision.mockReturnValue(
+      of({ ...faqResponse(), markdown: JSON.stringify(faq.content), sidecar: { mode: faq.mode, report: faq.report, checks: faq.checks } })
+    );
+    dialog.open.mockReturnValue({ onClose: NEVER, onDestroy: NEVER, close: vi.fn() });
+    await render(`/documents/faq/living?revision=${LATEST.id}`);
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    expect(dialog.open).toHaveBeenCalledExactlyOnceWith(
+      MktgApproveGapsDialogComponent,
+      expect.objectContaining({
+        header: 'Approve with open gaps?',
+        data: {
+          report: expect.objectContaining({ version: 2, findings: faq.report.findings, gaps: ['How do I propose a new project to AAIF?'] }),
+          brandKit: false,
+        },
+      })
+    );
     expect(store.approveRevision).not.toHaveBeenCalled();
   });
 
@@ -3598,7 +4034,7 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
     query('mktg-document-view-approve')?.querySelector('button')?.click();
     expect(dialog.open).not.toHaveBeenCalled();
-    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id, { expectedCurrentId: LATEST.id });
   });
 
   it('allows another approval attempt after the gaps dialog is dismissed', async () => {
@@ -3618,8 +4054,256 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.approveRevision).not.toHaveBeenCalled();
     approve?.click();
     expect(dialog.open).toHaveBeenCalledTimes(2);
+    // Another writer's selection is merged in behind the open dialog: confirming still sends what the reader reviewed.
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const viewed = component['view']();
+    if (!viewed) throw new Error('Missing synthetic FAQ view');
+    const moved = {
+      ...viewed,
+      revisions: viewed.revisions.map((entry) => ({ ...entry, latest: entry.id === OLDER.id })),
+      current: { revisionId: OLDER.id, changedAt: '2026-10-29T12:50:00Z', changedBy: null },
+    };
+    progressReader().observed.emit({ detail: moved, view: moved });
+    await settle();
+    expect(component['view']()?.current?.revisionId).toBe(OLDER.id);
     closed.next(true);
-    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'faq', 'living', LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'faq', 'living', LATEST.id, { expectedCurrentId: LATEST.id });
+  });
+
+  it.each([
+    {
+      action: 'approve',
+      name: 'Synthetic reviewer',
+      expected: 'Synthetic reviewer approved v3 a moment ago. Check v3 before you approve a different version.',
+    },
+    { action: 'restore', name: 'Synthetic reviewer', expected: 'Synthetic reviewer made v3 the current version a moment ago. Check it before you switch.' },
+    { action: 'approve', name: null, expected: 'Someone just approved a newer version. Check it before you approve this one.' },
+    { action: 'restore', name: null, expected: 'Someone just changed the current version. Check it before you switch.' },
+  ] as const)(
+    're-reads after stale $action (name=$name) with approved copy and an exact revision link, without replacing the view',
+    async ({ action, name, expected }) => {
+      useFrameworkRevision(true);
+      const comments = TestBed.inject(MktgDocumentCommentsService);
+      vi.spyOn(comments, 'loaded').mockReturnValue(true);
+      vi.spyOn(comments, 'selectedScope').mockReturnValue({
+        projectUid: PROJECT.uid,
+        agentKey: 'foundation-message',
+        documentId: 'living',
+        revisionId: LATEST.id,
+      });
+      await render('/documents/foundation-message/living?tab=numbers');
+      const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+      const loaded = component['view']();
+      if (!loaded) throw new Error('Missing synthetic framework draft');
+      expect(component['railReady']()).toBe(true);
+      const ids = ['mktg-document-view-title', 'mktg-document-view-content', 'mktg-framework-view-tab-numbers', 'mktg-document-view-revisions'];
+      const nodes = ids.map(query);
+      const approval = { approvedAt: '2026-10-29T12:50:00Z', approvedBy: { name } };
+      const winner = revision(3, { latest: true, approval });
+      const refreshed = {
+        ...loaded,
+        revisions: [winner, { ...loaded.revision, latest: false }, OLDER],
+        current: { revisionId: winner.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+        approvedCurrent: { revisionId: winner.id, number: 3 },
+      };
+      const pending = new Subject<MktgDocumentDetailResponse>();
+      store.getDocument.mockReturnValue(pending);
+      const failure = new HttpErrorResponse({
+        status: 409,
+        error: {
+          code: 'MKTG_APPROVED_CURRENT_CHANGED',
+          current: {
+            revisionId: winner.id,
+            number: 3,
+            approvedBy: name,
+            approvedAt: approval.approvedAt,
+            selectedBy: name,
+            selectedAt: approval.approvedAt,
+          },
+        },
+      });
+      const write = action === 'approve' ? store.approveRevision : store.restoreRevision;
+      write.mockReturnValue(throwError(() => failure));
+      const reads = store.getDocument.mock.calls.length;
+      if (action === 'approve') component['onApprove']();
+      else component['onRestore'](OLDER);
+      await settle();
+      expect(write).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'foundation-message', 'living', action === 'approve' ? loaded.revision.id : OLDER.id, {
+        expectedCurrentId: loaded.revision.id,
+      });
+      expect(store.getDocument).toHaveBeenCalledTimes(reads + 1);
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
+      expect(query('mktg-document-view-current-conflict-open')?.textContent?.trim()).toBe(name ? 'Open v3' : 'Open the latest version');
+      const href = query('mktg-document-view-current-conflict-open')?.getAttribute('href');
+      expect(href).toContain(`revision=${winner.id}`);
+      expect(href).toContain('tab=numbers');
+      expect(query('mktg-document-view-current-conflict')?.textContent).not.toContain('12:50');
+      // A poll that started before the conflict answers after it, with the selection from before: it neither retires
+      // the notice nor outdates the re-read still in flight.
+      const earlier = { ...loaded, current: { revisionId: loaded.revision.id, changedAt: '2026-10-29T12:00:00Z', changedBy: null } };
+      progressReader().observed.emit({ detail: earlier, view: earlier });
+      await settle();
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
+      pending.next(refreshed);
+      pending.complete();
+      await settle();
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(component['view']()?.revision.id).toBe(loaded.revision.id);
+      expect(component['view']()?.markdown).toBe(loaded.markdown);
+      expect(query('mktg-document-view-current-3')).not.toBeNull();
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
+      ids.forEach((id, index) => expect(query(id)).toBe(nodes[index]));
+      expect(component['railReady']()).toBe(true);
+      expect(query('mktg-document-view-error')).toBeNull();
+      expect(query('mktg-document-view-approval-error')).toBeNull();
+      // The same earlier read answering after the re-read was applied does not put the superseded current back.
+      progressReader().observed.emit({ detail: earlier, view: earlier });
+      await settle();
+      expect(query('mktg-document-view-current-3')).not.toBeNull();
+      expect(component['view']()?.current?.revisionId).toBe(winner.id);
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
+      // The page polls continuously: a read that still shows the named current keeps the notice on screen.
+      progressReader().observed.emit({ detail: refreshed, view: { ...loaded, revisions: refreshed.revisions } });
+      await settle();
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
+      // A failed poll replays what the reader last knew, here the current from before the conflict: that is not a
+      // read of the server, so it neither retires the notice nor counts as one.
+      const replayed = { ...loaded, progressUnavailable: true };
+      progressReader().observed.emit({ detail: replayed, view: replayed });
+      await settle();
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
+      // A read where the current moved again retires it: the notice would name the wrong revision.
+      const moved = { ...refreshed, current: { revisionId: OLDER.id, changedAt: '2026-10-29T12:55:00Z', changedBy: null } };
+      // The body on screen may carry an earlier partial read's flag, which a metadata-only cycle keeps; the fresh
+      // metadata decides.
+      const onScreen = component['view']();
+      if (!onScreen) throw new Error('Missing synthetic framework view');
+      component['view'].set({ ...onScreen, progressUnavailable: true });
+      progressReader().observed.emit({ detail: moved, view: { ...loaded, revisions: moved.revisions, current: moved.current } });
+      await settle();
+      expect(query('mktg-document-view-current-conflict')).toBeNull();
+    }
+  );
+
+  it('clears the conflict on revision navigation and ignores a late conflict detail response', async () => {
+    const response = faqResponse();
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    await render('/documents/faq/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    expect(component['view']()?.type.agentKey).toBe('faq');
+    const pending = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(pending);
+    store.approveRevision.mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: {
+              code: 'MKTG_APPROVED_CURRENT_CHANGED',
+              current: { revisionId: OLDER.id, number: 1, approvedBy: null, approvedAt: null, selectedBy: null, selectedAt: null },
+            },
+          })
+      )
+    );
+    component['onApprove']();
+    await settle();
+    // No approval is reported for the current, so the notice claims none.
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(
+      'Someone just changed the current version. Check it before you switch.'
+    );
+    expect(query('mktg-document-view-current-conflict-open')?.textContent?.trim()).toBe('Open the latest version');
+    expect(query('mktg-document-view-current-conflict-open')?.getAttribute('href')).toContain(`revision=${OLDER.id}`);
+    store.getRevision.mockReturnValue(of({ ...response, revision: OLDER }));
+    query('mktg-document-view-current-conflict-open')?.click();
+    await settle();
+    expect(TestBed.inject(Router).url).toContain(`revision=${OLDER.id}`);
+    pending.next(response);
+    pending.complete();
+    await settle();
+    expect(query('mktg-document-view-current-conflict')).toBeNull();
+    expect(component['view']()?.revision.id).toBe(OLDER.id);
+  });
+
+  it('ignores a late conflict re-read once a landed write or a newer read has replaced what it describes', async () => {
+    const response = faqResponse();
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    await render('/documents/faq/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const selectedAt = '2026-10-29T12:50:00Z';
+    const conflict = new HttpErrorResponse({
+      status: 409,
+      error: {
+        code: 'MKTG_APPROVED_CURRENT_CHANGED',
+        current: { revisionId: OLDER.id, number: 1, approvedBy: null, approvedAt: null, selectedBy: 'Synthetic selector', selectedAt },
+      },
+    });
+    const notice = 'Synthetic selector made v1 the current version a moment ago. Check it before you switch.';
+    // What the conflict re-read answers: v1 is current.
+    const older: MktgDocumentDetailResponse = {
+      ...response,
+      revisions: response.revisions.map((entry) => ({ ...entry, latest: entry.id === OLDER.id })),
+      current: { revisionId: OLDER.id, changedAt: selectedAt, changedBy: { name: 'Synthetic selector' } },
+    };
+
+    // 1. The reader's next approval lands before the re-read answers.
+    const first = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(first);
+    store.approveRevision.mockReturnValue(throwError(() => conflict));
+    component['onApprove']();
+    await settle();
+    // An approve attempt against a current nobody approved: the notice claims a selection, not an approval.
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+    const approval = { approvedAt: '2026-10-29T12:55:00Z', approvedBy: { name: 'Project writer' } };
+    const approved: MktgRevisionResponse = {
+      ...response,
+      approval,
+      revision: { ...response.revision, approval },
+      revisions: response.revisions.map((entry) => ({ ...entry, approval: entry.id === LATEST.id ? approval : null })),
+      current: { revisionId: LATEST.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: LATEST.id, number: 2 },
+    };
+    store.approveRevision.mockReturnValue(of(approved));
+    component['onApprove']();
+    await settle();
+    expect(query('mktg-document-view-current-conflict')).toBeNull();
+    first.next(older);
+    first.complete();
+    await settle();
+    expect(query('mktg-document-view-current-conflict')).toBeNull();
+    expect(component['view']()?.current?.revisionId).toBe(LATEST.id);
+    expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Approved');
+
+    // 2. The poller reads newer metadata (same current, one more revision) before the re-read answers.
+    const second = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(second);
+    store.restoreRevision.mockReturnValue(throwError(() => conflict));
+    component['onRestore'](OLDER);
+    await settle();
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+    const newer = { ...older, revisions: [revision(3, { latest: false }), ...older.revisions] };
+    progressReader().observed.emit({ detail: newer, view: { ...approved, revisions: newer.revisions, current: newer.current, approvedCurrent: null } });
+    await settle();
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+    expect(component['view']()?.revisions).toHaveLength(newer.revisions.length);
+    second.next(older);
+    second.complete();
+    await settle();
+    expect(component['view']()?.revisions).toHaveLength(newer.revisions.length);
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+
+    // 3. The re-read itself already shows a selection after the one the 409 named: no notice pointing at a superseded one.
+    const third = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(third);
+    component['onRestore'](OLDER);
+    await settle();
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+    third.next({ ...approved, revisions: newer.revisions.map((entry) => ({ ...entry, latest: entry.id === LATEST.id })) });
+    third.complete();
+    await settle();
+    expect(component['view']()?.current?.revisionId).toBe(LATEST.id);
+    expect(query('mktg-document-view-current-conflict')).toBeNull();
   });
 
   it('approves directly without confirmation and updates saving/state metadata', async () => {
@@ -3637,7 +4321,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-saving-status')).toBe(status);
     expect(dialog.open).not.toHaveBeenCalled();
     expect(status?.textContent).toBe('Approving revision 2…');
-    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'faq', 'living', LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'faq', 'living', LATEST.id, { expectedCurrentId: LATEST.id });
     expect(query('mktg-document-view-approve')?.querySelector('button')?.disabled).toBe(true);
     const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Project writer' } };
     pending.next({
@@ -3780,7 +4464,9 @@ describe('MktgDocumentViewComponent', () => {
     store.approveRevision.mockReturnValue(of(approved));
     component['onApprove']();
     await settle();
-    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'foundation-message', 'living', loaded.revision.id);
+    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'foundation-message', 'living', loaded.revision.id, {
+      expectedCurrentId: loaded.revision.id,
+    });
     expect(listing.observed).toBe(true);
     store.getDocument.mockReturnValue(of(approved));
     store.getRevision.mockReturnValue(of(approved));
@@ -4502,7 +5188,7 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
     query('mktg-document-view-restore-1')?.click();
     await settle();
-    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id, { expectedCurrentId: LATEST.id });
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain(status);
     expect(query('mktg-document-view-revision-chip')?.textContent).not.toContain('Current');
   });
@@ -4539,7 +5225,7 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-document-view-viewed-make-current')?.click();
     await settle();
 
-    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id, { expectedCurrentId: LATEST.id });
     expect(TestBed.inject(MktgDependencyService).notifyDocumentsChanged).toHaveBeenCalledWith(PROJECT.uid);
     expect(TestBed.inject(Router).url).toContain(`revision=${OLDER.id}`);
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');
@@ -4854,7 +5540,8 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-slides-export-last-link')?.getAttribute('href')).toBe('https://docs.google.com/presentation/d/SyntheticDeck/edit');
     } else if (answer === 'error' && afterCap) {
       expect(exporter?.classList.contains('hidden')).toBe(false);
-      expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
+      expect(query('mktg-slides-export-check-again')).toBeNull();
+      expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
     } else {
       expect(exporter?.classList.contains('hidden')).toBe(true);
       expect(query('mktg-slides-export-panel')).toBeNull();
@@ -4865,7 +5552,8 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     if (answer === 'error') {
       expect(exporter?.classList.contains('hidden')).toBe(false);
-      expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
+      expect(query('mktg-slides-export-check-again')).toBeNull();
+      expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
       expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
     } else {
       expect(query('mktg-slides-export-panel')).toBe(settledPanel);

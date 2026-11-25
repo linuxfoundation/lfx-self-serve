@@ -7,28 +7,67 @@
       <lfx-card data-testid="mentorship-mentor-invite-confirm">
         <div class="flex flex-col gap-6">
           <div class="flex flex-col gap-2">
-            <h1 class="text-xl font-semibold text-gray-900" data-testid="mentorship-mentor-invite-title">You've been invited to mentor</h1>
-            <p class="text-sm text-gray-500">
-              A program admin invited you to join their mentorship program as a mentor. The invitation email names the program. Accept to join it, or decline to
-              let the program admins know you can't take part.
+            <h1 class="text-xl font-semibold text-gray-900" data-testid="mentorship-mentor-invite-title">You've been invited to be a mentor</h1>
+            <p class="text-sm text-gray-500" data-testid="mentorship-mentor-invite-description">
+              @if (programName()) {
+                A program admin invited you to join
+                <strong class="font-semibold text-gray-900" data-testid="mentorship-mentor-invite-program-name">{{ programName() }}</strong>
+                as a mentor. Accept to join it, or decline to let the program admins know you can't take part.
+              } @else {
+                A program admin invited you to join their mentorship program as a mentor. The invitation email names the program. Accept to join it, or decline
+                to let the program admins know you can't take part.
+              }
             </p>
           </div>
-          <div class="flex flex-wrap justify-end gap-3">
-            <lfx-button
-              label="Decline"
-              severity="secondary"
-              [outlined]="true"
-              [disabled]="accepting()"
-              [loading]="declining()"
-              (onClick)="onRespond('decline')"
-              data-testid="mentorship-mentor-invite-decline-button" />
-            <lfx-button
-              label="Accept"
-              severity="primary"
-              [disabled]="declining()"
-              [loading]="accepting()"
-              (onClick)="onRespond('accept')"
-              data-testid="mentorship-mentor-invite-accept-button" />
+          @if (profileCheck() === 'failed') {
+            <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-gray-700" data-testid="mentorship-mentor-invite-profile-check-failed">
+              We couldn't check your mentor profile.
+              <button
+                type="button"
+                class="font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                (click)="onRetryProfileCheck()"
+                data-testid="mentorship-mentor-invite-profile-check-retry">
+                Try again
+              </button>
+            </p>
+          } @else if (profileCheck() === 'missing') {
+            <p class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-gray-700" data-testid="mentorship-mentor-invite-profile-hint">
+              You need a mentor profile to answer this invitation.
+              <a [routerLink]="profileRoute" class="font-medium text-blue-600 hover:text-blue-700 hover:underline">Create your mentor profile</a>
+              so program admins and mentees can see who you are, then open this link again.
+            </p>
+          }
+          <div class="flex flex-wrap items-center gap-3">
+            @if (programId() | mentorshipPublicUrl: 'programs'; as programUrl) {
+              <a
+                [href]="programUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                data-testid="mentorship-mentor-invite-view-program">
+                View program
+                <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+                <span class="sr-only">(opens in a new tab)</span>
+              </a>
+            }
+            <!-- Grouped so Decline and Accept wrap together, on the right, when the row is narrow. -->
+            <div class="ml-auto flex gap-3" data-testid="mentorship-mentor-invite-actions">
+              <lfx-button
+                label="Decline"
+                severity="secondary"
+                [outlined]="true"
+                [disabled]="accepting() || !canAnswer()"
+                [loading]="declining()"
+                (onClick)="onRespond('decline')"
+                data-testid="mentorship-mentor-invite-decline-button" />
+              <lfx-button
+                label="Accept"
+                severity="primary"
+                [disabled]="declining() || !canAnswer()"
+                [loading]="accepting()"
+                (onClick)="onRespond('accept')"
+                data-testid="mentorship-mentor-invite-accept-button" />
+            </div>
           </div>
         </div>
       </lfx-card>
@@ -37,25 +76,36 @@
         @switch (state()) {
           @case ('accepted') {
             <lfx-empty-state
-              icon="fa-light fa-circle-check"
+              icon="fa-light fa-circle-check !text-emerald-600"
               title="Invitation accepted"
-              subtitle="You're now a mentor on the program."
               ctaLabel="Go to My Programs"
-              [ctaRoute]="programsRoute" />
+              [ctaRoute]="programsRoute">
+              <p class="text-sm text-gray-500" data-testid="mentorship-mentor-invite-accepted-message">
+                @if (programName()) {
+                  You're now a mentor on <strong class="font-semibold text-gray-900">{{ programName() }}</strong
+                  >.
+                } @else {
+                  You're now a mentor on the program.
+                }
+              </p>
+            </lfx-empty-state>
           }
           @case ('declined') {
-            <lfx-empty-state
-              icon="fa-light fa-circle-check"
-              title="Invitation declined"
-              subtitle="We've let the program admins know."
-              ctaLabel="Back to Mentorship"
-              [ctaRoute]="programsRoute" />
+            <lfx-empty-state icon="fa-light fa-circle-check" title="Invitation declined" ctaLabel="Back to Mentorship" [ctaRoute]="programsRoute">
+              <p class="text-sm text-gray-500" data-testid="mentorship-mentor-invite-declined-message">
+                @if (programName()) {
+                  We've let the admins of <strong class="font-semibold text-gray-900">{{ programName() }}</strong> know.
+                } @else {
+                  We've let the program admins know.
+                }
+              </p>
+            </lfx-empty-state>
           }
           @case ('forbidden') {
             <lfx-empty-state
               icon="fa-light fa-lock"
               title="This invitation is for a different account"
-              subtitle="Sign in with the LFX account the invitation email was sent to, then open the link again."
+              subtitle="Sign in with the LF account the invitation email was sent to. If it was sent to an email address, use the LF account that has that address. Then open the link again."
               ctaLabel="Back to Mentorship"
               [ctaRoute]="programsRoute" />
           }

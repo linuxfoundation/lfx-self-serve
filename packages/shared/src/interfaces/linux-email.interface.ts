@@ -52,6 +52,18 @@ export interface LinuxAliasData {
   forwardAuthRequired?: boolean;
   /** Flow C authorization URL to call when `forwardAuthRequired` is true. Omitted when Flow C isn't configured — there's nowhere to send the client. */
   authorizeUrl?: string;
+  /**
+   * True in the `claimed` state when `forwardTo` is null specifically because the request is
+   * running under admin impersonation — the handler deliberately never reads the real forward
+   * target then, since the only management token in session belongs to the impersonator, not the
+   * target user. Distinct from `forwardAuthRequired` (a real session missing a Flow C token):
+   * this is a read refusal for a security reason, not a recoverable "please re-authorize" state,
+   * and it is never true at the same time as `forwardAuthRequired`. Lets a client — or anyone
+   * inspecting this response directly — tell "genuinely unset"/"unreadable" apart from
+   * "suppressed for impersonation" without relying on a separately-sourced impersonation signal
+   * (linuxfoundation/lfx-self-serve-ops#2006).
+   */
+  forwardUnavailableDuringImpersonation?: boolean;
 }
 
 /** Body for `POST /api/profile/linux-email/claim`. */

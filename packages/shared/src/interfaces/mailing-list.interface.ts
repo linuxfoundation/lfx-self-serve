@@ -77,6 +77,17 @@ export interface GroupsIOService {
 }
 
 /**
+ * Identity-only view of a Groups.io service
+ * @description The fields a caller needs to attach a mailing list to a service. Omits owner emails,
+ * writer/auditor lists and the response-only `writer` flag, so it is safe to return for a service the
+ * caller has no direct access to (e.g. a parent project's service).
+ */
+export type InheritedGroupsIOService = Pick<
+  GroupsIOService,
+  'uid' | 'type' | 'domain' | 'prefix' | 'project_slug' | 'project_uid' | 'project_name' | 'group_name' | 'status' | 'public' | 'url' | 'parent_service_uid'
+>;
+
+/**
  * Groups.io mailing list entity
  * @description Full mailing list data for dashboard display
  */

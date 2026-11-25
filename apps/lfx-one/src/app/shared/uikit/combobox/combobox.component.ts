@@ -11,8 +11,9 @@ import {
   Component,
   computed,
   contentChildren,
+  DestroyRef,
+  EnvironmentInjector,
   inject,
-  Injector,
   input,
   model,
   output,
@@ -43,6 +44,8 @@ import { revealRowInList } from '../select/reveal-row';
  * The component filters the rows itself: a row stays while its `label` contains the typed text, ignoring case, and the matching part of a plain
  * label is shown in bold. Rows with projected content keep their own look, and a group with no matching row is hidden. Separators stay. The field
  * picks from the list only: typed text that is not picked is dropped when focus leaves, and the field shows the picked option's `label` again.
+ * With `freeText`, the typed text is a value too: the list starts with a row that uses it, and leaving the field keeps it. With `serverSearch`,
+ * the page finds the rows: they are not narrowed here, `queryChange` reports the typed text, and `loading` shows a searching message.
  *
  * Built to the WAI-ARIA combobox pattern with a list popup: the input is the `combobox`, the list is a `listbox`, `aria-autocomplete="list"`
  * and the highlighted row is announced with `aria-activedescendant`. Focus never leaves the input. Works with `[(value)]` and with Angular forms.
@@ -64,7 +67,8 @@ import { revealRowInList } from '../select/reveal-row';
 export class UiComboboxComponent extends UiOptionHost implements ControlValueAccessor {
   private readonly baseId = inject(_IdGenerator).getId('lfx-ui-combobox-');
   private readonly ngControl = inject(NgControl, { self: true, optional: true });
-  private readonly injector = inject(Injector);
+  // A root effect, unlike a view one, runs after the views refresh, so rows added while the list is open are bound before the key manager reads them.
+  private readonly effectInjector = inject(EnvironmentInjector);
   private readonly document = inject(DOCUMENT);
   protected readonly origin = viewChild.required(CdkOverlayOrigin);
   protected readonly optionComponents = contentChildren(UiOptionComponent, { descendants: true });
@@ -87,12 +91,20 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
   public readonly size = input<UiInputSize>('medium');
   /** Disables the field. Forms can also disable it. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** Marks the field as required for assistive technology. */
+  /** Marks the field as required for assistive technology and adds a red asterisk to the visible label. */
   public readonly required = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** The `value` of the picked option, or `null` for none. Supports two-way binding with `[(value)]`. */
   public readonly value = model<string | null>(null);
+  /** Lets typed text be the value: the list starts with a row that uses it, and leaving the field keeps it. */
+  public readonly freeText = input<boolean, unknown>(false, { transform: booleanAttribute });
+  /** The page supplies the matching rows for the typed text, so they are not narrowed here. */
+  public readonly serverSearch = input<boolean, unknown>(false, { transform: booleanAttribute });
+  /** Shows a searching message under the rows while the page loads them. */
+  public readonly loading = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Emits `true` when the list opens and `false` when it closes. */
   public readonly openChange = output<boolean>();
+  /** Emits the typed text, trimmed, on every edit. */
+  public readonly queryChange = output<string>();
 
   protected readonly inputId = this.baseId;
   protected readonly labelId = `${this.baseId}-label`;
@@ -111,12 +123,31 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
   protected readonly expanded: Signal<boolean> = computed(() => this.open() && !this.isDisabled());
   protected readonly queryText: Signal<string> = computed(() => this.query()?.trim() ?? '');
   protected readonly selected: Signal<UiOption | null> = computed(() => this.options().find((option) => option.value === this.value()) ?? null);
-  /** The rows that match the typed text, in document order. The keyboard moves through these. */
-  protected readonly navigable: Signal<UiOption[]> = computed(() => this.options().filter((option) => this.matches(option)));
+  /** The row that uses the typed text, when free text is on and no option already has that label. */
+  protected readonly typedOption: Signal<UiOption | null> = this.initTypedOption();
+  protected readonly typedSelected: Signal<boolean> = computed(() => {
+    const typed = this.typedOption();
+    return !!typed && this.isSelected(typed);
+  });
+  /** The rows that match the typed text, in document order after the typed-text row. The keyboard moves through these. */
+  protected readonly navigable: Signal<UiOption[]> = computed(() => {
+    const rows = this.options().filter((option) => this.matches(option));
+    const typed = this.typedOption();
+    return typed ? [typed, ...rows] : rows;
+  });
   protected readonly isEmpty: Signal<boolean> = computed(() => this.navigable().length === 0);
-  protected readonly displayText: Signal<string> = computed(() => this.query() ?? this.selected()?.label ?? '');
+  protected readonly displayText: Signal<string> = computed(() => this.query() ?? this.selected()?.label ?? (this.freeText() ? (this.value() ?? '') : ''));
+  protected readonly statusText: Signal<string> = computed(() => {
+    if (!this.expanded()) return '';
+    if (this.loading()) return 'Searching…';
+    return this.isEmpty() ? this.emptyMessage() : '';
+  });
   protected readonly emptyMessage: Signal<string> = computed(() => (this.queryText() ? `${this.emptyText()} “${this.queryText()}”` : this.emptyText()));
   protected readonly activeOption: Signal<UiOption | null> = this.initActiveOption();
+  protected readonly typedActive: Signal<boolean> = computed(() => {
+    const typed = this.typedOption();
+    return !!typed && this.activeOption() === typed;
+  });
   protected readonly activeDescendant: Signal<string | null> = computed(() => this.activeOption()?.id ?? null);
   protected readonly describedBy: Signal<string | null> = computed(() => {
     if (this.error()) return this.errorId;
@@ -203,6 +234,7 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
 
   protected onInput(event: Event): void {
     this.query.set((event.target as HTMLInputElement).value);
+    this.queryChange.emit(this.queryText());
     this.openPanel();
     this.activeItem.set(this.firstPickable());
     this.syncKeyManager();
@@ -212,6 +244,8 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
     // Keys that belong to an input method composition are not ours.
     if (this.isDisabled() || event.isComposing || event.keyCode === 229) return;
     if (!this.open()) {
+      // Free text typed and left open by Escape becomes the value before a form hears the Enter.
+      if (event.key === 'Enter' && this.freeText() && this.query() !== null) this.commitTyped();
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
         this.openPanel();
@@ -226,7 +260,12 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
       this.closePanel(true);
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      if (!event.repeat) this.select(this.activeOption());
+      // Enter in an open list picks; it must not also submit a surrounding form.
+      event.stopPropagation();
+      if (event.repeat) return;
+      const active = this.activeOption();
+      if (active) this.select(active);
+      else if (this.freeText()) this.closePanel();
     } else if (event.key === 'Tab') {
       this.closePanel();
     } else {
@@ -250,7 +289,8 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
     this.open.set(false);
     this.activeItem.set(null);
     this.keyManager.updateActiveItem(-1);
-    // Typed text that was not picked is dropped, so the field shows the picked option again.
+    // Free text keeps what was typed as the value; otherwise typed text that was not picked is dropped, so the field shows the picked option again.
+    if (!keepText && this.freeText() && this.query() !== null) this.commitTyped();
     if (!keepText) this.query.set(null);
     if (wasOpen) this.openChange.emit(false);
   }
@@ -264,7 +304,10 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
 
   private initKeyManager(): ListKeyManager<UiOption> {
     // The manager skips disabled options and does not wrap, as the pattern asks. Home and End stay with the text caret.
-    return new ListKeyManager(this.navigable, this.injector).withVerticalOrientation().withPageUpDown();
+    const manager = new ListKeyManager(this.navigable, this.effectInjector).withVerticalOrientation().withPageUpDown();
+    // The root effect outlives the component unless the manager is destroyed with it.
+    inject(DestroyRef).onDestroy(() => manager.destroy());
+    return manager;
   }
 
   private initTriggerClasses(): Signal<string> {
@@ -308,12 +351,47 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
 
   private select(option: UiOption | null): void {
     if (!option || option.disabled || this.isDisabled()) return;
-    // Picking the option that is already chosen is not a change: the control stays pristine.
-    if (option.value !== this.value()) {
-      this.value.set(option.value);
-      this.onChange?.(option.value);
-    }
+    this.commit(option.value);
+    // The pick replaces the typed text, so closing does not keep that text as a free-text value.
+    this.query.set(null);
     this.closePanel();
+  }
+
+  // An enabled option whose label is the typed text, ignoring case, wins over the text, so the value keeps the option's spelling.
+  private commitTyped(): void {
+    const text = this.queryText();
+    const lower = text.toLowerCase();
+    const match = this.options().find((option) => !option.disabled && option.label.toLowerCase() === lower);
+    this.commit(match?.value ?? (text || null));
+    this.query.set(null);
+  }
+
+  private commit(value: string | null): void {
+    // Picking the value that is already chosen is not a change: the control stays pristine.
+    if (value === this.value()) return;
+    this.value.set(value);
+    this.onChange?.(value);
+  }
+
+  private initTypedOption(): Signal<UiOption | null> {
+    // One row object for the life of the field, so the highlight, held by identity, survives new search results.
+    const queryText = this.queryText;
+    const row: UiOption = {
+      id: `${this.baseId}-typed`,
+      get value() {
+        return queryText();
+      },
+      get label() {
+        return queryText();
+      },
+      disabled: false,
+      icon: '',
+    };
+    return computed(() => {
+      const text = this.queryText().toLowerCase();
+      if (!this.freeText() || !text) return null;
+      return this.options().some((option) => !option.disabled && option.label.toLowerCase() === text) ? null : row;
+    });
   }
 
   // Opens on the chosen row when it matches, or on the first one that can be picked.
@@ -333,7 +411,7 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
 
   private matches(option: UiOption): boolean {
     const text = this.queryText().toLowerCase();
-    return !text || option.label.toLowerCase().includes(text);
+    return this.serverSearch() || !text || option.label.toLowerCase().includes(text);
   }
 
   // The options can change while the list is open, and the key manager only follows silently: point it at the highlighted row before it acts.

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -14,6 +15,8 @@ import {
   COMMITTEE_LABEL,
   GROUPS_VIEW_MODE_STORAGE_KEY,
   JOIN_MODE_LABELS,
+  MEMBER_IMPORT_RECONCILE_INTERVAL_MS,
+  MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS,
   WG_ENGAGEMENT_METRICS_FLAG,
 } from '@lfx-one/shared/constants';
 import {
@@ -23,6 +26,7 @@ import {
   GroupsEngagementStats,
   GroupsViewMode,
   JoinMode,
+  MemberImportRunSummary,
   MyCommittee,
   MyGroupsActiveFilter,
   MyGroupsFilterKey,
@@ -31,6 +35,7 @@ import {
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 import { buildEngagementStatCards, getGroupBehavioralClass, getGroupCommands, groupCommitteesByFoundation } from '@lfx-one/shared/utils';
+import { CommitteeMemberImportService } from '@services/committee-member-import.service';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { InvitationService } from '@services/invitation.service';
@@ -44,12 +49,17 @@ import {
   combineLatest,
   debounceTime,
   distinctUntilChanged,
+  EMPTY,
   exhaustMap,
   filter,
   finalize,
+  first,
   map,
+  merge,
+  Observable,
   of,
   startWith,
+  Subject,
   switchMap,
   take,
   tap,
@@ -87,6 +97,7 @@ export class CommitteeDashboardComponent {
   // Inject services
   private readonly projectContextService = inject(ProjectContextService);
   private readonly committeeService = inject(CommitteeService);
+  private readonly importService = inject(CommitteeMemberImportService);
   private readonly personaService = inject(PersonaService);
   private readonly router = inject(Router);
   private readonly lensService = inject(LensService);
@@ -180,6 +191,10 @@ export class CommitteeDashboardComponent {
   private decoratedCommittees: Signal<Committee[]>;
   private decoratedMyCommittees: Signal<MyCommittee[]>;
 
+  /** Import refreshes keep the shown rows mounted; normal refreshes retain their loading state. */
+  private readonly importRefresh = new Subject<void>();
+  private readonly loadedListScope = signal('');
+
   public constructor() {
     // Initialize project context
     this.project = computed(() => this.projectContextService.activeContext());
@@ -264,6 +279,8 @@ export class CommitteeDashboardComponent {
     // restoring a 'card' view here would render a different template branch than the SSR HTML
     // on the client's first pass, tripping Angular's hydration mismatch detection (NG0500).
     afterNextRender(() => this.restoreViewMode());
+
+    this.initImportReconciliation();
   }
 
   /**
@@ -435,9 +452,97 @@ export class CommitteeDashboardComponent {
     this.searchForm?.get('joinModeFilter')?.setValue(null);
   }
 
+  /** Reconciles live and retained settlements once per run/attempt in the loaded scope, without replaying notices. */
+  private initImportReconciliation(): void {
+    const scope = computed(() => this.importScopeKey());
+    const retained = computed(() => {
+      if (this.loadedListScope() !== scope()) return [];
+      return this.shownCommittees().flatMap((committee) => {
+        const summary = this.importService.getSummary(committee.uid);
+        return summary?.phase === 'settled' ? [summary] : [];
+      });
+    });
+    const retained$ = toObservable(retained);
+    toObservable(scope)
+      .pipe(
+        switchMap((scopeKey) => {
+          const targets = new Map<string, number>();
+          const seen = new Set<string>();
+          return merge(this.importService.settlements$.pipe(map(({ summary }) => [summary])), retained$).pipe(
+            map((summaries: MemberImportRunSummary[]) =>
+              summaries.filter(
+                (summary) =>
+                  this.importScopeKey() === scopeKey &&
+                  this.loadedListScope() === scopeKey &&
+                  this.shownCommittees().some((committee) => committee.uid === summary.committeeUid) &&
+                  !seen.has(`${summary.runId}:${summary.attempt}`)
+              )
+            ),
+            filter((summaries) => summaries.length > 0),
+            tap((summaries) => {
+              for (const summary of summaries) {
+                seen.add(`${summary.runId}:${summary.attempt}`);
+                targets.set(summary.committeeUid, summary.reconciliationTarget);
+              }
+            }),
+            switchMap(() => this.reconcileImportedTotals(targets))
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe();
+  }
+
+  private reconcileImportedTotals(targets: Map<string, number>): Observable<void> {
+    const reached = (committees: readonly Committee[]): boolean =>
+      [...targets].every(([uid, target]) => (committees.find((committee) => committee.uid === uid)?.total_members ?? -1) >= target);
+    const shownAlreadyReached = reached(this.shownCommittees());
+    this.refreshShownCommittees();
+    if (shownAlreadyReached) {
+      targets.clear();
+      return EMPTY;
+    }
+    return timer(MEMBER_IMPORT_RECONCILE_INTERVAL_MS, MEMBER_IMPORT_RECONCILE_INTERVAL_MS).pipe(
+      exhaustMap(() =>
+        this.fetchShownCommittees().pipe(
+          catchError((error: unknown) => {
+            console.error('Failed to refetch committees after CSV import', { status: error instanceof HttpErrorResponse ? error.status : 0 });
+            return of(null);
+          })
+        )
+      ),
+      take(MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS),
+      first((committees) => committees !== null && reached(committees), null),
+      map(() => {
+        targets.clear();
+        this.refreshShownCommittees();
+      })
+    );
+  }
+
+  private shownCommittees(): readonly Committee[] {
+    return this.isMeLens() ? this.myCommittees() : this.committees();
+  }
+
+  private fetchShownCommittees(): Observable<readonly Committee[]> {
+    if (this.isMeLens()) {
+      return this.committeeService.getMyCommitteesOrError();
+    }
+    const projectUid = this.project()?.uid;
+    return projectUid ? this.committeeService.getCommitteesByProjectOrThrow(projectUid) : of([]);
+  }
+
+  private refreshShownCommittees(): void {
+    this.importRefresh.next();
+  }
+
+  private importScopeKey(): string {
+    return JSON.stringify([this.importService.viewerSubject(), this.lensService.activeLens(), this.project()?.uid]);
+  }
+
   private initializeMyCommittees(): Signal<MyCommittee[]> {
     const project$ = toObservable(this.project);
-    const refresh$ = toObservable(this.refresh);
+    const refresh$ = merge(toObservable(this.refresh).pipe(map(() => false)), this.importRefresh.pipe(map(() => true)));
     const isFoundationContext$ = toObservable(this.isFoundationContext);
     const isMeLens$ = toObservable(this.isMeLens);
 
@@ -460,15 +565,28 @@ export class CommitteeDashboardComponent {
 
     return toSignal(
       combineLatest([scope$, refresh$]).pipe(
-        switchMap(([scope]) => {
+        switchMap(([scope, silent]) => {
           if (scope.mode !== 'all') {
             // Non-me lens: full enrichment is not needed here; UIDs are fetched via getMyCommitteeUids.
             this.myCommitteesLoading.set(false);
             return of([] as MyCommittee[]);
           }
 
-          this.myCommitteesLoading.set(true);
-          return this.committeeService.getMyCommittees().pipe(finalize(() => this.myCommitteesLoading.set(false)));
+          const scopeKey = this.importScopeKey();
+          const keepRows = silent && this.loadedListScope() === scopeKey;
+          if (!keepRows) this.myCommitteesLoading.set(true);
+          const request$ = keepRows
+            ? this.committeeService.getMyCommitteesOrError().pipe(
+                catchError((error: unknown) => {
+                  console.error('Failed to refresh groups after CSV import', { status: error instanceof HttpErrorResponse ? error.status : 0 });
+                  return EMPTY;
+                })
+              )
+            : this.committeeService.getMyCommittees();
+          return request$.pipe(
+            tap(() => this.loadedListScope.set(scopeKey)),
+            finalize(() => this.myCommitteesLoading.set(false))
+          );
         })
       ),
       { initialValue: [] }
@@ -580,23 +698,30 @@ export class CommitteeDashboardComponent {
 
   private initializeCommittees(): Signal<Committee[]> {
     const project$ = toObservable(this.project);
-    const refresh$ = toObservable(this.refresh);
+    const refresh$ = merge(toObservable(this.refresh).pipe(map(() => false)), this.importRefresh.pipe(map(() => true)));
     const lens$ = toObservable(this.lensService.activeLens);
 
     return toSignal(
       combineLatest([project$, refresh$, lens$]).pipe(
-        switchMap(([project, , lens]) => {
+        switchMap(([project, silent, lens]) => {
           if (lens === 'me' || !project?.uid) {
             this.committeesLoading.set(false);
             return of([]);
           }
 
-          this.committeesLoading.set(true);
-          return this.committeeService.getCommitteesByProject(project.uid).pipe(
-            catchError((error) => {
-              console.error('Failed to load committees:', error);
-              return of([]);
-            }),
+          const scopeKey = this.importScopeKey();
+          const keepRows = silent && this.loadedListScope() === scopeKey;
+          if (!keepRows) this.committeesLoading.set(true);
+          const request$ = keepRows
+            ? this.committeeService.getCommitteesByProjectOrThrow(project.uid).pipe(
+                catchError((error: unknown) => {
+                  console.error('Failed to refresh groups after CSV import', { status: error instanceof HttpErrorResponse ? error.status : 0 });
+                  return EMPTY;
+                })
+              )
+            : this.committeeService.getCommitteesByProject(project.uid);
+          return request$.pipe(
+            tap(() => this.loadedListScope.set(scopeKey)),
             finalize(() => this.committeesLoading.set(false))
           );
         })

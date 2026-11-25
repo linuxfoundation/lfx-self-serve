@@ -7,17 +7,27 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { environment } from '@environments/environment';
-import { Meeting, MeetingDashboardView, MeetingHomeRow, MeetingRegistrationRemovalResult, PastMeeting } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingDashboardView,
+  MeetingHomeRow,
+  MeetingRegistrant,
+  MeetingRegistrationRemovalResult,
+  MeetingSelfInviteResult,
+  PastMeeting,
+} from '@lfx-one/shared/interfaces';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { of, Subject, throwError } from 'rxjs';
+import { defer, finalize, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
+import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeActionsComponent } from './meeting-home-actions.component';
 
 const INVITEE = {
@@ -57,6 +67,12 @@ describe('MeetingHomeActionsComponent', () => {
   let edit: ReturnType<typeof vi.fn>;
   let deleteMeeting: ReturnType<typeof vi.fn>;
   let checkingEdit: WritableSignal<boolean>;
+  let add$: ReturnType<typeof vi.fn>;
+  let addingSelf: WritableSignal<boolean>;
+  let markSelfInvited: ReturnType<typeof vi.fn>;
+  let forgetSelfInvite: ReturnType<typeof vi.fn>;
+  let selfInvites: Map<string, readonly string[]>;
+  let retrySelfInvites: ReturnType<typeof vi.fn>;
 
   const settle = async (): Promise<void> => {
     await fixture.whenStable();
@@ -80,6 +96,22 @@ describe('MeetingHomeActionsComponent', () => {
     find(testId)?.click();
     await settle();
   };
+  const confirmResend = async (): Promise<void> => {
+    await choose('meetings-home-row-actions-resend');
+    find('meetings-home-row-actions-resend-confirm')?.querySelector('button')?.click();
+    await settle();
+  };
+  /** A send that stays in flight until the returned subject settles, tracked the way the real service tracks it. */
+  const pendingResend = (): Subject<{ message: string }> => {
+    const send$ = new Subject<{ message: string }>();
+    resendOwn$.mockImplementation(() =>
+      defer(() => {
+        resending.set(true);
+        return send$.pipe(finalize(() => resending.set(false)));
+      })
+    );
+    return send$;
+  };
   const confirmRemoval = async (): Promise<void> => {
     await choose('meetings-home-row-actions-remove');
     find('meetings-home-row-actions-remove-confirm')?.querySelector('button')?.click();
@@ -97,6 +129,12 @@ describe('MeetingHomeActionsComponent', () => {
     deleteMeeting = vi.fn();
     checkingEdit = signal(false);
     remove$ = vi.fn().mockReturnValue(of({ removed_registrant_ids: ['synthetic-reg'], remaining_registrant_ids: [] }));
+    addingSelf = signal(false);
+    add$ = vi.fn().mockReturnValue(of<MeetingSelfInviteResult>({ status: 'added', registrant: { uid: 'synthetic-self-reg' } as MeetingRegistrant }));
+    selfInvites = new Map();
+    markSelfInvited = vi.fn((meetingId: string, uids: readonly string[]) => selfInvites.set(meetingId, uids));
+    forgetSelfInvite = vi.fn();
+    retrySelfInvites = vi.fn();
 
     TestBed.configureTestingModule({
       providers: [
@@ -111,6 +149,14 @@ describe('MeetingHomeActionsComponent', () => {
         { provide: MeetingSelfRemovalService, useValue: { remove$, describeFailure: () => 'Unable to remove you from this meeting. Please try again.' } },
         { provide: MeetingsHomeEditService, useValue: { edit, isChecking: () => checkingEdit() } },
         { provide: MeetingsHomeDeleteService, useValue: { delete: deleteMeeting } },
+        {
+          provide: MeetingSelfInviteService,
+          useValue: { add$, isPending: () => addingSelf(), describeFailure: () => 'Unable to add you to this meeting. Please try again.' },
+        },
+        {
+          provide: MeetingsHomeStore,
+          useValue: { markSelfInvited, forgetSelfInvite, retrySelfInvites, selfInviteOf: (meetingId: string) => selfInvites.get(meetingId) },
+        },
       ],
     });
     overlay = TestBed.inject(OverlayContainer).getContainerElement();
@@ -141,10 +187,29 @@ describe('MeetingHomeActionsComponent', () => {
       expect(await openMenu()).toEqual(['Copy Link', 'Remove Myself']);
     });
 
-    it('offers an organizer Copy Link and Delete Meeting without a registration of their own', async () => {
+    it('offers an organizer Add Myself without a registration of their own', async () => {
       await render(row({ ...INVITEE, organizer: true, my_registrant_ids: [] }));
 
-      expect(await openMenu()).toEqual(['Copy Link', 'Delete Meeting']);
+      expect(await openMenu()).toEqual(['Copy Link', 'Add Myself', 'Delete Meeting']);
+    });
+
+    it('offers an organizer who is not invited Add Myself', async () => {
+      await render(row({ ...INVITEE, organizer: true, invited: false, my_registrant_ids: [] }));
+
+      expect(await openMenu()).toEqual(['Copy Link', 'Add Myself', 'Delete Meeting']);
+    });
+
+    it('offers an organizer Add Myself again once their registration was removed', async () => {
+      removedIds.set(new Set([INVITEE.id]));
+      await render(row({ ...INVITEE, organizer: true }));
+
+      expect(await openMenu()).toEqual(['Copy Link', 'Add Myself', 'Delete Meeting']);
+    });
+
+    it('never offers Add Myself on a past meeting', async () => {
+      await render(row({ ...INVITEE, organizer: true, invited: false, my_registrant_ids: [] }), 'past');
+
+      expect(await openMenu()).toEqual(['Copy Link']);
     });
 
     it('offers a registered organizer the attendee actions', async () => {
@@ -253,18 +318,114 @@ describe('MeetingHomeActionsComponent', () => {
   });
 
   describe('Resend Invite', () => {
-    it("resends for the row's occurrence and confirms with a dark toast", async () => {
+    it('offers a confirmation refresh while syncing and removes it after indexing', async () => {
+      selfInvites.set(INVITEE.id, []);
+      await render(row(INVITEE));
+      await choose('meetings-home-row-actions-refresh-invitation');
+      expect(retrySelfInvites).toHaveBeenCalledTimes(1);
+      expect(remove$).not.toHaveBeenCalled();
+      selfInvites.delete(INVITEE.id);
+      fixture.componentRef.setInput('row', row(INVITEE));
+      await settle();
+      expect(await openMenu()).not.toContain('Refresh invitation');
+    });
+
+    it('keeps removal available but hides resend until the self-invite is indexed', async () => {
+      selfInvites.set(INVITEE.id, ['synthetic-self-reg']);
+      await render(row(INVITEE));
+      const items = await openMenu();
+      expect(items).toContain('Remove Myself');
+      expect(items).not.toContain('Resend Invite');
+
+      selfInvites.delete(INVITEE.id);
+      fixture.componentRef.setInput('row', row(INVITEE));
+      await settle();
+      (fixture.componentInstance as unknown as { resend: () => void }).resend();
+      expect(resendOwn$).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not resend from an open confirmation after a self-invite starts syncing', async () => {
+      await render(row(INVITEE));
+      await choose('meetings-home-row-actions-resend');
+      selfInvites.set(INVITEE.id, []);
+      fixture.componentRef.setInput('row', row(INVITEE));
+      find('meetings-home-row-actions-resend-confirm')?.querySelector('button')?.click();
+      await settle();
+      expect(resendOwn$).not.toHaveBeenCalled();
+      expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
+    });
+
+    it('asks first in an alertdialog with the meeting and the resend question, and sends nothing yet', async () => {
       await render(row(INVITEE));
       await choose('meetings-home-row-actions-resend');
 
+      const dialog = overlay.querySelector('[role="alertdialog"]');
+      expect(dialog).not.toBeNull();
+      expect(find('meetings-home-row-actions-resend-dialog')?.textContent).toContain('Resend Your Invitation');
+      expect(find('meetings-home-row-actions-resend-info')?.textContent).toContain('Synthetic sync');
+      const message = find('meetings-home-row-actions-resend-message');
+      expect(dialog?.getAttribute('aria-describedby')).toBe(message?.id);
+      expect(message?.textContent?.trim()).toBe("Resend your invitation to “Synthetic sync”? We'll email it to your own address again.");
+      expect(find('meetings-home-row-actions-resend-cancel')?.textContent?.trim()).toBe('Cancel');
+      expect(find('meetings-home-row-actions-resend-confirm')?.textContent?.trim()).toBe('Resend');
+      expect(resendOwn$).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing on Cancel', async () => {
+      await render(row(INVITEE));
+      await choose('meetings-home-row-actions-resend');
+      find('meetings-home-row-actions-resend-cancel')?.querySelector('button')?.click();
+      await settle();
+
+      expect(resendOwn$).not.toHaveBeenCalled();
+      expect(toastShow).not.toHaveBeenCalled();
+      expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
+    });
+
+    it("resends for the row's occurrence once confirmed, closes the dialog and confirms with a dark toast", async () => {
+      await render(row(INVITEE));
+      await confirmResend();
+
+      expect(resendOwn$).toHaveBeenCalledTimes(1);
       expect(resendOwn$).toHaveBeenCalledWith('synthetic-meeting', 'synthetic-occurrence');
+      expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
       expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting invitation sent' });
     });
 
-    it('reports a failed resend', async () => {
-      resendOwn$.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    it('keeps the dialog open, busy and undismissable until the send settles', async () => {
+      const send$ = pendingResend();
+      await render(row(INVITEE));
+      await confirmResend();
+
+      expect(find('meetings-home-row-actions-resend-confirm')?.querySelector('button')?.getAttribute('aria-busy')).toBe('true');
+      find('meetings-home-row-actions-resend-cancel')?.querySelector('button')?.click();
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+      await settle();
+      expect(overlay.querySelector('[role="alertdialog"]')).not.toBeNull();
+      send$.next({ message: 'ok' });
+      send$.complete();
+      await settle();
+      expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
+    });
+
+    it('sends one resend for a double click on Resend', async () => {
+      pendingResend();
       await render(row(INVITEE));
       await choose('meetings-home-row-actions-resend');
+      const confirm = find('meetings-home-row-actions-resend-confirm')?.querySelector('button');
+      confirm?.click();
+      confirm?.click();
+      await settle();
+
+      expect(resendOwn$).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a failed resend and closes the dialog', async () => {
+      resendOwn$.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      await render(row(INVITEE));
+      await confirmResend();
+
+      expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
 
       expect(toastShow).toHaveBeenCalledWith(
         expect.objectContaining({ variant: 'error', message: 'Error', description: 'Unable to resend the invitation. Please try again.' })
@@ -321,6 +482,58 @@ describe('MeetingHomeActionsComponent', () => {
       expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
       expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Removed from meeting' });
       expect(refreshUserMeetings).not.toHaveBeenCalled();
+      expect(forgetSelfInvite).toHaveBeenCalledWith('synthetic-meeting', ['synthetic-reg']);
+    });
+
+    it('removes a registration just added from the row by its saved uid, before the feed lists it', async () => {
+      const organizer = { ...INVITEE, organizer: true, invited: false, my_registrant_ids: [] } as Meeting;
+      await render(row(organizer));
+      await choose('meetings-home-row-actions-add-self');
+      fixture.componentRef.setInput('row', row({ ...organizer, invited: true, my_registrant_ids: ['synthetic-self-reg'] }));
+      await settle();
+      await confirmRemoval();
+
+      expect(remove$).toHaveBeenCalledWith('synthetic-meeting', 'meetings-home', 'synthetic-self-reg');
+      expect(toastShow).toHaveBeenLastCalledWith({ variant: 'dark', message: 'Removed from meeting' });
+    });
+
+    it('does not delete while a no-UID self-invite is syncing, then allows retry after indexing', async () => {
+      selfInvites.set(INVITEE.id, []);
+      await render(row({ ...INVITEE, organizer: true, my_registrant_ids: undefined }));
+      await confirmRemoval();
+
+      expect(remove$).not.toHaveBeenCalled();
+      expect(forgetSelfInvite).not.toHaveBeenCalled();
+      expect(refreshUserMeetings).toHaveBeenCalledTimes(1);
+      expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ message: 'Invitation syncing' }));
+      expect(toastShow).not.toHaveBeenCalledWith(expect.objectContaining({ message: 'Removed from meeting' }));
+
+      selfInvites.delete(INVITEE.id);
+      fixture.componentRef.setInput('row', row({ ...INVITEE, organizer: true, my_registrant_ids: ['synthetic-new-reg'] }));
+      await settle();
+      await confirmRemoval();
+      expect(remove$).toHaveBeenCalledWith('synthetic-meeting', 'meetings-home');
+      expect(toastShow).toHaveBeenLastCalledWith({ variant: 'dark', message: 'Removed from meeting' });
+    });
+
+    it('still reports syncing if the indexed registration disappears before a no-UID removal', async () => {
+      selfInvites.set(INVITEE.id, []);
+      remove$.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await render(row({ ...INVITEE, organizer: true, my_registrant_ids: ['synthetic-new-reg'] }));
+      await confirmRemoval();
+
+      expect(remove$).toHaveBeenCalledWith('synthetic-meeting', 'meetings-home');
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ message: 'Invitation syncing' }));
+      expect(toastShow).not.toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
+    });
+
+    it('reports a 404 as a failed removal when no self-invite is pending', async () => {
+      remove$.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await render(row(INVITEE));
+      await confirmRemoval();
+
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', message: 'Error' }));
     });
 
     it('keeps the dialog open, busy and undismissable until the removal settles', async () => {
@@ -371,6 +584,60 @@ describe('MeetingHomeActionsComponent', () => {
         expect.objectContaining({ variant: 'error', message: 'Error', description: 'Unable to remove you from this meeting. Please try again.' })
       );
       expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
+    });
+  });
+
+  describe('Add Myself', () => {
+    const ORGANIZER = { ...INVITEE, organizer: true, invited: false, my_registrant_ids: [] } as Meeting;
+
+    it('adds the viewer, marks the row invited and confirms with a dark toast', async () => {
+      await render(row(ORGANIZER));
+      await choose('meetings-home-row-actions-add-self');
+
+      expect(add$).toHaveBeenCalledWith('synthetic-meeting');
+      expect(markSelfInvited).toHaveBeenCalledWith('synthetic-meeting', ['synthetic-self-reg']);
+      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Added to meeting' });
+      expect(refreshUserMeetings).toHaveBeenCalledWith();
+    });
+
+    it('marks the row invited with the listed rows when the roster already has the viewer', async () => {
+      add$.mockReturnValue(of<MeetingSelfInviteResult>({ status: 'already-listed', registrants: [{ uid: 'synthetic-listed' } as MeetingRegistrant] }));
+      await render(row(ORGANIZER));
+      await choose('meetings-home-row-actions-add-self');
+
+      expect(markSelfInvited).toHaveBeenCalledWith('synthetic-meeting', ['synthetic-listed']);
+      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: "You're already a guest of this meeting" });
+    });
+
+    it('points to Add Guests when the viewer cannot be resolved as a guest', async () => {
+      add$.mockReturnValue(of<MeetingSelfInviteResult>({ status: 'unavailable' }));
+      await render(row(ORGANIZER));
+      await choose('meetings-home-row-actions-add-self');
+
+      expect(markSelfInvited).not.toHaveBeenCalled();
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', message: 'Add Yourself' }));
+      expect(refreshUserMeetings).not.toHaveBeenCalled();
+    });
+
+    it('reports a failed add', async () => {
+      add$.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      await render(row(ORGANIZER));
+      await choose('meetings-home-row-actions-add-self');
+
+      expect(markSelfInvited).not.toHaveBeenCalled();
+      expect(toastShow).toHaveBeenCalledWith(
+        expect.objectContaining({ variant: 'error', message: 'Error', description: 'Unable to add you to this meeting. Please try again.' })
+      );
+    });
+
+    it('shows the trigger busy and keeps the menu closed while an add is pending', async () => {
+      addingSelf.set(true);
+      await render(row(ORGANIZER));
+
+      expect(trigger().getAttribute('aria-busy')).toBe('true');
+      expect(await openMenu()).toEqual([]);
+      expect(find('meetings-home-row-actions-add-self')).toBeNull();
+      expect(add$).not.toHaveBeenCalled();
     });
   });
 });

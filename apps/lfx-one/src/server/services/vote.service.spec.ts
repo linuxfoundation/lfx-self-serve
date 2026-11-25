@@ -15,6 +15,8 @@ import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  VOTE_DELETE_ENDED,
+  VOTE_DELETE_ENDED_MESSAGE,
   VOTE_REMINDER_INACTIVE,
   VOTE_REMINDER_PRECHECK_FAILED,
   VOTE_REMINDER_SELECTION_STALE,
@@ -22,6 +24,7 @@ import {
   VOTE_SUMMARY_NOT_ENDED,
   VOTE_SUMMARY_PRECHECK_FAILED,
   VOTE_SUMMARY_SEND_FAILED,
+  VOTE_VOTER_REMOVED_ERROR_CODE,
   VOTE_VOTERS_DRAFT,
 } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, VoteResponseStatus, VoteVoterStatus } from '@lfx-one/shared/enums';
@@ -320,6 +323,26 @@ describe('VoteService', () => {
       await expect(service.deleteVote(req, '..')).rejects.toThrow(ServiceValidationError);
 
       expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('surfaces the upstream ended-vote 400 as a 409 VOTE_DELETE_ENDED conflict without polling the index (#5968)', async () => {
+      proxyRequest.mockRejectedValueOnce(new MicroserviceError('ended polls cannot be deleted', 400, 'BAD_REQUEST'));
+
+      const error = await service.deleteVote(req, CANONICAL_UID).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ConflictError);
+      expect(error).toMatchObject({ statusCode: 409, code: VOTE_DELETE_ENDED, message: VOTE_DELETE_ENDED_MESSAGE });
+      expect(pollEndpoint).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['403', new MicroserviceError('Forbidden', 403, 'FORBIDDEN')],
+      ['404', new MicroserviceError('Not Found', 404, 'NOT_FOUND')],
+    ])('passes an upstream %s through unchanged (#5968)', async (_status, upstream) => {
+      proxyRequest.mockRejectedValueOnce(upstream);
+
+      await expect(service.deleteVote(req, CANONICAL_UID)).rejects.toBe(upstream);
+      expect(pollEndpoint).not.toHaveBeenCalled();
     });
   });
 
@@ -2139,6 +2162,32 @@ describe('VoteService', () => {
       });
     });
 
+    describe.each(['vote_uid', 'poll_id'] as const)('incomplete invitation lookup via %s (#5964)', (parentKey) => {
+      it.each(['read', 'update'] as const)('propagates a later-page failure during %s instead of classifying removal', async (operation) => {
+        const paginator = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+        fetchAllQueryResources.mockImplementation(paginator.fetchAllQueryResources);
+        const failure = new MicroserviceError('Synthetic query service failure', 503, 'UNAVAILABLE');
+        proxyRequest.mockImplementation(
+          async (_req: unknown, _service: unknown, _path: string, _method: unknown, params: { filters: string[]; page_token?: string }) => {
+            if (!params.filters.includes(`${parentKey}:${VOTE_UID}`)) return { resources: [] };
+            if (params.page_token) throw failure;
+            return {
+              resources: [{ data: { uid: 'vr-removed', [parentKey]: VOTE_UID, username: 'spec-user', voter_removed: true } }],
+              page_token: 'next-page',
+            };
+          }
+        );
+
+        const result =
+          operation === 'read'
+            ? service.getMyVoteResponse(req, VOTE_UID)
+            : service.updateMyVoteResponse(req, VOTE_UID, { abstain: true, comment_responses: [] });
+        await expect(result).rejects.toBe(failure);
+        expect(fetchAllQueryResources).toHaveBeenCalledWith(req, expect.any(Function), expect.objectContaining({ failOnPartial: true }));
+        expect(proxyRequest.mock.calls.every((call) => call[2] === '/query/resources' && call[3] === 'GET')).toBe(true);
+      });
+    });
+
     it('prefers a current poll_id-only invitation over a removed vote_uid invitation', async () => {
       proxyRequest
         .mockResolvedValueOnce({ resources: [{ data: { uid: 'vr-removed', vote_uid: VOTE_UID, username: 'spec-user', voter_removed: true } }] })
@@ -2410,6 +2459,124 @@ describe('VoteService', () => {
         comment_responses: [],
         vote_creation_time: undefined,
       });
+    });
+
+    it.each([true, false])('passes through can_change_vote: %s from the upstream ballot (#4723)', async (canChangeVote) => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValue({ ...detail, can_change_vote: canChangeVote });
+
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).resolves.toMatchObject({ can_change_vote: canChangeVote });
+    });
+
+    it('omits can_change_vote when upstream omits it or sends a non-boolean (#4723)', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValueOnce(detail).mockResolvedValueOnce({ ...detail, can_change_vote: 'yes' });
+
+      expect(await service.getMyVoteBallot(req, VOTE_UID)).not.toHaveProperty('can_change_vote');
+      expect(await service.getMyVoteBallot(req, VOTE_UID)).not.toHaveProperty('can_change_vote');
+    });
+  });
+
+  describe('getMyWouldEndVote (#4726)', () => {
+    const VOTE_UID = 'v0000000-0000-0000-0000-00000000f401';
+    const OWN_ROW_UID = 'vr000000-0000-0000-0000-00000000f401';
+    const pendingRow = (overrides: Partial<MyVoteResponse> = {}): MyVoteResponse => ({
+      uid: OWN_ROW_UID,
+      vote_uid: VOTE_UID,
+      vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE,
+      voter_removed: false,
+      ...overrides,
+    });
+    const detail = (overrides: Record<string, unknown> = {}) => ({ vote_response_uid: OWN_ROW_UID, vote_uid: VOTE_UID, ...overrides });
+
+    it.each([
+      ['no row', null],
+      ['a removed row', pendingRow({ voter_removed: true })],
+      ['a responded row', pendingRow({ vote_status: IndexedVoteResponseStatus.RESPONDED })],
+    ])('answers false without reading upstream for %s', async (_label, row) => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(row);
+
+      await expect(service.getMyWouldEndVote(req, VOTE_UID)).resolves.toBe(false);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it("reads only the identity-matched pending row and returns upstream's true", async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(pendingRow());
+      proxyRequest.mockResolvedValue(detail({ would_end_vote: true }));
+
+      await expect(service.getMyWouldEndVote(req, VOTE_UID)).resolves.toBe(true);
+      expect(service.getMyVoteResponse).toHaveBeenCalledWith(req, VOTE_UID);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/vote_responses/${OWN_ROW_UID}`, 'GET');
+    });
+
+    it.each([
+      ['false', detail({ would_end_vote: false })],
+      ['missing (older voting service)', detail()],
+      ['a non-boolean', detail({ would_end_vote: 'true' })],
+      ['an empty body', null],
+    ])('answers false when upstream would_end_vote is %s', async (_label, body) => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(pendingRow());
+      proxyRequest.mockResolvedValue(body);
+
+      await expect(service.getMyWouldEndVote(req, VOTE_UID)).resolves.toBe(false);
+    });
+
+    it('answers false and warns when upstream returns a response for a different vote', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(pendingRow());
+      proxyRequest.mockResolvedValue(detail({ vote_uid: 'v0000000-0000-0000-0000-00000000f499', would_end_vote: true }));
+
+      await expect(service.getMyWouldEndVote(req, VOTE_UID)).resolves.toBe(false);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'get_my_would_end_vote', expect.any(String), expect.objectContaining({ vote_uid: VOTE_UID }));
+    });
+
+    it('rejects when the upstream read fails', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(pendingRow());
+      proxyRequest.mockRejectedValue(new Error('synthetic upstream failure'));
+
+      await expect(service.getMyWouldEndVote(req, VOTE_UID)).rejects.toThrow('synthetic upstream failure');
+    });
+  });
+
+  describe('updateMyVoteResponse (#4723)', () => {
+    const VOTE_UID = 'v0000000-0000-0000-0000-00000000e401';
+    const OWN_ROW_UID = 'vr000000-0000-0000-0000-00000000e401';
+    const payload = { abstain: false, user_vote_content: [{ question_id: 'q-1', choice_ids: ['c-yes'] }], comment_responses: [] };
+    const ownRow = (overrides: Partial<MyVoteResponse> = {}): MyVoteResponse => ({
+      uid: OWN_ROW_UID,
+      vote_uid: VOTE_UID,
+      vote_status: IndexedVoteResponseStatus.RESPONDED,
+      voter_removed: false,
+      ...overrides,
+    });
+
+    it.each([
+      ['no row', 'NOT_FOUND', null],
+      ['a removed row', VOTE_VOTER_REMOVED_ERROR_CODE, ownRow({ voter_removed: true })],
+      ['an awaiting row', 'NOT_FOUND', ownRow({ vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE })],
+    ])('returns 404 without calling upstream for %s (#5964 code %s)', async (_label, code, row) => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(row);
+
+      await expect(service.updateMyVoteResponse(req, VOTE_UID, payload)).rejects.toMatchObject({ statusCode: 404, code });
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it("PUTs to the caller's own row uid with the user token", async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValue(undefined);
+
+      await service.updateMyVoteResponse(req, VOTE_UID, payload);
+
+      expect(service.getMyVoteResponse).toHaveBeenCalledWith(req, VOTE_UID);
+      expect(proxyRequest).toHaveBeenCalledExactlyOnceWith(req, 'LFX_V2_SERVICE', `/vote_responses/${OWN_ROW_UID}`, 'PUT', undefined, payload);
+    });
+
+    it('propagates an upstream 409 when the vote makes ballots final', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      const conflict = new MicroserviceError('this poll does not allow changing a submitted vote', 409, 'CONFLICT', {});
+      proxyRequest.mockRejectedValue(conflict);
+
+      await expect(service.updateMyVoteResponse(req, VOTE_UID, payload)).rejects.toBe(conflict);
     });
   });
 
