@@ -26,6 +26,7 @@ import {
   VOTE_IMPERSONATION_PRIVATE_NOTICE,
   VOTE_IMPERSONATION_READ_ONLY_NOTICE,
   VOTE_LAST_VOTER_CONFIRMATION,
+  VOTE_RANKED_CHOICE_DRAG_START_DELAY,
   VOTE_RATE_LIMITED_MESSAGE,
   VOTE_UPSTREAM_ENDED,
   VOTE_UPSTREAM_UPDATE_REMOVAL_MESSAGES,
@@ -214,6 +215,7 @@ export class VoteCastDrawerComponent {
   protected readonly rankedOrderByQuestion: Signal<Map<string, UserChoice[]>> = this.initRankedOrderByQuestion();
   protected readonly unrankedChoicesByQuestion: Signal<Map<string, UserChoice[]>> = this.initUnrankedChoicesByQuestion();
   protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
+  protected readonly rankedDragStartDelay = VOTE_RANKED_CHOICE_DRAG_START_DELAY;
   protected readonly commentPrompts: Signal<PollCommentPrompt[]> = this.initCommentPrompts();
   protected readonly commentPromptsData: Signal<CommentResponseFormData[]> = this.initCommentPromptsData();
 

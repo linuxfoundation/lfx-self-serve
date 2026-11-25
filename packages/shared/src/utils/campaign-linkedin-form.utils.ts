@@ -14,8 +14,11 @@ import type {
   LinkedInTargetingProfileConfig,
   LinkedInTargetingProfileEdit,
   LinkedInVariantDraft,
+  LinkedInVariantFieldsEnabled,
 } from '../interfaces/campaign.interface';
-import { roundUsdToCentsLikeGo } from './campaign-linkedin.utils';
+import { linkedInVariantImageForBrief } from './campaign-linkedin-image.utils';
+import { linkedInCreativeTextLength, normalizeLinkedInCreativeName, roundUsdToCentsLikeGo } from './campaign-linkedin.utils';
+import { linkedInTextAdsCreateRefusal } from './campaign-linkedin-text-ads-form.utils';
 
 /**
  * The Implement tab's LinkedIn form rules (#5980): the daily cap, the targeting edit, the ad account, the variants a
@@ -96,23 +99,40 @@ export function linkedInAccountFields({
   return { selectedAdAccountId: effectiveAccount.accountId };
 }
 
-/** Whether the variant holds an upload made for the brief now open (`briefId`, `''` for none): the only one sent. */
-export function linkedInVariantImageForBrief(variant: LinkedInVariantDraft, briefId: string): boolean {
-  return variant.imageAssetId !== '' && variant.imageAssetBriefId === briefId;
-}
-
 /**
  * The variants a create sends. A variant's upload goes out only when the upload capability is an explicit yes
  * (`uploadAvailable`) and it was made for the open brief; it replaces any `imageUrn` the plan named, since
  * campaign-service refuses a variant carrying both. A variant with neither sends no image field. The tab-only fields
  * (`key`, the asset's name and brief) are never sent.
  */
-export function linkedInVariantsForCreate(variants: readonly LinkedInVariantDraft[], uploadAvailable: boolean, briefId: string): LinkedInCreativeVariant[] {
+export function linkedInVariantsForCreate(
+  variants: readonly LinkedInVariantDraft[],
+  uploadAvailable: boolean,
+  briefId: string,
+  fields: LinkedInVariantFieldsEnabled = { copy: false, callToAction: false }
+): LinkedInCreativeVariant[] {
   return variants.map((variant) => {
     const { introText, headline } = variant;
-    if (uploadAvailable && linkedInVariantImageForBrief(variant, briefId)) return { introText, headline, imageAssetId: variant.imageAssetId };
-    return variant.imageUrn ? { introText, headline, imageUrn: variant.imageUrn } : { introText, headline };
+    const optional = linkedInVariantOptionalFields(variant, fields);
+    if (uploadAvailable && linkedInVariantImageForBrief(variant, briefId)) return { introText, headline, imageAssetId: variant.imageAssetId, ...optional };
+    return variant.imageUrn ? { introText, headline, imageUrn: variant.imageUrn, ...optional } : { introText, headline, ...optional };
   });
+}
+
+/**
+ * A variant's ad name, description and call to action as a create sends them (#5764 rows 16–17): only on a deployment
+ * that sends each (`fields`), and only when set. A blank one is not set, as campaign-service reads it.
+ */
+function linkedInVariantOptionalFields(
+  variant: LinkedInVariantDraft,
+  fields: LinkedInVariantFieldsEnabled
+): Pick<LinkedInCreativeVariant, 'name' | 'description' | 'callToAction'> {
+  const out: Pick<LinkedInCreativeVariant, 'name' | 'description' | 'callToAction'> = {};
+  // Blank as campaign-service reads it: the normalized name, and the description's normalized length.
+  if (fields.copy && normalizeLinkedInCreativeName(variant.name ?? '') !== '') out.name = variant.name;
+  if (fields.copy && linkedInCreativeTextLength(variant.description ?? '') > 0) out.description = variant.description;
+  if (fields.callToAction && (variant.callToAction ?? '') !== '') out.callToAction = variant.callToAction;
+  return out;
 }
 
 /** Why the LinkedIn section holds Create, or `null`. The first failing check wins; each message names its fix. */
@@ -121,16 +141,33 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
   // A daily cap campaign-service would refuse (#5774); the message is under the field.
   if (input.dailyCapError !== null) return 'LinkedIn Ads: fix the daily cap.';
   if (input.geoTargetCount === 0) return 'LinkedIn Ads: add at least one location.';
-  if (input.variantCount === 0) return 'LinkedIn Ads: add at least one ad variant.';
-  if (input.variantCount > LINKEDIN_MAX_VARIANTS) return `LinkedIn Ads: remove ad variants until there are at most ${LINKEDIN_MAX_VARIANTS}.`;
-  // An intro text or headline campaign-service would refuse (blank) or cut short (over its limit).
-  if (input.variantTextInvalid) return 'LinkedIn Ads: fix the ad variant text.';
-  // Removals the create cannot carry (#5546): the legacy creator would drop them, and without the profile catalogue
-  // they cannot be applied. A block rather than a silent revert to the profile as configured.
-  if (input.removalsHeld) {
+  // A Text Ads choice this deployment no longer offers is held rather than sent as single image ads (#5764 row 19).
+  if (input.textAdsUnavailable) return 'LinkedIn Ads: Text Ads are not available right now. Choose single image ads as the ad format.';
+  // Custom targeting this deployment no longer offers is held rather than sent as the profile, a wider audience (#5764 rows 8–11).
+  if (input.customTargetingUnavailable) return 'LinkedIn Ads: custom targeting is not available right now. Choose a targeting profile.';
+  if (input.textAds) {
+    // Text Ads (#5764 row 19) take the variants' place: the create sends none.
+    const textAdsRefusal = linkedInTextAdsCreateRefusal(input.textAds);
+    if (textAdsRefusal !== null) return textAdsRefusal;
+  } else {
+    if (input.variantCount === 0) return 'LinkedIn Ads: add at least one ad variant.';
+    if (input.variantCount > LINKEDIN_MAX_VARIANTS) return `LinkedIn Ads: remove ad variants until there are at most ${LINKEDIN_MAX_VARIANTS}.`;
+    // An intro text or headline campaign-service would refuse (blank) or cut short (over its limit).
+    if (input.variantTextInvalid) return 'LinkedIn Ads: fix the ad variant text.';
+    // An ad name or description campaign-service would refuse or cut (#5764 rows 16–17); the message is under the field.
+    if (input.variantFieldsInvalid) return 'LinkedIn Ads: fix the ad name or description.';
+  }
+  // Custom targeting (#5764 rows 8–11) replaces the profile, so its removals are not sent and hold nothing.
+  if (input.customTargeting) {
+    if (input.customTargeting.refusal !== null) return `LinkedIn Ads: fix the custom targeting. ${input.customTargeting.refusal}`;
+  } else if (input.removalsHeld) {
+    // Removals the create cannot carry (#5546): the legacy creator would drop them, and without the profile catalogue
+    // they cannot be applied. A block rather than a silent revert to the profile as configured.
     if (!input.targetingEditAvailable) return 'LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.';
     if (!input.profileLoaded) return "LinkedIn Ads: the targeting profile's details have not loaded. Reload the page, or reset the targeting profile.";
   }
+  // The objective and conversion rules (#5764 rows 2 and 4): already a whole message (`linkedInObjectiveCreateRefusal`).
+  if (input.objectiveRefusal) return input.objectiveRefusal;
   // The legacy account must be one the CATALOG confirms, not merely a non-empty string: before the catalog read
   // returns, and for good if it fails, the restored id is still on the form while the selector shows nothing.
   // Membership also covers the blank id. Skipped when the connection decides the account (#5809), since the create

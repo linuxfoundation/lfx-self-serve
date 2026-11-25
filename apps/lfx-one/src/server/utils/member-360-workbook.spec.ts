@@ -85,7 +85,7 @@ describe('Member 360 workbook and tracker round trips', () => {
     const zip = await JSZip.loadAsync(bytes);
     expect(await zip.file('xl/worksheets/sheet5.xml')?.async('string')).not.toContain('<tableParts');
   });
-  it('expands a large summary watchlist and nested method settings into lossless rows', async () => {
+  it('caps a large summary watchlist and expands nested method settings into lossless rows', async () => {
     const envelope = member360Fixture();
     const entry = envelope.tabs.summary.watchlist[0];
     envelope.tabs.summary.watchlist = Array.from({ length: 400 }, (_, index) => ({ ...entry, member_organization: `Synthetic Member ${index}` }));
@@ -95,8 +95,9 @@ describe('Member 360 workbook and tracker round trips', () => {
     const summary = output.getWorksheet('Summary');
     const rows: unknown[][] = [];
     summary?.eachRow((row) => rows.push([row.getCell(1).value, row.getCell(2).value]));
-    expect(rows.filter(([key]) => String(key).startsWith('Synthetic Member '))).toHaveLength(400);
-    for (let index = 0; index < 400; index++) {
+    expect(rows.filter(([key]) => String(key).startsWith('Synthetic Member '))).toHaveLength(15);
+    // Equal scores keep the envelope's order.
+    for (let index = 0; index < 15; index++) {
       expect(summary?.getRow(19 + index).values).toEqual([
         undefined,
         `Synthetic Member ${index}`,
@@ -105,6 +106,7 @@ describe('Member 360 workbook and tracker round trips', () => {
         entry.engagement_tier,
       ]);
     }
+    expect(summary?.getCell('A34').text).toBe('385 more renew within 120 days: filter Member Ranking by Days to Renewal');
     expect(summary?.columnCount).toBe(6);
     expect(summary?.pageSetup).toMatchObject({ fitToWidth: 1, fitToHeight: 0 });
     expect(summary?.getTables()).toHaveLength(3);
@@ -296,6 +298,70 @@ describe('Member 360 workbook and tracker round trips', () => {
     expect(cells).not.toContain('Movers');
     expect(cells).toContain('Used: None');
     expect(cells).toContain('Unavailable: None');
+  });
+  it.each([
+    { qualifying: 151, shown: 15, line: '136 more renew within 120 days: filter Member Ranking by Days to Renewal' },
+    { qualifying: 16, shown: 15, line: '1 more renews within 120 days: filter Member Ranking by Days to Renewal' },
+    { qualifying: 15, shown: 15, line: null },
+    { qualifying: 10, shown: 10, line: null },
+  ])('shows $shown of $qualifying watchlist members, lowest scores first, and moves the later blocks up', async ({ qualifying, shown, line }) => {
+    const envelope = member360Fixture();
+    const entry = envelope.tabs.summary.watchlist[0];
+    // Highest score first in the envelope, so the cap has to pick by score and not by position.
+    envelope.tabs.summary.watchlist = Array.from({ length: qualifying }, (_, index) => ({
+      ...entry,
+      member_organization: `Synthetic Member ${index}`,
+      days_to_renewal: index % 121,
+      engagement_score: (qualifying - 1 - index) / 2,
+    }));
+    const bytes = await buildMember360Workbook(envelope);
+    const output = new ExcelJS.Workbook();
+    await output.xlsx.load(bytes);
+    const sheet = output.getWorksheet('Summary');
+    expect(sheet?.getCell('A17').text).toBe('Watchlist · renewal within 120 days');
+    const members: unknown[] = [];
+    sheet?.eachRow((row) => members.push(row.getCell(1).value));
+    expect(members.filter((value) => String(value).startsWith('Synthetic Member '))).toHaveLength(shown);
+    for (let index = 0; index < shown; index++) {
+      expect(sheet?.getRow(19 + index).values).toEqual([
+        undefined,
+        `Synthetic Member ${qualifying - 1 - index}`,
+        (qualifying - 1 - index) % 121,
+        index / 2,
+        entry.engagement_tier,
+      ]);
+      expect(sheet?.getCell(`C${19 + index}`).numFmt).toBe('0.0');
+    }
+    const texts: string[] = [];
+    sheet?.eachRow((row) => texts.push(row.getCell(1).text));
+    expect(texts.filter((text) => text.includes('filter Member Ranking'))).toEqual(line ? [line] : []);
+    // Header 18, members from 19, then the line (when there is one), one blank row, and the next block.
+    const after = 19 + shown;
+    const actionRow = after + (line ? 2 : 1);
+    if (line) {
+      expect(sheet?.getCell(`A${after}`).text).toBe(line);
+      expect(sheet?.getCell(`F${after}`).master.address).toBe(`A${after}`);
+    }
+    expect(sheet?.getCell(`A${actionRow - 1}`).value).toBeNull();
+    expect(sheet?.getCell(`A${actionRow}`).text).toBe('Action load per team');
+    expect(sheet?.getCell(`A${actionRow + 1}`).value).toBe('Team');
+    const coverageRow = actionRow + 1 + envelope.tabs.summary.action_load.length + 2;
+    expect(sheet?.getCell(`A${coverageRow}`).text).toBe('Data coverage');
+    const coverage = envelope.tabs.summary.data_coverage;
+    const lastRow = coverageRow + Math.max(coverage.sources_used.length, 1) + Math.max(coverage.sources_unavailable.length, 1);
+    expect(sheet?.pageSetup.printArea).toBe(`A1:F${lastRow}`);
+    expect(sheet?.getTables()).toHaveLength(3);
+    // The colour rules cover exactly the rows shown, and the chart stays on C6:F15 above the watchlist.
+    const zip = await JSZip.loadAsync(bytes);
+    const xml = (await zip.file('xl/worksheets/sheet1.xml')?.async('string')) ?? '';
+    const refs = [...xml.matchAll(/<conditionalFormatting sqref="([^"]+)">/g)].map((match) => match[1]);
+    expect(new Set(refs)).toEqual(new Set([`B19:B${after - 1}`, `D19:D${after - 1}`]));
+    expect(xml).toContain('AND(ISNUMBER(B19),B19&lt;=120)');
+    expect(xml).toContain('AND(ISNUMBER(B19),B19&gt;120,B19&lt;=240)');
+    for (const tier of ENGAGEMENT_TIERS) expect(xml).toContain(`D19=&quot;${tier}&quot;`);
+    const drawing = (await zip.file('xl/drawings/drawing1.xml')?.async('string')) ?? '';
+    expect(drawing).toContain('<xdr:from><xdr:col>2</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>5</xdr:row>');
+    expect(drawing).toContain('<xdr:to><xdr:col>6</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>15</xdr:row>');
   });
   it('writes six sheets with 21 contact-free ranking columns, sorted scores and frozen headers', async () => {
     const envelope = member360Fixture();

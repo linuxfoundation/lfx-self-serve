@@ -1,0 +1,35 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component, computed, signal, Signal } from '@angular/core';
+import { ACCOUNT_DEVELOPER_SETTINGS_COPY } from '@lfx-one/shared/constants';
+import { AccountCardComponent } from '@shared/components/account-card/account-card.component';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiNoteComponent } from '@shared/uikit/note/note.component';
+import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
+import { DialogService } from 'primeng/dynamicdialog';
+
+import { AccountSettingsComponent } from '../../settings/account-settings/account-settings.component';
+import { AccountInsightsTokensComponent } from './insights-tokens/account-insights-tokens.component';
+
+/**
+ * Account & Settings › Developer settings (#6081): the security guidelines, the API Token card, whose Personal Access Token is
+ * shown, hidden and copied in its row, and the LFX Insights API Tokens card behind its flag. It keeps the settings page's
+ * token loading, impersonation rule and copy by extending it.
+ */
+@Component({
+  selector: 'lfx-account-developer-settings',
+  imports: [AccountCardComponent, AccountInsightsTokensComponent, UiButtonComponent, UiNoteComponent, UiSkeletonComponent],
+  // The settings page opens its token dialog through PrimeNG's, which this page never shows; toasts go to the app's own.
+  providers: [DialogService],
+  templateUrl: './account-developer-settings.component.html',
+})
+export class AccountDeveloperSettingsComponent extends AccountSettingsComponent {
+  protected readonly copy = ACCOUNT_DEVELOPER_SETTINGS_COPY;
+  protected readonly tokenShown = signal(false);
+  /** The token as the row shows it: in full once shown, masked otherwise. */
+  protected readonly shownToken: Signal<string> = computed(() => (this.tokenShown() ? this.developerToken() : this.maskedToken()));
+  protected readonly guidelines: Signal<readonly string[]> = computed(() =>
+    this.insightsPublicApiEnabled() ? this.copy.guidelinesInsights : this.copy.guidelines
+  );
+}

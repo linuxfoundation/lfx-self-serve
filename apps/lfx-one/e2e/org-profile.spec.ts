@@ -215,7 +215,8 @@ test.describe('Org Profile — authenticated smoke set (S1/S2/S3/S4)', () => {
     await expect(root).toHaveAttribute('data-mode', 'view');
     await expect(page.getByTestId('org-profile-summary-card')).toBeVisible();
     await expect(page.getByTestId('org-profile-name')).toHaveText(MOCK_CANONICAL.name);
-    await expect(page.getByTestId('org-profile-primary-address-card')).toBeVisible();
+    await expect(page.getByTestId('org-profile-billing-address-card')).toBeVisible();
+    await expect(page.getByTestId('org-profile-primary-address-card')).toHaveCount(0);
   });
 
   test('S2: writer gate hides the edit button when role-grants omit the selected uid', async ({ page }) => {
@@ -402,9 +403,9 @@ test.describe('Org Profile — spec 023 empty addresses graceful degradation', (
 
     // The address card scaffold stays mounted (a section heading + empty/fallback content), but
     // the actual fixture address line MUST NOT render — proves the null body short-circuited the data path.
-    const primaryCard = page.getByTestId('org-profile-primary-address-card');
-    await expect(primaryCard).toBeVisible();
-    await expect(primaryCard).not.toContainText(MOCK_ADDRESSES.primaryAddress.line1);
+    const billingCard = page.getByTestId('org-profile-billing-address-card');
+    await expect(billingCard).toBeVisible();
+    await expect(billingCard).not.toContainText(MOCK_ADDRESSES.billingAddress.line1);
   });
 });
 

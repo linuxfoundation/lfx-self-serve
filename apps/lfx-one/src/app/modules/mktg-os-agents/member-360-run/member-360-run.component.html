@@ -241,13 +241,14 @@
         } @else if (!historyError() && !historyRetrying() && !history().length) {
           <p class="text-sm text-gray-500">No Member 360 runs yet.</p>
         }
+        <!-- The viewer's own zone and the time, as on the document page's Run history: two runs of one day stay apart. -->
         @for (run of history(); track run.documentId) {
           <a
             [routerLink]="['../documents/member-360', run.documentId]"
             [queryParams]="projectParams()"
             class="text-blue-600"
             [attr.data-testid]="'member-360-run-history-' + run.documentId"
-            >{{ run.createdAt | date: 'd MMM y' : 'UTC' }} · Open</a
+            >{{ run.createdAt | date: 'd MMM y, HH:mm' }} · Open</a
           >
         }
       </section>

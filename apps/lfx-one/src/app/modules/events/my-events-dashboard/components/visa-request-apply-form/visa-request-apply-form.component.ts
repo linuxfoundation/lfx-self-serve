@@ -11,6 +11,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { ACCOMMODATION_PAID_BY_OPTIONS, ATTENDEE_TYPE_OPTIONS, COUNTRIES } from '@lfx-one/shared/constants';
 import { AttendeeAccommodationPaidBy, AttendeeType, VisaRequestApplicantInfo } from '@lfx-one/shared/interfaces';
+import { toLocalDateOnlyString } from '@lfx-one/shared/utils';
 import { notFutureDateValidator, notPastDateValidator } from '@lfx-one/shared/validators';
 import { startWith } from 'rxjs';
 import { OrgSearchFieldComponent } from '../org-search-field/org-search-field.component';
@@ -71,8 +72,14 @@ export class VisaRequestApplyFormComponent {
     });
   }
 
+  // Send the picked calendar days, not local-midnight Dates: those serialize as UTC instants and shift the day.
   private buildFormValue(): VisaRequestApplicantInfo {
-    return this.form.getRawValue() as VisaRequestApplicantInfo;
+    const { birthDate, passportExpiryDate, ...rest } = this.form.getRawValue();
+    return {
+      ...rest,
+      birthDate: birthDate ? toLocalDateOnlyString(birthDate) : null,
+      passportExpiryDate: passportExpiryDate ? toLocalDateOnlyString(passportExpiryDate) : null,
+    };
   }
 }
 

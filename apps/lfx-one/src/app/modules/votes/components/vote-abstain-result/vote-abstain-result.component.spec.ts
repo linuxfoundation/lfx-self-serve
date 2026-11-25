@@ -19,7 +19,7 @@ describe('VoteAbstainResultComponent', () => {
     fixture = TestBed.createComponent(VoteAbstainResultComponent);
   });
 
-  function render(value: VoteParticipationStats, variant?: 'live' | 'final', testId?: string): HTMLElement | null {
+  function render(value: VoteParticipationStats, variant?: 'live' | 'final' | 'inline', testId?: string): HTMLElement | null {
     fixture.componentRef.setInput('stats', value);
     if (variant) fixture.componentRef.setInput('variant', variant);
     if (testId) fixture.componentRef.setInput('testId', testId);
@@ -45,6 +45,16 @@ describe('VoteAbstainResultComponent', () => {
     const bar = row?.querySelector<HTMLElement>('.bg-slate-400');
     expect(bar?.style.width).toBe('40%');
     expect(bar?.parentElement?.classList).toContain('bg-white');
+  });
+
+  it('renders the inline variant as one muted text line with no bar (#6124)', () => {
+    const row = render(stats(4, 8), 'inline');
+
+    expect(row?.tagName).toBe('P');
+    expect(text(row)).toBe('4 abstentions · 8%');
+    expect(row?.classList).toContain('text-slate-500');
+    expect(row?.querySelector('[style]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.rounded-full, .rounded-lg')).toBeNull();
   });
 
   it('pluralizes abstentions', () => {
@@ -79,6 +89,8 @@ describe('VoteAbstainResultComponent', () => {
       ['live', 2, '2 abstentions'],
       ['final', 1, '1 abstention'],
       ['final', 2, '2 abstentions'],
+      ['inline', 1, '1 abstention'],
+      ['inline', 2, '2 abstentions'],
     ] as const)('makes the %s count of %i the link and includes its visible label in the accessible name', (variant, count, label) => {
       fixture.componentRef.setInput('showVoterLinks', true);
       render(stats(count, count * 20), variant);
@@ -91,7 +103,7 @@ describe('VoteAbstainResultComponent', () => {
       expect(emitted).toBe(1);
     });
 
-    it.each(['live', 'final'] as const)('renders no link when nobody abstained in the %s variant', (variant) => {
+    it.each(['live', 'final', 'inline'] as const)('renders no link when nobody abstained in the %s variant', (variant) => {
       fixture.componentRef.setInput('showVoterLinks', true);
       render(stats(0, 0), variant);
 

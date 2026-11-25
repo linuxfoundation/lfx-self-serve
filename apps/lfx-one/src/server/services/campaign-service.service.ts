@@ -87,6 +87,9 @@ import type {
   CampaignServiceGoogleAdsAudiences,
   CampaignServiceGoogleAdsUserLists,
   CampaignServiceMetaCustomAudiences,
+  CampaignServiceLinkedInAudiences,
+  CampaignServiceLinkedInConversions,
+  LinkedInTargetingSearchFacet,
   CampaignServiceMetaLeadForms,
   CampaignServiceLinkedInAdsCreateAccount,
   CampaignServiceConnection,
@@ -132,6 +135,7 @@ import type {
   RedditAdVariant,
   RedditBriefCopy,
   StoredCreativeAsset,
+  CampaignServiceLinkedInTargetingEntities,
   CampaignServiceMetaTargetingSearch,
   MetaTargetingSearchType,
 } from '@lfx-one/shared/interfaces';
@@ -709,6 +713,15 @@ export function canSetRedditConversionPixel(): boolean {
 }
 
 /**
+ * Whether a Reddit `conversions` create may carry `conversionEvent` (#6108 row 2, campaign-service #549). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT`, which follows campaign-service's
+ * own `REDDIT_CONVERSION_EVENT_ENABLED`: campaign-service refuses the field while that is off, and the legacy creator ignores it.
+ */
+export function canSetRedditConversionEvent(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditConversionEvent);
+}
+
+/**
  * Whether a Google create may reference uploaded images by asset id.
  *
  * Needs the campaign-service create path to serve the create AND the Google-assets flag. Unlike its
@@ -901,6 +914,64 @@ export function canEditLinkedInTargeting(): boolean {
  */
 export function canSetLinkedInDailyCap(): boolean {
   return cutoverOwnsCreate();
+}
+
+/**
+ * Whether a LinkedIn variant may carry its ad `name` and `description` (#5764 row 17, campaign-service #588, #589).
+ * `cutoverOwnsCreate()` and nothing else, like `canSetLinkedInDailyCap`: campaign-service has taken both since v1.0.38
+ * with no flag of its own, and the LEGACY creator ignores them.
+ */
+export function canSetLinkedInVariantCopy(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
+ * Whether a LinkedIn variant may carry a `callToAction` (#5764 row 16, campaign-service #588). Needs the campaign-service
+ * create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CALL_TO_ACTION`, which follows campaign-service's own
+ * `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED`: campaign-service refuses the field while that is off.
+ */
+export function canSetLinkedInCallToAction(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInCallToAction);
+}
+
+/**
+ * Whether a LinkedIn create may be a Text Ads campaign (#5764 row 19, campaign-service #586). Needs the campaign-service
+ * create path with bidding (`canCreateWithBidding`), since a text create must carry a manual bid, AND
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS`, which follows campaign-service's own `LINKEDIN_ADS_TEXT_ADS_ENABLED`:
+ * campaign-service refuses the format while that is off, and the legacy creator ignores it.
+ */
+export function canSetLinkedInTextAds(): boolean {
+  return canCreateWithBidding() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInTextAds);
+}
+
+/**
+ * Whether a LinkedIn variant may carry a `videoAssetId`, a video ad (#5764 row 18, campaign-service #586). Needs the
+ * LinkedIn creative asset path (`canUseLinkedInCreativeAssets`, which includes the campaign-service create path), since
+ * the video is an asset uploaded to the brief, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO`, which follows
+ * campaign-service's own `LINKEDIN_ADS_VIDEO_ENABLED`: campaign-service refuses the field while that is off, and the
+ * legacy creator ignores it.
+ */
+export function canSetLinkedInVideoAds(): boolean {
+  return canUseLinkedInCreativeAssets() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInVideo);
+}
+
+/**
+ * Whether a LinkedIn create may carry its own `targeting` (#5764 rows 8–11, campaign-service #552). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING`, which follows campaign-service's own
+ * `LINKEDIN_ADS_TARGETING_ENABLED`: campaign-service refuses the field while that is off, and the legacy creator ignores it.
+ */
+export function canSetLinkedInTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInTargeting);
+}
+
+/**
+ * Whether a LinkedIn create may carry `objective` and `conversions` (#5764 rows 2 and 4, campaign-service #552, #582).
+ * Needs the campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS`, which follows
+ * campaign-service's own `LINKEDIN_ADS_CONVERSIONS_ENABLED`: campaign-service refuses `conversions` while that is off, and
+ * the legacy creator ignores both. Bidding plays no part: only a manual bid needs it, and `bidding` is gated on its own.
+ */
+export function canSetLinkedInConversions(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInConversions);
 }
 
 /**
@@ -1122,6 +1193,7 @@ export class CampaignServiceClient {
         redditCreativeEnabled: canCreateRedditCreative(),
         redditAssetUploadEnabled: canUseRedditCreativeAssets(),
         redditConversionPixelEnabled: canSetRedditConversionPixel(),
+        redditConversionEventEnabled: canSetRedditConversionEvent(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
@@ -1129,6 +1201,12 @@ export class CampaignServiceClient {
         linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
         linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
         linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
+        linkedInVariantCopyEnabled: canSetLinkedInVariantCopy(),
+        linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
+        linkedInTextAdsEnabled: canSetLinkedInTextAds(),
+        linkedInVideoAdsEnabled: canSetLinkedInVideoAds(),
+        linkedInTargetingEnabled: canSetLinkedInTargeting(),
+        linkedInConversionsEnabled: canSetLinkedInConversions(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1207,6 +1285,7 @@ export class CampaignServiceClient {
       redditCreativeEnabled: canCreateRedditCreative(),
       redditAssetUploadEnabled: canUseRedditCreativeAssets(),
       redditConversionPixelEnabled: canSetRedditConversionPixel(),
+      redditConversionEventEnabled: canSetRedditConversionEvent(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
@@ -1214,6 +1293,12 @@ export class CampaignServiceClient {
       linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
       linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
       linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
+      linkedInVariantCopyEnabled: canSetLinkedInVariantCopy(),
+      linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
+      linkedInTextAdsEnabled: canSetLinkedInTextAds(),
+      linkedInVideoAdsEnabled: canSetLinkedInVideoAds(),
+      linkedInTargetingEnabled: canSetLinkedInTargeting(),
+      linkedInConversionsEnabled: canSetLinkedInConversions(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -3720,6 +3805,81 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/meta-ads/lead-forms`,
       'GET'
+    );
+  }
+
+  /**
+   * LinkedIn targeting entities matching `query` for one facet (`search-linkedin-ads-targeting-entities`, #585, #643):
+   * the Implement tab's location search uses `facet=locations` (#5545), and its targeting editor the other searchable
+   * facets (`LINKEDIN_TARGETING_SEARCH_FACETS`, #5764 rows 8–11). Unflagged upstream; answered on
+   * `campaign_manager` of the path project, with the project's LinkedIn connection or LF's system credential. At most
+   * 100 entities, cached upstream for 6 hours per facet and query. A LinkedIn throttle answers 503 and is not retried.
+   * Failures are left to the caller.
+   */
+  public async searchLinkedInTargetingEntities(
+    req: Request,
+    projectSlug: string,
+    facet: 'locations' | LinkedInTargetingSearchFacet,
+    query: string
+  ): Promise<CampaignServiceLinkedInTargetingEntities> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A targeting search requires the project it is made for.', {
+        operation: 'search_linkedin_targeting_entities',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInTargetingEntities>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/targeting-entities`,
+      'GET',
+      { facet, query }
+    );
+  }
+
+  /**
+   * The ad segments on the LinkedIn ad account a create for this project uses (`list-linkedin-ads-audiences`, #585), for
+   * the Implement tab's targeting editor (#5764 rows 8–11). Answered upstream only on `global_marketing_ops` of the
+   * path project; EXPIRED and FAILED segments are left out, and the rest come sorted by name. `accountId`, when given,
+   * names the ad account (sent as `account_id`; campaign-service refuses one the project cannot create in), and omitted
+   * it is the project's default account. Failures are left to the caller.
+   */
+  public async listLinkedInAudiences(req: Request, projectSlug: string, accountId?: string): Promise<CampaignServiceLinkedInAudiences> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'An audience read requires the project it is made for.', {
+        operation: 'list_linkedin_audiences',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInAudiences>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/audiences`,
+      'GET',
+      accountId === undefined ? undefined : { account_id: accountId }
+    );
+  }
+
+  /**
+   * The conversion rules on the LinkedIn ad account a create for this project uses (`list-linkedin-ads-conversions`,
+   * #552), for the Implement tab's conversion picker (#5764 row 4). Answered upstream only on `global_marketing_ops` of
+   * the path project; disabled rules are listed with `enabled: false`, all sorted by name. `accountId`, when given, names
+   * the ad account (sent as `account_id`), and omitted it is the project's default account. Failures are left to the
+   * caller.
+   */
+  public async listLinkedInConversions(req: Request, projectSlug: string, accountId?: string): Promise<CampaignServiceLinkedInConversions> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A conversion rule read requires the project it is made for.', {
+        operation: 'list_linkedin_conversions',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInConversions>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/conversions`,
+      'GET',
+      accountId === undefined ? undefined : { account_id: accountId }
     );
   }
 

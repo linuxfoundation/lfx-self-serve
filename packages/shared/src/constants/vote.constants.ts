@@ -55,6 +55,23 @@ export const VOTE_CONDORCET_RANK_COLORS = [
   lfxColors.gray[600],
 ];
 
+/** Runner-up standings rows the vote detail Overview outcome shows before pointing to the Results tab (#6124). */
+export const VOTE_OVERVIEW_STANDINGS_LIMIT = 3;
+
+/**
+ * How a ranked result was decided, worded once for the Results tab, the Overview and the presenter view (#6124), which
+ * must describe the same outcome in the same words.
+ */
+export const VOTE_RANKED_OUTCOME_EXPLANATIONS = {
+  condorcetWinner: 'Preferred over every other option in head-to-head comparisons.',
+  condorcetIrvFallback: 'No option beat every other option head-to-head, so instant-runoff elimination decided the result.',
+  meekStv: 'using Meek STV proportional counting.',
+  irvMajority: 'a majority of continuing ballots.',
+  irvMajorityRound: 'a majority of continuing ballots in round {round}.',
+  tie: 'No single winner could be determined.',
+  noWinner: 'No winner could be determined.',
+} as const;
+
 /**
  * Response header carrying the BFF-stamped create-completion time (epoch ms) on POST /api/votes (GH-2826);
  * the client echoes it verbatim as `create_completed_at` — the enable route's FGA tuple-propagation grace hint.
@@ -77,6 +94,9 @@ export const VOTE_BALLOT_READ_RETRY_COUNT = 3;
 
 /** Delay between own-ballot 404 retries; authorization and other failures are never retried. */
 export const VOTE_BALLOT_READ_RETRY_DELAY_MS = 1000;
+
+/** Ranked-choice ballot drag start delay: touch needs a short hold so swipes still scroll; mouse starts immediately. */
+export const VOTE_RANKED_CHOICE_DRAG_START_DELAY = { touch: 200, mouse: 0 } as const;
 
 /**
  * TTL for the recently-opened-vote carrier (GH-2730): how long after a successful enable the votes

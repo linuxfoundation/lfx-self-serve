@@ -3,13 +3,16 @@
 
 /**
  * Stubs for answering a mentor invitation (linuxfoundation/lfx-mentorship#378): the email link's page,
- * `/mentorship/mentor/invites?token=` (POST `/api/mentorship/mentor/invites/{accept|decline}` with the token), and the
+ * `/mentorship/mentor/invites?token=` (POST `/api/mentorship/mentor/invites/{accept|decline}` with the token, after the
+ * page's read of the invited program from POST `/api/mentorship/mentor/invites/details`), and the
  * invitation rows in the mentor profile drawer (#346), which answer by membership id. Data is synthetic, and the stubs
  * record what the page sent.
  */
 
 import { MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE } from '@lfx-one/shared/constants';
 import { Page, Route } from '@playwright/test';
+
+import { stubMentorHasProfile } from './mentor-profile.helper';
 
 /** Shaped like upstream's signed token (`payload.signature`), so the page sends it. */
 export const INVITE_TOKEN = 'e2e-invite-payload.e2e-invite-signature';
@@ -25,6 +28,9 @@ export interface InviteAnswer {
   readOnly?: boolean;
 }
 
+/** How the stub answers the page's read of the invited program: the program's name, or a failure status. */
+export type InviteDetailsAnswer = { programId: string; programName: string } | InviteAnswer;
+
 /** Every write the page sent, as `METHOD /path` and its JSON body. */
 export type InviteWrites = { method: string; path: string; body: unknown }[];
 
@@ -39,10 +45,25 @@ const record = (writes: InviteWrites, route: Route) => {
   writes.push({ method: request.method(), path: new URL(request.url()).pathname, body: request.postDataJSON() });
 };
 
-/** Answers the email link's Accept and Decline with each answer in turn, the last one again once they run out. */
-export async function stubInviteResponse(page: Page, answers: InviteAnswer[] = [{ status: 204 }]): Promise<InviteWrites> {
+/**
+ * Answers the email link's Accept and Decline with each answer in turn, the last one again once they run out, and the
+ * page's read of the invited program with `details` (by default `INVITATION_PROGRAM`). The read is not a write.
+ * The profile check answers `hasProfile` (by default true), since the page answers only for someone with a mentor profile.
+ */
+export async function stubInviteResponse(
+  page: Page,
+  answers: InviteAnswer[] = [{ status: 204 }],
+  details: InviteDetailsAnswer = { programId: INVITATION_PROGRAM.id, programName: INVITATION_PROGRAM.name },
+  hasProfile = true
+): Promise<InviteWrites> {
   const writes: InviteWrites = [];
+  await stubMentorHasProfile(page, hasProfile);
   await page.route('**/api/mentorship/mentor/invites/*', (route) => {
+    if (new URL(route.request().url()).pathname.endsWith('/invites/details')) {
+      return 'programName' in details
+        ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(details) })
+        : fulfill(route, details);
+    }
     record(writes, route);
     return fulfill(route, answers[Math.min(writes.length, answers.length) - 1]);
   });

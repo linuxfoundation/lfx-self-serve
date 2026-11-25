@@ -36,14 +36,13 @@ const GROUP_ROWS = [
     PEOPLE: 4,
     COURSES_TAKEN: 6,
     COMPLETED: 3,
-    IN_PROGRESS: 3,
     LEVEL: 'Beginner',
     FOUNDATION: 'Foundation One',
   },
-  { GROUP_KEY: 'Course B', GROUP_LABEL: 'Course B', PEOPLE: 2, COURSES_TAKEN: 2, COMPLETED: 2, IN_PROGRESS: 0, LEVEL: null, FOUNDATION: null },
-  { GROUP_KEY: '', GROUP_LABEL: null, PEOPLE: 1, COURSES_TAKEN: 1, COMPLETED: 0, IN_PROGRESS: 1, LEVEL: null, FOUNDATION: null },
+  { GROUP_KEY: 'Course B', GROUP_LABEL: 'Course B', PEOPLE: 2, COURSES_TAKEN: 2, COMPLETED: 2, LEVEL: null, FOUNDATION: null },
+  { GROUP_KEY: '', GROUP_LABEL: null, PEOPLE: 1, COURSES_TAKEN: 1, COMPLETED: 0, LEVEL: null, FOUNDATION: null },
 ];
-const TOTALS = { PEOPLE: 6, COURSES_TAKEN: 9, COMPLETED: 5, IN_PROGRESS: 4 };
+const TOTALS = { PEOPLE: 6, COURSES_TAKEN: 9, COMPLETED: 5 };
 
 /** The distinct raw values of the all-time rows, as the known-values statement reads them: every value the specs filter by. */
 const KNOWN_ROWS = [
@@ -106,9 +105,9 @@ describe('OrgLensTrainingService — filter options', () => {
     expect(options.courses.map((o) => o.value)).toEqual(['A course', 'B course']);
     expect(options.levels).toEqual([{ label: 'Beginner', value: 'Beginner' }]);
     expect(options.formats).toEqual([{ label: 'E-Learning', value: 'E-Learning' }]);
-    expect(withOrgCache.mock.calls[0][1]).toBe('training-filter-options:v1:90d');
-    expect(execute.mock.calls[0][1]).toEqual([ACCOUNT]);
-    expect(execute.mock.calls[0][0]).toContain('DATEADD(day, -90, CURRENT_DATE())');
+    expect(withOrgCache.mock.calls[0][1]).toBe('training-filter-options:v2:90d');
+    expect(execute.mock.calls[0][1]).toEqual([ACCOUNT, '90d']);
+    expect(execute.mock.calls[0][0]).toContain('AND TIME_RANGE = ?');
   });
 });
 
@@ -192,7 +191,7 @@ describe('OrgLensTrainingService — group-by table', () => {
     // Totals and rows read the same filtered pairs and the same tab predicate as the stats' split.
     const sqls = execute.mock.calls.map(([sql]) => sql as string);
     expect(sqls).toHaveLength(2);
-    for (const sql of sqls) expect(sql).toContain("WHERE PRODUCT_TYPE = 'Certification'");
+    for (const sql of sqls) expect(sql).toContain("WHERE TRAINING_TAB = 'certifications'");
   });
 
   it('reads only people-list rows: every statement resolves its pairs from the people-list CTE and none counts outside rows', async () => {
@@ -209,12 +208,15 @@ describe('OrgLensTrainingService — group-by table', () => {
     }
   });
 
-  it('splits the trainings tab by the complement of the certification product type', async () => {
+  it('reads the trainings tab from the modeled tab column, the one the stats split on', async () => {
     mockGroups();
 
     await service.getGroups(REQ, ACCOUNT, QUERY, { groupBy: 'foundation', tab: 'trainings' }, 'org-grant');
 
-    for (const [sql] of execute.mock.calls as [string][]) expect(sql).toContain("WHERE COALESCE(PRODUCT_TYPE, '') <> 'Certification'");
+    for (const [sql] of execute.mock.calls as [string][]) {
+      expect(sql).toContain("WHERE TRAINING_TAB = 'trainings'");
+      expect(sql).not.toContain('PRODUCT_TYPE');
+    }
   });
 
   it('sorts and pages in memory over the cached set', async () => {
@@ -247,10 +249,10 @@ describe('OrgLensTrainingService — group-by table', () => {
     await service.getGroups(REQ, ACCOUNT, query, { groupBy: 'level', tab: 'trainings' }, 'org-grant');
 
     const rowsCall = execute.mock.calls.find(([sql]) => (sql as string).includes('AS GROUP_KEY'))!;
-    expect(rowsCall[1]).toEqual([ACCOUNT, 'Beginner']);
+    expect(rowsCall[1]).toEqual([ACCOUNT, QUERY.range, 'Beginner']);
     const keys = withOrgCache.mock.calls.map(([, key]) => key);
-    expect(keys).toContain(`training-groups:v1:${orgTrainingFiltersSignature(query)}:level:trainings`);
-    expect(keys).not.toContain(`training-groups:v1:${orgTrainingFiltersSignature(QUERY)}:level:trainings`);
+    expect(keys).toContain(`training-groups:v2:${orgTrainingFiltersSignature(query)}:level:trainings`);
+    expect(keys).not.toContain(`training-groups:v2:${orgTrainingFiltersSignature(QUERY)}:level:trainings`);
   });
 });
 
@@ -260,13 +262,13 @@ describe('OrgLensTrainingService — group drawer', () => {
     execute.mockImplementation(async (sql: string) => {
       if (isKnownValuesSql(sql)) return { rows: knownRows };
       if (sql.includes('AS GROUP_KEY')) return { rows: GROUP_ROWS };
-      if (sql.includes('COUNT(*) AS TOTAL')) return { rows: [count] };
+      if (sql.includes('COUNT(DISTINCT PAIR_KEY) AS TOTAL')) return { rows: [count] };
       if (sql.includes('CONTACT_ID')) return { rows: names };
       return { rows: [TOTALS] };
     });
   }
   const drawerCalls = (): [string, string[]][] =>
-    (execute.mock.calls as [string, string[]][]).filter(([sql]) => sql.includes('COUNT(*) AS TOTAL') || sql.includes('CONTACT_ID'));
+    (execute.mock.calls as [string, string[]][]).filter(([sql]) => sql.includes('COUNT(DISTINCT PAIR_KEY) AS TOTAL') || sql.includes('CONTACT_ID'));
 
   it('counts pairs and lists current employees of the cell, binding the group value', async () => {
     mockDrawer({ TOTAL: 7, GROUP_LABEL: 'Course A' }, [{ CONTACT_ID: 'k-1', NAME: 'Person One', JOB_TITLE: null }]);
@@ -284,9 +286,9 @@ describe('OrgLensTrainingService — group drawer', () => {
     const [[countSql, countBinds], [namesSql, namesBinds]] = drawerCalls();
     expect(countSql).toContain("COALESCE(COURSE_NAME, '') = ?");
     expect(countSql).toContain('IS_CERTIFIED');
-    expect(countBinds).toEqual([ACCOUNT, 'Course A']);
+    expect(countBinds).toEqual([ACCOUNT, QUERY.range, 'Course A']);
     expect(namesSql).toContain(`LIMIT ${MAX_ORG_TRAINING_GROUP_EMPLOYEES}`);
-    expect(namesBinds).toEqual([ACCOUNT, ACCOUNT, 'Course A']);
+    expect(namesBinds).toEqual([ACCOUNT, QUERY.range, ACCOUNT, 'Course A']);
   });
 
   it('keeps the drawer on people-list rows: no statement reads outside rows', async () => {
@@ -340,7 +342,7 @@ describe('OrgLensTrainingService — group drawer', () => {
     expect(response.total).toBe(2);
     expect(drawerCalls()[0][0]).toContain('NOT IS_CERTIFIED');
     const key = withOrgCache.mock.calls.map(([, k]) => k as string).find((k) => k.startsWith('training-group-employees:'))!;
-    expect(key).toMatch(/^training-group-employees:v1:[A-Za-z0-9_-]+:course:[A-Za-z0-9_-]+:trainings:in-progress$/);
+    expect(key).toMatch(/^training-group-employees:v2:[A-Za-z0-9_-]+:course:[A-Za-z0-9_-]+:trainings:in-progress$/);
   });
 
   it('rejects a group value that is not a group of the table, before any drawer cache key or statement', async () => {
@@ -426,7 +428,7 @@ describe('OrgLensTrainingService — a filter value the organization never carri
 
       // Only the known-values entry and the unfiltered stats entry (the roster's) were read; no key or statement holds the unknown value.
       const keys = withOrgCache.mock.calls.map(([, key]) => key as string);
-      expect(new Set(keys)).toEqual(new Set(['training-filter-known:v1', `training-stats:v6:${orgTrainingFiltersSignature(QUERY)}`]));
+      expect(new Set(keys)).toEqual(new Set(['training-filter-known:v2', `training-stats:v7:${orgTrainingFiltersSignature(QUERY)}`]));
       for (const [sql, binds] of execute.mock.calls as [string, unknown[]][]) {
         expect(binds).not.toContain(Object.values(filter)[0]);
         expect(sql.includes('AS GROUP_KEY')).toBe(false);
@@ -485,7 +487,7 @@ describe('OrgLensTrainingService — a filter value the organization never carri
 
     await service.getGroups(REQ, ACCOUNT, query, { groupBy: 'course', tab: 'certifications' }, 'org-grant');
 
-    expect(withOrgCache.mock.calls.map(([, key]) => key)).toContain(`training-groups:v1:${orgTrainingFiltersSignature(query)}:course:certifications`);
+    expect(withOrgCache.mock.calls.map(([, key]) => key)).toContain(`training-groups:v2:${orgTrainingFiltersSignature(query)}:course:certifications`);
   });
 
   it('compares a request value with the known values the way the URL normalizes it (trimmed), so a padded warehouse value is not unknown', async () => {
@@ -496,21 +498,20 @@ describe('OrgLensTrainingService — a filter value the organization never carri
     expect(groups.data.length).toBeGreaterThan(0);
   });
 
-  it('reads the known values from the raw rows of all time, not from resolved pairs or a range', async () => {
+  it('reads the known values from the people-list pairs of every range, not from one range', async () => {
     mockGroups(KNOWN_ROWS);
 
     await service.getTrainingStats(ACCOUNT, { ...QUERY, range: '30d', level: 'Beginner' }, 'org-grant');
 
     const knownCall = (execute.mock.calls as [string, unknown[]][]).find(([sql]) => isKnownValuesSql(sql))!;
-    expect(knownCall[0]).toContain('FROM rows_in_range');
+    expect(knownCall[0]).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_PAIRS');
+    expect(knownCall[0]).toContain('AND IS_ON_PEOPLE_LIST');
+    expect(knownCall[0]).not.toContain('TIME_RANGE');
     expect(knownCall[0]).not.toMatch(/FROM f\b/);
-    expect(knownCall[0]).not.toContain('DATEADD');
     expect(knownCall[1]).toEqual([ACCOUNT]);
   });
 
-  it('serves data, not zeros, for a value some raw row carries even when the pair resolves to another value all-time (30d Beginner, all-time Intermediate)', async () => {
-    // The dropdown of the 30d range offers `Beginner` (an in-range row says so); the all-time pair resolves to `Intermediate`.
-    // The known set holds the raw row values, so it still contains `Beginner`.
+  it('serves data, not zeros, for a value a pair carries in a narrower range even when it resolves to another value all-time (30d Beginner, all-time Intermediate)', async () => {
     execute.mockImplementation(async (sql: string) => {
       if (isKnownValuesSql(sql)) {
         return {
@@ -520,11 +521,9 @@ describe('OrgLensTrainingService — a filter value the organization never carri
           ],
         };
       }
-      if (sql.includes('AS COURSES_IN_PROGRESS')) {
+      if (sql.includes('AS CERTIFIED_PAIRS')) {
         return {
-          rows: [
-            { PEOPLE: 2, COURSES_TAKEN: 3, CERTIFICATIONS: 1, CERTIFIED_PEOPLE: 1, TRAININGS_COMPLETED: 1, COURSES_IN_PROGRESS: 1, PEOPLE_IN_TRAINING: 1 },
-          ],
+          rows: [{ PEOPLE: 2, COURSES_TAKEN: 3, CERTIFICATIONS: 1, CERTIFIED_PEOPLE: 1, TRAININGS_COMPLETED: 1, CERTIFIED_PAIRS: 2, PEOPLE_IN_TRAINING: 1 }],
         };
       }
       return { rows: [] };
@@ -537,23 +536,23 @@ describe('OrgLensTrainingService — a filter value the organization never carri
 
   describe('a tab-prefixed value is one legal value on every path', () => {
     const TABBED = '\tTabbed';
-    const TABBED_GROUP = { GROUP_KEY: TABBED, GROUP_LABEL: TABBED, PEOPLE: 2, COURSES_TAKEN: 3, COMPLETED: 1, IN_PROGRESS: 2, LEVEL: null, FOUNDATION: null };
+    const TABBED_GROUP = { GROUP_KEY: TABBED, GROUP_LABEL: TABBED, PEOPLE: 2, COURSES_TAKEN: 3, COMPLETED: 1, LEVEL: null, FOUNDATION: null };
     const STATS_ROW = {
       PEOPLE: 2,
       COURSES_TAKEN: 3,
       CERTIFICATIONS: 1,
       CERTIFIED_PEOPLE: 1,
       TRAININGS_COMPLETED: 0,
-      COURSES_IN_PROGRESS: 2,
+      CERTIFIED_PAIRS: 1,
       PEOPLE_IN_TRAINING: 2,
     };
 
     function mockTabbedWarehouse(): void {
       execute.mockImplementation(async (sql: string) => {
         if (isKnownValuesSql(sql)) return { rows: [{ FILTER_KEY: 'course', FILTER_VALUE: TABBED }] };
-        if (sql.includes('AS COURSES_IN_PROGRESS')) return { rows: [STATS_ROW] };
+        if (sql.includes('AS CERTIFIED_PAIRS')) return { rows: [STATS_ROW] };
         if (sql.includes('AS GROUP_KEY')) return { rows: [TABBED_GROUP] };
-        if (sql.includes('COUNT(*) AS TOTAL')) return { rows: [{ TOTAL: 1, GROUP_LABEL: TABBED }] };
+        if (sql.includes('COUNT(DISTINCT PAIR_KEY) AS TOTAL')) return { rows: [{ TOTAL: 1, GROUP_LABEL: TABBED }] };
         if (sql.includes('CONTACT_ID')) return { rows: [{ CONTACT_ID: 'k-1', NAME: 'Person One', JOB_TITLE: null }] };
         return { rows: [TOTALS] };
       });
@@ -585,7 +584,7 @@ describe('OrgLensTrainingService — a filter value the organization never carri
         { FILTER_KEY: 'course', FILTER_VALUE: 'Line\nBreak' },
       ];
       execute.mockImplementation(async (sql: string) =>
-        isKnownValuesSql(sql) ? { rows } : { rows: sql.includes('AS COURSES_IN_PROGRESS') ? [STATS_ROW] : [TOTALS] }
+        isKnownValuesSql(sql) ? { rows } : { rows: sql.includes('AS CERTIFIED_PAIRS') ? [STATS_ROW] : [TOTALS] }
       );
 
       const tabbed = await service.getTrainingStats(ACCOUNT, query, 'org-grant');
@@ -624,7 +623,7 @@ describe('OrgLensTrainingService — a filter value the organization never carri
 
 describe('OrgLensTrainingService — a filter valid for the organization but with no rows in the selected range', () => {
   const NO_ROWS_RANGE = '30d' as const;
-  const ZERO_TOTALS = { PEOPLE: 0, COURSES_TAKEN: 0, COMPLETED: 0, IN_PROGRESS: 0 };
+  const ZERO_TOTALS = { PEOPLE: 0, COURSES_TAKEN: 0, COMPLETED: 0 };
   const validFilters: [string, Partial<OrgTrainingStatsQuery>][] = [
     ['foundation', { foundation: 'f-1' }],
     ['project', { project: 'p-1' }],
@@ -641,14 +640,12 @@ describe('OrgLensTrainingService — a filter valid for the organization but wit
     execute.mockImplementation(async (sql: string) => {
       if (isKnownValuesSql(sql)) return { rows: KNOWN_ROWS };
       if (sql.includes('AS GROUP_KEY')) return { rows: [] };
-      if (sql.includes('AS COURSES_IN_PROGRESS')) {
+      if (sql.includes('AS CERTIFIED_PAIRS')) {
         return {
-          rows: [
-            { PEOPLE: 0, COURSES_TAKEN: 0, CERTIFICATIONS: 0, CERTIFIED_PEOPLE: 0, TRAININGS_COMPLETED: 0, COURSES_IN_PROGRESS: 0, PEOPLE_IN_TRAINING: 0 },
-          ],
+          rows: [{ PEOPLE: 0, COURSES_TAKEN: 0, CERTIFICATIONS: 0, CERTIFIED_PEOPLE: 0, TRAININGS_COMPLETED: 0, CERTIFIED_PAIRS: 0, PEOPLE_IN_TRAINING: 0 }],
         };
       }
-      if (sql.includes('COUNT(*) AS TOTAL')) return { rows: [{ TOTAL: 0, GROUP_LABEL: null }] };
+      if (sql.includes('COUNT(DISTINCT PAIR_KEY) AS TOTAL')) return { rows: [{ TOTAL: 0, GROUP_LABEL: null }] };
       if (sql.includes('COUNT(DISTINCT PERSON_KEY) AS PEOPLE') && !sql.includes('AS COURSES_TAKEN')) return { rows: [{ PEOPLE: 0 }] };
       if (sql.includes('AS COURSES_TAKEN')) return { rows: [ZERO_TOTALS] };
       return { rows: [] };
@@ -712,7 +709,7 @@ describe('OrgLensTrainingService — a filter valid for the organization but wit
     execute.mockImplementation(async (sql: string) => {
       if (isKnownValuesSql(sql)) return { rows: KNOWN_ROWS };
       if (sql.includes('AS GROUP_KEY')) return { rows: GROUP_ROWS };
-      if (sql.includes('COUNT(*) AS TOTAL')) return { rows: [{ TOTAL: 0, GROUP_LABEL: null }] };
+      if (sql.includes('COUNT(DISTINCT PAIR_KEY) AS TOTAL')) return { rows: [{ TOTAL: 0, GROUP_LABEL: null }] };
       if (sql.includes('CONTACT_ID')) return { rows: [] };
       return { rows: [TOTALS] };
     });

@@ -79,6 +79,7 @@ import type {
 // Node-safe participation and result shaping live in their own files; re-exported so every existing import path is unchanged.
 export { computeVoteRowParticipation } from './vote-participation.utils';
 export {
+  buildRankedOverviewOutcome,
   buildRankedQuestionViews,
   buildVoteResultsQuestions,
   buildVoteResultsSummary,

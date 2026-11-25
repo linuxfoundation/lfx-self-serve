@@ -1,0 +1,26 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<lfx-ui-modal [heading]="isVerified ? 'Remove verified identity' : 'This is not you?'" [width]="480" closable data-testid="account-remove-identity-dialog">
+  @if (isVerified) {
+    <p class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700" data-testid="account-remove-identity-text">
+      <strong class="font-semibold text-ui-neutral-900">{{ identity.identifier }}</strong> ({{ providerLabel }}) will be unlinked from your profile.
+    </p>
+    <lfx-ui-checkbox
+      label="I understand that removing this verified identity may affect my contribution attribution"
+      [(checked)]="acknowledged"
+      data-testid="account-remove-identity-acknowledge" />
+  } @else {
+    <p class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700" data-testid="account-remove-identity-text">
+      <strong class="font-semibold text-ui-neutral-900">{{ identity.identifier }}</strong> will be removed from your profile, and its activity will no longer be
+      attributed to you.
+    </p>
+  }
+  <ng-container modalActions>
+    <lfx-ui-button data-autofocus variant="secondary" (click)="dialogRef.close(false)" data-testid="account-remove-identity-cancel">Cancel</lfx-ui-button>
+    <lfx-ui-button variant="danger" [disabled]="isVerified && !acknowledged()" (click)="dialogRef.close(true)" data-testid="account-remove-identity-confirm">
+      Remove identity
+    </lfx-ui-button>
+  </ng-container>
+</lfx-ui-modal>

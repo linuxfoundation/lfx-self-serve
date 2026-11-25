@@ -71,6 +71,7 @@ a shared or explicit document entry uses the same component independently of the
 metadata polling cycle, not a Member-specific result receiver or browser pending cache.
 It waits for a committed revision before rendering the existing Member 360 type:
 the agent's stored summary Markdown (including any leading “Partial report.” disclosure), then summary cards, ranking, expanded member evidence, team actions, Evidence, Method, and history. Empty or absent legacy summary prose creates no empty section.
+The ranking shows the same short labels as the sections below it: `member360TierGroupLabel` drops the project prefix and the word “Membership” from the tier under the member's name, and `member360ActionText` drops a leading team or owner label from the next action, since the Owner column names the team. Both are display-only; the envelope and the workbook keep the agent's text. The rank is one unbreakable box, so a three-digit rank never wraps in its narrow column.
 A plain document URL in another browser works without the run selector, owner token,
 session storage or the initiating tab: authorized reads reconcile the saved session.
 Owner tokens never enter URLs. The creator-bound result endpoint remains compatible
@@ -141,9 +142,11 @@ the project's writer grant, reads the stored hash-checked run, and assembles its
 tabs on demand, without a Key Contact column. It accepts no client-supplied tabs and
 does not persist the XLSX blob.
 
-The Summary is a width-bounded QBR canvas with metadata, a tier table/bar chart,
-optional movers, the complete watchlist, team action counts and data coverage;
-large watchlists continue vertically. Ranking dates are real date cells; values,
+The Summary is a one-page QBR canvas with metadata, a tier table/bar chart,
+optional movers, the watchlist, team action counts and data coverage. The
+watchlist shows the 15 lowest-scoring members renewing within 120 days; when
+more qualify, one line under it gives the count of the rest and points to
+Member Ranking, which lists every member. Ranking dates are real date cells; values,
 scores and contact counts remain numbers with currency/decimal/integer formats.
 A single category-block heat scale accompanies engagement, renewal, tier and
 priority highlighting. The workbook and result page read renewal thresholds and

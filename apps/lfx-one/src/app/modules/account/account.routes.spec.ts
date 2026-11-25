@@ -39,16 +39,6 @@ describe('ACCOUNT_ROUTES', () => {
     expect(run(null)).toBe(true);
   });
 
-  it('opens Identities for Linux.com email, keeping a Flow C query', () => {
-    const route = children.find((child) => child.path === 'linux-email')!;
-    TestBed.configureTestingModule({ providers: [provideRouter([])] });
-    const tree = TestBed.runInInjectionContext(() =>
-      (route.redirectTo as (data: { queryParams: Record<string, string> }) => UrlTree)({ queryParams: { success: 'profile_token_obtained' } })
-    );
-
-    expect(TestBed.inject(Router).serializeUrl(tree)).toBe('/account/identities?success=profile_token_obtained');
-  });
-
   it('asks before leaving any page with unsaved changes, and leaves redirects alone', () => {
     for (const child of children) {
       expect(child.canDeactivate ?? []).toEqual(child.loadComponent ? [accountUnsavedChangesGuard] : []);

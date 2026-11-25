@@ -4,18 +4,25 @@
 import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { normalizeTShirtSize, OPEN_PROFILE_BANNER_LINK_CLICKED, PROFILE_TABS, TSHIRT_SIZES } from '@lfx-one/shared/constants';
+import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import {
+  ACCOUNT_PERSONAL_INFORMATION_PATH,
+  normalizeTShirtSize,
+  OPEN_PROFILE_BANNER_LINK_CLICKED,
+  PROFILE_TABS,
+  TSHIRT_SIZES,
+} from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, UserMetadata } from '@lfx-one/shared/interfaces';
-import { buildDisplayName, buildMentorshipLfxProfileFields, formatMemberSince } from '@lfx-one/shared/utils';
+import { formatMemberSince } from '@lfx-one/shared/utils';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { IntercomService } from '@services/intercom.service';
-import { MentorshipService } from '@services/mentorship.service';
 import { ProfileAuthReturnService } from '@services/profile-auth-return.service';
+import { ProfileSaveSyncService } from '@services/profile-save-sync.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, catchError, distinctUntilChanged, EMPTY, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
+import { injectProfileRedesignEnabled } from '@shared/utils/profile-redesign.util';
 import { ProfileEditDrawerComponent } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.component';
 import { ProfileEditDrawerService } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.service';
 import { ProfileVisibilityDrawerComponent } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.component';
@@ -71,7 +78,8 @@ export class ProfileLayoutComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly rumService = inject(DataDogRumService);
   private readonly intercomService = inject(IntercomService);
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly saveSync = inject(ProfileSaveSyncService);
+  private readonly router = inject(Router);
 
   // Refresh trigger for profile data
   private readonly refreshProfile$ = new BehaviorSubject<void>(undefined);
@@ -99,6 +107,11 @@ export class ProfileLayoutComponent {
   // but all profile mutations act on the real user's account server-side and are blocked. The edit
   // affordances render visible-but-disabled and a banner surfaces the read-only state.
   public readonly impersonating = this.userService.impersonating;
+
+  // Set once the browser has rendered, so the flag is read only where it can be (SSR has no click to answer).
+  private readonly hydrated = signal(false);
+  // With the profile redesign on, Edit profile opens Account & Settings › Personal information instead of the drawer (#6072).
+  private readonly profileRedesignEnabled: Signal<boolean> = injectProfileRedesignEnabled(this.hydrated);
 
   // Computed signals
   public readonly displayUsername = computed(() => stripAuthPrefixOrNull(this.profileData()?.username));
@@ -176,7 +189,10 @@ export class ProfileLayoutComponent {
     // notify the widget once the view renders or the launcher is dead on that path.
     // afterNextRender is browser-only, so SSR never fires it; pre-boot, the Intercom stub
     // queues the reattach/update pair and replays it once the widget script loads.
-    afterNextRender(() => this.intercomService.update());
+    afterNextRender(() => {
+      this.intercomService.update();
+      this.hydrated.set(true);
+    });
 
     // Flow C return: replay a save stashed before the redirect into this hub's optimistic view.
     this.authReturn.listen((metadata) => {
@@ -187,6 +203,10 @@ export class ProfileLayoutComponent {
 
   // Public methods
   public openEditDrawer(): void {
+    if (this.profileRedesignEnabled()) {
+      this.router.navigateByUrl(ACCOUNT_PERSONAL_INFORMATION_PATH);
+      return;
+    }
     if (!this.combinedProfile) return;
     this.editDrawer.open(this.combinedProfile);
   }
@@ -256,47 +276,13 @@ export class ProfileLayoutComponent {
     this.pendingOptimisticMetadata = null;
   }
 
-  // The navbar and account popover read UserService.user().name, which is seeded once from the SSR
-  // OIDC claims and never refetched, so push a saved name change into it for the current session.
   private syncSharedUserName(metadata: Partial<UserMetadata>): void {
-    const currentUser = this.userService.user();
-    if (!currentUser || this.impersonating() || (metadata.given_name === undefined && metadata.family_name === undefined)) {
-      return;
-    }
-
-    const givenName = metadata.given_name ?? this.combinedProfile?.user.first_name ?? '';
-    const familyName = metadata.family_name ?? this.combinedProfile?.user.last_name ?? '';
-    const name = buildDisplayName(givenName, familyName);
-    if (name) {
-      // `saved` latches the name so the post-hydration profile fetch can't overwrite it with a stale
-      // body — even when the name is already the one shown, so this must not be skipped on equality.
-      this.userService.applyDisplayName(givenName, familyName, true);
-    }
+    this.saveSync.syncSharedUserName(metadata, this.combinedProfile?.user);
   }
 
-  /**
-   * Copies a new picture or name onto the user's mentor and mentee profiles, which Mentorship shows ahead of the LFX profile
-   * (linuxfoundation/lfx-mentorship#466). Called before the save is merged into `combinedProfile`, so a name is sent only when
-   * it differs from the one saved before; with no profile loaded yet it is sent as saved. The picture is sent only when this
-   * save uploaded one, so an unchanged save never replaces a photo kept in Mentorship with the avatar shown here.
-   *
-   * Copies are queued on `MentorshipService`, which sends them one at a time in save order, so a quick second save cannot be
-   * overtaken by the first. The BFF does nothing for a user with no mentorship record. A failure is only logged, since the
-   * LFX profile did save. The saved name is merged locally either way, so a later save here copies only a name or picture
-   * that changes again; a save from a Mentorship page, whose profile card sends every field, repairs the rows.
-   */
+  // Called before the save is merged into `combinedProfile`, so only a name that changes is copied to Mentorship.
   private syncMentorshipProfiles(metadata: Partial<UserMetadata>): void {
-    if (this.impersonating()) return;
-
-    const savedUser = this.combinedProfile?.user;
-    const fields = buildMentorshipLfxProfileFields({
-      firstName: metadata.given_name !== savedUser?.first_name ? metadata.given_name : undefined,
-      lastName: metadata.family_name !== savedUser?.last_name ? metadata.family_name : undefined,
-      logoUrl: metadata.picture,
-    });
-    if (Object.keys(fields).length === 0) return;
-
-    this.mentorshipService.queueLfxProfileSync(fields);
+    this.saveSync.syncMentorshipProfiles(metadata, this.combinedProfile?.user);
   }
 
   // After a GET populates combinedProfile, re-apply a save that was stashed because no base profile

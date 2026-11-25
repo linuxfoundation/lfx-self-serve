@@ -10,29 +10,36 @@ import {
   DEFAULT_ORG_TRAINING_TAB_ID,
   MAX_ORG_TRAINING_GROUPS_PAGE_SIZE,
   ORG_LENS_EMPLOYEE_VIEW,
+  ORG_TRAINING_COMPANY_QUERY_PARAM,
   ORG_TRAINING_FILTER_KEYS,
   ORG_TRAINING_VIEW_QUERY_PARAMS,
   VALID_ORG_TRAINING_GROUPS_SORT_FIELDS,
   VALID_ORG_TRAINING_TAB_IDS,
 } from '@lfx-one/shared/constants';
 import type {
+  OrgTrainingFamilyScope,
   OrgTrainingGroupSortField,
+  OrgTrainingGroupsParams,
   OrgTrainingGroupStatus,
   OrgTrainingStats,
-  OrgTrainingStatsQuery,
   OrgTrainingTabId,
   OrgTrainingViewState,
 } from '@lfx-one/shared/interfaces';
 import { orgTrainingStatsQuery, parseOrgTrainingViewState } from '@lfx-one/shared/utils';
+import { isOrgRollUpSegment } from '@lfx-one/shared/utils/org-lens-url.utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
-import { assertOrgLensRead, getOrgLensViewMode } from '../helpers/org-lens-read-access.helper';
+import { assertOrgLensRead, getOrgLensViewMode, type OrgLensReadQualification } from '../helpers/org-lens-read-access.helper';
+import { resolveOrgLensRollUp } from '../helpers/org-lens-roll-up.helper';
 import { assertWellFormedOrgTrainingFilterValue } from '../helpers/org-training-filter.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
+import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
 import { getStringQueryParam, parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensTrainingService } from '../services/org-lens-training.service';
+
+type OrgTrainingReadTarget = { family: OrgTrainingFamilyScope } | { orgUid: string; qualification: OrgLensReadQualification };
 
 /**
  * Range, filters and groupBy of the shared Training / Trainees view; the same allow-list rules as the URL. A filter value that
@@ -65,23 +72,23 @@ export class OrgLensTrainingController {
     this.service = new OrgLensTrainingService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/training/stats?range&foundation&trainingProject&course&level&format */
+  /** GET /api/orgs/:orgUid/lens/training/stats?range&foundation&trainingProject&course&level&format, plus company in a roll-up */
   public async getTrainingStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_training_stats';
     const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
 
     try {
-      assertOrgUid(orgUid, operation);
-      // Memoized per request: the route gate already ran it. The qualification decides whether the shared caches may serve this caller.
-      const qualification = await assertOrgLensRead(req, orgUid, operation);
-
-      // Spec 002: orgUid is the canonical org account id (SFID); pass it straight to Snowflake.
-      const query: OrgTrainingStatsQuery = orgTrainingStatsQuery(parseViewState(req, operation));
-      const fullResponse = await this.service.getTrainingStats(orgUid, query, qualification);
+      const target = await this.readTarget(req, orgUid, operation);
+      const query = orgTrainingStatsQuery(parseViewState(req, operation));
+      const fullResponse =
+        'family' in target
+          ? await this.service.getFamilyTrainingStats(req, target.family, query)
+          : // orgUid is the canonical org account id (SFID); pass it straight to Snowflake.
+            await this.service.getTrainingStats(target.orgUid, query, target.qualification);
       // The all employee view has no People page, so the learners-not-on-the-people-list count means nothing there: it never leaves the API.
       const response: OrgTrainingStats =
-        getOrgLensViewMode(req, orgUid) === ORG_LENS_EMPLOYEE_VIEW ? { ...fullResponse, learnersOutsidePeopleList: null } : fullResponse;
+        'family' in target || getOrgLensViewMode(req, orgUid) !== ORG_LENS_EMPLOYEE_VIEW ? fullResponse : { ...fullResponse, learnersOutsidePeopleList: null };
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -105,11 +112,12 @@ export class OrgLensTrainingController {
     const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
 
     try {
-      assertOrgUid(orgUid, operation);
-      const qualification = await assertOrgLensRead(req, orgUid, operation);
-
+      const target = await this.readTarget(req, orgUid, operation);
       const { range } = parseViewState(req, operation);
-      const response = await this.service.getFilterOptions(orgUid, range, qualification);
+      const response =
+        'family' in target
+          ? await this.service.getFamilyFilterOptions(req, target.family, range)
+          : await this.service.getFilterOptions(target.orgUid, range, target.qualification);
 
       logger.success(req, operation, startTime, { org_uid: orgUid, time_range: range, course_count: response.courses.length });
 
@@ -120,15 +128,14 @@ export class OrgLensTrainingController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/training/groups?groupBy&tab&search&sortField&sortOrder&pageSize&offset + stats query */
+  /** GET /api/orgs/:orgUid/lens/training/groups?groupBy&tab&search&sortField&sortOrder&pageSize&offset + stats query, plus company in a roll-up */
   public async getGroups(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_training_groups';
     const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
 
     try {
-      assertOrgUid(orgUid, operation);
-      const qualification = await assertOrgLensRead(req, orgUid, operation);
+      const target = await this.readTarget(req, orgUid, operation);
 
       const state = parseViewState(req, operation);
       const tab = parseTab(req, operation);
@@ -143,21 +150,20 @@ export class OrgLensTrainingController {
       const rawSortOrder = String(req.query['sortOrder'] ?? DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER).toUpperCase();
       const sortOrder = rawSortOrder === 'ASC' ? 'ASC' : 'DESC';
 
-      const response = await this.service.getGroups(
-        req,
-        orgUid,
-        orgTrainingStatsQuery(state),
-        {
-          groupBy: state.groupBy,
-          tab,
-          searchQuery: getStringQueryParam(req, 'search'),
-          sortField,
-          sortOrder,
-          pageSize,
-          offset,
-        },
-        qualification
-      );
+      const query = orgTrainingStatsQuery(state);
+      const params: OrgTrainingGroupsParams = {
+        groupBy: state.groupBy,
+        tab,
+        searchQuery: getStringQueryParam(req, 'search'),
+        sortField,
+        sortOrder,
+        pageSize,
+        offset,
+      };
+      const response =
+        'family' in target
+          ? await this.service.getFamilyGroups(req, target.family, query, params)
+          : await this.service.getGroups(req, target.orgUid, query, params, target.qualification);
 
       logger.success(req, operation, startTime, { org_uid: orgUid, group_by: state.groupBy, tab, result_count: response.data.length, total: response.total });
 
@@ -168,15 +174,17 @@ export class OrgLensTrainingController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/training/groups/employees?groupBy&groupValue&tab&status + stats query */
+  /** GET /api/orgs/:orgUid/lens/training/groups/employees?groupBy&groupValue&tab&status + stats query, plus company in a roll-up */
   public async getGroupEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_training_group_employees';
     const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
 
     try {
-      assertOrgUid(orgUid, operation);
-      const qualification = await assertOrgLensRead(req, orgUid, operation);
+      const { accountId, qualification } =
+        typeof orgUid === 'string' && isOrgRollUpSegment(orgUid)
+          ? await this.rollUpDrawerAccount(req, orgUid, operation)
+          : await this.orgTarget(req, orgUid, operation).then((target) => ({ accountId: target.orgUid, qualification: target.qualification }));
 
       const state = parseViewState(req, operation);
       const tab = parseTab(req, operation);
@@ -197,7 +205,7 @@ export class OrgLensTrainingController {
       assertWellFormedOrgTrainingFilterValue(groupValue, 'groupValue', operation, 'groupKey');
       const response = await this.service.getGroupEmployees(
         req,
-        orgUid,
+        accountId,
         orgTrainingStatsQuery(state),
         {
           groupBy: state.groupBy,
@@ -208,12 +216,51 @@ export class OrgLensTrainingController {
         qualification
       );
 
-      logger.success(req, operation, startTime, { org_uid: orgUid, group_by: state.groupBy, tab, status, total: response.total });
+      logger.success(req, operation, startTime, { org_uid: orgUid, account_id: accountId, group_by: state.groupBy, tab, status, total: response.total });
 
       res.setHeader('Cache-Control', 'no-store');
       res.json(response);
     } catch (error) {
       next(error);
     }
+  }
+
+  private async readTarget(req: Request, orgUid: string | undefined, operation: string): Promise<OrgTrainingReadTarget> {
+    return typeof orgUid === 'string' && isOrgRollUpSegment(orgUid)
+      ? { family: await this.familyScope(req, orgUid, operation) }
+      : this.orgTarget(req, orgUid, operation);
+  }
+
+  private async orgTarget(req: Request, orgUid: string | undefined, operation: string): Promise<{ orgUid: string; qualification: OrgLensReadQualification }> {
+    assertOrgUid(orgUid, operation);
+    // Memoized per request: the route gate already ran it. The qualification decides whether the shared caches may serve this caller.
+    return { orgUid, qualification: await assertOrgLensRead(req, orgUid, operation) };
+  }
+
+  /**
+   * The roll-up gate's organizations for this caller, narrowed by the Company filter, which must name one of them. Absent is the
+   * whole family; a repeated or empty value is a 400, never a silent widening.
+   */
+  private async familyScope(req: Request, rollUpKey: string, operation: string): Promise<OrgTrainingFamilyScope> {
+    const rollUp = await resolveOrgLensRollUp(req, rollUpKey, operation);
+    const company = getStrictStringQueryParam(req, ORG_TRAINING_COMPANY_QUERY_PARAM, operation);
+    if (company !== undefined && !rollUp.members.some((member) => member.accountId === company)) {
+      throw ServiceValidationError.forField(ORG_TRAINING_COMPANY_QUERY_PARAM, 'company must be an organization in this roll-up', { operation });
+    }
+    return this.service.familyScope(rollUp, company);
+  }
+
+  private async rollUpDrawerAccount(
+    req: Request,
+    rollUpKey: string,
+    operation: string
+  ): Promise<{ accountId: string; qualification: OrgLensReadQualification }> {
+    const company = getStrictStringQueryParam(req, ORG_TRAINING_COMPANY_QUERY_PARAM, operation);
+    if (company === undefined) {
+      throw ServiceValidationError.forField(ORG_TRAINING_COMPANY_QUERY_PARAM, 'company is required for a roll-up drawer', { operation });
+    }
+    await this.familyScope(req, rollUpKey, operation);
+    // Memoized per request: the roll-up gate checked this organization already; its answer decides the shared caches, as on the single-organization page.
+    return { accountId: company, qualification: await assertOrgLensRead(req, company, operation) };
   }
 }

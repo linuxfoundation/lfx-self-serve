@@ -5,7 +5,10 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, input, output } from '@angular/core';
 import { VoteParticipationStats } from '@lfx-one/shared/interfaces';
 
-/** Vote-level abstention row — muted and never winner-styled; `live` matches the live option bars, `final` the final option cards. */
+/**
+ * Vote-level abstention row — muted and never winner-styled; `live` matches the live option bars, `final` the final option cards,
+ * and `inline` is one secondary text line under a ranked outcome on the vote detail Overview (#6124).
+ */
 @Component({
   selector: 'lfx-vote-abstain-result',
   imports: [NgTemplateOutlet],
@@ -15,7 +18,7 @@ import { VoteParticipationStats } from '@lfx-one/shared/interfaces';
 export class VoteAbstainResultComponent {
   // === Inputs ===
   public readonly stats = input.required<VoteParticipationStats>();
-  public readonly variant = input<'live' | 'final'>('final');
+  public readonly variant = input<'live' | 'final' | 'inline'>('final');
   public readonly testId = input<string>('vote-results-option-abstain');
   /** Turns the abstention count into a link to the abstainers when someone abstained — vote managers on named votes only (#3914). */
   public readonly showVoterLinks = input<boolean>(false);

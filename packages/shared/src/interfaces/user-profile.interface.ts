@@ -119,6 +119,27 @@ export interface EmailSettingsState {
   inviteLoadFailed: boolean;
 }
 
+/** A row of Account & Settings › Email settings (#6079): the address, its badges and what its ⋯ menu offers. */
+export interface AccountEmailRow {
+  email: UserEmail;
+  isPrimary: boolean;
+  isMeetingInvite: boolean;
+  canMakePrimary: boolean;
+  canSetMeetingInvite: boolean;
+  /** A meeting-invitation change is in flight, so the item waits. */
+  meetingInviteBusy: boolean;
+  /** Whether the menu offers Delete at all; the primary shows it disabled with its reason. */
+  showDelete: boolean;
+  /** Why Delete is unavailable, or '' when it isn't. */
+  deleteBlockedReason: string;
+  hasActions: boolean;
+}
+
+/** What the Account & Settings delete-email dialog asks about. */
+export interface AccountDeleteEmailDialogData {
+  email: string;
+}
+
 // Result of setting the preferred meeting-invitation email. `reason` maps a failure to an HTTP status:
 // validation → 4xx; sync_pending (SFDC lag) and unavailable (transport) → 503; upstream → 502.
 // `error` is the raw upstream message, retained for logging (not surfaced to end users).
@@ -144,11 +165,23 @@ export interface ChangePasswordRequest {
   new_password: string;
 }
 
+/** What sending a password reset link returns: `email` is the primary the auth service confirmed, when it could. */
+export interface PasswordResetLinkResponse {
+  message: string;
+  email?: string;
+}
+
 /**
  * Request to send password reset email
  */
 export interface PasswordResetRequest {
   email: string;
+}
+
+/** A password criterion on Account & Settings › Password (#6080), and whether the new password meets it. */
+export interface AccountPasswordCriterion {
+  label: string;
+  met: boolean;
 }
 
 /**

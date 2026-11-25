@@ -10,12 +10,14 @@ import {
   MailingListSyncDirection,
 } from '@lfx-one/shared/enums';
 import {
+  ApiRequestOptions,
   CreateGroupsIOServiceRequest,
   CreateMailingListMemberRequest,
   CreateMailingListRequest,
   GroupsIOMailingList,
   GroupsIOMemberResponse,
   GroupsIOService,
+  InheritedGroupsIOService,
   MailingListMember,
   MyMailingList,
   QueryServiceCountResponse,
@@ -36,10 +38,29 @@ import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-pro
 import { pollEndpoint, pollUntilIndexed } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { generateM2MToken } from '../utils/m2m-token.util';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
+
+/** Reduces a service to the identity fields safe to return for a service the caller has no direct access to. */
+function toInheritedService(service: GroupsIOService): InheritedGroupsIOService {
+  return {
+    uid: service.uid,
+    type: service.type,
+    domain: service.domain,
+    prefix: service.prefix,
+    project_slug: service.project_slug,
+    project_uid: service.project_uid,
+    project_name: service.project_name,
+    group_name: service.group_name,
+    status: service.status,
+    public: service.public,
+    url: service.url,
+    parent_service_uid: service.parent_service_uid,
+  };
+}
 
 /**
  * Service for handling mailing list business logic
@@ -87,6 +108,49 @@ export class MailingListService {
 
     // Add writer access field to all services
     return await this.accessCheckService.addAccessToResources(req, services, 'groupsio_service');
+  }
+
+  /**
+   * Resolves the Groups.io services a project can attach mailing lists to through its parent project.
+   *
+   * A parent's service is indexed against the parent project, so a user who only holds a role on the
+   * child project (e.g. a Maintainer) cannot see it through the query service. The user's own token is
+   * tried first; only when that finds nothing and the user holds `writer_guard` on the child project
+   * — the same check the upstream applies to creating that project's shared service — is the lookup
+   * repeated with an M2M token scoped to that one call. Only identity fields are returned.
+   */
+  public async getInheritedServices(req: Request, projectUid: string): Promise<InheritedGroupsIOService[]> {
+    logger.debug(req, 'get_inherited_groupsio_services', 'Resolving parent project services', { project_uid: projectUid });
+
+    const project = await this.projectService.getProjectById(req, projectUid, false);
+    if (!project.parent_uid) {
+      logger.debug(req, 'get_inherited_groupsio_services', 'Project has no parent project', { project_uid: projectUid });
+      return [];
+    }
+
+    const userVisible = await this.queryServicesByProject(req, project.parent_uid);
+    if (userVisible.length > 0) {
+      return userVisible.map(toInheritedService);
+    }
+
+    const isWriter = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: projectUid, access: 'writer_guard' });
+    if (!isWriter) {
+      logger.debug(req, 'get_inherited_groupsio_services', 'User cannot write to project, not resolving parent services privately', {
+        project_uid: projectUid,
+      });
+      return [];
+    }
+
+    const m2mToken = await generateM2MToken(req);
+    const inherited = await this.queryServicesByProject(req, project.parent_uid, { bearerToken: m2mToken });
+
+    logger.info(req, 'get_inherited_groupsio_services', 'Resolved parent project services with M2M token', {
+      project_uid: projectUid,
+      parent_project_uid: project.parent_uid,
+      service_count: inherited.length,
+    });
+
+    return inherited.map(toInheritedService);
   }
 
   /**
@@ -1091,5 +1155,20 @@ export class MailingListService {
       unique_committees: uniqueCommitteeUids.length,
       resolved: nameByUid.size,
     });
+  }
+
+  private async queryServicesByProject(req: Request, projectUid: string, options?: ApiRequestOptions): Promise<GroupsIOService[]> {
+    return fetchAllQueryResources<GroupsIOService>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOService>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        { type: 'groupsio_service', tags: `project_uid:${projectUid}`, ...(pageToken && { page_token: pageToken }) },
+        undefined,
+        undefined,
+        options
+      )
+    );
   }
 }

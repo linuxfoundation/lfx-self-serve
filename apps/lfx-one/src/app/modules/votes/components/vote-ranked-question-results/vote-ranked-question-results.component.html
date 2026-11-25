@@ -30,9 +30,11 @@
         <p class="min-w-0 text-sm break-words" [class.text-emerald-700]="outcome.result === 'winner'" [class.text-slate-700]="outcome.result !== 'winner'">
           {{ copy.lead }}
           @if (copy.names) {
-            <strong class="font-semibold">{{ copy.names }}</strong>
+            <strong class="font-semibold">{{ copy.names }}</strong
+            >{{ copy.tail }}
+          } @else {
+            {{ copy.tail }}
           }
-          {{ copy.tail }}
         </p>
       </div>
     }

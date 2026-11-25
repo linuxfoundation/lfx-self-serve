@@ -1,0 +1,39 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="flex flex-col gap-3" aria-label="Who this post is written as" data-testid="mktg-linkedin-identity-change">
+  <button
+    type="button"
+    class="w-fit text-sm font-medium text-blue-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+    [attr.aria-expanded]="open()"
+    aria-controls="mktg-linkedin-identity-change-panel"
+    (click)="open.set(!open())"
+    data-testid="mktg-linkedin-identity-change-toggle">
+    Change who this is written as
+  </button>
+  @if (open()) {
+    <div
+      id="mktg-linkedin-identity-change-panel"
+      class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700"
+      data-testid="mktg-linkedin-identity-change-panel">
+      @if (isAuthor()) {
+        <p>
+          This post is written as your LinkedIn profile: your name, role, audience and tone. To change any of them, edit your profile and draft the post again.
+          The new draft is written as the updated profile; this post stays as it is.
+        </p>
+        <lfx-button
+          label="Edit profile and draft again"
+          size="small"
+          class="w-fit"
+          (onClick)="editAndRedraft.emit()"
+          data-testid="mktg-linkedin-identity-change-edit" />
+      } @else {
+        <p>
+          This post is written as {{ authorName() ? authorName() + "'s" : "its author's" }} LinkedIn profile: their name, role, audience and tone. Only they can
+          change that profile. To have the post written as you, draft it from your own profile.
+        </p>
+        <lfx-button label="Draft it as me" size="small" class="w-fit" (onClick)="draftAsMe.emit()" data-testid="mktg-linkedin-identity-change-draft" />
+      }
+    </div>
+  }
+</section>

@@ -51,7 +51,7 @@ export class InsightsTokensComponent {
   protected readonly loading = signal(true);
   protected readonly loadError = signal(false);
   protected readonly revokingUid = signal<string | null>(null);
-  private readonly tokens = signal<InsightsToken[]>([]);
+  protected readonly tokens = signal<InsightsToken[]>([]);
   private readonly eligibility = signal<InsightsTokenEligibility>(INSIGHTS_TOKEN_INELIGIBLE);
 
   protected readonly canCreate = computed(() => this.eligibility().canCreate);
@@ -151,6 +151,10 @@ export class InsightsTokensComponent {
     this.delete(token, 'Token removed.', { summary: 'Remove failed', detail: "We couldn't remove the token. Please try again." });
   }
 
+  protected revoke(token: InsightsToken): void {
+    this.delete(token, 'Token revoked.', { summary: 'Revoke failed', detail: "We couldn't revoke the token. Please try again." });
+  }
+
   private initItems(): Signal<InsightsTokenListItem[]> {
     return computed(() =>
       this.tokens().map((token) => ({
@@ -162,11 +166,11 @@ export class InsightsTokensComponent {
     );
   }
 
-  private revoke(token: InsightsToken): void {
-    this.delete(token, 'Token revoked.', { summary: 'Revoke failed', detail: "We couldn't revoke the token. Please try again." });
-  }
-
   private delete(token: InsightsToken, success: string, failure: { summary: string; detail: string }): void {
+    // Here as well as at each entry point, so a caller can't revoke while impersonating; the server blocks it too.
+    if (this.impersonating()) {
+      return;
+    }
     this.revokingUid.set(token.uid);
 
     this.insightsTokensService

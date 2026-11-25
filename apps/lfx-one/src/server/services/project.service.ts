@@ -5,6 +5,7 @@ import {
   CLASSIFICATION_TO_EMAIL_TYPES,
   DOCUMENT_DELETE_TYPES,
   DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
+  DOCUMENT_UPDATE_TYPES,
   DOCUMENT_UPSTREAM_PATH_SEGMENTS,
   EMAIL_CAMPAIGN_LIMIT,
   EVENT_GROWTH_TOP_EVENTS_LIMIT,
@@ -151,8 +152,10 @@ import {
   UniqueContributorsDailyResponse,
   UniqueContributorsWeeklyResponse,
   UniqueContributorsWeeklyRow,
+  UpdateDocumentRequest,
   UpdateProjectStaffRequest,
   UploadProjectDocumentRequest,
+  UpstreamDocumentRecord,
   AuditUserProfile,
   CommitteeDocumentQueryResult,
   CommitteeLinkQueryResult,
@@ -200,6 +203,7 @@ import {
   ResourceNotFoundError,
   ServiceValidationError,
 } from '../errors';
+import { buildDocumentUpdateBody } from '../helpers/document-update.helper';
 import { assertMergedRecordValid, mergeFormationRecord, validateFormationRecordBody } from '../helpers/formation-record.helper';
 import { checkFormationTeamMembership } from '../helpers/formation-team.helper';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
@@ -7758,45 +7762,11 @@ export class ProjectService {
       }),
     ]);
 
-    const folderDocs: ProjectDocument[] = (folders || []).map((f) => ({
-      uid: f.uid,
-      type: 'folder' as const,
-      name: f.name,
-      created_at: f.created_at,
-      updated_at: f.updated_at,
-      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.created_by_username),
-      project_uid: f.project_uid,
-      document_source: 'project' as const,
-    }));
+    const folderDocs: ProjectDocument[] = (folders || []).map((f) => ({ ...this.toFolderDocument(f), document_source: 'project' as const }));
 
-    const linkDocs: ProjectDocument[] = (links || []).map((l) => ({
-      uid: l.uid,
-      type: 'link' as const,
-      name: l.name,
-      url: l.url,
-      description: l.description,
-      created_at: l.created_at,
-      updated_at: l.updated_at,
-      uploaded_by: resolveAuditUserDisplayName(l.created_by, l.created_by_username),
-      parent_uid: l.folder_uid,
-      project_uid: l.project_uid,
-      document_source: 'project' as const,
-    }));
+    const linkDocs: ProjectDocument[] = (links || []).map((l) => ({ ...this.toLinkDocument(l), document_source: 'project' as const }));
 
-    const fileDocs: ProjectDocument[] = (files || []).map((f) => ({
-      uid: f.uid,
-      type: 'file' as const,
-      name: f.name,
-      description: f.description,
-      file_size: f.file_size,
-      mime_type: f.content_type,
-      created_at: f.created_at,
-      updated_at: f.updated_at,
-      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.uploaded_by_username),
-      parent_uid: f.folder_uid,
-      project_uid: f.project_uid,
-      document_source: 'project' as const,
-    }));
+    const fileDocs: ProjectDocument[] = (files || []).map((f) => ({ ...this.toFileDocument(f), document_source: 'project' as const }));
 
     // Resolve mailing list titles for groupsio artifacts. Query by project_uid, then
     // match on the numeric group_id field (groupsio_mailing_list_uid tags hold the
@@ -8015,15 +7985,7 @@ export class ProjectService {
         metadata: { project_uid: projectId, folder_uid: folder.uid },
       });
 
-      return {
-        uid: folder.uid,
-        type: 'folder',
-        name: folder.name,
-        created_at: folder.created_at,
-        updated_at: folder.updated_at,
-        uploaded_by: resolveAuditUserDisplayName(folder.created_by, folder.created_by_username),
-        project_uid: folder.project_uid,
-      };
+      return this.toFolderDocument(folder);
     }
 
     // Link
@@ -8068,18 +8030,7 @@ export class ProjectService {
       metadata: { project_uid: projectId, link_uid: link.uid },
     });
 
-    return {
-      uid: link.uid,
-      type: 'link',
-      name: link.name,
-      url: link.url,
-      description: link.description,
-      created_at: link.created_at,
-      updated_at: link.updated_at,
-      uploaded_by: resolveAuditUserDisplayName(link.created_by, link.created_by_username),
-      parent_uid: link.folder_uid,
-      project_uid: link.project_uid,
-    };
+    return this.toLinkDocument(link);
   }
 
   /**
@@ -8242,6 +8193,65 @@ export class ProjectService {
       document_uid: documentId,
       document_type: documentType,
     });
+  }
+
+  /**
+   * Renames and/or moves a project folder, link or uploaded file. The upstream update replaces every editable field, so the
+   * record is read first, with its ETag, and what is not changing is carried over; the ETag makes the write fail with a
+   * conflict if the record changed in between. The project service ignores `X-Sync` (it is deprecated there), so the write
+   * does not wait for the indexer that the Documents tab lists from: a list read straight after can still show the old name
+   * or folder, and the caller should apply the returned document instead of refetching the list. A name another record
+   * holds, or a folder that is not the project's, is refused upstream and passed on as it is.
+   * @param documentType 'folder', 'link' or 'file' — determines which upstream endpoint to call
+   */
+  public async updateProjectDocument(
+    req: Request,
+    projectId: string,
+    documentId: string,
+    documentType: ProjectDocumentType,
+    changes: UpdateDocumentRequest
+  ): Promise<ProjectDocument> {
+    // Defense-in-depth: the controller validates this too, but an unknown type must never fall through to another resource's path.
+    if (!DOCUMENT_UPDATE_TYPES.includes(documentType)) {
+      throw ServiceValidationError.forField('type', `Unsupported document type: ${documentType}. Must be one of: ${DOCUMENT_UPDATE_TYPES.join(', ')}.`, {
+        operation: 'update_project_document',
+        service: 'project_service',
+      });
+    }
+
+    const resourcePath = `/projects/${projectId}/${DOCUMENT_UPSTREAM_PATH_SEGMENTS[documentType]}/${documentId}`;
+
+    // Step 1: Fetch the record with its ETag
+    const { data: current, etag } = await this.etagService.fetchWithETag<UpstreamDocumentRecord>(
+      req,
+      'LFX_V2_SERVICE',
+      resourcePath,
+      'update_project_document'
+    );
+
+    // Step 2: Replace it with the change applied, guarded by the ETag
+    const updated = await this.etagService.updateWithETag<ProjectFolder | ProjectLink | ProjectDocumentUpstreamResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      resourcePath,
+      etag,
+      buildDocumentUpdateBody(documentType, current, changes),
+      'update_project_document'
+    );
+
+    logger.debug(req, 'update_project_document', `Project ${documentType} updated successfully`, {
+      project_uid: projectId,
+      document_uid: documentId,
+      document_type: documentType,
+    });
+
+    if (documentType === 'folder') {
+      return this.toFolderDocument(updated as ProjectFolder);
+    }
+    if (documentType === 'link') {
+      return this.toLinkDocument(updated as ProjectLink);
+    }
+    return this.toFileDocument(updated as ProjectDocumentUpstreamResponse);
   }
 
   /**
@@ -9447,5 +9457,51 @@ export class ProjectService {
         clientMessage: DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
       });
     }
+  }
+
+  /** Maps an upstream folder to the shape the Documents tab lists. */
+  private toFolderDocument(folder: ProjectFolder): ProjectDocument {
+    return {
+      uid: folder.uid,
+      type: 'folder',
+      name: folder.name,
+      created_at: folder.created_at,
+      updated_at: folder.updated_at,
+      uploaded_by: resolveAuditUserDisplayName(folder.created_by, folder.created_by_username),
+      project_uid: folder.project_uid,
+    };
+  }
+
+  /** Maps an upstream link to the shape the Documents tab lists. */
+  private toLinkDocument(link: ProjectLink): ProjectDocument {
+    return {
+      uid: link.uid,
+      type: 'link',
+      name: link.name,
+      url: link.url,
+      description: link.description,
+      created_at: link.created_at,
+      updated_at: link.updated_at,
+      uploaded_by: resolveAuditUserDisplayName(link.created_by, link.created_by_username),
+      parent_uid: link.folder_uid,
+      project_uid: link.project_uid,
+    };
+  }
+
+  /** Maps an upstream uploaded file, from the upstream or the indexer, to the shape the Documents tab lists. */
+  private toFileDocument(file: ProjectDocumentQueryResult): ProjectDocument {
+    return {
+      uid: file.uid,
+      type: 'file',
+      name: file.name,
+      description: file.description,
+      file_size: file.file_size,
+      mime_type: file.content_type,
+      created_at: file.created_at,
+      updated_at: file.updated_at,
+      uploaded_by: resolveAuditUserDisplayName(file.created_by, file.uploaded_by_username),
+      parent_uid: file.folder_uid,
+      project_uid: file.project_uid,
+    };
   }
 }

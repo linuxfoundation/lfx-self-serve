@@ -271,6 +271,29 @@ describe('Member360ResultComponent', () => {
     view.sort('engagement_tier');
     expect(view.names()[0]).toBe(SYNTHETIC_SECOND_ORG_LEGAL_NAME);
   });
+  it('shows the short tier name and drops the team label from the next action in the ranking', () => {
+    const envelope = member360Fixture();
+    const [first, second] = envelope.tabs.member_ranking;
+    first.rank = 193;
+    first.membership_tier = `${envelope.project_name} - Gold Membership`;
+    first.recommended_next_action = 'Sales: confirm the renewal date.';
+    second.recommended_next_action = 'Confirm the board seat: before 17 November.';
+    const view = render(envelope);
+    const cells = (id: string) =>
+      Array.from(view.fixture.nativeElement.querySelectorAll(`[data-testid="${id}"]`)).map((cell) => (cell as HTMLElement).textContent?.trim());
+    // Default order is descending score: the second fixture row comes first.
+    expect(cells('member-360-ranking-tier')).toEqual(['General', 'Gold']);
+    expect(cells('member-360-ranking-action')).toEqual(['Confirm the board seat: before 17 November.', 'Confirm the renewal date.']);
+    expect(view.query('member-360-ranking').textContent).not.toContain('Sales: confirm');
+    expect(view.query('member-360-ranking').textContent).not.toContain('Gold Membership');
+    // The rank stays one unbreakable box, so a three-digit rank cannot wrap digit by digit in its narrow column.
+    const rank = view.fixture.nativeElement.querySelectorAll('[data-testid="member-360-rank"]')[1] as HTMLElement;
+    expect(rank.textContent?.trim()).toBe('193');
+    expect(rank.classList.contains('inline-block')).toBe(true);
+    expect(rank.classList.contains('whitespace-nowrap')).toBe(true);
+    // The envelope, and so the workbook, keeps what the agent wrote.
+    expect(first.recommended_next_action).toBe('Sales: confirm the renewal date.');
+  });
   it('combines reactive tier/owner/search filters and exposes no matches', () => {
     const view = render();
     view.component.filters.controls.tier.setValue('At Risk');

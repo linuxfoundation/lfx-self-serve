@@ -1,0 +1,52 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+@if (hasIdentities()) {
+  <div class="flex flex-col gap-[12px]" data-autofocus>
+    <span class="text-[13px] font-medium leading-[16px] text-ui-neutral-900" id="account-sign-cla-identity-label">
+      Sign {{ pickedName() || 'this CLA' }} as
+    </span>
+    <lfx-ui-choicebox-group joined ariaLabel="Identity to sign with" [formControl]="selectForm.controls.identity" data-testid="account-sign-cla-identities">
+      @for (account of accounts(); track account.githubId) {
+        <lfx-ui-choicebox
+          [value]="account.githubId"
+          [label]="account.label"
+          [description]="githubHint"
+          [disabled]="!!account.alreadySignedTooltip"
+          [disabledReason]="account.alreadySignedTooltip ?? ''"
+          [attr.data-testid]="'account-sign-cla-identity-' + account.githubId" />
+      }
+      @if (gerritLabel(); as label) {
+        <lfx-ui-choicebox
+          [value]="gerritValue"
+          [label]="label"
+          [description]="gerritHint"
+          [disabled]="!!gerritAlreadySignedTooltip()"
+          [disabledReason]="gerritAlreadySignedTooltip() ?? ''"
+          data-testid="account-sign-cla-identity-gerrit" />
+      }
+    </lfx-ui-choicebox-group>
+  </div>
+  <span class="text-[12px] leading-[16px] text-ui-neutral-500">You’ll finish signing in the EasyCLA Contributor Console.</span>
+  <div
+    class="-mx-[24px] -mb-[24px] flex flex-row items-center justify-end gap-[12px] bg-ui-background-200 px-[24px] py-[16px] shadow-[inset_0_1px_0_0] shadow-ui-neutral-alpha-200">
+    <lfx-ui-button variant="secondary" (click)="onCancel()" data-testid="account-sign-cla-identity-cancel">Cancel</lfx-ui-button>
+    <lfx-ui-button
+      trailingIcon="fa-light fa-arrow-up-right-from-square"
+      [disabled]="!selectedId()"
+      (click)="onContinue()"
+      data-testid="account-sign-cla-identity-continue">
+      Continue to sign
+    </lfx-ui-button>
+  </div>
+} @else {
+  <lfx-ui-note variant="info" data-testid="account-sign-cla-identity-empty">
+    No GitHub accounts are connected to your profile yet. Link one from Identities, then come back to sign.
+  </lfx-ui-note>
+  <div
+    class="-mx-[24px] -mb-[24px] flex flex-row items-center justify-end gap-[12px] bg-ui-background-200 px-[24px] py-[16px] shadow-[inset_0_1px_0_0] shadow-ui-neutral-alpha-200">
+    <lfx-ui-button variant="secondary" (click)="onCancel()" data-testid="account-sign-cla-identity-cancel">Cancel</lfx-ui-button>
+    <lfx-ui-button data-autofocus (click)="onLinkAccounts()" data-testid="account-sign-cla-identity-link">Go to Identities</lfx-ui-button>
+  </div>
+}

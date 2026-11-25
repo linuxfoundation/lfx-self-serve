@@ -1,0 +1,126 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<fieldset class="flex flex-col gap-3" aria-describedby="linkedin-text-ads-hint" data-testid="linkedin-text-ads-editor">
+  <legend class="float-left text-xs font-medium text-gray-700">Text ads ({{ textAds().length }}/{{ limits.ads }})</legend>
+  <p id="linkedin-text-ads-hint" class="text-xs text-gray-500">
+    Text ads show on the right rail of LinkedIn on desktop. Each has a headline (up to {{ limits.headline }} characters) and a description (up to
+    {{ limits.description }}), and links to the registration page.
+  </p>
+  @for (view of views(); track view.key; let i = $index) {
+    <fieldset class="flex flex-col gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'linkedin-text-ads-editor-ad-' + i">
+      <legend class="float-left text-xs font-medium text-gray-700">Text ad {{ i + 1 }}</legend>
+      <lfx-ui-input
+        label="Headline"
+        size="small"
+        [value]="view.headline"
+        (valueChange)="onTextChange(view.key, 'headline', $event)"
+        [error]="view.headlineError"
+        [hint]="view.headlineLength + '/' + limits.headline + ' characters'"
+        [attr.data-testid]="'linkedin-text-ads-editor-headline-' + i" />
+      <lfx-ui-input
+        label="Description"
+        size="small"
+        [value]="view.description"
+        (valueChange)="onTextChange(view.key, 'description', $event)"
+        [error]="view.descriptionError"
+        [hint]="view.descriptionLength + '/' + limits.description + ' characters'"
+        [attr.data-testid]="'linkedin-text-ads-editor-description-' + i" />
+      @if (imageUploadAvailable()) {
+        <div class="flex flex-col gap-1" [attr.data-testid]="'linkedin-text-ads-editor-image-' + i">
+          <label class="text-xs font-medium text-gray-700" [attr.for]="'linkedin-text-ad-image-file-' + i">Image (optional)</label>
+          <input
+            [id]="'linkedin-text-ad-image-file-' + i"
+            type="file"
+            [attr.accept]="imageAccept"
+            (change)="imageFileChange.emit({ key: view.key, event: $event })"
+            [disabled]="view.imagePickerDisabled"
+            [attr.aria-describedby]="'linkedin-text-ad-image-hint-' + i + ' linkedin-text-ad-image-status-' + i"
+            [attr.aria-invalid]="view.imageError ? 'true' : null"
+            class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+            [attr.data-testid]="'linkedin-text-ads-editor-image-file-' + i" />
+          <p [id]="'linkedin-text-ad-image-hint-' + i" class="text-xs text-gray-500">
+            PNG or JPEG, exactly {{ imageLimits.side }}x{{ imageLimits.side }} pixels, up to 2 MB. {{ view.imagePickerNote }}
+          </p>
+          <p
+            [id]="'linkedin-text-ad-image-status-' + i"
+            class="text-xs text-gray-700"
+            aria-live="polite"
+            [attr.data-testid]="'linkedin-text-ads-editor-image-status-' + i">
+            {{ view.imageStatusMessage }}
+          </p>
+          @if (view.imageUploading || view.imageHeld) {
+            <div>
+              <lfx-button
+                [label]="view.imageUploading ? 'Cancel upload' : 'Remove uploaded image'"
+                size="small"
+                severity="secondary"
+                [text]="true"
+                (onClick)="imageRemove.emit(view.key)"
+                [attr.data-testid]="'linkedin-text-ads-editor-image-remove-' + i" />
+            </div>
+          }
+          @if (view.imageError) {
+            <p role="alert" class="text-xs text-red-600" [attr.data-testid]="'linkedin-text-ads-editor-image-error-' + i">{{ view.imageError }}</p>
+          }
+        </div>
+      }
+      <!-- This ad's upload the request cannot carry, or its failed upload; see `imageBlock` from `linkedInTextAdViews`. -->
+      @if (view.imageBlock; as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-white]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'linkedin-text-ads-editor-image-block-' + block.kind + '-' + i">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          <div class="flex items-center gap-2">
+            @if (block.kind === 'failed') {
+              <lfx-button
+                label="Retry"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="retryCapabilities.emit()"
+                [attr.data-testid]="'linkedin-text-ads-editor-image-block-retry-' + i" />
+            }
+            <lfx-button
+              label="Remove image"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="imageRemove.emit(view.key)"
+              [attr.data-testid]="'linkedin-text-ads-editor-image-block-remove-' + i" />
+          </div>
+        </div>
+      }
+      <lfx-button
+        class="self-start"
+        label="Remove text ad"
+        icon="fa-light fa-trash"
+        size="small"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="textAds().length <= 1"
+        [ariaLabel]="'Remove text ad ' + (i + 1)"
+        (onClick)="remove(view.key)"
+        [attr.data-testid]="'linkedin-text-ads-editor-remove-' + i" />
+    </fieldset>
+  }
+  <lfx-button
+    class="self-start"
+    label="Add text ad"
+    icon="fa-light fa-plus"
+    size="small"
+    severity="secondary"
+    [outlined]="true"
+    [disabled]="textAds().length >= limits.ads"
+    (onClick)="add()"
+    data-testid="linkedin-text-ads-editor-add" />
+</fieldset>

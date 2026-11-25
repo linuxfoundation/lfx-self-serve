@@ -1,0 +1,83 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<lfx-ui-modal [heading]="copy.createTitle" [width]="520" [closable]="!submitting()" data-testid="account-insights-token-dialog">
+  @if (created(); as done) {
+    <div class="flex flex-col gap-[16px]" data-testid="account-insights-token-done">
+      <lfx-ui-note variant="warning" announce data-testid="account-insights-token-warning">{{ copy.createdWarning }}</lfx-ui-note>
+      <!-- data-dd-privacy="mask": a live bearer credential; keep it out of Session Replay. -->
+      <lfx-ui-input
+        class="[&_input]:font-mono"
+        [label]="done.token.name"
+        readonly
+        [value]="done.secret"
+        data-dd-privacy="mask"
+        data-testid="account-insights-token-secret">
+        <button
+          type="button"
+          lfxUiInputAction
+          class="mr-[6px] inline-flex h-[28px] shrink-0 items-center gap-[6px] self-center rounded-ui-sm px-[8px] text-[13px] font-medium text-ui-neutral-700 hover:bg-ui-neutral-alpha-100 focus-visible:shadow-focus focus-visible:outline-none"
+          (click)="copySecret()"
+          data-testid="account-insights-token-copy">
+          <i [class]="secretCopied() ? 'fa-light fa-check' : 'fa-light fa-copy'" aria-hidden="true"></i>
+          <span aria-live="polite">{{ secretCopied() ? copy.copied : 'Copy' }}</span>
+        </button>
+      </lfx-ui-input>
+      <div class="flex flex-col gap-[8px]" data-testid="account-insights-token-usage">
+        <h3 class="m-0 text-[13px] font-semibold leading-[16px] text-ui-neutral-900">Using it</h3>
+        <p class="m-0 text-[12px] leading-[18px] text-ui-neutral-600">Send this token as a bearer token. There's no separate token endpoint to call.</p>
+        <pre
+          class="m-0 whitespace-pre-wrap rounded-ui-sm bg-ui-background-200 p-[12px] font-mono text-[12px] leading-[18px] text-ui-neutral-700 [overflow-wrap:anywhere]"
+          data-testid="account-insights-token-snippet">
+curl -H "Authorization: Bearer lfi_…" \
+  {{ exampleUrl }}</pre
+        >
+        <p class="m-0 text-[12px] leading-[18px] text-ui-neutral-500">
+          Learn more about usage limits in
+          <a [href]="docsLink" target="_blank" rel="noopener noreferrer" class="font-medium text-ui-accent-600 hover:underline">LFX Insights docs</a>.
+        </p>
+      </div>
+    </div>
+  } @else {
+    <form class="flex flex-col gap-[16px]" [formGroup]="form" (ngSubmit)="submit()" data-testid="account-insights-token-form">
+      <lfx-ui-input
+        data-autofocus
+        label="Token name"
+        required
+        autocomplete="off"
+        [placeholder]="copy.namePlaceholder"
+        [hint]="copy.nameHint"
+        [error]="nameError()"
+        formControlName="name"
+        data-testid="account-insights-token-name" />
+      <div class="flex flex-col gap-[6px]">
+        <lfx-ui-select label="Expiration" formControlName="expiration" data-testid="account-insights-token-expiration">
+          @for (option of expirationOptions; track option.value) {
+            <lfx-ui-option [value]="option.value" [label]="option.label" />
+          }
+        </lfx-ui-select>
+        <p class="m-0 text-[12px] leading-[16px] text-ui-neutral-500" data-testid="account-insights-token-expiration-help">
+          @if (expiresOn(); as expiresOn) {
+            Expires on {{ expiresOn | date: 'd MMMM y' }}.
+          } @else {
+            This token stays valid until you revoke it.
+          }
+        </p>
+      </div>
+    </form>
+  }
+  <!-- One root per branch, so each lands in the actions slot. -->
+  @if (created()) {
+    <ng-container modalActions>
+      <lfx-ui-button data-autofocus variant="secondary" (click)="close()" data-testid="account-insights-token-close">Close</lfx-ui-button>
+    </ng-container>
+  } @else {
+    <ng-container modalActions>
+      <lfx-ui-button variant="secondary" [disabled]="submitting()" (click)="cancel()" data-testid="account-insights-token-cancel">Cancel</lfx-ui-button>
+      <lfx-ui-button [loading]="submitting()" [disabled]="!canSubmit()" (click)="submit()" data-testid="account-insights-token-create"
+        >Create token</lfx-ui-button
+      >
+    </ng-container>
+  }
+</lfx-ui-modal>

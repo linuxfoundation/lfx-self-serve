@@ -91,14 +91,14 @@
       <!-- Compact board proportions fit the desktop content area; smaller areas scroll only the table. -->
       <table class="w-full min-w-[940px] table-fixed text-left text-sm [&_td]:break-words [&_td]:whitespace-normal [&_td]:px-2 [&_th]:px-2">
         <colgroup>
-          <col class="w-[3%]" />
+          <col class="w-[5%]" />
           <col class="w-[14%]" />
           <col class="w-[9%]" />
           <col class="w-[5%]" />
           <col class="w-[12%]" />
           <col class="w-[6%]" />
           <col class="w-[8%]" />
-          <col class="w-[23%]" />
+          <col class="w-[21%]" />
           <col class="w-[11%]" />
           <col class="w-[9%]" />
         </colgroup>
@@ -118,7 +118,10 @@
         <tbody>
           @for (row of rows(); track row.key) {
             <tr class="border-t border-gray-100" [class.bg-blue-50]="expanded() === row.key" data-testid="member-360-ranking-row">
-              <td class="p-3">{{ row.member.rank }}</td>
+              <td class="p-3">
+                <!-- One unbreakable box: the cells' break-words would otherwise split a rank digit by digit. -->
+                <span class="inline-block whitespace-nowrap tabular-nums" data-testid="member-360-rank">{{ row.member.rank }}</span>
+              </td>
               <td class="p-3">
                 <button
                   type="button"
@@ -129,7 +132,7 @@
                   class="min-h-10 text-left font-semibold text-blue-700">
                   {{ row.member.member_organization }}
                 </button>
-                <p class="text-xs text-gray-500">{{ row.member.membership_tier }}</p>
+                <p class="text-xs text-gray-500" data-testid="member-360-ranking-tier">{{ row.tierLabel }}</p>
               </td>
               <td class="p-3">
                 <span class="whitespace-nowrap rounded-full px-2 py-1 text-xs font-semibold" [ngClass]="row.tierClass">{{ row.member.engagement_tier }}</span>
@@ -168,7 +171,7 @@
                   Unknown
                 }
               </td>
-              <td class="p-3">{{ row.member.recommended_next_action }}</td>
+              <td class="p-3" data-testid="member-360-ranking-action">{{ row.actionText }}</td>
               <td class="p-3">{{ row.member.action_owner }}</td>
               <td class="p-3" [class.text-red-700]="row.member.priority === 'High'">{{ row.member.priority }}</td>
             </tr>

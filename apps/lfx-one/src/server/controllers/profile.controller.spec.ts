@@ -146,6 +146,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   ACCOUNT_BASE_PATH: '/account',
   ACCOUNT_IDENTITIES_PATH: '/account/identities',
   ACCOUNT_LINUX_EMAIL_PATH: '/account/linux-email',
+  ACCOUNT_PERSONAL_INFORMATION_PATH: '/account/personal-information',
   ALLOWED_AVATAR_MIME_TYPES: ['image/png', 'image/jpeg', 'image/webp'],
   AUTH0_LINKED_ONLY_IDENTITY_COMBOS: new Set(['gitlab+username']),
   AUTH0_TO_CDP_PROVIDER_MAP: auth0ToCdpProviderMap,
@@ -393,11 +394,27 @@ describe('ProfileController.uploadProfilePicture', () => {
     expect(res.json).toHaveBeenCalledWith({
       error: 'management_token_required',
       message: 'Profile authorization required',
-      authorize_url: '/api/profile/auth/start?returnTo=/profile',
+      authorize_url: '/api/profile/auth/start?returnTo=%2Fprofile',
     });
     expect(objectStoreSvc.uploadProfilePicture).not.toHaveBeenCalled();
     expect(userSvc.updateUserMetadata).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the Personal information page', 'https://app.example/account/personal-information', '/account/personal-information'],
+    ['a hub tab', 'https://app.example/profile/identities', '/profile'],
+    ['another allowlisted page', 'https://app.example/account/identities', '/profile'],
+    ['another host', 'https://evil.example/account/personal-information?next=//evil.example', '/account/personal-information'],
+    ['a malformed referer', 'http://[::1', '/profile'],
+  ])('returns Flow C from %s to the page that hosts the profile form', async (_page, referer, returnTo) => {
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+    const res = buildRes();
+
+    await controller.uploadProfilePicture(buildReq({ headers: { 'content-type': 'image/png', 'content-length': '3', referer } }), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(returnTo)}` }));
   });
 
   it('propagates an object-store upload failure via next(error)', async () => {
@@ -861,6 +878,7 @@ describe('ProfileController.getLinuxAlias', () => {
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardAuthRequired: true }));
     expect(res.json.mock.calls[0][0]).not.toHaveProperty('authorizeUrl');
+    expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardUnavailableDuringImpersonation');
     expect(forwardsSvc.getForward).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
@@ -879,6 +897,7 @@ describe('ProfileController.getLinuxAlias', () => {
         authorizeUrl: '/api/profile/auth/start?returnTo=%2Fprofile%2Flinux-email',
       })
     );
+    expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardUnavailableDuringImpersonation');
   });
 
   it('omits forwardAuthRequired and reads the forward target when a management token is present', async () => {
@@ -892,6 +911,7 @@ describe('ProfileController.getLinuxAlias', () => {
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardTo: 'forward@example.com' }));
     expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardAuthRequired');
+    expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardUnavailableDuringImpersonation');
   });
 
   it('degrades to service_unavailable when a management token is present but the forward is unreadable', async () => {
@@ -915,7 +935,11 @@ describe('ProfileController.getLinuxAlias', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('suppresses forwardAuthRequired during impersonation even without a management token', async () => {
+  // lfx-self-serve-ops#2006: an admin inspecting this response during impersonation (as happened
+  // in the reported ticket) must be able to tell "suppressed for impersonation" apart from
+  // "genuinely unset" or "unreadable" from the response alone, without separately knowing the
+  // request was impersonated.
+  it('suppresses forwardAuthRequired during impersonation even without a management token, and flags forwardUnavailableDuringImpersonation', async () => {
     isImpersonatingMock.mockReturnValue(true);
     profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
     const res = buildRes();
@@ -923,7 +947,7 @@ describe('ProfileController.getLinuxAlias', () => {
 
     await controller.getLinuxAlias(buildReq(), res, next);
 
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardTo: null }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardTo: null, forwardUnavailableDuringImpersonation: true }));
     expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardAuthRequired');
     expect(forwardsSvc.getForward).not.toHaveBeenCalled();
   });
@@ -1129,6 +1153,16 @@ describe('ProfileController.setPrimaryEmail', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('returns Flow C to Personal information when the change started there', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+    const res = buildRes();
+    const req = buildReq({ params: { emailId: 'user@example.com' }, headers: { referer: 'https://app.example/account/personal-information' } });
+
+    await controller.setPrimaryEmail(req, res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ authorize_url: '/api/profile/auth/start?returnTo=%2Faccount%2Fpersonal-information' }));
+  });
+
   // Meeting invites stick to an address, not the primary role (#3983).
   describe('meeting-invite pin', () => {
     const OLD_PRIMARY = 'old-primary@example.com';
@@ -1288,6 +1322,30 @@ describe('ProfileController.sendPasswordResetEmail', () => {
     expect(emailVerificationSvc.sendPasswordResetLink).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
+
+  it('names the primary the auth service confirms once the link is sent', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    emailVerificationSvc.sendPasswordResetLink.mockResolvedValue({ success: true });
+    getEffectiveSubMock.mockReturnValue('auth0|user123');
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'ada@lovelace.example', alternate_emails: [] });
+    const res = buildRes();
+
+    await controller.sendPasswordResetEmail(buildReq(), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith({ message: 'A password reset link has been sent to the primary email on file.', email: 'ada@lovelace.example' });
+  });
+
+  it('names no address when the auth service can’t confirm the primary', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    emailVerificationSvc.sendPasswordResetLink.mockResolvedValue({ success: true });
+    getEffectiveSubMock.mockReturnValue('auth0|user123');
+    emailVerificationSvc.getUserEmails.mockResolvedValue(null);
+    const res = buildRes();
+
+    await controller.sendPasswordResetEmail(buildReq(), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith({ message: 'A password reset link has been sent to the primary email on file.' });
+  });
 });
 
 describe('ProfileController.startProfileAuth — returnTo allowlist', () => {
@@ -1319,14 +1377,17 @@ describe('ProfileController.startProfileAuth — returnTo allowlist', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it.each(['/account/identities', '/account/linux-email'])('keeps the Account & Settings page %s as an allowed returnTo', async (returnTo) => {
-    const res = buildRes();
-    const next = vi.fn();
+  it.each(['/account/identities', '/account/linux-email', '/account/personal-information'])(
+    'keeps the Account & Settings page %s as an allowed returnTo',
+    async (returnTo) => {
+      const res = buildRes();
+      const next = vi.fn();
 
-    await controller.startProfileAuth(buildReq({ query: { returnTo } }), res, next);
+      await controller.startProfileAuth(buildReq({ query: { returnTo } }), res, next);
 
-    expect(res.redirect).toHaveBeenCalledWith(`${returnTo}?error=profile_auth_not_configured`);
-  });
+      expect(res.redirect).toHaveBeenCalledWith(`${returnTo}?error=profile_auth_not_configured`);
+    }
+  );
 
   it('forwards a rejected getAuthorizationUrl to next instead of leaving it unhandled', async () => {
     profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
@@ -2345,6 +2406,19 @@ describe('ProfileController.verifyAndLinkEmail — step-2 failures are indisting
     expect(res.status).toHaveBeenCalledExactlyOnceWith(403);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'management_token_required' }));
     expect(emailVerificationSvc.verifyOtp).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Account & Settings › Identities', 'https://app.example/account/identities', '/account/identities'],
+    ['the hub', 'https://app.example/profile/identities', '/profile/emails'],
+    ['no page', undefined, '/profile/emails'],
+  ])('returns Flow C from %s to the page that hosts the link', async (_page, referer, returnTo) => {
+    profileAuthSvc.getManagementToken.mockReturnValue(null);
+    const res = buildRes();
+    const req = verificationReq();
+    if (referer) req.headers = { ...req.headers, referer };
+    await controller.verifyAndLinkEmail(req, res, vi.fn());
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(returnTo)}` }));
   });
 });
 

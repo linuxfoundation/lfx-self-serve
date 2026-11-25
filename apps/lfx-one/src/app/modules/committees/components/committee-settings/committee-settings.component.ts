@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, output } from '@angular/core';
+import { Component, computed, input, output, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -10,6 +11,9 @@ import { SelectComponent } from '@components/select/select.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { COMMITTEE_LABEL, COMMITTEE_SETTINGS_FEATURES, JOIN_MODE_OPTIONS, MEMBER_VISIBILITY_OPTIONS } from '@lfx-one/shared/constants';
+import { Committee, CommitteeSsoGroupNameDisplay } from '@lfx-one/shared/interfaces';
+import { resolveSsoGroupNameDisplay } from '@lfx-one/shared/utils';
+import { map, startWith, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-settings',
@@ -63,6 +67,15 @@ export class CommitteeSettingsComponent {
   public readonly impersonating = input<boolean>(false);
   /** The group's category — hides toggles that apply only to other categories (e.g. Social Listening is Board only). */
   public readonly category = input<string | null | undefined>(null);
+  /**
+   * Whether to render the read-only SSO group name line in the Enable SSO Group card. Defaults to
+   * false; only `committee-settings-tab.component` opts in, because issue #6054 scopes the name to
+   * group settings. The create wizard (`committee-manage.component`) has no saved committee yet,
+   * and its edit mode, which does load one, intentionally leaves the line out.
+   */
+  public readonly showSsoGroupName = input<boolean>(false);
+  /** The saved committee's `sso_group_name`, shown when `showSsoGroupName` is true. */
+  public readonly ssoGroupName = input<string | null | undefined>(null);
 
   // Outputs
   public readonly startEditingSlackWebhookUrl = output<void>();
@@ -91,6 +104,11 @@ export class CommitteeSettingsComponent {
     this.impersonating() ? `${this.slackWebhookCancelLabel()} — unavailable while impersonating another user` : this.slackWebhookCancelLabel()
   );
 
+  /** Live (unsaved) public/SSO toggle values from the form, read raw so a per-control disable of either toggle still reports it. */
+  private readonly formToggles: Signal<Partial<Pick<Committee, 'public' | 'sso_group_enabled'>>> = this.initFormToggles();
+  /** The SSO group name line, or null when the parent hasn't opted in or neither toggle is on. */
+  public readonly ssoGroupNameDisplay: Signal<CommitteeSsoGroupNameDisplay | null> = this.initSsoGroupNameDisplay();
+
   /**
    * Stages a removal: clears the control and marks it dirty, then reveals the input so the user
    * can enter a replacement instead if they change their mind — there is deliberately no separate
@@ -117,5 +135,26 @@ export class CommitteeSettingsComponent {
     const control = this.form().controls['chat_webhook_url'];
     control?.reset(null);
     this.cancelEditingSlackWebhookUrl.emit();
+  }
+
+  // A partially disabled group drops its disabled controls from `valueChanges` payloads, so map
+  // every emission to `getRawValue()` — a per-control lock on `public` or `sso_group_enabled`
+  // can't hide the toggle. A whole-form disable (read-only Auditor) already keeps every control.
+  private initFormToggles(): Signal<Partial<Pick<Committee, 'public' | 'sso_group_enabled'>>> {
+    return toSignal(
+      toObservable(this.form).pipe(
+        switchMap((group) =>
+          group.valueChanges.pipe(
+            startWith(null),
+            map(() => group.getRawValue())
+          )
+        )
+      ),
+      { initialValue: {} }
+    );
+  }
+
+  private initSsoGroupNameDisplay(): Signal<CommitteeSsoGroupNameDisplay | null> {
+    return computed(() => (this.showSsoGroupName() ? resolveSsoGroupNameDisplay(this.formToggles(), this.ssoGroupName()) : null));
   }
 }
