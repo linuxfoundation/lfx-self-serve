@@ -3768,7 +3768,7 @@ export class ImplementationTabComponent implements OnInit {
     () => metaAudienceTargetingRefusal(this.metaAudienceTargetingRequested())?.message ?? null
   );
 
-  /** The detailed fields the create carries (#5904 row 4): each list only on its explicit yes. */
+  /** The detailed fields the create carries (#5904 rows 4 and 6): each list only on its explicit yes. */
   private readonly metaDetailedTargetingRequested = computed(() =>
     metaDetailedTargetingForCreate(this.metaDetailedTargeting(), this.metaDetailedTargetingEnabled())
   );

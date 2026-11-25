@@ -306,11 +306,13 @@ export function metaTargetingSearchQuery(raw: string): string {
   return metaTargetingQueryRefusal(META_TARGETING_SEARCH_TYPES[0], query) === null ? query : '';
 }
 
-/** At most this many distinct picks in `list`, as campaign-service caps the field it fills. */
+/**
+ * At most this many distinct picks in `list`, as campaign-service caps the field it fills: the `max` of the
+ * `META_TARGETING_BOXES` box that fills it, the one source the picker's counts and disabled rows read too.
+ */
 function pickListMax(list: MetaTargetingPickKey): number {
-  if (list === 'locales') return META_MAX_LOCALES;
-  if (list === 'regions' || list === 'cities') return META_MAX_GEO_LOCATIONS;
-  return META_MAX_DETAILED_TARGETING_IDS;
+  const box = META_TARGETING_BOXES.find((b) => (b.lists as readonly MetaTargetingPickKey[]).includes(list));
+  return box ? box.max : 0;
 }
 
 /** Whether `id` can be sent in `list`: a Meta id (digits, no leading zero), and for a language one that stays exact as a number. */

@@ -621,3 +621,17 @@ describe('compactMetaDetailedTargeting with devices and operating systems', () =
     });
   });
 });
+
+// The picker's cap per list (the box's `max`) must be exactly what a create accepts for the field it fills, so a
+// row the picker offers is never refused on create and the create's cap is never out of reach in the picker.
+describe('the picker cap matches the create cap', () => {
+  const rows = META_TARGETING_BOXES.flatMap((b) => b.lists.map((list) => [list, b.max] as [MetaTargetingPickKey, number]));
+  it.each<[MetaTargetingPickKey, number]>(rows)('%s takes %i picks, as a create does', (list, max) => {
+    let picks: MetaTargetingPick[] = [];
+    for (const id of ids(max + 1)) picks = metaTargetingPicksWith(picks, { id, name: id }, list);
+    expect(picks).toHaveLength(max);
+    const sent = (n: number): unknown[] => (list === 'locales' ? ids(n).map(Number) : ids(n));
+    expect(metaDetailedTargetingRefusal({ [list]: sent(max) })).toBeNull();
+    expect(metaDetailedTargetingRefusal({ [list]: sent(max + 1) })?.field).toBe(`metaConfig.targeting.${list}`);
+  });
+});
