@@ -257,6 +257,28 @@ export function emptyMetaDetailedTargetingPicks(): MetaDetailedTargetingPicks {
   return { interests: [], behaviors: [], workPositions: [] };
 }
 
+/**
+ * Whether a targeting search of `type` may be sent: the flag of the list its options fill, so the search never
+ * offers an option a create would refuse. Every kind is listed; a new kind fails the type-check until it is mapped.
+ */
+export function metaTargetingSearchAllowed(type: MetaTargetingSearchType, flags: Pick<MetaTargetingFlags, 'interest' | 'behavior' | 'locale' | 'region'>): boolean {
+  switch (type) {
+    case 'interest':
+      return flags.interest;
+    case 'behavior':
+    case 'work_position':
+      return flags.behavior;
+    case 'locale':
+      return flags.locale;
+    case 'location':
+      return flags.region;
+    default: {
+      const unmapped: never = type;
+      return unmapped;
+    }
+  }
+}
+
 /** The lists the picker shows for this deployment: interests on the interest flag, behaviors and job titles on the behavior flag. */
 export function metaTargetingKindsShown(flags: Pick<MetaTargetingFlags, 'interest' | 'behavior'>): MetaTargetingKind[] {
   return META_TARGETING_KINDS.filter((kind) => (kind.type === 'interest' ? flags.interest : flags.behavior));

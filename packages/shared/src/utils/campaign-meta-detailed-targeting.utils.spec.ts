@@ -48,6 +48,7 @@ import {
   metaTargetingHasAudienceFields,
   metaTargetingHasDetailedFields,
   metaTargetingQueryRefusal,
+  metaTargetingSearchAllowed,
   metaTargetingSearchOptions,
 } from './campaign-meta-detailed-targeting.utils';
 
@@ -200,7 +201,9 @@ describe('metaTargetingQueryRefusal', () => {
 });
 
 describe('metaTargetingSearchOptions', () => {
-  it.each([
+  // The raw rows are upstream input, deliberately mistyped in places (a numeric id, a number in a path), so that
+  // column is `unknown`; the expected column keeps its type, so a misspelled field fails the type-check.
+  it.each<[string, MetaTargetingSearchType, unknown, MetaTargetingSearchOption[]]>([
     [
       'camel-cases an interest, dropping an id a create would refuse and a repeat; a nameless row reads as its id',
       'interest',
@@ -254,8 +257,22 @@ describe('metaTargetingSearchOptions', () => {
       [{ id: '6003', name: 'K', path: [] }],
     ],
     ['answers no options for none', 'interest', undefined, []],
-  ] as [string, MetaTargetingSearchType, CampaignServiceMetaTargetingSearch['options'], MetaTargetingSearchOption[]][])('%s', (_case, type, raw, expected) => {
-    expect(metaTargetingSearchOptions(type, raw)).toEqual(expected);
+  ])('%s', (_case, type, raw, expected) => {
+    expect(metaTargetingSearchOptions(type, raw as CampaignServiceMetaTargetingSearch['options'])).toEqual(expected);
+  });
+});
+
+describe('metaTargetingSearchAllowed', () => {
+  const off = { interest: false, behavior: false, locale: false, region: false };
+  it.each<[MetaTargetingSearchType, keyof typeof off]>([
+    ['interest', 'interest'],
+    ['behavior', 'behavior'],
+    ['work_position', 'behavior'],
+    ['locale', 'locale'],
+    ['location', 'region'],
+  ])('%s follows the %s flag only', (type, flag) => {
+    expect(metaTargetingSearchAllowed(type, { ...off, [flag]: true })).toBe(true);
+    expect(metaTargetingSearchAllowed(type, { interest: true, behavior: true, locale: true, region: true, [flag]: false })).toBe(false);
   });
 });
 

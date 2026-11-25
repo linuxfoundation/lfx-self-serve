@@ -49,6 +49,7 @@ import { encodePathSegment } from '../helpers/url-validation';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
 import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
 import { withAdoptedMarker } from '@lfx-one/shared/utils/campaign-optimize.utils';
+import { metaTargetingSearchAllowed } from '@lfx-one/shared/utils/campaign-meta-detailed-targeting.utils';
 import { emailLinkDestinations, escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
@@ -902,16 +903,12 @@ export function canSearchMetaTargeting(): boolean {
 
 /** Whether a targeting search of `type` may be sent: the flag of the list its options fill. */
 export function canSearchMetaTargetingType(type: MetaTargetingSearchType): boolean {
-  switch (type) {
-    case 'interest':
-      return canSetMetaInterestTargeting();
-    case 'locale':
-      return canSetMetaLocaleTargeting();
-    case 'location':
-      return canSetMetaRegionTargeting();
-    default:
-      return canSetMetaBehaviorTargeting();
-  }
+  return metaTargetingSearchAllowed(type, {
+    interest: canSetMetaInterestTargeting(),
+    behavior: canSetMetaBehaviorTargeting(),
+    locale: canSetMetaLocaleTargeting(),
+    region: canSetMetaRegionTargeting(),
+  });
 }
 
 /**
