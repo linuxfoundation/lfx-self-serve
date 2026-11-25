@@ -490,6 +490,17 @@ export interface CommitteeReference {
 }
 
 /**
+ * Read-only SSO group name line shown in a group's settings
+ * @description `pending` is true when the group has no saved name yet and `value` is the "generated on save" placeholder
+ */
+export interface CommitteeSsoGroupNameDisplay {
+  /** The saved SSO group name, or the pending placeholder copy */
+  value: string;
+  /** Whether `value` is the placeholder because no name has been generated yet */
+  pending: boolean;
+}
+
+/**
  * Committee entity with complete details
  * @description Represents a committee/working group within a project with full metadata
  */

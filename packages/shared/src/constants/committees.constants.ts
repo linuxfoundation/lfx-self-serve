@@ -583,6 +583,13 @@ export const COMMITTEE_SETTINGS_FEATURES: CommitteeSettingsFeature[] = [
 ];
 
 /**
+ * Shown as the SSO group name when a public or SSO-enabled group has no saved name yet.
+ * The committee service generates the name on the next save, so this mirrors PCC's
+ * "(auto-generated on save)" copy rather than guessing a slug.
+ */
+export const SSO_GROUP_NAME_PENDING_LABEL = 'Generated when you save';
+
+/**
  * Permission level options for committee member ACL dropdowns.
  * Shared across add-member-dialog and member-form components.
  */
