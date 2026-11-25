@@ -423,8 +423,8 @@ export enum ServerFeatureFlag {
    *
    * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 DEPLOYED with
    * `LINKEDIN_ADS_TEXT_ADS_ENABLED` on, since campaign-service refuses the format with a 400 otherwise, and is only
-   * meaningful while the create cutover is on (`cutoverOwnsCreate`), since the legacy creator would make a single-image
-   * campaign instead. Off (the default), the create route refuses the format with a 400, never dropping it. A request
+   * meaningful while the create cutover and `LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING` are on (`canCreateWithBidding`):
+   * the legacy creator would make a single-image campaign instead, and a text create must carry a manual bid. Off (the default), the create route refuses the format with a 400, never dropping it. A request
    * field only, so flipping it back strands nothing. Same accepted values as the flags above.
    */
   CampaignServiceLinkedInTextAds = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS',

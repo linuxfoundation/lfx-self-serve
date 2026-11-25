@@ -9748,7 +9748,7 @@ export class CampaignController {
    *    configured, as before.
    *
    * 4. Every other key goes out as it came, which is safe only because `createCampaign` has already refused any key
-   *    outside the request's own top-level and variant fields (`linkedInConfigKeyRefusal`, #5764).
+   *    outside the request's own top-level, variant and text ad fields (`linkedInConfigKeyRefusal`, #5764).
    *
    * 5. A variant's ad name, description and call to action go out only as `compactLinkedInVariantFields` checked and
    *    compacted them (#5764 rows 16–17): the name normalized, the call to action upper-cased, a blank one dropped.

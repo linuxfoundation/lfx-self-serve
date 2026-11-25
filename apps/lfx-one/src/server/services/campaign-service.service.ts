@@ -924,11 +924,12 @@ export function canSetLinkedInCallToAction(): boolean {
 
 /**
  * Whether a LinkedIn create may be a Text Ads campaign (#5764 row 19, campaign-service #586). Needs the campaign-service
- * create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS`, which follows campaign-service's own
- * `LINKEDIN_ADS_TEXT_ADS_ENABLED`: campaign-service refuses the format while that is off, and the legacy creator ignores it.
+ * create path with bidding (`canCreateWithBidding`), since a text create must carry a manual bid, AND
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS`, which follows campaign-service's own `LINKEDIN_ADS_TEXT_ADS_ENABLED`:
+ * campaign-service refuses the format while that is off, and the legacy creator ignores it.
  */
 export function canSetLinkedInTextAds(): boolean {
-  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInTextAds);
+  return canCreateWithBidding() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInTextAds);
 }
 
 /**

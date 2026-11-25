@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LINKEDIN_AD_FORMATS, LINKEDIN_IMAGE_URN_PATTERN, LINKEDIN_TEXT_AD_LIMITS } from '../constants/campaign.constants';
+import { LINKEDIN_AD_FORMATS, LINKEDIN_IMAGE_URN_PATTERN, LINKEDIN_TEXT_AD_LIMITS, LINKEDIN_TEXT_AD_REQUEST_KEYS } from '../constants/campaign.constants';
 import type { LinkedInConfigKeyRefusal } from '../interfaces/campaign.interface';
 import { linkedInCreativeTextLength } from './campaign-linkedin.utils';
 
@@ -10,9 +10,6 @@ import { linkedInCreativeTextLength } from './campaign-linkedin.utils';
  * `internal/dispatch/linkedin_text_ads.go`, `ValidateTextAds` in `internal/platform/linkedin/text_ads.go`, #586), so a
  * create campaign-service would refuse is refused here first, with a field to point at.
  */
-
-/** The keys one text ad may carry, spelled exactly (`LinkedInTextAd`). */
-export const LINKEDIN_TEXT_AD_REQUEST_KEYS = ['headline', 'description', 'imageUrn', 'imageAssetId'] as const;
 
 function plainRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;

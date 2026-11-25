@@ -1,9 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LINKEDIN_GEO_URN_CORRECTIONS } from '../constants/campaign.constants';
+import { LINKEDIN_GEO_URN_CORRECTIONS, LINKEDIN_TEXT_AD_REQUEST_KEYS } from '../constants/campaign.constants';
 import type { LinkedInConfigKeyRefusal } from '../interfaces/campaign.interface';
-import { LINKEDIN_TEXT_AD_REQUEST_KEYS } from './campaign-linkedin-text-ads.utils';
 
 /**
  * The `linkedInConfig` keys a create may carry, spelled exactly (`LinkedInCampaignCreateRequest`). campaign-service

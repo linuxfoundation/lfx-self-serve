@@ -5432,13 +5432,18 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
-  /** LinkedIn Text Ads (#5764 row 19): the cutover and its own flag. */
+  /** LinkedIn Text Ads (#5764 row 19): the cutover, bidding (a text create needs a manual bid) and its own flag. */
   it.each([
-    [{ cutover: true, textAds: true }, true],
-    [{ cutover: true, textAds: false }, false],
-    [{ cutover: false, textAds: true }, false],
+    [{ cutover: true, bidding: true, textAds: true }, true],
+    [{ cutover: true, bidding: true, textAds: false }, false],
+    [{ cutover: true, bidding: false, textAds: true }, false],
+    [{ cutover: false, bidding: true, textAds: true }, false],
   ])('reports LinkedIn Text Ads (%o) as %s', async (flags, expected) => {
-    isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceLinkedInTextAds ? flags.textAds : flags.cutover));
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInTextAds) return flags.textAds;
+      if (flag === ServerFeatureFlag.CampaignServiceBidding) return flags.bidding;
+      return flags.cutover;
+    });
     proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
     try {
       expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInTextAdsEnabled).toBe(expected);

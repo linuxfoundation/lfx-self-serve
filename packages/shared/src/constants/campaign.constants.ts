@@ -869,6 +869,9 @@ export const LINKEDIN_TEXT_AD_LIMITS = {
   ads: 100,
 } as const;
 
+/** The keys one LinkedIn text ad may carry, spelled exactly (`LinkedInTextAd`). */
+export const LINKEDIN_TEXT_AD_REQUEST_KEYS = ['headline', 'description', 'imageUrn', 'imageAssetId'] as const;
+
 /** An Images-API image URN as campaign-service accepts it (`imageURNRE`, `internal/platform/linkedin/targeting.go`). */
 export const LINKEDIN_IMAGE_URN_PATTERN = /^urn:li:image:[A-Za-z0-9_-]+$/;
 
