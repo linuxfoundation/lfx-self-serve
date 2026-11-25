@@ -1,17 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { SHARE_KIT_MEMBER_CODES_ENV, SHARE_KIT_MEMBERSHIP_CACHE_MS } from '@lfx-one/shared/constants';
 import type { ShareKitContent } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
-const { resolveVerifiedUserEmailsMock, generateM2MTokenMock } = vi.hoisted(() => ({
+const { resolveVerifiedUserEmailsMock, generateM2MTokenMock, usernameMock } = vi.hoisted(() => ({
   resolveVerifiedUserEmailsMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
+  usernameMock: vi.fn(),
 }));
 
 vi.mock('../helpers/user-emails.helper', () => ({ resolveVerifiedUserEmails: resolveVerifiedUserEmailsMock }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: usernameMock }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -46,17 +49,55 @@ describe('readShareKitMemberCodes', () => {
 describe('ShareKitMemberOfferService.resolveOffer', () => {
   let resolveEligibility: Mock;
   let service: ShareKitMemberOfferService;
+  let now: number;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    now = 1_000_000;
+    usernameMock.mockReturnValue('jane');
     resolveEligibility = vi.fn();
     resolveVerifiedUserEmailsMock.mockResolvedValue(['jane@acme-motors.example']);
     generateM2MTokenMock.mockResolvedValue('m2m-token');
     service = new ShareKitMemberOfferService(
       { resolveEligibility } as unknown as NewsletterMemberBenefitService,
       {} as EmailVerificationService,
-      new Map([['example-summit-2027', code]])
+      new Map([['example-summit-2027', code]]),
+      () => now
     );
+  });
+
+  it('reads the codes on first use, after the environment has loaded', async () => {
+    const lazy = new ShareKitMemberOfferService({ resolveEligibility } as unknown as NewsletterMemberBenefitService, {} as EmailVerificationService);
+    process.env[SHARE_KIT_MEMBER_CODES_ENV] = JSON.stringify({ 'example-summit-2027': code });
+    try {
+      expect(await lazy.resolveOffer(request(false), kit)).toEqual({ status: 'sign_in' });
+    } finally {
+      delete process.env[SHARE_KIT_MEMBER_CODES_ENV];
+    }
+  });
+
+  it('reuses a recent membership answer for the same visitor, then looks again once it expires', async () => {
+    resolveEligibility.mockResolvedValue({
+      verified_emails: [],
+      match: { email: 'jane@acme-motors.example', b2b_org_uid: 'org-1', company_name: 'Acme Motors' },
+    });
+    await service.resolveOffer(request(true), kit);
+    now += SHARE_KIT_MEMBERSHIP_CACHE_MS - 1;
+    expect(await service.resolveOffer(request(true), kit)).toEqual({ status: 'eligible', code, companyName: 'Acme Motors' });
+    expect(resolveEligibility).toHaveBeenCalledTimes(1);
+    now += 2;
+    await service.resolveOffer(request(true), kit);
+    expect(resolveEligibility).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps answers per visitor and never reuses a failed lookup', async () => {
+    resolveVerifiedUserEmailsMock.mockRejectedValueOnce(new Error('auth-service down'));
+    expect(await service.resolveOffer(request(true), kit)).toEqual({ status: 'unavailable' });
+    resolveEligibility.mockResolvedValue({ verified_emails: [], match: null, denied_reason: 'not_member_company' });
+    expect(await service.resolveOffer(request(true), kit)).toEqual({ status: 'not_member' });
+    usernameMock.mockReturnValue('sam');
+    await service.resolveOffer(request(true), kit);
+    expect(resolveEligibility).toHaveBeenCalledTimes(2);
   });
 
   it('offers nothing when the kit has no member benefit', async () => {

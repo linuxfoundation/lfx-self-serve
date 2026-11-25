@@ -96,3 +96,12 @@ export const SHARE_KIT_MEMBER_OFFER_STATUSES = ['sign_in', 'not_member', 'eligib
  * Set from the deployment's secret store: codes never live in this public repo.
  */
 export const SHARE_KIT_MEMBER_CODES_ENV = 'SHARE_KIT_MEMBER_CODES';
+
+/**
+ * How long a signed-in visitor's membership answer is reused, in milliseconds. Membership rarely changes within
+ * minutes; a company that joins or leaves is reflected after at most this long.
+ */
+export const SHARE_KIT_MEMBERSHIP_CACHE_MS = 5 * 60 * 1000;
+
+/** Upper bound on remembered membership answers per process; the cache is emptied when it is reached. */
+export const SHARE_KIT_MEMBERSHIP_CACHE_MAX_ENTRIES = 5000;

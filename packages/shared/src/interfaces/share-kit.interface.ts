@@ -178,6 +178,12 @@ export interface ShareKitContent {
   memberBenefit?: ShareKitMemberBenefit;
 }
 
+/** A remembered membership answer for one user and membership: the member company's name, or null when not a member. */
+export interface ShareKitMembershipCacheEntry {
+  expiresAt: number;
+  companyName: string | null;
+}
+
 /** The share kit endpoint's response: the content, plus the member offer for this visitor when the kit has one. */
 export interface ShareKitResponse extends ShareKitContent {
   memberOffer?: ShareKitMemberOffer;
