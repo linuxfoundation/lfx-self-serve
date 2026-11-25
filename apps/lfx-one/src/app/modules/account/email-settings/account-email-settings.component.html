@@ -191,14 +191,22 @@
             @if (linkedConflict()) {
               <lfx-ui-note variant="warning" size="small" announce [label]="linkedSupportTitle" data-testid="account-email-settings-linked-support">
                 {{ linkedSupportDetail }}
-                <lfx-ui-button note-action variant="secondary" size="tiny" lfxOpenIntercom [intercomMessage]="linkedSupportMessage()"
+                <lfx-ui-button
+                  note-action
+                  variant="secondary"
+                  size="tiny"
+                  lfxOpenIntercom
+                  [intercomMessage]="linkedSupportMessage()"
+                  data-testid="account-email-settings-linked-support-button"
                   >Contact support</lfx-ui-button
                 >
               </lfx-ui-note>
             } @else if (showResendSupport()) {
               <lfx-ui-note variant="info" size="small" [label]="resendSupportTitle" data-testid="account-email-settings-resend-support">
                 {{ resendSupportMessage }}
-                <lfx-ui-button note-action variant="secondary" size="tiny" lfxOpenIntercom>Contact support</lfx-ui-button>
+                <lfx-ui-button note-action variant="secondary" size="tiny" lfxOpenIntercom data-testid="account-email-settings-resend-support-button"
+                  >Contact support</lfx-ui-button
+                >
               </lfx-ui-note>
             } @else {
               <lfx-ui-note variant="info" size="small" [label]="codeNotReceivedTitle" data-testid="account-email-settings-code-hint">

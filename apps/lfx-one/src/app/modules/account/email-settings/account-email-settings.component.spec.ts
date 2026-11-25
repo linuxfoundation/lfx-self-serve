@@ -13,7 +13,7 @@ import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AccountEmailSettingsComponent } from './account-email-settings.component';
@@ -32,7 +32,7 @@ const EMAILS: EmailManagementData = {
 class StateEmailSettingsComponent extends AccountEmailSettingsComponent {}
 
 describe('AccountEmailSettingsComponent', () => {
-  function setup(invite: string | null = 'ada@invites.example') {
+  function setup(invite: string | null = 'ada@invites.example', emails: EmailManagementData | null = EMAILS, inviteFails = false) {
     const closed = new Subject<boolean | undefined>();
     const open = vi.fn(() => ({ closed }));
     TestBed.configureTestingModule({
@@ -47,8 +47,8 @@ describe('AccountEmailSettingsComponent', () => {
           provide: UserService,
           useValue: {
             impersonating: signal(false),
-            getUserEmails: vi.fn(() => of(EMAILS)),
-            getMeetingInviteEmail: vi.fn(() => of({ email_id: invite ? 'e-1' : null, email: invite })),
+            getUserEmails: vi.fn(() => of(emails)),
+            getMeetingInviteEmail: vi.fn(() => (inviteFails ? throwError(() => new Error('down')) : of({ email_id: invite ? 'e-1' : null, email: invite }))),
           },
         },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
@@ -87,6 +87,14 @@ describe('AccountEmailSettingsComponent', () => {
     expect(work.deleteBlockedReason).toContain('Updating the meeting-invitation email');
   });
 
+  it('holds every Delete when it can’t tell which address gets invitations', async () => {
+    setup(null, EMAILS, true);
+    const fixture = TestBed.createComponent(StateEmailSettingsComponent);
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance['rows']()[1].deleteBlockedReason).toContain('Could not confirm your meeting-invitation email');
+  });
+
   it('asks in its own dialog before a delete, and deletes only on yes', async () => {
     const { open, closed } = setup();
     const fixture = TestBed.createComponent(StateEmailSettingsComponent);
@@ -119,6 +127,16 @@ describe('AccountEmailSettingsComponent', () => {
     expect(row('ada@invites.example').querySelector('[data-testid="account-email-settings-meeting-invites"]')).not.toBeNull();
     expect(row('ada@work.example').querySelector('[data-testid="account-email-settings-verified"]')?.textContent).toContain('Verified');
     expect(host.querySelector('[data-testid="account-email-settings-add-form"]')).not.toBeNull();
+  });
+
+  it('says when there are no addresses to list', async () => {
+    setup(null, null);
+    const fixture = TestBed.createComponent(AccountEmailSettingsComponent);
+    await fixture.whenStable();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="account-email-settings-none"]')?.textContent).toContain(
+      'No email addresses found.'
+    );
   });
 
   it('moves the “No code yet?” hint into a note with a Contact support button', async () => {

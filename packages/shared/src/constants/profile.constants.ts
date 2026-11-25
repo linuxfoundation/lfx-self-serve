@@ -393,7 +393,6 @@ export const ACCOUNT_IDENTITIES_COPY = {
   emailProviderDescription: 'Add and verify an email address you use for open source work',
 } as const;
 
-/** Copy for the Account & Settings Linux.com email page (#6075). `{domain}` is the alias domain the server reports. */
 /** Copy of Account & Settings › Email settings (#6079). The add and code steps keep the hub's copy. */
 export const ACCOUNT_EMAIL_SETTINGS_COPY = {
   heading: 'Email Addresses',
@@ -406,6 +405,7 @@ export const ACCOUNT_EMAIL_SETTINGS_COPY = {
   deleteConfirm: 'Delete email address',
 } as const;
 
+/** Copy for the Account & Settings Linux.com email page (#6075). `{domain}` is the alias domain the server reports. */
 export const ACCOUNT_LINUX_EMAIL_COPY = {
   subtitle: 'A personal @{domain} address that forwards to an inbox you choose. It’s a one-time add-on for Individual Supporters.',
   claimNote: 'Your add-on is active. Pick your alias and where its email should go. You can’t change the alias later.',
