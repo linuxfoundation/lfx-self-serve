@@ -12,6 +12,7 @@ import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.ut
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
 import { correctLinkedInGeoTargets, linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
 import { linkedInGeoSearchLocations, linkedInGeoSearchQueryRefusal } from '@lfx-one/shared/utils/campaign-linkedin-geo.utils';
+import { linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
 import { linkedInTextAdAssetField, linkedInTextAdsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-text-ads.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
 import {
@@ -421,6 +422,7 @@ import {
   canChooseLinkedInAdAccount,
   canEditLinkedInTargeting,
   canSetLinkedInCallToAction,
+  canSetLinkedInTargeting,
   canSetLinkedInTextAds,
   canSetLinkedInDailyCap,
   canSetLinkedInVariantCopy,
@@ -1276,10 +1278,10 @@ export class CampaignController {
       // selection resolves to. Adding needs a name-to-URN lookup campaign-service does not offer yet
       // (linuxfoundation/lfx-v2-campaign-service#585), so a URN the ConfigMap does not already carry
       // is never forwarded: the Implement tab cannot produce one, and a direct caller must not.
-      const linkedInTargetingRefusal = this.linkedInTargetingEditRefusal(body);
-      if (linkedInTargetingRefusal !== null) {
+      const linkedInTargetingEditRefused = this.linkedInTargetingEditRefusal(body);
+      if (linkedInTargetingEditRefused !== null) {
         next(
-          ServiceValidationError.forField(LINKEDIN_TARGETING_PROFILE_EDIT_FIELD, linkedInTargetingRefusal, {
+          ServiceValidationError.forField(LINKEDIN_TARGETING_PROFILE_EDIT_FIELD, linkedInTargetingEditRefused, {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
@@ -1363,6 +1365,16 @@ export class CampaignController {
       const linkedInTextAdsRefused = linkedInTextAdsRefusal(body?.linkedInConfig, canSetLinkedInTextAds());
       if (linkedInTextAdsRefused !== null) {
         throw ServiceValidationError.forField(linkedInTextAdsRefused.field, linkedInTextAdsRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // LinkedIn custom targeting (#5764 rows 8–11): refused, never dropped, while this deployment cannot send it, and
+      // held to campaign-service's rules against the same `employerExclusions` `buildLinkedInConfig` sends. See
+      // `linkedInTargetingRefusal`.
+      const linkedInTargetingRefused = linkedInTargetingRefusal(body?.linkedInConfig, canSetLinkedInTargeting(), getLinkedInConfig().employerExclusions);
+      if (linkedInTargetingRefused !== null) {
+        throw ServiceValidationError.forField(linkedInTargetingRefused.field, linkedInTargetingRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });
@@ -9758,6 +9770,9 @@ export class CampaignController {
    *
    * 7. `format` and `textAds` (#5764 row 19) go out as they came, once `linkedInTextAdsRefusal` passed them:
    *    campaign-service normalizes each text ad's copy itself, as it does a variant's.
+   *
+   * 8. `targeting` (#5764 rows 8–11) goes out as it came, once `linkedInTargetingRefusal` passed it against the same
+   *    `employerExclusions` sent here: campaign-service drops duplicates and merges those exclusions itself.
    */
   private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;

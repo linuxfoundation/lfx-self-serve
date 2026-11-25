@@ -31,6 +31,7 @@ const LINKEDIN_CONFIG_REQUEST_KEYS = [
   'targetingProfileEdit',
   'format',
   'textAds',
+  'targeting',
 ] as const;
 
 /** The `linkedInConfig.variants[i]` keys a create may carry, spelled exactly (`LinkedInCreativeVariant`). */
@@ -62,7 +63,7 @@ function keyRefusalIn(record: Record<string, unknown>, known: readonly string[],
  * past every check here, and a differently cased known key past the checks that read it by exact spelling. Now any top-level
  * key outside {@link LINKEDIN_CONFIG_REQUEST_KEYS}, a variant key outside {@link LINKEDIN_VARIANT_REQUEST_KEYS}, or a text
  * ad key outside `LINKEDIN_TEXT_AD_REQUEST_KEYS` (#5764 row 19) is refused whatever the flags. Only those levels are
- * walked: the keys inside `bidding`, `geoTargets[i]` and `targetingProfileEdit` are left to the checks that read them. A
+ * walked: the keys inside `bidding`, `geoTargets[i]`, `targetingProfileEdit` and `targeting` are left to the checks that read them. A
  * variant or text ad that is not an object is left to the checks that read it, as before.
  */
 export function linkedInConfigKeyRefusal(raw: unknown): LinkedInConfigKeyRefusal | null {

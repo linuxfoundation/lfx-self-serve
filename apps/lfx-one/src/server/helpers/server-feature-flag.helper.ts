@@ -430,6 +430,19 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInTextAds = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS',
 
   /**
+   * LinkedIn custom targeting (#5764 rows 8–11): accept `linkedInConfig.targeting`, the campaign's own include clauses
+   * and exclusions in place of the configured targeting profile.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `LINKEDIN_ADS_TARGETING_ENABLED` on,
+   * since campaign-service refuses the field with a 400 otherwise, and is only meaningful while the create cutover is on
+   * (`cutoverOwnsCreate`): the legacy creator would target the profile instead. Off (the default), the create route
+   * refuses the field with a 400, never dropping it. Keep it off in production until the paused-campaign probe
+   * (linuxfoundation/lfx-v2-campaign-service#585) has passed. A request field only, so flipping it back strands nothing.
+   * Same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING',
+
+  /**
    * Offers Meta ad set audience targeting on the Implement tab (#5905), sent as `metaConfig.targeting`:
    * age range, gender and Advantage+ audience to every campaign manager, and included/excluded custom
    * audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only to a caller holding

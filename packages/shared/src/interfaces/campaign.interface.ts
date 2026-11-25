@@ -2352,6 +2352,20 @@ export interface LinkedInCampaignCreateRequest {
   format?: LinkedInAdFormat;
   /** The text ads of a `format: 'text'` create, 1 to 100. Only with that format. */
   textAds?: LinkedInTextAd[];
+  /**
+   * The campaign's own LinkedIn targeting (#5764 rows 8–11, campaign-service #552). Set, it REPLACES `targetingProfile`,
+   * so it is refused with `targetingProfileEdit`. Only while `linkedInTargetingEnabled`.
+   */
+  targeting?: LinkedInTargeting;
+}
+
+/**
+ * Custom LinkedIn targeting in campaign-service's shape (`linkedin.Targeting`): `include` clauses are ANDed (after the
+ * geo clause) and the facets inside one clause are ORed; `exclude` facets are ORed. Each facet maps to LinkedIn URNs.
+ */
+export interface LinkedInTargeting {
+  include: Record<string, string[]>[];
+  exclude?: Record<string, string[]>;
 }
 
 /** A `linkedInConfig` the create route refuses for its keys (#5764): the field to name, and why. Never echoes a caller key. */
@@ -7832,6 +7846,12 @@ export interface CampaignListResult {
    * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS`, which follows campaign-service's own `LINKEDIN_ADS_TEXT_ADS_ENABLED`.
    */
   linkedInTextAdsEnabled: boolean;
+  /**
+   * Whether a LinkedIn create may carry its own `targeting` (#5764 rows 8–11). Needs the campaign-service create path
+   * AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING`, which follows campaign-service's own
+   * `LINKEDIN_ADS_TARGETING_ENABLED`.
+   */
+  linkedInTargetingEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.

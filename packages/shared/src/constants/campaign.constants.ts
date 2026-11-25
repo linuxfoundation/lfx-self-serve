@@ -872,6 +872,53 @@ export const LINKEDIN_TEXT_AD_LIMITS = {
 /** The keys one LinkedIn text ad may carry, spelled exactly (`LinkedInTextAd`). */
 export const LINKEDIN_TEXT_AD_REQUEST_KEYS = ['headline', 'description', 'imageUrn', 'imageAssetId'] as const;
 
+/** The field a LinkedIn targeting refusal names (#5764 rows 8–11). */
+export const LINKEDIN_TARGETING_FIELD = 'linkedInConfig.targeting';
+
+/**
+ * LinkedIn custom targeting limits (#5764 rows 8–11), campaign-service's `MaxTargetingClauses`, `maxFacetValues` and
+ * `maxEmployerFacetValues` (`internal/platform/linkedin/targeting_criteria.go`, #552): include clauses, distinct values
+ * per facet, and distinct employers (by id) per employers list, including the merged `employerExclusions`.
+ */
+export const LINKEDIN_TARGETING_LIMITS = {
+  clauses: 10,
+  facetValues: 100,
+  employerValues: 200,
+} as const;
+
+/** LinkedIn's nine company-size buckets, campaign-service's `staffCountRangeValues`: the only `staffCountRanges` values. */
+export const LINKEDIN_STAFF_COUNT_RANGES = [
+  'urn:li:staffCountRange:(1,1)',
+  'urn:li:staffCountRange:(2,10)',
+  'urn:li:staffCountRange:(11,50)',
+  'urn:li:staffCountRange:(51,200)',
+  'urn:li:staffCountRange:(201,500)',
+  'urn:li:staffCountRange:(501,1000)',
+  'urn:li:staffCountRange:(1001,5000)',
+  'urn:li:staffCountRange:(5001,10000)',
+  'urn:li:staffCountRange:(10001,2147483647)',
+] as const;
+
+/**
+ * The facets `linkedInConfig.targeting` accepts, campaign-service's `targetingFacets`: each value's shape (a pattern,
+ * or `LINKEDIN_STAFF_COUNT_RANGES`), whether LinkedIn takes it only under `include`, and whether it is an employer list
+ * (compared by id, capped at `LINKEDIN_TARGETING_LIMITS.employerValues`). Ids are numeric with no leading zero.
+ */
+export const LINKEDIN_TARGETING_FACETS: Readonly<Record<string, { pattern: RegExp | null; includeOnly: boolean }>> = {
+  skills: { pattern: /^urn:li:skill:[1-9][0-9]{0,18}$/, includeOnly: false },
+  groups: { pattern: /^urn:li:group:[1-9][0-9]{0,18}$/, includeOnly: true },
+  industries: { pattern: /^urn:li:industry:[1-9][0-9]{0,18}$/, includeOnly: false },
+  titles: { pattern: /^urn:li:title:[1-9][0-9]{0,18}$/, includeOnly: false },
+  seniorities: { pattern: /^urn:li:seniority:[1-9][0-9]{0,18}$/, includeOnly: false },
+  jobFunctions: { pattern: /^urn:li:function:[1-9][0-9]{0,18}$/, includeOnly: false },
+  employers: { pattern: /^urn:li:(organization|company):[1-9][0-9]{0,18}$/, includeOnly: false },
+  staffCountRanges: { pattern: null, includeOnly: false },
+  interfaceLocales: { pattern: /^urn:li:locale:[a-z]{2}_[A-Z]{2}$/, includeOnly: true },
+  interests: { pattern: /^urn:li:interest:[1-9][0-9]{0,18}$/, includeOnly: false },
+  audienceMatchingSegments: { pattern: /^urn:li:adSegment:[1-9][0-9]{0,18}$/, includeOnly: false },
+  dynamicSegments: { pattern: /^urn:li:adSegment:[1-9][0-9]{0,18}$/, includeOnly: false },
+};
+
 /** An Images-API image URN as campaign-service accepts it (`imageURNRE`, `internal/platform/linkedin/targeting.go`). */
 export const LINKEDIN_IMAGE_URN_PATTERN = /^urn:li:image:[A-Za-z0-9_-]+$/;
 
