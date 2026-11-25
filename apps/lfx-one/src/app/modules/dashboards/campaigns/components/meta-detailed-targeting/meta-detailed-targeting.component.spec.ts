@@ -12,9 +12,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MetaDetailedTargetingComponent } from './meta-detailed-targeting.component';
 
-// The rules (which lists show, what is searched, which rows can be picked, the caps, the failure text) are tested in
-// campaign-meta-detailed-targeting.utils.spec.ts; this spec only checks the wiring: a typed query reaches the search
-// after the debounce, a picked row reaches the model and its chip removes it, a failed search shows why.
+// The rules (which boxes show, what is searched, which rows can be picked and into which list, the caps, the labels,
+// the failure text) are tested in campaign-meta-detailed-targeting.utils.spec.ts; this spec only checks the wiring: a
+// typed query reaches the search after the debounce, a picked row reaches the model and its chip removes it, a
+// location row lands in the list its type names, a failed search shows why.
 const RESULT: MetaTargetingSearchResult = {
   type: 'interest',
   options: [{ id: '6003', name: 'Open source', path: ['Interests', 'Technology'] }],
@@ -31,11 +32,12 @@ describe('MetaDetailedTargetingComponent', () => {
   const lists = (): { key: string; choices: { id: string; disabled: boolean }[] }[] =>
     (fixture.componentInstance as unknown as { lists(): { key: string; choices: { id: string; disabled: boolean }[] }[] }).lists();
 
-  async function searchInterests(text: string): Promise<void> {
-    call('onSearch', 'interest', { query: text, originalEvent: new Event('input') });
+  async function search(type: MetaTargetingSearchType, text: string): Promise<void> {
+    call('onSearch', type, { query: text, originalEvent: new Event('input') });
     await vi.advanceTimersByTimeAsync(META_TARGETING_SEARCH_DEBOUNCE_MS);
     fixture.detectChanges();
   }
+  const searchInterests = (text: string): Promise<void> => search('interest', text);
 
   beforeEach(async () => {
     vi.useFakeTimers();
@@ -48,6 +50,8 @@ describe('MetaDetailedTargetingComponent', () => {
     fixture.componentRef.setInput('projectSlug', 'tlf');
     fixture.componentRef.setInput('interestEnabled', true);
     fixture.componentRef.setInput('behaviorEnabled', true);
+    fixture.componentRef.setInput('localeEnabled', true);
+    fixture.componentRef.setInput('regionEnabled', true);
     fixture.componentRef.setInput('picks', emptyMetaDetailedTargetingPicks());
     fixture.detectChanges();
   });
@@ -63,6 +67,8 @@ describe('MetaDetailedTargetingComponent', () => {
       ['interests', ['6003']],
       ['behaviors', []],
       ['workPositions', []],
+      ['locales', []],
+      ['locations', []],
     ]);
   });
 
@@ -72,12 +78,34 @@ describe('MetaDetailedTargetingComponent', () => {
     await searchInterests('open source');
     call('onSelect', lists()[0], { value: lists()[0].choices[0], originalEvent: new Event('click') });
     fixture.detectChanges();
-    expect(picks).toEqual({ interests: [{ id: '6003', name: 'Open source' }], behaviors: [], workPositions: [] });
+    expect(picks).toEqual({ ...emptyMetaDetailedTargetingPicks(), interests: [{ id: '6003', name: 'Open source' }] });
 
     query('meta-detailed-targeting-interests-remove-6003')?.click();
     fixture.detectChanges();
     expect(picks).toEqual(emptyMetaDetailedTargetingPicks());
     expect(query('meta-detailed-targeting-interests-6003')).toBeNull();
+  });
+
+  it('puts a picked location row in the list its type names, with a chip that says which and removes it', async () => {
+    let picks: MetaDetailedTargetingPicks | null = null;
+    fixture.componentInstance.picks.subscribe((value) => (picks = value));
+    searchMetaTargetingOptions.mockReturnValue(
+      of<MetaTargetingSearchResult>({
+        type: 'location',
+        options: [{ id: '2420379', name: 'Austin', path: [], locationType: 'city', countryCode: 'US', region: 'Texas' }],
+      })
+    );
+    await search('location', 'austin');
+    expect(searchMetaTargetingOptions).toHaveBeenCalledWith('tlf', 'location', 'austin');
+    const box = lists()[4];
+    call('onSelect', box, { value: box.choices[0], originalEvent: new Event('click') });
+    fixture.detectChanges();
+    expect(picks).toEqual({ ...emptyMetaDetailedTargetingPicks(), cities: [{ id: '2420379', name: 'Austin, Texas, US' }] });
+    expect(query('meta-detailed-targeting-cities-2420379')?.textContent).toContain('Austin, Texas, US (city)');
+
+    query('meta-detailed-targeting-cities-remove-2420379')?.click();
+    fixture.detectChanges();
+    expect(picks).toEqual(emptyMetaDetailedTargetingPicks());
   });
 
   it('says why a search failed, under its own box, until the text is shortened', async () => {

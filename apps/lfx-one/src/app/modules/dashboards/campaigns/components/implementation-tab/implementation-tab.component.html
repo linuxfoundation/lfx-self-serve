@@ -4852,13 +4852,15 @@
             </div>
           }
 
-          <!-- Interests, behaviors and job titles (#5904 row 4), each list only on its own explicit yes. -->
+          <!-- Interests, behaviors, job titles and languages (#5904 row 4), regions and cities (row 6), each only on its own explicit yes. -->
           @if (metaDetailedTargetingAvailable()) {
             <lfx-meta-detailed-targeting
               class="mb-4 block"
               [projectSlug]="activeFoundationSlug()"
               [interestEnabled]="metaInterestTargetingEnabled() === true"
               [behaviorEnabled]="metaBehaviorTargetingEnabled() === true"
+              [localeEnabled]="metaLocaleTargetingEnabled() === true"
+              [regionEnabled]="metaRegionTargetingEnabled() === true"
               [picks]="metaDetailedTargeting()"
               (picksChange)="onMetaDetailedTargetingChange($event)"
               data-testid="implementation-meta-detailed-targeting" />

@@ -17,7 +17,8 @@ import {
   META_MAX_USER_OS,
   META_OS_TARGETING_OFF_MESSAGE,
   META_REGION_TARGETING_OFF_MESSAGE,
-  META_TARGETING_KINDS,
+  META_TARGETING_BOXES,
+  META_TARGETING_PICK_KEYS,
   META_TARGETING_QUERY_MAX_LENGTH,
   META_TARGETING_QUERY_MIN_LENGTH,
   META_TARGETING_SEARCH_BUSY_MESSAGE,
@@ -35,12 +36,15 @@ import type {
   MetaConfigRefusal,
   MetaDetailedTargeting,
   MetaDetailedTargetingBlockInput,
+  MetaDetailedTargetingChoiceView,
+  MetaDetailedTargetingEnabled,
+  MetaDetailedTargetingListView,
   MetaDetailedTargetingPicks,
   MetaLocationType,
   MetaTargetingFlags,
-  MetaTargetingKind,
+  MetaTargetingBox,
   MetaTargetingPick,
-  MetaTargetingSearchChoice,
+  MetaTargetingPickKey,
   MetaTargetingSearchOption,
   MetaTargetingSearchType,
   MetaUserOsValue,
@@ -212,7 +216,8 @@ function isMetaLocationType(value: unknown): value is MetaLocationType {
 
 /**
  * campaign-service's targeting search options, camel-cased for the picker. An option whose id is not one a create
- * accepts (digits, no leading zero) cannot be sent, so it is dropped rather than offered, and so is a `location`
+ * accepts (digits, no leading zero; for a `locale`, also a safe integer, as it is sent as a number) cannot be sent, so
+ * it is dropped rather than offered, and so is a `location`
  * row that is neither a region nor a city. A repeat is offered once: by id, or for `location` by type and id, since a
  * region and a city may share a key (campaign-service#671). A nameless option reads as its id.
  */
@@ -224,6 +229,8 @@ export function metaTargetingSearchOptions(type: MetaTargetingSearchType, raw: C
   for (const o of raw ?? []) {
     const id = o?.id;
     if (typeof id !== 'string' || !META_CUSTOM_AUDIENCE_ID_PATTERN.test(id)) continue;
+    // A language is sent as a number, so an id past Number.MAX_SAFE_INTEGER (it would round) cannot be sent.
+    if (type === 'locale' && !Number.isSafeInteger(Number(id))) continue;
     const locationType = type === 'location' ? o.location_type : undefined;
     if (type === 'location' && !isMetaLocationType(locationType)) continue;
     const key = `${locationType ?? ''}:${id}`;
@@ -254,7 +261,7 @@ export function metaTargetingSearchOptions(type: MetaTargetingSearchType, raw: C
 
 /** No picks in any list: a fresh object each time, so one caller's edit never reaches another's. */
 export function emptyMetaDetailedTargetingPicks(): MetaDetailedTargetingPicks {
-  return { interests: [], behaviors: [], workPositions: [] };
+  return { interests: [], behaviors: [], workPositions: [], locales: [], regions: [], cities: [] };
 }
 
 /**
@@ -282,9 +289,12 @@ export function metaTargetingSearchAllowed(
   }
 }
 
-/** The lists the picker shows for this deployment: interests on the interest flag, behaviors and job titles on the behavior flag. */
-export function metaTargetingKindsShown(flags: Pick<MetaTargetingFlags, 'interest' | 'behavior'>): MetaTargetingKind[] {
-  return META_TARGETING_KINDS.filter((kind) => (kind.type === 'interest' ? flags.interest : flags.behavior));
+/**
+ * The search boxes the picker shows for this deployment: each on the flag of the lists it fills (the same map as
+ * {@link metaTargetingSearchAllowed}), so languages show on the locale flag and the location box on the region flag.
+ */
+export function metaTargetingBoxesShown(flags: Pick<MetaTargetingFlags, 'interest' | 'behavior' | 'locale' | 'region'>): MetaTargetingBox[] {
+  return META_TARGETING_BOXES.filter((box) => metaTargetingSearchAllowed(box.type, flags));
 }
 
 /**
@@ -296,10 +306,29 @@ export function metaTargetingSearchQuery(raw: string): string {
   return metaTargetingQueryRefusal(META_TARGETING_SEARCH_TYPES[0], query) === null ? query : '';
 }
 
-/** `picks` with `option` added at the end; the same array when it is already there, the list is full, or its id is not a Meta id. */
-export function metaTargetingPicksWith(picks: MetaTargetingPick[], option: Pick<MetaTargetingSearchOption, 'id' | 'name'>): MetaTargetingPick[] {
+/** At most this many distinct picks in `list`, as campaign-service caps the field it fills. */
+function pickListMax(list: MetaTargetingPickKey): number {
+  if (list === 'locales') return META_MAX_LOCALES;
+  if (list === 'regions' || list === 'cities') return META_MAX_GEO_LOCATIONS;
+  return META_MAX_DETAILED_TARGETING_IDS;
+}
+
+/** Whether `id` can be sent in `list`: a Meta id (digits, no leading zero), and for a language one that stays exact as a number. */
+function pickIdAccepted(list: MetaTargetingPickKey, id: string): boolean {
+  return META_CUSTOM_AUDIENCE_ID_PATTERN.test(id) && (list !== 'locales' || Number.isSafeInteger(Number(id)));
+}
+
+/**
+ * `picks` (the list `list`) with `option` added at the end; the same array when it is already there, the list is at
+ * its cap, or its id cannot be sent in that list.
+ */
+export function metaTargetingPicksWith(
+  picks: MetaTargetingPick[],
+  option: Pick<MetaTargetingSearchOption, 'id' | 'name'>,
+  list: MetaTargetingPickKey
+): MetaTargetingPick[] {
   const id = option.id.trim();
-  if (!META_CUSTOM_AUDIENCE_ID_PATTERN.test(id) || picks.length >= META_MAX_DETAILED_TARGETING_IDS || picks.some((pick) => pick.id === id)) return picks;
+  if (!pickIdAccepted(list, id) || picks.length >= pickListMax(list) || picks.some((pick) => pick.id === id)) return picks;
   return [...picks, { id, name: option.name.trim() || id }];
 }
 
@@ -308,11 +337,75 @@ export function metaTargetingPicksWithout(picks: MetaTargetingPick[], id: string
   return picks.filter((pick) => pick.id !== id);
 }
 
-/** The search rows as the picker lists them: an already-picked row, or any row once the list is full, is shown but disabled. */
-export function metaTargetingSearchChoices(options: MetaTargetingSearchOption[], picks: MetaTargetingPick[]): MetaTargetingSearchChoice[] {
-  const picked = new Set(picks.map((pick) => pick.id));
-  const full = picks.length >= META_MAX_DETAILED_TARGETING_IDS;
-  return options.map((option) => ({ ...option, disabled: full || picked.has(option.id) }));
+/** The list a search row of `box` fills: the box's own, or for the location box `regions` or `cities` by the row's type; `null` for neither. */
+export function metaTargetingPickList(box: MetaTargetingBox, option: Pick<MetaTargetingSearchOption, 'locationType'>): MetaTargetingPickKey | null {
+  if (box.type !== 'location') return box.lists[0] ?? null;
+  if (option.locationType === 'region') return 'regions';
+  if (option.locationType === 'city') return 'cities';
+  return null;
+}
+
+/** Where a location row is: the region a city is in, then the country code, e.g. "Texas, US"; `''` when Meta gives neither. */
+function locationPlace(option: Pick<MetaTargetingSearchOption, 'locationType' | 'region' | 'countryCode'>): string {
+  return [option.locationType === 'city' ? option.region : undefined, option.countryCode].filter((part) => part !== undefined && part !== '').join(', ');
+}
+
+/** A search row's secondary line: a location's type and place ("City · Texas, US"), else the taxonomy path ("Interests › Technology"). */
+export function metaTargetingChoiceDetail(option: MetaTargetingSearchOption): string {
+  if (option.locationType === undefined) return option.path.join(' › ');
+  const type = option.locationType === 'region' ? 'Region' : 'City';
+  const place = locationPlace(option);
+  return place === '' ? type : `${type} · ${place}`;
+}
+
+/**
+ * `picks` with a search row of `box` added to the list it fills ({@link metaTargetingPickList}); the same object when
+ * nothing changes. A location's name keeps its place ("Austin, Texas, US"), so its chip still says which one after a restore.
+ */
+export function metaTargetingPicksAdd(picks: MetaDetailedTargetingPicks, box: MetaTargetingBox, option: MetaTargetingSearchOption): MetaDetailedTargetingPicks {
+  const list = metaTargetingPickList(box, option);
+  if (list === null) return picks;
+  const place = option.locationType === undefined ? '' : locationPlace(option);
+  const name = place === '' ? option.name : `${option.name.trim()}, ${place}`;
+  const next = metaTargetingPicksWith(picks[list], { id: option.id, name }, list);
+  return next === picks[list] ? picks : { ...picks, [list]: next };
+}
+
+/**
+ * The search rows as `box` lists them, each with its secondary line: a row is shown but disabled when it is already
+ * picked, when the list it fills is at its cap, or when it fills no list.
+ */
+export function metaTargetingBoxChoices(
+  box: MetaTargetingBox,
+  options: MetaTargetingSearchOption[],
+  picks: MetaDetailedTargetingPicks
+): MetaDetailedTargetingChoiceView[] {
+  return options.map((option) => {
+    const list = metaTargetingPickList(box, option);
+    const listed = list === null ? [] : picks[list];
+    const disabled = list === null || listed.length >= box.max || listed.some((pick) => pick.id === option.id);
+    return { ...option, disabled, pathLabel: metaTargetingChoiceDetail(option) };
+  });
+}
+
+/**
+ * What `box` shows of the picks: one chip per pick of each list it fills (a region or city chip says which), whether
+ * every one of those lists is at its cap, and its heading with the count, e.g. "Languages (2 of 50)" or
+ * "Regions and cities (1 of 25 regions, 0 of 25 cities)".
+ */
+export function metaTargetingBoxPicks(
+  box: MetaTargetingBox,
+  picks: MetaDetailedTargetingPicks
+): Pick<MetaDetailedTargetingListView, 'chips' | 'full' | 'countLabel'> {
+  const chips = box.lists.flatMap((list) =>
+    picks[list].map((pick) => {
+      const label = list === 'regions' || list === 'cities' ? `${pick.name} (${list === 'regions' ? 'region' : 'city'})` : pick.name;
+      return { list, id: pick.id, label };
+    })
+  );
+  const full = box.lists.every((list) => picks[list].length >= box.max);
+  const counts = box.lists.map((list) => (box.lists.length === 1 ? `${picks[list].length} of ${box.max}` : `${picks[list].length} of ${box.max} ${list}`));
+  return { chips, full, countLabel: `${box.label} (${counts.join(', ')})` };
 }
 
 /** What a failed targeting search tells the user, from its HTTP status (`0` when there is none). */
@@ -334,21 +427,37 @@ export function metaTargetingSearchEmptyMessage(refused: boolean, pending: boole
   return META_TARGETING_SEARCH_NO_MATCH_MESSAGE;
 }
 
-/** Which flag each list needs: interests the interest flag, behaviors and job titles the behavior flag. */
-function kindFlag(kind: MetaTargetingKind, interestEnabled: boolean | null, behaviorEnabled: boolean | null): boolean | null {
-  return kind.type === 'interest' ? interestEnabled : behaviorEnabled;
+/** Which capability answer each list needs: interests the interest flag, behaviors and job titles the behavior flag, languages the locale flag, regions and cities the region flag. */
+function pickListFlag(list: MetaTargetingPickKey, enabled: MetaDetailedTargetingEnabled): boolean | null {
+  switch (list) {
+    case 'interests':
+      return enabled.interest;
+    case 'behaviors':
+    case 'workPositions':
+      return enabled.behavior;
+    case 'locales':
+      return enabled.locale;
+    case 'regions':
+    case 'cities':
+      return enabled.region;
+    default: {
+      const unmapped: never = list;
+      return unmapped;
+    }
+  }
 }
 
 /**
  * The picks a saved draft carries, or `undefined` when it carries none or not as a record (a draft saved before row
- * 4). The draft is persisted JSON, so each list keeps only well-formed picks: a Meta id and a string name,
- * de-duplicated in first-seen order and capped at {@link META_MAX_DETAILED_TARGETING_IDS}.
+ * 4). The draft is persisted JSON, so each list keeps only well-formed picks: an id that list can send and a string
+ * name, de-duplicated in first-seen order and capped as the list is. A list a draft predates (languages, regions,
+ * cities) reads as empty.
  */
 export function metaDetailedTargetingPicksFromDraft(raw: unknown): MetaDetailedTargetingPicks | undefined {
   const record = metaConfigRecord(raw);
   if (record === null || record === undefined) return undefined;
   const picks = emptyMetaDetailedTargetingPicks();
-  for (const { key } of META_TARGETING_KINDS) {
+  for (const key of META_TARGETING_PICK_KEYS) {
     const list = record[key];
     if (!Array.isArray(list)) continue;
     for (const item of list) {
@@ -356,7 +465,7 @@ export function metaDetailedTargetingPicksFromDraft(raw: unknown): MetaDetailedT
       const id = entry?.['id'];
       const name = entry?.['name'];
       if (typeof id !== 'string' || typeof name !== 'string') continue;
-      picks[key] = metaTargetingPicksWith(picks[key], { id, name });
+      picks[key] = metaTargetingPicksWith(picks[key], { id, name }, key);
     }
   }
   return picks;
@@ -364,34 +473,37 @@ export function metaDetailedTargetingPicksFromDraft(raw: unknown): MetaDetailedT
 
 /** A copy of `picks`, so the parent's draft never holds a live view of the tab's signal. */
 export function copyMetaDetailedTargetingPicks(picks: MetaDetailedTargetingPicks): MetaDetailedTargetingPicks {
-  return { interests: [...picks.interests], behaviors: [...picks.behaviors], workPositions: [...picks.workPositions] };
+  const out = emptyMetaDetailedTargetingPicks();
+  for (const key of META_TARGETING_PICK_KEYS) out[key] = [...picks[key]];
+  return out;
+}
+
+/** Language picks' ids as the locale keys a create sends: numbers, only for ids that are exact whole numbers above zero. */
+export function metaLocaleKeys(ids: readonly string[]): number[] {
+  return ids.filter((id) => pickIdAccepted('locales', id.trim())).map((id) => Number(id.trim()));
 }
 
 /**
- * The detailed fields a Meta create sends, or `null` when none: the ids of each list whose flag is an explicit yes.
- * A list whose flag is not a yes is never sent; {@link metaDetailedTargetingBlock} holds Create while it has picks.
+ * The detailed fields a Meta create sends, or `null` when none: the ids of each list whose flag is an explicit yes,
+ * languages as numbers ({@link metaLocaleKeys}), regions and cities as their own lists. A list whose flag is not a
+ * yes is never sent; {@link metaDetailedTargetingBlock} holds Create while it has picks.
  */
-export function metaDetailedTargetingForCreate(
-  picks: MetaDetailedTargetingPicks,
-  interestEnabled: boolean | null,
-  behaviorEnabled: boolean | null
-): MetaDetailedTargeting | null {
+export function metaDetailedTargetingForCreate(picks: MetaDetailedTargetingPicks, enabled: MetaDetailedTargetingEnabled): MetaDetailedTargeting | null {
   const out: MetaDetailedTargeting = {};
-  for (const kind of META_TARGETING_KINDS) {
-    if (kindFlag(kind, interestEnabled, behaviorEnabled) === true) out[kind.key] = picks[kind.key].map((pick) => pick.id);
+  for (const key of META_TARGETING_PICK_KEYS) {
+    if (pickListFlag(key, enabled) !== true) continue;
+    const ids = picks[key].map((pick) => pick.id);
+    if (key === 'locales') out.locales = metaLocaleKeys(ids);
+    else out[key] = ids;
   }
   return compactMetaDetailedTargeting(out);
 }
 
 /** `picks` with every list this deployment answered no to emptied: the Clear past an `unsupported` block, whose lists are hidden. An unanswered list is kept, since it may yet be sendable. */
-export function metaDetailedTargetingPicksSendable(
-  picks: MetaDetailedTargetingPicks,
-  interestEnabled: boolean | null,
-  behaviorEnabled: boolean | null
-): MetaDetailedTargetingPicks {
+export function metaDetailedTargetingPicksSendable(picks: MetaDetailedTargetingPicks, enabled: MetaDetailedTargetingEnabled): MetaDetailedTargetingPicks {
   const out = copyMetaDetailedTargetingPicks(picks);
-  for (const kind of META_TARGETING_KINDS) {
-    if (kindFlag(kind, interestEnabled, behaviorEnabled) === false) out[kind.key] = [];
+  for (const key of META_TARGETING_PICK_KEYS) {
+    if (pickListFlag(key, enabled) === false) out[key] = [];
   }
   return out;
 }
@@ -403,9 +515,9 @@ export function metaDetailedTargetingPicksSendable(
  * out or failed, only waiting or Retry, since the picks may well be sendable once it answers.
  */
 export function metaDetailedTargetingBlock(input: MetaDetailedTargetingBlockInput): CampaignMetaAudienceTargetingBlock | null {
-  const held = META_TARGETING_KINDS.filter((kind) => input.picks[kind.key].length > 0 && kindFlag(kind, input.interestEnabled, input.behaviorEnabled) !== true);
+  const held = META_TARGETING_PICK_KEYS.filter((key) => input.picks[key].length > 0 && pickListFlag(key, input.enabled) !== true);
   if (held.length === 0) return null;
-  if (held.some((kind) => kindFlag(kind, input.interestEnabled, input.behaviorEnabled) === false)) {
+  if (held.some((key) => pickListFlag(key, input.enabled) === false)) {
     return {
       kind: 'unsupported',
       message: 'Some Meta detailed targeting on this brief is not available on this deployment, so it cannot be sent. Clear it to create the campaign.',

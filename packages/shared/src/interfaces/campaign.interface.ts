@@ -3148,9 +3148,6 @@ export interface MetaUserOsValue {
 /** A kind the Meta targeting search answers (`GET /api/campaigns/meta/targeting-search?type=`). */
 export type MetaTargetingSearchType = 'interest' | 'behavior' | 'work_position' | 'locale' | 'location';
 
-/** A search kind behind one of the detailed-targeting id lists (interests, behaviors, job titles). */
-export type MetaDetailedTargetingSearchType = 'interest' | 'behavior' | 'work_position';
-
 /** A Meta location type the targeting search keeps: a region fills `regions`, a city `cities`. */
 export type MetaLocationType = 'region' | 'city';
 
@@ -3182,11 +3179,32 @@ export interface MetaTargetingSearchResult {
 /** A detailed-targeting id list on `metaConfig.targeting`. */
 export type MetaDetailedTargetingKey = 'interests' | 'behaviors' | 'workPositions';
 
-/** One detailed-targeting list the Implement tab offers: the search kind that fills it and the list it fills. */
-export interface MetaTargetingKind {
-  type: MetaDetailedTargetingSearchType;
-  key: MetaDetailedTargetingKey;
+/** A list of picks the Implement tab keeps: the three id lists, languages (#5904 row 4), and regions and cities (row 6). */
+export type MetaTargetingPickKey = MetaDetailedTargetingKey | 'locales' | 'regions' | 'cities';
+
+/**
+ * One search box of the Meta targeting picker: the search kind behind it, the lists its picks fill (one, or regions
+ * and cities for the location box, by each row's location type), its label and each list's cap.
+ */
+export interface MetaTargetingBox {
+  type: MetaTargetingSearchType;
+  /** Names the box in test ids: a list key, or `locations` for the box that fills regions and cities. */
+  key: MetaDetailedTargetingKey | 'locales' | 'locations';
+  lists: readonly MetaTargetingPickKey[];
   label: string;
+  max: number;
+  /** Whether the box's picks join the "match any one" group (interests, behaviors, job titles); languages and places narrow instead. */
+  matchAny: boolean;
+  /** What the box's picks do, shown under its heading when they are not in the "match any one" group. */
+  hint?: string;
+}
+
+/** The detailed-targeting capability answers, one per flag: `true` yes, `false` no, `null` while unanswered. */
+export interface MetaDetailedTargetingEnabled {
+  interest: boolean | null;
+  behavior: boolean | null;
+  locale: boolean | null;
+  region: boolean | null;
 }
 
 /** One picked targeting option: the id sent, and the name kept so its chip reads the same after a restore. */
@@ -3195,23 +3213,36 @@ export interface MetaTargetingPick {
   name: string;
 }
 
-/** The detailed-targeting picks of a Meta create, one list per kind. */
-export type MetaDetailedTargetingPicks = Record<MetaDetailedTargetingKey, MetaTargetingPick[]>;
+/**
+ * The detailed-targeting picks of a Meta create, one list per field. Language picks hold the Meta locale key as a
+ * digit string (made a number only for the request); a region or city pick's name carries its region and country.
+ */
+export type MetaDetailedTargetingPicks = Record<MetaTargetingPickKey, MetaTargetingPick[]>;
 
 /** A search result row as the picker lists it: disabled when already picked or when its list is full. */
 export interface MetaTargetingSearchChoice extends MetaTargetingSearchOption {
   disabled: boolean;
 }
 
-/** One search row as the detailed-targeting picker draws it, with its taxonomy path already joined. */
+/** One search row as the detailed-targeting picker draws it, with its secondary line (taxonomy path, or a location's type and place). */
 export interface MetaDetailedTargetingChoiceView extends MetaTargetingSearchChoice {
   pathLabel: string;
 }
 
-/** One detailed-targeting list as the picker draws it. */
-export interface MetaDetailedTargetingListView extends MetaTargetingKind {
-  picks: MetaTargetingPick[];
+/** One chip of a search box: the list it sits in (regions or cities share a box), its id, and what it reads. */
+export interface MetaTargetingChipView {
+  list: MetaTargetingPickKey;
+  id: string;
+  label: string;
+}
+
+/** One search box as the picker draws it. */
+export interface MetaDetailedTargetingListView extends MetaTargetingBox {
+  /** E.g. "Interests (2 of 25)", or both counts for the location box. */
+  countLabel: string;
+  chips: MetaTargetingChipView[];
   choices: MetaDetailedTargetingChoiceView[];
+  /** Every list the box fills is at its cap. */
   full: boolean;
   /** What the search popup says while it has no rows. */
   emptyMessage: string;
@@ -8826,10 +8857,8 @@ export interface MetaAudienceTargetingBlockInput {
 /** The Meta detailed-targeting state `metaDetailedTargetingBlock` (`campaign-meta-detailed-targeting.utils.ts`) reads, as plain values. */
 export interface MetaDetailedTargetingBlockInput {
   picks: MetaDetailedTargetingPicks;
-  /** `CampaignListResult.metaInterestTargetingEnabled`: `null` while unanswered. */
-  interestEnabled: boolean | null;
-  /** `CampaignListResult.metaBehaviorTargetingEnabled`, for behaviors and job titles: `null` while unanswered. */
-  behaviorEnabled: boolean | null;
+  /** `CampaignListResult.metaInterestTargetingEnabled`, `metaBehaviorTargetingEnabled` (behaviors and job titles), `metaLocaleTargetingEnabled` and `metaRegionTargetingEnabled`. */
+  enabled: MetaDetailedTargetingEnabled;
   createCapabilityRead: CampaignCapabilityReadState;
   /** The open brief's id, or `null` while the brief is unsaved. */
   briefId: string | null;

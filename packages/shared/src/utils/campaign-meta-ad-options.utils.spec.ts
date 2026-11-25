@@ -160,6 +160,11 @@ describe('metaConfigKeyVariant', () => {
     // Go folds U+017F (long s) to s, which lower-casing alone misses.
     [{ ['adſchedule']: {} }, 'metaConfig.adSchedule'],
     [{ placements: { AudienceNetwork: true } }, 'metaConfig.placements.audienceNetwork'],
+    // Every targeting key too, so a differently cased list never slips past its flag gate.
+    [{ targeting: { Regions: ['3847'] } }, 'metaConfig.targeting.regions'],
+    [{ targeting: { CITIES: ['2420379'] } }, 'metaConfig.targeting.cities'],
+    [{ targeting: { Interests: ['6003'] } }, 'metaConfig.targeting.interests'],
+    [{ targeting: { ageMin: 30, locales: [6], regions: ['3847'] } }, null],
     [{ variants: [], geoTargets: [] }, null],
     [null, null],
   ])('finds the field %j sends under another spelling: %s', (raw, field) => {
