@@ -479,3 +479,4 @@ export * from './uikit.interface';
 export * from './social-share.interface';
 export * from './org-training-view.interface';
 export * from './formation-pipeline.interface';
+export * from './share-kit.interface';
