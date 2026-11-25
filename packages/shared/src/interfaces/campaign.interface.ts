@@ -2403,6 +2403,8 @@ export interface LinkedInCreateRefusalInput {
    * targeting replaces the profile, so profile removals then hold nothing.
    */
   customTargeting?: { refusal: string | null };
+  /** Custom targeting is on but this deployment no longer offers it (#5764 rows 8–11). */
+  customTargetingUnavailable?: boolean;
 }
 
 export interface LinkedInCampaignCreateRequest {

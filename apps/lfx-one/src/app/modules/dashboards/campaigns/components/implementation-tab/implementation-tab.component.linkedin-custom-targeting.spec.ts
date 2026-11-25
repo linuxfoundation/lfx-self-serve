@@ -125,12 +125,12 @@ describe('ImplementationTabComponent linkedin custom targeting', () => {
     expect(c(f)['linkedInTargetingDraft']()).toEqual(emptyLinkedInTargetingDraft());
   });
 
-  it('holds Create while the clauses are refused, and not once the capability is off', STATE_ONLY, async () => {
+  it('holds Create while the clauses are refused, and while the capability is off rather than falling back to the profile', STATE_ONLY, async () => {
     const { f } = await mount();
     c(f)['onLinkedInCustomTargetingOn']();
     expect(c(f)['createBlockedReason']()).toBe('LinkedIn Ads: fix the custom targeting. Add at least one included targeting clause.');
 
     f.componentRef.setInput('linkedInTargetingEnabled', false);
-    expect(c(f)['createBlockedReason']()).toBeNull();
+    expect(c(f)['createBlockedReason']()).toBe('LinkedIn Ads: custom targeting is not available right now. Choose a targeting profile.');
   });
 });

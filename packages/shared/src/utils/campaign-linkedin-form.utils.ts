@@ -143,6 +143,8 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
   if (input.geoTargetCount === 0) return 'LinkedIn Ads: add at least one location.';
   // A Text Ads choice this deployment no longer offers is held rather than sent as single image ads (#5764 row 19).
   if (input.textAdsUnavailable) return 'LinkedIn Ads: Text Ads are not available right now. Choose single image ads as the ad format.';
+  // Custom targeting this deployment no longer offers is held rather than sent as the profile, a wider audience (#5764 rows 8–11).
+  if (input.customTargetingUnavailable) return 'LinkedIn Ads: custom targeting is not available right now. Choose a targeting profile.';
   if (input.textAds) {
     // Text Ads (#5764 row 19) take the variants' place: the create sends none.
     const textAdsRefusal = linkedInTextAdsCreateRefusal(input.textAds);

@@ -182,6 +182,11 @@ describe('linkedInCreateRefusal', () => {
       { textAdsUnavailable: true },
       'LinkedIn Ads: Text Ads are not available right now. Choose single image ads as the ad format.',
     ],
+    [
+      'custom targeting no longer offered',
+      { customTargetingUnavailable: true },
+      'LinkedIn Ads: custom targeting is not available right now. Choose a targeting profile.',
+    ],
     ['Text Ads with no variants', { variantCount: 0, textAds: { count: 1, textInvalid: false, manualBid: true } }, null],
     [
       'Text Ads without a manual bid',

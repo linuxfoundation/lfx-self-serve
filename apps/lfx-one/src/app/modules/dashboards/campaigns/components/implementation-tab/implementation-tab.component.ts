@@ -8807,6 +8807,7 @@ export class ImplementationTabComponent implements OnInit {
       createAccountStatus: this.linkedInCreateAccount().status,
       // Text Ads chosen but no longer offered: held, never sent as single image ads instead (#5764 row 19).
       textAdsUnavailable: this.linkedInFormat() === 'text' && !this.linkedInTextAdsAvailable(),
+      customTargetingUnavailable: this.linkedInCustomTargeting() && !this.linkedInTargetingAvailable(),
       // Custom targeting (#5764 rows 8–11) holds Create while its clauses cannot be sent, and replaces the profile checks.
       ...(this.linkedInCustomTargetingSelected() ? { customTargeting: { refusal: linkedInTargetingDraftRefusal(this.linkedInTargetingDraft()) } } : {}),
       // Text Ads replace the variant checks while chosen (#5764 row 19); they need a manual bid.
