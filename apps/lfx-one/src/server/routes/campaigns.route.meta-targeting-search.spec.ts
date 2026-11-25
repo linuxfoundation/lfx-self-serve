@@ -160,6 +160,17 @@ describe('GET /api/campaigns/meta/targeting-search', () => {
     });
   });
 
+  // Languages and locations (campaign-service#671): the kind is forwarded as is, and a location keeps its type.
+  it('forwards a location search and keeps which list each option fills', async () => {
+    svcSearch.mockResolvedValueOnce({ type: 'location', options: [{ id: '3847', name: 'California', location_type: 'region', country_code: 'US' }] });
+
+    expect(await (await search('project=tlf&type=location&query=calif')).json()).toEqual({
+      type: 'location',
+      options: [{ id: '3847', name: 'California', path: [], locationType: 'region', countryCode: 'US' }],
+    });
+    expect(svcSearch).toHaveBeenCalledWith(expect.anything(), 'tlf', 'location', 'calif');
+  });
+
   it.each([
     ['an unknown kind', 'project=tlf&type=industry&query=kubernetes'],
     ['a one-letter query', 'project=tlf&type=interest&query=k'],
@@ -172,6 +183,8 @@ describe('GET /api/campaigns/meta/targeting-search', () => {
   it.each([
     ['interest', 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING'],
     ['work_position', 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING'],
+    ['locale', 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_LOCALE_TARGETING'],
+    ['location', 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_REGION_TARGETING'],
   ])('answers 404 for %s while its own flag (%s) is off, though the other kind is on', async (type, off) => {
     isServerFeatureEnabled.mockImplementation((flag) => flag !== off);
 
@@ -179,10 +192,14 @@ describe('GET /api/campaigns/meta/targeting-search', () => {
     expect(svcSearch).not.toHaveBeenCalled();
   });
 
-  it('answers 404 unless interest or behavior targeting is on', async () => {
-    isServerFeatureEnabled.mockImplementation(
-      (flag) => flag !== 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING' && flag !== 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING'
-    );
+  it('answers 404 unless some list the search fills can be sent', async () => {
+    const lists = [
+      'LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING',
+      'LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING',
+      'LFX_CUTOVER_CAMPAIGN_SERVICE_META_LOCALE_TARGETING',
+      'LFX_CUTOVER_CAMPAIGN_SERVICE_META_REGION_TARGETING',
+    ];
+    isServerFeatureEnabled.mockImplementation((flag) => !lists.includes(flag as string));
 
     expect((await search('project=tlf&type=interest&query=kubernetes')).status).toBe(404);
     expect(svcSearch).not.toHaveBeenCalled();
