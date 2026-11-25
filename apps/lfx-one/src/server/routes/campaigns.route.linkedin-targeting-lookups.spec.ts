@@ -153,14 +153,16 @@ describe('GET /api/campaigns/linkedin/audiences', () => {
       truncated: false,
     });
 
-    const res = await getAudiences();
+    const res = await fetch(`${baseUrl}/api/campaigns/linkedin/audiences?project=tlf&accountId=500000002`);
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       accountId: '500000001',
-      audiences: [{ urn: 'urn:li:adSegment:11', name: 'Contacts', facet: 'audienceMatchingSegments', type: 'BULK', approximateMemberCount: null }],
+      audiences: [
+        { urn: 'urn:li:adSegment:11', name: 'Contacts', facet: 'audienceMatchingSegments', type: 'BULK', status: 'READY', approximateMemberCount: null },
+      ],
     });
-    expect(svcList).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(svcList).toHaveBeenCalledWith(expect.anything(), 'tlf', '500000002');
   });
 });
 
@@ -184,6 +186,15 @@ describe('GET /api/campaigns/linkedin/targeting-entities', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ facet: 'skills', entities: [{ urn: 'urn:li:skill:17', name: 'Kubernetes' }] });
     expect(svcSearch).toHaveBeenCalledWith(expect.anything(), 'tlf', 'skills', 'kube');
+  });
+
+  it('is refused by the blanket campaign-manager guard, with no upstream call', async () => {
+    blanketAdmits.current = false;
+
+    const res = await fetch(`${baseUrl}/api/campaigns/linkedin/targeting-entities?project=tlf&facet=skills&q=kube`);
+
+    expect(res.status).toBe(403);
+    expect(svcSearch).not.toHaveBeenCalled();
   });
 
   it('refuses a facet it does not search, and answers 404 while targeting is off, with no upstream call', async () => {

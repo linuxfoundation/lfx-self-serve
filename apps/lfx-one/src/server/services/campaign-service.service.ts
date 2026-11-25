@@ -3802,9 +3802,11 @@ export class CampaignServiceClient {
   /**
    * The ad segments on the LinkedIn ad account a create for this project uses (`list-linkedin-ads-audiences`, #585), for
    * the Implement tab's targeting editor (#5764 rows 8–11). Answered upstream only on `global_marketing_ops` of the
-   * path project; EXPIRED and FAILED segments are left out, and the rest come sorted by name. Failures are left to the caller.
+   * path project; EXPIRED and FAILED segments are left out, and the rest come sorted by name. `accountId`, when given,
+   * names the ad account (sent as `account_id`; campaign-service refuses one the project cannot create in), and omitted
+   * it is the project's default account. Failures are left to the caller.
    */
-  public async listLinkedInAudiences(req: Request, projectSlug: string): Promise<CampaignServiceLinkedInAudiences> {
+  public async listLinkedInAudiences(req: Request, projectSlug: string, accountId?: string): Promise<CampaignServiceLinkedInAudiences> {
     if (projectSlug === '') {
       throw ServiceValidationError.forField('project', 'An audience read requires the project it is made for.', {
         operation: 'list_linkedin_audiences',
@@ -3815,7 +3817,8 @@ export class CampaignServiceClient {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/audiences`,
-      'GET'
+      'GET',
+      accountId === undefined ? undefined : { account_id: accountId }
     );
   }
 

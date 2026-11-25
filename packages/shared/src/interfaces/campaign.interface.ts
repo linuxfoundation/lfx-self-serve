@@ -1967,6 +1967,8 @@ export interface CampaignServiceLinkedInAudiences {
 export interface LinkedInAudienceSegment extends LinkedInTargetingEntity {
   facet: 'audienceMatchingSegments' | 'dynamicSegments';
   type: string;
+  /** LinkedIn's segment status. Only `READY` serves; `BUILDING`, `UPDATING` and `ARCHIVED` are listed but will not. */
+  status: string;
   approximateMemberCount: number | null;
 }
 

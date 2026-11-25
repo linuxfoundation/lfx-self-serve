@@ -4915,6 +4915,8 @@ export class CampaignController {
    * first: `global_marketing_ops` on the project — a coded 403 when refused, a coded 503 when the check cannot be made,
    * both before any upstream call. Registered ahead of the blanket `requireCampaignManager`, behind its own
    * `requireLinkedInAudiencesAccess`, as the Meta and Google pickers are. 404 while a create cannot carry `targeting`.
+   * Optional `?accountId=` names the ad account the create will use (`selectedAdAccountId`); omitted, campaign-service
+   * reads the project's default account. The answer's `accountId` says which account the segments belong to.
    */
   public async getLinkedInAudiences(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'linkedin_audiences';
@@ -4922,14 +4924,22 @@ export class CampaignController {
       next(this.monitorDisabledError(operation));
       return;
     }
-    const projectSlug = this.requireMonitorProject(req, next, operation);
-    if (projectSlug === null) {
+    const context = { operation, service: 'campaign_controller', path: req.path };
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(ServiceValidationError.forField('project', 'A project is required to read LinkedIn audiences.', context));
       return;
     }
+    const rawAccountId = req.query['accountId'];
+    if (rawAccountId !== undefined && !(typeof rawAccountId === 'string' && LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(rawAccountId))) {
+      next(ServiceValidationError.forField('accountId', 'The LinkedIn ad account must be a numeric account id.', context));
+      return;
+    }
+    const accountId = rawAccountId === undefined ? undefined : String(rawAccountId);
     try {
       await this.requireLinkedInAudienceAccess(req, projectSlug, operation, 'the LinkedIn audience read');
-      const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
-      const payload = await this.campaignServiceClient.listLinkedInAudiences(req, projectSlug);
+      const startTime = logger.startOperation(req, operation, { viaCampaignService: true, accountNamed: accountId !== undefined });
+      const payload = await this.campaignServiceClient.listLinkedInAudiences(req, projectSlug, accountId);
       // `audiences` is required upstream; reading its absence as an empty list would say the account has none.
       if (!Array.isArray(payload?.audiences)) {
         throw new MicroserviceError('campaign-service returned an unreadable LinkedIn audience read.', 502, 'BAD_GATEWAY', {

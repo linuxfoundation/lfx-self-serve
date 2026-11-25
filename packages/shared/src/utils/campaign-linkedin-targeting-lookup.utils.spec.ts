@@ -62,14 +62,21 @@ describe('linkedInAudienceSegments', () => {
           approximate_member_count: 3000,
         },
         { id: '11', urn: 'urn:li:adSegment:11', name: 'Repeat', type: 'BULK', status: 'READY', facet: 'audienceMatchingSegments' },
-        { id: '12', urn: 'urn:li:adSegment:12', name: '', type: 'RETARGETING', status: 'READY', facet: 'dynamicSegments', approximate_member_count: -1 },
+        { id: '12', urn: 'urn:li:adSegment:12', name: '', type: 'RETARGETING', status: 'BUILDING', facet: 'dynamicSegments', approximate_member_count: -1 },
         { id: '13', urn: 'urn:li:adSegment:13', name: 'No facet', type: 'LOOKALIKE', status: 'READY' },
         { id: '14', urn: 'urn:li:adSegment:x', name: 'Bad URN', type: 'BULK', status: 'READY', facet: 'audienceMatchingSegments' },
         { id: '15', urn: 'urn:li:adSegment:15', name: 'Other facet', type: 'BULK', status: 'READY', facet: 'skills' },
       ])
     ).toEqual([
-      { urn: 'urn:li:adSegment:11', name: 'Contacts', facet: 'audienceMatchingSegments', type: 'BULK', approximateMemberCount: 3000 },
-      { urn: 'urn:li:adSegment:12', name: 'urn:li:adSegment:12', facet: 'dynamicSegments', type: 'RETARGETING', approximateMemberCount: null },
+      { urn: 'urn:li:adSegment:11', name: 'Contacts', facet: 'audienceMatchingSegments', type: 'BULK', status: 'READY', approximateMemberCount: 3000 },
+      {
+        urn: 'urn:li:adSegment:12',
+        name: 'urn:li:adSegment:12',
+        facet: 'dynamicSegments',
+        type: 'RETARGETING',
+        status: 'BUILDING',
+        approximateMemberCount: null,
+      },
     ]);
   });
 

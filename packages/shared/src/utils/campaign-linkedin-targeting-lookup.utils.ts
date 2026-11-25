@@ -65,6 +65,7 @@ export function linkedInAudienceSegments(audiences: unknown): LinkedInAudienceSe
       name: label(record['name'], urn),
       facet,
       type: typeof record['type'] === 'string' ? record['type'] : '',
+      status: typeof record['status'] === 'string' ? record['status'] : '',
       approximateMemberCount: typeof count === 'number' && Number.isFinite(count) && count >= 0 ? count : null,
     });
   }
