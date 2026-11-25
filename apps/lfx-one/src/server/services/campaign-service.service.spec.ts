@@ -3396,12 +3396,28 @@ describe('CampaignServiceClient.generateEmailCopy for a newsletter issue', () =>
     expect(result.copy?.body).toContain('<a>the guide</a>');
   });
 
-  it('does not read the brief for any other stage', async () => {
+  it('takes the link rule from the stored brief, not the requested stage: a newsletter asked for with no stage keeps its note links', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(issue));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(newsletterBrief('Guide is out: https://acme.example/blog/guide/.')));
 
-    await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Registration Push');
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
-    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(result.copy?.body).toContain('<a href="https://acme.example/blog/guide/">the guide</a>');
+    expect(result.copy?.body).toContain('<a>Meet them</a>');
+  });
+
+  it('keeps the host rule for a brief that is read and is not a newsletter, whatever stage is named', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(issue));
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse(
+        storedBrief({ delivery_type: 'email', stage: 'Final Countdown', event_details: { name: 'E', sourceText: 'https://acme.example/blog/guide/' } })
+      )
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Newsletter');
+
+    // The notes do not vouch for an event email: the brand's link loses its href under the host rule.
+    expect(result.copy?.body).toContain('<a>the guide</a>');
   });
 });
 
@@ -3476,6 +3492,10 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
       })
     );
 
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse(storedBrief({ delivery_type: 'email', stage: 'Final Countdown', event_details: { name: 'E' } }))
+    );
+
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
     expect(result.copy?.body).toContain('href="https://events.linuxfoundation.org/x"');
@@ -3499,6 +3519,10 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
           },
         ],
       })
+    );
+
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse(storedBrief({ delivery_type: 'email', stage: 'Final Countdown', event_details: { name: 'E' } }))
     );
 
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');

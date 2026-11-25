@@ -2648,7 +2648,11 @@ export class PlanningTabComponent implements OnInit {
   private leaveExistingBrief(): void {
     this.editBase = null;
     this.editingExistingBrief.set(false);
-    this.briefForm.controls.url.enable();
+    // Not on the newsletter surface: it has no link field, and an enabled (required, empty) url
+    // control left Generate disabled after a failed generation or New Brief.
+    if (!this.isNewsletter()) {
+      this.briefForm.controls.url.enable();
+    }
   }
 
   /**

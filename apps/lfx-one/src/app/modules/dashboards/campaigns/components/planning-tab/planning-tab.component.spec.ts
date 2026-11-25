@@ -5280,6 +5280,20 @@ describe('PlanningTabComponent newsletter mode', () => {
     expect(internals().canGenerate()).toBe(true);
   });
 
+  it('can still generate after New Brief: the newsletter has no link field, so its url control stays disabled', () => {
+    fill('OpenSSF', 'November 2026', 'Scorecard v5 released');
+    internals().newsletterReferencesBrand.set('OpenSSF');
+    expect(internals().canGenerate()).toBe(true);
+
+    (fixture.componentInstance as unknown as { reset(): void }).reset();
+    fill('OpenSSF', 'November 2026', 'Scorecard v5 released');
+    internals().newsletterReferencesBrand.set('OpenSSF');
+    fixture.detectChanges();
+
+    expect(internals().briefForm.controls['url'].disabled).toBe(true);
+    expect(internals().canGenerate()).toBe(true);
+  });
+
   it("never sends or generates with another brand's previous issues while the new brand is being read", () => {
     fill('OpenSSF', 'November 2026', 'Scorecard v5 released');
     const email = (emailId: string) => ({

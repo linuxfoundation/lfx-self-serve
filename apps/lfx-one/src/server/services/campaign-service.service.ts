@@ -16,7 +16,6 @@ import {
   CAMPAIGN_GOALS,
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
-  CAMPAIGN_NEWSLETTER_STAGES,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_ADOPTED_REFUSAL_REASON,
   CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
@@ -2041,12 +2040,14 @@ export class CampaignServiceClient {
       // no event page: its links are the addresses in the operator's notes, each on whatever site
       // the item lives on. Judged by the host rule, every one of them lost its href, and the issue
       // reached the preview and the draft as a newsletter with no links. So a newsletter body is
-      // held to the notes' own addresses instead, one by one, read from the stored brief. An issue
-      // whose brief cannot be read vouches for nothing, which is the same answer as before.
-      const noteLinks =
-        stage !== undefined && (CAMPAIGN_NEWSLETTER_STAGES as readonly string[]).includes(stage)
-          ? ((await this.newsletterNoteLinks(req, projectSlug, briefId)) ?? [])
-          : null;
+      // held to the notes' own addresses instead, one by one, read from the stored brief.
+      //
+      // Which rule applies is the STORED brief's call, never the requested stage's: upstream writes
+      // a newsletter brief's copy as a newsletter whatever stage the request names (or none), so a
+      // stage test let an omitted or mismatched stage put a newsletter through the host rule and
+      // strip its links. `null` is a brief read and found not to be a newsletter (the host rule);
+      // `[]` is one that could not be read, which vouches for nothing.
+      const noteLinks = await this.newsletterNoteLinks(req, projectSlug, briefId);
 
       const body = sections
         .filter(
