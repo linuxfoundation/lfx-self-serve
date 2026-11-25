@@ -12,7 +12,7 @@ import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.ut
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
 import { correctLinkedInGeoTargets, linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
 import { linkedInGeoSearchLocations, linkedInGeoSearchQueryRefusal } from '@lfx-one/shared/utils/campaign-linkedin-geo.utils';
-import { linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
+import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
 import { linkedInTextAdAssetField, linkedInTextAdsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-text-ads.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
 import {
@@ -371,6 +371,10 @@ import {
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
   META_CUSTOM_AUDIENCES_RESTRICTED_CODE,
+  LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
+  LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
+  LINKEDIN_AUDIENCES_RESTRICTED_CODE,
+  LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE,
   LINKEDIN_GEO_SEARCH_BUSY_MESSAGE,
   META_TARGETING_SEARCH_BUSY_MESSAGE,
   META_AD_OPTION_FIELDS,
@@ -1378,6 +1382,11 @@ export class CampaignController {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });
+      }
+      // An ad segment is an audience on the ad account every foundation shares: named only by a caller holding
+      // `global_marketing_ops` on the project, as campaign-service requires (403), and never on a check that failed (503).
+      if (linkedInTargetingNamesSegments(body?.linkedInConfig)) {
+        await this.requireLinkedInAudienceAccess(req, projectSlug, 'campaign_create', 'the LinkedIn audience segments');
       }
       // The LinkedIn ad account to name: only the picker's explicit choice, checked against
       // campaign-service's own list (#5809) and refused when it cannot be honoured. See
@@ -6580,6 +6589,29 @@ export class CampaignController {
         projectSlug,
       });
       return 'unverified';
+    }
+  }
+
+  /**
+   * Throws unless the caller holds `global_marketing_ops` on `projectSlug`, the relation campaign-service answers a
+   * LinkedIn audience segment on (#5764 rows 8–11): a coded 403 when refused, a coded 503 when it cannot be checked.
+   */
+  private async requireLinkedInAudienceAccess(req: Request, projectSlug: string, operation: string, subject: string): Promise<void> {
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, subject);
+    if (access === 'denied') {
+      throw new AuthorizationError(LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE, {
+        operation,
+        service: 'campaign_controller',
+        path: req.path,
+        code: LINKEDIN_AUDIENCES_RESTRICTED_CODE,
+      });
+    }
+    if (access === 'unverified') {
+      throw new MicroserviceError(LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE, 503, LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE, {
+        operation,
+        service: 'campaign_controller',
+        clientMessage: LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
+      });
     }
   }
 

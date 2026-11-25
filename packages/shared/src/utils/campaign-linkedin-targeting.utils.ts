@@ -3,6 +3,7 @@
 
 import { LINKEDIN_STAFF_COUNT_RANGES, LINKEDIN_TARGETING_FACETS, LINKEDIN_TARGETING_FIELD, LINKEDIN_TARGETING_LIMITS } from '../constants/campaign.constants';
 import type { LinkedInConfigKeyRefusal } from '../interfaces/campaign.interface';
+import { foldKey } from './campaign-linkedin-config.utils';
 
 /**
  * LinkedIn custom targeting (#5764 rows 8–11), mirroring campaign-service's checks (`checkTargetingShape` and
@@ -20,11 +21,6 @@ const EMPLOYER_EXCLUSION_PATTERN = /^urn:li:(company|organization):[0-9]+$/;
 
 function plainRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-}
-
-/** A key as Go's `encoding/json` matches it: Unicode case folding, which upper-casing first catches. */
-function foldKey(key: string): string {
-  return key.toUpperCase().toLowerCase();
 }
 
 /** `value` as facets (an object of string lists), or `null` when it is anything else. */
@@ -129,7 +125,8 @@ export function linkedInTargetingRefusal(raw: unknown, enabled: boolean, employe
   const includeRaw = targeting['include'];
   const include = Array.isArray(includeRaw) ? includeRaw.map(asFacets) : null;
   if (!include || include.some((clause) => clause === null)) return { field: `${LINKEDIN_TARGETING_FIELD}.include`, message: SHAPE_MESSAGE };
-  const exclude = 'exclude' in targeting ? asFacets(targeting['exclude']) : {};
+  // An explicit `null` is no exclusions, as campaign-service decodes it.
+  const exclude = targeting['exclude'] === undefined || targeting['exclude'] === null ? {} : asFacets(targeting['exclude']);
   if (!exclude) return { field: `${LINKEDIN_TARGETING_FIELD}.exclude`, message: SHAPE_MESSAGE };
 
   if (!enabled) {
@@ -208,4 +205,17 @@ export function linkedInTargetingRefusal(raw: unknown, enabled: boolean, employe
     };
   }
   return null;
+}
+
+/**
+ * Whether `raw`'s `targeting` names an ad segment (`audienceMatchingSegments` or `dynamicSegments`, included or
+ * excluded). Segments are audiences on the ad account every foundation shares, so a create naming one needs
+ * `global_marketing_ops` on the project, as campaign-service requires. Run after `linkedInTargetingRefusal` passed.
+ */
+export function linkedInTargetingNamesSegments(raw: unknown): boolean {
+  const targeting = plainRecord(plainRecord(raw)?.['targeting']);
+  if (!targeting) return false;
+  const include = Array.isArray(targeting['include']) ? (targeting['include'] as unknown[]) : [];
+  const groups = [...include, targeting['exclude']].map(plainRecord);
+  return groups.some((facets) => facets !== null && SEGMENT_FACETS.some((facet) => Object.hasOwn(facets, facet)));
 }

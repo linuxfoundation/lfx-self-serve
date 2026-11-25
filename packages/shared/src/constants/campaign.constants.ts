@@ -919,6 +919,18 @@ export const LINKEDIN_TARGETING_FACETS: Readonly<Record<string, { pattern: RegEx
   dynamicSegments: { pattern: /^urn:li:adSegment:[1-9][0-9]{0,18}$/, includeOnly: false },
 };
 
+/**
+ * The error `code` (HTTP 403) of a LinkedIn audience read, or a create whose `targeting` names an ad segment, refused
+ * because the caller does not hold `global_marketing_ops` on the project: the ad account is shared by every foundation,
+ * so campaign-service answers both on that relation.
+ */
+export const LINKEDIN_AUDIENCES_RESTRICTED_CODE = 'LINKEDIN_AUDIENCES_RESTRICTED';
+export const LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE =
+  'LinkedIn audiences can only be used by the LF marketing team, because every foundation shares one LinkedIn ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
+export const LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE';
+export const LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to LinkedIn audiences could not be verified. Try again in a few minutes.';
+
 /** An Images-API image URN as campaign-service accepts it (`imageURNRE`, `internal/platform/linkedin/targeting.go`). */
 export const LINKEDIN_IMAGE_URN_PATTERN = /^urn:li:image:[A-Za-z0-9_-]+$/;
 

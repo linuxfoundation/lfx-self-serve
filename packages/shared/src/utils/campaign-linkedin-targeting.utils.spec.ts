@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { linkedInTargetingRefusal } from './campaign-linkedin-targeting.utils';
+import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from './campaign-linkedin-targeting.utils';
 
 const F = 'linkedInConfig.targeting';
 const ids = (prefix: string, n: number, from = 1): string[] => Array.from({ length: n }, (_, i) => `${prefix}${from + i}`);
@@ -30,6 +30,7 @@ describe('linkedInTargetingRefusal', () => {
     ['10 clauses', withT({ include: Array(10).fill({ skills: ['urn:li:skill:1'] }) }), []],
     ['100 values and duplicates past them', withT({ include: [{ skills: [...ids('urn:li:skill:', 100), 'urn:li:skill:1'] }] }), []],
     ['200 employers, one id under both spellings', withT({ include: [{ employers: [...ids('urn:li:company:', 200), 'urn:li:organization:1'] }] }), []],
+    ['a null exclude, as campaign-service decodes it', withT({ include: [{ skills: ['urn:li:skill:1'] }], exclude: null }), []],
     ['an empty exclude object', withT({ include: [{ skills: ['urn:li:skill:1'] }], exclude: {} }), []],
     [
       'configured exclusions merged under the cap',
@@ -118,5 +119,16 @@ describe('linkedInTargetingRefusal', () => {
   it('never echoes a caller value', () => {
     const refusal = linkedInTargetingRefusal(withT({ include: [{ 'secret-facet': ['secret-value'] }] }), true, []);
     expect(refusal?.message).not.toMatch(/secret/);
+  });
+});
+
+describe('linkedInTargetingNamesSegments', () => {
+  it.each([
+    ['no targeting', { targetingProfile: 'cloud-native' }, false],
+    ['taxonomy facets only', withT(targeting), false],
+    ['an included matched audience', withT({ include: [{ skills: ['urn:li:skill:1'] }, { audienceMatchingSegments: ['urn:li:adSegment:1'] }] }), true],
+    ['an excluded retargeting segment', withT({ ...targeting, exclude: { dynamicSegments: ['urn:li:adSegment:1'] } }), true],
+  ])('%s → %s', (_name, raw, expected) => {
+    expect(linkedInTargetingNamesSegments(raw)).toBe(expected);
   });
 });
