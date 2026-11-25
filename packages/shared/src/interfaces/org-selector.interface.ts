@@ -34,6 +34,8 @@ export interface OrgItem {
   slug?: string | null;
   /** True for an org the caller reaches only as its CLA Manager (see `OrgResolveResponse.claOnly`). Absent means false. */
   claOnly?: boolean;
+  /** True on a CLA-only row when the employee-view lookup ran and answered "not an employee" for the caller (epic #5845), so the client may drop any stale employee-view or full-access mode for it. Absent when the lookup did not run or could not answer. */
+  employeeViewChecked?: boolean;
   /** True for the company the caller reaches only through the all employee view (epic #5845). Absent means false. */
   employeeView?: boolean;
   /** True for a company the caller reads at full width only through the authorizer (`b2b_org#auditor`, no roster grant) and who would otherwise also qualify as an employee. Never CLA-only. Absent means false. */
@@ -317,6 +319,8 @@ export interface OrgResolveResponse {
   name: string;
   /** True when the caller reaches this org only as its CLA Manager: no Org Lens read, so only its EasyCLA tab opens. Absent means false. */
   claOnly?: boolean;
+  /** True on a CLA-only answer when the employee-view lookup ran and answered "not an employee" (epic #5845); absent when it did not run or could not answer, so the answer is not authoritative about the employee view. */
+  employeeViewChecked?: boolean;
   /** True when the caller reaches this org only through the all employee view (epic #5845). Absent means false. */
   employeeView?: boolean;
   /** True when the caller reads this org at full width through the authorizer alone and is not CLA-only (epic #5845). Absent means false. */

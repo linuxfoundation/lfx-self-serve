@@ -41,9 +41,11 @@ export class OrgClaOnlyAccessService {
   }
 
   /** Records the resolver's answer for an addressed organization; a later non-CLA-only answer clears it. */
-  public noteAddressed(uid: string, claOnly: boolean): void {
-    // CLA-only is the server's later, authoritative answer: it clears any employee-view or full-access mode still held for the company.
-    if (claOnly) this.orgRoleGrants.clearReducedModes(uid);
+  public noteAddressed(uid: string, claOnly: boolean, employeeViewChecked = false): void {
+    // A CLA-only answer the server reached AFTER the employee-view lookup answered "not an employee" is authoritative: it clears any employee-view
+    // or full-access mode still held for the company. An answer given without that check (the lookup did not run or failed) never does, so a
+    // qualifying employee who also manages CLAs is not confined to EasyCLA by a slow lookup.
+    if (claOnly && employeeViewChecked) this.orgRoleGrants.clearReducedModes(uid);
     const current = this.addressedClaOnlyUids();
     if (current.has(uid) === claOnly) return;
     const next = new Set(current);

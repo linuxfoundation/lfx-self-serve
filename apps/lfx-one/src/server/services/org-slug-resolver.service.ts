@@ -237,7 +237,8 @@ export class OrgSlugResolverService {
     claOnlyUid: string | null
   ): Promise<OrgResolveResponse | null> {
     let employeeViewError: unknown;
-    if (isOrgLensEmployeeViewEnabled(req)) {
+    const employeeViewRan = isOrgLensEmployeeViewEnabled(req);
+    if (employeeViewRan) {
       try {
         const verdict = await this.resolveReducedWithinBudget(req, 'resolve_employee_view_org');
         if (verdict.eligible && matches(verdict.org)) {
@@ -255,7 +256,8 @@ export class OrgSlugResolverService {
     // A CLA-only org is addressed by SFID only.
     const claOnly = claOnlyUid ? await this.claOnlyOrgs.resolveOrg(req, claOnlyUid) : null;
     if (claOnly) {
-      return claOnly;
+      // Conclusive about the employee view only when it ran and answered; after a failed lookup the client must not drop an employee mode.
+      return employeeViewRan && employeeViewError === undefined ? { ...claOnly, employeeViewChecked: true } : claOnly;
     }
     if (employeeViewError !== undefined) {
       throw this.employeeViewUnavailable(employeeViewError);

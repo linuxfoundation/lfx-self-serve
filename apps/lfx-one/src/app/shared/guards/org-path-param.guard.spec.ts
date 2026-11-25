@@ -265,7 +265,7 @@ describe('orgPathParamGuard', () => {
       resolve.mockReturnValueOnce(of({ ...hit(UID_B, null), fullAccess: true }));
       await outcome(UID_B, `/company/${UID_B}/people`);
       expect(noteFullAccessAddressed).toHaveBeenLastCalledWith(UID_B, true);
-      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, false);
+      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, false, false);
     });
 
     it('records an employee-view answer from the resolver', async () => {
@@ -277,13 +277,13 @@ describe('orgPathParamGuard', () => {
     it('records whether the resolved organization is CLA-only, before adopting it', async () => {
       resolve.mockReturnValueOnce(of({ ...hit(UID_B, null), claOnly: true }));
       await outcome(UID_B, `/company/${UID_B}/easycla`);
-      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, true);
+      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, true, false);
       expect(noteAddressed.mock.invocationCallOrder[0]).toBeLessThan(adoptFromAddress.mock.invocationCallOrder[0]);
 
       selectedAccount.set(placeholder);
       resolve.mockReturnValueOnce(of(hit(UID_B, null)));
       await outcome(UID_B, `/company/${UID_B}/people`);
-      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, false);
+      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, false, false);
     });
 
     it('lands on not-found for a miss (404/409 surface as null) without touching the selection (FR-024)', async () => {

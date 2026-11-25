@@ -116,17 +116,26 @@ describe('OrgClaOnlyAccessService', () => {
       expect(service.claOnlyOrgUids().size).toBe(0);
     });
 
-    it('becomes CLA-only even if an earlier role-grants answer had it as an employee-view or full-access company', () => {
+    it('becomes CLA-only, dropping a stale employee-view or full-access mode, when the server answered after checking the employee view', () => {
       employeeViewOrgUids.set(new Set([ADDRESSED]));
       expect(service.isClaOnly(ADDRESSED)).toBe(false);
 
-      service.noteAddressed(ADDRESSED, true);
+      service.noteAddressed(ADDRESSED, true, true);
       expect(service.isClaOnly(ADDRESSED)).toBe(true);
 
       fullAccessOrgUids.set(new Set([ADDRESSED]));
       expect(service.isClaOnly(ADDRESSED)).toBe(false);
-      service.noteAddressed(ADDRESSED, true);
+      service.noteAddressed(ADDRESSED, true, true);
       expect(service.isClaOnly(ADDRESSED)).toBe(true);
+    });
+
+    it('keeps an employee-view mode when a CLA-only answer came without the employee-view check (it failed or did not run)', () => {
+      employeeViewOrgUids.set(new Set([ADDRESSED]));
+
+      service.noteAddressed(ADDRESSED, true);
+
+      expect([...employeeViewOrgUids()]).toEqual([ADDRESSED]);
+      expect(service.isClaOnly(ADDRESSED)).toBe(false);
     });
 
     it('stops being CLA-only once a later resolve says otherwise', () => {

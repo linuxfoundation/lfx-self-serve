@@ -166,7 +166,7 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
         uid: resolved.uid,
         slug: resolved.slug,
       };
-      claOnlyAccess.noteAddressed(resolved.uid, resolved.claOnly === true);
+      claOnlyAccess.noteAddressed(resolved.uid, resolved.claOnly === true, resolved.employeeViewChecked === true);
       // Epic #5845: the same for a company reached only through the all employee view.
       viewMode.noteAddressed(resolved.uid, resolved.employeeView === true);
       viewMode.noteFullAccessAddressed(resolved.uid, resolved.fullAccess === true);
