@@ -19,7 +19,7 @@ import { ProfileAsideComponent } from './profile-aside.component';
   template: '<lfx-profile-aside [username]="username()" />',
 })
 class HostComponent {
-  public readonly username = signal('ada');
+  public readonly username = signal<string | null>('ada');
 }
 
 describe('ProfileAsideComponent', () => {
@@ -101,6 +101,19 @@ describe('ProfileAsideComponent', () => {
 
     expect(query('profile-openprofile-loading')).not.toBeNull();
     expect(query('profile-openprofile-card')).toBeNull();
+  });
+
+  it('holds the card’s place while the profile, and so the username, still loads', async () => {
+    const { fixture, query } = await render(visibility(true));
+    fixture.componentInstance.username.set(null);
+    await fixture.whenStable();
+
+    expect(query('profile-openprofile-loading')).not.toBeNull();
+
+    fixture.componentInstance.username.set('ada');
+    await fixture.whenStable();
+    expect(query('profile-openprofile-loading')).toBeNull();
+    expect(query('profile-openprofile-card')).not.toBeNull();
   });
 
   it('shows no card, and no placeholder, when no username arrives', async () => {

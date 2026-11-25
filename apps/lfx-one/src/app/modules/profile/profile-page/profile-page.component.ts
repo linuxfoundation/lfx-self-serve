@@ -70,7 +70,12 @@ export class ProfilePageComponent {
   // The openprofile rail's media query, followed once the browser renders so SSR and hydration agree (#6083).
   protected readonly railShown = injectMediaQueryMatches(PROFILE_ASIDE_MEDIA_QUERY);
   protected readonly railTop = computed(() => (this.impersonating() ? IMPERSONATION_BANNER_HEIGHT_PX : 0));
-  protected readonly username = computed(() => stripAuthPrefixOrNull(this.profile()?.user.username) ?? '');
+  // Null while the profile is still loading, so the rail holds its placeholder; '' when none came back.
+  protected readonly username = computed<string | null>(() => {
+    const profile = this.profile();
+    if (!profile) return this.profileFailed() ? '' : null;
+    return stripAuthPrefixOrNull(profile.user.username) ?? '';
+  });
   protected readonly jobTitle = computed(() => this.profile()?.profile?.job_title?.trim() ?? '');
   protected readonly company = computed(() => this.profile()?.profile?.organization?.trim() ?? '');
   protected readonly location = computed(() => [this.profile()?.profile?.city, this.profile()?.profile?.country].filter((part) => !!part?.trim()).join(', '));

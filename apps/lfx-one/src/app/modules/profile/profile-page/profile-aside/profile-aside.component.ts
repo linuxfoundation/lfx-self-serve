@@ -30,8 +30,8 @@ export class ProfileAsideComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   // Inputs
-  /** The signed-in user's username, which names the public profile; empty until the profile loads. */
-  public readonly username = input<string>('');
+  /** The signed-in user's username, which names the public profile: null while the profile loads, '' when none came back. */
+  public readonly username = input<string | null>(null);
 
   protected readonly copy = PROFILE_ASIDE_COPY;
   protected readonly personalInformationPath = ACCOUNT_PERSONAL_INFORMATION_PATH;
@@ -43,7 +43,7 @@ export class ProfileAsideComponent {
   protected readonly host = signal('');
 
   // Complex computed/toSignal signals
-  protected readonly publicPath = computed(() => `/u/${encodeURIComponent(this.username())}`);
+  protected readonly publicPath = computed(() => `/u/${encodeURIComponent(this.username() ?? '')}`);
   protected readonly publicLink = computed(() => `${this.host()}${this.publicPath()}`);
   /** Whether the public profile is on, or `unknown` when the read failed; null until the browser has read it. */
   protected readonly state: Signal<ProfileOpenprofileState | null> = this.initState();
@@ -53,7 +53,7 @@ export class ProfileAsideComponent {
   }
 
   protected openSettings(): void {
-    this.visibilityDrawer.open(this.username());
+    this.visibilityDrawer.open(this.username() ?? '');
   }
 
   // Private initializer functions
