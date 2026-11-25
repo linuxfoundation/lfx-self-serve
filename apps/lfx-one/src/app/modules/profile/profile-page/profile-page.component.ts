@@ -21,6 +21,8 @@ import { catchError, distinctUntilChanged, EMPTY, of, startWith, switchMap } fro
  */
 @Component({
   selector: 'lfx-profile-page',
+  // Cancels the main layout's page padding: the page sets its own gutters.
+  host: { class: 'block -mx-5 md:-mx-8' },
   imports: [UiButtonComponent, UiNoteComponent],
   // The page owns its profile and, for a photo upload that left for authorization, the Flow C return.
   providers: [AccountProfileService, ProfileAuthReturnService],
@@ -44,7 +46,12 @@ export class ProfilePageComponent {
   protected readonly profileFailed = this.accountProfile.failed;
   protected readonly avatarUploading = this.accountProfile.avatarUploading;
   protected readonly impersonating = this.userService.impersonating;
-  protected readonly avatarUrl = this.userService.effectiveAvatarUrl;
+  // A photo uploaded this session first, then the one this page loaded, then the sign-in picture.
+  protected readonly avatarUrl = computed(
+    () => this.userService.uploadedAvatarUrl() || this.profile()?.profile?.picture || this.userService.effectiveAvatarUrl()
+  );
+  // The empty-field prompts wait for a stored record: a failed metadata read also comes back without one.
+  protected readonly recordLoaded = computed(() => this.profile()?.profile != null);
   protected readonly name: Signal<string> = this.initName();
   protected readonly jobTitle = computed(() => this.profile()?.profile?.job_title?.trim() ?? '');
   protected readonly company = computed(() => this.profile()?.profile?.organization?.trim() ?? '');

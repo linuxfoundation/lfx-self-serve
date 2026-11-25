@@ -371,6 +371,9 @@ export const PROFILE_PAGE_COPY = {
   addBio: 'Add bio',
   uploadPhoto: 'Upload photo',
   uploadNewPhoto: 'Upload new photo',
+  githubLabel: 'GitHub: ',
+  githubTooltip: 'GitHub · ',
+  memberSince: 'Member since: ',
   loadFailed: 'We couldn’t load your profile.',
   retry: 'Try again',
 } as const;

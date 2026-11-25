@@ -47,6 +47,7 @@ describe('ProfilePageComponent', () => {
     const userService = {
       user: signal({ name: 'Ada L' }),
       impersonating: signal(options.impersonating ?? false),
+      uploadedAvatarUrl: signal<string | null>(null),
       effectiveAvatarUrl: signal(options.avatar ?? ''),
       identitiesRefresh$: of(),
       getCurrentUserProfile: vi.fn(options.profile ?? (() => of(PROFILE))),
@@ -130,6 +131,21 @@ describe('ProfilePageComponent', () => {
 
     expect(query('profile-hero-avatar-image')?.getAttribute('src')).toBe('https://cdn.example/ada.png');
     expect(query('profile-hero-avatar-upload')?.querySelector('button')?.getAttribute('aria-label')).toBe(PROFILE_PAGE_COPY.uploadNewPhoto);
+  });
+
+  it('shows the photo from its own profile load before the shared one catches up', async () => {
+    setup({ profile: () => of({ ...PROFILE, profile: { ...PROFILE.profile, picture: 'https://cdn.example/stored.png' } } as CombinedProfile) });
+    const { query } = await render();
+
+    expect(query('profile-hero-avatar-image')?.getAttribute('src')).toBe('https://cdn.example/stored.png');
+  });
+
+  it('holds the empty prompts back when no stored record came back, which a failed read also gives', async () => {
+    setup({ profile: () => of({ user: PROFILE.user, profile: null } as unknown as CombinedProfile) });
+    const { query } = await render();
+
+    expect(query('profile-hero-add-title')).toBeNull();
+    expect(query('profile-hero-no-bio')).toBeNull();
   });
 
   it('offers no upload while impersonating', async () => {

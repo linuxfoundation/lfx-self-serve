@@ -9,6 +9,7 @@ import { CombinedProfile, UserMetadata } from '@lfx-one/shared/interfaces';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { catchError, finalize, of, Subject, switchMap } from 'rxjs';
 
+import { ProfileSavedFieldsService } from './profile-saved-fields.service';
 import { ProfileSaveSyncService } from './profile-save-sync.service';
 import { UserService } from './user.service';
 
@@ -25,15 +26,15 @@ export class AccountProfileService {
 
   private readonly load$ = new Subject<void>();
   private readonly fetched = signal<CombinedProfile | null>(null);
-  private readonly saved = signal<Partial<UserMetadata>>({});
+  private readonly savedFieldsStore = inject(ProfileSavedFieldsService);
 
   public readonly loading = signal(false);
   public readonly failed = signal(false);
   public readonly avatarUploading = signal(false);
-  /** Every field saved since the shell opened, newest value each. */
-  public readonly savedFields: Signal<Partial<UserMetadata>> = this.saved.asReadonly();
+  /** Every field saved this session, newest value each, shared app-wide so the Profile page shows saves made here (#6082). */
+  public readonly savedFields: Signal<Partial<UserMetadata>> = this.savedFieldsStore.fields;
   /** The fetched profile with every save made since laid over it; `null` until the first fetch lands. */
-  public readonly profile: Signal<CombinedProfile | null> = computed(() => this.withSaves(this.fetched(), this.saved()));
+  public readonly profile: Signal<CombinedProfile | null> = computed(() => this.withSaves(this.fetched(), this.savedFields()));
 
   public constructor() {
     this.load$
@@ -65,9 +66,7 @@ export class AccountProfileService {
   /** Records a save so the profile shows it at once, and carries it to the navbar, avatar and Mentorship. */
   public applySaved(metadata: Partial<UserMetadata>): void {
     this.saveSync.apply(metadata, this.profile()?.user);
-    // Keys left undefined were not sent, so the stored value stands; a cleared field is '' and is kept.
-    const defined = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;
-    this.saved.update((saved) => ({ ...saved, ...defined }));
+    this.savedFieldsStore.record(metadata);
     // A save creates the record the last fetch lacked, so fetch it; the saves stay laid over the response.
     if (this.fetched() && this.fetched()?.profile == null) this.load();
   }

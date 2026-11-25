@@ -4,7 +4,7 @@
 import { TestBed } from '@angular/core/testing';
 import { CombinedProfile } from '@lfx-one/shared/interfaces';
 import { HttpErrorResponse } from '@angular/common/http';
-import { signal } from '@angular/core';
+import { createEnvironmentInjector, EnvironmentInjector, signal } from '@angular/core';
 import { AVATAR_UPLOAD_COPY } from '@lfx-one/shared/constants';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, Subject, throwError } from 'rxjs';
@@ -93,6 +93,26 @@ describe('AccountProfileService', () => {
     slow.next({ ...PROFILE, user: { ...PROFILE.user, first_name: 'Stale' } });
 
     expect(service.profile()?.user.first_name).toBe('Ada');
+  });
+});
+
+describe('AccountProfileService across pages', () => {
+  it('lays a save made on one page over another page’s stale fetch (#6082)', () => {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: UserService, useValue: { getCurrentUserProfile: () => of(PROFILE) } },
+        { provide: ProfileSaveSyncService, useValue: { apply: vi.fn() } },
+      ],
+    });
+    const injector = TestBed.inject(EnvironmentInjector);
+    const account = createEnvironmentInjector([AccountProfileService], injector).get(AccountProfileService);
+    account.load();
+    account.applySaved({ job_title: 'Architect' });
+
+    const profilePage = createEnvironmentInjector([AccountProfileService], injector).get(AccountProfileService);
+    profilePage.load();
+
+    expect(profilePage.profile()?.profile?.job_title).toBe('Architect');
   });
 });
 

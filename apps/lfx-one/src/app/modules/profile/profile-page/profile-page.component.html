@@ -11,10 +11,7 @@
   }
   <section class="flex flex-col border-b border-gray-200 pb-[32px]" aria-labelledby="profile-hero-name" data-testid="profile-hero">
     <!-- The cover bleeds 24px past each side of the column. -->
-    <div
-      class="-mx-[24px] h-[140px] rounded-[16px] bg-gradient-to-b from-ui-background-100 to-ui-accent-100"
-      aria-hidden="true"
-      data-testid="profile-hero-cover"></div>
+    <div class="-mx-[24px] h-[140px] rounded-[16px] bg-gradient-to-b from-white to-blue-100" aria-hidden="true" data-testid="profile-hero-cover"></div>
 
     <div
       class="group relative z-[1] -mt-[96px] ml-[24px] size-[120px] rounded-full bg-white p-[6px] shadow-small max-[640px]:ml-0"
@@ -22,9 +19,7 @@
       @if (avatarUrl()) {
         <img [src]="avatarUrl()" [alt]="name()" class="block size-full rounded-full object-cover" data-testid="profile-hero-avatar-image" />
       } @else {
-        <div
-          class="flex size-full items-center justify-center overflow-hidden rounded-full bg-ui-background-100 text-ui-accent-200"
-          data-testid="profile-hero-avatar-fallback">
+        <div class="flex size-full items-center justify-center overflow-hidden rounded-full bg-white text-blue-200" data-testid="profile-hero-avatar-fallback">
           <i class="fa-solid fa-circle-user text-[108px] leading-none" aria-hidden="true"></i>
         </div>
       }
@@ -66,8 +61,8 @@
           icon="fa-brands fa-github"
           iconOnly
           [href]="githubUrl()"
-          [ariaLabel]="'GitHub: ' + handle"
-          [lfxUiTooltip]="'GitHub · ' + handle"
+          [ariaLabel]="copy.githubLabel + handle"
+          [lfxUiTooltip]="copy.githubTooltip + handle"
           data-testid="profile-hero-github" />
       }
     </div>
@@ -89,7 +84,7 @@
             </span>
           }
         </span>
-      } @else if (profile()) {
+      } @else if (recordLoaded()) {
         <lfx-ui-button
           variant="tertiary-accent"
           size="small"
@@ -116,9 +111,9 @@
         class="m-0 mt-[16px] max-w-[75%] whitespace-pre-line text-[14px] leading-[1.55] text-gray-700 max-[640px]:max-w-full"
         [textContent]="bio()"
         data-testid="profile-hero-bio"></p>
-    } @else if (profile()) {
+    } @else if (recordLoaded()) {
       <div
-        class="mt-[16px] flex flex-row flex-wrap items-center gap-x-[16px] gap-y-[8px] rounded-ui-sm bg-ui-neutral-50 px-[16px] py-[12px]"
+        class="mt-[16px] flex flex-row flex-wrap items-center gap-x-[16px] gap-y-[8px] rounded-[8px] bg-gray-50 px-[16px] py-[12px]"
         data-testid="profile-hero-no-bio">
         <span class="min-w-[200px] flex-1 text-[14px] leading-[20px] text-gray-500">{{ copy.noBio }}</span>
         <lfx-ui-button variant="tertiary-accent" size="small" icon="fa-light fa-plus" [link]="personalInformationPath" data-testid="profile-hero-add-bio">
@@ -129,7 +124,7 @@
 
     @if (memberSince()) {
       <p class="m-0 mt-[12px] flex flex-row items-center gap-[6px] text-[12px] leading-[16px] text-gray-500" data-testid="profile-hero-member-since">
-        <i class="fa-light fa-flag" aria-hidden="true"></i>Member since: {{ memberSince() }}
+        <i class="fa-light fa-flag" aria-hidden="true"></i>{{ copy.memberSince }}{{ memberSince() }}
       </p>
     }
   </section>
