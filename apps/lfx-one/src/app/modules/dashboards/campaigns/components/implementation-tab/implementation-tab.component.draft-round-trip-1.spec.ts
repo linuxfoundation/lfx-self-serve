@@ -411,6 +411,14 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     pickRedditVideoGoal(f, 'VIDEO_VIEW_6S');
     expect(at(f).canSubmit()).toBe(true);
     expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-goal-error"]')).toBeNull();
+
+    // With a valid goal, a missing post alone holds Create (`redditVideoPostError` reaches `redditCreateRefusal`).
+    typeRedditPostUrl(f, '');
+    expect(at(f).createBlockedReason()).toBe('Reddit Ads: Video Views needs a video post.');
+    at(f).submit();
+    expect(createCampaign).not.toHaveBeenCalled();
+    typeRedditPostUrl(f, 'https://www.reddit.com/r/kubernetes/comments/abc123/video/');
+    expect(at(f).canSubmit()).toBe(true);
   });
 
   /** The chosen goal reaches `redditConfig`, picked through the template and carried across a tab round-trip. */

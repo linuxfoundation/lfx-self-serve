@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { REDDIT_SELECTABLE_OBJECTIVES } from '../constants/campaign.constants';
 import type { RedditCreateRefusalInput } from '../interfaces/campaign.interface';
 import {
   normaliseRedditGeoCodes,
@@ -95,8 +96,11 @@ describe('the Video Views goal and post', () => {
 });
 
 describe('stale objective and call to action', () => {
-  it('offers every objective today', () => {
-    expect(redditObjectiveIsUnavailable('traffic')).toBe(false);
+  it.each(REDDIT_SELECTABLE_OBJECTIVES)('offers %s', (objective) => {
+    expect(redditObjectiveIsUnavailable(objective)).toBe(false);
+  });
+
+  it('flags an objective the picker no longer offers', () => {
     expect(redditObjectiveIsUnavailable('legacy' as never)).toBe(true);
   });
 
