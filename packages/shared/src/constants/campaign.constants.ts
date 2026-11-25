@@ -58,6 +58,9 @@ import type {
   LinkedInCallToActionOption,
   LinkedInGeoTarget,
   LinkedInGeoUrnCorrection,
+  LinkedInTargetingEditorFacetOption,
+  LinkedInTargetingEntity,
+  LinkedInTargetingStaticFacet,
   LinkedInTargetingProfile,
   MetaAdOptionField,
   MetaAdSchedule,
@@ -941,6 +944,69 @@ export const LINKEDIN_TARGETING_SEARCH_FACETS = ['employers', 'groups', 'industr
 
 /** The message a LinkedIn targeting search answers while LinkedIn throttles or fails it (an upstream 503, not retried). */
 export const LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE = "LinkedIn targeting search isn't available right now. Wait a few seconds, then search again.";
+
+/** The message a LinkedIn targeting search answers when it fails another way. */
+export const LINKEDIN_TARGETING_SEARCH_FAILED_MESSAGE = "LinkedIn search didn't answer. Search again.";
+
+/** How long the custom targeting typeahead waits after the last keystroke before it searches (#5764 rows 8–11). */
+export const LINKEDIN_TARGETING_SEARCH_DEBOUNCE_MS = 400;
+
+/**
+ * The facets the Implement tab's custom targeting editor offers (#5764 rows 8–11), in the order shown: the searched
+ * ones (`LINKEDIN_TARGETING_SEARCH_FACETS`) and the three fixed lists. Not `interfaceLocales`, nor the ad segments.
+ */
+export const LINKEDIN_TARGETING_EDITOR_FACETS: readonly LinkedInTargetingEditorFacetOption[] = [
+  { key: 'skills', label: 'Skills', searchable: true },
+  { key: 'titles', label: 'Job titles', searchable: true },
+  { key: 'seniorities', label: 'Seniorities', searchable: false },
+  { key: 'jobFunctions', label: 'Job functions', searchable: false },
+  { key: 'employers', label: 'Employers', searchable: true },
+  { key: 'industries', label: 'Industries', searchable: true },
+  { key: 'staffCountRanges', label: 'Company sizes', searchable: false },
+  { key: 'groups', label: 'Member groups', searchable: true },
+  { key: 'interests', label: 'Interests', searchable: true },
+];
+
+function numbered(prefix: string, names: readonly string[]): LinkedInTargetingEntity[] {
+  return names.map((name, index) => ({ urn: `${prefix}${index + 1}`, name }));
+}
+
+/** The values of the three fixed-list facets, with LinkedIn's names: seniorities, job functions and company sizes. */
+export const LINKEDIN_TARGETING_STATIC_VALUES: Readonly<Record<LinkedInTargetingStaticFacet, readonly LinkedInTargetingEntity[]>> = {
+  seniorities: numbered('urn:li:seniority:', ['Unpaid', 'Training', 'Entry', 'Senior', 'Manager', 'Director', 'VP', 'CXO', 'Partner', 'Owner']),
+  jobFunctions: numbered('urn:li:function:', [
+    'Accounting',
+    'Administrative',
+    'Arts and Design',
+    'Business Development',
+    'Community and Social Services',
+    'Consulting',
+    'Education',
+    'Engineering',
+    'Entrepreneurship',
+    'Finance',
+    'Healthcare Services',
+    'Human Resources',
+    'Information Technology',
+    'Legal',
+    'Marketing',
+    'Media and Communication',
+    'Military and Protective Services',
+    'Operations',
+    'Product Management',
+    'Program and Project Management',
+    'Purchasing',
+    'Quality Assurance',
+    'Real Estate',
+    'Research',
+    'Sales',
+    'Support',
+  ]),
+  staffCountRanges: LINKEDIN_STAFF_COUNT_RANGES.map((urn, index) => ({
+    urn,
+    name: ['1 employee', '2–10', '11–50', '51–200', '201–500', '501–1,000', '1,001–5,000', '5,001–10,000', '10,001+'][index],
+  })),
+};
 
 /** An Images-API image URN as campaign-service accepts it (`imageURNRE`, `internal/platform/linkedin/targeting.go`). */
 export const LINKEDIN_IMAGE_URN_PATTERN = /^urn:li:image:[A-Za-z0-9_-]+$/;

@@ -159,9 +159,12 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
     // An ad name or description campaign-service would refuse or cut (#5764 rows 16–17); the message is under the field.
     if (input.variantFieldsInvalid) return 'LinkedIn Ads: fix the ad name or description.';
   }
-  // Removals the create cannot carry (#5546): the legacy creator would drop them, and without the profile catalogue
-  // they cannot be applied. A block rather than a silent revert to the profile as configured.
-  if (input.removalsHeld) {
+  // Custom targeting (#5764 rows 8–11) replaces the profile, so its removals are not sent and hold nothing.
+  if (input.customTargeting) {
+    if (input.customTargeting.refusal !== null) return `LinkedIn Ads: fix the custom targeting. ${input.customTargeting.refusal}`;
+  } else if (input.removalsHeld) {
+    // Removals the create cannot carry (#5546): the legacy creator would drop them, and without the profile catalogue
+    // they cannot be applied. A block rather than a silent revert to the profile as configured.
     if (!input.targetingEditAvailable) return 'LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.';
     if (!input.profileLoaded) return "LinkedIn Ads: the targeting profile's details have not loaded. Reload the page, or reset the targeting profile.";
   }

@@ -51,7 +51,15 @@ describe('linkedInDraftFields', () => {
     uploadFailedBriefId: '',
     format: 'text',
     textAds: [{ key: 'text-ad-1', headline: 'h', description: 'd' }],
+    customTargeting: true,
+    targetingDraft: { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {} },
   };
+
+  it('carries custom targeting and a copy of its draft', () => {
+    const fields = linkedInDraftFields(state);
+    expect(fields).toMatchObject({ linkedInCustomTargeting: true, linkedInTargetingDraft: state.targetingDraft });
+    expect(fields.linkedInTargetingDraft?.clauses[0]).not.toBe(state.targetingDraft.clauses[0]);
+  });
 
   it('carries the format and a copy of each text ad', () => {
     const fields = linkedInDraftFields(state);
@@ -87,6 +95,17 @@ describe('linkedInDraftRestore', () => {
   ])('restores a stored format %s as %s', (stored, expected) => {
     // A stored draft is replayed from JSON, so an unknown format is possible.
     expect(linkedInDraftRestore(draft({ linkedInFormat: stored as LinkedInDraftSnapshot['linkedInFormat'] })).format).toBe(expected);
+  });
+
+  it.each([
+    ['a stored draft', { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {} }, true],
+    ['a draft with no clause list', { exclude: {} }, false],
+  ])('restores custom targeting and %s', (_label, stored, restored) => {
+    const restore = linkedInDraftRestore(
+      draft({ linkedInCustomTargeting: true, linkedInTargetingDraft: stored as LinkedInDraftSnapshot['linkedInTargetingDraft'] })
+    );
+    expect(restore.customTargeting).toBe(true);
+    expect(restore.targetingDraft).toEqual(restored ? stored : undefined);
   });
 
   it('restores a copy of each text ad', () => {

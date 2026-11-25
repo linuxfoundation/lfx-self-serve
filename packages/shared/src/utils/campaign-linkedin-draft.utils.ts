@@ -11,6 +11,7 @@ import type {
   LinkedInDraftState,
   LinkedInVariantDraft,
 } from '../interfaces/campaign.interface';
+import { linkedInTargetingDraftFromStored } from './campaign-linkedin-targeting-form.utils';
 
 /**
  * The Implement tab's LinkedIn draft rules (#5980): what the draft carries, what a restore sets, and what a brief seeds.
@@ -49,6 +50,8 @@ export function linkedInDraftFields(
   | 'linkedInImageUploadFailedBriefId'
   | 'linkedInFormat'
   | 'linkedInTextAds'
+  | 'linkedInCustomTargeting'
+  | 'linkedInTargetingDraft'
 > {
   return {
     linkedInBudgetUsd: state.budgetUsd,
@@ -62,6 +65,8 @@ export function linkedInDraftFields(
     linkedInImageUploadFailedBriefId: state.uploadFailedBriefId,
     linkedInFormat: state.format,
     linkedInTextAds: state.textAds.map((ad) => ({ ...ad })),
+    linkedInCustomTargeting: state.customTargeting,
+    linkedInTargetingDraft: structuredClone(state.targetingDraft),
   };
 }
 
@@ -93,6 +98,10 @@ export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraf
       .filter((ad) => typeof ad?.key === 'string' && typeof ad.headline === 'string' && typeof ad.description === 'string')
       .map(({ key, headline, description }) => ({ key, headline, description }));
   }
+  // Custom targeting (#5764 rows 8–11): present-only, and only a stored draft the editor can show.
+  if (typeof draft.linkedInCustomTargeting === 'boolean') restore.customTargeting = draft.linkedInCustomTargeting;
+  const targetingDraft = linkedInTargetingDraftFromStored(draft.linkedInTargetingDraft);
+  if (targetingDraft) restore.targetingDraft = targetingDraft;
   if (draft.linkedInImageUploadPendingName) {
     restore.pendingUpload = { name: draft.linkedInImageUploadPendingName, briefId: draft.linkedInImageUploadPendingBriefId ?? '' };
   }

@@ -195,6 +195,9 @@ describe('linkedInCreateRefusal', () => {
       "LinkedIn Ads: the targeting profile's details have not loaded. Reload the page, or reset the targeting profile.",
     ],
     ['removals that can be sent', { removalsHeld: true, targetingEditAvailable: true, profileLoaded: true }, null],
+    // Custom targeting (#5764 rows 8–11) replaces the profile: its own refusal holds, and removals hold nothing.
+    ['custom targeting refused', { customTargeting: { refusal: 'Add a value.' } }, 'LinkedIn Ads: fix the custom targeting. Add a value.'],
+    ['custom targeting with profile removals', { removalsHeld: true, customTargeting: { refusal: null } }, null],
     ['an account the catalog does not list', { accountInCatalog: false }, 'LinkedIn Ads: choose an ad account.'],
     ['an unlisted account the connection decides', { accountInCatalog: false, accountSetByConnection: true }, null],
     [

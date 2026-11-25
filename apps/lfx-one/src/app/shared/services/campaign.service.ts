@@ -91,6 +91,8 @@ import {
   GoogleAdsGeoTargetSearchOptions,
   GoogleAdsGeoTargetSearchResult,
   LinkedInGeoSearchResult,
+  LinkedInTargetingSearchFacet,
+  LinkedInTargetingSearchResult,
   GoogleAdsAudienceReadType,
   GoogleAdsAudiencesResult,
   GoogleAdsUserListsResult,
@@ -812,6 +814,16 @@ export class CampaignService {
     // `strictHttpParams`, because the query is user-typed text (see `searchGoogleAdsGeoTargets`).
     const params = strictHttpParams().set('project', projectSlug).set('q', query);
     return this.http.get<LinkedInGeoSearchResult>('/api/campaigns/linkedin/geo-targets', { params });
+  }
+
+  /**
+   * Search one LinkedIn targeting facet for the Implement tab's custom targeting editor (#5764 rows 8–11): campaign-service's
+   * targeting typeahead. 404 while custom targeting is off on the server.
+   */
+  public searchLinkedInTargeting(projectSlug: string, facet: LinkedInTargetingSearchFacet, query: string): Observable<LinkedInTargetingSearchResult> {
+    // `strictHttpParams`, because the query is user-typed text (see `searchGoogleAdsGeoTargets`).
+    const params = strictHttpParams().set('project', projectSlug).set('facet', facet).set('q', query);
+    return this.http.get<LinkedInTargetingSearchResult>('/api/campaigns/linkedin/targeting-entities', { params });
   }
 
   /**

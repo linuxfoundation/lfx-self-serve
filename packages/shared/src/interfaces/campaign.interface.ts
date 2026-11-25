@@ -1453,6 +1453,12 @@ export interface CampaignImplementationDraft {
   linkedInFormat?: LinkedInAdFormat;
   linkedInTextAds?: LinkedInTextAdDraft[];
   /**
+   * Whether custom targeting replaces the targeting profile (#5764 rows 8–11), and the clauses as edited. Restored only
+   * when present; the tab sends `targeting` only while `linkedInTargetingEnabled` is on.
+   */
+  linkedInCustomTargeting?: boolean;
+  linkedInTargetingDraft?: LinkedInTargetingDraft;
+  /**
    * The X section as edited: the daily budget and the authored tweet's copy as RAW text, so a
    * blank budget stays blank rather than turning into 0, and the tweet image upload on the LinkedIn
    * upload fields' terms above. All optional and restored only when present, so a draft written
@@ -2356,6 +2362,11 @@ export interface LinkedInCreateRefusalInput {
   textAds?: LinkedInTextAdsRefusalInput;
   /** Text Ads are chosen but this deployment no longer offers them (#5764 row 19). */
   textAdsUnavailable?: boolean;
+  /**
+   * Present only while custom targeting is on (#5764 rows 8–11): why its clauses cannot be sent, or `null`. Custom
+   * targeting replaces the profile, so profile removals then hold nothing.
+   */
+  customTargeting?: { refusal: string | null };
 }
 
 export interface LinkedInCampaignCreateRequest {
@@ -2413,6 +2424,42 @@ export interface LinkedInCampaignCreateRequest {
 export interface LinkedInTargeting {
   include: Record<string, string[]>[];
   exclude?: Record<string, string[]>;
+}
+
+/** A facet the Implement tab's custom targeting editor offers (#5764 rows 8–11): searched, or picked from a fixed list. */
+export type LinkedInTargetingEditorFacet = LinkedInTargetingSearchFacet | LinkedInTargetingStaticFacet;
+
+/** A facet whose values are a fixed list rather than a search: seniorities, job functions and company sizes. */
+export type LinkedInTargetingStaticFacet = 'seniorities' | 'jobFunctions' | 'staffCountRanges';
+
+/** One editor facet: its key, the label shown, and whether its values come from the targeting search. */
+export interface LinkedInTargetingEditorFacetOption {
+  key: LinkedInTargetingEditorFacet;
+  label: string;
+  searchable: boolean;
+}
+
+/** The values picked for each facet of one clause or of the exclusions, with names so a restored chip reads the same. */
+export type LinkedInTargetingFacetPicks = Partial<Record<LinkedInTargetingEditorFacet, LinkedInTargetingEntity[]>>;
+
+/**
+ * Custom LinkedIn targeting as the Implement tab edits it (#5764 rows 8–11): the include clauses (ANDed; a clause's
+ * values ORed) and the exclusions. `linkedInTargetingForCreate` turns it into `linkedInConfig.targeting`.
+ */
+export interface LinkedInTargetingDraft {
+  clauses: LinkedInTargetingFacetPicks[];
+  exclude: LinkedInTargetingFacetPicks;
+}
+
+/** Where a facet's values go: an include clause or the exclusions. */
+export type LinkedInTargetingPlacement = 'include' | 'exclude';
+
+/** The state of the editor's typeahead for one facet: the values offered, and whether it is waiting or failed (the message). */
+export interface LinkedInTargetingSearchState {
+  facet: LinkedInTargetingSearchFacet | null;
+  entities: LinkedInTargetingEntity[];
+  pending: boolean;
+  failure: string | null;
 }
 
 /** A `linkedInConfig` the create route refuses for its keys (#5764): the field to name, and why. Never echoes a caller key. */
@@ -3095,6 +3142,8 @@ export type LinkedInDraftSnapshot = Pick<
   | 'linkedInImageUploadFailedBriefId'
   | 'linkedInFormat'
   | 'linkedInTextAds'
+  | 'linkedInCustomTargeting'
+  | 'linkedInTargetingDraft'
 >;
 
 /** The LinkedIn signals `linkedInDraftFields` snapshots into the draft (#5980): budget, cap, variants and the upload slot. */
@@ -3111,6 +3160,9 @@ export interface LinkedInDraftState {
   /** The ad format chosen and the Text Ads as edited (#5764 row 19). */
   format: LinkedInAdFormat;
   textAds: readonly LinkedInTextAdDraft[];
+  /** Whether custom targeting is on, and its clauses as edited (#5764 rows 8–11). */
+  customTargeting: boolean;
+  targetingDraft: LinkedInTargetingDraft;
 }
 
 /** What a restored draft does to the LinkedIn section (#5980): values to set, and at most one upload step for the component to run. */
@@ -3126,6 +3178,8 @@ export interface LinkedInDraftRestore {
   pendingUpload?: { name: string; briefId: string };
   format?: LinkedInAdFormat;
   textAds?: LinkedInTextAdDraft[];
+  customTargeting?: boolean;
+  targetingDraft?: LinkedInTargetingDraft;
 }
 
 /** What a brief's LinkedIn copy seeds (#5980): variants, geos and profile, and a lifetime budget when the strategy names one. */
