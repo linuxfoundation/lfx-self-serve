@@ -5,12 +5,27 @@ import { MAX_ORG_TRAINING_FILTER_VALUE_LENGTH, MAX_SNOWFLAKE_PAGINATION_PAGE } f
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { assertOrgLensRead, getTrainingStats, getFilterOptions, getGroups, getGroupEmployees, logger } = vi.hoisted(() => ({
+const {
+  assertOrgLensRead,
+  resolveOrgLensRollUp,
+  getTrainingStats,
+  getFilterOptions,
+  getGroups,
+  getGroupEmployees,
+  getFamilyTrainingStats,
+  getFamilyFilterOptions,
+  getFamilyGroups,
+  logger,
+} = vi.hoisted(() => ({
   assertOrgLensRead: vi.fn(),
+  resolveOrgLensRollUp: vi.fn(),
   getTrainingStats: vi.fn(),
   getFilterOptions: vi.fn(),
   getGroups: vi.fn(),
   getGroupEmployees: vi.fn(),
+  getFamilyTrainingStats: vi.fn(),
+  getFamilyFilterOptions: vi.fn(),
+  getFamilyGroups: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
@@ -25,10 +40,18 @@ vi.mock('../services/org-lens-training.service', () => ({
     public getFilterOptions = getFilterOptions;
     public getGroups = getGroups;
     public getGroupEmployees = getGroupEmployees;
+    public getFamilyTrainingStats = getFamilyTrainingStats;
+    public getFamilyFilterOptions = getFamilyFilterOptions;
+    public getFamilyGroups = getFamilyGroups;
+    public familyScope = (rollUp: { members: { accountId: string }[] }, company?: string) => ({
+      members: company ? rollUp.members.filter((member) => member.accountId === company) : rollUp.members,
+      organizations: rollUp.members,
+    });
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../helpers/org-lens-read-access.helper', () => ({ assertOrgLensRead }));
+vi.mock('../helpers/org-lens-roll-up.helper', () => ({ resolveOrgLensRollUp }));
 
 import { ServiceValidationError } from '../errors';
 import { OrgLensTrainingController } from './org-lens-training.controller';
@@ -279,6 +302,90 @@ describe('OrgLensTrainingController', () => {
 
       expect(next).not.toHaveBeenCalled();
       expect(getTrainingStats.mock.calls[0][1]).toMatchObject({ level: 'Unknown' });
+    });
+  });
+
+  describe('a family roll-up key', () => {
+    const ROLL_UP_KEY = 'family-001410000000000TOP';
+    const SIBLING = '001410000000000SIB';
+    const OUTSIDER = '001410000000000OUT';
+    const members = [
+      { uid: ORG_UID, accountId: ORG_UID, name: 'Acme', logoUrl: null },
+      { uid: SIBLING, accountId: SIBLING, name: 'Acme Labs', logoUrl: null },
+    ];
+    const rollUpReq = (query: Record<string, unknown>): Request => ({ params: { orgUid: ROLL_UP_KEY }, query, path: '/test' }) as unknown as Request;
+
+    beforeEach(() => {
+      resolveOrgLensRollUp.mockResolvedValue({ rollUpKey: ROLL_UP_KEY, rootUid: '001410000000000TOP', members, complete: true, excludedCount: 0 });
+      getFamilyTrainingStats.mockResolvedValue({ rosterMembers: null, peopleWithTrainingActivity: 0, coursesTaken: 0 });
+      getFamilyFilterOptions.mockResolvedValue({ courses: [] });
+      getFamilyGroups.mockResolvedValue({ data: [], total: 0, totals: {} });
+    });
+
+    it('serves stats, options and groups through the roll-up gate, never the single-organization reads', async () => {
+      const next = vi.fn();
+
+      await controller.getTrainingStats(rollUpReq({ range: 'all' }), buildRes(), next);
+      await controller.getFilterOptions(rollUpReq({ range: '90d' }), buildRes(), next);
+      await controller.getGroups(rollUpReq({ groupBy: 'project' }), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(resolveOrgLensRollUp).toHaveBeenCalledTimes(3);
+      expect(resolveOrgLensRollUp.mock.calls.every(([, key]) => key === ROLL_UP_KEY)).toBe(true);
+      expect(getFamilyTrainingStats.mock.calls[0][1].members).toEqual(members);
+      expect(getFamilyTrainingStats.mock.calls[0][2]).toMatchObject({ range: 'all' });
+      expect(getFamilyFilterOptions.mock.calls[0][2]).toBe('90d');
+      expect(getFamilyGroups.mock.calls[0][3]).toMatchObject({ groupBy: 'project', tab: 'certifications' });
+      expect([getTrainingStats, getFilterOptions, getGroups, assertOrgLensRead].every((fn) => fn.mock.calls.length === 0)).toBe(true);
+    });
+
+    it('narrows to the company the Company filter names, and refuses one outside the roll-up', async () => {
+      const next = vi.fn();
+
+      await controller.getTrainingStats(rollUpReq({ company: SIBLING }), buildRes(), next);
+      expect(getFamilyTrainingStats.mock.calls[0][1].members.map((member: { accountId: string }) => member.accountId)).toEqual([SIBLING]);
+
+      await controller.getTrainingStats(rollUpReq({ company: OUTSIDER }), buildRes(), next);
+      await controller.getGroups(rollUpReq({ company: OUTSIDER }), buildRes(), next);
+      expect(next).toHaveBeenCalledTimes(2);
+      expect(next.mock.calls.every(([e]) => e instanceof ServiceValidationError)).toBe(true);
+      expect(getFamilyTrainingStats).toHaveBeenCalledTimes(1);
+      expect(getFamilyGroups).not.toHaveBeenCalled();
+    });
+
+    it('stops before the service when the roll-up gate refuses the caller', async () => {
+      resolveOrgLensRollUp.mockRejectedValue(new Error('forbidden'));
+      const next = vi.fn();
+
+      await controller.getTrainingStats(rollUpReq({}), buildRes(), next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(getFamilyTrainingStats).not.toHaveBeenCalled();
+    });
+
+    it("opens the drawer as the named company's own single-organization read, with how the caller qualified on it", async () => {
+      assertOrgLensRead.mockResolvedValue('auditor-entitlement');
+      const next = vi.fn();
+
+      await controller.getGroupEmployees(rollUpReq({ company: SIBLING, groupValue: 'x', status: 'completed' }), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(assertOrgLensRead).toHaveBeenCalledWith(expect.anything(), SIBLING, 'get_org_lens_training_group_employees');
+      expect(getGroupEmployees.mock.calls[0][1]).toBe(SIBLING);
+      expect(getGroupEmployees.mock.calls[0][4]).toBe('auditor-entitlement');
+    });
+
+    it.each([
+      ['without a company', {}],
+      ['for a company outside the roll-up', { company: OUTSIDER }],
+    ])('refuses a drawer %s', async (_name, query) => {
+      const next = vi.fn();
+
+      await controller.getGroupEmployees(rollUpReq({ ...query, groupValue: 'x', status: 'completed' }), buildRes(), next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(getGroupEmployees).not.toHaveBeenCalled();
     });
   });
 });
