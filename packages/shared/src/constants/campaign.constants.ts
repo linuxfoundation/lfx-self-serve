@@ -953,19 +953,27 @@ export const LINKEDIN_TARGETING_SEARCH_DEBOUNCE_MS = 400;
 
 /**
  * The facets the Implement tab's custom targeting editor offers (#5764 rows 8–11), in the order shown: the searched
- * ones (`LINKEDIN_TARGETING_SEARCH_FACETS`) and the three fixed lists. Not `interfaceLocales`, nor the ad segments.
+ * ones (`LINKEDIN_TARGETING_SEARCH_FACETS`), the three fixed lists and the two ad segment facets. Not `interfaceLocales`.
  */
 export const LINKEDIN_TARGETING_EDITOR_FACETS: readonly LinkedInTargetingEditorFacetOption[] = [
-  { key: 'skills', label: 'Skills', searchable: true },
-  { key: 'titles', label: 'Job titles', searchable: true },
-  { key: 'seniorities', label: 'Seniorities', searchable: false },
-  { key: 'jobFunctions', label: 'Job functions', searchable: false },
-  { key: 'employers', label: 'Employers', searchable: true },
-  { key: 'industries', label: 'Industries', searchable: true },
-  { key: 'staffCountRanges', label: 'Company sizes', searchable: false },
-  { key: 'groups', label: 'Member groups', searchable: true },
-  { key: 'interests', label: 'Interests', searchable: true },
+  { key: 'skills', label: 'Skills', kind: 'search' },
+  { key: 'titles', label: 'Job titles', kind: 'search' },
+  { key: 'seniorities', label: 'Seniorities', kind: 'static' },
+  { key: 'jobFunctions', label: 'Job functions', kind: 'static' },
+  { key: 'employers', label: 'Employers', kind: 'search' },
+  { key: 'industries', label: 'Industries', kind: 'search' },
+  { key: 'staffCountRanges', label: 'Company sizes', kind: 'static' },
+  { key: 'groups', label: 'Member groups', kind: 'search' },
+  { key: 'interests', label: 'Interests', kind: 'search' },
+  { key: 'audienceMatchingSegments', label: 'Matched audiences', kind: 'segment' },
+  { key: 'dynamicSegments', label: 'Retargeting audiences', kind: 'segment' },
 ];
+
+/** What the editor's segment area says while the ad account's segments load (#5764 rows 8–11). */
+export const LINKEDIN_AUDIENCES_LOADING_MESSAGE = 'Loading LinkedIn audiences…';
+
+/** What it says when the segment read failed another way than the coded 403 or 503. */
+export const LINKEDIN_AUDIENCES_FAILED_MESSAGE = "LinkedIn audiences didn't load. Try again.";
 
 function numbered(prefix: string, names: readonly string[]): LinkedInTargetingEntity[] {
   return names.map((name, index) => ({ urn: `${prefix}${index + 1}`, name }));

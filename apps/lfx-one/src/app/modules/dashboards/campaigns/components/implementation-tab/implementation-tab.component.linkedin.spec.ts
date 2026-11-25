@@ -601,7 +601,11 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       const f = await mountWithSelection(true);
       await answer(f, chooser);
 
+      // The custom targeting editor reads the segments of the account the create names: the default until a grant is picked.
+      const audienceAccount = (f.componentInstance as unknown as { linkedInAudienceAccountId(): string | null }).linkedInAudienceAccountId;
+      expect(audienceAccount()).toBeNull();
       pick(f, GRANT.accountId);
+      expect(audienceAccount()).toBe(GRANT.accountId);
 
       expect(el(f, 'implementation-linkedin-create-account-page')?.textContent).toContain(GRANT.orgId);
       const sent = submitAndRead(f);

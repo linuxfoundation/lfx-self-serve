@@ -4007,6 +4007,7 @@
               <lfx-linkedin-targeting-editor
                 class="mt-3 block"
                 [projectSlug]="activeFoundationSlug()"
+                [accountId]="linkedInAudienceAccountId()"
                 [draft]="linkedInTargetingDraft()"
                 (draftChange)="onLinkedInTargetingDraftChange($event)"
                 data-testid="implementation-linkedin-custom-targeting" />

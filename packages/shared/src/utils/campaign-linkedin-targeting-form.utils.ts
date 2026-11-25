@@ -2,6 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
+  LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
+  LINKEDIN_AUDIENCES_FAILED_MESSAGE,
+  LINKEDIN_AUDIENCES_LOADING_MESSAGE,
+  LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE,
   LINKEDIN_TARGETING_EDITOR_FACETS,
   LINKEDIN_TARGETING_FACETS,
   LINKEDIN_TARGETING_LIMITS,
@@ -10,6 +15,8 @@ import {
   LINKEDIN_TARGETING_STATIC_VALUES,
 } from '../constants/campaign.constants';
 import type {
+  LinkedInAudienceSegment,
+  LinkedInAudiencesState,
   LinkedInTargeting,
   LinkedInTargetingDraft,
   LinkedInTargetingEditorFacet,
@@ -17,6 +24,8 @@ import type {
   LinkedInTargetingEntity,
   LinkedInTargetingFacetPicks,
   LinkedInTargetingPlacement,
+  LinkedInTargetingSegmentChoice,
+  LinkedInTargetingSegmentFacet,
 } from '../interfaces/campaign.interface';
 import { linkedInTargetingRefusal } from './campaign-linkedin-targeting.utils';
 
@@ -126,6 +135,60 @@ export function linkedInTargetingSearchEmptyMessage(queryRefusal: string | null,
   if (queryRefusal !== null) return queryRefusal;
   if (pending) return 'Searching…';
   return failure ?? 'Nothing matches. Try another word.';
+}
+
+/**
+ * The segment read's state after it failed with `status` and the error body's `code`: `restricted` on a 403 (only
+ * `global_marketing_ops` on the project may read or send segments), else `unavailable`, saying to try again.
+ */
+export function linkedInAudiencesFailure(status: number, code: unknown): LinkedInAudiencesState {
+  if (status === 403) return { status: 'restricted', audiences: [], failure: LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE };
+  const failure =
+    status === 503 && code === LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE ? LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE : LINKEDIN_AUDIENCES_FAILED_MESSAGE;
+  return { status: 'unavailable', audiences: [], failure };
+}
+
+/** What a segment's status adds to its label: nothing once `READY`, else that it will not serve. */
+function segmentStatusNote(status: string): string {
+  if (status === 'READY') return '';
+  if (status === 'ARCHIVED') return " (archived — won't serve)";
+  return ` (${status.toLowerCase()} — won't serve until ready)`;
+}
+
+/** A segment as the select lists it: its name, its approximate size when LinkedIn gives one, and a status note. */
+export function linkedInAudienceSegmentLabel(segment: LinkedInAudienceSegment): string {
+  const size = segment.approximateMemberCount === null ? '' : ` · ~${segment.approximateMemberCount.toLocaleString('en-US')} members`;
+  return `${segment.name}${size}${segmentStatusNote(segment.status)}`;
+}
+
+/**
+ * The segments `facet` may still add: the account's segments of that facet whose URN is in neither segment facet of
+ * `taken` (this group's picks and what it must not offer). The two segment facets are one namespace for the
+ * include/exclude overlap, as `linkedInTargetingRefusal` compares them.
+ */
+export function linkedInTargetingSegmentChoices(
+  facet: LinkedInTargetingSegmentFacet,
+  audiences: readonly LinkedInAudienceSegment[],
+  taken: LinkedInTargetingFacetPicks
+): LinkedInTargetingSegmentChoice[] {
+  const picked = new Set([...(taken.audienceMatchingSegments ?? []), ...(taken.dynamicSegments ?? [])].map((pick) => pick.urn));
+  return audiences
+    .filter((segment) => segment.facet === facet && !picked.has(segment.urn))
+    .map((segment) => ({ urn: segment.urn, name: segment.name, label: linkedInAudienceSegmentLabel(segment) }));
+}
+
+/**
+ * What the segment area says in place of, or under, its select, or `null` when there are choices: loading, the read's
+ * failure, that the account has no segments of this facet, or that every one is already used in this targeting.
+ */
+export function linkedInTargetingSegmentMessage(state: LinkedInAudiencesState, facet: LinkedInTargetingSegmentFacet, choiceCount: number): string | null {
+  if (state.status === 'loading') return LINKEDIN_AUDIENCES_LOADING_MESSAGE;
+  if (state.status !== 'loaded') return state.failure;
+  if (choiceCount > 0) return null;
+  if (!state.audiences.some((segment) => segment.facet === facet)) {
+    return `No ${facet === 'dynamicSegments' ? 'retargeting' : 'matched'} audiences on this ad account.`;
+  }
+  return 'Every one of these audiences is already used in this targeting.';
 }
 
 /** Whether another include clause may be added. */

@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, input, model, Signal, signal } from '@angular/core';
+import { Component, computed, inject, input, model, output, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
+import { ButtonComponent } from '@components/button/button.component';
 import { LINKEDIN_TARGETING_EDITOR_FACETS, LINKEDIN_TARGETING_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import type {
+  LinkedInAudiencesState,
   LinkedInTargetingEditorFacet,
   LinkedInTargetingEditorFacetOption,
   LinkedInTargetingEntity,
@@ -15,6 +17,8 @@ import type {
   LinkedInTargetingPlacement,
   LinkedInTargetingSearchFacet,
   LinkedInTargetingSearchState,
+  LinkedInTargetingSegmentChoice,
+  LinkedInTargetingSegmentFacet,
 } from '@lfx-one/shared/interfaces';
 import {
   linkedInGeoSearchQueryRefusal,
@@ -26,6 +30,8 @@ import {
   linkedInTargetingSearchChoices,
   linkedInTargetingSearchEmptyMessage,
   linkedInTargetingSearchFailure,
+  linkedInTargetingSegmentChoices,
+  linkedInTargetingSegmentMessage,
   linkedInTargetingStaticChoices,
 } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
@@ -36,12 +42,13 @@ import { catchError, map, of, startWith, switchMap, timer } from 'rxjs';
 
 /**
  * One group of LinkedIn custom targeting (#5764 rows 8–11): an include clause or the exclusions. Shows the values
- * picked per facet as chips, and adds values to the facet chosen, by search or from a fixed list. The parent owns the
- * picks; the rules live in `campaign-linkedin-targeting-form.utils.ts`.
+ * picked per facet as chips, and adds values to the facet chosen, by search, from a fixed list, or from the ad account's
+ * segments (which the editor reads once and passes in). The parent owns the picks; the rules live in
+ * `campaign-linkedin-targeting-form.utils.ts`.
  */
 @Component({
   selector: 'lfx-linkedin-targeting-facet-group',
-  imports: [AutocompleteComponent, ReactiveFormsModule, UiOptionComponent, UiSelectComponent],
+  imports: [AutocompleteComponent, ButtonComponent, ReactiveFormsModule, UiOptionComponent, UiSelectComponent],
   templateUrl: './linkedin-targeting-facet-group.component.html',
 })
 export class LinkedInTargetingFacetGroupComponent {
@@ -53,12 +60,16 @@ export class LinkedInTargetingFacetGroupComponent {
   public readonly testId = input.required<string>();
   /** Values this group must not offer: for the exclusions, everything a clause already includes. */
   public readonly unavailable = input<LinkedInTargetingFacetPicks>({});
+  /** The ad account's segments, read once by the editor for every group. */
+  public readonly segments = input<LinkedInAudiencesState>({ status: 'loading', audiences: [], failure: null });
 
   public readonly picks = model.required<LinkedInTargetingFacetPicks>();
+  /** Asks the editor to read the segments again after a failed read. */
+  public readonly segmentsRetry = output<void>();
 
   /** The typeahead's control, cleared after a pick so the box reads "search another". */
   protected readonly searchForm = new FormGroup({ entity: new FormControl<unknown>(null) });
-  /** The fixed-list picker's control, cleared after a pick. */
+  /** The fixed-list or segment picker's control, cleared after a pick. */
   protected readonly staticControl = new FormControl<string | null>(null);
 
   protected readonly facetsToAdd = computed<LinkedInTargetingEditorFacetOption[]>(() => linkedInTargetingFacetsToAdd(this.placement(), this.picks()));
@@ -77,9 +88,19 @@ export class LinkedInTargetingFacetGroupComponent {
   });
   /** What is picked here or unavailable, so neither is offered again. */
   private readonly taken = computed<LinkedInTargetingFacetPicks>(() => linkedInTargetingMergedPicks(this.picks(), this.unavailable()));
-  protected readonly staticChoices = computed<LinkedInTargetingEntity[]>(() => {
+  /** The values a fixed-list or segment facet still offers, each with the label its option shows. */
+  protected readonly listChoices = computed<LinkedInTargetingSegmentChoice[]>(() => {
     const facet = this.facet();
-    return facet && !facet.searchable ? linkedInTargetingStaticChoices(facet.key, this.taken()) : [];
+    if (facet?.kind === 'static') return linkedInTargetingStaticChoices(facet.key, this.taken()).map((choice) => ({ ...choice, label: choice.name }));
+    if (facet?.kind === 'segment') return linkedInTargetingSegmentChoices(facet.key as LinkedInTargetingSegmentFacet, this.segments().audiences, this.taken());
+    return [];
+  });
+  /** What a segment facet says instead of, or beside, its select: loading, why the read failed, or why nothing is left. */
+  protected readonly segmentMessage = computed<string | null>(() => {
+    const facet = this.facet();
+    return facet?.kind === 'segment'
+      ? linkedInTargetingSegmentMessage(this.segments(), facet.key as LinkedInTargetingSegmentFacet, this.listChoices().length)
+      : null;
   });
 
   /** The latest typed query; `equal: () => false` so a repeated query searches again after a failure. */
@@ -107,7 +128,7 @@ export class LinkedInTargetingFacetGroupComponent {
 
   protected onSearch(event: AutoCompleteCompleteEvent): void {
     const facet = this.facet();
-    if (facet?.searchable) this.query.set({ facet: facet.key as LinkedInTargetingSearchFacet, text: linkedInGeoSearchQueryText(event.query) });
+    if (facet?.kind === 'search') this.query.set({ facet: facet.key as LinkedInTargetingSearchFacet, text: linkedInGeoSearchQueryText(event.query) });
   }
 
   protected onSearchSelect(event: AutoCompleteSelectEvent): void {
@@ -121,7 +142,8 @@ export class LinkedInTargetingFacetGroupComponent {
   }
 
   protected onStaticPick(urn: string | null): void {
-    this.add(this.staticChoices().find((choice) => choice.urn === urn) ?? null);
+    const choice = this.listChoices().find((value) => value.urn === urn);
+    this.add(choice ? { urn: choice.urn, name: choice.name } : null);
     this.staticControl.setValue(null, { emitEvent: false });
   }
 

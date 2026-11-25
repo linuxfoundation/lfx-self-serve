@@ -1907,6 +1907,11 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInTargetingDraft = signal<LinkedInTargetingDraft>(emptyLinkedInTargetingDraft());
   /** Whether this create sends custom targeting: chosen, and offered by this deployment. */
   protected readonly linkedInCustomTargetingSelected = computed<boolean>(() => this.linkedInTargetingAvailable() && this.linkedInCustomTargeting());
+  /**
+   * The ad account whose segments the custom targeting editor reads: the one a create names as `selectedAdAccountId`
+   * (a non-default pick), else `null` for the default, so the segments offered are the ones the create can send.
+   */
+  protected readonly linkedInAudienceAccountId = computed<string | null>(() => this.linkedInAccountFieldsNow().selectedAdAccountId ?? null);
   protected readonly linkedInBudgetUsd = signal(DEFAULT_LINKEDIN_BUDGET_USD);
   protected readonly linkedInLifetimeBudget = signal(false);
   /** The optional daily cap beside a lifetime budget (#5774). null is no cap; cleared when the lifetime budget is turned off. */
