@@ -443,6 +443,9 @@ export const PROFILE_GROUPS_COPY = {
 /** Groups, where the Profile page sends someone to find a group (#6086). */
 export const PROFILE_GROUPS_PATH = '/groups';
 
+/** Router state for a group opened from the Profile page: its back link returns to Profile, in the Me lens (#6086). */
+export const PROFILE_GROUP_LINK_STATE = { backLabel: 'Profile', fromMeLens: true } as const;
+
 /** The Profile page's note when every section is empty (#6082). */
 export const PROFILE_NO_ACTIVITY_COPY = {
   title: 'We haven’t found any activity for you yet',

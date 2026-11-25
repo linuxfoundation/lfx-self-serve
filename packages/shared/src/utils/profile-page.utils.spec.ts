@@ -96,22 +96,21 @@ describe('buildProfileInvolvement', () => {
   });
 });
 
-const group = (uid: string, category: string, extra: Partial<MyCommittee> = {}): MyCommittee =>
-  ({
-    uid,
-    name: `${uid} group`,
-    category,
-    enable_voting: false,
-    public: true,
-    sso_group_enabled: false,
-    created_at: '',
-    updated_at: '',
-    total_members: 12,
-    project_uid: 'p1',
-    project_name: 'Acme Project',
-    my_role: 'Member',
-    ...extra,
-  }) as MyCommittee;
+const group = (uid: string, category: string, extra: Partial<MyCommittee> = {}): MyCommittee => ({
+  uid,
+  name: `${uid} group`,
+  category,
+  enable_voting: false,
+  public: true,
+  sso_group_enabled: false,
+  created_at: '',
+  updated_at: '',
+  total_members: 12,
+  project_uid: 'p1',
+  project_name: 'Acme Project',
+  my_role: 'Member',
+  ...extra,
+});
 
 describe('buildProfileGroups', () => {
   it('names the design’s type for each group, in its Groups page colour', () => {
@@ -120,11 +119,15 @@ describe('buildProfileGroups', () => {
       group('tsc', 'Technical Steering Committee'),
       group('wg', 'Working Group'),
       group('sig', 'Special Interest Group'),
+      group('legal', 'Legal Committee'),
+      group('abbr', 'TSC'),
     ]);
 
     expect(items.map((item) => [item.uid, item.type, item.typeTone])).toEqual([
       ['board', 'Board', 'feature'],
+      ['abbr', 'Technical', 'success'],
       ['tsc', 'Technical', 'success'],
+      ['legal', 'Committee', 'success'],
       ['wg', 'Working group', 'warning'],
       ['sig', 'Special Interest Group', 'accent'],
     ]);
@@ -142,5 +145,13 @@ describe('buildProfileGroups', () => {
 
     expect(item).toEqual(expect.objectContaining({ org: 'Acme Foundation', orgLogo: 'https://logos.example/acme.png', role: 'Chair', members: '1 member' }));
     expect(item.commands.at(-1)).toBe('one');
+    expect(item.ariaLabel).toBe('one group, Acme Foundation');
+  });
+
+  it('links under the group’s project, and names a group with no org on its own', () => {
+    const [item] = buildProfileGroups([group('solo', 'Board', { project_name: undefined, project_slug: 'acme' })]);
+
+    expect(item.queryParams).toEqual({ project: 'acme' });
+    expect(item.ariaLabel).toBe('solo group');
   });
 });

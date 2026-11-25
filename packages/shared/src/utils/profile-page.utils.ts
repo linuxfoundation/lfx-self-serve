@@ -66,12 +66,16 @@ export function buildProfileGroups(committees: MyCommittee[]): ProfileGroupItem[
   return committees
     .map((committee): ProfileGroupItem => {
       const behavioralClass = getGroupBehavioralClass(committee.category);
+      const org = committee.foundation_name || committee.project_name || '';
+      const name = committee.display_name || committee.name;
       return {
         uid: committee.uid,
         commands: getGroupCommands(committee) ?? ['/groups', committee.uid],
-        org: committee.foundation_name || committee.project_name || '',
+        queryParams: committee.project_slug ? { project: committee.project_slug } : null,
+        ariaLabel: org ? `${name}, ${org}` : name,
+        org,
         orgLogo: committee.project_logo_url || '',
-        name: committee.display_name || committee.name,
+        name,
         description: committee.description?.trim() || '',
         type: profileGroupType(behavioralClass, committee.category),
         typeTone: BEHAVIORAL_CLASS_TONE[behavioralClass],
@@ -86,7 +90,8 @@ export function buildProfileGroups(committees: MyCommittee[]): ProfileGroupItem[
 // The design's four types; a group outside them keeps its own category.
 function profileGroupType(behavioralClass: ReturnType<typeof getGroupBehavioralClass>, category: string | undefined): string {
   if (behavioralClass === 'governing-board') return 'Board';
-  if (behavioralClass === 'oversight-committee') return /technical/i.test(category ?? '') ? 'Technical' : 'Committee';
+  // Technical committees go by their full name or their TSC, TOC or TAC abbreviation.
+  if (behavioralClass === 'oversight-committee') return /technical|^t[soa]c$/i.test(category?.trim() ?? '') ? 'Technical' : 'Committee';
   if (behavioralClass === 'working-group') return 'Working group';
   return category?.trim() || 'Group';
 }

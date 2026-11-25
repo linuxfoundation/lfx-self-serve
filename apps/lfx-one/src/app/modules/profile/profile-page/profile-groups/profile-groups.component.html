@@ -31,7 +31,9 @@
         <a
           class="relative flex min-w-0 flex-col gap-[6px] rounded-[16px] border border-gray-200 bg-white p-[16px] text-inherit no-underline transition-colors duration-ui-fast hover:bg-gray-50 focus-visible:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 motion-reduce:transition-none"
           [routerLink]="item.commands"
-          [attr.aria-label]="item.name + ', ' + item.org"
+          [queryParams]="item.queryParams"
+          [state]="linkState"
+          [attr.aria-label]="item.ariaLabel"
           [lfxUiHoverCard]="card"
           [lfxUiHoverCardWidth]="300"
           [attr.data-testid]="'profile-groups-group-' + item.uid">
@@ -50,7 +52,7 @@
 
         <ng-template #card>
           <div class="flex flex-col items-start gap-[8px]" [attr.data-testid]="'profile-groups-card-' + item.uid">
-            <ng-container *ngTemplateOutlet="org; context: { $implicit: item }" />
+            <ng-container *ngTemplateOutlet="org; context: { $implicit: item, wrap: true }" />
             <span class="text-[15px] font-semibold leading-[20px] text-gray-900">{{ item.name }}</span>
             <span class="flex flex-row flex-wrap gap-[6px]">
               <lfx-ui-badge variant="line" size="sm" [tone]="item.typeTone">{{ item.type }}</lfx-ui-badge>
@@ -70,14 +72,14 @@
   }
 </lfx-profile-section>
 
-<!-- The org line: a 20px logo and the foundation or project name. -->
-<ng-template #org let-item>
+<!-- The org line: a 20px logo and the foundation or project name, cut to one line on the card and wrapped in full on the hover card. -->
+<ng-template #org let-item let-wrap="wrap">
   <span class="flex min-w-0 flex-row items-center gap-[8px]">
     <span class="flex size-[20px] flex-none items-center justify-center overflow-hidden rounded-[5px] shadow-[inset_0_0_0_1px_theme(colors.gray.200)]">
       @if (item.orgLogo) {
         <img class="size-[20px] object-contain" [src]="item.orgLogo" alt="" referrerpolicy="no-referrer" />
       }
     </span>
-    <span class="truncate text-[12px] leading-[16px] text-gray-500">{{ item.org }}</span>
+    <span class="text-[12px] leading-[16px] text-gray-500" [class.truncate]="!wrap" [class.break-words]="wrap">{{ item.org }}</span>
   </span>
 </ng-template>

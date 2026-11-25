@@ -906,8 +906,11 @@ export interface ProfileInvolvementState {
 /** A group seat on the Profile page's Group participation section (#6086). */
 export interface ProfileGroupItem {
   uid: string;
-  /** Router commands to the group's page. */
+  /** Router commands to the group's page, and the project it opens under, as the Groups page links it. */
   commands: string[];
+  queryParams: Record<string, string> | null;
+  /** The card's accessible name: the group, then its org when known. */
+  ariaLabel: string;
   /** The foundation or project the group belongs to, and its logo. */
   org: string;
   orgLogo: string;

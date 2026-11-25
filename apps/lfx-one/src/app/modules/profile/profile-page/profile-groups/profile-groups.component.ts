@@ -5,7 +5,7 @@ import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { outputFromObservable, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { PROFILE_GROUP_GRID_LIMIT, PROFILE_GROUPS_COPY, PROFILE_GROUPS_PATH } from '@lfx-one/shared/constants';
+import { PROFILE_GROUP_GRID_LIMIT, PROFILE_GROUP_LINK_STATE, PROFILE_GROUPS_COPY, PROFILE_GROUPS_PATH } from '@lfx-one/shared/constants';
 import { ProfileGroupsState } from '@lfx-one/shared/interfaces';
 import { buildProfileGroups } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
@@ -50,6 +50,7 @@ export class ProfileGroupsComponent {
   protected readonly copy = PROFILE_GROUPS_COPY;
   protected readonly findGroupsPath = PROFILE_GROUPS_PATH;
   protected readonly limit = PROFILE_GROUP_GRID_LIMIT;
+  protected readonly linkState = PROFILE_GROUP_LINK_STATE;
   protected readonly skeletons = [0, 1, 2];
 
   // Simple WritableSignals

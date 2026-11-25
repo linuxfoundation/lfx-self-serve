@@ -15,23 +15,23 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ProfileGroupsComponent } from './profile-groups.component';
 
-const group = (n: number, extra: Partial<MyCommittee> = {}): MyCommittee =>
-  ({
-    uid: `g${n}`,
-    name: `Group ${n}`,
-    category: 'Working Group',
-    description: `What group ${n} does.`,
-    enable_voting: false,
-    public: true,
-    sso_group_enabled: false,
-    created_at: '',
-    updated_at: '',
-    total_members: 8,
-    project_uid: 'p1',
-    project_name: 'Acme Project',
-    my_role: 'Member',
-    ...extra,
-  }) as MyCommittee;
+const group = (n: number, extra: Partial<MyCommittee> = {}): MyCommittee => ({
+  uid: `g${n}`,
+  name: `Group ${n}`,
+  category: 'Working Group',
+  description: `What group ${n} does.`,
+  enable_voting: false,
+  public: true,
+  sso_group_enabled: false,
+  created_at: '',
+  updated_at: '',
+  total_members: 8,
+  project_uid: 'p1',
+  project_name: 'Acme Project',
+  project_slug: 'acme',
+  my_role: 'Member',
+  ...extra,
+});
 
 @Component({
   selector: 'lfx-test-profile-groups-host',
@@ -93,6 +93,7 @@ describe('ProfileGroupsComponent', () => {
       'profile-groups-group-g4',
     ]);
     expect(cards()[0].getAttribute('href')).toContain('g2');
+    expect(cards()[0].getAttribute('href')).toContain('project=acme');
     expect(cards()[0].textContent).toContain('Board');
     expect(cards()[0].textContent).toContain('1 member');
     expect(cards()[1].textContent).toContain('Technical');
