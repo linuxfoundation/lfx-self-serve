@@ -383,6 +383,7 @@ import type {
   LinkedInTargeting,
   LinkedInTargetingDraft,
   LinkedInObjectiveDraft,
+  LinkedInTargetCostOfferInput,
   LinkedInTextAdDraft,
   LinkedInTextAdImageInput,
   LinkedInVariantView,
@@ -497,6 +498,11 @@ import {
   emptyLinkedInObjectiveDraft,
   linkedInObjectiveCreateRefusal,
   linkedInObjectiveFieldsForCreate,
+  linkedInObjectiveShown,
+  linkedInBiddingWithTargetCost,
+  linkedInTargetCostCreateRefusal,
+  linkedInTargetCostOffered,
+  linkedInTargetCostPending,
   linkedInTargetingDraftRefusal,
   linkedInTargetingForCreate,
   linkedInTargetingSegmentsAccountRefusal,
@@ -1026,6 +1032,12 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see linkedInConversionsEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInConversionsAvailable = computed<boolean>(() => this.linkedInConversionsEnabled() === true);
+
+  /**
+   * Whether a LinkedIn create's automatic bidding may carry a target cost (`CampaignListResult.linkedInTargetCostEnabled`,
+   * linuxfoundation/lfx-v2-campaign-service#674).
+   */
+  public readonly linkedInTargetCostEnabled = input<boolean | null>(null);
 
   /** The calls to action the variant editor offers. */
   protected readonly linkedInCallToActionOptions = LINKEDIN_CALL_TO_ACTION_OPTIONS;
@@ -1956,6 +1968,24 @@ export class ImplementationTabComponent implements OnInit {
    * picks (`linkedInSegmentsOwner`), and a create for another owner is held.
    */
   protected readonly linkedInObjectiveDraft = signal<LinkedInObjectiveDraft>(emptyLinkedInObjectiveDraft());
+  /** What decides whether the target cost is offered: the capability, the Bidding control, and LinkedIn's Bidding choice. */
+  private readonly linkedInTargetCostOfferInput = computed<LinkedInTargetCostOfferInput>(() => ({
+    enabled: this.linkedInTargetCostEnabled(),
+    biddingAvailable: this.biddingAvailable(),
+    strategy: this.biddingDrafts()['linkedin-ads']?.strategy,
+  }));
+  /** Whether the objective picker offers the target cost now (`linkedInTargetCostOffered`); hidden, a typed one is not sent. */
+  protected readonly linkedInTargetCostShown = computed<boolean>(() => linkedInTargetCostOffered(this.linkedInTargetCostOfferInput()));
+  /** A typed target cost while the capability is unread holds Create (`linkedInTargetCostPending`) rather than being dropped. */
+  private readonly linkedInTargetCostAwaitingCapability = computed<boolean>(() =>
+    linkedInTargetCostPending(this.linkedInTargetCostOfferInput(), this.linkedInObjectiveDraft())
+  );
+  /** The target cost field is on screen while it is offered, and while a typed one waits on the capability, so it can be cleared. */
+  protected readonly linkedInTargetCostFieldShown = computed<boolean>(() => this.linkedInTargetCostShown() || this.linkedInTargetCostAwaitingCapability());
+  /** The objective picker is mounted while it shows the objective or the target cost field. */
+  protected readonly linkedInObjectivePickerShown = computed<boolean>(
+    () => linkedInObjectiveShown(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable()) || this.linkedInTargetCostFieldShown()
+  );
 
   /**
    * The ad account whose segments the custom targeting editor reads: the account the create names, so the segments
@@ -7144,7 +7174,8 @@ export class ImplementationTabComponent implements OnInit {
               // The legacy creator reads the form's account. When the connection decides it, only a
               // chosen non-default account is sent, as `selectedAdAccountId` (#5809).
               ...this.linkedInAccountFieldsNow(),
-              ...this.biddingField('linkedin-ads'),
+              // With automatic bidding's target cost (campaign-service#674) only while offered and typed.
+              ...linkedInBiddingWithTargetCost(this.biddingField('linkedin-ads'), this.linkedInObjectiveDraft(), this.linkedInTargetCostShown()),
               // The objective and conversion rules (#5764 rows 2 and 4), only when chosen, so a create without a
               // choice sends what it always did and the bidding decides.
               ...linkedInObjectiveFieldsForCreate(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable()),
@@ -8901,6 +8932,12 @@ export class ImplementationTabComponent implements OnInit {
         owner: this.linkedInSegmentsOwner(),
         bidding: this.biddingField('linkedin-ads').bidding,
       }),
+      // The target cost (campaign-service#674): held while offered and refused; hidden, it is not sent and holds nothing.
+      targetCostRefusal: linkedInTargetCostCreateRefusal(
+        this.linkedInObjectiveDraft(),
+        this.linkedInTargetCostShown(),
+        this.linkedInTargetCostAwaitingCapability()
+      ),
       // Text Ads replace the variant checks while chosen (#5764 row 19); they need a manual bid.
       ...(this.linkedInTextAdsSelected()
         ? {

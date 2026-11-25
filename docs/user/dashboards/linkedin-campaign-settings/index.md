@@ -11,6 +11,8 @@ tags:
     sponsored content,
     budget,
     daily cap,
+    target cost,
+    automatic bidding,
     lifetime budget,
     targeting,
     locations,
@@ -24,7 +26,7 @@ tags:
     images,
     implement,
   ]
-last_updated: 2026-11-25
+last_updated: 2026-11-26
 intercom_collection: Dashboards
 ---
 
@@ -51,6 +53,14 @@ If the cap is under $10 or over the lifetime budget, a message appears under it 
 A campaign with a daily cap runs without its own end date in LinkedIn Campaign Manager. The event's campaign group stops it on the campaign's end date instead. If the event already has a campaign group that ends later than this campaign, or never ends, the create is refused.
 
 After the campaign is created, you can change its lifetime budget on the **Optimize** tab and the daily cap stays as it is. Keep **Budget pacing** on **Lifetime** there: switching a capped campaign to **Daily** is refused. A new lifetime budget below the daily cap is also refused; lower the cap first. To change the daily cap itself, use LinkedIn Campaign Manager.
+
+## Target cost
+
+With automatic bidding, you can set an optional **Target cost (USD)** under the LinkedIn bidding choice. It is sent with automatic bidding as the campaign's unit cost, in USD; how LinkedIn applies it is still being confirmed. For example, 17.88. Leave it empty for no target.
+
+The target must be more than 0, no more than 1,000,000 and use at most two decimal places. Otherwise a message appears under it and **Create** stays disabled until you fix or clear it.
+
+The box is only there with automatic bidding, and only where your deployment supports a target cost. Switch to manual bidding and the target is not sent. If you typed a target and the campaign settings are still loading, **Create** waits until they load, so the campaign is never created without the target you entered. If they can't be loaded, clear the target cost to continue.
 
 ## Locations
 

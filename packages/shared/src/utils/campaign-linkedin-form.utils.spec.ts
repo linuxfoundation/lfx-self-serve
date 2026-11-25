@@ -206,6 +206,9 @@ describe('linkedInCreateRefusal', () => {
     // The objective (#5764 rows 2 and 4) arrives as a whole message.
     ['an objective refused', { objectiveRefusal: 'LinkedIn Ads: pick a rule.' }, 'LinkedIn Ads: pick a rule.'],
     ['an objective that can be sent', { objectiveRefusal: null }, null],
+    // The target cost (campaign-service#674) arrives as a whole message too.
+    ['a target cost refused', { targetCostRefusal: 'LinkedIn Ads: fix it.' }, 'LinkedIn Ads: fix it.'],
+    ['a target cost that can be sent', { targetCostRefusal: null }, null],
     ['an account the catalog does not list', { accountInCatalog: false }, 'LinkedIn Ads: choose an ad account.'],
     ['an unlisted account the connection decides', { accountInCatalog: false, accountSetByConnection: true }, null],
     [

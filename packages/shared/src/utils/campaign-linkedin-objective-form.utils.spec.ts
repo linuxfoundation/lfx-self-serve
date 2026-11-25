@@ -23,6 +23,7 @@ import {
   linkedInObjectiveCreateRefusal,
   linkedInObjectiveDraftWithConversions,
   linkedInObjectiveFieldsForCreate,
+  linkedInObjectiveShown,
 } from './campaign-linkedin-objective-form.utils';
 
 const OWNER = 'tlf|';
@@ -40,6 +41,16 @@ const loaded: LinkedInConversionsState = {
   ],
   failure: null,
 };
+
+describe('linkedInObjectiveShown', () => {
+  it.each([
+    ['offered', draft(), true, true],
+    ['withdrawn with a choice held', draft({ objective: 'traffic' }), false, true],
+    ['withdrawn with nothing chosen', draft(), false, false],
+  ])('%s', (_label, value, available, expected) => {
+    expect(linkedInObjectiveShown(value, available)).toBe(expected);
+  });
+});
 
 describe('linkedInObjectiveChoice', () => {
   it.each([

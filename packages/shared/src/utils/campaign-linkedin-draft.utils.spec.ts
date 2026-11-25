@@ -141,6 +141,21 @@ describe('linkedInDraftRestore', () => {
       { objective: 'conversions', conversions: ['0x'], conversionsOwner: 'tlf|' },
       { objective: 'conversions', conversions: ['0x'], conversionsOwner: 'tlf|' },
     ],
+    [
+      'the target cost as typed, even one the create refuses',
+      { objective: null, conversions: [], conversionsOwner: null, targetCost: '17.885' },
+      { objective: null, conversions: [], conversionsOwner: null, targetCost: '17.885' },
+    ],
+    [
+      'no target cost that is not text',
+      { objective: null, conversions: [], conversionsOwner: null, targetCost: 17.88 },
+      { objective: null, conversions: [], conversionsOwner: null },
+    ],
+    [
+      'no blank target cost',
+      { objective: null, conversions: [], conversionsOwner: null, targetCost: '' },
+      { objective: null, conversions: [], conversionsOwner: null },
+    ],
     ['nothing from a draft that is not a record', ['traffic'], undefined],
   ])('restores the objective: %s', (_label, stored, expected) => {
     const restore = linkedInDraftRestore(draft({ linkedInObjectiveDraft: stored as unknown as LinkedInDraftSnapshot['linkedInObjectiveDraft'] }));
