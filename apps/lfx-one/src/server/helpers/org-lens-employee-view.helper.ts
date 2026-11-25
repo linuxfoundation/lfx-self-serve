@@ -17,7 +17,8 @@ const PERSONAL_FIELD_KEYS: ReadonlySet<string> = new Set(ORG_LENS_EMPLOYEE_VIEW_
 // The one ambiguity is unspaced CJK text glued to an ASCII local part (`联系ada@x.com`): {@link splitLeadingCjk} leaves the CJK words and
 // removes only the address. A git SSH remote (`git@github.com:org/repo.git`) is the one address-shaped token kept on purpose, and only by
 // {@link isGitRemote}: an address followed by a path or a colon is otherwise still an address.
-const EMBEDDED_EMAIL = /[\p{L}\p{M}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})(?![A-Za-z0-9_-]|\.[\p{L}\p{N}_])/gu;
+const EMBEDDED_EMAIL =
+  /[\p{L}\p{M}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:[Xx][Nn]--[A-Za-z0-9-]{2,}|\p{L}{2,})(?![A-Za-z0-9_-]|\.[\p{L}\p{N}_])/gu;
 
 /** Scripts written without spaces, whose words are not part of an address when they sit directly before an ASCII local part. */
 const CJK_THEN_ASCII_LOCAL = /^(.*[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}])([A-Za-z0-9._%+-]+)$/u;
@@ -35,7 +36,7 @@ function isGitRemote(address: string, following: string): boolean {
 }
 
 /** A whole value that is an address, by the same rule as {@link EMBEDDED_EMAIL}: `git@git.example.com:org/repo.git` and `pkg@1.2.3` are not. */
-const EMAIL_SHAPE = /^[^\s@]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})$/u;
+const EMAIL_SHAPE = /^[^\s@]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:[Xx][Nn]--[A-Za-z0-9-]{2,}|\p{L}{2,})$/u;
 
 /** A URL that names a person: a `mailto:` link, or a LinkedIn / X / Twitter profile path. */
 const PERSONAL_URL = /(?:mailto:\S+|https?:\/\/(?:[\w-]+\.)?(?:linkedin\.com\/(?:in|pub)\/|(?:x|twitter)\.com\/(?!i\/|intent\/|share)[\w]+)\S*)/gi;

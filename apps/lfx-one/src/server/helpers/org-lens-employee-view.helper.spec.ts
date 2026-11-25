@@ -125,6 +125,13 @@ describe('embedded personal data in free text', () => {
     expect(scrubFreeText('pin pkg@1.2.3 and git@git.example.com:acme-org/repo.git')).toBe('pin pkg@1.2.3 and git@git.example.com:acme-org/repo.git');
   });
 
+  it('removes addresses whose punycode top-level domain is upper or mixed case', () => {
+    const upper = ['ada', 'acme.XN--P1AI'].join('@');
+    const mixed = ['ada', 'acme.Xn--p1ai'].join('@');
+    expect(stripPersonalFields({ owner: upper, list: [upper, mixed] }, page)).toEqual({ list: [] });
+    expect(scrubFreeText(`write ${upper} or ${mixed} today`)).toBe('write  or  today');
+  });
+
   it('redacts an address whose local part is Unicode, whole or inside free text', () => {
     const cjk = ['用户', 'example.com'].join('@');
     const mixed = ['ada用户', 'example.com'].join('@');
