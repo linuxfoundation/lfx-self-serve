@@ -1,0 +1,83 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { isPlatformBrowser } from '@angular/common';
+import { afterNextRender, Component, computed, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ACCOUNT_IDENTITIES_PATH, ACCOUNT_PERSONAL_INFORMATION_PATH, ACCOUNT_WORK_HISTORY_PATH, PROFILE_ASIDE_COPY } from '@lfx-one/shared/constants';
+import { UserService } from '@services/user.service';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { catchError, filter, map, Observable, of, pairwise, startWith, switchMap } from 'rxjs';
+
+import { ProfileVisibilityDrawerService } from '../../components/profile-visibility-drawer/profile-visibility-drawer.service';
+
+/**
+ * The Profile page's right-hand rail (#6083): the openprofile card, which says whether the public profile is on and opens the
+ * Open Profile settings drawer, and links to the Account & Settings pages that edit what the page shows.
+ */
+@Component({
+  selector: 'lfx-profile-aside',
+  imports: [UiButtonComponent],
+  templateUrl: './profile-aside.component.html',
+})
+export class ProfileAsideComponent {
+  // Private injections
+  private readonly userService = inject(UserService);
+  private readonly visibilityDrawer = inject(ProfileVisibilityDrawerService);
+  private readonly platformId = inject(PLATFORM_ID);
+
+  // Inputs
+  /** The signed-in user's username, which names the public profile; empty until the profile loads. */
+  public readonly username = input<string>('');
+
+  protected readonly copy = PROFILE_ASIDE_COPY;
+  protected readonly personalInformationPath = ACCOUNT_PERSONAL_INFORMATION_PATH;
+  protected readonly identitiesPath = ACCOUNT_IDENTITIES_PATH;
+  protected readonly workHistoryPath = ACCOUNT_WORK_HISTORY_PATH;
+
+  // Simple WritableSignals
+  /** This site's host, for the link shown in the card; set once the browser renders, so SSR and hydration agree. */
+  protected readonly host = signal('');
+
+  // Complex computed/toSignal signals
+  protected readonly publicPath = computed(() => `/u/${encodeURIComponent(this.username())}`);
+  /** Whether the public profile is on; null until the browser has read it. */
+  protected readonly isPublic: Signal<boolean | null> = this.initIsPublic();
+
+  public constructor() {
+    afterNextRender(() => this.host.set(window.location.host));
+  }
+
+  protected openSettings(): void {
+    this.visibilityDrawer.open(this.username());
+  }
+
+  // Private initializer functions
+  // Read when the page loads, and again each time the settings drawer closes, so a change saved there shows here at once.
+  private initIsPublic(): Signal<boolean | null> {
+    if (!isPlatformBrowser(this.platformId)) return signal(null);
+    const drawerClosed$ = toObservable(this.visibilityDrawer.isOpen).pipe(
+      pairwise(),
+      filter(([wasOpen, isOpen]) => wasOpen && !isOpen)
+    );
+    return toSignal(
+      drawerClosed$.pipe(
+        startWith(undefined),
+        switchMap(() => this.readIsPublic())
+      ),
+      { initialValue: null }
+    );
+  }
+
+  // Private helper methods
+  // A failed read shows the private state, whose button opens the drawer, which reports its own load failure.
+  private readIsPublic(): Observable<boolean> {
+    return this.userService.getProfileVisibility().pipe(
+      map((visibility) => visibility.isPublic),
+      catchError((error: unknown) => {
+        console.warn('[ProfileAside] Failed to load profile visibility; showing the private state', error);
+        return of(false);
+      })
+    );
+  }
+}

@@ -378,12 +378,30 @@ export const PROFILE_PAGE_COPY = {
   retry: 'Try again',
 } as const;
 
+/** Copy of the Profile page's openprofile card and links (#6083). */
+export const PROFILE_ASIDE_COPY = {
+  privateTitle: 'Show the world what you build',
+  privateText: 'Turn on your public profile to showcase your contributions, badges and leadership roles with one link you can share anywhere.',
+  makePublic: 'Make my profile public',
+  publicTitle: 'Your profile is public',
+  publicText: 'Anyone with the link can see your contributions, badges and roles. Choose what is shown in Profile settings.',
+  viewPublic: 'View my public profile',
+  settings: 'Open Profile settings',
+  editProfile: 'Edit profile',
+  manageIdentities: 'Manage identities',
+  manageAffiliations: 'Manage affiliations',
+  publicStatus: 'Public',
+  privateStatus: 'Private',
+} as const;
+
 /** Base path of the Account & Settings area that replaces the Profile & Account hub's tabs (#6067). */
 export const ACCOUNT_BASE_PATH = '/account';
 /** Account & Settings pages that start Flow C from their own address, so the server accepts them as a return path. */
 export const ACCOUNT_IDENTITIES_PATH = '/account/identities';
 export const ACCOUNT_LINUX_EMAIL_PATH = '/account/linux-email';
 export const ACCOUNT_PERSONAL_INFORMATION_PATH = '/account/personal-information';
+/** Account & Settings › Work history & Affiliations, which the Profile page links to (#6083). */
+export const ACCOUNT_WORK_HISTORY_PATH = '/account/work-history';
 
 /** Copy for the Account & Settings Personal information page (#6072). */
 export const PERSONAL_INFORMATION_COPY = {

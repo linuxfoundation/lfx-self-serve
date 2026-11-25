@@ -17,6 +17,7 @@ import { MessageService } from 'primeng/api';
 import { Observable, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
+import { ProfileVisibilityDrawerService } from '../components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { ProfilePageComponent } from './profile-page.component';
 
 const PROFILE = {
@@ -29,7 +30,7 @@ const EMPTY_PROFILE = { user: PROFILE.user, profile: {} } as unknown as Combined
 const GITHUB = { platform: 'github', value: 'ada', inAuth0: true } as EnrichedIdentity;
 
 /** State-only: no template, so these tests cost no render. Providers are not inherited, so the page's own are repeated. */
-@Component({ selector: 'lfx-test-profile-page', template: '', providers: [AccountProfileService, ProfileAuthReturnService] })
+@Component({ selector: 'lfx-test-profile-page', template: '', providers: [AccountProfileService, ProfileAuthReturnService, ProfileVisibilityDrawerService] })
 class StateProfilePageComponent extends ProfilePageComponent {}
 
 describe('ProfilePageComponent', () => {
@@ -53,6 +54,7 @@ describe('ProfilePageComponent', () => {
       getCurrentUserProfile: vi.fn(options.profile ?? (() => of(PROFILE))),
       getIdentities: vi.fn(() => of(options.identities ?? [GITHUB])),
       getWorkHistoryLogo: vi.fn(() => of('https://cdn.example/acme.png')),
+      getProfileVisibility: vi.fn(() => of({ isPublic: false, sections: {} })),
       uploadProfilePicture: vi.fn(options.upload ?? (() => of({ public_url: 'https://cdn.example/ada.png' }))),
     };
     TestBed.configureTestingModule({
@@ -98,6 +100,14 @@ describe('ProfilePageComponent', () => {
 
     expect(github?.getAttribute('href')).toBe('https://github.com/ada');
     expect(github?.getAttribute('aria-label')).toBe('GitHub: ada');
+  });
+
+  it('pins the openprofile rail to the right, for the signed-in username', async () => {
+    setup();
+    const { query } = await render();
+
+    expect(query('profile-aside-rail')?.classList).toContain('fixed');
+    expect(query('profile-openprofile-link')?.textContent).toContain('ada');
   });
 
   it('leaves GitHub out when no owned account is linked', async () => {

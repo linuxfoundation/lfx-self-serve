@@ -132,3 +132,14 @@
     }
   </section>
 </div>
+
+<!-- Fixed to the right above 1024px and scrolling on its own; the main layout keeps a matching gutter so content and the footer stay clear. -->
+<aside
+  class="fixed bottom-0 right-0 z-40 hidden w-[300px] overflow-y-auto border-l border-gray-200 bg-white px-[24px] pb-[40px] pt-[24px] min-[1025px]:block"
+  [style.top.px]="impersonating() ? 36 : 0"
+  aria-label="Open Profile"
+  data-testid="profile-aside-rail">
+  <lfx-profile-aside [username]="username()" />
+</aside>
+
+<lfx-profile-visibility-drawer />

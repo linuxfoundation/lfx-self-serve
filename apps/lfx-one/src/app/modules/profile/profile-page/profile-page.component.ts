@@ -15,6 +15,10 @@ import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { stripAuthPrefixOrNull } from '@shared/utils/strip-auth-prefix.util';
 import { catchError, distinctUntilChanged, EMPTY, of, startWith, switchMap } from 'rxjs';
 
+import { ProfileVisibilityDrawerComponent } from '../components/profile-visibility-drawer/profile-visibility-drawer.component';
+import { ProfileVisibilityDrawerService } from '../components/profile-visibility-drawer/profile-visibility-drawer.service';
+import { ProfileAsideComponent } from './profile-aside/profile-aside.component';
+
 /**
  * The Profile page (#6082), behind the profile redesign flag: a hero with the photo, name, role and bio. Every edit happens on
  * Account & Settings › Personal information, except a new photo, which uploads from the hero as it does there.
@@ -23,9 +27,9 @@ import { catchError, distinctUntilChanged, EMPTY, of, startWith, switchMap } fro
   selector: 'lfx-profile-page',
   // Cancels the main layout's page padding: the page sets its own gutters.
   host: { class: 'block -mx-5 md:-mx-8' },
-  imports: [UiButtonComponent, UiNoteComponent],
-  // The page owns its profile and, for a photo upload that left for authorization, the Flow C return.
-  providers: [AccountProfileService, ProfileAuthReturnService],
+  imports: [UiButtonComponent, UiNoteComponent, ProfileAsideComponent, ProfileVisibilityDrawerComponent],
+  // The page owns its profile, the Flow C return for a photo upload that left for authorization, and the Open Profile drawer.
+  providers: [AccountProfileService, ProfileAuthReturnService, ProfileVisibilityDrawerService],
   templateUrl: './profile-page.component.html',
 })
 export class ProfilePageComponent {
@@ -53,6 +57,7 @@ export class ProfilePageComponent {
   // The empty-field prompts wait for a stored record: a failed metadata read also comes back without one.
   protected readonly recordLoaded = computed(() => this.profile()?.profile != null);
   protected readonly name: Signal<string> = this.initName();
+  protected readonly username = computed(() => stripAuthPrefixOrNull(this.profile()?.user.username) ?? '');
   protected readonly jobTitle = computed(() => this.profile()?.profile?.job_title?.trim() ?? '');
   protected readonly company = computed(() => this.profile()?.profile?.organization?.trim() ?? '');
   protected readonly location = computed(() => [this.profile()?.profile?.city, this.profile()?.profile?.country].filter((part) => !!part?.trim()).join(', '));
