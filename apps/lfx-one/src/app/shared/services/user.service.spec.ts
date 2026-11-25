@@ -5,11 +5,12 @@ import { ApplicationRef, PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
 import { MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS } from '@lfx-one/shared/constants';
-import { CombinedProfile, EnrichedIdentity, Meeting, MeetingRsvp, MeetingSelfGuest, PastMeeting, User } from '@lfx-one/shared/interfaces';
+import { CombinedProfile, EnrichedIdentity, Meeting, MeetingRsvp, MeetingSelfGuest, PastMeeting, User, UserMetadata } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { defer, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ProfileSavedFieldsService } from './profile-saved-fields.service';
 import { UserService } from './user.service';
 
 /**
@@ -1131,6 +1132,72 @@ describe('UserService', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe('profile saves (#6082)', () => {
+    it('records an uploaded photo, whichever editor uploaded it', () => {
+      const http = TestBed.inject(HttpClient) as unknown as { post: ReturnType<typeof vi.fn> };
+      http.post.mockReturnValue(of({ public_url: 'https://cdn.example/ada.png' }));
+
+      service.uploadProfilePicture(new File(['x'], 'ada.png', { type: 'image/png' })).subscribe();
+
+      expect(TestBed.inject(ProfileSavedFieldsService).fields()).toEqual({ picture: 'https://cdn.example/ada.png' });
+    });
+
+    it('leaves field saves for the editor to record after it syncs them', () => {
+      const http = TestBed.inject(HttpClient) as unknown as { patch: ReturnType<typeof vi.fn> };
+      http.patch.mockReturnValue(of({}));
+
+      service.updateUserProfile({ user_metadata: { given_name: 'Ada' } as UserMetadata }).subscribe();
+
+      expect(TestBed.inject(ProfileSavedFieldsService).fields()).toEqual({});
+    });
+  });
+
+  describe('getWorkHistoryLogo (#6082)', () => {
+    const logo = (company: string): { value: string | null | undefined; messages: ReturnType<typeof vi.fn> } => {
+      const result = { value: undefined as string | null | undefined, messages: vi.mocked(TestBed.inject(MessageService).add) };
+      service.getWorkHistoryLogo(company).subscribe((value) => (result.value = value));
+      return result;
+    };
+
+    it('matches the company however it is cased or spaced, a current job before a past one', () => {
+      httpGet.mockReturnValue(
+        of([
+          { organization: 'Acme Motors', organizationLogo: 'https://logos.example/past.png', endDate: 'Dec 2019' },
+          { organization: ' ACME MOTORS ', organizationLogo: 'https://logos.example/current.png' },
+        ])
+      );
+
+      expect(logo('acme motors ').value).toBe('https://logos.example/current.png');
+      expect(httpGet).toHaveBeenCalledWith('/api/profile/work-experiences');
+    });
+
+    it('takes a past job’s logo when the current one has none', () => {
+      httpGet.mockReturnValue(
+        of([{ organization: 'Acme Motors', organizationLogo: 'https://logos.example/past.png', endDate: 'Dec 2019' }, { organization: 'Acme Motors' }])
+      );
+
+      expect(logo('Acme Motors').value).toBe('https://logos.example/past.png');
+    });
+
+    it('returns null when no job matches', () => {
+      httpGet.mockReturnValue(of([{ organization: 'Vendor Corp', organizationLogo: 'https://logos.example/vendor.png' }]));
+
+      expect(logo('Acme Motors').value).toBeNull();
+    });
+
+    it('returns null without raising a toast, and logs, when the request fails', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      httpGet.mockReturnValue(throwError(() => new Error('boom')));
+
+      const { value, messages } = logo('Acme Motors');
+
+      expect(value).toBeNull();
+      expect(messages).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
     });
   });
 

@@ -84,6 +84,24 @@ describe('ShareKitCopyCardComponent', () => {
     expect(el('').getAttribute('data-dd-privacy')).toBe('mask');
   });
 
+  it('highlights a trailing link but still copies the whole text', async () => {
+    const writeText = vi.fn(async () => undefined);
+    setClipboard(writeText);
+    fixture.componentRef.setInput('link', 'https://events.example.org/');
+    fixture.detectChanges();
+    expect(el('-link').textContent?.trim()).toBe('https://events.example.org/');
+    el('-copy').querySelector('button')?.click();
+    await fixture.whenStable();
+    expect(writeText).toHaveBeenCalledWith('Join us.\n\nhttps://events.example.org/');
+  });
+
+  it('groups thousands in the character count', () => {
+    fixture.componentRef.setInput('length', 1204);
+    fixture.componentRef.setInput('limit', 3000);
+    fixture.detectChanges();
+    expect(el('-count').textContent?.trim()).toBe('1,204 / 3,000 characters');
+  });
+
   it('flags a post over the platform limit', () => {
     fixture.componentRef.setInput('length', 301);
     fixture.componentRef.setInput('limit', 300);

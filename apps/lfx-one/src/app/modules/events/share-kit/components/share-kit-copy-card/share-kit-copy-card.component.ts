@@ -19,7 +19,9 @@ export class ShareKitCopyCardComponent {
   public readonly heading = input<string>('');
   /** The exact text the button copies. Rendered as text, never HTML. */
   public readonly text = input.required<string>();
-  /** Button label, e.g. "Copy post". */
+  /** A link at the end of `text`, shown in the accent colour; the copy is still `text` exactly. */
+  public readonly link = input<string>('');
+  /** Button label, e.g. "Copy Post". */
   public readonly copyLabel = input<string>('Copy');
   /** Length as the platform counts it; hidden when null. */
   public readonly length = input<number | null>(null);
@@ -36,6 +38,18 @@ export class ShareKitCopyCardComponent {
   public readonly copied = output<void>();
 
   protected readonly status = signal('');
+  /** `text` split so its trailing link can be styled; a link not at the very end stays part of the body. */
+  protected readonly textParts = computed(() => {
+    const text = this.text();
+    const link = this.link();
+    return link && text.endsWith(link) ? { body: text.slice(0, -link.length), link } : { body: text, link: '' };
+  });
+  protected readonly countLabel = computed(() => {
+    const length = this.length();
+    const limit = this.limit();
+    // en-US grouping on the server and in every browser, so the SSR and client text match ("3,000").
+    return length === null || limit === null ? '' : `${length.toLocaleString('en-US')} / ${limit.toLocaleString('en-US')} characters`;
+  });
   protected readonly overLimit = computed(() => {
     const length = this.length();
     const limit = this.limit();

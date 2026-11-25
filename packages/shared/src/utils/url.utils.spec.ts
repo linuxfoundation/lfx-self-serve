@@ -232,8 +232,9 @@ describe('extractUrls', () => {
 });
 
 describe('isProfileHubPath', () => {
-  it('matches the exact /profile route', () => {
-    expect(isProfileHubPath('/profile')).toBe(true);
+  it('leaves out bare /profile, which the hub always leaves for a tab and the redesign makes the Profile page', () => {
+    expect(isProfileHubPath('/profile')).toBe(false);
+    expect(isProfileHubPath('/profile?x=1')).toBe(false);
   });
 
   it('matches nested /profile/ routes', () => {
@@ -247,12 +248,12 @@ describe('isProfileHubPath', () => {
   });
 
   it('strips the query string before matching', () => {
-    expect(isProfileHubPath('/profile?tab=account')).toBe(true);
+    expect(isProfileHubPath('/profile/settings?tab=account')).toBe(true);
     expect(isProfileHubPath('/profiles?x=1')).toBe(false);
   });
 
   it('strips the fragment before matching', () => {
-    expect(isProfileHubPath('/profile#developer-settings')).toBe(true);
+    expect(isProfileHubPath('/profile/#developer-settings')).toBe(true);
     expect(isProfileHubPath('/profile/settings#developer-settings')).toBe(true);
   });
 

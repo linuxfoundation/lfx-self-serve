@@ -50,7 +50,7 @@ import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
 import { openprofileMeLensGuard } from './shared/guards/openprofile-me-lens.guard';
-import { profileRedesignEnabledGuard } from './shared/guards/profile-redesign.guard';
+import { profileRedesignEnabledGuard, profileRedesignOnlyGuard } from './shared/guards/profile-redesign.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
@@ -922,6 +922,15 @@ export const routes: Routes = [
         title: 'Settings',
         canActivate: [settingsLensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
+      },
+      {
+        // The Profile page (#6082), behind the profile redesign flag; with it off, `/profile` falls through to the hub below.
+        path: 'profile',
+        pathMatch: 'full',
+        title: 'Profile',
+        data: { lens: 'me' },
+        canMatch: [profileRedesignOnlyGuard],
+        loadComponent: () => import('./modules/profile/profile-page/profile-page.component').then((m) => m.ProfilePageComponent),
       },
       {
         // A Me page, like crowdfunding/mentorship/formations: `data.lens: 'me'` makes every way in (a

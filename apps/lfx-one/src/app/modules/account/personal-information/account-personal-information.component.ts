@@ -10,7 +10,6 @@ import { AccountCardComponent } from '@components/account-card/account-card.comp
 import {
   ALLOWED_AVATAR_MIME_TYPES,
   COUNTRIES,
-  MAX_AVATAR_SIZE_BYTES,
   normalizeTShirtSize,
   PENDING_PRIMARY_EMAIL_KEY,
   PENDING_PRIMARY_EMAIL_TTL_MS,
@@ -109,7 +108,6 @@ export class AccountPersonalInformationComponent {
 
   // Simple WritableSignals
   public readonly saving = signal(false);
-  public readonly avatarUploading = signal(false);
   public readonly bioLength = signal(0);
   public readonly loadingEmails = signal(true);
   public readonly emailsFailed = signal(false);
@@ -143,6 +141,7 @@ export class AccountPersonalInformationComponent {
   public readonly username: Signal<string> = computed(() => stripAuthPrefixOrNull(this.profile()?.user.username) ?? '');
   // The shared avatar (an upload, else the sign-in picture), which a fresh upload updates at once; the avatar falls back to initials.
   public readonly avatarUrl = this.userService.effectiveAvatarUrl;
+  public readonly avatarUploading = this.accountProfile.avatarUploading;
   public readonly avatarInitials: Signal<string> = this.initAvatarInitials();
   public readonly emailOptions: Signal<UserEmail[]> = this.initEmailOptions();
   /** The address shown as primary: the one picked, or the only one offered when the list could not load. */
@@ -258,40 +257,13 @@ export class AccountPersonalInformationComponent {
     const file = input.files?.[0];
     // Cleared so choosing the same file again, after a rejected upload, still fires change.
     input.value = '';
-    if (!file || this.impersonating()) return;
-
-    if (!(ALLOWED_AVATAR_MIME_TYPES as readonly string[]).includes(file.type)) {
-      this.toast.show({ variant: 'error', message: 'Please choose a PNG, JPEG, or WEBP image.' });
-      return;
-    }
-    if (file.size > MAX_AVATAR_SIZE_BYTES) {
-      this.toast.show({ variant: 'error', message: 'Image must be 2MB or smaller.' });
-      return;
-    }
-
-    this.avatarUploading.set(true);
-    // Not tied to the page: the upload is what the user asked for, so leaving must not drop it. The service takes one value.
-    this.userService
-      .uploadProfilePicture(file)
-      .pipe(finalize(() => this.avatarUploading.set(false)))
-      .subscribe({
-        next: (response) => {
-          if (!response.public_url) {
-            this.toast.show({ variant: 'error', message: 'Failed to upload profile picture. Please try again.' });
-            return;
-          }
-          this.accountProfile.applySaved({ picture: response.public_url });
-          this.toast.show({ variant: 'dark', message: 'Profile picture updated' });
-        },
-        error: (error: HttpErrorResponse) => {
-          // Flow C: a File can't survive the redirect, so the user picks it again once back; unsaved field edits go along.
-          const pending = this.form.dirty ? { userMetadata: this.buildUserMetadataPayload() } : {};
-          const primary = this.primaryEmailChanged() ? this.selectedPrimaryEmail() : null;
-          if (this.redirectForAuthorization(error, { avatarPending: true, ...pending }, primary)) return;
-          if (this.toastIfImpersonationReadOnly(error)) return;
-          this.toast.show({ variant: 'error', message: 'Failed to upload profile picture. Please try again.' });
-        },
-      });
+    if (!file) return;
+    // Flow C: a File can't survive the redirect, so the user picks it again once back; unsaved field edits go along.
+    this.accountProfile.uploadAvatar(file, (authorizeUrl) => {
+      const pending = this.form.dirty ? { userMetadata: this.buildUserMetadataPayload() } : {};
+      const primary = this.primaryEmailChanged() ? this.selectedPrimaryEmail() : null;
+      this.leaveForAuthorization(authorizeUrl, { avatarPending: true, ...pending }, primary);
+    });
   }
 
   protected retryProfile(): void {
@@ -488,13 +460,17 @@ export class AccountPersonalInformationComponent {
    */
   private redirectForAuthorization(error: HttpErrorResponse, pending: Omit<PendingProfileSave, 'savedAt'> | null, primary: string | null): boolean {
     if (error.status !== 403 || error.error?.error !== 'management_token_required') return false;
-    if (isPlatformBrowser(this.platformId)) {
-      const savedAt = Date.now();
-      if (pending) sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt, ...pending } satisfies PendingProfileSave));
-      if (primary) sessionStorage.setItem(PENDING_PRIMARY_EMAIL_KEY, JSON.stringify({ savedAt, email: primary } satisfies PendingPrimaryEmail));
-      this.unsavedChanges.leaveForAuthorization(error.error.authorize_url);
-    }
+    this.leaveForAuthorization(error.error.authorize_url, pending, primary);
     return true;
+  }
+
+  // Keeps unsaved fields for the account shell to replay and the primary email choice for this page to restore, then leaves.
+  private leaveForAuthorization(authorizeUrl: string, pending: Omit<PendingProfileSave, 'savedAt'> | null, primary: string | null): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const savedAt = Date.now();
+    if (pending) sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt, ...pending } satisfies PendingProfileSave));
+    if (primary) sessionStorage.setItem(PENDING_PRIMARY_EMAIL_KEY, JSON.stringify({ savedAt, email: primary } satisfies PendingPrimaryEmail));
+    this.unsavedChanges.leaveForAuthorization(authorizeUrl);
   }
 
   // Picks again a primary email chosen before a Flow C redirect, so Save finishes the change. Only a recent, verified choice counts.

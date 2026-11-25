@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SHARE_KIT_PLATFORM_LIMITS, SHARE_KIT_UTM_SOURCE } from '../constants/share-kit.constants';
+import {
+  SHARE_KIT_MEMBER_BOX_TINT,
+  SHARE_KIT_MEMBER_BUTTON_HOVER_TINT,
+  SHARE_KIT_PLATFORM_LIMITS,
+  SHARE_KIT_UTM_SOURCE,
+} from '../constants/share-kit.constants';
 import { ShareKitLinkTracking, ShareKitPlatform } from '../interfaces/share-kit.interface';
 import { twitterWeightedLength } from './campaign-twitter.utils';
 
@@ -44,7 +49,7 @@ function parseIsoDay(day: string): { year: number; month: number; date: number }
 
 /**
  * Formats an event's dates for display without time-zone shifts:
- * "April 28, 2027", "April 28 and 29, 2027", "April 28–30, 2027", "April 30 – May 2, 2027", "December 31, 2027 – January 2, 2028".
+ * "April 28, 2027", "April 28–29, 2027", "April 28–30, 2027", "April 30 – May 2, 2027", "December 31, 2027 – January 2, 2028".
  */
 export function formatShareKitDateRange(startDate: string, endDate: string): string {
   const start = parseIsoDay(startDate);
@@ -61,9 +66,6 @@ export function formatShareKitDateRange(startDate: string, endDate: string): str
   if (start.date === end.date) {
     return `${startMonth} ${start.date}, ${start.year}`;
   }
-  if (end.date - start.date === 1) {
-    return `${startMonth} ${start.date} and ${end.date}, ${start.year}`;
-  }
   return `${startMonth} ${start.date}–${end.date}, ${start.year}`;
 }
 
@@ -77,6 +79,21 @@ function relativeLuminance(hex: string): number {
   const channels = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16) / 255);
   const [r, g, b] = channels.map((value) => (value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4));
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** `base` with `share` (0 to 1) of `overlay` mixed in, per sRGB channel, as `#RRGGBB`: how a translucent overlay composites. */
+export function mixShareKitColors(base: string, overlay: string, share: number): string {
+  const channel = (hex: string, start: number): number => parseInt(hex.slice(start, start + 2), 16);
+  return `#${[1, 3, 5]
+    .map((start) => Math.round(channel(base, start) * (1 - share) + channel(overlay, start) * share))
+    .map((value) => value.toString(16).padStart(2, '0').toUpperCase())
+    .join('')}`;
+}
+
+/** The themed member box background, and the same box under a hovered button, for a hero and its text colour. */
+export function shareKitMemberBoxColors(hero: string, heroText: string): { box: string; hover: string } {
+  const box = mixShareKitColors(hero, heroText, SHARE_KIT_MEMBER_BOX_TINT);
+  return { box, hover: mixShareKitColors(box, heroText, SHARE_KIT_MEMBER_BUTTON_HOVER_TINT) };
 }
 
 /** WCAG contrast ratio between two `#RRGGBB` colours, from 1 to 21. */

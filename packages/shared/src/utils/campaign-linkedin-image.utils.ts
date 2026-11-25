@@ -46,6 +46,16 @@ export function linkedInImageFileRefusal(file: { type: string; size: number }): 
   return null;
 }
 
+/** A variant's video (#5764 row 18) in the shape the image rules read, so one set of slot and notice rules serves both. */
+export function linkedInVariantVideoHolder(variant: LinkedInVariantDraft): LinkedInImageHolder & { imageAssetName: string } {
+  return {
+    key: variant.key,
+    imageAssetId: variant.videoAssetId ?? '',
+    imageAssetName: variant.videoAssetName ?? '',
+    imageAssetBriefId: variant.videoAssetBriefId ?? '',
+  };
+}
+
 /**
  * Whether the variant or text ad holds an upload made for the brief now open (`briefId`, `''` for none): the only one
  * sent. A text ad saved before images existed has no `imageAssetId` and holds none.
@@ -80,26 +90,28 @@ export function linkedInImageUploadHoldsCreate(showSection: boolean, uploadAvail
 
 /**
  * Why one LinkedIn image holds Create, or `null`: `metaImageAssetBlock`'s sibling for one upload alone. Shared by the
- * single image variants and the Text Ads (#5764 row 19); `label` names the ad in each message ("variant 2", "text ad 2").
+ * single image variants, the Text Ads (#5764 row 19) and the video ads (#5764 row 18); `label` names the ad in each
+ * message ("variant 2", "text ad 2"), and `media` what was uploaded.
  */
 export function linkedInImageBlock(
   input: LinkedInTextAdImageInput,
   holder: LinkedInImageHolder,
   label: string,
-  imageUploading: boolean
+  imageUploading: boolean,
+  media: 'image' | 'video' = 'image'
 ): CampaignLinkedInImageAssetBlock | null {
   if (!input.showSection) return null;
   const { briefId, slot } = input;
   if ((holder.imageAssetId ?? '') !== '' && briefId && holder.imageAssetBriefId !== briefId) {
     return {
       kind: 'otherBrief',
-      message: `The image for LinkedIn ${label} was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.`,
+      message: `The ${media} for LinkedIn ${label} was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.`,
     };
   }
   if (slot.variantKey === holder.key && slot.status === 'error' && briefId && slot.failedBriefId === briefId) {
     return {
       kind: 'uploadFailed',
-      message: `The image upload for LinkedIn ${label} did not complete: ${slot.error} Remove it, or choose the image again.`,
+      message: `The ${media} upload for LinkedIn ${label} did not complete: ${slot.error} Remove it, or choose the ${media} again.`,
     };
   }
   // An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes.
@@ -108,16 +120,20 @@ export function linkedInImageBlock(
   if (input.uploadEnabled === false) {
     return {
       kind: 'unsupported',
-      message: `LinkedIn ad images are not available on this deployment, so the image for ${label} cannot be sent. Remove it to create the campaign without it.`,
+      message:
+        media === 'video'
+          ? `LinkedIn video ads are not available on this deployment, so the video for ${label} cannot be sent. Choose single image ads as the ad format.`
+          : `LinkedIn ad images are not available on this deployment, so the image for ${label} cannot be sent. Remove it to create the campaign without it.`,
     };
   }
-  if (input.capabilityRead === 'pending') return { kind: 'pending', message: 'Checking LinkedIn ad image support…' };
+  const support = media === 'video' ? 'video ad' : 'ad image';
+  if (input.capabilityRead === 'pending') return { kind: 'pending', message: `Checking LinkedIn ${support} support…` };
   if (!briefId) {
-    return { kind: 'unsaved', message: "LinkedIn ad image support can't be checked until this brief is saved. Save the brief, or remove the image." };
+    return { kind: 'unsaved', message: `LinkedIn ${support} support can't be checked until this brief is saved. Save the brief, or remove the ${media}.` };
   }
   return {
     kind: 'failed',
-    message: `Could not confirm that LinkedIn ad images are supported, so the image for ${label} cannot be sent yet. Retry the check, or remove the image.`,
+    message: `Could not confirm that LinkedIn ${support}s are supported, so the ${media} for ${label} cannot be sent yet. Retry the check, or remove the ${media}.`,
   };
 }
 
@@ -127,21 +143,24 @@ export function linkedInImageBlock(
  */
 export function linkedInVariantViews(input: LinkedInVariantViewsInput): LinkedInVariantView[] {
   const { variants, slot, briefId } = input;
+  // While video ads are chosen (#5764 row 18) the upload fields describe each variant's video, in the same one slot.
+  const media = input.media ?? 'image';
   const uploading = slot.status === 'uploading';
   const failed = slot.status === 'error';
   // The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief.
-  const pickerBlocked = !briefId || input.briefSaving;
+  const pickerBlocked = !briefId || input.briefSaving || input.pickerHeld === true;
   const orphaned = linkedInImageUploadOrphaned(slot, variants);
   const slotIndex = variants.findIndex((variant) => variant.key === slot.variantKey);
   const fieldErrors = linkedInVariantFieldErrors(variants, input.eventName ?? '');
   return variants.map((variant, index): LinkedInVariantView => {
     const ownsSlot = slot.variantKey === variant.key;
     const imageUploading = ownsSlot && uploading;
-    const forThisBrief = linkedInVariantImageForBrief(variant, briefId);
+    const holder = media === 'video' ? linkedInVariantVideoHolder(variant) : variant;
+    const forThisBrief = linkedInVariantImageForBrief(holder, briefId);
     const heldByOther = linkedInImageSlotHeldByOther(variant.key, slot, orphaned, briefId);
     let imageStatusMessage = '';
-    if (imageUploading) imageStatusMessage = 'Uploading image…';
-    else if (forThisBrief) imageStatusMessage = `Uploaded: ${variant.imageAssetName || 'image'}`;
+    if (imageUploading) imageStatusMessage = `Uploading ${media}…`;
+    else if (forThisBrief) imageStatusMessage = `Uploaded: ${holder.imageAssetName || media}`;
     return {
       key: variant.key,
       introText: variant.introText,
@@ -158,11 +177,11 @@ export function linkedInVariantViews(input: LinkedInVariantViewsInput): LinkedIn
       descriptionError: fieldErrors[index].description,
       imageStatusMessage,
       imageUploading,
-      imageHeld: variant.imageAssetId !== '',
+      imageHeld: (holder.imageAssetId ?? '') !== '',
       imageError: ownsSlot && failed ? slot.error : '',
       imagePickerDisabled: pickerBlocked || heldByOther,
-      imagePickerNote: heldByOther ? `Finish or remove the image for variant ${slotIndex + 1} first.` : '',
-      imageBlock: linkedInImageBlock(input, variant, `variant ${index + 1}`, imageUploading),
+      imagePickerNote: heldByOther ? `Finish or remove the ${media} for variant ${slotIndex + 1} first.` : '',
+      imageBlock: linkedInImageBlock(input, holder, `variant ${index + 1}`, imageUploading, media),
     };
   });
 }

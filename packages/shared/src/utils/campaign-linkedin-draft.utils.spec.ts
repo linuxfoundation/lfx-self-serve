@@ -98,7 +98,8 @@ describe('linkedInDraftRestore', () => {
   it.each([
     ['text', 'text'],
     ['single_image', 'single_image'],
-    ['video', undefined],
+    ['video', 'video'],
+    ['carousel', undefined],
   ])('restores a stored format %s as %s', (stored, expected) => {
     // A stored draft is replayed from JSON, so an unknown format is possible.
     expect(linkedInDraftRestore(draft({ linkedInFormat: stored as LinkedInDraftSnapshot['linkedInFormat'] })).format).toBe(expected);
@@ -140,6 +141,21 @@ describe('linkedInDraftRestore', () => {
       'a malformed id as it is, for the create to hold',
       { objective: 'conversions', conversions: ['0x'], conversionsOwner: 'tlf|' },
       { objective: 'conversions', conversions: ['0x'], conversionsOwner: 'tlf|' },
+    ],
+    [
+      'the target cost as typed, even one the create refuses',
+      { objective: null, conversions: [], conversionsOwner: null, targetCost: '17.885' },
+      { objective: null, conversions: [], conversionsOwner: null, targetCost: '17.885' },
+    ],
+    [
+      'no target cost that is not text',
+      { objective: null, conversions: [], conversionsOwner: null, targetCost: 17.88 },
+      { objective: null, conversions: [], conversionsOwner: null },
+    ],
+    [
+      'no blank target cost',
+      { objective: null, conversions: [], conversionsOwner: null, targetCost: '' },
+      { objective: null, conversions: [], conversionsOwner: null },
     ],
     ['nothing from a draft that is not a record', ['traffic'], undefined],
   ])('restores the objective: %s', (_label, stored, expected) => {

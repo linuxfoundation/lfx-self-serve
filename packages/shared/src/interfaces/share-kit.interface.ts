@@ -195,6 +195,8 @@ export interface ShareKitPostView {
   title: string;
   /** Post text plus the tracked link, exactly as the copy button copies it. */
   text: string;
+  /** The tracked link at the end of `text`, shown highlighted. */
+  link: string;
   /** Length as the platform counts it. */
   length: number;
   limit: number;

@@ -201,9 +201,13 @@ export class CampaignService {
    * cancelled by the caller.
    */
   private readonly creativeAssetQueueAbort = new Subject<void>();
+  /** The stored creative asset being deleted and its brief (#5764 row 18), or `null`: see `deleteCreativeAsset`. */
+  private readonly creativeVideoDelete = signal<{ briefId: string; id: string } | null>(null);
 
   /** Every library upload item, in pick order. Each carries its brief; a reader shows only its own brief's. */
   public readonly creativeAssetUploadQueue = this.creativeAssetQueue.asReadonly();
+  /** The stored video being deleted and its brief (#5764 row 18), `null` when none is. */
+  public readonly creativeVideoDeleting = this.creativeVideoDelete.asReadonly();
 
   public constructor() {
     this.creativeAssetQueueWork
@@ -551,6 +555,26 @@ export class CampaignService {
       this.creativeAssetQueueAttempts.delete(item.id);
     });
     this.creativeAssetQueue.set(kept);
+  }
+
+  /**
+   * Permanently delete one stored creative asset of the brief: a video the library lists (#5764 row 18). campaign-service
+   * answers 409 `creative_asset_in_use` while a live campaign could still need it, with its own remedy text.
+   *
+   * While the request runs, `creativeVideoDeleting` names it, and it is cleared however the request ends, including a
+   * caller that unsubscribes because it was destroyed. The Implement tab holds its video pickers on it, since an upload
+   * of identical bytes would answer with the asset being deleted.
+   */
+  public deleteCreativeAsset(projectSlug: string, briefId: string, assetId: string): Observable<void> {
+    return defer(() => {
+      const mine = { briefId, id: assetId };
+      this.creativeVideoDelete.set(mine);
+      return this.http
+        .delete<void>(`/api/campaigns/brief/creative-assets/${encodeURIComponent(assetId)}`, {
+          params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+        })
+        .pipe(finalize(() => this.creativeVideoDelete.update((current) => (current === mine ? null : current))));
+    });
   }
 
   /**

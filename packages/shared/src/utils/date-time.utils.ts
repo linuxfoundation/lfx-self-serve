@@ -901,6 +901,23 @@ export function formatShortDate(date: Date): string {
 /** Guards {@link formatMemberSince} against JS's lenient `Date` parser accepting non-ISO input (e.g. `'2023'`, `'1'`) — captures y/m/d for the round-trip check below. */
 const ISO_DATE_PREFIX_PATTERN = /^(\d{4})-(\d{2})-(\d{2})/;
 
+/** The account-creation date behind the "Member since" labels, or null when it fails a check {@link formatMemberSince} lists. */
+function parseMemberSince(iso: string | null | undefined): Date | null {
+  const match = iso ? ISO_DATE_PREFIX_PATTERN.exec(iso) : null;
+  if (!match) {
+    return null;
+  }
+  const date = parseISODateString(iso);
+  if (!date || Number.isNaN(date.getTime()) || date.getUTCFullYear() < 1990) {
+    return null;
+  }
+  const [, year, month, day] = match;
+  if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() + 1 !== Number(month) || date.getUTCDate() !== Number(day)) {
+    return null;
+  }
+  return date;
+}
+
 /**
  * "Member since" label, e.g. "Mar 2023", for an account-creation ISO timestamp. Returns '' when
  * absent, non-ISO, unparseable, before 1990 (a pre-1990 result means the upstream sent a zero-time
@@ -914,19 +931,12 @@ const ISO_DATE_PREFIX_PATTERN = /^(\d{4})-(\d{2})-(\d{2})/;
  * shifted.
  */
 export function formatMemberSince(iso: string | null | undefined): string {
-  const match = iso ? ISO_DATE_PREFIX_PATTERN.exec(iso) : null;
-  if (!match) {
-    return '';
-  }
-  const date = parseISODateString(iso);
-  if (!date || Number.isNaN(date.getTime()) || date.getUTCFullYear() < 1990) {
-    return '';
-  }
-  const [, year, month, day] = match;
-  if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() + 1 !== Number(month) || date.getUTCDate() !== Number(day)) {
-    return '';
-  }
-  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', timeZone: 'UTC' });
+  return parseMemberSince(iso)?.toLocaleDateString('en-US', { year: 'numeric', month: 'short', timeZone: 'UTC' }) ?? '';
+}
+
+/** "Member since" as a full date, e.g. "March 14, 2013", hidden ('') on the same inputs as {@link formatMemberSince}. */
+export function formatMemberSinceDate(iso: string | null | undefined): string {
+  return parseMemberSince(iso)?.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }) ?? '';
 }
 
 /**

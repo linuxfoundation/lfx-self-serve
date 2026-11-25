@@ -4,19 +4,19 @@
 <!-- An event theme (validated colours from the kit's content file) arrives as --sk-* variables; without one the page keeps the LFX look. -->
 <div class="min-h-screen bg-gray-50 text-gray-900" [style]="themeStyle()" data-testid="share-kit-page">
   <div class="mx-auto flex w-full max-w-[1040px] flex-col gap-8 px-4 pb-20 pt-6 sm:px-10">
-    <!-- Chrome-less public page: a small "Powered by LFX" mark instead of the app shell. -->
-    <div class="flex items-center justify-between gap-4">
+    <!-- Chrome-less public page: a small "Powered by LFX" mark instead of the app shell. Stacked on phones, so the label never runs into it. -->
+    <div class="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <a
         href="https://app.lfx.dev/"
         target="_blank"
         rel="noopener noreferrer"
-        class="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
+        class="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
         data-testid="share-kit-powered-by">
         <span>Powered by</span>
         <img src="/images/logo_lfx.svg" alt="LFX" class="h-[13px] w-auto" />
       </a>
       @if (kit(); as kit) {
-        <span class="text-sm text-gray-500" data-testid="share-kit-foundation">{{ headerLabel() }}</span>
+        <span class="min-w-0 text-sm text-gray-500 sm:text-right" data-testid="share-kit-foundation">{{ headerLabel() }}</span>
       }
     </div>
 
@@ -121,51 +121,71 @@
         </section>
       }
 
-      <lfx-ui-tabs [tabs]="tabs()" [(value)]="tab" idPrefix="share-kit" ariaLabel="Share kit sections" data-testid="share-kit-tabs" />
+      <!-- On a phone the four tabs don't fit; they turn into a select instead of scrolling with a cut-off last tab. -->
+      <lfx-ui-tabs [tabs]="tabs()" [(value)]="tab" idPrefix="share-kit" ariaLabel="Share kit sections" collapseToSelect data-testid="share-kit-tabs" />
 
-      <!-- Share the event -->
+      <!-- Social posts -->
       @if (tab() === 'share') {
         <section
           id="share-kit-panel-share"
           role="tabpanel"
           aria-labelledby="share-kit-tab-share"
-          class="flex flex-col gap-4"
+          class="flex flex-col gap-[18px]"
           data-testid="share-kit-panel-share">
-          <div class="flex flex-wrap items-end justify-between gap-3">
-            <h2 class="text-lg font-semibold">Copy a post</h2>
-            <lfx-ui-tabs
-              [tabs]="platformTabs"
-              variant="secondary"
-              size="small"
-              [value]="platform()"
-              (valueChange)="selectPlatform($event)"
-              idPrefix="share-kit-platform"
-              ariaLabel="Platform"
-              data-testid="share-kit-platforms" />
-          </div>
+          <h2 class="text-[26px] font-extrabold leading-tight tracking-[-0.02em] [font-family:var(--sk-heading-font)]">Ready-to-Share Posts</h2>
+          <p class="max-w-[62ch] text-[15px] text-gray-700">
+            Pick a platform, copy a post and paste it. Each link is tagged so we can see how the kit is used.
+          </p>
+          <!-- Toggle buttons, not tabs: the cards below simply change platform. Exact px sizes follow the share kit design. -->
           <div
-            [id]="'share-kit-platform-panel-' + platform()"
-            role="tabpanel"
-            [attr.aria-labelledby]="'share-kit-platform-tab-' + platform()"
-            class="grid grid-cols-1 gap-4 md:grid-cols-2"
-            data-testid="share-kit-platform-panel">
+            role="group"
+            aria-label="Platform"
+            class="inline-flex flex-wrap gap-1 self-start rounded-[10px] bg-ui-accent-100 p-1"
+            data-testid="share-kit-platforms">
+            @for (option of platformTabs; track option.value) {
+              <button
+                type="button"
+                class="rounded-[7px] px-[14px] py-[7px] text-[14px] font-semibold text-gray-700 hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ui-accent-500 aria-pressed:bg-white aria-pressed:text-ui-accent-700 aria-pressed:shadow-sm"
+                [attr.aria-pressed]="platform() === option.value"
+                (click)="selectPlatform(option.value)"
+                [attr.data-testid]="'share-kit-platform-' + option.value">
+                {{ option.label }}
+              </button>
+            }
+          </div>
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2" data-testid="share-kit-platform-panel">
             @for (post of posts(); track post.id) {
               <lfx-share-kit-copy-card
                 [buttonVariant]="copyButtonVariant()"
                 [heading]="post.title"
                 [text]="post.text"
-                copyLabel="Copy post"
+                [link]="post.link"
+                copyLabel="Copy Post"
                 [length]="post.length"
                 [limit]="post.limit"
                 [testId]="'share-kit-post-' + post.id"
                 (copied)="onPostCopied(post.id)" />
             }
           </div>
+        </section>
+      }
+
+      <!-- Newsletter -->
+      @if (tab() === 'newsletter') {
+        <section
+          id="share-kit-panel-newsletter"
+          role="tabpanel"
+          aria-labelledby="share-kit-tab-newsletter"
+          class="flex flex-col gap-[18px]"
+          data-testid="share-kit-panel-newsletter">
+          <h2 class="text-[26px] font-extrabold leading-tight tracking-[-0.02em] [font-family:var(--sk-heading-font)]">Newsletter Blurb</h2>
+          <p class="max-w-[62ch] text-[15px] text-gray-700">A short paragraph for member newsletters and internal updates.</p>
           <lfx-share-kit-copy-card
             [buttonVariant]="copyButtonVariant()"
-            heading="Newsletter and community blurb"
+            heading="Newsletter Blurb"
             [text]="blurb()"
-            copyLabel="Copy blurb"
+            [link]="blurbLink()"
+            copyLabel="Copy Blurb"
             testId="share-kit-blurb"
             (copied)="onCopied('newsletter')" />
         </section>
@@ -177,52 +197,56 @@
           id="share-kit-panel-graphics"
           role="tabpanel"
           aria-labelledby="share-kit-tab-graphics"
-          class="grid grid-cols-1 gap-4 md:grid-cols-2"
+          class="flex flex-col gap-[18px]"
           data-testid="share-kit-panel-graphics">
-          @for (graphic of graphics(); track graphic.url) {
-            <figure class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5" [attr.data-testid]="'share-kit-graphic-' + $index">
-              <img
-                [src]="graphic.url"
-                [alt]="graphic.alt"
-                [attr.width]="graphic.width"
-                [attr.height]="graphic.height"
-                loading="lazy"
-                class="h-auto w-full rounded-lg border border-gray-100" />
-              <figcaption class="flex flex-wrap items-center justify-between gap-3">
-                <span class="text-sm font-semibold">{{ graphic.label }}</span>
-                @if (graphic.local) {
-                  <a
-                    [href]="graphic.url"
-                    download
-                    class="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-50"
-                    (click)="onGraphicDownload(graphic)"
-                    [attr.data-testid]="'share-kit-graphic-download-' + $index">
-                    <i class="fa-light fa-arrow-down-to-line" aria-hidden="true"></i>
-                    Download
-                  </a>
-                } @else {
-                  <!-- Browsers ignore `download` across origins, so offer the image in a new tab and don't count it as a download. -->
-                  <a
-                    [href]="graphic.url"
-                    target="_blank"
-                    rel="noopener"
-                    class="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-50"
-                    [attr.data-testid]="'share-kit-graphic-open-' + $index">
-                    <i class="fa-light fa-arrow-up-right" aria-hidden="true"></i>
-                    Open full size
-                  </a>
-                }
-              </figcaption>
-            </figure>
-          }
+          <h2 class="text-[26px] font-extrabold leading-tight tracking-[-0.02em] [font-family:var(--sk-heading-font)]">Graphics</h2>
+          <p class="max-w-[62ch] text-[15px] text-gray-700">Use the event graphics with your posts.</p>
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            @for (graphic of graphics(); track graphic.url) {
+              <figure class="flex flex-col gap-3 rounded-[14px] border border-gray-200 bg-white p-5" [attr.data-testid]="'share-kit-graphic-' + $index">
+                <img
+                  [src]="graphic.url"
+                  [alt]="graphic.alt"
+                  [attr.width]="graphic.width"
+                  [attr.height]="graphic.height"
+                  loading="lazy"
+                  class="h-auto w-full rounded-lg border border-gray-100" />
+                <figcaption class="flex flex-wrap items-center justify-between gap-3">
+                  <span class="text-sm font-semibold">{{ graphic.label }}</span>
+                  @if (graphic.local) {
+                    <a
+                      [href]="graphic.url"
+                      download
+                      class="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-50"
+                      (click)="onGraphicDownload(graphic)"
+                      [attr.data-testid]="'share-kit-graphic-download-' + $index">
+                      <i class="fa-light fa-arrow-down-to-line" aria-hidden="true"></i>
+                      Download Graphic
+                    </a>
+                  } @else {
+                    <!-- Browsers ignore `download` across origins, so offer the image in a new tab and don't count it as a download. -->
+                    <a
+                      [href]="graphic.url"
+                      target="_blank"
+                      rel="noopener"
+                      class="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-50"
+                      [attr.data-testid]="'share-kit-graphic-open-' + $index">
+                      <i class="fa-light fa-arrow-up-right" aria-hidden="true"></i>
+                      Open Full Size
+                    </a>
+                  }
+                </figcaption>
+              </figure>
+            }
+          </div>
         </section>
       }
 
       <!-- Call for proposals -->
       @if (tab() === 'cfp' && kit.cfp; as cfp) {
         <section id="share-kit-panel-cfp" role="tabpanel" aria-labelledby="share-kit-tab-cfp" class="flex flex-col gap-4" data-testid="share-kit-panel-cfp">
-          <article class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-6">
-            <h2 class="text-lg font-semibold">{{ cfp.heading }}</h2>
+          <article class="flex flex-col gap-3 rounded-[14px] border border-gray-200 bg-white p-6">
+            <h2 class="text-[26px] font-extrabold leading-tight tracking-[-0.02em] [font-family:var(--sk-heading-font)]">{{ cfp.heading }}</h2>
             <p class="text-sm text-gray-700">The call for proposals closes {{ cfpCloses() }}. {{ cfp.body }}</p>
             <div>
               <lfx-ui-button
@@ -232,12 +256,12 @@
                 target="_blank"
                 (click)="onCfpClick('cfp')"
                 data-testid="share-kit-cfp-details">
-                Official CFP details
+                Official CFP Details
               </lfx-ui-button>
             </div>
           </article>
           @if (cfp.guide; as guide) {
-            <article class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-6" data-testid="share-kit-cfp-guide">
+            <article class="flex flex-col gap-3 rounded-[14px] border border-gray-200 bg-white p-6" data-testid="share-kit-cfp-guide">
               <h3 class="text-base font-semibold">{{ guide.title }}</h3>
               <p class="text-sm text-gray-700">{{ guide.description }}</p>
               <div>
@@ -248,16 +272,17 @@
                   target="_blank"
                   (click)="onCfpClick('guide')"
                   data-testid="share-kit-cfp-guide-link">
-                  Read the guide
+                  Read the Guide
                 </lfx-ui-button>
               </div>
             </article>
           }
           <lfx-share-kit-copy-card
             [buttonVariant]="copyButtonVariant()"
-            heading="Copy an invitation"
+            heading="Invitation to Share With Your Team"
             [text]="cfpInvitation()"
-            copyLabel="Copy invitation"
+            [link]="cfpInvitationLink()"
+            copyLabel="Copy Invitation"
             testId="share-kit-cfp-invitation"
             (copied)="onCopied('cfp_invite')" />
         </section>
@@ -268,55 +293,57 @@
         <span aria-hidden="true">/</span>
         @if (registerUrl(); as url) {
           <a [href]="url" target="_blank" rel="noopener" class="text-blue-700 underline-offset-2 hover:underline" (click)="onRegisterClick('footer')"
-            >Official registration page</a
+            >Official Registration Page</a
           >
         }
       </footer>
     }
   </div>
   <!-- Outside the state branches so cookie settings stay reachable on loading, not-found and error views too. -->
-  <lfx-app-footer />
+  <!-- The shared footer has no side padding of its own; this keeps its text off the screen edge on phones. -->
+  <div class="px-4 sm:px-10">
+    <lfx-app-footer />
+  </div>
 </div>
 
 <!-- Member discount (#6061), shown in either hero: the code is only ever in the response for a signed-in employee of a member company. -->
 <ng-template #memberOfferBlock>
   @if (memberBenefit(); as benefit) {
     @if (memberOffer(); as offer) {
-      <div class="flex max-w-[640px] flex-col gap-3 rounded-lg border-l-4 border-blue-600 bg-blue-50 px-4 py-3" data-testid="share-kit-member-offer">
-        <p class="text-sm font-semibold text-gray-900">{{ benefit.membershipName }} members get {{ benefit.discountLabel }}.</p>
+      <!-- Exact px sizes follow the share kit design (the root font is 14px, so rem sizes undershoot). -->
+      <div [class]="memberBoxClasses()" data-testid="share-kit-member-offer">
+        <h2 class="text-[15px] font-bold" data-testid="share-kit-member-heading">{{ benefit.membershipName }} Members Get {{ benefit.discountLabel }}</h2>
         @switch (offer.status) {
           @case ('eligible') {
             <lfx-share-kit-copy-card
-              heading="Your member code"
+              heading="Your Member Code"
               [sensitive]="true"
               [buttonVariant]="copyButtonVariant()"
               [text]="offer.code ?? ''"
-              copyLabel="Copy code"
+              copyLabel="Copy Code"
               testId="share-kit-member-code"
               (copied)="onCopied('member_code')" />
-            <p class="text-sm text-gray-700" data-testid="share-kit-member-eligible">
+            <p [class]="memberTextClasses()" data-testid="share-kit-member-eligible">
               Enter it when you register.
               @if (offer.companyName) {
-                {{ offer.companyName }} is a {{ benefit.membershipName }} member.
+                {{ offer.companyName }} is a member of {{ benefit.membershipName }}.
               }
             </p>
           }
           @case ('sign_in') {
-            <p class="text-sm text-gray-700" data-testid="share-kit-member-sign-in">
-              <a [href]="signInUrl()" class="font-medium text-blue-700 underline-offset-2 hover:underline">Sign in</a>
-              with your work email to see your member code.
-            </p>
+            <div class="flex flex-col gap-[10px]" data-testid="share-kit-member-sign-in">
+              <p [class]="memberTextClasses()">Work at a member company? Sign in to LFX with your work email to see your code.</p>
+              <a [href]="signInUrl()" [class]="memberButtonClasses()">Sign In to See Your Code</a>
+            </div>
           }
           @case ('not_member') {
-            <p class="text-sm text-gray-700" data-testid="share-kit-member-not-member">
-              Your company isn't a {{ benefit.membershipName }} member yet.
-              <a [href]="benefit.joinUrl" target="_blank" rel="noopener" class="font-medium text-blue-700 underline-offset-2 hover:underline"
-                >Learn about joining</a
-              >
-            </p>
+            <div class="flex flex-col gap-[10px]" data-testid="share-kit-member-not-member">
+              <p [class]="memberTextClasses()">Your company isn't a member of {{ benefit.membershipName }} yet.</p>
+              <a [href]="benefit.joinUrl" target="_blank" rel="noopener" [class]="memberButtonClasses()">Learn About Membership</a>
+            </div>
           }
           @default {
-            <p class="text-sm text-gray-700" data-testid="share-kit-member-unavailable">
+            <p [class]="memberTextClasses()" data-testid="share-kit-member-unavailable">
               We couldn't check your membership right now. Refresh the page to try again.
             </p>
           }

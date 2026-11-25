@@ -42,6 +42,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { buildLfxProfileSummary, buildMentorshipLfxProfileFields } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
+import { ProfileSavedFieldsService } from '@services/profile-saved-fields.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -93,6 +94,7 @@ import { ProfileEditDrawerService } from '../../../profile/components/profile-ed
 export class ProfileCardComponent implements OnInit {
   private readonly userService = inject(UserService);
   private readonly mentorshipService = inject(MentorshipService);
+  private readonly savedFields = inject(ProfileSavedFieldsService);
   private readonly editDrawer = inject(ProfileEditDrawerService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
@@ -298,7 +300,8 @@ export class ProfileCardComponent implements OnInit {
     const fields = this.lfxProfileFields();
     if (Object.keys(fields).length > 0) {
       this.syncMentorshipProfileFields(fields, LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_DETAIL);
-    }
+    } // So Account & Settings and the Profile page lay this save, not an earlier one, over a stale profile GET (#6082).
+    this.savedFields.record(metadata);
   }
 
   /**
