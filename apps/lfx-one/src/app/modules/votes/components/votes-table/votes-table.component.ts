@@ -625,7 +625,11 @@ export class VotesTableComponent {
       if (!counts) return base;
       return base.map((option) => {
         const count = counts[option.id as keyof VoteStatusCounts];
-        return count > 0 ? { ...option, count, ariaLabel: `${option.label}, ${count} ${count === 1 ? 'vote' : 'votes'}` } : option;
+        if (count > 0) {
+          const noun = count === 1 ? 'vote' : 'votes';
+          return { ...option, count, ariaLabel: `${option.label}, ${count} ${noun}` };
+        }
+        return option;
       });
     });
   }
