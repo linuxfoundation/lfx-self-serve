@@ -20,7 +20,6 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, take } from 'rxjs';
 
 import { ProfileIdentitiesComponent } from '../../profile/identities/profile-identities.component';
-import { ProfileLinuxEmailComponent } from '../../profile/linux-email/profile-linux-email.component';
 import { AccountAddIdentityDialogComponent } from './components/add-identity-dialog/account-add-identity-dialog.component';
 import { AccountRemoveIdentityDialogComponent } from './components/remove-identity-dialog/account-remove-identity-dialog.component';
 import { AccountVerifyIdentityDialogComponent } from './components/verify-identity-dialog/account-verify-identity-dialog.component';
@@ -35,7 +34,6 @@ import { AccountVerifyIdentityDialogComponent } from './components/verify-identi
     NgTemplateOutlet,
     AccountCardComponent,
     OpenIntercomDirective,
-    ProfileLinuxEmailComponent,
     UiBadgeComponent,
     UiButtonComponent,
     UiEmptyStateComponent,

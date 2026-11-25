@@ -1,0 +1,14 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-[20px]">
+  @if (identitiesFailed()) {
+    <lfx-ui-note variant="warning" data-testid="account-linux-email-identities-error">
+      We couldn't load all your verified email addresses, so some may be missing from the forwarding list.
+      <lfx-ui-button note-action variant="secondary" size="tiny" (click)="retryIdentities()" data-testid="account-linux-email-identities-retry">
+        Try again
+      </lfx-ui-button>
+    </lfx-ui-note>
+  }
+  <lfx-account-linux-email [identities]="identities()" />
+</div>

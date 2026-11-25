@@ -492,7 +492,7 @@ export class AccountPersonalInformationComponent {
       const savedAt = Date.now();
       if (pending) sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt, ...pending } satisfies PendingProfileSave));
       if (primary) sessionStorage.setItem(PENDING_PRIMARY_EMAIL_KEY, JSON.stringify({ savedAt, email: primary } satisfies PendingPrimaryEmail));
-      window.location.href = error.error.authorize_url;
+      this.unsavedChanges.leaveForAuthorization(error.error.authorize_url);
     }
     return true;
   }

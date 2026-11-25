@@ -10,7 +10,7 @@ import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
-import { linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
+import { correctLinkedInGeoTargets, linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
 import { linkedInGeoSearchLocations, linkedInGeoSearchQueryRefusal } from '@lfx-one/shared/utils/campaign-linkedin-geo.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
 import {
@@ -1335,6 +1335,14 @@ export class CampaignController {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });
+      }
+      // Germany and the United Kingdom as the old shared map resolved them, corrected in the request itself (LFXV2-2665),
+      // so the legacy creator, which is handed `req.body` while the cutover is off, targets the right country too.
+      // An object only: `in` throws on a primitive, which campaign-service refuses on its own.
+      const linkedInConfigBody: unknown = body?.linkedInConfig;
+      if (linkedInConfigBody !== null && typeof linkedInConfigBody === 'object' && !Array.isArray(linkedInConfigBody) && 'geoTargets' in linkedInConfigBody) {
+        const config = linkedInConfigBody as { geoTargets: unknown };
+        config.geoTargets = correctLinkedInGeoTargets(config.geoTargets);
       }
       // A variant's ad name, description and call to action (#5764 rows 16–17): refused, never dropped, while this
       // deployment cannot send them, and held to campaign-service's rules. See `linkedInVariantFieldsRefusal`.
@@ -9727,6 +9735,9 @@ export class CampaignController {
    *
    * 5. A variant's ad name, description and call to action go out only as `compactLinkedInVariantFields` checked and
    *    compacted them (#5764 rows 16–17): the name normalized, the call to action upper-cased, a blank one dropped.
+   *
+   * 6. `geoTargets` goes out with the Germany and United Kingdom URNs the old shared map resolved wrongly corrected,
+   *    and a repeat dropped (`correctLinkedInGeoTargets`, LFXV2-2665), for a stale tab or a direct caller.
    */
   private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;
@@ -9741,6 +9752,8 @@ export class CampaignController {
     delete rest['selectedAdAccountId'];
     if (adAccountId !== null) rest['adAccountId'] = adAccountId;
     delete rest['targetingProfileEdit'];
+    // Germany and the United Kingdom as the old shared map resolved them, corrected (LFXV2-2665).
+    if ('geoTargets' in rest) rest['geoTargets'] = correctLinkedInGeoTargets(rest['geoTargets']);
     if (Array.isArray(rest['variants'])) rest['variants'] = rest['variants'].map((variant: unknown) => this.linkedInVariantToForward(variant));
 
     return {

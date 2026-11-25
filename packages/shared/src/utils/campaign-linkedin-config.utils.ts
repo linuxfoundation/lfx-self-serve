@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LINKEDIN_GEO_URN_CORRECTIONS } from '../constants/campaign.constants';
 import type { LinkedInConfigKeyRefusal } from '../interfaces/campaign.interface';
 
 /**
@@ -75,4 +76,29 @@ export function linkedInConfigKeyRefusal(raw: unknown): LinkedInConfigKeyRefusal
     if (refusal !== null) return refusal;
   }
   return null;
+}
+
+/**
+ * `geoTargets` with the URNs `LINKEDIN_GEO_RESOLVE_MAP` used to send for Germany and the United Kingdom corrected
+ * (`LINKEDIN_GEO_URN_CORRECTIONS`), so a brief or draft saved before the fix targets the country its label names. An
+ * entry whose URN repeats an earlier one once corrected (a stale United Kingdom beside a new one) is dropped. Anything
+ * else, including a value that is not a list, is returned as it came. Run where the Implement tab seeds or restores
+ * its geos and again by the create route.
+ */
+export function correctLinkedInGeoTargets<T>(geoTargets: T): T {
+  if (!Array.isArray(geoTargets)) return geoTargets;
+  const seen = new Set<unknown>();
+  const corrected: unknown[] = [];
+  for (const target of geoTargets as unknown[]) {
+    const record = plainRecord(target);
+    const fix = record ? LINKEDIN_GEO_URN_CORRECTIONS.find((c) => c.label === record['label'] && c.from === record['urn']) : undefined;
+    const next = fix && record ? { ...record, urn: fix.to } : target;
+    const urn = plainRecord(next)?.['urn'];
+    if (typeof urn === 'string') {
+      if (seen.has(urn)) continue;
+      seen.add(urn);
+    }
+    corrected.push(next);
+  }
+  return corrected as T;
 }

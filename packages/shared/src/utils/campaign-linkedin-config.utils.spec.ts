@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { linkedInConfigKeyRefusal } from './campaign-linkedin-config.utils';
+import { correctLinkedInGeoTargets, linkedInConfigKeyRefusal } from './campaign-linkedin-config.utils';
 
 describe('linkedInConfigKeyRefusal', () => {
   const variant = { introText: 'Join us', headline: 'KubeCon', imageAssetId: 'a1' };
@@ -33,5 +33,30 @@ describe('linkedInConfigKeyRefusal', () => {
 
   it('never echoes an unknown key', () => {
     expect(linkedInConfigKeyRefusal({ ...config, secretField: 1 })?.message).not.toContain('secretField');
+  });
+});
+
+describe('correctLinkedInGeoTargets', () => {
+  it.each([
+    ['Germany as the old map sent it', [{ label: 'Germany', urn: 'urn:li:geo:101165590' }], [{ label: 'Germany', urn: 'urn:li:geo:101282230' }]],
+    [
+      'the United Kingdom as the old map sent it',
+      [{ label: 'United Kingdom', urn: 'urn:li:geo:106693272' }],
+      [{ label: 'United Kingdom', urn: 'urn:li:geo:101165590' }],
+    ],
+    ['a genuine United Kingdom target', [{ label: 'United Kingdom', urn: 'urn:li:geo:101165590' }], [{ label: 'United Kingdom', urn: 'urn:li:geo:101165590' }]],
+    ['a genuine Switzerland target', [{ label: 'Switzerland', urn: 'urn:li:geo:106693272' }], [{ label: 'Switzerland', urn: 'urn:li:geo:106693272' }]],
+    ['other targets', [{ label: 'Japan', urn: 'urn:li:geo:101355337' }, 'x'], [{ label: 'Japan', urn: 'urn:li:geo:101355337' }, 'x']],
+    ['a value that is not a list', 'none', 'none'],
+    [
+      'a stale United Kingdom beside a new one',
+      [
+        { label: 'United Kingdom', urn: 'urn:li:geo:106693272' },
+        { label: 'United Kingdom', urn: 'urn:li:geo:101165590' },
+      ],
+      [{ label: 'United Kingdom', urn: 'urn:li:geo:101165590' }],
+    ],
+  ])('corrects %s', (_name, raw, expected) => {
+    expect(correctLinkedInGeoTargets(raw)).toEqual(expected);
   });
 });

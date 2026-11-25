@@ -61,7 +61,7 @@ export class ProfileLinuxEmailComponent {
   public savingForward = signal(false);
 
   // Tracks the last loaded/saved forward-to value so we can detect unsaved changes.
-  private readonly savedForwardTo = signal<string>('');
+  protected readonly savedForwardTo = signal<string>('');
 
   // Data signals
   public data: Signal<LinuxAliasData | null> = this.initData();
@@ -228,9 +228,8 @@ export class ProfileLinuxEmailComponent {
     }
   }
 
-  // Private methods
-
-  private handleError(err: HttpErrorResponse, fallback: string): void {
+  // Protected so Account & Settings can leave for Flow C without its unsaved-changes prompt.
+  protected handleError(err: HttpErrorResponse, fallback: string): void {
     // Flow C: redirect to authorize when a management token is required.
     if (err.error?.error === 'management_token_required' && err.error?.authorize_url) {
       if (isPlatformBrowser(this.platformId)) {
@@ -240,6 +239,8 @@ export class ProfileLinuxEmailComponent {
     }
     this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || fallback });
   }
+
+  // Private methods
 
   private initForwardDirty(): Signal<boolean> {
     // Reset coupling: after a successful save, updateForward() → refresh.next() →

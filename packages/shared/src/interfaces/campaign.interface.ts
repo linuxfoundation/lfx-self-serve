@@ -1894,6 +1894,13 @@ export interface LinkedInGeoTarget {
   urn: string;
 }
 
+/** A LinkedIn geo target the old shared map resolved wrongly: its label, the URN it sent, and the URN it should send. */
+export interface LinkedInGeoUrnCorrection {
+  label: string;
+  from: string;
+  to: string;
+}
+
 /**
  * campaign-service's LinkedIn targeting typeahead (`search-linkedin-ads-targeting-entities`, #585, #643), as the wire
  * carries it: up to 100 entities in LinkedIn's relevance order, de-duplicated by URN.

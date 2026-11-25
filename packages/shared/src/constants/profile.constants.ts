@@ -23,6 +23,10 @@ import {
 export const PENDING_PROFILE_SAVE_KEY = 'lfx_profile_pending_save';
 /** Session key for a primary email chosen on Personal information when its save left for Flow C; the page restores it on return. */
 export const PENDING_PRIMARY_EMAIL_KEY = 'lfx_profile_pending_primary_email';
+/** Session key for a Linux.com forwarding address chosen on Account & Settings when its save left for Flow C (#6075). */
+export const PENDING_LINUX_FORWARD_KEY = 'lfx_profile_pending_linux_forward';
+/** How long a kept forwarding address stays usable, the same as a pending profile save. */
+export const PENDING_LINUX_FORWARD_TTL_MS = 10 * 60 * 1000;
 /** How long a kept primary email choice stays usable, the same as a pending profile save. */
 export const PENDING_PRIMARY_EMAIL_TTL_MS = 10 * 60 * 1000;
 
@@ -296,10 +300,10 @@ export const EMAIL_VERIFICATION_SENT_MESSAGE = `Check your email for a 6-digit v
 /** Resends allowed on the code step before Resend is replaced by a Contact support action. */
 export const EMAIL_RESEND_SUPPORT_THRESHOLD = 1;
 
-/** Heading for the initial code-step guidance, neutral about delivery and linked-account status. */
 /** Digits in an email verification code. */
 export const EMAIL_VERIFICATION_CODE_LENGTH = 6;
 
+/** Heading for the initial code-step guidance, neutral about delivery and linked-account status. */
 export const EMAIL_CODE_NOT_RECEIVED_TITLE = 'No code yet?';
 
 /** Standalone code-step hint shown alongside a secondary Contact support action. */
@@ -387,6 +391,18 @@ export const ACCOUNT_IDENTITIES_COPY = {
   addSubtitle:
     'Identities are used to attribute contributions and participation across projects. Adding verified identities helps ensure accurate project affiliations.',
   emailProviderDescription: 'Add and verify an email address you use for open source work',
+} as const;
+
+/** Copy for the Account & Settings Linux.com email page (#6075). `{domain}` is the alias domain the server reports. */
+export const ACCOUNT_LINUX_EMAIL_COPY = {
+  subtitle: 'A personal @{domain} address that forwards to an inbox you choose. It’s a one-time add-on for Individual Supporters.',
+  claimNote: 'Your add-on is active. Pick your alias and where its email should go. You can’t change the alias later.',
+  aliasHint: 'Your alias can’t be changed after it’s claimed.',
+  forwardHint: 'Email sent to your alias is forwarded here.',
+  emptyTitle: 'Get your own Linux.com email',
+  emptyText:
+    'Show your support for Linux and open source with a personal @{domain} address that forwards to any inbox. It’s a one-time purchase for Individual Supporters.',
+  noVerifiedEmail: 'You don’t have a verified email address to forward to yet. Add and verify an email address first, then return here to set up forwarding.',
 } as const;
 
 /** Length limits of the Personal information fields; the server rejects longer values. */
