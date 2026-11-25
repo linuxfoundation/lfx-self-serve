@@ -418,6 +418,18 @@ export interface CreativeSlotCoverageState {
 /** One of the concrete video optimization goals Reddit accepts — see `REDDIT_VIDEO_GOALS`. */
 export type RedditVideoGoal = (typeof REDDIT_VIDEO_GOALS)[number];
 
+/**
+ * What `redditCreateRefusal` reads (#5980): the Reddit section's state as the Implement tab holds it, one flat object of
+ * plain values, like `LinkedInCreateRefusalInput`.
+ */
+export interface RedditCreateRefusalInput {
+  budgetUsd: number;
+  /** How many geo targets the request would carry (`redditEffectiveGeoTargets`). */
+  geoTargetCount: number;
+  videoGoalError: string | null;
+  videoPostError: string | null;
+}
+
 /** The three inputs needed to author a promoted post, once a creator has decided to author one. */
 export interface RedditAuthoredPostInput {
   imageUrl: string;

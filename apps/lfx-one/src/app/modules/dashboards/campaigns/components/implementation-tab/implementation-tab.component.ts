@@ -485,6 +485,15 @@ import {
   linkedInImageUploadHoldsCreate,
   linkedInImageUploadOrphaned,
   linkedInVariantViews,
+  redditCallToActionIsUnavailable,
+  redditCreateRefusal,
+  redditEffectiveGeoTargets,
+  redditEffectiveKeywords,
+  redditEffectiveSubreddits,
+  redditEffectiveVideoGoal,
+  redditObjectiveIsUnavailable,
+  redditVideoGoalError,
+  redditVideoPostError,
   linkedInGeoSearchOptions,
   linkedInGeoSearchQueryRefusal,
   linkedInGeoSearchQueryText,
@@ -1465,13 +1474,9 @@ export class ImplementationTabComponent implements OnInit {
    * falls back to index 0 and shows `awareness`, while the signal keeps the stored objective and
    * still sends it. The screen and the payload then disagree, and the first touch of the control
    * overwrites the stored value for good. A disabled option is what keeps the two in step.
-   *
-   * The widening cast is deliberate, as it is on the Meta computed: the constant is narrowed to
-   * `SelectableRedditObjective`, which would make `.includes()` reject the very value asked about.
+   * The rule itself is `redditObjectiveIsUnavailable` in `campaign-reddit-form.utils` (#5980).
    */
-  protected readonly redditObjectiveIsUnavailable = computed(
-    () => !(REDDIT_SELECTABLE_OBJECTIVES as readonly RedditObjective[]).includes(this.redditObjective())
-  );
+  protected readonly redditObjectiveIsUnavailable = computed(() => redditObjectiveIsUnavailable(this.redditObjective()));
   /**
    * The same guard for the call to action, because the exposure is the same one.
    *
@@ -1490,10 +1495,7 @@ export class ImplementationTabComponent implements OnInit {
    * The empty string is NOT unavailable — it is the real "let upstream default" selection the
    * first `<option>` carries.
    */
-  protected readonly redditCallToActionIsUnavailable = computed(() => {
-    const cta = this.redditCallToAction();
-    return cta !== '' && !(REDDIT_CALL_TO_ACTIONS as readonly string[]).includes(cta);
-  });
+  protected readonly redditCallToActionIsUnavailable = computed(() => redditCallToActionIsUnavailable(this.redditCallToAction()));
   protected readonly todayDate = new Date().toISOString().split('T')[0];
   protected readonly defaultEndDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
 
@@ -1898,23 +1900,16 @@ export class ImplementationTabComponent implements OnInit {
    * Membership-checked rather than truthiness-checked because a restored draft is not type-checked
    * at runtime and both creators refuse anything outside `REDDIT_VIDEO_GOALS`.
    */
-  protected readonly redditEffectiveVideoGoal = computed<RedditVideoGoal | null>(() => {
-    const goal = this.redditVideoGoal();
-    return (REDDIT_VIDEO_GOALS as readonly string[]).includes(goal) ? (goal as RedditVideoGoal) : null;
-  });
+  protected readonly redditEffectiveVideoGoal = computed<RedditVideoGoal | null>(() => redditEffectiveVideoGoal(this.redditVideoGoal()));
   /** The message shown under the goal picker while Video Views has no usable goal, else `null`. */
-  protected readonly redditVideoGoalError = computed(() =>
-    this.redditNeedsVideoGoal() && this.redditEffectiveVideoGoal() === null ? 'Choose a video goal — Reddit needs one for a Video Views campaign.' : null
-  );
+  protected readonly redditVideoGoalError = computed(() => redditVideoGoalError(this.redditObjective(), this.redditVideoGoal()));
   /**
    * The message shown under the Post URL while Video Views has no post, else `null`. A video-views
    * campaign has to promote an existing video post: the image-URL route authors an IMAGE post, which
    * can never earn a video view, and with neither the campaign is created with no ad at all. Neither
    * creator checks the creative against the objective, so this is the only place it is enforced.
    */
-  protected readonly redditVideoPostError = computed(() =>
-    this.redditNeedsVideoGoal() && !this.redditPostUrl() ? 'Video Views promotes an existing Reddit video post — enter its Post URL.' : null
-  );
+  protected readonly redditVideoPostError = computed(() => redditVideoPostError(this.redditObjective(), this.redditPostUrl()));
   /**
    * Link to an EXISTING Reddit post to promote. Ungated, because both creators read it: the
    * legacy path extracts the post id and builds the ad from it (`reddit-ads.service.ts`), exactly
@@ -2533,7 +2528,10 @@ export class ImplementationTabComponent implements OnInit {
    * targeting it exists to surface.
    */
   protected readonly redditEffectiveKeywords = computed<string[]>(() =>
-    this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term)
+    redditEffectiveKeywords(
+      this.redditKeywords(),
+      this.briefKeywords().map((k) => k.term)
+    )
   );
 
   /**
@@ -2681,16 +2679,10 @@ export class ImplementationTabComponent implements OnInit {
    * Mirrors `submit()`'s fallback to the form's country code, so the preview shows the value that
    * ships rather than an empty list for a request that targets somewhere specific.
    */
-  protected readonly redditEffectiveGeoTargets: Signal<string[]> = computed(() => {
-    // Normalise FIRST, then decide whether to fall back. Choosing the branch on the RAW
-    // recommendation strands the form's country: a brief carrying an unusable ['USA'] is
-    // non-empty, so it wins the branch, filters to nothing, and canSubmit blocks the section
-    // permanently — with a perfectly valid US sitting unread in the form. The fallback is for
-    // "the brief offers no usable geo", and non-empty is not the same test as usable.
-    const recommended = this.normaliseGeoCodes(this.redditGeoTargets());
-    if (recommended.length > 0) return recommended;
-    return this.normaliseGeoCodes([this.countryCodeValue()]);
-  });
+  protected readonly redditEffectiveGeoTargets: Signal<string[]> = computed(() =>
+    // The brief's usable recommendation, else the form's country code (`redditEffectiveGeoTargets`, #5980).
+    redditEffectiveGeoTargets(this.redditGeoTargets(), this.countryCodeValue())
+  );
   /**
    * Subreddit names as they will DISPATCH. A restored brief keeps whatever the generator wrote,
    * and `r/k8s` is a real stored value (campaign-service.service.spec.ts asserts it survives
@@ -2698,11 +2690,7 @@ export class ImplementationTabComponent implements OnInit {
    * under a fixed `r/` prefix previews `r/r/k8s` — a section whose entire purpose is showing
    * what will be sent must not show something else.
    */
-  protected readonly redditEffectiveSubreddits: Signal<string[]> = computed(() =>
-    this.redditSubreddits()
-      .map((sub) => sub.trim().replace(/^\/?r\//i, ''))
-      .filter((sub) => sub.length > 0)
-  );
+  protected readonly redditEffectiveSubreddits: Signal<string[]> = computed(() => redditEffectiveSubreddits(this.redditSubreddits()));
 
   /**
    * The geo list a Meta create would ACTUALLY send — one value for both the preview and `submit()`.
@@ -4138,20 +4126,17 @@ export class ImplementationTabComponent implements OnInit {
     // rather than an error on the request. Refuse locally instead.
     //
     // Most of Reddit's other inputs are AI-recommended from the brief and rendered read-only for
-    // review; the user-entered ones that can make a create fail are checked here and below (the
-    // video goal). Deliberately not an enumeration — a list is a claim the next field falsifies.
-    if (redditSelected && !this.redditBudgetIsUsable()) return 'Reddit Ads: set a budget Reddit accepts.';
-    // No usable geo at all — the brief recommended none AND the country code is blank. The
-    // request would carry [''], which Reddit cannot target and the operator cannot see, because
-    // the preview correctly renders nothing. countryCode has no validator, so this state is
-    // reachable by clearing one optional field.
-    if (redditSelected && this.redditEffectiveGeoTargets().length === 0) return 'Reddit Ads: add a location, or a country code.';
-    // Video Views with no usable goal: both creators refuse it before anything is created, and
-    // because creation is async that refusal would arrive as a dead job. The message is on screen
-    // under the goal picker.
-    if (redditSelected && this.redditVideoGoalError() !== null) return 'Reddit Ads: fix the Video Views goal.';
-    // Video Views without a post would build an image-post ad or no ad — never a video view.
-    if (redditSelected && this.redditVideoPostError() !== null) return 'Reddit Ads: Video Views needs a video post.';
+    // review; the user-entered ones that can make a create fail are held, in order, by `redditCreateRefusal`
+    // (`campaign-reddit-form.utils`, #5980). Deliberately not an enumeration here — a list is a claim the next field falsifies.
+    const redditRefusal = redditSelected
+      ? redditCreateRefusal({
+          budgetUsd: this.redditBudgetUsd(),
+          geoTargetCount: this.redditEffectiveGeoTargets().length,
+          videoGoalError: this.redditVideoGoalError(),
+          videoPostError: this.redditVideoPostError(),
+        })
+      : null;
+    if (redditRefusal !== null) return redditRefusal;
     // The rest of the Meta form, in order. The Instagram id and EU DSA errors are `null` while
     // `metaInstagramDsaAvailable` is off; campaign-service refuses the same states with a 400.
     const metaRefusal = metaSelected
@@ -4192,7 +4177,7 @@ export class ImplementationTabComponent implements OnInit {
     // `onMicrosoftBudgetInput`'s `|| 0` happens to prevent that today, but that is the handler's
     // incidental behaviour rather than this guard's, and the guard is what `canSubmit` promises.
     //
-    // The upper bound mirrors `redditBudgetIsUsable`: the client caps the daily budget at
+    // The upper bound mirrors `redditBudgetIsUsable` (`campaign-reddit-form.utils`): the client caps the daily budget at
     // `MICROSOFT_MAX_BUDGET` and rejects anything larger DURING dispatch, so an unguarded
     // over-cap value is a dead job rather than a refused request.
     //
@@ -5312,26 +5297,6 @@ export class ImplementationTabComponent implements OnInit {
   protected onMetaBudgetInput(event: Event): void {
     this.metaBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
     this.emitDraft();
-  }
-
-  /**
-   * Whether the Reddit budget is one the platform will accept.
-   *
-   * The CEILING and finiteness mirror the client's contract exactly
-   * (`internal/platform/reddit/client.go`: finite, within (0, 1e9]). Creation is ASYNC, so an
-   * over-cap budget is not a validation error the operator sees — it is a job that dies later and
-   * has to be gone and read.
-   *
-   * The 1 USD FLOOR is deliberately stricter than upstream, which accepts anything rounding to at
-   * least one micro-dollar. A sub-dollar Reddit campaign buys nothing, so a value in that range is
-   * far more likely a typo than an intent, and the siblings use the same 1 USD floor. Stated
-   * plainly rather than described as mirroring the client, because it does not.
-   *
-   * The siblings enforce neither bound; LFXV2-3315 covers bringing them into line.
-   */
-  protected redditBudgetIsUsable(): boolean {
-    const budget = this.redditBudgetUsd();
-    return Number.isFinite(budget) && budget >= 1 && budget <= REDDIT_MAX_BUDGET_USD;
   }
 
   protected onRedditBudgetInput(event: Event): void {
@@ -10462,20 +10427,6 @@ export class ImplementationTabComponent implements OnInit {
       else if (channels.length === 1) channel = GOOGLE_CAMPAIGN_NAME_TOKENS[channels[0]];
       return name ? `Events | ${name} | ${region} | Conversions | Prospecting | ${channel} | Linux Foundation | BoFU | ${startDate}` : '';
     });
-  }
-  /**
-   * Shape only: two uppercase letters, the form campaign-service requires before it consults its
-   * ISO 3166-1 set. That catches every realistic typo reachable from this form — empty,
-   * lowercase, "USA", a single letter — while never rejecting a valid code.
-   *
-   * Deliberately NOT validated against the shared COUNTRIES constant: it holds 89 of the ~250
-   * assigned codes (Iceland yes, Monaco and Liechtenstein no), so using it as an allow-list
-   * would refuse real campaigns — a worse failure than the one it prevents. A well-formed but
-   * unassigned code like "ZZ" still reaches dispatch and is refused there; LFXV2-3316 covers
-   * porting a real ISO set into the shared package, which the whole app would use.
-   */
-  private normaliseGeoCodes(codes: string[]): string[] {
-    return codes.map((g) => g.trim().toUpperCase()).filter((g) => /^[A-Z]{2}$/.test(g));
   }
 
   /**

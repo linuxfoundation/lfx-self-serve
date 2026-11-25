@@ -395,7 +395,9 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     at(f).selectedPlatforms.set(['reddit-ads']);
     makeSubmittable(f);
     pickRedditObjective(f, 'video_views');
-    // The Post URL is valid first, so the goal is the ONLY thing blocking the submit below: without
+    // With no Post URL yet, its reason is on screen too (`redditVideoPostError` reaches the template).
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-post-error"]')?.textContent).toContain('enter its Post URL');
+    // The Post URL is valid next, so the goal is the ONLY thing blocking the submit below: without
     // it the Post URL guard alone would keep canSubmit() false and hide a missing goal guard.
     typeRedditPostUrl(f, 'https://www.reddit.com/r/kubernetes/comments/abc123/video/');
 
@@ -409,26 +411,14 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     pickRedditVideoGoal(f, 'VIDEO_VIEW_6S');
     expect(at(f).canSubmit()).toBe(true);
     expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-goal-error"]')).toBeNull();
-  });
 
-  /**
-   * Video Views must promote an existing video post: an image URL authors an IMAGE post, which can
-   * never earn a video view, and neither creator checks the creative against the objective.
-   */
-  it('cannot submit video_views without a post url, even with an image url', async () => {
-    const f = (await mount(null, true)).fixture;
-    at(f).selectedPlatforms.set(['reddit-ads']);
-    makeSubmittable(f);
-    pickRedditObjective(f, 'video_views');
-    pickRedditVideoGoal(f, 'VIDEO_VIEW_6S');
-    typeRedditImageUrl(f, 'https://example.com/banner.png');
-
-    expect(at(f).canSubmit()).toBe(false);
-    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-post-error"]')?.textContent).toContain('enter its Post URL');
-
+    // With a valid goal, a missing post alone holds Create (`redditVideoPostError` reaches `redditCreateRefusal`).
+    typeRedditPostUrl(f, '');
+    expect(at(f).createBlockedReason()).toBe('Reddit Ads: Video Views needs a video post.');
+    at(f).submit();
+    expect(createCampaign).not.toHaveBeenCalled();
     typeRedditPostUrl(f, 'https://www.reddit.com/r/kubernetes/comments/abc123/video/');
     expect(at(f).canSubmit()).toBe(true);
-    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-post-error"]')).toBeNull();
   });
 
   /** The chosen goal reaches `redditConfig`, picked through the template and carried across a tab round-trip. */
