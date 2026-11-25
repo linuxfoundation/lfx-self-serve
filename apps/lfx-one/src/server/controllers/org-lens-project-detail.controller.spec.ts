@@ -27,7 +27,13 @@ const ORG_UID = '0014100000Te2ovAAB';
 const ROSTER = {
   total: 2,
   rows: [
-    { cells: [{ person: { name: 'octocat', initials: 'OC' } }, { text: 'fix: thing\n\nSigned-off-by: Octo Cat <octo@example.com>' }, { text: 'octo@example.com' }] },
+    {
+      cells: [
+        { person: { name: 'octocat', initials: 'OC' } },
+        { text: 'fix: thing\n\nSigned-off-by: Octo Cat <octo@example.com>' },
+        { text: 'octo@example.com' },
+      ],
+    },
     { cells: [{ person: { name: 'Mona', initials: 'MO' } }, { text: 'feat: more' }, { text: '—' }] },
   ],
 };
