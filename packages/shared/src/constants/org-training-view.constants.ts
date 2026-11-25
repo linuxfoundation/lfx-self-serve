@@ -17,6 +17,9 @@ export const ORG_TRAINING_VIEW_QUERY_PARAMS = {
   groupBy: 'groupBy',
 } as const;
 
+/** Roll-up only: narrows the Training reads to one organization of the family, and names the company a roll-up drawer opens for. */
+export const ORG_TRAINING_COMPANY_QUERY_PARAM = 'company';
+
 export const ORG_TRAINING_DEFAULT_GROUP_BY: OrgTrainingGroupBy = 'course';
 
 /** Group-by dropdown options of the Training page. */

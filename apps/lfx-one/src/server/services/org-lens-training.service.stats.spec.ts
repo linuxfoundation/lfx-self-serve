@@ -325,3 +325,46 @@ describe('OrgLensTrainingService — Training and Trainees read the same numbers
     expect(execute.mock.calls).toEqual(trainingCalls);
   });
 });
+
+describe('OrgLensTrainingService — family roll-up cache entries', () => {
+  const SIBLING = '001410000000000SIB';
+  const OTHER = '001410000000000OTH';
+  const familyOf = (accounts: string[]) =>
+    service.familyScope({
+      rollUpKey: 'family-001410000000000TOP',
+      rootUid: '001410000000000TOP',
+      members: accounts.map((accountId) => ({ uid: accountId, accountId, name: accountId, logoUrl: null })),
+      complete: true,
+      excludedCount: 0,
+    });
+  const statsKeys = () =>
+    withOrgCache.mock.calls.filter(([, key]) => (key as string).startsWith('training-stats:')).map(([org, key]) => [org as string, key as string]);
+
+  it('keys an entry by the roll-up and the exact account set it counts, so callers who read different organizations never share one', async () => {
+    mockStatsRows({ pairs: [PAIR_ROW] });
+    const req = {} as Parameters<OrgLensTrainingService['getFamilyTrainingStats']>[0];
+
+    await service.getFamilyTrainingStats(req, familyOf([ACCOUNT, SIBLING]), QUERY);
+    await service.getFamilyTrainingStats(req, familyOf([SIBLING, ACCOUNT]), QUERY);
+    await service.getFamilyTrainingStats(req, familyOf([ACCOUNT, SIBLING, OTHER]), QUERY);
+
+    const [first, reordered, wider] = statsKeys();
+    expect(first[0]).toBe('family-001410000000000TOP');
+    expect(reordered).toEqual(first);
+    expect(wider[1]).not.toBe(first[1]);
+  });
+
+  it('binds every account of the family into the pairs statement, and leaves the single-organization key as it was', async () => {
+    mockStatsRows({ pairs: [PAIR_ROW] });
+
+    await service.getFamilyTrainingStats({} as never, familyOf([ACCOUNT, SIBLING]), QUERY);
+    expect(pairsCall()[0]).toContain('ACCOUNT_ID IN (?, ?)');
+    expect([...pairsCall()[1].slice(0, 2)].sort()).toEqual([ACCOUNT, SIBLING].sort());
+
+    withOrgCache.mockClear();
+    execute.mockClear();
+    await service.getTrainingStats(ACCOUNT, QUERY, 'org-grant');
+    expect(statsKeys()).toEqual([[ACCOUNT, `training-stats:v7:${orgTrainingFiltersSignature(QUERY)}`]]);
+    expect(pairsCall()[0]).toContain('ACCOUNT_ID = ?');
+  });
+});

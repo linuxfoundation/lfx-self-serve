@@ -4,6 +4,7 @@
 import { createRequire } from 'node:module';
 
 import type { OrgTrainingStats, OrgTrainingStatsQuery, OrgTrainingTabId } from '@lfx-one/shared/interfaces';
+import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
@@ -19,6 +20,7 @@ vi.mock('./logger.service', () => ({ logger: { debug: vi.fn() } }));
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgLensTrainingService } from './org-lens-training.service';
+import { withOrgCache } from './valkey.service';
 
 interface SqlDatabase {
   exec(sql: string): void;
@@ -360,5 +362,181 @@ describe('Training reads run against SQLite over warehouse-resolved pairs', () =
       certifiedPeople: 1,
       peopleInTraining: 1,
     });
+  });
+});
+
+describe('a family roll-up over two accounts that share a person', () => {
+  // OTHER_ACCOUNT lists p1 with the Kubernetes Admin certificate ACCOUNT also lists, and its own learner p9. Adding the two
+  // companies' numbers would count p1 and that pair twice.
+  const req = {} as Request;
+  const family = (company?: string) =>
+    service.familyScope(
+      {
+        rollUpKey: 'family-001TOP',
+        rootUid: '001TOP',
+        members: [ACCOUNT, OTHER_ACCOUNT].map((accountId) => ({
+          uid: accountId,
+          accountId,
+          name: accountId === ACCOUNT ? 'Acme' : 'Acme Labs',
+          logoUrl: null,
+        })),
+        complete: true,
+        excludedCount: 0,
+      },
+      company
+    );
+  // p3's Kubernetes Security pair: enrolled at ACCOUNT (the base fixture), certified at OTHER_ACCOUNT.
+  const certifyP3AtOtherAccount = () =>
+    database
+      .prepare('INSERT INTO ORG_PEOPLE_TRAINING_PAIRS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(
+        'all',
+        OTHER_ACCOUNT,
+        'p3',
+        'cks',
+        'p3|cks',
+        1,
+        1,
+        'certifications',
+        'Kubernetes Security',
+        'Advanced',
+        'Exam',
+        'proj-b',
+        'Project proj-b',
+        'f-a',
+        'Foundation f-a',
+        '2026-11-25 04:15:00'
+      );
+
+  beforeEach(() => {
+    vi.mocked(withOrgCache).mockImplementation(async (_org, _key, _ttl, fetcher) => fetcher());
+  });
+
+  it('counts each person and each person-and-course pair once across the family, and its outside learners once', async () => {
+    const stats = await service.getFamilyTrainingStats(req, family(), query({}));
+
+    expect(pick(stats)).toEqual({
+      coursesTaken: 7,
+      certifications: 2,
+      trainingsCompleted: 2,
+      coursesInProgress: 3,
+      peopleWithTrainingActivity: 4,
+      certifiedPeople: 2,
+      peopleInTraining: 3,
+    });
+    expect(stats.learnersOutsidePeopleList).toBe(2);
+    expect(stats.organizations).toEqual([
+      { accountId: ACCOUNT, name: 'Acme' },
+      { accountId: OTHER_ACCOUNT, name: 'Acme Labs' },
+    ]);
+    expect(stats.rollUp).toEqual({ complete: true, excludedCount: 0 });
+  });
+
+  it('counts a pair certified at one company and enrolled at another once, as certified, and its person as not in training', async () => {
+    const singleBefore = pick(await service.getTrainingStats(ACCOUNT, query({}), 'auditor-entitlement'));
+    certifyP3AtOtherAccount();
+
+    const course = await service.getFamilyTrainingStats(req, family(), query({ course: 'Kubernetes Security' }));
+    expect(pick(course)).toEqual({
+      coursesTaken: 1,
+      certifications: 1,
+      trainingsCompleted: 0,
+      coursesInProgress: 0,
+      peopleWithTrainingActivity: 1,
+      certifiedPeople: 1,
+      peopleInTraining: 0,
+    });
+
+    const all = await service.getFamilyTrainingStats(req, family(), query({}));
+    expect(pick(all)).toEqual({
+      coursesTaken: 7,
+      certifications: 3,
+      trainingsCompleted: 2,
+      coursesInProgress: 2,
+      peopleWithTrainingActivity: 4,
+      certifiedPeople: 3,
+      peopleInTraining: 2,
+    });
+    expect(all.coursesTaken).toBe(all.certifications + all.trainingsCompleted + all.coursesInProgress);
+    expect(pick(await service.getTrainingStats(ACCOUNT, query({}), 'auditor-entitlement'))).toEqual(singleBefore);
+  });
+
+  it('serves one row per group value and company, while the totals count each pair once over the tab and equal the stat tiles', async () => {
+    certifyP3AtOtherAccount();
+    const stats = await service.getFamilyTrainingStats(req, family(), query({}));
+    const certifications = await service.getFamilyGroups(req, family(), query({}), {
+      groupBy: 'course',
+      tab: 'certifications',
+      sortField: 'people',
+      sortOrder: 'DESC',
+    });
+    const trainings = await service.getFamilyGroups(req, family(), query({}), { groupBy: 'course', tab: 'trainings' });
+
+    expect(certifications.data.map((row) => [row.label, row.organization?.name, row.people, row.coursesTaken, row.completed, row.inProgress])).toEqual([
+      ['Kubernetes Admin', 'Acme', 2, 2, 2, 0],
+      ['Kubernetes Admin', 'Acme Labs', 1, 1, 1, 0],
+      ['Kubernetes Security', 'Acme', 1, 1, 0, 1],
+      ['Kubernetes Security', 'Acme Labs', 1, 1, 1, 0],
+    ]);
+    expect(certifications.total).toBe(4);
+    expect(certifications.totals).toEqual({ people: 3, coursesTaken: 3, completed: 3, inProgress: 0 });
+    expect(certifications.totals.completed).toBe(stats.certifications);
+    expect(trainings.totals.completed).toBe(stats.trainingsCompleted);
+    expect(certifications.totals.inProgress + trainings.totals.inProgress).toBe(stats.coursesInProgress);
+    expect(certifications.totals.coursesTaken + trainings.totals.coursesTaken).toBe(stats.coursesTaken);
+  });
+
+  it('adds up the companies roster members, and has none when no company has a training program', async () => {
+    expect((await service.getFamilyTrainingStats(req, family(), query({}))).rosterMembers).toBeNull();
+
+    database.prepare('INSERT INTO ORG_TRAINING_ROSTER_MEMBERS VALUES (?, ?, ?)').run(ACCOUNT, 40, '2026-10-29 23:00:00');
+    database.prepare('INSERT INTO ORG_TRAINING_ROSTER_MEMBERS VALUES (?, ?, ?)').run(OTHER_ACCOUNT, 5, '2026-10-30 23:00:00');
+
+    expect((await service.getFamilyTrainingStats(req, family(), query({}))).rosterMembers).toBe(45);
+    expect((await service.getTrainingStats(ACCOUNT, query({}), 'auditor-entitlement')).rosterMembers).toBe(40);
+  });
+
+  it('offers every value a served company carries, and answers a value none carries with zeros', async () => {
+    database.prepare("UPDATE ORG_PEOPLE_TRAINING_PAIRS SET COURSE_LEVEL = 'Expert' WHERE ACCOUNT_ID = ? AND PAIR_KEY = 'p9|intro'").run(OTHER_ACCOUNT);
+
+    const options = await service.getFamilyFilterOptions(req, family(), 'all');
+    expect(options.levels.map((option) => option.value)).toEqual(['Advanced', 'Beginner', 'Expert', 'Intermediate']);
+    expect(pick(await service.getFamilyTrainingStats(req, family(), query({ level: 'Expert' }))).coursesTaken).toBe(1);
+    expect(pick(await service.getFamilyTrainingStats(req, family(), query({ level: 'Starter' }))).coursesTaken).toBe(0);
+  });
+
+  // p1|cka resolves to Intermediate / proj-b in ACCOUNT and to Beginner / proj-a in OTHER_ACCOUNT, where it is certified.
+  it.each<[string, Partial<OrgTrainingStatsQuery>]>([
+    ['level Beginner', { level: 'Beginner' }],
+    ['project proj-a', { project: 'proj-a' }],
+  ])('with %s, counts the pair one company resolves into the filter in the totals and stat tiles its row shows', async (_label, filters) => {
+    database
+      .prepare("UPDATE ORG_PEOPLE_TRAINING_PAIRS SET COURSE_LEVEL = 'Beginner', PROJECT_ID = 'proj-a' WHERE ACCOUNT_ID = ? AND PAIR_KEY = 'p1|cka'")
+      .run(OTHER_ACCOUNT);
+    const scope = family();
+    const stats = await service.getFamilyTrainingStats(req, scope, query(filters));
+    const certifications = await service.getFamilyGroups(req, scope, query(filters), { groupBy: 'course', tab: 'certifications' });
+    const trainings = await service.getFamilyGroups(req, scope, query(filters), { groupBy: 'course', tab: 'trainings' });
+
+    expect(certifications.data.map((row) => [row.label, row.organization?.name, row.people, row.coursesTaken, row.completed, row.inProgress])).toEqual([
+      ['Kubernetes Admin', 'Acme Labs', 1, 1, 1, 0],
+    ]);
+    expect(certifications.totals).toEqual({ people: 1, coursesTaken: 1, completed: 1, inProgress: 0 });
+    expect(trainings.totals).toEqual({ people: 3, coursesTaken: 3, completed: 1, inProgress: 2 });
+    expect([stats.coursesTaken, stats.certifications, stats.trainingsCompleted, stats.coursesInProgress]).toEqual([4, 1, 1, 2]);
+    expect([stats.peopleWithTrainingActivity, stats.certifiedPeople, stats.peopleInTraining]).toEqual([3, 1, 2]);
+    expect(certifications.totals.completed).toBe(stats.certifications);
+    expect(trainings.totals.completed).toBe(stats.trainingsCompleted);
+    expect(certifications.totals.coursesTaken + trainings.totals.coursesTaken).toBe(stats.coursesTaken);
+  });
+
+  it('narrows every figure to one company under the Company filter, which then equals its single-organization figures', async () => {
+    const narrowed = family(OTHER_ACCOUNT);
+    expect(narrowed.members.map((member) => member.accountId)).toEqual([OTHER_ACCOUNT]);
+
+    const stats = await service.getFamilyTrainingStats(req, narrowed, query({}));
+    const single = await service.getTrainingStats(OTHER_ACCOUNT, query({}), 'auditor-entitlement');
+    expect({ ...stats, organizations: undefined, rollUp: undefined }).toEqual({ ...single, organizations: undefined, rollUp: undefined });
+    expect(stats.organizations).toHaveLength(2);
   });
 });

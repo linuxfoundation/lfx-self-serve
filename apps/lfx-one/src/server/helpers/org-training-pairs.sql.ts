@@ -43,12 +43,20 @@ export function orgTrainingStatusPredicate(status: 'completed' | 'in-progress'):
   return status === 'completed' ? 'IS_CERTIFIED' : 'NOT IS_CERTIFIED';
 }
 
+/** `ACCOUNT_ID = ?` for one account, `ACCOUNT_ID IN (?, …)` for a family's; the account ids are bound, in order. */
+export function orgTrainingAccountPredicate(accounts: readonly string[]): string {
+  return accounts.length === 1 ? 'ACCOUNT_ID = ?' : `ACCOUNT_ID IN (${accounts.map(() => '?').join(', ')})`;
+}
+
 /**
- * The warehouse-resolved pairs of the org's people list as CTE `f`, narrowed to the range and the set filters.
- * Binds: `[accountId, range, ...set filter values in foundation, project, course, level, format order]`.
+ * The warehouse-resolved pairs of the people lists of one account or of a family's accounts as CTE `f`, narrowed to the
+ * range and the set filters; one row per account and pair. `PAIR_KEY` and `PERSON_KEY` are the same in every account, so a
+ * distinct count over a family counts each pair and each person once.
+ * Binds: `[...accounts, range, ...set filter values in foundation, project, course, level, format order]`.
  */
-export function buildOrgTrainingPairsCte(accountId: string, query: OrgTrainingStatsQuery): { cte: string; binds: string[] } {
-  const binds: string[] = [accountId, query.range];
+export function buildOrgTrainingPairsCte(accounts: string | readonly string[], query: OrgTrainingStatsQuery): { cte: string; binds: string[] } {
+  const accountIds = typeof accounts === 'string' ? [accounts] : [...accounts];
+  const binds: string[] = [...accountIds, query.range];
   const conditions: string[] = [];
   for (const key of Object.keys(FILTER_COLUMNS) as (keyof typeof FILTER_COLUMNS)[]) {
     const value = query[key];
@@ -61,6 +69,7 @@ export function buildOrgTrainingPairsCte(accountId: string, query: OrgTrainingSt
   const cte = `
     f AS (
       SELECT
+        ACCOUNT_ID,
         PERSON_KEY,
         PAIR_KEY,
         IS_CERTIFIED,
@@ -73,7 +82,7 @@ export function buildOrgTrainingPairsCte(accountId: string, query: OrgTrainingSt
         COURSE_LEVEL,
         COURSE_FORMAT
       FROM ${ORG_TRAINING_PAIRS_TABLE}
-      WHERE ACCOUNT_ID = ?
+      WHERE ${orgTrainingAccountPredicate(accountIds)}
         AND TIME_RANGE = ?
         AND IS_ON_PEOPLE_LIST
         ${conditions.join('\n        ')}
