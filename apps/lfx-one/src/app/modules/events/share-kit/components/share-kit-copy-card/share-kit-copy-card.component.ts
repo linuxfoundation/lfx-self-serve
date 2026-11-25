@@ -3,6 +3,7 @@
 
 import { DOCUMENT } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
+import { UiButtonVariant } from '@lfx-one/shared/interfaces';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 
 /** A block of ready-to-copy text with a copy button, a visible "Copied" state and a selection fallback. */
@@ -24,6 +25,8 @@ export class ShareKitCopyCardComponent {
   public readonly length = input<number | null>(null);
   /** The platform's character limit, shown beside the length. */
   public readonly limit = input<number | null>(null);
+  /** The copy button's look: filled (`primary`) on a branded kit, outlined otherwise. */
+  public readonly buttonVariant = input<UiButtonVariant>('secondary');
   /** Stable prefix for data-testid attributes. */
   public readonly testId = input<string>('share-kit-copy-card');
 

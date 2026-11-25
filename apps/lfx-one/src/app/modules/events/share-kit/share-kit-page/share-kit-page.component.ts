@@ -8,6 +8,7 @@ import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
 import {
   SHARE_KIT_EVENTS,
+  SHARE_KIT_HEADING_FONT_STACKS,
   SHARE_KIT_PLATFORM_LABELS,
   SHARE_KIT_PLATFORM_LIMITS,
   SHARE_KIT_PLATFORMS,
@@ -24,6 +25,7 @@ import {
   ShareKitPlatform,
   ShareKitPostView,
   ShareKitTab,
+  UiButtonVariant,
   UiTabItem,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -72,6 +74,37 @@ export class ShareKitPageComponent {
 
   protected readonly state: Signal<ShareKitPageState> = this.initState();
   protected readonly kit = computed(() => this.state().shareKit);
+  protected readonly theme = computed(() => this.kit()?.theme ?? null);
+  /** The event theme as CSS variables on the page root; null keeps the standard LFX look. Colours are validated `#RRGGBB`. */
+  protected readonly themeStyle = computed((): Record<string, string> | null => {
+    const theme = this.theme();
+    if (!theme) return null;
+    const { colors } = theme;
+    return {
+      'background-color': colors.page,
+      '--sk-hero': colors.hero,
+      '--sk-hero-text': colors.heroText,
+      '--sk-soft': colors.soft,
+      '--sk-accent': colors.accent,
+      '--sk-button': colors.button,
+      '--sk-button-text': colors.buttonText,
+      '--sk-primary': colors.primary,
+      '--sk-page': colors.page,
+      '--sk-heading-font': SHARE_KIT_HEADING_FONT_STACKS[theme.headingFont].family,
+      // The uikit's accent roles, scoped to this page, so its tabs, links and buttons take the event's primary colour.
+      '--ui-accent-100': `color-mix(in srgb, ${colors.primary} 10%, white)`,
+      '--ui-accent-200': `color-mix(in srgb, ${colors.primary} 20%, white)`,
+      '--ui-accent-300': `color-mix(in srgb, ${colors.primary} 40%, white)`,
+      '--ui-accent-500': colors.primary,
+      '--ui-accent-600': `color-mix(in srgb, ${colors.primary} 88%, black)`,
+      '--ui-accent-700': `color-mix(in srgb, ${colors.primary} 76%, black)`,
+    };
+  });
+  protected readonly copyButtonVariant = computed((): UiButtonVariant => (this.theme() ? 'primary' : 'secondary'));
+  protected readonly headerLabel = computed(() => {
+    const kit = this.kit();
+    return kit ? `${kit.foundationName} · ${kit.title} Share Kit` : '';
+  });
   protected readonly dates = computed(() => {
     const kit = this.kit();
     return kit ? formatShareKitDateRange(kit.startDate, kit.endDate) : '';
@@ -79,6 +112,13 @@ export class ShareKitPageComponent {
   protected readonly earlyBird = computed(() => {
     const until = this.kit()?.registration.earlyBirdUntil;
     return until ? formatShareKitDay(until) : '';
+  });
+  /** Price and early-bird line beside the themed Register button, e.g. "$399 early-bird through February 28." */
+  protected readonly priceLine = computed(() => {
+    const kit = this.kit();
+    if (!kit) return '';
+    const earlyBird = this.earlyBird();
+    return earlyBird ? `${kit.registration.priceLabel} early-bird through ${earlyBird}.` : `${kit.registration.priceLabel}.`;
   });
   protected readonly cfpCloses = computed(() => {
     const closesOn = this.kit()?.cfp?.closesOn;
@@ -240,6 +280,7 @@ export class ShareKitPageComponent {
   // Title + Open Graph / Twitter tags so a shared kit link unfurls with the event name, tagline and promo image.
   // Canonical, og:url and robots are reset every time, since a client-side visit can arrive with another page's.
   private applyMetadata(kit: ShareKitContent | null): void {
+    this.loadHeadingFont(kit);
     if (kit) {
       const pageUrl = `${this.ownOrigin()}/events/${kit.eventSlug}/share-kit`;
       this.setCanonical(pageUrl);
@@ -275,6 +316,19 @@ export class ShareKitPageComponent {
       this.meta.removeTag('name="twitter:image"');
       this.meta.updateTag({ name: 'twitter:card', content: 'summary' });
     }
+  }
+
+  // A theme font the app does not already load gets its stylesheet while the kit is open (also in SSR, so the first paint uses it).
+  private loadHeadingFont(kit: ShareKitContent | null): void {
+    const stylesheet = kit?.theme ? SHARE_KIT_HEADING_FONT_STACKS[kit.theme.headingFont].stylesheet : null;
+    if (!stylesheet || this.document.head.querySelector(`link[data-share-kit-font="${kit?.theme?.headingFont}"]`)) {
+      return;
+    }
+    const link = this.document.createElement('link');
+    link.setAttribute('rel', 'stylesheet');
+    link.setAttribute('href', stylesheet);
+    link.setAttribute('data-share-kit-font', kit?.theme?.headingFont ?? '');
+    this.document.head.appendChild(link);
   }
 
   private setCanonical(href: string): void {

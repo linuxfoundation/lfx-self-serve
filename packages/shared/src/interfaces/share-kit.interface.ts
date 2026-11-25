@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SHARE_KIT_PLATFORMS, SHARE_KIT_TABS } from '../constants/share-kit.constants';
+import { SHARE_KIT_HEADING_FONTS, SHARE_KIT_PLATFORMS, SHARE_KIT_TABS } from '../constants/share-kit.constants';
 
 /** A social platform the share kit writes posts for. */
 export type ShareKitPlatform = (typeof SHARE_KIT_PLATFORMS)[number];
@@ -83,6 +83,46 @@ export interface ShareKitOgImage {
   alt: string;
 }
 
+export type ShareKitHeadingFont = (typeof SHARE_KIT_HEADING_FONTS)[number];
+
+/** An event theme's colours, as `#RRGGBB`. Text colours must reach WCAG AA against their backgrounds. */
+export interface ShareKitThemeColors {
+  /** Hero background. */
+  hero: string;
+  /** Text on the hero. */
+  heroText: string;
+  /** Quiet hero shapes. Decorative only, never text. */
+  soft: string;
+  /** Decorative accent: the headline's full stop and hero shapes. Never used for text. */
+  accent: string;
+  /** Register button background, and its text colour. */
+  button: string;
+  buttonText: string;
+  /** Copy buttons, links and selected tabs; white text sits on it. */
+  primary: string;
+  /** Page background behind the cards. */
+  page: string;
+}
+
+/** The event's logo for the hero, drawn for the hero background (for example white on a dark hero). */
+export interface ShareKitThemeLogo {
+  /** https, or a path under `/share-kits/<eventSlug>/`. */
+  url: string;
+  /** Usually the event name. */
+  alt: string;
+  width: number;
+  height: number;
+}
+
+/** Optional event branding. Without it the page uses the standard LFX look. */
+export interface ShareKitTheme {
+  colors: ShareKitThemeColors;
+  logo?: ShareKitThemeLogo;
+  /** Hero headline, shown in place of the event title (the logo carries the name). */
+  headline?: string;
+  headingFont: ShareKitHeadingFont;
+}
+
 /**
  * Share kit content, one file per event at `apps/lfx-one/content/events/<eventSlug>/share-kit.json`.
  * Every field is plain text or a URL: the page renders text, never HTML.
@@ -107,6 +147,7 @@ export interface ShareKitContent {
   graphics: ShareKitGraphic[];
   cfp?: ShareKitCfp;
   ogImage?: ShareKitOgImage;
+  theme?: ShareKitTheme;
 }
 
 /** A post as the share kit page shows it for the selected platform: text with its tracked link, and its length. */

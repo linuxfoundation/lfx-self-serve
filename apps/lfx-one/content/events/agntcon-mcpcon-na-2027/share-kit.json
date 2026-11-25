@@ -80,5 +80,25 @@
   "ogImage": {
     "url": "/share-kits/agntcon-mcpcon-na-2027/agntcon-mcpcon-na-2027.png",
     "alt": "AGNTCon + MCPCon North America, April 28–29, 2027, San Francisco, California. Headline: Where the agentic stack is being built. A Register button sits beside a stack of geometric shapes and Alf, the AAIF robot mascot, giving a thumbs up."
+  },
+  "theme": {
+    "colors": {
+      "hero": "#3731C9",
+      "heroText": "#FFFFFF",
+      "soft": "#B6B0D0",
+      "accent": "#FF702D",
+      "button": "#FF702D",
+      "buttonText": "#0B0A1E",
+      "primary": "#3731C9",
+      "page": "#F6F6FB"
+    },
+    "logo": {
+      "url": "/share-kits/agntcon-mcpcon-na-2027/logo.svg",
+      "alt": "AGNTCon + MCPCon North America",
+      "width": 544,
+      "height": 122
+    },
+    "headline": "Where the agentic stack is being built",
+    "headingFont": "inter-tight"
   }
 }
