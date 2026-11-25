@@ -27,6 +27,7 @@ import { catchError, distinctUntilChanged, EMPTY, of, startWith, switchMap } fro
 import { ProfileVisibilityDrawerComponent } from '../components/profile-visibility-drawer/profile-visibility-drawer.component';
 import { ProfileVisibilityDrawerService } from '../components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { ProfileAsideComponent } from './profile-aside/profile-aside.component';
+import { ProfileRecognitionsComponent } from './profile-recognitions/profile-recognitions.component';
 
 /**
  * The Profile page (#6082), behind the profile redesign flag: a hero with the photo, name, role and bio. Every edit happens on
@@ -36,7 +37,7 @@ import { ProfileAsideComponent } from './profile-aside/profile-aside.component';
   selector: 'lfx-profile-page',
   // Cancels the main layout's page padding: the page sets its own gutters.
   host: { class: 'block -mx-5 md:-mx-8' },
-  imports: [UiButtonComponent, UiNoteComponent, ProfileAsideComponent, ProfileVisibilityDrawerComponent],
+  imports: [UiButtonComponent, UiNoteComponent, ProfileAsideComponent, ProfileRecognitionsComponent, ProfileVisibilityDrawerComponent],
   // The page owns its profile, the Flow C return for a photo upload that left for authorization, and the Open Profile drawer.
   providers: [AccountProfileService, ProfileAuthReturnService, ProfileVisibilityDrawerService],
   templateUrl: './profile-page.component.html',

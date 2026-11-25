@@ -940,6 +940,19 @@ export function formatMemberSinceDate(iso: string | null | undefined): string {
 }
 
 /**
+ * "Mon YYYY" for the year and month a date string starts with, e.g. "Mar 2026" for `'2026-03-01'` or
+ * `'2026-03-01T00:00:00Z'`, read as written so neither a date-only value nor a UTC timestamp moves to another month in
+ * the viewer's time zone. Returns '' for a value that doesn't start with `YYYY-MM`.
+ */
+export function formatYearMonth(value: string | null | undefined): string {
+  const match = value ? /^(\d{4})-(\d{2})/.exec(value) : null;
+  if (!match) return '';
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return '';
+  return new Date(Date.UTC(Number(match[1]), month - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+/**
  * Today's date as `YYYYMMDD` in the caller's local timezone — for stamping CSV/report export
  * filenames. Deliberately local, not `toISOString()` (which reports the UTC date and stamps
  * tomorrow's date for any viewer west of UTC exporting in the evening).

@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LINKEDIN_CONVERSIONS_FIELD, LINKEDIN_MAX_CONVERSIONS, LINKEDIN_OBJECTIVE_FIELD, LINKEDIN_OBJECTIVES } from '../constants/campaign.constants';
+import {
+  LINKEDIN_CONVERSIONS_FIELD,
+  LINKEDIN_LEAD_GEN_OBJECTIVE,
+  LINKEDIN_MAX_CONVERSIONS,
+  LINKEDIN_OBJECTIVE_FIELD,
+  LINKEDIN_OBJECTIVES,
+} from '../constants/campaign.constants';
 import type { LinkedInConfigKeyRefusal, LinkedInConversionRule } from '../interfaces/campaign.interface';
 
 /**
@@ -19,9 +25,19 @@ function plainRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
-/** Whether `id` is a LinkedIn `long` id: digits, no leading zero, positive and within int64 (`isPositiveLong`). */
-function isConversionRuleId(id: string): boolean {
+/**
+ * Whether `id` is a LinkedIn `long` id: digits, no leading zero, positive and within int64 (campaign-service's
+ * `isPositiveLong`). Conversion rule ids and Lead Gen Form ids are both held to it.
+ */
+export function isLinkedInLongId(id: string): boolean {
   return LONG_ID_PATTERN.test(id) && BigInt(id) <= MAX_LONG;
+}
+
+const isConversionRuleId = isLinkedInLongId;
+
+/** `record` without `key`. */
+function withoutKey(record: Record<string, unknown>, key: string): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([k]) => k !== key));
 }
 
 /** Why `conversions` cannot be sent, or `null`: campaign-service's `ValidateConversions`, distinct ids counted. */
@@ -44,7 +60,8 @@ function conversionsRefusal(conversions: string[]): LinkedInConfigKeyRefusal | n
 
 /**
  * Why `raw`'s `objective` or `conversions` cannot be sent, or `null` (#5764 rows 2 and 4). Typed runtime checks, since
- * the create route has no body validator. Absent both, nothing is checked. Refused:
+ * the create route has no body validator. Absent both, nothing is checked, and the `lead_generation` objective counts as
+ * absent: it is `linkedInLeadGenRefusal`'s. Refused:
  *
  * - a `conversions` that is not a list of text (`null` included), or an `objective` that is not non-empty text;
  * - either field while this deployment cannot send them (`enabled`): refused, never dropped, since the legacy creator
@@ -59,7 +76,10 @@ function conversionsRefusal(conversions: string[]): LinkedInConfigKeyRefusal | n
  */
 export function linkedInObjectiveRefusal(raw: unknown, enabled: boolean): LinkedInConfigKeyRefusal | null {
   const config = plainRecord(raw);
-  if (!config || !('objective' in config || 'conversions' in config)) return null;
+  if (!config) return null;
+  // The lead generation objective has its own flag and rules (`linkedInLeadGenRefusal`), so it is read here as omitted.
+  if (config['objective'] === LINKEDIN_LEAD_GEN_OBJECTIVE) return linkedInObjectiveRefusal(withoutKey(config, 'objective'), enabled);
+  if (!('objective' in config || 'conversions' in config)) return null;
   const conversions = config['conversions'];
   const objective = config['objective'];
   const hasConversions = 'conversions' in config;

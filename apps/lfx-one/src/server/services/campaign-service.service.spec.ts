@@ -4932,6 +4932,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInTargetCostEnabled: false,
       linkedInTargetingEnabled: false,
       linkedInConversionsEnabled: false,
+      linkedInLeadGenEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5664,6 +5665,21 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** LinkedIn lead gen (campaign-service#664): the cutover and its own flag. */
+  it.each([
+    [{ cutover: true, leadGen: true }, true],
+    [{ cutover: true, leadGen: false }, false],
+    [{ cutover: false, leadGen: true }, false],
+  ])('reports LinkedIn lead gen (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceLinkedInLeadGen ? flags.leadGen : flags.cutover));
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInLeadGenEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The LinkedIn daily-cap capability (#5774): the create cutover alone, like the targeting edit above. */
   it.each([
     [{ create: true, briefs: true, jobs: true, others: false }, true],
@@ -5767,6 +5783,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInTargetCostEnabled: false,
       linkedInTargetingEnabled: false,
       linkedInConversionsEnabled: false,
+      linkedInLeadGenEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -6727,6 +6744,28 @@ describe('CampaignServiceClient.listLinkedInAudiences', () => {
 
     expect(caught).toBeInstanceOf(ServiceValidationError);
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignServiceClient.listLinkedInLeadForms', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's lead form read, the project encoded, naming an account only when given; never with no project", async () => {
+    const forms = { account_id: '500000001', forms: [], form_count: 0 };
+    proxyRequest.mockResolvedValue(forms);
+
+    expect(await new CampaignServiceClient().listLinkedInLeadForms(req, 'lf/ai')).toBe(forms);
+    await new CampaignServiceClient().listLinkedInLeadForms(req, 'cncf', '500000002');
+    const caught = await new CampaignServiceClient().listLinkedInLeadForms(req, '').catch((e: unknown) => e);
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/linkedin-ads/lead-forms', 'GET', undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/linkedin-ads/lead-forms', 'GET', {
+      account_id: '500000002',
+    });
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
   });
 });
 

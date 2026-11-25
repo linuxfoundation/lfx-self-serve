@@ -168,6 +168,7 @@ export * from './campaign-linkedin-targeting.utils';
 export * from './campaign-linkedin-targeting-form.utils';
 export * from './campaign-linkedin-targeting-lookup.utils';
 export * from './campaign-linkedin-objective.utils';
+export * from './campaign-linkedin-lead-gen.utils';
 export * from './campaign-linkedin-objective-form.utils';
 export * from './campaign-linkedin-text-ads-form.utils';
 export * from './campaign-linkedin-variant-fields.utils';

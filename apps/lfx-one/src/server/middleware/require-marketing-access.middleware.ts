@@ -315,3 +315,11 @@ export async function requireLinkedInAudiencesAccess(req: Request, res: Response
 export async function requireLinkedInConversionsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   await deferToControllerMarketingOpsCheck(req, res, next);
 }
+
+/**
+ * LinkedIn lead form read only (lfx-v2-campaign-service#664): `deferToControllerMarketingOpsCheck`. Never use for any
+ * other route.
+ */
+export async function requireLinkedInLeadFormsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await deferToControllerMarketingOpsCheck(req, res, next);
+}

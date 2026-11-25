@@ -14,6 +14,7 @@ import {
   LINKEDIN_AUDIENCES_RESTRICTED_CODE,
   LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE,
   LINKEDIN_CONVERSIONS_RESTRICTED_CODE,
+  LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE,
 } from '@lfx-one/shared/constants';
 
 /**
@@ -24,15 +25,17 @@ import {
  * through for the search tests.
  */
 
-const { svcList, svcSearch, svcConversions, isServerFeatureEnabled, checkProjectGlobalMarketingOpsStrict, blanketGuard, blanketAdmits } = vi.hoisted(() => ({
-  svcList: vi.fn(),
-  svcSearch: vi.fn(),
-  svcConversions: vi.fn(),
-  blanketAdmits: { current: false },
-  isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => true),
-  checkProjectGlobalMarketingOpsStrict: vi.fn<(req: unknown, slug: string) => Promise<boolean>>(async () => true),
-  blanketGuard: vi.fn(),
-}));
+const { svcList, svcSearch, svcConversions, svcLeadForms, isServerFeatureEnabled, checkProjectGlobalMarketingOpsStrict, blanketGuard, blanketAdmits } =
+  vi.hoisted(() => ({
+    svcList: vi.fn(),
+    svcSearch: vi.fn(),
+    svcConversions: vi.fn(),
+    svcLeadForms: vi.fn(),
+    blanketAdmits: { current: false },
+    isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => true),
+    checkProjectGlobalMarketingOpsStrict: vi.fn<(req: unknown, slug: string) => Promise<boolean>>(async () => true),
+    blanketGuard: vi.fn(),
+  }));
 
 vi.mock('../middleware/require-marketing-access.middleware', async () => {
   const { AuthorizationError } = await import('../errors');
@@ -53,6 +56,7 @@ vi.mock('../middleware/require-marketing-access.middleware', async () => {
     requireMetaLeadFormsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
     requireLinkedInAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
     requireLinkedInConversionsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+    requireLinkedInLeadFormsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
   };
 });
 vi.mock('../services/campaign-service.service', async (importOriginal) => {
@@ -63,6 +67,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public listLinkedInAudiences = svcList;
       public searchLinkedInTargetingEntities = svcSearch;
       public listLinkedInConversions = svcConversions;
+      public listLinkedInLeadForms = svcLeadForms;
     },
   };
 });
@@ -233,6 +238,50 @@ describe('GET /api/campaigns/linkedin/conversions', () => {
 
     expect((await getConversions()).status).toBe(404);
     expect(svcConversions).not.toHaveBeenCalled();
+  });
+});
+
+// The lead form read (campaign-service#664) mirrors the conversion rule read: its own guard, the controller's strict check.
+describe('GET /api/campaigns/linkedin/lead-forms', () => {
+  const getForms = (query = ''): Promise<Response> => fetch(`${baseUrl}/api/campaigns/linkedin/lead-forms?project=tlf${query}`);
+
+  it("answers an access-check outage with the controller's coded 503, not the blanket guard's 403", async () => {
+    checkProjectGlobalMarketingOpsStrict.mockRejectedValueOnce(new Error('access-check unavailable'));
+
+    const res = await getForms();
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ code: LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE });
+    expect(blanketGuard).not.toHaveBeenCalled();
+    expect(svcLeadForms).not.toHaveBeenCalled();
+  });
+
+  it('answers the mapped forms on the account named, and refuses a malformed account before any upstream call', async () => {
+    svcLeadForms.mockResolvedValueOnce({
+      account_id: '500000002',
+      forms: [
+        { id: '11', urn: 'urn:li:adForm:11', name: 'CFP interest', state: 'DRAFT' },
+        { id: '12', urn: 'urn:li:adForm:12', name: 'Old', state: 'ARCHIVED' },
+      ],
+      form_count: 2,
+    });
+
+    const res = await getForms('&accountId=500000002');
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ accountId: '500000002', forms: [{ id: '11', name: 'CFP interest', state: 'DRAFT' }] });
+    expect(svcLeadForms).toHaveBeenCalledWith(expect.anything(), 'tlf', '500000002');
+
+    svcLeadForms.mockClear();
+    expect((await getForms('&accountId=act_1')).status).toBe(400);
+    expect(svcLeadForms).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 while LinkedIn lead gen is off, with no upstream call', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_LEAD_GEN');
+
+    expect((await getForms()).status).toBe(404);
+    expect(svcLeadForms).not.toHaveBeenCalled();
   });
 });
 
