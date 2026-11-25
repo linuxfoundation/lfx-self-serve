@@ -177,6 +177,15 @@ describe('validateShareKitContent', () => {
       expect(validateShareKitContent(kit).problems).toEqual([]);
     });
 
+    it('rejects a hero that passes on its own but not under the tinted member box', () => {
+      const kit = validKit();
+      const grey = theme();
+      // White on #767676 is 4.54:1, but the tinted box under a hovered button drops it to about 3.1:1.
+      grey.colors.hero = '#767676';
+      kit['theme'] = grey;
+      expect(validateShareKitContent(kit).problems.join('\n')).toContain('theme.colors.hero: heroText on the member box has contrast');
+    });
+
     it('rejects text colours below WCAG AA against their background, naming the pair', () => {
       const kit = validKit();
       const bad = theme();

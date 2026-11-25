@@ -35,6 +35,7 @@ import {
   formatLfxDocumentTitle,
   formatShareKitDateRange,
   formatShareKitDay,
+  shareKitMemberBoxColors,
 } from '@lfx-one/shared/utils';
 import { PlausibleService } from '@services/plausible.service';
 import { UserService } from '@services/user.service';
@@ -80,6 +81,8 @@ export class ShareKitPageComponent {
     const theme = this.theme();
     if (!theme) return null;
     const { colors } = theme;
+    // The same colours theme validation checks hero text against, so the member box always keeps its contrast.
+    const member = shareKitMemberBoxColors(colors.hero, colors.heroText);
     return {
       'background-color': colors.page,
       '--sk-hero': colors.hero,
@@ -90,6 +93,8 @@ export class ShareKitPageComponent {
       '--sk-button-text': colors.buttonText,
       '--sk-primary': colors.primary,
       '--sk-page': colors.page,
+      '--sk-member-box': member.box,
+      '--sk-member-hover': member.hover,
       '--sk-heading-font': SHARE_KIT_HEADING_FONT_STACKS[theme.headingFont].family,
       // The uikit's accent roles, scoped to this page, so its tabs, links and buttons take the event's primary colour.
       '--ui-accent-100': `color-mix(in srgb, ${colors.primary} 10%, white)`,
@@ -104,13 +109,13 @@ export class ShareKitPageComponent {
   // The member box sits inside the hero: on a branded hero it is a tint of the hero text colour, otherwise the LFX info box.
   protected readonly memberBoxClasses = computed(() =>
     this.theme()
-      ? 'mt-3 flex max-w-[560px] flex-col gap-[10px] rounded-[12px] border border-[color-mix(in_srgb,var(--sk-hero-text)_25%,transparent)] bg-[color-mix(in_srgb,var(--sk-hero-text)_10%,transparent)] px-[18px] py-4 text-[var(--sk-hero-text)]'
+      ? 'mt-3 flex max-w-[560px] flex-col gap-[10px] rounded-[12px] border border-[color-mix(in_srgb,var(--sk-hero-text)_25%,transparent)] bg-[var(--sk-member-box)] px-[18px] py-4 text-[var(--sk-hero-text)]'
       : 'flex max-w-[640px] flex-col gap-[10px] rounded-lg border-l-4 border-blue-600 bg-blue-50 px-4 py-3 text-gray-900'
   );
   protected readonly memberTextClasses = computed(() => (this.theme() ? 'text-[14px]' : 'text-[14px] text-gray-700'));
   protected readonly memberButtonClasses = computed(() =>
     this.theme()
-      ? 'inline-flex min-h-[38px] items-center self-start rounded-lg border border-[var(--sk-hero-text)] px-[14px] text-[14px] font-semibold text-[var(--sk-hero-text)] hover:bg-[color-mix(in_srgb,var(--sk-hero-text)_12%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sk-hero-text)]'
+      ? 'inline-flex min-h-[38px] items-center self-start rounded-lg border border-[var(--sk-hero-text)] px-[14px] text-[14px] font-semibold text-[var(--sk-hero-text)] hover:bg-[var(--sk-member-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sk-hero-text)]'
       : 'inline-flex min-h-[38px] items-center self-start rounded-lg border border-blue-600 bg-white px-[14px] text-[14px] font-semibold text-blue-700 hover:bg-blue-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
   );
   protected readonly headerLabel = computed(() => {
