@@ -19,17 +19,25 @@ import { VOTES_MOBILE_MEDIA_QUERY } from '@lfx-one/shared/constants';
  * Call from an injection context (a field initializer).
  */
 export function injectIsMobileViewport(query: string = VOTES_MOBILE_MEDIA_QUERY): Signal<boolean> {
-  const isMobile = signal(false);
+  return injectMediaQueryMatches(query);
+}
+
+/**
+ * Whether the viewport matches a media query, with the same SSR-safe timing as {@link injectIsMobileViewport}: `false` through
+ * the first render, then following the query once the browser has rendered. Call from an injection context.
+ */
+export function injectMediaQueryMatches(query: string): Signal<boolean> {
+  const matches = signal(false);
   const breakpointObserver = inject(BreakpointObserver);
   const destroyRef = inject(DestroyRef);
-  if (!isPlatformBrowser(inject(PLATFORM_ID))) return isMobile.asReadonly();
+  if (!isPlatformBrowser(inject(PLATFORM_ID))) return matches.asReadonly();
 
   afterNextRender(() => {
     breakpointObserver
       .observe(query)
       .pipe(takeUntilDestroyed(destroyRef))
-      .subscribe((state) => isMobile.set(state.matches));
+      .subscribe((state) => matches.set(state.matches));
   });
 
-  return isMobile.asReadonly();
+  return matches.asReadonly();
 }

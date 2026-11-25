@@ -4,19 +4,19 @@
 <!-- An event theme (validated colours from the kit's content file) arrives as --sk-* variables; without one the page keeps the LFX look. -->
 <div class="min-h-screen bg-gray-50 text-gray-900" [style]="themeStyle()" data-testid="share-kit-page">
   <div class="mx-auto flex w-full max-w-[1040px] flex-col gap-8 px-4 pb-20 pt-6 sm:px-10">
-    <!-- Chrome-less public page: a small "Powered by LFX" mark instead of the app shell. -->
-    <div class="flex items-center justify-between gap-4">
+    <!-- Chrome-less public page: a small "Powered by LFX" mark instead of the app shell. Stacked on phones, so the label never runs into it. -->
+    <div class="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <a
         href="https://app.lfx.dev/"
         target="_blank"
         rel="noopener noreferrer"
-        class="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
+        class="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
         data-testid="share-kit-powered-by">
         <span>Powered by</span>
         <img src="/images/logo_lfx.svg" alt="LFX" class="h-[13px] w-auto" />
       </a>
       @if (kit(); as kit) {
-        <span class="text-sm text-gray-500" data-testid="share-kit-foundation">{{ headerLabel() }}</span>
+        <span class="min-w-0 text-sm text-gray-500 sm:text-right" data-testid="share-kit-foundation">{{ headerLabel() }}</span>
       }
     </div>
 
@@ -121,7 +121,8 @@
         </section>
       }
 
-      <lfx-ui-tabs [tabs]="tabs()" [(value)]="tab" idPrefix="share-kit" ariaLabel="Share kit sections" data-testid="share-kit-tabs" />
+      <!-- On a phone the four tabs don't fit; they turn into a select instead of scrolling with a cut-off last tab. -->
+      <lfx-ui-tabs [tabs]="tabs()" [(value)]="tab" idPrefix="share-kit" ariaLabel="Share kit sections" collapseToSelect data-testid="share-kit-tabs" />
 
       <!-- Social posts -->
       @if (tab() === 'share') {
@@ -299,7 +300,10 @@
     }
   </div>
   <!-- Outside the state branches so cookie settings stay reachable on loading, not-found and error views too. -->
-  <lfx-app-footer />
+  <!-- The shared footer has no side padding of its own; this keeps its text off the screen edge on phones. -->
+  <div class="px-4 sm:px-10">
+    <lfx-app-footer />
+  </div>
 </div>
 
 <!-- Member discount (#6061), shown in either hero: the code is only ever in the response for a signed-in employee of a member company. -->

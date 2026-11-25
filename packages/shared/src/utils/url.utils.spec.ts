@@ -12,6 +12,7 @@ import {
   isMentorshipMentorInvitePath,
   isPrivateHost,
   isProfileHubPath,
+  isProfilePagePath,
   isRelativeInAppPath,
   isValidUrl,
   normalizeToUrl,
@@ -228,6 +229,18 @@ describe('extractUrls', () => {
 
   it('rejects non-http(s) and unsafe URLs', () => {
     expect(extractUrls('ftp://example.com javascript:alert(1)')).toEqual([]);
+  });
+});
+
+describe('isProfilePagePath', () => {
+  it('matches bare /profile, ignoring the query and fragment', () => {
+    expect(isProfilePagePath('/profile')).toBe(true);
+    expect(isProfilePagePath('/profile?success=profile_token_obtained#top')).toBe(true);
+  });
+
+  it('leaves out the hub tabs and sibling routes', () => {
+    expect(isProfilePagePath('/profile/identities')).toBe(false);
+    expect(isProfilePagePath('/profiles')).toBe(false);
   });
 });
 

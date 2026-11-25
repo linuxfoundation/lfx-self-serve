@@ -152,8 +152,8 @@ export class VotesTableComponent {
   public readonly quickFilter = input<MyVotesQuickFilter | null>(null);
   public readonly quickFilterNowMs = input<number>(0);
   public readonly scopeActive = input<boolean>(false);
-  // Opt-in status-tab counts (#3687): when on, a tab label carries its count only when it is 1 or more.
-  // A null `statusCounts` (loading or failed) and a confirmed zero both render the plain label (#3936).
+  // Opt-in status-tab counts (#3687): when on, a tab shows a count badge only when the count is 1 or more.
+  // A null `statusCounts` (loading or failed) and a confirmed zero both render the plain tab (#3936).
   public readonly showStatusCounts = input<boolean>(false);
   public readonly statusCounts = input<VoteStatusCounts | null>(null);
 
@@ -625,7 +625,11 @@ export class VotesTableComponent {
       if (!counts) return base;
       return base.map((option) => {
         const count = counts[option.id as keyof VoteStatusCounts];
-        return count > 0 ? { ...option, label: `${option.label} (${count})` } : option;
+        if (count > 0) {
+          const noun = count === 1 ? 'vote' : 'votes';
+          return { ...option, count, ariaLabel: `${option.label}, ${count} ${noun}` };
+        }
+        return option;
       });
     });
   }

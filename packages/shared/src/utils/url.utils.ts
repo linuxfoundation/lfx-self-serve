@@ -343,6 +343,14 @@ export function isProfileHubPath(url: string): boolean {
   return url.split(/[?#]/)[0].startsWith('/profile/');
 }
 /**
+ * Whether a router URL is the Profile page (#6082): bare `/profile`, which only stays put with the profile redesign on.
+ * @param url - The router URL (may include `?query` and/or `#fragment`)
+ */
+export function isProfilePagePath(url: string): boolean {
+  return url.split(/[?#]/)[0] === '/profile';
+}
+
+/**
  * Wildcard-DNS services that resolve a spelled-out address to that address.
  *
  * The bypass only works through a resolver that performs that mapping, so the spelled-address
