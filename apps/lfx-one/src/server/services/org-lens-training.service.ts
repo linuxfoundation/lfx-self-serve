@@ -58,7 +58,7 @@ interface OrgTrainingPairStatsRow {
   CERTIFICATIONS: number;
   CERTIFIED_PEOPLE: number;
   TRAININGS_COMPLETED: number;
-  COURSES_IN_PROGRESS: number;
+  CERTIFIED_PAIRS: number;
   PEOPLE_IN_TRAINING: number;
 }
 
@@ -91,7 +91,6 @@ interface OrgTrainingGroupSqlRow {
   PEOPLE: number;
   COURSES_TAKEN: number;
   COMPLETED: number;
-  IN_PROGRESS: number;
   LEVEL: string | null;
   FOUNDATION: string | null;
 }
@@ -344,7 +343,7 @@ export class OrgLensTrainingService {
         COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')}, PAIR_KEY, NULL))   AS CERTIFICATIONS,
         COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')}, PERSON_KEY, NULL)) AS CERTIFIED_PEOPLE,
         COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('trainings')}, PAIR_KEY, NULL))        AS TRAININGS_COMPLETED,
-        COUNT(DISTINCT PAIR_KEY) - COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL))                       AS COURSES_IN_PROGRESS,
+        COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL))                                                  AS CERTIFIED_PAIRS,
         COUNT(DISTINCT IFF(NOT IS_CERTIFIED, PERSON_KEY, NULL))                                            AS PEOPLE_IN_TRAINING
       FROM f
     `;
@@ -412,7 +411,7 @@ export class OrgLensTrainingService {
       certifiedPeople: pairs?.CERTIFIED_PEOPLE ?? 0,
       trainingsCompleted,
       completionRatePct: orgTrainingCompletionRatePct({ coursesTaken, certifications, trainingsCompleted }),
-      coursesInProgress: pairs?.COURSES_IN_PROGRESS ?? 0,
+      coursesInProgress: coursesTaken - (pairs?.CERTIFIED_PAIRS ?? 0),
       peopleInTraining: pairs?.PEOPLE_IN_TRAINING ?? 0,
     };
   }
@@ -432,10 +431,9 @@ export class OrgLensTrainingService {
       SELECT
         ${group.key}                    AS GROUP_KEY,
         ${group.label}                  AS GROUP_LABEL,
-        COUNT(DISTINCT PERSON_KEY)                                                   AS PEOPLE,
-        COUNT(DISTINCT PAIR_KEY)                                                     AS COURSES_TAKEN,
-        COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL))                            AS COMPLETED,
-        COUNT(DISTINCT PAIR_KEY) - COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL)) AS IN_PROGRESS,
+        COUNT(DISTINCT PERSON_KEY)                        AS PEOPLE,
+        COUNT(DISTINCT PAIR_KEY)                          AS COURSES_TAKEN,
+        COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL)) AS COMPLETED,
         MAX(COURSE_LEVEL)               AS LEVEL,
         MAX(FOUNDATION_NAME)            AS FOUNDATION
       FROM f
@@ -446,17 +444,16 @@ export class OrgLensTrainingService {
     const totalsSql = `
       WITH ${cte}
       SELECT
-        COUNT(DISTINCT PERSON_KEY)                                                   AS PEOPLE,
-        COUNT(DISTINCT PAIR_KEY)                                                     AS COURSES_TAKEN,
-        COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL))                            AS COMPLETED,
-        COUNT(DISTINCT PAIR_KEY) - COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL)) AS IN_PROGRESS
+        COUNT(DISTINCT PERSON_KEY)                        AS PEOPLE,
+        COUNT(DISTINCT PAIR_KEY)                          AS COURSES_TAKEN,
+        COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL)) AS COMPLETED
       FROM f
       WHERE ${tabPredicate}
     `;
 
     const [rowsResult, totalsResult] = await Promise.all([
       this.snowflakeService.execute<OrgTrainingGroupSqlRow>(rowsSql, binds),
-      this.snowflakeService.execute<{ PEOPLE: number; COURSES_TAKEN: number; COMPLETED: number; IN_PROGRESS: number }>(totalsSql, binds),
+      this.snowflakeService.execute<{ PEOPLE: number; COURSES_TAKEN: number; COMPLETED: number }>(totalsSql, binds),
     ]);
 
     const rows: OrgTrainingGroupRow[] = rowsResult.rows.map((row) => {
@@ -467,7 +464,7 @@ export class OrgLensTrainingService {
         people: row.PEOPLE || 0,
         coursesTaken: row.COURSES_TAKEN || 0,
         completed: row.COMPLETED || 0,
-        inProgress: row.IN_PROGRESS || 0,
+        inProgress: (row.COURSES_TAKEN || 0) - (row.COMPLETED || 0),
         level: groupBy === 'course' ? (row.LEVEL ?? null) : null,
         foundation: groupBy === 'course' || groupBy === 'project' ? (row.FOUNDATION ?? null) : null,
         logoUrl: null,
@@ -481,7 +478,7 @@ export class OrgLensTrainingService {
         people: totals?.PEOPLE ?? 0,
         coursesTaken: totals?.COURSES_TAKEN ?? 0,
         completed: totals?.COMPLETED ?? 0,
-        inProgress: totals?.IN_PROGRESS ?? 0,
+        inProgress: (totals?.COURSES_TAKEN ?? 0) - (totals?.COMPLETED ?? 0),
       },
     };
   }

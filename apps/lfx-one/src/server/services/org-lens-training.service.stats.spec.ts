@@ -72,7 +72,7 @@ const PAIR_ROW = {
   CERTIFICATIONS: 5,
   CERTIFIED_PEOPLE: 4,
   TRAININGS_COMPLETED: 6,
-  COURSES_IN_PROGRESS: 9,
+  CERTIFIED_PAIRS: 11,
   PEOPLE_IN_TRAINING: 7,
 };
 
@@ -122,7 +122,7 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
     expect(sql).toMatch(/COUNT\(DISTINCT PAIR_KEY\)\s+AS COURSES_TAKEN/);
     expect(sql).toMatch(/COUNT\(DISTINCT IFF\(IS_CERTIFIED AND TRAINING_TAB = 'certifications', PAIR_KEY, NULL\)\)\s+AS CERTIFICATIONS/);
     expect(sql).toMatch(/COUNT\(DISTINCT IFF\(IS_CERTIFIED AND TRAINING_TAB = 'trainings', PAIR_KEY, NULL\)\)\s+AS TRAININGS_COMPLETED/);
-    expect(sql).toMatch(/COUNT\(DISTINCT PAIR_KEY\) - COUNT\(DISTINCT IFF\(IS_CERTIFIED, PAIR_KEY, NULL\)\)\s+AS COURSES_IN_PROGRESS/);
+    expect(sql).toMatch(/COUNT\(DISTINCT IFF\(IS_CERTIFIED, PAIR_KEY, NULL\)\)\s+AS CERTIFIED_PAIRS/);
     expect(sql).not.toContain('COUNT(*)');
     expect(sql).not.toContain('GROUP BY');
     expect(sql).not.toContain('PRODUCT_TYPE');

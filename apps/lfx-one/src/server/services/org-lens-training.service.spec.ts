@@ -36,14 +36,13 @@ const GROUP_ROWS = [
     PEOPLE: 4,
     COURSES_TAKEN: 6,
     COMPLETED: 3,
-    IN_PROGRESS: 3,
     LEVEL: 'Beginner',
     FOUNDATION: 'Foundation One',
   },
-  { GROUP_KEY: 'Course B', GROUP_LABEL: 'Course B', PEOPLE: 2, COURSES_TAKEN: 2, COMPLETED: 2, IN_PROGRESS: 0, LEVEL: null, FOUNDATION: null },
-  { GROUP_KEY: '', GROUP_LABEL: null, PEOPLE: 1, COURSES_TAKEN: 1, COMPLETED: 0, IN_PROGRESS: 1, LEVEL: null, FOUNDATION: null },
+  { GROUP_KEY: 'Course B', GROUP_LABEL: 'Course B', PEOPLE: 2, COURSES_TAKEN: 2, COMPLETED: 2, LEVEL: null, FOUNDATION: null },
+  { GROUP_KEY: '', GROUP_LABEL: null, PEOPLE: 1, COURSES_TAKEN: 1, COMPLETED: 0, LEVEL: null, FOUNDATION: null },
 ];
-const TOTALS = { PEOPLE: 6, COURSES_TAKEN: 9, COMPLETED: 5, IN_PROGRESS: 4 };
+const TOTALS = { PEOPLE: 6, COURSES_TAKEN: 9, COMPLETED: 5 };
 
 /** The distinct raw values of the all-time rows, as the known-values statement reads them: every value the specs filter by. */
 const KNOWN_ROWS = [
@@ -522,11 +521,9 @@ describe('OrgLensTrainingService — a filter value the organization never carri
           ],
         };
       }
-      if (sql.includes('AS COURSES_IN_PROGRESS')) {
+      if (sql.includes('AS CERTIFIED_PAIRS')) {
         return {
-          rows: [
-            { PEOPLE: 2, COURSES_TAKEN: 3, CERTIFICATIONS: 1, CERTIFIED_PEOPLE: 1, TRAININGS_COMPLETED: 1, COURSES_IN_PROGRESS: 1, PEOPLE_IN_TRAINING: 1 },
-          ],
+          rows: [{ PEOPLE: 2, COURSES_TAKEN: 3, CERTIFICATIONS: 1, CERTIFIED_PEOPLE: 1, TRAININGS_COMPLETED: 1, CERTIFIED_PAIRS: 2, PEOPLE_IN_TRAINING: 1 }],
         };
       }
       return { rows: [] };
@@ -539,21 +536,21 @@ describe('OrgLensTrainingService — a filter value the organization never carri
 
   describe('a tab-prefixed value is one legal value on every path', () => {
     const TABBED = '\tTabbed';
-    const TABBED_GROUP = { GROUP_KEY: TABBED, GROUP_LABEL: TABBED, PEOPLE: 2, COURSES_TAKEN: 3, COMPLETED: 1, IN_PROGRESS: 2, LEVEL: null, FOUNDATION: null };
+    const TABBED_GROUP = { GROUP_KEY: TABBED, GROUP_LABEL: TABBED, PEOPLE: 2, COURSES_TAKEN: 3, COMPLETED: 1, LEVEL: null, FOUNDATION: null };
     const STATS_ROW = {
       PEOPLE: 2,
       COURSES_TAKEN: 3,
       CERTIFICATIONS: 1,
       CERTIFIED_PEOPLE: 1,
       TRAININGS_COMPLETED: 0,
-      COURSES_IN_PROGRESS: 2,
+      CERTIFIED_PAIRS: 1,
       PEOPLE_IN_TRAINING: 2,
     };
 
     function mockTabbedWarehouse(): void {
       execute.mockImplementation(async (sql: string) => {
         if (isKnownValuesSql(sql)) return { rows: [{ FILTER_KEY: 'course', FILTER_VALUE: TABBED }] };
-        if (sql.includes('AS COURSES_IN_PROGRESS')) return { rows: [STATS_ROW] };
+        if (sql.includes('AS CERTIFIED_PAIRS')) return { rows: [STATS_ROW] };
         if (sql.includes('AS GROUP_KEY')) return { rows: [TABBED_GROUP] };
         if (sql.includes('COUNT(DISTINCT PAIR_KEY) AS TOTAL')) return { rows: [{ TOTAL: 1, GROUP_LABEL: TABBED }] };
         if (sql.includes('CONTACT_ID')) return { rows: [{ CONTACT_ID: 'k-1', NAME: 'Person One', JOB_TITLE: null }] };
@@ -587,7 +584,7 @@ describe('OrgLensTrainingService — a filter value the organization never carri
         { FILTER_KEY: 'course', FILTER_VALUE: 'Line\nBreak' },
       ];
       execute.mockImplementation(async (sql: string) =>
-        isKnownValuesSql(sql) ? { rows } : { rows: sql.includes('AS COURSES_IN_PROGRESS') ? [STATS_ROW] : [TOTALS] }
+        isKnownValuesSql(sql) ? { rows } : { rows: sql.includes('AS CERTIFIED_PAIRS') ? [STATS_ROW] : [TOTALS] }
       );
 
       const tabbed = await service.getTrainingStats(ACCOUNT, query, 'org-grant');
@@ -626,7 +623,7 @@ describe('OrgLensTrainingService — a filter value the organization never carri
 
 describe('OrgLensTrainingService — a filter valid for the organization but with no rows in the selected range', () => {
   const NO_ROWS_RANGE = '30d' as const;
-  const ZERO_TOTALS = { PEOPLE: 0, COURSES_TAKEN: 0, COMPLETED: 0, IN_PROGRESS: 0 };
+  const ZERO_TOTALS = { PEOPLE: 0, COURSES_TAKEN: 0, COMPLETED: 0 };
   const validFilters: [string, Partial<OrgTrainingStatsQuery>][] = [
     ['foundation', { foundation: 'f-1' }],
     ['project', { project: 'p-1' }],
@@ -643,11 +640,9 @@ describe('OrgLensTrainingService — a filter valid for the organization but wit
     execute.mockImplementation(async (sql: string) => {
       if (isKnownValuesSql(sql)) return { rows: KNOWN_ROWS };
       if (sql.includes('AS GROUP_KEY')) return { rows: [] };
-      if (sql.includes('AS COURSES_IN_PROGRESS')) {
+      if (sql.includes('AS CERTIFIED_PAIRS')) {
         return {
-          rows: [
-            { PEOPLE: 0, COURSES_TAKEN: 0, CERTIFICATIONS: 0, CERTIFIED_PEOPLE: 0, TRAININGS_COMPLETED: 0, COURSES_IN_PROGRESS: 0, PEOPLE_IN_TRAINING: 0 },
-          ],
+          rows: [{ PEOPLE: 0, COURSES_TAKEN: 0, CERTIFICATIONS: 0, CERTIFIED_PEOPLE: 0, TRAININGS_COMPLETED: 0, CERTIFIED_PAIRS: 0, PEOPLE_IN_TRAINING: 0 }],
         };
       }
       if (sql.includes('COUNT(DISTINCT PAIR_KEY) AS TOTAL')) return { rows: [{ TOTAL: 0, GROUP_LABEL: null }] };
