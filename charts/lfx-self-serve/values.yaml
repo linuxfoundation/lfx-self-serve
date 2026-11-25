@@ -817,6 +817,17 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO:
     value:
 
+  # LinkedIn target cost (linuxfoundation/lfx-v2-campaign-service#674): accepts `linkedInConfig.bidding.targetAmount`,
+  # automatic bidding's target in USD (whole cents, above zero, at most 1,000,000), sent to LinkedIn as the campaign's
+  # `unitCost`. Refused with manual bidding.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `LINKEDIN_ADS_TARGET_COST_ENABLED` on,
+  # and LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING on (the target travels inside `bidding`). Off (the default), the create
+  # route refuses the field with a 400, never dropping it. A field only, so turning it back off strands nothing. Order:
+  # set campaign-service's flag and pass its paused target-cost probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGET_COST:
+    value:
+
   # LinkedIn custom targeting (#5764 rows 8–11): accepts `linkedInConfig.targeting`, the campaign's own include
   # clauses and exclusions in place of the configured targeting profile.
   #
@@ -1427,6 +1438,13 @@ environment:
   # HubSpot Configuration (Campaign UTM Tracking)
   HUBSPOT_ACCESS_TOKEN:
     value:
+
+  # Share Kit member codes: JSON object mapping an event slug to its member code,
+  # e.g. {"example-summit-2027":"EXAMPLE20"}. The default is an empty object: valid JSON,
+  # no member codes, so no kit shows a member offer (and nothing is logged as malformed).
+  # Real codes never live in this repository; set them per environment in lfx-v2-argocd.
+  SHARE_KIT_MEMBER_CODES:
+    value: "{}"
 
   # Stripe publishable key
   STRIPE_PUBLISHABLE_KEY:

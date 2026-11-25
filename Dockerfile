@@ -88,6 +88,8 @@ COPY --from=builder /app/apps/lfx-one/otel.mjs ./apps/lfx-one/
 # dist-docs is a sibling of dist/, not nested under it — sitemap.route.ts
 # resolves /sitemap.xml there relative to the compiled server bundle.
 COPY --from=builder /app/apps/lfx-one/dist-docs ./apps/lfx-one/dist-docs
+# Event share kit content (#6058), read once at startup by share-kit.service.ts (three levels above the server bundle).
+COPY --from=builder /app/apps/lfx-one/content ./apps/lfx-one/content
 
 # Enable Corepack for Yarn, needed at runtime because CMD still goes
 # through `yarn workspace ... start:server` (see docs/architecture/backend/

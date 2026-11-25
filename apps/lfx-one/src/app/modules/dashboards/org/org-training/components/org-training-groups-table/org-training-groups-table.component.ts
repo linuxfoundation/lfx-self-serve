@@ -15,8 +15,10 @@ import {
   ENROLL_AGAIN_URL,
   ORG_TRAINING_GROUP_BY_OPTIONS,
   ORG_TRAINING_GROUPS_SCOPE_NOTES,
+  ORG_TRAINING_ROLL_UP_TOTALS_NOTE,
 } from '@lfx-one/shared/constants';
 import type {
+  OrgLensRowOrganization,
   OrgTrainingGroupBy,
   OrgTrainingGroupEmployeesParams,
   OrgTrainingGroupRow,
@@ -39,6 +41,7 @@ import { OrgTrainingGroupEmployeesDrawerComponent } from '../org-training-group-
  * The Training page's one group-by table: person-course pairs of the selected range and filters, grouped by `groupBy`,
  * split by product type into the Certifications and Trainings tabs. Sort and paging are table-local and the name search comes from the page; the
  * footer totals come from the response; only the Certified / Completed total equals its stat tile, while In progress and People per tab can differ (see `ORG_TRAINING_GROUPS_SCOPE_NOTES`).
+ * In a family roll-up there is one row per group value and company, with a Company column, and the drawers open for the row's company.
  */
 @Component({
   selector: 'lfx-org-training-groups-table',
@@ -58,6 +61,10 @@ export class OrgTrainingGroupsTableComponent {
   public readonly tab = input.required<OrgTrainingTabId>();
   /** The page's name search (it sits in the filter row): narrows the rows below, never the stat tiles. */
   public readonly searchQuery = input<string>('');
+  /** `orgUid` is a family roll-up key. */
+  public readonly rollUp = input<boolean>(false);
+  /** Roll-up only: the picked company ('' for all of them); null while the page cannot yet check the pick, and nothing is read. */
+  public readonly company = input<string | null>('');
 
   protected readonly browseUrl = ENROLL_AGAIN_URL;
   protected readonly pageSizeOptions = [10, 25, 50];
@@ -76,8 +83,8 @@ export class OrgTrainingGroupsTableComponent {
   protected readonly drawerLabel = signal('');
   protected readonly drawerCount = signal(0);
 
-  private readonly viewKey = computed(() => JSON.stringify([this.orgUid(), this.query(), this.groupBy(), this.tab(), this.searchQuery()]));
-  /** The view (org, filters, group-by, tab, search) the offset belongs to; a different view starts on page one. */
+  private readonly viewKey = computed(() => JSON.stringify([this.orgUid(), this.company(), this.query(), this.groupBy(), this.tab(), this.searchQuery()]));
+  /** The view (org, company, filters, group-by, tab, search) the offset belongs to; a different view starts on page one. */
   private readonly paging = signal<{ viewKey: string; offset: number }>({ viewKey: '', offset: 0 });
   protected readonly offset = computed(() => {
     const paging = this.paging();
@@ -91,10 +98,12 @@ export class OrgTrainingGroupsTableComponent {
   protected readonly groupLabel = computed(() => ORG_TRAINING_GROUP_BY_OPTIONS.find((option) => option.value === this.groupBy())?.label ?? 'Course');
   protected readonly completedLabel = computed(() => (this.tab() === 'certifications' ? 'Certified' : 'Completed'));
   protected readonly completedTileLabel = computed(() => (this.tab() === 'certifications' ? 'Certifications' : 'Trainings completed'));
-  protected readonly totalsNote = computed(
-    () =>
-      `Totals cover every row of this tab, not only this page or the search. ${this.completedLabel()} equals the “${this.completedTileLabel()}” tile for the same range and filters; People is distinct people, not the sum of the rows.`
-  );
+  protected readonly totalsNote = computed(() => {
+    const note = `Totals cover every row of this tab, not only this page or the search. ${this.completedLabel()} equals the “${this.completedTileLabel()}” tile for the same range and filters; People is distinct people, not the sum of the rows.`;
+    return this.rollUp() ? `${note} ${ORG_TRAINING_ROLL_UP_TOTALS_NOTE}` : note;
+  });
+  protected readonly rollUpTotalsNote = ORG_TRAINING_ROLL_UP_TOTALS_NOTE;
+  protected readonly columnCount = computed(() => (this.rollUp() ? 6 : 5));
   protected readonly scopeNote = computed(() => ORG_TRAINING_GROUPS_SCOPE_NOTES[this.tab()]);
   protected readonly totalCompletedAriaLabel = computed(
     () => `${this.completedLabel()} total ${this.groups().totals.completed.toLocaleString('en-US')}, equals the ${this.completedTileLabel()} tile`
@@ -152,7 +161,13 @@ export class OrgTrainingGroupsTableComponent {
   }
 
   protected openDrawer(row: OrgTrainingGroupRowVm, status: OrgTrainingGroupStatus): void {
-    this.drawerParams.set({ groupBy: this.groupBy(), groupValue: row.key, tab: this.tab(), status });
+    this.drawerParams.set({
+      groupBy: this.groupBy(),
+      groupValue: row.key,
+      tab: this.tab(),
+      status,
+      ...(this.rollUp() && row.organization ? { company: row.organization } : {}),
+    });
     this.drawerLabel.set(row.label);
     this.drawerCount.set(status === 'completed' ? row.completed : row.inProgress);
     this.drawerVisible.set(true);
@@ -172,12 +187,18 @@ export class OrgTrainingGroupsTableComponent {
 
   private toRowVm(row: OrgTrainingGroupRow): OrgTrainingGroupRowVm {
     const completedStatus = this.completedLabel().toLowerCase();
+    const company = this.rollUp() ? row.organization : undefined;
     return {
       ...row,
+      rowKey: company ? `${row.key}::${company.accountId}` : row.key,
       meta: this.rowMeta(row),
-      completedAriaLabel: `${row.completed.toLocaleString('en-US')} ${completedStatus}, ${row.label}. Show people`,
-      inProgressAriaLabel: `${row.inProgress.toLocaleString('en-US')} in progress, ${row.label}. Show people`,
+      completedAriaLabel: `${row.completed.toLocaleString('en-US')} ${completedStatus}, ${this.rowName(row.label, company)}. Show people`,
+      inProgressAriaLabel: `${row.inProgress.toLocaleString('en-US')} in progress, ${this.rowName(row.label, company)}. Show people`,
     };
+  }
+
+  private rowName(label: string, company: OrgLensRowOrganization | undefined): string {
+    return company ? `${label}, ${company.name}` : label;
   }
 
   private ariaSort(field: OrgTrainingGroupSortField): string {
@@ -193,25 +214,36 @@ export class OrgTrainingGroupsTableComponent {
   private initGroups(): Signal<OrgTrainingGroupsResponse> {
     // One request per distinct view/sort/page; switchMap cancels the in-flight one.
     const request$ = toObservable(
-      computed(() => ({
-        orgUid: this.orgUid(),
-        query: this.query(),
-        params: {
-          groupBy: this.groupBy(),
-          tab: this.tab(),
-          searchQuery: this.searchQuery() || undefined,
-          sortField: this.sortField(),
-          sortOrder: this.sortOrder(),
-          pageSize: this.pageSize(),
-          offset: this.offset(),
-        },
-        retry: this.retryTrigger(),
-      }))
+      computed(() => {
+        const company = this.rollUp() ? this.company() : '';
+        return {
+          orgUid: this.orgUid(),
+          company,
+          query: this.query(),
+          params: {
+            groupBy: this.groupBy(),
+            tab: this.tab(),
+            searchQuery: this.searchQuery() || undefined,
+            sortField: this.sortField(),
+            sortOrder: this.sortOrder(),
+            pageSize: this.pageSize(),
+            offset: this.offset(),
+            ...(company ? { company } : {}),
+          },
+          retry: this.retryTrigger(),
+        };
+      })
     );
 
     return toSignal(
       request$.pipe(
-        switchMap(({ orgUid, query, params }) => {
+        switchMap(({ orgUid, company, query, params }) => {
+          // The pick is checked against the roll-up's organizations first: until then the table waits, never showing all of them.
+          if (company === null) {
+            this.loading.set(true);
+            this.error.set(false);
+            return of(EMPTY_ORG_TRAINING_GROUPS_RESPONSE);
+          }
           if (!orgUid) {
             this.loading.set(false);
             this.error.set(false);

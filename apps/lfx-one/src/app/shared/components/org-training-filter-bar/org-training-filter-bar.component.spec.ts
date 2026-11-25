@@ -63,7 +63,7 @@ describe('OrgTrainingFilterBarComponent', () => {
     fixture.detectChanges();
   }
 
-  async function mount(url: string, showGroupBy = false): Promise<void> {
+  async function mount(url: string, showGroupBy = false, projectedFilterParams: string[] = []): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [OrgTrainingFilterBarComponent],
       providers: [
@@ -75,6 +75,7 @@ describe('OrgTrainingFilterBarComponent', () => {
     await router().navigateByUrl(url);
     fixture = TestBed.createComponent(OrgTrainingFilterBarComponent);
     fixture.componentRef.setInput('showGroupBy', showGroupBy);
+    fixture.componentRef.setInput('projectedFilterParams', projectedFilterParams);
     await settle();
   }
 
@@ -168,6 +169,20 @@ describe('OrgTrainingFilterBarComponent', () => {
     await mount('/?range=all');
 
     expect(el().querySelector('[data-testid="org-training-filter-clear-all"] button')?.hasAttribute('disabled')).toBe(true);
+  });
+
+  it("enables Clear all for a host's projected filter alone, and clears it with the five filters", async () => {
+    await mount('/?tab=training&range=all&company=acc-2', false, ['company']);
+    const clearAll = (): HTMLButtonElement => el().querySelector<HTMLButtonElement>('[data-testid="org-training-filter-clear-all"] button')!;
+
+    expect(clearAll().hasAttribute('disabled')).toBe(false);
+    clearAll().click();
+    await settle();
+
+    expect(router().url).not.toContain('company=');
+    expect(router().url).toContain('range=all');
+    expect(router().url).toContain('tab=training');
+    expect(clearAll().hasAttribute('disabled')).toBe(true);
   });
 
   it('keeps a selection the loaded options do not list: still in the URL, applied and shown in its dropdown', async () => {
@@ -352,6 +367,16 @@ describe('OrgTrainingFilterBarComponent', () => {
         format: '',
       });
       expect(getFilterOptions).toHaveBeenLastCalledWith('org-uid-2', '90d');
+    });
+
+    it("leaves a host's projected filter to its host on a switch", async () => {
+      await mount(`${ALL_FILTERS}&company=acc-2`, true, ['company']);
+
+      account.set({ uid: 'org-uid-2', accountName: 'Other Org' });
+      await settle();
+
+      expect(urlState()).toMatchObject({ foundation: null, format: null });
+      expect(router().url).toContain('company=acc-2');
     });
 
     it('does not touch the URL on a switch while no filter is set', async () => {

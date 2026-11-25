@@ -156,7 +156,7 @@ async function renderTrainingPage(
       provideRouter([]),
       MessageService,
       { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: params }, queryParamMap: of(params) } },
-      { provide: AccountContextService, useValue: { selectedAccount: signal(ACME) } },
+      { provide: AccountContextService, useValue: { selectedAccount: signal(ACME), isRollUp: signal(false) } },
       { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
       { provide: OrgLensViewModeService, useValue: { isEmployeeView: signal(false) } },
       {

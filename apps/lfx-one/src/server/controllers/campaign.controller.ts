@@ -23,6 +23,7 @@ import { redditConversionEventRefusal } from '@lfx-one/shared/utils/campaign-red
 import { linkedInTextAdAssetField, linkedInTextAdsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-text-ads.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
 import { linkedInVideoVariantsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-video.utils';
+import { linkedInTargetCostRefusal } from '@lfx-one/shared/utils/campaign-linkedin-target-cost.utils';
 import {
   googleAdScheduleRefusal,
   googleAdsDevicesOn,
@@ -448,6 +449,7 @@ import {
   canSetLinkedInDailyCap,
   canSetLinkedInVariantCopy,
   canSetLinkedInVideoAds,
+  canSetLinkedInTargetCost,
   canSearchGoogleGeoTargets,
   canSetMetaAudienceTargeting,
   canSetMetaCallToAction,
@@ -1410,6 +1412,15 @@ export class CampaignController {
       const linkedInVideoRefused = linkedInVideoVariantsRefusal(body?.linkedInConfig, canSetLinkedInVideoAds());
       if (linkedInVideoRefused !== null) {
         throw ServiceValidationError.forField(linkedInVideoRefused.field, linkedInVideoRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // LinkedIn target cost (linuxfoundation/lfx-v2-campaign-service#674): refused, never dropped, while this deployment
+      // cannot send it, and held to campaign-service's rules. See `linkedInTargetCostRefusal`.
+      const linkedInTargetCostRefused = linkedInTargetCostRefusal(body?.linkedInConfig, canSetLinkedInTargetCost());
+      if (linkedInTargetCostRefused !== null) {
+        throw ServiceValidationError.forField(linkedInTargetCostRefused.field, linkedInTargetCostRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });
@@ -10031,6 +10042,9 @@ export class CampaignController {
    *
    * 10. A variant's `videoAssetId` (#5764 row 18) goes out as it came, once `linkedInVideoVariantsRefusal` passed it:
    *    campaign-service trims it itself.
+   *
+   * 11. `bidding.targetAmount` (campaign-service #674) goes out as it came, inside `bidding`, once
+   *    `linkedInTargetCostRefusal` passed it.
    */
   private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;
