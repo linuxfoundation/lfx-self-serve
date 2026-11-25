@@ -2,8 +2,10 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <section data-testid="badges-section">
-  <h2 class="m-0 text-lg font-bold text-gray-900">Badges</h2>
-  <p class="mb-5 mt-1 text-xs leading-relaxed text-gray-500">Recognitions and credentials earned across the community.</p>
+  @if (showHeading()) {
+    <h2 class="m-0 text-lg font-bold text-gray-900">Badges</h2>
+    <p class="mb-5 mt-1 text-xs leading-relaxed text-gray-500">Recognitions and credentials earned across the community.</p>
+  }
 
   <div class="grid grid-cols-3 gap-4 sm:grid-cols-4" data-testid="badges-grid">
     @for (badge of badges(); track badge) {

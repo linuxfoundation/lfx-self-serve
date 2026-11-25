@@ -454,6 +454,14 @@ export const PROFILE_NO_ACTIVITY_COPY = {
   connectGithub: 'Connect GitHub',
 } as const;
 
+/** Section headers of the redesigned public profile, in the second person for visitors (#6088). */
+export const PUBLIC_PROFILE_SECTION_COPY = {
+  recognitions: 'Recognitions',
+  recognitionsDescription: 'Awards this person has earned for contributions and participation across Linux Foundation programs and events.',
+  involvement: 'Foundations & projects involvement',
+  involvementDescription: 'Every foundation and project this person takes part in, and their role in each.',
+} as const;
+
 /** Training & Certifications, where the Profile page sends someone to earn badges (#6084). */
 export const PROFILE_TRAINING_PATH = '/me/training';
 

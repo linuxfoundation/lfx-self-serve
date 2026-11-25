@@ -9,6 +9,7 @@ import { ServerRequestContext } from '@lfx-one/shared/interfaces';
 import { accountPathForProfileTab, profileTargetForAccountRoute } from '@lfx-one/shared/utils';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
+import { UserService } from '../services/user.service';
 import { PROFILE_REDESIGN_KEY } from '../utils/profile-redesign.util';
 import { mirrorOverridesToCookie, readCookieOverride } from './meeting-page-redesign.guard';
 
@@ -69,3 +70,14 @@ export const profileRedesignRedirectGuard: CanActivateFn = async (route) => {
 
 /** Matches a route only with the redesign flag on, so the route after it (the Profile & Account hub) serves everyone else (#6082). */
 export const profileRedesignOnlyGuard: CanMatchFn = () => readProfileRedesignFlag('profileRedesignOnlyGuard');
+
+/**
+ * Settles the redesign flag for a page that renders either way, the public profile (#6088), and lets it load: the server
+ * hands its answer to the browser, so SSR and hydration render the same version.
+ */
+export const profileRedesignReadGuard: CanActivateFn = async () => {
+  // A signed-out visitor never has the flag, so the browser doesn't wait on the flag service for one.
+  if (isPlatformBrowser(inject(PLATFORM_ID)) && !inject(UserService).authenticated()) return true;
+  await readProfileRedesignFlag('profileRedesignReadGuard');
+  return true;
+};

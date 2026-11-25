@@ -1,14 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, isPlatformServer } from '@angular/common';
-import { Component, computed, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, TransferState } from '@angular/core';
+import { isPlatformBrowser, isPlatformServer, NgClass, NgTemplateOutlet } from '@angular/common';
+import { afterNextRender, Component, computed, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
+import { PUBLIC_PROFILE_SECTION_COPY } from '@lfx-one/shared/constants';
 import { PublicProfilePageState, ServerRequestContext } from '@lfx-one/shared/interfaces';
 import { formatAffiliation, formatLfxDocumentTitle } from '@lfx-one/shared/utils';
 import { TranscendService } from '@services/transcend.service';
+import { ProfileSectionComponent } from '@shared/components/profile-section/profile-section.component';
+import { injectProfileRedesignEnabled } from '@shared/utils/profile-redesign.util';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
@@ -24,7 +27,10 @@ import { PublicProfileService } from '../services/public-profile.service';
 @Component({
   selector: 'lfx-public-profile-page',
   imports: [
+    NgClass,
+    NgTemplateOutlet,
     SkeletonModule,
+    ProfileSectionComponent,
     PublicProfileTopbarComponent,
     PublicProfileHeroComponent,
     PublicProfileContributionsComponent,
@@ -49,6 +55,11 @@ export class PublicProfilePageComponent {
   // branch — failed responses aren't in HttpTransferCache, so not-found/error would else mismatch.
   private readonly stateKey = makeStateKey<PublicProfilePageState>('publicProfileState');
 
+  protected readonly sectionCopy = PUBLIC_PROFILE_SECTION_COPY;
+
+  // Set once the browser has rendered, so the redesign flag is read only where it can be.
+  private readonly hydrated = signal(false);
+
   // Single source of truth for the async page state; loading/error/notFound/profile derive from it.
   protected readonly state: Signal<PublicProfilePageState> = this.initProfile();
 
@@ -57,6 +68,8 @@ export class PublicProfilePageComponent {
   protected readonly notFound = computed(() => this.state().notFound);
   protected readonly isPrivate = computed(() => this.state().isPrivate);
   protected readonly profile = computed(() => this.state().profile);
+  /** The profile redesign (#6088): the server's answer for this render, so SSR and hydration agree; off for signed-out visitors. */
+  protected readonly redesign: Signal<boolean> = injectProfileRedesignEnabled(this.hydrated);
 
   // Section slices — each section is hidden when its slice is empty.
   protected readonly basic = computed(() => this.profile()?.basic ?? null);
@@ -76,6 +89,8 @@ export class PublicProfilePageComponent {
   protected readonly cookieSettingsAvailable = this.transcendService.preferencesAvailable;
 
   public constructor() {
+    afterNextRender(() => this.hydrated.set(true));
+
     // SEO sync — re-apply head tags when `profile()` resolves; `toObservable` + `takeUntilDestroyed`
     // instead of `effect()` per `docs/reviews/frontend-checklist.md` §5 (effect reserved for logging).
     toObservable(this.profile)

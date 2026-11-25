@@ -17,6 +17,8 @@ import { PublicProfileProject, PublicProfileTechnicalContribution } from '@lfx-o
 })
 export class PublicProfileContributionsComponent {
   public readonly technicalContribution = input<PublicProfileTechnicalContribution | null>(null);
+  /** False under the profile redesign, where the page's section header names the block (#6088). */
+  public readonly showHeading = input<boolean>(true);
 
   protected readonly yearForm = new FormGroup({ year: new FormControl<number>(PUBLIC_PROFILE_ALL_YEARS, { nonNullable: true }) });
 

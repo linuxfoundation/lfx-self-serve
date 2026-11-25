@@ -39,7 +39,7 @@ describe('resolveSsrFlags', () => {
     expect(isFlagEnabled).not.toHaveBeenCalled();
   });
 
-  it.each(['/profile', '/profile/identities?success=profile_token_obtained', '/account', '/account/password'])(
+  it.each(['/profile', '/profile/identities?success=profile_token_obtained', '/account', '/account/password', '/u/ada-lovelace'])(
     'evaluates the profile redesign flag for %s with the browser context',
     async (path) => {
       const req = request(path);
@@ -49,8 +49,8 @@ describe('resolveSsrFlags', () => {
     }
   );
 
-  it('leaves the profile redesign off for a signed-out render without asking', async () => {
-    expect(await resolveSsrFlags(request('/account/identities'), null)).toEqual({ profileRedesign: false });
+  it.each(['/account/identities', '/u/ada-lovelace'])('leaves the profile redesign off for a signed-out render of %s without asking', async (path) => {
+    expect(await resolveSsrFlags(request(path), null)).toEqual({ profileRedesign: false });
     expect(isFlagEnabled).not.toHaveBeenCalled();
   });
 
