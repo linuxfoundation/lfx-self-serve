@@ -13,6 +13,7 @@ import { AccountProfileService } from '@services/account-profile.service';
 import { ProfileAuthReturnService } from '@services/profile-auth-return.service';
 import { ProfileSaveSyncService } from '@services/profile-save-sync.service';
 import { BadgesService } from '@services/badges.service';
+import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { MessageService } from 'primeng/api';
@@ -58,6 +59,7 @@ describe('ProfilePageComponent', () => {
       getIdentities: vi.fn(() => of(options.identities ?? [GITHUB])),
       getWorkHistoryLogo: vi.fn(() => of('https://cdn.example/acme.png')),
       getProfileVisibility: vi.fn(() => of({ isPublic: false, sections: {} })),
+      readCdpProjectAffiliations: vi.fn(() => of([])),
       uploadProfilePicture: vi.fn(options.upload ?? (() => of({ public_url: 'https://cdn.example/ada.png' }))),
     };
     TestBed.configureTestingModule({
@@ -71,6 +73,7 @@ describe('ProfilePageComponent', () => {
         { provide: UiToastService, useValue: { show } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: BadgesService, useValue: { getBadges: () => of([]) } },
+        { provide: ProjectService, useValue: { getProjectSlugs: () => of(null) } },
         { provide: BreakpointObserver, useValue: { observe: () => of({ matches: options.wide ?? true, breakpoints: {} }) } },
       ],
     });

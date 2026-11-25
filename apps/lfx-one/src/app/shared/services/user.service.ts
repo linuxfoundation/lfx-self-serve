@@ -744,12 +744,17 @@ export class UserService {
    * Get user's CDP project affiliations (projects with org affiliations and roles)
    */
   public getCdpProjectAffiliations(): Observable<CdpProjectAffiliation[]> {
-    return this.http.get<CdpProjectAffiliation[]>('/api/profile/project-affiliations').pipe(
+    return this.readCdpProjectAffiliations().pipe(
       catchError(() => {
         this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load project affiliations.' });
         return of([]);
       })
     );
+  }
+
+  /** The same CDP project affiliations as {@link getCdpProjectAffiliations}, with a failure left to the caller to report. */
+  public readCdpProjectAffiliations(): Observable<CdpProjectAffiliation[]> {
+    return this.http.get<CdpProjectAffiliation[]>('/api/profile/project-affiliations');
   }
 
   /**

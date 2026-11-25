@@ -1,0 +1,78 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<lfx-profile-section [heading]="copy.heading" [description]="copy.description" testId="profile-involvement">
+  <ng-container profileSectionActions>
+    <lfx-profile-section-hint [label]="copy.missingLabel" [tip]="copy.missingTip" />
+    <lfx-ui-button variant="tertiary-accent" size="small" icon="fa-light fa-building" [link]="manageAffiliationsPath" data-testid="profile-involvement-manage">
+      {{ copy.manage }}
+    </lfx-ui-button>
+  </ng-container>
+
+  @if (state().loading) {
+    <div class="@container" aria-hidden="true" data-testid="profile-involvement-loading">
+      <div class="grid grid-cols-1 gap-[16px] @[480px]:grid-cols-2 @[720px]:grid-cols-3">
+        @for (skeleton of skeletons; track skeleton) {
+          <lfx-ui-skeleton height="66px" />
+        }
+      </div>
+    </div>
+  } @else if (state().error) {
+    <lfx-ui-note variant="error" data-testid="profile-involvement-error">
+      {{ copy.loadFailed }}
+      <lfx-ui-button note-action variant="secondary" size="small" (click)="retry()" data-testid="profile-involvement-retry">{{ copy.retry }}</lfx-ui-button>
+    </lfx-ui-note>
+  } @else if (items().length === 0) {
+    <lfx-profile-section-empty icon="fa-light fa-diagram-project" [heading]="copy.emptyTitle" [description]="copy.emptyText" />
+  } @else {
+    <lfx-profile-grid [total]="items().length" [(expanded)]="expanded" testId="profile-involvement-grid">
+      @for (item of shown(); track item.id) {
+        <lfx-profile-pill
+          [name]="item.name"
+          [imageUrl]="item.logo"
+          [hoverCard]="card"
+          [hoverCardWidth]="340"
+          [testId]="'profile-involvement-project-' + item.id">
+          <ng-container *ngTemplateOutlet="roleBadge; context: { $implicit: item }" />
+          @if (item.years) {
+            <span class="whitespace-nowrap">{{ item.years }}</span>
+          }
+        </lfx-profile-pill>
+
+        <ng-template #card>
+          <div class="flex flex-col items-start gap-[14px]" [attr.data-testid]="'profile-involvement-card-' + item.id">
+            <div class="flex min-w-0 flex-row items-center gap-[12px]">
+              <span
+                class="flex size-[40px] flex-none items-center justify-center overflow-hidden rounded-[12px] shadow-[inset_0_0_0_1px_theme(colors.gray.200)]">
+                @if (item.logo) {
+                  <img class="size-[40px] object-contain" [src]="item.logo" alt="" referrerpolicy="no-referrer" />
+                }
+              </span>
+              <span class="flex min-w-0 flex-col items-start gap-[4px]">
+                <!-- Wraps rather than cutting off: the card is not focusable, so a tooltip couldn't show the rest. -->
+                <span class="max-w-full break-words text-[15px] font-semibold leading-[20px] text-gray-900">{{ item.name }}</span>
+                <ng-container *ngTemplateOutlet="roleBadge; context: { $implicit: item }" />
+              </span>
+            </div>
+            @if (item.period) {
+              <span class="flex flex-row items-center gap-[6px] text-[12px] leading-[16px] text-gray-500">
+                <i class="fa-light fa-clock" aria-hidden="true"></i>
+                <span>{{ item.period }}</span>
+              </span>
+            }
+          </div>
+        </ng-template>
+      }
+    </lfx-profile-grid>
+  }
+</lfx-profile-section>
+
+<!-- The role as a line badge: Maintainer in the accent colour with a shield, Contributor neutral with code. -->
+<ng-template #roleBadge let-item>
+  @if (item.role === 'Maintainer') {
+    <lfx-ui-badge variant="line" tone="accent" size="sm"><i slot="icon" class="fa-light fa-shield-halved" aria-hidden="true"></i>{{ item.role }}</lfx-ui-badge>
+  } @else {
+    <lfx-ui-badge variant="line" size="sm"><i slot="icon" class="fa-light fa-code" aria-hidden="true"></i>{{ item.role }}</lfx-ui-badge>
+  }
+</ng-template>
