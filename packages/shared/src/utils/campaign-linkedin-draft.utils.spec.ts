@@ -147,8 +147,13 @@ describe('linkedInDraftRestore', () => {
       { objective: null, conversions: [], conversionsOwner: null, targetCost: '17.885' },
     ],
     [
-      'no target cost that is not text, or blank',
+      'no target cost that is not text',
       { objective: null, conversions: [], conversionsOwner: null, targetCost: 17.88 },
+      { objective: null, conversions: [], conversionsOwner: null },
+    ],
+    [
+      'no blank target cost',
+      { objective: null, conversions: [], conversionsOwner: null, targetCost: '' },
       { objective: null, conversions: [], conversionsOwner: null },
     ],
     ['nothing from a draft that is not a record', ['traffic'], undefined],

@@ -87,8 +87,9 @@ function typedTargetCost(text: string | undefined): number | string | undefined 
 
 /** `draft` with the target cost as typed; a blank removes it, so a cleared field sends nothing and saves nothing. */
 export function linkedInObjectiveDraftWithTargetCost(draft: LinkedInObjectiveDraft, text: string): LinkedInObjectiveDraft {
-  const next: LinkedInObjectiveDraft = { objective: draft.objective, conversions: draft.conversions, conversionsOwner: draft.conversionsOwner };
-  return text.trim() === '' ? next : { ...next, targetCost: text };
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { targetCost: _previous, ...rest } = draft;
+  return text.trim() === '' ? rest : { ...rest, targetCost: text };
 }
 
 /** Why the typed target cost cannot be sent, as the field shows it, or `null`: blank or not offered holds nothing. */
@@ -98,8 +99,22 @@ export function linkedInTargetCostInputError(text: string | undefined, offered: 
   return linkedInTargetCostRefusal({ bidding: { strategy: 'automatic', targetAmount: amount } }, true)?.message ?? null;
 }
 
-/** Why the target cost holds Create, as the create button says it, or `null`; see `linkedInTargetCostInputError`. */
-export function linkedInTargetCostCreateRefusal(draft: LinkedInObjectiveDraft, offered: boolean): string | null {
+/**
+ * Whether a typed target cost waits on the capability: `linkedInTargetCostEnabled` is not read yet (`null`, e.g. after a
+ * tab round-trip) while automatic LinkedIn bidding would carry it. Create is held rather than sending the campaign
+ * without the target, as a retained manual bid is held while the bidding capability is unconfirmed.
+ */
+export function linkedInTargetCostPending(input: LinkedInTargetCostOfferInput, draft: LinkedInObjectiveDraft): boolean {
+  return input.enabled === null && input.biddingAvailable && (input.strategy ?? 'automatic') === 'automatic' && (draft.targetCost ?? '').trim() !== '';
+}
+
+/**
+ * Why the target cost holds Create, as the create button says it, or `null`: the typed value's refusal while it is
+ * offered (`linkedInTargetCostInputError`), or, while it is `pending` (`linkedInTargetCostPending`), that it can't be
+ * confirmed yet.
+ */
+export function linkedInTargetCostCreateRefusal(draft: LinkedInObjectiveDraft, offered: boolean, pending = false): string | null {
+  if (pending) return "LinkedIn Ads: the target cost can't be confirmed yet. Wait for the campaign settings to load, or clear it.";
   const error = linkedInTargetCostInputError(draft.targetCost, offered);
   return error === null ? null : `LinkedIn Ads: ${error}`;
 }

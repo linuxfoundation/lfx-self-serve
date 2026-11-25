@@ -383,6 +383,7 @@ import type {
   LinkedInTargeting,
   LinkedInTargetingDraft,
   LinkedInObjectiveDraft,
+  LinkedInTargetCostOfferInput,
   LinkedInTextAdDraft,
   LinkedInTextAdImageInput,
   LinkedInVariantView,
@@ -501,6 +502,7 @@ import {
   linkedInBiddingWithTargetCost,
   linkedInTargetCostCreateRefusal,
   linkedInTargetCostOffered,
+  linkedInTargetCostPending,
   linkedInTargetingDraftRefusal,
   linkedInTargetingForCreate,
   linkedInTargetingSegmentsAccountRefusal,
@@ -1966,13 +1968,17 @@ export class ImplementationTabComponent implements OnInit {
    * picks (`linkedInSegmentsOwner`), and a create for another owner is held.
    */
   protected readonly linkedInObjectiveDraft = signal<LinkedInObjectiveDraft>(emptyLinkedInObjectiveDraft());
+  /** What decides whether the target cost is offered: the capability, the Bidding control, and LinkedIn's Bidding choice. */
+  private readonly linkedInTargetCostOfferInput = computed<LinkedInTargetCostOfferInput>(() => ({
+    enabled: this.linkedInTargetCostEnabled(),
+    biddingAvailable: this.biddingAvailable(),
+    strategy: this.biddingDrafts()['linkedin-ads']?.strategy,
+  }));
   /** Whether the objective picker offers the target cost now (`linkedInTargetCostOffered`); hidden, a typed one is not sent. */
-  protected readonly linkedInTargetCostShown = computed<boolean>(() =>
-    linkedInTargetCostOffered({
-      enabled: this.linkedInTargetCostEnabled(),
-      biddingAvailable: this.biddingAvailable(),
-      strategy: this.biddingDrafts()['linkedin-ads']?.strategy,
-    })
+  protected readonly linkedInTargetCostShown = computed<boolean>(() => linkedInTargetCostOffered(this.linkedInTargetCostOfferInput()));
+  /** A typed target cost while the capability is unread holds Create (`linkedInTargetCostPending`) rather than being dropped. */
+  private readonly linkedInTargetCostAwaitingCapability = computed<boolean>(() =>
+    linkedInTargetCostPending(this.linkedInTargetCostOfferInput(), this.linkedInObjectiveDraft())
   );
   /** The objective picker is mounted while it shows the objective or the target cost. */
   protected readonly linkedInObjectivePickerShown = computed<boolean>(
@@ -8925,7 +8931,11 @@ export class ImplementationTabComponent implements OnInit {
         bidding: this.biddingField('linkedin-ads').bidding,
       }),
       // The target cost (campaign-service#674): held while offered and refused; hidden, it is not sent and holds nothing.
-      targetCostRefusal: linkedInTargetCostCreateRefusal(this.linkedInObjectiveDraft(), this.linkedInTargetCostShown()),
+      targetCostRefusal: linkedInTargetCostCreateRefusal(
+        this.linkedInObjectiveDraft(),
+        this.linkedInTargetCostShown(),
+        this.linkedInTargetCostAwaitingCapability()
+      ),
       // Text Ads replace the variant checks while chosen (#5764 row 19); they need a manual bid.
       ...(this.linkedInTextAdsSelected()
         ? {

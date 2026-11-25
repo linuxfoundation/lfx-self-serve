@@ -60,7 +60,7 @@ With automatic bidding, you can set an optional **Target cost (USD)** under the 
 
 The target must be more than 0, no more than 1,000,000 and use at most two decimal places. Otherwise a message appears under it and **Create** stays disabled until you fix or clear it.
 
-The box is only there with automatic bidding, and only where your deployment supports a target cost. Switch to manual bidding and the target is not sent.
+The box is only there with automatic bidding, and only where your deployment supports a target cost. Switch to manual bidding and the target is not sent. If you typed a target and the campaign settings are still loading, **Create** waits until they load, so the campaign is never created without the target you entered.
 
 ## Locations
 

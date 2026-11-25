@@ -10,6 +10,7 @@ import {
   linkedInTargetCostCreateRefusal,
   linkedInTargetCostInputError,
   linkedInTargetCostOffered,
+  linkedInTargetCostPending,
   linkedInTargetCostRefusal,
 } from './campaign-linkedin-target-cost.utils';
 
@@ -103,6 +104,34 @@ describe('the Implement tab target cost', () => {
     ['a blank, removing it', objective('17.88'), '  ', objective()],
   ])('keeps %s in the draft', (_name, draft, typed, expected) => {
     expect(linkedInObjectiveDraftWithTargetCost({ ...draft, objective: 'traffic' }, typed)).toEqual({ ...expected, objective: 'traffic' });
+  });
+
+  it('keeps every other draft field, including one added later, when the target cost changes', () => {
+    const { targetCost: _typed, ...others } = {
+      ...objective('17'),
+      objective: 'conversions',
+      conversions: ['urn:lla:llaPartnerConversion:1'],
+      conversionsOwner: 'p|1',
+      laterField: 'kept',
+    } as LinkedInObjectiveDraft & { laterField: string };
+    expect(linkedInObjectiveDraftWithTargetCost({ ...others, targetCost: '17' }, '18')).toStrictEqual({ ...others, targetCost: '18' });
+    expect(linkedInObjectiveDraftWithTargetCost({ ...others, targetCost: '17' }, '')).toStrictEqual(others);
+  });
+
+  it.each([
+    ['capability unread, automatic, typed', null, true, undefined, '17.88', true],
+    ['capability unread, explicit automatic', null, true, 'automatic', '17.88', true],
+    ['capability unread, nothing typed', null, true, undefined, undefined, false],
+    ['capability unread, blank', null, true, undefined, '  ', false],
+    ['capability unread, manual bidding', null, true, 'manual', '17.88', false],
+    ['capability unread, no Bidding control', null, false, undefined, '17.88', false],
+    ['capability on', true, true, undefined, '17.88', false],
+    ['capability off', false, true, undefined, '17.88', false],
+  ] as const)('pending: %s → %s', (_name, enabled, biddingAvailable, strategy, typed, expected) => {
+    expect(linkedInTargetCostPending({ enabled, biddingAvailable, strategy }, objective(typed))).toBe(expected);
+    const refusal = linkedInTargetCostCreateRefusal(objective(typed), false, expected);
+    if (expected) expect(refusal).toContain("can't be confirmed yet");
+    else expect(refusal).toBeNull();
   });
 
   it.each([
