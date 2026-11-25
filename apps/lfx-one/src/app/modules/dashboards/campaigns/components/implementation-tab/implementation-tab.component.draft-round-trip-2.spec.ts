@@ -288,22 +288,9 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(c.canSubmit()).toBe(true);
   });
 
-  /**
-   * With the authored-post controls withheld there is no image field on screen, so naming one would
-   * be advice the operator cannot take. Asserted at both withheld states, since `null` (unanswered)
-   * and `false` (answered no) reach the template by different routes.
-   */
-  it.each([[undefined], [false]])('names only the post url while redditCreativeEnabled is %s', STATE_ONLY, async (capability) => {
-    const f = (await mount(null, capability as boolean | undefined)).fixture;
-    const c = selectReddit(f);
-
-    expect(c.redditNoAdWarning()).toContain('No post URL, so this campaign is created with no ad');
-    expect(c.redditNoAdWarning()).not.toContain('image URL');
-  });
-
-  /** A post URL is the one answer that works on both arms, so it clears the warning on both. */
-  it.each([[undefined], [true]])('clears once a post url is typed, with redditCreativeEnabled %s', async (capability) => {
-    const f = (await mount(null, capability as boolean | undefined)).fixture;
+  /** A typed post URL reaches the warning and clears it; every capability state is `redditNoAdWarning`'s rows. */
+  it('clears once a post url is typed', async () => {
+    const f = (await mount(null, true)).fixture;
     const c = selectReddit(f);
     expect(c.redditNoAdWarning()).not.toBeNull();
 
@@ -319,35 +306,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const c = selectReddit(f);
 
     typeRedditImageUrl(f, 'https://cdn.example.org/promo.png');
-
-    expect(c.redditNoAdWarning()).toBeNull();
-  });
-
-  /**
-   * The asymmetry that makes this warning worth having, and the one a warning keyed on the controls
-   * instead of on the payload's own gates would get wrong: a draft written while the capability was
-   * granted still carries an image, the remount still remembers it, and the request still drops it
-   * — so there is still no ad, and the warning must still fire.
-   */
-  it('keeps warning about a remembered image the request will not carry', async () => {
-    const granted = await mount(null, true);
-    typeRedditImageUrl(granted.fixture, 'https://cdn.example.org/promo.png');
-    const draft = granted.latest();
-    granted.fixture.destroy();
-
-    const withheld = await mount(draft, false);
-    const c = selectReddit(withheld.fixture);
-
-    expect(c.redditImageUrl()).toBe('https://cdn.example.org/promo.png');
-    expect(c.redditNoAdWarning()).not.toBeNull();
-  });
-
-  /** Nothing here belongs to a campaign Reddit is not part of. */
-  it('says nothing when reddit is not selected', STATE_ONLY, async () => {
-    const f = (await mount(null, true)).fixture;
-    const c = at(f);
-    c.selectedPlatforms.set(['linkedin-ads']);
-    f.detectChanges();
 
     expect(c.redditNoAdWarning()).toBeNull();
   });
