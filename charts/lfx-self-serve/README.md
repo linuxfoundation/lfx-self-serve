@@ -924,6 +924,12 @@ Server-side credentials for the Marketing OS agents proxy. Consumed only by the 
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------- |
 | `environment.INTERCOM_APP_ID` | Public Intercom Messenger workspace App ID. Messenger loads only when set; identity verification uses the `http://lfx.dev/claims/intercom` Auth0 claim, not this value. | No       | - (Messenger off) |
 
+#### Share Kit Configuration
+
+| Parameter                            | Description                                                                                                                                 | Required | Default             |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
+| `environment.SHARE_KIT_MEMBER_CODES` | JSON object mapping an event slug to its member code, e.g. `{"agntcon-mcpcon-na-2027":"AAIFMEM27"}`. Set per environment in `lfx-v2-argocd` | No       | - (no member codes) |
+
 #### Snowflake Analytics Configuration
 
 Required for analytics endpoints (active-weeks-streak, pull-requests-merged, code-commits):

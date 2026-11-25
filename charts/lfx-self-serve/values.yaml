@@ -1428,6 +1428,12 @@ environment:
   HUBSPOT_ACCESS_TOKEN:
     value:
 
+  # Share Kit member codes: JSON object mapping an event slug to its member code,
+  # e.g. {"agntcon-mcpcon-na-2027":"AAIFMEM27"}. Unset = no member codes configured.
+  # Set per environment in lfx-v2-argocd.
+  SHARE_KIT_MEMBER_CODES:
+    value:
+
   # Stripe publishable key
   STRIPE_PUBLISHABLE_KEY:
     value:
