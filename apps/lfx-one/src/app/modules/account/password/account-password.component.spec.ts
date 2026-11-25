@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute } from '@angular/router';
 import { ACCOUNT_PASSWORD_COPY, ACCOUNT_SETTINGS_SECTIONS } from '@lfx-one/shared/constants';
+import { EmailManagementData } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -20,8 +21,10 @@ import { AccountPasswordComponent } from './account-password.component';
 @Component({ selector: 'lfx-test-account-password', template: '', providers: [DialogService] })
 class StatePasswordComponent extends AccountPasswordComponent {}
 
+const EMAILS = { primary_email: 'ada@lovelace.example', alternate_emails: [] } as unknown as EmailManagementData;
+
 describe('AccountPasswordComponent', () => {
-  function setup(reset$: Observable<{ message: string }> = of({ message: 'sent' }), email: string | null = 'ada@lovelace.example') {
+  function setup(reset$: Observable<{ message: string }> = of({ message: 'sent' }), emails$: Observable<EmailManagementData | null> = of(EMAILS)) {
     const add = vi.fn();
     TestBed.configureTestingModule({
       providers: [
@@ -30,7 +33,7 @@ describe('AccountPasswordComponent', () => {
         { provide: ActivatedRoute, useValue: { snapshot: { data: { embedded: true, section: ACCOUNT_SETTINGS_SECTIONS.PASSWORD } }, fragment: of(null) } },
         {
           provide: UserService,
-          useValue: { impersonating: signal(false), user: signal(email ? { email } : null), sendPasswordResetEmail: vi.fn(() => reset$) },
+          useValue: { impersonating: signal(false), getUserEmails: vi.fn(() => emails$), sendPasswordResetEmail: vi.fn(() => reset$) },
         },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
         { provide: ConfirmationService, useValue: {} },
@@ -63,7 +66,7 @@ describe('AccountPasswordComponent', () => {
     expect(page['criteria']().every((criterion) => criterion.met)).toBe(true);
   });
 
-  it('confirms a sent reset link in a toast naming the address', async () => {
+  it('confirms a sent reset link in a toast naming the current primary address', async () => {
     const { add } = setup();
     const page = await state();
 
@@ -75,6 +78,18 @@ describe('AccountPasswordComponent', () => {
       detail: ACCOUNT_PASSWORD_COPY.resetSentDetail,
     });
     expect(page.resetResultMessage()).toBe('');
+  });
+
+  it('says “your primary email” when it can’t tell which address the link went to', async () => {
+    const { add } = setup(
+      of({ message: 'sent' }),
+      throwError(() => new Error('down'))
+    );
+    const page = await state();
+
+    page.onSendPasswordReset();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Password reset link sent to your primary email' }));
   });
 
   it('reports a failed reset link in a toast', async () => {
@@ -116,6 +131,20 @@ describe('AccountPasswordComponent', () => {
 
     expect(query('account-password-cancel')).not.toBeNull();
     expect(query('account-password-strength-label')?.textContent?.trim()).toBe('Strong');
+  });
+
+  it('puts each eye toggle inside its field and names what it shows', async () => {
+    setup();
+    const fixture = TestBed.createComponent(AccountPasswordComponent);
+    await fixture.whenStable();
+    const host = fixture.nativeElement as HTMLElement;
+    const toggle = host.querySelector('[data-testid="account-password-new-input"] [data-testid="account-password-new-toggle"]') as HTMLButtonElement;
+
+    expect(toggle.getAttribute('aria-label')).toBe('Show New Password');
+    toggle.click();
+    await fixture.whenStable();
+    expect(host.querySelector('[data-testid="account-password-new-input"] input')?.getAttribute('type')).toBe('text');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('says when the new passwords do not match', async () => {
