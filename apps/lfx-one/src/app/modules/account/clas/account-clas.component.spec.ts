@@ -10,7 +10,7 @@ import { MyClasService } from '@services/my-clas.service';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { MessageService } from 'primeng/api';
-import { DialogService } from 'primeng/dynamicdialog';
+import { DialogService, DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Observable, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -35,19 +35,24 @@ const CCLA: MyClaAgreement = {
 class StateClasComponent extends AccountClasComponent {}
 
 describe('AccountClasComponent', () => {
-  function setup(agreements: MyClaAgreement[] | 'error') {
+  /** What the page hands the modal: its providers turn the CDK dialog into the hub dialog's PrimeNG one. */
+  interface ModalOverrides {
+    providers: (ref: { close: (result?: unknown) => void }) => { provide: unknown; useValue: { close?: (result?: unknown) => void; data?: unknown } }[];
+  }
+
+  function setup(agreements: MyClaAgreement[] | 'error', impersonating = false) {
     const response$: Observable<MyClasResponse> =
       agreements === 'error'
         ? throwError(() => new Error('down'))
         : of({ agreements, identity: { matchedUserIds: agreements.length ? 1 : 0, unmatched: !agreements.length, githubLinked: true } });
-    const open = vi.fn(() => ({ closed: of(undefined) }));
+    const open = vi.fn<(content: unknown, config: unknown, overrides: ModalOverrides) => { closed: Observable<undefined> }>(() => ({ closed: of(undefined) }));
     TestBed.configureTestingModule({
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: MyClasService, useValue: { getMyClas: () => response$, getPdfUrl: vi.fn() } },
-        { provide: UserService, useValue: { impersonating: signal(false) } },
+        { provide: UserService, useValue: { impersonating: signal(impersonating) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: UiModalService, useValue: { open } },
       ],
@@ -55,8 +60,8 @@ describe('AccountClasComponent', () => {
     return { open };
   }
 
-  async function renderPage(agreements: MyClaAgreement[] | 'error') {
-    setup(agreements);
+  async function renderPage(agreements: MyClaAgreement[] | 'error', impersonating = false) {
+    setup(agreements, impersonating);
     const fixture = TestBed.createComponent(AccountClasComponent);
     await fixture.whenStable();
     const host = fixture.nativeElement as HTMLElement;
@@ -96,6 +101,33 @@ describe('AccountClasComponent', () => {
       expect.objectContaining({ data: { agreement: CCLA, mode: 'approval' } }),
       expect.objectContaining({ providers: expect.any(Function) })
     );
+  });
+
+  it('feeds the hub dialog its PrimeNG ref and data through the modal', async () => {
+    const { open } = setup([CCLA]);
+    const fixture = TestBed.createComponent(StateClasComponent);
+    await fixture.whenStable();
+    fixture.componentInstance['openRequest'](CCLA, 'approval');
+
+    const ref = { close: vi.fn() };
+    const providers = open.mock.calls[0][2].providers(ref);
+    providers.find((provider) => provider.provide === DynamicDialogRef)?.useValue.close?.('sent');
+    expect(ref.close).toHaveBeenCalledWith('sent');
+    expect(providers.find((provider) => provider.provide === DynamicDialogConfig)?.useValue.data).toEqual({
+      signatureId: 'ccla',
+      projectName: 'Project Two',
+      mode: 'approval',
+    });
+  });
+
+  it('opens no request while impersonating, and says why the requests are off', async () => {
+    const { open } = setup([CCLA], true);
+    const fixture = TestBed.createComponent(StateClasComponent);
+    await fixture.whenStable();
+    fixture.componentInstance['openRequest'](CCLA, 'removal');
+
+    expect(open).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['signDisabledReason']()).toBe('Sign CLA — unavailable while impersonating another user');
   });
 
   it('shows the agreements in a table, with the identities link below', async () => {

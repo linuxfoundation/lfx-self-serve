@@ -1,21 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, DestroyRef, inject, Signal, computed } from '@angular/core';
+import { Component, computed, inject, Signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AccountCardComponent } from '@components/account-card/account-card.component';
 import { ACCOUNT_CLAS_COPY, ACCOUNT_IDENTITIES_PATH } from '@lfx-one/shared/constants';
 import {
   AccountClaRequestDialogData,
   AccountClaRow,
-  AccountClaRowActions,
   ClaManagerRequestMode,
   ClaRow,
   ContactClaManagerDialogData,
   MyClaAgreement,
   UiBadgeTone,
 } from '@lfx-one/shared/interfaces';
-import { canContactClaManager, canRequestClaApproval, canRequestClaRemoval } from '@lfx-one/shared/utils';
+import { claRowActions } from '@lfx-one/shared/utils';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
@@ -25,10 +24,7 @@ import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTableCellDirective } from '@shared/uikit/table/table-cell.directive';
 import { UiTableComponent } from '@shared/uikit/table/table.component';
-import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { DialogService } from 'primeng/dynamicdialog';
-import { take } from 'rxjs';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { DialogService, DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ProfileClasComponent } from '../../profile/clas/profile-clas.component';
 import { AccountClaRequestDialogComponent } from './request-dialog/account-cla-request-dialog.component';
@@ -58,7 +54,6 @@ import { AccountClaRequestDialogComponent } from './request-dialog/account-cla-r
 })
 export class AccountClasComponent extends ProfileClasComponent {
   private readonly modal = inject(UiModalService);
-  private readonly pageDestroyRef = inject(DestroyRef);
 
   protected readonly copy = ACCOUNT_CLAS_COPY;
   protected readonly identitiesPath = ACCOUNT_IDENTITIES_PATH;
@@ -76,21 +71,20 @@ export class AccountClasComponent extends ProfileClasComponent {
 
   /** Opens the CCLA request dialog for a row: approval, removal, or a message to its managers. */
   protected openRequest(agreement: MyClaAgreement, mode: ClaManagerRequestMode): void {
+    // Re-checked here, not only on the disabled menu items, as the hub does for signing.
+    if (this.impersonating()) return;
     const legacy: ContactClaManagerDialogData = { signatureId: agreement.id, projectName: agreement.projectName || agreement.claGroupName, mode };
-    this.modal
-      .open<unknown>(
-        AccountClaRequestDialogComponent,
-        { data: { agreement, mode } satisfies AccountClaRequestDialogData, autoFocus: '[data-autofocus] button' },
-        {
-          // The dialog extends the hub's PrimeNG one, which closes through DynamicDialogRef and reads DynamicDialogConfig.
-          providers: (ref) => [
-            { provide: DynamicDialogRef, useValue: { close: (result?: unknown) => ref.close(result) } },
-            { provide: DynamicDialogConfig, useValue: { data: legacy } },
-          ],
-        }
-      )
-      .closed.pipe(take(1), takeUntilDestroyed(this.pageDestroyRef))
-      .subscribe();
+    this.modal.open<unknown>(
+      AccountClaRequestDialogComponent,
+      { data: { agreement, mode } satisfies AccountClaRequestDialogData, autoFocus: '[data-autofocus] button' },
+      {
+        // The dialog extends the hub's PrimeNG one, which closes through DynamicDialogRef and reads DynamicDialogConfig.
+        providers: (ref) => [
+          { provide: DynamicDialogRef, useValue: { close: (result?: unknown) => ref.close(result) } },
+          { provide: DynamicDialogConfig, useValue: { data: legacy } },
+        ],
+      }
+    );
   }
 
   private initAccountRows(): Signal<AccountClaRow[]> {
@@ -99,28 +93,13 @@ export class AccountClasComponent extends ProfileClasComponent {
 
   private toAccountRow(row: ClaRow): AccountClaRow {
     const agreement = row.agreement;
-    const actions = this.actionsFor(agreement);
+    const actions = claRowActions(agreement);
     return {
       row,
       statusTone: this.toneFor(row.status.severity),
       typeLabel: agreement.kind === 'ECLA' ? `CCLA${agreement.companyName ? ' · ' + agreement.companyName : ''}` : 'ICLA',
       actions,
       hasActions: actions.download || actions.requestApproval || actions.requestRemoval || actions.contact,
-    };
-  }
-
-  // Same rules as the hub's row menu: nothing on a revoked row or an invalidated ICLA, a PDF when there is one, and for a CCLA
-  // without one, the requests its state allows. Managing a CCLA in its console moves into the request dialog.
-  private actionsFor(agreement: MyClaAgreement): AccountClaRowActions {
-    const none: AccountClaRowActions = { download: false, requestApproval: false, requestRemoval: false, contact: false };
-    if (agreement.status === 'revoked' || (agreement.kind === 'ICLA' && agreement.status === 'invalidated')) return none;
-    if (agreement.pdfAvailable) return { ...none, download: true };
-    if (agreement.kind !== 'ECLA') return none;
-    return {
-      download: false,
-      requestApproval: canRequestClaApproval(agreement),
-      requestRemoval: canRequestClaRemoval(agreement),
-      contact: canContactClaManager(agreement),
     };
   }
 

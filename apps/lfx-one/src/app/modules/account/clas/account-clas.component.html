@@ -11,6 +11,7 @@
       icon="fa-light fa-file-signature"
       [loading]="starting()"
       [disabled]="signDisabled()"
+      [ariaLabel]="signDisabledReason() ?? ''"
       (click)="openSignDialog()"
       data-testid="account-clas-sign">
       Sign CLA
@@ -57,6 +58,7 @@
         icon="fa-light fa-file-signature"
         [loading]="starting()"
         [disabled]="signDisabled()"
+        [ariaLabel]="signDisabledReason() ?? ''"
         (click)="openSignDialog()"
         data-testid="account-clas-empty-sign">
         Sign CLA
@@ -79,9 +81,9 @@
               }
             </span>
             <span class="flex min-w-0 flex-col">
-              <span class="truncate font-medium">{{ cla.row.agreement.projectName || cla.row.agreement.claGroupName }}</span>
+              <span class="font-medium">{{ cla.row.agreement.projectName || cla.row.agreement.claGroupName }}</span>
               @if (cla.row.agreement.projectName && cla.row.agreement.claGroupName) {
-                <span class="truncate text-[12px] leading-[16px] text-ui-neutral-500">{{ cla.row.agreement.claGroupName }}</span>
+                <span class="text-[12px] leading-[16px] text-ui-neutral-500">{{ cla.row.agreement.claGroupName }}</span>
               }
             </span>
           </span>
@@ -90,7 +92,13 @@
 
       <ng-template lfxUiTableCell="type" let-row>
         @if (rowsById().get(row.id); as cla) {
-          <lfx-ui-badge variant="outline" size="sm" class="max-w-full [&_span]:truncate" [attr.data-testid]="'account-clas-type-' + cla.row.id">
+          <!-- A long company name ends in an ellipsis inside the badge; the title shows it whole. -->
+          <lfx-ui-badge
+            variant="outline"
+            size="sm"
+            class="max-w-full [&_span]:truncate"
+            [attr.title]="cla.typeLabel"
+            [attr.data-testid]="'account-clas-type-' + cla.row.id">
             <span>{{ cla.typeLabel }}</span>
           </lfx-ui-badge>
         }
@@ -116,7 +124,7 @@
           <span class="flex min-w-0 flex-col" [attr.data-testid]="'account-clas-signed-' + cla.row.id">
             <span>{{ cla.row.signedOnLabel }}</span>
             @if (cla.row.signedAsLine) {
-              <span class="truncate text-[12px] leading-[16px] text-ui-neutral-500">{{ cla.row.signedAsLine }}</span>
+              <span class="text-[12px] leading-[16px] text-ui-neutral-500">{{ cla.row.signedAsLine }}</span>
             }
           </span>
         }
@@ -146,6 +154,7 @@
                     <lfx-ui-menu-item
                       icon="fa-light fa-circle-check"
                       [disabled]="impersonating()"
+                      disabledReason="Unavailable while impersonating another user"
                       (triggered)="openRequest(cla.row.agreement, 'approval')"
                       data-testid="account-clas-request-approval">
                       Request CCLA approval
@@ -155,6 +164,7 @@
                     <lfx-ui-menu-item
                       icon="fa-light fa-user-slash"
                       [disabled]="impersonating()"
+                      disabledReason="Unavailable while impersonating another user"
                       (triggered)="openRequest(cla.row.agreement, 'removal')"
                       data-testid="account-clas-request-removal">
                       Request removal from CCLA
@@ -164,6 +174,7 @@
                     <lfx-ui-menu-item
                       icon="fa-light fa-address-book"
                       [disabled]="impersonating()"
+                      disabledReason="Unavailable while impersonating another user"
                       (triggered)="openRequest(cla.row.agreement, 'contact')"
                       data-testid="account-clas-contact">
                       Contact CLA manager
