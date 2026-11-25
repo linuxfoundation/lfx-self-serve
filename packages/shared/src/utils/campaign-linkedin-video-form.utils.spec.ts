@@ -4,7 +4,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { LinkedInVariantDraft } from '../interfaces/campaign.interface';
-import { linkedInVideoFileRefusal, linkedInVideoMissing, linkedInVideoVariantsForCreate } from './campaign-linkedin-video-form.utils';
+import {
+  linkedInVideoAssetToDelete,
+  linkedInVideoFileRefusal,
+  linkedInVideoMissing,
+  linkedInVideoVariantsForCreate,
+} from './campaign-linkedin-video-form.utils';
 import { linkedInVideoVariantsRefusal } from './campaign-linkedin-video.utils';
 
 const BRIEF = 'b1';
@@ -76,5 +81,17 @@ describe('linkedInVideoVariantsForCreate', () => {
   it('sends what the create route accepts: no refusal for a full video create', () => {
     const sent = linkedInVideoVariantsForCreate([withVideo('a', { description: 'Talks' }), withVideo('b')], BRIEF, { copy: true, callToAction: true });
     expect(linkedInVideoVariantsRefusal({ variants: sent }, true)).toBeNull();
+  });
+});
+
+describe('linkedInVideoAssetToDelete', () => {
+  const OTHER = '9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f';
+  it.each([
+    ['a video no ad uses', [withVideo('a', { videoAssetId: OTHER })], VIDEO, '', VIDEO],
+    ['a video another ad still uses', [withVideo('a')], VIDEO, '', null],
+    ['the id the replacement came back as', [variant('a')], VIDEO, VIDEO, null],
+    ['no video', [variant('a')], '', '', null],
+  ])('%s: %s', (_label, variants, assetId, keepId, expected) => {
+    expect(linkedInVideoAssetToDelete(variants, assetId, keepId)).toBe(expected);
   });
 });

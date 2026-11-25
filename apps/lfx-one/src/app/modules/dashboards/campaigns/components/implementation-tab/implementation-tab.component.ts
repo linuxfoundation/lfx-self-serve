@@ -490,6 +490,7 @@ import {
   linkedInTargetingEmptyWarning,
   linkedInTargetingRemovalsHeld,
   linkedInVariantsForCreate,
+  linkedInVideoAssetToDelete,
   linkedInVideoFileRefusal,
   linkedInVideoMissing,
   linkedInVideoVariantsForCreate,
@@ -2185,6 +2186,11 @@ export class ImplementationTabComponent implements OnInit {
   private readonly linkedInImageUploadFailedBriefId = signal('');
   protected readonly linkedInImageUploadError = signal('');
   private linkedInImageUploadSub: Subscription | null = null;
+  /**
+   * The stored video a running upload replaces (#5764 row 18), and the variant it was on: deleted once the new video is
+   * stored as another asset, or the upload fails or is cancelled, unless an ad still uses it (`pruneReplacedLinkedInVideo`).
+   */
+  private linkedInReplacedVideo: { assetId: string; briefId: string } | null = null;
   /**
    * The X tweet image: an upload made for this brief, attached to the authored tweet as its image
    * (`twitterConfig.imageAssetId`). X takes no image URL here, so the upload is the whole control,
@@ -5734,7 +5740,9 @@ export class ImplementationTabComponent implements OnInit {
   protected removeLinkedInVariant(key: string): void {
     if (!linkedInCanRemoveVariant(this.linkedInVariants().length)) return;
     if (this.linkedInImageUploadVariantKey() === key) this.clearLinkedInImageUpload();
+    const removed = this.linkedInVariants().find((variant) => variant.key === key);
     this.linkedInVariants.update((variants) => variants.filter((variant) => variant.key !== key));
+    if (removed?.videoAssetId) this.deleteUnusedLinkedInVideo(removed.videoAssetId, removed.videoAssetBriefId ?? '');
     this.emitDraft();
   }
 
@@ -5794,7 +5802,10 @@ export class ImplementationTabComponent implements OnInit {
     if (this.linkedInImageSlotHeldByOther(key)) return;
 
     this.clearLinkedInImageUpload();
+    const replaced = this.linkedInVariants().find((variant) => variant.key === key);
     this.setLinkedInVariantVideo(key, '', '', '');
+    // Deleted only after the new upload answers: identical bytes come back as the same stored asset.
+    if (replaced?.videoAssetId) this.linkedInReplacedVideo = { assetId: replaced.videoAssetId, briefId: replaced.videoAssetBriefId ?? '' };
     this.linkedInImageUploadVariantKey.set(key);
     this.emitDraft();
 
@@ -5821,12 +5832,18 @@ export class ImplementationTabComponent implements OnInit {
     else this.onLinkedInVariantImageRemove(key);
   }
 
-  /** Forget one variant's LinkedIn video, or its upload in flight or failed (#5764 row 18). */
+  /**
+   * Forget one variant's LinkedIn video, or its upload in flight or failed (#5764 row 18), and delete the stored video
+   * when no other ad uses it: the library does not list videos, so nothing else could free its space.
+   */
   protected onLinkedInVariantVideoRemove(key: string): void {
     if (this.linkedInImageUploadVariantKey() === key) this.clearLinkedInImageUpload();
+    const removed = this.linkedInVariants().find((variant) => variant.key === key);
     this.setLinkedInVariantVideo(key, '', '', '');
+    if (removed?.videoAssetId) this.deleteUnusedLinkedInVideo(removed.videoAssetId, removed.videoAssetBriefId ?? '');
     this.emitDraft();
   }
+
   /**
    * Upload the chosen Microsoft image for this brief — `onMetaImageFileChange`'s sibling, step for
    * step, plus Microsoft's own 76,800-byte limit: far below the shared upload cap, and
@@ -8157,6 +8174,25 @@ export class ImplementationTabComponent implements OnInit {
     );
   }
 
+  /** Delete the video a finished, failed or cancelled replacement left unused; `keepId` is what the upload stored. */
+  private pruneReplacedLinkedInVideo(keepId = ''): void {
+    const replaced = this.linkedInReplacedVideo;
+    this.linkedInReplacedVideo = null;
+    if (replaced) this.deleteUnusedLinkedInVideo(replaced.assetId, replaced.briefId, keepId);
+  }
+
+  /**
+   * Delete a stored video (#5764 row 18) unless an ad still uses it (`linkedInVideoAssetToDelete`), and only on the open
+   * brief it was made for. Best effort, and not tied to this tab's life: a 409 means a campaign may still need it, so it
+   * stays, and any other failure leaves it as it was before this change.
+   */
+  private deleteUnusedLinkedInVideo(assetId: string, briefId: string, keepId = ''): void {
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    const toDelete = linkedInVideoAssetToDelete(this.linkedInVariants(), assetId, keepId);
+    if (!toDelete || !projectSlug || briefId === '' || briefId !== (this.briefPersistence().briefId ?? '')) return;
+    this.campaignService.deleteCreativeAsset(projectSlug, briefId, toDelete).subscribe({ error: () => undefined });
+  }
+
   /** Set (or, with `''`, clear) one variant's video (#5764 row 18). */
   private setLinkedInVariantVideo(key: string, videoAssetId: string, videoAssetName: string, videoAssetBriefId: string): void {
     this.linkedInVariants.update((variants) =>
@@ -8204,6 +8240,7 @@ export class ImplementationTabComponent implements OnInit {
           if (asset.mimeType === CREATIVE_ASSET_VIDEO_MIME_TYPE) this.setLinkedInVariantVideo(key, asset.id, fileName, briefId);
           else this.setLinkedInVariantImage(key, asset.id, fileName, briefId);
         } else if (this.linkedInTextAds().some((ad) => ad.key === key)) this.setLinkedInTextAdImage(key, asset.id, fileName, briefId);
+        this.pruneReplacedLinkedInVideo(asset.id);
         this.linkedInImageUploadStatus.set('idle');
         this.creativeLibraryRevision.update((revision) => revision + 1);
         this.emitDraft();
@@ -8212,6 +8249,7 @@ export class ImplementationTabComponent implements OnInit {
         this.campaignService.forgetCreativeAssetUpload('linkedin', upload$);
         this.linkedInImageUploadPendingName.set('');
         this.linkedInImageUploadPendingBriefId.set('');
+        this.pruneReplacedLinkedInVideo();
         const message = this.linkedInVideoSelected() ? this.linkedInVideoUploadErrorMessage(err) : this.creativeAssetUploadErrorMessage(err, false);
         this.failLinkedInImageUpload(message, briefId);
         this.emitDraft();
@@ -8240,6 +8278,8 @@ export class ImplementationTabComponent implements OnInit {
   private clearLinkedInImageUpload(): void {
     this.linkedInImageUploadSub?.unsubscribe();
     this.linkedInImageUploadSub = null;
+    // A cancelled replacement stores nothing the draft keeps, so the video it replaced is unused too.
+    this.pruneReplacedLinkedInVideo();
     if (this.linkedInImageUploadStatus() === 'uploading' || this.linkedInImageUploadPendingName() !== '') {
       this.campaignService.cancelCreativeAssetUpload('linkedin');
     }

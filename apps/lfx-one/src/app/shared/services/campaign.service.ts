@@ -561,6 +561,16 @@ export class CampaignService {
    * answer ("nothing stored"), and a failed read rendered as one would tell the Google image slots
    * that a held image had been deleted.
    */
+  /**
+   * Permanently delete one stored creative asset of the brief (#5764 row 18: a LinkedIn video an ad no longer uses).
+   * campaign-service answers 409 while a live campaign could still need it; the caller decides what that means.
+   */
+  public deleteCreativeAsset(projectSlug: string, briefId: string, assetId: string): Observable<void> {
+    return this.http.delete<void>(`/api/campaigns/brief/creative-assets/${encodeURIComponent(assetId)}`, {
+      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+    });
+  }
+
   public listCreativeAssets(projectSlug: string, briefId: string): Observable<CreativeAssetLibrary> {
     return this.http
       .get<CreativeAssetLibrary>('/api/campaigns/brief/creative-assets', { params: new HttpParams().set('project', projectSlug).set('brief_id', briefId) })

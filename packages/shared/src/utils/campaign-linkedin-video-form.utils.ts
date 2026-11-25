@@ -59,3 +59,13 @@ export function linkedInVideoVariantsForCreate(
     return out;
   });
 }
+
+/**
+ * The stored video to delete once an ad no longer uses it, or `null` (#5764 row 18). The library does not list videos, so
+ * a removed or replaced one would otherwise hold its bytes against the brief's quota for good. Kept: an empty id, the
+ * one the replacement upload came back as (identical bytes are stored once), and any id another ad still uses.
+ */
+export function linkedInVideoAssetToDelete(variants: readonly LinkedInVariantDraft[], assetId: string, keepId = ''): string | null {
+  if (assetId === '' || assetId === keepId) return null;
+  return variants.some((variant) => variant.videoAssetId === assetId) ? null : assetId;
+}

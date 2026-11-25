@@ -828,6 +828,7 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
   let uploadCreativeAsset: ReturnType<typeof vi.fn>;
   let resumeCreativeAssetUpload: ReturnType<typeof vi.fn>;
   let cancelCreativeAssetUpload: ReturnType<typeof vi.fn>;
+  const deleteCreativeAsset = vi.fn(() => of(undefined));
   const searchLinkedInGeoTargets = vi.fn();
 
   interface Internals {
@@ -955,6 +956,7 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
             resumeCreativeAssetUpload,
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
+            deleteCreativeAsset,
             getLinkedInAccounts: () => of([ACCOUNT]),
             getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
@@ -1617,6 +1619,53 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       c.onLinkedInVariantMediaRemove(at(f).linkedInVariants()[0].key);
       expect(c.linkedInVariantViews()[0].imageBlock).toBeNull();
       expect(at(f).linkedInVariants()[0]).toMatchObject({ imageAssetId: 'img', videoAssetId: '' });
+    });
+
+    // A stored video is not in the library (#5764 row 18), so one no ad uses any more is deleted to free the brief's quota.
+    describe('stored videos', () => {
+      const NEW_ID = '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f';
+      const storedVideo = (id: string) => of({ id, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true });
+      const removeVideo = (f: ComponentFixture<ImplementationTabComponent>, index: number): void =>
+        (f.componentInstance as unknown as { onLinkedInVariantVideoRemove(key: string): void }).onLinkedInVariantVideoRemove(
+          at(f).linkedInVariants()[index].key
+        );
+
+      beforeEach(() => deleteCreativeAsset.mockClear());
+
+      it('deletes a removed video once no other ad uses it', STATE_ONLY, async () => {
+        uploadCreativeAsset.mockReturnValue(storedVideo(VIDEO_ID));
+        const f = await mountVideo();
+        pick(f, 0, mp4());
+        pick(f, 1, mp4());
+
+        removeVideo(f, 0);
+        expect(deleteCreativeAsset).not.toHaveBeenCalled();
+        removeVideo(f, 1);
+        expect(deleteCreativeAsset).toHaveBeenCalledWith('tlf', BRIEF_ID, VIDEO_ID);
+      });
+
+      it('deletes a replaced video once the new one is stored, but not when the same video comes back', STATE_ONLY, async () => {
+        uploadCreativeAsset.mockReturnValue(storedVideo(VIDEO_ID));
+        const f = await mountVideo();
+        pick(f, 0, mp4());
+        pick(f, 0, mp4());
+        expect(deleteCreativeAsset).not.toHaveBeenCalled();
+
+        uploadCreativeAsset.mockReturnValue(storedVideo(NEW_ID));
+        pick(f, 0, mp4());
+        expect(deleteCreativeAsset).toHaveBeenCalledWith('tlf', BRIEF_ID, VIDEO_ID);
+      });
+
+      it('leaves a video campaign-service refuses to delete, without an error on the tab', STATE_ONLY, async () => {
+        deleteCreativeAsset.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409 })));
+        uploadCreativeAsset.mockReturnValue(storedVideo(VIDEO_ID));
+        const f = await mountVideo();
+        pick(f, 0, mp4());
+
+        removeVideo(f, 0);
+        expect(deleteCreativeAsset).toHaveBeenCalledTimes(1);
+        expect(at(f).linkedInImageUploadError()).toBe('');
+      });
     });
 
     it('holds Create, never sending image ads instead, when a video choice is no longer offered', STATE_ONLY, async () => {
