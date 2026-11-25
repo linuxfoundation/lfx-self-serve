@@ -42,8 +42,8 @@ import type { OrgLensReadQualification } from '../helpers/org-lens-read-access.h
 import {
   buildOrgTrainingPairsCte,
   ORG_TRAINING_GROUP_SQL,
+  ORG_TRAINING_PAIRS_TABLE,
   orgTrainingParamSignature,
-  orgTrainingRangePredicate,
   orgTrainingStatusPredicate,
   orgTrainingTabPredicate,
 } from '../helpers/org-training-pairs.sql';
@@ -127,7 +127,8 @@ interface OrgTrainingKnownValueRow {
 }
 
 /**
- * Learner numbers of the shared Training / Trainees view: one pairs definition (see org-training-pairs.sql) behind stats, options, groups and drawers.
+ * Learner numbers of the shared Training / Trainees view: stats, options, groups and drawers all count the warehouse-resolved
+ * pairs (see org-training-pairs.sql); no pair rule is applied here.
  *
  * Caching follows the Groups page (`OrgLensGroupsService.getGroups`): the shared Valkey entries are served only to a
  * caller whose access resolved as `org-grant` on this org. A caller the roster does not list and the authorizer admitted
@@ -290,13 +291,13 @@ export class OrgLensTrainingService {
   }
 
   /**
-   * Whether every filter the request sets names a value the org's people-list training rows carry. A value the org never
+   * Whether every filter the request sets names a value the org's people-list pairs carry. A value the org never
    * carries (another org's value kept across an org switch, a stale shared URL) is not an error: the callers answer it with
    * the zero payload before any stats/groups/drawer cache key or statement exists, which keeps that key space bounded by
-   * the org's own values. The set is the DISTINCT raw row values over all time, not the options of a range or the resolved
-   * pair attributes: a pair's attribute is the greatest value of its in-range rows, so a value that only some rows carry
-   * (a `Beginner` row of a pair that resolves to `Intermediate` all-time) is a value the dropdown of a narrower range offers
-   * and must be accepted. A value valid for the org with no rows in the selected range is served as zero data by the normal path.
+   * the org's own values. The set is the DISTINCT pair values over every range, not the options of one range: a pair's
+   * attribute is resolved per range, so a value it carries only in a narrower range (`Beginner` in 30d, `Intermediate`
+   * all-time) is a value that range's dropdown offers and must be accepted. A value valid for the org with no pairs in the
+   * selected range is served as zero data by the normal path.
    */
   private async carriesOnlyKnownFilters(accountId: string, query: OrgTrainingStatsQuery, qualification: OrgLensReadQualification): Promise<boolean> {
     const requested = ORG_TRAINING_FILTER_KEYS.filter((filter) => query[filter] !== null);
@@ -313,21 +314,24 @@ export class OrgLensTrainingService {
       accountId,
       'training-filter-known:v1',
       async () => {
-        // rows_in_range of the all-time query: the exact row set every range's pairs are resolved from.
-        const { cte, binds } = buildOrgTrainingPairsCte(accountId, { range: 'all', foundation: null, project: null, course: null, level: null, format: null });
         const sql = `
-          WITH ${cte}
-          SELECT 'foundation' AS FILTER_KEY, FOUNDATION_ID AS FILTER_VALUE FROM rows_in_range
+          WITH known_pairs AS (
+            SELECT FOUNDATION_ID, PROJECT_ID, COURSE_NAME, COURSE_LEVEL, COURSE_FORMAT
+            FROM ${ORG_TRAINING_PAIRS_TABLE}
+            WHERE ACCOUNT_ID = ?
+              AND IS_ON_PEOPLE_LIST
+          )
+          SELECT 'foundation' AS FILTER_KEY, FOUNDATION_ID AS FILTER_VALUE FROM known_pairs
           UNION
-          SELECT 'project', PROJECT_ID FROM rows_in_range
+          SELECT 'project', PROJECT_ID FROM known_pairs
           UNION
-          SELECT 'course', COURSE_NAME FROM rows_in_range
+          SELECT 'course', COURSE_NAME FROM known_pairs
           UNION
-          SELECT 'level', COURSE_LEVEL FROM rows_in_range
+          SELECT 'level', COURSE_LEVEL FROM known_pairs
           UNION
-          SELECT 'format', COURSE_FORMAT FROM rows_in_range
+          SELECT 'format', COURSE_FORMAT FROM known_pairs
         `;
-        const result = await this.snowflakeService.execute<OrgTrainingKnownValueRow>(sql, binds);
+        const result = await this.snowflakeService.execute<OrgTrainingKnownValueRow>(sql, [accountId]);
         return buildKnownFilterValues(result.rows);
       },
       isKnownFilterValues
@@ -339,43 +343,38 @@ export class OrgLensTrainingService {
     const pairsSql = `
       WITH ${cte}
       SELECT
-        COUNT(DISTINCT PERSON_KEY)                                                                       AS PEOPLE,
-        COUNT(*)                                                                                         AS COURSES_TAKEN,
-        COUNT_IF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')})                          AS CERTIFICATIONS,
+        COUNT(DISTINCT PERSON_KEY)                                                                         AS PEOPLE,
+        COUNT(DISTINCT PAIR_KEY)                                                                           AS COURSES_TAKEN,
+        COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')}, PAIR_KEY, NULL))   AS CERTIFICATIONS,
         COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')}, PERSON_KEY, NULL)) AS CERTIFIED_PEOPLE,
-        COUNT_IF(IS_CERTIFIED AND ${orgTrainingTabPredicate('trainings')})                               AS TRAININGS_COMPLETED,
-        COUNT_IF(NOT IS_CERTIFIED)                                                                       AS COURSES_IN_PROGRESS,
-        COUNT(DISTINCT IFF(NOT IS_CERTIFIED, PERSON_KEY, NULL))                                          AS PEOPLE_IN_TRAINING
+        COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('trainings')}, PAIR_KEY, NULL))        AS TRAININGS_COMPLETED,
+        COUNT(DISTINCT PAIR_KEY) - COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL))                       AS COURSES_IN_PROGRESS,
+        COUNT(DISTINCT IFF(NOT IS_CERTIFIED, PERSON_KEY, NULL))                                            AS PEOPLE_IN_TRAINING
       FROM f
     `;
 
     // Learners the warehouse attributes to the org outside its people list (lfx-self-serve#4287): counted only while no filter
-    // is set, like their list, and null (not counted) otherwise; a key that also has people-list rows is that person.
+    // is set, like their list, and null (not counted) otherwise; a key that also has people-list pairs is that person.
     // They are never added to the people-list numbers: every other metric reads the people-list pairs `f`.
-    const inRange = orgTrainingRangePredicate(query.range);
     const outsideSql = `
       SELECT COUNT(DISTINCT PERSON_KEY) AS PEOPLE
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
+      FROM ${ORG_TRAINING_PAIRS_TABLE}
       WHERE ACCOUNT_ID = ?
+        AND TIME_RANGE = ?
         AND NOT IS_ON_PEOPLE_LIST
-        AND STATUS IN ('Enrolled', 'Certified')
-        AND ACTIVITY_TS IS NOT NULL
-        ${inRange}
         AND PERSON_KEY NOT IN (
           SELECT PERSON_KEY
-          FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
+          FROM ${ORG_TRAINING_PAIRS_TABLE}
           WHERE ACCOUNT_ID = ?
+            AND TIME_RANGE = ?
             AND IS_ON_PEOPLE_LIST
-            AND STATUS IN ('Enrolled', 'Certified')
-            AND ACTIVITY_TS IS NOT NULL
-            ${inRange}
         )
     `;
 
-    // One build time for every range of the account.
+    // One build time for every range of the account: that of the pairs every figure is counted from.
     const asOfSql = `
       SELECT MAX(DBT_RUN_AT) AS AS_OF
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
+      FROM ${ORG_TRAINING_PAIRS_TABLE}
       WHERE ACCOUNT_ID = ?
     `;
 
@@ -391,7 +390,7 @@ export class OrgLensTrainingService {
     const [pairsResult, outsideResult, asOfResult, rosterResult] = await Promise.all([
       this.snowflakeService.execute<OrgTrainingPairStatsRow>(pairsSql, binds),
       includeOutside
-        ? this.snowflakeService.execute<OrgTrainingCountRow>(outsideSql, [accountId, accountId])
+        ? this.snowflakeService.execute<OrgTrainingCountRow>(outsideSql, [accountId, query.range, accountId, query.range])
         : Promise.resolve({ rows: [] as OrgTrainingCountRow[] }),
       this.snowflakeService.execute<OrgTrainingAsOfRow>(asOfSql, [accountId]),
       this.snowflakeService.execute<OrgTrainingRosterMembersRow>(rosterSql, [accountId]),
@@ -437,10 +436,10 @@ export class OrgLensTrainingService {
       SELECT
         ${group.key}                    AS GROUP_KEY,
         ${group.label}                  AS GROUP_LABEL,
-        COUNT(DISTINCT PERSON_KEY)      AS PEOPLE,
-        COUNT(*)                        AS COURSES_TAKEN,
-        COUNT_IF(IS_CERTIFIED)          AS COMPLETED,
-        COUNT_IF(NOT IS_CERTIFIED)      AS IN_PROGRESS,
+        COUNT(DISTINCT PERSON_KEY)                                                   AS PEOPLE,
+        COUNT(DISTINCT PAIR_KEY)                                                     AS COURSES_TAKEN,
+        COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL))                            AS COMPLETED,
+        COUNT(DISTINCT PAIR_KEY) - COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL)) AS IN_PROGRESS,
         MAX(COURSE_LEVEL)               AS LEVEL,
         MAX(FOUNDATION_NAME)            AS FOUNDATION
       FROM f
@@ -451,10 +450,10 @@ export class OrgLensTrainingService {
     const totalsSql = `
       WITH ${cte}
       SELECT
-        COUNT(DISTINCT PERSON_KEY)      AS PEOPLE,
-        COUNT(*)                        AS COURSES_TAKEN,
-        COUNT_IF(IS_CERTIFIED)          AS COMPLETED,
-        COUNT_IF(NOT IS_CERTIFIED)      AS IN_PROGRESS
+        COUNT(DISTINCT PERSON_KEY)                                                   AS PEOPLE,
+        COUNT(DISTINCT PAIR_KEY)                                                     AS COURSES_TAKEN,
+        COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL))                            AS COMPLETED,
+        COUNT(DISTINCT PAIR_KEY) - COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL)) AS IN_PROGRESS
       FROM f
       WHERE ${tabPredicate}
     `;
@@ -475,7 +474,7 @@ export class OrgLensTrainingService {
         inProgress: row.IN_PROGRESS || 0,
         level: groupBy === 'course' ? (row.LEVEL ?? null) : null,
         foundation: groupBy === 'course' || groupBy === 'project' ? (row.FOUNDATION ?? null) : null,
-        // ORG_PEOPLE_TRAINING carries no logo column.
+        // ORG_PEOPLE_TRAINING_PAIRS carries no logo column.
         logoUrl: null,
       };
     });
@@ -505,7 +504,7 @@ export class OrgLensTrainingService {
 
     const countSql = `
       WITH ${cte}
-      SELECT COUNT(*) AS TOTAL, ${group.label} AS GROUP_LABEL
+      SELECT COUNT(DISTINCT PAIR_KEY) AS TOTAL, ${group.label} AS GROUP_LABEL
       FROM f
       WHERE ${where}
     `;
@@ -513,7 +512,7 @@ export class OrgLensTrainingService {
     // read People › Trainees uses, so the roster matches the pair count for any range. ORG_PEOPLE_ALL would drop members
     // whose only training is older than its 12-month engagement gate or reaches them through a merged learner. That row is
     // unique per (account, person); one row per person however many pairs. No other training query joins ORG_PEOPLE_ALL:
-    // stats, options and groups read ORG_PEOPLE_TRAINING alone.
+    // stats, options and groups read ORG_PEOPLE_TRAINING_PAIRS alone.
     const namesSql = `
       WITH ${cte}
       SELECT

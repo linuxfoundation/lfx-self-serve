@@ -57,7 +57,7 @@ function mockStatsRows(rows: StatsRows): void {
 }
 
 function pairsCall(): [string, string[]] {
-  const call = execute.mock.calls.find(([sql]) => (sql as string).includes('rows_in_range AS') && !(sql as string).includes('AS FILTER_KEY'));
+  const call = execute.mock.calls.find(([sql]) => (sql as string).includes('f AS (') && !(sql as string).includes('AS FILTER_KEY'));
   if (!call) throw new Error('no pairs statement');
   return call as [string, string[]];
 }
@@ -113,39 +113,31 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
     expect(stats.certifications + stats.trainingsCompleted + stats.coursesInProgress).toBe(stats.coursesTaken);
   });
 
-  it('splits certified pairs by product type and counts in progress as enrolled pairs without a certificate in range', async () => {
+  it('counts distinct pair keys split by the modeled tab, and in progress as the pairs without a certificate in range', async () => {
     mockStatsRows({});
 
     await service.getTrainingStats(ACCOUNT, QUERY, 'org-grant');
 
     const [sql] = pairsCall();
-    expect(sql).toMatch(/COUNT_IF\(IS_CERTIFIED AND PRODUCT_TYPE = 'Certification'\)\s+AS CERTIFICATIONS/);
-    expect(sql).toMatch(/COUNT_IF\(IS_CERTIFIED AND COALESCE\(PRODUCT_TYPE, ''\) <> 'Certification'\)\s+AS TRAININGS_COMPLETED/);
-    expect(sql).toMatch(/COUNT_IF\(NOT IS_CERTIFIED\)\s+AS COURSES_IN_PROGRESS/);
-    // Certified wins inside the range only: one pair per (person, course), certified when any row in range is a certificate.
-    expect(sql).toContain("BOOLOR_AGG(STATUS = 'Certified')");
-    expect(sql).toContain('GROUP BY PERSON_KEY, COURSE_KEY');
+    expect(sql).toMatch(/COUNT\(DISTINCT PAIR_KEY\)\s+AS COURSES_TAKEN/);
+    expect(sql).toMatch(/COUNT\(DISTINCT IFF\(IS_CERTIFIED AND TRAINING_TAB = 'certifications', PAIR_KEY, NULL\)\)\s+AS CERTIFICATIONS/);
+    expect(sql).toMatch(/COUNT\(DISTINCT IFF\(IS_CERTIFIED AND TRAINING_TAB = 'trainings', PAIR_KEY, NULL\)\)\s+AS TRAININGS_COMPLETED/);
+    expect(sql).toMatch(/COUNT\(DISTINCT PAIR_KEY\) - COUNT\(DISTINCT IFF\(IS_CERTIFIED, PAIR_KEY, NULL\)\)\s+AS COURSES_IN_PROGRESS/);
+    // The pair rule is the warehouse's: nothing here groups rows into pairs or reads a row's product type.
+    expect(sql).not.toContain('COUNT(*)');
+    expect(sql).not.toContain('GROUP BY');
+    expect(sql).not.toContain('PRODUCT_TYPE');
   });
 
-  it.each([
-    ['30d', 30],
-    ['90d', 90],
-    ['365d', 365],
-    ['730d', 730],
-  ] as const)('windows ACTIVITY_TS to the last %s', async (range, days) => {
+  it.each(['30d', '90d', '365d', '730d', 'all'] as const)('reads the pairs of the %s range by binding it, with no date arithmetic', async (range) => {
     mockStatsRows({});
 
     await service.getTrainingStats(ACCOUNT, { ...QUERY, range }, 'org-grant');
 
-    expect(pairsCall()[0]).toContain(`AND ACTIVITY_TS >= DATEADD(day, -${days}, CURRENT_DATE())`);
-  });
-
-  it('applies no date predicate for all time', async () => {
-    mockStatsRows({});
-
-    await service.getTrainingStats(ACCOUNT, { ...QUERY, range: 'all' }, 'org-grant');
-
-    expect(pairsCall()[0]).not.toContain('DATEADD');
+    const [sql, binds] = pairsCall();
+    expect(sql).toContain('AND TIME_RANGE = ?');
+    expect(sql).not.toContain('DATEADD');
+    expect(binds).toEqual([ACCOUNT, range]);
   });
 
   it('binds every filter as a param, never inlined, in a fixed order', async () => {
@@ -159,7 +151,7 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
     );
 
     const [sql, binds] = pairsCall();
-    expect(binds).toEqual([ACCOUNT, 'f-1', 'p-1', hostile, 'Beginner', 'E-Learning']);
+    expect(binds).toEqual([ACCOUNT, '90d', 'f-1', 'p-1', hostile, 'Beginner', 'E-Learning']);
     expect(sql).not.toContain(hostile);
     expect(sql).toContain('AND FOUNDATION_ID = ?');
     expect(sql).toContain('AND PROJECT_ID = ?');
@@ -200,14 +192,16 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
     expect(outsideStatements[0]).toMatch(/SELECT COUNT\(DISTINCT PERSON_KEY\) AS PEOPLE\s+FROM ANALYTICS/);
   });
 
-  it('reads the outside learners without people-list rows of the same key, in the same range', async () => {
+  it('reads the outside learners without people-list pairs of the same key, in the same range', async () => {
     mockStatsRows({});
 
     await service.getTrainingStats(ACCOUNT, { ...QUERY, range: '90d' }, 'org-grant');
 
-    const sql = execute.mock.calls.map(([statement]) => statement as string).find((statement) => statement.includes('NOT IS_ON_PEOPLE_LIST'))!;
+    const [sql, binds] = execute.mock.calls.find(([statement]) => (statement as string).includes('NOT IS_ON_PEOPLE_LIST')) as [string, string[]];
     expect(sql).toContain('PERSON_KEY NOT IN (');
-    expect(sql.match(/AND ACTIVITY_TS >= DATEADD\(day, -90, CURRENT_DATE\(\)\)/g)).toHaveLength(2);
+    expect(sql.match(/FROM ANALYTICS\.PLATINUM_LFX_ONE\.ORG_PEOPLE_TRAINING_PAIRS/g)).toHaveLength(2);
+    expect(sql.match(/AND TIME_RANGE = \?/g)).toHaveLength(2);
+    expect(binds).toEqual([ACCOUNT, '90d', ACCOUNT, '90d']);
   });
 
   it('reports no roster (null, not zero) without a training client row, and a roster of zero as zero', async () => {
@@ -237,7 +231,8 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
 
     for (const [sql, binds] of execute.mock.calls as [string, string[]][]) {
       expect(sql).toContain('ACCOUNT_ID = ?');
-      expect(binds.every((bind) => bind === ACCOUNT)).toBe(true);
+      expect(binds[0]).toBe(ACCOUNT);
+      expect(binds.every((bind) => bind === ACCOUNT || bind === QUERY.range)).toBe(true);
     }
   });
 
