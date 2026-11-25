@@ -28,6 +28,12 @@
       </lfx-ui-select>
     </div>
 
+    <!-- Every tab controls a panel: the inactive ones are empty and hidden, so each tab's aria-controls resolves. -->
+    @for (tab of tabs; track tab.value) {
+      @if (tab.value !== activeTab()) {
+        <div role="tabpanel" hidden [id]="'account-transactions-panel-' + tab.value" [attr.aria-labelledby]="'account-transactions-tab-' + tab.value"></div>
+      }
+    }
     <div
       role="tabpanel"
       class="flex flex-col gap-[12px]"

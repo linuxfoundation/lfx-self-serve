@@ -90,6 +90,18 @@ describe('AccountTransactionsComponent', () => {
     expect(query('account-transactions-select')).not.toBeNull();
   });
 
+  it('gives every tab the panel it controls, showing only the active one', async () => {
+    const { host } = await renderPage(of([]));
+    const tabs = Array.from(host.querySelectorAll<HTMLElement>('[role="tab"]'));
+
+    expect(tabs).toHaveLength(7);
+    for (const tab of tabs) {
+      const panel = host.querySelector<HTMLElement>(`#${tab.getAttribute('aria-controls')}`);
+      expect(panel?.getAttribute('role')).toBe('tabpanel');
+      expect(panel?.hidden).toBe(tab.getAttribute('aria-selected') !== 'true');
+    }
+  });
+
   it('says when a tab has no transactions, and that recent ones take time to appear', async () => {
     const { query } = await renderPage(of([]));
 
