@@ -4,14 +4,17 @@
 <!-- data-dd-privacy="mask" keeps sensitive text (a member code) out of Datadog Session Replay, which records page text by default. -->
 <!-- Exact px sizes follow the share kit design (the root font is 14px, so rem sizes undershoot). -->
 <article
-  class="flex min-w-0 flex-col gap-3 rounded-[14px] border border-gray-200 bg-white p-5 text-gray-900"
+  class="flex min-w-0 flex-col gap-3 rounded-[14px] border border-gray-200 bg-white p-4 text-gray-900 sm:p-5"
   [attr.data-dd-privacy]="sensitive() ? 'mask' : null"
   [attr.data-testid]="testId()">
   @if (heading()) {
     <h3 class="text-base font-bold text-gray-900" [attr.data-testid]="testId() + '-heading'">{{ heading() }}</h3>
   }
   <!-- Pre-wrap sits on the spans, not the paragraph, so template indentation never shows as leading spaces. -->
-  <p #textElement class="flex-1 break-words rounded-[10px] bg-gray-50 p-[14px] text-[14px] leading-[1.6] text-gray-700" [attr.data-testid]="testId() + '-text'">
+  <p
+    #textElement
+    class="flex-1 break-words rounded-[10px] bg-gray-50 p-3 text-[14px] sm:p-[14px] leading-[1.6] text-gray-700"
+    [attr.data-testid]="testId() + '-text'">
     <span class="whitespace-pre-wrap">{{ textParts().body }}</span>
     @if (textParts().link) {
       <span class="whitespace-pre-wrap text-ui-accent-700" [attr.data-testid]="testId() + '-link'">{{ textParts().link }}</span>
