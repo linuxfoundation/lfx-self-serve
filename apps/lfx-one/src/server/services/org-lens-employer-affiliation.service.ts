@@ -58,12 +58,18 @@ function matchKeyExpression(column: string): string {
  * A caller may hold several current jobs; every one of them is checked, and the answer is `member` when
  * any is one, so a day job alongside a foundation role never reads as "not a member".
  *
- * Resolution is by account name rather than by identifier: the only employer identifier a profile
- * carries is a CDP organization id, and `ACCOUNT_TO_CDEV_ORG_MAPPING` maps Crowd.dev org ids, which is
- * a different identifier. #4225 does resolve by crowd.dev id against `ORG_LENS_ACCOUNT_CONTEXT`, but
- * that view is account-grain and misses an employer that is a company's second mapped org; the name
- * match answers for part of what that gap leaves unknown, which is the whole difference in reach
- * between the two routes (`docs/architecture/frontend/lens-system.md`). Names are
+ * Resolution is by account name rather than by the employer id the profile carries.
+ *
+ * Do not read that as "the id cannot be used": #4225 takes the same `organizationId` off the same CDP
+ * work-history entry and queries `ORG_LENS_ACCOUNT_CONTEXT` on `CDEV_ORG_ID` with it, so the shipped
+ * system already treats it as resolvable. (An earlier note here claimed a CDP org id and a crowd.dev
+ * org id are different identifiers; #4225 contradicts that and it is not repeated.) What the id route
+ * does not cover is a company's second mapped org: the view is account-grain, so such an employer is
+ * absent from it even when its account is a member, and #4225 answers "unknown" there. The name match
+ * reaches part of that population — and that reach, not the availability of ids, is the entire
+ * difference between the two routes. See the Open note in
+ * `docs/architecture/frontend/lens-system.md`: if the ids are in fact interchangeable, folding this
+ * onto #4225's verdict costs only that population. Names are
  * compared on {@link employerMatchKey} rather than literally, so a trailing legal form written on one
  * side and not the other ("Acme" / "Acme LLC") still finds the account. A name that matches no account
  * at all answers `unresolved`, never a negative: "no row came back" says the match did not settle the
