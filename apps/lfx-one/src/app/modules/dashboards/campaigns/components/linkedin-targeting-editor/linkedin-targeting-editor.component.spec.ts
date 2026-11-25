@@ -52,6 +52,7 @@ describe('LinkedInTargetingEditorComponent', () => {
     fixture = TestBed.createComponent(LinkedInTargetingEditorComponent);
     fixture.componentRef.setInput('projectSlug', 'tlf');
     fixture.componentRef.setInput('accountId', '100000002');
+    fixture.componentRef.setInput('segmentsOwner', 'tlf|100000002');
     fixture.componentRef.setInput('draft', emptyLinkedInTargetingDraft());
     fixture.componentInstance.draft.subscribe((value) => (draft = value));
     fixture.detectChanges();
@@ -91,7 +92,7 @@ describe('LinkedInTargetingEditorComponent', () => {
     fixture.detectChanges();
     expect(draft.clauses[0]).toEqual({ dynamicSegments: [{ urn: 'urn:li:adSegment:7', name: 'Site visitors' }] });
     // Recorded with the account it was picked for, which the tab compares with the create's.
-    expect(draft.segmentsAccountId).toBe('100000002');
+    expect(draft.segmentsAccountId).toBe('tlf|100000002');
     expect(getLinkedInAudiences).toHaveBeenCalledTimes(1);
   });
 
@@ -122,6 +123,7 @@ describe('LinkedInTargetingEditorComponent', () => {
     expect(query('linkedin-targeting-editor-clause-0-facets-dynamicSegments-urn:li:adSegment:7')).not.toBeNull();
 
     fixture.componentRef.setInput('accountId', '100000003');
+    fixture.componentRef.setInput('segmentsOwner', 'tlf|100000003');
     fixture.detectChanges();
     expect(draft.clauses[0]).toEqual({ skills: [go] });
     expect(query('linkedin-targeting-editor-clause-0-facets-dynamicSegments-urn:li:adSegment:7')).toBeNull();

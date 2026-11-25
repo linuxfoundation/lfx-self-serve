@@ -3,6 +3,7 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE } from '@lfx-one/shared/constants';
@@ -25,6 +26,8 @@ trackStateOnlyTests();
  * reaches the request in place of the profile edit, the saved draft and the restore, and its refusal reaches Create.
  */
 describe('ImplementationTabComponent linkedin custom targeting', () => {
+  /** The active foundation: a foundation switch keeps the page (and the tab) mounted. */
+  const foundation = signal({ slug: 'tlf' });
   const ACCOUNT = { accountId: 'urn:li:sponsoredAccount:111', label: 'First Account', orgId: 'urn:li:organization:1', status: 'ACTIVE' };
   const SECOND = { ...ACCOUNT, accountId: 'urn:li:sponsoredAccount:222', label: 'Second Account' };
   const DRAFT: LinkedInTargetingDraft = { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {}, segmentsAccountId: null };
@@ -76,7 +79,7 @@ describe('ImplementationTabComponent linkedin custom targeting', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
-        { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'tlf' }) } },
+        { provide: ProjectContextService, useValue: { activeContext: foundation } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         {
           provide: CampaignService,
@@ -127,14 +130,14 @@ describe('ImplementationTabComponent linkedin custom targeting', () => {
     expect(c(f)['linkedInTargetingDraft']()).toEqual(emptyLinkedInTargetingDraft());
   });
 
-  it('holds Create, never dropping them, while the segments were picked for another ad account than the create uses', STATE_ONLY, async () => {
+  it('holds Create, never dropping them, while the segments were picked for another foundation or ad account than the create uses', STATE_ONLY, async () => {
     const { f } = await mount();
     c(f)['onLinkedInCustomTargetingOn']();
     expect(c(f)['linkedInAudienceAccountId']()).toBe(ACCOUNT.accountId);
     const segments = {
       clauses: [{ dynamicSegments: [{ urn: 'urn:li:adSegment:7', name: 'Site visitors' }] }],
       exclude: {},
-      segmentsAccountId: ACCOUNT.accountId,
+      segmentsAccountId: `tlf|${ACCOUNT.accountId}`,
     };
     c(f)['onLinkedInTargetingDraftChange'](segments);
     expect(c(f)['createBlockedReason']()).toBeNull();
@@ -143,6 +146,14 @@ describe('ImplementationTabComponent linkedin custom targeting', () => {
     c(f)['campaignForm'].controls['linkedInAccountId'].setValue(SECOND.accountId);
     expect(c(f)['createBlockedReason']()).toBe(`LinkedIn Ads: fix the custom targeting. ${LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE}`);
     expect(c(f)['linkedInTargetingDraft']()).toEqual(segments);
+
+    // Back on the account they were picked for, then another foundation: its account differs even when both are its
+    // default, and the page keeps the draft across a foundation switch.
+    c(f)['campaignForm'].controls['linkedInAccountId'].setValue(ACCOUNT.accountId);
+    expect(c(f)['createBlockedReason']()).toBeNull();
+    foundation.set({ slug: 'cncf' });
+    expect(c(f)['createBlockedReason']()).toBe(`LinkedIn Ads: fix the custom targeting. ${LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE}`);
+    foundation.set({ slug: 'tlf' });
   });
 
   it('holds Create while the clauses are refused, and while the capability is off rather than falling back to the profile', STATE_ONLY, async () => {

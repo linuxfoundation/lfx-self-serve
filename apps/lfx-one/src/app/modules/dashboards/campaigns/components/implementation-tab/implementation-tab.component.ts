@@ -491,6 +491,7 @@ import {
   linkedInTargetingDraftRefusal,
   linkedInTargetingForCreate,
   linkedInTargetingSegmentsAccountRefusal,
+  linkedInSegmentsOwnerKey,
   newLinkedInTextAdDraft,
   linkedInCanAddVariant,
   linkedInCanRemoveVariant,
@@ -1908,6 +1909,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInTargetingDraft = signal<LinkedInTargetingDraft>(emptyLinkedInTargetingDraft());
   /** Whether this create sends custom targeting: chosen, and offered by this deployment. */
   protected readonly linkedInCustomTargetingSelected = computed<boolean>(() => this.linkedInTargetingAvailable() && this.linkedInCustomTargeting());
+  /**
+   * Who segment picks are made for (#5764 rows 8–11): the active foundation and the audience account. A foundation
+   * switch keeps this page and its draft, and each foundation's default account differs, so both are part of it.
+   */
+  protected readonly linkedInSegmentsOwner = computed(() => linkedInSegmentsOwnerKey(this.activeFoundationSlug(), this.linkedInAudienceAccountId()));
+
   /**
    * The ad account whose segments the custom targeting editor reads: the account the create names, so the segments
    * offered are the ones it can send. That is `selectedAdAccountId` (a non-default pick) when the connection decides
@@ -8753,7 +8760,7 @@ export class ImplementationTabComponent implements OnInit {
    */
   private linkedInCustomTargetingRefusalNow(): string | null {
     const draft = this.linkedInTargetingDraft();
-    return linkedInTargetingSegmentsAccountRefusal(draft, this.linkedInAudienceAccountId()) ?? linkedInTargetingDraftRefusal(draft);
+    return linkedInTargetingSegmentsAccountRefusal(draft, this.linkedInSegmentsOwner()) ?? linkedInTargetingDraftRefusal(draft);
   }
 
   /** The account fields a create sends (#5809); see `linkedInAccountFields`. */

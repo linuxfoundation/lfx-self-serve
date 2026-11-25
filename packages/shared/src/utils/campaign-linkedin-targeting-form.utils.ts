@@ -217,6 +217,14 @@ function draftHasSegments(draft: LinkedInTargetingDraft): boolean {
 }
 
 /**
+ * Who segment picks are made for: the foundation and the ad account the create uses (`null`: that foundation's
+ * default, which differs per foundation, so the foundation is part of the key). Compared, never parsed.
+ */
+export function linkedInSegmentsOwnerKey(projectSlug: string, accountId: string | null): string {
+  return `${projectSlug}|${accountId ?? ''}`;
+}
+
+/**
  * `next`, an edit of `previous`, with the ad account its segments were picked for: none once no segment is left; the
  * editor's account (`accountId`) for the first segment picked; else `previous`'s, so a segment added beside ones picked
  * for another account does not make those sendable.

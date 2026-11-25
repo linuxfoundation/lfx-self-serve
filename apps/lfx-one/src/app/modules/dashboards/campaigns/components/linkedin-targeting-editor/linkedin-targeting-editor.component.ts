@@ -38,6 +38,8 @@ export class LinkedInTargetingEditorComponent {
   public readonly projectSlug = input.required<string>();
   /** The non-default LinkedIn ad account the create names (`selectedAdAccountId`), or `null` for the default. */
   public readonly accountId = input<string | null>(null);
+  /** Who segment picks are made for (`linkedInSegmentsOwnerKey`): the foundation and ad account the create uses. */
+  public readonly segmentsOwner = input<string>('');
   public readonly draft = model.required<LinkedInTargetingDraft>();
 
   /** Bumped by a group's "Try again", so a failed segment read runs again. */
@@ -49,7 +51,7 @@ export class LinkedInTargetingEditorComponent {
   protected readonly canAddClause = computed(() => linkedInTargetingCanAddClause(this.draft()));
   protected readonly refusal = computed(() => linkedInTargetingDraftRefusal(this.draft()));
   /** Why the segments picked cannot go to this account: they were picked for another one (the tab holds Create on it). */
-  protected readonly segmentsRefusal = computed(() => linkedInTargetingSegmentsAccountRefusal(this.draft(), this.accountId()));
+  protected readonly segmentsRefusal = computed(() => linkedInTargetingSegmentsAccountRefusal(this.draft(), this.segmentsOwner()));
   /** What the clauses include, which the exclusions do not offer. */
   protected readonly included = computed(() => linkedInTargetingMergedPicks(...this.draft().clauses));
 
@@ -71,7 +73,7 @@ export class LinkedInTargetingEditorComponent {
     // Segments belong to the ad account they were read from: when the create's account changes, the picks of the
     // previous one are dropped rather than sent with the new one. skip(1) leaves the first value (the account the
     // editor opened on, a restored draft included) alone. toObservable + subscribe per frontend-checklist §5.
-    toObservable(this.accountId)
+    toObservable(this.segmentsOwner)
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.draft.update(linkedInTargetingDraftWithoutSegments));
   }
@@ -126,6 +128,6 @@ export class LinkedInTargetingEditorComponent {
 
   /** Applies a group's edit, recording the account its segments were picked for. */
   private edit(change: (draft: LinkedInTargetingDraft) => LinkedInTargetingDraft): void {
-    this.draft.update((draft) => linkedInTargetingDraftWithSegmentsAccount(draft, change(draft), this.accountId()));
+    this.draft.update((draft) => linkedInTargetingDraftWithSegmentsAccount(draft, change(draft), this.segmentsOwner()));
   }
 }

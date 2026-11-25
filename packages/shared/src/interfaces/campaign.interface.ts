@@ -2497,8 +2497,9 @@ export interface LinkedInTargetingDraft {
   clauses: LinkedInTargetingFacetPicks[];
   exclude: LinkedInTargetingFacetPicks;
   /**
-   * The ad account the segment picks were made for (`null`: the default account). Segments belong to one account, so
-   * a create to another is held (`linkedInTargetingSegmentsAccountRefusal`). Never sent.
+   * Whose ad account the segment picks were made for: the foundation and ad account, as `linkedInSegmentsOwnerKey`
+   * builds it (`null` once no segment is picked). Segments belong to one account, and every foundation's default
+   * account differs, so a create for another owner is held (`linkedInTargetingSegmentsAccountRefusal`). Never sent.
    */
   segmentsAccountId: string | null;
 }

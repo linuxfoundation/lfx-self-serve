@@ -23,6 +23,7 @@ import type {
   LinkedInTargetingFacetPicks,
 } from '../interfaces/campaign.interface';
 import {
+  linkedInSegmentsOwnerKey,
   emptyLinkedInTargetingDraft,
   linkedInAudienceSegmentLabel,
   linkedInAudiencesFailure,
@@ -376,5 +377,15 @@ describe('segment account', () => {
     ['excluded segments for another account', draft([{}], { dynamicSegments: [pick(2)] }, '100000001'), null, LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE],
   ])('refuses %s: %j', (_label, value, account, expected) => {
     expect(linkedInTargetingSegmentsAccountRefusal(value, account)).toBe(expected);
+  });
+});
+
+describe('linkedInSegmentsOwnerKey', () => {
+  it.each([
+    ['a picked account', 'tlf', '100000002', 'tlf|100000002'],
+    ["the foundation's default account", 'tlf', null, 'tlf|'],
+    ["another foundation's default account", 'cncf', null, 'cncf|'],
+  ])('keys %s by foundation and account', (_name, projectSlug, accountId, expected) => {
+    expect(linkedInSegmentsOwnerKey(projectSlug, accountId)).toBe(expected);
   });
 });
