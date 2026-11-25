@@ -3459,7 +3459,8 @@ export class CampaignController {
       next(this.unsupportedCreativeAsset(req, operation, true));
       return;
     }
-    if (!isCreativeAssetUploadMimeType(declaredType) || !Buffer.isBuffer(image)) {
+    // Narrowed where it enters: only a raw parser's Buffer is a body, never a parsed array or string.
+    if (!isCreativeAssetUploadMimeType(declaredType) || Array.isArray(image) || !Buffer.isBuffer(image)) {
       next(this.unsupportedCreativeAsset(req, operation, video));
       return;
     }

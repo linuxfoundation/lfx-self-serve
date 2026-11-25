@@ -5811,24 +5811,23 @@ export class ImplementationTabComponent implements OnInit {
     if (!file) return;
     if (this.linkedInImageSlotHeldByOther(key) || this.linkedInVideoDeleteRunning()) return;
 
+    // A file that cannot be uploaded is refused before anything changes: the ad keeps the video it has, and the reason
+    // shows under the picker without holding Create.
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    const refusal = linkedInVideoFileRefusal(file) ?? (!briefId || !projectSlug ? 'Save the brief before uploading a video for it.' : null);
+    if (refusal !== null) {
+      this.clearLinkedInImageUpload();
+      this.linkedInImageUploadVariantKey.set(key);
+      this.failLinkedInImageUpload(refusal);
+      this.emitDraft();
+      return;
+    }
+
     this.clearLinkedInImageUpload();
     this.setLinkedInVariantVideo(key, '', '', '');
     this.linkedInImageUploadVariantKey.set(key);
     this.emitDraft();
-
-    const briefId = this.briefPersistence().briefId ?? '';
-    const refusal = linkedInVideoFileRefusal(file);
-    if (refusal !== null) {
-      this.failLinkedInImageUpload(refusal, briefId);
-      this.emitDraft();
-      return;
-    }
-    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
-    if (!briefId || !projectSlug) {
-      this.failLinkedInImageUpload('Save the brief before uploading a video for it.');
-      return;
-    }
-
     this.followLinkedInImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'linkedin'), briefId, file.name);
     this.emitDraft();
   }

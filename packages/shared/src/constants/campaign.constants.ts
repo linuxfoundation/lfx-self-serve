@@ -4477,8 +4477,11 @@ export function sniffCreativeAssetMimeType(bytes: unknown): CreativeAssetMimeTyp
  * is read; campaign-service walks the whole file and refuses a truncated one with a readable 400.
  */
 export function sniffCreativeAssetUploadMimeType(bytes: unknown): CreativeAssetUploadMimeType | null {
+  // Only a real byte buffer is read, as in `sniffCreativeAssetMimeType`: a request body tampered into an array or a
+  // string would otherwise have its `length` and indexes read as bytes.
+  if (Array.isArray(bytes) || !(bytes instanceof Uint8Array)) return null;
   const image = sniffCreativeAssetMimeType(bytes);
-  if (image !== null || !(bytes instanceof Uint8Array) || bytes.length < 12) return image;
+  if (image !== null || bytes.length < 12) return image;
   const ascii = (from: number) => String.fromCharCode(...bytes.subarray(from, from + 4));
   // A box whose 32-bit size is 1 carries a 64-bit size after its type, which moves the brand to offset 16.
   const largeSize = bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 0 && bytes[3] === 1;

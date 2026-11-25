@@ -1589,6 +1589,21 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       ]);
     });
 
+    it("keeps the ad's video when a refused file is picked over it, without holding Create", STATE_ONLY, async () => {
+      uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
+      const f = await mountVideo();
+      pick(f, 0, mp4());
+      pick(f, 1, mp4());
+      uploadCreativeAsset.mockClear();
+
+      pick(f, 0, png());
+
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(at(f).linkedInImageUploadError()).toBe('Only MP4 videos can be uploaded.');
+      expect(at(f).linkedInVariants()[0]).toMatchObject({ videoAssetId: VIDEO_ID });
+      expect(at(f).createBlockedReason()).toBeNull();
+    });
+
     it('refuses a file that is not an MP4 before uploading it', STATE_ONLY, async () => {
       const f = await mountVideo();
 
