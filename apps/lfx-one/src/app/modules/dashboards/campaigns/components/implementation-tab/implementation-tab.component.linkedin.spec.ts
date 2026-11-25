@@ -1207,6 +1207,25 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       ]);
     });
 
+    it('does not hold a Text Ads create over a variant image it does not send (#5764 row 19)', async () => {
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      choose(f, png(5_000_001));
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: resolve the image notice.');
+
+      const c = f.componentInstance as unknown as {
+        biddingDrafts: { set(v: Record<string, unknown>): void };
+        onLinkedInFormatChange(format: string): void;
+        onLinkedInTextAdsChange(ads: { key: string; headline: string; description: string }[]): void;
+      };
+      f.componentRef.setInput('linkedInTextAdsEnabled', true);
+      f.componentRef.setInput('biddingEnabled', true);
+      c.biddingDrafts.set({ 'linkedin-ads': { strategy: 'manual', bidAmount: 5 } });
+      c.onLinkedInFormatChange('text');
+      c.onLinkedInTextAdsChange([{ key: 'text-ad-1', headline: 'KubeCon EU', description: 'Join cloud native engineers.' }]);
+      expect(at(f).createBlockedReason()).toBeNull();
+    });
+
     it.each([
       ['an oversized image', () => png(5_000_001)],
       ['a file that is not a PNG or JPEG', () => new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' })],

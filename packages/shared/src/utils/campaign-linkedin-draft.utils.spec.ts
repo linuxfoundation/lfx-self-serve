@@ -81,13 +81,12 @@ describe('linkedInDraftRestore', () => {
   });
 
   it.each([
-    ['text', { format: 'text' }],
-    ['single_image', { format: 'single_image' }],
-    ['an unknown format', {}],
-  ])('restores the format %s', (format, expected) => {
-    // @ts-expect-error -- a stored draft is replayed from JSON, so an unknown format is possible
-    const restore = linkedInDraftRestore(draft({ linkedInFormat: format === 'an unknown format' ? 'video' : format }));
-    expect(restore.format).toBe((expected as { format?: string }).format);
+    ['text', 'text'],
+    ['single_image', 'single_image'],
+    ['video', undefined],
+  ])('restores a stored format %s as %s', (stored, expected) => {
+    // A stored draft is replayed from JSON, so an unknown format is possible.
+    expect(linkedInDraftRestore(draft({ linkedInFormat: stored as LinkedInDraftSnapshot['linkedInFormat'] })).format).toBe(expected);
   });
 
   it('restores a copy of each text ad', () => {
@@ -95,6 +94,12 @@ describe('linkedInDraftRestore', () => {
     const restore = linkedInDraftRestore(draft({ linkedInTextAds: textAds }));
     expect(restore.textAds).toEqual(textAds);
     expect(restore.textAds?.[0]).not.toBe(textAds[0]);
+  });
+
+  it('drops a restored text ad whose fields are not all text', () => {
+    const textAds = [{ key: 'text-ad-1', headline: 'h', description: 'd' }, { key: 'text-ad-2', headline: 7, description: 'd' }, null];
+    // @ts-expect-error -- a draft is replayed from stored JSON whose inner shape is not validated
+    expect(linkedInDraftRestore(draft({ linkedInTextAds: textAds })).textAds).toEqual([textAds[0]]);
   });
 
   it.each([

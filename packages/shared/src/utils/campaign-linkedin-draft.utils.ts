@@ -87,7 +87,12 @@ export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraf
   }
   // Text Ads (#5764 row 19): present-only, so an older draft keeps the single-image default. An unknown format restores nothing.
   if (draft.linkedInFormat === 'single_image' || draft.linkedInFormat === 'text') restore.format = draft.linkedInFormat;
-  if (Array.isArray(draft.linkedInTextAds)) restore.textAds = draft.linkedInTextAds.map((ad) => ({ ...ad }));
+  // Only entries whose fields are all text: a draft is replayed from stored JSON whose inner shape is not validated.
+  if (Array.isArray(draft.linkedInTextAds)) {
+    restore.textAds = draft.linkedInTextAds
+      .filter((ad) => typeof ad?.key === 'string' && typeof ad.headline === 'string' && typeof ad.description === 'string')
+      .map(({ key, headline, description }) => ({ key, headline, description }));
+  }
   if (draft.linkedInImageUploadPendingName) {
     restore.pendingUpload = { name: draft.linkedInImageUploadPendingName, briefId: draft.linkedInImageUploadPendingBriefId ?? '' };
   }

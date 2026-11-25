@@ -4232,7 +4232,8 @@ export class ImplementationTabComponent implements OnInit {
     if (this.redditImageAssetBlock() !== null) return 'Reddit Ads: resolve the image notice.';
     if (this.metaImageAssetBlock() !== null) return 'Meta Ads: resolve the image notice.';
     if (this.googleImageAssetBlock() !== null) return 'Google Ads: resolve the image notice.';
-    if (this.linkedInImageAssetBlock() !== null) return 'LinkedIn Ads: resolve the image notice.';
+    // A Text Ads create sends no variants (#5764 row 19), so a variant image it would not send holds nothing.
+    if (!this.linkedInTextAdsSelected() && this.linkedInImageAssetBlock() !== null) return 'LinkedIn Ads: resolve the image notice.';
     if (this.twitterImageAssetBlock() !== null) return 'X: resolve the image notice.';
     if (this.microsoftImageAssetBlock() !== null) return 'Microsoft Ads: resolve the image notice.';
     // Retained audience segments this caller may not (or may not yet be known to) send: held, never
@@ -5449,7 +5450,6 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
-  /** Add an empty LinkedIn variant, up to `LINKEDIN_MAX_VARIANTS`. */
   /** Choose the LinkedIn ad format (#5764 row 19). The first switch to text starts one empty text ad. */
   protected onLinkedInFormatChange(format: LinkedInAdFormat): void {
     this.linkedInFormat.set(format);
@@ -5463,6 +5463,7 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /** Add an empty LinkedIn variant, up to `LINKEDIN_MAX_VARIANTS`. */
   protected addLinkedInVariant(): void {
     if (!linkedInCanAddVariant(this.linkedInVariants().length)) return;
     this.linkedInVariants.update((variants) => [...variants, this.newLinkedInVariant({ introText: '', headline: '' })]);
