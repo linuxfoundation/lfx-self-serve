@@ -23,17 +23,23 @@ const MEMBERSHIP: EnrollmentMembership = {
   id: 'm-1',
   extPaymentType: 'stripe',
 };
-const ITEM = {
+const ITEM: IndividualEnrollment = {
   projectName: 'The Linux Foundation',
+  projectSlug: 'the-linux-foundation',
   productName: 'Individual Supporter',
+  projectDesc: '',
+  enrollButton: 'Enroll',
   price: 99,
   projectLogo: '',
   benefits: ['A t-shirt', 'Discounts'],
+  projectId: 'proj-1',
+  productSFID: 'sfid-1',
   productId: 'p-1',
-  enrollButton: 'Enroll',
-  ctaPath: '/individual',
   membership: MEMBERSHIP,
-} as unknown as IndividualEnrollment;
+  ctaPath: '/individual',
+  activeButtonText: '',
+  activeButtonURL: '',
+};
 
 /** State-only page: no template, so these tests cost no render. Providers are not inherited, so the page's own is repeated. */
 @Component({ selector: 'lfx-test-account-enrollment', template: '', providers: [ConfirmationService] })
@@ -116,8 +122,8 @@ describe('AccountIndividualEnrollmentComponent', () => {
     const page = fixture.componentInstance;
     (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="account-enrollment-toggle-auto-renew"] button')?.click();
 
-    expect(open).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ role: 'alertdialog' }));
-    expect(page['pendingAutoRenew']()).toEqual({ enable: false, endDate: '2099-01-12' });
+    expect(open).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ role: 'alertdialog', describedBy: true }));
+    expect(page['pendingAutoRenew']()).toEqual({ enable: false, endDate: 'Jan 12, 2099' });
     expect(updateAutoRenew).toHaveBeenCalledWith('m-1', false);
   });
 

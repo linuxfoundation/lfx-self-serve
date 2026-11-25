@@ -134,14 +134,15 @@
     [width]="480"
     closable
     data-testid="account-enrollment-auto-renew-dialog">
-    <p class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700" data-testid="account-enrollment-auto-renew-text">
+    <!-- The subtitle id makes the sentence, with its date, the alertdialog's description. -->
+    <p [id]="ref.id + '-subtitle'" class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700" data-testid="account-enrollment-auto-renew-text">
       @if (change.enable) {
         This will enable auto-renew for your membership. Your next payment will be charged on
-        <strong class="font-semibold text-ui-neutral-900">{{ change.endDate | date: 'mediumDate' : 'UTC' }}</strong
+        <strong class="font-semibold text-ui-neutral-900">{{ change.endDate }}</strong
         >.
       } @else {
         This will disable auto-renew for your membership. Your current membership will expire on
-        <strong class="font-semibold text-ui-neutral-900">{{ change.endDate | date: 'mediumDate' : 'UTC' }}</strong
+        <strong class="font-semibold text-ui-neutral-900">{{ change.endDate }}</strong
         >.
       }
     </p>

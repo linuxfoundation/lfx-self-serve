@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate } from '@angular/common';
+import { formatDate } from '@angular/common';
 import { Component, computed, DestroyRef, inject, Signal, signal, TemplateRef, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AccountCardComponent } from '@components/account-card/account-card.component';
@@ -32,7 +32,7 @@ import { ProfileIndividualEnrollmentComponent } from '../../profile/individual-e
  */
 @Component({
   selector: 'lfx-account-individual-enrollment',
-  imports: [DatePipe, AccountCardComponent, UiBadgeComponent, UiButtonComponent, UiEmptyStateComponent, UiModalComponent, UiSkeletonComponent],
+  imports: [AccountCardComponent, UiBadgeComponent, UiButtonComponent, UiEmptyStateComponent, UiModalComponent, UiSkeletonComponent],
   // The hub tab injects PrimeNG's ConfirmationService; nothing here opens it. Toasts go to the app's own, as the account pages do.
   providers: [ConfirmationService],
   templateUrl: './account-individual-enrollment.component.html',
@@ -64,9 +64,9 @@ export class AccountIndividualEnrollmentComponent extends ProfileIndividualEnrol
   protected override onToggleAutoRenew(item: DisplayEnrollment, newValue: boolean): void {
     if (!item.membership || this.isPending(item)) return;
     const membershipId = item.membership.id;
-    this.pendingAutoRenew.set({ enable: newValue, endDate: item.membership.endDate });
+    this.pendingAutoRenew.set({ enable: newValue, endDate: this.formatDay(item.membership.endDate) });
     this.modal
-      .open<boolean>(this.autoRenewDialog(), { role: 'alertdialog', autoFocus: '[data-autofocus] button' })
+      .open<boolean>(this.autoRenewDialog(), { role: 'alertdialog', describedBy: true, autoFocus: '[data-autofocus] button' })
       .closed.pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((confirmed) => {
         if (confirmed) this.performAutoRenewUpdate(membershipId, newValue);
@@ -99,12 +99,11 @@ export class AccountIndividualEnrollmentComponent extends ProfileIndividualEnrol
   private figuresFor(item: DisplayEnrollment, price: string): AccountEnrollmentFigure[] {
     const membership = item.membership;
     if (!membership) return [];
-    const date = (value: string) => formatDate(value, 'mediumDate', 'en-US', 'UTC');
     const endLabel: Record<EnrollmentDisplayStatus, string> = { Active: 'Renews', 'Expiring Soon': 'Expires', Expired: 'Expired on', 'Not Enrolled': 'Renews' };
     const figures: AccountEnrollmentFigure[] = [];
     if (price) figures.push({ label: 'Price', icon: 'fa-tag', value: price });
-    if (membership.purchaseDate) figures.push({ label: 'Purchased', icon: 'fa-credit-card', value: date(membership.purchaseDate) });
-    if (membership.endDate) figures.push({ label: endLabel[item.displayStatus], icon: 'fa-calendar', value: date(membership.endDate) });
+    if (membership.purchaseDate) figures.push({ label: 'Purchased', icon: 'fa-credit-card', value: this.formatDay(membership.purchaseDate) });
+    if (membership.endDate) figures.push({ label: endLabel[item.displayStatus], icon: 'fa-calendar', value: this.formatDay(membership.endDate) });
     if (membership.extPaymentType === 'stripe' && item.displayStatus !== 'Expired') {
       figures.push({ label: 'Auto-renew', icon: 'fa-arrows-rotate', value: membership.autoRenew ? 'Enabled' : 'Disabled' });
     }
@@ -117,5 +116,12 @@ export class AccountIndividualEnrollmentComponent extends ProfileIndividualEnrol
     if (item.displayStatus === 'Expiring Soon') return 'renew';
     if (item.displayStatus === 'Expired') return 'repurchase';
     return null;
+  }
+
+  // A date-only value such as 2025-01-12 is a calendar day. Angular reads it as local midnight, which a UTC format shows as the day
+  // before east of UTC, so it is read as UTC midnight; a full timestamp is shown in UTC as given.
+  private formatDay(value: string): string {
+    const utc = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value;
+    return formatDate(utc, 'mediumDate', 'en-US', 'UTC');
   }
 }
