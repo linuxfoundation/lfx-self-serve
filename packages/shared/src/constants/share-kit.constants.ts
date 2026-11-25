@@ -98,8 +98,9 @@ export const SHARE_KIT_MEMBER_OFFER_STATUSES = ['sign_in', 'not_member', 'eligib
 export const SHARE_KIT_MEMBER_CODES_ENV = 'SHARE_KIT_MEMBER_CODES';
 
 /**
- * How long a signed-in visitor's membership answer is reused, in milliseconds. Membership rarely changes within
- * minutes; a company that joins or leaves is reflected after at most this long.
+ * How long a signed-in visitor's membership answer is reused, in milliseconds. The answer comes from a membership list
+ * that is itself cached for `MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS` (10 minutes), so a company that joins or leaves is
+ * reflected after at most the sum of the two, about 15 minutes.
  */
 export const SHARE_KIT_MEMBERSHIP_CACHE_MS = 5 * 60 * 1000;
 

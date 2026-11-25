@@ -41,7 +41,7 @@ To set or rotate codes:
 
 3. Restart the pods (`kubectl rollout restart deployment/lfx-self-serve`, or let the Argo CD sync roll them). Each pod reads the variable once, on the first share kit request, so a changed secret only takes effect after a restart.
 
-A signed-in visitor's membership answer is reused for five minutes, so a company that joins or leaves is reflected within that time.
+A company that joins or leaves is reflected within about 15 minutes: a signed-in visitor's membership answer is reused for five minutes, and the membership list it comes from is refreshed every ten (`MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS`).
 
 ## Checking a change
 
