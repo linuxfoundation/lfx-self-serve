@@ -41,6 +41,11 @@ export interface ShareKitNewsletterBlurb {
 }
 
 /** A downloadable promotional graphic. */
+/** A graphic as the page renders it: `local` graphics are same-origin, so the browser can download them. */
+export interface ShareKitGraphicView extends ShareKitGraphic {
+  local: boolean;
+}
+
 export interface ShareKitGraphic {
   /** Short name shown above the image and reported to analytics. */
   label: string;
@@ -139,8 +144,8 @@ export interface ShareKitLoadResult {
 
 /** Tracking parameters added to every link the share kit hands out. */
 export interface ShareKitLinkTracking {
-  /** `utm_medium`: where the link is posted (a platform, `newsletter`, or `page` for buttons on the kit itself). */
-  medium: ShareKitPlatform | 'newsletter' | 'page';
+  /** `utm_medium`: where the link is posted (a platform, `newsletter`, `cfp` for the speaker invitation, or `page` for buttons on the kit itself). */
+  medium: ShareKitPlatform | 'newsletter' | 'cfp' | 'page';
   /** `utm_campaign`: the event slug. */
   campaign: string;
   /** `utm_content`: which post or button. */

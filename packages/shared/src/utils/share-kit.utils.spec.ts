@@ -29,6 +29,10 @@ describe('countShareKitPostLength', () => {
     expect(countShareKitPostLength('Hello', link, 'bluesky')).toBe(5 + 2 + 40);
   });
 
+  it('uses the X weighted count, where CJK characters count twice', () => {
+    expect(countShareKitPostLength('漢'.repeat(130), link, 'x')).toBe(260 + 2 + 23);
+  });
+
   it('matches the composed post text', () => {
     expect(composeShareKitPost(' Hello ', 'https://e.example.org/')).toBe('Hello\n\nhttps://e.example.org/');
   });

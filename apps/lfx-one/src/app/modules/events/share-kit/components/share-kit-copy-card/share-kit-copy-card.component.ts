@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT } from '@angular/common';
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 
 /** A block of ready-to-copy text with a copy button, a visible "Copied" state and a selection fallback. */
@@ -39,6 +39,11 @@ export class ShareKitCopyCardComponent {
 
   private statusTimer: ReturnType<typeof setTimeout> | null = null;
 
+  public constructor() {
+    // A copy shortly before navigating away must not leave a timer writing to a destroyed card.
+    inject(DestroyRef).onDestroy(() => this.clearStatusTimer());
+  }
+
   protected async copy(textElement: HTMLElement): Promise<void> {
     try {
       await navigator.clipboard.writeText(this.text());
@@ -57,9 +62,14 @@ export class ShareKitCopyCardComponent {
 
   private showStatus(message: string): void {
     this.status.set(message);
+    this.clearStatusTimer();
+    this.statusTimer = setTimeout(() => this.status.set(''), 4000);
+  }
+
+  private clearStatusTimer(): void {
     if (this.statusTimer) {
       clearTimeout(this.statusTimer);
+      this.statusTimer = null;
     }
-    this.statusTimer = setTimeout(() => this.status.set(''), 4000);
   }
 }

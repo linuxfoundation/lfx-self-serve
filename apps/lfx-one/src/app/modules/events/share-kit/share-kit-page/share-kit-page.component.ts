@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DOCUMENT, isPlatformBrowser, isPlatformServer } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser, isPlatformServer, PlatformLocation } from '@angular/common';
 import { Component, computed, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
@@ -19,6 +19,7 @@ import {
   ShareKitContent,
   ShareKitCopyKind,
   ShareKitGraphic,
+  ShareKitGraphicView,
   ShareKitPageState,
   ShareKitPlatform,
   ShareKitPostView,
@@ -35,10 +36,11 @@ import {
 } from '@lfx-one/shared/utils';
 import { PlausibleService } from '@services/plausible.service';
 import { UserService } from '@services/user.service';
+import { AppFooterComponent } from '@shared/components/app-footer/app-footer.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
-import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { ShareKitCopyCardComponent } from '../components/share-kit-copy-card/share-kit-copy-card.component';
 import { PublicShareKitService } from '../services/public-share-kit.service';
@@ -46,7 +48,7 @@ import { PublicShareKitService } from '../services/public-share-kit.service';
 /** Public event share kit (#6059): copy-ready posts, graphics and a CFP invitation, rendered from repo-owned content. */
 @Component({
   selector: 'lfx-share-kit-page',
-  imports: [UiButtonComponent, UiSkeletonComponent, UiTabsComponent, ShareKitCopyCardComponent],
+  imports: [AppFooterComponent, UiButtonComponent, UiSkeletonComponent, UiTabsComponent, ShareKitCopyCardComponent],
   templateUrl: './share-kit-page.component.html',
 })
 export class ShareKitPageComponent {
@@ -57,6 +59,7 @@ export class ShareKitPageComponent {
   private readonly title = inject(Title);
   private readonly meta = inject(Meta);
   private readonly document = inject(DOCUMENT);
+  private readonly platformLocation = inject(PlatformLocation);
   private readonly transferState = inject(TransferState);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
@@ -83,6 +86,10 @@ export class ShareKitPageComponent {
   });
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
   protected readonly platformTabs: UiTabItem[] = SHARE_KIT_PLATFORMS.map((value) => ({ value, label: SHARE_KIT_PLATFORM_LABELS[value] }));
+  protected readonly graphics: Signal<ShareKitGraphicView[]> = computed(() =>
+    // `download` only works for same-origin files: graphics on another host open in a new tab instead.
+    (this.kit()?.graphics ?? []).map((graphic) => ({ ...graphic, local: graphic.url.startsWith('/') }))
+  );
   protected readonly posts: Signal<ShareKitPostView[]> = this.initPosts();
   protected readonly blurb = computed(() => {
     const kit = this.kit();
@@ -93,7 +100,8 @@ export class ShareKitPageComponent {
   protected readonly cfpInvitation = computed(() => {
     const kit = this.kit();
     if (!kit?.cfp) return '';
-    const link = buildShareKitTrackedUrl(kit.cfp.url, { medium: this.currentPlatform(), campaign: kit.eventSlug, content: 'cfp-invite' });
+    // The invitation is sent to colleagues, not posted to the platform picked on the Share tab.
+    const link = buildShareKitTrackedUrl(kit.cfp.url, { medium: 'cfp', campaign: kit.eventSlug, content: 'cfp-invite' });
     return composeShareKitPost(kit.cfp.invitation, link);
   });
   protected readonly registerUrl = computed(() => this.pageLink(this.kit()?.registration.url, 'register'));
@@ -101,9 +109,21 @@ export class ShareKitPageComponent {
   protected readonly guideUrl = computed(() => this.pageLink(this.kit()?.cfp?.guide?.url, 'cfp-guide'));
 
   public constructor() {
-    toObservable(this.kit)
-      .pipe(takeUntilDestroyed())
-      .subscribe((kit) => this.applyMetadata(kit));
+    const settled$ = toObservable(this.state).pipe(filter((state) => !state.loading));
+    settled$.pipe(takeUntilDestroyed()).subscribe((state) => this.applyMetadata(state.shareKit));
+    if (isPlatformBrowser(this.platformId)) {
+      // This route defers its pageview (PlausibleService) so it carries the kit's foundation, not the visitor's lens.
+      const ready$ = toObservable(this.plausible.ready).pipe(filter(Boolean), take(1));
+      settled$
+        .pipe(
+          distinctUntilChanged((a, b) => a.shareKit?.eventSlug === b.shareKit?.eventSlug),
+          switchMap((state) => ready$.pipe(map(() => state.shareKit))),
+          takeUntilDestroyed()
+        )
+        .subscribe((kit) =>
+          this.plausible.trackPage(PlausibleService.buildPageviewContext({ foundationSlug: kit?.foundationSlug, foundationName: kit?.foundationName }))
+        );
+    }
   }
 
   protected selectPlatform(value: string): void {
@@ -125,11 +145,6 @@ export class ShareKitPageComponent {
 
   protected onCfpClick(link: 'cfp' | 'guide'): void {
     this.track(SHARE_KIT_EVENTS.cfpClick, { foundation: this.kit()?.foundationSlug, link });
-  }
-
-  /** `download` only works for same-origin files: graphics on another host open in a new tab instead. */
-  protected isLocalGraphic(graphic: ShareKitGraphic): boolean {
-    return graphic.url.startsWith('/');
   }
 
   protected onGraphicDownload(graphic: ShareKitGraphic): void {
@@ -216,8 +231,26 @@ export class ShareKitPageComponent {
     this.plausible.trackEvent(event, { event_slug: kit.eventSlug, ...props });
   }
 
+  // Request-backed in SSR too, unlike `document.location`, so preview image URLs in the first HTML are absolute and valid.
+  private ownOrigin(): string {
+    const { protocol, hostname, port } = this.platformLocation;
+    return port ? `${protocol}//${hostname}:${port}` : `${protocol}//${hostname}`;
+  }
+
   // Title + Open Graph / Twitter tags so a shared kit link unfurls with the event name, tagline and promo image.
+  // Canonical, og:url and robots are reset every time, since a client-side visit can arrive with another page's.
   private applyMetadata(kit: ShareKitContent | null): void {
+    if (kit) {
+      const pageUrl = `${this.ownOrigin()}/events/${kit.eventSlug}/share-kit`;
+      this.setCanonical(pageUrl);
+      this.meta.updateTag({ property: 'og:url', content: pageUrl });
+      this.meta.removeTag('name="robots"');
+    } else {
+      this.document.querySelector('link[rel="canonical"]')?.remove();
+      this.meta.removeTag('property="og:url"');
+      this.meta.updateTag({ name: 'robots', content: 'noindex' });
+    }
+
     const name = kit ? `${kit.title} share kit` : 'Event share kit';
     const description = kit?.tagline ?? 'Copy-ready posts and graphics to share an LF event.';
     this.title.setTitle(formatLfxDocumentTitle(name));
@@ -231,7 +264,7 @@ export class ShareKitPageComponent {
 
     const image = kit?.ogImage;
     if (image) {
-      const url = image.url.startsWith('/') ? `${this.document.location.origin}${image.url}` : image.url;
+      const url = image.url.startsWith('/') ? `${this.ownOrigin()}${image.url}` : image.url;
       this.meta.updateTag({ property: 'og:image', content: url });
       this.meta.updateTag({ property: 'og:image:alt', content: image.alt });
       this.meta.updateTag({ name: 'twitter:image', content: url });
@@ -242,5 +275,15 @@ export class ShareKitPageComponent {
       this.meta.removeTag('name="twitter:image"');
       this.meta.updateTag({ name: 'twitter:card', content: 'summary' });
     }
+  }
+
+  private setCanonical(href: string): void {
+    let link = this.document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    if (!link) {
+      link = this.document.createElement('link');
+      link.setAttribute('rel', 'canonical');
+      this.document.head.appendChild(link);
+    }
+    link.setAttribute('href', href);
   }
 }

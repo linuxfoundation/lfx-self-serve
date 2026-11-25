@@ -6,8 +6,9 @@
 // and no keys beyond the schema (a typo'd or unexpected key fails instead of being silently ignored).
 import { z } from 'zod';
 
-import { SHARE_KIT_LOCAL_ASSET_PREFIX, SHARE_KIT_SLUG_PATTERN } from '../constants/share-kit.constants';
+import { SHARE_KIT_LOCAL_ASSET_PREFIX, SHARE_KIT_PLATFORM_LIMITS, SHARE_KIT_SLUG_PATTERN } from '../constants/share-kit.constants';
 import { ShareKitContent, ShareKitValidationResult } from '../interfaces/share-kit.interface';
+import { countShareKitPostLength } from '../utils/share-kit.utils';
 
 const MARKUP_PATTERN = /<[a-z!/?][^>]*>/i;
 
@@ -47,11 +48,24 @@ const isoDay = z
 
 const slug = z.string().regex(SHARE_KIT_SLUG_PATTERN, 'must be lowercase letters, digits and hyphens');
 
+// X and Bluesky count a link at a fixed length, so any https URL stands in for the real one here.
+const PLACEHOLDER_LINK = 'https://events.example.org/';
+
+/** Text for one platform that still fits once the copy button adds the blank line and the link. */
+const fixedLinkPostText = (platform: 'x' | 'bluesky') =>
+  plainText(SHARE_KIT_PLATFORM_LIMITS[platform].limit).superRefine((text, ctx) => {
+    const length = countShareKitPostLength(text, PLACEHOLDER_LINK, platform);
+    const { limit } = SHARE_KIT_PLATFORM_LIMITS[platform];
+    if (length > limit) {
+      ctx.addIssue({ code: 'custom', message: `is ${length} of ${limit} characters once the link is added; shorten it by ${length - limit}` });
+    }
+  });
+
 const postSchema = z
   .object({
     id: slug,
     title: plainText(80),
-    text: z.object({ linkedin: plainText(2800), x: plainText(240), bluesky: plainText(260) }).strict(),
+    text: z.object({ linkedin: plainText(2800), x: fixedLinkPostText('x'), bluesky: fixedLinkPostText('bluesky') }).strict(),
   })
   .strict();
 

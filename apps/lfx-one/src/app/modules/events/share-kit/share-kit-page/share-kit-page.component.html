@@ -77,10 +77,16 @@
               size="small"
               [value]="platform()"
               (valueChange)="selectPlatform($event)"
+              idPrefix="share-kit-platform"
               ariaLabel="Platform"
               data-testid="share-kit-platforms" />
           </div>
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div
+            [id]="'share-kit-platform-panel-' + platform()"
+            role="tabpanel"
+            [attr.aria-labelledby]="'share-kit-platform-tab-' + platform()"
+            class="grid grid-cols-1 gap-4 md:grid-cols-2"
+            data-testid="share-kit-platform-panel">
             @for (post of posts(); track post.id) {
               <lfx-share-kit-copy-card
                 [heading]="post.title"
@@ -109,7 +115,7 @@
           aria-labelledby="share-kit-tab-graphics"
           class="grid grid-cols-1 gap-4 md:grid-cols-2"
           data-testid="share-kit-panel-graphics">
-          @for (graphic of kit.graphics; track graphic.url) {
+          @for (graphic of graphics(); track graphic.url) {
             <figure class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5" [attr.data-testid]="'share-kit-graphic-' + $index">
               <img
                 [src]="graphic.url"
@@ -120,7 +126,7 @@
                 class="h-auto w-full rounded-lg border border-gray-100" />
               <figcaption class="flex flex-wrap items-center justify-between gap-3">
                 <span class="text-sm font-semibold">{{ graphic.label }}</span>
-                @if (isLocalGraphic(graphic)) {
+                @if (graphic.local) {
                   <a
                     [href]="graphic.url"
                     download
@@ -203,4 +209,6 @@
       </footer>
     }
   </div>
+  <!-- Outside the state branches so cookie settings stay reachable on loading, not-found and error views too. -->
+  <lfx-app-footer />
 </div>
