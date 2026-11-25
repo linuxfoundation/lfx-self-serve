@@ -20,6 +20,21 @@ describe('extractHttpLinks', () => {
     ]);
   });
 
+  it('reads addresses the way document editors, Markdown and CJK prose write them', () => {
+    expect(extractHttpLinks('See “https://acme.example/x” and ‘https://acme.example/q?a=1!’.')).toEqual([
+      'https://acme.example/x',
+      'https://acme.example/q?a=1!',
+    ]);
+    expect(extractHttpLinks('(https://acme.example/y)… and https://acme.example/z。')).toEqual(['https://acme.example/y', 'https://acme.example/z']);
+    expect(extractHttpLinks('[https://acme.example/a](https://acme.example/a) and [the report](https://acme.example/r)')).toEqual([
+      'https://acme.example/a',
+      'https://acme.example/r',
+    ]);
+    expect(extractHttpLinks('https://acme.example/a,https://acme.example/b')).toEqual(['https://acme.example/a', 'https://acme.example/b']);
+    // A comma inside an address that is not followed by another address is the address's own.
+    expect(extractHttpLinks('https://acme.example/list?ids=1,2 done')).toEqual(['https://acme.example/list?ids=1,2']);
+  });
+
   it('keeps a closing bracket the address itself opened, and drops one the prose opened', () => {
     expect(extractHttpLinks('Background: https://acme.example/wiki/Guide_(2026).')).toEqual(['https://acme.example/wiki/Guide_(2026)']);
     expect(extractHttpLinks('(see https://acme.example/wiki/Guide_(2026))')).toEqual(['https://acme.example/wiki/Guide_(2026)']);

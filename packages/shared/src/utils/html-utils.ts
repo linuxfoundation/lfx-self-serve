@@ -773,8 +773,8 @@ export function emailLinkMatchKey(value: unknown): string {
   }
 }
 
-/** Characters prose puts after an address without meaning them as part of it. */
-const TRAILING_LINK_PUNCTUATION = '.,;:!?)]}>';
+/** Characters prose puts after an address without meaning them as part of it, CJK and typographic ones included. */
+const TRAILING_LINK_PUNCTUATION = '.,;:!?)]}>…。、，；：！？';
 
 /**
  * Every http(s) address in free text, canonical and de-duplicated, in the order written.
@@ -788,7 +788,11 @@ export function extractHttpLinks(text: unknown, limit: number = EMAIL_NOTE_LINK_
   if (typeof text !== 'string' || text === '') return [];
   const seen = new Set<string>();
   const links: string[] = [];
-  for (const match of text.matchAll(/https?:\/\/[^\s<>"']+/gi)) {
+  // An address also ends at a typographic quote (pasted from a document editor), at "](" (the
+  // seam of a Markdown link, `[label](https://…)`), and at a comma directly followed by another
+  // address (`https://a.example/x,https://b.example/y`). Each would otherwise make one address the
+  // operator never wrote, and the real link would never be vouched for.
+  for (const match of text.matchAll(/https?:\/\/(?:(?!\]\(|,https?:\/\/)[^\s<>"'“”‘’])+/gi)) {
     let raw = match[0];
     const start = match.index;
     const end = start + raw.length;
@@ -797,7 +801,11 @@ export function extractHttpLinks(text: unknown, limit: number = EMAIL_NOTE_LINK_
     // the notes never gave. campaign-service reads the notes the same way (`explicitlyDelimited`).
     const opener = start > 0 ? text[start - 1] : '';
     const closer = end < text.length ? text[end] : '';
-    const delimited = (opener === '<' && closer === '>') || (opener !== '' && (opener === '"' || opener === "'") && closer === opener);
+    const delimited =
+      (opener === '<' && closer === '>') ||
+      (opener !== '' && (opener === '"' || opener === "'") && closer === opener) ||
+      (opener === '“' && closer === '”') ||
+      (opener === '‘' && closer === '’');
     while (!delimited && raw !== '' && TRAILING_LINK_PUNCTUATION.includes(raw[raw.length - 1])) {
       // A closing bracket that closes one opened INSIDE the address belongs to it
       // (`…/wiki/Foo_(bar)`); only an unmatched one is the prose's ("(see https://example.org/x)").

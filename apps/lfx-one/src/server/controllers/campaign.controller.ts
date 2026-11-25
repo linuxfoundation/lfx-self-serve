@@ -709,6 +709,12 @@ export class CampaignController {
    * Read-only: it fetches public pages and writes nothing.
    */
   public async suggestNewsletterItems(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Up to CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS page fetches and as many model calls: not work
+    // to start on a server that is draining, as the other generation routes already refuse it.
+    if (isShuttingDown()) {
+      res.status(503).json({ status: 'shutting_down' });
+      return;
+    }
     const body = (req.body ?? {}) as Partial<CampaignNewsletterSuggestionsRequest>;
     const urls = Array.isArray(body.urls) ? body.urls.filter((u): u is string => typeof u === 'string' && u.trim() !== '').map((u) => u.trim()) : [];
     const brand = typeof body.brand === 'string' ? body.brand.trim() : '';
@@ -7731,8 +7737,8 @@ export class CampaignController {
    * carries: they are what campaign-service wrote the issue from, and a caller cannot widen them.
    *
    * Asked only for a create that stages a HubSpot email with a body, and only when the request
-   * names its brief: nothing else has a body to judge. A brief that cannot be read answers null,
-   * so the body is judged by the host rule and loses its links, never gains any.
+   * names its brief: nothing else has a body to judge. A brief that cannot be read answers `[]`,
+   * so the body loses every link and its button rather than falling back to the host rule.
    */
   private async emailNoteLinksToVouch(req: Request, projectSlug: string, briefId: string, body: CampaignCreateRequest): Promise<string[] | null> {
     const stagesEmail = Array.isArray(body?.platforms) && body.platforms.includes('hubspot');

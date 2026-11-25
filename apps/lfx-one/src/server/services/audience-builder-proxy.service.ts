@@ -39,6 +39,8 @@ import type {
   AudienceSuppressionCategory,
   AudienceSuppressionListsResult,
   CampaignAudience,
+  AudienceWireListDescription,
+  AudienceWireNewsletterBrandsResponse,
 } from '@lfx-one/shared/interfaces';
 import {
   AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS,
@@ -139,23 +141,6 @@ interface WireMasterListBrief {
   name: string;
   size?: number;
   hubspot_url: string;
-}
-
-interface WireRuleGroup {
-  conditions?: string[];
-}
-
-interface WireListDescription {
-  list_id: string;
-  name?: string;
-  size?: number;
-  processing_type?: string;
-  hubspot_url?: string;
-  status?: string;
-  summary?: string;
-  match?: string;
-  groups?: WireRuleGroup[];
-  complete?: boolean;
 }
 
 interface WirePreviewCount {
@@ -798,12 +783,7 @@ export class AudienceBuilderProxyService {
 
   /** The brands with a sent newsletter (`GET /audience-builder/newsletter-brands`), newest first. */
   public async getNewsletterBrands(req: Request, projectSlug: string): Promise<AudienceNewsletterBrand[]> {
-    const wire = await this.get<{ brands?: { brand: string; latest_email_name: string; latest_sent_at?: string; issues: number }[] }>(
-      req,
-      projectSlug,
-      'newsletter-brands',
-      {}
-    );
+    const wire = await this.get<AudienceWireNewsletterBrandsResponse>(req, projectSlug, 'newsletter-brands', {});
 
     return (wire.brands ?? [])
       .filter((row) => typeof row.brand === 'string' && row.brand.trim() !== '')
@@ -859,7 +839,7 @@ export class AudienceBuilderProxyService {
    * OR-of-groups shape.
    */
   public async describeLists(req: Request, projectSlug: string, listIds: string[]): Promise<AudienceListDescription[]> {
-    const wire = await this.post<{ lists?: WireListDescription[] }>(req, projectSlug, 'lists/describe', { list_ids: listIds });
+    const wire = await this.post<{ lists?: AudienceWireListDescription[] }>(req, projectSlug, 'lists/describe', { list_ids: listIds });
     return (wire.lists ?? []).map((list) => ({
       listId: list.list_id,
       name: list.name ?? '',

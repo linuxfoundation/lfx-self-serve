@@ -9924,6 +9924,30 @@ export interface AudienceRuleGroup {
  * from the list's filter tree. Deterministic, not model-written, so each condition says exactly
  * what one HubSpot filter does.
  */
+/** One rule group of a list description, as campaign-service sends it (`POST /audience-builder/lists/describe`). */
+export interface AudienceWireRuleGroup {
+  conditions?: string[];
+}
+
+/** One list description, as campaign-service sends it; the BFF maps it onto `AudienceListDescription`. */
+export interface AudienceWireListDescription {
+  list_id: string;
+  name?: string;
+  size?: number;
+  processing_type?: string;
+  hubspot_url?: string;
+  status?: string;
+  summary?: string;
+  match?: string;
+  groups?: AudienceWireRuleGroup[];
+  complete?: boolean;
+}
+
+/** `GET /audience-builder/newsletter-brands`, as campaign-service sends it. */
+export interface AudienceWireNewsletterBrandsResponse {
+  brands?: { brand: string; latest_email_name: string; latest_sent_at?: string; issues: number }[];
+}
+
 export interface AudienceListDescription {
   listId: string;
   /** Empty when the list could not be read. */

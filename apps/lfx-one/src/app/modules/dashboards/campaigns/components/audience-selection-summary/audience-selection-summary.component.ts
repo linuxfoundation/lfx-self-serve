@@ -46,32 +46,40 @@ export class AudienceSelectionSummaryComponent {
   protected readonly otherRows: Signal<AudienceSelectionSummaryRow[]> = this.initRows(this.otherExcludes);
 
   /** How many lists keep contacts off the send, counting a registrants list that attach will create. */
-  protected readonly excludedCount = computed(
-    () => this.standardExcludes().length + this.otherExcludes().length + (this.pendingRegistrantsEdition() === '' ? 0 : 1)
-  );
-
+  protected readonly excludedCount: Signal<number> = this.initExcludedCount();
   /** The one sentence on top: who the email goes to, and who is kept off. */
-  protected readonly headline = computed(() => {
-    const included = this.includes().length;
-    const excluded = this.excludedCount();
-    let who: string;
-    if (included === 0) {
-      who = 'No list is included yet, so this email would go to nobody';
-    } else if (included === 1) {
-      who = 'This email goes to everyone in the included list';
-    } else {
-      who = `This email goes to anyone in at least one of the ${included} included lists`;
-    }
-    if (excluded === 0) {
-      return `${who}.`;
-    }
-    return `${who}, except anyone in ${excluded === 1 ? 'the excluded list' : `any of the ${excluded} excluded lists`}.`;
-  });
-
+  protected readonly headline: Signal<string> = this.initHeadline();
   /** Whether any description is partial, so the panel can say so once rather than per row. */
-  protected readonly anyIncomplete = computed(() =>
-    [...this.includes(), ...this.standardExcludes(), ...this.otherExcludes()].some((item) => item.description !== null && !item.description.complete)
-  );
+  protected readonly anyIncomplete: Signal<boolean> = this.initAnyIncomplete();
+
+  private initExcludedCount(): Signal<number> {
+    return computed(() => this.standardExcludes().length + this.otherExcludes().length + (this.pendingRegistrantsEdition() === '' ? 0 : 1));
+  }
+
+  private initHeadline(): Signal<string> {
+    return computed(() => {
+      const included = this.includes().length;
+      const excluded = this.excludedCount();
+      let who: string;
+      if (included === 0) {
+        who = 'No list is included yet, so this email would go to nobody';
+      } else if (included === 1) {
+        who = 'This email goes to everyone in the included list';
+      } else {
+        who = `This email goes to anyone in at least one of the ${included} included lists`;
+      }
+      if (excluded === 0) {
+        return `${who}.`;
+      }
+      return `${who}, except anyone in ${excluded === 1 ? 'the excluded list' : `any of the ${excluded} excluded lists`}.`;
+    });
+  }
+
+  private initAnyIncomplete(): Signal<boolean> {
+    return computed(() =>
+      [...this.includes(), ...this.standardExcludes(), ...this.otherExcludes()].some((item) => item.description !== null && !item.description.complete)
+    );
+  }
 
   private initRows(items: Signal<readonly AudienceSelectionSummaryItem[]>): Signal<AudienceSelectionSummaryRow[]> {
     return computed(() =>

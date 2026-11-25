@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
+  CAMPAIGN_EVENT_URL_MAX_LENGTH,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS,
   CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
   CAMPAIGN_RESUME_REFUSED_CODE,
   GOOGLE_ADS_LANGUAGE_MAP,
@@ -83,8 +86,12 @@ const {
   isServerFeatureEnabled,
   logger,
   svcGetLinkedInCreateAccount,
+  legacySuggestNewsletterItems,
+  isShuttingDown,
 } = vi.hoisted(() => ({
   svcGetLinkedInCreateAccount: vi.fn(),
+  legacySuggestNewsletterItems: vi.fn(),
+  isShuttingDown: vi.fn(() => false),
   saveBrief: vi.fn(),
   approveStoredBrief: vi.fn(),
   loadBrief: vi.fn(),
@@ -173,6 +180,7 @@ vi.mock('../services/campaign-proxy.service', () => ({
     public executeKeywordActions = legacyKeywordActions;
     public lookupHubSpotUtm = legacyLookupUtm;
     public createHubSpotUtm = legacyCreateUtm;
+    public suggestNewsletterItems = legacySuggestNewsletterItems;
   },
 }));
 vi.mock('../services/campaign-metrics.service', () => ({
@@ -185,7 +193,7 @@ vi.mock('../services/campaign-metrics.service', () => ({
   MetaMetricsService: class {},
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
-vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn(), isShuttingDown: () => false }));
+vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn(), isShuttingDown }));
 // The real helper pulls the `@lfx-one/shared/utils` barrel, which loads `@angular/forms` and throws
 // outside Angular (GH-2381). The shared-account monitor gate is covered in campaign.controller.monitor.spec.ts.
 vi.mock('../utils/persona-helper', () => ({
@@ -3306,7 +3314,23 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(invented['buttonText']).toBeUndefined();
     });
 
-    it('falls back to the host rule when the brief is not a newsletter or cannot be read', async () => {
+    it('stages no link and no button when the brief cannot be read, even on the button host', async () => {
+      // newsletterNoteLinks answers [] for a brief it could not read: the brief may be a newsletter,
+      // so its body must not fall back to the host rule, which would vouch for the button's host.
+      newsletterNoteLinks.mockResolvedValue([]);
+
+      const cfg = await stage({
+        sourceEmailId: 'e-1',
+        bodyHtml: '<p><a href="https://acme.example/invented">Invented</a></p>',
+        buttonText: 'Read More',
+        buttonUrl: 'https://acme.example/november',
+      });
+
+      expect(cfg['bodyHtml']).toBe('<p><a>Invented</a></p>');
+      expect(cfg['buttonUrl']).toBeUndefined();
+    });
+
+    it('falls back to the host rule when the brief is not a newsletter', async () => {
       newsletterNoteLinks.mockResolvedValue(null);
 
       const cfg = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p><a href="https://acme.example/blog/guide">The guide</a></p>' });
@@ -14161,5 +14185,98 @@ describe('CampaignController survey surface', () => {
       expect(res.json).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(failure);
     });
+  });
+});
+
+/**
+ * POST /newsletter/suggestions starts up to CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS page fetches and
+ * as many model calls, so every refusal must happen before any of them, and a draining server must
+ * not start them at all.
+ */
+describe('CampaignController.suggestNewsletterItems', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const call = (body: unknown): Promise<void> => controller.suggestNewsletterItems(buildReq(body), res, next);
+  const fieldOf = (): string | undefined => {
+    const error = (next as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as ServiceValidationError | undefined;
+    return (error?.toResponse()['errors'] as { field: string }[] | undefined)?.[0]?.field;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isShuttingDown.mockReturnValue(false);
+    controller = new CampaignController();
+    res = { ...buildRes(), on: vi.fn() } as unknown as Response;
+    next = vi.fn();
+    legacySuggestNewsletterItems.mockResolvedValue({ items: [{ title: 'Offer' }], failedUrls: [] });
+  });
+
+  it.each([
+    ['no urls', { brand: 'Acme' }, 'urls'],
+    ['an empty url list', { urls: [], brand: 'Acme' }, 'urls'],
+    ['only blank urls', { urls: ['  '], brand: 'Acme' }, 'urls'],
+    [
+      'too many urls',
+      { urls: Array.from({ length: CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS + 1 }, (_, i) => `https://acme.example/${i}`), brand: 'Acme' },
+      'urls',
+    ],
+    ['an over-long url', { urls: [`https://acme.example/${'x'.repeat(CAMPAIGN_EVENT_URL_MAX_LENGTH)}`], brand: 'Acme' }, 'urls'],
+    ['no brand', { urls: ['https://acme.example/'] }, 'brand'],
+    ['a blank brand', { urls: ['https://acme.example/'], brand: '   ' }, 'brand'],
+    ['an over-long brand', { urls: ['https://acme.example/'], brand: 'b'.repeat(CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH + 1) }, 'brand'],
+  ])('refuses %s as a field error before any fetch', async (_label, body, field) => {
+    await call(body);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect((next as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(fieldOf()).toBe(field);
+    expect(legacySuggestNewsletterItems).not.toHaveBeenCalled();
+  });
+
+  it('answers 503 and starts nothing while the server is shutting down', async () => {
+    isShuttingDown.mockReturnValue(true);
+
+    await call({ urls: ['https://acme.example/'], brand: 'Acme' });
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(legacySuggestNewsletterItems).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes trimmed urls, the brand and notBefore through, with an abort signal tied to the response', async () => {
+    await call({ urls: [' https://acme.example/news ', 42], brand: ' Acme ', notBefore: '2026-11-01' });
+
+    expect(legacySuggestNewsletterItems).toHaveBeenCalledWith(
+      expect.anything(),
+      { urls: ['https://acme.example/news'], brand: 'Acme', notBefore: '2026-11-01' },
+      expect.any(AbortSignal)
+    );
+    expect(res.on).toHaveBeenCalledWith('close', expect.any(Function));
+    expect(res.json).toHaveBeenCalledWith({ items: [{ title: 'Offer' }], failedUrls: [] });
+  });
+
+  it('aborts the outbound work when the client goes away', async () => {
+    let signal: AbortSignal | undefined;
+    legacySuggestNewsletterItems.mockImplementation(async (_req: unknown, _input: unknown, s: AbortSignal) => {
+      signal = s;
+      return { items: [], failedUrls: [] };
+    });
+
+    await call({ urls: ['https://acme.example/'], brand: 'Acme' });
+    const onClose = (res.on as unknown as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[0] === 'close')?.[1] as () => void;
+    onClose();
+
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('hands an upstream failure to the error middleware', async () => {
+    const failure = new MicroserviceError('upstream timed out', 503, 'UNAVAILABLE');
+    legacySuggestNewsletterItems.mockRejectedValue(failure);
+
+    await call({ urls: ['https://acme.example/'], brand: 'Acme' });
+
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(res.json).not.toHaveBeenCalled();
   });
 });

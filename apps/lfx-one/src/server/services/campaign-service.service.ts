@@ -151,6 +151,7 @@ import type {
   MetaTargetingSearchType,
 } from '@lfx-one/shared/interfaces';
 import { MULTI_CAMPAIGN_PLATFORMS_ENV } from '../constants/campaign-multi.constants';
+import { HUBSPOT_EMAIL_SEARCH_TIMEOUT_MS } from '../constants/campaign-newsletter.constants';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -469,15 +470,6 @@ interface CampaignServiceMarketingEmail {
  * the fact instead of re-deriving it. Not a live defect: the constants agree today.
  */
 const UNFILTERED_EMAIL_CAP = 500;
-
-/**
- * How long the BFF waits for a HubSpot template search, filtered or scoped.
- *
- * Above campaign-service's own 40s search deadline (`emailSearchCallTimeout`), so the service
- * answers -- with a typed 503 if its walk overran -- before this side gives up. A filtered walk
- * reads up to 20 pages sequentially and measured 15-16s against the LF portal.
- */
-const HUBSPOT_EMAIL_SEARCH_TIMEOUT_MS = 45_000;
 
 /**
  * One wire email onto the shared interface.
@@ -1740,22 +1732,27 @@ export class CampaignServiceClient {
    * The addresses a NEWSLETTER brief's notes carry: the only links its issue may keep.
    *
    * Read from the stored brief by id, so the list is the one campaign-service wrote the issue
-   * from rather than one a request supplied. `null` means the brief is not a newsletter's, was not
-   * found, could not be opened or could not be read: none of those is evidence about its notes,
-   * so the caller applies whatever rule it would have without this. A failed read is not thrown,
-   * because the callers are a copy generation and a draft staging that are still correct with
-   * fewer links, not with none of their own answer.
+   * from rather than one a request supplied. `null` ONLY for a brief that was read and is not a
+   * newsletter's: that body keeps the host rule it always had. A brief that was not found, could
+   * not be opened or could not be read answers `[]`, which vouches for nothing. It may be a
+   * newsletter, and answering `null` there would hand its body the looser host rule (the button's
+   * host and LF-owned links) at the very boundary the preview judged by the notes: a transient
+   * read failure must lose links, never gain them. A failed read is not thrown, because the
+   * callers are a copy generation and a draft staging that are still correct with fewer links.
    */
   public async newsletterNoteLinks(req: Request, projectSlug: string, briefId: string): Promise<string[] | null> {
     try {
       const loaded = await this.loadBriefById(req, projectSlug, briefId);
-      if (loaded.status !== 'loaded' || loaded.brief === null || loaded.brief.deliveryType !== 'newsletter') {
+      if (loaded.status !== 'loaded' || loaded.brief === null) {
+        return [];
+      }
+      if (loaded.brief.deliveryType !== 'newsletter') {
         return null;
       }
       return extractHttpLinks(loaded.brief.eventDetails?.sourceText);
     } catch (error) {
-      logger.warning(req, 'newsletter_note_links', 'Could not read the brief for its notes; no note link is vouched for', { err: error });
-      return null;
+      logger.warning(req, 'newsletter_note_links', 'Could not read the brief for its notes; no link is vouched for', { err: error });
+      return [];
     }
   }
 

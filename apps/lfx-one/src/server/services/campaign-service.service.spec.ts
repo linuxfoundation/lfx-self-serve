@@ -3432,10 +3432,10 @@ describe('CampaignServiceClient.newsletterNoteLinks', () => {
     await expect(new CampaignServiceClient().newsletterNoteLinks(req, 'tlf', 'b-1')).resolves.toBeNull();
   });
 
-  it('answers null when the read fails', async () => {
+  it('vouches for nothing when the read fails: a brief that may be a newsletter must not fall back to the looser host rule', async () => {
     proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('upstream timed out', 503, 'UNAVAILABLE'));
 
-    await expect(new CampaignServiceClient().newsletterNoteLinks(req, 'tlf', 'b-1')).resolves.toBeNull();
+    await expect(new CampaignServiceClient().newsletterNoteLinks(req, 'tlf', 'b-1')).resolves.toEqual([]);
   });
 });
 

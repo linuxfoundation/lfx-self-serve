@@ -23,7 +23,9 @@ import {
   MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_CHAR_LIMITS,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_KINDS,
 } from '@lfx-one/shared/constants';
+import { NEWSLETTER_SUGGESTION_TEXT_ADDRESS, NEWSLETTER_SUGGESTIONS_SYSTEM_PROMPT } from '../constants/campaign-newsletter.constants';
 import {
   campaignSurveySourceTextTooLong,
   deriveNewsletterSlug,
@@ -1459,18 +1461,6 @@ function failJob(jobId: string, error: string): void {
 // CampaignProxyService — brief generation + campaign creation
 // ---------------------------------------------------------------------------
 
-/** The suggestion kinds the model may return; anything else is dropped. */
-const NEWSLETTER_SUGGESTION_KINDS: ReadonlySet<CampaignNewsletterSuggestionKind> = new Set<CampaignNewsletterSuggestionKind>([
-  'offer',
-  'cfp',
-  'event',
-  'report',
-  'post',
-]);
-
-/** A web address inside free text, with or without its scheme's usual company (`www.`). */
-const SUGGESTION_TEXT_ADDRESS = /(?:https?:\/\/|www\.)\S+/gi;
-
 /**
  * A suggestion's words with every web address taken out. The model writes `title` and `detail`
  * freely, and the planner copies them into the notes, where any address becomes a link the issue
@@ -1481,36 +1471,13 @@ const SUGGESTION_TEXT_ADDRESS = /(?:https?:\/\/|www\.)\S+/gi;
 function suggestionTextWithoutAddresses(value: unknown, maxLength: number): string {
   if (typeof value !== 'string') return '';
   return value
-    .replace(SUGGESTION_TEXT_ADDRESS, ' ')
+    .replace(NEWSLETTER_SUGGESTION_TEXT_ADDRESS, ' ')
     .replace(/\s+/g, ' ')
     .replace(/\s+([.,;:!?)])/g, '$1')
     .replace(/[\s:(\-–—]+$/, '')
     .trim()
     .slice(0, maxLength);
 }
-
-/**
- * Lists what a brand's page offers that a newsletter issue could carry. Facts only from the page,
- * links copied from its hrefs (each is then checked against the page), dates as the page states them.
- */
-const NEWSLETTER_SUGGESTIONS_SYSTEM_PROMPT = `You read one web page of an open source foundation or project and list items its next email newsletter could carry.
-
-Return ONLY a JSON array (no markdown fencing), at most 12 items, most useful first:
-[{"kind":"offer|cfp|event|report|post","title":"...","detail":"...","deadline":"YYYY-MM-DD or empty","url":"..."}]
-
-Kinds:
-- offer: a discount, sale, promo code, free course or scholarship. Put the code, the percentage or the price in "detail" exactly as the page states it.
-- cfp: a call for papers, talks, proposals or sponsors with a deadline.
-- event: an upcoming event or webinar to register for.
-- report: a free report, survey result or other download.
-- post: a recent blog post or announcement worth a line in the newsletter.
-
-Rules:
-- Use ONLY what the page states. Never invent a code, price, percentage, date or link.
-- "url" must be an href that appears in the page's HTML, copied exactly. Skip an item with no link of its own.
-- "deadline" is the closing, end or event date the page states for that item, as YYYY-MM-DD; leave it empty when the page states none. Skip items whose date is before the issue's send date given above.
-- "detail" is one short line, under 200 characters.
-- Skip navigation, footer, social and cookie links.`;
 
 export class CampaignProxyService {
   // === HubSpot UTM lookup/create ===
@@ -1613,7 +1580,7 @@ export class CampaignProxyService {
           return rows.flatMap((row): CampaignNewsletterSuggestion[] => {
             if (typeof row !== 'object' || row === null) return [];
             const r = row as Record<string, unknown>;
-            const kind = NEWSLETTER_SUGGESTION_KINDS.has(r['kind'] as CampaignNewsletterSuggestionKind)
+            const kind = CAMPAIGN_NEWSLETTER_SUGGESTION_KINDS.has(r['kind'] as CampaignNewsletterSuggestionKind)
               ? (r['kind'] as CampaignNewsletterSuggestionKind)
               : null;
             // A title that was only an address is no title: the row is dropped below.

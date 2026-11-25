@@ -4977,6 +4977,11 @@ export const CAMPAIGN_NEWSLETTER_SUGGESTION_KIND_LABELS: Readonly<Record<Campaig
   post: 'Post',
 };
 
+/** The suggestion kinds a newsletter suggestion may carry, derived from the labels so the two cannot drift; anything else is dropped. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_KINDS: ReadonlySet<CampaignNewsletterSuggestionKind> = new Set(
+  Object.keys(CAMPAIGN_NEWSLETTER_SUGGESTION_KIND_LABELS) as CampaignNewsletterSuggestionKind[]
+);
+
 /** localStorage key prefix for the pages last checked for a brand's suggestions (per viewer, per brand). */
 export const CAMPAIGN_NEWSLETTER_SOURCE_STORAGE_PREFIX = 'lfx-campaign-newsletter-sources:';
 
