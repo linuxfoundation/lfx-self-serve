@@ -2693,7 +2693,7 @@ export interface LinkedInConfigKeyRefusal {
  */
 export interface LinkedInObjectiveDraft {
   /** The objective chosen, or `null`: none is sent, so the bidding decides, as every create did before. */
-  objective: LinkedInObjective | null;
+  objective: LinkedInObjective | LinkedInLeadGenObjective | null;
   /** The conversion rule ids picked, sent only with the `conversions` objective. */
   conversions: string[];
   /**
@@ -2706,6 +2706,25 @@ export interface LinkedInObjectiveDraft {
    * as `bidding.targetAmount` only while `linkedInTargetCostOffered`; see `linkedInBiddingWithTargetCost`.
    */
   targetCost?: string;
+  /** The Lead Gen Form picked (its numeric id), sent only with the `lead_generation` objective (campaign-service#664). */
+  leadGenForm?: string;
+  /**
+   * Who the form was picked for (`linkedInSegmentsOwnerKey`), as `conversionsOwner` is for rules: a form belongs to one ad
+   * account, so a create for another owner is held. Never sent.
+   */
+  leadGenFormOwner?: string;
+  /** The form's button label; absent is `LINKEDIN_LEAD_GEN_DEFAULT_CALL_TO_ACTION` (Register). */
+  leadGenCallToAction?: LinkedInLeadGenCallToAction;
+}
+
+/**
+ * The lead form picker's read of the ad account's Lead Gen Forms (campaign-service#664): loading, loaded, refused to a
+ * caller without `global_marketing_ops` (`restricted`), or failed (`unavailable`), with the message to show.
+ */
+export interface LinkedInLeadFormsState {
+  status: 'loading' | 'loaded' | 'restricted' | 'unavailable';
+  forms: LinkedInLeadForm[];
+  failure: string | null;
 }
 
 /** What `linkedInTargetCostOffered` reads: whether the Implement tab offers a LinkedIn target cost now. */
@@ -2737,6 +2756,10 @@ export interface LinkedInObjectiveCreateInput {
   owner: string;
   /** The `bidding` the create sends, if any. */
   bidding?: CampaignBiddingConfig;
+  /** `linkedInLeadGenEnabled` is an explicit yes (campaign-service#664). */
+  leadGenAvailable?: boolean;
+  /** The `format` the create sends, if any: a lead gen create cannot be Text Ads. */
+  format?: string;
 }
 
 /** Which of a LinkedIn variant's optional fields this deployment sends (#5764 rows 16–17). */
@@ -9072,6 +9095,8 @@ export interface CampaignBiddingContext {
   objective?: string;
   /** The DAILY budget, or `null` when the budget is a lifetime one. Meta and X compare the bid with it. */
   dailyBudget?: number | null;
+  /** Why the config's other choices take automatic bidding only (a LinkedIn lead gen create), or absent when manual can be sent. */
+  manualRefusal?: string;
 }
 
 /** What one platform accepts as a manual bid, and how the control describes it. */

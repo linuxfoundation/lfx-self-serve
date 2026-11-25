@@ -35,6 +35,13 @@ describe('campaignBiddingError', () => {
     expect(campaignBiddingError(platform, defaultCampaignBiddingDraft(), { objective: 'conversions', dailyBudget: 0.01 })).toBeNull();
   });
 
+  it('refuses any manual bid when the context takes automatic only, and never automatic', () => {
+    const context = { manualRefusal: 'Lead generation takes automatic bidding only.' };
+    expect(campaignBiddingError('linkedin-ads', manual(4.5), context)).toBe(context.manualRefusal);
+    expect(campaignBiddingPayload('linkedin-ads', manual(4.5), context)).toBeNull();
+    expect(campaignBiddingError('linkedin-ads', defaultCampaignBiddingDraft(), context)).toBeNull();
+  });
+
   it.each(CAMPAIGN_BIDDING_PLATFORMS.map((p) => [p]))('refuses a manual choice with no amount on %s', (platform) => {
     expect(campaignBiddingError(platform, manual(null), { objective: 'traffic' })).toContain('Enter a max CPC bid');
     expect(campaignBiddingError(platform, manual(Number.NaN), { objective: 'traffic' })).toContain('Enter a max CPC bid');
