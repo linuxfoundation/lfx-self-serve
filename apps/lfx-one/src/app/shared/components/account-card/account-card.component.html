@@ -20,6 +20,8 @@
         @if (subtitle()) {
           <p class="m-0 mt-[2px] text-pretty text-[12px] leading-[18px] text-ui-neutral-500" [attr.data-testid]="testId() + '-subtitle'">{{ subtitle() }}</p>
         }
+        <!-- A subtitle with markup, such as a link, in place of the plain one. -->
+        <ng-content select="[accountCardSubtitle]" />
       </div>
     </div>
     <div class="ml-auto flex flex-none flex-row items-center gap-[8px] empty:hidden"><ng-content select="[accountCardActions]" /></div>

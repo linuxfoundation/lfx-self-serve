@@ -5,7 +5,7 @@
 // Framework-free so the branching is unit-testable without an Angular harness. The menu
 // factories map these to PrimeNG MenuItems; they do not re-derive the rules.
 
-import type { MyClaAgreement } from '../interfaces/cla.interface';
+import type { AccountClaRowActions, MyClaAgreement } from '../interfaces/cla.interface';
 
 /** Request approval — ECLA that is off the current Approved List (#1372). */
 export function canRequestClaApproval(agreement: MyClaAgreement): boolean {
@@ -61,4 +61,22 @@ export function cclaConsoleUrl(corporateConsoleBase: string, foundationSfid?: st
     return `${base}/foundation/${encodeURIComponent(foundation)}/project/${encodeURIComponent(project)}/cla`;
   }
   return `${base}/foundation/${encodeURIComponent(foundation)}/cla`;
+}
+
+/**
+ * What a CLA row's ⋯ menu offers on Account & Settings › CLAs (#6077), by the hub's rules: nothing on a revoked row or an
+ * invalidated ICLA, the PDF when there is one, and for a CCLA without one the manager requests its state allows. Managing a
+ * CCLA in its console is reached from the request dialog, since every row that allows it also allows a removal request.
+ */
+export function claRowActions(agreement: MyClaAgreement): AccountClaRowActions {
+  const none: AccountClaRowActions = { download: false, requestApproval: false, requestRemoval: false, contact: false };
+  if (agreement.status === 'revoked' || (agreement.kind === 'ICLA' && agreement.status === 'invalidated')) return none;
+  if (agreement.pdfAvailable) return { ...none, download: true };
+  if (agreement.kind !== 'ECLA') return none;
+  return {
+    download: false,
+    requestApproval: canRequestClaApproval(agreement),
+    requestRemoval: canRequestClaRemoval(agreement),
+    contact: canContactClaManager(agreement),
+  };
 }

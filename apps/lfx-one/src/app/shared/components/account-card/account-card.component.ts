@@ -6,8 +6,8 @@ import { Component, inject, input } from '@angular/core';
 
 /**
  * One card of an Account & Settings page (#6067): an optional logo before the title (`[accountCardLeading]`), a 16px title with an
- * optional badge beside it (`[accountCardTitleSuffix]`), an optional subtitle, a right-hand slot for the card's action
- * (`[accountCardActions]`), then its content.
+ * optional badge beside it (`[accountCardTitleSuffix]`), an optional subtitle (plain, or with markup through `[accountCardSubtitle]`),
+ * a right-hand slot for the card's action (`[accountCardActions]`), then its content.
  */
 @Component({
   selector: 'lfx-account-card',
