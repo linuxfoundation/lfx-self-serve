@@ -11,6 +11,7 @@ import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/sha
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
 import { correctLinkedInGeoTargets, linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
+import { linkedInGeoSearchLocations, linkedInGeoSearchQueryRefusal } from '@lfx-one/shared/utils/campaign-linkedin-geo.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
 import {
   googleAdScheduleRefusal,
@@ -173,6 +174,7 @@ import type {
   MetaDeliveryOptions,
   MetaAudienceTargeting,
   MetaTargeting,
+  LinkedInGeoSearchResult,
   MetaTargetingSearchResult,
   MetaCustomAudiencesResult,
   MetaLeadFormsResult,
@@ -367,6 +369,7 @@ import {
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
   META_CUSTOM_AUDIENCES_RESTRICTED_CODE,
+  LINKEDIN_GEO_SEARCH_BUSY_MESSAGE,
   META_TARGETING_SEARCH_BUSY_MESSAGE,
   META_AD_OPTION_FIELDS,
   META_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE,
@@ -4748,6 +4751,57 @@ export class CampaignController {
       logger.success(req, operation, startTime, { count: result.forms.length });
       res.json(result);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * LinkedIn locations matching `?q=` for the Implement tab's location search (#5545), through campaign-service's
+   * targeting typeahead (`search-linkedin-ads-targeting-entities`, `facet=locations`, #643). Unflagged upstream, and any
+   * geo URN it returns is one a create accepts on either road, so there is no capability gate; `requireCampaignManager`
+   * on the router is the gate, as campaign-service's. The query is checked here first, so a bad one costs no upstream
+   * call. An upstream 503 (a LinkedIn throttle, not retried) answers a "try again" 503 that keeps the original error.
+   */
+  public async searchLinkedInGeoTargets(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'linkedin_geo_search';
+    const context = { operation, service: 'campaign_controller', path: req.path };
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(ServiceValidationError.forField('project', 'A project is required to search LinkedIn locations.', context));
+      return;
+    }
+    const refusal = linkedInGeoSearchQueryRefusal(req.query['q']);
+    if (refusal !== null) {
+      next(ServiceValidationError.forField('q', refusal, context));
+      return;
+    }
+    const query = String(req.query['q']).trim();
+    // This handler does not log the query text; the request logger records the URL as for every route.
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+    try {
+      const payload = await this.campaignServiceClient.searchLinkedInTargetingEntities(req, projectSlug, 'locations', query);
+      // `entities` is required upstream; reading its absence as an empty list would say nothing matched.
+      if (!Array.isArray(payload?.entities)) {
+        throw new MicroserviceError('campaign-service returned an unreadable LinkedIn location search.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: LinkedInGeoSearchResult = { locations: linkedInGeoSearchLocations(payload.entities) };
+      logger.success(req, operation, startTime, { count: result.locations.length });
+      res.json(result);
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 503 && error.transportFailure !== true) {
+        next(
+          new MicroserviceError(LINKEDIN_GEO_SEARCH_BUSY_MESSAGE, 503, 'LINKEDIN_GEO_SEARCH_UNAVAILABLE', {
+            operation,
+            service: 'campaign_controller',
+            clientMessage: LINKEDIN_GEO_SEARCH_BUSY_MESSAGE,
+            originalError: error,
+          })
+        );
+        return;
+      }
       next(error);
     }
   }

@@ -132,6 +132,7 @@ import type {
   RedditAdVariant,
   RedditBriefCopy,
   StoredCreativeAsset,
+  CampaignServiceLinkedInTargetingEntities,
   CampaignServiceMetaTargetingSearch,
   MetaTargetingSearchType,
 } from '@lfx-one/shared/interfaces';
@@ -3742,6 +3743,34 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/meta-ads/lead-forms`,
       'GET'
+    );
+  }
+
+  /**
+   * LinkedIn targeting entities matching `query` for one facet (`search-linkedin-ads-targeting-entities`, #585, #643):
+   * the Implement tab's location search uses `facet=locations` (#5545). Unflagged upstream; answered on
+   * `campaign_manager` of the path project, with the project's LinkedIn connection or LF's system credential. At most
+   * 100 entities, cached upstream for 6 hours per facet and query. A LinkedIn throttle answers 503 and is not retried.
+   * Failures are left to the caller.
+   */
+  public async searchLinkedInTargetingEntities(
+    req: Request,
+    projectSlug: string,
+    facet: 'locations',
+    query: string
+  ): Promise<CampaignServiceLinkedInTargetingEntities> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A targeting search requires the project it is made for.', {
+        operation: 'search_linkedin_targeting_entities',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInTargetingEntities>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/targeting-entities`,
+      'GET',
+      { facet, query }
     );
   }
 

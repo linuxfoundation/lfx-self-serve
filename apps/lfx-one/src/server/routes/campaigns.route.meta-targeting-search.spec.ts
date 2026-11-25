@@ -14,11 +14,13 @@ import { META_TARGETING_SEARCH_BUSY_MESSAGE } from '@lfx-one/shared/constants';
 /**
  * Router-level coverage for the Meta targeting search (#5904 row 4): it sits behind the blanket
  * `requireCampaignManager` (Meta taxonomy, campaign-service's own gate), checks the kind and query before any
- * upstream call, camel-cases the answer, and turns a Meta throttle into a "busy, try again" 503.
+ * upstream call, camel-cases the answer, and turns a Meta throttle into a "busy, try again" 503. The LinkedIn location
+ * search (#5545) shares the harness for its guard test, at the end.
  */
 
-const { svcSearch, isServerFeatureEnabled, checkProjectGlobalMarketingOpsStrict, blanketGuard } = vi.hoisted(() => ({
+const { svcSearch, svcLinkedInSearch, isServerFeatureEnabled, checkProjectGlobalMarketingOpsStrict, blanketGuard } = vi.hoisted(() => ({
   svcSearch: vi.fn(),
+  svcLinkedInSearch: vi.fn(),
   isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => true),
   checkProjectGlobalMarketingOpsStrict: vi.fn<(req: unknown, slug: string) => Promise<boolean>>(async () => true),
   blanketGuard: vi.fn(),
@@ -30,7 +32,7 @@ vi.mock('../middleware/require-marketing-access.middleware', async () => {
     requireCampaignManager: (req: express.Request, _res: express.Response, next: express.NextFunction) => {
       blanketGuard(req.path);
       // Let the search through: it belongs behind this guard, which only records that it ran.
-      if (req.path === '/meta/targeting-search') {
+      if (req.path === '/meta/targeting-search' || req.path === '/linkedin/geo-targets') {
         next();
         return;
       }
@@ -50,6 +52,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
     ...actual,
     CampaignServiceClient: class {
       public searchMetaTargetingOptions = svcSearch;
+      public searchLinkedInTargetingEntities = svcLinkedInSearch;
     },
   };
 });
@@ -209,5 +212,18 @@ describe('GET /api/campaigns/meta/targeting-search', () => {
     svcSearch.mockResolvedValueOnce({ type: 'interest' });
 
     expect((await search('project=tlf&type=interest&query=kubernetes')).status).toBe(502);
+  });
+});
+
+// The LinkedIn location search (#5545) shares this router harness: it sits behind the same blanket guard.
+describe('GET /api/campaigns/linkedin/geo-targets', () => {
+  it('runs behind requireCampaignManager', async () => {
+    svcLinkedInSearch.mockResolvedValueOnce({ facet: 'locations', entities: [{ urn: 'urn:li:geo:103035651', name: 'Berlin, Germany' }], entity_count: 1 });
+
+    const res = await fetch(`${baseUrl}/api/campaigns/linkedin/geo-targets?project=tlf&q=Berlin`);
+
+    expect(blanketGuard).toHaveBeenCalledWith('/linkedin/geo-targets');
+    // The answer's shape is the controller spec's (`campaign.controller.linkedin-geo-search.spec.ts`).
+    expect(res.status).toBe(200);
   });
 });

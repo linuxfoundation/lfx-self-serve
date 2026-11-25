@@ -6503,6 +6503,23 @@ describe('CampaignServiceClient.searchMetaTargetingOptions', () => {
   });
 });
 
+describe('CampaignServiceClient.searchLinkedInTargetingEntities', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's LinkedIn targeting entities with the facet and query, the project encoded", async () => {
+    const answer = { facet: 'locations', entities: [], entity_count: 0 };
+    proxyRequest.mockResolvedValueOnce(answer);
+
+    expect(await new CampaignServiceClient().searchLinkedInTargetingEntities(req, 'lf/ai', 'locations', 'berlin')).toBe(answer);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/linkedin-ads/targeting-entities', 'GET', {
+      facet: 'locations',
+      query: 'berlin',
+    });
+  });
+});
+
 describe('CampaignServiceClient.listGoogleAdsAudiences', () => {
   beforeEach(() => {
     vi.clearAllMocks();

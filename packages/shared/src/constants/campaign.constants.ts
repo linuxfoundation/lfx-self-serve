@@ -3819,6 +3819,18 @@ export const DEFAULT_MICROSOFT_KEYWORDS_WINDOW: MicrosoftKeywordsWindow = 'last_
 // They are kept out of source control entirely so vendor IDs never ship in the
 // client bundle or the public chart repo.
 
+/**
+ * The LinkedIn location search query bounds (#5545): campaign-service's `search-linkedin-ads-targeting-entities` takes
+ * 2 to 100 characters with no control characters, so the BFF checks the same before any upstream call.
+ */
+export const LINKEDIN_GEO_SEARCH_BOUNDS = { minQueryLength: 2, maxQueryLength: 100 } as const;
+
+/** A LinkedIn geo URN as campaign-service accepts it in `linkedInConfig.geoTargets` (`internal/platform/linkedin/targeting.go`). */
+export const LINKEDIN_GEO_URN_PATTERN = /^urn:li:geo:[0-9]+$/;
+
+/** The message a LinkedIn location search answers while LinkedIn throttles or fails it (an upstream 503, not retried). */
+export const LINKEDIN_GEO_SEARCH_BUSY_MESSAGE = "LinkedIn location search isn't available right now. Wait a few seconds, then search again.";
+
 export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget>> = {
   japan: { label: 'Japan', urn: 'urn:li:geo:101355337' },
   india: { label: 'India', urn: 'urn:li:geo:102713980' },

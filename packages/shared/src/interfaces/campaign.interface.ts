@@ -1901,6 +1901,21 @@ export interface LinkedInGeoUrnCorrection {
   to: string;
 }
 
+/**
+ * campaign-service's LinkedIn targeting typeahead (`search-linkedin-ads-targeting-entities`, #585, #643), as the wire
+ * carries it: up to 100 entities in LinkedIn's relevance order, de-duplicated by URN.
+ */
+export interface CampaignServiceLinkedInTargetingEntities {
+  facet: string;
+  entities: { urn: string; name: string }[];
+  entity_count: number;
+}
+
+/** `GET /api/campaigns/linkedin/geo-targets` (#5545): the locations matching a query, ready to add as geo targets. */
+export interface LinkedInGeoSearchResult {
+  locations: LinkedInGeoTarget[];
+}
+
 export interface LinkedInCreativeVariant {
   introText: string;
   headline: string;
