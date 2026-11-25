@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { buildShareKitTrackedUrl } from '../utils/share-kit.utils';
 import { validateShareKitContent } from './share-kit-schema.utils';
 
 function validKit(): Record<string, unknown> {
@@ -120,6 +121,29 @@ describe('validateShareKitContent', () => {
     const kit = validKit();
     kit['posts'] = [{ id: 'invite', title: 'Invite', text: { linkedin: 'Hi', x: 'Hi', bluesky: 'a'.repeat(259) } }];
     expect(validateShareKitContent(kit).problems.join('\n')).toContain('301 of 300 characters');
+  });
+
+  describe('LinkedIn length with the tracked link', () => {
+    // A long registration query makes the real link long enough to matter under the 2,800-character cap.
+    const registrationUrl = `https://events.example.org/summit/register/?ref=${'r'.repeat(300)}`;
+    const link = buildShareKitTrackedUrl(registrationUrl, { medium: 'linkedin', campaign: 'example-summit-2027', content: 'invite' });
+    const fitting = 3000 - 2 - link.length;
+
+    function kitWithLinkedIn(length: number): Record<string, unknown> {
+      const kit = validKit();
+      kit['registration'] = { url: registrationUrl, priceLabel: '$399' };
+      kit['posts'] = [{ id: 'invite', title: 'Invite', text: { linkedin: 'a'.repeat(length), x: 'Hi', bluesky: 'Hi' } }];
+      return kit;
+    }
+
+    it('accepts a post that exactly fills 3,000 characters once the link is added', () => {
+      expect(validateShareKitContent(kitWithLinkedIn(fitting)).ok).toBe(true);
+    });
+
+    it('rejects a post one character over once the link is added', () => {
+      const result = validateShareKitContent(kitWithLinkedIn(fitting + 1));
+      expect(result.problems.join('\n')).toContain('posts.0.text.linkedin: is 3001 of 3000 characters once the link is added; shorten it by 1');
+    });
   });
 
   describe('theme', () => {

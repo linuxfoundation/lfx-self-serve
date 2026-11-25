@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { signal } from '@angular/core';
+import { makeStateKey, signal, TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, ParamMap } from '@angular/router';
-import { ShareKitContent, ShareKitGraphic, ShareKitTheme } from '@lfx-one/shared/interfaces';
+import { ShareKitContent, ShareKitGraphic, ShareKitPageState, ShareKitTheme } from '@lfx-one/shared/interfaces';
 import { PlausibleService } from '@services/plausible.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, Observable, of, throwError } from 'rxjs';
@@ -50,7 +50,8 @@ describe('ShareKitPageComponent', () => {
 
   async function setup(
     response: Observable<ShareKitContent> = of(kit),
-    paramMap: Observable<ParamMap> = of(convertToParamMap({ eventSlug: 'example-summit-2027' }))
+    paramMap: Observable<ParamMap> = of(convertToParamMap({ eventSlug: 'example-summit-2027' })),
+    transferred?: ShareKitPageState
   ): Promise<PageHandlers> {
     trackEvent = vi.fn();
     trackPage = vi.fn();
@@ -64,6 +65,9 @@ describe('ShareKitPageComponent', () => {
         { provide: UserService, useValue: { authenticated: signal(false) } },
       ],
     }).compileComponents();
+    if (transferred) {
+      TestBed.inject(TransferState).set(makeStateKey<ShareKitPageState>('shareKitState'), transferred);
+    }
     fixture = TestBed.createComponent(ShareKitPageComponent);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -79,6 +83,17 @@ describe('ShareKitPageComponent', () => {
     expect(text('share-kit-foundation')).toBe('Example Foundation · Example Summit Share Kit');
     expect(fixture.nativeElement.querySelector('[data-testid="share-kit-logo"]')).toBeNull();
     expect((fixture.nativeElement.querySelector('[data-testid="share-kit-page"]') as HTMLElement).style.getPropertyValue('--sk-hero')).toBe('');
+  });
+
+  it('keeps the server-rendered kit instead of refetching it in the browser', async () => {
+    const transferred: ShareKitPageState = { eventSlug: 'example-summit-2027', loading: false, error: false, notFound: false, shareKit: kit };
+    await setup(
+      throwError(() => new HttpErrorResponse({ status: 503 })),
+      undefined,
+      transferred
+    );
+    expect(getShareKit).not.toHaveBeenCalled();
+    expect(text('share-kit-foundation')).toBe('Example Foundation · Example Summit Share Kit');
   });
 
   it('brands the page from the event theme', async () => {

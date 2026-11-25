@@ -14,7 +14,7 @@ import {
   SHARE_KIT_SLUG_PATTERN,
 } from '../constants/share-kit.constants';
 import { ShareKitContent, ShareKitValidationResult } from '../interfaces/share-kit.interface';
-import { countShareKitPostLength, shareKitContrastRatio } from '../utils/share-kit.utils';
+import { buildShareKitTrackedUrl, countShareKitPostLength, shareKitContrastRatio } from '../utils/share-kit.utils';
 
 const MARKUP_PATTERN = /<[a-z!/?][^>]*>/i;
 
@@ -178,6 +178,21 @@ export const shareKitContentSchema = z
   .refine((content) => new Set(content.posts.map((post) => post.id)).size === content.posts.length, {
     message: 'post ids must be unique',
     path: ['posts'],
+  })
+  .superRefine((content, ctx) => {
+    // LinkedIn counts the link in full, so check each post with the tracked link the copy button adds.
+    const { limit } = SHARE_KIT_PLATFORM_LIMITS.linkedin;
+    content.posts.forEach((post, index) => {
+      const link = buildShareKitTrackedUrl(content.registration.url, { medium: 'linkedin', campaign: content.eventSlug, content: post.id });
+      const length = countShareKitPostLength(post.text.linkedin, link, 'linkedin');
+      if (length > limit) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `is ${length} of ${limit} characters once the link is added; shorten it by ${length - limit}`,
+          path: ['posts', index, 'text', 'linkedin'],
+        });
+      }
+    });
   });
 
 /** Validates raw share kit content. `expectedSlug` is the folder name, which must match `eventSlug`. */

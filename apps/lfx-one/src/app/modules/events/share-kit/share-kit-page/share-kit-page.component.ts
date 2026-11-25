@@ -214,6 +214,10 @@ export class ShareKitPageComponent {
         switchMap((slug, index) => {
           // Another kit may lack the section that was open (Graphics, CFP), so a new slug starts on the Share tab.
           if (index > 0) this.tab.set('share');
+          // The server already rendered this kit; refetching could only swap a good page for an error.
+          if (index === 0 && transferred) {
+            return of(transferred);
+          }
           return this.shareKitService.getShareKit(slug).pipe(
             map((shareKit): ShareKitPageState => ({ eventSlug: slug, loading: false, error: false, notFound: false, shareKit })),
             catchError((err) => {
@@ -235,7 +239,7 @@ export class ShareKitPageComponent {
                 }
               }
             }),
-            startWith(index === 0 && transferred ? transferred : { ...initial, eventSlug: slug })
+            startWith<ShareKitPageState>({ ...initial, eventSlug: slug })
           );
         })
       ),
