@@ -4,7 +4,7 @@ description: How to view recurring donation details, hide your name on a recurri
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, recurring donations, cancel, subscription, manage, anonymous]
-last_updated: 2026-11-10
+last_updated: 2026-11-23
 intercom_collection: Crowdfunding
 ---
 
@@ -12,7 +12,7 @@ This article explains how to view your recurring donation details and how to can
 
 ## Before you begin
 
-- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
+- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your LF account.
 - You must have at least one recurring donation. The **Recurring Donations** section appears on the Donations page only when you have one.
 
 ## View recurring donation details

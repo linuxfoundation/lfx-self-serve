@@ -4,7 +4,7 @@ description: How to add and remove saved payment methods for crowdfunding donati
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, payment methods, add, remove, credit card]
-last_updated: 2026-10-29
+last_updated: 2026-11-23
 intercom_collection: Crowdfunding
 ---
 
@@ -12,7 +12,7 @@ Your saved payment card is shown in the **Payment Methods** section at the botto
 
 ## Before you begin
 
-- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
+- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your LF account.
 - Before removing a card: check whether it is linked to any active recurring donations. Removing it will cause those donations to fail on the next billing cycle. To avoid missed charges, cancel the recurring donation first — see [Manage Recurring Donations](../manage-recurring-donations/).
 
 ## Add a payment card

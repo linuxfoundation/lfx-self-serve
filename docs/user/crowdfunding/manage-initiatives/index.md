@@ -4,7 +4,7 @@ description: How to view initiative details, edit settings, and archive or activ
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, manage, edit, attribution, archive, activate]
-last_updated: 2026-11-11
+last_updated: 2026-11-23
 intercom_collection: Crowdfunding
 ---
 
@@ -12,7 +12,7 @@ This article explains how to edit, archive, and activate crowdfunding initiative
 
 ## Before you begin
 
-- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
+- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your LF account.
 - You must have created at least one crowdfunding initiative. These steps apply to initiative owners only.
 
 ## Initiative detail page
