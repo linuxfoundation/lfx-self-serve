@@ -8,7 +8,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { LinkedInTextAdsEditorComponent } from './linkedin-text-ads-editor.component';
 
 // The rules (counters, errors, keys) are table rows in campaign-linkedin-text-ads-form.utils.spec.ts; this spec only
-// checks the wiring: a view's error reaches the template, and edits, adds and removes reach the model.
+// checks the wiring: a view's error reaches the template, edits, adds and removes reach the model, and an image pick
+// reaches the parent with its ad's key.
 describe('LinkedInTextAdsEditorComponent', () => {
   let fixture: ComponentFixture<LinkedInTextAdsEditorComponent>;
   let model: LinkedInTextAdDraft[];
@@ -43,5 +44,25 @@ describe('LinkedInTextAdsEditorComponent', () => {
     call('remove', 'text-ad-1');
     call('remove', 'text-ad-2');
     expect(model.map((ad) => ad.key)).toEqual(['text-ad-2']);
+  });
+
+  it('offers the image picker on an explicit yes and hands a pick to the parent with its ad', () => {
+    expect(el('linkedin-text-ads-editor-image-file-0')).toBeNull();
+    fixture.componentRef.setInput('imageUploadAvailable', true);
+    fixture.componentRef.setInput('image', {
+      slot: { variantKey: '', status: 'idle', failedBriefId: '', error: '' },
+      briefId: 'brief-1',
+      briefSaving: false,
+      showSection: true,
+      uploadEnabled: true,
+      capabilityRead: 'ready',
+    });
+    fixture.detectChanges();
+    const picks: { key: string; event: Event }[] = [];
+    fixture.componentInstance.imageFileChange.subscribe((pick) => picks.push(pick));
+
+    el('linkedin-text-ads-editor-image-file-0')?.dispatchEvent(new Event('change'));
+
+    expect(picks.map((pick) => pick.key)).toEqual(['text-ad-1']);
   });
 });
