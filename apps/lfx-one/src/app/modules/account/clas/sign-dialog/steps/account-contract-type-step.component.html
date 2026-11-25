@@ -1,0 +1,30 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<p class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700">{{ copy.body }}</p>
+<lfx-ui-choicebox-group
+  data-autofocus
+  ariaLabel="Contributor type"
+  [formControl]="selectForm.controls.contractType"
+  data-testid="account-sign-cla-contract-type">
+  <lfx-ui-choicebox
+    [value]="individualValue"
+    [label]="copy.individual.label"
+    [description]="copy.individual.description"
+    [disabled]="individualHeld"
+    [disabledReason]="individualHeld ? copy.alreadyHeld : ''"
+    data-testid="account-sign-cla-contract-individual" />
+  <lfx-ui-choicebox
+    [value]="corporateValue"
+    [label]="copy.corporate.label"
+    [description]="copy.corporate.description"
+    [disabled]="corporateHeld"
+    [disabledReason]="corporateHeld ? copy.alreadyHeld : ''"
+    data-testid="account-sign-cla-contract-corporate" />
+</lfx-ui-choicebox-group>
+<div
+  class="-mx-[24px] -mb-[24px] flex flex-row items-center justify-end gap-[12px] bg-ui-background-200 px-[24px] py-[16px] shadow-[inset_0_1px_0_0] shadow-ui-neutral-alpha-200">
+  <lfx-ui-button variant="secondary" (click)="onCancel()" data-testid="account-sign-cla-contract-cancel">Cancel</lfx-ui-button>
+  <lfx-ui-button [disabled]="!selectedType()" (click)="onContinue()" data-testid="account-sign-cla-contract-continue">Continue</lfx-ui-button>
+</div>
