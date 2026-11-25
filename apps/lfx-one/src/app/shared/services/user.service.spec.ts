@@ -1134,6 +1134,52 @@ describe('UserService', () => {
     });
   });
 
+  describe('getWorkHistoryLogo (#6082)', () => {
+    const logo = (company: string): { value: string | null | undefined; messages: ReturnType<typeof vi.fn> } => {
+      const result = { value: undefined as string | null | undefined, messages: vi.mocked(TestBed.inject(MessageService).add) };
+      service.getWorkHistoryLogo(company).subscribe((value) => (result.value = value));
+      return result;
+    };
+
+    it('matches the company however it is cased or spaced, a current job before a past one', () => {
+      httpGet.mockReturnValue(
+        of([
+          { organization: 'Acme Motors', organizationLogo: 'https://logos.example/past.png', endDate: 'Dec 2019' },
+          { organization: ' ACME MOTORS ', organizationLogo: 'https://logos.example/current.png' },
+        ])
+      );
+
+      expect(logo('acme motors ').value).toBe('https://logos.example/current.png');
+      expect(httpGet).toHaveBeenCalledWith('/api/profile/work-experiences');
+    });
+
+    it('takes a past job’s logo when the current one has none', () => {
+      httpGet.mockReturnValue(
+        of([{ organization: 'Acme Motors', organizationLogo: 'https://logos.example/past.png', endDate: 'Dec 2019' }, { organization: 'Acme Motors' }])
+      );
+
+      expect(logo('Acme Motors').value).toBe('https://logos.example/past.png');
+    });
+
+    it('returns null when no job matches', () => {
+      httpGet.mockReturnValue(of([{ organization: 'Vendor Corp', organizationLogo: 'https://logos.example/vendor.png' }]));
+
+      expect(logo('Acme Motors').value).toBeNull();
+    });
+
+    it('returns null without raising a toast, and logs, when the request fails', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      httpGet.mockReturnValue(throwError(() => new Error('boom')));
+
+      const { value, messages } = logo('Acme Motors');
+
+      expect(value).toBeNull();
+      expect(messages).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    });
+  });
+
   describe('getMeetingSelfGuest (#5798)', () => {
     const PROFILE: CombinedProfile = {
       user: { id: 'auth0|1', email: 'primary@example.com', first_name: 'Pat', last_name: 'Doe', username: 'pdoe', created_at: '', updated_at: '' },

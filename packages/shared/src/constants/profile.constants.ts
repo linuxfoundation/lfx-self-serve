@@ -371,11 +371,8 @@ export const PROFILE_PAGE_COPY = {
   addBio: 'Add bio',
   uploadPhoto: 'Upload photo',
   uploadNewPhoto: 'Upload new photo',
-  photoUpdated: 'Profile picture updated',
-  photoFailed: 'Failed to upload profile picture. Please try again.',
-  photoType: 'Please choose a PNG, JPEG, or WEBP image.',
-  photoSize: 'Image must be 2MB or smaller.',
-  photoImpersonating: 'Profile editing is unavailable while impersonating another user.',
+  loadFailed: 'We couldn’t load your profile.',
+  retry: 'Try again',
 } as const;
 
 /** Base path of the Account & Settings area that replaces the Profile & Account hub's tabs (#6067). */

@@ -6,7 +6,7 @@ import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { ACCOUNT_PERSONAL_INFORMATION_PATH, PROFILE_PAGE_COPY } from '@lfx-one/shared/constants';
+import { ACCOUNT_PERSONAL_INFORMATION_PATH, AVATAR_UPLOAD_COPY, PENDING_PROFILE_SAVE_KEY, PROFILE_PAGE_COPY } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity } from '@lfx-one/shared/interfaces';
 import { AccountProfileService } from '@services/account-profile.service';
 import { ProfileAuthReturnService } from '@services/profile-auth-return.service';
@@ -33,15 +33,23 @@ const GITHUB = { platform: 'github', value: 'ada', inAuth0: true } as EnrichedId
 class StateProfilePageComponent extends ProfilePageComponent {}
 
 describe('ProfilePageComponent', () => {
-  function setup(options: { profile?: CombinedProfile; identities?: EnrichedIdentity[]; upload?: () => Observable<unknown>; avatar?: string } = {}) {
+  function setup(
+    options: {
+      profile?: () => Observable<CombinedProfile>;
+      identities?: EnrichedIdentity[];
+      upload?: () => Observable<unknown>;
+      avatar?: string;
+      impersonating?: boolean;
+    } = {}
+  ) {
     const show = vi.fn();
     const apply = vi.fn();
     const userService = {
       user: signal({ name: 'Ada L' }),
-      impersonating: signal(false),
+      impersonating: signal(options.impersonating ?? false),
       effectiveAvatarUrl: signal(options.avatar ?? ''),
       identitiesRefresh$: of(),
-      getCurrentUserProfile: vi.fn(() => of(options.profile ?? PROFILE)),
+      getCurrentUserProfile: vi.fn(options.profile ?? (() => of(PROFILE))),
       getIdentities: vi.fn(() => of(options.identities ?? [GITHUB])),
       getWorkHistoryLogo: vi.fn(() => of('https://cdn.example/acme.png')),
       uploadProfilePicture: vi.fn(options.upload ?? (() => of({ public_url: 'https://cdn.example/ada.png' }))),
@@ -99,7 +107,7 @@ describe('ProfilePageComponent', () => {
   });
 
   it('asks an owner with no title, company or bio to add them on Personal information', async () => {
-    setup({ profile: EMPTY_PROFILE });
+    setup({ profile: () => of(EMPTY_PROFILE) });
     const { query } = await render();
 
     expect(query('profile-hero-add-title')?.querySelector('a')?.getAttribute('href')).toBe(ACCOUNT_PERSONAL_INFORMATION_PATH);
@@ -108,17 +116,39 @@ describe('ProfilePageComponent', () => {
     expect(query('profile-hero-location')).toBeNull();
   });
 
-  it('falls back to the person icon with no photo, and names the upload for a first photo or a new one', async () => {
+  it('falls back to the person icon with no photo, and offers a first photo', async () => {
     setup();
     const { query } = await render();
+
     expect(query('profile-hero-avatar-fallback')).not.toBeNull();
     expect(query('profile-hero-avatar-upload')?.querySelector('button')?.getAttribute('aria-label')).toBe(PROFILE_PAGE_COPY.uploadPhoto);
+  });
 
-    TestBed.resetTestingModule();
+  it('shows the photo, and offers a new one', async () => {
     setup({ avatar: 'https://cdn.example/ada.png' });
-    const withPhoto = await render();
-    expect(withPhoto.query('profile-hero-avatar-image')?.getAttribute('src')).toBe('https://cdn.example/ada.png');
-    expect(withPhoto.query('profile-hero-avatar-upload')?.querySelector('button')?.getAttribute('aria-label')).toBe(PROFILE_PAGE_COPY.uploadNewPhoto);
+    const { query } = await render();
+
+    expect(query('profile-hero-avatar-image')?.getAttribute('src')).toBe('https://cdn.example/ada.png');
+    expect(query('profile-hero-avatar-upload')?.querySelector('button')?.getAttribute('aria-label')).toBe(PROFILE_PAGE_COPY.uploadNewPhoto);
+  });
+
+  it('offers no upload while impersonating', async () => {
+    setup({ impersonating: true });
+    const { query } = await render();
+
+    expect(query('profile-hero-avatar-controls')).toBeNull();
+  });
+
+  it('says when the profile could not load, and tries again', async () => {
+    const { userService } = setup({ profile: () => throwError(() => new HttpErrorResponse({ status: 502 })) });
+    const { fixture, query } = await render();
+    expect(query('profile-load-error')?.textContent).toContain(PROFILE_PAGE_COPY.loadFailed);
+
+    userService.getCurrentUserProfile.mockImplementation(() => of(PROFILE));
+    query('profile-load-retry')?.querySelector('button')?.click();
+    await fixture.whenStable();
+    expect(query('profile-load-error')).toBeNull();
+    expect(query('profile-hero-bio')?.textContent).toBe('I build compilers.');
   });
 
   describe('photo upload', () => {
@@ -137,26 +167,41 @@ describe('ProfilePageComponent', () => {
       pick(page, new File(['x'], 'ada.png', { type: 'image/png' }));
 
       expect(apply).toHaveBeenCalledWith({ picture: 'https://cdn.example/ada.png' }, expect.anything());
-      expect(show).toHaveBeenCalledWith({ variant: 'dark', message: PROFILE_PAGE_COPY.photoUpdated });
+      expect(show).toHaveBeenCalledWith({ variant: 'dark', message: AVATAR_UPLOAD_COPY.updated });
     });
 
-    it('turns down a file that is not an image it accepts', async () => {
+    it('turns down a file of the wrong type or over 2MB', async () => {
       const { show, userService } = setup();
       const page = await state();
 
       pick(page, new File(['x'], 'ada.gif', { type: 'image/gif' }));
+      pick(page, new File(['x'.repeat(2 * 1024 * 1024 + 1)], 'ada.png', { type: 'image/png' }));
 
       expect(userService.uploadProfilePicture).not.toHaveBeenCalled();
-      expect(show).toHaveBeenCalledWith({ variant: 'error', message: PROFILE_PAGE_COPY.photoType });
+      expect(show).toHaveBeenCalledWith({ variant: 'error', message: AVATAR_UPLOAD_COPY.wrongType });
+      expect(show).toHaveBeenCalledWith({ variant: 'error', message: AVATAR_UPLOAD_COPY.tooLarge });
     });
 
-    it('says why an upload failed while impersonating', async () => {
+    it('leaves for authorization and asks for the photo again on return', async () => {
+      setup({
+        upload: () => throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'management_token_required', authorize_url: '#authorize' } })),
+      });
+      const page = await state();
+
+      pick(page, new File(['x'], 'ada.png', { type: 'image/png' }));
+
+      expect(JSON.parse(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY) ?? '{}').avatarPending).toBe(true);
+      expect(window.location.hash).toBe('#authorize');
+      sessionStorage.removeItem(PENDING_PROFILE_SAVE_KEY);
+    });
+
+    it('reports a failure, and why while impersonating', async () => {
       const { show } = setup({ upload: () => throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'IMPERSONATION_READ_ONLY' } })) });
       const page = await state();
 
       pick(page, new File(['x'], 'ada.png', { type: 'image/png' }));
 
-      expect(show).toHaveBeenCalledWith({ variant: 'error', message: PROFILE_PAGE_COPY.photoImpersonating });
+      expect(show).toHaveBeenCalledWith({ variant: 'error', message: AVATAR_UPLOAD_COPY.impersonating });
     });
   });
 });

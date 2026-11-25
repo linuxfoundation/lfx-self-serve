@@ -689,7 +689,10 @@ export class UserService {
         const matches = experiences.filter((experience) => experience.organizationLogo && experience.organization.trim().toLowerCase() === name);
         return (matches.find((experience) => !experience.endDate) ?? matches[0])?.organizationLogo ?? null;
       }),
-      catchError(() => of(null))
+      catchError((error) => {
+        console.warn('[UserService] getWorkHistoryLogo failed; showing no logo', error);
+        return of(null);
+      })
     );
   }
 

@@ -36,8 +36,10 @@ const SIDEBAR_LOAD_TIMEOUT = 20_000;
 const ELEMENT_TIMEOUT = 10_000;
 
 // ─── Test data ────────────────────────────────────────────────────────────────
-// /profile redirects to its first tab, so this is the canonical landing route for any bare-/profile nav.
+// With the profile redesign off, /profile redirects to its first tab, so this is the canonical landing route for any bare-/profile nav.
 const PROFILE_DEFAULT_URL = /\/profile\/attributions\b/;
+// With it on, /profile is the Profile page itself (#6082).
+const PROFILE_PAGE_URL = /\/profile$/;
 
 // Foundation-lens fixtures — used only to seed a non-Me lens as the precondition for the account-menu tests.
 const MOCK_FOUNDATION_SLUG = 'test-foundation';
@@ -281,7 +283,8 @@ test.describe('Profile redesign entry points', () => {
     await expect(page.getByTestId('account-landing')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
     await profile.click();
-    await expect(page).toHaveURL(PROFILE_DEFAULT_URL, { timeout: ELEMENT_TIMEOUT });
+    await expect(page).toHaveURL(PROFILE_PAGE_URL, { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('profile-hero')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(profile, 'Profile should be active on the Profile pages').toHaveClass(/\bis-active\b/);
     await expect(account).not.toHaveClass(/\bis-active\b/);
   });
