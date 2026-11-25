@@ -6181,6 +6181,10 @@
             [briefId]="briefPersistence().briefId ?? ''"
             [available]="libraryUploadAvailable()"
             [reloadToken]="creativeLibraryRevision()"
+            [videoIdsInUse]="linkedInVideoIdsInUse()"
+            [videoUploadRunning]="linkedInImageUploadStatus() === 'uploading'"
+            (videoDeleteRunning)="linkedInVideoDeleteRunning.set($event)"
+            (videoDeleted)="onLibraryVideoDeleted($event)"
             (libraryChanged)="onCreativeLibraryChanged()" />
           <lfx-creative-slot-grid
             [projectSlug]="activeFoundationSlug()"

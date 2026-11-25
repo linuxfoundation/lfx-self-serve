@@ -148,7 +148,7 @@ export function linkedInVariantViews(input: LinkedInVariantViewsInput): LinkedIn
   const uploading = slot.status === 'uploading';
   const failed = slot.status === 'error';
   // The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief.
-  const pickerBlocked = !briefId || input.briefSaving;
+  const pickerBlocked = !briefId || input.briefSaving || input.pickerHeld === true;
   const orphaned = linkedInImageUploadOrphaned(slot, variants);
   const slotIndex = variants.findIndex((variant) => variant.key === slot.variantKey);
   const fieldErrors = linkedInVariantFieldErrors(variants, input.eventName ?? '');

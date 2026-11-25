@@ -137,6 +137,7 @@ import type {
   RedditAdVariant,
   RedditBriefCopy,
   StoredCreativeAsset,
+  StoredCreativeVideo,
   CampaignServiceLinkedInTargetingEntities,
   CampaignServiceMetaTargetingSearch,
   MetaTargetingSearchType,
@@ -1033,6 +1034,19 @@ export function creativeAssetUploadBody(contentType: CreativeAssetUploadMimeType
   }
   tail.copy(body, offset);
   return body;
+}
+
+/** A stored MP4 as the library lists it (#5764 row 18), or `null` when the entry is not one of this brief's. */
+function toStoredCreativeVideo(asset: CampaignServiceCreativeAsset | undefined, briefId: string): StoredCreativeVideo | null {
+  const usable =
+    typeof asset?.id === 'string' &&
+    asset.id.length > 0 &&
+    typeof asset.brief_id === 'string' &&
+    asset.brief_id.toLowerCase() === briefId.toLowerCase() &&
+    typeof asset.byte_size === 'number' &&
+    Number.isFinite(asset.byte_size) &&
+    typeof asset.checksum === 'string';
+  return usable ? { id: asset.id, byteSize: asset.byte_size, checksum: asset.checksum } : null;
 }
 
 function toStoredCreativeAsset(asset: CampaignServiceCreativeAsset | undefined, briefId: string): StoredCreativeAsset | null {
@@ -2824,10 +2838,19 @@ export class CampaignServiceClient {
       Number.isFinite(list.bytes_used) &&
       typeof list.bytes_limit === 'number' &&
       Number.isFinite(list.bytes_limit);
-    // A LinkedIn video (#5764 row 18) shares the brief's store but is no image any image slot or the library can use, so
-    // it is left out of `assets`. `count` and `bytesUsed` stay upstream's, since the quota counts it.
-    const images = countable ? list.assets.filter((asset) => asset?.mime_type !== CREATIVE_ASSET_VIDEO_MIME_TYPE) : [];
-    const assets = images.map((asset) => toStoredCreativeAsset(asset, briefId));
+    // A LinkedIn video (#5764 row 18) shares the brief's store but is no image any image slot can use, so it is listed
+    // apart, as `videos`, where it can be deleted to free the quota. `count` and `bytesUsed` stay upstream's.
+    const isVideo = (asset: CampaignServiceCreativeAsset | undefined) => asset?.mime_type === CREATIVE_ASSET_VIDEO_MIME_TYPE;
+    const assets = countable ? list.assets.filter((asset) => !isVideo(asset)).map((asset) => toStoredCreativeAsset(asset, briefId)) : [];
+    // An unusable video entry is dropped and logged rather than failing the read: the images every slot needs come first.
+    const listedVideos = countable ? list.assets.filter(isVideo).map((asset) => toStoredCreativeVideo(asset, briefId)) : [];
+    const videos = listedVideos.filter((video): video is StoredCreativeVideo => video !== null);
+    if (videos.length < listedVideos.length) {
+      logger.warning(req, 'list_creative_assets', 'Upstream listed a video entry this app cannot use; it is left out', {
+        brief_id: briefId,
+        dropped: listedVideos.length - videos.length,
+      });
+    }
     if (!countable || assets.some((asset) => asset === null)) {
       logger.warning(req, 'list_creative_assets', 'Upstream answered the asset list with an unusable body', {
         brief_id: briefId,
@@ -2844,6 +2867,7 @@ export class CampaignServiceClient {
 
     return {
       assets: assets as StoredCreativeAsset[],
+      videos,
       count: list.count,
       countLimit: list.count_limit,
       bytesUsed: list.bytes_used,

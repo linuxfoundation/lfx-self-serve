@@ -6918,18 +6918,26 @@ describe('CampaignServiceClient creative-asset library reads', () => {
 
       const result = await new CampaignServiceClient().listCreativeAssets(req, 'tlf', BRIEF);
 
-      expect(result).toEqual({ assets: [mappedAsset], count: 1, countLimit: 100, bytesUsed: 12, bytesLimit: 536870912 });
+      expect(result).toEqual({ assets: [mappedAsset], videos: [], count: 1, countLimit: 100, bytesUsed: 12, bytesLimit: 536870912 });
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/tlf/briefs/${BRIEF}/creative-assets`, 'GET');
     });
 
     // A LinkedIn video (#5764 row 18) shares the store: it is left out of the images, and still counts toward the quota.
-    it('leaves a stored MP4 out of the images, keeping the quota as upstream counts it', async () => {
-      const video = { ...upstreamAsset, id: '9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f', mime_type: 'video/mp4', byte_size: 102_400 };
+    it('lists a stored MP4 apart from the images, keeping the quota as upstream counts it', async () => {
+      const VIDEO_ID = '9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f';
+      const video = { ...upstreamAsset, id: VIDEO_ID, mime_type: 'video/mp4', byte_size: 102_400 };
       proxyRequest.mockResolvedValueOnce({ ...upstreamList, assets: [upstreamAsset, video], count: 2, bytes_used: 102_412 });
 
       const result = await new CampaignServiceClient().listCreativeAssets(req, 'tlf', BRIEF);
 
-      expect(result).toEqual({ assets: [mappedAsset], count: 2, countLimit: 100, bytesUsed: 102_412, bytesLimit: 536870912 });
+      expect(result).toEqual({
+        assets: [mappedAsset],
+        videos: [{ id: VIDEO_ID, byteSize: 102_400, checksum: 'ab'.repeat(32) }],
+        count: 2,
+        countLimit: 100,
+        bytesUsed: 102_412,
+        bytesLimit: 536870912,
+      });
     });
 
     // `width`/`height` are OPTIONAL upstream and absent means UNKNOWN, not 0 — the service began

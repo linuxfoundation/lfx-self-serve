@@ -4,12 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { LinkedInVariantDraft } from '../interfaces/campaign.interface';
-import {
-  linkedInVideoAssetToDelete,
-  linkedInVideoFileRefusal,
-  linkedInVideoMissing,
-  linkedInVideoVariantsForCreate,
-} from './campaign-linkedin-video-form.utils';
+import { linkedInStoredVideoRows, linkedInVideoFileRefusal, linkedInVideoMissing, linkedInVideoVariantsForCreate } from './campaign-linkedin-video-form.utils';
 import { linkedInVideoVariantsRefusal } from './campaign-linkedin-video.utils';
 
 const BRIEF = 'b1';
@@ -84,14 +79,20 @@ describe('linkedInVideoVariantsForCreate', () => {
   });
 });
 
-describe('linkedInVideoAssetToDelete', () => {
-  const OTHER = '9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f';
+describe('linkedInStoredVideoRows', () => {
+  const stored = [
+    { id: 'v-1', byteSize: 10, checksum: 'a' },
+    { id: 'v-2', byteSize: 20, checksum: 'b' },
+  ];
   it.each([
-    ['a video no ad uses', [withVideo('a', { videoAssetId: OTHER })], VIDEO, '', VIDEO],
-    ['a video another ad still uses', [withVideo('a')], VIDEO, '', null],
-    ['the id the replacement came back as', [variant('a')], VIDEO, VIDEO, null],
-    ['no video', [variant('a')], '', '', null],
-  ])('%s: %s', (_label, variants, assetId, keepId, expected) => {
-    expect(linkedInVideoAssetToDelete(variants, assetId, keepId)).toBe(expected);
+    ['neither in use', [], false, '', [false, false], ['', '']],
+    ['the first in use by an ad', ['v-1'], false, '', [true, false], ['Used by an ad on this tab. Remove it from the ad first.', '']],
+    ['a LinkedIn upload running', [], true, '', [true, true], ['Wait for the LinkedIn upload to finish.', 'Wait for the LinkedIn upload to finish.']],
+    ['the second being deleted', [], false, 'v-2', [true, true], ['', 'Deleting…']],
+  ])('%s', (_label, inUse, uploading, deletingId, disabled, notes) => {
+    const rows = linkedInStoredVideoRows(stored, inUse, uploading, deletingId);
+    expect(rows.map((row) => row.label)).toEqual(['Video 1 (a)', 'Video 2 (b)']);
+    expect(rows.map((row) => row.deleteDisabled)).toEqual(disabled);
+    expect(rows.map((row) => row.note)).toEqual(notes);
   });
 });

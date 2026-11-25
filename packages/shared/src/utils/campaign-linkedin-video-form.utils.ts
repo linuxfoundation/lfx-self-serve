@@ -9,7 +9,13 @@ import {
   LINKEDIN_VIDEO_MIN_BYTES,
   LINKEDIN_VIDEO_TOO_SMALL_MESSAGE,
 } from '../constants/campaign.constants';
-import type { LinkedInCreativeVariant, LinkedInVariantDraft, LinkedInVariantFieldsEnabled } from '../interfaces/campaign.interface';
+import type {
+  LinkedInCreativeVariant,
+  LinkedInStoredVideoRow,
+  LinkedInVariantDraft,
+  LinkedInVariantFieldsEnabled,
+  StoredCreativeVideo,
+} from '../interfaces/campaign.interface';
 import { linkedInVariantImageForBrief, linkedInVariantVideoHolder } from './campaign-linkedin-image.utils';
 import { normalizeLinkedInCreativeName } from './campaign-linkedin.utils';
 
@@ -61,11 +67,27 @@ export function linkedInVideoVariantsForCreate(
 }
 
 /**
- * The stored video to delete once an ad no longer uses it, or `null` (#5764 row 18). The library does not list videos, so
- * a removed or replaced one would otherwise hold its bytes against the brief's quota for good. Kept: an empty id, the
- * one the replacement upload came back as (identical bytes are stored once), and any id another ad still uses.
+ * The library's stored videos with whether each may be deleted (#5764 row 18). Delete is the operator's, never automatic,
+ * so it cannot race an upload: it is off while an ad on the tab uses the video (the create would name a deleted asset),
+ * while a LinkedIn upload runs (identical bytes come back as an asset already stored), and while another delete runs.
  */
-export function linkedInVideoAssetToDelete(variants: readonly LinkedInVariantDraft[], assetId: string, keepId = ''): string | null {
-  if (assetId === '' || assetId === keepId) return null;
-  return variants.some((variant) => variant.videoAssetId === assetId) ? null : assetId;
+export function linkedInStoredVideoRows(
+  videos: readonly StoredCreativeVideo[],
+  inUse: readonly string[],
+  uploading: boolean,
+  deletingId: string
+): LinkedInStoredVideoRow[] {
+  return videos.map((video, index) => {
+    let note = '';
+    if (inUse.includes(video.id)) note = 'Used by an ad on this tab. Remove it from the ad first.';
+    else if (uploading) note = 'Wait for the LinkedIn upload to finish.';
+    else if (deletingId === video.id) note = 'Deleting…';
+    return {
+      id: video.id,
+      label: `Video ${index + 1} (${video.checksum.slice(0, 8)})`,
+      byteSize: video.byteSize,
+      deleteDisabled: note !== '' || deletingId !== '',
+      note,
+    };
+  });
 }

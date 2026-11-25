@@ -352,6 +352,7 @@ describe('creative-asset library reads and prune', () => {
   const ASSET_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
   const LIBRARY = {
     assets: [{ id: ASSET_ID, projectId: 'tlf', briefId: BRIEF, mimeType: 'image/png', byteSize: 12, checksum: 'ab'.repeat(32) }],
+    videos: [],
     count: 1,
     countLimit: 100,
     bytesUsed: 12,

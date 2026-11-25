@@ -1,14 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, Signal } from '@angular/core';
-import { outputFromObservable, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, computed, DestroyRef, inject, input, output, Signal, signal } from '@angular/core';
+import { outputFromObservable, takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CREATIVE_ASSET_MIME_TYPES, CREATIVE_ASSET_QUEUE_STATUS_VIEW, CREATIVE_ASSET_QUEUE_SUMMARY_ORDER } from '@lfx-one/shared/constants';
-import type { CreativeAssetLibraryQuotaRead, CreativeAssetLibraryQuotaState, CreativeAssetQueueItem, CreativeAssetQueueRow } from '@lfx-one/shared/interfaces';
-import { formatFileSize } from '@lfx-one/shared/utils';
+import type {
+  CreativeAssetLibraryQuotaRead,
+  CreativeAssetLibraryQuotaState,
+  CreativeAssetQueueItem,
+  CreativeAssetQueueRow,
+  LinkedInStoredVideoRow,
+} from '@lfx-one/shared/interfaces';
+import { formatFileSize, linkedInStoredVideoRows } from '@lfx-one/shared/utils';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { CampaignService } from '@services/campaign.service';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { catchError, filter, map, of, pairwise, scan, startWith, switchMap } from 'rxjs';
 
 /**
@@ -29,6 +37,7 @@ import { catchError, filter, map, of, pairwise, scan, startWith, switchMap } fro
 export class CreativeLibraryUploadComponent {
   // === Injections ===
   private readonly campaignService = inject(CampaignService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // === Inputs ===
   public readonly projectSlug = input('');
@@ -42,6 +51,20 @@ export class CreativeLibraryUploadComponent {
   public readonly available = input<boolean | null>(null);
   /** The host's library revision, bumped by any upload (a platform picker's too), to re-read the quota. */
   public readonly reloadToken = input(0);
+  /** The stored videos an ad on the tab uses (#5764 row 18): not deletable, since the create would name them. */
+  public readonly videoIdsInUse = input<readonly string[]>([]);
+  /** Whether a LinkedIn upload is running, which holds every video Delete (an identical upload answers with a stored id). */
+  public readonly videoUploadRunning = input(false);
+
+  // === Writable Signals ===
+  /** The stored video being deleted (#5764 row 18) and its brief; shown only on that brief. */
+  private readonly deleting = signal<{ briefId: string; id: string } | null>(null);
+  /** Why the last video delete failed, and on which brief; shown only on that brief. */
+  private readonly deleteFailure = signal<{ briefId: string; message: string } | null>(null);
+  /** Videos deleted on this page, kept off the list while the library is read again (ids are unique across briefs). */
+  private readonly deletedVideoIds = signal<readonly string[]>([]);
+  /** Bumped by a finished delete, so the library and quota are read again. */
+  private readonly deleteRevision = signal(0);
 
   // === Computed Signals ===
   protected readonly accept = CREATIVE_ASSET_MIME_TYPES.join(',');
@@ -82,10 +105,32 @@ export class CreativeLibraryUploadComponent {
   protected readonly summary: Signal<string> = this.initSummary();
   protected readonly liveMessage: Signal<string> = this.initLiveMessage();
   protected readonly canClear = computed(() => this.items().length > 0 && !this.running());
+  /** The stored video being deleted on the brief on screen, `''` for none. */
+  private readonly deletingVideoId = computed(() => {
+    const deleting = this.deleting();
+    return deleting && deleting.briefId === this.briefId() ? deleting.id : '';
+  });
+  /** Why the last video delete on the brief on screen failed, `''` for none. */
+  protected readonly videoDeleteError = computed(() => {
+    const failure = this.deleteFailure();
+    return failure && failure.briefId === this.briefId() ? failure.message : '';
+  });
+  /** The stored videos, listed apart from the images so their space can be freed (#5764 row 18). */
+  protected readonly videoRows: Signal<LinkedInStoredVideoRow[]> = computed(() => {
+    const videos = (this.quota().library?.videos ?? []).filter((video) => !this.deletedVideoIds().includes(video.id));
+    return linkedInStoredVideoRows(videos, this.videoIdsInUse(), this.videoUploadRunning(), this.deletingVideoId());
+  });
 
   // === Outputs ===
   /** Emitted each time a file adds an asset to the library, so the host can re-read what depends on it. */
   public readonly libraryChanged = outputFromObservable(this.libraryGrowth$);
+  /**
+   * Whether a video delete is running (#5764 row 18). The host holds its video pickers meanwhile: an upload of identical
+   * bytes would answer with the asset being deleted.
+   */
+  public readonly videoDeleteRunning = output<boolean>();
+  /** A stored video was deleted (#5764 row 18), so the host clears it from any ad that still names it. */
+  public readonly videoDeleted = output<string>();
 
   // === Protected Methods ===
   protected onFilesPicked(event: Event, folder: boolean): void {
@@ -111,6 +156,41 @@ export class CreativeLibraryUploadComponent {
     this.campaignService.clearCreativeAssetUploadQueue(this.briefId());
   }
 
+  /**
+   * Delete one stored video the operator chose (#5764 row 18), then read the library again. campaign-service keeps a video
+   * a live campaign may still need (409) and says so; that message is shown as it came.
+   */
+  protected deleteVideo(row: LinkedInStoredVideoRow): void {
+    const briefId = this.briefId();
+    if (row.deleteDisabled || briefId === '' || this.projectSlug() === '') return;
+    this.deleting.set({ briefId, id: row.id });
+    this.deleteFailure.set(null);
+    this.videoDeleteRunning.emit(true);
+    this.campaignService
+      .deleteCreativeAsset(this.projectSlug(), briefId, row.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.deleting.set(null);
+          this.deletedVideoIds.update((ids) => [...ids, row.id]);
+          this.videoDeleteRunning.emit(false);
+          this.videoDeleted.emit(row.id);
+          this.deleteRevision.update((revision) => revision + 1);
+        },
+        error: (err: unknown) => {
+          this.deleting.set(null);
+          this.videoDeleteRunning.emit(false);
+          // Already gone (deleted elsewhere): read the library again rather than offer a Delete that can only 404.
+          if (err instanceof HttpErrorResponse && err.status === 404) {
+            this.deletedVideoIds.update((ids) => [...ids, row.id]);
+            this.deleteRevision.update((revision) => revision + 1);
+            return;
+          }
+          this.deleteFailure.set({ briefId, message: serverAuthoredMessage(err, `${row.label} could not be deleted. Try again.`) });
+        },
+      });
+  }
+
   // === Private Initializers ===
   /**
    * The library's quota, re-read whenever a file adds to it, so the headroom shown during a run is
@@ -118,9 +198,10 @@ export class CreativeLibraryUploadComponent {
    * and costs nothing, which only the service can tell.
    */
   private initQuota(): Signal<CreativeAssetLibraryQuotaState> {
-    const request = computed(() => ({ projectSlug: this.projectSlug(), briefId: this.briefId(), stored: this.libraryRevision(), reload: this.reloadToken() }), {
-      equal: (a, b) => a.projectSlug === b.projectSlug && a.briefId === b.briefId && a.stored === b.stored && a.reload === b.reload,
-    });
+    const request = computed(
+      () => ({ projectSlug: this.projectSlug(), briefId: this.briefId(), stored: this.libraryRevision(), reload: this.reloadToken() + this.deleteRevision() }),
+      { equal: (a, b) => a.projectSlug === b.projectSlug && a.briefId === b.briefId && a.stored === b.stored && a.reload === b.reload }
+    );
     return toSignal(
       toObservable(request).pipe(
         switchMap((target) => {
@@ -159,7 +240,7 @@ export class CreativeLibraryUploadComponent {
         }
         return "Couldn't read this library's quota. Uploads still work; any that would exceed it are refused and listed below.";
       }
-      return `${library.count} of ${library.countLimit} images · ${formatFileSize(library.bytesUsed)} of ${formatFileSize(library.bytesLimit)} used`;
+      return `${library.count} of ${library.countLimit} files · ${formatFileSize(library.bytesUsed)} of ${formatFileSize(library.bytesLimit)} used`;
     });
   }
 

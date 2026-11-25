@@ -262,6 +262,27 @@ export interface StoredCreativeAsset {
 }
 
 /**
+ * A stored MP4 (#5764 row 18): listed apart from the images, which every image slot draws from, so it can be deleted to
+ * free the brief's quota. campaign-service records no file name or pixel size for it.
+ */
+export interface StoredCreativeVideo {
+  id: string;
+  byteSize: number;
+  checksum: string;
+}
+
+/** One stored video as the library lists it (#5764 row 18), and whether it may be deleted now. */
+export interface LinkedInStoredVideoRow {
+  id: string;
+  /** "Video 1 (ab12cd34)": the library's order and the checksum's start, since campaign-service records no file name. */
+  label: string;
+  byteSize: number;
+  deleteDisabled: boolean;
+  /** Why Delete is off, or `''`. */
+  note: string;
+}
+
+/**
  * A brief's creative-asset library plus its quota.
  *
  * The limits travel with the list rather than only in the 409 an upload returns, so a folder upload
@@ -269,7 +290,10 @@ export interface StoredCreativeAsset {
  * brief is full by sending file 51 and being refused.
  */
 export interface CreativeAssetLibrary {
+  /** The stored images. Never a video: every image slot and picker reads this list. */
   assets: StoredCreativeAsset[];
+  /** The stored videos (#5764 row 18), shown only so they can be deleted. `count` and `bytesUsed` include them. */
+  videos: StoredCreativeVideo[];
   count: number;
   countLimit: number;
   bytesUsed: number;
@@ -8887,6 +8911,8 @@ export interface LinkedInVariantViewsInput {
   /** The open brief's id, `''` while it is unsaved. */
   briefId: string;
   briefSaving: boolean;
+  /** Whether the pickers are held for another reason: a stored video being deleted (#5764 row 18). */
+  pickerHeld?: boolean;
   /** Whether the LinkedIn section is shown; no image block applies while it is not. */
   showSection: boolean;
   /** `linkedInAssetUploadEnabled` as the page holds it: `null` while unknown. */
