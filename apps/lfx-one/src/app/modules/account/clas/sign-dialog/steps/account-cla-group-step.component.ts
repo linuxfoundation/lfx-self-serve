@@ -38,7 +38,8 @@ export class AccountClaGroupStepComponent extends ClaGroupSelectComponent {
 
   private initCombobox(): Signal<UiInputCombobox> {
     return computed(() => {
-      const highlighted = this.options()[this.highlightedIndex()];
+      // Only while its row is drawn: a selection closes the list but keeps the highlight.
+      const highlighted = this.resultsOpen() && !this.error() ? this.options()[this.highlightedIndex()] : undefined;
       return {
         controls: 'account-sign-cla-results',
         expanded: this.resultsOpen(),

@@ -81,6 +81,18 @@ describe('Account & Settings "Sign a CLA" steps', () => {
     expect(field.getAttribute('role')).toBe('combobox');
     expect(field.getAttribute('aria-controls')).toBe('account-sign-cla-results');
     expect(field.getAttribute('aria-expanded')).toBe('true');
+
+    const step = fixture.componentInstance;
+    const option = { claGroupId: 'cg-1', primaryName: 'Project One', secondaryName: null, matchTypeLabels: [], orgViews: [], expanded: false };
+    step['options'].set([option as never]);
+    step['highlightedIndex'].set(0);
+    await fixture.whenStable();
+    expect(field.getAttribute('aria-activedescendant')).toBe('account-sign-cla-option-cg-1');
+
+    step['onSelect'](option as never);
+    await fixture.whenStable();
+    expect(field.getAttribute('aria-expanded')).toBe('false');
+    expect(field.getAttribute('aria-activedescendant')).toBeNull();
   });
 
   it('asks which contributor type, and continues with the one picked', async () => {
