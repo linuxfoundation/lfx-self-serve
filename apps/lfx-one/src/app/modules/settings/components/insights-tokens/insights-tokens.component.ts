@@ -167,6 +167,10 @@ export class InsightsTokensComponent {
   }
 
   private delete(token: InsightsToken, success: string, failure: { summary: string; detail: string }): void {
+    // Here as well as at each entry point, so a caller can't revoke while impersonating; the server blocks it too.
+    if (this.impersonating()) {
+      return;
+    }
     this.revokingUid.set(token.uid);
 
     this.insightsTokensService

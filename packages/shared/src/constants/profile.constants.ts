@@ -415,7 +415,8 @@ export const ACCOUNT_DEVELOPER_SETTINGS_COPY = {
   createdWarning: 'Copy this token now. You won’t be able to see it again.',
   revokeTitle: 'Revoke token?',
   revokeTextBefore: 'Anything using',
-  revokeTextAfter: 'will lose access to the LFX Insights API immediately. This action can’t be undone.',
+  // Not "immediately" as designed: the Worker caches an exchanged token for up to 10 minutes (insights-tokens.md).
+  revokeTextAfter: 'will lose access to the LFX Insights API within 10 minutes. This action can’t be undone.',
   revokeConfirm: 'Revoke token',
 } as const;
 

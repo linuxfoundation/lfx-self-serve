@@ -38,7 +38,7 @@ describe('AccountInsightsTokensComponent', () => {
     providers?: (ref: { close: () => void }) => { provide: unknown; useValue: unknown }[];
   }
 
-  function setup(tokens: InsightsToken[] = [], eligibility: InsightsTokenEligibility = INSIGHTS_TOKEN_ELIGIBLE) {
+  function setup(tokens: InsightsToken[] = [], eligibility: InsightsTokenEligibility = INSIGHTS_TOKEN_ELIGIBLE, impersonating = false) {
     const closed = new Subject<unknown>();
     const close = vi.fn(() => closed.next(undefined));
     const open = vi.fn<(content: unknown, config: unknown, overrides?: DialogOverrides) => { closed: Subject<unknown>; close: () => void }>(() => ({
@@ -50,7 +50,7 @@ describe('AccountInsightsTokensComponent', () => {
       providers: [
         provideNoopAnimations(),
         { provide: InsightsTokensService, useValue: { getEligibility: () => of(eligibility), getTokens: () => of(tokens), revokeToken } },
-        { provide: UserService, useValue: { impersonating: signal(false) } },
+        { provide: UserService, useValue: { impersonating: signal(impersonating) } },
         { provide: ConfirmationService, useValue: {} },
         { provide: MessageService, useValue: { add: vi.fn(), messageObserver: of(), clearObserver: of() } },
         { provide: UiModalService, useValue: { open } },
@@ -92,6 +92,21 @@ describe('AccountInsightsTokensComponent', () => {
     closed.next(true);
 
     expect(revokeToken).toHaveBeenCalledWith('t1');
+  });
+
+  it('opens no dialog and revokes nothing while impersonating', async () => {
+    const { open, revokeToken } = setup([token('t1'), token('old', '2020-01-01T00:00:00Z')], INSIGHTS_TOKEN_ELIGIBLE, true);
+    const fixture = TestBed.createComponent(StateTokensComponent);
+    await fixture.whenStable();
+    const card = fixture.componentInstance;
+
+    card['openCreateDialog']();
+    card['confirmRevoke'](token('t1'));
+    card['revoke'](token('t1'));
+    card['remove'](token('old'));
+
+    expect(open).not.toHaveBeenCalled();
+    expect(revokeToken).not.toHaveBeenCalled();
   });
 
   it('closes the revoke dialog with the card, and revokes nothing', async () => {
@@ -150,7 +165,7 @@ describe('AccountRevokeTokenDialogComponent', () => {
     const host = fixture.nativeElement as HTMLElement;
     const text = host.querySelector('[data-testid="account-revoke-token-text"]');
 
-    expect(text?.textContent).toContain('Anything using Quarterly report will lose access');
+    expect(text?.textContent).toContain('Anything using Quarterly report will lose access to the LFX Insights API within 10 minutes.');
     expect(text?.id).toBe('revoke-subtitle');
     (host.querySelector('[data-testid="account-revoke-token-confirm"] button') as HTMLButtonElement).click();
     expect(close).toHaveBeenCalledWith(true);

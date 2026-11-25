@@ -57,6 +57,7 @@ export class AccountEmailSettingsComponent extends AccountSettingsComponent {
       data: { email },
       role: 'alertdialog',
       describedBy: true,
+      autoFocus: '[data-autofocus] button',
     });
     dialogRef.closed.pipe(take(1), takeUntilDestroyed(this.pageDestroyRef)).subscribe((confirmed) => (confirmed ? accept() : reject()));
     // The modal is root-owned: it closes with the page, which then deletes nothing.

@@ -73,6 +73,7 @@ export class AccountInsightsTokensComponent extends InsightsTokensComponent {
       data: { name: token.name },
       role: 'alertdialog',
       describedBy: true,
+      autoFocus: '[data-autofocus] button',
     });
     dialogRef.closed.pipe(take(1), takeUntilDestroyed(this.cardDestroyRef)).subscribe((confirmed) => {
       if (confirmed) this.revoke(token);

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule } from '@angular/forms';
 import {
   ACCOUNT_DEVELOPER_SETTINGS_COPY,
@@ -17,6 +18,7 @@ import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { MessageService } from 'primeng/api';
+import { filter, take } from 'rxjs';
 
 import { InsightsTokenCreateDialogComponent } from '../../../../settings/components/insights-token-create-dialog/insights-token-create-dialog.component';
 import { AccountInsightsTokenDialogRef } from './account-insights-token-dialog-ref';
@@ -34,6 +36,8 @@ export class AccountInsightsTokenDialogComponent extends InsightsTokenCreateDial
   private readonly steps = inject(AccountInsightsTokenDialogRef);
   private readonly platform = inject(PLATFORM_ID);
   private readonly toasts = inject(MessageService);
+  private readonly element = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+  private readonly stepInjector = inject(Injector);
 
   protected readonly copy = ACCOUNT_DEVELOPER_SETTINGS_COPY;
   protected readonly docsLink = INSIGHTS_PUBLIC_API_DOCS_URL;
@@ -47,6 +51,18 @@ export class AccountInsightsTokenDialogComponent extends InsightsTokenCreateDial
   public constructor() {
     super();
     inject(DestroyRef).onDestroy(() => this.clearCopiedTimer());
+    // The form, and whatever had focus in it, goes when the token is created, so focus moves to the done step's Close.
+    toObservable(this.created)
+      .pipe(
+        filter((created) => !!created),
+        take(1),
+        takeUntilDestroyed()
+      )
+      .subscribe(() =>
+        afterNextRender(() => this.element.querySelector<HTMLElement>('[data-testid="account-insights-token-close"] button')?.focus(), {
+          injector: this.stepInjector,
+        })
+      );
   }
 
   protected close(): void {

@@ -24,20 +24,21 @@ describe('AccountInsightsTokenDialogComponent', () => {
     const cdkClose = vi.fn();
     const steps = new AccountInsightsTokenDialogRef({ close: cdkClose });
     const createToken = vi.fn(() => of(CREATED));
+    const add = vi.fn();
     TestBed.configureTestingModule({
       providers: [
         provideNoopAnimations(),
         { provide: AccountInsightsTokenDialogRef, useValue: steps },
         { provide: DynamicDialogRef, useValue: steps },
         { provide: InsightsTokensService, useValue: { createToken } },
-        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MessageService, useValue: { add } },
       ],
     });
     const fixture = TestBed.createComponent(AccountInsightsTokenDialogComponent);
     await fixture.whenStable();
     const host = fixture.nativeElement as HTMLElement;
     const query = (testId: string) => host.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null;
-    return { fixture, query, cdkClose, createToken };
+    return { fixture, query, cdkClose, createToken, add };
   }
 
   it('asks for a name, with the design’s placeholder and hint', async () => {
@@ -63,8 +64,35 @@ describe('AccountInsightsTokenDialogComponent', () => {
     expect((query('account-insights-token-secret')?.querySelector('input') as HTMLInputElement).value).toBe('lfi_live_secret');
     expect(query('account-insights-token-secret')?.getAttribute('data-dd-privacy')).toBe('mask');
     expect(query('account-insights-token-usage')?.textContent).toContain('Authorization: Bearer');
+    expect(document.activeElement).toBe(query('account-insights-token-close')?.querySelector('button'));
 
     query('account-insights-token-close')?.querySelector('button')?.click();
     expect(cdkClose).toHaveBeenCalled();
+  });
+
+  it('names the field’s problem: the server’s first, then the length, then control characters', async () => {
+    const { fixture } = await render();
+    const dialog = fixture.componentInstance;
+
+    dialog['form'].controls.name.setValue('x'.repeat(dialog['maxLength'] + 1));
+    expect(dialog['nameError']()).toBe(`Use ${dialog['maxLength']} characters or fewer.`);
+
+    dialog['form'].controls.name.setValue('tab\there');
+    expect(dialog['nameError']()).toBe('Remove tabs, line breaks, and other control characters.');
+
+    dialog['errorMessage'].set('That name is taken.');
+    expect(dialog['nameError']()).toBe('That name is taken.');
+  });
+
+  it('says to copy the token by hand when the clipboard fails', async () => {
+    const { fixture, add } = await render();
+    const steps = TestBed.inject(AccountInsightsTokenDialogRef);
+    steps.close(CREATED);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn(() => Promise.reject(new Error('denied'))) }, configurable: true });
+
+    await fixture.componentInstance['copySecret']();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Select the token and copy it manually.' }));
+    expect(fixture.componentInstance['secretCopied']()).toBe(false);
   });
 });
