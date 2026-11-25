@@ -79,8 +79,6 @@ export class OrgTrainingComponent {
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
   protected readonly viewMode = inject(OrgLensViewModeService);
-  /** The all employee view has no People page, so the learners-not-on-the-people-list tile (and its endpoint) is gone there. */
-  protected readonly statsExcludeKeys = computed<OrgTrainingStatKey[]>(() => (this.viewMode.isEmployeeView() ? ['learnersOutsidePeopleList'] : []));
 
   // ─── Configuration ─────────────────────────────────────────────────────────
   // Shared constants are readonly; copy into a mutable array for the component input that expects it.
@@ -108,6 +106,9 @@ export class OrgTrainingComponent {
   // Page-level state (e.g. `contractor-no-grant`, `could-not-load`) replacing the page, or null when it renders.
   protected readonly pageState = this.emptyState.pageState;
   protected readonly correlationId = this.orgRoleGrantsService.correlationId;
+  /** The all employee view has no People page, so the learners-not-on-the-people-list tile (and its endpoint) is gone there. */
+  protected readonly statsExcludeKeys = computed<OrgTrainingStatKey[]>(() => (this.viewMode.isEmployeeView() ? ['learnersOutsidePeopleList'] : []));
+
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly orgUid = computed(() => this.accountContext.selectedAccount()?.uid ?? '');
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });

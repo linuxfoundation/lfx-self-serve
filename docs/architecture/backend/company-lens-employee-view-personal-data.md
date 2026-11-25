@@ -5,26 +5,26 @@
 
 Internal engineering note for epic #5845, story #5861. Not Help Center copy. User-facing text says "company", never "organization" (epic #5060); identifiers keep the `org` names.
 
-The rule of the view: an employee sees counts, charts and company-level totals. The only personal data allowed is data from a **public code contribution**, the kind anyone can find on GitHub or LFX Insights without logging in. This register lists every place a name, email or other person-level value could reach an employee-view user, per page and per endpoint, with a verdict and a status. It is checked by a unit test (see [How the register is enforced](#how-the-register-is-enforced)).
+The rule of the view: an employee sees counts, charts and company-level totals, with no names, avatars or email addresses on any page. A later update may allow public code-contribution data (equal to what LFX Insights shows without a login) under a different access model. This register lists every place a name, email or other person-level value could reach an employee-view user, per page and per endpoint, with a verdict and a status. It is checked by a unit test (see [How the register is enforced](#how-the-register-is-enforced)).
 
-It describes the view **with the page pull requests (#5869 to #5880) applied** on top of the access gate (#5863). Nothing here is verified against a running service; every row comes from reading the code of those branches. The register is machine-readable in `packages/shared/src/constants/org-lens-employee-view-register.constants.ts`; this document and that file are kept in step.
+It describes the view as shipped: the access gate (#5863, merged) with the page pull request (#6154) on top. Nothing here is verified against a running service; every row comes from reading the code. The register is machine-readable in `packages/shared/src/constants/org-lens-employee-view-register.constants.ts`; this document and that file are kept in step.
 
 ## How to read it
 
-| Column      | Meaning                                                                                                                                                               |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Allowed?    | `Yes, public code contribution`: may show a value. `No, count only`: must never leave the API as a value. `Not personal` and `Own data` are listed for completeness.  |
-| Enforcement | What does the work: `blocked-403`, `refused-by-default` (analytics gate), `stripped`, `anonymised`, `not-queried`, `not-in-field-list`, `by-construction`, or `none`. |
-| Status      | `enforced`; `gap` (a value can reach the user today); `decision` (enforced, but the product owner has a call to make); `unverified` (not provable from code alone).   |
+| Column      | Meaning                                                                                                                                                                                       |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Allowed?    | `Yes, public code contribution`: may show a value. `No, count only`: must never leave the API as a value. `Not personal` and `Own data` are listed for completeness.                          |
+| Enforcement | What does the work: `blocked-403`, `refused-by-default` (analytics gate), `stripped`, `anonymised`, `nulled-by-controller`, `not-queried`, `not-in-field-list`, `by-construction`, or `none`. |
+| Status      | `enforced`; `gap` (a value can reach the user today); `decision` (enforced, but the product owner has a call to make); `unverified` (not provable from code alone).                           |
 
 ## Findings
 
-### Gaps: a name, email or free text can reach an employee today
+### What is enforced
 
-1. ~~Projects workspace names~~ **Fixed.** `GET /lens/workspaces` now returns neutral `Workspace N` names for user-created workspaces in the employee view; ids, slugs and counts are unchanged.
-2. ~~Crowdfunding initiative name, description and website~~ **Removed.** Crowdfunding is hidden from the all employee view, so none of these fields reaches an employee.
-3. ~~Embedded emails in free text~~ **Fixed.** `stripPersonalFields` replaces an address inside a string, not only a value that is wholly an email.
-4. ~~Overview analytics routes answer 403~~ **Fixed.** The four involvement routes (`org-involvement-*-monthly`, `org-foundation-coverage`) now sit behind `requireOrgAnalyticsAccessAllowingEmployeeView` (`allowEmployeeView: true`). They return aggregate counts, monthly series and foundation names only, and their handlers still redact, so the Overview charts load for an employee. Every other analytics route still refuses the employee view.
+- **Workspace names:** `GET /lens/workspaces` returns neutral `Workspace N` names for user-created workspaces; ids, slugs and counts are unchanged.
+- **Embedded emails and personal URLs:** `stripPersonalFields` replaces an address, `mailto:` link or personal profile URL inside any string, at any depth.
+- **Crowdfunding:** hidden entirely (Initiatives and Donations), so none of its fields reaches an employee.
+- **Overview analytics:** the four involvement routes (`org-involvement-*-monthly`, `org-foundation-coverage`) sit behind `requireOrgAnalyticsAccessAllowingEmployeeView` (`allowEmployeeView: true`) and return aggregate counts, monthly series and foundation names only. Every other analytics route refuses the employee view.
 
 ### Project detail card panels are blocked
 
@@ -36,14 +36,14 @@ Resolved by the product owner:
 
 - **The all-company roll-up** (and per-family roll-ups) is not available to employee-view users; admins and staff only.
 
-Still open:
+Also decided:
 
-- **Small counts: decided.** Small counts are allowed with **no minimum floor**; a count does not reveal a name. No suppression helper is planned.
+- **Small counts** are allowed with **no minimum floor**; a count does not reveal a name. No suppression helper is planned.
 - **Commits feed on Code Contributions** is removed entirely. That is stricter than the epic allows (public committer names and handles could show); job title and person key never could.
 
 ### Unverified
 
-- The rollout flag `LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED` must stay off until the whole stack has merged.
+- The rollout flag `LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED` must stay off until the rollout checklist in [company-lens-employee-view.md](./company-lens-employee-view.md) is done.
 - No screenshots are included: producing them needs the real services.
 
 ### Checked and fine
@@ -113,11 +113,11 @@ ROI routes are LF-staff only. EasyCLA is refused by the CLA read gate. Every non
 
 ### Training
 
-| Id                             | Where shown                              | Endpoint                                                      | Field                                                                | Example                           | Source    | Allowed?       | Enforcement     | Status   |
-| ------------------------------ | ---------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------- | --------- | -------------- | --------------- | -------- |
-| `training.learners-drilldown`  | Certified / In progress count drill-down | `GET /api/orgs/:orgUid/lens/training/groups/employees`        | `data[] (learner name, enrollment)`                                  | `name: 'Ada Example'`             | snowflake | No, count only | blocked-403     | enforced |
-| `training.outside-people-list` | Learners not on the people list tile     | `GET /api/orgs/:orgUid/lens/training/stats`                   | `learnersOutsidePeopleList`                                          | `learnersOutsidePeopleList: null` | snowflake | No, count only | stripped        | enforced |
-| `training.group-counts`        | Group-by table and filter dropdowns      | `GET /api/orgs/:orgUid/lens/training/{groups,filter-options}` | `data[].people / completed / inProgress; course and project options` | `people: 1`                       | snowflake | No, count only | by-construction | enforced |
+| Id                             | Where shown                              | Endpoint                                                      | Field                                                                | Example                           | Source    | Allowed?       | Enforcement          | Status   |
+| ------------------------------ | ---------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------- | --------- | -------------- | -------------------- | -------- |
+| `training.learners-drilldown`  | Certified / In progress count drill-down | `GET /api/orgs/:orgUid/lens/training/groups/employees`        | `data[] (learner name, enrollment)`                                  | `name: 'Ada Example'`             | snowflake | No, count only | blocked-403          | enforced |
+| `training.outside-people-list` | Learners not on the people list tile     | `GET /api/orgs/:orgUid/lens/training/stats`                   | `learnersOutsidePeopleList`                                          | `learnersOutsidePeopleList: null` | snowflake | No, count only | nulled-by-controller | enforced |
+| `training.group-counts`        | Group-by table and filter dropdowns      | `GET /api/orgs/:orgUid/lens/training/{groups,filter-options}` | `data[].people / completed / inProgress; course and project options` | `people: 1`                       | snowflake | No, count only | by-construction      | enforced |
 
 ### Meetings
 
@@ -141,7 +141,7 @@ ROI routes are LF-staff only. EasyCLA is refused by the CLA read gate. Every non
 | `hidden.easycla`     | Easy CLA (groups, managers, approval lists, activity, signing)                                                                 | `/api/orgs/:orgUid/lens/cla-groups/**`                                                     | `CLA managers, approved contributors, signatory (name, email)`                           | `email: user@example.com`      | lfx            | No, count only | blocked-403 | enforced |
 | `hidden.profile`     | Company profile (record, addresses, logo)                                                                                      | `/api/orgs/uid/:uid, /api/orgs/uid/:uid/addresses, /api/orgs/:id`                          | `company record, contact addresses, domains`                                             | `primaryDomain: 'example.com'` | member-service | No, count only | blocked-403 | enforced |
 | `hidden.groups`      | Groups and committee seat holders                                                                                              | `/api/orgs/:orgUid/lens/groups, /lens/people/committee-members`                            | `seat holders (name, email), committee seat counts`                                      | `name: 'Ada Example'`          | member-service | No, count only | blocked-403 | enforced |
-| `hidden.initiatives` | Crowdfunding Initiatives (the initiatives list, stats and detail)                                                              | `/api/crowdfunding/initiatives?orgUid=..., /api/crowdfunding/initiatives/stats?orgUid=...` | `initiative owners, sponsors, beneficiaries, creators, free-text names and descriptions` | `creator: 'Ada Example'`       | crowdfunding   | No, count only | blocked-403 | enforced |
+| `hidden.initiatives` | Crowdfunding Initiatives (the initiatives list, stats and detail)                                                              | `/api/crowdfunding/initiatives?orgUid=..., /api/crowdfunding/initiatives-stats?orgUid=...` | `initiative owners, sponsors, beneficiaries, creators, free-text names and descriptions` | `creator: 'Ada Example'`       | crowdfunding   | No, count only | blocked-403 | enforced |
 | `hidden.donations`   | Crowdfunding Donations (the company donations table)                                                                           | `/api/crowdfunding/org-donations?orgUid=...`                                               | `donor name, donor email, anonymous flag, per-donation records`                          | `donorName: 'Ada Example'`     | crowdfunding   | No, count only | blocked-403 | enforced |
 
 ### Cross-cutting

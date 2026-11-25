@@ -154,6 +154,15 @@ describe('orgs router — Profile routes in the all employee view', () => {
     expect(res.status).not.toBe(403);
   });
 
+  it('answers a malformed company id with the controller 400, before the read gate or any lookup', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/uid/not-an-account-id`);
+
+    expect(res.status).toBe(400);
+    expect(resolveEmployeeView).not.toHaveBeenCalled();
+    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
   it('leaves the routes untouched while the rollout flag is off', async () => {
     delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
     proxyRequest.mockResolvedValue({ uid: UID, name: 'Beta' });

@@ -161,11 +161,7 @@ describe('orgs router, all employee view: hidden pages', () => {
   }
 });
 
-// The panel stories land on sibling branches; until the hide-page stories are in the tree (the hidden-page list is the
-// marker, it is empty on the bare gate) the panel routes are legitimately open, so the strict assertion waits for them.
-const PAGE_STORIES_APPLIED = ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES.length > 0;
-
-describe.skipIf(!PAGE_STORIES_APPLIED)('orgs router, all employee view: blocked panels on shown pages', () => {
+describe('orgs router, all employee view: blocked panels on shown pages', () => {
   it.each(BLOCKED_PANEL_ROUTES)('%s %s answers 403 EMPLOYEE_VIEW_FORBIDDEN, and 200-class handling in the full view', async (method, path) => {
     const entry = routeTable().find((r) => r.method === method && r.path === path);
     expect(entry, `panel route ${method} ${path} is no longer registered; update BLOCKED_PANEL_ROUTES`).toBeDefined();

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_ORG_LOGO_MIME_TYPES, MAX_ORG_LOGO_SIZE_BYTES } from '@lfx-one/shared/constants';
+import { ALLOWED_ORG_LOGO_MIME_TYPES, MAX_ORG_LOGO_SIZE_BYTES, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { OrgIdentityController } from '../controllers/org-identity.controller';
@@ -59,7 +59,14 @@ function blockEmployeeViewOnOrgRecord(req: Request, res: Response, next: NextFun
     next();
     return;
   }
-  req.params['orgUid'] = req.params['uid'] ?? req.params['id'] ?? '';
+  const orgUid = req.params['uid'] ?? req.params['id'] ?? '';
+  // A malformed id reaches the controller's 400 first: it never names a company, so the read gate (and its lookup
+  // outages) has nothing to decide.
+  if (!ORG_ACCOUNT_ID_PATTERN.test(orgUid)) {
+    next();
+    return;
+  }
+  req.params['orgUid'] = orgUid;
   void blockEmployeeView(req, res, next);
 }
 

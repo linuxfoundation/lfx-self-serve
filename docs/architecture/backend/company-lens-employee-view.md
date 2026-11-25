@@ -137,7 +137,7 @@ Stories #5847-#5859 each handled one page; this table is the consolidated result
 ### How this is checked in CI (story #5860)
 
 - `routes/orgs.route.employee-view.spec.ts` reads the route table off the assembled router. Every route behind a page in `ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES` must answer 403 `EMPLOYEE_VIEW_FORBIDDEN` in the employee view and must not in the full view; each blocked panel route and every non-GET lens route is asserted too. A hidden page with no route mapping in that spec fails the suite, so adding a page to the hidden list forces its API to be listed.
-- `routes/analytics.route.employee-view.spec.ts` asserts every org-scoped analytics route refuses the employee view, except the four Overview involvement paths in its `ALLOWED_FOR_EMPLOYEE_VIEW` set, which must carry `requireOrgAnalyticsAccessAllowingEmployeeView` (those two checks activate once the Overview story, #5847, is in the base).
+- `routes/analytics.route.employee-view.spec.ts` asserts every org-scoped analytics route refuses the employee view, except the four Overview involvement paths in its `ALLOWED_FOR_EMPLOYEE_VIEW` set, which must carry `requireOrgAnalyticsAccessAllowingEmployeeView`.
 - `helpers/org-lens-employee-view-sweep.spec.ts` is the stray name and email sweep: the redaction tool removes every listed field at any depth, and every `org-lens-*.controller.ts` needs a reviewed disposition (`redacts`, `blocked`, `counts-only`, `staff-only`), so a new Company Lens controller cannot ship unreviewed.
 - These specs stub the read gate's decision. They do not prove who qualifies as an employee (that is `org-employee-view.service.spec.ts`) and they do not run Playwright: the repo's e2e suite signs in through Auth0 against a real dev server, so the employee-view user journey (allowed pages, nav, redirects) has to be walked by hand against a seeded environment. See the checklist below.
 
@@ -145,15 +145,16 @@ Stories #5847-#5859 each handled one page; this table is the consolidated result
 
 The flag is OFF by default and a complete no-op when off. Do not turn it on in any shared environment until all of these hold.
 
-1. **Every page story is merged** (#5847-#5859) and `ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES` lists `memberships`, `people`, `easycla`, `profile`, `groups`, `initiatives`, `donations`. The page branches each rewrite that one line, so the merge result must be one array, not seven declarations.
-2. **The CI specs above pass** on the merged tree, including the panel and controller-inventory checks that only run once the hidden list is non-empty.
+1. **The page pull request (#6154) is merged** and `ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES` lists `memberships`, `people`, `easycla`, `profile`, `groups`, `initiatives`, `donations`.
+2. **The CI specs above pass** on the merged tree.
 3. **Overview analytics decision made (resolved).** The four Overview involvement routes (`org-foundation-coverage`, `org-involvement-contributors-monthly`, `org-involvement-maintainers-monthly`, `org-involvement-event-attendance-monthly`) return only aggregate counts and series, so the product owner opted them in through `requireOrgAnalyticsAccessAllowingEmployeeView`; their handlers still redact. Every other `/api/analytics/*` row keeps refusing the employee view (`analytics.route.employee-view.spec.ts`).
-4. **Exceptions allow-list reviewed.** `ORG_LENS_EMPLOYEE_VIEW_EXCEPTIONS` is empty; confirm that is still the product owner's decision.
-5. **Walk the journey** with a seeded employee of a member company on a non-production environment, with no grant and not staff: the selector lists the company with the Employee badge; the nav shows only the shown pages; each hidden route (`/people`, `/memberships`, `/easycla`, `/profile`, `/groups`, `/initiatives`, `/donations`) redirects to Overview; the blocked panels are absent; a direct API call to each hidden prefix answers 403 `EMPLOYEE_VIEW_FORBIDDEN`; a grant holder and an LF staff user still see everything.
-6. **Impersonation**: an admin impersonating an employee sees the employee's view, never more.
-7. **Upstream load**: the verdict costs a CDP, member-service and authorizer lookup once per 60 s per caller and company; confirm those services tolerate the added reads.
-8. **Enable per environment** (dev, then staging, then production), watching `EMPLOYEE_VIEW_FORBIDDEN` and `ROLE_GRANTS_UNAVAILABLE` counts. Turning the flag off restores the previous behavior with no data change.
-9. **User docs**: publish the `docs/user/company/` description of who gets this view and what it shows when the flag goes generally available (not before; dark-launched features are not documented).
+4. **ADR accepted.** `adr-company-lens-employee-view-access.md` is accepted by the architect and logged in the platform ADR log (it is Proposed until then), and its architecture review is linked here.
+5. **Exceptions allow-list reviewed.** `ORG_LENS_EMPLOYEE_VIEW_EXCEPTIONS` is empty; confirm that is still the product owner's decision.
+6. **Walk the journey** with a seeded employee of a member company on a non-production environment, with no grant and not staff: the selector lists the company with the Employee badge; the nav shows only the shown pages; each hidden route (`/people`, `/memberships`, `/easycla`, `/profile`, `/groups`, `/initiatives`, `/donations`) redirects to Overview; the blocked panels are absent; a direct API call to each hidden prefix answers 403 `EMPLOYEE_VIEW_FORBIDDEN`; a grant holder and an LF staff user still see everything.
+7. **Impersonation**: an admin impersonating an employee sees the employee's view, never more.
+8. **Upstream load**: the verdict costs a CDP, member-service and authorizer lookup once per 60 s per caller and company, and employee-view requests also run uncached Snowflake reads (Training skips the shared cache for a caller without an `org-grant`, and the Projects default workspace's `fetchDefaultProjectSlugs` is uncached); confirm those services tolerate the added reads, or let employee-view callers read the shared entries and redact on the response.
+9. **Enable per environment** (dev, then staging, then production), watching `EMPLOYEE_VIEW_FORBIDDEN` and `ROLE_GRANTS_UNAVAILABLE` counts. Turning the flag off restores the previous behavior with no data change.
+10. **User docs**: publish the `docs/user/company/` description of who gets this view and what it shows when the flag goes generally available (not before; dark-launched features are not documented).
 
 ## Known open questions
 

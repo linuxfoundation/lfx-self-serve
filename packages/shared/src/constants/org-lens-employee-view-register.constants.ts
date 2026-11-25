@@ -35,9 +35,6 @@ export const ORG_LENS_EMPLOYEE_VIEW_ECOSYSTEM_CARD_KEYS: readonly string[] = [
   'meetup-attendance',
 ];
 
-/** The pages the view hides entirely, derived from the list the nav and the guards read. Each needs its own `hidden.<page>` row below. */
-export const ORG_LENS_EMPLOYEE_VIEW_REGISTERED_HIDDEN_PAGES: readonly string[] = [...ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES];
-
 /** A snapshot of `ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS` as reviewed. Changing the shared list means updating this and the rows above. */
 export const ORG_LENS_EMPLOYEE_VIEW_REVIEWED_PERSONAL_FIELDS: readonly string[] = [
   'email',
@@ -441,10 +438,9 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     example: 'learnersOutsidePeopleList: null',
     source: 'snowflake',
     verdict: 'count-only',
-    enforcement: 'stripped',
-    strippedBy: 'route-extra-fields',
+    enforcement: 'nulled-by-controller',
     status: 'enforced',
-    note: 'The tile and the value are removed: the count is set to null in the employee view.',
+    note: 'The tile and the value are removed: `org-lens-training.controller.ts` sets the count to null for a single-company employee-view response; the route never calls the redactor.',
   },
   {
     id: 'training.group-counts',
@@ -574,7 +570,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     id: 'hidden.initiatives',
     page: 'hidden',
     surface: 'Crowdfunding Initiatives (the initiatives list, stats and detail)',
-    endpoint: '/api/crowdfunding/initiatives?orgUid=..., /api/crowdfunding/initiatives/stats?orgUid=...',
+    endpoint: '/api/crowdfunding/initiatives?orgUid=..., /api/crowdfunding/initiatives-stats?orgUid=...',
     field: 'initiative owners, sponsors, beneficiaries, creators, free-text names and descriptions',
     example: "creator: 'Ada Example'",
     source: 'crowdfunding',

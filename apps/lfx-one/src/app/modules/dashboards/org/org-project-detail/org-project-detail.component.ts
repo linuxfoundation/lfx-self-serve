@@ -125,9 +125,6 @@ export class OrgProjectDetailComponent {
   // All employee view (epic #5845, #5849): every influence card (Technical and Ecosystem) and the ecosystem leaderboard rows keep
   // their numbers and charts but open nothing. UX only; the BFF answers 403 for the same panels.
   protected readonly isEmployeeView = inject(OrgLensViewModeService).isEmployeeView;
-
-  /** Whether the ecosystem leaderboard rows open their score breakdown; false in the all employee view. Bound by the template. */
-  protected readonly ecosystemRowsOpenable = computed<boolean>(() => this.canOpenLeaderboardDetail('ecosystem'));
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly detailService = inject(OrgLensProjectDetailService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
@@ -214,6 +211,9 @@ export class OrgProjectDetailComponent {
   }));
 
   protected readonly activeTab: Signal<OrgLensProjectDetailTab> = computed(() => this.initActiveTab());
+  /** Whether the ecosystem leaderboard rows open their score breakdown; false in the all employee view. Bound by the template. */
+  protected readonly ecosystemRowsOpenable = computed<boolean>(() => this.canOpenLeaderboardDetail('ecosystem'));
+
   protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
   protected readonly timeRange = computed<OrgLensLeaderboardTimeRange>(() => this.initTimeRange());
   // Spec 053 / #2961 — the page-level state replacing the whole page (`could-not-load`,

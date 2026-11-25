@@ -39,6 +39,8 @@ export type OrgLensEmployeeViewRegisterEnforcement =
   | 'stripped'
   /** The server replaces each person with an opaque placeholder and keeps only the count. */
   | 'anonymised'
+  /** The controller sets the value to `null` for this caller after the read; the route never calls the redactor. */
+  | 'nulled-by-controller'
   /** The server never runs the query for this caller, so the value is not read, cached or sent. */
   | 'not-queried'
   /** Allowed: the key is not in the shared personal-field list, so it passes `stripPersonalFields` untouched. */

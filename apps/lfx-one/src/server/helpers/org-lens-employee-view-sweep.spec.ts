@@ -3,7 +3,7 @@
 
 import '@angular/compiler';
 
-import { ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES, ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS } from '@lfx-one/shared/constants';
+import { ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS } from '@lfx-one/shared/constants';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -47,9 +47,6 @@ const CONTROLLER_DISPOSITION: Record<string, Disposition> = {
   'org-lens-training.controller.ts': 'counts-only', // stats, filters and group tables are counts; the roster panel is blocked
 };
 
-// The page stories live on sibling branches; on the bare gate every controller is still unredacted by design.
-const PAGE_STORIES_APPLIED = ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES.length > 0;
-
 describe('employee view sweep: redaction tool', () => {
   const people = {
     summary: { total: 3 },
@@ -84,12 +81,9 @@ describe('employee view sweep: controller inventory', () => {
     expect(controllers.sort()).toEqual(Object.keys(CONTROLLER_DISPOSITION).sort());
   });
 
-  it.skipIf(!PAGE_STORIES_APPLIED).each(controllers.filter((f) => CONTROLLER_DISPOSITION[f] === 'redacts'))(
-    '%s routes its payload through the redaction tool',
-    (file) => {
-      const source = readFileSync(join(controllerDir, file), 'utf8');
+  it.each(controllers.filter((f) => CONTROLLER_DISPOSITION[f] === 'redacts'))('%s routes its payload through the redaction tool', (file) => {
+    const source = readFileSync(join(controllerDir, file), 'utf8');
 
-      expect(source).toMatch(/redactForEmployeeView|redactProjectsForEmployeeView|stripPersonalFields/);
-    }
-  );
+    expect(source).toMatch(/redactForEmployeeView|redactProjectsForEmployeeView|stripPersonalFields/);
+  });
 });

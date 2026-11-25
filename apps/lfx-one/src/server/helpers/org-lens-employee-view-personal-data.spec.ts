@@ -16,7 +16,6 @@ import {
   ORG_LENS_EMPLOYEE_VIEW_INTERFACE_FILES,
   ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS,
   ORG_LENS_EMPLOYEE_VIEW_REGISTER,
-  ORG_LENS_EMPLOYEE_VIEW_REGISTERED_HIDDEN_PAGES,
   ORG_LENS_EMPLOYEE_VIEW_REVIEWED_PERSONAL_FIELDS,
   ORG_LENS_EMPLOYEE_VIEW_REVIEWED_SHAPES,
   ORG_LENS_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS,
@@ -139,23 +138,9 @@ describe('the shared personal-field list', () => {
 
 describe('hidden pages', () => {
   it('registers exactly the hidden pages of the epic, each with its own row', () => {
-    expect([...ORG_LENS_EMPLOYEE_VIEW_REGISTERED_HIDDEN_PAGES].sort()).toEqual([
-      'donations',
-      'easycla',
-      'groups',
-      'initiatives',
-      'memberships',
-      'people',
-      'profile',
-    ]);
-    for (const page of ORG_LENS_EMPLOYEE_VIEW_REGISTERED_HIDDEN_PAGES) {
-      expect(registerIds.has(`hidden.${page}`), `missing hidden.${page}`).toBe(true);
-    }
-  });
-
-  it('never hides a page the register does not know about', () => {
+    expect([...ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES].sort()).toEqual(['donations', 'easycla', 'groups', 'initiatives', 'memberships', 'people', 'profile']);
     for (const page of ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES) {
-      expect(ORG_LENS_EMPLOYEE_VIEW_REGISTERED_HIDDEN_PAGES, `${page} is hidden but not registered`).toContain(page);
+      expect(registerIds.has(`hidden.${page}`), `missing hidden.${page}`).toBe(true);
     }
   });
 });

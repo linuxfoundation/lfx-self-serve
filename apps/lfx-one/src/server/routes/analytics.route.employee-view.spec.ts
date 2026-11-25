@@ -100,12 +100,11 @@ describe('analytics router, all employee view', () => {
     }
   });
 
-  // Skipped only while the Overview story (#5847), which introduces the opt-in gate, is not yet in this branch's base.
-  it.skipIf(optedInPaths().length === 0)('opts in exactly the allow-listed rows, so an opt-in cannot be added without this list (and its review)', () => {
+  it('opts in exactly the allow-listed rows, so an opt-in cannot be added without this list (and its review)', () => {
     expect([...optedInPaths()].sort()).toEqual([...ALLOWED_FOR_EMPLOYEE_VIEW].sort());
   });
 
-  it.skipIf(optedInPaths().length === 0)('admits the all employee view on the allow-listed rows (no 403 EMPLOYEE_VIEW_FORBIDDEN)', async () => {
+  it('admits the all employee view on the allow-listed rows (no 403 EMPLOYEE_VIEW_FORBIDDEN)', async () => {
     for (const path of ALLOWED_FOR_EMPLOYEE_VIEW) {
       const res = await fetch(`${baseUrl}/api/analytics${path}?accountId=${ORG_UID}`);
       const body = (await res.json().catch(() => ({}))) as { code?: string };

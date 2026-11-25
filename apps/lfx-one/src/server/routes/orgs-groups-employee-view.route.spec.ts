@@ -33,7 +33,7 @@ vi.mock('../controllers/org-lens-people.controller', () => ({
     public getCommitteeMembers = getCommitteeMembers;
   },
 }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'lguerra', isImpersonating: () => false }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'employee', isImpersonating: () => false }));
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkLFStaff: async () => false } }));
 vi.mock('../services/logger.service', () => ({
   logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), startOperation: vi.fn(() => Date.now()), success: vi.fn() },
