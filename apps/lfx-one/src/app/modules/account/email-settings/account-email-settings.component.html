@@ -1,0 +1,224 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<div class="flex flex-col gap-[20px]" data-testid="account-email-settings">
+  @if (meetingInviteError(); as inviteError) {
+    <lfx-ui-note variant="error" announce data-testid="account-email-settings-invite-error">
+      {{ inviteError }} If you believe this is an error,
+      <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="account-email-settings-invite-error-support">contact support</button>.
+      <lfx-ui-button note-action variant="tertiary" size="tiny" (click)="dismissMeetingInviteError()" data-testid="account-email-settings-invite-error-dismiss">
+        Dismiss
+      </lfx-ui-button>
+    </lfx-ui-note>
+  }
+  @if (!emailLoading() && meetingInviteLoadFailed()) {
+    <lfx-ui-note variant="warning" data-testid="account-email-settings-invite-load-failed">
+      We couldn't load your meeting-invitation email. Reload the page to try again.
+    </lfx-ui-note>
+  } @else if (!emailLoading() && orphanedInviteEmail(); as orphaned) {
+    <lfx-ui-note variant="warning" data-testid="account-email-settings-invite-orphaned">
+      Meeting invitations are going to {{ orphaned }}, which isn't one of the addresses listed here. Choose an address below or
+      <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="account-email-settings-invite-orphaned-support">contact support</button>.
+    </lfx-ui-note>
+  }
+
+  <lfx-account-card [heading]="copy.heading" [subtitle]="copy.subtitle" testId="account-email-settings-card">
+    @if (emailLoading()) {
+      <div class="flex flex-col gap-[12px]" aria-hidden="true" data-testid="account-email-settings-loading">
+        @for (row of [1, 2]; track row) {
+          <lfx-ui-skeleton width="100%" height="44px" />
+        }
+      </div>
+    } @else {
+      @if (rows().length === 0) {
+        <p class="m-0 text-[14px] leading-[20px] text-ui-neutral-500" data-testid="account-email-settings-none">No email addresses found.</p>
+      } @else {
+        <ul class="m-0 flex list-none flex-col p-0" data-testid="account-email-settings-list">
+          @for (row of rows(); track row.email.email) {
+            <li
+              class="flex min-h-[52px] flex-row items-center gap-[12px] py-[8px] shadow-[inset_0_-1px_0] shadow-ui-neutral-alpha-100 last:shadow-none"
+              [attr.data-testid]="'account-email-settings-row-' + row.email.email">
+              <span class="flex min-w-0 flex-1 flex-col gap-[2px]">
+                <span class="flex min-w-0 flex-row flex-wrap items-center gap-[8px]">
+                  <span class="min-w-0 break-all text-[14px] leading-[20px] text-ui-neutral-900">{{ row.email.email }}</span>
+                  @if (row.isPrimary) {
+                    <lfx-ui-badge tone="success" size="sm" data-testid="account-email-settings-primary">Primary</lfx-ui-badge>
+                  }
+                  @if (row.isMeetingInvite) {
+                    <lfx-ui-badge tone="success" size="sm" data-testid="account-email-settings-meeting-invites">Meeting Invites</lfx-ui-badge>
+                  }
+                  @if (row.email.verified) {
+                    <lfx-ui-badge tone="success" variant="solid" size="sm" data-testid="account-email-settings-verified">
+                      <i class="fa-solid fa-check" aria-hidden="true"></i>
+                      Verified
+                    </lfx-ui-badge>
+                  }
+                </span>
+                @if (row.isPrimary) {
+                  <span class="text-[12px] leading-[16px] text-ui-neutral-500">{{ copy.primaryHint }}</span>
+                }
+              </span>
+              @if (row.hasActions) {
+                <lfx-ui-button
+                  variant="tertiary"
+                  icon="fa-light fa-ellipsis"
+                  iconOnly
+                  [disabled]="impersonating()"
+                  [ariaLabel]="'Email actions for ' + row.email.email"
+                  [menu]="emailMenu"
+                  menuAlign="end"
+                  [attr.data-testid]="'account-email-settings-menu-' + row.email.email" />
+                <ng-template #emailMenu>
+                  <lfx-ui-menu ariaLabel="Email actions">
+                    @if (row.canMakePrimary) {
+                      <lfx-ui-menu-item icon="fa-light fa-star" (triggered)="setPrimary(row.email)" data-testid="account-email-settings-make-primary">
+                        Make Primary
+                      </lfx-ui-menu-item>
+                    }
+                    @if (row.canSetMeetingInvite) {
+                      <lfx-ui-menu-item
+                        icon="fa-light fa-calendar"
+                        [disabled]="row.meetingInviteBusy"
+                        (triggered)="setMeetingInvite(row.email)"
+                        data-testid="account-email-settings-meeting-invite">
+                        Use for Meeting Invitations
+                      </lfx-ui-menu-item>
+                    }
+                    @if (row.showDelete) {
+                      <lfx-ui-menu-item
+                        variant="danger"
+                        icon="fa-light fa-trash"
+                        [disabled]="!!row.deleteBlockedReason"
+                        [disabledReason]="row.deleteBlockedReason"
+                        (triggered)="deleteEmail(row.email)"
+                        data-testid="account-email-settings-delete">
+                        Delete
+                      </lfx-ui-menu-item>
+                    }
+                  </lfx-ui-menu>
+                </ng-template>
+              }
+            </li>
+          }
+        </ul>
+      }
+
+      <!-- Add an address: confirm it with a code, then link it. Shown read-only while impersonating. -->
+      <div class="flex flex-col gap-[12px] pt-[16px] shadow-[inset_0_1px_0] shadow-ui-neutral-alpha-200" data-testid="account-email-settings-add">
+        @if (!otpStep()) {
+          <form class="flex flex-col gap-[8px]" [formGroup]="addEmailForm" (ngSubmit)="sendVerificationCode()" data-testid="account-email-settings-add-form">
+            <div class="flex flex-col gap-[12px] @container">
+              <div class="flex flex-col items-stretch gap-[12px] @[420px]:flex-row @[420px]:items-start">
+                <lfx-ui-input
+                  class="flex-1"
+                  label="Add New Email Address"
+                  placeholder="Enter email address"
+                  type="email"
+                  autocomplete="email"
+                  [formControl]="addEmailForm.controls.email"
+                  [error]="addEmailForm.controls.email.invalid && addEmailForm.controls.email.touched ? 'Please enter a valid email address' : ''"
+                  data-testid="account-email-settings-add-input" />
+                <!-- Lines up with the field under its label. -->
+                <lfx-ui-button
+                  class="@[420px]:mt-[24px]"
+                  type="submit"
+                  variant="secondary-accent"
+                  icon="fa-light fa-envelope"
+                  [loading]="sendingCode()"
+                  [disabled]="addEmailForm.invalid || sendingCode() || impersonating()"
+                  data-testid="account-email-settings-send-code">
+                  {{ sendingCode() ? 'Requesting code…' : 'Send Code' }}
+                </lfx-ui-button>
+              </div>
+            </div>
+            <p class="m-0 text-[12px] leading-[16px] text-ui-neutral-500">
+              Confirm you own the email address before we check whether it can be linked to your account.
+            </p>
+          </form>
+        } @else {
+          <div class="flex flex-col gap-[12px]" data-testid="account-email-settings-otp">
+            <p class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700">
+              Check <strong class="font-semibold text-ui-neutral-900">{{ pendingEmail() }}</strong> for a 6-digit verification code.
+              {{ verificationInstructions }}
+            </p>
+            <form class="flex flex-col gap-[12px] @container" [formGroup]="otpForm" (ngSubmit)="verifyAndLink()" data-testid="account-email-settings-otp-form">
+              <div class="flex flex-col items-stretch gap-[12px] @[480px]:flex-row @[480px]:items-start">
+                <lfx-ui-input
+                  class="flex-1 [&_input]:tracking-[.2em]"
+                  label="Enter verification code"
+                  placeholder="000000"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
+                  [formControl]="otpForm.controls.otp"
+                  data-testid="account-email-settings-otp-input" />
+                <span class="flex flex-row gap-[8px] @[480px]:mt-[24px]">
+                  <lfx-ui-button
+                    type="submit"
+                    icon="fa-light fa-check"
+                    [loading]="verifyingOtp()"
+                    [disabled]="otpForm.invalid || verifyingOtp() || impersonating()"
+                    data-testid="account-email-settings-verify">
+                    Verify
+                  </lfx-ui-button>
+                  <lfx-ui-button
+                    type="button"
+                    variant="secondary"
+                    [disabled]="sendingCode() || verifyingOtp()"
+                    (click)="changeEmail()"
+                    data-testid="account-email-settings-change-email">
+                    Use a different email
+                  </lfx-ui-button>
+                </span>
+              </div>
+            </form>
+            @if (!showResendSupport()) {
+              <button
+                type="button"
+                class="self-start text-[12px] leading-[16px] text-ui-accent-600 enabled:hover:underline disabled:cursor-not-allowed disabled:text-ui-neutral-400"
+                [disabled]="sendingCode() || resendCooldown() > 0 || impersonating()"
+                (click)="sendVerificationCode()"
+                data-testid="account-email-settings-resend">
+                @if (sendingCode()) {
+                  Requesting code…
+                } @else if (resendCooldown() > 0) {
+                  Resend code in {{ resendCooldown() }}s
+                } @else {
+                  Resend code
+                }
+              </button>
+            }
+            @if (linkedConflict()) {
+              <lfx-ui-note variant="warning" size="small" announce [label]="linkedSupportTitle" data-testid="account-email-settings-linked-support">
+                {{ linkedSupportDetail }}
+                <lfx-ui-button
+                  note-action
+                  variant="secondary"
+                  size="tiny"
+                  lfxOpenIntercom
+                  [intercomMessage]="linkedSupportMessage()"
+                  data-testid="account-email-settings-linked-support-button"
+                  >Contact support</lfx-ui-button
+                >
+              </lfx-ui-note>
+            } @else if (showResendSupport()) {
+              <lfx-ui-note variant="info" size="small" [label]="resendSupportTitle" data-testid="account-email-settings-resend-support">
+                {{ resendSupportMessage }}
+                <lfx-ui-button note-action variant="secondary" size="tiny" lfxOpenIntercom data-testid="account-email-settings-resend-support-button"
+                  >Contact support</lfx-ui-button
+                >
+              </lfx-ui-note>
+            } @else {
+              <lfx-ui-note variant="info" size="small" [label]="codeNotReceivedTitle" data-testid="account-email-settings-code-hint">
+                {{ codeNotReceivedHint }}
+                <lfx-ui-button note-action variant="secondary" size="tiny" lfxOpenIntercom data-testid="account-email-settings-code-support"
+                  >Contact support</lfx-ui-button
+                >
+              </lfx-ui-note>
+            }
+          </div>
+        }
+      </div>
+    }
+  </lfx-account-card>
+</div>

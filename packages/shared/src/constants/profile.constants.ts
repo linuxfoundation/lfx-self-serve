@@ -393,6 +393,18 @@ export const ACCOUNT_IDENTITIES_COPY = {
   emailProviderDescription: 'Add and verify an email address you use for open source work',
 } as const;
 
+/** Copy of Account & Settings › Email settings (#6079). The add and code steps keep the hub's copy. */
+export const ACCOUNT_EMAIL_SETTINGS_COPY = {
+  heading: 'Email Addresses',
+  subtitle: 'Manage your email addresses. All email addresses are verified before they can be used.',
+  primaryHint: 'Used for account communications',
+  deletePrimaryReason: 'You can’t delete your primary email.',
+  deleteInviteReason: 'This email is set for meeting invitations.',
+  deleteTitle: 'Delete email address?',
+  deleteText: 'will be removed from your account. Activity linked to it may no longer be attributed to you. This action can’t be undone.',
+  deleteConfirm: 'Delete email address',
+} as const;
+
 /** Copy for the Account & Settings Linux.com email page (#6075). `{domain}` is the alias domain the server reports. */
 export const ACCOUNT_LINUX_EMAIL_COPY = {
   subtitle: 'A personal @{domain} address that forwards to an inbox you choose. It’s a one-time add-on for Individual Supporters.',

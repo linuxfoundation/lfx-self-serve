@@ -79,7 +79,7 @@ export const ACCOUNT_ROUTES: Routes = [
         title: 'Email settings',
         canActivate: [settingsSectionFragmentGuard],
         data: { embedded: true, section: ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS },
-        loadComponent: loadAccountSettings,
+        loadComponent: () => import('./email-settings/account-email-settings.component').then((m) => m.AccountEmailSettingsComponent),
       },
       {
         path: 'password',
