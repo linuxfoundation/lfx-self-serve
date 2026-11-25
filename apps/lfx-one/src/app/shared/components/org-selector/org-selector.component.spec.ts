@@ -169,7 +169,7 @@ describe('OrgSelectorComponent.selectItem', () => {
   it('records a CLA-only row as CLA-only before the switch navigates', () => {
     pick({ ...rowB, slug: null, claOnly: true });
 
-    expect(noteAddressed).toHaveBeenCalledWith(UID_B, true);
+    expect(noteAddressed).toHaveBeenCalledWith(UID_B, true, false);
     expect(noteAddressed.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
   });
 
@@ -193,14 +193,14 @@ describe('OrgSelectorComponent.selectItem', () => {
   it('clears any CLA-only note when the picked row is not CLA-only', () => {
     pick(rowB);
 
-    expect(noteAddressed).toHaveBeenCalledWith(UID_B, false);
+    expect(noteAddressed).toHaveBeenCalledWith(UID_B, false, false);
   });
 
   // The same-organization pick returns before switching, and the path guard will not resolve it either.
   it('records a re-pick of the selected CLA-only row without re-selecting it', () => {
     pick({ ...rowA, slug: null, claOnly: true });
 
-    expect(noteAddressed).toHaveBeenCalledWith(UID_A, true);
+    expect(noteAddressed).toHaveBeenCalledWith(UID_A, true, false);
     expect(setAccount).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
   });

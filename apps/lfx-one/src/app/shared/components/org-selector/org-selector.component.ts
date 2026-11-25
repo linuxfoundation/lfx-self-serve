@@ -476,7 +476,7 @@ export class OrgSelectorComponent {
     // M3: the path guard skips the resolver for the organization already selected, so this pick is the
     // only place the row's CLA-only answer can reach the CLA-only shell. Recorded for a re-pick of the
     // selection too, which returns below without navigating.
-    this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true);
+    this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true, item.employeeViewChecked === true);
     this.viewModeService.noteAddressed(item.uid, item.employeeView === true);
     this.viewModeService.noteFullAccessAddressed(item.uid, item.fullAccess === true);
     // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —

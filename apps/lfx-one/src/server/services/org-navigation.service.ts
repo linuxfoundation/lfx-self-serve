@@ -177,7 +177,12 @@ export class OrgNavigationService {
     // Proven employee (or authorizer full) access supersedes CLA-only classification for the same company: a CLA-only row opens EasyCLA alone and
     // redirects every other page there, which would lock a qualifying employee out of the view they earned. The caller's own
     // CLA Manager scope is untouched — EasyCLA's gate still asks it independently.
-    const items = [...this.toClaOnlyItems(orgs).filter((item) => item.uid !== employeeViewItem?.uid), ...(employeeViewItem ? [employeeViewItem] : [])];
+    // The employee lookup answered (ran and did not fail), so these CLA-only rows are conclusive about the employee view.
+    const employeeViewChecked = isOrgLensEmployeeViewEnabled(req) && !employeeViewFailed;
+    const items = [
+      ...this.toClaOnlyItems(orgs, employeeViewChecked).filter((item) => item.uid !== employeeViewItem?.uid),
+      ...(employeeViewItem ? [employeeViewItem] : []),
+    ];
     const shown = this.applySelectedUidPin(sortOrgItemsByName(filterOrgItemsByName(items, name), name), items, selectedUid, pageToken);
 
     logger.debug(req, 'build_org_items', 'Built CLA-only org items', {
@@ -203,7 +208,8 @@ export class OrgNavigationService {
     let timer: NodeJS.Timeout | undefined;
     try {
       // Bounded like the role-grants lookup: this rides the selector list the page waits for, so a cold membership index or a slow
-      // work-history read must not hold CLA-only rows that are already resolved. The lookup keeps running (and stays cached) for a retry.
+      // work-history read must not hold CLA-only rows that are already resolved. The lookup keeps running (and stays cached) for a retry;
+      // (an abandoned race input is still handled by `Promise.race`, so a late failure is not an unhandled rejection).
       const verdict = await Promise.race([
         this.employeeView.resolveReduced(req),
         new Promise<never>((_, reject) => {
@@ -250,7 +256,7 @@ export class OrgNavigationService {
     }
   }
 
-  private toClaOnlyItems(orgs: ClaOnlyOrg[]): OrgItem[] {
+  private toClaOnlyItems(orgs: ClaOnlyOrg[], employeeViewChecked = false): OrgItem[] {
     return orgs.map(
       (org): OrgItem => ({
         uid: org.uid,
@@ -263,6 +269,7 @@ export class OrgNavigationService {
         slug: null,
         isAssigned: true,
         claOnly: true,
+        ...(employeeViewChecked ? { employeeViewChecked: true } : {}),
       })
     );
   }

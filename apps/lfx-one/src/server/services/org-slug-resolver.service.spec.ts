@@ -472,6 +472,23 @@ describe('OrgSlugResolverService — all employee view company (#5845)', () => {
     await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).resolves.toMatchObject({ outcome: 'hit', org: { claOnly: true } });
   });
 
+  it('marks a CLA-only answer as conclusive about the employee view only when that lookup ran and answered', async () => {
+    proxyRequest.mockResolvedValue(page([]));
+    resolveClaOnlyOrg.mockResolvedValue({ uid: UID_A, slug: null, name: 'Acme Motors', claOnly: true });
+
+    resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
+    await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).resolves.toMatchObject({ org: { claOnly: true, employeeViewChecked: true } });
+
+    resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
+    const failed = await new OrgSlugResolverService().resolveSegment(req, UID_A);
+    expect(failed).toMatchObject({ org: { claOnly: true } });
+    expect((failed as { org: { employeeViewChecked?: boolean } }).org.employeeViewChecked).toBeUndefined();
+
+    delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
+    const off = await new OrgSlugResolverService().resolveSegment(req, UID_A);
+    expect((off as { org: { employeeViewChecked?: boolean } }).org.employeeViewChecked).toBeUndefined();
+  });
+
   it('throws a structured 503, not a miss, when the lookup is unavailable and nothing else answers', async () => {
     proxyRequest.mockResolvedValue(page([]));
     resolveEmployeeView.mockRejectedValue(new Error('cdp down'));

@@ -542,6 +542,42 @@ describe('OrgNavigationService — all employee view company (#5845)', () => {
     ]);
   });
 
+  it('marks CLA-only rows as conclusive about the employee view only when that lookup answered', async () => {
+    listClaOnlyOrgs.mockResolvedValue({ orgs: [{ uid: COMPANY_B, name: 'Beta Corp' }], failed: false });
+
+    resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
+    const answered = await new OrgNavigationService().getOrgItems(req, {});
+    expect(answered.items[0]).toMatchObject({ uid: COMPANY_B, claOnly: true, employeeViewChecked: true });
+
+    resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
+    const failed = await new OrgNavigationService().getOrgItems(req, {});
+    expect(failed.items[0]).toMatchObject({ uid: COMPANY_B, claOnly: true });
+    expect(failed.items[0].employeeViewChecked).toBeUndefined();
+  });
+
+  it('does not turn a lookup that fails after the budget into an unhandled rejection', async () => {
+    // Only the budget timer is faked, so the real `setImmediate` below still lets Node report an unhandled rejection.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      let fail: (reason: unknown) => void = () => undefined;
+      resolveEmployeeView.mockReturnValue(new Promise((_, reject) => (fail = reject)));
+
+      const pending = new OrgNavigationService().getOrgItems(req, {});
+      await vi.advanceTimersByTimeAsync(5001);
+      await pending;
+      fail(new Error('cdp down after the budget'));
+      await vi.advanceTimersByTimeAsync(0);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+      vi.useRealTimers();
+    }
+  });
+
   it('reports an unavailable lookup as upstream_failed, not as no companies', async () => {
     resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
 
