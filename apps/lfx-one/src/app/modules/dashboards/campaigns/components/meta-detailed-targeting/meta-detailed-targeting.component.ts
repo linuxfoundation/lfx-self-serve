@@ -6,20 +6,22 @@ import { Component, computed, inject, input, model, Signal, signal } from '@angu
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
-import { META_MAX_DETAILED_TARGETING_IDS, META_TARGETING_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
+import { META_TARGETING_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import type {
   MetaDetailedTargetingListView,
   MetaDetailedTargetingPicks,
-  MetaTargetingKind,
+  MetaTargetingBox,
+  MetaTargetingPickKey,
   MetaTargetingSearchChoice,
   MetaTargetingSearchState,
   MetaTargetingSearchType,
 } from '@lfx-one/shared/interfaces';
 import {
-  metaTargetingKindsShown,
-  metaTargetingPicksWith,
+  metaTargetingBoxChoices,
+  metaTargetingBoxesShown,
+  metaTargetingBoxPicks,
+  metaTargetingPicksAdd,
   metaTargetingPicksWithout,
-  metaTargetingSearchChoices,
   metaTargetingSearchEmptyMessage,
   metaTargetingSearchFailure,
   metaTargetingSearchQuery,
@@ -29,11 +31,12 @@ import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/auto
 import { catchError, map, of, startWith, switchMap, timer } from 'rxjs';
 
 /**
- * Meta detailed targeting on the Implement tab (#5904 row 4): interests, behaviors and job titles, each picked
- * from Meta's own taxonomy through `GET /api/campaigns/meta/targeting-search`. Interests show on the interest flag;
- * behaviors and job titles on the behavior flag. The parent owns the picks (with names, so a restored chip reads
- * the same), sends their ids as `metaConfig.targeting`, and holds Create. The rules live in
- * `campaign-meta-detailed-targeting.utils.ts`.
+ * Meta detailed targeting on the Implement tab: interests, behaviors, job titles and languages (#5904 row 4), and
+ * regions and cities (row 6), each picked from Meta's own answers through `GET /api/campaigns/meta/targeting-search`.
+ * Each box shows on its own flag: interests on the interest flag, behaviors and job titles on the behavior flag,
+ * languages on the locale flag, and one location box, whose rows are regions or cities, on the region flag. The
+ * parent owns the picks (with names, so a restored chip reads the same), sends them as `metaConfig.targeting`, and
+ * holds Create. The rules live in `campaign-meta-detailed-targeting.utils.ts`.
  */
 @Component({
   selector: 'lfx-meta-detailed-targeting',
@@ -46,18 +49,23 @@ export class MetaDetailedTargetingComponent {
   public readonly projectSlug = input.required<string>();
   public readonly interestEnabled = input<boolean>(false);
   public readonly behaviorEnabled = input<boolean>(false);
+  public readonly localeEnabled = input<boolean>(false);
+  public readonly regionEnabled = input<boolean>(false);
 
   public readonly picks = model.required<MetaDetailedTargetingPicks>();
 
-  protected readonly maxIds = META_MAX_DETAILED_TARGETING_IDS;
   /** One control per search box; each is cleared after a pick, so the box reads "search another". */
   protected readonly searchForm = new FormGroup({
     interest: new FormControl<unknown>(null),
     behavior: new FormControl<unknown>(null),
     work_position: new FormControl<unknown>(null),
+    locale: new FormControl<unknown>(null),
+    location: new FormControl<unknown>(null),
   });
 
-  private readonly kinds = computed(() => metaTargetingKindsShown({ interest: this.interestEnabled(), behavior: this.behaviorEnabled() }));
+  private readonly boxes = computed(() =>
+    metaTargetingBoxesShown({ interest: this.interestEnabled(), behavior: this.behaviorEnabled(), locale: this.localeEnabled(), region: this.regionEnabled() })
+  );
   /** The latest typed query and the box it came from; `equal: () => false` so a repeated query searches again after a failure. */
   private readonly query = signal<{ type: MetaTargetingSearchType; query: string } | null>(null, { equal: () => false });
   private readonly search: Signal<MetaTargetingSearchState> = this.initSearch();
@@ -66,26 +74,27 @@ export class MetaDetailedTargetingComponent {
     const picks = this.picks();
     const search = this.search();
     const request = this.query();
-    return this.kinds().map((kind) => {
-      const answers = search.type === kind.type;
+    return this.boxes().map((box) => {
+      const answers = search.type === box.type;
       const failure = answers ? search.failure : null;
-      const refused = request !== null && request.type === kind.type && request.query === '';
-      const choices = answers
-        ? metaTargetingSearchChoices(search.options, picks[kind.key]).map((choice) => ({ ...choice, pathLabel: choice.path.join(' › ') }))
-        : [];
+      const refused = request !== null && request.type === box.type && request.query === '';
+      const choices = answers ? metaTargetingBoxChoices(box, search.options, picks) : [];
       const emptyMessage = metaTargetingSearchEmptyMessage(refused, answers && search.pending, failure);
-      return { ...kind, picks: picks[kind.key], choices, full: picks[kind.key].length >= META_MAX_DETAILED_TARGETING_IDS, emptyMessage, failure };
+      return { ...box, ...metaTargetingBoxPicks(box, picks), choices, emptyMessage, failure };
     });
   });
+
+  /** Whether any shown box joins the "match any one" group, so its hint applies. */
+  protected readonly matchAnyShown = computed<boolean>(() => this.lists().some((list) => list.matchAny));
 
   protected onSearch(type: MetaTargetingSearchType, event: AutoCompleteCompleteEvent): void {
     this.query.set({ type, query: metaTargetingSearchQuery(event.query) });
   }
 
-  protected onSelect(kind: MetaTargetingKind, event: AutoCompleteSelectEvent): void {
+  protected onSelect(box: MetaTargetingBox, event: AutoCompleteSelectEvent): void {
     const choice = event.value as MetaTargetingSearchChoice | null;
-    if (choice && !choice.disabled) this.picks.update((picks) => ({ ...picks, [kind.key]: metaTargetingPicksWith(picks[kind.key], choice) }));
-    this.searchForm.controls[kind.type].setValue(null);
+    if (choice && !choice.disabled) this.picks.update((picks) => metaTargetingPicksAdd(picks, box, choice));
+    this.searchForm.controls[box.type].setValue(null);
     this.query.set(null);
   }
 
@@ -93,8 +102,8 @@ export class MetaDetailedTargetingComponent {
     this.query.set(null);
   }
 
-  protected onRemove(kind: MetaTargetingKind, id: string): void {
-    this.picks.update((picks) => ({ ...picks, [kind.key]: metaTargetingPicksWithout(picks[kind.key], id) }));
+  protected onRemove(list: MetaTargetingPickKey, id: string): void {
+    this.picks.update((picks) => ({ ...picks, [list]: metaTargetingPicksWithout(picks[list], id) }));
   }
 
   /**
@@ -104,11 +113,11 @@ export class MetaDetailedTargetingComponent {
    */
   private initSearch(): Signal<MetaTargetingSearchState> {
     const idle = (): MetaTargetingSearchState => ({ type: null, options: [], pending: false, failure: null });
-    const trigger = computed(() => ({ request: this.query(), projectSlug: this.projectSlug(), kinds: this.kinds() }));
+    const trigger = computed(() => ({ request: this.query(), projectSlug: this.projectSlug(), boxes: this.boxes() }));
     return toSignal(
       toObservable(trigger).pipe(
-        switchMap(({ request, projectSlug, kinds }) => {
-          if (request === null || request.query === '' || projectSlug === '' || !kinds.some((kind) => kind.type === request.type)) return of(idle());
+        switchMap(({ request, projectSlug, boxes }) => {
+          if (request === null || request.query === '' || projectSlug === '' || !boxes.some((box) => box.type === request.type)) return of(idle());
           const { type, query } = request;
           return timer(META_TARGETING_SEARCH_DEBOUNCE_MS).pipe(
             switchMap(() =>

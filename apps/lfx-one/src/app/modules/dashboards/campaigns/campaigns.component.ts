@@ -1156,9 +1156,11 @@ export class CampaignsComponent {
   protected readonly briefCampaignsMetaCallToActionEnabled = signal<boolean | null>(null);
   /** Meta lead forms (#5940) — `CampaignListResult.metaLeadFormsEnabled`: whether THIS caller may create a lead ad. */
   protected readonly briefCampaignsMetaLeadFormsEnabled = signal<boolean | null>(null);
-  /** Meta interests, and behaviors with job titles (#5904 row 4): deployment-wide answers, read and cleared like the capabilities above. */
+  /** Meta interests, behaviors with job titles, languages (#5904 row 4), and regions with cities (row 6): deployment-wide answers, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaInterestTargetingEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaBehaviorTargetingEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaLocaleTargetingEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaRegionTargetingEnabled = signal<boolean | null>(null);
   /** The Meta ad schedule and frequency cap (#5904 row 5): deployment-wide answers, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaAdScheduleEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaFrequencyCapEnabled = signal<boolean | null>(null);
@@ -3155,6 +3157,8 @@ export class CampaignsComponent {
         this.briefCampaignsMetaLeadFormsEnabled.set(null);
         this.briefCampaignsMetaInterestTargetingEnabled.set(null);
         this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+        this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
+        this.briefCampaignsMetaRegionTargetingEnabled.set(null);
         this.briefCampaignsMetaAdScheduleEnabled.set(null);
         this.briefCampaignsMetaFrequencyCapEnabled.set(null);
         this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
@@ -5998,6 +6002,8 @@ export class CampaignsComponent {
           this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
+          this.briefCampaignsMetaLocaleTargetingEnabled.set(result.metaLocaleTargetingEnabled ?? null);
+          this.briefCampaignsMetaRegionTargetingEnabled.set(result.metaRegionTargetingEnabled ?? null);
           this.briefCampaignsMetaAdScheduleEnabled.set(result.metaAdScheduleEnabled ?? null);
           this.briefCampaignsMetaFrequencyCapEnabled.set(result.metaFrequencyCapEnabled ?? null);
           this.briefCampaignsMetaDeviceTargetingEnabled.set(result.metaDeviceTargetingEnabled ?? null);
@@ -6057,6 +6063,8 @@ export class CampaignsComponent {
           this.briefCampaignsMetaLeadFormsEnabled.set(null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+          this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
+          this.briefCampaignsMetaRegionTargetingEnabled.set(null);
           this.briefCampaignsMetaAdScheduleEnabled.set(null);
           this.briefCampaignsMetaFrequencyCapEnabled.set(null);
           this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
@@ -6161,6 +6169,8 @@ export class CampaignsComponent {
       this.briefCampaignsMetaLeadFormsEnabled.set(null);
       this.briefCampaignsMetaInterestTargetingEnabled.set(null);
       this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+      this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
+      this.briefCampaignsMetaRegionTargetingEnabled.set(null);
       this.briefCampaignsMetaAdScheduleEnabled.set(null);
       this.briefCampaignsMetaFrequencyCapEnabled.set(null);
       this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
@@ -6235,6 +6245,8 @@ export class CampaignsComponent {
             this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
+            this.briefCampaignsMetaLocaleTargetingEnabled.set(result.metaLocaleTargetingEnabled ?? null);
+            this.briefCampaignsMetaRegionTargetingEnabled.set(result.metaRegionTargetingEnabled ?? null);
             this.briefCampaignsMetaAdScheduleEnabled.set(result.metaAdScheduleEnabled ?? null);
             this.briefCampaignsMetaFrequencyCapEnabled.set(result.metaFrequencyCapEnabled ?? null);
             this.briefCampaignsMetaDeviceTargetingEnabled.set(result.metaDeviceTargetingEnabled ?? null);
@@ -6292,6 +6304,8 @@ export class CampaignsComponent {
             this.briefCampaignsMetaLeadFormsEnabled.set(null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+            this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
+            this.briefCampaignsMetaRegionTargetingEnabled.set(null);
             this.briefCampaignsMetaAdScheduleEnabled.set(null);
             this.briefCampaignsMetaFrequencyCapEnabled.set(null);
             this.briefCampaignsMetaDeviceTargetingEnabled.set(null);

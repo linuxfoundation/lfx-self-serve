@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   META_AUDIENCE_TARGETING_OFF_MESSAGE,
+  META_TARGETING_BOXES,
   META_BEHAVIOR_TARGETING_OFF_MESSAGE,
   META_DEVICE_TARGETING_OFF_MESSAGE,
   META_INTEREST_TARGETING_OFF_MESSAGE,
@@ -20,8 +21,14 @@ import {
 } from '../constants/campaign.constants';
 import type {
   CampaignServiceMetaTargetingSearch,
+  MetaDetailedTargeting,
+  MetaDetailedTargetingEnabled,
+  MetaDetailedTargetingListView,
+  MetaDetailedTargetingPicks,
+  MetaTargetingBox,
   MetaTargetingFlags,
   MetaTargetingPick,
+  MetaTargetingPickKey,
   MetaTargetingSearchOption,
   MetaTargetingSearchType,
 } from '../interfaces/campaign.interface';
@@ -35,10 +42,14 @@ import {
   metaDetailedTargetingPicksFromDraft,
   metaDetailedTargetingPicksSendable,
   emptyMetaDetailedTargetingPicks,
-  metaTargetingKindsShown,
+  metaLocaleKeys,
+  metaTargetingBoxChoices,
+  metaTargetingBoxesShown,
+  metaTargetingBoxPicks,
+  metaTargetingPickList,
+  metaTargetingPicksAdd,
   metaTargetingPicksWith,
   metaTargetingPicksWithout,
-  metaTargetingSearchChoices,
   metaTargetingSearchEmptyMessage,
   metaTargetingSearchFailure,
   metaTargetingSearchQuery,
@@ -235,6 +246,21 @@ describe('metaTargetingSearchOptions', () => {
       [{ id: '6', name: 'English (US)', path: [] }],
     ],
     [
+      'drops a language key past the safe-integer range, which would round as a number',
+      'locale',
+      [
+        { id: '9007199254740993', name: 'Too big' },
+        { id: '9007199254740991', name: 'Largest safe' },
+      ],
+      [{ id: '9007199254740991', name: 'Largest safe', path: [] }],
+    ],
+    [
+      'keeps an interest id past the safe-integer range, as it is sent as text',
+      'interest',
+      [{ id: '9007199254740993', name: 'Big id' }],
+      [{ id: '9007199254740993', name: 'Big id', path: [] }],
+    ],
+    [
       'keeps a region and a city that share a key, drops a location of another type, and keeps the location fields',
       'location',
       [
@@ -282,17 +308,20 @@ describe('the detailed-targeting picker rules', () => {
   const full = Array.from({ length: 25 }, (_, i) => pick(String(1000 + i)));
 
   it('starts every list empty, with a fresh object each time', () => {
-    expect(emptyMetaDetailedTargetingPicks()).toEqual({ interests: [], behaviors: [], workPositions: [] });
+    expect(emptyMetaDetailedTargetingPicks()).toEqual({ interests: [], behaviors: [], workPositions: [], locales: [], regions: [], cities: [] });
     expect(emptyMetaDetailedTargetingPicks()).not.toBe(emptyMetaDetailedTargetingPicks());
   });
 
-  it.each([
-    [{ interest: true, behavior: true }, ['interests', 'behaviors', 'workPositions']],
-    [{ interest: true, behavior: false }, ['interests']],
-    [{ interest: false, behavior: true }, ['behaviors', 'workPositions']],
-    [{ interest: false, behavior: false }, []],
-  ])('shows the lists %j turns on', (flags, keys) => {
-    expect(metaTargetingKindsShown(flags).map((kind) => kind.key)).toEqual(keys);
+  const flagsOff = { interest: false, behavior: false, locale: false, region: false };
+  it.each<[Partial<typeof flagsOff>, MetaTargetingBox['key'][]]>([
+    [{ interest: true, behavior: true, locale: true, region: true }, ['interests', 'behaviors', 'workPositions', 'locales', 'locations']],
+    [{ interest: true }, ['interests']],
+    [{ behavior: true }, ['behaviors', 'workPositions']],
+    [{ locale: true }, ['locales']],
+    [{ region: true }, ['locations']],
+    [{}, []],
+  ])('shows the boxes %j turns on', (flags, keys) => {
+    expect(metaTargetingBoxesShown({ ...flagsOff, ...flags }).map((box) => box.key)).toEqual(keys);
   });
 
   it.each([
@@ -307,25 +336,26 @@ describe('the detailed-targeting picker rules', () => {
   });
 
   it('adds a pick once, trimmed, and keeps its name', () => {
-    expect(metaTargetingPicksWith([], { id: ' 6003 ', name: ' Open source ' })).toEqual([{ id: '6003', name: 'Open source' }]);
-    expect(metaTargetingPicksWith([], { id: '6003', name: ' ' })).toEqual([{ id: '6003', name: '6003' }]);
+    expect(metaTargetingPicksWith([], { id: ' 6003 ', name: ' Open source ' }, 'interests')).toEqual([{ id: '6003', name: 'Open source' }]);
+    expect(metaTargetingPicksWith([], { id: '6003', name: ' ' }, 'interests')).toEqual([{ id: '6003', name: '6003' }]);
   });
 
-  it.each([
-    ['already picked', [pick('6003')], '6003'],
-    ['not a Meta id', [], '06003'],
-    ['the list is full', full, '6003'],
-  ])('leaves the list alone when the option is %s', (_case, picks, id) => {
-    expect(metaTargetingPicksWith(picks, option(id))).toBe(picks);
+  it.each<[string, MetaTargetingPick[], string, MetaTargetingPickKey]>([
+    ['already picked', [pick('6003')], '6003', 'interests'],
+    ['not a Meta id', [], '06003', 'interests'],
+    ['the list is full', full, '6003', 'interests'],
+    ['a region list at its cap of 25', full, '6003', 'regions'],
+    ['a language past the safe-integer range', [], '9007199254740993', 'locales'],
+  ])('leaves the list alone when the option is %s', (_case, picks, id, list) => {
+    expect(metaTargetingPicksWith(picks, option(id), list)).toBe(picks);
+  });
+
+  it('caps languages at 50, not 25', () => {
+    expect(metaTargetingPicksWith(full, option('6'), 'locales')).toHaveLength(26);
   });
 
   it('removes a pick by id', () => {
     expect(metaTargetingPicksWithout([pick('1'), pick('2')], '1')).toEqual([pick('2')]);
-  });
-
-  it('disables a picked row, and every row once the list is full', () => {
-    expect(metaTargetingSearchChoices([option('1'), option('2')], [pick('1')]).map((c) => c.disabled)).toEqual([true, false]);
-    expect(metaTargetingSearchChoices([option('9')], full).map((c) => c.disabled)).toEqual([true]);
   });
 
   it.each([
@@ -348,12 +378,16 @@ describe('the detailed-targeting picker rules', () => {
 });
 
 describe('the detailed-targeting create rules', () => {
-  const picks = {
+  const picks: MetaDetailedTargetingPicks = {
     interests: [{ id: '6003', name: 'Open source' }],
     behaviors: [{ id: '6004', name: 'Early adopters' }],
     workPositions: [{ id: '105', name: 'Engineer' }],
+    locales: [{ id: '6', name: 'English (US)' }],
+    regions: [{ id: '3847', name: 'California, US' }],
+    cities: [{ id: '2420379', name: 'Austin, Texas, US' }],
   };
   const none = emptyMetaDetailedTargetingPicks();
+  const on: MetaDetailedTargetingEnabled = { interest: true, behavior: true, locale: true, region: true };
 
   it.each([
     ['not a record', 'x', undefined],
@@ -366,7 +400,19 @@ describe('the detailed-targeting create rules', () => {
         behaviors: 'x',
         workPositions: [{ id: ' 105 ', name: 'Engineer' }],
       },
-      { interests: [{ id: '6003', name: 'Open source' }], behaviors: [], workPositions: [{ id: '105', name: 'Engineer' }] },
+      { ...none, interests: [{ id: '6003', name: 'Open source' }], workPositions: [{ id: '105', name: 'Engineer' }] },
+    ],
+    [
+      'languages, regions and cities, dropping a language past the safe-integer range',
+      {
+        locales: [
+          { id: '6', name: 'English (US)' },
+          { id: '9007199254740993', name: 'Too big' },
+        ],
+        regions: [{ id: '3847', name: 'California, US' }],
+        cities: [{ id: '2420379', name: 'Austin, Texas, US' }],
+      },
+      { ...none, locales: picks.locales, regions: picks.regions, cities: picks.cities },
     ],
   ])('reads a saved draft holding %s', (_case, raw, expected) => {
     expect(metaDetailedTargetingPicksFromDraft(raw)).toEqual(expected);
@@ -381,39 +427,149 @@ describe('the detailed-targeting create rules', () => {
     const copy = copyMetaDetailedTargetingPicks(picks);
     expect(copy).toEqual(picks);
     expect(copy.interests).not.toBe(picks.interests);
+    expect(copy.cities).not.toBe(picks.cities);
   });
 
-  it.each([
-    [true, true, { interests: ['6003'], behaviors: ['6004'], workPositions: ['105'] }],
-    [true, false, { interests: ['6003'] }],
-    [null, true, { behaviors: ['6004'], workPositions: ['105'] }],
-    [false, null, null],
-  ])('sends the lists whose flag is a yes (interest %s, behavior %s)', (interest, behavior, expected) => {
-    expect(metaDetailedTargetingForCreate(picks, interest, behavior)).toEqual(expected);
+  it.each<[string, Partial<MetaDetailedTargetingEnabled>, MetaDetailedTargeting | null]>([
+    ['every flag is a yes', {}, { interests: ['6003'], behaviors: ['6004'], workPositions: ['105'], locales: [6], regions: ['3847'], cities: ['2420379'] }],
+    ['only interests', { behavior: false, locale: null, region: false }, { interests: ['6003'] }],
+    ['only behaviors and job titles', { interest: null, locale: false, region: null }, { behaviors: ['6004'], workPositions: ['105'] }],
+    ['only languages, as numbers', { interest: false, behavior: false, region: false }, { locales: [6] }],
+    ['only regions and cities, each in its own list', { interest: false, behavior: false, locale: false }, { regions: ['3847'], cities: ['2420379'] }],
+    ['no flag is a yes', { interest: false, behavior: null, locale: null, region: false }, null],
+  ])('sends the lists whose flag is a yes: %s', (_case, enabled, expected) => {
+    expect(metaDetailedTargetingForCreate(picks, { ...on, ...enabled })).toEqual(expected);
   });
 
   it('sends nothing for empty lists', () => {
-    expect(metaDetailedTargetingForCreate(none, true, true)).toBeNull();
+    expect(metaDetailedTargetingForCreate(none, on)).toBeNull();
   });
 
-  it('clears only the lists this deployment answered no to', () => {
-    expect(metaDetailedTargetingPicksSendable(picks, true, false)).toEqual({ ...none, interests: picks.interests });
-    expect(metaDetailedTargetingPicksSendable(picks, null, false)).toEqual({ ...none, interests: picks.interests });
+  it.each<[string[], number[]]>([
+    [
+      ['6', ' 1001 '],
+      [6, 1001],
+    ],
+    [['06', '9007199254740993', 'x'], []],
+  ])('turns language ids %j into the keys %j', (ids, keys) => {
+    expect(metaLocaleKeys(ids)).toEqual(keys);
   });
 
-  const block = (over: Partial<Parameters<typeof metaDetailedTargetingBlock>[0]>) =>
-    metaDetailedTargetingBlock({ picks, interestEnabled: true, behaviorEnabled: true, createCapabilityRead: 'ready', briefId: 'b-1', ...over })?.kind ?? null;
+  it.each<[string, Partial<MetaDetailedTargetingEnabled>, MetaDetailedTargetingPicks]>([
+    ['behaviors answered no', { behavior: false }, { ...picks, behaviors: [], workPositions: [] }],
+    ['languages answered no, regions unanswered', { locale: false, region: null }, { ...picks, locales: [] }],
+    ['regions answered no', { region: false }, { ...picks, regions: [], cities: [] }],
+  ])('clears only the lists this deployment answered no to: %s', (_case, enabled, expected) => {
+    expect(metaDetailedTargetingPicksSendable(picks, { ...on, ...enabled })).toEqual(expected);
+  });
 
-  it.each([
-    ['every held list is sendable', {}, null],
-    ['nothing is picked in an unsendable list', { picks: { ...none, interests: picks.interests }, behaviorEnabled: false }, null],
-    ['a held list answered no', { behaviorEnabled: false }, 'unsupported'],
-    ['a no wins over an unanswered list', { interestEnabled: null, behaviorEnabled: false, createCapabilityRead: 'pending' }, 'unsupported'],
-    ['the answer is still out', { interestEnabled: null, createCapabilityRead: 'pending' }, 'pending'],
-    ['the brief is unsaved', { interestEnabled: null, briefId: null }, 'unsaved'],
-    ['the answer failed', { interestEnabled: null, createCapabilityRead: 'failed' }, 'failed'],
-  ] as const)('holds Create when %s', (_case, over, kind) => {
-    expect(block(over)).toBe(kind);
+  const block = (over: Partial<Omit<Parameters<typeof metaDetailedTargetingBlock>[0], 'enabled'>>, enabled: Partial<MetaDetailedTargetingEnabled> = {}) =>
+    metaDetailedTargetingBlock({ picks, enabled: { ...on, ...enabled }, createCapabilityRead: 'ready', briefId: 'b-1', ...over })?.kind ?? null;
+
+  it.each<[string, Partial<Omit<Parameters<typeof metaDetailedTargetingBlock>[0], 'enabled'>>, Partial<MetaDetailedTargetingEnabled>, string | null]>([
+    ['every held list is sendable', {}, {}, null],
+    ['nothing is picked in an unsendable list', { picks: { ...none, interests: picks.interests } }, { behavior: false, locale: false, region: false }, null],
+    ['a held list answered no', {}, { behavior: false }, 'unsupported'],
+    ['held languages answered no', {}, { locale: false }, 'unsupported'],
+    ['held cities answered no', { picks: { ...none, cities: picks.cities } }, { region: false }, 'unsupported'],
+    ['a no wins over an unanswered list', { createCapabilityRead: 'pending' }, { interest: null, behavior: false }, 'unsupported'],
+    ['the answer is still out', { createCapabilityRead: 'pending' }, { interest: null }, 'pending'],
+    ['the region answer is still out', { createCapabilityRead: 'pending' }, { region: null }, 'pending'],
+    ['the brief is unsaved', { briefId: null }, { interest: null }, 'unsaved'],
+    ['the answer failed', { createCapabilityRead: 'failed' }, { locale: null }, 'failed'],
+  ])('holds Create when %s', (_case, over, enabled, kind) => {
+    expect(block(over, enabled)).toBe(kind);
+  });
+});
+
+describe('the language and location picker rules', () => {
+  const box = (key: MetaTargetingBox['key']): MetaTargetingBox => META_TARGETING_BOXES.find((b) => b.key === key) ?? META_TARGETING_BOXES[0];
+  const none = emptyMetaDetailedTargetingPicks();
+  const region: MetaTargetingSearchOption = { id: '3847', name: 'California', path: [], locationType: 'region', countryCode: 'US' };
+  const city: MetaTargetingSearchOption = { id: '2420379', name: 'Austin', path: [], locationType: 'city', countryCode: 'US', region: 'Texas' };
+  const language: MetaTargetingSearchOption = { id: '6', name: 'English (US)', path: [] };
+
+  it.each<[string, MetaTargetingBox['key'], MetaTargetingSearchOption, MetaTargetingPickKey | null]>([
+    ['an interest fills interests', 'interests', { id: '6003', name: 'K', path: [] }, 'interests'],
+    ['a language fills locales', 'locales', language, 'locales'],
+    ['a region fills regions', 'locations', region, 'regions'],
+    ['a city fills cities', 'locations', city, 'cities'],
+    ['a location of neither type fills nothing', 'locations', { id: '1', name: 'X', path: [] }, null],
+  ])('%s', (_case, key, option, list) => {
+    expect(metaTargetingPickList(box(key), option)).toBe(list);
+  });
+
+  it.each<[string, MetaTargetingBox['key'], MetaTargetingSearchOption, Partial<MetaDetailedTargetingPicks>]>([
+    ['a language keeps its key as text', 'locales', language, { locales: [{ id: '6', name: 'English (US)' }] }],
+    ['a region keeps its country in its name', 'locations', region, { regions: [{ id: '3847', name: 'California, US' }] }],
+    ['a city keeps its region and country in its name', 'locations', city, { cities: [{ id: '2420379', name: 'Austin, Texas, US' }] }],
+    [
+      'a city with no place reads as its name',
+      'locations',
+      { id: '2420380', name: 'Nowhere', path: [], locationType: 'city' },
+      { cities: [{ id: '2420380', name: 'Nowhere' }] },
+    ],
+  ])('adds a pick: %s', (_case, key, option, expected) => {
+    expect(metaTargetingPicksAdd(none, box(key), option)).toEqual({ ...none, ...expected });
+  });
+
+  it.each<[string, MetaTargetingBox['key'], MetaTargetingSearchOption]>([
+    ['a location of neither type', 'locations', { id: '1', name: 'X', path: [] }],
+    ['a language past the safe-integer range', 'locales', { id: '9007199254740993', name: 'Too big', path: [] }],
+  ])('returns the same picks for %s', (_case, key, option) => {
+    expect(metaTargetingPicksAdd(none, box(key), option)).toBe(none);
+  });
+
+  it.each<[string, MetaDetailedTargetingPicks, boolean[], string[]]>([
+    ['nothing picked', none, [false, false, true], ['Region · US', 'City · Texas, US', '']],
+    ['the region picked', { ...none, regions: [{ id: '3847', name: 'California, US' }] }, [true, false, true], ['Region · US', 'City · Texas, US', '']],
+    [
+      'the city list at its cap',
+      { ...none, cities: Array.from({ length: 25 }, (_, i) => ({ id: String(9000 + i), name: `C${i}` })) },
+      [false, true, true],
+      ['Region · US', 'City · Texas, US', ''],
+    ],
+  ])('lists location rows with %s', (_case, picks, disabled, details) => {
+    const choices = metaTargetingBoxChoices(box('locations'), [region, city, { id: '1', name: 'X', path: [] }], picks);
+    expect(choices.map((c) => c.disabled)).toEqual(disabled);
+    expect(choices.map((c) => c.pathLabel)).toEqual(details);
+  });
+
+  it('lists an interest row with its taxonomy path, disabled once picked', () => {
+    const rows = metaTargetingBoxChoices(box('interests'), [{ id: '6003', name: 'K', path: ['Interests', 'Technology'] }], {
+      ...none,
+      interests: [{ id: '6003', name: 'K' }],
+    });
+    expect(rows.map((r) => [r.disabled, r.pathLabel])).toEqual([[true, 'Interests › Technology']]);
+  });
+
+  it.each<[string, MetaTargetingBox['key'], MetaDetailedTargetingPicks, Pick<MetaDetailedTargetingListView, 'chips' | 'full' | 'countLabel'>]>([
+    ['empty languages', 'locales', none, { chips: [], full: false, countLabel: 'Languages (0 of 50)' }],
+    [
+      'a region and a city, each chip saying which',
+      'locations',
+      { ...none, regions: [{ id: '3847', name: 'California, US' }], cities: [{ id: '3847', name: 'Austin, Texas, US' }] },
+      {
+        chips: [
+          { list: 'regions', id: '3847', label: 'California, US (region)' },
+          { list: 'cities', id: '3847', label: 'Austin, Texas, US (city)' },
+        ],
+        full: false,
+        countLabel: 'Regions and cities (1 of 25 regions, 1 of 25 cities)',
+      },
+    ],
+    [
+      'regions at their cap but not cities',
+      'locations',
+      { ...none, regions: Array.from({ length: 25 }, (_, i) => ({ id: String(100 + i), name: 'R' })) },
+      {
+        chips: Array.from({ length: 25 }, (_, i) => ({ list: 'regions', id: String(100 + i), label: 'R (region)' })),
+        full: false,
+        countLabel: 'Regions and cities (25 of 25 regions, 0 of 25 cities)',
+      },
+    ],
+  ])('shows the picks of %s', (_case, key, picks, expected) => {
+    expect(metaTargetingBoxPicks(box(key), picks)).toEqual(expected);
   });
 });
 
@@ -463,5 +619,19 @@ describe('compactMetaDetailedTargeting with devices and operating systems', () =
       devicePlatforms: ['mobile'],
       userOs: ['iOS', 'Android_ver_4.0_and_above'],
     });
+  });
+});
+
+// The picker's cap per list (the box's `max`) must be exactly what a create accepts for the field it fills, so a
+// row the picker offers is never refused on create and the create's cap is never out of reach in the picker.
+describe('the picker cap matches the create cap', () => {
+  const rows = META_TARGETING_BOXES.flatMap((b) => b.lists.map((list) => [list, b.max] as [MetaTargetingPickKey, number]));
+  it.each<[MetaTargetingPickKey, number]>(rows)('%s takes %i picks, as a create does', (list, max) => {
+    let picks: MetaTargetingPick[] = [];
+    for (const id of ids(max + 1)) picks = metaTargetingPicksWith(picks, { id, name: id }, list);
+    expect(picks).toHaveLength(max);
+    const sent = (n: number): unknown[] => (list === 'locales' ? ids(n).map(Number) : ids(n));
+    expect(metaDetailedTargetingRefusal({ [list]: sent(max) })).toBeNull();
+    expect(metaDetailedTargetingRefusal({ [list]: sent(max + 1) })?.field).toBe(`metaConfig.targeting.${list}`);
   });
 });

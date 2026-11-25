@@ -10,6 +10,7 @@ import type {
   MetaAdOptions,
   MetaAdOptionsEnabled,
   MetaConfigRefusal,
+  MetaTargeting,
 } from '../interfaces/campaign.interface';
 
 /**
@@ -47,6 +48,27 @@ const META_CONFIG_EXACT_KEYS = [
 ] as const;
 /** The `metaConfig.placements` keys, which the device rules read by their exact spelling. */
 const META_PLACEMENT_KEYS = ['facebookFeed', 'instagramFeed', 'stories', 'reels', 'audienceNetwork', 'messengerInbox'] as const;
+/**
+ * Every `metaConfig.targeting` key, audience and detailed, which the targeting gates and rules read by their exact
+ * spelling. A record over `keyof MetaTargeting`, so a key added to the interface fails the type-check until it is listed.
+ */
+const META_TARGETING_KEY_SET: Record<keyof MetaTargeting, true> = {
+  ageMin: true,
+  ageMax: true,
+  genders: true,
+  customAudiences: true,
+  excludedCustomAudiences: true,
+  advantageAudience: true,
+  interests: true,
+  behaviors: true,
+  workPositions: true,
+  locales: true,
+  devicePlatforms: true,
+  userOs: true,
+  regions: true,
+  cities: true,
+};
+const META_TARGETING_KEYS = Object.keys(META_TARGETING_KEY_SET);
 
 /** A key as Go's `encoding/json` matches it: Unicode case folding, which upper-casing first catches (`ſ` is `s`). */
 function foldKey(key: string): string {
@@ -66,8 +88,9 @@ function keyVariantIn(record: Record<string, unknown>, known: readonly string[])
  * The `metaConfig` field `raw` sends under another spelling of its key, or `null` (#5904 row 6 review). campaign-service
  * decodes keys ignoring case (Unicode folding), but the create route reads and rebuilds each by its exact spelling and
  * forwards the rest untouched, so `Targeting` would reach campaign-service past every targeting gate here, and a
- * differently cased `objective` or `placements.audienceNetwork` past the rules that read them. The route refuses any
- * such key whatever the flags, naming the field it folds to.
+ * differently cased `objective`, `placements.audienceNetwork` or `targeting.regions` past the rules and flag gates
+ * that read them (`targeting: { Regions: [...] }` would otherwise reach Meta with no region flag). The route refuses
+ * any such key whatever the flags, naming the field it folds to.
  */
 export function metaConfigKeyVariant(raw: unknown): string | null {
   const record = metaConfigRecord(raw);
@@ -76,7 +99,10 @@ export function metaConfigKeyVariant(raw: unknown): string | null {
   if (top !== null) return `metaConfig.${top}`;
   const placements = metaConfigRecord(record['placements']);
   const placement = placements ? keyVariantIn(placements, META_PLACEMENT_KEYS) : null;
-  return placement === null ? null : `metaConfig.placements.${placement}`;
+  if (placement !== null) return `metaConfig.placements.${placement}`;
+  const targeting = metaConfigRecord(record['targeting']);
+  const target = targeting ? keyVariantIn(targeting, META_TARGETING_KEYS) : null;
+  return target === null ? null : `metaConfig.targeting.${target}`;
 }
 
 /**
