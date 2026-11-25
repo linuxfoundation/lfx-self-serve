@@ -44,9 +44,10 @@ export function linkedInCarouselDestinationProblem(raw: string): string | null {
   if (!prefix || googleAdsUrlParseFlaw(url)) return 'must be a full http:// or https:// link';
   const rest = url.slice(prefix[0].length);
   const authority = rest.slice(0, rest.search(/[/?#]|$/));
-  // Go's `Hostname()` is empty for "https://:443/", which `validateLandingURL` refuses.
   if (authority.includes('@')) return 'must not carry a user name or password';
-  if (authority.replace(/:[0-9]*$/, '') === '') return 'must be a full http:// or https:// link';
+  // Go's `Hostname()` is empty for "https://:443/" and for "https://[]/", which `validateLandingURL` refuses.
+  const host = authority.replace(/:[0-9]*$/, '');
+  if (host === '' || host === '[]') return 'must be a full http:// or https:// link';
   const beforeFragment = url.split('#')[0];
   const queryAt = beforeFragment.indexOf('?');
   const query = queryAt === -1 ? '' : beforeFragment.slice(queryAt + 1);

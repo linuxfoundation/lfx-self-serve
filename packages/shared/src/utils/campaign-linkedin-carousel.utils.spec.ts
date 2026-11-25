@@ -119,6 +119,8 @@ describe('linkedInCarouselDestinationProblem', () => {
     ['events.example.org', 'full http'],
     ['https://', 'full http'],
     ['https://:443/a', 'full http'],
+    ['https://[]/path', 'full http'],
+    ['https://[]:443/path', 'full http'],
     ['javascript:alert(1)', 'full http'],
     ['https://user:pw@events.example.org', 'user name or password'],
     ['https://events.example.org/?a=%zz', 'malformed query'],
