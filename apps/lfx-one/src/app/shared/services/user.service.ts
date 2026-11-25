@@ -79,6 +79,7 @@ import {
 } from 'rxjs';
 
 import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
+import { ProfileSavedFieldsService } from './profile-saved-fields.service';
 
 @Injectable({
   providedIn: 'root',
@@ -87,6 +88,7 @@ export class UserService {
   private readonly http = inject(HttpClient);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly savedFields = inject(ProfileSavedFieldsService);
 
   public authenticated: WritableSignal<boolean> = signal<boolean>(false);
   public user: WritableSignal<User | null> = signal<User | null>(null);
@@ -271,7 +273,8 @@ export class UserService {
 
   /**
    * Update user profile metadata via unified NATS endpoint
-   * Only sends user_metadata - username and email are extracted from OIDC claim on backend
+   * Only sends user_metadata - username and email are extracted from OIDC claim on backend.
+   * Not recorded here: each editor records its save after syncing it, which compares against the name from before the save.
    */
   public updateUserProfile(data: ProfileUpdateRequest): Observable<any> {
     return this.http.patch('/api/profile', data).pipe(take(1));
@@ -280,9 +283,15 @@ export class UserService {
   /**
    * Upload a new profile picture. Sent as raw bytes with the file's MIME type as
    * Content-Type (the backend parses this with express.raw, not multipart/form-data).
+   * Every editor uploads through here, so the new photo is recorded for the pages that lay saves over a stale GET.
    */
   public uploadProfilePicture(file: File): Observable<ProfilePictureUploadResponse> {
-    return this.http.post<ProfilePictureUploadResponse>('/api/profile/picture-upload', file, { headers: { 'Content-Type': file.type } }).pipe(take(1));
+    return this.http.post<ProfilePictureUploadResponse>('/api/profile/picture-upload', file, { headers: { 'Content-Type': file.type } }).pipe(
+      take(1),
+      tap((response) => {
+        if (response.public_url) this.savedFields.record({ picture: response.public_url });
+      })
+    );
   }
 
   // Public-profile visibility methods (LFXV2-2629)
@@ -671,6 +680,26 @@ export class UserService {
       map((experiences) => currentEmployerFromWorkExperiences(experiences.filter((experience) => !experience.endDate))?.name ?? null),
       catchError((error) => {
         console.warn('[UserService] getCurrentEmployerName failed; leaving the organization blank', error);
+        return of(null);
+      })
+    );
+  }
+
+  /**
+   * The logo of the named company in the signed-in user's work history, a current job's before a past one's. A quiet read like
+   * {@link getCurrentEmployerName}: a failure, a timeout or no match is a null, never a toast.
+   */
+  public getWorkHistoryLogo(company: string): Observable<string | null> {
+    const name = company.trim().toLowerCase();
+    return this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
+      take(1),
+      timeout(CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS),
+      map((experiences) => {
+        const matches = experiences.filter((experience) => experience.organizationLogo && experience.organization.trim().toLowerCase() === name);
+        return (matches.find((experience) => !experience.endDate) ?? matches[0])?.organizationLogo ?? null;
+      }),
+      catchError((error) => {
+        console.warn('[UserService] getWorkHistoryLogo failed; showing no logo', error);
         return of(null);
       })
     );

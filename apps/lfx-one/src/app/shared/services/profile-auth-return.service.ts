@@ -29,8 +29,8 @@ import { filter } from 'rxjs';
 /**
  * Handles the Flow C (profile authorization) return for a page shell: replays a profile save stashed before the
  * redirect, reports the email-verification outcome and maps error codes to a toast, then strips the callback query.
- * Provided per shell (the Profile & Account hub and Account & Settings), so it runs once on whichever page the
- * authorization returns to.
+ * Provided per shell (the Profile & Account hub and Account & Settings) and by the Profile page, so it runs once on whichever
+ * page the authorization returns to.
  */
 @Injectable()
 export class ProfileAuthReturnService {
