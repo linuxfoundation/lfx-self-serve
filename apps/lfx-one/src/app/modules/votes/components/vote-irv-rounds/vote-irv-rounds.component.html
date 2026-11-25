@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @let view = rounds();
-<section class="flex flex-col gap-3" data-testid="vote-irv-rounds">
+<section class="flex flex-col gap-3" [attr.data-testid]="testIds() ? 'vote-irv-rounds' : null">
   <h5 class="text-sm font-semibold text-gray-900">Round-by-round count</h5>
   <p class="text-sm text-slate-600">
     Each round counts every ballot for its highest-ranked option still in the race. The option with the fewest votes is eliminated and its ballots move to their
@@ -14,7 +14,7 @@
     tabindex="0"
     role="region"
     aria-label="Round-by-round count">
-    <table class="w-full border-collapse text-sm" data-testid="vote-irv-rounds-table">
+    <table class="w-full border-collapse text-sm" [attr.data-testid]="testIds() ? 'vote-irv-rounds-table' : null">
       <caption class="sr-only">
         Votes for each option in each counting round, with continuing ballots, exhausted ballots and the majority needed per round
       </caption>
@@ -47,7 +47,7 @@
                 [class.text-slate-500]="cell.status === 'eliminated' || cell.status === 'out'"
                 [class.text-gray-700]="cell.status === 'continuing'"
                 [attr.data-status]="cell.status"
-                [attr.data-testid]="'vote-irv-rounds-cell-' + row.choiceId + '-' + cell.roundNumber">
+                [attr.data-testid]="testIds() ? 'vote-irv-rounds-cell-' + row.choiceId + '-' + cell.roundNumber : null">
                 @if (cell.status === 'out') {
                   <span aria-hidden="true">{{ cell.votesText }}</span>
                   <span class="sr-only">Not in this round</span>
@@ -92,7 +92,7 @@
 
   <ol class="flex flex-col gap-2 text-sm text-slate-700">
     @for (line of stepLines(); track line.roundNumber) {
-      <li class="break-words" [attr.data-testid]="'vote-irv-rounds-step-' + line.roundNumber">
+      <li class="break-words" [attr.data-testid]="testIds() ? 'vote-irv-rounds-step-' + line.roundNumber : null">
         <span class="font-semibold text-gray-900">Round {{ line.roundNumber }}:</span>
         {{ line.text }}
       </li>

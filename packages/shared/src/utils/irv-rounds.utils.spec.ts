@@ -173,7 +173,10 @@ describe('buildIrvRoundsView', () => {
   });
 
   it('treats missing round votes as no candidates counted', () => {
-    const view = buildIrvRoundsView([{ ...round(1, {}), votes: undefined as unknown as IrvRoundSummary['votes'] }], ['a'], [], textOf);
+    const noVotes = round(1, {});
+    // @ts-expect-error -- votes is required; the builder tolerates a payload without it
+    delete noVotes.votes;
+    const view = buildIrvRoundsView([noVotes], ['a'], [], textOf);
 
     expect(view?.rows[0].cells[0].status).toBe('out');
     expect(view?.steps[0].kind).toBe('exhausted');

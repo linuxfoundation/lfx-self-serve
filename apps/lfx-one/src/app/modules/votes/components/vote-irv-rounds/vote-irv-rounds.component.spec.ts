@@ -11,8 +11,9 @@ function column(roundNumber: number, overrides: Partial<IrvRoundColumn> = {}): I
   return { roundNumber, continuingBallots: 100, exhaustedBallots: 0, threshold: 51, isFinal: false, ...overrides };
 }
 
-function cell(roundNumber: number, votes: number | null, status: IrvRoundCell['status'] = 'continuing'): IrvRoundCell {
-  return { roundNumber, votes, percentage: votes === null ? null : votes, status };
+/** A cell whose percentage is its share of the round's continuing ballots (100 unless given). */
+function cell(roundNumber: number, votes: number | null, status: IrvRoundCell['status'] = 'continuing', continuing = 100): IrvRoundCell {
+  return { roundNumber, votes, percentage: votes === null ? null : Math.round((votes / continuing) * 100), status };
 }
 
 function step(roundNumber: number, overrides: Partial<IrvRoundStep> = {}): IrvRoundStep {
@@ -31,7 +32,7 @@ function step(roundNumber: number, overrides: Partial<IrvRoundStep> = {}): IrvRo
   };
 }
 
-/** Candidate D out in round 1 (5 to A, 3 to B, 2 exhausted), Candidate C out in round 2, Candidate A wins round 3. */
+/** Candidate D out in round 1 (5 to A, 3 to B, 2 exhausted), Candidate C out in round 2 (10 to A, 2 to B, 8 exhausted), Candidate A wins round 3. */
 const MAJORITY: IrvRoundsView = {
   rounds: [
     column(1),
@@ -39,9 +40,9 @@ const MAJORITY: IrvRoundsView = {
     column(3, { continuingBallots: 90, exhaustedBallots: 10, threshold: 46, isFinal: true }),
   ],
   rows: [
-    { choiceId: 'a', choiceText: 'Candidate A', cells: [cell(1, 40), cell(2, 45), cell(3, 55, 'winner')] },
-    { choiceId: 'b', choiceText: 'Candidate B', cells: [cell(1, 30), cell(2, 33), cell(3, 35)] },
-    { choiceId: 'c', choiceText: 'Candidate C', cells: [cell(1, 20), cell(2, 20, 'eliminated'), cell(3, null, 'out')] },
+    { choiceId: 'a', choiceText: 'Candidate A', cells: [cell(1, 40), cell(2, 45, 'continuing', 98), cell(3, 55, 'winner', 90)] },
+    { choiceId: 'b', choiceText: 'Candidate B', cells: [cell(1, 30), cell(2, 33, 'continuing', 98), cell(3, 35, 'continuing', 90)] },
+    { choiceId: 'c', choiceText: 'Candidate C', cells: [cell(1, 20), cell(2, 20, 'eliminated', 98), cell(3, null, 'out')] },
     { choiceId: 'd', choiceText: 'Candidate D', cells: [cell(1, 10, 'eliminated'), cell(2, null, 'out'), cell(3, null, 'out')] },
   ],
   steps: [
@@ -59,7 +60,10 @@ const MAJORITY: IrvRoundsView = {
       kind: 'eliminated',
       choiceTexts: ['Candidate C'],
       votes: 20,
-      transfers: [{ choiceId: 'a', choiceText: 'Candidate A', votes: 12 }],
+      transfers: [
+        { choiceId: 'a', choiceText: 'Candidate A', votes: 10 },
+        { choiceId: 'b', choiceText: 'Candidate B', votes: 2 },
+      ],
       exhaustedFromElimination: 8,
       tieBreak: 'lower_preference',
       tieBreakLevel: 2,
@@ -105,7 +109,7 @@ describe('VoteIrvRoundsComponent', () => {
     const el = render(MAJORITY);
 
     expect(squash(text(cellEl(el, 'a', 1)))).toBe(squash('40 (40%)'));
-    expect(squash(text(cellEl(el, 'a', 3)))).toBe(squash('55 (55%) Winner'));
+    expect(squash(text(cellEl(el, 'a', 3)))).toBe(squash('55 (61%) Winner'));
     expect(cellEl(el, 'a', 3)?.classList).toContain('text-emerald-700');
     expect(squash(text(cellEl(el, 'd', 1)))).toBe(squash('10 (10%) Eliminated'));
     expect(cellEl(el, 'd', 1)?.classList).toContain('text-slate-500');
@@ -145,7 +149,7 @@ describe('VoteIrvRoundsComponent', () => {
 
     expect(stepText(el, 1)).toBe('Round 1: Candidate D was eliminated with 10 votes. Their ballots moved: 5 to Candidate A, 3 to Candidate B, 2 exhausted.');
     expect(stepText(el, 2)).toBe(
-      'Round 2: Candidate C was eliminated with 20 votes. Their ballots moved: 12 to Candidate A, 8 exhausted. Tied for the fewest votes; decided by comparing lower-ranked preferences (rank 2).'
+      'Round 2: Candidate C was eliminated with 20 votes. Their ballots moved: 10 to Candidate A, 2 to Candidate B, 8 exhausted. Tied for the fewest votes; decided by comparing lower-ranked preferences (rank 2).'
     );
     expect(stepText(el, 3)).toBe('Round 3: Candidate A won with 55 of 90 continuing ballots (majority needed: 46).');
   });

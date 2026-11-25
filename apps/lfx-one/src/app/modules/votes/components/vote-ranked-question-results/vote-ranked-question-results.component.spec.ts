@@ -251,6 +251,14 @@ describe('VoteRankedQuestionResultsComponent', () => {
 
       expect(text(el)).toBe(squash('Rank the candidates'));
     });
+
+    it('renders the round-by-round count without test ids (#6152)', () => {
+      const el = render(question({ outcome: outcome({ kind: 'irv', roundCount: 1 }), irvRounds }), 'voter', true);
+
+      expect(text(el)).toContain(squash('Round-by-round count'));
+      expect(text(el)).toContain(squash('Round 1: Candidate One won with 3 of 4 continuing ballots (majority needed: 3).'));
+      expect(el.querySelector('[data-testid]')).toBeNull();
+    });
   });
 
   describe('voter links (#3914, #4450)', () => {

@@ -18,6 +18,8 @@ import { joinNames } from '@lfx-one/shared/utils';
 export class VoteIrvRoundsComponent {
   // === Inputs ===
   public readonly rounds = input.required<IrvRoundsView>();
+  /** Emit `data-testid` hooks; the ranked results parent turns them off for its `voter` variant. */
+  public readonly testIds = input<boolean>(true);
 
   // === Computed Signals ===
   /** Candidate rows with each cell's vote, percentage and status text. */
