@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ApplicationRef, signal } from '@angular/core';
+import { ApplicationRef, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
@@ -25,6 +25,7 @@ import {
   Project,
   StagedCommitteeMemberRequest,
 } from '@lfx-one/shared/interfaces';
+import { classifyMemberImportBulkResult } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, defer, EMPTY, Observable, of, Subject, throwError } from 'rxjs';
@@ -33,6 +34,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommitteeManageComponent } from './committee-manage.component';
 import { CommitteeMembersManagerComponent } from '../components/committee-members-manager/committee-members-manager.component';
 import { MemberFormComponent } from '../components/member-form/member-form.component';
+
+/** State-only save tests keep the real forms, signals and service orchestration without rendering children. */
+@Component({ selector: 'lfx-committee-manage-state-only', template: '' })
+class StateOnlyCommitteeManageComponent extends CommitteeManageComponent {}
 
 // Regression coverage for the committee edit context-correction flow (GH-1566): an edit payload
 // must select the COMMITTEE's project/tier (not the cookie-restored last-visited project), the
@@ -452,9 +457,14 @@ describe('CommitteeManageComponent', () => {
       );
     }
 
-    async function setupPending(toAdd: StagedCommitteeMemberRequest[], changes: Partial<MemberPendingChanges> = {}): Promise<CommitteeManageComponent> {
-      const fixture = TestBed.createComponent(CommitteeManageComponent);
+    async function setupPending(
+      toAdd: StagedCommitteeMemberRequest[],
+      changes: Partial<MemberPendingChanges> = {},
+      stateOnly = false
+    ): Promise<CommitteeManageComponent> {
+      const fixture = TestBed.createComponent(stateOnly ? StateOnlyCommitteeManageComponent : CommitteeManageComponent);
       const component = fixture.componentInstance;
+      if (stateOnly) vi.spyOn(component, 'memberSaveDisabled').mockReturnValue(false);
       component.memberUpdates.set({ toAdd, toUpdate: [], toDelete: [], toInvite: [], ...changes });
       component.form.patchValue({ name: 'Example Group', category: 'Technical Steering Committee' });
       await fixture.whenStable();
@@ -984,11 +994,15 @@ describe('CommitteeManageComponent', () => {
 
       it('saves CSV rows in bulk and keeps manual and self additions on single creates', async () => {
         answerRuns();
-        const component = await setupPending([
-          csv('csv@example.com', { pendingInviteUids: ['invite-1'] }),
-          { email: 'manual@example.com' },
-          { email: 'self@example.com', isSelfAddition: true, createOptions: { skipNotification: true } },
-        ]);
+        const component = await setupPending(
+          [
+            csv('csv@example.com', { pendingInviteUids: ['invite-1'] }),
+            { email: 'manual@example.com' },
+            { email: 'self@example.com', isSelfAddition: true, createOptions: { skipNotification: true } },
+          ],
+          {},
+          true
+        );
         component.onSubmitAll();
 
         expect(runStaged).toHaveBeenCalledExactlyOnceWith({
@@ -1008,12 +1022,16 @@ describe('CommitteeManageComponent', () => {
 
       it("groups CSV rows by their own import's notification choice, in staged order", async () => {
         answerRuns();
-        const component = await setupPending([
-          csv('a@example.com'),
-          csv('b@example.com', { createOptions: { skipNotification: false } }),
-          csv('c@example.com'),
-          csv('d@example.com', { createOptions: undefined }),
-        ]);
+        const component = await setupPending(
+          [
+            csv('a@example.com'),
+            csv('b@example.com', { createOptions: { skipNotification: false } }),
+            csv('c@example.com'),
+            csv('d@example.com', { createOptions: undefined }),
+          ],
+          {},
+          true
+        );
         component.onSubmitAll();
 
         expect(
@@ -1031,11 +1049,15 @@ describe('CommitteeManageComponent', () => {
         runStaged.mockImplementation((input: MemberImportStagedRunInput) =>
           defer(() => (calls.push('csv'), of(input.members.map(({ payload }) => stagedRow(payload.email)))))
         );
-        const component = await setupPending([csv('csv@example.com'), { email: 'manual@example.com' }], {
-          toUpdate: [{ uid: 'member-update', changes: { email: 'edited@example.com' } }],
-          toDelete: ['member-delete'],
-          toInvite: [{ invitee_email: 'invited@example.com' }],
-        });
+        const component = await setupPending(
+          [csv('csv@example.com'), { email: 'manual@example.com' }],
+          {
+            toUpdate: [{ uid: 'member-update', changes: { email: 'edited@example.com' } }],
+            toDelete: ['member-delete'],
+            toInvite: [{ invitee_email: 'invited@example.com' }],
+          },
+          true
+        );
         Object.assign(TestBed.inject(CommitteeService), {
           createCommitteeMember: logged('add', createdMember),
           updateCommitteeMember: logged('update', createdMember),
@@ -1047,6 +1069,7 @@ describe('CommitteeManageComponent', () => {
       });
 
       it('counts only added and skipped rows as saved, promotes them, and keeps the rest staged', async () => {
+        const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const existing = { ...createdMember, uid: 'existing-1', email: 'existing@example.com' };
         const getCommitteeMember = vi.fn((_uid: string, memberUid: string) =>
           memberUid === 'existing-1' ? of(existing) : throwError(() => new HttpErrorResponse({ status: 503 }))
@@ -1071,6 +1094,7 @@ describe('CommitteeManageComponent', () => {
           [COMMITTEE_UID, 'existing-1'],
           [COMMITTEE_UID, 'existing-2'],
         ]);
+        expect(errorLog).toHaveBeenCalledExactlyOnceWith('Existing member lookup failed', { status: 503 });
         expect([...prune.mock.calls[0][0].addedMembers.keys()]).toEqual(['added@example.com', 'existing@example.com']);
         expect(prune.mock.calls[0][0].addedMembers.get('existing@example.com')).toEqual(existing);
         expect(component.memberUpdates().toAdd.map((member) => member.email)).toEqual([
@@ -1105,11 +1129,12 @@ describe('CommitteeManageComponent', () => {
           'unsent@example.com',
         ]);
         expect(navigate).toHaveBeenCalledWith(['/groups']);
+        errorLog.mockRestore();
       });
 
       it.each(['onDone', 'onSubmitAll'] as const)('reports every row of a run that never starts as failed on %s', async (submit) => {
         runStaged.mockReturnValue(EMPTY);
-        const component = await setupPending([csv('a@example.com'), csv('b@example.com')]);
+        const component = await setupPending([csv('a@example.com'), csv('b@example.com')], {}, true);
         if (submit === 'onDone') component.mode.set('create');
         component[submit]();
         expect(component.memberUpdates().toAdd.map((member) => member.email)).toEqual(['a@example.com', 'b@example.com']);
@@ -1122,7 +1147,7 @@ describe('CommitteeManageComponent', () => {
         const getCommitteeMember = vi.fn(() => of(existing));
         Object.assign(TestBed.inject(CommitteeService), { getCommitteeMember });
         answerRuns(() => ({ status: 'skipped', conflict: true, unconfirmedAddition: true, memberUid: 'existing-1', member: undefined }));
-        const component = await setupPending([csv('csv@example.com', { pendingInviteUids: ['invite-1'] })]);
+        const component = await setupPending([csv('csv@example.com', { pendingInviteUids: ['invite-1'] })], {}, true);
         component.onSubmitAll();
 
         const toast = TestBed.inject(MessageService).add;
@@ -1140,6 +1165,51 @@ describe('CommitteeManageComponent', () => {
         expect(revokeCommitteeInvite).not.toHaveBeenCalled();
         expect(getCommitteeMember).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, 'existing-1');
         expect(navigate).toHaveBeenCalledWith(['/groups']);
+      });
+
+      it.each(['onDone', 'onSubmitAll'] as const)('retains uncertainty across a manual retry on %s', async (submit) => {
+        const getCommitteeMember = vi.fn(() => of({ ...createdMember, uid: 'existing-1' }));
+        Object.assign(TestBed.inject(CommitteeService), { getCommitteeMember });
+        let attempt = 0;
+        runStaged.mockImplementation((input: MemberImportStagedRunInput) => {
+          const firstAttempt = attempt++ === 0;
+          return of(
+            input.members.map(({ payload, uncertain }) => {
+              const row = stagedRow(payload.email, { uncertain });
+              return firstAttempt
+                ? { ...row, status: 'unknown', uncertain: true }
+                : {
+                    ...row,
+                    ...classifyMemberImportBulkResult(
+                      {
+                        index: 0,
+                        email: payload.email,
+                        status: 'skipped',
+                        reason: 'already_member',
+                        retryable: false,
+                        member_uid: 'existing-1',
+                      },
+                      row
+                    ),
+                  };
+            })
+          );
+        });
+        const component = await setupPending([csv('ada@example.com', { pendingInviteUids: ['invite-1'] })], {}, true);
+        if (submit === 'onDone') component.mode.set('create');
+        const toast = TestBed.inject(MessageService).add;
+        component[submit]();
+        expect(navigate).not.toHaveBeenCalledWith(['/groups']);
+        vi.mocked(toast).mockClear();
+        component[submit]();
+        expect(runStaged.mock.calls[1][0].members[0].uncertain).toBe(true);
+        expect(toast).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Unconfirmed Additions' }));
+        expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Already Members' }));
+        expect(revokeCommitteeInvite).not.toHaveBeenCalled();
+        expect(navigate).toHaveBeenCalledWith(['/groups']);
+        // A settled row no longer carries uncertainty into any later save.
+        component[submit]();
+        expect(runStaged.mock.calls[2][0].members[0].uncertain).toBeUndefined();
       });
 
       it.each(['onDone', 'onSubmitAll'] as const)('reports the outcome but neither prunes nor navigates once the wizard is gone (%s)', async (submit) => {
@@ -1165,7 +1235,7 @@ describe('CommitteeManageComponent', () => {
 
       it('keeps an added row with a cleanup warning saved and warns about the invitation', async () => {
         answerRuns(() => ({ cleanupWarning: 'Added, but their pending invitation could not be revoked.' }));
-        const component = await setupPending([csv('csv@example.com', { pendingInviteUids: ['invite-1'] })]);
+        const component = await setupPending([csv('csv@example.com', { pendingInviteUids: ['invite-1'] })], {}, true);
         component.onSubmitAll();
         const toast = TestBed.inject(MessageService).add;
         expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Group and 1 member(s) updated successfully' }));

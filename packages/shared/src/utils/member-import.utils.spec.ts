@@ -718,7 +718,16 @@ describe('classifyMemberImportBulkResult', () => {
   });
 
   it('carries the created member on an added row', () => {
-    const member = { uid: 'member-1', email: 'ada@example.com' } as CommitteeMember;
+    const member: CommitteeMember = {
+      uid: 'member-1',
+      committee_uid: 'group-1',
+      committee_name: 'Example Group',
+      email: 'ada@example.com',
+      first_name: 'Ada',
+      last_name: 'Example',
+      created_at: '2026-11-25T00:00:00Z',
+      updated_at: '2026-11-25T00:00:00Z',
+    };
     expect(classifyMemberImportBulkResult(result({ status: 'added', member_uid: 'member-1', member }), row)).toMatchObject({ status: 'added', member });
   });
 

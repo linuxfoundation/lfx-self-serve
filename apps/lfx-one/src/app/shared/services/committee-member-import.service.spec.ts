@@ -657,6 +657,21 @@ describe('CommitteeMemberImportService', () => {
       expect(delivered[0][0]).toMatchObject({ status: 'skipped', conflict: true, memberUid: 'existing-0' });
     });
 
+    it('preserves uncertainty supplied by a manual wizard retry', () => {
+      const input = staged(1);
+      input.members[0].uncertain = true;
+      run(input);
+      pending[0].response.next({
+        results: [{ index: 0, email: 'staged0@example.com', status: 'skipped', reason: 'already_member', retryable: false, member_uid: 'existing-0' }],
+        added: 0,
+        skipped: 1,
+        failed: 0,
+      });
+      pending[0].response.complete();
+      expect(delivered[0][0]).toMatchObject({ status: 'skipped', conflict: true, unconfirmedAddition: true });
+      expect(delivered[0][0].reason).toContain('Review pending invitations');
+    });
+
     it('never announces a wizard run or shows it as the group report', () => {
       run(staged(1));
       expect(service.summaries().size).toBe(0);

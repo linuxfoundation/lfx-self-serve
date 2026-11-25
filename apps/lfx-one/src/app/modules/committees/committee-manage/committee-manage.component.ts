@@ -110,6 +110,8 @@ export class CommitteeManageComponent {
 
   // Member management state
   public memberUpdates = signal<MemberPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [], toInvite: [] });
+  /** Unconfirmed CSV writes stay uncertain across manual saves, scoped to the target group and email. */
+  private readonly uncertainCsvMembers = new Set<string>();
   /**
    * uids of members whose delete failed on the most recent flush, owned here (rather than in the
    * members-manager child) so the failure survives the child remounting when the PrimeNG step
@@ -910,7 +912,8 @@ export class CommitteeManageComponent {
           delete payload.createOptions;
           delete payload.isSelfAddition;
           delete payload.importSource;
-          return { payload, pendingInviteUids };
+          const key = `${committeeId}:${payload.email.trim().toLowerCase()}`;
+          return { payload, pendingInviteUids, ...(this.uncertainCsvMembers.has(key) ? { uncertain: true } : {}) };
         }),
       })
     ).pipe(
@@ -930,6 +933,9 @@ export class CommitteeManageComponent {
    */
   private toCsvOperationResult(committeeId: string, row: MemberImportRow): Observable<MemberOperationResult> {
     const result: MemberOperationResult = { type: 'add', identifier: row.normalizedEmail, success: false };
+    const key = `${committeeId}:${row.normalizedEmail}`;
+    if (row.uncertain) this.uncertainCsvMembers.add(key);
+    if (row.status === 'added' || row.status === 'skipped') this.uncertainCsvMembers.delete(key);
     if (row.status === 'added') {
       return of({ ...result, success: true, createdMember: row.member, cleanupWarning: !!row.cleanupWarning });
     }
@@ -949,7 +955,10 @@ export class CommitteeManageComponent {
     // Best effort: the existing record promotes the staged row; without it, a retry skips the row again.
     return this.committeeService.getCommitteeMember(committeeId, row.memberUid).pipe(
       map((member) => (member ? { ...alreadyMember, createdMember: member } : alreadyMember)),
-      catchError(() => of(alreadyMember))
+      catchError((error: HttpErrorResponse) => {
+        console.error('Existing member lookup failed', { status: error.status });
+        return of(alreadyMember);
+      })
     );
   }
 

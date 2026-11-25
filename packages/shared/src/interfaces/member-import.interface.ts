@@ -152,8 +152,8 @@ export interface MemberImportStagedRunInput {
   committeeUid: string;
   committeeName: string;
   skipNotification: boolean;
-  /** Native create-member bodies in staged order, each with the pending invitations to revoke once it is added. */
-  members: { payload: CreateCommitteeMemberRequest; pendingInviteUids: string[] }[];
+  /** Native create-member bodies in staged order, with invite cleanup and uncertainty retained across wizard saves. */
+  members: { payload: CreateCommitteeMemberRequest; pendingInviteUids: string[]; uncertain?: boolean }[];
 }
 
 /** Whether a confirmed import run is still writing (`importing`) or has finished its latest attempt (`settled`). */

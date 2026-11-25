@@ -166,7 +166,7 @@ export class CommitteeMemberImportService {
       if (!owner || input.members.length === 0) return EMPTY;
       this.synchronizeOwner(owner);
 
-      const rows: MemberImportRow[] = input.members.map(({ payload, pendingInviteUids }, index) => ({
+      const rows: MemberImportRow[] = input.members.map(({ payload, pendingInviteUids, uncertain }, index) => ({
         rowNumber: index + 1,
         email: payload.email,
         normalizedEmail: payload.email.trim().toLowerCase(),
@@ -175,6 +175,7 @@ export class CommitteeMemberImportService {
         issues: [],
         payload,
         pendingInviteUids: [...pendingInviteUids],
+        uncertain,
       }));
       const runId = `member-import-${++this.runSequence}`;
       const run: MemberImportRun = {
