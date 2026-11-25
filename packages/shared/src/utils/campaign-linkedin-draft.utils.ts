@@ -93,8 +93,10 @@ export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraf
   if (draft.linkedInImageUploadFailedMessage && draft.linkedInImageUploadFailedBriefId) {
     restore.failedUpload = { message: draft.linkedInImageUploadFailedMessage, briefId: draft.linkedInImageUploadFailedBriefId };
   }
-  // Text Ads (#5764 row 19): present-only, so an older draft keeps the single-image default. An unknown format restores nothing.
-  if (draft.linkedInFormat === 'single_image' || draft.linkedInFormat === 'text') restore.format = draft.linkedInFormat;
+  // Text Ads (#5764 row 19) and video ads (row 18): present-only, so an older draft keeps the single-image default. An
+  // unknown format restores nothing.
+  const format = draft.linkedInFormat;
+  if (format === 'single_image' || format === 'text' || format === 'video') restore.format = format;
   // Only entries whose fields are all text: a draft is replayed from stored JSON whose inner shape is not validated.
   if (Array.isArray(draft.linkedInTextAds)) {
     restore.textAds = draft.linkedInTextAds

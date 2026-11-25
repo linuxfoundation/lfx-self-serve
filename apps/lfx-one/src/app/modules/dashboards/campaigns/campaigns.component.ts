@@ -1129,6 +1129,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsLinkedInCallToActionEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers Text Ads (`CampaignListResult.linkedInTextAdsEnabled`, #5764 row 19). */
   protected readonly briefCampaignsLinkedInTextAdsEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers video ads (`CampaignListResult.linkedInVideoAdsEnabled`, #5764 row 18). */
+  protected readonly briefCampaignsLinkedInVideoAdsEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers custom targeting (`CampaignListResult.linkedInTargetingEnabled`, #5764 rows 8–11). */
   protected readonly briefCampaignsLinkedInTargetingEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers an objective and conversion tracking (`CampaignListResult.linkedInConversionsEnabled`, #5764 rows 2 and 4). */
@@ -3136,6 +3138,7 @@ export class CampaignsComponent {
         this.briefCampaignsLinkedInVariantCopyEnabled.set(null);
         this.briefCampaignsLinkedInCallToActionEnabled.set(null);
         this.briefCampaignsLinkedInTextAdsEnabled.set(null);
+        this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
         this.briefCampaignsLinkedInTargetingEnabled.set(null);
         this.briefCampaignsLinkedInConversionsEnabled.set(null);
         this.briefCampaignsLinkedInTargetCostEnabled.set(null);
@@ -5977,6 +5980,7 @@ export class CampaignsComponent {
           this.briefCampaignsLinkedInVariantCopyEnabled.set(result.linkedInVariantCopyEnabled);
           this.briefCampaignsLinkedInCallToActionEnabled.set(result.linkedInCallToActionEnabled);
           this.briefCampaignsLinkedInTextAdsEnabled.set(result.linkedInTextAdsEnabled);
+          this.briefCampaignsLinkedInVideoAdsEnabled.set(result.linkedInVideoAdsEnabled);
           this.briefCampaignsLinkedInTargetingEnabled.set(result.linkedInTargetingEnabled);
           this.briefCampaignsLinkedInConversionsEnabled.set(result.linkedInConversionsEnabled);
           this.briefCampaignsLinkedInTargetCostEnabled.set(result.linkedInTargetCostEnabled);
@@ -6034,6 +6038,7 @@ export class CampaignsComponent {
           this.briefCampaignsLinkedInVariantCopyEnabled.set(null);
           this.briefCampaignsLinkedInCallToActionEnabled.set(null);
           this.briefCampaignsLinkedInTextAdsEnabled.set(null);
+          this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
           this.briefCampaignsLinkedInTargetingEnabled.set(null);
           this.briefCampaignsLinkedInConversionsEnabled.set(null);
           this.briefCampaignsLinkedInTargetCostEnabled.set(null);
@@ -6136,6 +6141,7 @@ export class CampaignsComponent {
       this.briefCampaignsLinkedInVariantCopyEnabled.set(null);
       this.briefCampaignsLinkedInCallToActionEnabled.set(null);
       this.briefCampaignsLinkedInTextAdsEnabled.set(null);
+      this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
       this.briefCampaignsLinkedInTargetingEnabled.set(null);
       this.briefCampaignsLinkedInConversionsEnabled.set(null);
       this.briefCampaignsLinkedInTargetCostEnabled.set(null);
@@ -6208,6 +6214,7 @@ export class CampaignsComponent {
             this.briefCampaignsLinkedInVariantCopyEnabled.set(result.linkedInVariantCopyEnabled);
             this.briefCampaignsLinkedInCallToActionEnabled.set(result.linkedInCallToActionEnabled);
             this.briefCampaignsLinkedInTextAdsEnabled.set(result.linkedInTextAdsEnabled);
+            this.briefCampaignsLinkedInVideoAdsEnabled.set(result.linkedInVideoAdsEnabled);
             this.briefCampaignsLinkedInTargetingEnabled.set(result.linkedInTargetingEnabled);
             this.briefCampaignsLinkedInConversionsEnabled.set(result.linkedInConversionsEnabled);
             this.briefCampaignsLinkedInTargetCostEnabled.set(result.linkedInTargetCostEnabled);
@@ -6263,6 +6270,7 @@ export class CampaignsComponent {
             this.briefCampaignsLinkedInVariantCopyEnabled.set(null);
             this.briefCampaignsLinkedInCallToActionEnabled.set(null);
             this.briefCampaignsLinkedInTextAdsEnabled.set(null);
+            this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
             this.briefCampaignsLinkedInTargetingEnabled.set(null);
             this.briefCampaignsLinkedInConversionsEnabled.set(null);
             this.briefCampaignsLinkedInTargetCostEnabled.set(null);

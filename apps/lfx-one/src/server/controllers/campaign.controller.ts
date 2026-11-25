@@ -211,8 +211,10 @@ import {
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_SERVICE_BUDGET_UNWRITABLE_MESSAGE_PREFIX,
-  CREATIVE_ASSET_MAX_BYTES,
   CREATIVE_ASSET_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_VIDEO_MIME_TYPE,
+  CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE,
   CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
   DEFAULT_CAMPAIGN_BID_TYPE,
   GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN,
@@ -375,10 +377,11 @@ import {
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
   isCanonicalGoogleAdsResourceId,
-  isCreativeAssetMimeType,
+  creativeAssetUploadMaxBytes,
+  isCreativeAssetUploadMimeType,
   isGoSpaceCode,
   isMicrosoftMatchType,
-  sniffCreativeAssetMimeType,
+  sniffCreativeAssetUploadMimeType,
   META_CUSTOM_AUDIENCE_ID_PATTERN,
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
@@ -3406,16 +3409,17 @@ export class CampaignController {
 
   /**
    * `POST /api/campaigns/brief/creative-assets?project=&brief_id=` — the raw image bytes, typed
-   * `image/png` or `image/jpeg`, stored against the brief by campaign-service's
+   * `image/png` or `image/jpeg`, or the raw video bytes typed `video/mp4` (#5764 row 18), stored against the brief by campaign-service's
    * `upload-creative-asset`. Answers `{ id, mimeType, byteSize, checksum, created }` with 201 when
-   * the image was stored and 200 when an identical one already was (the id is usable either way).
+   * the asset was stored and 200 when an identical one already was (the id is usable either way).
    *
    * Refused before anything is sent upstream: EVERY capability off (`canUseRedditCreativeAssets`,
    * `canUseGoogleCreativeAssets`, `canUseMetaCreativeAssets`, `canUseLinkedInCreativeAssets`,
    * `canUseMicrosoftCreativeAssets` and `canCreateTwitter` (the tweet image) — nothing could use the asset; any one alone admits the upload), a missing `project` or `brief_id`, a type outside
-   * `CREATIVE_ASSET_MIME_TYPES` or bytes that are not the type they claim (415), an empty body
-   * (400). Over `CREATIVE_ASSET_MAX_BYTES` is a 413 from the route's raw parser before this runs;
-   * the length is re-checked here so a direct caller of this method gets the same answer.
+   * `CREATIVE_ASSET_UPLOAD_MIME_TYPES`, an MP4 while `canSetLinkedInVideoAds()` is off (only a LinkedIn video ad uses
+   * one), or bytes that are not the type they claim (415), an empty body (400). Over the type's own limit
+   * (`creativeAssetUploadMaxBytes`: 10 MiB for an image, 30 MiB for a video) is a 413 from the route's raw parsers
+   * before this runs; the length is re-checked here so a direct caller of this method gets the same answer.
    * Upstream 4xx/5xx pass through with campaign-service's own message. Only ids, type and size are
    * logged, never the bytes.
    */
@@ -3459,17 +3463,25 @@ export class CampaignController {
     // no Buffer — told apart from an empty file by the declared type, not by the body.
     const declaredType = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
     const image: unknown = req.body;
-    if (!isCreativeAssetMimeType(declaredType) || !Buffer.isBuffer(image)) {
-      next(this.unsupportedCreativeAsset(req, operation));
+    // A video is stored only where something can use it: a LinkedIn video ad (#5764 row 18). The route does not even
+    // read its body otherwise.
+    const video = declaredType === CREATIVE_ASSET_VIDEO_MIME_TYPE;
+    if (video && !canSetLinkedInVideoAds()) {
+      next(this.unsupportedCreativeAsset(req, operation, true));
+      return;
+    }
+    // Narrowed where it enters: only a raw parser's Buffer is a body, never a parsed array or string.
+    if (!isCreativeAssetUploadMimeType(declaredType) || Array.isArray(image) || !Buffer.isBuffer(image)) {
+      next(this.unsupportedCreativeAsset(req, operation, video));
       return;
     }
     if (image.byteLength === 0) {
-      fail('file', 'the image is empty');
+      fail('file', video ? 'the video is empty' : 'the image is empty');
       return;
     }
-    if (image.byteLength > CREATIVE_ASSET_MAX_BYTES) {
+    if (image.byteLength > creativeAssetUploadMaxBytes(declaredType)) {
       next(
-        new MicroserviceError(CREATIVE_ASSET_TOO_LARGE_MESSAGE, 413, 'PAYLOAD_TOO_LARGE', {
+        new MicroserviceError(video ? CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE : CREATIVE_ASSET_TOO_LARGE_MESSAGE, 413, 'PAYLOAD_TOO_LARGE', {
           operation,
           service: 'campaign_controller',
           path: req.path,
@@ -3480,8 +3492,8 @@ export class CampaignController {
     // The declared type is the browser's claim; campaign-service re-sniffs and would refuse a
     // mismatch with a 400. Checking the magic bytes here gives that the wrong-type answer without
     // a base64 round trip.
-    if (sniffCreativeAssetMimeType(image) !== declaredType) {
-      next(this.unsupportedCreativeAsset(req, operation));
+    if (sniffCreativeAssetUploadMimeType(image) !== declaredType) {
+      next(this.unsupportedCreativeAsset(req, operation, video));
       return;
     }
 
@@ -7056,9 +7068,12 @@ export class CampaignController {
     );
   }
 
-  /** 415 for an upload that is not a PNG or JPEG, or whose bytes are not the type declared. */
-  private unsupportedCreativeAsset(req: Request, operation: string): MicroserviceError {
-    return new MicroserviceError(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, 415, 'UNSUPPORTED_MEDIA_TYPE', {
+  /**
+   * 415 for an upload that is not a PNG, JPEG or MP4, or whose bytes are not the type declared. `video` names the MP4 in
+   * the message: a video while this deployment takes none, or one whose bytes are not an MP4.
+   */
+  private unsupportedCreativeAsset(req: Request, operation: string, video = false): MicroserviceError {
+    return new MicroserviceError(video ? CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE : CREATIVE_ASSET_WRONG_TYPE_MESSAGE, 415, 'UNSUPPORTED_MEDIA_TYPE', {
       operation,
       service: 'campaign_controller',
       path: req.path,

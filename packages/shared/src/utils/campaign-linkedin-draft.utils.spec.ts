@@ -98,7 +98,8 @@ describe('linkedInDraftRestore', () => {
   it.each([
     ['text', 'text'],
     ['single_image', 'single_image'],
-    ['video', undefined],
+    ['video', 'video'],
+    ['carousel', undefined],
   ])('restores a stored format %s as %s', (stored, expected) => {
     // A stored draft is replayed from JSON, so an unknown format is possible.
     expect(linkedInDraftRestore(draft({ linkedInFormat: stored as LinkedInDraftSnapshot['linkedInFormat'] })).format).toBe(expected);

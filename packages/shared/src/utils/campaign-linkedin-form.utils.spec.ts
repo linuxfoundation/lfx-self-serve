@@ -182,6 +182,13 @@ describe('linkedInCreateRefusal', () => {
       { textAdsUnavailable: true },
       'LinkedIn Ads: Text Ads are not available right now. Choose single image ads as the ad format.',
     ],
+    // Video ads (#5764 row 18): held rather than sent as image ads, and every ad needs its video.
+    [
+      'video ads no longer offered',
+      { videoAdsUnavailable: true },
+      'LinkedIn Ads: video ads are not available right now. Choose single image ads as the ad format.',
+    ],
+    ['an ad with no video', { videoMissing: true }, 'LinkedIn Ads: upload a video for every ad.'],
     [
       'custom targeting no longer offered',
       { customTargetingUnavailable: true },
