@@ -9,7 +9,12 @@ import express from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE, LINKEDIN_AUDIENCES_RESTRICTED_CODE } from '@lfx-one/shared/constants';
+import {
+  LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
+  LINKEDIN_AUDIENCES_RESTRICTED_CODE,
+  LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE,
+  LINKEDIN_CONVERSIONS_RESTRICTED_CODE,
+} from '@lfx-one/shared/constants';
 
 /**
  * Router-level coverage for the LinkedIn targeting lookups (#5764 rows 8–11), wiring only (the mapping rules are
@@ -19,9 +24,10 @@ import { LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE, LINKEDIN_AUDIENCES_RESTRICT
  * through for the search tests.
  */
 
-const { svcList, svcSearch, isServerFeatureEnabled, checkProjectGlobalMarketingOpsStrict, blanketGuard, blanketAdmits } = vi.hoisted(() => ({
+const { svcList, svcSearch, svcConversions, isServerFeatureEnabled, checkProjectGlobalMarketingOpsStrict, blanketGuard, blanketAdmits } = vi.hoisted(() => ({
   svcList: vi.fn(),
   svcSearch: vi.fn(),
+  svcConversions: vi.fn(),
   blanketAdmits: { current: false },
   isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => true),
   checkProjectGlobalMarketingOpsStrict: vi.fn<(req: unknown, slug: string) => Promise<boolean>>(async () => true),
@@ -46,6 +52,7 @@ vi.mock('../middleware/require-marketing-access.middleware', async () => {
     requireMetaCustomAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
     requireMetaLeadFormsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
     requireLinkedInAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+    requireLinkedInConversionsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
   };
 });
 vi.mock('../services/campaign-service.service', async (importOriginal) => {
@@ -55,6 +62,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
     CampaignServiceClient: class {
       public listLinkedInAudiences = svcList;
       public searchLinkedInTargetingEntities = svcSearch;
+      public listLinkedInConversions = svcConversions;
     },
   };
 });
@@ -163,6 +171,56 @@ describe('GET /api/campaigns/linkedin/audiences', () => {
       ],
     });
     expect(svcList).toHaveBeenCalledWith(expect.anything(), 'tlf', '500000002');
+  });
+});
+
+// The conversion rule read (#5764 row 4) mirrors the audience read: its own guard, the controller's strict check.
+describe('GET /api/campaigns/linkedin/conversions', () => {
+  const getConversions = (): Promise<Response> => fetch(`${baseUrl}/api/campaigns/linkedin/conversions?project=tlf`);
+
+  it("answers an access-check outage with the controller's coded 503, not the blanket guard's 403", async () => {
+    checkProjectGlobalMarketingOpsStrict.mockRejectedValueOnce(new Error('access-check unavailable'));
+
+    const res = await getConversions();
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ code: LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE });
+    expect(blanketGuard).not.toHaveBeenCalled();
+    expect(svcConversions).not.toHaveBeenCalled();
+  });
+
+  it('answers a caller without global_marketing_ops on the project with the coded 403', async () => {
+    checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(false);
+
+    const res = await getConversions();
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: LINKEDIN_CONVERSIONS_RESTRICTED_CODE });
+    expect(svcConversions).not.toHaveBeenCalled();
+  });
+
+  it('answers the mapped rules to a caller who holds it', async () => {
+    svcConversions.mockResolvedValueOnce({
+      account_id: '500000001',
+      conversions: [
+        { id: '104012', urn: 'urn:lla:llaPartnerConversion:104012', name: 'Registration', type: 'REGISTRATION', enabled: true },
+        { id: '104013', urn: 'urn:lla:llaPartnerConversion:104013', name: 'Old', type: 'LEAD', enabled: false },
+      ],
+      conversion_count: 2,
+    });
+
+    const res = await fetch(`${baseUrl}/api/campaigns/linkedin/conversions?project=tlf&accountId=500000002`);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ accountId: '500000001', conversions: [{ id: '104012', name: 'Registration', type: 'REGISTRATION' }] });
+    expect(svcConversions).toHaveBeenCalledWith(expect.anything(), 'tlf', '500000002');
+  });
+
+  it('answers 404 while LinkedIn conversions are off, with no upstream call', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS');
+
+    expect((await getConversions()).status).toBe(404);
+    expect(svcConversions).not.toHaveBeenCalled();
   });
 });
 

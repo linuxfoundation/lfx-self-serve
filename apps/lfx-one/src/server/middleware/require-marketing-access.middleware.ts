@@ -307,3 +307,11 @@ export async function requireMetaLeadFormsAccess(req: Request, res: Response, ne
 export async function requireLinkedInAudiencesAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   await deferToControllerMarketingOpsCheck(req, res, next);
 }
+
+/**
+ * LinkedIn conversion rule read only (#5764 row 4; lfx-v2-campaign-service#552): `deferToControllerMarketingOpsCheck`.
+ * Never use for any other route.
+ */
+export async function requireLinkedInConversionsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await deferToControllerMarketingOpsCheck(req, res, next);
+}

@@ -936,6 +936,34 @@ export const LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'LINKEDIN_AUDIENCES_AC
 export const LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to LinkedIn audiences could not be verified. Try again in a few minutes.';
 
 /**
+ * The goals `linkedInConfig.objective` may name (#5764 row 2), campaign-service's `linkedinObjectiveTraffic` and
+ * `linkedinObjectiveConversions` (`internal/dispatch/linkedin.go`, #582), spelled exactly. Omitted lets the bidding decide.
+ */
+export const LINKEDIN_OBJECTIVES = ['traffic', 'conversions'] as const;
+
+/** The fields a LinkedIn objective or conversions refusal names (#5764 rows 2 and 4). */
+export const LINKEDIN_OBJECTIVE_FIELD = 'linkedInConfig.objective';
+export const LINKEDIN_CONVERSIONS_FIELD = 'linkedInConfig.conversions';
+
+/**
+ * campaign-service's `linkedin.MaxConversions` (#552): distinct conversion rule ids per create. A list longer than twice
+ * that is refused before any id is read.
+ */
+export const LINKEDIN_MAX_CONVERSIONS = 20;
+
+/**
+ * The error `code` (HTTP 403) of a LinkedIn conversion rule read, or a create naming `conversions`, refused because the
+ * caller does not hold `global_marketing_ops` on the project: conversion rules belong to the shared ad account, so
+ * campaign-service answers both on that relation.
+ */
+export const LINKEDIN_CONVERSIONS_RESTRICTED_CODE = 'LINKEDIN_CONVERSIONS_RESTRICTED';
+export const LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE =
+  'LinkedIn conversion tracking can only be set by the LF marketing team, because every foundation shares one LinkedIn ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
+export const LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE = 'LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE';
+export const LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to LinkedIn conversion tracking could not be verified. Try again in a few minutes.';
+
+/**
  * The facets campaign-service's targeting typeahead searches for `linkedInConfig.targeting` (`search-linkedin-ads-targeting-entities`,
  * #585): its `locations` answer `geoTargets`, and seniorities, job functions, company sizes, locales and segments are
  * not searched (segments come from `GET /api/campaigns/linkedin/audiences`).

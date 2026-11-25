@@ -4810,6 +4810,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInCallToActionEnabled: false,
       linkedInTextAdsEnabled: false,
       linkedInTargetingEnabled: false,
+      linkedInConversionsEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5470,6 +5471,23 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** LinkedIn objective and conversions (#5764 rows 2 and 4): the cutover and its own flag. Bidding plays no part. */
+  it.each([
+    [{ cutover: true, conversions: true }, true],
+    [{ cutover: true, conversions: false }, false],
+    [{ cutover: false, conversions: true }, false],
+  ])('reports LinkedIn objective and conversions (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceLinkedInConversions ? flags.conversions : flags.cutover
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInConversionsEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The LinkedIn daily-cap capability (#5774): the create cutover alone, like the targeting edit above. */
   it.each([
     [{ create: true, briefs: true, jobs: true, others: false }, true],
@@ -5569,6 +5587,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInCallToActionEnabled: false,
       linkedInTextAdsEnabled: false,
       linkedInTargetingEnabled: false,
+      linkedInConversionsEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -6526,6 +6545,33 @@ describe('CampaignServiceClient.listLinkedInAudiences', () => {
 
   it('refuses an empty project without calling the proxy', async () => {
     const caught = await new CampaignServiceClient().listLinkedInAudiences(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignServiceClient.listLinkedInConversions', () => {
+  const conversions = { account_id: '500000001', conversions: [], conversion_count: 0 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's conversion rule read, the project encoded, naming an account only when given", async () => {
+    proxyRequest.mockResolvedValue(conversions);
+
+    expect(await new CampaignServiceClient().listLinkedInConversions(req, 'lf/ai')).toBe(conversions);
+    await new CampaignServiceClient().listLinkedInConversions(req, 'cncf', '500000002');
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/linkedin-ads/conversions', 'GET', undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/linkedin-ads/conversions', 'GET', {
+      account_id: '500000002',
+    });
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listLinkedInConversions(req, '').catch((e: unknown) => e);
 
     expect(caught).toBeInstanceOf(ServiceValidationError);
     expect(proxyRequest).not.toHaveBeenCalled();

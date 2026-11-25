@@ -88,6 +88,7 @@ import type {
   CampaignServiceGoogleAdsUserLists,
   CampaignServiceMetaCustomAudiences,
   CampaignServiceLinkedInAudiences,
+  CampaignServiceLinkedInConversions,
   LinkedInTargetingSearchFacet,
   CampaignServiceMetaLeadForms,
   CampaignServiceLinkedInAdsCreateAccount,
@@ -944,6 +945,16 @@ export function canSetLinkedInTargeting(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may carry `objective` and `conversions` (#5764 rows 2 and 4, campaign-service #552, #582).
+ * Needs the campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS`, which follows
+ * campaign-service's own `LINKEDIN_ADS_CONVERSIONS_ENABLED`: campaign-service refuses `conversions` while that is off, and
+ * the legacy creator ignores both. Bidding plays no part: only a manual bid needs it, and `bidding` is gated on its own.
+ */
+export function canSetLinkedInConversions(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInConversions);
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -1173,6 +1184,7 @@ export class CampaignServiceClient {
         linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
         linkedInTextAdsEnabled: canSetLinkedInTextAds(),
         linkedInTargetingEnabled: canSetLinkedInTargeting(),
+        linkedInConversionsEnabled: canSetLinkedInConversions(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1262,6 +1274,7 @@ export class CampaignServiceClient {
       linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
       linkedInTextAdsEnabled: canSetLinkedInTextAds(),
       linkedInTargetingEnabled: canSetLinkedInTargeting(),
+      linkedInConversionsEnabled: canSetLinkedInConversions(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -3818,6 +3831,29 @@ export class CampaignServiceClient {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/audiences`,
+      'GET',
+      accountId === undefined ? undefined : { account_id: accountId }
+    );
+  }
+
+  /**
+   * The conversion rules on the LinkedIn ad account a create for this project uses (`list-linkedin-ads-conversions`,
+   * #552), for the Implement tab's conversion picker (#5764 row 4). Answered upstream only on `global_marketing_ops` of
+   * the path project; disabled rules are listed with `enabled: false`, all sorted by name. `accountId`, when given, names
+   * the ad account (sent as `account_id`), and omitted it is the project's default account. Failures are left to the
+   * caller.
+   */
+  public async listLinkedInConversions(req: Request, projectSlug: string, accountId?: string): Promise<CampaignServiceLinkedInConversions> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A conversion rule read requires the project it is made for.', {
+        operation: 'list_linkedin_conversions',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInConversions>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/conversions`,
       'GET',
       accountId === undefined ? undefined : { account_id: accountId }
     );

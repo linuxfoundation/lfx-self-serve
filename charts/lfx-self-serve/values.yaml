@@ -806,6 +806,17 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING:
     value:
 
+  # LinkedIn objective and conversion tracking (#5764 rows 2 and 4): accepts `linkedInConfig.objective` (`traffic` or
+  # `conversions`) and `linkedInConfig.conversions` (conversion rule ids), and answers
+  # `GET /api/campaigns/linkedin/conversions` (global_marketing_ops only) for the rules to pick from.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `LINKEDIN_ADS_CONVERSIONS_ENABLED` on
+  # and the create pipeline on. Off (the default), the create route refuses either field with a 400, never dropping it,
+  # and the read answers 404. A field only, so turning it back off strands nothing. Order: set campaign-service's flag
+  # and pass its live probe, THEN this. Keep it off until then. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS:
+    value:
+
   # Offers Meta ad set audience targeting on the Implement tab (#5905), sent as
   # `metaConfig.targeting`: age range, gender and Advantage+ audience for every campaign manager, and
   # included/excluded custom audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only for
