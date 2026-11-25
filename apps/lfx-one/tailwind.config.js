@@ -25,20 +25,18 @@ import {
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
+  HEALTH_METRICS_BAR_CHART_LABEL_CLASSES,
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS,
   HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS,
   HEALTH_METRICS_EVENTS_FORECAST_PACES,
-  HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
-  HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
+  HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES,
+  HEALTH_METRICS_MEMBERS_BOARD_FILL_CLASSES,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES,
-  HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
-  HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
-  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
-  HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_BADGE_CLASSES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NO_NPS_ICON_CLASS,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_ICON_CLASSES,
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
-  HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER,
-  HEALTH_METRICS_MEMBERS_RENEWALS_RENEWED_MARKER,
-  HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS,
+  HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES,
   HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES,
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
   HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES,
@@ -238,31 +236,28 @@ export default {
     ...Object.values(HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES),
     // Events forecast goal-bar fills (HEALTH_METRICS_EVENTS_FORECAST_PACES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_EVENTS_FORECAST_PACES).map((pace) => pace.fillClass),
-    // Members directory tier pill, NPS chips and engagement dots (HEALTH_METRICS_MEMBERS_DIRECTORY_* in @lfx-one/shared) — applied via [class].
-    ...HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS.split(' '),
-    ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES).flatMap((c) => c.split(' ')),
-    ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES),
-    // Members at-risk aging bar fill (HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS in @lfx-one/shared) — applied via [class].
-    HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
-    // Members renewals balance and renewed markers (HEALTH_METRICS_MEMBERS_RENEWALS_*_MARKER in @lfx-one/shared) — applied via [class].
-    HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER.textClass,
-    HEALTH_METRICS_MEMBERS_RENEWALS_RENEWED_MARKER.textClass,
+    // The All members NPS dots and engagement badges (HEALTH_METRICS_MEMBERS_DIRECTORY_* in @lfx-one/shared) — applied via [class].
+    ...[...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_ICON_CLASSES), HEALTH_METRICS_MEMBERS_DIRECTORY_NO_NPS_ICON_CLASS].flatMap((c) => c.split(' ')),
+    ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_BADGE_CLASSES).flatMap((c) => c.split(' ')),
+    // Members at-risk age and risk dots (HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES),
+    // Bar chart value label tones (HEALTH_METRICS_BAR_CHART_LABEL_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_BAR_CHART_LABEL_CLASSES),
     // Members NPS distribution segments (HEALTH_METRICS_MEMBERS_NPS_SEGMENTS in @lfx-one/shared) — applied via [class].
     ...HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => segment.colorClass),
-    // Non-Members fit band dots (HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS in @lfx-one/shared) — applied via [class].
-    ...Object.values(HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS),
-    // Members churn share-of-loss bar fill (HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS in @lfx-one/shared) — applied via [class].
-    HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
-    // Engagement attendance bar fills and the board hero colour, per attendance tone — applied via [class] / [ngClass].
+    // Non-Members fit badges (HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES).flatMap((c) => c.split(' ')),
+    // Engagement attendance bar fills, per attendance tone — applied via [class].
     ...Object.values(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS),
     // Newsletter recipient status dots (HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS in @lfx-one/shared) — applied via [class].
     ...HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS.map((metric) => metric.dotClass),
-    ...Object.values(HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS),
+    // Members board attendance bar fills (HEALTH_METRICS_MEMBERS_BOARD_FILL_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_MEMBERS_BOARD_FILL_CLASSES),
     // Members breakdown table cells and rules (HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES)
       .flatMap((value) => (typeof value === 'string' ? [value] : Object.values(value)))
       .flatMap((classes) => classes.split(' ')),
-    // Training course type pills (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
+    // Training course type badges (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES).flatMap((c) => c.split(' ')),
     // Key-contact role pills — People → Key Contacts, the All Employees Key Contact column and the
     // person-detail drawer all colour a role from ORG_KEY_CONTACT_ROLE_PILL_CLASSES in @lfx-one/shared,
@@ -315,6 +310,11 @@ export default {
         card: `inset 0 0 0 1px ${lfxColors.gray[100]}, 0px 1px 2px -1px rgba(0, 0, 0, 0.05), 0px 1px 3px 0px rgba(0, 0, 0, 0.05)`,
       },
       keyframes: {
+        // A meetings home row picked on the calendar: an accent wash that fades out.
+        'meetings-row-flash': {
+          '0%, 40%': { backgroundColor: lfxColors.blue[50] },
+          '100%': { backgroundColor: 'transparent' },
+        },
         'step-in': {
           '0%': { opacity: '0', transform: 'translateY(4px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
@@ -334,6 +334,7 @@ export default {
         'fade-in-up': 'fade-in-up 1s ease-out forwards', // Adjust duration and easing
         // A new row or card settling in (Marketing OS run feed and questions stepper); used behind `motion-safe:`.
         'step-in': 'step-in 180ms ease-out both',
+        'meetings-row-flash': 'meetings-row-flash 1.6s ease',
       },
       fontWeight: {
         normal: 400,

@@ -6,6 +6,10 @@ import { TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
+import { environment } from '@environments/environment';
+import { environment as devEnvironment } from '@environments/environment.dev';
+import { environment as productionEnvironment } from '@environments/environment.prod';
+import { environment as stagingEnvironment } from '@environments/environment.staging';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
@@ -527,12 +531,18 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
 });
 
 /**
- * Guards #4190: GitLab is visible but unavailable pending #4151 rollout verification; LF ID stays excluded.
+ * Guards #4042/#4190: dev can link GitLab; staging and production retain Coming soon.
  */
-describe('AddAccountDialogComponent — provider list (#4190)', () => {
+describe.each([
+  { name: 'dev', config: devEnvironment, expectedDisabled: false },
+  { name: 'staging', config: stagingEnvironment, expectedDisabled: true },
+  { name: 'production', config: productionEnvironment, expectedDisabled: true },
+])('AddAccountDialogComponent — provider list ($name)', ({ config, expectedDisabled }) => {
   let fixture: ComponentFixture<AddAccountDialogComponent>;
+  const originalProduction = environment.production;
 
   function setup(data: Record<string, unknown> = { existingProviders: [] }) {
+    environment.production = config.production;
     TestBed.configureTestingModule({
       imports: [AddAccountDialogComponent],
       providers: [
@@ -551,6 +561,7 @@ describe('AddAccountDialogComponent — provider list (#4190)', () => {
   afterEach(() => {
     fixture?.destroy();
     TestBed.resetTestingModule();
+    environment.production = originalProduction;
   });
 
   it('lists GitLab with its icon and excludes LF ID', () => {
@@ -560,46 +571,81 @@ describe('AddAccountDialogComponent — provider list (#4190)', () => {
     expect(component.providers.some((provider) => provider.id === 'lfid')).toBe(false);
   });
 
-  it('disables the GitLab button and does not start linking when clicked', async () => {
-    const component = setup();
-    await fixture.whenStable();
-    const selectProvider = vi.spyOn(component, 'onSelectProvider');
-    const root = fixture.nativeElement as HTMLElement;
-    const button = root.querySelector<HTMLButtonElement>('[data-testid="provider-action-gitlab"] button');
+  if (!expectedDisabled) {
+    it.each(['/profile/identities', '/profile/clas'])('enables GitLab and starts social linking with return path %s', async (returnTo) => {
+      setup();
+      await fixture.whenStable();
+      const root = fixture.nativeElement as HTMLElement;
+      const button = root.querySelector<HTMLButtonElement>('[data-testid="provider-action-gitlab"] button');
+      const location = { pathname: returnTo, search: '?ignored=true', hash: '#ignored', href: '' };
 
-    expect(button).not.toBeNull();
-    expect(button?.disabled).toBe(true);
-    button?.click();
-    root.querySelector<HTMLElement>('[data-testid="provider-action-hint-gitlab"]')?.click();
+      expect(button).not.toBeNull();
+      expect(button?.disabled).toBe(false);
+      expect(button?.textContent).toContain('Continue with GitLab');
+      expect(root.querySelector('[data-testid="provider-gitlab-coming-soon"]')).toBeNull();
+      expect(root.querySelector('[data-testid="provider-action-hint-gitlab"]')).toBeNull();
 
-    expect(selectProvider).not.toHaveBeenCalled();
-    expect(root.querySelector('[data-testid="provider-gitlab-coming-soon"]')?.textContent).toBe('Coming soon');
-  });
+      // Run the real click handler, replacing only the navigation sink so OAuth cannot leave jsdom.
+      vi.stubGlobal(
+        'window',
+        new Proxy(window, {
+          get: (target, property) => {
+            if (property === 'location') return location;
+            const value = Reflect.get(target, property);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        })
+      );
+      try {
+        button?.click();
 
-  it.each([
-    { showEvent: 'focus', hideEvent: 'blur' },
-    { showEvent: 'mouseenter', hideEvent: 'mouseleave' },
-  ])('shows the GitLab tooltip on $showEvent and hides it on $hideEvent', async ({ showEvent, hideEvent }) => {
-    setup();
-    await fixture.whenStable();
-    const hint = fixture.debugElement.query(By.css('[data-testid="provider-action-hint-gitlab"]'));
-    const target = hint.nativeElement as HTMLElement;
+        expect(location.href).toBe(`/api/profile/identities/social/connect?provider=gitlab&returnTo=${encodeURIComponent(returnTo)}`);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+  } else {
+    it('disables the GitLab button and does not start linking when clicked', async () => {
+      const component = setup();
+      await fixture.whenStable();
+      const selectProvider = vi.spyOn(component, 'onSelectProvider');
+      const root = fixture.nativeElement as HTMLElement;
+      const button = root.querySelector<HTMLButtonElement>('[data-testid="provider-action-gitlab"] button');
 
-    expect(target.getAttribute('tabindex')).toBe('0');
-    expect(target.getAttribute('aria-label')).toBe('GitLab account linking: Coming soon');
-    expect(target.querySelector('.p-component')).toBeNull();
-    expect(hint.injector.get(Tooltip).tooltipEvent).toBe('both');
-    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+      expect(button).not.toBeNull();
+      expect(button?.disabled).toBe(true);
+      button?.click();
+      root.querySelector<HTMLElement>('[data-testid="provider-action-hint-gitlab"]')?.click();
 
-    // Dispatch to the actual focus/hover target, not directly to the directive's show method.
-    target.dispatchEvent(new Event(showEvent));
-    const tooltip = document.body.querySelector<HTMLElement>('[role="tooltip"]');
-    expect(tooltip?.textContent).toBe('Coming soon');
-    expect(tooltip?.style.display).toBe('inline-block');
+      expect(selectProvider).not.toHaveBeenCalled();
+      expect(root.querySelector('[data-testid="provider-gitlab-coming-soon"]')?.textContent).toBe('Coming soon');
+    });
 
-    target.dispatchEvent(new Event(hideEvent));
-    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
-  });
+    it.each([
+      { showEvent: 'focus', hideEvent: 'blur' },
+      { showEvent: 'mouseenter', hideEvent: 'mouseleave' },
+    ])('shows the GitLab tooltip on $showEvent and hides it on $hideEvent', async ({ showEvent, hideEvent }) => {
+      setup();
+      await fixture.whenStable();
+      const hint = fixture.debugElement.query(By.css('[data-testid="provider-action-hint-gitlab"]'));
+      const target = hint.nativeElement as HTMLElement;
+
+      expect(target.getAttribute('tabindex')).toBe('0');
+      expect(target.getAttribute('aria-label')).toBe('GitLab account linking: Coming soon');
+      expect(target.querySelector('.p-component')).toBeNull();
+      expect(hint.injector.get(Tooltip).tooltipEvent).toBe('both');
+      expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+
+      // Dispatch to the actual focus/hover target, not directly to the directive's show method.
+      target.dispatchEvent(new Event(showEvent));
+      const tooltip = document.body.querySelector<HTMLElement>('[role="tooltip"]');
+      expect(tooltip?.textContent).toBe('Coming soon');
+      expect(tooltip?.style.display).toBe('inline-block');
+
+      target.dispatchEvent(new Event(hideEvent));
+      expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+    });
+  }
 
   it('keeps the existing providers enabled and the email flow usable', async () => {
     const component = setup();

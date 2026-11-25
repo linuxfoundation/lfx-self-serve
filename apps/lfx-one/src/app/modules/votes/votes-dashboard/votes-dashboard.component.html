@@ -18,15 +18,23 @@
       titleTestId="votes-dashboard-title"
       descriptionTestId="votes-dashboard-description">
       @if (!isMeLens() && canWrite()) {
-        <lfx-button
-          pageHeaderActions
-          [label]="'Create ' + voteLabel"
-          size="small"
-          icon="fa-light fa-check-to-slot"
-          severity="primary"
-          [routerLink]="['/votes', 'create']"
-          data-testid="votes-create-button">
-        </lfx-button>
+        <div pageHeaderActions class="flex items-center">
+          <!-- One button, not a split: creating a vote always starts by picking its voting method. -->
+          <lfx-button
+            [label]="'Create ' + voteLabel"
+            size="small"
+            icon="fa-light fa-chevron-down"
+            iconPos="right"
+            severity="primary"
+            ariaHaspopup="menu"
+            [ariaExpanded]="createMenu.isOpen()"
+            (onClick)="createMenu.toggle($event)"
+            data-testid="votes-create-button">
+            <!-- Projected rather than `icon`, which the chevron needs (see the meetings dashboard's Create Meeting). -->
+            <i class="fa-light fa-check-to-slot" aria-hidden="true"></i>
+          </lfx-button>
+          <lfx-vote-create-menu #createMenu (methodSelected)="onCreateVoteMethod($event)" />
+        </div>
       }
     </lfx-page-header>
 
@@ -86,6 +94,7 @@
         [first]="currentFirst()"
         [lazy]="!isMeLens()"
         [isMeLens]="isMeLens()"
+        [canCancelVotes]="isManagementVotesLens()"
         [serverFiltersActive]="!isMeLens() && hasActiveFilters()"
         [groupOptions]="groupOptions()"
         [foundationOptions]="foundationOptions()"
@@ -124,5 +133,6 @@
     [listVote]="castDrawerVote()"
     [changeMode]="castDrawerReviewMode()"
     (voteSubmitted)="onCastVoteSubmitted($event)"
+    (ballotUnavailable)="onCastBallotUnavailable()"
     data-testid="votes-dashboard-cast-drawer"></lfx-vote-cast-drawer>
 }

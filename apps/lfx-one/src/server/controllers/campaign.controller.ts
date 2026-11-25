@@ -10,6 +10,20 @@ import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
+import { correctLinkedInGeoTargets, linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
+import { linkedInGeoSearchLocations, linkedInGeoSearchQueryRefusal } from '@lfx-one/shared/utils/campaign-linkedin-geo.utils';
+import {
+  isLinkedInTargetingSearchFacet,
+  linkedInAudienceSegments,
+  linkedInTargetingSearchEntities,
+} from '@lfx-one/shared/utils/campaign-linkedin-targeting-lookup.utils';
+import { linkedInConfigNamesConversions, linkedInConversionRules, linkedInObjectiveRefusal } from '@lfx-one/shared/utils/campaign-linkedin-objective.utils';
+import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
+import { redditConversionEventRefusal } from '@lfx-one/shared/utils/campaign-reddit-conversion-event.utils';
+import { linkedInTextAdAssetField, linkedInTextAdsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-text-ads.utils';
+import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
+import { linkedInVideoVariantsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-video.utils';
+import { linkedInTargetCostRefusal } from '@lfx-one/shared/utils/campaign-linkedin-target-cost.utils';
 import {
   googleAdScheduleRefusal,
   googleAdsDevicesOn,
@@ -55,6 +69,34 @@ import {
 import { googleExcludedPlacementsRefusal } from '@lfx-one/shared/utils/campaign-google-placements.utils';
 import { googleDemandGenVideoCreativeRefusal } from '@lfx-one/shared/utils/campaign-google-demand-gen-video.utils';
 import { googleCampaignAudienceSegmentFault, googleCampaignAudienceSegmentsRefusal } from '@lfx-one/shared/utils/campaign-google-user-lists.utils';
+import {
+  compactMetaAudienceTargeting,
+  metaAudienceTargetingRefusal,
+  metaTargetingNamesCustomAudiences,
+} from '@lfx-one/shared/utils/campaign-meta-audience-targeting.utils';
+import {
+  compactMetaAdOptions,
+  metaAdOptionOffMessage,
+  metaAdOptionsRefusal,
+  metaConfigKeyVariant,
+  metaConfigRecord,
+} from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
+import { hasMetaLeadFormKeyVariant, metaLeadFormId, metaLeadFormRefusal } from '@lfx-one/shared/utils/campaign-meta-lead-form.utils';
+import {
+  compactMetaDeliveryOptions,
+  metaAdScheduleRefusal,
+  metaDeliveryFlagRefusal,
+  metaDeliveryKeyVariant,
+  metaFrequencyCapRefusal,
+} from '@lfx-one/shared/utils/campaign-meta-delivery.utils';
+import {
+  compactMetaDetailedTargeting,
+  isMetaTargetingSearchType,
+  metaDetailedTargetingRefusal,
+  metaDeviceOsRefusal,
+  metaTargetingFlagRefusal,
+  metaTargetingQueryRefusal,
+} from '@lfx-one/shared/utils/campaign-meta-detailed-targeting.utils';
 import {
   googleDemandGenAudienceCarried,
   googleDemandGenAudiencesRefusal,
@@ -138,6 +180,18 @@ import type {
   MonitorConnectionPlatform,
   NormalizedGoogleAdSchedule,
   NormalizedGoogleDeviceBidModifier,
+  MetaAdOptionKey,
+  MetaAdOptions,
+  MetaDeliveryOptions,
+  MetaAudienceTargeting,
+  MetaTargeting,
+  LinkedInGeoSearchResult,
+  LinkedInAudiencesResult,
+  LinkedInConversionsResult,
+  LinkedInTargetingSearchResult,
+  MetaTargetingSearchResult,
+  MetaCustomAudiencesResult,
+  MetaLeadFormsResult,
 } from '@lfx-one/shared/interfaces';
 import {
   EMAIL_SECONDARY_LINK_LIMIT,
@@ -325,6 +379,29 @@ import {
   isGoSpaceCode,
   isMicrosoftMatchType,
   sniffCreativeAssetMimeType,
+  META_CUSTOM_AUDIENCE_ID_PATTERN,
+  META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
+  META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
+  META_CUSTOM_AUDIENCES_RESTRICTED_CODE,
+  LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
+  LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
+  LINKEDIN_AUDIENCES_RESTRICTED_CODE,
+  LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE,
+  LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE,
+  LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE,
+  LINKEDIN_CONVERSIONS_RESTRICTED_CODE,
+  LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE,
+  LINKEDIN_GEO_SEARCH_BUSY_MESSAGE,
+  LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
+  META_TARGETING_SEARCH_BUSY_MESSAGE,
+  META_AD_OPTION_FIELDS,
+  META_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE,
+  META_LEAD_FORM_ID_PATTERN,
+  META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE,
+  META_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE,
+  META_LEAD_FORMS_OFF_MESSAGE,
+  META_LEAD_FORMS_RESTRICTED_CODE,
+  META_LEAD_FORMS_RESTRICTED_MESSAGE,
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
@@ -365,8 +442,29 @@ import {
   canCreateWithGoogleCriteria,
   canChooseLinkedInAdAccount,
   canEditLinkedInTargeting,
+  canSetLinkedInCallToAction,
+  canSetLinkedInConversions,
+  canSetLinkedInTargeting,
+  canSetLinkedInTextAds,
   canSetLinkedInDailyCap,
+  canSetLinkedInVariantCopy,
+  canSetLinkedInVideoAds,
+  canSetLinkedInTargetCost,
   canSearchGoogleGeoTargets,
+  canSetMetaAudienceTargeting,
+  canSetMetaCallToAction,
+  canSetMetaConversionEvent,
+  canSetMetaLeadForm,
+  canSearchMetaTargeting,
+  canSetMetaBehaviorTargeting,
+  canSetMetaInterestTargeting,
+  canSetMetaLocaleTargeting,
+  canSetMetaDeviceTargeting,
+  canSetMetaOsTargeting,
+  canSetMetaAdSchedule,
+  canSetMetaFrequencyCap,
+  canSetMetaOptimizationGoal,
+  canSetRedditConversionEvent,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
@@ -1205,10 +1303,10 @@ export class CampaignController {
       // selection resolves to. Adding needs a name-to-URN lookup campaign-service does not offer yet
       // (linuxfoundation/lfx-v2-campaign-service#585), so a URN the ConfigMap does not already carry
       // is never forwarded: the Implement tab cannot produce one, and a direct caller must not.
-      const linkedInTargetingRefusal = this.linkedInTargetingEditRefusal(body);
-      if (linkedInTargetingRefusal !== null) {
+      const linkedInTargetingEditRefused = this.linkedInTargetingEditRefusal(body);
+      if (linkedInTargetingEditRefused !== null) {
         next(
-          ServiceValidationError.forField(LINKEDIN_TARGETING_PROFILE_EDIT_FIELD, linkedInTargetingRefusal, {
+          ServiceValidationError.forField(LINKEDIN_TARGETING_PROFILE_EDIT_FIELD, linkedInTargetingEditRefused, {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
@@ -1257,11 +1355,128 @@ export class CampaignController {
         return;
       }
 
+      // The Reddit conversion event (#6108 row 2): refused, never dropped, while this deployment cannot send it, and held
+      // to campaign-service's rules (`checkRedditConversionEvent`). See `redditConversionEventRefusal`.
+      const redditConversionEventRefused = redditConversionEventRefusal(body?.redditConfig, canSetRedditConversionEvent());
+      if (redditConversionEventRefused !== null) {
+        next(
+          ServiceValidationError.forField(redditConversionEventRefused.field, redditConversionEventRefused.message, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // Any top-level or variant LinkedIn key the create route does not check is refused before any LinkedIn
+      // read or create, whatever the flags (#5764): `buildLinkedInConfig` forwards the rest of `linkedInConfig`
+      // as it comes, and campaign-service decodes keys ignoring case. See `linkedInConfigKeyRefusal`.
+      const linkedInKeyRefusal = linkedInConfigKeyRefusal(body?.linkedInConfig);
+      if (linkedInKeyRefusal !== null) {
+        throw ServiceValidationError.forField(linkedInKeyRefusal.field, linkedInKeyRefusal.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // Germany and the United Kingdom as the old shared map resolved them, corrected in the request itself (LFXV2-2665),
+      // so the legacy creator, which is handed `req.body` while the cutover is off, targets the right country too.
+      // An object only: `in` throws on a primitive, which campaign-service refuses on its own.
+      const linkedInConfigBody: unknown = body?.linkedInConfig;
+      if (linkedInConfigBody !== null && typeof linkedInConfigBody === 'object' && !Array.isArray(linkedInConfigBody) && 'geoTargets' in linkedInConfigBody) {
+        const config = linkedInConfigBody as { geoTargets: unknown };
+        config.geoTargets = correctLinkedInGeoTargets(config.geoTargets);
+      }
+      // A variant's ad name, description and call to action (#5764 rows 16–17): refused, never dropped, while this
+      // deployment cannot send them, and held to campaign-service's rules. See `linkedInVariantFieldsRefusal`.
+      const linkedInVariantRefusal = linkedInVariantFieldsRefusal(body?.linkedInConfig, {
+        copy: canSetLinkedInVariantCopy(),
+        callToAction: canSetLinkedInCallToAction(),
+      });
+      if (linkedInVariantRefusal !== null) {
+        throw ServiceValidationError.forField(linkedInVariantRefusal.field, linkedInVariantRefusal.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // LinkedIn Text Ads (#5764 row 19): refused, never dropped, while this deployment cannot send them, and held to
+      // campaign-service's rules. See `linkedInTextAdsRefusal`.
+      const linkedInTextAdsRefused = linkedInTextAdsRefusal(body?.linkedInConfig, canSetLinkedInTextAds());
+      if (linkedInTextAdsRefused !== null) {
+        throw ServiceValidationError.forField(linkedInTextAdsRefused.field, linkedInTextAdsRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // LinkedIn video ads (#5764 row 18): refused, never dropped, while this deployment cannot send them, and held to
+      // campaign-service's rules. See `linkedInVideoVariantsRefusal`.
+      const linkedInVideoRefused = linkedInVideoVariantsRefusal(body?.linkedInConfig, canSetLinkedInVideoAds());
+      if (linkedInVideoRefused !== null) {
+        throw ServiceValidationError.forField(linkedInVideoRefused.field, linkedInVideoRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // LinkedIn target cost (linuxfoundation/lfx-v2-campaign-service#674): refused, never dropped, while this deployment
+      // cannot send it, and held to campaign-service's rules. See `linkedInTargetCostRefusal`.
+      const linkedInTargetCostRefused = linkedInTargetCostRefusal(body?.linkedInConfig, canSetLinkedInTargetCost());
+      if (linkedInTargetCostRefused !== null) {
+        throw ServiceValidationError.forField(linkedInTargetCostRefused.field, linkedInTargetCostRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // LinkedIn custom targeting (#5764 rows 8–11): refused, never dropped, while this deployment cannot send it, and
+      // held to campaign-service's rules against the same `employerExclusions` `buildLinkedInConfig` sends. See
+      // `linkedInTargetingRefusal`.
+      const linkedInTargetingRefused = linkedInTargetingRefusal(body?.linkedInConfig, canSetLinkedInTargeting(), getLinkedInConfig().employerExclusions);
+      if (linkedInTargetingRefused !== null) {
+        throw ServiceValidationError.forField(linkedInTargetingRefused.field, linkedInTargetingRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // An ad segment is an audience on the ad account every foundation shares: named only by a caller holding
+      // `global_marketing_ops` on the project, as campaign-service requires (403), and never on a check that failed (503).
+      if (linkedInTargetingNamesSegments(body?.linkedInConfig)) {
+        await this.requireLinkedInAudienceAccess(req, projectSlug, 'campaign_create', 'the LinkedIn audience segments');
+      }
+      // LinkedIn objective and conversions (#5764 rows 2 and 4): refused, never dropped, while this deployment cannot send
+      // them, and held to campaign-service's rules. See `linkedInObjectiveRefusal`.
+      const linkedInObjectiveRefused = linkedInObjectiveRefusal(body?.linkedInConfig, canSetLinkedInConversions());
+      if (linkedInObjectiveRefused !== null) {
+        throw ServiceValidationError.forField(linkedInObjectiveRefused.field, linkedInObjectiveRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // Conversion rules belong to the ad account every foundation shares: named only by a caller holding
+      // `global_marketing_ops` on the project, as campaign-service requires (403), and never on a check that failed (503).
+      if (linkedInConfigNamesConversions(body?.linkedInConfig)) {
+        await this.requireLinkedInAudienceAccess(req, projectSlug, 'campaign_create', 'the LinkedIn conversion rules', 'conversions');
+      }
       // The LinkedIn ad account to name: only the picker's explicit choice, checked against
       // campaign-service's own list (#5809) and refused when it cannot be honoured. See
       // `linkedInAdAccountToForward`.
       const linkedInAdAccountId = await this.linkedInAdAccountToForward(req, projectSlug, body);
-      const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId);
+      // Any Meta field under another spelling of its key is refused first, whatever the flags: campaign-service
+      // decodes keys ignoring case, so it would reach it past every gate below. See `metaConfigKeyVariant`.
+      const metaKeyVariant = metaConfigKeyVariant(body?.metaConfig);
+      if (metaKeyVariant !== null) {
+        throw ServiceValidationError.forField(metaKeyVariant, `Send it as ${metaKeyVariant}, spelled exactly.`, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // The Meta audience targeting to send (#5905), or none. See `metaTargetingToForward`.
+      const metaTargeting = await this.metaTargetingToForward(req, projectSlug, body);
+      // The Meta call to action, conversion event and optimization goal (#5934). See `metaAdOptionsToForward`.
+      const metaAdOptions = this.metaAdOptionsToForward(body);
+      // The Meta ad schedule and frequency cap (#5904 row 5), checked here, before the lead form's upstream reads,
+      // so a bad one fails fast. See `metaDeliveryOptionsToForward`.
+      const metaDelivery = this.metaDeliveryOptionsToForward(body);
+      // The Meta Instant Form of a `leads` create (#5940), or none. See `metaLeadFormToForward`.
+      const metaLeadFormIdToSend = await this.metaLeadFormToForward(req, projectSlug, body);
+      const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId, metaTargeting, metaAdOptions, metaLeadFormIdToSend, metaDelivery);
 
       // The channel the Google config resolved to, read ONCE for every channel fence below rather
       // than re-read and re-cast by each of them. `unknown`, not the channel union: it is whatever
@@ -3642,8 +3857,10 @@ export class CampaignController {
       // would answer 503.
       const segmentsDeployed = canCreateWithAudienceSegments();
       const conversionsDeployed = canCreateWithGoogleCriteria();
+      const metaTargetingDeployed = canSetMetaAudienceTargeting();
+      const metaLeadFormsDeployed = canSetMetaLeadForm();
       const marketingOps =
-        segmentsDeployed || conversionsDeployed
+        segmentsDeployed || conversionsDeployed || metaTargetingDeployed || metaLeadFormsDeployed
           ? await this.googleMarketingOpsAccess(req, projectSlug, 'list_brief_campaigns', 'Google marketing-ops capabilities')
           : 'denied';
       let googleAudienceSegmentsEnabled: boolean | null = false;
@@ -3666,8 +3883,22 @@ export class CampaignController {
       // The Performance Max audience signal (#5262) on exactly the same two checks: the same create road,
       // and the same relation campaign-service checks before it creates with one (#501).
       const googlePerformanceMaxAudienceSignalEnabled = googleDemandGenAudienceEnabled;
+      // The Meta custom audiences (#5905) on the deployment test and the same relation, which
+      // campaign-service checks before it lists them and before it creates with one (#550).
+      let metaCustomAudiencesEnabled: boolean | null = false;
+      if (metaTargetingDeployed) {
+        metaCustomAudiencesEnabled = marketingOps === 'unverified' ? null : marketingOps === 'granted';
+      }
+      // The Meta lead forms (#5940) on the deployment test and the same relation, which campaign-service checks
+      // before it lists them and before it creates with one (#550).
+      let metaLeadFormsEnabled: boolean | null = false;
+      if (metaLeadFormsDeployed) {
+        metaLeadFormsEnabled = marketingOps === 'unverified' ? null : marketingOps === 'granted';
+      }
       const result: CampaignListResult = {
         ...listed,
+        metaCustomAudiencesEnabled,
+        metaLeadFormsEnabled,
         googleAudienceSegmentsEnabled,
         googleConversionActionsEnabled,
         googleDemandGenAudienceEnabled,
@@ -4548,6 +4779,461 @@ export class CampaignController {
         truncated: payload.truncated === true,
       };
       logger.success(req, operation, startTime, { count: result.userLists.length, truncated: result.truncated });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * The Instant Forms of the Facebook Page a Meta create for this project uses, for the Implement tab's lead
+   * form picker (#5940), camel-cased. A project without its own connection uses the shared LF Page, which holds
+   * every foundation's forms, so it is answered on the relation campaign-service checks first:
+   * `global_marketing_ops` on the project — a coded 403 when refused, a coded 503 when the check cannot be made,
+   * both before any upstream call. Registered ahead of the blanket `requireCampaignManager`, behind its own
+   * `requireMetaLeadFormsAccess`. 404 while Meta lead forms are off. Every status is listed; only ACTIVE passes a
+   * create, which the tab shows.
+   */
+  public async getMetaLeadForms(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'meta_lead_forms';
+    if (!canSetMetaLeadForm()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the Meta lead form read');
+    if (access !== 'granted') {
+      next(
+        access === 'denied'
+          ? new AuthorizationError(META_LEAD_FORMS_RESTRICTED_MESSAGE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              code: META_LEAD_FORMS_RESTRICTED_CODE,
+            })
+          : new MicroserviceError(META_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE, 503, META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              clientMessage: META_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE,
+            })
+      );
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+
+    try {
+      const payload = await this.campaignServiceClient.listMetaLeadForms(req, projectSlug);
+      // `forms` is required upstream; reading its absence as an empty list would say the Page has none.
+      if (!Array.isArray(payload?.forms)) {
+        throw new MicroserviceError('campaign-service returned an unreadable Meta lead form read.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: MetaLeadFormsResult = {
+        pageId: typeof payload.page_id === 'string' ? payload.page_id : '',
+        // A row whose id is not one `leadFormId` accepts cannot be sent, so it is dropped rather than offered;
+        // a repeated id is offered once.
+        forms: payload.forms
+          .filter((f, i, all) => typeof f?.id === 'string' && META_LEAD_FORM_ID_PATTERN.test(f.id) && all.findIndex((other) => other?.id === f.id) === i)
+          .map((f) => ({
+            id: f.id,
+            name: typeof f.name === 'string' && f.name.trim() !== '' ? f.name : f.id,
+            status: typeof f.status === 'string' ? f.status.toUpperCase() : '',
+          })),
+      };
+      logger.success(req, operation, startTime, { count: result.forms.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * LinkedIn locations matching `?q=` for the Implement tab's location search (#5545), through campaign-service's
+   * targeting typeahead (`search-linkedin-ads-targeting-entities`, `facet=locations`, #643). Unflagged upstream, and any
+   * geo URN it returns is one a create accepts on either road, so there is no capability gate; `requireCampaignManager`
+   * on the router is the gate, as campaign-service's. The query is checked here first, so a bad one costs no upstream
+   * call. An upstream 503 (a LinkedIn throttle, not retried) answers a "try again" 503 that keeps the original error.
+   */
+  public async searchLinkedInGeoTargets(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'linkedin_geo_search';
+    const context = { operation, service: 'campaign_controller', path: req.path };
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(ServiceValidationError.forField('project', 'A project is required to search LinkedIn locations.', context));
+      return;
+    }
+    const refusal = linkedInGeoSearchQueryRefusal(req.query['q']);
+    if (refusal !== null) {
+      next(ServiceValidationError.forField('q', refusal, context));
+      return;
+    }
+    const query = String(req.query['q']).trim();
+    // This handler does not log the query text; the request logger records the URL as for every route.
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+    try {
+      const payload = await this.campaignServiceClient.searchLinkedInTargetingEntities(req, projectSlug, 'locations', query);
+      // `entities` is required upstream; reading its absence as an empty list would say nothing matched.
+      if (!Array.isArray(payload?.entities)) {
+        throw new MicroserviceError('campaign-service returned an unreadable LinkedIn location search.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: LinkedInGeoSearchResult = { locations: linkedInGeoSearchLocations(payload.entities) };
+      logger.success(req, operation, startTime, { count: result.locations.length });
+      res.json(result);
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 503 && error.transportFailure !== true) {
+        next(
+          new MicroserviceError(LINKEDIN_GEO_SEARCH_BUSY_MESSAGE, 503, 'LINKEDIN_GEO_SEARCH_UNAVAILABLE', {
+            operation,
+            service: 'campaign_controller',
+            clientMessage: LINKEDIN_GEO_SEARCH_BUSY_MESSAGE,
+            originalError: error,
+          })
+        );
+        return;
+      }
+      next(error);
+    }
+  }
+
+  /**
+   * The values of one LinkedIn targeting facet matching `?q=`, for the Implement tab's targeting editor (#5764 rows
+   * 8–11), through campaign-service's targeting typeahead (`search-linkedin-ads-targeting-entities`, #585). 404 while a
+   * create cannot carry `targeting`, so the editor never offers a value a create would refuse. LinkedIn taxonomy, so
+   * `requireCampaignManager` on the router is the gate, as campaign-service's. `?facet=` must be one of
+   * `LINKEDIN_TARGETING_SEARCH_FACETS`; the facet and query are checked here first, so a bad one costs no upstream call.
+   * Only values that facet accepts in `targeting` are offered. An upstream 503 (a LinkedIn throttle, not retried)
+   * answers a "try again" 503 that keeps the original error.
+   */
+  public async searchLinkedInTargetingEntities(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'linkedin_targeting_search';
+    if (!canSetLinkedInTargeting()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const context = { operation, service: 'campaign_controller', path: req.path };
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(ServiceValidationError.forField('project', 'A project is required to search LinkedIn targeting.', context));
+      return;
+    }
+    const facet = req.query['facet'];
+    if (!isLinkedInTargetingSearchFacet(facet)) {
+      next(ServiceValidationError.forField('facet', 'Choose what kind of LinkedIn targeting to search for.', context));
+      return;
+    }
+    const refusal = typeof req.query['q'] === 'string' ? linkedInGeoSearchQueryRefusal(req.query['q']) : 'Enter text to search for.';
+    if (refusal !== null) {
+      next(ServiceValidationError.forField('q', refusal, context));
+      return;
+    }
+    const query = String(req.query['q']).trim();
+    // This handler does not log the query text (only its facet); the request logger records the URL as for every route.
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true, facet });
+    try {
+      const payload = await this.campaignServiceClient.searchLinkedInTargetingEntities(req, projectSlug, facet, query);
+      // `entities` is required upstream; reading its absence as an empty list would say nothing matched.
+      if (!Array.isArray(payload?.entities)) {
+        throw new MicroserviceError('campaign-service returned an unreadable LinkedIn targeting search.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: LinkedInTargetingSearchResult = { facet, entities: linkedInTargetingSearchEntities(facet, payload.entities) };
+      logger.success(req, operation, startTime, { count: result.entities.length, facet });
+      res.json(result);
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 503 && error.transportFailure !== true) {
+        next(
+          new MicroserviceError(LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE, 503, 'LINKEDIN_TARGETING_SEARCH_UNAVAILABLE', {
+            operation,
+            service: 'campaign_controller',
+            clientMessage: LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
+            originalError: error,
+          })
+        );
+        return;
+      }
+      next(error);
+    }
+  }
+
+  /**
+   * The ad segments on the LinkedIn ad account a create for this project uses, for the Implement tab's targeting editor
+   * (#5764 rows 8–11), camel-cased: matched audiences and retargeting segments, each under the facet `targeting` names
+   * it with. The ad account is shared by every foundation, so it is answered on the relation campaign-service checks
+   * first: `global_marketing_ops` on the project — a coded 403 when refused, a coded 503 when the check cannot be made,
+   * both before any upstream call. Registered ahead of the blanket `requireCampaignManager`, behind its own
+   * `requireLinkedInAudiencesAccess`, as the Meta and Google pickers are. 404 while a create cannot carry `targeting`.
+   * Optional `?accountId=` names the ad account the create will use (`selectedAdAccountId`); omitted, campaign-service
+   * reads the project's default account. The answer's `accountId` says which account the segments belong to.
+   */
+  public async getLinkedInAudiences(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'linkedin_audiences';
+    if (!canSetLinkedInTargeting()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const context = { operation, service: 'campaign_controller', path: req.path };
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(ServiceValidationError.forField('project', 'A project is required to read LinkedIn audiences.', context));
+      return;
+    }
+    const rawAccountId = req.query['accountId'];
+    if (rawAccountId !== undefined && !(typeof rawAccountId === 'string' && LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(rawAccountId))) {
+      next(ServiceValidationError.forField('accountId', 'The LinkedIn ad account must be a numeric account id.', context));
+      return;
+    }
+    const accountId = rawAccountId === undefined ? undefined : String(rawAccountId);
+    try {
+      await this.requireLinkedInAudienceAccess(req, projectSlug, operation, 'the LinkedIn audience read');
+      const startTime = logger.startOperation(req, operation, { viaCampaignService: true, accountNamed: accountId !== undefined });
+      const payload = await this.campaignServiceClient.listLinkedInAudiences(req, projectSlug, accountId);
+      // `audiences` is required upstream; reading its absence as an empty list would say the account has none.
+      if (!Array.isArray(payload?.audiences)) {
+        throw new MicroserviceError('campaign-service returned an unreadable LinkedIn audience read.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: LinkedInAudiencesResult = {
+        accountId: typeof payload.account_id === 'string' ? payload.account_id : '',
+        audiences: linkedInAudienceSegments(payload.audiences),
+      };
+      logger.success(req, operation, startTime, { count: result.audiences.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * The conversion rules on the LinkedIn ad account a create for this project uses, for the Implement tab's conversion
+   * picker (#5764 row 4), camel-cased: only enabled rules whose id a create accepts (`linkedInConversionRules`). Conversion
+   * rules belong to the shared ad account, so it is answered on `global_marketing_ops` on the project, as
+   * `getLinkedInAudiences` is, behind its own `requireLinkedInConversionsAccess`. 404 while a create cannot carry
+   * `conversions`. Optional `?accountId=` names the ad account the create will use; the answer's `accountId` says which.
+   */
+  public async getLinkedInConversions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'linkedin_conversions';
+    if (!canSetLinkedInConversions()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const context = { operation, service: 'campaign_controller', path: req.path };
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(ServiceValidationError.forField('project', 'A project is required to read LinkedIn conversion rules.', context));
+      return;
+    }
+    const rawAccountId = req.query['accountId'];
+    if (rawAccountId !== undefined && !(typeof rawAccountId === 'string' && LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(rawAccountId))) {
+      next(ServiceValidationError.forField('accountId', 'The LinkedIn ad account must be a numeric account id.', context));
+      return;
+    }
+    const accountId = rawAccountId === undefined ? undefined : String(rawAccountId);
+    try {
+      await this.requireLinkedInAudienceAccess(req, projectSlug, operation, 'the LinkedIn conversion rule read', 'conversions');
+      const startTime = logger.startOperation(req, operation, { viaCampaignService: true, accountNamed: accountId !== undefined });
+      const payload = await this.campaignServiceClient.listLinkedInConversions(req, projectSlug, accountId);
+      // `conversions` is required upstream; reading its absence as an empty list would say the account has none.
+      if (!Array.isArray(payload?.conversions)) {
+        throw new MicroserviceError('campaign-service returned an unreadable LinkedIn conversion rule read.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: LinkedInConversionsResult = {
+        accountId: typeof payload.account_id === 'string' ? payload.account_id : '',
+        conversions: linkedInConversionRules(payload.conversions),
+      };
+      logger.success(req, operation, startTime, { count: result.conversions.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * One page of Meta's targeting taxonomy for the Implement tab's detailed targeting (#5904 row 4), camel-cased:
+   * interests, behaviors or job titles matching `?query=`, through campaign-service's `search-meta-targeting-options`
+   * (linuxfoundation/lfx-v2-campaign-service#612). 404 unless interests or behaviors can be sent. Meta taxonomy, so
+   * `requireCampaignManager` is the gate, as upstream's. Each kind answers only while its own flag is on (interests,
+   * or behaviors with job titles). The kind and query are checked here first, so a bad one
+   * costs no upstream call. An upstream 503 (a Meta throttle or failure, which campaign-service does not retry)
+   * answers a "try again" 503 that keeps the original error; a failure to reach campaign-service at all is left
+   * as it is.
+   */
+  public async searchMetaTargetingOptions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'meta_targeting_search';
+    if (!canSearchMetaTargeting()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(
+        ServiceValidationError.forField('project', 'A project is required to search Meta targeting.', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const type = req.query['type'];
+    const queryRefusal = metaTargetingQueryRefusal(type, req.query['query']);
+    if (queryRefusal !== null || !isMetaTargetingSearchType(type)) {
+      next(
+        ServiceValidationError.forField(isMetaTargetingSearchType(type) ? 'query' : 'type', queryRefusal ?? 'Unknown search type.', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    // Each kind answers only while it can be sent: interests on their flag, behaviors and job titles on theirs,
+    // so the search never offers an option a create would refuse.
+    if (type === 'interest' ? !canSetMetaInterestTargeting() : !canSetMetaBehaviorTargeting()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const query = String(req.query['query']).trim();
+    // This handler does not log the query text (only its kind); the request logger records the URL as for every route.
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true, type });
+    try {
+      const payload = await this.campaignServiceClient.searchMetaTargetingOptions(req, projectSlug, type, query);
+      // `options` is required upstream; reading its absence as an empty list would say nothing matched.
+      if (!Array.isArray(payload?.options)) {
+        throw new MicroserviceError('campaign-service returned an unreadable Meta targeting search.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const num = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
+      const result: MetaTargetingSearchResult = {
+        type,
+        // An option whose id is not one a create accepts cannot be sent, so it is dropped rather than offered;
+        // a repeated id is offered once.
+        options: payload.options
+          .filter((o, i, all) => typeof o?.id === 'string' && META_CUSTOM_AUDIENCE_ID_PATTERN.test(o.id) && all.findIndex((other) => other?.id === o.id) === i)
+          .map((o) => {
+            const lower = num(o.audience_size_lower_bound);
+            const upper = num(o.audience_size_upper_bound);
+            const coverage = num(o.coverage);
+            return {
+              id: o.id as string,
+              name: typeof o.name === 'string' && o.name.trim() !== '' ? o.name : (o.id as string),
+              path: Array.isArray(o.path) ? o.path.filter((part): part is string => typeof part === 'string') : [],
+              ...(typeof o.description === 'string' && o.description.trim() !== '' ? { description: o.description } : {}),
+              ...(lower !== undefined ? { audienceSizeLowerBound: lower } : {}),
+              ...(upper !== undefined ? { audienceSizeUpperBound: upper } : {}),
+              ...(coverage !== undefined ? { coverage } : {}),
+            };
+          }),
+      };
+      logger.success(req, operation, startTime, { count: result.options.length, type });
+      res.json(result);
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 503 && error.transportFailure !== true) {
+        next(
+          new MicroserviceError(META_TARGETING_SEARCH_BUSY_MESSAGE, 503, 'META_TARGETING_SEARCH_UNAVAILABLE', {
+            operation,
+            service: 'campaign_controller',
+            clientMessage: META_TARGETING_SEARCH_BUSY_MESSAGE,
+            originalError: error,
+          })
+        );
+        return;
+      }
+      next(error);
+    }
+  }
+
+  /**
+   * The custom audiences on the Meta ad account a create for this project uses, for the Implement tab's
+   * Meta audience targeting (#5905), camel-cased. The ad account is shared by every foundation, so it is
+   * answered on the relation campaign-service checks first: `global_marketing_ops` on the project
+   * (linuxfoundation/lfx-v2-campaign-service#550) — a coded 403 when refused, a coded 503 when the check
+   * cannot be made, both before any upstream call. Registered ahead of the blanket `requireCampaignManager`,
+   * behind its own `requireMetaCustomAudiencesAccess`, as the Google pickers are (#5239). 404 while Meta
+   * audience targeting is off. Optional `?q=` (1–100 characters, not blank) filters by name upstream.
+   */
+  public async getMetaCustomAudiences(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'meta_custom_audiences';
+    if (!canSetMetaAudienceTargeting()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const rawQ = req.query['q'];
+    const q = typeof rawQ === 'string' ? rawQ.trim() : undefined;
+    if (rawQ !== undefined && (q === undefined || q === '' || q.length > 100)) {
+      next(ServiceValidationError.forField('q', 'Search with 1 to 100 characters.', { operation, service: 'campaign_controller', path: req.path }));
+      return;
+    }
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the Meta custom audience read');
+    if (access !== 'granted') {
+      next(
+        access === 'denied'
+          ? new AuthorizationError(META_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              code: META_CUSTOM_AUDIENCES_RESTRICTED_CODE,
+            })
+          : new MicroserviceError(META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE, 503, META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              clientMessage: META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
+            })
+      );
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true, searched: q !== undefined });
+
+    try {
+      const payload = await this.campaignServiceClient.listMetaCustomAudiences(req, projectSlug, q);
+      // `audiences` is required upstream; reading its absence as an empty list would say the account has
+      // none, so an unreadable body fails the read and the tab falls back to typed ids.
+      if (!Array.isArray(payload?.audiences)) {
+        throw new MicroserviceError('campaign-service returned an unreadable Meta custom audience read.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const count = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null);
+      const result: MetaCustomAudiencesResult = {
+        accountId: typeof payload.account_id === 'string' ? payload.account_id : '',
+        // A row whose id is not the canonical numeric id `targeting.customAudiences` accepts cannot be
+        // sent, so it is dropped rather than offered; a repeated id is offered once.
+        audiences: payload.audiences
+          .filter((a, i, all) => typeof a?.id === 'string' && META_CUSTOM_AUDIENCE_ID_PATTERN.test(a.id) && all.findIndex((other) => other?.id === a.id) === i)
+          .map((a) => ({
+            id: a.id,
+            name: typeof a.name === 'string' && a.name.trim() !== '' ? a.name : a.id,
+            subtype: typeof a.subtype === 'string' ? a.subtype : '',
+            description: typeof a.description === 'string' && a.description.trim() !== '' ? a.description : null,
+            approximateCountLowerBound: count(a.approximate_count_lower_bound),
+            approximateCountUpperBound: count(a.approximate_count_upper_bound),
+          })),
+        truncated: payload.truncated === true,
+      };
+      logger.success(req, operation, startTime, { count: result.audiences.length, truncated: result.truncated });
       res.json(result);
     } catch (error) {
       next(error);
@@ -6132,6 +6818,35 @@ export class CampaignController {
   }
 
   /**
+   * Throws unless the caller holds `global_marketing_ops` on `projectSlug`, the relation campaign-service answers a
+   * LinkedIn audience segment (#5764 rows 8–11) and a conversion rule (row 4) on: a coded 403 when refused, a coded 503
+   * when it cannot be checked. `kind` picks the codes and messages: `audiences` or `conversions`.
+   */
+  private async requireLinkedInAudienceAccess(
+    req: Request,
+    projectSlug: string,
+    operation: string,
+    subject: string,
+    kind: 'audiences' | 'conversions' = 'audiences'
+  ): Promise<void> {
+    const conversions = kind === 'conversions';
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, subject);
+    if (access === 'denied') {
+      throw new AuthorizationError(conversions ? LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE : LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE, {
+        operation,
+        service: 'campaign_controller',
+        path: req.path,
+        code: conversions ? LINKEDIN_CONVERSIONS_RESTRICTED_CODE : LINKEDIN_AUDIENCES_RESTRICTED_CODE,
+      });
+    }
+    if (access === 'unverified') {
+      const message = conversions ? LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE : LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE;
+      const code = conversions ? LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE : LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE;
+      throw new MicroserviceError(message, 503, code, { operation, service: 'campaign_controller', clientMessage: message });
+    }
+  }
+
+  /**
    * Whether the caller is a cross-foundation principal: a ROOT writer, or a holder of ROOT
    * `global_marketing_ops`. The test for the shared-account monitor reads (the conversion-action
    * picker answers on the project's own `global_marketing_ops` instead, as campaign-service does). Both
@@ -6609,13 +7324,19 @@ export class CampaignController {
     );
   }
 
-  /** `unservedMetaAssetField`'s LinkedIn sibling: the first `linkedInConfig.variants[i].imageAssetId` this deployment cannot honour. */
+  /**
+   * `unservedMetaAssetField`'s LinkedIn sibling: the first `linkedInConfig.variants[i].imageAssetId`, or else
+   * `linkedInConfig.textAds[i].imageAssetId` (#5764 row 19), this deployment cannot honour.
+   */
   private unservedLinkedInAssetField(body: CampaignCreateRequest): string | null {
     if (canUseLinkedInCreativeAssets()) return null;
     const config: unknown = body?.linkedInConfig;
-    if (config === null || typeof config !== 'object' || !('variants' in config) || !Array.isArray(config.variants)) return null;
-    const index = config.variants.findIndex((variant: unknown) => variant !== null && typeof variant === 'object' && 'imageAssetId' in variant);
-    return index === -1 ? null : `linkedInConfig.variants[${index}].imageAssetId`;
+    if (config === null || typeof config !== 'object') return null;
+    if ('variants' in config && Array.isArray(config.variants)) {
+      const index = config.variants.findIndex((variant: unknown) => variant !== null && typeof variant === 'object' && 'imageAssetId' in variant);
+      if (index !== -1) return `linkedInConfig.variants[${index}].imageAssetId`;
+    }
+    return linkedInTextAdAssetField(config);
   }
 
   /**
@@ -6843,7 +7564,14 @@ export class CampaignController {
    * builder). Keys with no config are omitted rather than sent as null: the dispatcher treats an
    * absent config as "not selected", and a null one as a malformed selection.
    */
-  private createConfigEnvelope(body: CampaignCreateRequest, linkedInAdAccountId: string | null = null): Record<string, unknown> {
+  private createConfigEnvelope(
+    body: CampaignCreateRequest,
+    linkedInAdAccountId: string | null = null,
+    metaTargeting: MetaTargeting | null = null,
+    metaAdOptions: MetaAdOptions = {},
+    metaLeadFormIdToSend: string | null = null,
+    metaDelivery: MetaDeliveryOptions = {}
+  ): Record<string, unknown> {
     const envelope: Record<string, unknown> = {};
     if (body?.hsToken) envelope['hsToken'] = body.hsToken;
 
@@ -6854,7 +7582,7 @@ export class CampaignController {
     if (linkedInConfig) envelope['linkedInConfig'] = linkedInConfig;
     if (body?.redditConfig) envelope['redditConfig'] = body.redditConfig;
 
-    const metaConfig = this.buildMetaConfig(body);
+    const metaConfig = this.buildMetaConfig(body, metaTargeting, metaAdOptions, metaLeadFormIdToSend, metaDelivery);
     if (metaConfig) envelope['metaConfig'] = metaConfig;
 
     const microsoftConfig = this.buildMicrosoftConfig(body);
@@ -9293,6 +10021,30 @@ export class CampaignController {
    *    removal only by `linkedInTargetingEditRefusal` in `createCampaign` — it narrows that one
    *    profile in the catalogue and is then dropped. Absent, the catalogue goes out exactly as
    *    configured, as before.
+   *
+   * 4. Every other key goes out as it came, which is safe only because `createCampaign` has already refused any key
+   *    outside the request's own top-level, variant and text ad fields (`linkedInConfigKeyRefusal`, #5764).
+   *
+   * 5. A variant's ad name, description and call to action go out only as `compactLinkedInVariantFields` checked and
+   *    compacted them (#5764 rows 16–17): the name normalized, the call to action upper-cased, a blank one dropped.
+   *
+   * 6. `geoTargets` goes out with the Germany and United Kingdom URNs the old shared map resolved wrongly corrected,
+   *    and a repeat dropped (`correctLinkedInGeoTargets`, LFXV2-2665), for a stale tab or a direct caller.
+   *
+   * 7. `format` and `textAds` (#5764 row 19) go out as they came, once `linkedInTextAdsRefusal` passed them:
+   *    campaign-service normalizes each text ad's copy itself, as it does a variant's.
+   *
+   * 8. `targeting` (#5764 rows 8–11) goes out as it came, once `linkedInTargetingRefusal` passed it against the same
+   *    `employerExclusions` sent here: campaign-service drops duplicates and merges those exclusions itself.
+   *
+   * 9. `objective` and `conversions` (#5764 rows 2 and 4) go out as they came, once `linkedInObjectiveRefusal` passed
+   *    them: campaign-service drops repeated conversion rule ids itself.
+   *
+   * 10. A variant's `videoAssetId` (#5764 row 18) goes out as it came, once `linkedInVideoVariantsRefusal` passed it:
+   *    campaign-service trims it itself.
+   *
+   * 11. `bidding.targetAmount` (campaign-service #674) goes out as it came, inside `bidding`, once
+   *    `linkedInTargetCostRefusal` passed it.
    */
   private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;
@@ -9307,12 +10059,23 @@ export class CampaignController {
     delete rest['selectedAdAccountId'];
     if (adAccountId !== null) rest['adAccountId'] = adAccountId;
     delete rest['targetingProfileEdit'];
+    // Germany and the United Kingdom as the old shared map resolved them, corrected (LFXV2-2665).
+    if ('geoTargets' in rest) rest['geoTargets'] = correctLinkedInGeoTargets(rest['geoTargets']);
+    if (Array.isArray(rest['variants'])) rest['variants'] = rest['variants'].map((variant: unknown) => this.linkedInVariantToForward(variant));
 
     return {
       ...rest,
       targetingProfiles: edit ? this.linkedInProfilesWithEdit(runtime.targetingProfiles, edit) : runtime.targetingProfiles,
       employerExclusions: runtime.employerExclusions,
     };
+  }
+
+  /** One variant as it goes out: its ad name, description and call to action replaced by their compacted form. */
+  private linkedInVariantToForward(variant: unknown): unknown {
+    if (variant === null || typeof variant !== 'object' || Array.isArray(variant)) return variant;
+    const record = variant as Record<string, unknown>;
+    const rest = Object.fromEntries(Object.entries(record).filter(([key]) => key !== 'name' && key !== 'description' && key !== 'callToAction'));
+    return { ...rest, ...compactLinkedInVariantFields(record) };
   }
 
   /**
@@ -9381,12 +10144,209 @@ export class CampaignController {
    * does no FX conversion)". On a non-USD Meta account this spends the number in that account's
    * currency. Not fixable here (no FX anywhere in campaign-service, and the account currency is
    * not exposed to this application); see the fuller note on `buildGoogleAdsConfig`.
+   *
+   * The request's own `targeting` is never forwarded: only the block `metaTargetingToForward` checked and
+   * compacted (#5905), and otherwise nothing. Likewise the call to action, conversion event and
+   * optimization goal: only what `metaAdOptionsToForward` checked (#5934), and the lead form: only the id
+   * `metaLeadFormToForward` checked (#5940), and the ad schedule and frequency cap: only what
+   * `metaDeliveryOptionsToForward` checked (#5904 row 5).
    */
-  private buildMetaConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+  private buildMetaConfig(
+    body: CampaignCreateRequest,
+    targeting: MetaTargeting | null = null,
+    adOptions: MetaAdOptions = {},
+    leadFormId: string | null = null,
+    delivery: MetaDeliveryOptions = {}
+  ): Record<string, unknown> | null {
     if (!body?.metaConfig) return null;
 
     const { budgetUsd, ...rest } = body.metaConfig;
-    return { ...rest, budget: budgetUsd };
+    delete rest.targeting;
+    delete rest.leadFormId;
+    delete rest.adSchedule;
+    delete rest.frequencyCap;
+    for (const { key } of META_AD_OPTION_FIELDS) delete rest[key];
+    return {
+      ...rest,
+      budget: budgetUsd,
+      ...(targeting ? { targeting } : {}),
+      ...adOptions,
+      ...(leadFormId !== null ? { leadFormId } : {}),
+      ...delivery,
+    };
+  }
+
+  /**
+   * The `metaConfig.adSchedule` and `frequencyCap` a create sends (#5904 row 5):
+   *
+   * - either under another spelling of its key (`metaDeliveryKeyVariant`): 400, whatever the flag. campaign-service
+   *   decodes keys ignoring case, so it would otherwise reach it past every check below;
+   * - a field present (anything but absent or null) while its flag is off (`canSetMetaAdSchedule`,
+   *   `canSetMetaFrequencyCap`): 400, never a silent drop. Dropping a schedule would run the ads around the clock;
+   * - a schedule or cap that breaks campaign-service's rules (`metaAdScheduleRefusal`, `metaFrequencyCapRefusal`, the
+   *   tab's own rules): 400 naming the field;
+   * - otherwise only the known fields, the schedule's days de-duplicated and sorted.
+   */
+  private metaDeliveryOptionsToForward(body: CampaignCreateRequest): MetaDeliveryOptions {
+    const meta = metaConfigRecord(body?.metaConfig);
+    if (!meta) return {};
+    const context = { operation: 'campaign_create', service: 'campaign_controller' };
+    const variant = metaDeliveryKeyVariant(meta);
+    if (variant !== null) throw ServiceValidationError.forField(`metaConfig.${variant}`, `Send it as metaConfig.${variant}, spelled exactly.`, context);
+    const refusal =
+      metaDeliveryFlagRefusal(meta, { adSchedule: canSetMetaAdSchedule(), frequencyCap: canSetMetaFrequencyCap() }) ??
+      metaAdScheduleRefusal(meta) ??
+      metaFrequencyCapRefusal(meta);
+    if (refusal !== null) throw ServiceValidationError.forField(refusal.field, refusal.message, context);
+    return compactMetaDeliveryOptions(meta);
+  }
+
+  /**
+   * The `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal` a create sends (#5934):
+   *
+   * - a field present (anything but absent or null) while its flag is off (`canSetMetaCallToAction`, ...):
+   *   400, never a silent drop. The form never sends it in that state, so it comes from a tab opened while
+   *   the flag was on; dropping it would create ads with a button or goal the operator did not choose;
+   * - a value outside campaign-service's list, on an objective it does not apply to, or LANDING_PAGE_VIEWS
+   *   with manual bidding (`metaAdOptionsRefusal`, the tab's own rules): 400 naming the field;
+   * - otherwise each value trimmed and upper-cased, a blank one dropped as "Not set".
+   */
+  private metaAdOptionsToForward(body: CampaignCreateRequest): MetaAdOptions {
+    const meta = metaConfigRecord(body?.metaConfig);
+    if (!meta) return {};
+    const operation = 'campaign_create';
+    const enabled: Record<MetaAdOptionKey, () => boolean> = {
+      callToAction: canSetMetaCallToAction,
+      conversionEvent: canSetMetaConversionEvent,
+      optimizationGoal: canSetMetaOptimizationGoal,
+    };
+    for (const field of META_AD_OPTION_FIELDS) {
+      if (meta[field.key] !== undefined && meta[field.key] !== null && !enabled[field.key]()) {
+        throw ServiceValidationError.forField(`metaConfig.${field.key}`, metaAdOptionOffMessage(field), { operation, service: 'campaign_controller' });
+      }
+    }
+    const manualBidding = (meta['bidding'] as { strategy?: unknown } | undefined)?.strategy === 'manual';
+    const refusal = metaAdOptionsRefusal(meta, meta['objective'], manualBidding);
+    if (refusal !== null) {
+      throw ServiceValidationError.forField(refusal.field, refusal.message, { operation, service: 'campaign_controller' });
+    }
+    return compactMetaAdOptions(meta);
+  }
+
+  /**
+   * The `metaConfig.leadFormId` a create sends (#5940), or `null` to send none.
+   *
+   * - the form under any other spelling of the key (`hasMetaLeadFormKeyVariant`): 400, whatever the flag.
+   *   campaign-service decodes keys ignoring case, so it would otherwise pass every check below;
+   * - a form present (anything but absent or null) while lead forms are off (`canSetMetaLeadForm`): 400, never a
+   *   silent drop. Dropping it would create a website-traffic campaign where the operator chose a lead ad;
+   * - a form that breaks campaign-service's rules (`metaLeadFormRefusal`: the id shape, the `leads` objective,
+   *   no manual bidding, a call to action a form can carry): 400 naming the field;
+   * - a form from a caller without `global_marketing_ops` on the project: 403; a check that cannot be made: 503.
+   *   A project without its own Meta connection uses the shared LF Page, which holds every foundation's forms,
+   *   and campaign-service checks the same relation (lfx-v2-campaign-service#550);
+   * - otherwise the trimmed id, or `null` for a blank "Not set".
+   */
+  private async metaLeadFormToForward(req: Request, projectSlug: string, body: CampaignCreateRequest): Promise<string | null> {
+    const operation = 'campaign_create';
+    const meta = metaConfigRecord(body?.metaConfig);
+    if (hasMetaLeadFormKeyVariant(meta)) {
+      throw ServiceValidationError.forField('metaConfig.leadFormId', 'Send the lead form as metaConfig.leadFormId, spelled exactly.', {
+        operation,
+        service: 'campaign_controller',
+      });
+    }
+    const raw = meta?.['leadFormId'];
+    if (raw === undefined || raw === null) return null;
+    if (!canSetMetaLeadForm()) {
+      throw ServiceValidationError.forField('metaConfig.leadFormId', META_LEAD_FORMS_OFF_MESSAGE, { operation, service: 'campaign_controller' });
+    }
+    const manualBidding = (meta?.['bidding'] as { strategy?: unknown } | undefined)?.strategy === 'manual';
+    const refusal = metaLeadFormRefusal(meta, manualBidding);
+    if (refusal !== null) {
+      throw ServiceValidationError.forField(refusal.field, refusal.message, { operation, service: 'campaign_controller' });
+    }
+    const id = metaLeadFormId(meta);
+    if (id === null) return null;
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the Meta lead form');
+    if (access === 'denied') {
+      throw new AuthorizationError(META_LEAD_FORMS_RESTRICTED_MESSAGE, {
+        operation,
+        service: 'campaign_controller',
+        path: req.path,
+        code: META_LEAD_FORMS_RESTRICTED_CODE,
+      });
+    }
+    if (access === 'unverified') {
+      throw new MicroserviceError(META_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE, 503, META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE, {
+        operation,
+        service: 'campaign_controller',
+        clientMessage: META_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE,
+      });
+    }
+    return id;
+  }
+
+  /**
+   * The `metaConfig.targeting` a create sends (#5905, and #5904 row 4's detailed fields), or `null` to send none.
+   *
+   * - a field this deployment does not accept (`metaTargetingFlagRefusal`): 400, never a silent drop. The audience
+   *   flag covers age, gender, custom audiences and Advantage+ (and an empty block); interests, behaviors with job
+   *   titles, and languages each have their own, as campaign-service's `checkMetaTargeting`, so a block with only
+   *   detailed fields passes while audience targeting is off. The form never sends a field that is off, so a block
+   *   here comes from a tab opened while the flag was on (a rollout or a rollback); dropping it would create the
+   *   campaign without the audience the operator chose;
+   * - a block that breaks campaign-service's rules (`metaAudienceTargetingRefusal`, `metaDetailedTargetingRefusal`,
+   *   and `metaDeviceOsRefusal` for devices and operating systems, #5904 row 6): 400 naming the field;
+   * - a block naming custom audiences from a caller without `global_marketing_ops` on the project: 403;
+   *   a check that cannot be made: 503 — the Meta ad account is shared by every foundation, and
+   *   campaign-service checks the same relation (lfx-v2-campaign-service#550). Detailed fields are Meta taxonomy,
+   *   so they need no such check;
+   * - otherwise the block with every default dropped, or `null` when nothing is left.
+   */
+  private async metaTargetingToForward(req: Request, projectSlug: string, body: CampaignCreateRequest): Promise<MetaTargeting | null> {
+    const operation = 'campaign_create';
+    const raw: unknown = body?.metaConfig?.targeting;
+    if (raw === undefined || raw === null) return null;
+    const flagRefusal = metaTargetingFlagRefusal(raw, {
+      audience: canSetMetaAudienceTargeting(),
+      interest: canSetMetaInterestTargeting(),
+      behavior: canSetMetaBehaviorTargeting(),
+      locale: canSetMetaLocaleTargeting(),
+      device: canSetMetaDeviceTargeting(),
+      os: canSetMetaOsTargeting(),
+    });
+    if (flagRefusal !== null) {
+      throw ServiceValidationError.forField(flagRefusal.field, flagRefusal.message, { operation, service: 'campaign_controller' });
+    }
+    const refusal =
+      metaAudienceTargetingRefusal(raw) ??
+      metaDetailedTargetingRefusal(raw) ??
+      metaDeviceOsRefusal(raw, body.metaConfig?.objective, body.metaConfig?.placements);
+    if (refusal !== null) {
+      throw ServiceValidationError.forField(refusal.field, refusal.message, { operation, service: 'campaign_controller' });
+    }
+    const audience = compactMetaAudienceTargeting(raw as MetaAudienceTargeting);
+    const detailed = compactMetaDetailedTargeting(raw);
+    const targeting: MetaTargeting | null = audience === null && detailed === null ? null : { ...audience, ...detailed };
+    if (!metaTargetingNamesCustomAudiences(audience)) return targeting;
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the Meta custom audiences');
+    if (access === 'denied') {
+      throw new AuthorizationError(META_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE, {
+        operation,
+        service: 'campaign_controller',
+        path: req.path,
+        code: META_CUSTOM_AUDIENCES_RESTRICTED_CODE,
+      });
+    }
+    if (access === 'unverified') {
+      throw new MicroserviceError(META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE, 503, META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE, {
+        operation,
+        service: 'campaign_controller',
+        clientMessage: META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
+      });
+    }
+    return targeting;
   }
 
   /**

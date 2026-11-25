@@ -61,7 +61,7 @@ export class ProfileLinuxEmailComponent {
   public savingForward = signal(false);
 
   // Tracks the last loaded/saved forward-to value so we can detect unsaved changes.
-  private readonly savedForwardTo = signal<string>('');
+  protected readonly savedForwardTo = signal<string>('');
 
   // Data signals
   public data: Signal<LinuxAliasData | null> = this.initData();
@@ -79,9 +79,18 @@ export class ProfileLinuxEmailComponent {
   // itself is unconfigured, since there's nowhere to send the client to re-authorize.
   public forwardAuthorizeUrl = computed(() => this.data()?.authorizeUrl ?? '');
 
-  // Forward is genuinely unset (not unreadable) — the FORWARD_SET_FAILED recovery path and the
-  // impersonation read-only path both land here. Drives an honest hint on the still-usable select.
-  public forwardNotSet = computed(() => this.state() === 'claimed' && !this.data()?.forwardTo && !this.data()?.forwardAuthRequired);
+  // A null forwardTo specifically because the BFF suppressed it for impersonation, not because it's
+  // unset or unreadable for any other reason (see LinuxAliasData.forwardUnavailableDuringImpersonation).
+  // Read directly from this response rather than the separately-sourced `impersonating` signal above,
+  // so the "why is this null" messaging can't drift out of sync with what this specific request
+  // actually did (lfx-self-serve-ops#2006).
+  public forwardUnavailableDuringImpersonation = computed(() => this.state() === 'claimed' && !!this.data()?.forwardUnavailableDuringImpersonation);
+
+  // Forward is genuinely unset (not unreadable, not impersonation-suppressed) — the
+  // FORWARD_SET_FAILED recovery path lands here too. Drives an honest hint on the still-usable select.
+  public forwardNotSet = computed(
+    () => this.state() === 'claimed' && !this.data()?.forwardTo && !this.data()?.forwardAuthRequired && !this.data()?.forwardUnavailableDuringImpersonation
+  );
 
   // True only when the user has changed the forward-to selection from its saved value.
   public forwardDirty: Signal<boolean> = this.initForwardDirty();
@@ -228,9 +237,8 @@ export class ProfileLinuxEmailComponent {
     }
   }
 
-  // Private methods
-
-  private handleError(err: HttpErrorResponse, fallback: string): void {
+  // Protected so Account & Settings can leave for Flow C without its unsaved-changes prompt.
+  protected handleError(err: HttpErrorResponse, fallback: string): void {
     // Flow C: redirect to authorize when a management token is required.
     if (err.error?.error === 'management_token_required' && err.error?.authorize_url) {
       if (isPlatformBrowser(this.platformId)) {
@@ -240,6 +248,8 @@ export class ProfileLinuxEmailComponent {
     }
     this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || fallback });
   }
+
+  // Private methods
 
   private initForwardDirty(): Signal<boolean> {
     // Reset coupling: after a successful save, updateForward() → refresh.next() →

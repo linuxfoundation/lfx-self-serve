@@ -5,7 +5,7 @@
   <!-- Page Header -->
   <lfx-page-header
     [title]="companyName() && contentVisible() ? 'Events — ' + companyName() : 'Events'"
-    description="Your company's event footprint across LF events."
+    [description]="pageCopy().description"
     titleTestId="org-events-title"
     descriptionTestId="org-events-subtitle"
     data-testid="org-events-header">
@@ -31,6 +31,20 @@
       <p-skeleton height="24rem" />
     </div>
   } @else {
+    @if (rollUpNotices().length > 0) {
+      <div
+        class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        role="status"
+        data-testid="org-events-roll-up-notice">
+        <i class="fa-light fa-circle-info mt-0.5" aria-hidden="true"></i>
+        <div class="flex flex-col gap-1">
+          @for (notice of rollUpNotices(); track notice) {
+            <p>{{ notice }}</p>
+          }
+        </div>
+      </div>
+    }
+
     <!-- Stat Strip -->
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-events-stat-strip">
       <div class="grid w-full grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
@@ -127,6 +141,18 @@
               [ngModel]="searchTerm()"
               (ngModelChange)="searchTerm.set($event)" />
           </div>
+          @if (isRollUp()) {
+            <div class="w-full sm:w-52">
+              <lfx-select
+                [form]="filterForm"
+                control="company"
+                size="small"
+                [options]="companyOptions()"
+                styleClass="w-full"
+                ariaLabel="Filter by company"
+                dataTest="org-events-company-filter" />
+            </div>
+          }
           <div class="w-full sm:w-48" data-testid="org-events-status-filter">
             <label for="org-events-status-id" class="sr-only">Filter by status</label>
             <p-select
@@ -176,16 +202,18 @@
               tooltipPosition="top"
               dataTest="org-events-participation-select" />
           </div>
-          <div class="w-full sm:w-52">
-            <lfx-select
-              [form]="filterForm"
-              control="scope"
-              size="small"
-              [options]="scopeOptions"
-              styleClass="w-full"
-              [ariaLabel]="scopeLabel"
-              dataTest="org-events-scope-filter" />
-          </div>
+          @if (!isRollUp()) {
+            <div class="w-full sm:w-52">
+              <lfx-select
+                [form]="filterForm"
+                control="scope"
+                size="small"
+                [options]="scopeOptions"
+                styleClass="w-full"
+                [ariaLabel]="scopeLabel"
+                dataTest="org-events-scope-filter" />
+            </div>
+          }
           @if (canClearFilters()) {
             <button
               type="button"
@@ -209,6 +237,8 @@
               [sortField]="upcomingSortField()"
               [sortOrder]="upcomingSortOrder()"
               [attendeesCaption]="upcomingAttendeesCaption()"
+              [rollUp]="isRollUp()"
+              [emptyStateSubtitle]="pageCopy().upcomingEmpty"
               (pageChange)="onUpcomingPageChange($event)"
               (sortChange)="onUpcomingSortChange($event)"
               (retry)="retryLoad()"
@@ -227,9 +257,10 @@
               [sortField]="pastSortField()"
               [sortOrder]="pastSortOrder()"
               [attendeesCaption]="pastAttendeesCaption()"
+              [rollUp]="isRollUp()"
               [showAction]="false"
               emptyStateTitle="No past events"
-              emptyStateSubtitle="No past events were found for your company."
+              [emptyStateSubtitle]="pageCopy().pastEmpty"
               emptyStateIcon="fa-light fa-calendar-check"
               (pageChange)="onPastPageChange($event)"
               (sortChange)="onPastSortChange($event)"
@@ -250,6 +281,8 @@
       [eventName]="activeDrawerEvent()?.eventName ?? ''"
       [attendeeCount]="activeDrawerEvent()?.orgAttendeeCount ?? 0"
       [participation]="drawerParticipation()"
+      [company]="activeDrawerEvent()?.organization?.accountId ?? ''"
+      [companyLabel]="activeDrawerEvent()?.organization?.name ?? ''"
       data-testid="org-events-attendees-drawer" />
     <lfx-event-speakers-drawer
       [visible]="speakersDrawerVisible()"
@@ -258,6 +291,8 @@
       [eventName]="activeDrawerEvent()?.eventName ?? ''"
       [acceptedCount]="activeDrawerEvent()?.orgSpeakerAcceptedCount ?? 0"
       [submittedCount]="activeDrawerEvent()?.orgSpeakerSubmittedCount ?? 0"
+      [company]="activeDrawerEvent()?.organization?.accountId ?? ''"
+      [companyLabel]="activeDrawerEvent()?.organization?.name ?? ''"
       data-testid="org-events-speakers-drawer" />
   }
 </div>

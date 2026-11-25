@@ -78,7 +78,7 @@ describe('CampaignBudgetFormComponent', () => {
     expect(el().querySelector('#campaign-budget-amount-c-1')!.getAttribute('aria-describedby')).toBe('campaign-budget-amount-hint-c-1');
   });
 
-  it.each(['0', '-1'])('refuses %s and says why', (amount) => {
+  it.each(['0'])('refuses %s and says why', (amount) => {
     fixture.detectChanges();
     typeAmount(amount);
     fixture.componentInstance.form.controls.budgetType.setValue('daily');

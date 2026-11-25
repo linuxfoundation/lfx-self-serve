@@ -13,6 +13,7 @@
 // deletion or anonymization request could require removing must never be
 // inside the hashed bytes, or removing it would drop the revision.
 
+import type { MKTG_APPROVED_CURRENT_CHANGED } from '../constants/mktg-document-store.constants';
 import type { AeoGeoReportSummary } from './aeo-geo.interface';
 import type { MktgRebuildStaleness, MktgRevisionRef } from './mktg-rebuild.interface';
 import type { LinkedinDocumentContent } from './linkedin-post.interface';
@@ -331,10 +332,47 @@ export interface MktgDocumentReadCycle {
   view: MktgRevisionResponse | null;
 }
 
+/**
+ * Optional for older clients; the current selection the writer actually reviewed: its revision id and the instant it
+ * was selected (`current.changedAt`). The instant catches a change that leaves the id alone, such as an approval of
+ * the current revision itself.
+ */
+export interface MktgApproveRevisionRequest {
+  expectedCurrentId?: string;
+  expectedCurrentChangedAt?: string;
+}
+
 /** Body of `POST /api/mktg-agents/documents/:agentKey/:documentId/restore`. */
-export interface MktgRestoreRevisionRequest {
+export interface MktgRestoreRevisionRequest extends MktgApproveRevisionRequest {
   project: string;
   revisionId: string;
+}
+
+/**
+ * Safe conflict projection: display names only, no stored subject, email, username or manifest.
+ * `selectedBy`/`selectedAt`: who made this revision current and when. `approvedBy`/`approvedAt`: set only when that
+ * selection was the revision's approval; null for a draft, or for a revision approved earlier and made current later.
+ */
+export interface MktgDocumentCurrentConflictResponse {
+  code: typeof MKTG_APPROVED_CURRENT_CHANGED;
+  current: {
+    revisionId: string;
+    number: number;
+    approvedBy: string | null;
+    approvedAt: string | null;
+    selectedBy: string | null;
+    selectedAt: string | null;
+  } | null;
+}
+
+/** The attempted selection action; a conflict never automatically repeats it. */
+export type MktgDocumentCurrentConflictAction = 'approve' | 'restore';
+
+/** In-place conflict presentation; an absent selection has no invented revision link. */
+export interface MktgDocumentCurrentConflictNotice {
+  message: string;
+  buttonLabel: string;
+  revisionId: string | null;
 }
 
 /** Response of Make current (the compatibility route remains `/restore`): no new revision. */

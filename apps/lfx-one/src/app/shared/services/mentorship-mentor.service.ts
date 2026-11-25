@@ -7,6 +7,7 @@ import {
   MentorshipMentorApplicationNoteUpdate,
   MentorshipMentorHasProfileResponse,
   MentorshipMentorInviteDecision,
+  MentorshipMentorInviteDetails,
   MentorshipMentorInviteResponseRequest,
   MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
@@ -62,6 +63,16 @@ export class MentorshipMentorService {
         return of({ hasProfile: false });
       })
     );
+  }
+
+  /**
+   * As `hasMentorProfile`, but a failed check is logged and rethrown, for the invite page, which must not read a
+   * failure as "no profile".
+   */
+  public checkMentorProfile(): Observable<MentorshipMentorHasProfileResponse> {
+    return this.http
+      .get<MentorshipMentorHasProfileResponse>('/api/mentorship/mentor/has-profile')
+      .pipe(take(1), catchError(this.rethrowError('checkMentorProfile')));
   }
 
   /**
@@ -127,6 +138,14 @@ export class MentorshipMentorService {
       take(1),
       tap(() => this.clearMentorCaches())
     );
+  }
+
+  /** Names the program the invite email's token is for. A failure is logged and rethrown, so the page can keep its generic copy. */
+  public getMentorInvite(token: string): Observable<MentorshipMentorInviteDetails> {
+    const body: MentorshipMentorInviteResponseRequest = { token };
+    return this.http
+      .post<MentorshipMentorInviteDetails>('/api/mentorship/mentor/invites/details', body)
+      .pipe(take(1), catchError(this.rethrowError('getMentorInvite')));
   }
 
   /** Accepts or declines a mentor invitation with the token from the invite email. Failures propagate raw; a success drops the cached requests. */

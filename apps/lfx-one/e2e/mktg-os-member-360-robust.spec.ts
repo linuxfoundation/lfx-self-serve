@@ -4,8 +4,9 @@
 import { expect, test } from '@playwright/test';
 import { createHash } from 'node:crypto';
 
-import { json, MEMBER_360_DOCUMENT_ID, openMember360, setupMember360 } from './helpers/member-360.helper';
+import { json, MEMBER_360_DOCUMENT_ID, member360Progress, openMember360, setupMember360, stubMember360Progress } from './helpers/member-360.helper';
 import { member360Revision } from './fixtures/mock-data/member-360.mock';
+import { MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 
 test.use({ storageState: { cookies: [], origins: [] } });
 test.describe.configure({ timeout: 60000 });
@@ -52,6 +53,7 @@ for (const width of [1440, 1280, 390]) {
     if (!envelope) throw new Error('Member 360 fixture is missing');
     envelope.tabs.member_ranking[1].days_to_renewal = 120;
     envelope.tabs.member_ranking[1].annual_value = null;
+    envelope.tabs.member_ranking.forEach((row, index) => (row.rank = 193 + index));
     envelope.content_sha256 = createHash('sha256').update(JSON.stringify(envelope.tabs)).digest('hex');
     await page.route(`**/api/mktg-agents/documents/member-360/${MEMBER_360_DOCUMENT_ID}**`, (route) => json(route, view));
     await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
@@ -113,7 +115,20 @@ for (const width of [1440, 1280, 390]) {
       expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
       await expect(cell).not.toHaveCSS('text-overflow', 'ellipsis');
     }
-    await page.getByTestId('member-360-expand-1').click();
+    // A three-digit rank stays on one line inside its column: the cells' break-words once split it digit by digit.
+    for (const rank of await page.getByTestId('member-360-rank').all()) {
+      await expect(rank).toHaveText(/^\s*19\d\s*$/);
+      const fit = await rank.evaluate((element) => {
+        const cell = element.closest('td');
+        if (!cell) throw new Error('Rank cell is missing');
+        const box = element.getBoundingClientRect();
+        const cellBox = cell.getBoundingClientRect();
+        return { height: box.height, lineHeight: parseFloat(getComputedStyle(element).lineHeight), right: box.right, cellRight: cellBox.right };
+      });
+      expect(fit.height).toBeLessThan(fit.lineHeight * 1.5);
+      expect(fit.right).toBeLessThanOrEqual(fit.cellRight);
+    }
+    await page.getByTestId('member-360-expand-193').click();
     for (const heading of ['Gaps', 'Rationale', 'Evidence']) {
       const column = page.getByTestId('member-360-row-detail').getByText(heading, { exact: true });
       await column.scrollIntoViewIfNeeded();
@@ -163,7 +178,33 @@ test('non-writer sees an access message, never a run form', async ({ page }, inf
   await page.screenshot({ path: info.outputPath('no-access.png'), fullPage: true });
 });
 
-test('the document has a loading state, then a recoverable read error', async ({ page }, info) => {
+test('the in-progress view and the Start over intake keep their test-id structure', async ({ page }, info) => {
+  await setupMember360(page);
+  const detail = member360Progress('writing');
+  await page.route('**/api/mktg-agents/documents?*', (route) => json(route, { project: 'sample-project', groups: [], runs: detail.runs }));
+  await stubMember360Progress(page, () => detail);
+  await page.route('**/api/mktg-agents/member-360/result', (route) => json(route, { status: 'pending', activity: detail.runs?.[0]?.activity }));
+  await openMember360(page);
+  // The open run carries the choice: one row, holding the Start over action, beside the activity pane.
+  await expect(page.getByTestId('member-360-generating')).toBeVisible();
+  await expect(page.getByTestId('member-360-run-choice')).toHaveCount(1);
+  await expect(page.getByTestId('member-360-run-choice').getByTestId('member-360-start-over')).toHaveCount(1);
+  await expect(page.getByTestId('member-360-waiting-notice')).toHaveCount(0);
+  await page.getByTestId('member-360-start-over').getByRole('button').click();
+  // Start over: the notice holds the way back, the intake sits beside it, and the activity pane and its choice are gone.
+  const notice = page.getByTestId('member-360-waiting-notice');
+  await expect(notice).toBeVisible();
+  await expect(notice.getByTestId('member-360-waiting-open')).toHaveCount(1);
+  await expect(notice.getByTestId('member-360-waiting-open').getByRole('button')).toBeEnabled();
+  await expect(page.getByTestId('member-360-intake')).toBeVisible();
+  await expect(page.getByTestId('member-360-intake').getByTestId('member-360-run')).toHaveCount(1);
+  await expect(notice.getByTestId('member-360-intake')).toHaveCount(0);
+  await expect(page.getByTestId('member-360-generating')).toHaveCount(0);
+  await expect(page.getByTestId('member-360-run-choice')).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('start-over-structure.png'), fullPage: true });
+});
+
+test('the document has a loading state, then keeps checking a transient read failure on its own with no Retry button', async ({ page }, info) => {
   await setupMember360(page, { stored: true });
   let release: (() => void) | undefined;
   const pending = new Promise<void>((resolve) => {
@@ -177,8 +218,9 @@ test('the document has a loading state, then a recoverable read error', async ({
   await expect(page.getByTestId('mktg-document-view-loading')).toContainText('Loading the document');
   await expect(page.getByTestId('member-360-download')).toHaveCount(0);
   release?.();
-  await expect(page.getByTestId('mktg-document-view-error')).toContainText('could not be loaded');
-  await expect(page.getByTestId('mktg-document-view-retry')).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-refresh-warning')).toContainText(MKTG_POLL_RETRYING_TEXT);
+  await expect(page.getByTestId('mktg-document-view-retry')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-document-view-loading')).toBeVisible();
   await expect(page.getByTestId('member-360-download')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('document-error.png'), fullPage: true });
 });

@@ -8,6 +8,7 @@ import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, DefaultUrlSerializer, provideRouter, Router } from '@angular/router';
+import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingCreateMenuComponent } from '@app/modules/meetings/meeting-composer/meeting-create-menu.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -27,7 +28,7 @@ import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -99,9 +100,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     return component;
   };
 
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2098-12-31T10:00:00Z'));
+  beforeEach(async () => {
     lens = signal<Lens>('me');
     context = signal<ProjectContext | null>(null);
     route.snapshot.queryParamMap = convertToParamMap({});
@@ -128,6 +127,10 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
         { provide: DialogService, useValue: { open: vi.fn() } },
       ],
     });
+    TestBed.overrideComponent(MeetingCardComponent, { set: { template: '', imports: [] } });
+    await TestBed.compileComponents();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2098-12-31T10:00:00Z'));
     location.replaceState.mockClear();
     location.path.mockReturnValue('/project/meetings?project=scope');
     users = TestBed.inject(UserService);
@@ -407,6 +410,38 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     respond(component, 'all');
     expect(ids(component)).toEqual(['unknown', 'pending', 'owned', 'maybe', 'declined', 'legacy', 'disabled-unknown']);
     http.expectNone('/api/user/meetings');
+  });
+
+  it('keeps an organizer card mounted after self-removal and hides removed invitees without reloading the list', () => {
+    const organizer = row('organizer', { organizer: true, invited: true, registrant_count: 3 });
+    const invitee = row('invitee', { organizer: false, invited: true });
+    const dashboard = mount([organizer, invitee]);
+    vi.spyOn(meetings, 'getMeetingAttachments').mockReturnValue(of([]));
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', organizer);
+    fixture.detectChanges();
+    flush();
+    const card = fixture.componentInstance;
+    const refresh = vi.spyOn(dashboard, 'refreshMeetings');
+    card.meetingDeleted.subscribe(() => dashboard.refreshMeetings());
+    const confirmation = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    card.confirmLeaveMeeting();
+    confirmation.mock.calls[0][0].accept?.();
+    http.expectOne('/api/meetings/organizer/registrants/self').flush({ removed_registrant_ids: ['synthetic-registrant'], remaining_registrant_ids: [] });
+    flush();
+    expect(card.guestCount()).toBe(2);
+    expect(fixture.componentInstance).toBe(card);
+    expect(refresh).not.toHaveBeenCalled();
+    expect(dashboard.meetingsLoading()).toBe(false);
+    expect(ids(dashboard)).toEqual(['organizer', 'invitee']);
+    http.expectNone('/api/user/meetings');
+
+    meetings.markRegistrationRemoved('invitee', ['synthetic-registrant']);
+    flush();
+    expect(ids(dashboard)).toEqual(['organizer']);
+    expect(dashboard.meetingsLoading()).toBe(false);
+    expect(card.guestCount()).toBe(2);
+    fixture.destroy();
   });
 
   it('keeps meetings without an active registration in All meetings but out of Needs response', () => {

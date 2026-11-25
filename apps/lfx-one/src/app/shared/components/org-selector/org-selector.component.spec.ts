@@ -5,11 +5,12 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
-import { Account, DisplayOrgItem, OrgItem, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
+import { Account, DisplayOrgItem, OrgItem, OrgRelatedCompanyRow, OrgRollUpFamily, OrgRollUpSetOrg, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, orgRollUpAccount } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { LensService } from '@services/lens.service';
 import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -43,6 +44,8 @@ describe('OrgSelectorComponent.selectItem', () => {
   let refreshList: ReturnType<typeof vi.fn>;
   let previewingMenuLens: WritableSignal<boolean>;
   let noteAddressed: ReturnType<typeof vi.fn>;
+  let noteViewModeAddressed: ReturnType<typeof vi.fn>;
+  let noteFullAccessAddressed: ReturnType<typeof vi.fn>;
 
   const pick = (item: OrgItem): void => (fixture.componentInstance as unknown as { selectItem(item: OrgItem): void }).selectItem(item);
 
@@ -59,6 +62,8 @@ describe('OrgSelectorComponent.selectItem', () => {
     refreshList = vi.fn();
     previewingMenuLens = signal(false);
     noteAddressed = vi.fn();
+    noteViewModeAddressed = vi.fn();
+    noteFullAccessAddressed = vi.fn();
     const empty = signal(new Set<string>());
 
     await TestBed.configureTestingModule({
@@ -66,6 +71,10 @@ describe('OrgSelectorComponent.selectItem', () => {
       providers: [
         provideNoopAnimations(),
         { provide: OrgClaOnlyAccessService, useValue: { noteAddressed, isClaOnly: () => false } },
+        {
+          provide: OrgLensViewModeService,
+          useValue: { noteAddressed: noteViewModeAddressed, noteFullAccessAddressed, isEmployeeView: signal(false), isFullAccessReader: signal(false) },
+        },
         {
           provide: AccountContextService,
           useValue: {
@@ -88,6 +97,7 @@ describe('OrgSelectorComponent.selectItem', () => {
             selectedRollUpFamily: signal(null),
             isRollUp: signal(false),
             rollUpOrganizationCount: signal(0),
+            relatedCompanies: signal([]),
             selectRollUp: vi.fn(() => false),
           },
         },
@@ -116,6 +126,12 @@ describe('OrgSelectorComponent.selectItem', () => {
             inheritedWriterSet: empty,
             inheritedAuditorSet: empty,
             parentNameByUid: signal(new Map<string, string>()),
+            employeeViewOrgUid: signal<string | null>(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            fullAccessOrgUid: signal<string | null>(null),
+            fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
+            noteEmployeeViewAddressed: vi.fn(),
+            noteFullAccessAddressed: vi.fn(),
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnNotFound } },
@@ -153,21 +169,38 @@ describe('OrgSelectorComponent.selectItem', () => {
   it('records a CLA-only row as CLA-only before the switch navigates', () => {
     pick({ ...rowB, slug: null, claOnly: true });
 
-    expect(noteAddressed).toHaveBeenCalledWith(UID_B, true);
+    expect(noteAddressed).toHaveBeenCalledWith(UID_B, true, false);
     expect(noteAddressed.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
+  });
+
+  // #5845 — the path guard skips the resolver for a known slug, so the pick must carry the row's mode answers.
+  it('records an employee-view row, and clears the full-access note, before the switch navigates', () => {
+    pick({ ...rowB, slug: null, employeeView: true });
+
+    expect(noteViewModeAddressed).toHaveBeenCalledWith(UID_B, true);
+    expect(noteFullAccessAddressed).toHaveBeenCalledWith(UID_B, false);
+    expect(noteViewModeAddressed.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
+  });
+
+  it('records a full-access row before the switch navigates, and not as employee-view', () => {
+    pick({ ...rowB, slug: null, fullAccess: true });
+
+    expect(noteFullAccessAddressed).toHaveBeenCalledWith(UID_B, true);
+    expect(noteViewModeAddressed).toHaveBeenCalledWith(UID_B, false);
+    expect(noteFullAccessAddressed.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
   });
 
   it('clears any CLA-only note when the picked row is not CLA-only', () => {
     pick(rowB);
 
-    expect(noteAddressed).toHaveBeenCalledWith(UID_B, false);
+    expect(noteAddressed).toHaveBeenCalledWith(UID_B, false, false);
   });
 
   // The same-organization pick returns before switching, and the path guard will not resolve it either.
   it('records a re-pick of the selected CLA-only row without re-selecting it', () => {
     pick({ ...rowA, slug: null, claOnly: true });
 
-    expect(noteAddressed).toHaveBeenCalledWith(UID_A, true);
+    expect(noteAddressed).toHaveBeenCalledWith(UID_A, true, false);
     expect(setAccount).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
   });
@@ -284,6 +317,7 @@ describe('OrgSelectorComponent navbar card', () => {
     inheritedWriters?: string[];
     claManagerOrgs?: string[];
     claOnlyPending?: boolean;
+    employeeViewOrgs?: string[];
   }
 
   const createCard = async ({
@@ -294,6 +328,7 @@ describe('OrgSelectorComponent navbar card', () => {
     inheritedWriters = [],
     claManagerOrgs = [],
     claOnlyPending = false,
+    employeeViewOrgs = [],
   }: CardSetup): Promise<NavbarCardView> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -319,6 +354,7 @@ describe('OrgSelectorComponent navbar card', () => {
             selectedRollUpFamily: signal(null),
             isRollUp: signal(false),
             rollUpOrganizationCount: signal(0),
+            relatedCompanies: signal([]),
             selectRollUp: vi.fn(() => false),
           },
         },
@@ -347,6 +383,13 @@ describe('OrgSelectorComponent navbar card', () => {
             parentNameByUid: signal(new Map([[UID_A, 'Parent Holdings']])),
             claManagerOrgSet: signal(new Set(claManagerOrgs)),
             claManagerLookupFailed: signal(false),
+            employeeViewLookupFailed: signal(false),
+            employeeViewOrgUid: signal<string | null>(employeeViewOrgs[0] ?? null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set(employeeViewOrgs)),
+            fullAccessOrgUid: signal<string | null>(null),
+            fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
+            noteEmployeeViewAddressed: vi.fn(),
+            noteFullAccessAddressed: vi.fn(),
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: vi.fn(), isOnNotFound: vi.fn(() => false) } },
@@ -440,6 +483,37 @@ describe('OrgSelectorComponent navbar card', () => {
       expect(card.displayedItems()[0].roleLabel).toBe('Company Admin Editor');
     });
   });
+
+  describe('an all employee view company (#5845)', () => {
+    const EMPLOYEE_TOOLTIP = 'You work for this company. You can see a read-only summary with no names or email addresses.';
+
+    it('labels a row that is both CLA-only and employee-view as Employee, matching the selected-company copy', async () => {
+      const card = await createCard({ items: [{ ...rowA, claOnly: true, employeeView: true }] });
+
+      expect(card.displayedItems().map((row) => [row.item.uid, row.roleLabel, row.roleTooltip])).toEqual([[UID_A, 'Employee', EMPLOYEE_TOOLTIP]]);
+    });
+
+    it('labels an employee-view row that carries no grant', async () => {
+      const card = await createCard({ items: [{ ...rowA, employeeView: true }] });
+
+      expect(card.displayedItems().map((row) => [row.item.uid, row.roleLabel, row.roleTooltip])).toEqual([[UID_A, 'Employee', EMPLOYEE_TOOLTIP]]);
+    });
+
+    it('labels the card when the selected company is an employee-view company', async () => {
+      const card = await createCard({ employeeViewOrgs: [UID_A] });
+
+      expect(card.selectedRoleLabel()).toBe('Employee');
+      expect(card.selectedRoleTooltip()).toBe(EMPLOYEE_TOOLTIP);
+      expect(card.navbarRoleTooltip()).toBe(EMPLOYEE_TOOLTIP);
+    });
+
+    it('lets a held grant win over the employee-view flag', async () => {
+      const card = await createCard({ items: [{ ...rowA, employeeView: true }], writers: [UID_A], employeeViewOrgs: [UID_A] });
+
+      expect(card.selectedRoleLabel()).toBe('Company Admin Editor');
+      expect(card.displayedItems()[0].roleLabel).toBe('Company Admin Editor');
+    });
+  });
 });
 
 /**
@@ -471,6 +545,8 @@ describe('OrgSelectorComponent family roll-ups', () => {
     listIncomplete(): boolean;
     rollUpTriggerSubtitle(): string;
     selectRollUp(rootUid: string): void;
+    relatedRows(): OrgRelatedCompanyRow[];
+    displayedRows(): OrgSelectorRow[];
   }
 
   const selectRollUpSpy = vi.fn();
@@ -496,6 +572,11 @@ describe('OrgSelectorComponent family roll-ups', () => {
     familiesUnsettled?: boolean;
     /** The deferred CLA-only rows are still on their way. */
     claOnlyPending?: boolean;
+    staffSearch?: string;
+    related?: OrgRollUpSetOrg[];
+    canSelectFor?: boolean;
+    rollUpEnabled?: boolean;
+    writerUids?: string[];
   }): Promise<RollUpView> => {
     selectRollUpSpy.mockReset().mockReturnValue(opts.accepted ?? true);
     navigateSpy.mockReset();
@@ -529,6 +610,9 @@ describe('OrgSelectorComponent family roll-ups', () => {
             selectedRollUpFamily: signal(opts.families.find((family) => family.rootUid === selectedRootUid) ?? null),
             isRollUp: signal(selectedRootUid !== null),
             rollUpOrganizationCount: signal(opts.count ?? 0),
+            relatedCompanies: signal(opts.related ?? []),
+            rollUpEnabled: signal(opts.rollUpEnabled ?? true),
+            canSelectRollUpFor: vi.fn(() => opts.canSelectFor ?? false),
             selectRollUp: selectRollUpSpy,
           },
         },
@@ -541,7 +625,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
             loaded: signal(true),
             hasMore: signal(false),
             upstreamFailed: signal(false),
-            searchTerm: () => signal(''),
+            searchTerm: () => signal(opts.staffSearch ?? ''),
             setSearchTerm: vi.fn(),
             resetAndReload: vi.fn(),
             loadNextPage: vi.fn(),
@@ -550,12 +634,18 @@ describe('OrgSelectorComponent family roll-ups', () => {
         {
           provide: OrgRoleGrantsService,
           useValue: {
-            isStaff: signal(false),
-            writerSet: signal(new Set<string>()),
+            isStaff: signal(opts.staffSearch !== undefined),
+            writerSet: signal(new Set<string>(opts.writerUids ?? [])),
             auditorSet: signal(new Set<string>()),
             inheritedWriterSet: signal(new Set<string>()),
             inheritedAuditorSet: signal(new Set<string>()),
             parentNameByUid: signal(new Map<string, string>()),
+            employeeViewOrgUid: signal<string | null>(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            fullAccessOrgUid: signal<string | null>(null),
+            fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
+            noteEmployeeViewAddressed: vi.fn(),
+            noteFullAccessAddressed: vi.fn(),
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: navigateSpy, navigateToRollUpHome: rollUpHomeSpy, isOnNotFound: onNotFound } },
@@ -682,6 +772,132 @@ describe('OrgSelectorComponent family roll-ups', () => {
   it('agrees with the noun at one company', async () => {
     const view = await create({ families: [], selectedRootUid: UID_A, count: 1 });
     expect(view.rollUpTriggerSubtitle()).toBe('1 company');
+  });
+
+  describe('roll-ups offered by a staff search (#5942)', () => {
+    const charlieSub: OrgItem = { uid: UID_D, accountId: UID_D, name: 'Charlie Labs', logoUrl: null, familyRootUid: UID_C, familyRootName: 'Charlie' };
+    const charlieTop: OrgItem = { uid: UID_C, accountId: UID_C, name: 'Charlie', logoUrl: null, familyRootUid: UID_C, familyRootName: 'Charlie' };
+    const solo: OrgItem = { uid: 'solo', accountId: 'solo', name: 'Charlie Solo', logoUrl: null };
+
+    it('offers one roll-up per family among the matches, and none for a standalone match', async () => {
+      const view = await create({ families: [], staffSearch: 'charlie', items: [charlieSub, solo, charlieTop] });
+
+      expect(view.rollUpRows()).toEqual([
+        { rootUid: UID_C, name: 'All Charlie Companies', subtitle: 'Combined view of related companies', organizationCount: 0, isSelected: false },
+      ]);
+      expect((await create({ families: [], staffSearch: 'charlie', items: [solo] })).showRollUpRow()).toBe(false);
+    });
+
+    it('does not repeat a roll-up the caller is already offered', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: 'charlie', items: [charlieSub] });
+
+      expect(view.rollUpRows().map((row) => row.rootUid)).toEqual([UID_C]);
+      expect(view.rollUpRows()[0].organizationCount).toBe(2);
+    });
+
+    it('offers nothing before a search runs', async () => {
+      const view = await create({ families: [], staffSearch: '', items: [charlieSub] });
+
+      expect(view.showRollUpRow()).toBe(false);
+    });
+
+    it('offers nothing while the roll-up flag is off, even for rows already labelled with a family', async () => {
+      const view = await create({ families: [], staffSearch: 'charlie', items: [charlieSub], rollUpEnabled: false });
+
+      expect(view.showRollUpRow()).toBe(false);
+    });
+
+    it('admits a picked search roll-up while its family is fetched, labelled with the family name', async () => {
+      const view = await create({ families: [], staffSearch: 'charlie', items: [charlieSub] });
+
+      view.selectRollUp(UID_C);
+
+      expect(selectRollUpSpy).toHaveBeenCalledWith(UID_C, { admitWhilePending: true, name: 'Charlie' });
+      expect(rollUpHomeSpy).toHaveBeenCalledWith(UID_C);
+    });
+
+    it('selects an already-offered family the usual way', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: 'charlie', items: [charlieSub], canSelectFor: true });
+
+      view.selectRollUp(UID_C);
+
+      expect(selectRollUpSpy).toHaveBeenCalledWith(UID_C);
+    });
+  });
+
+  describe('related companies of the selected family (#5942)', () => {
+    const related: OrgRollUpSetOrg[] = [
+      { uid: UID_C, accountId: UID_C, name: 'Charlie', logoUrl: null },
+      { uid: UID_D, accountId: UID_D, name: 'Charlie Labs', logoUrl: 'https://logo.example/labs.png' },
+    ];
+    const selectedD: Account = { accountId: UID_D, accountName: 'Charlie Labs', membershipTier: '', uid: UID_D };
+    const rowD: OrgItem = { uid: UID_D, accountId: UID_D, name: 'Charlie Labs', logoUrl: null, slug: 'charlie-labs', isAssigned: false };
+
+    it('lists the family with the selection marked', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: '', related, selected: selectedD });
+
+      expect(view.relatedRows().map((row) => [row.org.uid, row.isSelected])).toEqual([
+        [UID_C, false],
+        [UID_D, true],
+      ]);
+    });
+
+    it('does not list a company twice when the organization rows already hold it', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: '', related, selected: selectedD, items: [rowD, rowA] });
+
+      expect(view.displayedRows().map((row) => row.display.item.uid)).toEqual([UID_A]);
+    });
+
+    it('steps aside during a search, which lists its own matches', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: 'charlie', related, selected: selectedD, items: [rowD] });
+
+      expect(view.relatedRows()).toEqual([]);
+      expect(view.displayedRows().map((row) => row.display.item.uid)).toEqual([UID_D]);
+    });
+
+    it('switches to a picked company, carrying its organization row when the list has one', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: '', related, selected: selectedD, items: [rowD] });
+      const activate = (uid: string): boolean => {
+        const el = document.createElement('button');
+        el.dataset['optionKind'] = 'related';
+        el.dataset['orgUid'] = uid;
+        return view.activateOption(el);
+      };
+
+      expect(activate(UID_C)).toBe(true);
+      expect(setAccountSpy).toHaveBeenLastCalledWith(expect.objectContaining({ uid: UID_C, accountName: 'Charlie' }));
+      expect(navigateSpy).toHaveBeenCalledWith('switch');
+
+      setAccountSpy.mockClear();
+      expect(activate(UID_D)).toBe(true);
+      expect(setAccountSpy).not.toHaveBeenCalled();
+      expect(activate('nope')).toBe(false);
+    });
+
+    // A slug no organization row answered for is unknown, not absent: null would tell the path guard
+    // there is none to resolve.
+    it('leaves the slug unknown for a picked company the organization rows do not hold', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: '', related, selected: selectedD, items: [rowD] });
+      const el = document.createElement('button');
+      el.dataset['optionKind'] = 'related';
+      el.dataset['orgUid'] = UID_C;
+
+      view.activateOption(el);
+
+      const account = setAccountSpy.mock.lastCall?.[0] as Account;
+      expect(account.uid).toBe(UID_C);
+      expect(account.slug).toBeUndefined();
+    });
+
+    it('keeps the role badge of a granted company listed under related companies', async () => {
+      const grantedD: OrgItem = { ...rowD, isAssigned: true };
+      const view = await create({ families: [charlieFamily], staffSearch: '', related, selected: selectedD, items: [grantedD, rowA], writerUids: [UID_D] });
+
+      const relatedD = view.relatedRows().find((row) => row.org.uid === UID_D);
+      expect(relatedD?.roleLabel).toMatch(/^Company Admin Editor/);
+      expect(relatedD?.roleIcon).toBe('fa-light fa-pen-to-square');
+      expect(view.relatedRows().find((row) => row.org.uid === UID_C)?.roleLabel).toBe('');
+    });
   });
 
   /**

@@ -263,10 +263,34 @@ export interface MentorshipMentorInvitationResponse {
   decision: MentorshipMentorInviteDecision;
 }
 
-/** Body of `POST /api/mentorship/mentor/invites/accept|decline`: the signed token from the invite email. */
+/** Body of `POST /api/mentorship/mentor/invites/details|accept|decline`: the signed token from the invite email. */
 export interface MentorshipMentorInviteResponseRequest {
   token: string;
 }
+
+/** Upstream `GET /v1/mentor-invites/{token}`: the program an open invitation is for. */
+export interface MentorshipUpstreamMentorInvite {
+  program_id: string;
+  program_name: string;
+}
+
+/** What `POST /api/mentorship/mentor/invites/details` returns: the invited program's id and name, each empty when upstream has none. */
+export interface MentorshipMentorInviteDetails {
+  programId: string;
+  programName: string;
+}
+
+/**
+ * The invite page's read of its invitation: the program once read, or why the link cannot be used when the read says
+ * so (`invalid-link` or `forbidden`); both null while reading, and after any other failure.
+ */
+export interface MentorshipMentorInviteRead {
+  details: MentorshipMentorInviteDetails | null;
+  failure: MentorshipMentorInviteState | null;
+}
+
+/** Where the invite page's mentor profile check stands: still checking, a profile found, none, or the check failed. */
+export type MentorshipMentorProfileCheck = 'checking' | 'found' | 'missing' | 'failed';
 
 /** What the invite page shows: the choice, the outcome, or why the link cannot be used. */
 export type MentorshipMentorInviteState = 'confirm' | 'submitting' | 'accepted' | 'declined' | 'invalid-link' | 'forbidden' | 'read-only' | 'error';

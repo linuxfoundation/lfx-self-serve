@@ -12,14 +12,14 @@ import { SelectChipComponent, SelectChipOption } from '@components/select-chip/s
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { FullNamePipe } from '@pipes/full-name.pipe';
-import { MAILING_LIST_MEMBER_LABEL } from '@lfx-one/shared/constants';
+import { GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS, MAILING_LIST_MEMBER_LABEL } from '@lfx-one/shared/constants';
 import { MailingListMemberDeliveryMode, MailingListMemberModStatus } from '@lfx-one/shared/enums';
 import { GroupsIOMailingList, MailingListMember, UpdateMailingListMemberRequest } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap, take } from 'rxjs';
 
 import { ManageMemberModalComponent } from '../manage-member-modal/manage-member-modal.component';
 
@@ -220,6 +220,7 @@ export class MailingListMembersComponent {
           this.error.set(false);
 
           return this.mailingListService.getMembers(ml.uid).pipe(
+            map((members) => members.filter((m) => !GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS.includes(m.email?.toLowerCase() ?? ''))),
             catchError(() => {
               this.messageService.add({
                 severity: 'error',

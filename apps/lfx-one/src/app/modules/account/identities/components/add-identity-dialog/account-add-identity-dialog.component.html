@@ -1,0 +1,83 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<lfx-ui-modal heading="Add identity" [subtitle]="copy.addSubtitle" [width]="560" closable data-testid="account-add-identity-dialog">
+  @if (stage() === 'pick') {
+    <div class="flex flex-col rounded-ui-md shadow-[inset_0_0_0_1px] shadow-ui-neutral-alpha-200" data-testid="account-add-identity-providers">
+      @for (provider of providers; track provider.id; let first = $first) {
+        @let comingSoon = provider.id === 'gitlab' && gitlabLinkingDisabled;
+        <div
+          class="flex flex-row items-center gap-[12px] px-[14px] py-[12px]"
+          [class.shadow-[inset_0_1px_0]]="!first"
+          [class.shadow-ui-neutral-alpha-200]="!first"
+          [attr.data-testid]="'account-add-identity-provider-' + provider.id">
+          <span
+            class="inline-flex h-[36px] w-[36px] flex-none items-center justify-center rounded-ui-sm bg-ui-background-100 text-[16px] text-ui-neutral-700 shadow-[inset_0_0_0_1px] shadow-ui-neutral-alpha-200"
+            aria-hidden="true">
+            <i [class]="provider.icon"></i>
+          </span>
+          <span class="flex min-w-0 flex-1 flex-col gap-[2px]">
+            <span class="flex flex-row items-center gap-[8px] text-[14px] font-medium leading-[20px] text-ui-neutral-900">
+              {{ provider.name }}
+              @if (comingSoon) {
+                <lfx-ui-badge variant="outline" size="sm">Coming soon</lfx-ui-badge>
+              }
+            </span>
+            <span class="text-[13px] leading-[18px] text-ui-neutral-500">{{ provider.description }}</span>
+          </span>
+          <lfx-ui-button
+            variant="secondary"
+            size="small"
+            [disabled]="comingSoon"
+            [ariaLabel]="(provider.id === 'email' ? 'Add email' : 'Connect') + ' ' + provider.name"
+            (click)="choose(provider)"
+            [attr.data-testid]="'account-add-identity-choose-' + provider.id">
+            {{ provider.id === 'email' ? 'Add email' : 'Connect' }}
+          </lfx-ui-button>
+        </div>
+      }
+    </div>
+  } @else if (!verification.codeSent()) {
+    <lfx-ui-input
+      label="Email address"
+      type="email"
+      placeholder="name@example.com"
+      autocomplete="email"
+      [formControl]="email"
+      [readonly]="verification.sending()"
+      [error]="emailError() || verification.error()"
+      data-testid="account-add-identity-email" />
+  } @else {
+    <lfx-account-email-code-step [email]="sentTo()" />
+  }
+
+  @if (stage() === 'email') {
+    <ng-container modalActions>
+      @if (!verification.codeSent()) {
+        <lfx-ui-button variant="secondary" [disabled]="verification.sending()" (click)="back()" data-testid="account-add-identity-back">Back</lfx-ui-button>
+        <lfx-ui-button [loading]="verification.sending()" [disabled]="!emailValue()" (click)="sendCode()" data-testid="account-add-identity-send">
+          Send verification code
+        </lfx-ui-button>
+      } @else {
+        <!-- Pushed to the left edge, apart from the step's own actions. -->
+        <lfx-ui-button
+          class="mr-auto"
+          variant="tertiary-accent"
+          [disabled]="verification.resendCooldown() > 0 || verification.sending() || verification.showResendSupport()"
+          (click)="resend()"
+          data-testid="account-add-identity-resend">
+          {{ verification.resendCooldown() > 0 ? 'Resend code in ' + verification.resendCooldown() + 's' : 'Resend code' }}
+        </lfx-ui-button>
+        <lfx-ui-button variant="secondary" [disabled]="verification.verifying()" (click)="back()" data-testid="account-add-identity-back">Back</lfx-ui-button>
+        <lfx-ui-button
+          [loading]="verification.verifying()"
+          [disabled]="!verification.codeComplete()"
+          (click)="verify()"
+          data-testid="account-add-identity-verify">
+          Verify email
+        </lfx-ui-button>
+      }
+    </ng-container>
+  }
+</lfx-ui-modal>

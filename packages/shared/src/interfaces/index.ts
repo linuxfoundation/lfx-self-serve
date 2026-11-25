@@ -170,6 +170,7 @@ export * from './org-lens-empty-state.interface';
 
 // Org Lens URL scheme (spec 050) — address intent
 export * from './org-lens-url.interface';
+export * from './org-lens-view-mode.interface';
 
 // Persona detection interfaces
 export * from './persona-detection.interface';
@@ -214,6 +215,7 @@ export * from './health-metrics-events.interface';
 export * from './health-metrics-l2.interface';
 
 // Health Metrics shared line chart
+export * from './health-metrics-bar-chart.interface';
 export * from './health-metrics-column-chart.interface';
 export * from './health-metrics-world-map.interface';
 export * from './health-metrics-line-chart.interface';
@@ -479,3 +481,4 @@ export * from './uikit.interface';
 export * from './social-share.interface';
 export * from './org-training-view.interface';
 export * from './formation-pipeline.interface';
+export * from './share-kit.interface';

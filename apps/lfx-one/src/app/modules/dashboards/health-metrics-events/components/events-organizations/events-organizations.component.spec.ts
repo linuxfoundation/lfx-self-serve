@@ -106,7 +106,15 @@ describe('EventsOrganizationsComponent', () => {
   it('reads the selected foundation and period ten rows at a time, renders the page, and settles', async () => {
     await render();
 
-    expect(getEventsOrganizations).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', segment: 'all', search: '', offset: 0, pageSize: 10 });
+    expect(getEventsOrganizations).toHaveBeenCalledWith({
+      foundationSlug: 'acme',
+      range: 'YTD',
+      segment: 'all',
+      search: '',
+      offset: 0,
+      pageSize: 10,
+      sort: null,
+    });
     expect(query(`events-orgs-row-${ACCOUNT_ID}-name`)?.querySelector('[data-testid="health-metrics-cell-text"]')?.textContent?.trim()).toBe('Acme Motors');
     // The count caption is gone; the sub-nav and the pager carry the totals.
     expect(query('events-orgs-count')).toBeNull();
@@ -228,6 +236,21 @@ describe('EventsOrganizationsComponent', () => {
 
     expect(getEventsOrganizations).toHaveBeenCalledWith(expect.objectContaining({ offset: 20, pageSize: 10 }));
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgSegment: null, orgSearch: null, orgPage: 3 } }));
+  });
+
+  it("opens on Registrations sorted with the view's rank, and re-reads every page from the first in a picked order", async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }));
+    const header = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="events-organizations-sort-${key}"]`);
+    expect(header('registrations').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+
+    fixture.componentInstance['page'].set(2);
+    await settle();
+    getEventsOrganizations.mockClear();
+    (header('membership').querySelector('button') as HTMLButtonElement).click();
+    await settle();
+
+    expect(getEventsOrganizations).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0, sort: { key: 'membership', direction: 'desc' } }));
+    expect(header('membership').closest('th')?.getAttribute('aria-sort')).toBe('descending');
   });
 
   it('starts on the segment, search and page the URL carries', async () => {

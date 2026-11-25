@@ -18,3 +18,6 @@ export const HEALTH_METRICS_WORLD_MAP_EMPTY_FILL = lfxColors.gray[200];
 
 /** The geometry asset, loaded once on first use. */
 export const HEALTH_METRICS_WORLD_GEOMETRY_URL = '/assets/health-metrics/world-countries-110m.json';
+
+/** Codes the map keys a country by beyond the assigned ones, with their names; the geography read's code set takes its keys. */
+export const HEALTH_METRICS_COUNTRY_NAME_EXTRAS: Readonly<Record<string, string>> = { XK: 'Kosovo' };

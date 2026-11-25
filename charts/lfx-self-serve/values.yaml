@@ -4,8 +4,13 @@
 replicaCount: 3
 
 # strategy controls the Kubernetes rolling update behavior.
-# maxSurge: "100%" spins up a full new replica set before terminating any old pods (zero disruption).
-# maxUnavailable: 0 ensures the ready count never drops below the desired replica count.
+# The effective deployed value is maxSurge: 1, set in lfx-v2-argocd values/global/lfx-self-serve.yaml
+# (lfx-self-serve#1375), so the rollout adds at most one extra non-terminating pod at a time.
+# Pods still draining in their terminationGracePeriodSeconds are not counted, so the total running
+# pods can briefly exceed replicaCount + 1; do not treat that as a hard resource ceiling.
+# The "100%" below is only the chart default and is overridden there.
+# maxUnavailable: 0 stops the rollout from voluntarily scaling below the desired ready count; it does
+# not guarantee that count through node or pod failures.
 strategy:
   type: RollingUpdate
   rollingUpdate:
@@ -505,7 +510,7 @@ environment:
   # STATUS_TOGGLE below must be on and CONVERGED before this goes on. Otherwise a new pod mints a
   # UUID campaign while an old pod, still without the toggle flag, refuses that campaign's
   # pause/resume at campaign.controller.ts. Requests are not sticky and this chart runs
-  # replicaCount: 3 with maxSurge: "100%", so during such an overlap pause — the primary
+  # replicaCount: 3 with an effective maxSurge: 1 (set in lfx-v2-argocd), so during such an overlap pause — the primary
   # cost-control lever — can intermittently 400 on a campaign created moments earlier.
   #
   # To deploy safely from this chart, roll it out with this value overridden OFF, let
@@ -688,6 +693,16 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS:
     value:
 
+  # Reddit conversion event (#6108 row 2): offers the pixel event a `conversions` campaign optimizes toward on the
+  # Implement tab, sent as `redditConfig.conversionEvent` (default PURCHASE, which is left out).
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_CONVERSION_EVENT_ENABLED` on
+  # and the create pipeline on. Off (the default), the picker is hidden and the create route refuses the field with a
+  # 400, never dropping it. A field only, so turning it back off strands nothing. Order: set campaign-service's flag and
+  # pass its live probe, THEN this. Keep it off until then. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT:
+    value:
+
   # Offers a stored-image LIBRARY in each Google creative image slot (Demand Gen, Performance Max
   # and Display): upload a PNG/JPEG into the brief's library (the same library REDDIT_ASSETS and
   # META_ASSETS upload into), or pick a stored image that fits the slot's aspect ratio and minimum
@@ -768,6 +783,174 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION:
     value:
 
+  # LinkedIn call to action (#5764 row 16): accepts `linkedInConfig.variants[i].callToAction`, the dark post's
+  # button (one of campaign-service's labels, such as REGISTER or LEARN_MORE). The ad name and description
+  # (`name`, `description`) need no flag, only the create pipeline.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 DEPLOYED with
+  # `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED` on, and the create pipeline on. Off (the default), the create route
+  # refuses the field with a 400, never dropping it. A field only, so turning it back off strands nothing.
+  # Order: set campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags
+  # above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CALL_TO_ACTION:
+    value:
+
+  # LinkedIn Text Ads (#5764 row 19): accepts `linkedInConfig.format: "text"` with `linkedInConfig.textAds`, a
+  # TEXT_AD campaign of headline-and-description ads on LinkedIn's desktop right rail, on a manual bid.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 DEPLOYED with
+  # `LINKEDIN_ADS_TEXT_ADS_ENABLED` on, the create pipeline on, and LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING on (a
+  # text create must carry a manual bid). Off (the default), the create route refuses
+  # the format with a 400, never dropping it. A field only, so turning it back off strands nothing. Order: set
+  # campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS:
+    value:
+
+  # LinkedIn video ads, LF's "Motion" (#5764 row 18): accepts `linkedInConfig.variants[i].videoAssetId`, an MP4
+  # uploaded to the brief, which makes the campaign a SINGLE_VIDEO one. Every ad carries a video or none does.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 DEPLOYED with `LINKEDIN_ADS_VIDEO_ENABLED`
+  # on, the create pipeline on, and LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS on (the video is a brief asset). Off
+  # (the default), the create route refuses the field with a 400, never dropping it. A field only, so turning it back
+  # off strands nothing. Order: set campaign-service's flag and pass its paused video probe, THEN this. Same accepted
+  # values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO:
+    value:
+
+  # LinkedIn target cost (linuxfoundation/lfx-v2-campaign-service#674): accepts `linkedInConfig.bidding.targetAmount`,
+  # automatic bidding's target in USD (whole cents, above zero, at most 1,000,000), sent to LinkedIn as the campaign's
+  # `unitCost`. Refused with manual bidding.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `LINKEDIN_ADS_TARGET_COST_ENABLED` on,
+  # and LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING on (the target travels inside `bidding`). Off (the default), the create
+  # route refuses the field with a 400, never dropping it. A field only, so turning it back off strands nothing. Order:
+  # set campaign-service's flag and pass its paused target-cost probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGET_COST:
+    value:
+
+  # LinkedIn custom targeting (#5764 rows 8–11): accepts `linkedInConfig.targeting`, the campaign's own include
+  # clauses and exclusions in place of the configured targeting profile.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `LINKEDIN_ADS_TARGETING_ENABLED` on
+  # and the create pipeline on. Off (the default), the create route refuses the field with a 400, never dropping it.
+  # A field only, so turning it back off strands nothing. Order: set campaign-service's flag and pass its live probe
+  # (linuxfoundation/lfx-v2-campaign-service#585), THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING:
+    value:
+
+  # LinkedIn objective and conversion tracking (#5764 rows 2 and 4): accepts `linkedInConfig.objective` (`traffic` or
+  # `conversions`) and `linkedInConfig.conversions` (conversion rule ids), and answers
+  # `GET /api/campaigns/linkedin/conversions` (global_marketing_ops only) for the rules to pick from.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `LINKEDIN_ADS_CONVERSIONS_ENABLED` on
+  # and the create pipeline on. Off (the default), the create route refuses either field with a 400, never dropping it,
+  # and the read answers 404. A field only, so turning it back off strands nothing. Order: set campaign-service's flag
+  # and pass its live probe, THEN this. Keep it off until then. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS:
+    value:
+
+  # Offers Meta ad set audience targeting on the Implement tab (#5905), sent as
+  # `metaConfig.targeting`: age range, gender and Advantage+ audience for every campaign manager, and
+  # included/excluded custom audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only for
+  # a caller holding `global_marketing_ops` on the project, because the Meta ad account is shared by
+  # every foundation.
+  #
+  # A CAPABILITY flag of the Bidding kind. REQUIRES linuxfoundation/lfx-v2-campaign-service#550
+  # (v1.0.37) DEPLOYED with its own META_AUDIENCE_TARGETING_ENABLED="true": campaign-service refuses
+  # any `metaConfig.targeting` with a 400 otherwise. It also needs the create pipeline (CREATE, BRIEFS,
+  # JOBS) on.
+  #
+  # Off (the default), the section is hidden, the custom-audience read answers 404 and the create
+  # route refuses a `targeting` block with a 400, so a tab opened while the flag was on must reload.
+  # Turning it back off strands nothing. Order: set campaign-service's
+  # META_AUDIENCE_TARGETING_ENABLED, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING:
+    value:
+
+  # Offer the Meta call to action, conversion event and optimization goal on the Implement tab (#5934),
+  # sent as `metaConfig.callToAction` (every objective), `conversionEvent` (`conversions` only) and
+  # `optimizationGoal` (`traffic` only; LANDING_PAGE_VIEWS not with manual bidding). One flag each.
+  #
+  # CAPABILITY flags of the Bidding kind. Each REQUIRES campaign-service v1.0.38 DEPLOYED with its own
+  # META_CALL_TO_ACTION_ENABLED, META_CONVERSION_EVENT_ENABLED or META_OPTIMIZATION_GOAL_ENABLED="true":
+  # campaign-service refuses the field with a 400 otherwise. They also need the create pipeline (CREATE,
+  # BRIEFS, JOBS) on. None needs `global_marketing_ops`.
+  #
+  # Off (the default), the dropdown is hidden and the create route refuses the field with a 400, so a
+  # tab opened while the flag was on must reload. Turning one back off strands nothing. Order: set
+  # campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_CONVERSION_EVENT:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_OPTIMIZATION_GOAL:
+    value:
+
+  # Opens the Meta lead form read (`GET /api/campaigns/meta/lead-forms`) and accepts `metaConfig.leadFormId`
+  # on create (#5940), so campaign-service creates a lead ad (OUTCOME_LEADS) instead of a website-traffic
+  # campaign. The Implement tab offers `leads` with a form picker once the UI change lands; until then this
+  # flag opens the server half only. Forms are made in Meta Ads Manager; LFX never creates one.
+  #
+  # A CAPABILITY flag of the Bidding kind. REQUIRES campaign-service v1.0.38 DEPLOYED with
+  # META_LEAD_FORMS_ENABLED="true": campaign-service refuses the read and `leadFormId` with a 400 otherwise.
+  # It also needs the create pipeline (CREATE, BRIEFS, JOBS) on. Only `global_marketing_ops` may read the
+  # forms or send one (403 otherwise, 503 when that cannot be checked): a project without its own Meta
+  # connection uses the shared LF Page, which holds every foundation's forms.
+  #
+  # Off (the default), `leads` stays hidden, the read answers 404 and the create route refuses a
+  # `leadFormId` with a 400, so a tab opened while the flag was on must reload. Turning it back off strands
+  # nothing. Order: set campaign-service's flag and pass its live probe, THEN this. Same accepted values as
+  # the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS:
+    value:
+
+  # Meta detailed targeting (#5904 row 4), one flag each: `..._META_INTEREST_TARGETING` accepts
+  # `metaConfig.targeting.interests`, `..._META_BEHAVIOR_TARGETING` accepts `behaviors` and `workPositions`
+  # (job titles), and `..._META_LOCALE_TARGETING` accepts `locales` (languages). The targeting search
+  # (`GET /api/campaigns/meta/targeting-search`) answers each kind only while that kind's flag is on:
+  # `type=interest` on the interest flag, `type=behavior` and `type=work_position` on the behavior flag.
+  #
+  # CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
+  # `META_INTEREST_TARGETING_ENABLED`, `META_BEHAVIOR_TARGETING_ENABLED` or `META_LOCALE_TARGETING_ENABLED` on,
+  # plus `META_TARGETING_SEARCH_ENABLED` for the search, and the create pipeline on. Off (the default), the
+  # create route refuses the field with a 400, never dropping it, and the search answers 404. A field and a
+  # read only, so turning one back off strands nothing. Order: set campaign-service's flag and pass its live
+  # probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_LOCALE_TARGETING:
+    value:
+
+  # Meta device and operating-system targeting (#5904 row 6), one flag each: `..._META_DEVICE_TARGETING`
+  # accepts `metaConfig.targeting.devicePlatforms` (mobile, desktop), and `..._META_OS_TARGETING` accepts
+  # `metaConfig.targeting.userOs` (iOS, Android, optionally with a listed minimum version or version range).
+  #
+  # CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
+  # `META_DEVICE_TARGETING_ENABLED` or `META_OS_TARGETING_ENABLED` on, and the create pipeline on. Off (the
+  # default), the create route refuses the field with a 400, never dropping it. A field only, so turning one
+  # back off strands nothing. Order: set campaign-service's flag and pass its live probe, THEN this. Same
+  # accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_OS_TARGETING:
+    value:
+
+  # Meta delivery options (#5904 row 5), one flag each: `..._META_AD_SCHEDULE` accepts `metaConfig.adSchedule`
+  # (the days and whole hours a lifetime-budget ad set runs, in the Meta ad account's time zone), and
+  # `..._META_FREQUENCY_CAP` accepts `metaConfig.frequencyCap` (impressions per person on an awareness ad set).
+  #
+  # CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
+  # `META_AD_SCHEDULE_ENABLED` or `META_FREQUENCY_CAP_ENABLED` on, and the create pipeline on. Off (the
+  # default), the create route refuses the field with a 400, never dropping it. A field only, so turning one
+  # back off strands nothing. Order: set campaign-service's flag and pass its live probe, THEN this. Same
+  # accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_FREQUENCY_CAP:
+    value:
+
   # Offers a PNG/JPEG image upload in the Microsoft section of the create flow, sent as
   # `microsoftConfig.imageAssetId`, which campaign-service attaches to the campaign as an image ad
   # extension. Microsoft accepts at most 76,800 bytes (40x20 to 2592x2048 pixels), far below the
@@ -831,16 +1014,6 @@ environment:
   # that a not-yet-converged pod still 403s on. To roll back, reverse it: disable the client flag
   # first, confirm it, then unset/disable this flag.
   LFX_MARKETING_OPS_FGA_ENABLED:
-    value:
-
-  # Dark-launch gate for the Foundation Lens Participating Companies endpoints (#5697). OFF answers every
-  # /api/foundation-participating-orgs request with a neutral 404. ON reads the live warehouse table
-  # PROJECT_PARTICIPATING_ORGS (#5707), so it needs Snowflake access to that table. Before enabling it, someone with
-  # access must run the two foundation queries against a real foundation (the foundation's own row carries its slug,
-  # and unique contributors per company stay at or under the sum of its project lines) and measure the largest
-  # foundation roster against the cache cap.
-  # Pairs with the client-side `foundation-participating-orgs-enabled` flag, which hides the route and nav item.
-  LFX_FOUNDATION_PARTICIPATING_ORGS_ENABLED:
     value:
 
   # Server-side kill switch for the /api/gatewaze routes. It does NOT gate the Angular routes — the

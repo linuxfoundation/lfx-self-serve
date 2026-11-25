@@ -9,7 +9,9 @@ import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { VOTE_COMMENT_PROMPT_MAX_COUNT, VOTE_COMMENT_PROMPT_MAX_LENGTH, VOTE_LABEL, VOTE_RESPONSE_TYPES } from '@lfx-one/shared/constants';
+import { PollType } from '@lfx-one/shared/enums';
 import { CommentPromptFormData, QuestionFormData } from '@lfx-one/shared/interfaces';
+import { isRankedPollType } from '@lfx-one/shared/utils';
 import { InputTextModule } from 'primeng/inputtext';
 
 @Component({
@@ -30,6 +32,9 @@ export class VoteQuestionComponent {
   public readonly responseTypeOptions = [...VOTE_RESPONSE_TYPES];
   public readonly commentPromptMaxLength = VOTE_COMMENT_PROMPT_MAX_LENGTH;
   public readonly commentPromptMaxCount = VOTE_COMMENT_PROMPT_MAX_COUNT;
+
+  /** Ranked methods have no Response Type: voters rank every option, and every question is sent as multiple_choice. */
+  public readonly isRankedMethod: Signal<boolean> = computed(() => isRankedPollType(this.formValue()()['poll_type'] as PollType));
 
   // Computed signals for form arrays
   public readonly questionsArray: Signal<FormArray<FormGroup>> = this.initQuestionsArray();

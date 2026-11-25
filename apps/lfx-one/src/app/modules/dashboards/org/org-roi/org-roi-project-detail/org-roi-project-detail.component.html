@@ -148,27 +148,30 @@
         <!-- The canvas is otherwise the only presentation of these values, so it is unreadable to a
              screen reader. This table carries them, plus the per-year return the single-series
              chart deliberately leaves out. -->
-        <table class="sr-only" data-testid="org-roi-project-detail-annual-table">
-          <caption>
-            Investment and return by year
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Year</th>
-              <th scope="col">Investment</th>
-              <th scope="col">Return</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (row of yearRows(); track row.year) {
+        <!-- sr-only sits on a wrapper: a table ignores its 1px height and overflow, so it would keep its full height and stretch the page. -->
+        <div class="sr-only">
+          <table data-testid="org-roi-project-detail-annual-table">
+            <caption>
+              Investment and return by year
+            </caption>
+            <thead>
               <tr>
-                <th scope="row">{{ row.year }}{{ row.isPartial ? ' (partial year)' : '' }}</th>
-                <td>{{ row.investmentLabel }}</td>
-                <td>{{ row.returnLabel }}</td>
+                <th scope="col">Year</th>
+                <th scope="col">Investment</th>
+                <th scope="col">Return</th>
               </tr>
-            }
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              @for (row of yearRows(); track row.year) {
+                <tr>
+                  <th scope="row">{{ row.year }}{{ row.isPartial ? ' (partial year)' : '' }}</th>
+                  <td>{{ row.investmentLabel }}</td>
+                  <td>{{ row.returnLabel }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
 
         <div class="flex flex-col gap-1 border-t border-gray-100 pt-3">
           @if (apportioned()) {

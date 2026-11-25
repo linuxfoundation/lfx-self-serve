@@ -68,12 +68,12 @@ describe('HealthMetricsColumnChartComponent', () => {
       (query('chart-column-2025') as HTMLElement).dispatchEvent(new Event('mouseenter'));
       fixture.detectChanges();
       // No room on either side of a 200px screen, so the popup shifts to stay 8px inside.
-      expect(fixture.componentInstance['tipPlacement']()).toEqual({ left: 'calc(50% + 8px)', right: null });
+      expect(fixture.componentInstance['tip'].placement()).toEqual({ left: 'calc(50% + 8px)', right: null });
 
       setViewport(1200);
       window.dispatchEvent(new Event('resize'));
       fixture.detectChanges();
-      expect(fixture.componentInstance['tipPlacement']()).toEqual({ left: 'calc(50% + 12px)', right: null });
+      expect(fixture.componentInstance['tip'].placement()).toEqual({ left: 'calc(50% + 12px)', right: null });
     } finally {
       if (original) Object.defineProperty(root, 'clientWidth', original);
       else delete (root as { clientWidth?: number }).clientWidth;
@@ -101,7 +101,7 @@ describe('HealthMetricsColumnChartComponent', () => {
     fixture.detectChanges();
     expect(query('chart-tip')).toBeNull();
     // Escape forgets the column too, so a resize after it re-places nothing.
-    expect(fixture.componentInstance['activeColumn']).toBeNull();
+    expect(fixture.componentInstance['tip']['anchor']).toBeNull();
 
     column.dispatchEvent(new Event('focus'));
     fixture.detectChanges();

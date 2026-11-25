@@ -20,7 +20,6 @@
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
  */
 
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import type {
   FoundationParticipatingOrgsPage,
   FoundationParticipatingOrgsSummary,
@@ -60,15 +59,8 @@ function summaryWithActivity(): FoundationParticipatingOrgsSummary {
   };
 }
 
-/** The dark-launch flag pinned on, the ED persona, the foundation context and the page's BFF reads, all stubbed. */
+/** The ED persona, the foundation context and the page's BFF reads, all stubbed. */
 async function stubPage(page: Page, summary: FoundationParticipatingOrgsSummaryResponse, list: FoundationParticipatingOrgsPage): Promise<void> {
-  await page.addInitScript(
-    ([storageKey, flagKey]) => {
-      const current = JSON.parse(window.localStorage.getItem(storageKey as string) ?? '{}');
-      window.localStorage.setItem(storageKey as string, JSON.stringify({ ...current, [flagKey as string]: true }));
-    },
-    [FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG] as const
-  );
   await seedEdPersona(page);
   await stubNavLensItems(page);
   await stubFoundationProject(page);

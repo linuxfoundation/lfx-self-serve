@@ -13,6 +13,7 @@ import {
   OrgLensLookupOutcome,
   OrgLensStaffCheck,
   OrgRollUpFamily,
+  OrgRollUpSetOrg,
 } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of, Subject } from 'rxjs';
@@ -45,6 +46,10 @@ describe('AccountContextService — address-adopted selection', () => {
     inheritedAuditorSet: WritableSignal<Set<string>>;
     isStaff: WritableSignal<boolean>;
     claManagerOrgSet: WritableSignal<Set<string>>;
+    employeeViewOrgUid: WritableSignal<string | null>;
+    employeeViewOrgUids: WritableSignal<ReadonlySet<string>>;
+    fullAccessOrgUid: WritableSignal<string | null>;
+    fullAccessOrgUids: WritableSignal<ReadonlySet<string>>;
   };
 
   beforeEach(() => {
@@ -56,6 +61,10 @@ describe('AccountContextService — address-adopted selection', () => {
       inheritedAuditorSet: signal(new Set<string>()),
       isStaff: signal(false),
       claManagerOrgSet: signal(new Set<string>()),
+      employeeViewOrgUid: signal<string | null>(null),
+      employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+      fullAccessOrgUid: signal<string | null>(null),
+      fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -258,6 +267,26 @@ describe('AccountContextService — address-adopted selection', () => {
       grants.claManagerOrgSet.set(new Set([UID_A]));
       expect(service.hasOrgSelectorAccess()).toBe(true);
     });
+
+    it('is true for an all employee view company alone (#5845)', () => {
+      grants.employeeViewOrgUid.set(UID_A);
+      grants.employeeViewOrgUids.set(new Set([UID_A]));
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
+
+    it('is true for an addressed employee view company when role-grants never published one (#5845)', () => {
+      expect(service.hasOrgSelectorAccess()).toBe(false);
+
+      grants.employeeViewOrgUids.set(new Set([UID_A]));
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
+
+    it('is true for a company read in full through the authorizer alone (#5845)', () => {
+      expect(service.hasOrgSelectorAccess()).toBe(false);
+
+      grants.fullAccessOrgUids.set(new Set([UID_A]));
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
   });
 
   // lfx-self-serve#2570 (prod): the org-items default (or the guard's already-selected shortcut) pins
@@ -418,7 +447,16 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
         { provide: AnalyticsService, useValue: { getOrgLensAccountContext } },
         {
           provide: OrgRoleGrantsService,
-          useValue: { writerSet: signal(new Set()), auditorSet: signal(new Set()), isStaff: signal(false), claManagerOrgSet: signal(new Set()) },
+          useValue: {
+            writerSet: signal(new Set()),
+            auditorSet: signal(new Set()),
+            isStaff: signal(false),
+            claManagerOrgSet: signal(new Set()),
+            employeeViewOrgUid: signal(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            fullAccessOrgUid: signal<string | null>(null),
+            fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
+          },
         },
         {
           provide: OrgRollUpFamiliesService,
@@ -557,6 +595,10 @@ describe('AccountContextService — family roll-up', () => {
     inheritedAuditorSet: WritableSignal<Set<string>>;
     isStaff: WritableSignal<boolean>;
     claManagerOrgSet: WritableSignal<Set<string>>;
+    employeeViewOrgUid: WritableSignal<string | null>;
+    employeeViewOrgUids: WritableSignal<ReadonlySet<string>>;
+    fullAccessOrgUid: WritableSignal<string | null>;
+    fullAccessOrgUids: WritableSignal<ReadonlySet<string>>;
     loaded: WritableSignal<boolean>;
     lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
     staffCheck: WritableSignal<OrgLensStaffCheck>;
@@ -576,6 +618,7 @@ describe('AccountContextService — family roll-up', () => {
     loading: WritableSignal<boolean>;
     staffAnchor: WritableSignal<string | null>;
     setStaffAnchor: ReturnType<typeof vi.fn>;
+    orgsByUid: WritableSignal<Map<string, OrgRollUpSetOrg>>;
   };
   /** The `org-lens-rollup-enabled` gate — on and settled unless a test says otherwise. */
   let rollUpFlag: { enabled: WritableSignal<boolean>; unsettled: WritableSignal<boolean> };
@@ -617,6 +660,10 @@ describe('AccountContextService — family roll-up', () => {
       inheritedAuditorSet: signal(new Set<string>()),
       isStaff: signal(false),
       claManagerOrgSet: signal(new Set<string>()),
+      employeeViewOrgUid: signal<string | null>(null),
+      employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+      fullAccessOrgUid: signal<string | null>(null),
+      fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
       loaded: signal(true),
       lookupOutcome: signal<OrgLensLookupOutcome>('ok'),
       staffCheck: signal<OrgLensStaffCheck>('ok'),
@@ -633,6 +680,7 @@ describe('AccountContextService — family roll-up', () => {
       loading: signal(false),
       staffAnchor: signal<string | null>(null),
       setStaffAnchor: vi.fn((uid: string | null) => serverFamilies.staffAnchor.set(uid)),
+      orgsByUid: signal(new Map<string, OrgRollUpSetOrg>()),
     };
     rollUpFlag = { enabled: signal(true), unsettled: signal(false) };
     TestBed.configureTestingModule({
@@ -822,6 +870,96 @@ describe('AccountContextService — family roll-up', () => {
       serverAnswer.set([{ rootUid: OTHER, name: 'Other', orgUids: [OTHER] }]);
 
       expect(service.eligibleRollUpFamilies()).toEqual([]);
+    });
+
+    describe('related companies (#5942)', () => {
+      const org = (uid: string, name: string): OrgRollUpSetOrg => ({ uid, accountId: uid, name, logoUrl: null });
+      const relatedUids = (): string[] => service.relatedCompanies().map((company) => company.uid);
+
+      beforeEach(() => {
+        serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_B, UID_A] }]);
+        serverFamilies.orgsByUid.set(
+          new Map([
+            [UID_A, org(UID_A, 'Zulu Holdings')],
+            [UID_B, org(UID_B, 'Bravo')],
+          ])
+        );
+      });
+
+      it('lists every company in the selected company’s family, top account first', () => {
+        service.setAccount(seedB);
+        TestBed.tick();
+
+        expect(relatedUids()).toEqual([UID_A, UID_B]);
+      });
+
+      it('lists the family while its roll-up is selected', () => {
+        service.setAccount(seedB);
+        TestBed.tick();
+        expect(service.selectRollUp(ROOT)).toBe(true);
+        TestBed.tick();
+
+        expect(relatedUids()).toEqual([UID_A, UID_B]);
+      });
+
+      it('lists nothing for a standalone company', () => {
+        service.setAccount(otherCo);
+        TestBed.tick();
+        serverAnswer.set([{ rootUid: OTHER, name: 'Other', orgUids: [OTHER] }]);
+
+        expect(relatedUids()).toEqual([]);
+      });
+
+      it('lists nothing while the answer for a newly selected company is still owed, then that company’s family', () => {
+        const OTHER_SUB = '0014100000MgsSSSSS';
+        serverAnswer.set([
+          { rootUid: ROOT, name: 'Alpha', orgUids: [UID_B, UID_A] },
+          { rootUid: OTHER, name: 'Other', orgUids: [OTHER, OTHER_SUB] },
+        ]);
+        serverFamilies.orgsByUid.update((orgs) => new Map([...orgs, [OTHER, org(OTHER, 'Other')], [OTHER_SUB, org(OTHER_SUB, 'Other Sub')]]));
+        service.setAccount(seedB);
+        TestBed.tick();
+        serverFamilies.setStaffAnchor.mockImplementation((uid: string | null) => {
+          serverFamilies.staffAnchor.set(uid);
+          serverFamilies.unsettled.set(true);
+        });
+
+        service.setAccount(otherCo);
+        TestBed.tick();
+        expect(relatedUids()).toEqual([]);
+
+        serverFamilies.unsettled.set(false);
+        expect(relatedUids()).toEqual([OTHER, OTHER_SUB]);
+      });
+
+      it('lists nothing for a caller who is not staff', () => {
+        grants.isStaff.set(false);
+        grants.inheritedWriterSet.set(new Set([UID_A, UID_B]));
+        service.setAccount(seedB);
+        TestBed.tick();
+
+        expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+        expect(relatedUids()).toEqual([]);
+      });
+    });
+
+    it('labels a roll-up picked from search with the family name it was offered under, until its family lands', () => {
+      serverAnswer.set([]);
+      TestBed.tick();
+
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true, name: 'Alpha Group' })).toBe(true);
+
+      expect(service.selectedAccount().accountName).toContain('Alpha Group');
+    });
+
+    it('keeps that label when the path guard re-admits the same roll-up without a name', () => {
+      serverAnswer.set([]);
+      TestBed.tick();
+      service.selectRollUp(ROOT, { admitWhilePending: true, name: 'Alpha Group' });
+
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
+
+      expect(service.selectedAccount().accountName).toContain('Alpha Group');
     });
 
     describe('when the anchor moves, the families stay unsettled until its answer lands', () => {
@@ -1717,6 +1855,23 @@ describe('AccountContextService — family roll-up', () => {
       service.selectRollUp(ROOT, { admitWhilePending: true });
       service.initializeUserOrganizations([]);
       claOnlyOrgUids.set(new Set([UID_A]));
+
+      expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
+    });
+
+    // #5845 — a company read in full through the authorizer alone (never in a grant set) is still a real address.
+    it('keeps a full-access company the caller is already addressing, and counts it as addressable', () => {
+      grants.fullAccessOrgUids.set(new Set([UID_A]));
+      service.adoptFromAddress({ accountId: UID_A, accountName: 'Alpha', membershipTier: '', uid: UID_A, slug: 'alpha-inc' });
+      service.initializeUserOrganizations([]);
+
+      expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
+    });
+
+    it('falls back to a full-access company rather than the not-found dead end', () => {
+      service.selectRollUp(ROOT, { admitWhilePending: true });
+      service.initializeUserOrganizations([]);
+      grants.fullAccessOrgUids.set(new Set([UID_A]));
 
       expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
     });

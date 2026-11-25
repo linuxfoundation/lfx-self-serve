@@ -46,6 +46,10 @@ const { profileAuthSvc, fakeValkey, stubConstructor, verifyOtp } = vi.hoisted(()
 });
 
 vi.mock('@lfx-one/shared/constants', () => ({
+  ACCOUNT_BASE_PATH: '/account',
+  ACCOUNT_IDENTITIES_PATH: '/account/identities',
+  ACCOUNT_LINUX_EMAIL_PATH: '/account/linux-email',
+  ACCOUNT_PERSONAL_INFORMATION_PATH: '/account/personal-information',
   ALLOWED_AVATAR_MIME_TYPES: ['image/png', 'image/jpeg', 'image/webp'],
   AUTH0_LINKED_ONLY_IDENTITY_COMBOS: new Set(),
   AUTH0_TO_CDP_PROVIDER_MAP: {},

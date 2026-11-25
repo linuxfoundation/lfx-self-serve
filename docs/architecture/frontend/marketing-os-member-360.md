@@ -58,6 +58,8 @@ The Member 360 page first renders the shared neutral run-page skeleton. `GET /ap
 
 Generate stays on the Member 360 run page. Visibility/focus polling re-reads both the creator result and recorded progress before showing questions; writing/storing suppress stale question hints, committed readiness opens the document, and confirmed absence discards the hint for a private intake fallback. Last-run/history space is reserved and same-turn rechecks preserve typed edits. Local cached phases, timestamps and answered digests never authorize the rendered state. The shared activity feed covers pending work; `needs_input` opens the shared one-question-at-a-time stepper under “Member 360 needs your answers to finish.” Accepted answers resume the same poll, ignoring the answered digest, and a stored ready result opens the finished document. Guild failures open the existing classified document failure view. At the Member ceiling polling slows and says “Still running”; a clock never fails the run. Re-entry resolves the viewer's run from the server roster; subject-keyed local proof is optional, and the explicit cross-entry `?run=` receiver is a separate layer. Documents questions entries target the Member 360 run page; the document page shows only a plain continuation notice for its creator.
 
+The in-progress view (activity or questions) carries the other agents' choice: it is the open run, and **Start over** beside it shows the intake under a notice whose button returns to that run. Start over is a view change only; it sends nothing and discards nothing. Creating from that intake posts a plain Generate, the server's `MKTG_RUN_ACTIVE` 409 opens the shared `MktgActiveRunGuardService` dialog, and only “Discard and start over” re-posts with the existing `discard` body field. The dialog's “Open it” returns to this page's in-progress view when the conflict names the run the page already follows, and otherwise opens the run's document as before. The choice shows only while the run is going: the ready and failed fallback panes carry no Start over row. Start over is keyed to the run it was chosen on, so a different run restored later (another tab) opens on its own in-progress view, and answers typed but not sent are kept (the stepper's `draftChanged` draft, keyed by `questionsId`, comes back as `initialDraft`) when the requester returns with “Answer the questions”. While the intake is shown this way the earlier run's poll never clears or sets the form's message, the form's message outranks that poll's connection line, and the notice's button is disabled while a Create is in flight. A run that ends meanwhile leaves the requester on the intake instead of navigating to its document: the notice goes, run history is re-read, a failed run says so in one line, and the ended run is latched so a roster that still lists it does not restore it and repeat the read.
+
 The shared activity builder has verified tool tables for Brand Kit, Messaging Document, Boilerplates, FAQ, LinkedIn post, AEO/GEO, ICP and Member 360. Existing recognized calls retain their historical activity semantics. Jina web search is research, all `lfx_mcp_*` names use the common LFX rule, and FAQ’s `membership_tier_prices` is LFX. Unknown non-UI tool work after observed research advances a generic Writing step; any unknown `finalize_*` is Checking. ICP can finalize without earlier tool calls: its observed model-turn start supplies the writing timestamp. Only event/tool fields authorize these advances, never English progress prose, arguments or tool output; new labels are fixed strings. Existing fixture payloads are unchanged, with synthetic real-tool-name replays for all eight agents.
 
 Member activity maps `score_member_360`, `record_member_actions` and `judge_member_slice` to one continuous “Writing the report” step (fan-out does not create per-member rows); `ask_requester` maps to Questions; `finalize_member_360` or a surfaced `finalize_member_slice` ends Writing and starts “Checking the report”. The shared header retains Reading sources → Searching the web and LFX → Writing → Checking. Showing agent-authored progress prose remains out of scope.
@@ -69,6 +71,7 @@ a shared or explicit document entry uses the same component independently of the
 metadata polling cycle, not a Member-specific result receiver or browser pending cache.
 It waits for a committed revision before rendering the existing Member 360 type:
 the agent's stored summary Markdown (including any leading “Partial report.” disclosure), then summary cards, ranking, expanded member evidence, team actions, Evidence, Method, and history. Empty or absent legacy summary prose creates no empty section.
+The ranking shows the same short labels as the sections below it: `member360TierGroupLabel` drops the project prefix and the word “Membership” from the tier under the member's name, and `member360ActionText` drops a leading team or owner label from the next action, since the Owner column names the team. Both are display-only; the envelope and the workbook keep the agent's text. The rank is one unbreakable box, so a three-digit rank never wraps in its narrow column.
 A plain document URL in another browser works without the run selector, owner token,
 session storage or the initiating tab: authorized reads reconcile the saved session.
 Owner tokens never enter URLs. The creator-bound result endpoint remains compatible
@@ -93,7 +96,7 @@ The `MktgRunFailureReason` union currently contains `Member360FailureReason`; th
 `isMktgRunFailureReason` guard accepts only the codes in the Member failure-message allow-list,
 not arbitrary metadata/attempt IDs. A new one-off's classified failures extend that union and
 its guard's explicit allow-list together, with their own safe message presentation; no prose matching.
-A Guild-ended Member session is a classified failure that offers Run again, not Retry or paused Refresh:
+A Guild-ended Member session is a classified failure that offers Run again, not Retry or a Refresh control:
 the Member failure view hides the shared retry card, so it cannot reopen a dead session. The BFF retry API is unchanged; this is a document-page action policy.
 Entity document-title binding remains limited to Member 360. Transient reads retain
 last-known content/progress within the shared bounded backoff policy; access errors
@@ -139,9 +142,11 @@ the project's writer grant, reads the stored hash-checked run, and assembles its
 tabs on demand, without a Key Contact column. It accepts no client-supplied tabs and
 does not persist the XLSX blob.
 
-The Summary is a width-bounded QBR canvas with metadata, a tier table/bar chart,
-optional movers, the complete watchlist, team action counts and data coverage;
-large watchlists continue vertically. Ranking dates are real date cells; values,
+The Summary is a one-page QBR canvas with metadata, a tier table/bar chart,
+optional movers, the watchlist, team action counts and data coverage. The
+watchlist shows the 15 lowest-scoring members renewing within 120 days; when
+more qualify, one line under it gives the count of the rest and points to
+Member Ranking, which lists every member. Ranking dates are real date cells; values,
 scores and contact counts remain numbers with currency/decimal/integer formats.
 A single category-block heat scale accompanies engagement, renewal, tier and
 priority highlighting. The workbook and result page read renewal thresholds and

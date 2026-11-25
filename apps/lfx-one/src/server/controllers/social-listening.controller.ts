@@ -18,15 +18,16 @@ import {
   parseSocialListeningScope,
 } from '../helpers/social-listening-params.helper';
 import { logger } from '../services/logger.service';
+import { socialListeningAccessService } from '../services/social-listening-access.service';
 import { SocialListeningService } from '../services/social-listening.service';
 import { UserPreferenceService } from '../services/user-preference.service';
 import { isImpersonating } from '../utils/auth-helper';
 
-import type { PreferenceReadResponse, PreferenceUpsertRequest } from '@lfx-one/shared/interfaces';
+import type { PreferenceReadResponse, PreferenceUpsertRequest, SocialListeningAccessResponse } from '@lfx-one/shared/interfaces';
 
 /**
  * Social Listening HTTP boundary: feed/count JSON bodies and remaining GET query params are
- * validated before touching the service. The dashboard-access gate (ED + LF Staff) lives in route middleware.
+ * validated before touching the service. The access gate (ED, LF Staff, members of opted-in groups) lives in route middleware.
  */
 export class SocialListeningController {
   private readonly socialListeningService: SocialListeningService;
@@ -35,6 +36,28 @@ export class SocialListeningController {
   public constructor() {
     this.socialListeningService = new SocialListeningService();
     this.userPreferenceService = new UserPreferenceService();
+  }
+
+  /**
+   * GET /api/social-listening/access — whether the caller can view Social Listening for `foundationSlug`.
+   * Not behind the access middleware: it answers `canView: false` rather than 403ing.
+   */
+  public async getAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_social_listening_access';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      parseFoundationSlug(req, operation);
+      // Validated above; passed as given (not lowercased) so the slug lookup matches mixed-case upstream slugs.
+      const foundationSlug = String(req.query['foundationSlug']);
+      const response: SocialListeningAccessResponse = await socialListeningAccessService.getAccess(req, foundationSlug);
+
+      logger.success(req, operation, startTime, { can_view: response.canView, reason: response.reason });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
   }
 
   /**

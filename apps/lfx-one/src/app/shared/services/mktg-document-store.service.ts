@@ -6,6 +6,7 @@ import { inject, Injectable } from '@angular/core';
 import { LINKEDIN_API, MKTG_DOCUMENTS_API_PATH } from '@lfx-one/shared/constants';
 import {
   LinkedinShareLinkResponse,
+  MktgApproveRevisionRequest,
   MktgDismissDocumentRunRequest,
   MktgDocumentDetailResponse,
   MktgDocumentsResponse,
@@ -78,19 +79,30 @@ export class MktgDocumentStoreService {
   }
 
   /** Approve an existing revision; the response includes the approved current selection. */
-  public approveRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRevisionResponse> {
+  public approveRevision(
+    projectUid: string,
+    agentKey: string,
+    documentId: string,
+    revisionId: string,
+    expected: MktgApproveRevisionRequest = {}
+  ): Observable<MktgRevisionResponse> {
+    const body = this.expectedCurrent(expected);
     return this.http
-      .post<MktgRevisionResponse>(
-        `${this.documentPath(agentKey, documentId)}/revisions/${encodeURIComponent(revisionId)}/approve`,
-        {},
-        { params: this.projectParams(projectUid) }
-      )
+      .post<MktgRevisionResponse>(`${this.documentPath(agentKey, documentId)}/revisions/${encodeURIComponent(revisionId)}/approve`, body, {
+        params: this.projectParams(projectUid),
+      })
       .pipe(take(1));
   }
 
   /** Make a revision current without adding history; `/restore` is the compatibility URL. */
-  public restoreRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRestoreRevisionResponse> {
-    const body: MktgRestoreRevisionRequest = { project: projectUid, revisionId };
+  public restoreRevision(
+    projectUid: string,
+    agentKey: string,
+    documentId: string,
+    revisionId: string,
+    expected: MktgApproveRevisionRequest = {}
+  ): Observable<MktgRestoreRevisionResponse> {
+    const body: MktgRestoreRevisionRequest = { project: projectUid, revisionId, ...this.expectedCurrent(expected) };
     return this.http.post<MktgRestoreRevisionResponse>(`${this.documentPath(agentKey, documentId)}/restore`, body).pipe(take(1));
   }
 
@@ -110,6 +122,14 @@ export class MktgDocumentStoreService {
   public dismissRun(projectUid: string, agentKey: string, documentId: string, runId: string): Observable<void> {
     const body: MktgDismissDocumentRunRequest = { project: projectUid };
     return this.http.post<void>(`${this.documentPath(agentKey, documentId)}/runs/${encodeURIComponent(runId)}/dismiss`, body).pipe(take(1));
+  }
+
+  /** Only what the caller observed goes on the wire: an absent field means "no expectation", as for older clients. */
+  private expectedCurrent(expected: MktgApproveRevisionRequest): MktgApproveRevisionRequest {
+    return {
+      ...(expected.expectedCurrentId === undefined ? {} : { expectedCurrentId: expected.expectedCurrentId }),
+      ...(expected.expectedCurrentChangedAt === undefined ? {} : { expectedCurrentChangedAt: expected.expectedCurrentChangedAt }),
+    };
   }
 
   private readApprovedRevision(

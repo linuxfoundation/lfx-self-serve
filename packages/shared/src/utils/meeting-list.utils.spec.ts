@@ -20,7 +20,10 @@ import {
   formatMeetingWhenFull,
   getMeetingWhenParts,
   getMeetingDayBucket,
+  getMeetingGroupCategories,
   getMeetingGroupNames,
+  getMeetingGroupType,
+  getMeetingGroupTypes,
   getMeetingHomeRowLink,
   getMeetingHomeRowOrganizers,
   getMeetingHomeRowProject,
@@ -475,6 +478,30 @@ describe('filterMeetingsHome', () => {
     expect(keys(filterMeetingsHome(rows, filters({ hideDeclined: true, rsvp: 'declined' }), '', null))).toEqual(['tsc-1', 'tsc-2', 'board-1']);
   });
 
+  it('filters by group, on any of the meeting groups', () => {
+    const shared = row({
+      key: 'shared',
+      meeting: buildMeeting({
+        id: 'shared',
+        committees: [
+          { uid: 'c-2', name: 'Security WG' },
+          { uid: 'c-1', name: 'TSC' },
+        ],
+      }),
+    });
+    expect(keys(filterMeetingsHome([...rows, shared], filters({ group: 'c-1' }), '', null))).toEqual(['tsc-1', 'tsc-2', 'shared']);
+    expect(keys(filterMeetingsHome([...rows, shared], filters({ group: 'c-2' }), '', null))).toEqual(['shared']);
+  });
+
+  it('filters by group type: the category when known, else the type read from the group name', () => {
+    const wg = row({ key: 'wg', meeting: buildMeeting({ id: 'wg', committees: [{ uid: 'c-2', name: 'Security WG' }] }) });
+    expect(keys(filterMeetingsHome([...rows, wg], filters({ groupType: 'Technical Advisory Committee' }), '', null))).toEqual(['tsc-1', 'tsc-2']);
+    expect(keys(filterMeetingsHome([...rows, wg], filters({ groupType: 'Working Group' }), '', null))).toEqual(['wg']);
+    const categories = new Map([['c-1', 'Technical Steering Committee']]);
+    expect(keys(filterMeetingsHome([...rows, wg], filters({ groupType: 'Technical Steering Committee' }), '', null, categories))).toEqual(['tsc-1', 'tsc-2']);
+    expect(filterMeetingsHome(rows, filters({ groupType: 'Technical Advisory Committee' }), '', null, categories)).toEqual([]);
+  });
+
   it('combines search and filters', () => {
     expect(keys(filterMeetingsHome(rows, filters({ project: 'p-2', rsvp: 'declined' }), 'board', null))).toEqual(['board-1']);
     expect(filterMeetingsHome(rows, filters({ project: 'p-2' }), 'steering', null)).toEqual([]);
@@ -488,6 +515,7 @@ describe('countAppliedMeetingFilters', () => {
       countAppliedMeetingFilters(filters({ foundation: 'f-1', project: 'p-1', meetingType: 'Board', rsvp: 'pending', organizedByMe: true, hideDeclined: true }))
     ).toBe(6);
     expect(countAppliedMeetingFilters(filters({ rsvp: 'maybe' }))).toBe(1);
+    expect(countAppliedMeetingFilters(filters({ project: 'p-1', group: 'c-1', groupType: 'Board', meetingType: 'Board' }))).toBe(4);
   });
 });
 
@@ -523,6 +551,29 @@ describe('buildMeetingFilterChips', () => {
   it('prefixes the Foundation/Project chip with Foundation when its pick is a foundation', () => {
     expect(buildMeetingFilterChips(filters({ project: 'f-1' }), rows)).toEqual([{ key: 'project', prefix: 'Foundation:', label: 'Foundation One' }]);
   });
+
+  it('labels the project lens filters in section order, with Project even for a foundation', () => {
+    const grouped = [...rows, row({ meeting: buildMeeting({ id: 'g', committees: [{ uid: 'c-1' }, { uid: 'c-2', name: ' Security WG ' }] }) })];
+    const chips = buildMeetingFilterChips(filters({ project: 'f-1', group: 'c-2', groupType: 'Working Group', meetingType: 'Technical' }), grouped, true);
+    expect(chips).toEqual([
+      { key: 'project', prefix: 'Project:', label: 'Foundation One' },
+      { key: 'group', prefix: 'Group:', label: 'Security WG' },
+      { key: 'groupType', prefix: 'Group type:', label: 'Working Group' },
+      { key: 'meetingType', prefix: 'Meeting type:', label: 'Technical' },
+    ]);
+    expect(buildMeetingFilterChips(filters({ group: 'c-1' }), grouped, true)).toEqual([{ key: 'group', prefix: 'Group:', label: 'c-1' }]);
+  });
+
+  it('names projects and groups from the scope options first, for picks not on the loaded rows', () => {
+    const scope = {
+      projects: [{ uid: 'p-9', name: 'Old Project', slug: 'old' }],
+      groups: [{ uid: 'c-9', name: 'Old WG', category: null, project_uid: 'p-9' }],
+    };
+    expect(buildMeetingFilterChips(filters({ project: 'p-9', group: 'c-9' }), rows, true, scope)).toEqual([
+      { key: 'project', prefix: 'Project:', label: 'Old Project' },
+      { key: 'group', prefix: 'Group:', label: 'Old WG' },
+    ]);
+  });
 });
 
 describe('getMeetingGroupNames', () => {
@@ -537,6 +588,67 @@ describe('getMeetingGroupNames', () => {
 
     expect(getMeetingGroupNames({ committees })).toEqual(['TOC', 'Security WG']);
     expect(getMeetingGroupNames({ committees: [] })).toEqual([]);
+  });
+});
+
+describe('getMeetingGroupType', () => {
+  it('uses the category when the group has one', () => {
+    expect(getMeetingGroupType('Security WG', ' Technical Oversight Committee ')).toBe('Technical Oversight Committee');
+  });
+
+  it.each([
+    ['Governing Board', 'Board'],
+    ['Board Technical Committee', 'Board'],
+    ['Security WG', 'Working Group'],
+    ['Docs Working Group', 'Working Group'],
+    ['Release Workstream', 'Working Group'],
+    ['Observability SIG', 'Special Interest Group'],
+    ['Special Interest: Storage', 'Special Interest Group'],
+    ['TAC', 'Technical Advisory Committee'],
+    ['TOC', 'Technical Advisory Committee'],
+    ['Technical Steering Committee', 'Technical Advisory Committee'],
+    ['Steering', 'Technical Advisory Committee'],
+    ['Outreach Committee', 'Committee'],
+    ['Governance Council', 'Committee'],
+    ['Cloud Native Ambassadors', 'Ambassador'],
+    ['Onboarding WG', 'Working Group'],
+    ['Dashboard Council', 'Committee'],
+    ['Protocol Team', 'Other'],
+    ['Tech Stack Maintainers', 'Other'],
+    ['Contact Desk', 'Other'],
+    ['Maintainers', 'Other'],
+    ['', 'Other'],
+  ])('reads "%s" as %s without a category', (name, type) => {
+    expect(getMeetingGroupType(name, null)).toBe(type);
+    expect(getMeetingGroupType(name, '  ')).toBe(type);
+  });
+});
+
+describe('getMeetingGroupCategories', () => {
+  it('maps groups with a category by UID, trimmed, and leaves the rest out', () => {
+    expect(
+      getMeetingGroupCategories([
+        { uid: 'c-1', category: ' Board ' },
+        { uid: 'c-2', category: null },
+        { uid: 'c-3', category: '  ' },
+      ])
+    ).toEqual(new Map([['c-1', 'Board']]));
+  });
+});
+
+describe('getMeetingGroupTypes', () => {
+  it('lists the meeting group types without repeats, taking categories by committee UID', () => {
+    const committees = [
+      { uid: 'c-1', name: 'TOC' },
+      { uid: 'c-2', name: 'Security WG' },
+      { uid: 'c-3', name: 'Docs Working Group' },
+    ];
+    expect(getMeetingGroupTypes({ committees }, new Map())).toEqual(['Technical Advisory Committee', 'Working Group']);
+    expect(getMeetingGroupTypes({ committees }, new Map([['c-1', 'Technical Oversight Committee']]))).toEqual([
+      'Technical Oversight Committee',
+      'Working Group',
+    ]);
+    expect(getMeetingGroupTypes({ committees: [] }, new Map())).toEqual([]);
   });
 });
 

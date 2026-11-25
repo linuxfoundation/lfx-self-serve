@@ -1,0 +1,48 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<p class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700" data-testid="account-email-code-instructions">
+  Check <strong class="font-semibold text-ui-neutral-900">{{ email() }}</strong> for a 6-digit verification code. Enter it to confirm you own this address.
+  We’ll then check whether it can be linked to your account.
+</p>
+<lfx-ui-input
+  label="Enter verification code"
+  placeholder="000000"
+  inputmode="numeric"
+  autocomplete="one-time-code"
+  [value]="verification.code()"
+  (valueChange)="onCode($event)"
+  class="[&_input]:tracking-[.2em]"
+  data-testid="account-email-code-input" />
+@if (verification.error()) {
+  <p class="m-0 text-[12px] leading-[16px] text-ui-danger-700" role="alert" data-testid="account-email-code-error">
+    @if (verification.alreadyLinked()) {
+      You’ve verified this email address, but it’s already linked to an LFX account.
+      <button
+        type="button"
+        lfxOpenIntercom
+        [intercomMessage]="linkedSupportMessage()"
+        class="font-medium underline"
+        data-testid="account-email-code-linked-support">
+        Contact support
+      </button>
+      for help with next steps.
+    } @else {
+      {{ verification.error() }}
+    }
+  </p>
+}
+@if (verification.showResendSupport()) {
+  <lfx-ui-note variant="info" size="small" [label]="resendSupportTitle" data-testid="account-email-code-resend-support">
+    {{ resendSupportMessage }}
+    <lfx-ui-button note-action variant="secondary" size="tiny" lfxOpenIntercom data-testid="account-email-code-resend-support-button"
+      >Contact support</lfx-ui-button
+    >
+  </lfx-ui-note>
+} @else {
+  <lfx-ui-note variant="info" size="small" [label]="notReceivedTitle" data-testid="account-email-code-hint">
+    {{ notReceivedHint }}
+    <lfx-ui-button note-action variant="secondary" size="tiny" lfxOpenIntercom data-testid="account-email-code-support">Contact support</lfx-ui-button>
+  </lfx-ui-note>
+}

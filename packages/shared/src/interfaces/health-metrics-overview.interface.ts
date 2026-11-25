@@ -5,6 +5,7 @@ import type { Signal } from '@angular/core';
 
 import type { HealthMetricsEventsForecast, HealthMetricsEventsForecastCurve } from './health-metrics-events.interface';
 import type { HealthMetricsChartTipView, HealthMetricsL2Range } from './health-metrics-l2.interface';
+import type { HealthMetricsMembersReservedTier } from './health-metrics-members.interface';
 import type { UiBadgeTone, UiBadgeVariant } from './uikit.interface';
 
 /** Every Overview card read is foundation-wide and carries all four periods, so a period change never re-reads. */
@@ -95,9 +96,11 @@ export interface HealthMetricsOverviewChurn {
   periods: Record<HealthMetricsL2Range, HealthMetricsOverviewChurnPeriod>;
 }
 
-/** `GET /api/analytics/overview-outstanding-balance` — overdue invoices today; the view has no periods. Shares are 0–1. */
-export interface HealthMetricsOverviewOutstandingBalance {
-  measured: boolean;
+/**
+ * One period's overdue membership invoices: those due in the period that are still unpaid and 60 or more days
+ * overdue today, not the balance at the period's end. Shares are 0–1.
+ */
+export interface HealthMetricsOverviewBalancePeriod {
   outstandingUsd: number | null;
   overdueMembers: number | null;
   highRiskUsd: number | null;
@@ -106,6 +109,12 @@ export interface HealthMetricsOverviewOutstandingBalance {
   mediumRiskUsd: number | null;
   mediumRiskMembers: number | null;
   mediumRiskSharePct: number | null;
+}
+
+/** `GET /api/analytics/overview-outstanding-balance` — every period, from the foundation's one row. */
+export interface HealthMetricsOverviewOutstandingBalance {
+  measured: boolean;
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewBalancePeriod>;
 }
 
 /** One event on the Overview list. Every `null` is unmeasured, never zero. */
@@ -121,6 +130,11 @@ export interface HealthMetricsOverviewEvent {
   registrationsGoal: number | null;
   /** Upcoming only: the view's pace against last year (`high`, `medium` or `low`). */
   compScore: string | null;
+  /**
+   * Upcoming only: the proposals' pace against last year's edition, on the same scale. `null` with no previous
+   * edition, no proposals yet, or once the event has started.
+   */
+  proposalsCompScore: string | null;
   acceptedTalks: number | null;
   totalProposals: number | null;
   /** The call for proposals' stage, e.g. `In Review`. */
@@ -159,6 +173,8 @@ export interface HealthMetricsOverviewBoardMember {
   jobTitle: string | null;
   organization: string | null;
   logoUrl: string | null;
+  /** `null` keeps the initials avatar. */
+  photoUrl: string | null;
   /** `YYYY-MM-DD`. */
   lastAttendedDate: string | null;
   attendance: Partial<Record<HealthMetricsL2Range, HealthMetricsOverviewBoardAttendance>>;
@@ -366,11 +382,21 @@ export interface HealthMetricsOverviewNpsView {
 export interface HealthMetricsOverviewChurnTierView {
   key: string;
   label: string;
+  /** The tier icon for Diamond, Platinum, Gold and Silver. */
+  tier: HealthMetricsMembersReservedTier | null;
   rateLabel: string;
   rateWidthPct: number;
   lostLabel: string;
   valueLabel: string;
+  /** The tier's place in the view's rank, highest first, so a Tier sort follows the view rather than a client list. */
+  tierRank: number;
+  churnRatePct: number | null;
+  membershipsLost: number | null;
+  valueLostUsd: number | null;
 }
+
+/** The churn table's sortable columns. */
+export type HealthMetricsOverviewChurnSortKey = 'tier' | 'rate' | 'lost' | 'value';
 
 export interface HealthMetricsOverviewChurnView {
   isEmpty: boolean;
@@ -389,7 +415,12 @@ export interface HealthMetricsOverviewBalanceRowView {
   widthPct: number;
   membersLabel: string;
   amountLabel: string;
+  members: number | null;
+  amountUsd: number | null;
 }
+
+/** The balance table's sortable columns. */
+export type HealthMetricsOverviewBalanceSortKey = 'risk' | 'members' | 'amount';
 
 export interface HealthMetricsOverviewBalanceView {
   isEmpty: boolean;
@@ -398,6 +429,8 @@ export interface HealthMetricsOverviewBalanceView {
   totalLabel: string;
   overdueMembersLabel: string;
   atRiskLabel: string;
+  /** The "{N} at risk of churn" tag shows only when the period has high-risk members. */
+  showAtRisk: boolean;
   rows: HealthMetricsOverviewBalanceRowView[];
 }
 
@@ -446,6 +479,8 @@ export interface HealthMetricsOverviewEventRegistrationsView extends HealthMetri
 export interface HealthMetricsOverviewEventTalksView extends HealthMetricsOverviewEventBarView {
   hasProposals: boolean;
   note: string;
+  /** An upcoming event's proposals pace, named for screen readers; `null` without one. */
+  statusLabel: string | null;
 }
 
 export interface HealthMetricsOverviewEventRowView {
@@ -456,7 +491,13 @@ export interface HealthMetricsOverviewEventRowView {
   isPast: boolean;
   registrations: HealthMetricsOverviewEventRegistrationsView;
   talks: HealthMetricsOverviewEventTalksView;
+  /** Raw counts for sorting; `null` is unmeasured, and `acceptedTalks` is `null` when the cell shows a note, not a count. */
+  registrationsCount: number | null;
+  acceptedTalks: number | null;
 }
+
+/** The events table's sortable columns; the actions column does not sort. */
+export type HealthMetricsOverviewEventsSortKey = 'event' | 'registrations' | 'talks';
 
 /** The period's events, split into held and upcoming for the stacked bar. */
 export interface HealthMetricsOverviewEventsTotalView {
@@ -597,13 +638,15 @@ export interface HealthMetricsOverviewNewsletterView {
   mostEngaging: { name: string; rateLabel: string } | null;
 }
 
-/** How the board table is sorted; the design opens on the lowest attendance first. */
-export type HealthMetricsOverviewBoardSort = 'att-asc' | 'att-desc' | 'name-asc' | 'name-desc';
+/** The board table's sortable columns: name, company, attendance and the last meeting attended. */
+export type HealthMetricsOverviewBoardSortKey = 'name' | 'org' | 'att' | 'last';
 
 export interface HealthMetricsOverviewBoardRowView {
   key: string;
   name: string;
   initials: string;
+  /** Empty keeps the initials. */
+  photoUrl: string;
   title: string;
   organization: string;
   organizationInitial: string;
@@ -615,6 +658,8 @@ export interface HealthMetricsOverviewBoardRowView {
   widthPct: number;
   barClass: string;
   lastAttendedLabel: string;
+  /** `YYYY-MM-DD`, for sorting; `null` when never attended. */
+  lastAttendedDate: string | null;
 }
 
 export interface HealthMetricsOverviewBoardView {

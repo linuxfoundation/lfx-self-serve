@@ -176,8 +176,16 @@ export function validateMemberImportRow(cells: MemberImportCells, rules: MemberI
     add('email', 'Email is not a valid address.');
   }
 
-  checkLength(value('first_name'), 100, 'first_name', 'First name', add);
-  checkLength(value('last_name'), 100, 'last_name', 'Last name', add);
+  for (const [column, label] of [
+    ['first_name', 'First name'],
+    ['last_name', 'Last name'],
+  ] as const) {
+    if (!value(column).trim()) {
+      add(column, `${label} is required.`);
+    } else {
+      checkLength(value(column), 100, column, label, add);
+    }
+  }
   checkLength(value('job_title'), 200, 'job_title', 'Job title', add);
 
   const linkedin = value('linkedin_profile');
@@ -366,6 +374,11 @@ export function getMemberImportRetryDelayMs(retryAfter: string | null, pauseInde
   const backoff = MEMBER_IMPORT_PAUSE_DELAYS_MS[Math.min(Math.max(pauseIndex, 0), MEMBER_IMPORT_PAUSE_DELAYS_MS.length - 1)];
   const delay = retryAfter === null ? backoff : (parseRetryAfterMs(retryAfter, now) ?? MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS);
   return Math.max(delay, MEMBER_IMPORT_RETRY_AFTER_MIN_MS);
+}
+
+/** Retry unresolved attempts, unsent rows and retryable failures, but never unchanged invalid data. */
+export function isMemberImportRowRetryable(row: MemberImportRow): boolean {
+  return row.status === 'not_submitted' || ((row.status === 'failed' || row.status === 'unknown') && row.retryable !== false);
 }
 
 function parseRetryAfterMs(value: string, now: number): number | null {

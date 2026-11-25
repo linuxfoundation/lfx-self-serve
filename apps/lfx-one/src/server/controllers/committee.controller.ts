@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_FILE_TYPES, COMMITTEE_DOCUMENT_DELETE_TYPES, MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX } from '@lfx-one/shared/constants';
+import {
+  ALLOWED_FILE_TYPES,
+  COMMITTEE_DOCUMENT_DELETE_TYPES,
+  COMMITTEE_DOCUMENT_NAME_MAX_LENGTH,
+  DOCUMENT_UPDATE_TYPES,
+  MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX,
+} from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
@@ -25,6 +31,7 @@ import { pipeline } from 'node:stream/promises';
 
 import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
+import { parseDocumentUpdateRequest } from '../helpers/document-update.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam, validateFoundationUidParameter } from '../helpers/validation.helper';
 import { GroupsEngagementStatsService } from '../services/groups-engagement-stats.service';
@@ -199,6 +206,7 @@ export class CommitteeController {
         includeInheritedPermissions: true,
         includeMailingListStatus: true,
         includeAuditor: req.query['auditor'] === 'true',
+        strictWriter: req.query['strict_writer'] === 'true',
       });
 
       // Log the success
@@ -1390,6 +1398,84 @@ export class CommitteeController {
       });
 
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PATCH /committees/:id/documents/:documentId?type=folder|link|file
+   * Body: `{ name?, parent_uid? }`. Renames and/or moves the record; `parent_uid: null` moves it to the root.
+   */
+  public async updateCommitteeDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, documentId } = req.params;
+    const documentType = getStringQueryParam(req, 'type');
+    const validUpdateTypes: readonly string[] = DOCUMENT_UPDATE_TYPES;
+    const startTime = logger.startOperation(req, 'update_committee_document', {
+      committee_id: id,
+      document_id: documentId,
+      document_type: documentType,
+    });
+
+    try {
+      // id/documentId are interpolated directly into the upstream request path — reject anything that isn't a UUID before it
+      // reaches the proxy layer, or a crafted id can traverse/retarget the upstream call.
+      if (!id || !isUuid(id)) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID must be a valid UUID', {
+            operation: 'update_committee_document',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!documentId || !isUuid(documentId)) {
+        next(
+          ServiceValidationError.forField('documentId', 'Document ID must be a valid UUID', {
+            operation: 'update_committee_document',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!documentType || !validUpdateTypes.includes(documentType)) {
+        const message = !documentType ? 'Document type query parameter is required' : `Document type must be one of: ${validUpdateTypes.join(', ')}`;
+        next(
+          ServiceValidationError.forField('type', message, {
+            operation: 'update_committee_document',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const type = documentType as ProjectDocumentType;
+      const { request, fieldErrors } = parseDocumentUpdateRequest(req.body, type, COMMITTEE_DOCUMENT_NAME_MAX_LENGTH[type]);
+      if (Object.keys(fieldErrors).length > 0) {
+        next(
+          ServiceValidationError.fromFieldErrors(fieldErrors, 'Validation failed', {
+            operation: 'update_committee_document',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const updated = await this.committeeService.updateCommitteeDocument(req, id, documentId, type, request);
+
+      logger.success(req, 'update_committee_document', startTime, {
+        committee_id: id,
+        document_id: documentId,
+        document_type: documentType,
+      });
+
+      res.status(200).json(updated);
     } catch (error) {
       next(error);
     }

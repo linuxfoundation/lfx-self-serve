@@ -8,6 +8,7 @@ import type {
   CommitteeFoundationGroup,
   CommitteeMailingListLink,
   CommitteeMemberPermissionInfo,
+  CommitteeSsoGroupNameDisplay,
   GroupBehavioralClass,
   GroupChannel,
   GroupEditLink,
@@ -15,7 +16,8 @@ import type {
   ParentCommitteeOption,
 } from '../interfaces/committee.interface';
 import type { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
-import type { CommitteeMember } from '../interfaces/member.interface';
+import type { User } from '../interfaces/auth.interface';
+import type { CommitteeMember, CreateCommitteeMemberRequest } from '../interfaces/member.interface';
 import type { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
 import type { PersonaType } from '../interfaces/persona.interface';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
@@ -25,14 +27,18 @@ import {
   FILTERED_COMMITTEE_CATEGORIES,
   FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL,
   GROUPS_ENGAGEMENT_ICON_CLASS,
+  MEMBER_FORM_VOTING_STATUSES,
   OTHER_GROUPS_LABEL,
+  SSO_GROUP_NAME_PENDING_LABEL,
 } from '../constants/committees.constants';
+import { SOCIAL_LISTENING_GROUP_CATEGORIES } from '../constants/social-listening.constants';
 import { formatRelativeTime } from './date-time.utils';
 import { getMailingListCommands } from './mailing-list.utils';
 import { getEntityCommands } from './entity-route.utils';
 import { slugify } from './string.utils';
 import { isMailtoSafeEmail } from './email.utils';
 import { normalizeToUrl, toAppUrl } from './url.utils';
+import { committeeOrganizationFormComplete } from './invitation.utils';
 
 /**
  * Determine the behavioral class for a given committee category.
@@ -211,6 +217,23 @@ export function committeeRouteIdMatches(
 }
 
 /**
+ * Resolves the read-only SSO group name line for a group's settings. The committee service
+ * generates `sso_group_name` whenever a group is public or SSO-enabled, so the line shows for
+ * either toggle (PCC parity) and is hidden when both are off. A missing or blank name returns
+ * the pending placeholder instead of an empty value.
+ */
+export function resolveSsoGroupNameDisplay(
+  toggles: { public?: boolean | null; sso_group_enabled?: boolean | null },
+  ssoGroupName: string | null | undefined
+): CommitteeSsoGroupNameDisplay | null {
+  if (!toggles.public && !toggles.sso_group_enabled) {
+    return null;
+  }
+  const value = ssoGroupName?.trim();
+  return value ? { value, pending: false } : { value: SSO_GROUP_NAME_PENDING_LABEL, pending: true };
+}
+
+/**
  * Build the query params used when navigating to create a vote or survey for a committee.
  * Always includes `committee_uid`; includes `project` only when the committee carries a project slug.
  */
@@ -381,6 +404,56 @@ export function isVotingRep(member: CommitteeMember): boolean {
 /** Count of members with an active "Voting Rep" status (excludes Alternate Voting Rep). */
 export function countVotingReps(members: CommitteeMember[]): number {
   return members.filter(isVotingRep).length;
+}
+
+// ── Add myself (#6117) ──────────────────────────────────────────────────────
+
+/**
+ * Build the member request that adds the signed-in user to a group from their session profile.
+ * Prefers the OIDC `given_name` / `family_name` claims and falls back to `first_name` / `last_name`.
+ * Returns null when the user has no email, since a member cannot be added without one.
+ */
+export function buildSelfMemberRequest(
+  user: Pick<User, 'email' | 'given_name' | 'family_name' | 'first_name' | 'last_name'> | null
+): Pick<CreateCommitteeMemberRequest, 'email' | 'first_name' | 'last_name'> | null {
+  const email = user?.email?.trim();
+  if (!user || !email) return null;
+  return {
+    email,
+    first_name: user.given_name?.trim() || user.first_name?.trim() || '',
+    last_name: user.family_name?.trim() || user.last_name?.trim() || '',
+  };
+}
+
+/**
+ * Whether adding the signed-in user needs the Add with details form instead of a one-click add.
+ * The member form requires names, plus company when a business email is required and role and
+ * voting status when voting is enabled, so any of those routes the user to the prefilled form.
+ */
+export function selfMemberNeedsDetails(
+  request: Pick<CreateCommitteeMemberRequest, 'first_name' | 'last_name'>,
+  requirements: Pick<Committee, 'business_email_required' | 'enable_voting'>
+): boolean {
+  return !request.first_name?.trim() || !request.last_name?.trim() || !!requirements.business_email_required || !!requirements.enable_voting;
+}
+
+/** Required group details still missing from a staged addition under the settings being saved. */
+export function getMissingCommitteeMemberRequirements(
+  member: Pick<CreateCommitteeMemberRequest, 'organization' | 'role' | 'voting'>,
+  requirements: Pick<Committee, 'business_email_required' | 'enable_voting'>
+): string[] {
+  const missing: string[] = [];
+  if (
+    (requirements.business_email_required || requirements.enable_voting) &&
+    !committeeOrganizationFormComplete({ organization: member.organization?.name ?? '', organization_url: member.organization?.website ?? '' })
+  ) {
+    missing.push('company name and HTTPS website');
+  }
+  if (requirements.enable_voting) {
+    if (!member.role?.name?.trim()) missing.push('role');
+    if (!MEMBER_FORM_VOTING_STATUSES.some(({ value }) => value === member.voting?.status)) missing.push('voting status');
+  }
+  return missing;
 }
 
 // ── My Groups card grid (LFXV2-1715) ────────────────────────────────────────
@@ -674,4 +747,9 @@ function resolveEngagementSubLine(stats: GroupsEngagementStats | null): string |
 function resolveActiveMembersSubLine(stats: GroupsEngagementStats | null, baseSubLine: string | undefined): string | undefined {
   if (!stats?.coverage || stats.coverage.covered >= stats.coverage.total) return baseSubLine;
   return `${baseSubLine} · across ${stats.coverage.covered} of ${stats.coverage.total} groups`;
+}
+
+/** Whether a group of this category can grant its members Social Listening (Board only for now). */
+export function canGroupGrantSocialListening(category: string | null | undefined): boolean {
+  return !!category && SOCIAL_LISTENING_GROUP_CATEGORIES.includes(category);
 }

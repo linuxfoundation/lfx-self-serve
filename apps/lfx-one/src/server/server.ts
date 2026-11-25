@@ -72,6 +72,7 @@ import publicNewslettersRouter from './routes/public-newsletters.route';
 import publicVotesRouter from './routes/public-votes.route';
 import publicProfileRouter from './routes/public-profile.route';
 import publicProjectsRouter from './routes/public-projects.route';
+import publicShareKitsRouter from './routes/public-share-kits.route';
 import rewardsRouter from './routes/rewards.route';
 import searchRouter from './routes/search.route';
 import sitemapRouter from './routes/sitemap.route';
@@ -431,6 +432,7 @@ app.use('/public/api/foundations', publicFoundationsRouter);
 app.use('/public/api/groups', publicGroupsRouter);
 app.use('/public/api/profile', publicProfileRouter);
 app.use('/public/api/projects', publicProjectsRouter);
+app.use('/public/api/events', publicShareKitsRouter);
 // The Gatewaze embed's stylesheet, scoped to the LFX chrome and cached by hashed name. Public:
 // the loader fetches it without credentials and the content is public (see the controller).
 app.use(GW_EMBED_STYLESHEET_ROUTE, gwEmbedStylesheetRouter);
@@ -452,7 +454,7 @@ app.use('/api/past-meetings', pastMeetingsRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/analytics', analyticsRouter);
-// Executive-dashboard Foundation Lens surface (ED + LF Staff) — the router applies requireDashboardAccess to every endpoint.
+// Foundation Lens Social Listening (ED, LF Staff, members of opted-in foundation groups) — the router applies requireSocialListeningAccess to every endpoint except the /access probe.
 app.use('/api/social-listening', socialListeningRouter);
 // Foundation Lens → Participating Companies (#5697): executive director or LF staff, like Health Metrics.
 app.use('/api/foundation-participating-orgs', foundationParticipatingOrgsRouter);

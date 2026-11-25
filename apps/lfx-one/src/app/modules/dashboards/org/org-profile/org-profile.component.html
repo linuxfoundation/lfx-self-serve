@@ -126,18 +126,8 @@
       </div>
     </section>
 
-    <!-- Two address cards side by side (FR-004). Read-only in v1. -->
+    <!-- Billing address card only; Primary Address is intentionally hidden. Grid keeps the card at half width on md+ screens. -->
     <section class="grid grid-cols-1 gap-4 md:grid-cols-2" data-testid="org-profile-addresses">
-      <div class="rounded-lg border border-gray-200 bg-white p-6" data-testid="org-profile-primary-address-card">
-        <h2 class="text-sm font-semibold text-gray-900">Primary Address</h2>
-        @if (addresses()?.primaryAddress; as addr) {
-          <p class="mt-2 text-sm text-gray-700">{{ addr.line1 }}</p>
-          <p class="text-sm text-gray-700">{{ addr.city }}, {{ addr.stateProvince }} {{ addr.postalCode }}</p>
-          <p class="text-sm text-gray-700">{{ addr.country }}</p>
-        } @else {
-          <p class="mt-2 text-sm text-gray-500">—</p>
-        }
-      </div>
       <div class="rounded-lg border border-gray-200 bg-white p-6" data-testid="org-profile-billing-address-card">
         <h2 class="text-sm font-semibold text-gray-900">Billing Address</h2>
         @if (addresses()?.billingAddress; as addr) {

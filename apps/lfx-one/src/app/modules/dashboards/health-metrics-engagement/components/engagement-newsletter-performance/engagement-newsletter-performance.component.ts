@@ -8,12 +8,19 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import {
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_DEFAULT_SORT,
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES,
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_PAGE_SIZE,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_SORT_COLUMNS,
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEngagementNewsletterChart, buildHealthMetricsEngagementNewsletterView } from '@lfx-one/shared/utils';
+import {
+  buildHealthMetricsEngagementNewsletterChart,
+  buildHealthMetricsEngagementNewsletterView,
+  healthMetricsRowSortValue,
+  sortHealthMetricsRows,
+} from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
@@ -22,6 +29,8 @@ import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsLineChartComponent } from '../../../components/health-metrics-line-chart/health-metrics-line-chart.component';
 import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
@@ -48,6 +57,7 @@ import type {
     HealthMetricsCellComponent,
     HealthMetricsLineChartComponent,
     HealthMetricsMetricsRowComponent,
+    HealthMetricsThComponent,
     Skeleton,
     TableComponent,
     UiPaginationComponent,
@@ -89,9 +99,13 @@ export class EngagementNewsletterPerformanceComponent {
   /** Nothing sent in the period, or never measured; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.view().isEmpty);
 
-  /** A new foundation or period is a different list, so paging restarts. */
+  protected readonly sorting = injectHealthMetricsTableSort(
+    HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_SORT_COLUMNS,
+    HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_DEFAULT_SORT
+  );
+  /** A new foundation or period is a different list, and a new sort a different order, so paging restarts. */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(() => `${this.query().foundationSlug}|${this.chrome.selectedRange()}`),
+    source: computed(() => `${this.query().foundationSlug}|${this.chrome.selectedRange()}|${JSON.stringify(this.sorting.sort())}`),
     computation: () => 0,
   });
 
@@ -101,9 +115,13 @@ export class EngagementNewsletterPerformanceComponent {
   protected readonly chart: Signal<HealthMetricsEngagementNewsletterChartView> = computed(() =>
     buildHealthMetricsEngagementNewsletterChart(this.points(), this.mode())
   );
+  /** The table's rows in the picked order; the chart keeps its own chronological order. */
+  protected readonly rows: Signal<HealthMetricsEngagementNewsletterRowView[]> = computed(() =>
+    sortHealthMetricsRows(this.view().rows, this.sorting.order(), healthMetricsRowSortValue)
+  );
   // Kept inside the loaded rows, so a page picked before a smaller read lands never leaves the table blank.
   protected readonly pageRows: Signal<HealthMetricsEngagementNewsletterRowView[]> = computed(() => {
-    const rows = this.view().rows;
+    const rows = this.rows();
     const page = Math.min(this.page(), Math.max(0, Math.ceil(rows.length / this.size) - 1));
     return rows.slice(page * this.size, (page + 1) * this.size);
   });

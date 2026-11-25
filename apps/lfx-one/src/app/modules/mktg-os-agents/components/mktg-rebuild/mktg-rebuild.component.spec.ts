@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { By } from '@angular/platform-browser';
+import { MKTG_NOT_AVAILABLE_TEXT, MKTG_POLL_RETRYING_TEXT, MKTG_REBUILD_UNREACHABLE_TEXT } from '@lfx-one/shared/constants';
 import { MktgRebuildResponse } from '@lfx-one/shared/interfaces';
 import { buildMktgRevisionKey } from '@lfx-one/shared/utils';
 import { MktgRebuildService } from '@services/mktg-rebuild.service';
@@ -39,13 +41,13 @@ describe('Family rebuild progress', () => {
   let fixture: ComponentFixture<MktgRebuildComponent>;
   let updates: Subject<MktgRebuildResponse>;
   let answers: Subject<MktgRebuildResponse>;
-  let api: { run: ReturnType<typeof vi.fn>; answer: ReturnType<typeof vi.fn> };
+  let api: { run: ReturnType<typeof vi.fn>; answer: ReturnType<typeof vi.fn>; retrying: WritableSignal<boolean> };
   beforeEach(async () => {
     impersonating.set(false);
     user.set({ sub: 'synthetic-writer' });
     updates = new Subject();
     answers = new Subject();
-    api = { run: vi.fn(() => updates), answer: vi.fn(() => answers) };
+    api = { run: vi.fn(() => updates), answer: vi.fn(() => answers), retrying: signal(false) };
     TestBed.configureTestingModule({
       providers: [provideRouter([]), { provide: MktgRebuildService, useValue: api }, { provide: UserService, useValue: { user, impersonating } }],
     });
@@ -170,6 +172,44 @@ describe('Family rebuild progress', () => {
     updates.error(new Error('Progress unavailable'));
     await fixture.whenStable();
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="mktg-rebuild-error"]')?.textContent).toContain('Progress unavailable');
+  });
+  it('shows one grey line while the chain cannot reach the server, keeps the steps, and clears it on the next good read', async () => {
+    const root: HTMLElement = fixture.nativeElement;
+    fixture.componentInstance.start();
+    const running = pending();
+    running.status = 'running';
+    running.steps = [{ ...running.steps[0], status: 'running', questions: undefined }];
+    updates.next(running);
+    api.retrying.set(true);
+    await fixture.whenStable();
+    const line = root.querySelector('[data-testid="mktg-rebuild-retrying"]');
+    expect(line?.textContent?.trim()).toBe(MKTG_POLL_RETRYING_TEXT);
+    expect(line?.getAttribute('role')).toBe('status');
+    expect(line?.className).toContain('text-gray-500');
+    expect(root.querySelector('[data-testid="mktg-rebuild-step-boilerplates"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="mktg-rebuild-error"]')).toBeNull();
+    expect(root.textContent).not.toContain('Try again');
+    api.retrying.set(false);
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="mktg-rebuild-retrying"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-rebuild-step-boilerplates"]')).not.toBeNull();
+  });
+  it('offers Try again only for a start that could not reach the server, and names a final refusal without it', async () => {
+    const root: HTMLElement = fixture.nativeElement;
+    fixture.componentInstance.start();
+    updates.error(new HttpErrorResponse({ status: 0 }));
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="mktg-rebuild-error"]')?.textContent).toContain(MKTG_REBUILD_UNREACHABLE_TEXT);
+    expect(root.textContent).not.toContain('reload the family');
+    updates = new Subject();
+    root.querySelector<HTMLButtonElement>('[data-testid="mktg-rebuild-try-again"] button')?.click();
+    await fixture.whenStable();
+    expect(api.run).toHaveBeenCalledTimes(2);
+    expect(root.querySelector('[data-testid="mktg-rebuild-error"]')).toBeNull();
+    updates.error(new HttpErrorResponse({ status: 404 }));
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="mktg-rebuild-error"]')?.textContent?.trim()).toBe(MKTG_NOT_AVAILABLE_TEXT.rebuild);
+    expect(root.querySelector('[data-testid="mktg-rebuild-try-again"]')).toBeNull();
   });
   it('cancels old context subscriptions and drops capabilities on a project or subject change', async () => {
     fixture.componentInstance.start();

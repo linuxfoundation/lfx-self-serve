@@ -3,6 +3,7 @@
 
 import type { VOTE_DETAIL_SUMMARY_CARD_ACTIONS } from '../constants/vote.constants';
 import type {
+  CondorcetOutcome,
   IndexedVoteResponseStatus,
   IndividualVoteStatus,
   PollStatus,
@@ -951,6 +952,8 @@ export interface VoteFormValue {
   committee: CommitteeReference | null;
   /** Eligible participants filter value */
   eligible_participants: string;
+  /** Voting method — chosen on create, locked once the vote exists */
+  poll_type: PollType;
   /** Vote close/end date */
   close_date: Date | null;
   /** Vote close time in 12-hour format (e.g. "11:59 PM") */
@@ -965,6 +968,63 @@ export interface VoteFormValue {
   questions: QuestionFormValue[];
   /** Array of comment-prompt form values (optional, creator authoring only) */
   commentPrompts: CommentPromptFormValue[];
+}
+
+/**
+ * Title and description a new vote is prefilled with once a group is selected (#6104)
+ * @description Built by `buildVoteBasicsDefaults`; the create form only writes them into fields the
+ * organizer hasn't edited.
+ */
+export interface VoteBasicsDefaults {
+  /** Prefilled vote title */
+  title: string;
+  /** Prefilled vote description */
+  description: string;
+}
+
+/**
+ * A voting method offered when creating a vote
+ * @description Shared by the Create Vote dropdown and the form's Voting Method select, so adding a
+ * method is one entry in `VOTE_METHOD_OPTIONS`.
+ */
+export interface VoteMethodOption {
+  /** Display label for the method (e.g. "Plurality") */
+  label: string;
+  /** Voting method sent as `poll_type` */
+  value: PollType;
+  /** Supporting copy explaining how the method picks a winner */
+  description: string;
+  /** Font Awesome icon classes for the method */
+  icon: string;
+  /** Unavailable for new votes; does not change existing votes or ballots. */
+  disabled?: boolean;
+}
+
+/**
+ * Extra per-row fields the Create Vote dropdown renders alongside the label and icon a PrimeNG
+ * `MenuItem` already carries.
+ * @description Mirrors `MeetingCreateMenuRow` — free of any PrimeNG import, intersected with
+ * `MenuItem` at the component boundary and read from the menu's `item` template.
+ */
+export interface VoteCreateMenuRow {
+  /** Supporting copy shown under the row's title */
+  description: string;
+  /** Tailwind classes for the row's icon tile — background plus icon colour */
+  tileClass: string;
+  /** `data-testid` for the row, since the template replaces PrimeNG's own item markup */
+  testId: string;
+}
+
+/**
+ * How many group members a Condorcet IRV vote would go to, as the create form knows it
+ * @description `idle` when the count doesn't apply (plurality, or no group chosen yet); `error` when
+ * the group's members couldn't be fetched, which never blocks the form since the backend accepts the vote.
+ */
+export interface VoteEligibleVoterCountState {
+  /** Where the count is in its fetch */
+  status: 'idle' | 'loading' | 'loaded' | 'error';
+  /** Eligible voter count once `loaded`, otherwise null */
+  count: number | null;
 }
 
 /**
@@ -1032,7 +1092,7 @@ export interface VoteResultsQuestion {
 /**
  * One-line results summary for a question
  * @description Built by `buildVoteResultsSummary` for the vote detail Overview card, which shows the leading choice
- * instead of the full breakdown.
+ * instead of the full breakdown; an ended ranked vote's final outcome uses `VoteOverviewOutcome` instead (#6124).
  */
 export interface VoteResultsSummaryLine {
   /** Question identifier */
@@ -1041,6 +1101,35 @@ export interface VoteResultsSummaryLine {
   question: string;
   /** Summary sentence, e.g. "Yes leads with 87%" */
   text: string;
+}
+
+/** One runner-up row under the vote detail Overview outcome (#6124); `detail` is null when there is nothing to add. */
+export interface VoteOverviewStanding {
+  choiceId: string;
+  choiceText: string;
+  /** Competition rank, rendered as an ordinal */
+  rank: number;
+  /** e.g. "Won 2 out of 3 possible head-to-head matchups", "Eliminated in round 1" or "Not elected" */
+  detail: string | null;
+}
+
+/**
+ * Method-agnostic final outcome of a ranked question for the vote detail Overview card (#6124)
+ * @description Built by `buildCondorcetOverviewOutcome` (Condorcet IRV) or `buildRankedOverviewOutcome` (IRV, Meek STV)
+ * and rendered by `lfx-vote-overview-outcome`. `standings` holds only the rows after the winners, capped to
+ * `VOTE_OVERVIEW_STANDINGS_LIMIT`; `hiddenCount` is how many more rows the Results tab lists.
+ */
+export interface VoteOverviewOutcome {
+  questionId: string;
+  prompt: string;
+  result: 'winner' | 'tie' | 'none';
+  label: 'Winner' | 'Elected' | 'Tied' | 'No winner';
+  /** Winning, elected or tied option names; empty for no winner */
+  winnerTexts: string[];
+  /** How the result was decided; null when there is nothing to explain */
+  explanation: string | null;
+  standings: VoteOverviewStanding[];
+  hiddenCount: number;
 }
 
 /**
@@ -1085,6 +1174,24 @@ export interface RankCount {
 }
 
 /**
+ * One head-to-head pairing in a Condorcet matrix
+ * @description Each `ranked_choice_votes[]` row lists its own choice against every other choice, so a pair appears
+ * once from each side. Mirrors lfx-v2-voting-service `CondorcetMatrixEntryResponseBody`.
+ */
+export interface CondorcetMatrixEntry {
+  /** Choice this row belongs to */
+  choice_id: string;
+  /** Opponent choice */
+  other_choice_id: string;
+  /** Ballots that rank `choice_id` above `other_choice_id` */
+  choice_id_wins: number;
+  /** Ballots that rank `other_choice_id` above `choice_id` */
+  other_choice_id_wins: number;
+  /** Display string, e.g. `23(10)` */
+  result: string;
+}
+
+/**
  * Ranked-choice vote result for a single choice
  * @description Contains rank distribution and Condorcet matrix data
  */
@@ -1093,19 +1200,109 @@ export interface RankedChoiceVoteResult {
   choice_id: string;
   /** Distribution of ranks assigned to this choice */
   rank_counts: RankCount[];
-  /** Condorcet pairwise comparison matrix entries */
-  condorcet_matrix: any[];
+  /** Condorcet pairwise comparison matrix entries — upstream omits this with `omitempty` outside Condorcet-IRV */
+  condorcet_matrix?: CondorcetMatrixEntry[];
 }
 
 /**
  * Winner information for ranked-choice voting
- * @description Contains winning choices and algorithm metadata
+ * @description Computed by ITX (`pkg/results/calculate.go`) — the authoritative outcome for every ranked method
  */
 export interface RankedChoiceWinnerInfo {
-  /** Choices participating in the ranked vote */
+  /** Winning choices (several on a tie; the elected seats for Meek STV) — not every choice on the ballot */
   poll_choices: { choice_id: string; choice_text: string }[];
-  /** Whether Condorcet-IRV hybrid was used for tie-breaking */
-  condorcet_irv_used_for_eliminations: boolean;
+  /** Whether no Condorcet winner existed and Condorcet-IRV fell back to instant-runoff eliminations — upstream `*bool` */
+  condorcet_irv_used_for_eliminations?: boolean;
+}
+
+/**
+ * Per-choice vote count in one IRV round
+ * @description Mirrors lfx-v2-voting-service `VoteCountResponseBody`
+ */
+export interface IrvRoundVoteCount {
+  /** Choice identifier */
+  choice_id: string;
+  /** Continuing ballots counted for this choice in the round */
+  vote_count: number;
+  /** Share of the round's votes (0-100), when upstream supplies it */
+  percentage?: number;
+}
+
+/**
+ * State of a single instant-runoff counting round (Instant Runoff, or Condorcet-IRV with eliminations)
+ * @description Mirrors lfx-v2-voting-service `IRVRoundSummaryResponseBody`
+ */
+export interface IrvRoundSummary {
+  /** Round number (1-based) */
+  round_number: number;
+  /** Vote counts per continuing choice */
+  votes: IrvRoundVoteCount[];
+  /** Total votes counted in this round */
+  total_votes: number;
+  /** Lowest vote count in this round */
+  min_votes?: number;
+  /** Ballots with no continuing choice left */
+  exhausted_votes: number;
+  /** Votes moved to other choices by this round's elimination */
+  transferred_votes?: IrvRoundVoteCount[];
+  /** Votes needed to win */
+  threshold: number;
+  /** Choice eliminated at the end of this round */
+  eliminated_choice_id?: string;
+  /** Upstream round description */
+  message: string;
+}
+
+/**
+ * Per-choice vote count in one Meek STV round
+ * @description Mirrors lfx-v2-voting-service `MeekSTVVoteCountResponseBody`. ITX computes fractional values; the voting
+ * service currently declares them as integers.
+ */
+export interface MeekStvVoteCount {
+  /** Choice identifier */
+  choice_id: string;
+  /** Votes for this choice in the round */
+  vote_count: number;
+}
+
+/**
+ * Choice elected in a Meek STV round
+ * @description Mirrors lfx-v2-voting-service `MeekSTVElectedChoiceResponseBody`
+ */
+export interface MeekStvElectedChoice {
+  /** Choice identifier */
+  choice_id: string;
+  /** Votes for this choice when elected */
+  vote_count: number;
+  /** Votes over the quota, transferred onward */
+  surplus_votes: number;
+}
+
+/**
+ * State of a single Meek STV counting round
+ * @description Mirrors lfx-v2-voting-service `MeekSTVRoundSummaryResponseBody`
+ */
+export interface MeekStvRoundSummary {
+  /** Round number (1-based) */
+  round_number: number;
+  /** Vote counts per choice */
+  votes: MeekStvVoteCount[];
+  /** Total votes counted in this round */
+  total_votes: number;
+  /** Ballots with no continuing choice left */
+  exhausted_votes: number;
+  /** Quota needed to be elected */
+  threshold: number;
+  /** Upstream round description */
+  message: string;
+  /** Choices elected in this round */
+  elected_choices?: MeekStvElectedChoice[];
+  /** Choices eliminated in this round */
+  eliminated_choices?: MeekStvVoteCount[];
+  /** Votes transferred in this round */
+  transferred_votes?: MeekStvVoteCount[];
+  /** Surplus votes distributed in this round */
+  surplus_votes?: MeekStvVoteCount[];
 }
 
 /**
@@ -1136,10 +1333,10 @@ export interface PollQuestionResult {
   ranked_choice_votes?: RankedChoiceVoteResult[];
   /** Winner information for ranked-choice voting */
   ranked_choice_winner_info?: RankedChoiceWinnerInfo;
-  /** IRV round-by-round elimination summary */
-  irv_round_summary?: any;
-  /** Meek STV round-by-round summary */
-  meek_stv_round_summary?: any;
+  /** IRV round-by-round elimination summary — only for Instant Runoff, or Condorcet-IRV with eliminations */
+  irv_round_summary?: IrvRoundSummary[];
+  /** Meek STV round-by-round summary — only for Meek STV */
+  meek_stv_round_summary?: MeekStvRoundSummary[];
 }
 
 /**
@@ -1538,12 +1735,152 @@ export interface RankedChoiceDistribution {
   rankCounts: RankCountDistribution[];
 }
 
+/**
+ * Final outcome of a ranked-choice question, built by `buildRankedQuestionViews` from `ranked_choice_winner_info`
+ * @description `kind` is the counting method that decided it: `condorcet` (a Condorcet winner beat every other choice),
+ * `irv` (Instant Runoff, or Condorcet-IRV that fell back to eliminations) or `meek_stv`. `result` is `winner` for one
+ * winner (or any elected seats for Meek STV), `tie` for several, `none` for no winner. `roundCount` is 0 when the
+ * payload has no round summary.
+ */
+export interface RankedOutcome {
+  kind: 'condorcet' | 'irv' | 'meek_stv';
+  result: 'winner' | 'tie' | 'none';
+  winnerTexts: string[];
+  roundCount: number;
+  /** True for an `irv` outcome reached by Condorcet-IRV after no choice beat every other head-to-head */
+  condorcetFallback: boolean;
+}
+
+/** Outcome banner sentence for `lfx-vote-ranked-question-results`, split around the bolded winner names. */
+export interface RankedOutcomeCopy {
+  lead: string;
+  names: string;
+  tail: string;
+}
+
+/**
+ * One row of a ranked-choice question's standings, built by `buildRankedQuestionViews`
+ * @description `rank` uses competition ranking (1, 1, 3). `round` is the elimination or election round, when known.
+ * `headToHeadWins`/`headToHeadTotal` are set only for Condorcet-IRV.
+ */
+export interface RankedStanding {
+  choiceId: string;
+  choiceText: string;
+  rank: number;
+  label: 'winner' | 'tied' | 'eliminated' | 'survivor' | 'elected' | 'not_elected' | null;
+  round: number | null;
+  headToHeadWins: number | null;
+  headToHeadTotal: number | null;
+}
+
+/** A standings row with its display text, derived by `lfx-vote-ranked-question-results`; `statusText` is null for a row with nothing to add (a runoff survivor). */
+export interface RankedStandingRow extends RankedStanding {
+  rankText: string;
+  statusText: string | null;
+}
+
 /** Results view model for a ranked-choice question — projection of PollQuestionResult built by `buildRankedQuestionViews` (vote.utils) and rendered by `lfx-vote-ranked-question-results`. */
 export interface RankedQuestionView {
   questionId: string;
   prompt: string;
   choiceDistributions: RankedChoiceDistribution[];
-  hasRoundSummary: boolean;
+  /** Final outcome, or null when the payload has no ranked votes */
+  outcome: RankedOutcome | null;
+  /** Ordered standings rows, empty when `outcome` is null */
+  standings: RankedStanding[];
+}
+
+/** A candidate in a Condorcet IRV question, in `question.choices` order (#5969). */
+export interface CondorcetCandidate {
+  choiceId: string;
+  choiceText: string;
+}
+
+/** One row of a Condorcet IRV question's standings (#5969). */
+export interface CondorcetStandingRow {
+  /** Competition rank ("1, 2, 2, 4") */
+  rank: number;
+  choiceId: string;
+  choiceText: string;
+  /** Head-to-head matchups this candidate won */
+  winCount: number;
+  /** Head-to-head matchups possible — 0 when the matrix is missing */
+  totalMatchups: number;
+  isWinner: boolean;
+  /** A winner who shares the win */
+  isTied: boolean;
+  /** Instant-runoff round that eliminated the candidate; null when not eliminated */
+  eliminatedInRound: number | null;
+}
+
+/** One pairwise comparison table cell: "{rowWins}–{colWins}" with its result for the row candidate (#5969). */
+export interface CondorcetPairwiseCell {
+  value: string;
+  result: 'win' | 'loss' | 'tie' | 'neutral' | 'self';
+}
+
+/** One row of the pairwise comparison table (#5969). */
+export interface CondorcetPairwiseRow {
+  candidate: CondorcetCandidate;
+  cells: CondorcetPairwiseCell[];
+}
+
+/** One row of the candidate rank summary: voters per rank position, index 0 = 1st (#5969). */
+export interface CondorcetRankSummaryRow {
+  candidate: CondorcetCandidate;
+  counts: number[];
+}
+
+/** One distinct ballot ordering and how many ballots used it (#5969). */
+export interface CondorcetBallotPatternRow {
+  /** Stable identity from ordered choice IDs; unchanged when its count or display names change */
+  key: string;
+  count: number;
+  /** Candidate names, 1st choice first; partial ballots are shorter than the candidate list */
+  ranking: string[];
+}
+
+/** Results view model for a Condorcet IRV question — built by `buildCondorcetQuestionViews`, rendered by `lfx-vote-condorcet-results` (#5969). */
+export interface CondorcetQuestionView {
+  questionId: string;
+  prompt: string;
+  candidates: CondorcetCandidate[];
+  outcome: CondorcetOutcome;
+  /** Winner names from the voting service; several for a tie, empty for no winner */
+  winnerNames: string[];
+  /** The service fell back to instant-runoff elimination */
+  usedIrv: boolean;
+  standings: CondorcetStandingRow[];
+  pairwise: CondorcetPairwiseRow[];
+  /** Rank positions 1..N, one per candidate */
+  ranks: number[];
+  rankSummary: CondorcetRankSummaryRow[];
+  /** Distinct ballot orderings, most common first; null when individual ballots aren't available */
+  ballotPatterns: CondorcetBallotPatternRow[] | null;
+}
+
+/** Context for polling a named Condorcet vote's ballots on the Results tab (#5969). */
+export interface CondorcetBallotsKey {
+  uid: string;
+  /** Whether Results is active; inactive keys retain eligibility so privacy changes invalidate cached ballots */
+  active: boolean;
+  /** Vote detail refresh tick, bumped after a ballot is cast from the page */
+  tick: number;
+  /** Voting ended and final totals were released; starts the bounded ballot-confirmation window */
+  closed: boolean;
+  /** A draft has no ballots, and the voters endpoint refuses it, so the read is skipped */
+  draft: boolean;
+}
+
+/** The latest named-ballot read for a Condorcet vote and the vote it belongs to (#5969). */
+export interface CondorcetBallotsRead {
+  uid: string;
+  /** Null when the first read for this vote failed */
+  voters: VoteVoter[] | null;
+  /** The latest refresh failed; any retained ballots may be out of date */
+  stale: boolean;
+  /** The bounded final ballot-confirmation window is still running */
+  confirming: boolean;
 }
 
 /**

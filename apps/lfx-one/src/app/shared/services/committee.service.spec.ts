@@ -128,6 +128,36 @@ describe('CommitteeService detail cache aliases', () => {
 
     expect(http.get).toHaveBeenCalledTimes(2);
   });
+
+  it('sends strict-writer reads to the network without reading or replacing a cached entry (#5731)', () => {
+    service.getCommitteeDetail(SLUG).subscribe();
+    service.getCommitteeDetail(SLUG, { strictWriter: true }).subscribe();
+    service.getCommitteeDetail(SLUG, { strictWriter: true }).subscribe();
+    service.getCommitteeDetail(SLUG).subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(3);
+    const strictParams = http.get.mock.calls[1][1]?.params as HttpParams;
+    expect(strictParams.get('strict_writer')).toBe('true');
+    expect(strictParams.has('auditor')).toBe(false);
+  });
+
+  it.each([undefined, { auditor: true }, { strictWriter: true }, { strictWriter: true, auditor: true }])(
+    'encodes the detail ID as one URL path segment with options %j',
+    (options) => {
+      service.getCommitteeDetail('group/with ?#%', options).subscribe();
+
+      expect(http.get.mock.calls[0][0]).toBe('/api/committees/group%2Fwith%20%3F%23%25');
+    }
+  );
+
+  it('does not cache a failed strict-writer read', () => {
+    http.get.mockReturnValueOnce(throwError(() => new Error('access check unavailable')));
+    service.getCommitteeDetail(UID, { strictWriter: true }).subscribe({ error: vi.fn() });
+    service.getCommitteeDetail(UID).subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(2);
+    expect(http.get.mock.calls[1]).toEqual([`/api/committees/${UID}`]);
+  });
 });
 
 describe('CommitteeService.bulkCreateCommitteeMembers', () => {
@@ -174,5 +204,53 @@ describe('CommitteeService.bulkCreateCommitteeMembers', () => {
     service.getCommitteeDetail(UID).subscribe();
 
     expect(http.get).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('CommitteeService.updateCommitteeDocument', () => {
+  let service: CommitteeService;
+  let patch: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    patch = vi.fn().mockReturnValue(of({ uid: 'doc-1', type: 'link', name: 'Renamed' }));
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch, delete: vi.fn() } }] });
+    service = TestBed.inject(CommitteeService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('patches the document with the changes, naming its type in the query', () => {
+    let result: unknown = null;
+    service.updateCommitteeDocument('committee-1', 'doc-1', 'link', { name: 'Renamed' }).subscribe((doc) => (result = doc));
+
+    expect(patch).toHaveBeenCalledTimes(1);
+    const [url, body, options] = patch.mock.calls[0];
+    expect(url).toBe('/api/committees/committee-1/documents/doc-1');
+    expect(body).toEqual({ name: 'Renamed' });
+    expect((options.params as HttpParams).get('type')).toBe('link');
+    expect(result).toEqual({ uid: 'doc-1', type: 'link', name: 'Renamed' });
+  });
+
+  it('encodes the ids it puts in the path', () => {
+    service.updateCommitteeDocument('a/b', 'c d?e', 'file', { name: 'Renamed' }).subscribe();
+
+    expect(patch.mock.calls[0][0]).toBe('/api/committees/a%2Fb/documents/c%20d%3Fe');
+  });
+
+  it('sends a move to the root as a null folder', () => {
+    service.updateCommitteeDocument('committee-1', 'doc-1', 'file', { parent_uid: null }).subscribe();
+
+    expect(patch.mock.calls[0][1]).toEqual({ parent_uid: null });
+  });
+
+  it('passes a conflict from the BFF on to the caller', () => {
+    patch.mockReturnValue(throwError(() => ({ status: 409 })));
+    let error: unknown = null;
+
+    service.updateCommitteeDocument('committee-1', 'doc-1', 'folder', { name: 'Taken' }).subscribe({ error: (err) => (error = err) });
+
+    expect(error).toEqual({ status: 409 });
   });
 });

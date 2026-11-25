@@ -9,7 +9,6 @@ import {
   DOCUMENT_LABEL,
   FORMATION_CHECKLIST_PATH,
   FORMATION_ENABLED_FLAG,
-  FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG,
   GATEWAZE_EMBED_ENABLED_FLAG,
   GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
@@ -24,6 +23,7 @@ import {
   ORG_EASYCLA_PATH,
   CF_ORG_DONATIONS_FLAG,
   ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
+  ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
   ORG_SCOPE_QUERY_PARAM,
   ORG_TEAM_MEMBERS_QUERY_PARAM,
@@ -37,10 +37,13 @@ import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
+import { withoutEmployeeViewHiddenPages } from '../utils/org-lens-employee-nav.utils';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SocialListeningService } from '@services/social-listening.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
 import { finalize, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
@@ -65,9 +68,12 @@ export class SidebarNavService {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
+  private readonly orgLensViewMode = inject(OrgLensViewModeService);
+  private readonly socialListeningService = inject(SocialListeningService);
 
   /** The Me lens section Formations (#2753) is appended to; matched by label because the tree is built inline. */
   private readonly meEngagementSectionLabel = 'Engagement';
+  private readonly orgEngagementSectionLabel = 'Company Engagement';
 
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
@@ -87,7 +93,6 @@ export class SidebarNavService {
    * is the checklist plus Meetings, Mailing Lists and Groups (#2754, #3059).
    */
   private readonly isFormationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
-  private readonly isFoundationParticipatingOrgsEnabled = this.featureFlagService.getBooleanFlag(FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG, false);
 
   /**
    * True when the user has non-marketing foundation access (board role, root-writer, LF-staff, or
@@ -126,6 +131,12 @@ export class SidebarNavService {
   // when they have writer (or owner-equivalent) permission on the currently
   // active foundation/project. canWrite() is reactive to context changes.
   private readonly canSeeNewsletters: Signal<boolean> = this.initCanSeeNewsletters();
+
+  /**
+   * True when a non-ED, non-LF-Staff user can view Social Listening for the selected foundation because
+   * one of their groups on it has the setting on (lfx-self-serve-ops#387).
+   */
+  private readonly canGroupMemberViewSocialListening: Signal<boolean> = this.initCanGroupMemberViewSocialListening();
 
   /**
    * Mirrors the BFF gate for the project Participating companies page so the entry is hidden, not a dead end: LF staff,
@@ -293,9 +304,11 @@ export class SidebarNavService {
     // Crowdfunding Donations is single-organization too: `/api/crowdfunding/org-donations` takes an
     // `orgUid` its SFID validator refuses the sentinel for, so `/org/family-{id}/donations` only errors (#4415, Copilot).
     const donationsItems = this.isCfOrgDonationsEnabled() && !this.accountContext.isRollUp() ? [this.orgDonationsNavItem()] : [];
-    const withInitiatives = this.placeAfterOrgProjects(items, [...initiativesItems, ...donationsItems]);
+    // Both close the Company Engagement section, right below Groups.
+    const withInitiatives = this.placeAfterOrgGroups(items, [...initiativesItems, ...donationsItems]);
     // ROI Metrics sits in the LF Staff Only section, which closes the menu.
-    return this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
+    const withStaffSection = this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
+    return this.orgLensViewMode.isEmployeeView() ? withoutEmployeeViewHiddenPages(withStaffSection, ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES) : withStaffSection;
   });
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched),
@@ -675,24 +688,27 @@ export class SidebarNavService {
         });
       }
 
-      if (this.personaService.canViewExecutiveDashboards()) {
-        const metricsItems: SidebarMenuItem[] = [
-          {
+      const canViewExecutiveDashboards = this.personaService.canViewExecutiveDashboards();
+      if (canViewExecutiveDashboards || this.canGroupMemberViewSocialListening()) {
+        const metricsItems: SidebarMenuItem[] = [];
+        if (canViewExecutiveDashboards) {
+          metricsItems.push({
             label: 'Health Metrics',
             icon: 'fa-light fa-chart-line-up',
             routerLink: '/foundation/health-metrics',
             testId: 'sidebar-metrics-health-metrics',
-          },
-          {
-            label: 'Social Listening',
-            icon: 'fa-light fa-radar',
-            routerLink: '/foundation/social-listening',
-            testId: 'sidebar-metrics-social-listening',
-          },
-        ];
+          });
+        }
+        metricsItems.push({
+          label: 'Social Listening',
+          icon: 'fa-light fa-radar',
+          routerLink: '/foundation/social-listening',
+          testId: 'sidebar-metrics-social-listening',
+        });
 
-        // Dark-launched (#5697): the page reads live PROJECT_PARTICIPATING_ORGS figures from the warehouse, so the flag is the only gate before it is generally available.
-        if (this.isFoundationParticipatingOrgsEnabled()) {
+        // The page reads live PROJECT_PARTICIPATING_ORGS figures (#5697); its route and BFF admit only the foundation's executive director and LF staff,
+        // so a group member here (Social Listening only) does not get it.
+        if (canViewExecutiveDashboards) {
           metricsItems.push({
             label: 'Participating companies',
             icon: 'fa-light fa-building',
@@ -1013,7 +1029,7 @@ export class SidebarNavService {
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
       // top-level item or a section when re-enabled.
       {
-        label: 'Company Engagement',
+        label: this.orgEngagementSectionLabel,
         isSection: true,
         expanded: true,
         items: [
@@ -1215,6 +1231,32 @@ export class SidebarNavService {
     };
   }
 
+  private initCanGroupMemberViewSocialListening(): Signal<boolean> {
+    // Probe with the slug as stored: the server looks it up verbatim.
+    // Only probe for an authenticated user on the foundation lens (the docs shell injects this service too).
+    const groupFoundationSlug = computed((): string | null => {
+      if (!this.userService.authenticated() || this.menuLens() !== 'foundation' || this.personaService.canViewExecutiveDashboards()) {
+        return null;
+      }
+      return this.projectContextService.selectedFoundation()?.slug ?? null;
+    });
+
+    return toSignal(
+      toObservable(groupFoundationSlug).pipe(
+        switchMap((slug) =>
+          slug
+            ? this.socialListeningService.getAccess(slug).pipe(
+                map((access) => access.canView),
+                // Start each foundation's probe at false so the previous foundation's answer can't linger while it loads.
+                startWith(false)
+              )
+            : of(false)
+        )
+      ),
+      { initialValue: false }
+    );
+  }
+
   private initCanSeeNewsletters(): Signal<boolean> {
     return computed(() => this.personaService.currentPersona() === 'executive-director' || this.projectContextService.menuCanWrite());
   }
@@ -1250,12 +1292,15 @@ export class SidebarNavService {
     return relation === 'isMarketingAuditor' ? this.personaService.isMarketingAuditor() : this.personaService.isCampaignManager();
   }
 
-  /** Splices `extra` in right after Projects. Appends when Projects is absent, so it can't jump to the top. */
-  private placeAfterOrgProjects(items: SidebarMenuItem[], extra: SidebarMenuItem[]): SidebarMenuItem[] {
+  /**
+   * Splices `extra` onto the end of the Company Engagement section, right below Groups (its last item).
+   * Appends at the top level when the section is absent, so it can't jump to the top.
+   */
+  private placeAfterOrgGroups(items: SidebarMenuItem[], extra: SidebarMenuItem[]): SidebarMenuItem[] {
     if (extra.length === 0) return items;
-    const projectsIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('projects'));
-    if (projectsIndex === -1) return [...items, ...extra];
-    const afterProjects = projectsIndex + 1;
-    return [...items.slice(0, afterProjects), ...extra, ...items.slice(afterProjects)];
+    const sectionIndex = items.findIndex((item) => item.isSection && item.label === this.orgEngagementSectionLabel);
+    if (sectionIndex === -1) return [...items, ...extra];
+    const section = items[sectionIndex];
+    return items.map((item, index) => (index === sectionIndex ? { ...section, items: [...(section.items ?? []), ...extra] } : item));
   }
 }

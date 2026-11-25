@@ -3,6 +3,14 @@
 
 @if (!headless() && visibleAnswersNotice() && runState() !== 'failed' && !closedRun()) {
   <p class="text-sm text-gray-600" role="status" data-testid="mktg-run-progress-answered-note">{{ visibleAnswersNotice() }}</p>
+  @if (keptBlock(); as kept) {
+    <lfx-mktg-run-questions
+      [questions]="kept.questions"
+      [projectName]="projectName()"
+      [locked]="true"
+      [initialDraft]="kept.draft"
+      data-testid="mktg-run-questions-locked" />
+  }
 }
 @if (announceState() && !headless() && !runPage()) {
   <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>
@@ -27,11 +35,6 @@
         {{ warning() }}
       } @else if (runState() === 'questions') {
         Waiting for your answers.
-        @if (!publicQuestions() && !answersError()) {
-          <span data-testid="mktg-run-progress-owner-note"
-            >Answering needs project write access or the browser that started this run. Refresh progress to check again.</span
-          >
-        }
       } @else if (runState() === 'completed') {
         Written — confirming the produced revision…
       } @else {
@@ -40,22 +43,16 @@
     </p>
     @if (runState() === 'questions') {
       @if (publicQuestions(); as pending) {
-        <lfx-mktg-run-questions [questions]="pending.questions" [projectName]="projectName()" [busy]="answersSending()" (answered)="onPublicAnswers($event)" />
+        <lfx-mktg-run-questions
+          [questions]="pending.questions"
+          [projectName]="projectName()"
+          [busy]="answersSending()"
+          (answered)="onPublicAnswers($event)"
+          (draftChanged)="onPublicDraft($event)" />
       }
-      <div class="contents" data-testid="mktg-run-progress-questions-refresh">
-        <lfx-button
-          label="Refresh"
-          [text]="true"
-          [disabled]="answersSending()"
-          (onClick)="onRefreshProgress()"
-          data-testid="mktg-document-view-refresh-progress" />
-      </div>
     }
     @if (answersError()) {
       <lfx-message severity="error" [text]="answersError()" data-testid="mktg-run-progress-answers-error" />
-    }
-    @if (warning() && runState() !== 'questions') {
-      <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-document-view-refresh-progress" />
     }
     @if (visibleRunActivity(); as activity) {
       <lfx-mktg-run-activity [activity]="activity" [title]="generatingLabel()" [startedAt]="activityStartedAt()" [showQuestions]="false" [showHeader]="false" />
@@ -101,22 +98,20 @@
       }
     } @else if (state === 'questions') {
       @if (publicQuestions(); as pending) {
-        <lfx-mktg-run-questions [questions]="pending.questions" [projectName]="projectName()" [busy]="answersSending()" (answered)="onPublicAnswers($event)" />
+        <lfx-mktg-run-questions
+          [questions]="pending.questions"
+          [projectName]="projectName()"
+          [busy]="answersSending()"
+          (answered)="onPublicAnswers($event)"
+          (draftChanged)="onPublicDraft($event)" />
       } @else if (pausedWithoutAnswers()) {
         <p class="text-sm text-gray-500" role="status" data-testid="member-360-needs-input">
           The agent needs an answer before it can finish — this version of the page cannot answer yet; the run stays open.
         </p>
-        <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-document-view-paused-refresh" />
       } @else {
         <p class="text-sm text-gray-600">The agent is waiting for answers.</p>
         @if (!answersError()) {
-          <p class="text-sm text-gray-500" data-testid="mktg-run-progress-owner-note">
-            @if (runPage()) {
-              Answering needs project write access or the browser that started this run. Refresh progress to check again.
-            } @else {
-              Open the intake form to continue with an available questions block.
-            }
-          </p>
+          <p class="text-sm text-gray-500" data-testid="mktg-run-progress-owner-note">Open the intake form to continue with an available questions block.</p>
         }
       }
     } @else if (state === 'completed') {
@@ -144,14 +139,6 @@
       } @else {
         <p class="text-sm text-gray-500">Submitting your intake. Keep this page open until the run is recorded.</p>
       }
-    }
-    @if (state === 'questions' && (!pausedWithoutAnswers() || publicQuestions())) {
-      <lfx-button
-        label="Refresh progress"
-        [text]="true"
-        [disabled]="answersSending()"
-        (onClick)="onRefreshProgress()"
-        data-testid="mktg-run-progress-questions-refresh" />
     }
     @if (answersError()) {
       <lfx-message severity="error" [text]="answersError()" data-testid="mktg-run-progress-answers-error" />
@@ -222,7 +209,6 @@
 }
 @if (!headless() && runPage() && readFailure()) {
   <lfx-message severity="error" [text]="readFailure()" data-testid="mktg-run-progress-error" />
-  <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-run-progress-refresh" />
   <a
     class="text-sm font-medium text-blue-700 hover:underline"
     [routerLink]="currentStateLink()"
@@ -233,13 +219,5 @@
   >
 }
 @if (!headless() && !runPage() && warning()) {
-  <div class="flex flex-wrap items-center gap-2" data-testid="mktg-document-view-refresh-warning">
-    <p class="text-xs text-gray-500">{{ warning() }}</p>
-    <lfx-button
-      label="Refresh"
-      [text]="true"
-      [disabled]="submittingGeneration()"
-      (onClick)="onRefreshProgress()"
-      data-testid="mktg-document-view-refresh-progress" />
-  </div>
+  <p class="text-xs text-gray-500" role="status" data-testid="mktg-document-view-refresh-warning">{{ warning() }}</p>
 }

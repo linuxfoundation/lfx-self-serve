@@ -60,6 +60,9 @@ interface Harness {
   affiliationLookupFailed: WritableSignal<boolean>;
   /** #4314 — `OrgLensEmployerAffiliationService.refresh`, the employer half of the shared Retry. */
   refreshAffiliation: Mock<() => void>;
+  /** Epic #5845 — companies the caller reaches through the all employee view / reads in full through the authorizer alone. */
+  employeeViewOrgUids: WritableSignal<ReadonlySet<string>>;
+  fullAccessOrgUids: WritableSignal<ReadonlySet<string>>;
   refresh: Mock<(bypassCache?: boolean) => Observable<void>>;
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
@@ -108,6 +111,8 @@ function setup(): Harness {
   const affiliationEmployerName = signal<string | null>(null);
   const affiliationLookupFailed = signal(false);
   const refreshAffiliation: Mock<() => void> = vi.fn();
+  const employeeViewOrgUids = signal<ReadonlySet<string>>(new Set());
+  const fullAccessOrgUids = signal<ReadonlySet<string>>(new Set());
   const refresh: Mock<(bypassCache?: boolean) => Observable<void>> = vi.fn(() => of(undefined));
   const grantsLoading = signal(false);
   const listLoaded = signal(false);
@@ -145,6 +150,12 @@ function setup(): Harness {
           inheritedWriterSet: signal(new Set<string>()),
           inheritedAuditorSet,
           affiliatedToMember,
+          employeeViewOrgUid: signal<string | null>(null),
+          employeeViewOrgUids,
+          fullAccessOrgUid: signal<string | null>(null),
+          fullAccessOrgUids,
+          noteEmployeeViewAddressed: vi.fn(),
+          noteFullAccessAddressed: vi.fn(),
           refresh,
         },
       },
@@ -222,6 +233,8 @@ function setup(): Harness {
     affiliationEmployerName,
     affiliationLookupFailed,
     refreshAffiliation,
+    employeeViewOrgUids,
+    fullAccessOrgUids,
     refresh,
     listLoaded,
     listLoading,
@@ -1173,5 +1186,81 @@ describe('OrgLensEmptyStateService — a selection the CLA-only rows have not cl
     expect(h.service.settled()).toBe(false);
     expect(h.readCheck).not.toHaveBeenCalled();
     expect(h.service.pageState()).toBeNull();
+  });
+});
+
+describe('OrgLensEmptyStateService — all employee view and full-access readers (#5845)', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = setup();
+    h.selectedAccount.set(account(OTHER));
+  });
+
+  it('renders the page, not an empty state, for a company the caller reaches only as an employee', () => {
+    expect(h.service.pageState()).toBe('no-organization');
+
+    h.employeeViewOrgUids.set(new Set([OTHER]));
+
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it('renders the page for a company read at full width through the authorizer alone', () => {
+    expect(h.service.pageState()).toBe('no-organization');
+
+    h.fullAccessOrgUids.set(new Set([OTHER]));
+
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it.each([
+    ['an employee-view company', 'employee'],
+    ['a full-access company', 'full'],
+  ])('keeps the Retry notice for %s when the lookup of what the caller holds failed', (_label, kind) => {
+    if (kind === 'employee') h.employeeViewOrgUids.set(new Set([OTHER]));
+    else h.fullAccessOrgUids.set(new Set([OTHER]));
+    h.claLookupFailed.set(true);
+
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it('does not show the Retry notice for an employee-view company when nothing failed', () => {
+    h.employeeViewOrgUids.set(new Set([OTHER]));
+
+    expect(h.service.listIncomplete()).toBe(false);
+  });
+
+  it('does not let the signals for another company open this one', () => {
+    h.fullAccessOrgUids.set(new Set([HELD]));
+    h.employeeViewOrgUids.set(new Set([HELD]));
+
+    expect(h.service.pageState()).toBe('no-organization');
+  });
+
+  describe('for an LF contractor', () => {
+    beforeEach(() => {
+      h.isContractor.set(true);
+      h.hasOrgSelectorAccess.set(true);
+    });
+
+    it('asks the read gate for an unheld company', () => {
+      TestBed.tick();
+
+      expect(h.readCheck).toHaveBeenCalledWith(OTHER);
+    });
+
+    it.each([
+      ['an employee-view company', 'employee'],
+      ['a full-access company', 'full'],
+    ])('does not probe the read gate for %s, and renders the page', (_label, kind) => {
+      if (kind === 'employee') h.employeeViewOrgUids.set(new Set([OTHER]));
+      else h.fullAccessOrgUids.set(new Set([OTHER]));
+      TestBed.tick();
+
+      expect(h.readCheck).not.toHaveBeenCalled();
+      expect(h.service.settled()).toBe(true);
+      expect(h.service.pageState()).toBeNull();
+    });
   });
 });

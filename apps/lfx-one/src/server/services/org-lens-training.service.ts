@@ -16,7 +16,11 @@ import {
 import type {
   OrgTrainingGroupEmployee,
   OrgDropdownOption,
+  OrgLensRollUpScope,
+  OrgLensRowOrganization,
   OrgLensTimeRange,
+  OrgRollUpSetOrg,
+  OrgTrainingFamilyScope,
   OrgTrainingFilterOptions,
   OrgTrainingFilters,
   OrgTrainingGroupEmployeesParams,
@@ -26,6 +30,7 @@ import type {
   OrgTrainingGroupsResponse,
   OrgTrainingStats,
   OrgTrainingStatsQuery,
+  OrgLensReadQualification,
 } from '@lfx-one/shared/interfaces';
 import {
   hasOrgTrainingFilter,
@@ -38,12 +43,12 @@ import type { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { toIsoTimestamp } from '../helpers/date-format.helper';
-import type { OrgLensReadQualification } from '../helpers/org-lens-read-access.helper';
 import {
   buildOrgTrainingPairsCte,
   ORG_TRAINING_GROUP_SQL,
+  ORG_TRAINING_PAIRS_TABLE,
+  orgTrainingAccountPredicate,
   orgTrainingParamSignature,
-  orgTrainingRangePredicate,
   orgTrainingStatusPredicate,
   orgTrainingTabPredicate,
 } from '../helpers/org-training-pairs.sql';
@@ -58,7 +63,7 @@ interface OrgTrainingPairStatsRow {
   CERTIFICATIONS: number;
   CERTIFIED_PEOPLE: number;
   TRAININGS_COMPLETED: number;
-  COURSES_IN_PROGRESS: number;
+  CERTIFIED_PAIRS: number;
   PEOPLE_IN_TRAINING: number;
 }
 
@@ -71,8 +76,26 @@ interface OrgTrainingAsOfRow {
 }
 
 interface OrgTrainingRosterMembersRow {
-  ROSTER_MEMBERS: number;
+  ROSTER_MEMBERS: number | null;
   AS_OF_TS: Date | string | null;
+}
+
+/**
+ * The accounts a read counts and how its result may be cached: one organization (shared entry for an `org-grant` caller only)
+ * or a family roll-up (an entry per served account set, so callers who can read different organizations never share one).
+ */
+interface OrgTrainingSource {
+  readonly accounts: readonly string[];
+  cache<T>(subResource: string, fetcher: () => Promise<T>, accept: (value: unknown) => boolean): Promise<T>;
+}
+
+interface OrgTrainingFamilyGroupRow extends OrgTrainingGroupRow {
+  accountId: string;
+}
+
+interface OrgTrainingFamilyGroupsRaw {
+  rows: OrgTrainingFamilyGroupRow[];
+  totals: OrgTrainingGroupsResponse['totals'];
 }
 
 interface OrgTrainingOptionRow {
@@ -86,12 +109,12 @@ interface OrgTrainingOptionRow {
 }
 
 interface OrgTrainingGroupSqlRow {
+  ACCOUNT_ID?: string;
   GROUP_KEY: string | null;
   GROUP_LABEL: string | null;
   PEOPLE: number;
   COURSES_TAKEN: number;
   COMPLETED: number;
-  IN_PROGRESS: number;
   LEVEL: string | null;
   FOUNDATION: string | null;
 }
@@ -143,44 +166,109 @@ export class OrgLensTrainingService {
 
   /** The one stats function: both pages and the Overview tile call it, so equal queries always give equal numbers. */
   public async getTrainingStats(accountId: string, query: OrgTrainingStatsQuery, qualification: OrgLensReadQualification): Promise<OrgTrainingStats> {
-    if (!(await this.carriesOnlyKnownFilters(accountId, query, qualification))) {
-      // Zeros for every range metric; the roster is live and unfiltered, and the as-of is the build time of the same rows, so both come from the unfiltered stats entry.
-      const unfiltered = await this.cached(
-        qualification,
-        accountId,
-        `training-stats:v6:${orgTrainingFiltersSignature({ range: query.range, foundation: null, project: null, course: null, level: null, format: null })}`,
-        () => this.fetchTrainingStats(accountId, { range: query.range, foundation: null, project: null, course: null, level: null, format: null }),
-        isTrainingStats
-      );
-      return emptyTrainingStats(query.range, unfiltered.asOf, unfiltered.rosterMembers, unfiltered.rosterMembersAsOf);
-    }
-    return this.cached(
-      qualification,
-      accountId,
-      `training-stats:v6:${orgTrainingFiltersSignature(query)}`,
-      () => this.fetchTrainingStats(accountId, query),
-      isTrainingStats
-    );
+    const source = this.orgSource(accountId, qualification);
+    return this.readTrainingStats(source, source, query);
   }
 
   /** Dropdown options: the people-list pairs in range, unfiltered. */
   public async getFilterOptions(accountId: string, range: OrgLensTimeRange, qualification: OrgLensReadQualification): Promise<OrgTrainingFilterOptions> {
-    return this.cached(
-      qualification,
-      accountId,
-      `training-filter-options:v1:${range}`,
-      async () => {
-        const { cte, binds } = buildOrgTrainingPairsCte(accountId, { range, foundation: null, project: null, course: null, level: null, format: null });
-        const sql = `
-          WITH ${cte}
-          SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME, PROJECT_ID, PROJECT_NAME, COURSE_NAME, COURSE_LEVEL, COURSE_FORMAT
-          FROM f
-        `;
-        const result = await this.snowflakeService.execute<OrgTrainingOptionRow>(sql, binds);
-        return buildFilterOptions(result.rows);
-      },
-      isFilterOptions
+    return this.readFilterOptions(this.orgSource(accountId, qualification), range);
+  }
+
+  /**
+   * The family roll-up the Training reads serve: the organizations the roll-up gate verified, alphabetical, narrowed to
+   * `company` when the Company filter names one (the caller checks that it is in the roll-up).
+   */
+  public familyScope(rollUp: OrgLensRollUpScope, company?: string): OrgTrainingFamilyScope {
+    const organizations = [...rollUp.members].sort((a, b) => a.name.localeCompare(b.name) || a.accountId.localeCompare(b.accountId));
+    return {
+      rollUpKey: rollUp.rollUpKey,
+      members: company ? organizations.filter((member) => member.accountId === company) : organizations,
+      organizations,
+      coverage: { complete: rollUp.complete, excludedCount: rollUp.excludedCount },
+    };
+  }
+
+  /**
+   * Stats of a family roll-up over the served accounts' pairs: person tiles count each person once across the family and
+   * course tiles each person-and-course pair once, certified when any served account's pair is. Roster members adds up the
+   * companies' counts: the roster model carries no person column. Filter values are checked against every organization of
+   * the roll-up, as its dropdowns offer them.
+   */
+  public async getFamilyTrainingStats(req: Request, scope: OrgTrainingFamilyScope, query: OrgTrainingStatsQuery): Promise<OrgTrainingStats> {
+    logger.debug(req, 'get_org_lens_training_stats', 'Reading family training stats', { roll_up_key: scope.rollUpKey, members: scope.members.length });
+    const stats = await this.readTrainingStats(
+      this.familySource(scope.rollUpKey, scope.members),
+      this.familySource(scope.rollUpKey, scope.organizations),
+      query
     );
+    return { ...stats, organizations: scope.organizations.map(rowOrganization), rollUp: scope.coverage };
+  }
+
+  /** Dropdown options of a family roll-up: every value a served account's people-list pairs in range carry, whatever the Company filter. */
+  public async getFamilyFilterOptions(req: Request, scope: OrgTrainingFamilyScope, range: OrgLensTimeRange): Promise<OrgTrainingFilterOptions> {
+    logger.debug(req, 'get_org_lens_training_filter_options', 'Reading family training filter options', {
+      roll_up_key: scope.rollUpKey,
+      organizations: scope.organizations.length,
+    });
+    return this.readFilterOptions(this.familySource(scope.rollUpKey, scope.organizations), range);
+  }
+
+  /**
+   * Group-by table of a family roll-up: one row per group value and company, each counting that company's own pairs, so a
+   * person in two companies appears in both rows. `totals` count over the whole tab once, so they can be less than the sum
+   * of the rows and still equal the stat tiles. Search, sort and paging run in memory; ties sort by label, then company.
+   */
+  public async getFamilyGroups(
+    req: Request,
+    scope: OrgTrainingFamilyScope,
+    query: OrgTrainingStatsQuery,
+    params: OrgTrainingGroupsParams
+  ): Promise<OrgTrainingGroupsResponse> {
+    const { groupBy, tab, searchQuery } = params;
+    const sortField = params.sortField ?? DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELD;
+    const sortOrder = params.sortOrder ?? DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER;
+    const pageSize = params.pageSize ?? DEFAULT_ORG_TRAINING_GROUPS_PAGE_SIZE;
+    const offset = params.offset ?? 0;
+
+    logger.debug(req, 'get_org_training_groups', 'Reading family training groups', {
+      roll_up_key: scope.rollUpKey,
+      members: scope.members.length,
+      group_by: groupBy,
+      tab,
+      has_search: !!searchQuery,
+      sort_field: sortField,
+      sort_order: sortOrder,
+      page_size: pageSize,
+      offset,
+    });
+
+    if (!(await this.carriesOnlyKnownFilters(this.familySource(scope.rollUpKey, scope.organizations), query))) {
+      return { data: [...EMPTY_ORG_TRAINING_GROUPS_RESPONSE.data], total: 0, totals: { ...EMPTY_ORG_TRAINING_GROUPS_RESPONSE.totals } };
+    }
+    const source = this.familySource(scope.rollUpKey, scope.members);
+    const raw = await source.cache(
+      `training-groups-family:v2:${orgTrainingFiltersSignature(query)}:${groupBy}:${tab}`,
+      () => this.fetchFamilyGroups(source, query, groupBy, tab),
+      isGroupsRaw
+    );
+
+    const organizationOf = new Map(scope.members.map((member) => [member.accountId, rowOrganization(member)]));
+    const rows: OrgTrainingGroupRow[] = raw.rows.flatMap(({ accountId, ...row }) => {
+      const organization = organizationOf.get(accountId);
+      return organization ? [{ ...row, organization }] : [];
+    });
+
+    const needle = searchQuery?.trim().toLowerCase();
+    const matching = needle ? rows.filter((row) => row.label.toLowerCase().includes(needle)) : rows;
+    const direction = sortOrder === 'ASC' ? 1 : -1;
+    matching.sort((a, b) => {
+      const primary = sortField === 'label' ? a.label.localeCompare(b.label, 'en-US') : a[sortField] - b[sortField];
+      if (primary !== 0) return primary * direction;
+      return a.label.localeCompare(b.label, 'en-US') || (a.organization?.name ?? '').localeCompare(b.organization?.name ?? '', 'en-US');
+    });
+
+    return { data: matching.slice(offset, offset + pageSize), total: matching.length, totals: raw.totals };
   }
 
   /** Group-by table page of one tab. The full group set is cached; search, sort and paging run in memory. */
@@ -208,7 +296,7 @@ export class OrgLensTrainingService {
       offset,
     });
 
-    if (!(await this.carriesOnlyKnownFilters(accountId, query, qualification))) {
+    if (!(await this.carriesOnlyKnownFilters(this.orgSource(accountId, qualification), query))) {
       return { data: [...EMPTY_ORG_TRAINING_GROUPS_RESPONSE.data], total: 0, totals: { ...EMPTY_ORG_TRAINING_GROUPS_RESPONSE.totals } };
     }
     const raw = await this.getGroupsRaw(accountId, query, groupBy, tab, qualification);
@@ -242,7 +330,7 @@ export class OrgLensTrainingService {
     });
 
     // A filter value the org never carries answers an empty drawer, before any cache key or statement.
-    if (!(await this.carriesOnlyKnownFilters(accountId, query, qualification))) {
+    if (!(await this.carriesOnlyKnownFilters(this.orgSource(accountId, qualification), query))) {
       return { groupBy, groupValue, label: ORG_TRAINING_GROUP_NONE_LABELS[groupBy], tab, status, total: 0, data: [] };
     }
     // The cell must be a group of this table: an unknown value never reaches a cache key or SQL.
@@ -254,12 +342,43 @@ export class OrgLensTrainingService {
     const raw = await this.cached(
       qualification,
       accountId,
-      `training-group-employees:v1:${orgTrainingFiltersSignature(query)}:${groupBy}:${orgTrainingParamSignature([groupValue])}:${tab}:${status}`,
+      `training-group-employees:v2:${orgTrainingFiltersSignature(query)}:${groupBy}:${orgTrainingParamSignature([groupValue])}:${tab}:${status}`,
       () => this.fetchGroupEmployees(accountId, query, params),
       isGroupEmployeesRaw
     );
 
     return { groupBy, groupValue, label: raw.label || ORG_TRAINING_GROUP_NONE_LABELS[groupBy], tab, status, total: raw.total, data: raw.data };
+  }
+
+  private async readTrainingStats(source: OrgTrainingSource, filterSource: OrgTrainingSource, query: OrgTrainingStatsQuery): Promise<OrgTrainingStats> {
+    if (!(await this.carriesOnlyKnownFilters(filterSource, query))) {
+      // Zeros for every range metric; the roster is live and unfiltered, and the as-of is the build time of the same rows, so both come from the unfiltered stats entry.
+      const unfilteredQuery: OrgTrainingStatsQuery = { range: query.range, foundation: null, project: null, course: null, level: null, format: null };
+      const unfiltered = await source.cache(
+        `training-stats:v7:${orgTrainingFiltersSignature(unfilteredQuery)}`,
+        () => this.fetchTrainingStats(source.accounts, unfilteredQuery),
+        isTrainingStats
+      );
+      return emptyTrainingStats(query.range, unfiltered.asOf, unfiltered.rosterMembers, unfiltered.rosterMembersAsOf);
+    }
+    return source.cache(`training-stats:v7:${orgTrainingFiltersSignature(query)}`, () => this.fetchTrainingStats(source.accounts, query), isTrainingStats);
+  }
+
+  private readFilterOptions(source: OrgTrainingSource, range: OrgLensTimeRange): Promise<OrgTrainingFilterOptions> {
+    return source.cache(
+      `training-filter-options:v2:${range}`,
+      async () => {
+        const { cte, binds } = buildOrgTrainingPairsCte(source.accounts, { range, foundation: null, project: null, course: null, level: null, format: null });
+        const sql = `
+          WITH ${cte}
+          SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME, PROJECT_ID, PROJECT_NAME, COURSE_NAME, COURSE_LEVEL, COURSE_FORMAT
+          FROM f
+        `;
+        const result = await this.snowflakeService.execute<OrgTrainingOptionRow>(sql, binds);
+        return buildFilterOptions(result.rows);
+      },
+      isFilterOptions
+    );
   }
 
   /** Shared Valkey entry for an `org-grant` caller; any other caller resolves directly and stores nothing. */
@@ -273,6 +392,24 @@ export class OrgLensTrainingService {
     return qualification === 'org-grant' ? withOrgCache(accountId, subResource, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, fetcher, accept) : fetcher();
   }
 
+  private orgSource(accountId: string, qualification: OrgLensReadQualification): OrgTrainingSource {
+    return { accounts: [accountId], cache: (subResource, fetcher, accept) => this.cached(qualification, accountId, subResource, fetcher, accept) };
+  }
+
+  /**
+   * A family roll-up's accounts. Every caller reaching here passed the roll-up gate for each of them, so the entry is shared
+   * by callers who read the same account set and by no one else: the sorted account ids are part of the key.
+   */
+  private familySource(rollUpKey: string, organizations: readonly OrgRollUpSetOrg[]): OrgTrainingSource {
+    const accounts = organizations.map((organization) => organization.accountId);
+    const accountSignature = orgTrainingParamSignature([...accounts].sort());
+    return {
+      accounts,
+      cache: (subResource, fetcher, accept) =>
+        withOrgCache(rollUpKey, `${subResource}:family:${accountSignature}`, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, fetcher, accept),
+    };
+  }
+
   private getGroupsRaw(
     accountId: string,
     query: OrgTrainingStatsQuery,
@@ -283,8 +420,8 @@ export class OrgLensTrainingService {
     return this.cached(
       qualification,
       accountId,
-      `training-groups:v1:${orgTrainingFiltersSignature(query)}:${groupBy}:${tab}`,
-      () => this.fetchGroups(accountId, query, groupBy, tab),
+      `training-groups:v2:${orgTrainingFiltersSignature(query)}:${groupBy}:${tab}`,
+      () => this.fetchGroups([accountId], query, groupBy, tab),
       isGroupsRaw
     );
   }
@@ -293,97 +430,100 @@ export class OrgLensTrainingService {
    * Whether every filter the request sets names a value the org's people-list training rows carry. A value the org never
    * carries (another org's value kept across an org switch, a stale shared URL) is not an error: the callers answer it with
    * the zero payload before any stats/groups/drawer cache key or statement exists, which keeps that key space bounded by
-   * the org's own values. The set is the DISTINCT raw row values over all time, not the options of a range or the resolved
-   * pair attributes: a pair's attribute is the greatest value of its in-range rows, so a value that only some rows carry
-   * (a `Beginner` row of a pair that resolves to `Intermediate` all-time) is a value the dropdown of a narrower range offers
-   * and must be accepted. A value valid for the org with no rows in the selected range is served as zero data by the normal path.
+   * the org's own values. A value valid for the org with no rows in the selected range is served as zero data by the normal path.
    */
-  private async carriesOnlyKnownFilters(accountId: string, query: OrgTrainingStatsQuery, qualification: OrgLensReadQualification): Promise<boolean> {
+  private async carriesOnlyKnownFilters(source: OrgTrainingSource, query: OrgTrainingStatsQuery): Promise<boolean> {
     const requested = ORG_TRAINING_FILTER_KEYS.filter((filter) => query[filter] !== null);
     if (requested.length === 0) return true;
 
-    const known = await this.getKnownFilterValues(accountId, qualification);
+    const known = await this.getKnownFilterValues(source);
     return requested.every((filter) => known[filter].includes(query[filter] as string));
   }
 
-  /** The known-value set, bounded by the org's own attribute values; cached as its own entry for an `org-grant` caller only. */
-  private getKnownFilterValues(accountId: string, qualification: OrgLensReadQualification): Promise<OrgTrainingKnownFilterValues> {
-    return this.cached(
-      qualification,
-      accountId,
-      'training-filter-known:v1',
+  /** The known-value set, bounded by the accounts' own attribute values; cached as its own entry as the source allows. */
+  private getKnownFilterValues(source: OrgTrainingSource): Promise<OrgTrainingKnownFilterValues> {
+    return source.cache(
+      'training-filter-known:v2',
       async () => {
-        // rows_in_range of the all-time query: the exact row set every range's pairs are resolved from.
-        const { cte, binds } = buildOrgTrainingPairsCte(accountId, { range: 'all', foundation: null, project: null, course: null, level: null, format: null });
         const sql = `
-          WITH ${cte}
-          SELECT 'foundation' AS FILTER_KEY, FOUNDATION_ID AS FILTER_VALUE FROM rows_in_range
+          WITH known_pairs AS (
+            SELECT FOUNDATION_ID, PROJECT_ID, COURSE_NAME, COURSE_LEVEL, COURSE_FORMAT
+            FROM ${ORG_TRAINING_PAIRS_TABLE}
+            WHERE ${orgTrainingAccountPredicate(source.accounts)}
+              AND IS_ON_PEOPLE_LIST
+          )
+          SELECT 'foundation' AS FILTER_KEY, FOUNDATION_ID AS FILTER_VALUE FROM known_pairs
           UNION
-          SELECT 'project', PROJECT_ID FROM rows_in_range
+          SELECT 'project', PROJECT_ID FROM known_pairs
           UNION
-          SELECT 'course', COURSE_NAME FROM rows_in_range
+          SELECT 'course', COURSE_NAME FROM known_pairs
           UNION
-          SELECT 'level', COURSE_LEVEL FROM rows_in_range
+          SELECT 'level', COURSE_LEVEL FROM known_pairs
           UNION
-          SELECT 'format', COURSE_FORMAT FROM rows_in_range
+          SELECT 'format', COURSE_FORMAT FROM known_pairs
         `;
-        const result = await this.snowflakeService.execute<OrgTrainingKnownValueRow>(sql, binds);
+        const result = await this.snowflakeService.execute<OrgTrainingKnownValueRow>(sql, [...source.accounts]);
         return buildKnownFilterValues(result.rows);
       },
       isKnownFilterValues
     );
   }
 
-  private async fetchTrainingStats(accountId: string, query: OrgTrainingStatsQuery): Promise<OrgTrainingStats> {
-    const { cte, binds } = buildOrgTrainingPairsCte(accountId, query);
+  private async fetchTrainingStats(accounts: readonly string[], query: OrgTrainingStatsQuery): Promise<OrgTrainingStats> {
+    const { cte, binds } = buildOrgTrainingPairsCte(accounts, query);
+    const accountPredicate = orgTrainingAccountPredicate(accounts);
+    // A family keeps one row per account and pair, so a pair certified in one account is in training in none: people in
+    // training are those with a pair whose key no certified row carries. One account has one row per pair, so its own flag
+    // decides, without scanning `f` again.
+    const peopleInTraining =
+      accounts.length > 1
+        ? '(SELECT COUNT(DISTINCT PERSON_KEY) FROM f WHERE NOT IS_CERTIFIED AND PAIR_KEY NOT IN (SELECT PAIR_KEY FROM f WHERE IS_CERTIFIED))'
+        : 'COUNT(DISTINCT IFF(NOT IS_CERTIFIED, PERSON_KEY, NULL))';
     const pairsSql = `
       WITH ${cte}
       SELECT
-        COUNT(DISTINCT PERSON_KEY)                                                                       AS PEOPLE,
-        COUNT(*)                                                                                         AS COURSES_TAKEN,
-        COUNT_IF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')})                          AS CERTIFICATIONS,
+        COUNT(DISTINCT PERSON_KEY)                                                                         AS PEOPLE,
+        COUNT(DISTINCT PAIR_KEY)                                                                           AS COURSES_TAKEN,
+        COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')}, PAIR_KEY, NULL))   AS CERTIFICATIONS,
         COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')}, PERSON_KEY, NULL)) AS CERTIFIED_PEOPLE,
-        COUNT_IF(IS_CERTIFIED AND ${orgTrainingTabPredicate('trainings')})                               AS TRAININGS_COMPLETED,
-        COUNT_IF(NOT IS_CERTIFIED)                                                                       AS COURSES_IN_PROGRESS,
-        COUNT(DISTINCT IFF(NOT IS_CERTIFIED, PERSON_KEY, NULL))                                          AS PEOPLE_IN_TRAINING
+        COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('trainings')}, PAIR_KEY, NULL))        AS TRAININGS_COMPLETED,
+        COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL))                                                  AS CERTIFIED_PAIRS,
+        ${peopleInTraining}                                                                                AS PEOPLE_IN_TRAINING
       FROM f
     `;
 
     // Learners the warehouse attributes to the org outside its people list (lfx-self-serve#4287): counted only while no filter
     // is set, like their list, and null (not counted) otherwise; a key that also has people-list rows is that person.
     // They are never added to the people-list numbers: every other metric reads the people-list pairs `f`.
-    const inRange = orgTrainingRangePredicate(query.range);
+    // Across a family, a learner is outside only when no served account lists them.
     const outsideSql = `
       SELECT COUNT(DISTINCT PERSON_KEY) AS PEOPLE
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
-      WHERE ACCOUNT_ID = ?
+      FROM ${ORG_TRAINING_PAIRS_TABLE}
+      WHERE ${accountPredicate}
+        AND TIME_RANGE = ?
         AND NOT IS_ON_PEOPLE_LIST
-        AND STATUS IN ('Enrolled', 'Certified')
-        AND ACTIVITY_TS IS NOT NULL
-        ${inRange}
         AND PERSON_KEY NOT IN (
           SELECT PERSON_KEY
-          FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
-          WHERE ACCOUNT_ID = ?
+          FROM ${ORG_TRAINING_PAIRS_TABLE}
+          WHERE ${accountPredicate}
+            AND TIME_RANGE = ?
             AND IS_ON_PEOPLE_LIST
-            AND STATUS IN ('Enrolled', 'Certified')
-            AND ACTIVITY_TS IS NOT NULL
-            ${inRange}
         )
     `;
 
     // One build time for every range of the account.
     const asOfSql = `
       SELECT MAX(DBT_RUN_AT) AS AS_OF
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
-      WHERE ACCOUNT_ID = ?
+      FROM ${ORG_TRAINING_PAIRS_TABLE}
+      WHERE ${accountPredicate}
     `;
 
-    // One row per account with an LF Education training client; none otherwise. Live: not windowed, not filtered.
+    // One row per account with an LF Education training client; none otherwise. Live: not windowed, not filtered. The model
+    // publishes a count per account and no person column, so a family adds its companies' counts; with no row the sum is NULL.
     const rosterSql = `
-      SELECT ROSTER_MEMBERS, AS_OF_TS
+      SELECT SUM(ROSTER_MEMBERS) AS ROSTER_MEMBERS, MAX(AS_OF_TS) AS AS_OF_TS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_TRAINING_ROSTER_MEMBERS
-      WHERE ACCOUNT_ID = ?
+      WHERE ${accountPredicate}
     `;
 
     // Any filter leaves learners outside the people list uncounted (null), as their list is hidden then.
@@ -391,15 +531,16 @@ export class OrgLensTrainingService {
     const [pairsResult, outsideResult, asOfResult, rosterResult] = await Promise.all([
       this.snowflakeService.execute<OrgTrainingPairStatsRow>(pairsSql, binds),
       includeOutside
-        ? this.snowflakeService.execute<OrgTrainingCountRow>(outsideSql, [accountId, accountId])
+        ? this.snowflakeService.execute<OrgTrainingCountRow>(outsideSql, [...accounts, query.range, ...accounts, query.range])
         : Promise.resolve({ rows: [] as OrgTrainingCountRow[] }),
-      this.snowflakeService.execute<OrgTrainingAsOfRow>(asOfSql, [accountId]),
-      this.snowflakeService.execute<OrgTrainingRosterMembersRow>(rosterSql, [accountId]),
+      this.snowflakeService.execute<OrgTrainingAsOfRow>(asOfSql, [...accounts]),
+      this.snowflakeService.execute<OrgTrainingRosterMembersRow>(rosterSql, [...accounts]),
     ]);
 
     const pairs = pairsResult.rows[0];
     const outside = outsideResult.rows[0]?.PEOPLE ?? 0;
     const roster = rosterResult.rows[0];
+    const hasRoster = roster !== undefined && roster.ROSTER_MEMBERS !== null;
     const coursesTaken = pairs?.COURSES_TAKEN ?? 0;
     const certifications = pairs?.CERTIFICATIONS ?? 0;
     const trainingsCompleted = pairs?.TRAININGS_COMPLETED ?? 0;
@@ -408,8 +549,8 @@ export class OrgLensTrainingService {
       range: query.range,
       asOf: toIsoTimestamp(asOfResult.rows[0]?.AS_OF),
       // No row: the org has no LF Education training client, so there is no roster to count (not zero members).
-      rosterMembers: roster ? roster.ROSTER_MEMBERS : null,
-      rosterMembersAsOf: roster ? toIsoTimestamp(roster.AS_OF_TS) : null,
+      rosterMembers: hasRoster ? roster.ROSTER_MEMBERS : null,
+      rosterMembersAsOf: hasRoster ? toIsoTimestamp(roster.AS_OF_TS) : null,
       peopleWithTrainingActivity: pairs?.PEOPLE ?? 0,
       learnersOutsidePeopleList: includeOutside ? outside : null,
       coursesTaken,
@@ -417,65 +558,75 @@ export class OrgLensTrainingService {
       certifiedPeople: pairs?.CERTIFIED_PEOPLE ?? 0,
       trainingsCompleted,
       completionRatePct: orgTrainingCompletionRatePct({ coursesTaken, certifications, trainingsCompleted }),
-      coursesInProgress: pairs?.COURSES_IN_PROGRESS ?? 0,
+      coursesInProgress: coursesTaken - (pairs?.CERTIFIED_PAIRS ?? 0),
       peopleInTraining: pairs?.PEOPLE_IN_TRAINING ?? 0,
     };
   }
 
-  private async fetchGroups(
-    accountId: string,
+  private async fetchFamilyGroups(
+    source: OrgTrainingSource,
     query: OrgTrainingStatsQuery,
     groupBy: OrgTrainingGroupsParams['groupBy'],
     tab: OrgTrainingGroupsParams['tab']
-  ): Promise<OrgTrainingGroupsRaw> {
-    const { cte, binds } = buildOrgTrainingPairsCte(accountId, query);
+  ): Promise<OrgTrainingFamilyGroupsRaw> {
+    const raw = await this.fetchGroups(source.accounts, query, groupBy, tab, true);
+    return { rows: raw.rows.filter((row): row is OrgTrainingFamilyGroupRow => typeof row.accountId === 'string'), totals: raw.totals };
+  }
+
+  /** `perAccount`: one row per group value and account (the family table); the totals always count each pair of the tab once. */
+  private async fetchGroups(
+    accounts: readonly string[],
+    query: OrgTrainingStatsQuery,
+    groupBy: OrgTrainingGroupsParams['groupBy'],
+    tab: OrgTrainingGroupsParams['tab'],
+    perAccount = false
+  ): Promise<{ rows: (OrgTrainingGroupRow & { accountId?: string })[]; totals: OrgTrainingGroupsResponse['totals'] }> {
+    const { cte, binds } = buildOrgTrainingPairsCte(accounts, query);
     const group = ORG_TRAINING_GROUP_SQL[groupBy];
     const tabPredicate = orgTrainingTabPredicate(tab);
 
     const rowsSql = `
       WITH ${cte}
       SELECT
-        ${group.key}                    AS GROUP_KEY,
+        ${perAccount ? 'ACCOUNT_ID                      AS ACCOUNT_ID,\n        ' : ''}${group.key}                    AS GROUP_KEY,
         ${group.label}                  AS GROUP_LABEL,
-        COUNT(DISTINCT PERSON_KEY)      AS PEOPLE,
-        COUNT(*)                        AS COURSES_TAKEN,
-        COUNT_IF(IS_CERTIFIED)          AS COMPLETED,
-        COUNT_IF(NOT IS_CERTIFIED)      AS IN_PROGRESS,
+        COUNT(DISTINCT PERSON_KEY)                        AS PEOPLE,
+        COUNT(DISTINCT PAIR_KEY)                          AS COURSES_TAKEN,
+        COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL)) AS COMPLETED,
         MAX(COURSE_LEVEL)               AS LEVEL,
         MAX(FOUNDATION_NAME)            AS FOUNDATION
       FROM f
       WHERE ${tabPredicate}
-      GROUP BY ${group.key}
+      GROUP BY ${perAccount ? 'ACCOUNT_ID, ' : ''}${group.key}
     `;
     // Over the whole tab set (people are distinct across groups), so the footer equals the stat tiles.
     const totalsSql = `
       WITH ${cte}
       SELECT
-        COUNT(DISTINCT PERSON_KEY)      AS PEOPLE,
-        COUNT(*)                        AS COURSES_TAKEN,
-        COUNT_IF(IS_CERTIFIED)          AS COMPLETED,
-        COUNT_IF(NOT IS_CERTIFIED)      AS IN_PROGRESS
+        COUNT(DISTINCT PERSON_KEY)                        AS PEOPLE,
+        COUNT(DISTINCT PAIR_KEY)                          AS COURSES_TAKEN,
+        COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL)) AS COMPLETED
       FROM f
       WHERE ${tabPredicate}
     `;
 
     const [rowsResult, totalsResult] = await Promise.all([
       this.snowflakeService.execute<OrgTrainingGroupSqlRow>(rowsSql, binds),
-      this.snowflakeService.execute<{ PEOPLE: number; COURSES_TAKEN: number; COMPLETED: number; IN_PROGRESS: number }>(totalsSql, binds),
+      this.snowflakeService.execute<{ PEOPLE: number; COURSES_TAKEN: number; COMPLETED: number }>(totalsSql, binds),
     ]);
 
-    const rows: OrgTrainingGroupRow[] = rowsResult.rows.map((row) => {
+    const rows = rowsResult.rows.map((row) => {
       const key = row.GROUP_KEY ?? '';
       return {
+        ...(perAccount && row.ACCOUNT_ID ? { accountId: row.ACCOUNT_ID } : {}),
         key,
         label: key === '' ? ORG_TRAINING_GROUP_NONE_LABELS[groupBy] : (row.GROUP_LABEL ?? key),
         people: row.PEOPLE || 0,
         coursesTaken: row.COURSES_TAKEN || 0,
         completed: row.COMPLETED || 0,
-        inProgress: row.IN_PROGRESS || 0,
+        inProgress: (row.COURSES_TAKEN || 0) - (row.COMPLETED || 0),
         level: groupBy === 'course' ? (row.LEVEL ?? null) : null,
         foundation: groupBy === 'course' || groupBy === 'project' ? (row.FOUNDATION ?? null) : null,
-        // ORG_PEOPLE_TRAINING carries no logo column.
         logoUrl: null,
       };
     });
@@ -487,7 +638,7 @@ export class OrgLensTrainingService {
         people: totals?.PEOPLE ?? 0,
         coursesTaken: totals?.COURSES_TAKEN ?? 0,
         completed: totals?.COMPLETED ?? 0,
-        inProgress: totals?.IN_PROGRESS ?? 0,
+        inProgress: (totals?.COURSES_TAKEN ?? 0) - (totals?.COMPLETED ?? 0),
       },
     };
   }
@@ -505,15 +656,14 @@ export class OrgLensTrainingService {
 
     const countSql = `
       WITH ${cte}
-      SELECT COUNT(*) AS TOTAL, ${group.label} AS GROUP_LABEL
+      SELECT COUNT(DISTINCT PAIR_KEY) AS TOTAL, ${group.label} AS GROUP_LABEL
       FROM f
       WHERE ${where}
     `;
     // Identity from the all-time, all-projects ORG_PEOPLE_ALL_RANGES row of each current employee (IS_FORMER = FALSE), the
     // read People › Trainees uses, so the roster matches the pair count for any range. ORG_PEOPLE_ALL would drop members
     // whose only training is older than its 12-month engagement gate or reaches them through a merged learner. That row is
-    // unique per (account, person); one row per person however many pairs. No other training query joins ORG_PEOPLE_ALL:
-    // stats, options and groups read ORG_PEOPLE_TRAINING alone.
+    // unique per (account, person); one row per person however many pairs. No other training query joins ORG_PEOPLE_ALL.
     const namesSql = `
       WITH ${cte}
       SELECT
@@ -628,6 +778,10 @@ function emptyTrainingStats(range: OrgLensTimeRange, asOf: string | null, roster
     coursesInProgress: 0,
     peopleInTraining: 0,
   };
+}
+
+function rowOrganization(organization: OrgRollUpSetOrg): OrgLensRowOrganization {
+  return { accountId: organization.accountId, name: organization.name };
 }
 
 const isNumber = (value: unknown): boolean => typeof value === 'number' && Number.isFinite(value);

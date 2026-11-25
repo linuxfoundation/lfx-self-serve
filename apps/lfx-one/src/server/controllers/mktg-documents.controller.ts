@@ -231,10 +231,28 @@ export class MktgDocumentsController {
       next(this.invalidField(req, operation, 'revisionId', 'revisionId is required and must be a revision id'));
       return;
     }
+    const expectedCurrentId = req.body?.expectedCurrentId;
+    if (expectedCurrentId !== undefined && !this.readRevisionId(expectedCurrentId)) {
+      next(this.invalidField(req, operation, 'expectedCurrentId', 'expectedCurrentId must be a revision id'));
+      return;
+    }
+    const expectedCurrentChangedAt = req.body?.expectedCurrentChangedAt;
+    if (expectedCurrentChangedAt !== undefined && !this.readInstant(expectedCurrentChangedAt)) {
+      next(this.invalidField(req, operation, 'expectedCurrentChangedAt', 'expectedCurrentChangedAt must be a timestamp'));
+      return;
+    }
     const startTime = logger.startOperation(req, operation, { agent: params.type.agentKey, document: params.documentId });
     try {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
-      const revision = await this.documentStore.approveRevision(req, project, params.type, params.documentId, revisionId);
+      const revision = await this.documentStore.approveRevision(
+        req,
+        project,
+        params.type,
+        params.documentId,
+        revisionId,
+        expectedCurrentId,
+        expectedCurrentChangedAt
+      );
       if (!revision) {
         throw new ResourceNotFoundError('Marketing OS document revision', revisionId, { operation, service: 'mktg_documents_controller', path: req.path });
       }
@@ -263,10 +281,28 @@ export class MktgDocumentsController {
       return;
     }
 
+    const expectedCurrentId = body.expectedCurrentId;
+    if (expectedCurrentId !== undefined && !this.readRevisionId(expectedCurrentId)) {
+      next(this.invalidField(req, operation, 'expectedCurrentId', 'expectedCurrentId must be a revision id'));
+      return;
+    }
+    const expectedCurrentChangedAt = body.expectedCurrentChangedAt;
+    if (expectedCurrentChangedAt !== undefined && !this.readInstant(expectedCurrentChangedAt)) {
+      next(this.invalidField(req, operation, 'expectedCurrentChangedAt', 'expectedCurrentChangedAt must be a timestamp'));
+      return;
+    }
     const startTime = logger.startOperation(req, operation, { agent: params.type.agentKey, document: params.documentId });
     try {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
-      const restored = await this.documentStore.restoreRevision(req, project, params.type, params.documentId, revisionId);
+      const restored = await this.documentStore.restoreRevision(
+        req,
+        project,
+        params.type,
+        params.documentId,
+        revisionId,
+        expectedCurrentId,
+        expectedCurrentChangedAt
+      );
       if (!restored) {
         await this.requireDocument(req, project, params.type, params.documentId, operation);
         throw new ResourceNotFoundError('Marketing OS document revision', revisionId, { operation, service: 'mktg_documents_controller', path: req.path });
@@ -432,6 +468,11 @@ export class MktgDocumentsController {
 
   private readRevisionId(raw: unknown): string | null {
     return typeof raw === 'string' && MKTG_REVISION_ID_REGEX.test(raw) ? raw : null;
+  }
+
+  /** The selection instant a client echoes back; compared as an opaque string, so only its shape is checked. */
+  private readInstant(raw: unknown): string | null {
+    return typeof raw === 'string' && raw.length <= 40 && !Number.isNaN(Date.parse(raw)) ? raw : null;
   }
 
   /**

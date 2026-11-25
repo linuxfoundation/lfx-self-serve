@@ -4,7 +4,7 @@ description: How to join a project meeting from its LFX Self Serve link, respond
 audience: [all]
 product_area: Meetings
 tags: [meetings, join, attendee, rsvp, register, guest, zoom]
-last_updated: 2026-11-17
+last_updated: 2026-11-19
 intercom_collection: Meetings
 ---
 
@@ -30,7 +30,7 @@ If you see an error about your email address, such as that you aren't on the gue
 
 When you're signed in and the meeting hasn't ended, a bar stays at the bottom of the screen with a calendar action and a **Join Meeting** button.
 
-- If you're invited, the calendar action is **Resend Invite**. It emails the invitation to your own address again, so the calendar entry stays the one the invitation created and keeps receiving updates.
+- If you're invited, the calendar action is **Resend Invite**. It asks you to confirm, then emails the invitation to your own address again, so the calendar entry stays the one the invitation created and keeps receiving updates.
 - If you aren't invited and the meeting is public, it's **Subscribe to calendar**. It opens the subscribe dialog for the project's calendar feed, so you can add it to your calendar app. The feed lists the project's public meetings and keeps itself up to date.
 - **Join Meeting** is greyed out and reads "Join opens" followed by the time in your own time zone, until the join window opens (10 minutes before the start, or earlier if the organizer set a longer early join time). It turns on by itself, with no need to reload the page.
 
@@ -75,7 +75,7 @@ Your response and the dates it covers are shown after you save. Choosing **No** 
 
 ## Resend your invitation
 
-If you can't find your invitation email, select **Resend Invite** on the join page or on your meeting card. It sends the invitation to your own email address.
+If you can't find your invitation email, select **Resend Invite** on the join page or on your meeting card. A **Resend Your Invitation** popup asks you to confirm first: select **Resend** to send the invitation to your own email address again, or **Cancel** to send nothing.
 
 ## Remove yourself from a meeting
 
@@ -83,8 +83,9 @@ If you're registered for an upcoming meeting and can't attend, select **Remove M
 
 - Your registration ends, and your saved response is discarded. If you register again, you start with no response.
 - If you were added through a group or a mailing list, you stay a member of it. Its syncs won't add you back to this meeting unless you leave and rejoin the group or list. An organizer, or you registering yourself, can still add you.
-- Organizers who are also registered can remove their registration and stay organizers.
+- Organizers who are also registered can remove their registration and stay organizers. On the card of a meeting you organize, the button then changes back to **Add Myself**, so you can invite yourself again. See [Add yourself](../manage-participants/#add-yourself).
 - If only some of your registrations can be removed, you see **Removal incomplete**. You stay invited, and you can try again.
+- If you just added yourself from a card and it shows **Invitation syncing**, the invitation is saved but its registration details aren't available yet. Try **Remove Myself** again shortly; don't add yourself again.
 
 ## Meeting materials
 

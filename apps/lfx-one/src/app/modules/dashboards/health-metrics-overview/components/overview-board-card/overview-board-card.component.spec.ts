@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -22,6 +22,7 @@ function member(key: string, name: string, attended: number, invited = 3): Healt
     jobTitle: null,
     organization: 'Acme Corp',
     logoUrl: null,
+    photoUrl: null,
     lastAttendedDate: null,
     attendance: { YTD: { invited, attended, attendancePct: attended / invited } },
   };
@@ -30,19 +31,21 @@ function member(key: string, name: string, attended: number, invited = 3): Healt
 const PERIOD = { meetings: 3, meetingsChangePct: 0.25, avgAttendancePct: 0.38, avgAttendanceChangePct: -0.1 };
 const BOARD: HealthMetricsOverviewBoard = {
   periods: { YTD: PERIOD, COMPLETED_YEAR: null, COMPLETED_YEAR_2: PERIOD, COMPLETED_YEAR_3: PERIOD },
-  members: [member('k1', 'Pat Doe', 3), member('k2', 'Sam Roe', 0), member('k3', 'Alex Moe', 1)],
+  members: [{ ...member('k1', 'Pat Doe', 3), photoUrl: 'https://photos.example/pat.jpg' }, member('k2', 'Sam Roe', 0), member('k3', 'Alex Moe', 1)],
 };
 
 describe('OverviewBoardCardComponent', () => {
   let fixture: ComponentFixture<OverviewBoardCardComponent>;
+  let foundation: WritableSignal<{ slug: string }>;
 
   async function render(sfid: string | null = 'a0941000002acme'): Promise<void> {
+    foundation = signal({ slug: 'acme' });
     await TestBed.configureTestingModule({
       imports: [OverviewBoardCardComponent],
       providers: [
         HealthMetricsChromeService,
         { provide: AnalyticsService, useValue: { getOverviewBoard: vi.fn().mockReturnValue(of(BOARD)) } },
-        { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }), selectedFoundationSfid: signal(sfid) } },
+        { provide: ProjectContextService, useValue: { selectedFoundation: foundation, selectedFoundationSfid: signal(sfid) } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
       ],
     }).compileComponents();
@@ -56,6 +59,10 @@ describe('OverviewBoardCardComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   }
 
+  function sortButton(testId: string): HTMLButtonElement | null {
+    return query(testId)?.querySelector('button') ?? null;
+  }
+
   function names(): string[] {
     return [...fixture.nativeElement.querySelectorAll('[data-testid="overview-board-name"]')].map((cell: Element) => cell.textContent?.trim() ?? '');
   }
@@ -67,7 +74,7 @@ describe('OverviewBoardCardComponent', () => {
     expect(query('overview-board-sort-attended')?.parentElement?.getAttribute('aria-sort')).toBe('ascending');
   });
 
-  it('heads the second column Company and gives each member an initials avatar', async () => {
+  it('heads the second column Company and gives a member without a photo an initials avatar', async () => {
     await render();
 
     expect([...(query('overview-board-table')?.querySelectorAll('[role="columnheader"]') ?? [])].map((cell) => cell.textContent?.trim())).toEqual([
@@ -76,7 +83,15 @@ describe('OverviewBoardCardComponent', () => {
       'Attended',
       'Last attended',
     ]);
-    expect(query('overview-board-row-k1')?.querySelector('[data-testid="overview-board-avatar"]')?.textContent?.trim()).toBe('PD');
+    expect(query('overview-board-row-k2')?.querySelector('[data-testid="overview-board-avatar"]')?.textContent?.trim()).toBe('SR');
+  });
+
+  it("shows a member's photo, keeping the initials for one without", async () => {
+    await render();
+
+    const photo = (key: string) => query(`overview-board-row-${key}`)?.querySelector('[data-testid="ui-avatar-image"]');
+    expect(photo('k1')?.getAttribute('src')).toBe('https://photos.example/pat.jpg');
+    expect(photo('k2')).toBeNull();
   });
 
   it('lets the keyboard reach the full company behind its truncation', async () => {
@@ -91,15 +106,52 @@ describe('OverviewBoardCardComponent', () => {
   it('flips a column on each click and switches columns', async () => {
     await render();
 
-    query('overview-board-sort-attended')?.click();
+    sortButton('overview-board-sort-attended')?.click();
     fixture.detectChanges();
     expect(names()).toEqual(['Pat Doe', 'Alex Moe', 'Sam Roe']);
 
-    query('overview-board-sort-name')?.click();
+    sortButton('overview-board-sort-name')?.click();
     fixture.detectChanges();
     expect(names()).toEqual(['Alex Moe', 'Pat Doe', 'Sam Roe']);
     expect(query('overview-board-sort-name')?.parentElement?.getAttribute('aria-sort')).toBe('ascending');
     expect(query('overview-board-sort-attended')?.parentElement?.getAttribute('aria-sort')).toBe('none');
+  });
+
+  it('sorts by company A to Z and by last attended newest first on their first click', async () => {
+    BOARD.members[0] = { ...BOARD.members[0], organization: 'Zeta Labs', lastAttendedDate: '2026-03-01' };
+    BOARD.members[2] = { ...BOARD.members[2], lastAttendedDate: '2026-05-01' };
+    try {
+      await render();
+
+      sortButton('overview-board-sort-company')?.click();
+      fixture.detectChanges();
+      expect(names()).toEqual(['Sam Roe', 'Alex Moe', 'Pat Doe']);
+      expect(query('overview-board-sort-company')?.parentElement?.getAttribute('aria-sort')).toBe('ascending');
+
+      sortButton('overview-board-sort-last-attended')?.click();
+      fixture.detectChanges();
+      // Sam has never attended, so his empty date stays last.
+      expect(names()).toEqual(['Alex Moe', 'Pat Doe', 'Sam Roe']);
+      expect(query('overview-board-sort-last-attended')?.parentElement?.getAttribute('aria-sort')).toBe('descending');
+    } finally {
+      BOARD.members[0] = member('k1', 'Pat Doe', 3);
+      BOARD.members[2] = member('k3', 'Alex Moe', 1);
+    }
+  });
+
+  it('returns to the lowest attendance first when the foundation changes', async () => {
+    await render();
+
+    sortButton('overview-board-sort-name')?.click();
+    fixture.detectChanges();
+    expect(names()).toEqual(['Alex Moe', 'Pat Doe', 'Sam Roe']);
+
+    foundation.set({ slug: 'other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(names()).toEqual(['Sam Roe', 'Alex Moe', 'Pat Doe']);
+    expect(query('overview-board-sort-attended')?.parentElement?.getAttribute('aria-sort')).toBe('ascending');
   });
 
   it("links to PCC's add-past-meeting page by the foundation's Salesforce id", async () => {

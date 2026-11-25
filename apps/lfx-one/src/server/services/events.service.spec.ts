@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Imported from source, not through the mocked '@lfx-one/shared/utils' barrel, so the SQL/JS
 // whitespace-agreement assertion below checks the real implementation.
@@ -17,8 +17,8 @@ const snowflakeMocks = vi.hoisted(() => ({
 
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => {
-  // Use the real travel fund aggregates and request tables so the SQL assertions can't drift from the source of truth.
-  const { EVENT_REQUEST_SOURCE_TABLES, TRAVEL_FUND_OFFERED_AGG, TRAVEL_FUND_OPEN_ENDED_AGG, TRAVEL_FUND_LATEST_DEADLINE_AGG } = await vi.importActual<
+  // Use the real travel fund and request tables so the SQL assertions can't drift from the source of truth.
+  const { EVENT_REQUEST_SOURCE_TABLES, TRAVEL_FUND_EVENTS_TABLE, TRAVEL_FUND_EVENT_STATUSES } = await vi.importActual<
     typeof import('../../../../../packages/shared/src/constants/events.constants')
   >('../../../../../packages/shared/src/constants/events.constants');
 
@@ -29,9 +29,8 @@ vi.mock('@lfx-one/shared/constants', async () => {
     EVENT_REQUEST_SOURCE_TABLES,
     EVENT_SOURCE_BACKFILL: 'backfill',
     MY_EVENT_STATUS: { ATTENDED: 'Attended', REGISTERED: 'Registered', NOT_REGISTERED: 'Not Registered' },
-    TRAVEL_FUND_OFFERED_AGG,
-    TRAVEL_FUND_OPEN_ENDED_AGG,
-    TRAVEL_FUND_LATEST_DEADLINE_AGG,
+    TRAVEL_FUND_EVENTS_TABLE,
+    TRAVEL_FUND_EVENT_STATUSES,
     VALID_EVENT_SORT_FIELDS: new Set(['EVENT_NAME', 'PROJECT_NAME', 'EVENT_START_DATE', 'EVENT_CITY']),
     VALID_VISA_REQUEST_SORT_FIELDS: new Set(['EVENT_NAME', 'EVENT_CITY', 'APPLICATION_DATE']),
     WHOLE_NUMBER_PATTERN: /^\d+$/,
@@ -50,7 +49,9 @@ vi.mock('@lfx-one/shared/utils', async () => {
   return {
     isBackfillEventSource: eventUtils.isBackfillEventSource,
     normalizeToUrl: urlUtils.normalizeToUrl,
+    dateOnlyToUtcMidnightIso: dateUtils.dateOnlyToUtcMidnightIso,
     formatDateToUTC: dateUtils.formatDateToUTC,
+    isLocalDateOnlyString: dateUtils.isLocalDateOnlyString,
   };
 });
 vi.mock('./snowflake.service', () => ({
@@ -64,6 +65,7 @@ vi.mock('./logger.service', () => ({
 }));
 
 const { EventsService } = await import('./events.service');
+const { logger } = await import('./logger.service');
 
 const USER_EMAIL = 'delegate@acme-motors.example';
 const SALESFORCE_ID = '003000000000001AAA';
@@ -439,19 +441,23 @@ describe('EventsService.getTravelFundEvents', () => {
     const [sql, binds] = await callFor();
 
     expect(sql).not.toContain('USER_EMAIL');
-    expect(sql).toContain('BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED)');
-    expect(sql).toContain('IS NULL OR');
-    expect(sql).toContain('>= CURRENT_TIMESTAMP()');
-    expect(sql).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1');
+    expect(sql).toContain('IS_TRAVEL_FUND_ACCEPTED = TRUE');
+    expect(sql).toContain('EVENT_IS_PAST = FALSE');
+    expect(sql).toContain('TRAVEL_FUND_END_TS IS NULL OR TRAVEL_FUND_END_TS >= CURRENT_TIMESTAMP()');
     expect(binds).not.toContain(USER_EMAIL);
   });
 
-  it('treats an open-ended flagged row as an open deadline even when another flagged row has expired', async () => {
+  it('reads the events table so an event with no registrations still qualifies', async () => {
     const [sql] = await callFor();
 
-    expect(sql).toContain(
-      'IFF(BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED AND TRAVEL_FUND_END_TS IS NULL) OVER (PARTITION BY EVENT_ID), NULL, MAX(IFF(IS_TRAVEL_FUND_ACCEPTED, TRAVEL_FUND_END_TS, NULL)) OVER (PARTITION BY EVENT_ID))'
-    );
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.EVENTS');
+    expect(sql).not.toContain('EVENT_REGISTRATIONS');
+  });
+
+  it('lists Active and Pending events only, which excludes Cancelled and Completed', async () => {
+    const [sql] = await callFor();
+
+    expect(sql).toContain("EVENT_STATUS IN ('Active', 'Pending')");
   });
 
   it('maps rows to events with the travel fund deadline and no registration', async () => {
@@ -515,6 +521,16 @@ describe('EventsService filter options use the same past-event predicate', () =>
 
     expect(lastSql()).toContain('WHERE NOT (CASE WHEN');
     expect(lastSql()).not.toContain('IS_PAST_EVENT = FALSE');
+    expect(lastSql()).toContain("AND NULLIF(TRIM(EVENT_COUNTRY), '') IS NOT NULL");
+  });
+
+  it('lists travel fund countries from the same events and rule as the picker', async () => {
+    await service.getUpcomingCountries({} as never, 'travel-fund');
+
+    expect(lastSql()).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.EVENTS');
+    expect(lastSql()).not.toContain('EVENT_REGISTRATIONS');
+    expect(lastSql()).toContain("EVENT_STATUS IN ('Active', 'Pending')");
+    expect(lastSql()).toContain("AND NULLIF(TRIM(EVENT_COUNTRY), '') IS NOT NULL");
   });
 });
 
@@ -655,11 +671,12 @@ describe('EventsService.isEligibleForEventRequest', () => {
 
     const [sql, binds] = lastCall();
     expect(sql).not.toContain('USER_EMAIL');
-    expect(sql).toContain('BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED)');
-    expect(sql).toContain(
-      'IFF(BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED AND TRAVEL_FUND_END_TS IS NULL), NULL, MAX(IFF(IS_TRAVEL_FUND_ACCEPTED, TRAVEL_FUND_END_TS, NULL)))'
-    );
-    expect(sql).toContain('>= CURRENT_TIMESTAMP()');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.EVENTS');
+    expect(sql).not.toContain('EVENT_REGISTRATIONS');
+    expect(sql).toContain('IS_TRAVEL_FUND_ACCEPTED = TRUE');
+    expect(sql).toContain("EVENT_STATUS IN ('Active', 'Pending')");
+    expect(sql).toContain('EVENT_IS_PAST = FALSE');
+    expect(sql).toContain('TRAVEL_FUND_END_TS IS NULL OR TRAVEL_FUND_END_TS >= CURRENT_TIMESTAMP()');
     expect(binds).toEqual(['evt-1']);
   });
 
@@ -718,5 +735,84 @@ describe('EventsService.getVisaRequests event-ended gate', () => {
     const result = await service.getVisaRequests({} as never, REGISTRANT, { pageSize: 10, offset: 0 } as never);
 
     expect(result.data[0].eventEnded).toBe(expected);
+  });
+});
+
+// #6052: user-service keeps only the UTC day of the value it gets, so the picked calendar day must go
+// out as UTC midnight rather than the applicant's local midnight.
+describe('EventsService.submitVisaRequestApplication dates', () => {
+  let service: InstanceType<typeof EventsService>;
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('API_GW_AUDIENCE', 'https://api-gw.example/');
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockResolvedValue({ ok: true });
+    service = new EventsService();
+    (service as unknown as { userService: unknown }).userService = {
+      getApiGatewayProfile: vi.fn().mockResolvedValue({ ID: SALESFORCE_ID }),
+    };
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  async function submit(dates: { birthDate: string | null; passportExpiryDate: string | null }): Promise<Record<string, unknown>> {
+    const applicantInfo = {
+      firstName: 'Ada',
+      lastName: 'Example',
+      email: USER_EMAIL,
+      passportNumber: 'X0000000',
+      citizenshipCountry: 'Example Country',
+      embassyCity: 'Example City',
+      organizationID: 'org-1',
+      company: 'Example Account',
+      mailingAddress: '1 Example Street',
+      attendeeAccommodationPaidBy: 'delegate',
+      attendeeType: 'attendee',
+      ...dates,
+    };
+    await service.submitVisaRequestApplication(
+      { apiGatewayToken: 'token' } as never,
+      {
+        eventId: 'evt-1',
+        eventName: 'Example Community Summit',
+        termsAccepted: true,
+        userId: '',
+        applicantInfo,
+      } as never
+    );
+    return JSON.parse(fetchMock.mock.calls[0][1].body);
+  }
+
+  it('sends calendar dates as UTC midnight', async () => {
+    const body = await submit({ birthDate: '1990-05-10', passportExpiryDate: '2030-01-31' });
+
+    expect(body['birthDate']).toBe('1990-05-10T00:00:00.000Z');
+    expect(body['passportExpiryDate']).toBe('2030-01-31T00:00:00.000Z');
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+
+  it('rejects an impossible birth date instead of rolling it into the next month', async () => {
+    await expect(submit({ birthDate: '1990-02-31', passportExpiryDate: null })).rejects.toMatchObject({ code: 'INVALID_REQUEST_FIELDS' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an impossible passport expiry instead of sending it as null', async () => {
+    await expect(submit({ birthDate: '1990-05-10', passportExpiryDate: '2030-02-31' })).rejects.toMatchObject({
+      code: 'INVALID_REQUEST_FIELDS',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('still accepts a full timestamp from an older client and warns without logging the value', async () => {
+    const body = await submit({ birthDate: '1990-05-09T23:00:00.000Z', passportExpiryDate: null });
+
+    expect(body['birthDate']).toBe('1990-05-09T23:00:00.000Z');
+    expect(body).not.toHaveProperty('passportExpiryDate');
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'submit_visa_request_application', expect.any(String), { field: 'birthDate' });
   });
 });

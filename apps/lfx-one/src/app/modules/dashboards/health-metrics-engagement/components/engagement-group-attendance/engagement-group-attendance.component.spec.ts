@@ -127,6 +127,7 @@ describe('EngagementGroupAttendanceComponent', () => {
       range: 'YTD',
       page: 1,
       size: 10,
+      sort: null,
     });
     expect(query('engagement-group-attendance-row-c-1')).not.toBeNull();
     expect(query('engagement-group-attendance-count')).toBeNull();
@@ -157,6 +158,28 @@ describe('EngagementGroupAttendanceComponent', () => {
     await setType('wg');
 
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ groupType: 'wg', page: 1 }));
+  });
+
+  it("opens on Attendance sorted, sends no sort for the view's own rank, and re-reads from page 1 with a picked column", async () => {
+    await render(response({ totalRecords: 80 }));
+    const header = (key: string): HTMLElement => query(`engagement-group-attendance-sort-${key}`) as HTMLElement;
+    expect(header('attendance').closest('th')?.getAttribute('aria-sort')).toBe('ascending');
+    expect(header('group').closest('th')?.getAttribute('aria-sort')).toBe('none');
+
+    fixture.componentInstance['page'].set(3);
+    getEngagementGroupAttendance.mockClear();
+    (header('last').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(getEngagementGroupAttendance).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, sort: { key: 'last', direction: 'desc' } }));
+
+    // Back on the default column and direction, the read leaves the order to the view's rank again.
+    (header('attendance').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (header('attendance').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(getEngagementGroupAttendance).toHaveBeenLastCalledWith(expect.objectContaining({ sort: null }));
   });
 
   it('re-reads from page 1 when the period changes, since the page came from the wider scope', async () => {

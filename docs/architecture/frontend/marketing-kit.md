@@ -174,7 +174,8 @@ documented in [Family exports](../backend/mktg-document-revisions.md#family-expo
 read stays unchanged: It reads only the framework row's latest document revision via the existing endpoint,
 then renders the validated `sidecar.report.sources_read` / `sources_failed`
 (name/reason) as the board's sentences. Missing documents/reports omit the source block;
-loading and failure/retry are explicit, never a fabricated list. Project/family switches
+loading, a read that cannot reach the server (one grey status line while it keeps trying by itself) and a final
+refusal (one red line, no Retry) are explicit, never a fabricated list. Project/family switches
 cancel old reads. Kit and Agents never make these detail reads.
 
 ## The brand kit's portrait book (Download PDF)
@@ -426,15 +427,21 @@ The header and body share the first-observation loading boundary. Fixed identity
 slots keep profile resolution and input-provenance messages from shifting layout. A seeded
 visibility-aware observer rechecks idle entry on timers and focus without repeating profile
 reads or resetting unsent inputs; the document observer owns an already selected run.
-Transport failures expose retry actions rather than claiming no run exists. An initially
+A first load that cannot reach the server keeps trying by itself behind one grey status line over the skeleton, and a
+final refusal is one red line with no Retry, rather than claiming no run exists. An initially
 unavailable progress response settles to available inputs with an inline notice and keeps
 checking; it never claims that no run exists. Background failures retain the last observed
 state, question DOM and unsent edits while pausing submission until verification recovers. AEO/GEO discovery needs backend run
 recording before this mechanism applies to it.
 
 LinkedIn content sources use `source=`; profile editing keeps `profile=edit` until Save or Cancel.
-Edit actions mark their pushed history entry with `mktgEditPushed: 'run' | 'document'`.
-Cancel and persisted saves return through history only for a marked entry. Cold entries strip `profile`
+Edit actions mark their pushed history entry with `mktgEditPushed: 'run' | 'document' | 'redraft'`
+(`LINKEDIN_PROFILE_EDIT_ORIGINS`). For a `run` or `document` entry, Cancel and persisted saves return
+through history. A `redraft` entry (the Document's "Change who this is written as" → Edit profile and
+draft again, see [Objections to who a post is written as](../backend/mktg-linkedin-post.md#objections-to-who-a-post-is-written-as))
+returns through history only on Cancel: Save and setup-only Continue stay on the intake source form
+with `replaceUrl: true`, because a changed profile reaches a post only through a new draft. Cold
+(unmarked) entries strip `profile`
 in place, including after Family → Back. Setup-only Continue keeps its answers and returns through
 history only for run origin; document origin stays on intake with `replaceUrl: true` to avoid losing
 unpersisted answers. Legacy boolean markers conservatively retain document-origin behavior.

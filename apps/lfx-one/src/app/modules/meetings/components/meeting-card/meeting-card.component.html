@@ -295,7 +295,7 @@
                 <ng-container *ngTemplateOutlet="attachmentChips; context: { $implicit: attachments(), offset: 0 }"></ng-container>
               }
               <ng-template #attachmentChips let-items let-offset="offset">
-                <div class="grid grid-cols-4 gap-2">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
                   @for (attachment of items; track attachment.uid; let i = $index) {
                     @if (attachment.type === 'link') {
                       <a
@@ -305,7 +305,12 @@
                         class="bg-gray-200 hover:bg-gray-300 rounded px-2.5 py-1.5 flex items-center gap-2.5 transition-colors cursor-pointer"
                         [attr.data-testid]="'resource-link-' + (offset + i)">
                         <i class="fa-light fa-arrow-up-right-from-square text-xs text-black flex-shrink-0"></i>
-                        <span class="text-xs text-gray-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-inter">{{ attachment.name }}</span>
+                        <!-- Full name wraps on phones; truncates with a tooltip once the chips share a row -->
+                        <span
+                          class="text-xs text-gray-950 min-w-0 flex-1 font-inter break-words sm:overflow-ellipsis sm:overflow-hidden sm:whitespace-nowrap"
+                          [title]="attachment.name"
+                          >{{ attachment.name }}</span
+                        >
                       </a>
                     } @else {
                       <a
@@ -313,7 +318,12 @@
                         class="bg-gray-200 hover:bg-gray-300 rounded px-2.5 py-1.5 flex items-center gap-2.5 transition-colors cursor-pointer"
                         [attr.data-testid]="'resource-file-' + (offset + i)">
                         <i class="fa-light fa-file-arrow-down text-xs text-black flex-shrink-0"></i>
-                        <span class="text-xs text-gray-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-inter">{{ attachment.name }}</span>
+                        <!-- Full name wraps on phones; truncates with a tooltip once the chips share a row -->
+                        <span
+                          class="text-xs text-gray-950 min-w-0 flex-1 font-inter break-words sm:overflow-ellipsis sm:overflow-hidden sm:whitespace-nowrap"
+                          [title]="attachment.name"
+                          >{{ attachment.name }}</span
+                        >
                       </a>
                     }
                   }
@@ -407,7 +417,11 @@
               [pastMeeting]="pastMeeting()"
               [showAddButton]="!pastMeeting()"
               [showAttendeePreview]="true"
-              [additionalRegistrantsCount]="additionalRegistrantsCount()"
+              [initialRegistrants]="drawerRegistrants()"
+              [confirmedRegistrants]="confirmedSelfRegistrants()"
+              [confirmedRemovedRegistrantIds]="confirmedRemovedRegistrantIds()"
+              [confirmedCountAdjustment]="confirmedSelfCountDelta()"
+              [additionalRegistrantsCount]="drawerRegistrants() ? 0 : additionalRegistrantsCount()"
               (addClicked)="onInvitePeople()"
               (viewAllClicked)="showRegistrants.set(true)">
             </lfx-meeting-rsvp-details>
@@ -536,7 +550,7 @@
           }
         </div>
         <!-- Viewer's own actions, side by side like Guests / See Meeting Details; a lone button fills the row -->
-        @if (canResendInvite() || canLeaveMeeting()) {
+        @if (canResendInvite() || canLeaveMeeting() || canAddMyself()) {
           <div class="flex gap-2 mt-2" data-testid="own-invite-actions">
             @if (canResendInvite()) {
               <lfx-button
@@ -548,7 +562,7 @@
                 severity="secondary"
                 data-testid="resend-invite-button"
                 [loading]="resendingInvite()"
-                (onClick)="resendInvite()">
+                (onClick)="confirmResendInvite()">
               </lfx-button>
             }
             @if (canLeaveMeeting()) {
@@ -564,7 +578,25 @@
                 (onClick)="confirmLeaveMeeting()">
               </lfx-button>
             }
+            @if (canAddMyself()) {
+              <lfx-button
+                class="w-full"
+                styleClass="w-full"
+                icon="fa-light fa-user-plus"
+                label="Add Myself"
+                size="small"
+                severity="secondary"
+                data-testid="add-myself-button"
+                [loading]="selfInvitePending()"
+                (onClick)="addMyself()">
+              </lfx-button>
+            }
           </div>
+          @if (selfIdentityPending()) {
+            <p class="text-xs text-gray-500 mt-2" role="status" data-testid="self-invite-syncing">
+              Your invitation is saved. If Remove Myself is not ready yet, try again shortly.
+            </p>
+          }
         }
       </div>
     </div>
@@ -607,9 +639,15 @@
           [showAddRegistrant]="!pastMeeting()"
           [openAddFormOnShow]="openRegistrantsOnAddForm()"
           [occurrence]="occurrence()"
+          [selfInvited]="isRegisteredAttendee()"
+          [selfInvitePending]="addingMyself()"
+          [confirmedRegistrants]="confirmedSelfRegistrants()"
+          [confirmedRemovedRegistrantIds]="confirmedRemovedRegistrantIds()"
+          [confirmedCountAdjustment]="confirmedSelfCountDelta()"
           (registrantsCountChange)="additionalRegistrantsCount.set($event)"
           (totalCountChange)="drawerGuestCount.set($event)"
-          (selfAdded)="onSelfAdded($event.meeting_id)"
+          (registrantsChange)="drawerRegistrants.set($event)"
+          (selfAdded)="onSelfAdded($event.meeting_id, $event)"
           (selfRemoved)="onSelfRemoved($event)"
           (resolvedHostsChange)="drawerHosts.set($event)">
         </lfx-meeting-registrants-display>

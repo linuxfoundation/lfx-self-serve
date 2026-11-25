@@ -4,6 +4,8 @@
 import type { Signal, WritableSignal } from '@angular/core';
 import type { Subject } from 'rxjs';
 
+import type { OrgLensEmployeeViewGrant } from './org-lens-view-mode.interface';
+
 /** Selector row. Spec 002: the org account id (18-char SFID) is the canonical identifier; `uid` and `accountId` both carry it. */
 export interface OrgItem {
   /** Org account id (18-char SFID), sourced from the indexed `b2b_org` doc id. */
@@ -32,6 +34,14 @@ export interface OrgItem {
   slug?: string | null;
   /** True for an org the caller reaches only as its CLA Manager (see `OrgResolveResponse.claOnly`). Absent means false. */
   claOnly?: boolean;
+  /** True on a CLA-only row when the employee-view lookup ran and answered "not an employee" for the caller (epic #5845), so the client may drop any stale employee-view or full-access mode for it. Absent when the lookup did not run or could not answer. */
+  employeeViewChecked?: boolean;
+  /** True for the company the caller reaches only through the all employee view (epic #5845). Absent means false. */
+  employeeView?: boolean;
+  /** True for a company the caller reads at full width only through the authorizer (`b2b_org#auditor`, no roster grant) and who would otherwise also qualify as an employee. Never CLA-only. Absent means false. */
+  fullAccess?: boolean;
+  familyRootUid?: string;
+  familyRootName?: string | null;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */
@@ -138,6 +148,12 @@ export interface OrgLensRollUpScope {
   rootUid: string;
   members: OrgRollUpSetOrg[];
   complete: boolean;
+  excludedCount: number;
+}
+
+export interface OrgLensRollUpCoverage {
+  complete: boolean;
+  excludedCount: number;
 }
 
 export interface OrgStaffRollUpFamily {
@@ -155,6 +171,14 @@ export interface OrgRollUpSelectorRow {
   subtitle: string;
   organizationCount: number;
   isSelected: boolean;
+}
+
+export interface OrgRelatedCompanyRow {
+  org: OrgRollUpSetOrg;
+  isSelected: boolean;
+  roleLabel: string;
+  roleIcon: string;
+  roleTooltip: string;
 }
 
 /** Spec 022 — cascading-grant entry; each item carries the direct-granted parent it inherits from. */
@@ -222,6 +246,12 @@ export interface RoleGrantsResponse {
    */
   claManagerLookup?: 'ok' | 'failed';
   /**
+   * Epic #5845 — `failed` when the all employee view lookup was asked for and could not answer (a work-history, email, company or
+   * timeout failure), so the absence of `employeeView` is unknown rather than "not an employee" and the client renders the outage
+   * state with Retry. Absent ⇒ `ok` (including a flag-off server and a caller who holds something).
+   */
+  employeeViewLookup?: 'ok' | 'failed';
+  /**
    * #4225 — the caller's own employment affiliation, used only to pick between `no-organization` and
    * `affiliated-no-grant` when the caller holds nothing. Resolved server-side because the client
    * cannot read it: the employer comes from CDP work history, and its membership from the warehouse
@@ -232,6 +262,22 @@ export interface RoleGrantsResponse {
    * Optional for rolling deploys: absent ⇒ treat as `lookup: 'failed'`, i.e. keep today's copy.
    */
   affiliation?: OrgLensAffiliationVerdict;
+  /**
+   * Epic #5845 — the company the caller may open in the all employee view (read-only, no names or emails):
+   * their current employer is an active LF member and they hold a verified email on that company's domain (the website host of its active membership for now).
+   * Computed only when the caller holds no grant and is not staff, like `affiliation`, but with no affiliation
+   * pre-filter: the strict lookup considers every present employer. Absent for everyone else. A lookup that could
+   * not answer (an error or the lookup budget) is reported as `employeeViewLookup: 'failed'`, the retryable outage
+   * state, never as "not an employee". Never widens what a grant holder sees.
+   */
+  employeeView?: OrgLensEmployeeViewGrant;
+  /**
+   * Epic #5845 — uid of a company the caller reads at FULL width through the authorizer alone (`b2b_org#auditor`, absent
+   * from the roster) and who also qualifies as an employee there. The client never stores authorizer entitlements in its
+   * grant sets, so without this it would classify the company CLA-only (when the caller also manages its CLAs) or
+   * unaddressable. Same computation entry rule as `employeeView`; absent for everyone else.
+   */
+  fullAccessOrgUid?: string;
 }
 
 /**
@@ -273,6 +319,12 @@ export interface OrgResolveResponse {
   name: string;
   /** True when the caller reaches this org only as its CLA Manager: no Org Lens read, so only its EasyCLA tab opens. Absent means false. */
   claOnly?: boolean;
+  /** True on a CLA-only answer when the employee-view lookup ran and answered "not an employee" (epic #5845); absent when it did not run or could not answer, so the answer is not authoritative about the employee view. */
+  employeeViewChecked?: boolean;
+  /** True when the caller reaches this org only through the all employee view (epic #5845). Absent means false. */
+  employeeView?: boolean;
+  /** True when the caller reads this org at full width through the authorizer alone and is not CLA-only (epic #5845). Absent means false. */
+  fullAccess?: boolean;
 }
 
 /** Canonical org record returned by `GET /api/orgs/:accountId` (member-service snake_case → camelCase). Spec 002: keyed by the org account id (18-char SFID). */
@@ -465,6 +517,8 @@ export interface MemberServiceB2bOrgResponse {
   description?: string | null;
   website?: string | null;
   primary_domain?: string | null;
+  /** Normalized alternate domains registered for the company; an employee's verified email may match any of them. */
+  domain_aliases?: string[] | null;
   logo_url?: string | null;
   /** Spec 050 — lowercase slug derived from the org name by member-service (DR-007); `omitempty` upstream. */
   slug?: string | null;

@@ -114,6 +114,7 @@ This script will identify any files missing the required license header. The scr
 
 - **Pre-commit Hook**: The license header check runs automatically before each commit
 - **CI Pipeline**: GitHub Actions will verify all files have proper headers on every pull request
+- **Pre-push Hook**: Runs `yarn format:check`, `yarn lint:check`, and `yarn check-types` in order, stopping on the first failure. Type checks generate documentation assets, but the hook does not build the application. Application builds remain a separate validation step and continue to run in CI.
 
 ## Code Style
 

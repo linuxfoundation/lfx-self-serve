@@ -2,22 +2,29 @@
 // SPDX-License-Identifier: MIT
 
 import type { HealthMetricsL2Blank, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
-import type { HealthMetricsBarFillRule } from '../interfaces/health-metrics-table.interface';
+import type { HealthMetricsBarFillRule, HealthMetricsSortColumn, HealthMetricsTableSort } from '../interfaces/health-metrics-table.interface';
 import type {
   HealthMetricsEngagementAttendanceRule,
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementAttendanceTrend,
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupKind,
+  HealthMetricsEngagementGroupSortKey,
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementMeetingParticipation,
   HealthMetricsEngagementNewsletterPerformance,
   HealthMetricsEngagementNewsletterRecipients,
+  HealthMetricsEngagementNewsletterSortKey,
   HealthMetricsEngagementNonMemberParticipation,
+  HealthMetricsEngagementNonMemberSortKey,
   HealthMetricsEngagementOrgParticipation,
+  HealthMetricsEngagementOrgSortKey,
+  HealthMetricsEngagementParticipationSortKey,
   HealthMetricsEngagementQueryParams,
   HealthMetricsEngagementRecipientFilter,
+  HealthMetricsEngagementRecipientSortKey,
   HealthMetricsEngagementRepresentatives,
+  HealthMetricsEngagementRepSortKey,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
 import { HEALTH_METRICS_L2_EMPTY_SOURCES, HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
@@ -475,3 +482,88 @@ export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED: HealthM
   recipients: [],
   truncated: false,
 };
+
+// ── Sorting ────────────────────────────────────────────────────────────────
+
+/** Meeting participation's sortable columns; it opens in the meeting-type order, with no arrow. */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsEngagementParticipationSortKey>[] = [
+  { key: 'type', kind: 'text' },
+  { key: 'meetings', kind: 'number' },
+  { key: 'attendance', kind: 'number' },
+];
+
+/** Group attendance's sortable columns, which the server sorts across every page. */
+export const HEALTH_METRICS_ENGAGEMENT_GROUP_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsEngagementGroupSortKey>[] = [
+  { key: 'group', kind: 'text' },
+  { key: 'meetings', kind: 'number' },
+  { key: 'last', kind: 'date' },
+  { key: 'attendance', kind: 'number' },
+];
+
+/** Group attendance opens on the view's rank: dormant first, then the lowest attendance. */
+export const HEALTH_METRICS_ENGAGEMENT_GROUP_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsEngagementGroupSortKey> = {
+  key: 'attendance',
+  direction: 'asc',
+};
+
+/** Company participation's sortable columns. */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsEngagementOrgSortKey>[] = [
+  { key: 'company', kind: 'text' },
+  { key: 'membership', kind: 'tier' },
+  { key: 'attended', kind: 'number' },
+  { key: 'reps', kind: 'number' },
+  { key: 'last', kind: 'date' },
+];
+
+/** Company participation opens on the view's rank, the most meetings attended first. */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsEngagementOrgSortKey> = { key: 'attended', direction: 'desc' };
+
+/** The representatives table's sortable columns. */
+export const HEALTH_METRICS_ENGAGEMENT_REP_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsEngagementRepSortKey>[] = [
+  { key: 'representative', kind: 'text' },
+  { key: 'group', kind: 'text' },
+  { key: 'attended', kind: 'number' },
+  { key: 'last', kind: 'date' },
+];
+
+/** Representatives open on the view's rank, the lowest attendance first. */
+export const HEALTH_METRICS_ENGAGEMENT_REP_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsEngagementRepSortKey> = { key: 'attended', direction: 'asc' };
+
+/** Non-member participation's sortable columns. */
+export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsEngagementNonMemberSortKey>[] = [
+  { key: 'company', kind: 'text' },
+  { key: 'meetings', kind: 'number' },
+  { key: 'people', kind: 'number' },
+];
+
+/** Non-member participation opens on the view's rank, the most meetings attended first. */
+export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsEngagementNonMemberSortKey> = {
+  key: 'meetings',
+  direction: 'desc',
+};
+
+/** Newsletter performance's sortable columns; Newsletter sorts by the send date under its name. */
+export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsEngagementNewsletterSortKey>[] = [
+  { key: 'newsletter', kind: 'date' },
+  { key: 'recipients', kind: 'number' },
+  { key: 'opens', kind: 'number' },
+  { key: 'openRate', kind: 'number' },
+  { key: 'clicks', kind: 'number' },
+  { key: 'clickRate', kind: 'number' },
+  { key: 'clickToOpen', kind: 'number' },
+];
+
+/** Newsletter performance opens on the latest send first. */
+export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsEngagementNewsletterSortKey> = {
+  key: 'newsletter',
+  direction: 'desc',
+};
+
+/** The recipient engagement table's sortable columns; it opens in the view's engagement order, with no arrow. */
+export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsEngagementRecipientSortKey>[] = [
+  { key: 'recipient', kind: 'text' },
+  { key: 'delivery', kind: 'text' },
+  { key: 'engagement', kind: 'text' },
+  { key: 'opens', kind: 'number' },
+  { key: 'clicks', kind: 'number' },
+];

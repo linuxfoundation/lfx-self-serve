@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CombinedProfile, MeetingHostCandidate, MeetingInviteEmail, MeetingRegistrant, MeetingSelfGuest, User } from '../interfaces';
+import type {
+  CombinedProfile,
+  MeetingHostCandidate,
+  MeetingInviteEmail,
+  MeetingRegistrant,
+  MeetingRegistrantWithState,
+  MeetingSelfGuest,
+  User,
+} from '../interfaces';
 import { occurrenceIdToSeconds } from './rsvp-calculator.util';
 
 /**
@@ -57,6 +65,25 @@ export function isMeetingSelfGuestListed(
   const emails = new Set(self.matchEmails);
   const username = self.username?.trim().toLowerCase();
   return people.some((person) => emails.has(person.email?.trim().toLowerCase() ?? '') || (!!username && person.username?.trim().toLowerCase() === username));
+}
+
+/**
+ * The registrant body the Guests drawer's and the meeting card's "Add myself" post: a regular guest from the
+ * signed-in user's profile details.
+ * @description `selfAdded` is what lets the user's LFID and avatar onto the create body (`MeetingService.stripMetadata`).
+ */
+export function toMeetingSelfGuestRegistrant(self: MeetingSelfGuest): Partial<MeetingRegistrantWithState> {
+  return {
+    email: self.email,
+    first_name: self.first_name,
+    last_name: self.last_name,
+    job_title: self.job_title,
+    org_name: self.org_name,
+    username: self.username,
+    avatar_url: self.avatar_url,
+    host: false,
+    selfAdded: true,
+  };
 }
 
 /** Keep successful additions only until an indexed row acknowledges their UID or UID-less email/scope. */

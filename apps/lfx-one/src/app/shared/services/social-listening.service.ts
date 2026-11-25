@@ -2,12 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
-import { map, Observable } from 'rxjs';
+import { computed, inject, Injectable, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { catchError, EMPTY, map, Observable, of, skip, switchMap } from 'rxjs';
+
+import { ProjectContextService } from './project-context.service';
 
 import type {
+  SocialListeningGroupGrant,
   PreferenceReadResponse,
   PreferenceUpsertRequest,
+  SocialListeningAccessResponse,
   SocialListeningAnalyticsOverview,
   SocialListeningAnalyticsRequest,
   SocialListeningAuthorsRequest,
@@ -29,15 +34,63 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * Angular gateway over the 13 Express endpoints from LFXV2-3015 (`/api/social-listening/*`,
- * dashboard-access-gated server-side: ED + LF Staff). All methods return Observables; the preference store adapts them to the Promise-based `UserPreferenceTransport` contract.
+ * Angular gateway over the Express endpoints from LFXV2-3015 (`/api/social-listening/*`, access-gated
+ * server-side: ED, LF Staff, and members of opted-in foundation groups — lfx-self-serve-ops#387). All methods return Observables; the preference store adapts them to the Promise-based `UserPreferenceTransport` contract.
  */
 @Injectable({
   providedIn: 'root',
 })
 export class SocialListeningService {
   private readonly http = inject(HttpClient);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly baseUrl = '/api/social-listening';
+
+  /** Set by `socialListeningAccessGuard` on a `group-member` grant, whose holder may not be able to load the foundation itself. */
+  public readonly groupGrant = signal<SocialListeningGroupGrant | null>(null);
+
+  /** The selected foundation's Salesforce ID (keys per-user preferences), falling back to the group grant's. */
+  public readonly foundationSfid = computed(() => {
+    const grant = this.groupGrant();
+    const fallback = grant && grant.foundation.uid === this.projectContextService.selectedFoundation()?.uid ? grant.foundationSfid : null;
+    return this.projectContextService.selectedFoundationSfid() ?? fallback;
+  });
+
+  /**
+   * Keeps a group member's grant in step with the selected foundation while the page is open: a same-lens
+   * foundation switch keeps the page mounted without rerunning the guard, so the grant is re-probed here, and
+   * switchMap drops an answer for a foundation already left. Every switch to a foundation without a matching
+   * grant is probed, including for a user who opened the page as ED or staff and has no grant yet: the new
+   * foundation may be one they only reach through a Board group. The first value is skipped because the
+   * guard has just checked it. A denial keeps the previous grant: it only applies to its own foundation, and
+   * keeping it lets later switches (including back to it) still work.
+   * Call from the page's injection context; it stops when the page is destroyed.
+   */
+  public trackGroupGrant(): void {
+    toObservable(this.projectContextService.selectedFoundation)
+      .pipe(
+        skip(1),
+        switchMap((foundation) => {
+          const grant = this.groupGrant();
+          return foundation?.slug && grant?.foundation.uid !== foundation.uid ? this.getAccess(foundation.slug) : EMPTY;
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe((access) => {
+        if (access.canView && access.foundation) {
+          this.groupGrant.set({ foundation: access.foundation, foundationSfid: access.foundationSfid ?? null });
+        }
+      });
+  }
+
+  /** Whether the current user can view Social Listening for `foundationSlug`; any failure reads as no access. */
+  public getAccess(foundationSlug: string): Observable<SocialListeningAccessResponse> {
+    return this.http.get<SocialListeningAccessResponse>(`${this.baseUrl}/access`, { params: { foundationSlug } }).pipe(
+      catchError((error) => {
+        console.error('Failed to load Social Listening access', error);
+        return of<SocialListeningAccessResponse>({ canView: false, reason: 'none' });
+      })
+    );
+  }
 
   /** One window of mentions for a foundation, newest first. */
   public getMentionsFeed(request: SocialListeningFeedRequest): Observable<SocialListeningFeedResponse> {
@@ -106,18 +159,33 @@ export class SocialListeningService {
 
   /** Reads one preference value for the current user (`null` when unset) — `UserPreferenceStore` transport. */
   public getPreference(name: string): Observable<string | null> {
-    return this.http.get<PreferenceReadResponse>(`${this.baseUrl}/preferences/${encodeURIComponent(name)}`).pipe(map((response) => response.value));
+    return this.http
+      .get<PreferenceReadResponse>(`${this.baseUrl}/preferences/${encodeURIComponent(name)}`, { params: this.preferenceParams() })
+      .pipe(map((response) => response.value));
   }
 
   /** Upserts one preference value (stringified JSON) for the current user. */
   public upsertPreference(name: string, value: string): Observable<void> {
     const body: PreferenceUpsertRequest = { value };
-    return this.http.put<PreferenceReadResponse>(`${this.baseUrl}/preferences/${encodeURIComponent(name)}`, body).pipe(map(() => undefined));
+    return this.http
+      .put<PreferenceReadResponse>(`${this.baseUrl}/preferences/${encodeURIComponent(name)}`, body, { params: this.preferenceParams() })
+      .pipe(map(() => undefined));
   }
 
   /** Deletes one preference for the current user (idempotent server-side). */
   public deletePreference(name: string): Observable<void> {
-    return this.http.delete<PreferenceReadResponse>(`${this.baseUrl}/preferences/${encodeURIComponent(name)}`).pipe(map(() => undefined));
+    return this.http
+      .delete<PreferenceReadResponse>(`${this.baseUrl}/preferences/${encodeURIComponent(name)}`, { params: this.preferenceParams() })
+      .pipe(map(() => undefined));
+  }
+
+  /**
+   * Preferences are per-user, but the access gate scopes group members by foundation — send the
+   * selected foundation so a group member's bookmarks and read state aren't 403'd.
+   */
+  private preferenceParams(): HttpParams {
+    const foundationSlug = this.projectContextService.selectedFoundation()?.slug;
+    return foundationSlug ? new HttpParams().set('foundationSlug', foundationSlug) : new HttpParams();
   }
 
   /** Serializes a request to query params: arrays become repeated params (`tags=a&tags=b` — commas inside a value survive); empty values are omitted. */

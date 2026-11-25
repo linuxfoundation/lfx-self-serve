@@ -14,6 +14,8 @@ export const MEMBER_360_WORKBOOK_FORMATS = {
 } as const;
 export const MEMBER_360_SUMMARY_WIDTHS = [28, 14, 14, 18, 14, 14];
 export const MEMBER_360_SUMMARY_TIER_HEADER_ROW = 7;
+/** The Summary is a one-page QBR view: it lists this many watchlist members, and Member Ranking holds the rest. */
+export const MEMBER_360_SUMMARY_WATCHLIST_ROWS = 15;
 export const MEMBER_360_WORKBOOK_TIER_FILLS = {
   Champion: lfxColors[MEMBER_360_TIER_TONES.Champion][100],
   Engaged: lfxColors[MEMBER_360_TIER_TONES.Engaged][50],

@@ -5,11 +5,11 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentee, mentor, profile, lfx-profile, github, linkedin, identities]
 last_generated: 2026-10-30
-last_updated: 2026-10-30
+last_updated: 2026-11-23
 intercom_collection: Mentorship
 ---
 
-The **From Your LFX Profile** card shows the account details your mentorship profiles use. You do not type them into the mentorship forms. They come from your LFX account, and you fix them from the card.
+The **From Your LFX Profile** card shows the account details your mentorship profiles use. You do not type them into the mentorship forms. They come from your LFX profile, and you fix them from the card.
 
 ## Where you see it
 
@@ -40,7 +40,9 @@ A field your LFX profile leaves empty shows "Not provided".
 
 The card updates straight away. Your new name, email and picture are also copied onto your mentor and mentee profiles, if you have them. On a register page, the details on the card when you select **Submit** are the ones your new profile uses.
 
-The first time you save in a session, or after your authorization has expired, you may be asked to authorize the change first. When you do, you land on **Profile & Account** rather than back on the mentorship page. Anything you had typed into the mentorship form and not submitted is lost, and the new details are not copied onto your mentorship profiles. Go back to the mentorship page and save from **Edit LFX Profile** again to copy them. To avoid losing a half-filled form, edit your LFX profile before you start a register form.
+The first time you save in a session, or after your authorization has expired, you may be asked to authorize the change first. When you do, you land on **Profile & Account** rather than back on the mentorship page, and your save finishes there. A new name is still copied onto your mentorship profiles. Anything you had typed into the mentorship form and not submitted is lost. To avoid losing a half-filled form, edit your LFX profile before you start a register form.
+
+Changes you save on **Profile & Account** are copied the same way: a new name or picture reaches your mentor and mentee profiles. See [Edit Your Profile](../../profile/edit-profile/).
 
 The panel is the same one used under **Profile & Account**. See [Edit Your Profile](../../profile/edit-profile/) for its fields and limits.
 

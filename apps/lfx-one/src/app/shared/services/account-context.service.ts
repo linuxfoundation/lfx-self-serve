@@ -14,7 +14,7 @@ import {
   ORG_NOT_FOUND_PATH,
   ROLLUP_MIN_ORGANIZATIONS,
 } from '@lfx-one/shared/constants';
-import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
+import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgRollUpFamily, OrgRollUpSetOrg } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, normalizeOrgSegment, orgRollUpAccount, orgRollUpRootUid, orgUrlSegment } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { filter, firstValueFrom, from, Subscription, switchMap, take } from 'rxjs';
@@ -110,6 +110,9 @@ export class AccountContextService {
   /** True while a family roll-up is the selection — every page reads combined data and every write is gated off (#4125). */
   public readonly isRollUp: Signal<boolean> = computed(() => this.selectedRollUpRootUid() !== null);
 
+  /** True only while the `org-lens-rollup-enabled` flag is known to be on for this viewer. */
+  public readonly rollUpEnabled: Signal<boolean> = computed(() => this.rollUpFlag.enabled());
+
   private readonly staffRollUpAnchor: Signal<string | null> = computed(() => this.initStaffRollUpAnchor());
 
   /**
@@ -163,6 +166,8 @@ export class AccountContextService {
 
   /** How many organizations the selected roll-up combines — 0 while its family is not known (yet). */
   public readonly rollUpOrganizationCount: Signal<number> = computed(() => this.selectedRollUpFamily()?.orgUids.length ?? 0);
+
+  public readonly relatedCompanies: Signal<OrgRollUpSetOrg[]> = computed(() => this.initRelatedCompanies());
 
   /**
    * True when the roll-up is the selection and the caller has stopped qualifying for it — the one
@@ -285,7 +290,11 @@ export class AccountContextService {
       this.availableAccounts().length > 0 ||
       this.orgRoleGrantsService.isStaff() ||
       // M3: a CLA Manager with no grant still needs the selector to reach their company's EasyCLA tab.
-      this.orgClaOnlyAccess.claOnlyOrgUids().size > 0
+      this.orgClaOnlyAccess.claOnlyOrgUids().size > 0 ||
+      // Epic #5845: an employee with a verified company email reaches their company's read-only view through the selector.
+      this.orgRoleGrantsService.employeeViewOrgUids().size > 0 ||
+      // A company read at full width through the authorizer alone is never in a grant set, but is still addressable.
+      this.orgRoleGrantsService.fullAccessOrgUids().size > 0
   );
 
   public constructor() {
@@ -458,8 +467,7 @@ export class AccountContextService {
    * No-op when the caller holds fewer than `ROLLUP_MIN_ORGANIZATIONS` in that family, so a stale
    * cookie or a hand-typed address cannot put a caller into a mode built for several.
    */
-  public selectRollUp(rootUid: string, options?: { admitWhilePending?: boolean }): boolean {
-    // `admitWhilePending` is for an ADDRESS — a `/org/family-…` deep link the guard is activating.
+  public selectRollUp(rootUid: string, options?: { admitWhilePending?: boolean; name?: string | null }): boolean {
     // The count is a lower bound while the grants are unsettled, so refusing then would send a
     // genuine conglomerate admin to `/org/not-found`: a dead end later grants cannot repair,
     // because reconciliation stops once the roll-up is deselected and no default may leave
@@ -478,7 +486,7 @@ export class AccountContextService {
     if (!admissible) {
       return false;
     }
-    this.applyRollUpSelection(rootUid);
+    this.applyRollUpSelection(rootUid, options?.name);
     return true;
   }
 
@@ -528,6 +536,9 @@ export class AccountContextService {
       // on `/org/not-found`, even though `canAddressOrganization` keeps that same organization when
       // they are already addressing it — the EasyCLA page guard redirects it from there (#4415, Copilot).
       this.orgClaOnlyAccess.claOnlyOrgUids(),
+      // Epic #5845: after the CLA-only set for the same reason — a real address, never part of a roll-up.
+      this.orgRoleGrantsService.employeeViewOrgUids(),
+      this.orgRoleGrantsService.fullAccessOrgUids(),
     ]) {
       for (const uid of set) {
         // Same shape the cookie-restore path uses for an id with no seed behind it, `accountId`
@@ -859,7 +870,12 @@ export class AccountContextService {
     if (!uid) {
       return false;
     }
-    if (this.orgRoleGrantsService.isStaff() || this.orgClaOnlyAccess.claOnlyOrgUids().has(uid)) {
+    if (
+      this.orgRoleGrantsService.isStaff() ||
+      this.orgClaOnlyAccess.claOnlyOrgUids().has(uid) ||
+      this.orgRoleGrantsService.employeeViewOrgUids().has(uid) ||
+      this.orgRoleGrantsService.fullAccessOrgUids().has(uid)
+    ) {
       return true;
     }
     if (this.userOrganizations().some((account) => account.uid === uid)) {
@@ -968,9 +984,13 @@ export class AccountContextService {
   }
 
   /** Writes the family roll-up selection and pins it as an address selection. The eligibility gate lives in the callers. */
-  private applyRollUpSelection(rootUid: string): void {
+  private applyRollUpSelection(rootUid: string, name?: string | null): void {
     const family = this.rollUpFamilies().find((candidate) => candidate.rootUid === rootUid);
-    const account = orgRollUpAccount(rootUid, family?.name);
+    const knownName = family?.name ?? name;
+    const current = this.selectedAccount();
+    const named = orgRollUpAccount(rootUid, knownName);
+    // A re-admission without a name (the path guard's) must not demote a label already held for this roll-up.
+    const account = !knownName && current.uid === named.uid ? { ...named, accountName: current.accountName } : named;
     this.selectedAccount.set(account);
     this.persistToStorage(account);
     this.addressedUid.set(account.uid ?? null);
@@ -985,6 +1005,23 @@ export class AccountContextService {
       return;
     }
     this.selectedAccount.set({ ...current, accountName: named.accountName });
+  }
+
+  private initRelatedCompanies(): OrgRollUpSetOrg[] {
+    if (!this.orgRoleGrantsService.isStaff()) {
+      return [];
+    }
+    const rootUid = this.selectedRollUpRootUid();
+    const selectedUid = this.selectedAccount().uid;
+    const family = this.eligibleRollUpFamilies().find((candidate) =>
+      rootUid ? candidate.rootUid === rootUid : !!selectedUid && candidate.orgUids.includes(selectedUid)
+    );
+    if (!family) {
+      return [];
+    }
+    const orgsByUid = this.rollUpFamiliesService.orgsByUid();
+    const orgs = family.orgUids.map((uid) => orgsByUid.get(uid)).filter((org): org is OrgRollUpSetOrg => !!org);
+    return [...orgs.filter((org) => org.uid === family.rootUid), ...orgs.filter((org) => org.uid !== family.rootUid)];
   }
 
   private initStaffRollUpAnchor(): string | null {

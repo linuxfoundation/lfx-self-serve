@@ -692,6 +692,19 @@
     margin-left: auto;
   }
 
+  // The profile redesign's two links share the strip evenly, centred, with a hairline between them.
+  .lfxn__me-action--split {
+    flex: 1 1 0;
+    justify-content: center;
+    padding: 0 6px;
+  }
+
+  .lfxn__me-sep {
+    flex: 0 0 1px;
+    margin: 8px 0;
+    background: theme('colors.white / 10%');
+  }
+
   // ---------- Menu body: 8px 12px padding, 16px between blocks ----------
   .lfxn__menu {
     align-self: stretch;
@@ -1538,6 +1551,10 @@
   // Home card action strip.
   .lfxn__me-actions {
     border-top-color: var(--ui-neutral-alpha-100);
+  }
+
+  .lfxn__me-sep {
+    background: var(--ui-neutral-alpha-200);
   }
 
   .lfxn__me-action {

@@ -5,7 +5,8 @@ import type { LinkedinFormRenderVersion } from '../interfaces/linkedin-post.inte
 
 /** Provenance belongs to the pushed edit history entry, not the previous route. */
 export const LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY = 'mktgEditPushed';
-export const LINKEDIN_PROFILE_EDIT_ORIGINS = { run: 'run', document: 'document' } as const;
+/** `redraft` is the document's "Change who this is written as": a saved profile stays on the intake to draft again. */
+export const LINKEDIN_PROFILE_EDIT_ORIGINS = { run: 'run', document: 'document', redraft: 'redraft' } as const;
 
 /** Verbatim Step 1/2 copy and defaults from the live agent src/profile.ts. */
 export const LINKEDIN_ABOUT_FIELDS = [

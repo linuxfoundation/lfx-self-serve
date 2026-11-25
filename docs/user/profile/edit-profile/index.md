@@ -4,7 +4,7 @@ description: How to update your personal information, photo, location, and conta
 audience: [all]
 product_area: Profile
 tags: [profile, edit, about-me, bio, photo, location, lfid, username]
-last_updated: 2026-11-06
+last_updated: 2026-11-23
 intercom_collection: Profile
 ---
 
@@ -23,6 +23,8 @@ Your personal details are edited in the **Edit Profile** drawer, not directly on
 3. In the profile panel on the right, select **Edit profile**. A drawer opens from the right side.
 4. Update the fields you want to change (see the tables below).
 5. Select **Save Changes**. The button stays disabled until you have made a change.
+
+If you have an LFX Mentorship mentor or mentee profile, a new name or picture is also copied onto it, so your public mentorship pages show it too. Your mentorship photo changes only when you upload a new picture, so a photo you added in Mentorship stays until then.
 
 > **Two changes apply immediately, not on Save:** uploading a **profile picture** and selecting a **primary email address** each save on their own as soon as you make them. Closing the drawer with **Cancel** does not undo those two — it only discards unsaved text fields (About Me, name, job title, location, and so on).
 

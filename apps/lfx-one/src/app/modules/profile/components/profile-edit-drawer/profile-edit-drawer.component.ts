@@ -470,7 +470,7 @@ export class ProfileEditDrawerComponent {
           if (error.status === 403 && error.error?.error === 'management_token_required') {
             if (isPlatformBrowser(this.platformId)) {
               // Stash an avatarPending marker (plus any unsaved text-field edits, mapped the same way
-              // onSubmit does) so ProfileLayoutComponent.handleProfileAuthReturn can tell the user to
+              // onSubmit does) so ProfileAuthReturnService.replayPendingProfileSave can tell the user to
               // re-select their image once we're back — a toast added here would be wiped by the
               // synchronous window.location.href below before it ever renders. Stashing the mapped
               // payload rather than the raw form keeps clear-to-empty edits intact on replay.

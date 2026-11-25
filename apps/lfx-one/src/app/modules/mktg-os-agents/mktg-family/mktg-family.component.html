@@ -70,16 +70,17 @@
         }
       }
     </p>
+    @if (kit.retrying()) {
+      <!-- One quiet connection-state line where the family is read; whatever is loaded below stays usable. -->
+      <p role="status" class="text-xs text-gray-500" data-testid="mktg-family-retrying">{{ retryingText }}</p>
+    }
     @if (kit.loading() && !kit.documents()) {
       <div class="h-64 overflow-hidden rounded-lg border border-gray-200 bg-white p-3" data-testid="mktg-family-content-loading">
         <lfx-mktg-skeleton variant="rows" [rows]="4" />
       </div>
     }
     @if (kit.error()) {
-      <div role="alert" class="flex flex-col items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-5" data-testid="mktg-family-error">
-        <p>{{ kit.error() }}</p>
-        <lfx-button label="Try again" [outlined]="true" (onClick)="kit.retry()" data-testid="mktg-family-error-retry" />
-      </div>
+      <p role="alert" class="text-sm text-red-700" data-testid="mktg-family-error">{{ kit.error() }}</p>
       <!-- Keep the named export slot available when the document listing is denied or fails. -->
       @if (!kit.documents()) {
         <lfx-mktg-family-export-actions [familyId]="definition.id" />

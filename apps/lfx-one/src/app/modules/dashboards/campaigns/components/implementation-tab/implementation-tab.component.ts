@@ -50,28 +50,24 @@ import {
   CAMPAIGN_CHAR_LIMITS,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES,
-  CREATIVE_ASSET_MAX_BYTES,
   CREATIVE_ASSET_MIME_TYPES,
   CREATIVE_ASSET_TOO_LARGE_MESSAGE,
   CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
   isCreativeAssetMimeType,
   LINKEDIN_CHAR_LIMITS,
-  LINKEDIN_GEO_RESOLVE_MAP,
-  LINKEDIN_IMAGE_MAX_BYTES,
+  LINKEDIN_GEO_SEARCH_BOUNDS,
+  LINKEDIN_GEO_SEARCH_DEBOUNCE_MS,
+  LINKEDIN_CALL_TO_ACTION_OPTIONS,
+  LINKEDIN_VARIANT_FIELD_LIMITS,
   LINKEDIN_MAX_VARIANTS,
-  LINKEDIN_MIN_DAILY_BUDGET_USD,
   LINKEDIN_MIN_VARIANTS,
   TWITTER_IMAGE_MAX_BYTES,
   TWITTER_IMAGE_TOO_LARGE_MESSAGE,
   TWITTER_MAX_BUDGET,
   TWITTER_MAX_TWEET_WEIGHTED_CHARS,
-  LINKEDIN_IMAGE_TOO_LARGE_MESSAGE,
   META_CHAR_LIMITS,
   META_DEFAULT_PLACEMENTS,
   META_MESSENGER_INBOX_RETIRED_REASON,
-  META_DSA_NAME_MAX_LENGTH,
-  META_DSA_TERRITORIES,
-  META_NUMERIC_ID_PATTERN,
   canonicalMicrosoftMatchType,
   isMicrosoftMatchType,
   MICROSOFT_CONTROL_CHAR_RE,
@@ -86,11 +82,8 @@ import {
   MICROSOFT_NEW_KEYWORD_MATCH_TYPE,
   MICROSOFT_MIN_CPC_BID,
   META_OBJECTIVE_LABELS,
-  META_SELECTABLE_OBJECTIVES,
   META_PLACEMENT_LABELS,
   META_SELECTABLE_PLACEMENTS,
-  META_INELIGIBLE_COUNTRIES,
-  normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_EMAIL_CHANNEL_LABEL,
@@ -225,8 +218,11 @@ import {
   DEFAULT_MICROSOFT_BUDGET_USD,
   DEFAULT_REDDIT_BUDGET_USD,
   DEFAULT_REDDIT_CALL_TO_ACTION,
+  DEFAULT_REDDIT_CONVERSION_EVENT,
   DEFAULT_REDDIT_OBJECTIVE,
   REDDIT_CALL_TO_ACTIONS,
+  REDDIT_CONVERSION_EVENT_LABELS,
+  REDDIT_CONVERSION_EVENTS,
   REDDIT_MAX_BUDGET_USD,
   REDDIT_OBJECTIVE_LABELS,
   REDDIT_SELECTABLE_OBJECTIVES,
@@ -238,18 +234,20 @@ import {
   googleAdsTrimSpace,
   isCanonicalGoogleAdsResourceId,
   isGoogleAdsServableUrl,
+  DEFAULT_META_AUDIENCE_TARGETING,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
 import { UiMultiSelectComponent } from '@shared/uikit/multi-select/multi-select.component';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
+import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiTextareaComponent } from '@shared/uikit/textarea/textarea.component';
 import { DialogService } from 'primeng/dynamicdialog';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ProjectContextService } from '@services/project-context.service';
 import { extractFieldOrEnvelopeMessage, isBffValidationError, serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { catchError, filter, from, map, merge, Observable, of, scan, skip, startWith, Subscription, switchMap, take, tap, timer } from 'rxjs';
+import { catchError, filter, from, map, merge, Observable, of, pairwise, scan, startWith, Subscription, switchMap, take, tap, timer } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -273,6 +271,7 @@ import type {
   CampaignGoogleExtensionsCapabilityBlock,
   CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
+  CampaignMetaAudienceTargetingBlock,
   CampaignJobOutcome,
   CampaignCreateAnother,
   CampaignCreateAnotherDialogData,
@@ -299,6 +298,7 @@ import type {
   CampaignAdSchedule,
   CampaignDeviceBidModifier,
   CampaignRedditImageAssetBlock,
+  RedditImageField,
   CampaignCallExtension,
   CampaignCallExtensionDraft,
   CampaignPriceExtension,
@@ -366,14 +366,25 @@ import type {
   LinkedInAccount,
   LinkedInCreateAccountOption,
   LinkedInCreateAccountState,
+  LinkedInCampaignCreateRequest,
   LinkedInCreativeVariant,
+  LinkedInDailyCapInput,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
   LinkedInTargetingProfileConfig,
   LinkedInTargetingProfileEdit,
   LinkedInTargetingFacets,
   LinkedInTargetingRemovals,
+  LinkedInGeoSearchOption,
+  LinkedInGeoSearchState,
+  LinkedInImageSlot,
   LinkedInVariantDraft,
+  LinkedInAdFormat,
+  LinkedInTargeting,
+  LinkedInTargetingDraft,
+  LinkedInObjectiveDraft,
+  LinkedInTextAdDraft,
+  LinkedInTextAdImageInput,
   LinkedInVariantView,
   MetaAdVariant,
   MetaCampaignCreateRequest,
@@ -381,21 +392,33 @@ import type {
   MetaPlacement,
   MicrosoftKeyword,
   RedditAdVariant,
+  RedditBriefSeed,
   RedditCallToAction,
+  RedditConversionEvent,
   RedditObjective,
   RedditVideoGoal,
   StoredCreativeAsset,
+  MetaAudienceTargetingDraft,
+  MetaDetailedTargetingPicks,
+  MetaDeliveryDraft,
+  MetaDeviceOsDraft,
+  MetaAdOptionKey,
+  MetaAdOptions,
+  MetaAdOptionView,
+  MetaImageField,
 } from '@lfx-one/shared/interfaces';
 import {
   campaignBiddingError,
   campaignBiddingPayload,
   campaignFlightDays,
   campaignLabelColumns,
+  compactMetaAudienceTargeting,
+  copyMetaAudienceTargeting,
   defaultCampaignBiddingDraft,
   defaultCampaignEndDate,
-  googleSeededFlight,
   describeCampaignDispatchFailure,
   googleAdditionalSearchAdsRefusal,
+  googleAdGroupDemographicExclusionsRefusal,
   googleAdsCampaignUrl,
   googleAdScheduleRefusal,
   googleAdsDevicesOn,
@@ -415,28 +438,27 @@ import {
   googleCreativeFieldWidth,
   googleCreativeImageDrift,
   googleCreativeImageFit,
+  googleCreativeImageRequirement,
   googleCreativeOptionMessage,
-  googleDemandGenVideoCreativeRefusal,
   googleDemandGenAdGroupsRefusal,
+  googleDemandGenAdsRefusal,
   googleDemandGenAudiencesRefusal,
   googleDemandGenDemographicsLeftOut,
   googleDemandGenDemographicsRefusal,
-  googleDemographicValuesAsOffered,
-  googleDisplayAudiencesRefusal,
-  googleDemandGenAdsRefusal,
   googleDemandGenSingleAdGroupName,
-  googleExcludedPlacementsRefusal,
-  googleDisplayAdGroupsRefusal,
-  googleCreativeImageRequirement,
+  googleDemandGenVideoCreativeRefusal,
+  googleDemographicValuesAsOffered,
   googleDeviceAdjustmentNotSentSentence,
   googleDeviceBidModifierRefusal,
-  googleExcludedAgeRangesRefusal,
-  googleAdGroupDemographicExclusionsRefusal,
+  googleDisplayAdGroupsRefusal,
+  googleDisplayAudiencesRefusal,
   googleDisplayDemographicsCarried,
   googleDisplayDemographicsRefusal,
+  googleExcludedAgeRangesRefusal,
   googleExcludedGendersRefusal,
-  googleObservedDemographicsRefusal,
   googleExcludedGeoListRefusal,
+  googleExcludedPlacementsRefusal,
+  googleObservedDemographicsRefusal,
   googlePerformanceMaxAudienceSignalRefusal,
   googlePerformanceMaxSearchThemesRefusal,
   googlePerformanceMaxShortDescriptionMissing,
@@ -447,6 +469,7 @@ import {
   googleScheduleAdjustmentStrategiesOn,
   googleSearchAdCopyWidthRefusal,
   googleSearchAdPathsRefusal,
+  googleSeededFlight,
   googleStrategyTakesScheduleAdjustments,
   googleSuggestedNegativeKeywordsText,
   googleUnpickedUserLists,
@@ -455,12 +478,140 @@ import {
   isHttpUrl,
   isReversedCampaignFlight,
   joinAsSentenceList,
-  linkedInCreativeTextLength,
+  linkedInAccountFields,
+  linkedInCreateRefusal,
+  linkedInDailyCapError,
+  linkedInDailyCapField,
+  linkedInEffectiveAccount,
+  correctLinkedInGeoTargets,
   linkedInTargetingAfterRemovals,
-  linkedInVariantTextError,
+  linkedInTargetingEdit,
+  linkedInTargetingEmptyWarning,
+  linkedInTargetingRemovalsHeld,
+  linkedInVariantsForCreate,
+  linkedInTextAdImageFileRefusal,
+  linkedInTextAdImageSizeRefusal,
+  linkedInTextAdViews,
+  linkedInTextAdsForCreate,
+  emptyLinkedInTargetingDraft,
+  emptyLinkedInObjectiveDraft,
+  linkedInObjectiveCreateRefusal,
+  linkedInObjectiveFieldsForCreate,
+  linkedInTargetingDraftRefusal,
+  linkedInTargetingForCreate,
+  linkedInTargetingSegmentsAccountRefusal,
+  linkedInSegmentsOwnerKey,
+  newLinkedInTextAdDraft,
+  linkedInCanAddVariant,
+  linkedInCanRemoveVariant,
+  linkedInImageFileRefusal,
+  linkedInImageSlotHeldByOther,
+  linkedInImageUploadHoldsCreate,
+  linkedInImageUploadOrphaned,
+  linkedInVariantViews,
+  redditBriefReset,
+  redditBriefSeed,
+  redditCallToActionIsUnavailable,
+  redditConversionEventBlock,
+  redditConversionEventField,
+  redditConversionEventFromDraft,
+  redditConversionEventOffered,
+  redditCreateRefusal,
+  redditDraftFields,
+  redditDraftRestore,
+  redditEffectiveGeoTargets,
+  redditEffectiveKeywords,
+  redditEffectiveSubreddits,
+  redditEffectiveVideoGoal,
+  redditImageAssetBlock,
+  redditImageAssetForBrief,
+  redditImageCapabilities,
+  redditImageField,
+  redditImageFileDescribedBy,
+  redditImageFileRefusal,
+  redditImageUploadHoldsCreate,
+  redditImageUploadLiveMessage,
+  redditImageUploadStatusMessage,
+  redditNoAdWarning,
+  redditObjectiveIsUnavailable,
+  redditVideoGoalError,
+  redditVideoPostError,
+  linkedInGeoSearchOptions,
+  linkedInGeoSearchQueryRefusal,
+  linkedInGeoSearchQueryText,
+  linkedInBriefSeed,
+  linkedInDraftFields,
+  linkedInDraftRestore,
+  newLinkedInVariantDraft,
+  metaAcceptedGeos,
+  metaAdOptionsBlock,
+  metaAdOptionsForCreate,
+  metaAdOptionsForObjective,
+  metaAdOptionsRefusal,
+  metaAdOptionsWithChoice,
+  metaAdOptionsWithoutUnsupported,
+  metaAdOptionViews,
+  metaAudienceTargetingBlock,
+  metaAudienceTargetingCapabilities,
+  metaAudienceTargetingRefusal,
+  emptyMetaDetailedTargetingPicks,
+  metaDetailedTargetingBlock,
+  metaDetailedTargetingForCreate,
+  metaDetailedTargetingPicksSendable,
+  metaDetailedTargetingRefusal,
+  emptyMetaDeliveryDraft,
+  metaAdScheduleRefusal,
+  metaDeliveryApplicable,
+  metaDeliveryBlock,
+  metaDeliveryClearLabel,
+  metaDeliveryForCreate,
+  metaDeliverySendable,
+  emptyMetaDeviceOsDraft,
+  metaDeviceOsBlock,
+  metaDeviceOsClearLabel,
+  metaDeviceOsError,
+  metaDeviceOsForCreate,
+  metaDeviceOsSendable,
+  metaFrequencyCapRefusal,
+  metaBasicsRefusal,
+  metaBriefSeed,
+  metaCreateRefusal,
+  metaDraftFields,
+  metaDraftRestore,
+  metaPendingDraftFields,
+  metaDsaCountries,
+  metaDsaFieldError,
+  metaEffectiveGeoTargets,
+  metaFoundationChange,
+  metaGeoIsIneligible,
+  metaHasPlacement,
+  metaImageAssetBlock,
+  metaImageAssetForBrief,
+  metaImageAssetWithheld,
+  metaImageCapabilities,
+  metaImageDraftFields,
+  metaImageDraftRestore,
+  metaImageField,
+  metaImageFileRefusal,
+  metaImageUploadStatusMessage,
+  metaImageUrlWithheld,
+  metaInstagramDsaFields,
+  metaInstagramUserIdError,
+  metaLeadFormDraftRefusal,
+  metaLeadFormForObjective,
+  metaObjectiveAfterFoundationSwitch,
+  metaObjectiveChoices,
+  metaObjectiveIsUnavailable,
+  metaPixelField,
+  metaPixelValid,
+  metaPlacementIsSelectable,
+  metaPlacementOverrides,
+  metaPreviewImageLabel,
+  metaRequiresPixel,
+  metaUsesInstagram,
+  metaVariantsWithImage,
   parseNegativeKeywordInput,
   resolveLinkedInTargetingProfileId,
-  roundUsdToCentsLikeGo,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -470,6 +621,14 @@ import {
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
 import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
+import { LinkedInObjectivePickerComponent } from '../linkedin-objective-picker/linkedin-objective-picker.component';
+import { LinkedInTargetingEditorComponent } from '../linkedin-targeting-editor/linkedin-targeting-editor.component';
+import { LinkedInTextAdsEditorComponent } from '../linkedin-text-ads-editor/linkedin-text-ads-editor.component';
+import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
+import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
+import { MetaDeviceOsOptionsComponent } from '../meta-device-os-options/meta-device-os-options.component';
+import { MetaDetailedTargetingComponent } from '../meta-detailed-targeting/meta-detailed-targeting.component';
+import { MetaLeadFormPickerComponent } from '../meta-lead-form-picker/meta-lead-form-picker.component';
 import { CampaignGoogleDemographicsPanelComponent } from '../campaign-google-demographics-panel/campaign-google-demographics-panel.component';
 import { CampaignGoogleExclusionsPanelComponent } from '../campaign-google-exclusions-panel/campaign-google-exclusions-panel.component';
 import { CampaignGoogleSearchAdsPanelComponent } from '../campaign-google-search-ads-panel/campaign-google-search-ads-panel.component';
@@ -551,6 +710,11 @@ let linkedInVariantKeySequence = 0;
     SlicePipe,
     CampaignBiddingControlComponent,
     CampaignGoogleDemographicTargetingComponent,
+    MetaAudienceTargetingComponent,
+    MetaDetailedTargetingComponent,
+    MetaDeliveryOptionsComponent,
+    MetaDeviceOsOptionsComponent,
+    MetaLeadFormPickerComponent,
     CampaignGoogleDemographicsPanelComponent,
     CampaignGoogleExclusionsPanelComponent,
     CampaignGoogleSearchAdsPanelComponent,
@@ -562,7 +726,11 @@ let linkedInVariantKeySequence = 0;
     UiInputComponent,
     UiMultiSelectComponent,
     UiOptionComponent,
+    UiSelectComponent,
     UiTextareaComponent,
+    LinkedInObjectivePickerComponent,
+    LinkedInTargetingEditorComponent,
+    LinkedInTextAdsEditorComponent,
   ],
   // Component-scoped so the "create another" confirmation (#4983) needs nothing from the host; the app
   // also provides one at root, and this instance behaves the same.
@@ -712,7 +880,7 @@ export class ImplementationTabComponent implements OnInit {
    * picker named another. So on an explicit yes the selector is replaced, and the account gate below
    * does not block on it. With account selection on (`linkedInAccountSelectionAvailable`) the
    * replacement reads the account from campaign-service and, for `global_marketing_ops`, offers a
-   * choice, sent as `selectedAdAccountId` only for a non-default pick (`linkedInAdAccountField`); the
+   * choice, sent as `selectedAdAccountId` only for a non-default pick (`linkedInAccountFields`); the
    * server forwards it only when campaign-service lists it as a grant, and refuses it otherwise. Otherwise it is a read-only line. `false` or unknown
    * keeps the selector: the legacy creator still reads the chosen account.
    */
@@ -744,7 +912,9 @@ export class ImplementationTabComponent implements OnInit {
   public readonly redditCreativeEnabled = input<boolean | null>(null);
 
   /** @see redditCreativeEnabled — an explicit yes, never a `null`. */
-  protected readonly redditCreativeAvailable = computed<boolean>(() => this.redditCreativeEnabled() === true);
+  protected readonly redditCreativeAvailable = computed<boolean>(
+    () => redditImageCapabilities(this.redditCreativeEnabled(), this.redditAssetUploadEnabled()).creativeAvailable
+  );
 
   /**
    * Whether the Reddit section may offer an image UPLOAD (`CampaignListResult.redditAssetUploadEnabled`,
@@ -757,7 +927,9 @@ export class ImplementationTabComponent implements OnInit {
   public readonly redditAssetUploadEnabled = input<boolean | null>(null);
 
   /** @see redditAssetUploadEnabled — both capabilities an explicit yes. */
-  protected readonly redditAssetUploadAvailable = computed<boolean>(() => this.redditCreativeAvailable() && this.redditAssetUploadEnabled() === true);
+  protected readonly redditAssetUploadAvailable = computed<boolean>(
+    () => redditImageCapabilities(this.redditCreativeEnabled(), this.redditAssetUploadEnabled()).uploadAvailable
+  );
 
   /**
    * Whether the Meta section may offer an ad image (`CampaignListResult.metaCreativeEnabled`).
@@ -766,7 +938,9 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaCreativeEnabled = input<boolean | null>(null);
 
   /** @see metaCreativeEnabled — an explicit yes, never a `null`. */
-  protected readonly metaCreativeAvailable = computed<boolean>(() => this.metaCreativeEnabled() === true);
+  protected readonly metaCreativeAvailable = computed<boolean>(
+    () => metaImageCapabilities(this.metaCreativeEnabled(), this.metaAssetUploadEnabled()).creativeAvailable
+  );
 
   /**
    * Whether the Reddit section may offer a per-campaign conversion pixel override
@@ -780,6 +954,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditConversionPixelAvailable = computed<boolean>(() => this.redditConversionPixelEnabled() === true);
 
   /**
+   * Whether a Reddit `conversions` create may carry a conversion event (`CampaignListResult.redditConversionEventEnabled`,
+   * #6108 row 2). `null` until the parent has an answer, which withholds the picker and holds a non-default event.
+   */
+  public readonly redditConversionEventEnabled = input<boolean | null>(null);
+
+  /**
    * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
    * Read only together with `metaCreativeAvailable()`, as `redditAssetUploadEnabled` is with its
    * sibling; the pasted image URL stays offered whatever this answers.
@@ -787,7 +967,9 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaAssetUploadEnabled = input<boolean | null>(null);
 
   /** @see metaAssetUploadEnabled — both capabilities an explicit yes. */
-  protected readonly metaAssetUploadAvailable = computed<boolean>(() => this.metaCreativeAvailable() && this.metaAssetUploadEnabled() === true);
+  protected readonly metaAssetUploadAvailable = computed<boolean>(
+    () => metaImageCapabilities(this.metaCreativeEnabled(), this.metaAssetUploadEnabled()).uploadAvailable
+  );
 
   /**
    * Whether the LinkedIn section may offer an image UPLOAD (`CampaignListResult.linkedInAssetUploadEnabled`).
@@ -808,6 +990,50 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see linkedInTargetingEditEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInTargetingEditAvailable = computed<boolean>(() => this.linkedInTargetingEditEnabled() === true);
+
+  /**
+   * Whether each LinkedIn variant offers an ad name and description (`CampaignListResult.linkedInVariantCopyEnabled`,
+   * #5764 rows 16–17). `null` (unknown) hides them, so the form never sends a field the deployment would refuse.
+   */
+  public readonly linkedInVariantCopyEnabled = input<boolean | null>(null);
+
+  /** @see linkedInVariantCopyEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInVariantCopyAvailable = computed<boolean>(() => this.linkedInVariantCopyEnabled() === true);
+
+  /** Whether each LinkedIn variant offers a call to action (`CampaignListResult.linkedInCallToActionEnabled`, #5764 row 16). */
+  public readonly linkedInCallToActionEnabled = input<boolean | null>(null);
+
+  /** @see linkedInCallToActionEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInCallToActionAvailable = computed<boolean>(() => this.linkedInCallToActionEnabled() === true);
+
+  /** Whether the LinkedIn section offers Text Ads (`CampaignListResult.linkedInTextAdsEnabled`, #5764 row 19). */
+  public readonly linkedInTextAdsEnabled = input<boolean | null>(null);
+
+  /** @see linkedInTextAdsEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInTextAdsAvailable = computed<boolean>(() => this.linkedInTextAdsEnabled() === true);
+
+  /** Whether the LinkedIn section offers custom targeting (`CampaignListResult.linkedInTargetingEnabled`, #5764 rows 8–11). */
+  public readonly linkedInTargetingEnabled = input<boolean | null>(null);
+
+  /** @see linkedInTargetingEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInTargetingAvailable = computed<boolean>(() => this.linkedInTargetingEnabled() === true);
+
+  /**
+   * Whether the LinkedIn section offers an objective and conversion tracking (`CampaignListResult.linkedInConversionsEnabled`,
+   * #5764 rows 2 and 4).
+   */
+  public readonly linkedInConversionsEnabled = input<boolean | null>(null);
+
+  /** @see linkedInConversionsEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInConversionsAvailable = computed<boolean>(() => this.linkedInConversionsEnabled() === true);
+
+  /** The calls to action the variant editor offers. */
+  protected readonly linkedInCallToActionOptions = LINKEDIN_CALL_TO_ACTION_OPTIONS;
+  /** The location search's shortest query, so the picker opens only once a search can run. */
+  protected readonly linkedInGeoSearchMinLength = LINKEDIN_GEO_SEARCH_BOUNDS.minQueryLength;
+
+  /** The ad name and description limits, for the counters. */
+  protected readonly linkedInVariantFieldLimits = LINKEDIN_VARIANT_FIELD_LIMITS;
 
   /**
    * Whether the LinkedIn section reads the create's ad account from campaign-service and may offer a
@@ -940,6 +1166,68 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see metaInstagramDsaEnabled — an explicit yes, never a `null`. */
   protected readonly metaInstagramDsaAvailable = computed<boolean>(() => this.metaInstagramDsaEnabled() === true);
+
+  /**
+   * Whether this deployment sends Meta audience targeting (#5905) — `CampaignListResult.metaAudienceTargetingEnabled`,
+   * behind `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING`. `null` and `false` hide the section and send no `targeting`.
+   */
+  public readonly metaAudienceTargetingEnabled = input<boolean | null>(null);
+  /** Whether THIS caller may pick custom audiences — `CampaignListResult.metaCustomAudiencesEnabled` (`global_marketing_ops`). */
+  public readonly metaCustomAudiencesEnabled = input<boolean | null>(null);
+  protected readonly metaAudienceTargetingAvailable = computed<boolean>(
+    () => metaAudienceTargetingCapabilities(this.metaAudienceTargetingEnabled(), this.metaCustomAudiencesEnabled()).targetingAvailable
+  );
+  protected readonly metaCustomAudiencesAvailable = computed<boolean>(
+    () => metaAudienceTargetingCapabilities(this.metaAudienceTargetingEnabled(), this.metaCustomAudiencesEnabled()).customAudiencesAvailable
+  );
+
+  /**
+   * Whether this deployment sends each Meta ad choice (#5934) — `CampaignListResult.metaCallToActionEnabled`,
+   * `metaConversionEventEnabled`, `metaOptimizationGoalEnabled`, one flag each. Only an explicit `true` shows
+   * the dropdown; `null` (unanswered) and `false` hide it and send nothing.
+   */
+  public readonly metaAdOptionsEnabled = input<Partial<Record<MetaAdOptionKey, boolean | null>>>({});
+
+  /**
+   * Whether THIS caller may create a Meta lead ad (#5940) — `CampaignListResult.metaLeadFormsEnabled`: the
+   * deployment flag `LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS` and `global_marketing_ops` on the project.
+   * Only an explicit `true` offers the Leads objective and its form picker; otherwise `leads` stays hidden.
+   */
+  public readonly metaLeadFormsEnabled = input<boolean | null>(null);
+  protected readonly metaLeadFormsAvailable = computed<boolean>(() => this.metaLeadFormsEnabled() === true);
+
+  /**
+   * Whether this deployment sends Meta interests (#5904 row 4) — `CampaignListResult.metaInterestTargetingEnabled`,
+   * behind `LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING`. Deployment-wide; `null` while unanswered.
+   */
+  public readonly metaInterestTargetingEnabled = input<boolean | null>(null);
+  /** The same for Meta behaviors and job titles — `CampaignListResult.metaBehaviorTargetingEnabled`. */
+  public readonly metaBehaviorTargetingEnabled = input<boolean | null>(null);
+  /**
+   * Whether this deployment sends a Meta ad schedule (#5904 row 5) — `CampaignListResult.metaAdScheduleEnabled`, behind
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE`. Deployment-wide; `null` while unanswered.
+   */
+  public readonly metaAdScheduleEnabled = input<boolean | null>(null);
+  /** The same for the Meta frequency cap — `CampaignListResult.metaFrequencyCapEnabled`. */
+  public readonly metaFrequencyCapEnabled = input<boolean | null>(null);
+  /** The schedule is offered on its explicit yes and a lifetime budget, which Meta needs for one. */
+  protected readonly metaAdScheduleShown = computed<boolean>(() => this.metaAdScheduleEnabled() === true && this.metaLifetimeBudget());
+  /** The cap is offered on its explicit yes and the awareness objective, the only one Meta takes it on. */
+  protected readonly metaFrequencyCapShown = computed<boolean>(() => this.metaFrequencyCapEnabled() === true && this.metaObjective() === 'awareness');
+  /**
+   * Whether this deployment sends Meta devices (#5904 row 6) — `CampaignListResult.metaDeviceTargetingEnabled`, behind
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING`. Deployment-wide; `null` while unanswered.
+   */
+  public readonly metaDeviceTargetingEnabled = input<boolean | null>(null);
+  /** The same for Meta operating systems — `CampaignListResult.metaOsTargetingEnabled`. */
+  public readonly metaOsTargetingEnabled = input<boolean | null>(null);
+  /** Whether either device or OS group is offered: each only on its explicit yes. */
+  protected readonly metaDeviceOsShown = computed<boolean>(() => this.metaDeviceTargetingEnabled() === true || this.metaOsTargetingEnabled() === true);
+
+  /** Whether any detailed-targeting list is offered: each only on an explicit yes. */
+  protected readonly metaDetailedTargetingAvailable = computed<boolean>(
+    () => this.metaInterestTargetingEnabled() === true || this.metaBehaviorTargetingEnabled() === true
+  );
 
   /**
    * Whether this deployment can SEARCH Google's geo target table for postal-code targets —
@@ -1195,11 +1483,11 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaCharLimits = META_CHAR_LIMITS;
   protected readonly metaObjectiveLabels = META_OBJECTIVE_LABELS;
   /**
-   * Read from `META_SELECTABLE_OBJECTIVES`, NOT from the labels map's keys: the labels map stays
-   * total over `MetaObjective` so restored objectives still render a name, and `leads` is hidden
-   * from the picker only. See that constant for why.
+   * `META_SELECTABLE_OBJECTIVES`, plus `leads` only for a caller who may send a lead form (#5940): the labels
+   * map stays total over `MetaObjective` so restored objectives still render a name, and `leads` without a
+   * form would run as traffic. See that constant for why.
    */
-  protected readonly metaObjectiveOptions = META_SELECTABLE_OBJECTIVES;
+  protected readonly metaObjectiveOptions = computed<MetaObjective[]>(() => metaObjectiveChoices(this.metaLeadFormsAvailable()));
   /**
    * True when the restored objective is one the picker no longer offers — today only `leads`.
    *
@@ -1214,12 +1502,9 @@ export class ImplementationTabComponent implements OnInit {
    * Rendering it as a disabled option is what makes display and dispatch agree; disabled is what
    * keeps it visible without letting anyone newly choose it.
    *
-   * The widening cast is deliberate: `META_SELECTABLE_OBJECTIVES` is narrowed to
-   * `SelectableMetaObjective` so a hidden objective cannot be listed in it, which also makes
-   * `.includes()` reject the very value this asks about. Widening for the membership test is
-   * what keeps that narrowing — the guard against re-adding `leads` — intact.
+   * Read from {@link metaObjectiveOptions}, so `leads` counts as available exactly when it is offered.
    */
-  protected readonly metaObjectiveIsUnavailable = computed(() => !(META_SELECTABLE_OBJECTIVES as readonly MetaObjective[]).includes(this.metaObjective()));
+  protected readonly metaObjectiveIsUnavailable = computed(() => metaObjectiveIsUnavailable(this.metaObjectiveOptions(), this.metaObjective()));
   protected readonly metaPlacementLabels = META_PLACEMENT_LABELS;
   protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
@@ -1249,6 +1534,9 @@ export class ImplementationTabComponent implements OnInit {
   /** The goals offered for `video_views`, and their readable names. */
   protected readonly redditVideoGoalOptions = REDDIT_VIDEO_GOALS;
   protected readonly redditVideoGoalLabels = REDDIT_VIDEO_GOAL_LABELS;
+  /** The pixel events offered for `conversions` (#6108 row 2), and their readable names. */
+  protected readonly redditConversionEventOptions = REDDIT_CONVERSION_EVENTS;
+  protected readonly redditConversionEventLabels = REDDIT_CONVERSION_EVENT_LABELS;
   /**
    * The full CTA list, with no selectable/withheld split: upstream accepts every one of these,
    * resolving the value case-insensitively and rejecting anything outside the set. The empty
@@ -1268,13 +1556,9 @@ export class ImplementationTabComponent implements OnInit {
    * falls back to index 0 and shows `awareness`, while the signal keeps the stored objective and
    * still sends it. The screen and the payload then disagree, and the first touch of the control
    * overwrites the stored value for good. A disabled option is what keeps the two in step.
-   *
-   * The widening cast is deliberate, as it is on the Meta computed: the constant is narrowed to
-   * `SelectableRedditObjective`, which would make `.includes()` reject the very value asked about.
+   * The rule itself is `redditObjectiveIsUnavailable` in `campaign-reddit-form.utils` (#5980).
    */
-  protected readonly redditObjectiveIsUnavailable = computed(
-    () => !(REDDIT_SELECTABLE_OBJECTIVES as readonly RedditObjective[]).includes(this.redditObjective())
-  );
+  protected readonly redditObjectiveIsUnavailable = computed(() => redditObjectiveIsUnavailable(this.redditObjective()));
   /**
    * The same guard for the call to action, because the exposure is the same one.
    *
@@ -1293,11 +1577,7 @@ export class ImplementationTabComponent implements OnInit {
    * The empty string is NOT unavailable — it is the real "let upstream default" selection the
    * first `<option>` carries.
    */
-  protected readonly redditCallToActionIsUnavailable = computed(() => {
-    const cta = this.redditCallToAction();
-    return cta !== '' && !(REDDIT_CALL_TO_ACTIONS as readonly string[]).includes(cta);
-  });
-  protected readonly allKnownGeos: LinkedInGeoTarget[] = [...new Map(Object.values(LINKEDIN_GEO_RESOLVE_MAP).map((g) => [g.urn, g])).values()];
+  protected readonly redditCallToActionIsUnavailable = computed(() => redditCallToActionIsUnavailable(this.redditCallToAction()));
   protected readonly todayDate = new Date().toISOString().split('T')[0];
   protected readonly defaultEndDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
 
@@ -1527,6 +1807,25 @@ export class ImplementationTabComponent implements OnInit {
 
   // === WritableSignals ===
   protected readonly step = signal<ImplementationStep>('form');
+  /** The Meta audience targeting as edited in `lfx-meta-audience-targeting` (#5905); kept whatever the capability says, like the DSA fields. */
+  protected readonly metaAudienceTargeting = signal<MetaAudienceTargetingDraft>(this.defaultMetaAudienceTargeting());
+  /** The Meta interests, behaviors and job titles as picked in `lfx-meta-detailed-targeting` (#5904 row 4), kept whatever the flags say. */
+  protected readonly metaDetailedTargeting = signal<MetaDetailedTargetingPicks>(emptyMetaDetailedTargetingPicks());
+  /** The Meta ad schedule and frequency cap as edited in `lfx-meta-delivery-options` (#5904 row 5); `null` is unset. */
+  protected readonly metaDelivery = signal<MetaDeliveryDraft>(emptyMetaDeliveryDraft());
+  /** The Meta devices and operating systems as ticked in `lfx-meta-device-os-options` (#5904 row 6); empty is Meta's default. */
+  protected readonly metaDeviceOs = signal<MetaDeviceOsDraft>(emptyMetaDeviceOsDraft());
+  /** The Meta call to action, conversion event and optimization goal as chosen (#5934); an absent key is "Not set". */
+  protected readonly metaAdOptions = signal<MetaAdOptions>({});
+  /** The Meta Instant Form picked or typed in `lfx-meta-lead-form-picker` (#5940); blank is none. Sent only under `leads`. */
+  protected readonly metaLeadFormId = signal('');
+  /** Why the picker's held form cannot be sent once the Page's forms are read (#6107), or `null`; set by the picker. */
+  protected readonly metaLeadFormHeldRefusal = signal<string | null>(null);
+  /**
+   * A draft restored while the foundation was still unknown (#6107): its foundation-scoped Meta choices (targeting,
+   * ad options, lead form) could not be matched yet, so they are applied when the foundation first resolves.
+   */
+  private pendingMetaDraft: CampaignImplementationDraft | null = null;
   protected readonly creationProgress = signal<string[]>([]);
   protected readonly results = signal<CampaignCreateResult[]>([]);
   /**
@@ -1635,6 +1934,39 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
   /** The LinkedIn ad variants as edited: seeded from the brief, carried in the draft (#5547). */
   protected readonly linkedInVariants = signal<LinkedInVariantDraft[]>([]);
+  /** The LinkedIn ad format chosen (#5764 row 19). Text goes out only while `linkedInTextAdsAvailable()`. */
+  protected readonly linkedInFormat = signal<LinkedInAdFormat>('single_image');
+  /** The LinkedIn Text Ads as edited (#5764 row 19), carried in the draft. */
+  protected readonly linkedInTextAds = signal<LinkedInTextAdDraft[]>([]);
+  /** Whether this create is a Text Ads campaign: chosen, and offered by this deployment. */
+  protected readonly linkedInTextAdsSelected = computed<boolean>(() => this.linkedInTextAdsAvailable() && this.linkedInFormat() === 'text');
+  /** Whether custom targeting replaces the targeting profile (#5764 rows 8–11), carried in the draft. */
+  protected readonly linkedInCustomTargeting = signal(false);
+  /** The custom targeting clauses and exclusions as edited (#5764 rows 8–11), carried in the draft. */
+  protected readonly linkedInTargetingDraft = signal<LinkedInTargetingDraft>(emptyLinkedInTargetingDraft());
+  /** Whether this create sends custom targeting: chosen, and offered by this deployment. */
+  protected readonly linkedInCustomTargetingSelected = computed<boolean>(() => this.linkedInTargetingAvailable() && this.linkedInCustomTargeting());
+  /**
+   * Who segment picks are made for (#5764 rows 8–11): the active foundation and the audience account. A foundation
+   * switch keeps this page and its draft, and each foundation's default account differs, so both are part of it.
+   */
+  protected readonly linkedInSegmentsOwner = computed(() => linkedInSegmentsOwnerKey(this.activeFoundationSlug(), this.linkedInAudienceAccountId()));
+  /**
+   * The objective and conversion rules as edited (#5764 rows 2 and 4), carried in the draft. Rules are owned like segment
+   * picks (`linkedInSegmentsOwner`), and a create for another owner is held.
+   */
+  protected readonly linkedInObjectiveDraft = signal<LinkedInObjectiveDraft>(emptyLinkedInObjectiveDraft());
+
+  /**
+   * The ad account whose segments the custom targeting editor reads: the account the create names, so the segments
+   * offered are the ones it can send. That is `selectedAdAccountId` (a non-default pick) when the connection decides
+   * the account, the legacy dropdown's `adAccountId` otherwise, and `null` (the default) when neither is sent. `||`,
+   * not `??`: the legacy dropdown holds `''` until the accounts load, which names no account.
+   */
+  protected readonly linkedInAudienceAccountId = computed<string | null>(() => {
+    const fields = this.linkedInAccountFieldsNow();
+    return fields.selectedAdAccountId || fields.adAccountId || null;
+  });
   protected readonly linkedInBudgetUsd = signal(DEFAULT_LINKEDIN_BUDGET_USD);
   protected readonly linkedInLifetimeBudget = signal(false);
   /** The optional daily cap beside a lifetime budget (#5774). null is no cap; cleared when the lifetime budget is turned off. */
@@ -1683,13 +2015,27 @@ export class ImplementationTabComponent implements OnInit {
    * Membership-checked rather than truthiness-checked because a restored draft is not type-checked
    * at runtime and both creators refuse anything outside `REDDIT_VIDEO_GOALS`.
    */
-  protected readonly redditEffectiveVideoGoal = computed<RedditVideoGoal | null>(() => {
-    const goal = this.redditVideoGoal();
-    return (REDDIT_VIDEO_GOALS as readonly string[]).includes(goal) ? (goal as RedditVideoGoal) : null;
-  });
+  protected readonly redditEffectiveVideoGoal = computed<RedditVideoGoal | null>(() => redditEffectiveVideoGoal(this.redditVideoGoal()));
   /** The message shown under the goal picker while Video Views has no usable goal, else `null`. */
-  protected readonly redditVideoGoalError = computed(() =>
-    this.redditNeedsVideoGoal() && this.redditEffectiveVideoGoal() === null ? 'Choose a video goal — Reddit needs one for a Video Views campaign.' : null
+  protected readonly redditVideoGoalError = computed(() => redditVideoGoalError(this.redditObjective(), this.redditVideoGoal()));
+  /**
+   * The pixel event a `conversions` campaign optimizes toward (#6108 row 2). Starts on campaign-service's own default,
+   * which a create leaves out, and is remembered across objective changes like the video goal; only the request is gated.
+   */
+  protected readonly redditConversionEvent = signal<RedditConversionEvent>(DEFAULT_REDDIT_CONVERSION_EVENT);
+  /** Whether the picker shows: an explicit yes, on the conversions objective. */
+  protected readonly redditConversionEventOffered = computed<boolean>(() =>
+    redditConversionEventOffered(this.redditConversionEventEnabled(), this.redditObjective())
+  );
+  /** Why Create is held for a non-default event this deployment has not confirmed, or `null` — held, never dropped. */
+  protected readonly redditConversionEventBlock = computed<CampaignBiddingCapabilityBlock | null>(() =>
+    redditConversionEventBlock(
+      this.redditConversionEvent(),
+      this.redditObjective(),
+      this.redditConversionEventEnabled(),
+      this.createCapabilityRead(),
+      this.briefPersistence().briefId
+    )
   );
   /**
    * The message shown under the Post URL while Video Views has no post, else `null`. A video-views
@@ -1697,9 +2043,7 @@ export class ImplementationTabComponent implements OnInit {
    * can never earn a video view, and with neither the campaign is created with no ad at all. Neither
    * creator checks the creative against the objective, so this is the only place it is enforced.
    */
-  protected readonly redditVideoPostError = computed(() =>
-    this.redditNeedsVideoGoal() && !this.redditPostUrl() ? 'Video Views promotes an existing Reddit video post — enter its Post URL.' : null
-  );
+  protected readonly redditVideoPostError = computed(() => redditVideoPostError(this.redditObjective(), this.redditPostUrl()));
   /**
    * Link to an EXISTING Reddit post to promote. Ungated, because both creators read it: the
    * legacy path extracts the post id and builds the ad from it (`reddit-ads.service.ts`), exactly
@@ -1753,9 +2097,7 @@ export class ImplementationTabComponent implements OnInit {
    * returning to the input re-reads why the last file was refused. The input stays enabled during
    * an upload (disabling it would drop keyboard focus); a new pick replaces the one in flight.
    */
-  protected readonly redditImageFileDescribedBy = computed(() =>
-    ['reddit-image-file-hint', 'reddit-image-file-status', ...(this.redditImageUploadStatus() === 'error' ? ['reddit-image-file-error'] : [])].join(' ')
-  );
+  protected readonly redditImageFileDescribedBy = computed(() => redditImageFileDescribedBy(this.redditImageUploadStatus()));
   /**
    * This component's subscription to the upload in flight. Unsubscribing only detaches it (a tab
    * switch must not abort the upload); `clearRedditImageAsset` cancels the request itself.
@@ -1804,14 +2146,15 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly linkedInImageUploadVariantKey = signal('');
   /**
-   * The one LinkedIn upload belongs to no variant on screen: the brief re-seeded the variants (new
-   * keys) while it ran. It is not cancelled, because a draft restore that follows the re-seed brings
-   * that variant back and the upload lands on it; until then it holds no picker and not Create.
+   * The one LinkedIn upload belongs to no ad the chosen format shows: the brief re-seeded the variants (new
+   * keys) while it ran, or it is for the other format (#5764 row 19). It is not cancelled, because a draft
+   * restore that follows the re-seed brings that variant back, or a switch back to its format brings its
+   * editor back, and the upload lands on it; until then it holds no picker and not Create. The same rule the
+   * variant and text ad views apply, each to its own list, so a picker that looks enabled always takes a pick.
    */
-  private readonly linkedInImageUploadOrphaned = computed(() => {
-    const slotKey = this.linkedInImageUploadVariantKey();
-    return slotKey !== '' && !this.linkedInVariants().some((variant) => variant.key === slotKey);
-  });
+  private readonly linkedInImageUploadOrphaned = computed(() =>
+    linkedInImageUploadOrphaned(this.linkedInImageSlot(), this.linkedInTextAdsSelected() ? this.linkedInTextAds() : this.linkedInVariants())
+  );
   protected readonly linkedInImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
   private readonly linkedInImageUploadPendingName = signal('');
   private readonly linkedInImageUploadPendingBriefId = signal('');
@@ -1964,6 +2307,21 @@ export class ImplementationTabComponent implements OnInit {
    * is also how the operator retries a search that failed.
    */
   protected readonly googleGeoSearchQuery = signal('', { equal: () => false });
+  /** The LinkedIn location picker (#5545): its box, its latest query (no equality check, as Google's), and its debounced search. */
+  protected readonly linkedInGeoSearchForm = this.fb.group({ location: this.fb.control<LinkedInGeoSearchOption | string | null>(null) });
+  protected readonly linkedInGeoSearchQuery = signal('', { equal: () => false });
+  private readonly linkedInGeoSearchState: Signal<LinkedInGeoSearchState> = this.initLinkedInGeoSearchState();
+  /** The picker's rows, a location already targeted marked `disabled`. */
+  protected readonly linkedInGeoSearchOptions = computed<LinkedInGeoSearchOption[]>(() =>
+    linkedInGeoSearchOptions(this.linkedInGeoSearchState().locations, this.linkedInGeoTargets())
+  );
+  protected readonly linkedInGeoSearchFailed = computed(() => this.linkedInGeoSearchState().failed);
+  /** What the picker's popup says with no rows: searching, failed, or nothing matched (a custom `#empty`, as Google's). */
+  protected readonly linkedInGeoSearchEmptyMessage = computed(() => {
+    if (this.linkedInGeoSearchState().pending) return 'Searching…';
+    if (this.linkedInGeoSearchFailed()) return 'The location search did not come back. Try again in a moment.';
+    return 'No matching locations.';
+  });
   private readonly googleGeoSearchState: Signal<GoogleAdsGeoTargetSearchState> = this.initGoogleGeoSearchState();
   /** The picker's rows, an id already on the list marked `disabled` so it cannot be picked twice. */
   protected readonly googleGeoSearchOptions = computed<GoogleAdsGeoTargetOption[]>(() => {
@@ -2306,7 +2664,10 @@ export class ImplementationTabComponent implements OnInit {
    * targeting it exists to surface.
    */
   protected readonly redditEffectiveKeywords = computed<string[]>(() =>
-    this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term)
+    redditEffectiveKeywords(
+      this.redditKeywords(),
+      this.briefKeywords().map((k) => k.term)
+    )
   );
 
   /**
@@ -2377,7 +2738,7 @@ export class ImplementationTabComponent implements OnInit {
    * (LFXV2-3230).
    *
    * They moved from signals onto `campaignForm` so the draft carries them, but the template,
-   * `canSubmit` and `availableGeoTargets` all read them reactively. A plain
+   * `canSubmit` and `linkedInGeoSearchOptions` all read them reactively. A plain
    * `controls.linkedInGeoTargets.value` read is not a reactive dependency, so a `computed` over
    * it would memoise on first read and never update — the chip list would stop re-rendering as
    * the user adds and removes geos. Bridging through `toSignal` keeps every existing reader
@@ -2393,9 +2754,9 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * Coalesced to `[]` HERE rather than at each reader, because the readers are the whole surface:
-   * `canSubmit`, `availableGeoTargets`, `submit()` and two template blocks all read this, and four
+   * `canSubmit`, `linkedInGeoSearchOptions`, `submit()` and two template blocks all read this, and four
    * of the five would throw on an absent value (`.length`, `.map`, `@for`). Guarding one call site
-   * leaves the other four, and the crash in `availableGeoTargets` is reached from the TEMPLATE, so
+   * leaves the other four, and the crash in `linkedInGeoSearchOptions` is reached from the TEMPLATE, so
    * it takes down the tab rather than one control.
    *
    * The value can be absent even though `CampaignImplementationDraft` declares it non-optional:
@@ -2454,16 +2815,10 @@ export class ImplementationTabComponent implements OnInit {
    * Mirrors `submit()`'s fallback to the form's country code, so the preview shows the value that
    * ships rather than an empty list for a request that targets somewhere specific.
    */
-  protected readonly redditEffectiveGeoTargets: Signal<string[]> = computed(() => {
-    // Normalise FIRST, then decide whether to fall back. Choosing the branch on the RAW
-    // recommendation strands the form's country: a brief carrying an unusable ['USA'] is
-    // non-empty, so it wins the branch, filters to nothing, and canSubmit blocks the section
-    // permanently — with a perfectly valid US sitting unread in the form. The fallback is for
-    // "the brief offers no usable geo", and non-empty is not the same test as usable.
-    const recommended = this.normaliseGeoCodes(this.redditGeoTargets());
-    if (recommended.length > 0) return recommended;
-    return this.normaliseGeoCodes([this.countryCodeValue()]);
-  });
+  protected readonly redditEffectiveGeoTargets: Signal<string[]> = computed(() =>
+    // The brief's usable recommendation, else the form's country code (`redditEffectiveGeoTargets`, #5980).
+    redditEffectiveGeoTargets(this.redditGeoTargets(), this.countryCodeValue())
+  );
   /**
    * Subreddit names as they will DISPATCH. A restored brief keeps whatever the generator wrote,
    * and `r/k8s` is a real stored value (campaign-service.service.spec.ts asserts it survives
@@ -2471,11 +2826,7 @@ export class ImplementationTabComponent implements OnInit {
    * under a fixed `r/` prefix previews `r/r/k8s` — a section whose entire purpose is showing
    * what will be sent must not show something else.
    */
-  protected readonly redditEffectiveSubreddits: Signal<string[]> = computed(() =>
-    this.redditSubreddits()
-      .map((sub) => sub.trim().replace(/^\/?r\//i, ''))
-      .filter((sub) => sub.length > 0)
-  );
+  protected readonly redditEffectiveSubreddits: Signal<string[]> = computed(() => redditEffectiveSubreddits(this.redditSubreddits()));
 
   /**
    * The geo list a Meta create would ACTUALLY send — one value for both the preview and `submit()`.
@@ -2490,12 +2841,7 @@ export class ImplementationTabComponent implements OnInit {
    * Empty is a real answer, not a bug: it means nothing usable was supplied, and `canSubmit`
    * blocks on it rather than letting the server pick a country on the operator's behalf.
    */
-  protected readonly metaEffectiveGeoTargets = computed<string[]>(() => {
-    const chips = normalizeGeoTargets(this.metaGeoTargets());
-    const eligibleChips = chips.filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
-    if (eligibleChips.length > 0) return eligibleChips;
-    return normalizeGeoTargets([this.countryCodeValue()]).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
-  });
+  protected readonly metaEffectiveGeoTargets = computed<string[]>(() => metaEffectiveGeoTargets(this.metaGeoTargets(), this.countryCodeValue()));
 
   /**
    * The geo list a Google create would ACTUALLY send — one value for the preview and for `submit()`,
@@ -3295,7 +3641,7 @@ export class ImplementationTabComponent implements OnInit {
   });
 
   /** Whether the pixel field applies at all — only `conversions` carries a promoted pixel object. */
-  protected readonly metaRequiresPixel = computed(() => this.metaObjective() === 'conversions');
+  protected readonly metaRequiresPixel = computed(() => metaRequiresPixel(this.metaObjective()));
 
   /**
    * Whether at least one SELECTABLE placement is on.
@@ -3306,41 +3652,145 @@ export class ImplementationTabComponent implements OnInit {
    * emptiness check is even reached — so counting it would let the UI pass a config the service
    * fails twice over.
    */
-  protected readonly metaHasPlacement = computed(() => {
-    const placements = this.metaPlacements();
-    return this.metaSelectablePlacements.some((key) => placements[key]);
-  });
+  protected readonly metaHasPlacement = computed(() => metaHasPlacement(this.metaPlacements()));
 
   /**
    * Whether the ad set runs on Instagram — Instagram Feed, Stories or Reels, the three placements
    * campaign-service maps to Instagram positions (`meta.UsesInstagram`). Only then is the Instagram
    * account id sent, and only then does Meta need it to publish.
    */
-  protected readonly metaUsesInstagram = computed(() => {
-    const placements = this.metaPlacements();
-    return placements.instagramFeed || placements.stories || placements.reels;
-  });
+  protected readonly metaUsesInstagram = computed(() => metaUsesInstagram(this.metaPlacements()));
 
   /** The targeted countries that make Meta require the EU DSA disclosures, in request order. */
-  protected readonly metaDsaCountries = computed<string[]>(() => this.metaEffectiveGeoTargets().filter((c) => META_DSA_TERRITORIES.has(c)));
+  protected readonly metaDsaCountries = computed<string[]>(() => metaDsaCountries(this.metaEffectiveGeoTargets()));
 
   /**
    * Why the Instagram account id cannot be sent, or `null`. Required only when the capability is on
    * AND an Instagram placement is enabled — Meta creates the ad without it but will not publish it.
    * Numeric, as campaign-service's `numericIDRE` requires; trimmed first because upstream trims.
    */
-  protected readonly metaInstagramUserIdError = computed<string | null>(() => {
-    if (!this.metaInstagramDsaAvailable() || !this.metaUsesInstagram()) return null;
-    const id = this.metaInstagramDsaDraft().instagramUserId.trim();
-    if (id === '') return 'An Instagram account ID is required for the Instagram placements. Enter it, or turn off Instagram Feed, Stories and Reels.';
-    if (!META_NUMERIC_ID_PATTERN.test(id)) return 'The Instagram account ID must be numeric.';
-    return null;
+  protected readonly metaInstagramUserIdError = computed<string | null>(() =>
+    metaInstagramUserIdError(this.metaInstagramDsaAvailable(), this.metaUsesInstagram(), this.metaInstagramDsaDraft().instagramUserId)
+  );
+
+  /**
+   * The targeting the create would carry, before defaults are dropped: the draft exactly as the child
+   * shows and validates it, or none while the capability is off. Nothing chosen is stripped here: what
+   * cannot be sent holds Create instead ({@link metaAudienceTargetingBlock}).
+   */
+  private readonly metaAudienceTargetingRequested = computed<MetaAudienceTargetingDraft | null>(() =>
+    this.metaAudienceTargetingAvailable() ? this.metaAudienceTargeting() : null
+  );
+  protected readonly metaAudienceTargetingBlock: Signal<CampaignMetaAudienceTargetingBlock | null> = this.initMetaAudienceTargetingBlock();
+  /** Why the Meta audience targeting cannot be sent, or `null`: the create route's own rules. */
+  protected readonly metaAudienceTargetingError = computed<string | null>(
+    () => metaAudienceTargetingRefusal(this.metaAudienceTargetingRequested())?.message ?? null
+  );
+
+  /** The detailed fields the create carries (#5904 row 4): each list only on its explicit yes. */
+  private readonly metaDetailedTargetingRequested = computed(() =>
+    metaDetailedTargetingForCreate(this.metaDetailedTargeting(), this.metaInterestTargetingEnabled(), this.metaBehaviorTargetingEnabled())
+  );
+  /** Why Create is held for picks in a list the request cannot carry, or `null`: {@link metaAudienceTargetingBlock}'s states. */
+  protected readonly metaDetailedTargetingBlock = computed(() =>
+    metaDetailedTargetingBlock({
+      picks: this.metaDetailedTargeting(),
+      interestEnabled: this.metaInterestTargetingEnabled(),
+      behaviorEnabled: this.metaBehaviorTargetingEnabled(),
+      createCapabilityRead: this.createCapabilityRead(),
+      briefId: this.briefPersistence().briefId,
+    })
+  );
+  /** The ad schedule and frequency cap the create carries (#5904 row 5): each only on its explicit yes. */
+  private readonly metaDeliveryRequested = computed(() =>
+    metaDeliveryForCreate(this.metaDelivery(), this.metaAdScheduleEnabled(), this.metaFrequencyCapEnabled())
+  );
+  /** Why Create is held for a schedule or cap the request cannot carry, or `null`: {@link metaAudienceTargetingBlock}'s states. */
+  protected readonly metaDeliveryBlock = computed(() =>
+    metaDeliveryBlock({
+      draft: this.metaDelivery(),
+      adScheduleEnabled: this.metaAdScheduleEnabled(),
+      frequencyCapEnabled: this.metaFrequencyCapEnabled(),
+      createCapabilityRead: this.createCapabilityRead(),
+      briefId: this.briefPersistence().briefId,
+    })
+  );
+  /** What the block's Clear clears, named: only the options this deployment answered no to. */
+  protected readonly metaDeliveryClearLabel = computed<string>(() =>
+    metaDeliveryClearLabel(this.metaDelivery(), this.metaAdScheduleEnabled(), this.metaFrequencyCapEnabled())
+  );
+  /** Why the schedule or cap cannot be sent, or `null`: the create route's own rules, on this budget mode and objective. */
+  protected readonly metaDeliveryError = computed<string | null>(() => {
+    const raw = { ...this.metaDeliveryRequested(), lifetimeBudget: this.metaLifetimeBudget(), objective: this.metaObjective() };
+    return (metaAdScheduleRefusal(raw) ?? metaFrequencyCapRefusal(raw))?.message ?? null;
   });
+  /** The devices and operating systems the create carries (#5904 row 6): each list only on its explicit yes. */
+  private readonly metaDeviceOsRequested = computed(() =>
+    metaDeviceOsForCreate(this.metaDeviceOs(), this.metaDeviceTargetingEnabled(), this.metaOsTargetingEnabled())
+  );
+  /** Why Create is held for devices or systems the request cannot carry, or `null`: {@link metaAudienceTargetingBlock}'s states. */
+  protected readonly metaDeviceOsBlock = computed(() =>
+    metaDeviceOsBlock({
+      draft: this.metaDeviceOs(),
+      deviceEnabled: this.metaDeviceTargetingEnabled(),
+      osEnabled: this.metaOsTargetingEnabled(),
+      createCapabilityRead: this.createCapabilityRead(),
+      briefId: this.briefPersistence().briefId,
+    })
+  );
+  /** What the block's Clear clears, named: only the lists this deployment answered no to. */
+  protected readonly metaDeviceOsClearLabel = computed<string>(() =>
+    metaDeviceOsClearLabel(this.metaDeviceOs(), this.metaDeviceTargetingEnabled(), this.metaOsTargetingEnabled())
+  );
+  /**
+   * Why the devices or systems cannot be sent, or `null`: the create route's own rule, on this objective and every
+   * placement. Shown and holding Create rather than cleared, so turning Audience Network on never silently widens a
+   * desktop-only ad set.
+   */
+  protected readonly metaDeviceOsError = computed<string | null>(() => metaDeviceOsError(this.metaDeviceOs(), this.metaObjective(), this.metaPlacements()));
+
+  /** Why the detailed fields cannot be sent, or `null`: the create route's own rules. */
+  protected readonly metaDetailedTargetingError = computed<string | null>(
+    () => metaDetailedTargetingRefusal(this.metaDetailedTargetingRequested())?.message ?? null
+  );
+
+  /** Whether the Meta create carries manual bidding, a link-click bid cap that refuses LANDING_PAGE_VIEWS (#5934). */
+  private readonly metaManualBidding = computed<boolean>(() => this.biddingField('meta-ads').bidding?.strategy === 'manual');
+  /** The Meta ad choice dropdowns offered (#5934): each only on an explicit yes and where the objective fits. */
+  protected readonly metaAdOptionViews = computed<MetaAdOptionView[]>(() =>
+    metaAdOptionViews(this.metaAdOptionsEnabled(), this.metaObjective(), this.metaManualBidding(), this.metaLeadFormRequested())
+  );
+  /** Why the Meta ad choices cannot be sent, or `null`: the create route's own rules. */
+  protected readonly metaAdOptionsError = computed<string | null>(
+    () => metaAdOptionsRefusal(this.metaAdOptions(), this.metaObjective(), this.metaManualBidding())?.message ?? null
+  );
+  /** Whether the create carries a lead form (#5940): only `leads`, and only for a caller who may send one. */
+  protected readonly metaLeadFormRequested = computed<boolean>(() => this.metaLeadFormsAvailable() && this.metaObjective() === 'leads');
+  /** Why the Meta lead form holds Create, or `null`: `leads` needs a form, and the form the create route's own rules (#5940). */
+  protected readonly metaLeadFormError = computed<string | null>(
+    () =>
+      metaLeadFormDraftRefusal({
+        leadFormsEnabled: this.metaLeadFormsAvailable(),
+        objective: this.metaObjective(),
+        leadFormId: this.metaLeadFormId(),
+        manualBidding: this.metaManualBidding(),
+        callToAction: this.metaAdOptions().callToAction,
+      })?.message ??
+      // A held form the Page now lists as inactive (#6107): refused here rather than at create.
+      (this.metaLeadFormRequested() ? this.metaLeadFormHeldRefusal() : null)
+  );
+  protected readonly metaAdOptionsBlock: Signal<CampaignBiddingCapabilityBlock | null> = this.initMetaAdOptionsBlock();
 
   /** Why the DSA beneficiary cannot be sent, or `null` — see `metaDsaFieldError`. */
-  protected readonly metaDsaBeneficiaryError = computed<string | null>(() => this.metaDsaFieldError('dsaBeneficiary'));
+  protected readonly metaDsaBeneficiaryError = computed<string | null>(() => {
+    const draft = this.metaInstagramDsaDraft();
+    return metaDsaFieldError(this.metaInstagramDsaAvailable(), draft.dsaBeneficiary, draft.dsaPayor, this.metaDsaCountries());
+  });
   /** Why the DSA payor cannot be sent, or `null` — see `metaDsaFieldError`. */
-  protected readonly metaDsaPayorError = computed<string | null>(() => this.metaDsaFieldError('dsaPayor'));
+  protected readonly metaDsaPayorError = computed<string | null>(() => {
+    const draft = this.metaInstagramDsaDraft();
+    return metaDsaFieldError(this.metaInstagramDsaAvailable(), draft.dsaPayor, draft.dsaBeneficiary, this.metaDsaCountries());
+  });
 
   /**
    * The three keys `submit` adds to `metaConfig`, or none. Off: nothing, so the create is exactly
@@ -3348,17 +3798,9 @@ export class ImplementationTabComponent implements OnInit {
    * for an Instagram placement, and the disclosures only as a pair — `canSubmit` has already blocked
    * a one-sided or an EU-without-both state, so a lone value is never sent.
    */
-  protected readonly metaInstagramDsaFields = computed<Pick<MetaCampaignCreateRequest, 'instagramUserId' | 'dsaBeneficiary' | 'dsaPayor'>>(() => {
-    if (!this.metaInstagramDsaAvailable()) return {};
-    const draft = this.metaInstagramDsaDraft();
-    const instagramUserId = draft.instagramUserId.trim();
-    const dsaBeneficiary = draft.dsaBeneficiary.trim();
-    const dsaPayor = draft.dsaPayor.trim();
-    return {
-      ...(this.metaUsesInstagram() && instagramUserId !== '' ? { instagramUserId } : {}),
-      ...(dsaBeneficiary !== '' && dsaPayor !== '' ? { dsaBeneficiary, dsaPayor } : {}),
-    };
-  });
+  protected readonly metaInstagramDsaFields = computed<Pick<MetaCampaignCreateRequest, 'instagramUserId' | 'dsaBeneficiary' | 'dsaPayor'>>(() =>
+    metaInstagramDsaFields(this.metaInstagramDsaAvailable(), this.metaUsesInstagram(), this.metaInstagramDsaDraft())
+  );
 
   /**
    * The placement entries that DIFFER from `META_DEFAULT_PLACEMENTS`, which is all the payload
@@ -3369,14 +3811,7 @@ export class ImplementationTabComponent implements OnInit {
    * `true`, so the difference filter drops it — the payload cannot carry the one value the
    * service rejects outright.
    */
-  protected readonly metaPlacementOverrides = computed<Partial<MetaPlacement>>(() => {
-    const placements = this.metaPlacements();
-    const overrides: Partial<MetaPlacement> = {};
-    for (const key of Object.keys(placements) as (keyof MetaPlacement)[]) {
-      if (placements[key] !== META_DEFAULT_PLACEMENTS[key]) overrides[key] = placements[key];
-    }
-    return overrides;
-  });
+  protected readonly metaPlacementOverrides = computed<Partial<MetaPlacement>>(() => metaPlacementOverrides(this.metaPlacements()));
 
   /**
    * Whether the pixel id is acceptable for the CURRENT objective.
@@ -3389,11 +3824,7 @@ export class ImplementationTabComponent implements OnInit {
    * hear it. Trimmed first because upstream trims before both checks, so `' '` must read as
    * empty here too rather than passing a truthiness test locally and being refused there.
    */
-  protected readonly metaPixelValid = computed(() => {
-    if (!this.metaRequiresPixel()) return true;
-    const trimmed = this.metaPixelId().trim();
-    return trimmed !== '' && META_NUMERIC_ID_PATTERN.test(trimmed);
-  });
+  protected readonly metaPixelValid = computed(() => metaPixelValid(this.metaObjective(), this.metaPixelId()));
   protected readonly selectedLinkedInAccount = computed(() => {
     const accounts = this.linkedInAccounts();
     return accounts.find((a) => a.accountId === this.linkedInAccountId()) ?? accounts[0];
@@ -3436,22 +3867,23 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly redditImageAssetBlock: Signal<CampaignRedditImageAssetBlock | null> = this.initRedditImageAssetBlock();
   /** Whether the draft holds an uploaded Reddit image made for the brief now open — the only one sent. */
-  protected readonly redditImageAssetForThisBrief = computed(
-    () => this.redditImageAssetId() !== '' && this.redditImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  protected readonly redditImageAssetForThisBrief = computed(() =>
+    redditImageAssetForBrief(this.redditImageAssetId(), this.redditImageAssetBriefId(), this.briefPersistence().briefId)
   );
   /** The always-mounted live region's text for `redditImageAssetBlock`; `''` when nothing blocks. */
   protected readonly redditImageAssetBlockMessage = computed(() => this.redditImageAssetBlock()?.message ?? '');
   /** The upload control's progress or success line; empty when there is nothing to report. */
-  protected readonly redditImageUploadStatusMessage = computed(() => {
-    if (this.redditImageUploadStatus() === 'uploading') return 'Uploading image…';
-    return this.redditImageAssetForThisBrief() ? `Uploaded: ${this.redditImageAssetName() || 'image'}` : '';
-  });
+  protected readonly redditImageUploadStatusMessage = computed(() =>
+    redditImageUploadStatusMessage(this.redditImageUploadStatus(), this.redditImageAssetForThisBrief(), this.redditImageAssetName())
+  );
   /**
    * What the always-mounted live region announces: the control's status while it is shown. Kept out
    * of the control so the region is not created and destroyed as upload support settles, which
    * drops the first announcement; while the control is hidden, the asset block's region speaks.
    */
-  protected readonly redditImageUploadLiveMessage = computed(() => (this.redditAssetUploadAvailable() ? this.redditImageUploadStatusMessage() : ''));
+  protected readonly redditImageUploadLiveMessage = computed(() =>
+    redditImageUploadLiveMessage(this.redditAssetUploadAvailable(), this.redditImageUploadStatusMessage())
+  );
 
   /**
    * Why Create is blocked for an uploaded Meta image this tab still holds but cannot send, or
@@ -3460,31 +3892,25 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly metaImageAssetBlock: Signal<CampaignMetaImageAssetBlock | null> = this.initMetaImageAssetBlock();
   /** Whether the draft holds an uploaded Meta image made for the brief now open — the only one sent. */
-  protected readonly metaImageAssetForThisBrief = computed(
-    () => this.metaImageAssetId() !== '' && this.metaImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  protected readonly metaImageAssetForThisBrief = computed(() =>
+    metaImageAssetForBrief(this.metaImageAssetId(), this.metaImageAssetBriefId(), this.briefPersistence().briefId)
   );
   /** An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes. */
-  private readonly metaAssetWithheld = computed(
-    () => (this.metaImageAssetForThisBrief() || this.metaImageUploadStatus() === 'uploading') && !this.metaAssetUploadAvailable()
+  private readonly metaAssetWithheld = computed(() =>
+    metaImageAssetWithheld(this.metaImageAssetForThisBrief(), this.metaImageUploadStatus(), this.metaAssetUploadAvailable())
   );
   /** A pasted image URL the request cannot carry: the image capability is not an explicit yes. */
-  private readonly metaImageUrlWithheld = computed(() => this.metaImageUrl() !== '' && !this.metaCreativeAvailable());
+  private readonly metaImageUrlWithheld = computed(() => metaImageUrlWithheld(this.metaImageUrl(), this.metaCreativeAvailable()));
   protected readonly metaImageAssetBlockMessage = computed(() => this.metaImageAssetBlock()?.message ?? '');
-  protected readonly metaImageUploadStatusMessage = computed(() => {
-    if (this.metaImageUploadStatus() === 'uploading') return 'Uploading image…';
-    return this.metaImageAssetForThisBrief() ? `Uploaded: ${this.metaImageAssetName() || 'image'}` : '';
-  });
+  protected readonly metaImageUploadStatusMessage = computed(() =>
+    metaImageUploadStatusMessage(this.metaImageUploadStatus(), this.metaImageAssetForThisBrief(), this.metaImageAssetName())
+  );
   protected readonly metaImageUploadLiveMessage = computed(() => (this.metaAssetUploadAvailable() ? this.metaImageUploadStatusMessage() : ''));
   /**
    * What the variant preview says about the image each ad will carry, read from the same field the
    * payload is (`metaImageField`), so the preview never promises an image the request leaves out.
    */
-  protected readonly metaPreviewImageLabel = computed(() => {
-    const image = this.metaImageField();
-    if ('imageAssetId' in image) return `Image: ${this.metaImageAssetName() || 'uploaded image'}`;
-    if ('imageUrl' in image) return `Image: ${image.imageUrl}`;
-    return '';
-  });
+  protected readonly metaPreviewImageLabel = computed(() => metaPreviewImageLabel(this.metaImageField(), this.metaImageAssetName()));
 
   /**
    * The brief's stored images, read while a Google image slot offers the library. Re-read on every
@@ -3538,13 +3964,19 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInMaxVariants = LINKEDIN_MAX_VARIANTS;
   /** Each LinkedIn variant as the editor shows it: its copy, its limits and its own image (#5547). */
   protected readonly linkedInVariantViews: Signal<LinkedInVariantView[]> = this.initLinkedInVariantViews();
+  /** The upload slot, brief and capability state the Text Ads editor shows each ad's image against (#5764 row 19). */
+  protected readonly linkedInTextAdImageInput: Signal<LinkedInTextAdImageInput> = this.initLinkedInTextAdImageInput();
+  /** Each text ad with its image state, for the image notice that holds Create; the editor renders its own. */
+  private readonly linkedInTextAdImageViews = computed(() => linkedInTextAdViews(this.linkedInTextAds(), this.linkedInTextAdImageInput()));
   /**
    * Why Create is blocked for an uploaded LinkedIn image this tab still holds but cannot send, or
    * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL LinkedIn does not have. The first
-   * blocked variant's; each variant shows its own beside its picker.
+   * blocked variant's, or text ad's while Text Ads are chosen (#5764 row 19); each shows its own beside its picker.
    */
   protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = computed(
-    () => this.linkedInVariantViews().find((view) => view.imageBlock !== null)?.imageBlock ?? null
+    () =>
+      (this.linkedInTextAdsSelected() ? this.linkedInTextAdImageViews() : this.linkedInVariantViews()).find((view) => view.imageBlock !== null)?.imageBlock ??
+      null
   );
   protected readonly linkedInImageAssetBlockMessage = computed(() => this.linkedInImageAssetBlock()?.message ?? '');
   /** Why the daily cap (#5774) cannot be sent, or null; see `initLinkedInDailyCapError`. */
@@ -3825,76 +4257,52 @@ export class ImplementationTabComponent implements OnInit {
     // The first ad's copy over Google's display width; the message is under Headlines or Descriptions.
     if (googleSelected && (this.googleFirstAdHeadlinesError() !== null || this.googleFirstAdDescriptionsError() !== null))
       return "Google Ads: the first ad's headlines or descriptions are too wide.";
-    if (linkedInSelected && this.linkedInBudgetUsd() < 1) return 'LinkedIn Ads: set a budget of at least $1.';
-    // A daily cap campaign-service would refuse (#5774); the message is under the field.
-    if (linkedInSelected && this.linkedInDailyCapError() !== null) return 'LinkedIn Ads: fix the daily cap.';
-    if (linkedInSelected && this.linkedInGeoTargets().length === 0) return 'LinkedIn Ads: add at least one location.';
-    if (linkedInSelected && this.linkedInVariants().length === 0) return 'LinkedIn Ads: add at least one ad variant.';
-    if (linkedInSelected && this.linkedInVariants().length > LINKEDIN_MAX_VARIANTS)
-      return `LinkedIn Ads: remove ad variants until there are at most ${LINKEDIN_MAX_VARIANTS}.`;
-    // An intro text or headline campaign-service would refuse (blank) or cut short (over its limit).
-    if (linkedInSelected && this.linkedInVariantTextInvalid()) return 'LinkedIn Ads: fix the ad variant text.';
-    // Removals the create cannot carry (#5546) — the legacy creator would drop them, and without the
-    // profile catalogue they cannot be applied — are a block rather than a silent revert to the
-    // profile as configured.
-    if (linkedInSelected && this.linkedInTargetingRemovalsHeld()) {
-      if (!this.linkedInTargetingEditAvailable()) return 'LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.';
-      if (!this.linkedInSelectedTargetingProfile())
-        return "LinkedIn Ads: the targeting profile's details have not loaded. Reload the page, or reset the targeting profile.";
-    }
-    // The account must be one the CATALOG confirms, not merely a non-empty string.
-    //
-    // `ngOnInit`'s reconciliation only runs on a successful response, so it cannot cover the two
-    // windows either side of it: before the request returns, and permanently if it fails. In both
-    // the restored id is still on the form while `linkedInAccounts()` is empty, so a create would
-    // dispatch an account nothing has verified and the selector is not displaying — the same
-    // divergence the reconciliation closes, reached where it does not run.
-    //
-    // Membership is the test rather than "loading finished", because a failed fetch leaves
-    // loading false with an empty catalog, which is exactly when this matters most. It also
-    // covers the blank id for free. The gate is scoped to LinkedIn, so a Google-only or
-    // Reddit-only create is unaffected by an ad-account endpoint being down.
-    // Skipped when the connection decides the account (#5809): the selector is not shown, and the
-    // create does not send the account, so its catalog cannot block a create it has no part in.
-    if (linkedInSelected && !this.linkedInAccountSetByConnection() && !this.linkedInAccounts().some((a) => a.accountId === this.linkedInAccountId()))
-      return 'LinkedIn Ads: choose an ad account.';
-    // While the ad account read is in flight the picker is not shown yet, so a create would go to the
-    // default before the operator could see or change it (#5809). A failed read does not block: the
-    // create then sends no account and goes to the default, as it did before account selection.
-    if (linkedInSelected && this.linkedInAccountSelectionAvailable() && this.linkedInCreateAccount().status === 'loading')
-      return 'LinkedIn Ads: the ad account is still loading.';
-    if (metaSelected && this.metaBudgetUsd() < 1) return 'Meta Ads: set a budget of at least $1.';
-    // No usable geo at all: every chip ineligible (or none) AND no usable countryCode. The request
-    // would otherwise carry nothing and let the server default to US — spending on a country the
-    // operator neither chose nor saw.
-    if (metaSelected && this.metaEffectiveGeoTargets().length === 0) return 'Meta Ads: add a location, or a country code.';
+    // The LinkedIn section's own rules (#5980): `linkedInCreateRefusal` holds them, in order.
+    const linkedInRefusal = linkedInSelected ? this.linkedInCreateRefusalNow() : null;
+    if (linkedInRefusal !== null) return linkedInRefusal;
+    // Budget, then no usable geo at all (which would let the server default to US). Reddit's budget
+    // and geo come next, before the rest of the Meta form, so the Meta checks are split in two.
+    const metaBasics = metaSelected ? metaBasicsRefusal(this.metaBudgetUsd(), this.metaEffectiveGeoTargets()) : null;
+    if (metaBasics !== null) return metaBasics;
     // Reddit's client rejects a non-positive budget at dispatch (client.go: "invalid budget:
     // must be a positive number"), and because creation is async that surfaces as a dead job
     // rather than an error on the request. Refuse locally instead.
     //
     // Most of Reddit's other inputs are AI-recommended from the brief and rendered read-only for
-    // review; the user-entered ones that can make a create fail are checked here and below (the
-    // video goal). Deliberately not an enumeration — a list is a claim the next field falsifies.
-    if (redditSelected && !this.redditBudgetIsUsable()) return 'Reddit Ads: set a budget Reddit accepts.';
-    // No usable geo at all — the brief recommended none AND the country code is blank. The
-    // request would carry [''], which Reddit cannot target and the operator cannot see, because
-    // the preview correctly renders nothing. countryCode has no validator, so this state is
-    // reachable by clearing one optional field.
-    if (redditSelected && this.redditEffectiveGeoTargets().length === 0) return 'Reddit Ads: add a location, or a country code.';
-    // Video Views with no usable goal: both creators refuse it before anything is created, and
-    // because creation is async that refusal would arrive as a dead job. The message is on screen
-    // under the goal picker.
-    if (redditSelected && this.redditVideoGoalError() !== null) return 'Reddit Ads: fix the Video Views goal.';
-    // Video Views without a post would build an image-post ad or no ad — never a video view.
-    if (redditSelected && this.redditVideoPostError() !== null) return 'Reddit Ads: Video Views needs a video post.';
-    if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim()))
-      return 'Meta Ads: give at least one ad both primary text and a headline.';
-    if (metaSelected && !this.metaHasPlacement()) return 'Meta Ads: choose at least one placement.';
-    if (metaSelected && !this.metaPixelValid()) return 'Meta Ads: fix the pixel.';
-    // The Instagram id and EU DSA disclosures (behind `metaInstagramDsaAvailable`; each error is
-    // `null` while it is off). campaign-service refuses the same EU and one-sided states with a 400.
-    if (metaSelected && (this.metaInstagramUserIdError() || this.metaDsaBeneficiaryError() || this.metaDsaPayorError()))
-      return 'Meta Ads: fix the Instagram account or the EU disclosure fields.';
+    // review; the user-entered ones that can make a create fail are held, in order, by `redditCreateRefusal`
+    // (`campaign-reddit-form.utils`, #5980). Deliberately not an enumeration here — a list is a claim the next field falsifies.
+    const redditRefusal = redditSelected
+      ? redditCreateRefusal({
+          budgetUsd: this.redditBudgetUsd(),
+          geoTargetCount: this.redditEffectiveGeoTargets().length,
+          videoGoalError: this.redditVideoGoalError(),
+          videoPostError: this.redditVideoPostError(),
+          conversionEventBlock: this.redditConversionEventBlock()?.message ?? null,
+        })
+      : null;
+    if (redditRefusal !== null) return redditRefusal;
+    // The rest of the Meta form, in order. The Instagram id and EU DSA errors are `null` while
+    // `metaInstagramDsaAvailable` is off; campaign-service refuses the same states with a 400.
+    const metaRefusal = metaSelected
+      ? metaCreateRefusal({
+          variants: this.metaVariants(),
+          hasPlacement: this.metaHasPlacement(),
+          pixelValid: this.metaPixelValid(),
+          instagramDsaInvalid: !!(this.metaInstagramUserIdError() || this.metaDsaBeneficiaryError() || this.metaDsaPayorError()),
+          audienceTargetingBlock: this.metaAudienceTargetingBlock()?.message ?? null,
+          audienceTargetingError: this.metaAudienceTargetingError(),
+          detailedTargetingBlock: this.metaDetailedTargetingBlock()?.message ?? null,
+          detailedTargetingError: this.metaDetailedTargetingError(),
+          deliveryBlock: this.metaDeliveryBlock()?.message ?? null,
+          deliveryError: this.metaDeliveryError(),
+          deviceOsBlock: this.metaDeviceOsBlock()?.message ?? null,
+          deviceOsError: this.metaDeviceOsError(),
+          adOptionsBlock: this.metaAdOptionsBlock()?.message ?? null,
+          adOptionsError: this.metaAdOptionsError(),
+          leadFormError: this.metaLeadFormError(),
+        })
+      : null;
+    if (metaRefusal !== null) return metaRefusal;
 
     // Microsoft's three blocking conditions (LFXV2-3312). Each is a SILENT failure upstream rather
     // than a refusal, which is why they are caught here — the operator would otherwise learn at
@@ -3913,7 +4321,7 @@ export class ImplementationTabComponent implements OnInit {
     // `onMicrosoftBudgetInput`'s `|| 0` happens to prevent that today, but that is the handler's
     // incidental behaviour rather than this guard's, and the guard is what `canSubmit` promises.
     //
-    // The upper bound mirrors `redditBudgetIsUsable`: the client caps the daily budget at
+    // The upper bound mirrors `redditBudgetIsUsable` (`campaign-reddit-form.utils`): the client caps the daily budget at
     // `MICROSOFT_MAX_BUDGET` and rejects anything larger DURING dispatch, so an unguarded
     // over-cap value is a dead job rather than a refused request.
     //
@@ -3949,6 +4357,8 @@ export class ImplementationTabComponent implements OnInit {
     if (this.redditImageAssetBlock() !== null) return 'Reddit Ads: resolve the image notice.';
     if (this.metaImageAssetBlock() !== null) return 'Meta Ads: resolve the image notice.';
     if (this.googleImageAssetBlock() !== null) return 'Google Ads: resolve the image notice.';
+    // The first variant's image block, or text ad's while Text Ads are chosen (#5764 row 19); an image for the ads the
+    // chosen format hides is not sent and holds nothing (see `linkedInImageAssetBlock`).
     if (this.linkedInImageAssetBlock() !== null) return 'LinkedIn Ads: resolve the image notice.';
     if (this.twitterImageAssetBlock() !== null) return 'X: resolve the image notice.';
     if (this.microsoftImageAssetBlock() !== null) return 'Microsoft Ads: resolve the image notice.';
@@ -3996,7 +4406,14 @@ export class ImplementationTabComponent implements OnInit {
     // while the upload control is shown, where its status and Remove live; while it is hidden,
     // `redditImageAssetBlock` holds Create instead and shows the upload's state with a Remove. Not
     // with a post URL, which `redditImageField` sends in place of any image, as the block agrees.
-    if (this.showRedditSection() && this.redditAssetUploadAvailable() && !this.redditPostUrl() && this.redditImageUploadStatus() === 'uploading')
+    if (
+      redditImageUploadHoldsCreate({
+        showRedditSection: this.showRedditSection(),
+        uploadAvailable: this.redditAssetUploadAvailable(),
+        postUrl: this.redditPostUrl(),
+        uploadStatus: this.redditImageUploadStatus(),
+      })
+    )
       return 'Waiting for the Reddit Ads image upload to finish.';
     // Meta's sibling of the hold above, on the same terms.
     if (this.showMetaSection() && this.metaAssetUploadAvailable() && this.metaImageUploadStatus() === 'uploading')
@@ -4005,12 +4422,15 @@ export class ImplementationTabComponent implements OnInit {
     // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
     if (this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading' && this.googleImageUploadInReach())
       return 'Waiting for the Google Ads image upload to finish.';
-    // Not for an orphaned upload, whose image has no variant to land on and no Cancel on screen.
+    // Not for an orphaned upload, whose image has no ad on screen to land on and no Cancel: that includes one for the
+    // ads the chosen format hides (#5764 row 19), which the create does not send.
     if (
-      this.showLinkedInSection() &&
-      this.linkedInAssetUploadAvailable() &&
-      this.linkedInImageUploadStatus() === 'uploading' &&
-      !this.linkedInImageUploadOrphaned()
+      linkedInImageUploadHoldsCreate(
+        this.showLinkedInSection(),
+        this.linkedInAssetUploadAvailable(),
+        this.linkedInImageSlot(),
+        this.linkedInImageUploadOrphaned()
+      )
     )
       return 'Waiting for the LinkedIn Ads image upload to finish.';
     if (this.showTwitterSection() && this.twitterCreateAvailable() && this.twitterImageUploadStatus() === 'uploading')
@@ -4045,11 +4465,6 @@ export class ImplementationTabComponent implements OnInit {
       return 'The saved brief is not approved yet, and campaigns can only be created from an approved brief.';
 
     return null;
-  });
-
-  protected readonly availableGeoTargets = computed(() => {
-    const selected = new Set(this.linkedInGeoTargets().map((g) => g.urn));
-    return this.allKnownGeos.filter((g) => !selected.has(g.urn));
   });
 
   // === Reactive Signals (from form valueChanges) ===
@@ -4848,16 +5263,36 @@ export class ImplementationTabComponent implements OnInit {
       }
     });
 
-    // skip(1) drops the emission toObservable fires immediately on subscribe — ngOnInit already
-    // runs the initial load, so only later foundation switches should refetch the ad-account list
-    // and the targeting-profile catalogue. Both serve the same ConfigMap for every project, but each
+    // pairwise() absorbs the emission toObservable fires immediately on subscribe — ngOnInit already
+    // runs the initial load, so only later foundation changes refetch the ad-account list and the
+    // targeting-profile catalogue. metaFoundationChange tells the foundation first becoming known
+    // (restore the pending draft) from a real switch (reset the Meta choices). Both serve the same ConfigMap for every project, but each
     // route is gated per project by requireCampaignManager, which can 403 for a foundation the
     // caller doesn't manage.
     toObservable(this.activeFoundationSlug)
-      .pipe(skip(1), takeUntilDestroyed())
-      .subscribe(() => {
+      .pipe(pairwise(), takeUntilDestroyed())
+      .subscribe(([previous, next]) => {
+        const change = metaFoundationChange(previous, next);
+        if (change === 'same') return;
         this.loadLinkedInAccounts();
         this.loadLinkedInTargetingProfiles();
+        // The foundation first becoming known is not a switch (#6107): nothing was chosen under another one, so a
+        // draft restored while it was unknown gets its foundation-scoped choices now, instead of losing them.
+        if (change === 'resolved') {
+          this.restorePendingMetaDraft();
+          return;
+        }
+        this.pendingMetaDraft = null;
+        // The brief survives a foundation switch, but its Meta audience targeting does not: custom audience
+        // ids belong to the previous foundation's ad account, and the capabilities are re-read for this one.
+        this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
+        // The Meta ad choices (#5934) are reset too: their capabilities are re-read for this foundation.
+        this.metaAdOptions.set({});
+        // So is the lead form (#5940): it belongs to the previous foundation's Page. A `leads` objective falls back
+        // too, since lead forms are re-read for this foundation and `leads` without a form would go out as traffic.
+        this.metaLeadFormId.set('');
+        this.metaObjective.set(metaObjectiveAfterFoundationSwitch(this.metaObjective()));
+        this.emitDraft();
       });
   }
 
@@ -4937,16 +5372,17 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.linkedInGeoTargets.setValue(current.filter((_, i) => i !== index));
   }
 
-  protected addGeoTarget(urn: string): void {
-    if (!urn) return;
-    const geo = this.allKnownGeos.find((g) => g.urn === urn);
+  /** Add one LinkedIn location picked in the search (#5545), once. */
+  protected addGeoTarget(geo: LinkedInGeoTarget): void {
     const current = this.campaignForm.controls.linkedInGeoTargets.value;
-    if (geo && !current.some((g) => g.urn === urn)) {
+    if (geo.urn && !current.some((g) => g.urn === geo.urn)) {
       this.campaignForm.controls.linkedInGeoTargets.setValue([...current, geo]);
     }
   }
 
   protected setLinkedInTargetingProfile(profile: LinkedInTargetingProfile): void {
+    // A profile replaces custom targeting (#5764 rows 8–11); the form write below saves the draft.
+    this.linkedInCustomTargeting.set(false);
     // Another profile reseeds the facets: removals were made against the one being left. Compared
     // as campaign-service resolves them, so `custom` to `cloud-native` (the same facets) keeps them.
     const current = this.campaignForm.controls.linkedInTargetingProfile.value;
@@ -4979,12 +5415,6 @@ export class ImplementationTabComponent implements OnInit {
   // The identically-named methods on monitoring-tab and optimization-tab are live and untouched.
   protected onLinkedInAccountChange(event: Event): void {
     this.campaignForm.controls.linkedInAccountId.setValue((event.target as HTMLSelectElement).value);
-  }
-
-  protected onGeoTargetChange(event: Event): void {
-    const select = event.target as HTMLSelectElement;
-    this.addGeoTarget(select.value);
-    select.value = '';
   }
 
   // Every handler below emits, on the same rule the Meta handlers state: these signals are
@@ -5025,26 +5455,6 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
-  /**
-   * Whether the Reddit budget is one the platform will accept.
-   *
-   * The CEILING and finiteness mirror the client's contract exactly
-   * (`internal/platform/reddit/client.go`: finite, within (0, 1e9]). Creation is ASYNC, so an
-   * over-cap budget is not a validation error the operator sees — it is a job that dies later and
-   * has to be gone and read.
-   *
-   * The 1 USD FLOOR is deliberately stricter than upstream, which accepts anything rounding to at
-   * least one micro-dollar. A sub-dollar Reddit campaign buys nothing, so a value in that range is
-   * far more likely a typo than an intent, and the siblings use the same 1 USD floor. Stated
-   * plainly rather than described as mirroring the client, because it does not.
-   *
-   * The siblings enforce neither bound; LFXV2-3315 covers bringing them into line.
-   */
-  protected redditBudgetIsUsable(): boolean {
-    const budget = this.redditBudgetUsd();
-    return Number.isFinite(budget) && budget >= 1 && budget <= REDDIT_MAX_BUDGET_USD;
-  }
-
   protected onRedditBudgetInput(event: Event): void {
     this.redditBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
     // Every Reddit handler emits, because the section's values live in signals that
@@ -5063,6 +5473,20 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /** The picker's choice; it offers only `REDDIT_CONVERSION_EVENTS`, so anything else (a cleared value) is ignored. */
+  protected onRedditConversionEventChange(value: string | null): void {
+    const event = redditConversionEventFromDraft(value);
+    if (event === undefined) return;
+    this.redditConversionEvent.set(event);
+    this.emitDraft();
+  }
+
+  /** Back to Purchase: the way past an `unsupported` {@link redditConversionEventBlock}, whose picker is hidden. */
+  protected useDefaultRedditConversionEvent(): void {
+    this.redditConversionEvent.set(DEFAULT_REDDIT_CONVERSION_EVENT);
+    this.emitDraft();
+  }
+
   protected onRedditPostUrlInput(event: Event): void {
     this.redditPostUrl.set((event.target as HTMLInputElement).value.trim());
     this.emitDraft();
@@ -5076,8 +5500,8 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Upload the chosen image for this brief and keep its asset id.
    *
-   * Type and size are checked here against the same shared allowlist the BFF route enforces, so
-   * the common refusals need no round trip and read the same either way. The input is cleared
+   * Type and size are checked first (`redditImageFileRefusal`) against the same shared allowlist the
+   * BFF route enforces, so the common refusals need no round trip and read the same either way. The input is cleared
    * afterwards so choosing the same file again (after a failure) fires `change` again.
    */
   protected onRedditImageFileChange(event: Event): void {
@@ -5093,18 +5517,11 @@ export class ImplementationTabComponent implements OnInit {
     this.clearRedditImageAsset();
     this.emitDraft();
 
-    if (!isCreativeAssetMimeType(file.type)) {
-      this.failRedditImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
-      return;
-    }
-    if (file.size > CREATIVE_ASSET_MAX_BYTES) {
-      this.failRedditImageUpload(CREATIVE_ASSET_TOO_LARGE_MESSAGE);
-      return;
-    }
     const briefId = this.briefPersistence().briefId ?? '';
     const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
-    if (!briefId || !projectSlug) {
-      this.failRedditImageUpload('Save the brief before uploading an image for it.');
+    const refusal = redditImageFileRefusal(file, briefId, projectSlug);
+    if (refusal !== null) {
+      this.failRedditImageUpload(refusal);
       return;
     }
 
@@ -5140,18 +5557,11 @@ export class ImplementationTabComponent implements OnInit {
     this.clearMetaImageAsset();
     this.emitDraft();
 
-    if (!isCreativeAssetMimeType(file.type)) {
-      this.failMetaImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
-      return;
-    }
-    if (file.size > CREATIVE_ASSET_MAX_BYTES) {
-      this.failMetaImageUpload(CREATIVE_ASSET_TOO_LARGE_MESSAGE);
-      return;
-    }
     const briefId = this.briefPersistence().briefId ?? '';
     const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
-    if (!briefId || !projectSlug) {
-      this.failMetaImageUpload('Save the brief before uploading an image for it.');
+    const refusal = metaImageFileRefusal(file, briefId, projectSlug);
+    if (refusal !== null) {
+      this.failMetaImageUpload(refusal);
       return;
     }
 
@@ -5177,22 +5587,119 @@ export class ImplementationTabComponent implements OnInit {
     }
     this.emitDraft();
   }
-  /** Edit one LinkedIn variant's intro text or headline. */
-  protected onLinkedInVariantTextChange(key: string, field: 'introText' | 'headline', value: string): void {
+  /** Edit one LinkedIn variant's intro text, headline, ad name, description or call to action. */
+  protected onLinkedInVariantTextChange(key: string, field: 'introText' | 'headline' | 'name' | 'description' | 'callToAction', value: string): void {
     this.linkedInVariants.update((variants) => variants.map((variant) => (variant.key === key ? { ...variant, [field]: value } : variant)));
+    this.emitDraft();
+  }
+
+  /** Choose the LinkedIn ad format (#5764 row 19). The first switch to text starts one empty text ad. */
+  protected onLinkedInFormatChange(format: LinkedInAdFormat): void {
+    this.linkedInFormat.set(format);
+    if (format === 'text' && this.linkedInTextAds().length === 0) this.linkedInTextAds.set([newLinkedInTextAdDraft([])]);
+    this.emitDraft();
+  }
+
+  /** Turn custom targeting on in place of the targeting profile (#5764 rows 8–11). */
+  protected onLinkedInCustomTargetingOn(): void {
+    this.linkedInCustomTargeting.set(true);
+    this.emitDraft();
+  }
+
+  /** The objective picker's draft as edited (#5764 rows 2 and 4). */
+  protected onLinkedInObjectiveDraftChange(draft: LinkedInObjectiveDraft): void {
+    this.linkedInObjectiveDraft.set(draft);
+    this.emitDraft();
+  }
+
+  /** The custom targeting editor's draft as edited (#5764 rows 8–11). */
+  protected onLinkedInTargetingDraftChange(draft: LinkedInTargetingDraft): void {
+    this.linkedInTargetingDraft.set(draft);
+    this.emitDraft();
+  }
+
+  /** The Text Ads editor's list as edited (#5764 row 19). A removed ad's upload in flight, if any, is cancelled. */
+  protected onLinkedInTextAdsChange(textAds: LinkedInTextAdDraft[]): void {
+    const slotKey = this.linkedInImageUploadVariantKey();
+    const removedHolder = this.linkedInTextAds().some((ad) => ad.key === slotKey) && !textAds.some((ad) => ad.key === slotKey);
+    if (removedHolder) this.clearLinkedInImageUpload();
+    this.linkedInTextAds.set(textAds);
+    this.emitDraft();
+  }
+
+  /**
+   * Upload the chosen image for one text ad of this brief (#5764 row 19): `onLinkedInVariantImageFileChange`'s sibling,
+   * in the same one LinkedIn upload slot, against the Text Ad limits. campaign-service checks the 100x100 size only after
+   * the campaign group exists, so the size is read here first, as `onMicrosoftImageFileChange` reads its bounds, and an
+   * image whose size cannot be read is refused.
+   */
+  protected onLinkedInTextAdImageFileChange({ key, event }: { key: string; event: Event }): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+    // The picker is disabled meanwhile; a new upload would cancel the other ad's.
+    if (this.linkedInTextAdImageViews().find((view) => view.key === key)?.imagePickerDisabled !== false) return;
+
+    this.clearLinkedInImageUpload();
+    this.setLinkedInTextAdImage(key, '', '', '');
+    this.linkedInImageUploadVariantKey.set(key);
+    this.emitDraft();
+
+    // A refused pick is recorded against the open brief and saved, like a failed upload.
+    const briefId = this.briefPersistence().briefId ?? '';
+    const refusal = linkedInTextAdImageFileRefusal(file);
+    if (refusal !== null) {
+      this.failLinkedInImageUpload(refusal, briefId);
+      this.emitDraft();
+      return;
+    }
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    if (!briefId || !projectSlug) {
+      this.failLinkedInImageUpload('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    // Recorded as uploading, and told to the parent, BEFORE the size read, so Create is held meanwhile and a tab switch
+    // during it raises the interrupted-upload block on remount. The read rides the upload subscription, so a clear or
+    // the component's destruction drops its answer.
+    this.linkedInImageUploadStatus.set('uploading');
+    this.linkedInImageUploadPendingName.set(file.name);
+    this.linkedInImageUploadPendingBriefId.set(briefId);
+    this.emitDraft();
+    this.linkedInImageUploadSub = from(this.readImageSize(file))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((size) => {
+        this.linkedInImageUploadPendingName.set('');
+        this.linkedInImageUploadPendingBriefId.set('');
+        const sizeRefusal = linkedInTextAdImageSizeRefusal(size);
+        if (sizeRefusal !== null) {
+          this.failLinkedInImageUpload(sizeRefusal, briefId);
+          this.emitDraft();
+          return;
+        }
+        this.followLinkedInImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'linkedin'), briefId, file.name);
+        this.emitDraft();
+      });
+  }
+
+  /** Forget one text ad's image, or its upload in flight or failed (a stored asset stays upstream, unused). */
+  protected onLinkedInTextAdImageRemove(key: string): void {
+    if (this.linkedInImageUploadVariantKey() === key) this.clearLinkedInImageUpload();
+    this.setLinkedInTextAdImage(key, '', '', '');
     this.emitDraft();
   }
 
   /** Add an empty LinkedIn variant, up to `LINKEDIN_MAX_VARIANTS`. */
   protected addLinkedInVariant(): void {
-    if (this.linkedInVariants().length >= LINKEDIN_MAX_VARIANTS) return;
+    if (!linkedInCanAddVariant(this.linkedInVariants().length)) return;
     this.linkedInVariants.update((variants) => [...variants, this.newLinkedInVariant({ introText: '', headline: '' })]);
     this.emitDraft();
   }
 
   /** Remove a LinkedIn variant, keeping at least `LINKEDIN_MIN_VARIANTS`; its upload in flight, if any, is cancelled. */
   protected removeLinkedInVariant(key: string): void {
-    if (this.linkedInVariants().length <= LINKEDIN_MIN_VARIANTS) return;
+    if (!linkedInCanRemoveVariant(this.linkedInVariants().length)) return;
     if (this.linkedInImageUploadVariantKey() === key) this.clearLinkedInImageUpload();
     this.linkedInVariants.update((variants) => variants.filter((variant) => variant.key !== key));
     this.emitDraft();
@@ -5219,13 +5726,9 @@ export class ImplementationTabComponent implements OnInit {
     // A refused pick is recorded against the open brief and saved, like a failed upload: the image
     // it replaced is gone, so Create stays blocked and the reason survives a tab switch.
     const briefId = this.briefPersistence().briefId ?? '';
-    if (!isCreativeAssetMimeType(file.type)) {
-      this.failLinkedInImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, briefId);
-      this.emitDraft();
-      return;
-    }
-    if (file.size > LINKEDIN_IMAGE_MAX_BYTES) {
-      this.failLinkedInImageUpload(LINKEDIN_IMAGE_TOO_LARGE_MESSAGE, briefId);
+    const refusal = linkedInImageFileRefusal(file);
+    if (refusal !== null) {
+      this.failLinkedInImageUpload(refusal, briefId);
       this.emitDraft();
       return;
     }
@@ -5524,11 +6027,21 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onMetaLifetimeBudgetChange(event: Event): void {
     this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
+    // Meta schedules only lifetime budgets, so a daily budget clears the schedule rather than hiding it (#5904 row 5).
+    this.dropInapplicableMetaDelivery();
     this.emitDraft();
   }
 
   protected onMetaObjectiveChange(event: Event): void {
+    // A choice made while the foundation is unknown wins over the draft still waiting for it (#6107).
+    this.pendingMetaDraft = null;
     this.metaObjective.set((event.target as HTMLSelectElement).value as MetaObjective);
+    // A conversion event or optimization goal the new objective does not take is cleared, not kept hidden (#5934).
+    this.dropInapplicableMetaAdOptions();
+    // Only `leads` carries a lead form, so leaving it clears the form (#5940).
+    this.metaLeadFormId.set(metaLeadFormForObjective(this.metaObjective(), this.metaLeadFormId()));
+    // Only awareness takes a frequency cap, so leaving it clears the cap (#5904 row 5).
+    this.dropInapplicableMetaDelivery();
     // Every Meta mutation emits. These signals are invisible to `campaignForm.valueChanges`, so
     // without this the parent's draft never learns the edit and a tab switch reverts it.
     this.emitDraft();
@@ -5542,10 +6055,78 @@ export class ImplementationTabComponent implements OnInit {
    * that toggle disabled, but a disabled input is a presentation guarantee, not a state one.
    */
   protected onMetaPlacementChange(key: keyof MetaPlacement, event: Event): void {
-    if (!this.metaSelectablePlacements.includes(key)) return;
+    if (!metaPlacementIsSelectable(key)) return;
     const enabled = (event.target as HTMLInputElement).checked;
     this.metaPlacements.update((placements) => ({ ...placements, [key]: enabled }));
     this.emitDraft();
+  }
+
+  protected onMetaAudienceTargetingChange(targeting: MetaAudienceTargetingDraft): void {
+    this.pendingMetaDraft = null;
+    this.metaAudienceTargeting.set(targeting);
+    this.emitDraft();
+  }
+
+  /** One Meta ad choice (#5934); the empty "Not set" option removes the key, so nothing is sent. */
+  protected onMetaAdOptionChange(key: MetaAdOptionKey, value: string | null): void {
+    this.pendingMetaDraft = null;
+    this.metaAdOptions.update((options) => metaAdOptionsWithChoice(options, key, value));
+    this.emitDraft();
+  }
+
+  /** The picker's report on the held form (#6107): not a draft field, so nothing is emitted. */
+  protected onMetaLeadFormHeldRefusal(refusal: string | null): void {
+    this.metaLeadFormHeldRefusal.set(refusal);
+  }
+
+  /** The lead form picked or typed in `lfx-meta-lead-form-picker` (#5940). Signal-backed like the other Meta fields, so it emits. */
+  protected onMetaLeadFormChange(leadFormId: string): void {
+    this.pendingMetaDraft = null;
+    this.metaLeadFormId.set(leadFormId);
+    this.emitDraft();
+  }
+
+  /** Drops every Meta ad choice this deployment answered no to: the way past an `unsupported` {@link metaAdOptionsBlock}. */
+  protected clearUnsupportedMetaAdOptions(): void {
+    this.metaAdOptions.update((options) => metaAdOptionsWithoutUnsupported(options, this.metaAdOptionsEnabled()));
+    this.emitDraft();
+  }
+
+  /** Back to Meta's defaults: the way past an `unsupported` {@link metaAudienceTargetingBlock}, whose section is hidden. */
+  protected clearMetaAudienceTargeting(): void {
+    this.onMetaAudienceTargetingChange(this.defaultMetaAudienceTargeting());
+  }
+
+  protected onMetaDeliveryChange(delivery: MetaDeliveryDraft): void {
+    this.metaDelivery.set(delivery);
+    this.emitDraft();
+  }
+
+  /** Clears each option this deployment answered no to: the way past an `unsupported` {@link metaDeliveryBlock}, whose control is hidden. */
+  protected clearUnsendableMetaDelivery(): void {
+    this.onMetaDeliveryChange(metaDeliverySendable(this.metaDelivery(), this.metaAdScheduleEnabled(), this.metaFrequencyCapEnabled()));
+  }
+
+  protected onMetaDeviceOsChange(deviceOs: MetaDeviceOsDraft): void {
+    this.metaDeviceOs.set(deviceOs);
+    this.emitDraft();
+  }
+
+  /** Clears each list this deployment answered no to: the way past an `unsupported` {@link metaDeviceOsBlock}, whose group is hidden. */
+  protected clearUnsendableMetaDeviceOs(): void {
+    this.onMetaDeviceOsChange(metaDeviceOsSendable(this.metaDeviceOs(), this.metaDeviceTargetingEnabled(), this.metaOsTargetingEnabled()));
+  }
+
+  protected onMetaDetailedTargetingChange(picks: MetaDetailedTargetingPicks): void {
+    this.metaDetailedTargeting.set(picks);
+    this.emitDraft();
+  }
+
+  /** Empties the lists this deployment does not send: the way past an `unsupported` {@link metaDetailedTargetingBlock}, whose lists are hidden. */
+  protected clearUnsendableMetaDetailedTargeting(): void {
+    this.onMetaDetailedTargetingChange(
+      metaDetailedTargetingPicksSendable(this.metaDetailedTargeting(), this.metaInterestTargetingEnabled(), this.metaBehaviorTargetingEnabled())
+    );
   }
 
   protected onMetaPixelIdInput(event: Event): void {
@@ -5566,7 +6147,7 @@ export class ImplementationTabComponent implements OnInit {
    * `validateGeoTargets` call the same helper, so a `us` from the brief and a typed `US` collapse
    * to one chip and one wire entry no matter which door they came through.
    *
-   * Shape, ISO ASSIGNMENT and Meta ELIGIBILITY are all settled here, via `acceptedMetaGeos`.
+   * Shape, ISO ASSIGNMENT and Meta ELIGIBILITY are all settled here, via `metaAcceptedGeos`.
    * Eligibility is checked at every door rather than only at this one: a chip the operator can
    * SEE must be a chip the request will BUY. `metaEffectiveGeoTargets` filters ineligible codes
    * out of the dispatch, so a code displayed but not dispatched is precisely the display/dispatch
@@ -5581,8 +6162,8 @@ export class ImplementationTabComponent implements OnInit {
     // will not target them — and on the legacy path that rejection lands at the ad set, after the
     // campaign POST. Same list the server and the Go client check, so the answer cannot depend on
     // which path runs.
-    if (META_INELIGIBLE_COUNTRIES.has(code.trim().toUpperCase())) return;
-    this.metaGeoTargets.update((targets) => this.acceptedMetaGeos([...targets, code]));
+    if (metaGeoIsIneligible(code)) return;
+    this.metaGeoTargets.update((targets) => metaAcceptedGeos([...targets, code]));
     this.emitDraft();
   }
 
@@ -5749,6 +6330,31 @@ export class ImplementationTabComponent implements OnInit {
     if (this.addGooglePostalGeoTarget(suggestion.id)) return true;
     this.googlePostalGeoLabels.set(previous);
     return false;
+  }
+
+  protected onLinkedInGeoSearch(event: AutoCompleteCompleteEvent): void {
+    this.linkedInGeoSearchQuery.set(linkedInGeoSearchQueryText(event.query));
+  }
+
+  protected onLinkedInGeoSearchSelect(event: AutoCompleteSelectEvent): void {
+    const option = event.value as LinkedInGeoSearchOption;
+    if (option && !option.disabled) this.addGeoTarget({ urn: option.urn, label: option.label });
+    // Cleared whatever the outcome, so the box reads "search another" rather than naming the pick.
+    this.linkedInGeoSearchForm.controls.location.setValue(null);
+    this.linkedInGeoSearchQuery.set('');
+  }
+
+  protected onLinkedInGeoSearchClear(): void {
+    this.linkedInGeoSearchQuery.set('');
+  }
+
+  /**
+   * Every keystroke in the location box. Below the two-character minimum PrimeNG emits neither `completeMethod` nor
+   * `onClear`, so the last query (and its debounce or request) would carry on; clearing it here cancels that search.
+   */
+  protected onLinkedInGeoSearchInput(event: Event): void {
+    const typed = (event.target as HTMLInputElement | null)?.value ?? '';
+    if (Array.from(linkedInGeoSearchQueryText(typed)).length < this.linkedInGeoSearchMinLength) this.linkedInGeoSearchQuery.set('');
   }
 
   protected onGoogleGeoSearch(event: AutoCompleteCompleteEvent): void {
@@ -6525,18 +7131,23 @@ export class ImplementationTabComponent implements OnInit {
               lifetimeBudget: this.linkedInLifetimeBudget(),
               // Only beside a lifetime budget and only when set (#5774), so a create without a cap
               // sends exactly what it always did.
-              ...this.linkedInDailyCapField(),
+              ...linkedInDailyCapField(this.linkedInDailyCapInput()),
               startDate: form.startDate,
               endDate: form.endDate,
               geoTargets: this.linkedInGeoTargets(),
               targetingProfile: this.linkedInTargetingProfile(),
-              // Only when something was removed, so an untouched profile sends what it always did.
-              ...this.linkedInTargetingEditField(),
-              variants: this.linkedInVariantsForCreate(),
+              // Custom targeting (#5764 rows 8–11) in place of a profile edit; otherwise the edit, only when
+              // something was removed, so an untouched profile sends what it always did.
+              ...this.linkedInTargetingField(),
+              // Text Ads (#5764 row 19) send their ads and no variants; otherwise the variants as today.
+              ...this.linkedInCreativesField(),
               // The legacy creator reads the form's account. When the connection decides it, only a
               // chosen non-default account is sent, as `selectedAdAccountId` (#5809).
-              ...(this.linkedInAccountSetByConnection() ? this.linkedInAdAccountField() : { adAccountId: this.linkedInAccountId() }),
+              ...this.linkedInAccountFieldsNow(),
               ...this.biddingField('linkedin-ads'),
+              // The objective and conversion rules (#5764 rows 2 and 4), only when chosen, so a create without a
+              // choice sends what it always did and the bidding decides.
+              ...linkedInObjectiveFieldsForCreate(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable()),
             },
           }
         : {}),
@@ -6574,6 +7185,8 @@ export class ImplementationTabComponent implements OnInit {
               // a goal left over from an earlier Video Views choice is not sent with another
               // objective. `canSubmit` guarantees it is present whenever the objective needs it.
               ...this.redditVideoGoalPayload(),
+              // Only offered, on conversions, and other than the default; a held one blocks Create instead (#6108 row 2).
+              ...redditConversionEventField(this.redditConversionEvent(), this.redditObjective(), this.redditConversionEventEnabled()),
               // Omitted when blank rather than sent empty: upstream treats an empty `postUrl` as
               // "author a post instead", and an empty `callToAction` as "use the default" — both
               // the same decision an absent key makes, so a blank string would only add a value
@@ -6616,8 +7229,16 @@ export class ImplementationTabComponent implements OnInit {
               // a page id or nothing at all, so an id left in the box from an earlier selection
               // would be a field the service ignores — and one a reader of the payload would
               // reasonably take as meaningful. Trimmed to match the upstream trim.
-              ...(this.metaRequiresPixel() ? { pixelId: this.metaPixelId().trim() } : {}),
+              ...metaPixelField(this.metaObjective(), this.metaPixelId()),
               ...this.metaInstagramDsaFields(),
+              // Defaults dropped; nothing at all when the targeting asks for nothing (#5905).
+              ...this.metaTargetingField(),
+              // Only the choices this deployment confirmed; any other holds Create ({@link metaAdOptionsBlock}).
+              ...this.metaAdOptionsField(),
+              // Only the schedule and cap this deployment confirmed; any other holds Create ({@link metaDeliveryBlock}).
+              ...this.metaDeliveryRequested(),
+              // Only under `leads` for a caller who may send one; `canSubmit` has already refused a missing or bad form (#5940).
+              ...(this.metaLeadFormRequested() ? { leadFormId: this.metaLeadFormId().trim() } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
               ...this.biddingField('meta-ads'),
             },
@@ -7052,24 +7673,6 @@ export class ImplementationTabComponent implements OnInit {
    * the draft is ignored and the brief's own copy stands.
    */
   /**
-   * Normalise a geo list AND drop what Meta cannot target — the single owner of that pair.
-   *
-   * Every path that WRITES `metaGeoTargets` routes through here: the chip add, the brief seed and
-   * the draft restore. Previously only the chip add checked eligibility, so a brief recommending
-   * `IR` — or a draft carrying one — rendered a chip that `metaEffectiveGeoTargets` then filtered
-   * out of the request. The empty-state warning is gated on `metaGeoTargets().length === 0`, so a
-   * surviving ineligible chip suppressed it, and `canSubmit` passed on the `countryCode` fallback:
-   * the operator read `IR` on screen and bought a US campaign.
-   *
-   * Eligibility belongs on the WRITE rather than only on the read so the two cannot disagree.
-   * `metaEffectiveGeoTargets` keeps its own filter regardless — it is the boundary `submit()`
-   * reads, and a guard there costs nothing.
-   */
-  private acceptedMetaGeos(codes: readonly string[]): string[] {
-    return normalizeGeoTargets(codes).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
-  }
-
-  /**
    * The label of the first `campaignForm` control that fails its validators, for the reason Create is
    * disabled when the form is invalid (#5491). Walks the controls in declaration order, which is
    * roughly the order the form renders them. A control with no entry here is named from its key.
@@ -7141,78 +7744,34 @@ export class ImplementationTabComponent implements OnInit {
     return channels.includes('search') ? 'search' : channels[0];
   }
 
-  /**
-   * The Reddit image field the create request carries: the uploaded asset, else the pasted URL.
-   *
-   * Exactly one, because campaign-service refuses `imageAssetId` alongside `imageUrl` (or
-   * `postUrl`) with a 400. The asset is withheld while a post URL is set — that post already has
-   * its image, and the combination is refused rather than ignored — and while the upload
-   * capability is off, where the legacy creator would drop it or campaign-service refuse it. The
-   * pasted URL keeps its existing rule: sent on `redditCreativeAvailable()`, and ignored upstream
-   * when a post URL is set.
-   */
-  private redditImageField(): { imageAssetId: string } | { imageUrl: string } | Record<string, never> {
-    if (this.redditAssetUploadAvailable() && this.redditImageAssetForThisBrief() && !this.redditPostUrl()) {
-      return { imageAssetId: this.redditImageAssetId() };
-    }
-    if (this.redditCreativeAvailable() && this.redditImageUrl()) return { imageUrl: this.redditImageUrl() };
-    return {};
+  /** The Reddit image field the create request carries; the rule is `redditImageField` in the shared helper. */
+  private redditImageField(): RedditImageField {
+    return redditImageField({
+      uploadAvailable: this.redditAssetUploadAvailable(),
+      assetForThisBrief: this.redditImageAssetForThisBrief(),
+      assetId: this.redditImageAssetId(),
+      postUrl: this.redditPostUrl(),
+      creativeAvailable: this.redditCreativeAvailable(),
+      imageUrl: this.redditImageUrl(),
+    });
   }
 
   private initRedditImageAssetBlock(): Signal<CampaignRedditImageAssetBlock | null> {
-    return computed(() => {
-      if (!this.showRedditSection() || this.redditPostUrl()) return null;
-      // An upload made for another brief, retained across a brief switch: `redditImageField` never
-      // sends it, whatever the capability says, so it must not read as usable either.
-      const briefId = this.briefPersistence().briefId;
-      if (this.redditImageAssetId() !== '' && briefId && this.redditImageAssetBriefId() !== briefId) {
-        return {
-          kind: 'otherBrief',
-          message:
-            'The uploaded Reddit image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again or use an image URL.',
-        };
-      }
-      // An upload still in flight counts as the image too: resumed after a tab switch it has no
-      // asset id yet, and while the upload control is hidden (support unknown, unconfirmed or off)
-      // this block is the only place its state shows and the only way to remove it.
-      const hasImage = this.redditImageAssetForThisBrief() || this.redditImageUploadStatus() === 'uploading';
-      if (this.redditAssetUploadAvailable()) return null;
-      // A failed upload's reason lives in the upload control, so while that is hidden (a resumed
-      // upload that failed after a tab switch) it is shown here, holding Create until the operator
-      // removes it: otherwise the campaign would go out without the image they chose, unannounced.
-      // Only for an upload made for the OPEN brief: one for a brief left behind (a foundation
-      // switch with the tab still open) could never have been sent with this one.
-      if (this.redditImageUploadStatus() === 'error' && briefId && this.redditImageUploadFailedBriefId() === briefId) {
-        return {
-          kind: 'uploadFailed',
-          message: `The Reddit image upload did not complete: ${this.redditImageUploadError()} Remove it to create the campaign without the image.`,
-        };
-      }
-      if (!hasImage) return null;
-      if (this.redditCreativeEnabled() === false || this.redditAssetUploadEnabled() === false) {
-        return {
-          kind: 'unsupported',
-          message:
-            'Image upload is not available on this deployment, so the uploaded Reddit image cannot be sent. Remove it to create the campaign without it.',
-        };
-      }
-      // The same create-capability read answers this and the bidding capability, so its state says
-      // whether a read is out; see `initBiddingCapabilityBlock` for why `unknown` gets a Retry.
-      if (this.createCapabilityRead() === 'pending') {
-        return { kind: 'pending', message: 'Checking Reddit image upload support…' };
-      }
-      if (!this.briefPersistence().briefId) {
-        return {
-          kind: 'unsaved',
-          message: "Reddit image upload support can't be checked until this brief is saved. Save the brief, or remove the uploaded image.",
-        };
-      }
-      return {
-        kind: 'failed',
-        message:
-          'Could not confirm that Reddit image upload is supported, so the uploaded image cannot be sent yet. Retry the check, or remove the uploaded image.',
-      };
-    });
+    return computed(() =>
+      redditImageAssetBlock({
+        showRedditSection: this.showRedditSection(),
+        postUrl: this.redditPostUrl(),
+        briefId: this.briefPersistence().briefId,
+        assetId: this.redditImageAssetId(),
+        assetBriefId: this.redditImageAssetBriefId(),
+        uploadStatus: this.redditImageUploadStatus(),
+        uploadFailedBriefId: this.redditImageUploadFailedBriefId(),
+        uploadError: this.redditImageUploadError(),
+        creativeEnabled: this.redditCreativeEnabled(),
+        assetUploadEnabled: this.redditAssetUploadEnabled(),
+        createCapabilityRead: this.createCapabilityRead(),
+      })
+    );
   }
 
   /**
@@ -7311,14 +7870,17 @@ export class ImplementationTabComponent implements OnInit {
    * `metaCreativeAvailable()`. Never both on a variant, which campaign-service refuses.
    */
   private metaVariantsForCreate(): MetaAdVariant[] {
-    const image = this.metaImageField();
-    return Object.keys(image).length > 0 ? this.metaVariants().map((variant) => ({ ...variant, ...image })) : this.metaVariants();
+    return metaVariantsWithImage(this.metaVariants(), this.metaImageField());
   }
 
-  private metaImageField(): { imageAssetId: string } | { imageUrl: string } | Record<string, never> {
-    if (this.metaAssetUploadAvailable() && this.metaImageAssetForThisBrief()) return { imageAssetId: this.metaImageAssetId() };
-    if (this.metaCreativeAvailable() && this.metaImageUrl()) return { imageUrl: this.metaImageUrl() };
-    return {};
+  private metaImageField(): MetaImageField {
+    return metaImageField({
+      uploadAvailable: this.metaAssetUploadAvailable(),
+      assetForThisBrief: this.metaImageAssetForThisBrief(),
+      assetId: this.metaImageAssetId(),
+      creativeAvailable: this.metaCreativeAvailable(),
+      imageUrl: this.metaImageUrl(),
+    });
   }
 
   /**
@@ -7333,43 +7895,22 @@ export class ImplementationTabComponent implements OnInit {
    * upload does, since `metaImageField` would withhold it.
    */
   private initMetaImageAssetBlock(): Signal<CampaignMetaImageAssetBlock | null> {
-    return computed(() => {
-      if (!this.showMetaSection()) return null;
-      const briefId = this.briefPersistence().briefId;
-      if (this.metaImageAssetId() !== '' && briefId && this.metaImageAssetBriefId() !== briefId) {
-        return {
-          kind: 'otherBrief',
-          message:
-            'The uploaded Meta image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again or use an image URL.',
-        };
-      }
-      if (this.metaImageUploadStatus() === 'error' && briefId && this.metaImageUploadFailedBriefId() === briefId) {
-        return {
-          kind: 'uploadFailed',
-          message: `The Meta image upload did not complete: ${this.metaImageUploadError()} Remove it, or choose the image again.`,
-        };
-      }
-      if (!this.metaAssetWithheld() && !this.metaImageUrlWithheld()) return null;
-      if (this.metaCreativeEnabled() === false || (this.metaAssetWithheld() && this.metaAssetUploadEnabled() === false)) {
-        return {
-          kind: 'unsupported',
-          message: 'Meta ad images are not available on this deployment, so the image cannot be sent. Remove it to create the campaign without it.',
-        };
-      }
-      if (this.createCapabilityRead() === 'pending') {
-        return { kind: 'pending', message: 'Checking Meta ad image support…' };
-      }
-      if (!this.briefPersistence().briefId) {
-        return {
-          kind: 'unsaved',
-          message: "Meta ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
-        };
-      }
-      return {
-        kind: 'failed',
-        message: 'Could not confirm that Meta ad images are supported, so the image cannot be sent yet. Retry the check, or remove the image.',
-      };
-    });
+    return computed(() =>
+      metaImageAssetBlock({
+        showMetaSection: this.showMetaSection(),
+        briefId: this.briefPersistence().briefId,
+        assetId: this.metaImageAssetId(),
+        assetBriefId: this.metaImageAssetBriefId(),
+        uploadStatus: this.metaImageUploadStatus(),
+        uploadFailedBriefId: this.metaImageUploadFailedBriefId(),
+        uploadError: this.metaImageUploadError(),
+        assetWithheld: this.metaAssetWithheld(),
+        urlWithheld: this.metaImageUrlWithheld(),
+        creativeEnabled: this.metaCreativeEnabled(),
+        assetUploadEnabled: this.metaAssetUploadEnabled(),
+        createCapabilityRead: this.createCapabilityRead(),
+      })
+    );
   }
 
   /** `followRedditImageUpload`'s sibling. */
@@ -7445,26 +7986,15 @@ export class ImplementationTabComponent implements OnInit {
   }
   /**
    * The LinkedIn variants as sent: each variant's copy as edited, carrying its OWN uploaded image
-   * when that goes out (`linkedInVariantImageSent`). The asset replaces any `imageUrn` the plan named,
+   * when that goes out (`linkedInVariantsForCreate` in `campaign-linkedin-form.utils`). The asset replaces any `imageUrn` the plan named,
    * since campaign-service refuses a variant carrying both; a variant with neither sends no image
    * field. The tab-only fields (`key`, the asset's name and brief) are never sent.
    */
-  private linkedInVariantsForCreate(): LinkedInCreativeVariant[] {
-    return this.linkedInVariants().map((variant) => {
-      const { introText, headline } = variant;
-      if (this.linkedInVariantImageSent(variant)) return { introText, headline, imageAssetId: variant.imageAssetId };
-      return variant.imageUrn ? { introText, headline, imageUrn: variant.imageUrn } : { introText, headline };
+  private linkedInVariantsSent(): LinkedInCreativeVariant[] {
+    return linkedInVariantsForCreate(this.linkedInVariants(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '', {
+      copy: this.linkedInVariantCopyAvailable(),
+      callToAction: this.linkedInCallToActionAvailable(),
     });
-  }
-
-  /** Whether a variant's upload goes out: the upload capability is an explicit yes and the asset was made for the open brief. */
-  private linkedInVariantImageSent(variant: LinkedInVariantDraft): boolean {
-    return this.linkedInAssetUploadAvailable() && this.linkedInVariantImageForThisBrief(variant);
-  }
-
-  /** Whether the variant holds an upload made for the brief now open — the only one sent. */
-  private linkedInVariantImageForThisBrief(variant: LinkedInVariantDraft): boolean {
-    return variant.imageAssetId !== '' && variant.imageAssetBriefId === (this.briefPersistence().briefId ?? '');
   }
 
   /**
@@ -7473,11 +8003,17 @@ export class ImplementationTabComponent implements OnInit {
    * upload (`linkedInImageUploadOrphaned`) holds nothing, so a new pick simply replaces it.
    */
   private linkedInImageSlotHeldByOther(key: string): boolean {
-    const slotKey = this.linkedInImageUploadVariantKey();
-    if (slotKey === '' || slotKey === key || this.linkedInImageUploadOrphaned()) return false;
-    if (this.linkedInImageUploadStatus() === 'uploading') return true;
-    const briefId = this.briefPersistence().briefId ?? '';
-    return this.linkedInImageUploadStatus() === 'error' && briefId !== '' && this.linkedInImageUploadFailedBriefId() === briefId;
+    return linkedInImageSlotHeldByOther(key, this.linkedInImageSlot(), this.linkedInImageUploadOrphaned(), this.briefPersistence().briefId ?? '');
+  }
+
+  /** The one LinkedIn upload slot as the image rules read it (`campaign-linkedin-image.utils`, #5980). */
+  private linkedInImageSlot(): LinkedInImageSlot {
+    return {
+      variantKey: this.linkedInImageUploadVariantKey(),
+      status: this.linkedInImageUploadStatus(),
+      failedBriefId: this.linkedInImageUploadFailedBriefId(),
+      error: this.linkedInImageUploadError(),
+    };
   }
 
   private initLinkedInSelectedTargetingProfile(): Signal<LinkedInTargetingProfileConfig | null> {
@@ -7495,124 +8031,42 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   private initLinkedInTargetingProfileEdit(): Signal<LinkedInTargetingProfileEdit | null> {
-    return computed(() => {
-      const profile = this.linkedInSelectedTargetingProfile();
-      const effective = this.linkedInEffectiveTargeting();
-      if (!profile || !effective) return null;
-      if (effective.skills.length === profile.skills.length && effective.groups.length === profile.groups.length) return null;
-      return { id: profile.id, skills: effective.skills, groups: effective.groups };
-    });
+    return computed(() => linkedInTargetingEdit(this.linkedInSelectedTargetingProfile(), this.linkedInEffectiveTargeting()));
   }
 
   private initLinkedInTargetingRemovalsHeld(): Signal<boolean> {
-    return computed(() => {
-      const removals = this.linkedInTargetingRemovals();
-      return !!removals && removals.skills.length + removals.groups.length > 0;
-    });
+    return computed(() => linkedInTargetingRemovalsHeld(this.linkedInTargetingRemovals()));
   }
 
   private initLinkedInTargetingEmptyWarning(): Signal<boolean> {
-    return computed(() => {
-      const effective = this.linkedInEffectiveTargeting();
-      return !!effective && this.linkedInTargetingProfileEdit() !== null && effective.skills.length === 0 && effective.groups.length === 0;
-    });
+    return computed(() => linkedInTargetingEmptyWarning(this.linkedInEffectiveTargeting(), this.linkedInTargetingProfileEdit()));
   }
 
   private initLinkedInVariantViews(): Signal<LinkedInVariantView[]> {
-    return computed(() => {
-      const slotKey = this.linkedInImageUploadVariantKey();
-      const uploading = this.linkedInImageUploadStatus() === 'uploading';
-      const failed = this.linkedInImageUploadStatus() === 'error';
-      // The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief.
-      const pickerBlocked = !this.briefPersistence().briefId || this.briefPersistence().status === 'saving';
-      const variants = this.linkedInVariants();
-      const slotIndex = variants.findIndex((variant) => variant.key === slotKey);
-      return variants.map((variant, index): LinkedInVariantView => {
-        const ownsSlot = slotKey === variant.key;
-        const imageUploading = ownsSlot && uploading;
-        const forThisBrief = this.linkedInVariantImageForThisBrief(variant);
-        const heldByOther = this.linkedInImageSlotHeldByOther(variant.key);
-        const imagePickerNote = heldByOther ? `Finish or remove the image for variant ${slotIndex + 1} first.` : '';
-        let imageStatusMessage = '';
-        if (imageUploading) imageStatusMessage = 'Uploading image…';
-        else if (forThisBrief) imageStatusMessage = `Uploaded: ${variant.imageAssetName || 'image'}`;
-        return {
-          key: variant.key,
-          introText: variant.introText,
-          headline: variant.headline,
-          introTextLength: linkedInCreativeTextLength(variant.introText),
-          headlineLength: linkedInCreativeTextLength(variant.headline),
-          introTextError: linkedInVariantTextError('introText', variant.introText) ?? '',
-          headlineError: linkedInVariantTextError('headline', variant.headline) ?? '',
-          imageStatusMessage,
-          imageUploading,
-          imageHeld: variant.imageAssetId !== '',
-          imageError: ownsSlot && failed ? this.linkedInImageUploadError() : '',
-          imagePickerDisabled: pickerBlocked || heldByOther,
-          imagePickerNote,
-          imageBlock: this.linkedInVariantImageBlock(variant, index, imageUploading),
-        };
-      });
-    });
-  }
-
-  /** `initMetaImageAssetBlock`'s sibling, for one variant's upload alone. */
-  private linkedInVariantImageBlock(variant: LinkedInVariantDraft, index: number, imageUploading: boolean): CampaignLinkedInImageAssetBlock | null {
-    if (!this.showLinkedInSection()) return null;
-    const n = index + 1;
-    const briefId = this.briefPersistence().briefId;
-    if (variant.imageAssetId !== '' && briefId && variant.imageAssetBriefId !== briefId) {
-      return {
-        kind: 'otherBrief',
-        message: `The image for LinkedIn variant ${n} was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.`,
-      };
-    }
-    if (
-      this.linkedInImageUploadVariantKey() === variant.key &&
-      this.linkedInImageUploadStatus() === 'error' &&
-      briefId &&
-      this.linkedInImageUploadFailedBriefId() === briefId
-    ) {
-      return {
-        kind: 'uploadFailed',
-        message: `The image upload for LinkedIn variant ${n} did not complete: ${this.linkedInImageUploadError()} Remove it, or choose the image again.`,
-      };
-    }
-    // An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes.
-    const withheld = (this.linkedInVariantImageForThisBrief(variant) || imageUploading) && !this.linkedInAssetUploadAvailable();
-    if (!withheld) return null;
-    if (this.linkedInAssetUploadEnabled() === false) {
-      return {
-        kind: 'unsupported',
-        message: `LinkedIn ad images are not available on this deployment, so the image for variant ${n} cannot be sent. Remove it to create the campaign without it.`,
-      };
-    }
-    if (this.createCapabilityRead() === 'pending') {
-      return { kind: 'pending', message: 'Checking LinkedIn ad image support…' };
-    }
-    if (!briefId) {
-      return {
-        kind: 'unsaved',
-        message: "LinkedIn ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
-      };
-    }
-    return {
-      kind: 'failed',
-      message: `Could not confirm that LinkedIn ad images are supported, so the image for variant ${n} cannot be sent yet. Retry the check, or remove the image.`,
-    };
+    return computed(() =>
+      linkedInVariantViews({
+        variants: this.linkedInVariants(),
+        slot: this.linkedInImageSlot(),
+        briefId: this.briefPersistence().briefId ?? '',
+        briefSaving: this.briefPersistence().status === 'saving',
+        showSection: this.showLinkedInSection(),
+        uploadEnabled: this.linkedInAssetUploadEnabled(),
+        capabilityRead: this.createCapabilityRead(),
+        // campaign-service builds an unnamed ad's default from the STORED brief's event name
+        // (`linkedinPreflightEventName`), not the editable field, so that is the name compared here.
+        eventName: this.briefData()?.eventDetails?.name ?? '',
+      })
+    );
   }
 
   /** A LinkedIn variant for the editor, with a fresh key and no upload. */
   private newLinkedInVariant(copy: LinkedInCreativeVariant): LinkedInVariantDraft {
-    return {
-      key: `linkedin-variant-${++linkedInVariantKeySequence}`,
-      introText: copy.introText,
-      headline: copy.headline,
-      ...(copy.imageUrn ? { imageUrn: copy.imageUrn } : {}),
-      imageAssetId: '',
-      imageAssetName: '',
-      imageAssetBriefId: '',
-    };
+    return newLinkedInVariantDraft(copy, this.nextLinkedInVariantKey());
+  }
+
+  /** A fresh variant key, unique for the page's life, so an upload lands on the variant it was chosen for. */
+  private nextLinkedInVariantKey(): string {
+    return `linkedin-variant-${++linkedInVariantKeySequence}`;
   }
 
   /** Set (or, with `''`, clear) one variant's upload. */
@@ -7620,6 +8074,22 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInVariants.update((variants) =>
       variants.map((variant) => (variant.key === key ? { ...variant, imageAssetId, imageAssetName, imageAssetBriefId } : variant))
     );
+  }
+
+  /** Set (or, with `''`, clear) one text ad's upload (#5764 row 19). */
+  private setLinkedInTextAdImage(key: string, imageAssetId: string, imageAssetName: string, imageAssetBriefId: string): void {
+    this.linkedInTextAds.update((ads) => ads.map((ad) => (ad.key === key ? { ...ad, imageAssetId, imageAssetName, imageAssetBriefId } : ad)));
+  }
+
+  private initLinkedInTextAdImageInput(): Signal<LinkedInTextAdImageInput> {
+    return computed(() => ({
+      slot: this.linkedInImageSlot(),
+      briefId: this.briefPersistence().briefId ?? '',
+      briefSaving: this.briefPersistence().status === 'saving',
+      showSection: this.showLinkedInSection(),
+      uploadEnabled: this.linkedInAssetUploadEnabled(),
+      capabilityRead: this.createCapabilityRead(),
+    }));
   }
 
   /** `followMetaImageUpload`'s sibling. */
@@ -7638,10 +8108,11 @@ export class ImplementationTabComponent implements OnInit {
           this.emitDraft();
           return;
         }
-        // Onto the variant the image was chosen for, and only that one. Gone (the brief re-seeded the
-        // variants), the image has nowhere to go and the upload is simply over.
+        // Onto the variant or text ad the image was chosen for, and only that one. Gone (the brief re-seeded the
+        // variants, or the ad was removed), the image has nowhere to go and the upload is simply over.
         const key = this.linkedInImageUploadVariantKey();
         if (this.linkedInVariants().some((variant) => variant.key === key)) this.setLinkedInVariantImage(key, asset.id, fileName, briefId);
+        else if (this.linkedInTextAds().some((ad) => ad.key === key)) this.setLinkedInTextAdImage(key, asset.id, fileName, briefId);
         this.linkedInImageUploadStatus.set('idle');
         this.creativeLibraryRevision.update((revision) => revision + 1);
         this.emitDraft();
@@ -7779,7 +8250,7 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
-  /** `linkedInVariantImageBlock`'s sibling, for the tweet image. */
+  /** The LinkedIn variant image notice's sibling (`linkedInVariantViews`), for the tweet image. */
   private initTwitterImageAssetBlock(): Signal<CampaignTwitterImageAssetBlock | null> {
     return computed(() => {
       if (!this.showTwitterSection()) return null;
@@ -7911,12 +8382,17 @@ export class ImplementationTabComponent implements OnInit {
     this.twitterImageUploadFailedBriefId.set(briefId);
   }
 
+  /** Whether a variant or text ad with `key` is on the page (#5764 row 19). */
+  private linkedInImageUploadHolderExists(key: string): boolean {
+    return this.linkedInVariants().some((variant) => variant.key === key) || this.linkedInTextAds().some((ad) => ad.key === key);
+  }
+
   private failLinkedInImageUpload(message: string, briefId = ''): void {
-    // A failure for a variant that no longer exists (the brief re-seeded the variants mid-upload) has
-    // no variant to show it on and no Remove to clear it, so recording it would hold every other
+    // A failure for a variant or text ad that no longer exists (the brief re-seeded the variants mid-upload) has
+    // nowhere to show it and no Remove to clear it, so recording it would hold every other
     // picker. The slot is freed instead.
     const slotKey = this.linkedInImageUploadVariantKey();
-    if (slotKey !== '' && !this.linkedInVariants().some((variant) => variant.key === slotKey)) {
+    if (slotKey !== '' && !this.linkedInImageUploadHolderExists(slotKey)) {
       this.clearLinkedInImageUpload();
       return;
     }
@@ -8302,6 +8778,16 @@ export class ImplementationTabComponent implements OnInit {
       });
   }
 
+  /**
+   * `{ targeting }` while custom targeting is chosen and offered (#5764 rows 8–11), which replaces the profile and so
+   * never goes with a profile edit; else the profile edit field.
+   */
+  private linkedInTargetingField(): { targeting?: LinkedInTargeting; targetingProfileEdit?: LinkedInTargetingProfileEdit } {
+    if (!this.linkedInCustomTargetingSelected()) return this.linkedInTargetingEditField();
+    const targeting = linkedInTargetingForCreate(this.linkedInTargetingDraft());
+    return targeting ? { targeting } : {};
+  }
+
   /** `{ targetingProfileEdit }` when the operator removed something from the selected profile, else nothing. */
   private linkedInTargetingEditField(): { targetingProfileEdit?: LinkedInTargetingProfileEdit } {
     const edit = this.linkedInTargetingProfileEdit();
@@ -8341,32 +8827,91 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   private initLinkedInEffectiveAccount(): Signal<LinkedInCreateAccountOption | null> {
-    return computed(() => {
-      const account = this.linkedInCreateAccount().account;
-      if (!account) return null;
-      const fallback: LinkedInCreateAccountOption = { accountId: account.accountId, orgId: account.orgId, label: account.label, isDefault: true };
-      const defaultAccount = account.accounts.find((a) => a.isDefault) ?? fallback;
-      if (!account.canChoose) return defaultAccount;
-      return account.accounts.find((a) => a.accountId === this.linkedInChosenAccountId()) ?? defaultAccount;
+    return computed(() => linkedInEffectiveAccount(this.linkedInCreateAccount().account, this.linkedInChosenAccountId()));
+  }
+
+  /** The inputs `linkedInDailyCapError` and `linkedInDailyCapField` read (#5774). */
+  private linkedInDailyCapInput(): LinkedInDailyCapInput {
+    return {
+      capUsd: this.linkedInDailyCapUsd(),
+      lifetimeBudget: this.linkedInLifetimeBudget(),
+      available: this.linkedInDailyCapAvailable(),
+      budgetUsd: this.linkedInBudgetUsd(),
+    };
+  }
+
+  /**
+   * Why the custom targeting cannot be sent (#5764 rows 8–11), or `null`: segments picked for another ad account than
+   * the one the create names (held, never dropped, as the editor may not be open to prune them), else the clauses'
+   * refusal.
+   */
+  private linkedInCustomTargetingRefusalNow(): string | null {
+    const draft = this.linkedInTargetingDraft();
+    return linkedInTargetingSegmentsAccountRefusal(draft, this.linkedInSegmentsOwner()) ?? linkedInTargetingDraftRefusal(draft);
+  }
+
+  /** The account fields a create sends (#5809); see `linkedInAccountFields`. */
+  private linkedInAccountFieldsNow(): Pick<LinkedInCampaignCreateRequest, 'adAccountId' | 'selectedAdAccountId'> {
+    return linkedInAccountFields({
+      setByConnection: this.linkedInAccountSetByConnection(),
+      selectionAvailable: this.linkedInAccountSelectionAvailable(),
+      effectiveAccount: this.linkedInEffectiveAccount(),
+      canChoose: this.linkedInCanChooseAccount(),
+      legacyAccountId: this.linkedInAccountId(),
     });
   }
 
   /**
-   * `{ selectedAdAccountId }` only for a chosen account that is NOT the default (#5809). A field of its
-   * own, so the server can tell a pick from the legacy `adAccountId` this form still carries, which it
-   * ignores on this road. While campaign-service's account selection is on it refuses ANY `adAccountId`,
-   * the default included, from a caller without `global_marketing_ops`, so the default is sent as nothing.
+   * The LinkedIn creatives for the request (#5764 row 19): `format: 'text'`, the text ads and no variants while Text Ads
+   * are chosen and offered, else the variants exactly as before (no `format` key).
    */
-  private linkedInAdAccountField(): { selectedAdAccountId?: string } {
-    const account = this.linkedInEffectiveAccount();
-    if (!this.linkedInAccountSelectionAvailable() || !this.linkedInCanChooseAccount() || !account || account.isDefault) return {};
-    return { selectedAdAccountId: account.accountId };
+  private linkedInCreativesField(): Pick<LinkedInCampaignCreateRequest, 'variants' | 'format' | 'textAds'> {
+    if (!this.linkedInTextAdsSelected()) return { variants: this.linkedInVariantsSent() };
+    const textAds = linkedInTextAdsForCreate(this.linkedInTextAds(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '');
+    return { format: 'text', textAds, variants: [] };
   }
 
-  /** `{ dailyCapUsd }` when a cap is set beside a lifetime budget on a deployment that offers it (#5774), else nothing. */
-  private linkedInDailyCapField(): { dailyCapUsd?: number } {
-    const cap = this.linkedInDailyCapUsd();
-    return this.linkedInDailyCapAvailable() && this.linkedInLifetimeBudget() && cap !== null ? { dailyCapUsd: cap } : {};
+  /** Why the LinkedIn section holds Create now, or `null`; see `linkedInCreateRefusal`. */
+  private linkedInCreateRefusalNow(): string | null {
+    return linkedInCreateRefusal({
+      budgetUsd: this.linkedInBudgetUsd(),
+      dailyCapError: this.linkedInDailyCapError(),
+      geoTargetCount: this.linkedInGeoTargets().length,
+      variantCount: this.linkedInVariants().length,
+      variantTextInvalid: this.linkedInVariantTextInvalid(),
+      // Only fields the create sends can hold it: a hidden name or description goes nowhere.
+      variantFieldsInvalid:
+        this.linkedInVariantCopyAvailable() && this.linkedInVariantViews().some((view) => view.nameError !== '' || view.descriptionError !== ''),
+      removalsHeld: this.linkedInTargetingRemovalsHeld(),
+      targetingEditAvailable: this.linkedInTargetingEditAvailable(),
+      profileLoaded: this.linkedInSelectedTargetingProfile() !== null,
+      accountSetByConnection: this.linkedInAccountSetByConnection(),
+      accountInCatalog: this.linkedInAccounts().some((a) => a.accountId === this.linkedInAccountId()),
+      accountSelectionAvailable: this.linkedInAccountSelectionAvailable(),
+      createAccountStatus: this.linkedInCreateAccount().status,
+      // Text Ads chosen but no longer offered: held, never sent as single image ads instead (#5764 row 19).
+      textAdsUnavailable: this.linkedInFormat() === 'text' && !this.linkedInTextAdsAvailable(),
+      customTargetingUnavailable: this.linkedInCustomTargeting() && !this.linkedInTargetingAvailable(),
+      // Custom targeting (#5764 rows 8–11) holds Create while its clauses cannot be sent, and replaces the profile checks.
+      ...(this.linkedInCustomTargetingSelected() ? { customTargeting: { refusal: this.linkedInCustomTargetingRefusalNow() } } : {}),
+      // The objective (#5764 rows 2 and 4), checked against the request with its bidding; a withdrawn choice is held.
+      objectiveRefusal: linkedInObjectiveCreateRefusal({
+        draft: this.linkedInObjectiveDraft(),
+        available: this.linkedInConversionsAvailable(),
+        owner: this.linkedInSegmentsOwner(),
+        bidding: this.biddingField('linkedin-ads').bidding,
+      }),
+      // Text Ads replace the variant checks while chosen (#5764 row 19); they need a manual bid.
+      ...(this.linkedInTextAdsSelected()
+        ? {
+            textAds: {
+              count: this.linkedInTextAds().length,
+              textInvalid: this.linkedInTextAdImageViews().some((view) => view.headlineError !== '' || view.descriptionError !== ''),
+              manualBid: this.biddingField('linkedin-ads').bidding?.strategy === 'manual',
+            },
+          }
+        : {}),
+    });
   }
 
   private loadLinkedInAccounts(): void {
@@ -8449,6 +8994,8 @@ export class ImplementationTabComponent implements OnInit {
     }
 
     if (draft.eventSlug !== currentSlug) return;
+    // What the draft restores to the LinkedIn section (#5980); the writes below run it.
+    const linkedInRestore = linkedInDraftRestore(draft);
 
     // EMITS, unlike the first version of this method, and the difference is visible to the user.
     //
@@ -8497,10 +9044,11 @@ export class ImplementationTabComponent implements OnInit {
       // blocks a LinkedIn campaign with no geos, so the empty state is visible rather than
       // dangerous.
       linkedInAccountId: draft.linkedInAccountId,
-      linkedInGeoTargets: draft.linkedInGeoTargets,
+      // Germany and the United Kingdom as the old shared map resolved them, corrected (LFXV2-2665).
+      linkedInGeoTargets: correctLinkedInGeoTargets(draft.linkedInGeoTargets),
       linkedInTargetingProfile: draft.linkedInTargetingProfile,
-      // Absent on a draft saved before #5546, which removed nothing.
-      linkedInTargetingRemovals: draft.linkedInTargetingRemovals ?? { skills: [], groups: [] },
+      // Absent on a draft saved before #5546, which removed nothing (`linkedInDraftRestore`).
+      linkedInTargetingRemovals: linkedInRestore.targetingRemovals,
     });
 
     // The copy arrays stay silent: nothing derives a display from them, and rebuilding a FormArray
@@ -8716,30 +9264,31 @@ export class ImplementationTabComponent implements OnInit {
       this.campaignForm.controls.googlePerformanceMaxAudienceSignal.setValue(draft.googlePerformanceMaxAudienceSignal, { emitEvent: false });
     }
 
-    // Restored only when PRESENT. A draft persisted before these fields shipped has none of them,
-    // and absence there means "this draft predates Meta fields" — the seeded values must stand.
-    // Writing `?? 'traffic'` instead would let an old draft silently downgrade a Conversions
-    // campaign. A present-but-empty `metaPixelId` is a real cleared value and is restored as one,
-    // which is exactly the distinction `undefined` preserves and `''` would destroy.
-    if (draft.metaObjective !== undefined) {
-      this.metaObjective.set(draft.metaObjective);
+    // Each field only when the draft carries it; targeting, ad options and the lead form only under their own
+    // foundation; the objective after the lead form rule. See `metaDraftRestore`.
+    const metaRestore = metaDraftRestore(draft, this.metaObjective(), this.activeFoundationSlug());
+    // Foundation-scoped choices cannot be matched while the foundation is unknown; keep the draft for when it resolves.
+    this.pendingMetaDraft = this.activeFoundationSlug() === '' ? draft : null;
+    this.metaObjective.set(metaRestore.objective);
+    if (metaRestore.placements !== undefined) this.metaPlacements.set(metaRestore.placements);
+    if (metaRestore.pixelId !== undefined) this.metaPixelId.set(metaRestore.pixelId);
+    // ONE emitting patch: `metaInstagramDsaDraft` (what validation, `submit` and `emitDraft` read) follows this
+    // group's `valueChanges`, so a silent write would leave the inputs showing the restored text while every check
+    // still saw blanks (PR #4483 review). The emit cannot loop: `applyDraft` runs only while `seeding`.
+    if (Object.keys(metaRestore.instagramDsaPatch).length > 0) this.metaInstagramDsaForm.patchValue(metaRestore.instagramDsaPatch);
+    if (metaRestore.audienceTargeting !== undefined) this.metaAudienceTargeting.set(metaRestore.audienceTargeting);
+    if (metaRestore.detailedTargeting !== undefined) this.metaDetailedTargeting.set(metaRestore.detailedTargeting);
+    if (metaRestore.adOptions !== undefined) this.metaAdOptions.set(metaRestore.adOptions);
+    if (metaRestore.leadFormId !== null) this.metaLeadFormId.set(metaRestore.leadFormId);
+    if (metaRestore.geoTargets !== undefined) this.metaGeoTargets.set(metaRestore.geoTargets);
+    if (metaRestore.budgetUsd !== undefined) this.metaBudgetUsd.set(metaRestore.budgetUsd);
+    if (metaRestore.lifetimeBudget !== undefined) this.metaLifetimeBudget.set(metaRestore.lifetimeBudget);
+    // After the budget mode and objective, so only what they can carry is restored (#5904 row 5).
+    if (metaRestore.delivery !== undefined) {
+      this.metaDelivery.set(metaDeliveryApplicable(metaRestore.delivery, this.metaLifetimeBudget(), this.metaObjective()));
     }
-    if (draft.metaPlacements !== undefined) {
-      this.metaPlacements.set({ ...draft.metaPlacements });
-    }
-    if (draft.metaPixelId !== undefined) {
-      this.metaPixelId.set(draft.metaPixelId);
-    }
-    this.restoreMetaInstagramDsa(draft);
-    if (draft.metaGeoTargets !== undefined) {
-      this.metaGeoTargets.set(this.acceptedMetaGeos(draft.metaGeoTargets));
-    }
-    if (draft.metaBudgetUsd !== undefined) {
-      this.metaBudgetUsd.set(draft.metaBudgetUsd);
-    }
-    if (draft.metaLifetimeBudget !== undefined) {
-      this.metaLifetimeBudget.set(draft.metaLifetimeBudget);
-    }
+    // As saved, even when the rules now refuse it, so its error shows and holds Create (#5904 row 6).
+    if (metaRestore.deviceOs !== undefined) this.metaDeviceOs.set(metaRestore.deviceOs);
 
     // Same present-only rule, for the same reason: an older draft omits these, and absence there
     // means "keep what the brief seeded".
@@ -8749,85 +9298,54 @@ export class ImplementationTabComponent implements OnInit {
     // `!== undefined` test is what makes dropping them safe rather than merely tidy: a draft
     // written by an OLDER build still carries them, and this loop simply no longer looks, so the
     // brief's own seed stands instead of a stale copy being replayed over it.
-    if (draft.linkedInBudgetUsd !== undefined) {
-      this.linkedInBudgetUsd.set(draft.linkedInBudgetUsd);
-    }
-    if (draft.linkedInLifetimeBudget !== undefined) {
-      this.linkedInLifetimeBudget.set(draft.linkedInLifetimeBudget);
-    }
-    if (draft.linkedInDailyCapUsd !== undefined) {
-      // An unparsable entry (NaN) cannot be shown again: the remounted box starts empty, so it is
-      // restored as no cap, which is what that empty box says, rather than a hidden value blocking Create.
-      const cap = draft.linkedInDailyCapUsd;
-      this.linkedInDailyCapUsd.set(cap !== null && Number.isNaN(cap) ? null : cap);
-    }
-    if (draft.redditBudgetUsd !== undefined) {
-      this.redditBudgetUsd.set(draft.redditBudgetUsd);
-    }
-    // Restored even when the picker no longer offers it: `redditObjectiveIsUnavailable` renders a
-    // withheld objective as a disabled option, so the stored value stays visible and stays on the
-    // wire rather than being silently replaced by whatever sits at index 0.
-    if (draft.redditObjective !== undefined) {
-      this.redditObjective.set(draft.redditObjective);
-    }
-    // Restored on the same terms, and on `!== undefined` rather than truthiness for the reason the
-    // Microsoft arrays below are: an empty string is a deliberate clear, not an older draft.
-    if (draft.redditPostUrl !== undefined) {
-      this.redditPostUrl.set(draft.redditPostUrl);
-    }
-    if (draft.redditImageUrl !== undefined) {
-      this.redditImageUrl.set(draft.redditImageUrl);
-    }
-    if (draft.redditCallToAction !== undefined) {
-      this.redditCallToAction.set(draft.redditCallToAction);
-    }
+    // The LinkedIn budget pair and cap, present-only; an unparsable cap restores as no cap (`linkedInDraftRestore`).
+    if (linkedInRestore.budgetUsd !== undefined) this.linkedInBudgetUsd.set(linkedInRestore.budgetUsd);
+    if (linkedInRestore.lifetimeBudget !== undefined) this.linkedInLifetimeBudget.set(linkedInRestore.lifetimeBudget);
+    if (linkedInRestore.dailyCapUsd !== undefined) this.linkedInDailyCapUsd.set(linkedInRestore.dailyCapUsd);
+    // The Reddit fields, present-only, with the image and at most one upload step (`redditDraftRestore`).
+    const redditRestore = redditDraftRestore(draft);
+    if (redditRestore.budgetUsd !== undefined) this.redditBudgetUsd.set(redditRestore.budgetUsd);
+    if (redditRestore.objective !== undefined) this.redditObjective.set(redditRestore.objective);
+    if (redditRestore.postUrl !== undefined) this.redditPostUrl.set(redditRestore.postUrl);
+    if (redditRestore.imageUrl !== undefined) this.redditImageUrl.set(redditRestore.imageUrl);
+    if (redditRestore.callToAction !== undefined) this.redditCallToAction.set(redditRestore.callToAction);
     // An emitting patch, as `metaInstagramDsaForm`'s restore is: `redditConversionPixelDraft` follows
     // the group's `valueChanges`, and the draft subscription honours `seeding`, so it cannot loop.
-    if (typeof draft.redditConversionPixelId === 'string') {
-      this.redditConversionPixelForm.patchValue({ conversionPixelId: draft.redditConversionPixelId });
+    if (redditRestore.conversionPixelId !== undefined) this.redditConversionPixelForm.patchValue({ conversionPixelId: redditRestore.conversionPixelId });
+    if (redditRestore.asset) {
+      this.redditImageAssetId.set(redditRestore.asset.id);
+      this.redditImageAssetName.set(redditRestore.asset.name);
+      this.redditImageAssetBriefId.set(redditRestore.asset.briefId);
     }
-    if (draft.redditImageAssetId !== undefined) {
-      this.redditImageAssetId.set(draft.redditImageAssetId);
-      this.redditImageAssetName.set(draft.redditImageAssetName ?? '');
-      this.redditImageAssetBriefId.set(draft.redditImageAssetBriefId ?? '');
-    }
-    if (draft.redditImageUploadFailedMessage && draft.redditImageUploadFailedBriefId) {
-      this.failRedditImageUpload(draft.redditImageUploadFailedMessage, draft.redditImageUploadFailedBriefId);
-    }
-    if (draft.redditImageUploadPendingName) {
-      this.resumeRedditImageUpload(draft.redditImageUploadPendingName, draft.redditImageUploadPendingBriefId ?? '');
-    }
-    if (draft.redditVideoGoal !== undefined) {
-      this.redditVideoGoal.set(draft.redditVideoGoal);
-    }
+    if (redditRestore.failedUpload) this.failRedditImageUpload(redditRestore.failedUpload.message, redditRestore.failedUpload.briefId);
+    if (redditRestore.pendingUpload) this.resumeRedditImageUpload(redditRestore.pendingUpload.name, redditRestore.pendingUpload.briefId);
+    if (redditRestore.videoGoal !== undefined) this.redditVideoGoal.set(redditRestore.videoGoal);
+    if (redditRestore.conversionEvent !== undefined) this.redditConversionEvent.set(redditRestore.conversionEvent);
     // The Meta image, on the Reddit image's terms above.
-    if (draft.metaImageUrl !== undefined) {
-      this.metaImageUrl.set(draft.metaImageUrl);
+    const metaImageRestore = metaImageDraftRestore(draft);
+    if (metaImageRestore.imageUrl !== undefined) this.metaImageUrl.set(metaImageRestore.imageUrl);
+    if (metaImageRestore.asset !== undefined) {
+      this.metaImageAssetId.set(metaImageRestore.asset.id);
+      this.metaImageAssetName.set(metaImageRestore.asset.name);
+      this.metaImageAssetBriefId.set(metaImageRestore.asset.briefId);
     }
-    if (draft.metaImageAssetId !== undefined) {
-      this.metaImageAssetId.set(draft.metaImageAssetId);
-      this.metaImageAssetName.set(draft.metaImageAssetName ?? '');
-      this.metaImageAssetBriefId.set(draft.metaImageAssetBriefId ?? '');
-    }
-    if (draft.metaImageUploadFailedMessage && draft.metaImageUploadFailedBriefId) {
-      this.failMetaImageUpload(draft.metaImageUploadFailedMessage, draft.metaImageUploadFailedBriefId);
-    }
-    if (draft.metaImageUploadPendingName) {
-      this.resumeMetaImageUpload(draft.metaImageUploadPendingName, draft.metaImageUploadPendingBriefId ?? '');
-    }
+    if (metaImageRestore.failedUpload) this.failMetaImageUpload(metaImageRestore.failedUpload.message, metaImageRestore.failedUpload.briefId);
+    if (metaImageRestore.pendingUpload) this.resumeMetaImageUpload(metaImageRestore.pendingUpload.name, metaImageRestore.pendingUpload.briefId);
     // The LinkedIn variants as edited, each with its own image, over the brief's seed (#5547). Each
     // entry copied, so the parent's draft is never reachable from the editor.
-    if (Array.isArray(draft.linkedInVariants)) {
-      this.linkedInVariants.set(draft.linkedInVariants.map((variant) => ({ ...variant })));
-    }
+    if (linkedInRestore.variants) this.linkedInVariants.set(linkedInRestore.variants);
+    // The format and Text Ads as edited (#5764 row 19), present-only.
+    if (linkedInRestore.format) this.linkedInFormat.set(linkedInRestore.format);
+    if (linkedInRestore.textAds) this.linkedInTextAds.set(linkedInRestore.textAds);
+    // Custom targeting and its clauses as edited (#5764 rows 8–11), present-only.
+    if (linkedInRestore.customTargeting !== undefined) this.linkedInCustomTargeting.set(linkedInRestore.customTargeting);
+    if (linkedInRestore.targetingDraft) this.linkedInTargetingDraft.set(linkedInRestore.targetingDraft);
+    // The objective and conversion rules (#5764 rows 2 and 4), present-only.
+    if (linkedInRestore.objectiveDraft) this.linkedInObjectiveDraft.set(linkedInRestore.objectiveDraft);
     // The LinkedIn upload, on the Meta upload's terms above, for the variant it was chosen for.
-    this.linkedInImageUploadVariantKey.set(draft.linkedInImageUploadVariantKey ?? '');
-    if (draft.linkedInImageUploadFailedMessage && draft.linkedInImageUploadFailedBriefId) {
-      this.failLinkedInImageUpload(draft.linkedInImageUploadFailedMessage, draft.linkedInImageUploadFailedBriefId);
-    }
-    if (draft.linkedInImageUploadPendingName) {
-      this.resumeLinkedInImageUpload(draft.linkedInImageUploadPendingName, draft.linkedInImageUploadPendingBriefId ?? '');
-    }
+    this.linkedInImageUploadVariantKey.set(linkedInRestore.uploadVariantKey);
+    if (linkedInRestore.failedUpload) this.failLinkedInImageUpload(linkedInRestore.failedUpload.message, linkedInRestore.failedUpload.briefId);
+    if (linkedInRestore.pendingUpload) this.resumeLinkedInImageUpload(linkedInRestore.pendingUpload.name, linkedInRestore.pendingUpload.briefId);
     // The X section, on the same present-only rule.
     this.applyTwitterDraft(draft);
     // The Microsoft image, on the Meta upload's terms above.
@@ -9269,16 +9787,26 @@ export class ImplementationTabComponent implements OnInit {
       // Signal-backed, so `valueChanges` never carries them — they are snapshotted here and
       // emitted explicitly by each Meta handler. `placements` is spread rather than referenced so
       // the parent holds a value, not a live view of a signal this component is about to destroy.
-      metaObjective: this.metaObjective(),
-      metaPlacements: { ...this.metaPlacements() },
-      metaPixelId: this.metaPixelId(),
-      metaGeoTargets: [...this.metaGeoTargets()],
-      // As typed, whether or not the capability is on, so a draft survives the answer arriving late.
-      metaInstagramUserId: this.metaInstagramDsaDraft().instagramUserId,
-      metaDsaBeneficiary: this.metaInstagramDsaDraft().dsaBeneficiary,
-      metaDsaPayor: this.metaInstagramDsaDraft().dsaPayor,
-      metaBudgetUsd: this.metaBudgetUsd(),
-      metaLifetimeBudget: this.metaLifetimeBudget(),
+      ...metaDraftFields({
+        objective: this.metaObjective(),
+        placements: this.metaPlacements(),
+        pixelId: this.metaPixelId(),
+        geoTargets: this.metaGeoTargets(),
+        instagramUserId: this.metaInstagramDsaDraft().instagramUserId,
+        dsaBeneficiary: this.metaInstagramDsaDraft().dsaBeneficiary,
+        dsaPayor: this.metaInstagramDsaDraft().dsaPayor,
+        audienceTargeting: this.metaAudienceTargeting(),
+        detailedTargeting: this.metaDetailedTargeting(),
+        delivery: this.metaDelivery(),
+        deviceOs: this.metaDeviceOs(),
+        adOptions: this.metaAdOptions(),
+        leadFormId: this.metaLeadFormId(),
+        foundation: this.activeFoundationSlug(),
+        budgetUsd: this.metaBudgetUsd(),
+        lifetimeBudget: this.metaLifetimeBudget(),
+      }),
+      // A draft still waiting for its foundation keeps its foundation-scoped choices in what is saved (#6107).
+      ...(this.pendingMetaDraft === null ? {} : metaPendingDraftFields(this.pendingMetaDraft)),
       // Microsoft's four (LFXV2-3312), snapshotted rather than referenced for the same reason as
       // the Meta block: the parent must hold a value, not a live view of a signal this component
       // is about to destroy. The two ARRAYS are carried because they have a real editor here —
@@ -9324,42 +9852,52 @@ export class ImplementationTabComponent implements OnInit {
       // test that drives the new binding, not one that writes the signal and calls `emitDraft` by
       // hand. That shape passes against a handler that never emits, which is how the LinkedIn
       // budget pair stayed broken behind three green tests.
-      linkedInBudgetUsd: this.linkedInBudgetUsd(),
-      linkedInLifetimeBudget: this.linkedInLifetimeBudget(),
-      linkedInDailyCapUsd: this.linkedInDailyCapUsd(),
-      redditBudgetUsd: this.redditBudgetUsd(),
-      redditObjective: this.redditObjective(),
+      ...linkedInDraftFields({
+        budgetUsd: this.linkedInBudgetUsd(),
+        lifetimeBudget: this.linkedInLifetimeBudget(),
+        dailyCapUsd: this.linkedInDailyCapUsd(),
+        variants: this.linkedInVariants(),
+        uploadVariantKey: this.linkedInImageUploadVariantKey(),
+        uploadPendingName: this.linkedInImageUploadPendingName(),
+        uploadPendingBriefId: this.linkedInImageUploadPendingBriefId(),
+        uploadError: this.linkedInImageUploadError(),
+        uploadFailedBriefId: this.linkedInImageUploadFailedBriefId(),
+        format: this.linkedInFormat(),
+        textAds: this.linkedInTextAds(),
+        customTargeting: this.linkedInCustomTargeting(),
+        targetingDraft: this.linkedInTargetingDraft(),
+        objectiveDraft: this.linkedInObjectiveDraft(),
+      }),
       // Snapshotted whatever `redditCreativeAvailable()` says — see the draft interface for why a
-      // capability must not decide what the draft remembers.
-      redditPostUrl: this.redditPostUrl(),
-      redditImageUrl: this.redditImageUrl(),
-      redditCallToAction: this.redditCallToAction(),
-      redditConversionPixelId: this.redditConversionPixelDraft().conversionPixelId,
-      redditImageAssetId: this.redditImageAssetId(),
-      redditImageAssetName: this.redditImageAssetName(),
-      redditImageAssetBriefId: this.redditImageAssetBriefId(),
-      redditImageUploadPendingName: this.redditImageUploadPendingName(),
-      redditImageUploadPendingBriefId: this.redditImageUploadPendingBriefId(),
-      // A failed upload stays until the operator removes or replaces it, across tab switches too:
-      // dropping it on remount would lift the block and let Create go out without the image.
-      redditImageUploadFailedMessage: this.redditImageUploadFailedBriefId() ? this.redditImageUploadError() : '',
-      redditImageUploadFailedBriefId: this.redditImageUploadFailedBriefId(),
-      redditVideoGoal: this.redditVideoGoal(),
-      metaImageUrl: this.metaImageUrl(),
-      metaImageAssetId: this.metaImageAssetId(),
-      metaImageAssetName: this.metaImageAssetName(),
-      metaImageAssetBriefId: this.metaImageAssetBriefId(),
-      metaImageUploadPendingName: this.metaImageUploadPendingName(),
-      metaImageUploadPendingBriefId: this.metaImageUploadPendingBriefId(),
-      metaImageUploadFailedMessage: this.metaImageUploadFailedBriefId() ? this.metaImageUploadError() : '',
-      metaImageUploadFailedBriefId: this.metaImageUploadFailedBriefId(),
-      // A real editor since #5547, so carried (see the note on the brief-derived arrays above).
-      linkedInVariants: this.linkedInVariants().map((variant) => ({ ...variant })),
-      linkedInImageUploadVariantKey: this.linkedInImageUploadVariantKey(),
-      linkedInImageUploadPendingName: this.linkedInImageUploadPendingName(),
-      linkedInImageUploadPendingBriefId: this.linkedInImageUploadPendingBriefId(),
-      linkedInImageUploadFailedMessage: this.linkedInImageUploadFailedBriefId() ? this.linkedInImageUploadError() : '',
-      linkedInImageUploadFailedBriefId: this.linkedInImageUploadFailedBriefId(),
+      // capability must not decide what the draft remembers. A failed upload is kept with its brief
+      // (`redditDraftFields`): dropping it on remount would lift the block and let Create go out without the image.
+      ...redditDraftFields({
+        budgetUsd: this.redditBudgetUsd(),
+        objective: this.redditObjective(),
+        postUrl: this.redditPostUrl(),
+        imageUrl: this.redditImageUrl(),
+        callToAction: this.redditCallToAction(),
+        conversionPixelId: this.redditConversionPixelDraft().conversionPixelId,
+        assetId: this.redditImageAssetId(),
+        assetName: this.redditImageAssetName(),
+        assetBriefId: this.redditImageAssetBriefId(),
+        uploadPendingName: this.redditImageUploadPendingName(),
+        uploadPendingBriefId: this.redditImageUploadPendingBriefId(),
+        uploadError: this.redditImageUploadError(),
+        uploadFailedBriefId: this.redditImageUploadFailedBriefId(),
+        videoGoal: this.redditVideoGoal(),
+        conversionEvent: this.redditConversionEvent(),
+      }),
+      ...metaImageDraftFields({
+        imageUrl: this.metaImageUrl(),
+        assetId: this.metaImageAssetId(),
+        assetName: this.metaImageAssetName(),
+        assetBriefId: this.metaImageAssetBriefId(),
+        uploadPendingName: this.metaImageUploadPendingName(),
+        uploadPendingBriefId: this.metaImageUploadPendingBriefId(),
+        uploadError: this.metaImageUploadError(),
+        uploadFailedBriefId: this.metaImageUploadFailedBriefId(),
+      }),
       twitterBudget: form.twitterBudget,
       twitterTweetText: form.twitterTweetText,
       twitterImageAssetId: this.twitterImageAssetId(),
@@ -9395,19 +9933,17 @@ export class ImplementationTabComponent implements OnInit {
     // the previous brief's typed post, image, button, objective, goal and budget into this one.
     // The uploaded image is left alone on purpose: it is scoped to its brief, and
     // `redditImageAssetBlock` already holds Create with a Remove for one made for another brief.
-    this.redditPostUrl.set('');
-    this.redditImageUrl.set('');
-    this.redditCallToAction.set('');
-    this.redditObjective.set(DEFAULT_REDDIT_OBJECTIVE);
-    this.redditVideoGoal.set('');
-    this.redditBudgetUsd.set(DEFAULT_REDDIT_BUDGET_USD);
-    // The lists seeded only from Reddit copy, emptied first so a brief without any opens on none
-    // rather than the previous brief's (#4648); the seed below refills them when the copy is there.
-    this.redditVariants.set([]);
-    this.redditSubreddits.set([]);
-    this.redditInterests.set([]);
-    this.redditKeywords.set([]);
-    this.redditGeoTargets.set([]);
+    // The lists seeded only from Reddit copy are emptied too, so a brief without any opens on none
+    // rather than the previous brief's (#4648); the seed below refills them (`redditBriefReset`).
+    const redditReset = redditBriefReset();
+    this.redditPostUrl.set(redditReset.postUrl);
+    this.redditImageUrl.set(redditReset.imageUrl);
+    this.redditCallToAction.set(redditReset.callToAction);
+    this.redditObjective.set(redditReset.objective);
+    this.redditVideoGoal.set(redditReset.videoGoal);
+    this.redditConversionEvent.set(redditReset.conversionEvent);
+    this.redditBudgetUsd.set(redditReset.budgetUsd);
+    this.setRedditBriefLists(redditReset);
     // The other platforms on the same terms (#4624): every value the brief does not derive, or derives
     // only when present, back to its default, so the seed below is all that survives a switch.
     this.resetMetaFields();
@@ -9519,8 +10055,9 @@ export class ImplementationTabComponent implements OnInit {
     // campaign-service links them before the ad groups and returns on a refusal there, which leaves
     // the campaign with no ad group, ad or keyword, so that step runs only when the operator asks.
 
-    if (brief.linkedInCopy) {
-      this.linkedInVariants.set(brief.linkedInCopy.variants.map((variant) => this.newLinkedInVariant(variant)));
+    const linkedInSeed = linkedInBriefSeed(brief.linkedInCopy, () => this.nextLinkedInVariantKey());
+    if (linkedInSeed) {
+      this.linkedInVariants.set(linkedInSeed.variants);
       // Seeded UNCONDITIONALLY, and the ticket's premise that this needs a "only when the parent
       // holds nothing" guard does not survive contact with the call order (LFXV2-3230).
       //
@@ -9536,60 +10073,30 @@ export class ImplementationTabComponent implements OnInit {
       //
       // These EMIT, and must. The three controls are read through `toSignal` bridges over
       // `valueChanges`, so a `{ emitEvent: false }` write updates the control while every reader —
-      // the template's chip list, `canSubmit`, `availableGeoTargets`, `submit()` — keeps the stale
+      // the template's chip list, `canSubmit`, `linkedInGeoSearchOptions`, `submit()` — keeps the stale
       // initial value. Suppressing here made the seed invisible: the form held the recommendation
       // and the page rendered an empty geo list.
       //
       // Emitting is safe because `seeding` is true for the whole of this call, so the
       // `valueChanges` subscription returns early rather than snapshotting a half-built form.
-      this.campaignForm.controls.linkedInGeoTargets.setValue(brief.linkedInCopy.recommendedGeoTargets);
-      this.campaignForm.controls.linkedInTargetingProfile.setValue(brief.linkedInCopy.recommendedTargetingProfile);
+      this.campaignForm.controls.linkedInGeoTargets.setValue(correctLinkedInGeoTargets(linkedInSeed.geoTargets));
+      this.campaignForm.controls.linkedInTargetingProfile.setValue(linkedInSeed.targetingProfile);
       this.resetLinkedInTargeting();
-      // `budgetRecommendation` is guarded as well as `strategy`. Until LFXV2-3108 every brief
-      // reaching here came straight from the generator, which always emits both; a RESTORED
-      // brief is replayed from stored JSON, where `asVariantCopy` validates only the `variants`
-      // discriminator and leaves the inner shape alone. A `strategy` without a
-      // `budgetRecommendation` therefore reaches this line and throws on the nested read —
-      // every other field in this block is assigned whole, so this is the only such reach.
-      const lifetimeBudget = brief.linkedInCopy.strategy?.budgetRecommendation?.lifetimeBudgetUsd;
-      if (typeof lifetimeBudget === 'number' && Number.isFinite(lifetimeBudget)) {
-        this.linkedInBudgetUsd.set(lifetimeBudget);
+      // The strategy's lifetime budget, only when it is a finite number (`linkedInBriefSeed`).
+      if (linkedInSeed.lifetimeBudgetUsd !== undefined) {
+        this.linkedInBudgetUsd.set(linkedInSeed.lifetimeBudgetUsd);
         this.linkedInLifetimeBudget.set(true);
       }
     }
 
-    const redditCopy = brief.structuredCopy?.['reddit_promoted'] as Record<string, unknown> | undefined;
-    if (redditCopy) {
-      this.redditVariants.set((redditCopy['variants'] as RedditAdVariant[]) ?? []);
-      this.redditSubreddits.set((redditCopy['recommended_subreddits'] as string[]) ?? []);
-      this.redditInterests.set((redditCopy['recommended_interests'] as string[]) ?? []);
-      this.redditKeywords.set((redditCopy['recommended_keywords'] as string[]) ?? []);
-      this.redditGeoTargets.set((redditCopy['recommended_geos'] as string[]) ?? []);
-    }
-    if (brief.redditCopy) {
-      this.redditVariants.set(brief.redditCopy.variants);
-      this.redditSubreddits.set(brief.redditCopy.recommendedSubreddits);
-      this.redditInterests.set(brief.redditCopy.recommendedInterests);
-      this.redditKeywords.set(brief.redditCopy.recommendedKeywords);
-      this.redditGeoTargets.set(brief.redditCopy.recommendedGeos);
-    }
+    // The typed Reddit copy over the legacy `reddit_promoted` block (`redditBriefSeed`).
+    const redditSeed = redditBriefSeed(brief);
+    if (redditSeed) this.setRedditBriefLists(redditSeed);
 
-    const metaCopy = brief.structuredCopy?.['meta_ads'] as Record<string, unknown> | undefined;
-    if (metaCopy) {
-      const rawVariants = metaCopy['variants'];
-      const variants = Array.isArray(rawVariants) ? (rawVariants as { primary_text?: string; headline?: string; description?: string }[]) : [];
-      this.metaVariants.set(
-        variants.map((v) => ({
-          primaryText: v.primary_text ?? '',
-          headline: v.headline ?? '',
-          description: v.description,
-        }))
-      );
-      const rawGeos = metaCopy['recommended_geos'];
-      this.metaGeoTargets.set(this.acceptedMetaGeos(Array.isArray(rawGeos) ? (rawGeos as string[]) : []));
-    } else if (brief.metaCopy) {
-      this.metaVariants.set(brief.metaCopy.variants);
-      this.metaGeoTargets.set(this.acceptedMetaGeos(brief.metaCopy.recommendedGeos));
+    const metaSeed = metaBriefSeed(brief);
+    if (metaSeed) {
+      this.metaVariants.set(metaSeed.variants);
+      this.metaGeoTargets.set(metaSeed.geoTargets);
     }
 
     // A stored brief can lack the list; every reader maps or filters it (#4848).
@@ -9649,6 +10156,15 @@ export class ImplementationTabComponent implements OnInit {
     this.briefDriveFolderUrl.set(brief.driveFolderUrl);
   }
 
+  /** The Reddit lists a brief seeds or a brief switch empties: the variants and the four targeting lists. */
+  private setRedditBriefLists(lists: RedditBriefSeed): void {
+    this.redditVariants.set(lists.variants);
+    this.redditSubreddits.set(lists.subreddits);
+    this.redditInterests.set(lists.interests);
+    this.redditKeywords.set(lists.keywords);
+    this.redditGeoTargets.set(lists.geoTargets);
+  }
+
   /*
    * The per-platform resets `populateFromBrief` runs inside `seeding` (#4624). A brief switch clears the
    * draft, so `applyDraft` restores nothing and these values would otherwise ride into the next brief.
@@ -9658,11 +10174,20 @@ export class ImplementationTabComponent implements OnInit {
 
   /** Meta: objective, placements, pixel, Instagram/DSA, budget and its mode, image URL; geos and variants until the brief's Meta copy seeds them. */
   private resetMetaFields(): void {
+    // A draft still waiting for the foundation belongs to the previous brief (#6107).
+    this.pendingMetaDraft = null;
     this.metaObjective.set(DEFAULT_META_OBJECTIVE);
     this.metaPlacements.set({ ...META_DEFAULT_PLACEMENTS });
     this.metaPixelId.set('');
     // Another brief's payor and beneficiary must never reach a live create.
     this.metaInstagramDsaForm.reset();
+    // Another brief's audiences must never reach a live create either, nor its detailed targeting or Meta ad choices.
+    this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
+    this.metaDetailedTargeting.set(emptyMetaDetailedTargetingPicks());
+    this.metaDelivery.set(emptyMetaDeliveryDraft());
+    this.metaDeviceOs.set(emptyMetaDeviceOsDraft());
+    this.metaAdOptions.set({});
+    this.metaLeadFormId.set('');
     this.metaBudgetUsd.set(DEFAULT_META_BUDGET_USD);
     this.metaLifetimeBudget.set(false);
     this.metaImageUrl.set('');
@@ -9679,6 +10204,11 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInLifetimeBudget.set(false);
     this.linkedInDailyCapUsd.set(null);
     this.linkedInVariants.set([]);
+    this.linkedInFormat.set('single_image');
+    this.linkedInTextAds.set([]);
+    this.linkedInCustomTargeting.set(false);
+    this.linkedInTargetingDraft.set(emptyLinkedInTargetingDraft());
+    this.linkedInObjectiveDraft.set(emptyLinkedInObjectiveDraft());
     this.campaignForm.patchValue({
       linkedInAccountId: untracked(() => this.linkedInAccounts())[0]?.accountId ?? '',
       linkedInGeoTargets: [],
@@ -10127,18 +10657,7 @@ export class ImplementationTabComponent implements OnInit {
    * or no lifetime budget, is never an error.
    */
   private initLinkedInDailyCapError(): Signal<string | null> {
-    return computed((): string | null => {
-      const cap = this.linkedInDailyCapUsd();
-      // Not offered, or no lifetime budget: nothing is sent, so nothing can be wrong.
-      if (cap === null || !this.linkedInLifetimeBudget() || !this.linkedInDailyCapAvailable()) return null;
-      if (!Number.isFinite(cap)) return 'Enter the daily cap in US dollars, or leave it empty for no cap.';
-      // Rounded exactly as campaign-service rounds both amounts, ties to the even cent.
-      const rounded = roundUsdToCentsLikeGo(cap);
-      if (rounded < LINKEDIN_MIN_DAILY_BUDGET_USD) return `The daily cap must be at least $${LINKEDIN_MIN_DAILY_BUDGET_USD}, LinkedIn's daily minimum.`;
-      const total = roundUsdToCentsLikeGo(this.linkedInBudgetUsd());
-      if (rounded > total) return "The daily cap can't be more than the lifetime budget.";
-      return null;
-    });
+    return computed(() => linkedInDailyCapError(this.linkedInDailyCapInput()));
   }
 
   private initGoogleSearchKeywordsError(): Signal<string | null> {
@@ -10200,20 +10719,6 @@ export class ImplementationTabComponent implements OnInit {
       else if (channels.length === 1) channel = GOOGLE_CAMPAIGN_NAME_TOKENS[channels[0]];
       return name ? `Events | ${name} | ${region} | Conversions | Prospecting | ${channel} | Linux Foundation | BoFU | ${startDate}` : '';
     });
-  }
-  /**
-   * Shape only: two uppercase letters, the form campaign-service requires before it consults its
-   * ISO 3166-1 set. That catches every realistic typo reachable from this form — empty,
-   * lowercase, "USA", a single letter — while never rejecting a valid code.
-   *
-   * Deliberately NOT validated against the shared COUNTRIES constant: it holds 89 of the ~250
-   * assigned codes (Iceland yes, Monaco and Liechtenstein no), so using it as an allow-list
-   * would refuse real campaigns — a worse failure than the one it prevents. A well-formed but
-   * unassigned code like "ZZ" still reaches dispatch and is refused there; LFXV2-3316 covers
-   * porting a real ISO set into the shared package, which the whole app would use.
-   */
-  private normaliseGeoCodes(codes: string[]): string[] {
-    return codes.map((g) => g.trim().toUpperCase()).filter((g) => /^[A-Z]{2}$/.test(g));
   }
 
   /**
@@ -11221,6 +11726,36 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * Why Create is held for Meta audience targeting the draft holds but the request cannot carry, or `null` —
+   * {@link initGoogleAudienceSegmentsBlock}'s states, on the same capability read: held rather than dropped,
+   * because targeting changes who the campaign reaches. `unsupported` (the deployment answered no) offers
+   * Clear, since its section is hidden; `restricted` and every unanswered state for custom audiences leave
+   * the audiences listed with Remove. While the deployment's answer is still out or failed, nothing is
+   * offered but waiting or Retry: the targeting may well be sendable once it answers.
+   */
+  private initMetaAudienceTargetingBlock(): Signal<CampaignMetaAudienceTargetingBlock | null> {
+    return computed(() =>
+      metaAudienceTargetingBlock({
+        targeting: this.metaAudienceTargeting(),
+        targetingEnabled: this.metaAudienceTargetingEnabled(),
+        customAudiencesEnabled: this.metaCustomAudiencesEnabled(),
+        createCapabilityRead: this.createCapabilityRead(),
+        briefId: this.briefPersistence().briefId,
+      })
+    );
+  }
+
+  /**
+   * Why Create is held for a Meta ad choice (#5934) the draft holds but this deployment has not confirmed,
+   * or `null` — {@link initMetaAudienceTargetingBlock}'s states: held rather than dropped, since the choice
+   * changes the ads. Only an explicit no (`unsupported`) offers Clear; while an answer is out or failed,
+   * Create waits or offers Retry, because the choice may well be sendable once it answers.
+   */
+  private initMetaAdOptionsBlock(): Signal<CampaignBiddingCapabilityBlock | null> {
+    return computed(() => metaAdOptionsBlock(this.metaAdOptions(), this.metaAdOptionsEnabled(), this.createCapabilityRead(), this.briefPersistence().briefId));
+  }
+
+  /**
    * The sentence saying an entered segment list is being WITHHELD because of the CHANNEL, or null
    * when it is not — the audience twin of {@link initGoogleCalloutsWithheldWarning}, on the same
    * terms and for the same reason: it asks {@link resolveGoogleChannel} and tests the channel
@@ -12033,25 +12568,14 @@ export class ImplementationTabComponent implements OnInit {
    * drops the image, and a warning that ignored that would promise an ad the request never asks for.
    */
   private initRedditNoAdWarning(): Signal<string | null> {
-    return computed(() => {
-      if (!this.showRedditSection()) return null;
-      if (this.redditPostUrl()) return null;
-      if (Object.keys(this.redditImageField()).length > 0) return null;
-      // Names only the fields the operator can actually see: with the authored-post controls
-      // withheld, an image URL is not a remedy and telling them to supply one would be advice they
-      // cannot take.
-      const missing = this.redditCreativeAvailable() ? 'No post URL and no image URL' : 'No post URL';
-      // "Will not change that" rather than "stays refused", for the reason the post-submit sibling
-      // was corrected to the same wording in #3451: the clause has to hold on BOTH arms and the
-      // refusal is campaign-service's alone. There activation needs both child ids
-      // (`RedditDispatcher.ToggleStatus` in `internal/dispatch/reddit.go`), taken from
-      // `redditChildIDs` in the same file, which
-      // reads only the persisted Result blob — nothing re-reads Reddit, so an ad attached by hand
-      // is never discovered and the refusal never lifts. The legacy toggle has no ad-existence
-      // guard at all (`campaign-proxy.service.ts`) and goes through to a campaign with nothing to
-      // serve. Either way activating accomplishes nothing, which is what the operator needs to know.
-      return `${missing}, so this campaign is created with no ad: the campaign and its ad group are made and the create reports success, but nothing serves. Activating it from LFX will not change that, so either supply a post above or build and launch the campaign in Reddit Ads Manager.`;
-    });
+    return computed(() =>
+      redditNoAdWarning({
+        showRedditSection: this.showRedditSection(),
+        postUrl: this.redditPostUrl(),
+        image: this.redditImageField(),
+        creativeAvailable: this.redditCreativeAvailable(),
+      })
+    );
   }
 
   /**
@@ -12204,6 +12728,37 @@ export class ImplementationTabComponent implements OnInit {
   private googleProximityPayload(): Partial<CampaignCreateRequest> {
     const targets = this.googleDispatchedProximityTargets();
     return targets.length > 0 ? { proximityTargets: targets.map((t) => ({ ...t })) } : {};
+  }
+
+  /**
+   * The LinkedIn location picker's search (#5545), debounced off {@link linkedInGeoSearchQuery} on the same terms as
+   * `initGoogleGeoSearchState`: each new query cancels the request in flight and clears its rows, and a query under
+   * campaign-service's 2 characters, no project, or the LinkedIn section being hidden answers the empty state with no request.
+   */
+  private initLinkedInGeoSearchState(): Signal<LinkedInGeoSearchState> {
+    const idle = (): LinkedInGeoSearchState => ({ locations: [], failed: false, pending: false });
+    const trigger = computed(() => ({
+      query: this.linkedInGeoSearchQuery(),
+      projectSlug: this.activeFoundationSlug(),
+      shown: this.showLinkedInSection(),
+    }));
+    return toSignal(
+      toObservable(trigger).pipe(
+        switchMap(({ query, projectSlug, shown }) => {
+          if (linkedInGeoSearchQueryRefusal(query) !== null || projectSlug === '' || !shown) return of(idle());
+          return timer(LINKEDIN_GEO_SEARCH_DEBOUNCE_MS).pipe(
+            switchMap(() =>
+              this.campaignService.searchLinkedInGeoTargets(projectSlug, query).pipe(
+                map((result): LinkedInGeoSearchState => ({ locations: result.locations, failed: false, pending: false })),
+                catchError(() => of<LinkedInGeoSearchState>({ locations: [], failed: true, pending: false }))
+              )
+            ),
+            startWith<LinkedInGeoSearchState>({ locations: [], failed: false, pending: true })
+          );
+        })
+      ),
+      { initialValue: idle() }
+    );
   }
 
   /**
@@ -14021,50 +14576,51 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Restores the Meta Instagram id and DSA disclosures, each only when present and a string — the
-   * same present-only rule as `restoreGoogleBidding`.
+   * `metaConfig.targeting` for the request: the audience fields, the detailed ones (#5904 row 4) and the devices and
+   * operating systems (row 6) in one block, or nothing when it asks for nothing. `canSubmit` has already refused a bad one.
    */
-  private restoreMetaInstagramDsa(draft: CampaignImplementationDraft): void {
-    const fields = [
-      ['metaInstagramUserId', 'instagramUserId'],
-      ['metaDsaBeneficiary', 'dsaBeneficiary'],
-      ['metaDsaPayor', 'dsaPayor'],
-    ] as const;
-    const patch: Partial<Record<(typeof fields)[number][1], string>> = {};
-    for (const [draftKey, control] of fields) {
-      const value = draft[draftKey];
-      if (typeof value === 'string') patch[control] = value;
-    }
-    // ONE emitting patch, unlike `restoreGoogleBidding`: `metaInstagramDsaDraft` (what validation,
-    // `submit` and `emitDraft` read) follows this group's `valueChanges`, so a silent write would
-    // leave the inputs showing the restored text while every check still saw blanks (PR #4483
-    // review). The emit cannot loop: `applyDraft` runs only while `seeding`, which the group's
-    // draft subscription honours.
-    if (Object.keys(patch).length > 0) this.metaInstagramDsaForm.patchValue(patch);
+  private metaTargetingField(): Pick<MetaCampaignCreateRequest, 'targeting'> {
+    const targeting = {
+      ...compactMetaAudienceTargeting(this.metaAudienceTargetingRequested()),
+      ...this.metaDetailedTargetingRequested(),
+      ...this.metaDeviceOsRequested(),
+    };
+    return Object.keys(targeting).length > 0 ? { targeting } : {};
+  }
+
+  /** The Meta ad choices for the request: each only on an explicit yes, "Not set" never sent. */
+  private metaAdOptionsField(): MetaAdOptions {
+    return metaAdOptionsForCreate(this.metaAdOptions(), this.metaAdOptionsEnabled());
+  }
+
+  /** Clears the schedule off a daily budget and the cap off any objective but awareness (#5904 row 5). */
+  private dropInapplicableMetaDelivery(): void {
+    this.metaDelivery.update((delivery) => metaDeliveryApplicable(delivery, this.metaLifetimeBudget(), this.metaObjective()));
+  }
+
+  /** Clears each Meta ad choice the current objective does not take (#5934). */
+  private dropInapplicableMetaAdOptions(): void {
+    this.metaAdOptions.update((options) => metaAdOptionsForObjective(options, this.metaObjective()));
   }
 
   /**
-   * Why one EU DSA disclosure cannot be sent, or `null` while the capability is off. Mirrors
-   * campaign-service's `CheckPublishIdentity`: at most `META_DSA_NAME_MAX_LENGTH` characters
-   * (counted as code points, as Go counts runes — which is why the inputs carry no native
-   * `maxlength`: the browser counts UTF-16 units and would cut a valid astral-plane name short), no C0/C1 control, Unicode line/paragraph separator
-   * or bidi control (its `isLineBreakingOrControl`), and present whenever the
-   * other one is OR an EU country is targeted. Trimmed first, as upstream trims.
+   * Applies the foundation-scoped Meta choices of a draft restored while the foundation was unknown (#6107), with
+   * the same rules as a restore (`metaDraftRestore`): only what was chosen under this foundation, the lead form last.
    */
-  private metaDsaFieldError(field: 'dsaBeneficiary' | 'dsaPayor'): string | null {
-    if (!this.metaInstagramDsaAvailable()) return null;
-    const draft = this.metaInstagramDsaDraft();
-    const value = draft[field].trim();
-    const other = (field === 'dsaBeneficiary' ? draft.dsaPayor : draft.dsaBeneficiary).trim();
-    if ([...value].length > META_DSA_NAME_MAX_LENGTH) return `Enter at most ${META_DSA_NAME_MAX_LENGTH} characters.`;
-    // eslint-disable-next-line no-control-regex -- matching control characters is the point.
-    if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(value))
-      return 'Enter the name on one line, without tabs, line breaks or invisible formatting characters.';
-    if (value !== '') return null;
-    const eu = this.metaDsaCountries();
-    if (eu.length > 0) return `Required when targeting the EU/EEA (${eu.join(', ')}).`;
-    if (other !== '') return 'Enter both the beneficiary and the payor, or neither.';
-    return null;
+  private restorePendingMetaDraft(): void {
+    const draft = this.pendingMetaDraft;
+    this.pendingMetaDraft = null;
+    if (draft === null) return;
+    const restore = metaDraftRestore(draft, this.metaObjective(), this.activeFoundationSlug());
+    if (restore.audienceTargeting !== undefined) this.metaAudienceTargeting.set(restore.audienceTargeting);
+    if (restore.adOptions !== undefined) this.metaAdOptions.set(restore.adOptions);
+    this.metaObjective.set(restore.objective);
+    if (restore.leadFormId !== null) this.metaLeadFormId.set(restore.leadFormId);
+    this.emitDraft();
+  }
+
+  private defaultMetaAudienceTargeting(): MetaAudienceTargetingDraft {
+    return copyMetaAudienceTargeting(DEFAULT_META_AUDIENCE_TARGETING);
   }
 
   /**

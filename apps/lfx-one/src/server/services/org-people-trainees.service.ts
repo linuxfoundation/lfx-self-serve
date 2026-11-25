@@ -22,11 +22,11 @@ import type {
   OrgTraineesResponse,
   OrgTrainingOutsideLearnerRow,
   TraineeAsOfRow,
+  OrgLensReadQualification,
 } from '@lfx-one/shared/interfaces';
 import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { toIsoTimestamp } from '../helpers/date-format.helper';
-import type { OrgLensReadQualification } from '../helpers/org-lens-read-access.helper';
 import { orgTrainingRangePredicate } from '../helpers/org-training-pairs.sql';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCompactCache } from './valkey.service';

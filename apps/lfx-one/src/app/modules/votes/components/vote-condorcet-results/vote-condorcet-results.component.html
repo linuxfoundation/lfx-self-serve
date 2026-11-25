@@ -1,0 +1,336 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let q = question();
+<div class="flex flex-col gap-6 rounded-lg border border-slate-200 p-4 sm:p-5" [attr.data-testid]="'vote-condorcet-question-' + q.questionId">
+  <h4 class="break-words text-base font-semibold text-gray-900">
+    @if (questionNumber(); as number) {
+      Q{{ number }}.
+    }
+    {{ q.prompt }}
+  </h4>
+
+  <!-- The outcome is authoritative only once final totals have been confirmed. -->
+  <section
+    class="flex flex-col gap-3 rounded-xl border p-4 sm:p-5"
+    [class.border-emerald-200]="isClosed() && hasWinner()"
+    [class.bg-emerald-50]="isClosed() && hasWinner()"
+    [class.border-amber-200]="isClosed() && isTie()"
+    [class.bg-amber-50]="isClosed() && isTie()"
+    [class.border-gray-200]="isClosed() && !hasWinner() && !isTie()"
+    [class.bg-gray-50]="isClosed() && !hasWinner() && !isTie()"
+    [class.border-blue-200]="!isClosed()"
+    [class.bg-blue-50]="!isClosed()"
+    data-testid="vote-condorcet-outcome">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">{{ isClosed() ? 'Final result' : 'Vote status' }}</span>
+      <lfx-tag [value]="isClosed() && q.usedIrv ? 'Instant-runoff fallback' : 'Condorcet IRV'" severity="secondary" />
+    </div>
+    <h5 class="flex items-start gap-3 break-words text-2xl font-semibold text-gray-900" data-testid="vote-condorcet-outcome-heading">
+      @if (!isClosed()) {
+        <i class="fa-light fa-clock mt-1 text-blue-700" aria-hidden="true"></i>
+      } @else if (hasWinner()) {
+        <i class="fa-light fa-trophy mt-1 text-amber-700" aria-hidden="true"></i>
+      } @else if (isTie()) {
+        <i class="fa-light fa-handshake mt-1 text-amber-700" aria-hidden="true"></i>
+      }
+      <span class="min-w-0">{{ outcomeHeading() }}</span>
+    </h5>
+    @if (isDraft()) {
+      <p class="text-sm text-slate-700" data-testid="vote-condorcet-not-open">Voting has not opened yet. Results will be available once voting begins.</p>
+    } @else if (!isClosed() && isEnded()) {
+      <p class="text-sm text-slate-700" data-testid="vote-condorcet-finalizing">
+        Voting has ended. The final outcome will appear once the final totals are confirmed.
+      </p>
+    } @else if (!isClosed()) {
+      <p class="text-sm text-slate-700" data-testid="vote-condorcet-in-progress">
+        The vote is currently in progress. Final results will be available once voting has ended.
+      </p>
+    } @else {
+      <p class="text-sm text-slate-700" data-testid="vote-condorcet-outcome-message">{{ outcomeMessage() }}</p>
+    }
+  </section>
+  <p class="text-sm text-slate-600" data-testid="vote-condorcet-method-explanation">
+    First-choice votes alone do not decide a Condorcet result. Each option is compared with every other option using voters' rankings.
+  </p>
+
+  @if (isClosed() && q.standings.length > 0) {
+    <section class="flex flex-col gap-3" data-testid="vote-condorcet-standings">
+      <h5 class="text-base font-semibold text-gray-900">Final standings</h5>
+      <ol class="flex flex-col gap-2">
+        @for (standing of q.standings; track standing.choiceId) {
+          <li
+            class="flex items-start gap-3 rounded-md px-3 py-2 text-sm"
+            [class.bg-emerald-50]="standing.isWinner && !standing.isTied"
+            [attr.data-testid]="'vote-condorcet-standing-' + standing.choiceId">
+            <span class="w-10 flex-shrink-0 font-semibold text-slate-500">{{ standing.rank | ordinal }}</span>
+            <div class="flex min-w-0 flex-col gap-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="break-words font-semibold text-gray-900">{{ standing.choiceText }}</span>
+                @if (standing.isTied) {
+                  <lfx-tag value="Tied" severity="warn" />
+                } @else if (standing.isWinner) {
+                  <lfx-tag value="Winner" severity="success" />
+                }
+              </div>
+              @if (standing.eliminatedInRound !== null) {
+                <span class="text-xs text-slate-500">Eliminated in round {{ standing.eliminatedInRound }}</span>
+              } @else if (standing.totalMatchups > 0) {
+                <span class="text-xs text-slate-500"
+                  >Won {{ standing.winCount }} out of {{ standing.totalMatchups }} possible head-to-head
+                  {{ standing.totalMatchups === 1 ? 'matchup' : 'matchups' }}</span
+                >
+              }
+            </div>
+          </li>
+        }
+      </ol>
+    </section>
+  }
+
+  <section class="flex flex-col gap-3 border-t border-slate-200 pt-5" data-testid="vote-condorcet-pairwise">
+    <h5 class="text-base font-semibold text-gray-900">Head-to-head results</h5>
+    <p class="text-sm text-slate-600">
+      Read across a row to compare that option with the others. The first number counts voters preferring the row option; the second counts voters preferring
+      the column option.
+    </p>
+    @if (winnerMatchups(); as winnerRow) {
+      <div class="flex flex-col gap-2 rounded-lg bg-emerald-50 p-3" data-testid="vote-condorcet-winner-matchups">
+        <h6 class="text-sm font-semibold text-gray-900">Winner's head-to-head matchups</h6>
+        <ul class="flex flex-col gap-2">
+          @for (cell of winnerRow.cells; track $index; let i = $index) {
+            @if (cell.result !== 'self' && cell.result !== 'neutral') {
+              <li class="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span class="min-w-0 break-words">{{ winnerRow.candidate.choiceText }} vs {{ q.candidates[i].choiceText }}</span>
+                <span class="flex items-center gap-2 whitespace-nowrap font-semibold">
+                  {{ cell.value }}
+                  <span class="capitalize">{{ cell.result }}</span>
+                </span>
+              </li>
+            }
+          }
+        </ul>
+      </div>
+    }
+    <div
+      class="relative overflow-x-auto rounded-lg border border-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600"
+      tabindex="0"
+      role="region"
+      aria-label="Head-to-head results">
+      <table class="w-full border-collapse text-sm">
+        <caption class="sr-only">
+          Voters preferring each row option over each column option, and the reverse
+        </caption>
+        <thead>
+          <tr class="bg-gray-50">
+            <th scope="col" class="sticky left-0 z-10 bg-gray-50 px-3 py-3 text-left font-medium text-gray-600">Options</th>
+            @for (candidate of q.candidates; track candidate.choiceId) {
+              <th scope="col" class="px-3 py-3 text-left font-medium text-gray-600">
+                <span class="block w-32 break-words whitespace-normal sm:w-40">{{ candidate.choiceText }}</span>
+              </th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of q.pairwise; track row.candidate.choiceId) {
+            <tr class="border-t border-gray-100">
+              <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-3 text-left font-semibold text-gray-900">
+                <span class="block w-32 break-words whitespace-normal sm:w-40">{{ row.candidate.choiceText }}</span>
+              </th>
+              @for (cell of row.cells; track $index) {
+                <td
+                  class="whitespace-nowrap px-3 py-3 text-gray-700"
+                  [class.bg-emerald-50]="cell.result === 'win'"
+                  [class.bg-red-50]="cell.result === 'loss'"
+                  [class.bg-amber-50]="cell.result === 'tie'"
+                  [class.bg-gray-50]="cell.result === 'self'"
+                  [attr.data-result]="cell.result">
+                  <span class="flex items-center gap-2">
+                    {{ cell.value }}
+                    @switch (cell.result) {
+                      @case ('win') {
+                        <i class="fa-solid fa-circle-check text-emerald-700" aria-hidden="true"></i>
+                        <span class="text-xs">Win</span>
+                      }
+                      @case ('loss') {
+                        <i class="fa-solid fa-circle-xmark text-red-700" aria-hidden="true"></i>
+                        <span class="text-xs">Loss</span>
+                      }
+                      @case ('tie') {
+                        <i class="fa-solid fa-handshake-simple text-amber-700" aria-hidden="true"></i>
+                        <span class="text-xs">Tie</span>
+                      }
+                    }
+                  </span>
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="flex flex-col gap-4 border-t border-slate-200 pt-5" data-testid="vote-condorcet-rank-summary">
+    <h5 class="text-base font-semibold text-gray-900">How voters ranked each option</h5>
+    <p class="text-sm text-slate-600">
+      Preference distribution, not the final result. Each bar shows the share of ballots that ranked that option at each position. Ballots omitting the option
+      and abstentions are not included.
+    </p>
+    <ul class="flex flex-col gap-5" aria-label="Rank counts by option" data-testid="vote-condorcet-preference-bars">
+      @for (choice of preferenceDistributions(); track choice.choiceId) {
+        <li class="flex min-w-0 flex-col gap-2" [attr.data-testid]="'vote-condorcet-preference-' + choice.choiceId">
+          <div class="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+            <span class="min-w-0 break-words font-semibold text-gray-900">{{ choice.choiceText }}</span>
+            <span class="text-slate-500">Ranked on {{ choice.totalRanked }} {{ choice.totalRanked === 1 ? 'ballot' : 'ballots' }}</span>
+          </div>
+          <div class="flex h-5 overflow-hidden rounded-md bg-gray-100" aria-hidden="true">
+            @for (rc of choice.rankCounts; track rc.rank; let i = $index) {
+              <span class="h-full shrink-0" [style.width.%]="rc.percentage" [style.background-color]="rankColors[i % rankColors.length]"></span>
+            }
+          </div>
+          @if (choice.totalRanked > 0) {
+            <ul class="flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-600">
+              @for (rc of choice.rankCounts; track rc.rank; let i = $index) {
+                <li class="flex items-center gap-1.5">
+                  <span class="h-2.5 w-2.5 rounded-sm" [style.background-color]="rankColors[i % rankColors.length]" aria-hidden="true"></span>
+                  <span
+                    >{{ rc.rank | ordinal }}: <strong class="font-semibold text-gray-900">{{ rc.count }}</strong></span
+                  >
+                </li>
+              }
+            </ul>
+          } @else {
+            <p class="text-xs text-slate-500">No rankings recorded for this option.</p>
+          }
+        </li>
+      }
+    </ul>
+    <details class="group rounded-lg border border-gray-200">
+      <summary
+        class="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-3 text-sm font-medium text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+        data-testid="vote-condorcet-rank-counts-toggle">
+        View exact rank counts
+        <i class="fa-light fa-chevron-down ml-auto transition-transform group-open:rotate-180" aria-hidden="true"></i>
+      </summary>
+      <div
+        class="relative overflow-x-auto border-t border-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600"
+        tabindex="0"
+        role="region"
+        aria-label="Exact rank counts">
+        <table class="w-full border-collapse text-sm">
+          <caption class="sr-only">
+            Number of voters who ranked each option at each position
+          </caption>
+          <thead>
+            <tr class="bg-gray-50">
+              <th scope="col" class="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium text-gray-600">Options</th>
+              @for (rank of q.ranks; track rank) {
+                <th scope="col" class="px-3 py-2 text-left font-medium text-gray-600">{{ rank | ordinal }}</th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of q.rankSummary; track row.candidate.choiceId) {
+              <tr class="border-t border-gray-100">
+                <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-gray-900">
+                  <span class="block w-32 break-words whitespace-normal sm:w-40">{{ row.candidate.choiceText }}</span>
+                </th>
+                @for (count of row.counts; track $index) {
+                  <td class="px-3 py-2 text-gray-700">{{ count }}</td>
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </section>
+
+  <section class="flex flex-col gap-3 border-t border-slate-200 pt-5" data-testid="vote-condorcet-ballots">
+    <h5 class="text-base font-semibold text-gray-900">Ballot breakdown</h5>
+    @if (q.ballotPatterns; as patterns) {
+      @if (ballotsStale()) {
+        <p class="text-sm text-amber-700" role="status" data-testid="vote-condorcet-ballots-stale">
+          Ballot rankings may be out of date. The latest refresh failed.
+        </p>
+      } @else if (ballotsConfirming()) {
+        <p class="text-sm text-slate-500" role="status" data-testid="vote-condorcet-ballots-confirming">Ballot rankings are being confirmed.</p>
+      } @else if (ballotsMismatch()) {
+        <p class="text-sm text-amber-700" role="status" data-testid="vote-condorcet-ballots-mismatch">
+          Ballot rankings may be out of date. They do not match the final totals.
+        </p>
+      }
+      @if (patterns.length > 0) {
+        <details class="group rounded-lg border border-gray-200" data-testid="vote-condorcet-ballots-details">
+          <summary
+            class="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-3 text-sm font-medium text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+            data-testid="vote-condorcet-ballots-toggle">
+            View ballot rankings ({{ patterns.length }} distinct {{ patterns.length === 1 ? 'order' : 'orders' }})
+            <i class="fa-light fa-chevron-down ml-auto transition-transform group-open:rotate-180" aria-hidden="true"></i>
+          </summary>
+          <div class="flex flex-col gap-3 border-t border-gray-200 p-3">
+            <p class="text-xs text-slate-600">
+              Most common orders first. Each row counts ballots with the same ranking. Omitted preferences are marked Not ranked.
+            </p>
+            <div
+              class="relative overflow-x-auto rounded-lg border border-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600"
+              tabindex="0"
+              role="region"
+              aria-label="Ballot ranking orders">
+              <table class="w-full border-collapse text-sm" [id]="'vote-condorcet-ballot-orders-' + q.questionId">
+                <caption class="sr-only">
+                  Number of ballots for each ranking order
+                </caption>
+                <thead>
+                  <tr class="bg-gray-50">
+                    <th scope="col" class="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium text-gray-600">Ballots</th>
+                    @for (rank of q.ranks; track rank) {
+                      <th scope="col" class="px-3 py-2 text-left font-medium text-gray-600">{{ rank | ordinal }}</th>
+                    }
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (pattern of visibleBallotPatterns(); track pattern.key) {
+                    <tr class="border-t border-gray-100">
+                      <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-gray-900">{{ pattern.count }}</th>
+                      @for (rank of q.ranks; track rank; let i = $index) {
+                        <td class="px-3 py-2 text-gray-700">
+                          <span class="block w-32 break-words whitespace-normal sm:w-40">{{
+                            i < pattern.ranking.length ? pattern.ranking[i] : 'Not ranked'
+                          }}</span>
+                        </td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            @if (patterns.length > ballotPreviewLimit) {
+              <div class="flex flex-wrap items-center justify-between gap-3 text-sm">
+                <span class="text-slate-500">Showing {{ visibleBallotPatterns().length }} of {{ patterns.length }} ranking orders</span>
+                <button
+                  type="button"
+                  class="rounded-md px-2 py-1 font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                  [attr.aria-expanded]="showAllBallots()"
+                  [attr.aria-controls]="'vote-condorcet-ballot-orders-' + q.questionId"
+                  (click)="showAllBallots.set(!showAllBallots())"
+                  data-testid="vote-condorcet-ballots-show-all">
+                  {{ showAllBallots() ? 'Show ' + ballotPreviewLimit + ' most common' : 'Show all rankings' }}
+                </button>
+              </div>
+            }
+          </div>
+        </details>
+      } @else {
+        <p class="text-sm text-slate-500" data-testid="vote-condorcet-ballots-empty">
+          {{ isClosed() ? 'No ranked ballots were submitted.' : 'No ranked ballots recorded yet.' }}
+        </p>
+      }
+    } @else if (ballotsLoading()) {
+      <p class="text-sm text-slate-500" data-testid="vote-condorcet-ballots-loading">Loading ballot rankings…</p>
+    } @else {
+      <p class="text-sm text-slate-500" data-testid="vote-condorcet-ballots-unavailable">Ballot-by-ballot rankings aren't available for this vote.</p>
+    }
+  </section>
+</div>

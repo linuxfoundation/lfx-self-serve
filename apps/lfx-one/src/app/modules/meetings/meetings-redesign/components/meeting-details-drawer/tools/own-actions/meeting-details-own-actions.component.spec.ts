@@ -8,10 +8,11 @@ import { Meeting, MeetingDetailsState, MeetingHomeRow } from '@lfx-one/shared/in
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsContext } from '../../meeting-details.context';
+import { MeetingDetailsSource } from '../../meeting-details.source';
 import { MeetingDetailsOwnActionsComponent } from './meeting-details-own-actions.component';
 
 const MEETING = {
@@ -29,6 +30,7 @@ describe('MeetingDetailsOwnActionsComponent', () => {
   let meetingService: Record<string, ReturnType<typeof vi.fn>>;
   let toastShow: ReturnType<typeof vi.fn>;
   let refreshList: ReturnType<typeof vi.fn>;
+  let selfInvite: WritableSignal<readonly string[] | undefined>;
   const listedSelfRegistrantUids = signal<readonly string[]>([]);
 
   const settle = async (): Promise<void> => {
@@ -56,6 +58,7 @@ describe('MeetingDetailsOwnActionsComponent', () => {
     listedSelfRegistrantUids.set([]);
     meeting = signal(MEETING);
     state = signal<MeetingDetailsState>('far');
+    selfInvite = signal(undefined);
     meetingService = {
       resendMyMeetingInvitation: vi.fn().mockReturnValue(of({ message: 'ok' })),
       removeMyMeetingRegistration: vi.fn().mockReturnValue(of({ removed_registrant_ids: ['reg-me'], remaining_registrant_ids: [] })),
@@ -79,6 +82,7 @@ describe('MeetingDetailsOwnActionsComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: MeetingDetailsContext, useValue: context },
+        { provide: MeetingDetailsSource, useValue: { selfInviteOf: () => selfInvite() } },
         { provide: MeetingService, useValue: meetingService },
         {
           provide: UserService,
@@ -100,12 +104,74 @@ describe('MeetingDetailsOwnActionsComponent', () => {
     TestBed.inject(OverlayContainer).ngOnDestroy();
   });
 
-  it('resends the invite for the shown date', async () => {
+  it('blocks resend but preserves removal while an invite is syncing, including an open confirmation', async () => {
+    await render();
+    await click(find('meeting-details-resend'));
+    selfInvite.set([]);
+    await click(overlay('meeting-details-resend-confirm'));
+    expect(meetingService['resendMyMeetingInvitation']).not.toHaveBeenCalled();
+    expect(overlay('meeting-details-resend-dialog')).toBeNull();
+    expect(find('meeting-details-resend')).toBeNull();
+    expect(find('meeting-details-remove')).not.toBeNull();
+
+    selfInvite.set(undefined);
+    await settle();
+    expect(find('meeting-details-resend')).not.toBeNull();
+  });
+
+  it('asks before resending, in an alertdialog naming the meeting, and sends nothing yet', async () => {
     await render();
     await click(find('meeting-details-resend'));
 
+    expect(overlay('meeting-details-resend-dialog')?.textContent).toContain('Resend Your Invitation');
+    const message = overlay('meeting-details-resend-message');
+    expect(message?.textContent?.trim()).toBe("Resend your invitation to “Synthetic sync”? We'll email it to your own address again.");
+    expect(document.querySelector('[role="alertdialog"]')?.getAttribute('aria-describedby')).toBe(message?.id);
+    expect(overlay('meeting-details-resend-cancel')?.textContent?.trim()).toBe('Cancel');
+    expect(overlay('meeting-details-resend-confirm')?.textContent?.trim()).toBe('Resend');
+    expect(meetingService['resendMyMeetingInvitation']).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing on Cancel', async () => {
+    await render();
+    await click(find('meeting-details-resend'));
+    await click(overlay('meeting-details-resend-cancel'));
+
+    expect(overlay('meeting-details-resend-dialog')).toBeNull();
+    expect(meetingService['resendMyMeetingInvitation']).not.toHaveBeenCalled();
+    expect(toastShow).not.toHaveBeenCalled();
+  });
+
+  it('resends the invite for the shown date once confirmed, then closes the dialog', async () => {
+    await render();
+    await click(find('meeting-details-resend'));
+    await click(overlay('meeting-details-resend-confirm'));
+
+    expect(meetingService['resendMyMeetingInvitation']).toHaveBeenCalledTimes(1);
     expect(meetingService['resendMyMeetingInvitation']).toHaveBeenCalledWith('synthetic-meeting', 'occ-1');
+    expect(overlay('meeting-details-resend-dialog')).toBeNull();
     expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ message: 'Meeting invitation sent' }));
+  });
+
+  it('keeps the dialog open and busy until the send settles, and sends once for a double click', async () => {
+    const send$ = new Subject<{ message: string }>();
+    meetingService['resendMyMeetingInvitation'].mockReturnValue(send$);
+    await render();
+    await click(find('meeting-details-resend'));
+    const confirm = overlay('meeting-details-resend-confirm')?.querySelector('button') as HTMLButtonElement;
+    confirm.click();
+    confirm.click();
+    await settle();
+
+    expect(meetingService['resendMyMeetingInvitation']).toHaveBeenCalledTimes(1);
+    expect(overlay('meeting-details-resend-confirm')?.querySelector('button')?.getAttribute('aria-busy')).toBe('true');
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+    await settle();
+    expect(overlay('meeting-details-resend-dialog')).not.toBeNull();
+    send$.next({ message: 'ok' });
+    send$.complete();
+    await settle();
+    expect(overlay('meeting-details-resend-dialog')).toBeNull();
   });
 
   it('removes the viewer after confirming', async () => {

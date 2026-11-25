@@ -90,6 +90,11 @@ import {
   GoogleAdsConversionActionsResult,
   GoogleAdsGeoTargetSearchOptions,
   GoogleAdsGeoTargetSearchResult,
+  LinkedInGeoSearchResult,
+  LinkedInAudiencesResult,
+  LinkedInConversionsResult,
+  LinkedInTargetingSearchFacet,
+  LinkedInTargetingSearchResult,
   GoogleAdsAudienceReadType,
   GoogleAdsAudiencesResult,
   GoogleAdsUserListsResult,
@@ -98,6 +103,10 @@ import {
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
+  MetaCustomAudiencesResult,
+  MetaLeadFormsResult,
+  MetaTargetingSearchResult,
+  MetaTargetingSearchType,
   LinkedInAccount,
   LinkedInCreateAccountResult,
   LinkedInMonitorResponse,
@@ -754,6 +763,34 @@ export class CampaignService {
   }
 
   /**
+   * The custom audiences on the Meta ad account a create for this project uses, for the Implement tab's
+   * Meta audience targeting (#5905). A coded 403 without `global_marketing_ops` on the project, a coded
+   * 503 when that check cannot be made, and a 404 while Meta audience targeting is off.
+   */
+  public getMetaCustomAudiences(projectSlug: string): Observable<MetaCustomAudiencesResult> {
+    return this.http.get<MetaCustomAudiencesResult>('/api/campaigns/meta/custom-audiences', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The Instant Forms on the Facebook Page a Meta create for this project uses, for the Implement tab's lead form
+   * picker (#5940). A coded 403 without `global_marketing_ops` on the project, a 404 while Meta lead forms are off,
+   * and a 503 when Meta refuses the read or the Page holds more forms than campaign-service lists.
+   */
+  public getMetaLeadForms(projectSlug: string): Observable<MetaLeadFormsResult> {
+    return this.http.get<MetaLeadFormsResult>('/api/campaigns/meta/lead-forms', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Meta's interests, behaviors or job titles matching `query`, for the Implement tab's detailed targeting (#5904
+   * row 4). A 404 while the search is off on this deployment, and a 503 when Meta is busy or refuses the read.
+   */
+  public searchMetaTargetingOptions(projectSlug: string, type: MetaTargetingSearchType, query: string): Observable<MetaTargetingSearchResult> {
+    // Strict encoding: the default codec leaves `+` bare, which Express reads as a space, so `C++` would search `C`.
+    const params = strictHttpParams().set('project', projectSlug).set('type', type).set('query', query);
+    return this.http.get<MetaTargetingSearchResult>('/api/campaigns/meta/targeting-search', { params });
+  }
+
+  /**
    * Whether X creation is open on this deployment, with no brief — the Plan picker's answer before
    * one exists. `project` is not read by the answer, which is deployment-wide; it is what lets the
    * campaign-manager guard authorise a project-scoped caller, which refuses an unscoped request.
@@ -769,6 +806,50 @@ export class CampaignService {
    */
   public getTwitterAdsAccounts(projectSlug: string): Observable<TwitterAdsAccountsResult> {
     return this.http.get<TwitterAdsAccountsResult>('/api/campaigns/twitter/accounts', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Search LinkedIn locations for the Implement tab's location picker (#5545): campaign-service's targeting typeahead,
+   * `facet=locations`, answered as geo targets ready to add. Unflagged.
+   */
+  public searchLinkedInGeoTargets(projectSlug: string, query: string): Observable<LinkedInGeoSearchResult> {
+    // `strictHttpParams`, because the query is user-typed text (see `searchGoogleAdsGeoTargets`).
+    const params = strictHttpParams().set('project', projectSlug).set('q', query);
+    return this.http.get<LinkedInGeoSearchResult>('/api/campaigns/linkedin/geo-targets', { params });
+  }
+
+  /**
+   * Search one LinkedIn targeting facet for the Implement tab's custom targeting editor (#5764 rows 8–11): campaign-service's
+   * targeting typeahead. 404 while custom targeting is off on the server.
+   */
+  public searchLinkedInTargeting(projectSlug: string, facet: LinkedInTargetingSearchFacet, query: string): Observable<LinkedInTargetingSearchResult> {
+    // `strictHttpParams`, because the query is user-typed text (see `searchGoogleAdsGeoTargets`).
+    const params = strictHttpParams().set('project', projectSlug).set('facet', facet).set('q', query);
+    return this.http.get<LinkedInTargetingSearchResult>('/api/campaigns/linkedin/targeting-entities', { params });
+  }
+
+  /**
+   * The ad segments (matched and retargeting audiences) on the LinkedIn ad account a create uses, for the custom
+   * targeting editor (#5764 rows 8–11). `accountId` names a non-default account the caller chose; without it the
+   * default is read. A coded 403 for a caller without `global_marketing_ops` on the project, a coded 503 when that
+   * check cannot be made, and a 404 while custom targeting is off on the server.
+   */
+  public getLinkedInAudiences(projectSlug: string, accountId?: string): Observable<LinkedInAudiencesResult> {
+    // `strictHttpParams`, as the targeting search beside it, so every param is encoded the same way.
+    let params = strictHttpParams().set('project', projectSlug);
+    if (accountId) params = params.set('accountId', accountId);
+    return this.http.get<LinkedInAudiencesResult>('/api/campaigns/linkedin/audiences', { params });
+  }
+
+  /**
+   * The enabled conversion rules on the LinkedIn ad account a create uses, for the objective picker (#5764 row 4), with
+   * `accountId` as for `getLinkedInAudiences`. A coded 403 for a caller without `global_marketing_ops` on the project, a
+   * coded 503 when that check cannot be made, and a 404 while conversions are off on the server.
+   */
+  public getLinkedInConversions(projectSlug: string, accountId?: string): Observable<LinkedInConversionsResult> {
+    let params = strictHttpParams().set('project', projectSlug);
+    if (accountId) params = params.set('accountId', accountId);
+    return this.http.get<LinkedInConversionsResult>('/api/campaigns/linkedin/conversions', { params });
   }
 
   /**

@@ -6,6 +6,42 @@ import type { HealthMetricsMembersReservedTier } from './health-metrics-members.
 /** A sortable Health Metrics column's state: unsorted, ascending or descending. */
 export type HealthMetricsColumnSort = 'none' | 'asc' | 'desc';
 
+/** A sorted table's direction. */
+export type HealthMetricsSortDirection = 'asc' | 'desc';
+
+/** How a column compares: text sorts A to Z on its first click, every other kind highest or newest first. */
+export type HealthMetricsSortKind = 'text' | 'number' | 'date' | 'tier';
+
+/** A table's sort: the column it follows and which way. */
+export interface HealthMetricsTableSort<K extends string = string> {
+  key: K;
+  direction: HealthMetricsSortDirection;
+}
+
+/** A sortable column: its key and how its values compare. */
+export interface HealthMetricsSortColumn<K extends string = string> {
+  key: K;
+  kind: HealthMetricsSortKind;
+}
+
+/** A sortable header's state and the `aria-sort` its `th` carries. */
+export interface HealthMetricsSortHeaderView {
+  state: HealthMetricsColumnSort;
+  ariaSort: 'ascending' | 'descending' | 'none';
+}
+
+/**
+ * A cell's sort value: a number (counts, money, percentages, epoch dates, tier ranks) or text; `null` for an empty
+ * cell, which sorts last in both directions.
+ */
+export type HealthMetricsSortValue = number | string | null;
+
+/** A server-sorted column's SQL: a trusted expression from the service, never request text. */
+export interface HealthMetricsSqlSortColumn {
+  expression: string;
+  kind: HealthMetricsSortKind;
+}
+
 /** A 28px icon tile before a cell's text, which indents 38px. */
 export interface HealthMetricsCellIconLead {
   kind: 'icon';
@@ -19,6 +55,8 @@ export interface HealthMetricsCellPersonLead {
   name: string;
   /** Photo URL; empty falls back to initials. */
   photoUrl: string;
+  /** Overrides the avatar's initials, such as one letter for a one-word name; empty keeps its default. */
+  initials?: string;
 }
 
 /** A 24px company logo box inline before a cell's text; its description indents 32px to line up with the name. */

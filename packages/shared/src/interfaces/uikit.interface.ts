@@ -209,6 +209,16 @@ export type UiInputType = 'text' | 'email' | 'url' | 'tel' | 'password' | 'searc
 /** Virtual keyboard hint of a uikit text input, the native `inputmode` values. */
 export type UiInputMode = 'none' | 'text' | 'tel' | 'url' | 'email' | 'numeric' | 'decimal' | 'search';
 
+/** Makes a `lfx-ui-input` the combobox of a listbox drawn beside it, so focus stays in the field while arrows move the highlight. */
+export interface UiInputCombobox {
+  /** The listbox's id. */
+  controls: string;
+  /** Whether the listbox shows. */
+  expanded: boolean;
+  /** The highlighted option's id, or `null` when none is. */
+  activeDescendant: string | null;
+}
+
 /** Scroll axis of the uikit scroller: a snapping rail, a fading list, or a free two-axis pane. */
 export type UiScrollerDirection = 'horizontal' | 'vertical' | 'both';
 
@@ -437,6 +447,9 @@ export interface UiFocusable {
 
 /** Padding of a uikit popover panel: the default 16px, or none for content that runs edge to edge. */
 export type UiPopoverPadding = 'default' | 'none';
+
+/** Which side of its host a uikit hover card prefers; it flips to the other when it does not fit. */
+export type UiHoverCardSide = 'top' | 'bottom';
 
 /** Size of a uikit empty state: `default` for pages and lists, `small` for cards, side panels and popovers. */
 export type UiEmptyStateSize = 'default' | 'small';

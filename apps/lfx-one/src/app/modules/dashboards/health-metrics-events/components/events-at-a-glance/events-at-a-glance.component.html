@@ -19,16 +19,40 @@
     <lfx-table
       styleClass="hm-table"
       [rowHover]="false"
-      [value]="view().rows"
+      [value]="rows()"
       [paginator]="false"
       [tableStyle]="{ 'min-width': '560px' }"
       data-testid="events-at-a-glance-table">
       <ng-template #header>
         <tr>
-          <th scope="col">Metric</th>
-          <th scope="col" class="text-right" data-testid="events-at-a-glance-period-heading">{{ view().periodHeading }}</th>
-          <th scope="col" class="text-right" data-testid="events-at-a-glance-comparison-heading">{{ view().comparisonHeading }}</th>
-          <th scope="col" class="text-right">Change</th>
+          <th scope="col" [attr.aria-sort]="sorting.headers().metric.ariaSort">
+            <lfx-health-metrics-th
+              label="Metric"
+              [sort]="sorting.headers().metric.state"
+              (sorted)="sorting.toggle('metric')"
+              data-testid="events-at-a-glance-sort-metric" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().period.ariaSort" data-testid="events-at-a-glance-period-heading">
+            <lfx-health-metrics-th
+              [label]="view().periodHeading"
+              [sort]="sorting.headers().period.state"
+              (sorted)="sorting.toggle('period')"
+              data-testid="events-at-a-glance-sort-period" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().comparison.ariaSort" data-testid="events-at-a-glance-comparison-heading">
+            <lfx-health-metrics-th
+              [label]="view().comparisonHeading"
+              [sort]="sorting.headers().comparison.state"
+              (sorted)="sorting.toggle('comparison')"
+              data-testid="events-at-a-glance-sort-comparison" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().change.ariaSort">
+            <lfx-health-metrics-th
+              label="Change"
+              [sort]="sorting.headers().change.state"
+              (sorted)="sorting.toggle('change')"
+              data-testid="events-at-a-glance-sort-change" />
+          </th>
         </tr>
       </ng-template>
 

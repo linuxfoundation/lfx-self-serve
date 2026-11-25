@@ -16,7 +16,7 @@ import type {
 } from './health-metrics-l2.interface';
 import type { HealthMetricsMembersQueryParams } from './health-metrics-members.interface';
 import type { HealthMetricsColumnChartView } from './health-metrics-column-chart.interface';
-import type { HealthMetricsBarListRow, HealthMetricsCellCompanyLead } from './health-metrics-table.interface';
+import type { HealthMetricsBarListRow, HealthMetricsCellCompanyLead, HealthMetricsSortValue, HealthMetricsTableSort } from './health-metrics-table.interface';
 import type { HealthMetricsNonMembersQueryParams } from './health-metrics-non-members.interface';
 import type { HealthMetricsWorldMapCountry } from './health-metrics-world-map.interface';
 import type { UiBadgeTone } from './uikit.interface';
@@ -141,6 +141,8 @@ export interface HealthMetricsEventsForecastRowView {
   fillClass: string;
   /** The fill's meaning for a screen reader, e.g. "Needs action"; empty with no goal, which draws no bar. */
   paceLabel: string;
+  /** Each sortable column's value, matching what its cell shows, so the whole list sorts before a page is cut. */
+  sortValues: Record<HealthMetricsEventsForecastSortKey, HealthMetricsSortValue>;
 }
 
 /** Outcome chip for one closed event; see `resolveHealthMetricsEventsPastStatus` for the rule. */
@@ -201,6 +203,8 @@ export interface HealthMetricsEventsPastRowView {
   status: HealthMetricsEventsPastStatus;
   statusLabel: string;
   statusTone: UiBadgeTone;
+  /** Each sortable column's value, matching what its cell shows, so the whole list sorts before a page is cut. */
+  sortValues: Record<HealthMetricsEventsPastSortKey, HealthMetricsSortValue>;
 }
 
 /** The section for one period: its metrics row and the events that closed in it, most recent first. */
@@ -263,6 +267,8 @@ export interface HealthMetricsEventsAtAGlanceRowView {
   comparison: string;
   change: string | null;
   changeTone: UiBadgeTone;
+  /** Each sortable column's value, matching what its cell shows, so the whole list sorts before a page is cut. */
+  sortValues: Record<HealthMetricsEventsAtAGlanceSortKey, HealthMetricsSortValue>;
 }
 
 /** The section for one period: its metrics row and the comparison table with its two period headings. */
@@ -378,6 +384,8 @@ export interface HealthMetricsEventsRevenueRowView {
   registrationGoalSuffix: string;
   sponsorshipLabel: string;
   sponsorshipGoalSuffix: string;
+  /** Each sortable column's value, matching what its cell shows, so the whole list sorts before a page is cut. */
+  sortValues: Record<HealthMetricsEventsRevenueSortKey, HealthMetricsSortValue>;
 }
 
 /** The section for one period: its metrics row and its events, with whether there is anything to show. */
@@ -527,6 +535,8 @@ export interface HealthMetricsEventsSpeakerProposalsQuery {
   pageSize: number;
   /** Also list the period's events; the drawer asks once, as the list ignores the filters. */
   includeEvents: boolean;
+  /** A column the reader picked on the proposals table; `null` keeps the most recent first. */
+  sort: HealthMetricsTableSort<HealthMetricsEventsSpeakerProposalSortKey> | null;
 }
 
 /** An event with proposals in the period, as the drawer's event filter lists it. */
@@ -581,6 +591,8 @@ export interface HealthMetricsEventsOrganizationsQuery {
   search: string;
   offset: number;
   pageSize: number;
+  /** A column the reader picked; `null` keeps the view's rank, the most registrations first. */
+  sort: HealthMetricsTableSort<HealthMetricsEventsOrganizationsSortKey> | null;
 }
 
 /** One organization's event record for the period. Every `null` is not available, never zero. */
@@ -786,3 +798,21 @@ export interface HealthMetricsEventsSnapshot {
   sponsorshipRevenueUsd: number;
   sponsorshipRevenueInPeriodUsd: Record<HealthMetricsEventsSnapshotPeriod, number>;
 }
+
+/** The All upcoming events table's sortable columns; Registrations sorts by the share of goal reached. */
+export type HealthMetricsEventsForecastSortKey = 'event' | 'registrations';
+
+/** The Past events table's sortable columns; Event sorts by the event's date. */
+export type HealthMetricsEventsPastSortKey = 'event' | 'registrations' | 'revenue' | 'status';
+
+/** The At a glance table's sortable columns. */
+export type HealthMetricsEventsAtAGlanceSortKey = 'metric' | 'period' | 'comparison' | 'change';
+
+/** The Event revenue table's sortable columns. */
+export type HealthMetricsEventsRevenueSortKey = 'event' | 'registration' | 'sponsorship';
+
+/** The recent proposals table's sortable columns, sorted on the server across the whole period. */
+export type HealthMetricsEventsSpeakerProposalSortKey = 'speaker' | 'company' | 'event' | 'submitted' | 'status';
+
+/** Companies at events' sortable columns, sorted on the server across every page. */
+export type HealthMetricsEventsOrganizationsSortKey = 'company' | 'membership' | 'registrations' | 'sponsorship' | 'proposals' | 'speakers' | 'events';

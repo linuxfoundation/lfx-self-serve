@@ -7,7 +7,7 @@ import { ProjectContextService } from '@app/shared/services/project-context.serv
 import { EditorComponent } from '@components/editor/editor.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { GroupsIOServiceType } from '@lfx-one/shared/enums';
-import { GroupsIOService } from '@lfx-one/shared/interfaces';
+import { InheritedGroupsIOService } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-mailing-list-basic-info',
@@ -19,7 +19,7 @@ export class MailingListBasicInfoComponent {
 
   public readonly form = input.required<FormGroup>();
   public readonly formValue = input.required<Signal<Record<string, unknown>>>();
-  public readonly service = input<GroupsIOService | null>(null);
+  public readonly service = input<InheritedGroupsIOService | null>(null);
   public readonly prefix = input<string>('');
   public readonly maxGroupNameLength = input<number>(34);
   public readonly isEditMode = input<boolean>(false);

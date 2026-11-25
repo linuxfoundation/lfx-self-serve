@@ -129,7 +129,10 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
   const members: OrgRollUpSetOrg[] = [];
   checks.forEach((check, index) => {
     if (check.status === 'fulfilled') {
-      members.push(family.orgs[index]);
+      // The all employee view is single-company and reduced; a roll-up must never serve a company at full width on it.
+      if (check.value !== 'employee-view') {
+        members.push(family.orgs[index]);
+      }
       return;
     }
     if (!(check.reason instanceof MicroserviceError && check.reason.statusCode === 403)) {
@@ -140,11 +143,12 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     throw forbidden();
   }
 
-  if (members.length < family.orgs.length) {
+  const excludedCount = family.orgs.length - members.length;
+  if (excludedCount > 0) {
     logger.debug(req, operation, 'Left organizations the caller cannot read out of the roll-up', {
       roll_up_key: rollUpKey,
       member_count: members.length,
-      excluded_count: family.orgs.length - members.length,
+      excluded_count: excludedCount,
     });
   }
 
@@ -155,7 +159,7 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
       member_count: members.length,
     });
   }
-  return { rollUpKey, rootUid, members, complete };
+  return { rollUpKey, rootUid, members, complete, excludedCount };
 }
 
 function batchAuditorChecks(req: Request, orgUids: string[]): (orgUid: string) => Promise<boolean> {

@@ -63,6 +63,7 @@ router.post('/:uid/documents/upload', express.raw({ type: '*/*', limit: '100mb' 
 );
 // Stream a project document file binary back to the browser with Content-Disposition.
 router.get('/:uid/documents/:documentId/download', (req, res, next) => projectController.downloadProjectDocument(req, res, next));
+router.patch('/:uid/documents/:documentId', (req, res, next) => projectController.updateProjectDocument(req, res, next));
 router.delete('/:uid/documents/:documentId', (req, res, next) => projectController.deleteProjectDocument(req, res, next));
 
 export default router;

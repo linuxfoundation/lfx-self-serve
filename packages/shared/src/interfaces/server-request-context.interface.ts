@@ -24,6 +24,8 @@ export interface ServerFlagUserContext {
 export interface ServerRequestFlags {
   /** `MEETINGS_REDESIGN_FLAG` for the viewer; set only on `/meetings/:id`. */
   meetingsRedesign?: boolean;
+  /** `PROFILE_REDESIGN_FLAG` for the viewer; set only on `/profile` and `/account` pages. */
+  profileRedesign?: boolean;
 }
 
 /**

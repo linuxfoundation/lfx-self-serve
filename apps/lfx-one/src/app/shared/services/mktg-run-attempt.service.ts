@@ -379,6 +379,30 @@ export class MktgRunAttemptService {
     }
   }
 
+  /**
+   * The answered round this profile's STORED attempt carries for the given block, read past this window's memory copy:
+   * another window's accepted send reaches shared storage, never this cache. Nothing is restored or cached by the look.
+   * A save that retires that block spreads the result in, so the sibling's marker (its resume's ignore-id) survives the
+   * rewrite; an older round's marker is not carried, since a resume would take its id as the ignore-id.
+   */
+  public storedAnswered(project: string, agentId: string, questionsId: string): Pick<MktgPendingGeneration, 'answered'> {
+    if (!this.subject() || !isPlatformBrowser(this.platformId)) {
+      return { answered: undefined };
+    }
+    try {
+      const raw = window.localStorage.getItem(this.key(project, agentId, this.subject()));
+      const answered = raw ? (JSON.parse(raw) as MktgStoredPendingGeneration).answered : undefined;
+      return { answered: answered?.questionsId === questionsId ? answered : undefined };
+    } catch {
+      return { answered: undefined };
+    }
+  }
+
+  /** Whether this profile answered the block in ANOTHER window (its stored attempt says so; this window's copy cannot). */
+  public answeredInAnotherWindow(project: string, agentId: string, questionsId: string): boolean {
+    return !!this.storedAnswered(project, agentId, questionsId).answered;
+  }
+
   public clear(project: string, agentId: string, subject = this.subject(), documentId?: string): void {
     if (!subject || subject !== this.subject() || !isPlatformBrowser(this.platformId)) {
       return;

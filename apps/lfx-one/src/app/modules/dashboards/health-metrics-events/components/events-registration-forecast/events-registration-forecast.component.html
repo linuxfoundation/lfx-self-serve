@@ -53,9 +53,21 @@
       data-testid="events-registration-forecast-table">
       <ng-template #header>
         <tr>
-          <th scope="col">Event</th>
+          <th scope="col" [attr.aria-sort]="sorting.headers().event.ariaSort">
+            <lfx-health-metrics-th
+              label="Event"
+              [sort]="sorting.headers().event.state"
+              (sorted)="sorting.toggle('event')"
+              data-testid="events-registration-forecast-sort-event" />
+          </th>
           <!-- Exact px: the design's minmax(200px, 240px) column. -->
-          <th scope="col" class="w-[240px] min-w-[200px]">Registrations</th>
+          <th scope="col" class="w-[240px] min-w-[200px]" [attr.aria-sort]="sorting.headers().registrations.ariaSort">
+            <lfx-health-metrics-th
+              label="Registrations"
+              [sort]="sorting.headers().registrations.state"
+              (sorted)="sorting.toggle('registrations')"
+              data-testid="events-registration-forecast-sort-registrations" />
+          </th>
         </tr>
       </ng-template>
 
