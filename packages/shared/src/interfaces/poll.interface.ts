@@ -1092,7 +1092,7 @@ export interface VoteResultsQuestion {
 /**
  * One-line results summary for a question
  * @description Built by `buildVoteResultsSummary` for the vote detail Overview card, which shows the leading choice
- * (or, for an ended ranked vote, its final outcome) instead of the full breakdown.
+ * instead of the full breakdown; an ended ranked vote's final outcome uses `VoteOverviewOutcome` instead (#6124).
  */
 export interface VoteResultsSummaryLine {
   /** Question identifier */
@@ -1101,6 +1101,35 @@ export interface VoteResultsSummaryLine {
   question: string;
   /** Summary sentence, e.g. "Yes leads with 87%" */
   text: string;
+}
+
+/** One runner-up row under the vote detail Overview outcome (#6124); `detail` is null when there is nothing to add. */
+export interface VoteOverviewStanding {
+  choiceId: string;
+  choiceText: string;
+  /** Competition rank, rendered as an ordinal */
+  rank: number;
+  /** e.g. "Won 2 out of 3 possible head-to-head matchups", "Eliminated in round 1" or "Not elected" */
+  detail: string | null;
+}
+
+/**
+ * Method-agnostic final outcome of a ranked question for the vote detail Overview card (#6124)
+ * @description Built by `buildCondorcetOverviewOutcome` (Condorcet IRV) or `buildRankedOverviewOutcome` (IRV, Meek STV)
+ * and rendered by `lfx-vote-overview-outcome`. `standings` holds only the rows after the winners, capped to
+ * `VOTE_OVERVIEW_STANDINGS_LIMIT`; `hiddenCount` is how many more rows the Results tab lists.
+ */
+export interface VoteOverviewOutcome {
+  questionId: string;
+  prompt: string;
+  result: 'winner' | 'tie' | 'none';
+  label: 'Winner' | 'Elected' | 'Tied' | 'No winner';
+  /** Winning, elected or tied option names; empty for no winner */
+  winnerTexts: string[];
+  /** How the result was decided; null when there is nothing to explain */
+  explanation: string | null;
+  standings: VoteOverviewStanding[];
+  hiddenCount: number;
 }
 
 /**

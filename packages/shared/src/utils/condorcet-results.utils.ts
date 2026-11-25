@@ -13,11 +13,18 @@ import type {
   CondorcetStandingRow,
   IrvRoundSummary,
   PollQuestionResult,
+  RankedOutcome,
+  VoteOverviewOutcome,
   VoteResultsResponse,
-  VoteResultsSummaryLine,
   VoteVoter,
 } from '../interfaces/poll.interface';
-import { buildCondorcetSurvivorTiebreaker, joinNames, rankedAnswerChoices, resolveCondorcetOutcome } from './vote-results.utils';
+import {
+  buildCondorcetSurvivorTiebreaker,
+  buildOverviewOutcome,
+  overviewStandingDetail,
+  rankedAnswerChoices,
+  resolveCondorcetOutcome,
+} from './vote-results.utils';
 
 /**
  * Builds the Condorcet IRV results view for each question (#5969), a port of PCC's condorcet-poll-result derivations
@@ -62,22 +69,33 @@ export function condorcetBallotsMatchResults(results: VoteResultsResponse, ballo
 }
 
 /**
- * Builds the vote detail Overview line for each closed Condorcet IRV question (#5969)
- * @param views - Views from `buildCondorcetQuestionViews`
- * @param isClosed - Whether the vote is finalized
- * @returns "Winner: X", "Tied: A and B" or "No winner" per question; empty while the vote is open, so the caller keeps its live summary
+ * Builds the vote detail Overview outcome for a closed Condorcet IRV question (#6124)
+ * @description Mirrors the Results tab banner of `lfx-vote-condorcet-results` in the same words: a Condorcet winner was
+ * preferred over every other option head-to-head; an IRV winner came from the instant-runoff fallback (`usedIrv`).
+ * Standings keep the non-winning rows, capped to `VOTE_OVERVIEW_STANDINGS_LIMIT`.
+ * @param view - A view from `buildCondorcetQuestionViews`
  */
-export function buildCondorcetSummaryLines(views: CondorcetQuestionView[], isClosed: boolean): VoteResultsSummaryLine[] {
-  if (!isClosed) return [];
-  return views.map((view) => {
-    let text = 'No winner';
-    if (view.outcome === CondorcetOutcome.CONDORCET_WINNER || view.outcome === CondorcetOutcome.IRV_WINNER) {
-      text = `Winner: ${view.winnerNames[0]}`;
-    } else if (view.outcome === CondorcetOutcome.TIE) {
-      text = `Tied: ${joinNames(view.winnerNames)}`;
-    }
-    return { questionId: view.questionId, question: view.prompt, text };
-  });
+export function buildCondorcetOverviewOutcome(view: CondorcetQuestionView): VoteOverviewOutcome {
+  let result: RankedOutcome['result'] = 'none';
+  if (view.outcome === CondorcetOutcome.CONDORCET_WINNER || view.outcome === CondorcetOutcome.IRV_WINNER) result = 'winner';
+  else if (view.outcome === CondorcetOutcome.TIE) result = 'tie';
+
+  const outcome: RankedOutcome = {
+    kind: view.usedIrv ? 'irv' : 'condorcet',
+    result,
+    winnerTexts: view.winnerNames,
+    roundCount: 0,
+    condorcetFallback: view.usedIrv,
+  };
+  const runnersUp = view.standings
+    .filter((row) => !row.isWinner)
+    .map((row) => ({
+      choiceId: row.choiceId,
+      choiceText: row.choiceText,
+      rank: row.rank,
+      detail: overviewStandingDetail(row.eliminatedInRound !== null, row.eliminatedInRound, row.winCount, row.totalMatchups),
+    }));
+  return buildOverviewOutcome(view.questionId, view.prompt, outcome, runnersUp);
 }
 
 function buildQuestionView(pr: PollQuestionResult, ballots: VoteVoter[] | null): CondorcetQuestionView {

@@ -471,7 +471,7 @@ describe('VotePresenterComponent', () => {
     fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED, poll_type: PollType.CONDORCET_IRV })));
     await mount();
     const compact = (value: string): string => value.replace(/\s+/g, '');
-    expect(text('vote-results-ranked-outcome-q1')).toBe('Candidate B is the winner, having defeated every other candidate in head-to-head matchups.');
+    expect(text('vote-results-ranked-outcome-q1')).toBe('Candidate B is the winner. Preferred over every other option in head-to-head comparisons.');
     expect(compact(text('vote-results-ranked-standing-b'))).toBe(compact('1st Candidate B Won 1 out of 1 possible head-to-head matchup Winner'));
     expect(compact(text('vote-results-ranked-standing-a'))).toBe(compact('2nd Candidate A Won 0 out of 1 possible head-to-head matchup'));
   });
