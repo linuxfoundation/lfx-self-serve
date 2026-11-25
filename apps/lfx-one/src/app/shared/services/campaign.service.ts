@@ -92,6 +92,7 @@ import {
   GoogleAdsGeoTargetSearchResult,
   LinkedInGeoSearchResult,
   LinkedInAudiencesResult,
+  LinkedInConversionsResult,
   LinkedInTargetingSearchFacet,
   LinkedInTargetingSearchResult,
   GoogleAdsAudienceReadType,
@@ -838,6 +839,17 @@ export class CampaignService {
     let params = strictHttpParams().set('project', projectSlug);
     if (accountId) params = params.set('accountId', accountId);
     return this.http.get<LinkedInAudiencesResult>('/api/campaigns/linkedin/audiences', { params });
+  }
+
+  /**
+   * The enabled conversion rules on the LinkedIn ad account a create uses, for the objective picker (#5764 row 4), with
+   * `accountId` as for `getLinkedInAudiences`. A coded 403 for a caller without `global_marketing_ops` on the project, a
+   * coded 503 when that check cannot be made, and a 404 while conversions are off on the server.
+   */
+  public getLinkedInConversions(projectSlug: string, accountId?: string): Observable<LinkedInConversionsResult> {
+    let params = strictHttpParams().set('project', projectSlug);
+    if (accountId) params = params.set('accountId', accountId);
+    return this.http.get<LinkedInConversionsResult>('/api/campaigns/linkedin/conversions', { params });
   }
 
   /**

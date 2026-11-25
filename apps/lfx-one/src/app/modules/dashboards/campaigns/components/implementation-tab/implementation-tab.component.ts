@@ -379,6 +379,7 @@ import type {
   LinkedInAdFormat,
   LinkedInTargeting,
   LinkedInTargetingDraft,
+  LinkedInObjectiveDraft,
   LinkedInTextAdDraft,
   LinkedInTextAdImageInput,
   LinkedInVariantView,
@@ -489,6 +490,9 @@ import {
   linkedInTextAdViews,
   linkedInTextAdsForCreate,
   emptyLinkedInTargetingDraft,
+  emptyLinkedInObjectiveDraft,
+  linkedInObjectiveCreateRefusal,
+  linkedInObjectiveFieldsForCreate,
   linkedInTargetingDraftRefusal,
   linkedInTargetingForCreate,
   linkedInTargetingSegmentsAccountRefusal,
@@ -609,6 +613,7 @@ import {
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
 import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
+import { LinkedInObjectivePickerComponent } from '../linkedin-objective-picker/linkedin-objective-picker.component';
 import { LinkedInTargetingEditorComponent } from '../linkedin-targeting-editor/linkedin-targeting-editor.component';
 import { LinkedInTextAdsEditorComponent } from '../linkedin-text-ads-editor/linkedin-text-ads-editor.component';
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
@@ -715,6 +720,7 @@ let linkedInVariantKeySequence = 0;
     UiOptionComponent,
     UiSelectComponent,
     UiTextareaComponent,
+    LinkedInObjectivePickerComponent,
     LinkedInTargetingEditorComponent,
     LinkedInTextAdsEditorComponent,
   ],
@@ -997,6 +1003,15 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see linkedInTargetingEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInTargetingAvailable = computed<boolean>(() => this.linkedInTargetingEnabled() === true);
+
+  /**
+   * Whether the LinkedIn section offers an objective and conversion tracking (`CampaignListResult.linkedInConversionsEnabled`,
+   * #5764 rows 2 and 4).
+   */
+  public readonly linkedInConversionsEnabled = input<boolean | null>(null);
+
+  /** @see linkedInConversionsEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInConversionsAvailable = computed<boolean>(() => this.linkedInConversionsEnabled() === true);
 
   /** The calls to action the variant editor offers. */
   protected readonly linkedInCallToActionOptions = LINKEDIN_CALL_TO_ACTION_OPTIONS;
@@ -1919,6 +1934,11 @@ export class ImplementationTabComponent implements OnInit {
    * switch keeps this page and its draft, and each foundation's default account differs, so both are part of it.
    */
   protected readonly linkedInSegmentsOwner = computed(() => linkedInSegmentsOwnerKey(this.activeFoundationSlug(), this.linkedInAudienceAccountId()));
+  /**
+   * The objective and conversion rules as edited (#5764 rows 2 and 4), carried in the draft. Rules are owned like segment
+   * picks (`linkedInSegmentsOwner`), and a create for another owner is held.
+   */
+  protected readonly linkedInObjectiveDraft = signal<LinkedInObjectiveDraft>(emptyLinkedInObjectiveDraft());
 
   /**
    * The ad account whose segments the custom targeting editor reads: the account the create names, so the segments
@@ -5535,6 +5555,12 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /** The objective picker's draft as edited (#5764 rows 2 and 4). */
+  protected onLinkedInObjectiveDraftChange(draft: LinkedInObjectiveDraft): void {
+    this.linkedInObjectiveDraft.set(draft);
+    this.emitDraft();
+  }
+
   /** The custom targeting editor's draft as edited (#5764 rows 8–11). */
   protected onLinkedInTargetingDraftChange(draft: LinkedInTargetingDraft): void {
     this.linkedInTargetingDraft.set(draft);
@@ -7068,6 +7094,9 @@ export class ImplementationTabComponent implements OnInit {
               // chosen non-default account is sent, as `selectedAdAccountId` (#5809).
               ...this.linkedInAccountFieldsNow(),
               ...this.biddingField('linkedin-ads'),
+              // The objective and conversion rules (#5764 rows 2 and 4), only when chosen, so a create without a
+              // choice sends what it always did and the bidding decides.
+              ...linkedInObjectiveFieldsForCreate(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable()),
             },
           }
         : {}),
@@ -8812,6 +8841,13 @@ export class ImplementationTabComponent implements OnInit {
       customTargetingUnavailable: this.linkedInCustomTargeting() && !this.linkedInTargetingAvailable(),
       // Custom targeting (#5764 rows 8–11) holds Create while its clauses cannot be sent, and replaces the profile checks.
       ...(this.linkedInCustomTargetingSelected() ? { customTargeting: { refusal: this.linkedInCustomTargetingRefusalNow() } } : {}),
+      // The objective (#5764 rows 2 and 4), checked against the request with its bidding; a withdrawn choice is held.
+      objectiveRefusal: linkedInObjectiveCreateRefusal({
+        draft: this.linkedInObjectiveDraft(),
+        available: this.linkedInConversionsAvailable(),
+        owner: this.linkedInSegmentsOwner(),
+        bidding: this.biddingField('linkedin-ads').bidding,
+      }),
       // Text Ads replace the variant checks while chosen (#5764 row 19); they need a manual bid.
       ...(this.linkedInTextAdsSelected()
         ? {
@@ -9250,6 +9286,8 @@ export class ImplementationTabComponent implements OnInit {
     // Custom targeting and its clauses as edited (#5764 rows 8–11), present-only.
     if (linkedInRestore.customTargeting !== undefined) this.linkedInCustomTargeting.set(linkedInRestore.customTargeting);
     if (linkedInRestore.targetingDraft) this.linkedInTargetingDraft.set(linkedInRestore.targetingDraft);
+    // The objective and conversion rules (#5764 rows 2 and 4), present-only.
+    if (linkedInRestore.objectiveDraft) this.linkedInObjectiveDraft.set(linkedInRestore.objectiveDraft);
     // The LinkedIn upload, on the Meta upload's terms above, for the variant it was chosen for.
     this.linkedInImageUploadVariantKey.set(linkedInRestore.uploadVariantKey);
     if (linkedInRestore.failedUpload) this.failLinkedInImageUpload(linkedInRestore.failedUpload.message, linkedInRestore.failedUpload.briefId);
@@ -9774,6 +9812,7 @@ export class ImplementationTabComponent implements OnInit {
         textAds: this.linkedInTextAds(),
         customTargeting: this.linkedInCustomTargeting(),
         targetingDraft: this.linkedInTargetingDraft(),
+        objectiveDraft: this.linkedInObjectiveDraft(),
       }),
       // Snapshotted whatever `redditCreativeAvailable()` says — see the draft interface for why a
       // capability must not decide what the draft remembers. A failed upload is kept with its brief
@@ -10113,6 +10152,7 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInTextAds.set([]);
     this.linkedInCustomTargeting.set(false);
     this.linkedInTargetingDraft.set(emptyLinkedInTargetingDraft());
+    this.linkedInObjectiveDraft.set(emptyLinkedInObjectiveDraft());
     this.campaignForm.patchValue({
       linkedInAccountId: untracked(() => this.linkedInAccounts())[0]?.accountId ?? '',
       linkedInGeoTargets: [],
