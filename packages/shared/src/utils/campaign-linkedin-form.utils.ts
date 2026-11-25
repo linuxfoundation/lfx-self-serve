@@ -166,6 +166,8 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
     if (!input.targetingEditAvailable) return 'LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.';
     if (!input.profileLoaded) return "LinkedIn Ads: the targeting profile's details have not loaded. Reload the page, or reset the targeting profile.";
   }
+  // The objective and conversion rules (#5764 rows 2 and 4): already a whole message (`linkedInObjectiveCreateRefusal`).
+  if (input.objectiveRefusal) return input.objectiveRefusal;
   // The legacy account must be one the CATALOG confirms, not merely a non-empty string: before the catalog read
   // returns, and for good if it fails, the restored id is still on the form while the selector shows nothing.
   // Membership also covers the blank id. Skipped when the connection decides the account (#5809), since the create

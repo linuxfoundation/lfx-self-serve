@@ -40,4 +40,15 @@ describe('CampaignService', () => {
     ]);
     reqs.forEach((req) => req.flush({ accountId: '', audiences: [] }));
   });
+
+  it('reads the LinkedIn conversion rules of the default account, or of the account named', () => {
+    service.getLinkedInConversions('tlf').subscribe();
+    service.getLinkedInConversions('tlf', '100000002').subscribe();
+    const reqs = http.match((r) => r.url === '/api/campaigns/linkedin/conversions');
+    expect(reqs.map((req) => req.request.urlWithParams)).toEqual([
+      '/api/campaigns/linkedin/conversions?project=tlf',
+      '/api/campaigns/linkedin/conversions?project=tlf&accountId=100000002',
+    ]);
+    reqs.forEach((req) => req.flush({ accountId: '', conversions: [] }));
+  });
 });

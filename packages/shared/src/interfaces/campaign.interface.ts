@@ -1460,6 +1460,11 @@ export interface CampaignImplementationDraft {
   linkedInCustomTargeting?: boolean;
   linkedInTargetingDraft?: LinkedInTargetingDraft;
   /**
+   * The LinkedIn objective and conversion rules as edited (#5764 rows 2 and 4). Restored only when present; the tab
+   * sends them only while `linkedInConversionsEnabled` is on, and holds Create while they are chosen and it is off.
+   */
+  linkedInObjectiveDraft?: LinkedInObjectiveDraft;
+  /**
    * The X section as edited: the daily budget and the authored tweet's copy as RAW text, so a
    * blank budget stays blank rather than turning into 0, and the tweet image upload on the LinkedIn
    * upload fields' terms above. All optional and restored only when present, so a draft written
@@ -2428,6 +2433,8 @@ export interface LinkedInCreateRefusalInput {
   customTargeting?: { refusal: string | null };
   /** Custom targeting is on but this deployment no longer offers it (#5764 rows 8–11). */
   customTargetingUnavailable?: boolean;
+  /** Why the objective or conversion rules chosen cannot be sent (#5764 rows 2 and 4), or `null`; see `linkedInObjectiveCreateRefusal`. */
+  objectiveRefusal?: string | null;
 }
 
 export interface LinkedInCampaignCreateRequest {
@@ -2571,6 +2578,40 @@ export interface LinkedInTargetingSegmentChoice extends LinkedInTargetingEntity 
 export interface LinkedInConfigKeyRefusal {
   field: string;
   message: string;
+}
+
+/** The Implement tab's LinkedIn objective and conversion rules as edited (#5764 rows 2 and 4), carried in the draft. */
+export interface LinkedInObjectiveDraft {
+  /** The objective chosen, or `null`: none is sent, so the bidding decides, as every create did before. */
+  objective: LinkedInObjective | null;
+  /** The conversion rule ids picked, sent only with the `conversions` objective. */
+  conversions: string[];
+  /**
+   * Who the rules were picked for (`linkedInSegmentsOwnerKey`: the foundation and ad account), or `null` with none
+   * picked. Rules belong to one ad account, so a create for another owner is held. Never sent.
+   */
+  conversionsOwner: string | null;
+}
+
+/**
+ * The objective picker's read of the ad account's conversion rules (#5764 row 4): loading, loaded, refused to a caller
+ * without `global_marketing_ops` (`restricted`), or failed (`unavailable`), with the message to show.
+ */
+export interface LinkedInConversionsState {
+  status: 'loading' | 'loaded' | 'restricted' | 'unavailable';
+  conversions: LinkedInConversionRule[];
+  failure: string | null;
+}
+
+/** What `linkedInObjectiveCreateRefusal` reads (#5764 rows 2 and 4): the draft, the capability, the create's owner and bidding. */
+export interface LinkedInObjectiveCreateInput {
+  draft: LinkedInObjectiveDraft;
+  /** `linkedInConversionsEnabled` is an explicit yes. */
+  available: boolean;
+  /** The owner the create uses now (`linkedInSegmentsOwnerKey`). */
+  owner: string;
+  /** The `bidding` the create sends, if any. */
+  bidding?: CampaignBiddingConfig;
 }
 
 /** Which of a LinkedIn variant's optional fields this deployment sends (#5764 rows 16–17). */
@@ -3249,6 +3290,7 @@ export type LinkedInDraftSnapshot = Pick<
   | 'linkedInTextAds'
   | 'linkedInCustomTargeting'
   | 'linkedInTargetingDraft'
+  | 'linkedInObjectiveDraft'
 >;
 
 /** The LinkedIn signals `linkedInDraftFields` snapshots into the draft (#5980): budget, cap, variants and the upload slot. */
@@ -3268,6 +3310,8 @@ export interface LinkedInDraftState {
   /** Whether custom targeting is on, and its clauses as edited (#5764 rows 8–11). */
   customTargeting: boolean;
   targetingDraft: LinkedInTargetingDraft;
+  /** The objective and conversion rules as edited (#5764 rows 2 and 4). */
+  objectiveDraft: LinkedInObjectiveDraft;
 }
 
 /** What a restored draft does to the LinkedIn section (#5980): values to set, and at most one upload step for the component to run. */
@@ -3285,6 +3329,7 @@ export interface LinkedInDraftRestore {
   textAds?: LinkedInTextAdDraft[];
   customTargeting?: boolean;
   targetingDraft?: LinkedInTargetingDraft;
+  objectiveDraft?: LinkedInObjectiveDraft;
 }
 
 /** What a brief's LinkedIn copy seeds (#5980): variants, geos and profile, and a lifetime budget when the strategy names one. */

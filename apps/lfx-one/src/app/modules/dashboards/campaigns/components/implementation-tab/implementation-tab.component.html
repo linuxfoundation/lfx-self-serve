@@ -4165,6 +4165,20 @@
             </div>
           }
 
+          <!-- The objective and conversion tracking (#5764 rows 2 and 4), offered on an explicit yes, and kept on screen
+               while a choice can no longer be sent, so the operator can set it back to the default. -->
+          @if (linkedInConversionsAvailable() || linkedInObjectiveDraft().objective !== null) {
+            <lfx-linkedin-objective-picker
+              class="mb-4 block"
+              [projectSlug]="activeFoundationSlug()"
+              [accountId]="linkedInAudienceAccountId()"
+              [owner]="linkedInSegmentsOwner()"
+              [available]="linkedInConversionsAvailable()"
+              [draft]="linkedInObjectiveDraft()"
+              (draftChange)="onLinkedInObjectiveDraftChange($event)"
+              data-testid="implementation-linkedin-objective" />
+          }
+
           <!-- The upload's status and any image notice, announced. Always mounted; only their text changes. -->
           <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-linkedin-image-status-live">
             {{ linkedInImageUploadLiveMessage() }}

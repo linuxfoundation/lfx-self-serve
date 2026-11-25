@@ -963,6 +963,15 @@ export const LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE =
 export const LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE = 'LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE';
 export const LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to LinkedIn conversion tracking could not be verified. Try again in a few minutes.';
 
+/** What the objective picker says while the ad account's conversion rules load (#5764 row 4). */
+export const LINKEDIN_CONVERSIONS_LOADING_MESSAGE = 'Loading LinkedIn conversion rules…';
+
+/** What it says when the conversion rule read failed another way than the coded 403 or 503. */
+export const LINKEDIN_CONVERSIONS_FAILED_MESSAGE = "LinkedIn conversion rules didn't load. Try again.";
+
+/** Why a create is held while the draft's conversion rules were picked for another foundation or ad account than its own. */
+export const LINKEDIN_CONVERSIONS_OWNER_MESSAGE = 'Conversion rules were picked for another LinkedIn ad account. Remove them or pick them again.';
+
 /**
  * The facets campaign-service's targeting typeahead searches for `linkedInConfig.targeting` (`search-linkedin-ads-targeting-entities`,
  * #585): its `locations` answer `geoTargets`, and seniorities, job functions, company sizes, locales and segments are
