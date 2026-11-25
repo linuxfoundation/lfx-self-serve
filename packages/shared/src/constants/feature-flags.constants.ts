@@ -247,6 +247,20 @@ export const INSIGHTS_PUBLIC_API_FLAG = 'insights-public-api';
 export const INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG = 'insights-public-api-token-access';
 
 /**
+ * Launch gate for public event share kits (`/events/:eventSlug/share-kit`, epic #6057). Default false: a
+ * missing flag, an unset `LD_SDK_KEY` or LaunchDarkly not answering in time all keep every kit hidden.
+ *
+ * **Server-evaluated** — `GET /public/api/events/:eventSlug/share-kit` answers 404 while it is off, so the page
+ * shows its not-found view in SSR and in the browser alike (SSR forwards the visitor's cookies to that call).
+ * Signed-in visitors are evaluated by LFID username, so it can be turned on for staff first; every signed-out
+ * visitor is one shared anonymous context, so turning it on for them is all or nothing. Responses for signed-out
+ * visitors are cacheable for five minutes, so a change can take that long to reach them.
+ *
+ * Remove the flag once the feature is stable.
+ */
+export const EVENT_SHARE_KIT_FLAG = 'event-share-kit';
+
+/**
  * How long the server's LaunchDarkly SDK may take to connect on first use, in seconds. The request
  * that triggers initialization waits at most this long, then falls back to the flag's default
  * (fail closed) and the SDK keeps connecting in the background.

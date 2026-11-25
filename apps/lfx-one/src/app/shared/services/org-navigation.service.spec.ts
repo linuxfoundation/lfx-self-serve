@@ -55,6 +55,8 @@ describe('OrgNavigationService default selection', () => {
   let grantsError: WritableSignal<string | null>;
   let claManagerOrgSet: WritableSignal<Set<string>>;
   let claManagerLookupFailed: WritableSignal<boolean>;
+  let noteEmployeeViewAddressed: ReturnType<typeof vi.fn>;
+  let noteFullAccessAddressed: ReturnType<typeof vi.fn>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let isOnAddressedPage: ReturnType<typeof vi.fn>;
   let isRollUp: ReturnType<typeof vi.fn>;
@@ -79,6 +81,8 @@ describe('OrgNavigationService default selection', () => {
     grantsError = signal<string | null>(null);
     claManagerOrgSet = signal(new Set<string>());
     claManagerLookupFailed = signal(false);
+    noteEmployeeViewAddressed = vi.fn();
+    noteFullAccessAddressed = vi.fn();
     navigateToSelectedOrg = vi.fn();
     isOnAddressedPage = vi.fn(() => false);
     isRollUp = vi.fn(() => false);
@@ -104,6 +108,13 @@ describe('OrgNavigationService default selection', () => {
             error: grantsError,
             claManagerOrgSet,
             claManagerLookupFailed,
+            employeeViewLookupFailed: signal(false),
+            employeeViewOrgUid: signal<string | null>(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            fullAccessOrgUid: signal<string | null>(null),
+            fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
+            noteEmployeeViewAddressed,
+            noteFullAccessAddressed,
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnAddressedPage } },
@@ -575,6 +586,38 @@ describe('OrgNavigationService default selection', () => {
 
       expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
       expect(TestBed.inject(OrgClaOnlyAccessService).isClaOnly(UID_B)).toBe(true);
+    });
+  });
+
+  // #5845 — a restored selection the held list does not list is restored from its own row when that row is an
+  // employee-view or full-access company, and the row's answers are recorded before the address is written.
+  describe('a restored all-employee-view or full-access selection (#5845)', () => {
+    const restoreFirstPage = (rows: OrgItem[]): void => {
+      service.resetAndReload(UID_B);
+      http.expectOne((req) => req.url === '/api/nav/org-items').flush(page(rows));
+      TestBed.tick();
+    };
+
+    it('restores a full-access row the caller holds no grant on, and records it before the address is written', () => {
+      restoreFirstPage([item(UID_A, 'Acme', { slug: null }), item(UID_B, 'Beta', { slug: null, fullAccess: true })]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+      expect(setAccount).not.toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+      expect(noteFullAccessAddressed).toHaveBeenCalledWith(UID_B, true);
+    });
+
+    it('restores an employee-view row the same way', () => {
+      restoreFirstPage([item(UID_A, 'Acme', { slug: null }), item(UID_B, 'Beta', { slug: null, employeeView: true })]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+      expect(noteEmployeeViewAddressed).toHaveBeenCalledWith(UID_B, true);
+      expect(noteFullAccessAddressed).toHaveBeenCalledWith(UID_B, false);
+    });
+
+    it('does not restore an ordinary unheld row from the pin', () => {
+      restoreFirstPage([item(UID_A, 'Acme', { slug: null }), item(UID_B, 'Beta', { slug: null })]);
+
+      expect(setAccount).not.toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
     });
   });
 

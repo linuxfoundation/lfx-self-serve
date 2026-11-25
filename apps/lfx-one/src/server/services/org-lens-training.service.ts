@@ -30,6 +30,7 @@ import type {
   OrgTrainingGroupsResponse,
   OrgTrainingStats,
   OrgTrainingStatsQuery,
+  OrgLensReadQualification,
 } from '@lfx-one/shared/interfaces';
 import {
   hasOrgTrainingFilter,
@@ -42,7 +43,6 @@ import type { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { toIsoTimestamp } from '../helpers/date-format.helper';
-import type { OrgLensReadQualification } from '../helpers/org-lens-read-access.helper';
 import {
   buildOrgTrainingPairsCte,
   ORG_TRAINING_GROUP_SQL,
@@ -473,7 +473,12 @@ export class OrgLensTrainingService {
     const { cte, binds } = buildOrgTrainingPairsCte(accounts, query);
     const accountPredicate = orgTrainingAccountPredicate(accounts);
     // A family keeps one row per account and pair, so a pair certified in one account is in training in none: people in
-    // training are those with a pair whose key no certified row carries.
+    // training are those with a pair whose key no certified row carries. One account has one row per pair, so its own flag
+    // decides, without scanning `f` again.
+    const peopleInTraining =
+      accounts.length > 1
+        ? '(SELECT COUNT(DISTINCT PERSON_KEY) FROM f WHERE NOT IS_CERTIFIED AND PAIR_KEY NOT IN (SELECT PAIR_KEY FROM f WHERE IS_CERTIFIED))'
+        : 'COUNT(DISTINCT IFF(NOT IS_CERTIFIED, PERSON_KEY, NULL))';
     const pairsSql = `
       WITH ${cte}
       SELECT
@@ -483,7 +488,7 @@ export class OrgLensTrainingService {
         COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')}, PERSON_KEY, NULL)) AS CERTIFIED_PEOPLE,
         COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('trainings')}, PAIR_KEY, NULL))        AS TRAININGS_COMPLETED,
         COUNT(DISTINCT IFF(IS_CERTIFIED, PAIR_KEY, NULL))                                                  AS CERTIFIED_PAIRS,
-        (SELECT COUNT(DISTINCT PERSON_KEY) FROM f WHERE NOT IS_CERTIFIED AND PAIR_KEY NOT IN (SELECT PAIR_KEY FROM f WHERE IS_CERTIFIED)) AS PEOPLE_IN_TRAINING
+        ${peopleInTraining}                                                                                AS PEOPLE_IN_TRAINING
       FROM f
     `;
 

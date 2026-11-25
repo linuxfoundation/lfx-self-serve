@@ -2533,8 +2533,8 @@ export interface LinkedInCampaignCreateRequest {
    * `global_marketing_ops`, and refuses the create otherwise, rather than creating in another account.
    */
   selectedAdAccountId?: string;
-  /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
-  bidding?: CampaignBiddingConfig;
+  /** Optional bidding choice (#3299) — see {@link LinkedInBiddingConfig}. Omitted means automatic. */
+  bidding?: LinkedInBiddingConfig;
   /** The selected targeting profile with entries removed (#5546). Omitted when nothing was removed. */
   targetingProfileEdit?: LinkedInTargetingProfileEdit;
   /**
@@ -8265,6 +8265,13 @@ export interface CampaignListResult {
    */
   linkedInVideoAdsEnabled: boolean;
   /**
+   * Whether a LinkedIn create's automatic `bidding` may carry a `targetAmount`, its target cost
+   * (linuxfoundation/lfx-v2-campaign-service#674). Needs bidding (`canCreateWithBidding`), since the target travels inside
+   * `bidding`, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGET_COST`, which follows campaign-service's own
+   * `LINKEDIN_ADS_TARGET_COST_ENABLED`.
+   */
+  linkedInTargetCostEnabled: boolean;
+  /**
    * Whether a LinkedIn create may carry its own `targeting` (#5764 rows 8–11). Needs the campaign-service create path
    * AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING`, which follows campaign-service's own
    * `LINKEDIN_ADS_TARGETING_ENABLED`.
@@ -8597,6 +8604,17 @@ export interface CampaignBiddingConfig {
   strategy: CampaignBiddingStrategy;
   /** Max cost-per-click bid, in the currency the provider expects (USD on LinkedIn). Manual only. */
   bidAmount?: number;
+}
+
+/** `linkedInConfig.bidding`: {@link CampaignBiddingConfig} plus LinkedIn's own automatic-bidding target. */
+export interface LinkedInBiddingConfig extends CampaignBiddingConfig {
+  /**
+   * Automatic bidding's target cost, in USD like the budget (linuxfoundation/lfx-v2-campaign-service#674), sent to
+   * LinkedIn as the campaign's `unitCost` beside `MAX_CLICK` or `MAX_CONVERSION`. Omitted means no target. Refused with
+   * `strategy: "manual"`, and unless above zero, at most 1,000,000 and a whole number of cents. Only while
+   * `linkedInTargetCostEnabled`. See `linkedInTargetCostRefusal`.
+   */
+  targetAmount?: number;
 }
 
 /** One platform's Bidding control as edited. `bidAmount` is `null` until a number is entered. */

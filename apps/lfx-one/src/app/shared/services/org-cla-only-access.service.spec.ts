@@ -12,14 +12,20 @@ describe('OrgClaOnlyAccessService', () => {
   const UID = '0014100000ClaOnlyA';
   const claManagerOrgSet = signal(new Set<string>());
   const claManagerLookupFailed = signal(false);
+  const employeeViewLookupFailed = signal(false);
   const writerSet = signal(new Set<string>());
   const inheritedAuditorSet = signal(new Set<string>());
   const isStaff = signal(false);
+  const employeeViewOrgUids = signal<ReadonlySet<string>>(new Set());
+  const fullAccessOrgUids = signal<ReadonlySet<string>>(new Set());
   let service: OrgClaOnlyAccessService;
 
   beforeEach(() => {
+    employeeViewOrgUids.set(new Set());
+    fullAccessOrgUids.set(new Set());
     claManagerOrgSet.set(new Set([UID]));
     claManagerLookupFailed.set(false);
+    employeeViewLookupFailed.set(false);
     writerSet.set(new Set());
     inheritedAuditorSet.set(new Set());
     isStaff.set(false);
@@ -30,11 +36,19 @@ describe('OrgClaOnlyAccessService', () => {
           useValue: {
             claManagerOrgSet,
             claManagerLookupFailed,
+            employeeViewLookupFailed,
             isStaff,
             writerSet,
             auditorSet: signal(new Set<string>()),
             inheritedWriterSet: signal(new Set<string>()),
             inheritedAuditorSet,
+            employeeViewOrgUids,
+            fullAccessOrgUids,
+            // Mirrors the real service: a CLA-only answer drops the company from both reduced-mode sets.
+            clearReducedModes: (uid: string) => {
+              employeeViewOrgUids.set(new Set([...employeeViewOrgUids()].filter((value) => value !== uid)));
+              fullAccessOrgUids.set(new Set([...fullAccessOrgUids()].filter((value) => value !== uid)));
+            },
           },
         },
       ],
@@ -47,6 +61,18 @@ describe('OrgClaOnlyAccessService', () => {
     expect(service.isClaOnly(UID)).toBe(true);
     expect(service.isClaOnly('0014100000OtherOrg')).toBe(false);
     expect(service.isClaOnly(null)).toBe(false);
+  });
+
+  it('lets proven employee access supersede CLA-only for the same company', () => {
+    employeeViewOrgUids.set(new Set([UID]));
+
+    expect(service.isClaOnly(UID)).toBe(false);
+  });
+
+  it('treats a company read at full width through the authorizer as full, not CLA-only, even for a CLA Manager', () => {
+    fullAccessOrgUids.set(new Set([UID]));
+
+    expect(service.isClaOnly(UID)).toBe(false);
   });
 
   it('never narrows an organization the grants hold, even when the server set names it', () => {
@@ -65,6 +91,17 @@ describe('OrgClaOnlyAccessService', () => {
     expect(service.lookupFailed()).toBe(true);
   });
 
+  it('reports a failed all employee view lookup too, so the empty state offers Retry instead of "not an employee"', () => {
+    expect(service.lookupFailed()).toBe(false);
+
+    employeeViewLookupFailed.set(true);
+    expect(service.lookupFailed()).toBe(true);
+
+    employeeViewLookupFailed.set(false);
+    claManagerLookupFailed.set(true);
+    expect(service.lookupFailed()).toBe(true);
+  });
+
   describe('an organization an address resolved as CLA-only', () => {
     const ADDRESSED = '0014100000AddressB';
 
@@ -77,6 +114,28 @@ describe('OrgClaOnlyAccessService', () => {
 
       expect(service.isClaOnly(ADDRESSED)).toBe(true);
       expect(service.claOnlyOrgUids().size).toBe(0);
+    });
+
+    it('becomes CLA-only, dropping a stale employee-view or full-access mode, when the server answered after checking the employee view', () => {
+      employeeViewOrgUids.set(new Set([ADDRESSED]));
+      expect(service.isClaOnly(ADDRESSED)).toBe(false);
+
+      service.noteAddressed(ADDRESSED, true, true);
+      expect(service.isClaOnly(ADDRESSED)).toBe(true);
+
+      fullAccessOrgUids.set(new Set([ADDRESSED]));
+      expect(service.isClaOnly(ADDRESSED)).toBe(false);
+      service.noteAddressed(ADDRESSED, true, true);
+      expect(service.isClaOnly(ADDRESSED)).toBe(true);
+    });
+
+    it('keeps an employee-view mode when a CLA-only answer came without the employee-view check (it failed or did not run)', () => {
+      employeeViewOrgUids.set(new Set([ADDRESSED]));
+
+      service.noteAddressed(ADDRESSED, true);
+
+      expect([...employeeViewOrgUids()]).toEqual([ADDRESSED]);
+      expect(service.isClaOnly(ADDRESSED)).toBe(false);
     });
 
     it('stops being CLA-only once a later resolve says otherwise', () => {

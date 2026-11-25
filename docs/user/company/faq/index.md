@@ -1,6 +1,6 @@
 ---
 title: Company FAQ
-description: Short answers about the Company lens — what the lens is and what you can do in it, how to switch companies, what the Company Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Events page shows for a company family, what the Company Profile page shows and who can edit it, where to see the company's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Company Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Company lens — what the lens is and what you can do in it, how to switch companies, what the Company Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Events and Training & Certification pages show for a company family, what the Company Profile page shows and who can edit it, where to see the company's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Company Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Company
 tags:
@@ -32,7 +32,7 @@ tags:
     leaderboard,
     crowdfunding,
   ]
-last_updated: 2026-11-23
+last_updated: 2026-11-25
 intercom_collection: Company
 ---
 
@@ -86,7 +86,11 @@ When you pick a company family in the company selector, listed as **All**, the f
 
 ## What does the Training & Certification page show?
 
-The Training & Certification page shows the Linux Foundation training courses and certifications the selected company's people enrolled in or completed over a time range. Ten cards count its learners and courses, such as **Courses taken**, **Certifications** and **Completion rate**, and a table on the **Certifications** and **Trainings** tabs groups them by course, foundation, project, level or format. The time range defaults to **Past 2 years**. **Clear all** resets only the five filters under **More filters**, and keeps the time range, **Group by** and the search. Select a **Certified**, **Completed** or **In progress** number to see the current employees behind it. The sidebar item is **Training & Certification**, under **Company Engagement**, and the page heading reads **Training & Certifications —** followed by the company's name. See [What is the Training & Certification page?](../training/#what-is-the-training-amp-certification-page).
+The Training & Certification page shows the Linux Foundation training courses and certifications the selected company's people enrolled in or completed over a time range. Ten cards count its learners and courses, such as **Courses taken**, **Certifications** and **Completion rate**, and a table on the **Certifications** and **Trainings** tabs groups them by course, foundation, project, level or format. The time range defaults to **Past 2 years**. **Clear all** resets the five filters under **More filters**, and the **Company** filter for a company family, and keeps the time range, **Group by** and the search. Select a **Certified**, **Completed** or **In progress** number to see the current employees behind it. The sidebar item is **Training & Certification**, under **Company Engagement**, and the page heading reads **Training & Certifications —** followed by the company's name. See [What is the Training & Certification page?](../training/#what-is-the-training-amp-certification-page).
+
+## What does the Training & Certification page show for a company family?
+
+When you pick a company family in the company selector, listed as **All**, the family's name and **Companies** (for example, **All Acme Companies**), the Training & Certification page combines the training of every company in that family that you have access to. Apart from **Training-program roster members**, which adds up each company's count, the cards count a person once and a person-course pair (one person in one course) once across the family, and a pair with a certificate under any of the companies counts as certified. The table has one row per **Group by** value and company, such as one row for each course and company, with a **Company** column, and each row counts that company's own people and pairs, so the **Total** row can be less than the sum of the rows. A **Company** filter narrows the cards and the table to one company, and selecting a number in a row opens the people of that row's company only. See [What does the Training & Certification page show for a company family?](../training/#what-does-the-training-amp-certification-page-show-for-a-company-family).
 
 ## What does the Company lens Meetings page show?
 

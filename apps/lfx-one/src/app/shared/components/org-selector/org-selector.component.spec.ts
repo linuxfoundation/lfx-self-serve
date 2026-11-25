@@ -10,6 +10,7 @@ import { isOrgRollUpSegment, orgRollUpAccount } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { LensService } from '@services/lens.service';
 import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -43,6 +44,8 @@ describe('OrgSelectorComponent.selectItem', () => {
   let refreshList: ReturnType<typeof vi.fn>;
   let previewingMenuLens: WritableSignal<boolean>;
   let noteAddressed: ReturnType<typeof vi.fn>;
+  let noteViewModeAddressed: ReturnType<typeof vi.fn>;
+  let noteFullAccessAddressed: ReturnType<typeof vi.fn>;
 
   const pick = (item: OrgItem): void => (fixture.componentInstance as unknown as { selectItem(item: OrgItem): void }).selectItem(item);
 
@@ -59,6 +62,8 @@ describe('OrgSelectorComponent.selectItem', () => {
     refreshList = vi.fn();
     previewingMenuLens = signal(false);
     noteAddressed = vi.fn();
+    noteViewModeAddressed = vi.fn();
+    noteFullAccessAddressed = vi.fn();
     const empty = signal(new Set<string>());
 
     await TestBed.configureTestingModule({
@@ -66,6 +71,10 @@ describe('OrgSelectorComponent.selectItem', () => {
       providers: [
         provideNoopAnimations(),
         { provide: OrgClaOnlyAccessService, useValue: { noteAddressed, isClaOnly: () => false } },
+        {
+          provide: OrgLensViewModeService,
+          useValue: { noteAddressed: noteViewModeAddressed, noteFullAccessAddressed, isEmployeeView: signal(false), isFullAccessReader: signal(false) },
+        },
         {
           provide: AccountContextService,
           useValue: {
@@ -117,6 +126,12 @@ describe('OrgSelectorComponent.selectItem', () => {
             inheritedWriterSet: empty,
             inheritedAuditorSet: empty,
             parentNameByUid: signal(new Map<string, string>()),
+            employeeViewOrgUid: signal<string | null>(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            fullAccessOrgUid: signal<string | null>(null),
+            fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
+            noteEmployeeViewAddressed: vi.fn(),
+            noteFullAccessAddressed: vi.fn(),
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnNotFound } },
@@ -154,21 +169,38 @@ describe('OrgSelectorComponent.selectItem', () => {
   it('records a CLA-only row as CLA-only before the switch navigates', () => {
     pick({ ...rowB, slug: null, claOnly: true });
 
-    expect(noteAddressed).toHaveBeenCalledWith(UID_B, true);
+    expect(noteAddressed).toHaveBeenCalledWith(UID_B, true, false);
     expect(noteAddressed.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
+  });
+
+  // #5845 — the path guard skips the resolver for a known slug, so the pick must carry the row's mode answers.
+  it('records an employee-view row, and clears the full-access note, before the switch navigates', () => {
+    pick({ ...rowB, slug: null, employeeView: true });
+
+    expect(noteViewModeAddressed).toHaveBeenCalledWith(UID_B, true);
+    expect(noteFullAccessAddressed).toHaveBeenCalledWith(UID_B, false);
+    expect(noteViewModeAddressed.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
+  });
+
+  it('records a full-access row before the switch navigates, and not as employee-view', () => {
+    pick({ ...rowB, slug: null, fullAccess: true });
+
+    expect(noteFullAccessAddressed).toHaveBeenCalledWith(UID_B, true);
+    expect(noteViewModeAddressed).toHaveBeenCalledWith(UID_B, false);
+    expect(noteFullAccessAddressed.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
   });
 
   it('clears any CLA-only note when the picked row is not CLA-only', () => {
     pick(rowB);
 
-    expect(noteAddressed).toHaveBeenCalledWith(UID_B, false);
+    expect(noteAddressed).toHaveBeenCalledWith(UID_B, false, false);
   });
 
   // The same-organization pick returns before switching, and the path guard will not resolve it either.
   it('records a re-pick of the selected CLA-only row without re-selecting it', () => {
     pick({ ...rowA, slug: null, claOnly: true });
 
-    expect(noteAddressed).toHaveBeenCalledWith(UID_A, true);
+    expect(noteAddressed).toHaveBeenCalledWith(UID_A, true, false);
     expect(setAccount).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
   });
@@ -285,6 +317,7 @@ describe('OrgSelectorComponent navbar card', () => {
     inheritedWriters?: string[];
     claManagerOrgs?: string[];
     claOnlyPending?: boolean;
+    employeeViewOrgs?: string[];
   }
 
   const createCard = async ({
@@ -295,6 +328,7 @@ describe('OrgSelectorComponent navbar card', () => {
     inheritedWriters = [],
     claManagerOrgs = [],
     claOnlyPending = false,
+    employeeViewOrgs = [],
   }: CardSetup): Promise<NavbarCardView> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -349,6 +383,13 @@ describe('OrgSelectorComponent navbar card', () => {
             parentNameByUid: signal(new Map([[UID_A, 'Parent Holdings']])),
             claManagerOrgSet: signal(new Set(claManagerOrgs)),
             claManagerLookupFailed: signal(false),
+            employeeViewLookupFailed: signal(false),
+            employeeViewOrgUid: signal<string | null>(employeeViewOrgs[0] ?? null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set(employeeViewOrgs)),
+            fullAccessOrgUid: signal<string | null>(null),
+            fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
+            noteEmployeeViewAddressed: vi.fn(),
+            noteFullAccessAddressed: vi.fn(),
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: vi.fn(), isOnNotFound: vi.fn(() => false) } },
@@ -437,6 +478,37 @@ describe('OrgSelectorComponent navbar card', () => {
 
     it('lets a held grant win over a CLA-only flag on the same row', async () => {
       const card = await createCard({ items: [{ ...rowA, claOnly: true }], writers: [UID_A], claManagerOrgs: [UID_A] });
+
+      expect(card.selectedRoleLabel()).toBe('Company Admin Editor');
+      expect(card.displayedItems()[0].roleLabel).toBe('Company Admin Editor');
+    });
+  });
+
+  describe('an all employee view company (#5845)', () => {
+    const EMPLOYEE_TOOLTIP = 'You work for this company. You can see a read-only summary with no names or email addresses.';
+
+    it('labels a row that is both CLA-only and employee-view as Employee, matching the selected-company copy', async () => {
+      const card = await createCard({ items: [{ ...rowA, claOnly: true, employeeView: true }] });
+
+      expect(card.displayedItems().map((row) => [row.item.uid, row.roleLabel, row.roleTooltip])).toEqual([[UID_A, 'Employee', EMPLOYEE_TOOLTIP]]);
+    });
+
+    it('labels an employee-view row that carries no grant', async () => {
+      const card = await createCard({ items: [{ ...rowA, employeeView: true }] });
+
+      expect(card.displayedItems().map((row) => [row.item.uid, row.roleLabel, row.roleTooltip])).toEqual([[UID_A, 'Employee', EMPLOYEE_TOOLTIP]]);
+    });
+
+    it('labels the card when the selected company is an employee-view company', async () => {
+      const card = await createCard({ employeeViewOrgs: [UID_A] });
+
+      expect(card.selectedRoleLabel()).toBe('Employee');
+      expect(card.selectedRoleTooltip()).toBe(EMPLOYEE_TOOLTIP);
+      expect(card.navbarRoleTooltip()).toBe(EMPLOYEE_TOOLTIP);
+    });
+
+    it('lets a held grant win over the employee-view flag', async () => {
+      const card = await createCard({ items: [{ ...rowA, employeeView: true }], writers: [UID_A], employeeViewOrgs: [UID_A] });
 
       expect(card.selectedRoleLabel()).toBe('Company Admin Editor');
       expect(card.displayedItems()[0].roleLabel).toBe('Company Admin Editor');
@@ -568,6 +640,12 @@ describe('OrgSelectorComponent family roll-ups', () => {
             inheritedWriterSet: signal(new Set<string>()),
             inheritedAuditorSet: signal(new Set<string>()),
             parentNameByUid: signal(new Map<string, string>()),
+            employeeViewOrgUid: signal<string | null>(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            fullAccessOrgUid: signal<string | null>(null),
+            fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
+            noteEmployeeViewAddressed: vi.fn(),
+            noteFullAccessAddressed: vi.fn(),
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: navigateSpy, navigateToRollUpHome: rollUpHomeSpy, isOnNotFound: onNotFound } },
