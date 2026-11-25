@@ -1439,6 +1439,13 @@ environment:
   HUBSPOT_ACCESS_TOKEN:
     value:
 
+  # Share Kit member codes: JSON object mapping an event slug to its member code,
+  # e.g. {"example-summit-2027":"EXAMPLE20"}. The default is an empty object: valid JSON,
+  # no member codes, so no kit shows a member offer (and nothing is logged as malformed).
+  # Real codes never live in this repository; set them per environment in lfx-v2-argocd.
+  SHARE_KIT_MEMBER_CODES:
+    value: "{}"
+
   # Stripe publishable key
   STRIPE_PUBLISHABLE_KEY:
     value:
