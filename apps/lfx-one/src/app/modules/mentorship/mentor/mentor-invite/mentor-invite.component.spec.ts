@@ -119,7 +119,31 @@ describe('MentorInviteComponent', () => {
   });
 
   it.each([
-    ['the read fails', httpError(403)],
+    [400, 'mentorship-mentor-invite-invalid-link'],
+    [409, 'mentorship-mentor-invite-invalid-link'],
+    [403, 'mentorship-mentor-invite-forbidden'],
+  ])('shows a %i from the read at once, before the profile check can disable the answer', (status, testId) => {
+    build({ invite: httpError(status), hasProfile: false });
+
+    expect(byTestId(testId)).not.toBeNull();
+    expect(byTestId('mentorship-mentor-invite-confirm')).toBeNull();
+    expect(byTestId('mentorship-mentor-invite-profile-hint')).toBeNull();
+  });
+
+  it('keeps an answer in flight when the read fails after it', () => {
+    const read = new Subject<{ programId: string; programName: string }>();
+    build({ invite: read, respond: new Subject<void>() });
+
+    click('mentorship-mentor-invite-accept-button');
+    read.error(new HttpErrorResponse({ status: 403 }));
+    fixture.detectChanges();
+
+    expect(byTestId('mentorship-mentor-invite-forbidden')).toBeNull();
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.getAttribute('data-loading')).toBe('true');
+  });
+
+  it.each([
+    ['the read fails', httpError(503)],
     ['the program has no name', of({ programId: '', programName: '' })],
   ])('keeps the generic copy when %s, and still answers', (_label, invite) => {
     build({ invite });

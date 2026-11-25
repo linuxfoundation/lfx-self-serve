@@ -70,6 +70,15 @@ test.describe('Mentor invite link — answering', () => {
     expect(writes).toEqual([]);
   });
 
+  test('says at once that the link can no longer be used when the read refuses it (400)', async ({ page }) => {
+    const writes = await stubInviteResponse(page, [{ status: 204 }], { status: 400 });
+    await openInvite(page);
+
+    await expect(page.getByTestId('mentorship-mentor-invite-invalid-link')).toContainText('It may have expired or already been answered.');
+    await expect(page.getByTestId('mentorship-mentor-invite-confirm')).toHaveCount(0);
+    expect(writes).toEqual([]);
+  });
+
   test('keeps the generic copy when the program cannot be read, and still answers', async ({ page }) => {
     const writes = await stubInviteResponse(page, [{ status: 204 }], { status: 503 });
     await openInvite(page);

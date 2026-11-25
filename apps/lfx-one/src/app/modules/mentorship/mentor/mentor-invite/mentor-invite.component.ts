@@ -12,7 +12,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE } from '@lfx-one/shared/constants';
 import {
   MentorshipMentorInviteDecision,
-  MentorshipMentorInviteDetails,
+  MentorshipMentorInviteRead,
   MentorshipMentorInviteState,
   MentorshipMentorProfileCheck,
 } from '@lfx-one/shared/interfaces';
@@ -60,13 +60,17 @@ export class MentorInviteComponent {
   protected readonly profileCheck: Signal<MentorshipMentorProfileCheck> = this.initProfileCheck();
   /** Accept and Decline need a confirmed mentor profile. */
   protected readonly canAnswer = computed(() => this.profileCheck() === 'found');
-  /** The invited program, or null until the browser's read returns it (never on the server, or after a failed read). */
-  private readonly invite: Signal<MentorshipMentorInviteDetails | null> = this.initInvite();
-  protected readonly programName = computed(() => this.invite()?.programName ?? '');
+  /** The browser's read of the invitation; never made on the server. */
+  private readonly inviteRead: Signal<MentorshipMentorInviteRead> = this.initInviteRead();
+  protected readonly programName = computed(() => this.inviteRead().details?.programName ?? '');
   /** The program's id, for the View program link; the link shows only for a UUID. */
-  protected readonly programId = computed(() => this.invite()?.programId ?? '');
+  protected readonly programId = computed(() => this.inviteRead().details?.programId ?? '');
+  /**
+   * An answer in flight or given comes first; then a read that says the link cannot be used, so it is shown before the
+   * mentor profile check can disable the answer; then the choice.
+   */
   protected readonly state = computed<MentorshipMentorInviteState>(
-    () => this.submission() ?? (isMentorshipMentorInviteToken(this.token()) ? 'confirm' : 'invalid-link')
+    () => this.submission() ?? this.inviteRead().failure ?? (isMentorshipMentorInviteToken(this.token()) ? 'confirm' : 'invalid-link')
   );
   protected readonly submitting = computed(() => this.state() === 'submitting');
   protected readonly accepting = computed(() => this.submitting() && this.decision() === 'accept');
@@ -123,24 +127,33 @@ export class MentorInviteComponent {
   }
 
   /**
-   * Reads the program's id and name for each usable link. The read's failure is not shown: Accept or Decline reports why
-   * the link cannot be used, as before the page named the program.
+   * Reads the program's id and name for each usable link. Upstream checks the read as it does an answer, so its 400 or
+   * 409 (the link can no longer be used) and 403 (another account's invitation) are shown at once; any other failure
+   * keeps the generic copy, and Accept or Decline reports it.
    */
-  private initInvite(): Signal<MentorshipMentorInviteDetails | null> {
-    if (!isPlatformBrowser(this.platformId)) return signal<MentorshipMentorInviteDetails | null>(null).asReadonly();
+  private initInviteRead(): Signal<MentorshipMentorInviteRead> {
+    const none: MentorshipMentorInviteRead = { details: null, failure: null };
+    if (!isPlatformBrowser(this.platformId)) return signal(none).asReadonly();
     return toSignal(
       toObservable(this.token).pipe(
         switchMap((token) =>
           isMentorshipMentorInviteToken(token)
             ? this.mentorService.getMentorInvite(token).pipe(
-                catchError(() => of(null)),
-                startWith(null)
+                map((details): MentorshipMentorInviteRead => ({ details, failure: null })),
+                catchError((error: unknown) => of<MentorshipMentorInviteRead>({ details: null, failure: this.readFailureFor(error) })),
+                startWith(none)
               )
-            : of(null)
+            : of(none)
         )
       ),
-      { initialValue: null }
+      { initialValue: none }
     );
+  }
+
+  /** The state a failed read shows: only a refusal that an answer would meet too; anything else shows none. */
+  private readFailureFor(error: unknown): MentorshipMentorInviteState | null {
+    const state = this.stateForError(error);
+    return state === 'invalid-link' || state === 'forbidden' ? state : null;
   }
 
   /** Shows an outcome only on the link it was made from. */

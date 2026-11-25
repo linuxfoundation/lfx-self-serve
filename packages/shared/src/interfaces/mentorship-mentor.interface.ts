@@ -280,6 +280,15 @@ export interface MentorshipMentorInviteDetails {
   programName: string;
 }
 
+/**
+ * The invite page's read of its invitation: the program once read, or why the link cannot be used when the read says
+ * so (`invalid-link` or `forbidden`); both null while reading, and after any other failure.
+ */
+export interface MentorshipMentorInviteRead {
+  details: MentorshipMentorInviteDetails | null;
+  failure: MentorshipMentorInviteState | null;
+}
+
 /** Where the invite page's mentor profile check stands: still checking, a profile found, none, or the check failed. */
 export type MentorshipMentorProfileCheck = 'checking' | 'found' | 'missing' | 'failed';
 
