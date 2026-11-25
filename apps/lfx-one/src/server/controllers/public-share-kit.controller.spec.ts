@@ -26,7 +26,7 @@ const kit = { eventSlug: 'example-summit-2027', title: 'Example Summit' } as Sha
 
 function buildReqRes(eventSlug: string): { req: Request; res: Response & { json: Mock; setHeader: Mock }; next: NextFunction & Mock } {
   const req = { params: { eventSlug }, path: `/public/api/events/${eventSlug}/share-kit`, log: {} } as unknown as Request;
-  const res = { json: vi.fn(), setHeader: vi.fn() } as unknown as Response & { json: Mock; setHeader: Mock };
+  const res = { json: vi.fn(), setHeader: vi.fn(), vary: vi.fn() } as unknown as Response & { json: Mock; setHeader: Mock; vary: Mock };
   const next = vi.fn() as unknown as NextFunction & Mock;
   return { req, res, next };
 }
@@ -65,7 +65,7 @@ describe('PublicShareKitController.getShareKit', () => {
     await controller.getShareKit(req, res, next);
     expect(isFlagEnabled).toHaveBeenCalledWith(req, EVENT_SHARE_KIT_FLAG, false, { key: 'anonymous-share-kit-visitor', anonymous: true });
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
-    expect(res.setHeader).toHaveBeenCalledWith('Vary', 'Cookie');
+    expect(res.vary).toHaveBeenCalledWith('Cookie');
   });
 
   it('evaluates signed-in visitors by username and keeps their answer out of shared caches', async () => {
@@ -116,6 +116,6 @@ describe('PublicShareKitController.getShareKit', () => {
     await controller.getShareKit(req, res, next);
     expect(res.json).toHaveBeenCalledWith({ ...kit, memberOffer: { status: 'eligible', code: 'EXAMPLE20', companyName: 'Acme Motors' } });
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
-    expect(res.setHeader).toHaveBeenCalledWith('Vary', 'Cookie');
+    expect(res.vary).toHaveBeenCalledWith('Cookie');
   });
 });

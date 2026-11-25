@@ -36,8 +36,9 @@ export class PublicShareKitController {
       const signedIn = !!getEffectiveUsername(req);
       // Signed-in visitors are targeted by LFID username (staff first); everyone else shares one context.
       const enabled = await this.flags.isFlagEnabled(req, EVENT_SHARE_KIT_FLAG, false, signedIn ? undefined : SHARE_KIT_ANONYMOUS_FLAG_CONTEXT);
-      // The answer can differ per visitor while the flag is targeted, so shared caches must keep them apart.
-      res.setHeader('Vary', 'Cookie');
+      // The answer depends on the session cookie (signed in or not, flag targeting, member offer), so shared caches must
+      // keep visitors apart. `vary` appends, keeping any Vary value set earlier.
+      res.vary('Cookie');
       if (!enabled) {
         logger.debug(req, 'get_public_share_kit', 'Share kit flag is off for this visitor', { event_slug: eventSlug, signed_in: signedIn });
         throw new ResourceNotFoundError('Share kit', eventSlug, { operation: 'get_public_share_kit', service: 'public_share_kit_controller', path: req.path });
