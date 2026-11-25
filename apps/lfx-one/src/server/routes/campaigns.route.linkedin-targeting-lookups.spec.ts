@@ -221,6 +221,13 @@ describe('GET /api/campaigns/linkedin/conversions', () => {
     expect(svcConversions).not.toHaveBeenCalled();
   });
 
+  it('fails an unreadable rule list with a 502 rather than an empty list', async () => {
+    svcConversions.mockResolvedValueOnce({ account_id: '500000001' });
+
+    expect((await getConversions()).status).toBe(502);
+    expect(svcConversions).toHaveBeenCalledTimes(1);
+  });
+
   it('answers 404 while LinkedIn conversions are off, with no upstream call', async () => {
     isServerFeatureEnabled.mockImplementation((flag) => flag !== 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS');
 
