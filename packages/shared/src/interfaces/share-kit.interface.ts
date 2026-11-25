@@ -40,12 +40,12 @@ export interface ShareKitNewsletterBlurb {
   url: string;
 }
 
-/** A downloadable promotional graphic. */
 /** A graphic as the page renders it: `local` graphics are same-origin, so the browser can download them. */
 export interface ShareKitGraphicView extends ShareKitGraphic {
   local: boolean;
 }
 
+/** A downloadable promotional graphic. */
 export interface ShareKitGraphic {
   /** Short name shown above the image and reported to analytics. */
   label: string;

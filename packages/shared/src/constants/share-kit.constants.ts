@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { ServerFlagUserContext } from '../interfaces/server-request-context.interface';
+
 /** Platforms a share kit writes posts for, in tab order. */
 export const SHARE_KIT_PLATFORMS = ['linkedin', 'x', 'bluesky'] as const;
 
@@ -61,6 +63,12 @@ export const SHARE_KIT_LOCAL_ASSET_PREFIX = '/share-kits/';
  * read is an in-memory lookup of repo-owned content.
  */
 export const SHARE_KIT_PUBLIC_READ_PATTERN = /^\/events\/[a-z0-9-]+\/share-kit\/?$/;
+
+/**
+ * The one LaunchDarkly context every signed-out visitor is evaluated as for `EVENT_SHARE_KIT_FLAG`, so the flag is on
+ * for all of them or none.
+ */
+export const SHARE_KIT_ANONYMOUS_FLAG_CONTEXT: ServerFlagUserContext = { key: 'anonymous-share-kit-visitor', anonymous: true };
 
 /** Heading fonts an event theme may pick. Each must exist in `SHARE_KIT_HEADING_FONT_STACKS`. */
 export const SHARE_KIT_HEADING_FONTS = ['inter', 'inter-tight'] as const;

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EVENT_SHARE_KIT_FLAG, SHARE_KIT_SLUG_PATTERN } from '@lfx-one/shared/constants';
+import { EVENT_SHARE_KIT_FLAG, SHARE_KIT_ANONYMOUS_FLAG_CONTEXT, SHARE_KIT_SLUG_PATTERN } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { ContentUnavailableError, ResourceNotFoundError } from '../errors';
@@ -9,9 +9,6 @@ import { LaunchDarklyServerService } from '../services/launchdarkly-server.servi
 import { logger } from '../services/logger.service';
 import { ShareKitService } from '../services/share-kit.service';
 import { getEffectiveUsername } from '../utils/auth-helper';
-
-/** The one context every signed-out visitor is evaluated as, so the flag is on for all of them or none. */
-const ANONYMOUS_SHARE_KIT_CONTEXT = { key: 'anonymous-share-kit-visitor', anonymous: true };
 
 /** Controller for the public event share kit (#6058). Content is repo-owned and loaded at startup. */
 export class PublicShareKitController {
@@ -35,7 +32,7 @@ export class PublicShareKitController {
       res.setHeader('Cache-Control', 'private, no-store');
       const signedIn = !!getEffectiveUsername(req);
       // Signed-in visitors are targeted by LFID username (staff first); everyone else shares one context.
-      const enabled = await this.flags.isFlagEnabled(req, EVENT_SHARE_KIT_FLAG, false, signedIn ? undefined : ANONYMOUS_SHARE_KIT_CONTEXT);
+      const enabled = await this.flags.isFlagEnabled(req, EVENT_SHARE_KIT_FLAG, false, signedIn ? undefined : SHARE_KIT_ANONYMOUS_FLAG_CONTEXT);
       // The answer can differ per visitor while the flag is targeted, so shared caches must keep them apart.
       res.setHeader('Vary', 'Cookie');
       if (!enabled) {
