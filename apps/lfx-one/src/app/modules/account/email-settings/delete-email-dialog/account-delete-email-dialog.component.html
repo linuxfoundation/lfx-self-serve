@@ -1,0 +1,13 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<lfx-ui-modal [heading]="copy.deleteTitle" [width]="480" closable data-testid="account-delete-email-dialog">
+  <p class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700" data-testid="account-delete-email-text">
+    <strong class="font-semibold text-ui-neutral-900">{{ email }}</strong> {{ copy.deleteText }}
+  </p>
+  <ng-container modalActions>
+    <lfx-ui-button data-autofocus variant="secondary" (click)="dialogRef.close(false)" data-testid="account-delete-email-cancel">Cancel</lfx-ui-button>
+    <lfx-ui-button variant="danger" (click)="dialogRef.close(true)" data-testid="account-delete-email-confirm">{{ copy.deleteConfirm }}</lfx-ui-button>
+  </ng-container>
+</lfx-ui-modal>

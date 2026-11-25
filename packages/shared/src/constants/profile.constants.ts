@@ -394,6 +394,18 @@ export const ACCOUNT_IDENTITIES_COPY = {
 } as const;
 
 /** Copy for the Account & Settings Linux.com email page (#6075). `{domain}` is the alias domain the server reports. */
+/** Copy of Account & Settings › Email settings (#6079). The add and code steps keep the hub's copy. */
+export const ACCOUNT_EMAIL_SETTINGS_COPY = {
+  heading: 'Email Addresses',
+  subtitle: 'Manage your email addresses. All email addresses are verified before they can be used.',
+  primaryHint: 'Used for account communications',
+  deletePrimaryReason: 'You can’t delete your primary email.',
+  deleteInviteReason: 'This email is set for meeting invitations.',
+  deleteTitle: 'Delete email address?',
+  deleteText: 'will be removed from your account. Activity linked to it may no longer be attributed to you. This action can’t be undone.',
+  deleteConfirm: 'Delete email address',
+} as const;
+
 export const ACCOUNT_LINUX_EMAIL_COPY = {
   subtitle: 'A personal @{domain} address that forwards to an inbox you choose. It’s a one-time add-on for Individual Supporters.',
   claimNote: 'Your add-on is active. Pick your alias and where its email should go. You can’t change the alias later.',
