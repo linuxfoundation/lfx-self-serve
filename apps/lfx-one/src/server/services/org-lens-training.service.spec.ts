@@ -513,8 +513,6 @@ describe('OrgLensTrainingService — a filter value the organization never carri
   });
 
   it('serves data, not zeros, for a value a pair carries in a narrower range even when it resolves to another value all-time (30d Beginner, all-time Intermediate)', async () => {
-    // The dropdown of the 30d range offers `Beginner` (the pair's 30d value); the all-time pair resolves to `Intermediate`.
-    // The known set holds the values of every range, so it still contains `Beginner`.
     execute.mockImplementation(async (sql: string) => {
       if (isKnownValuesSql(sql)) {
         return {

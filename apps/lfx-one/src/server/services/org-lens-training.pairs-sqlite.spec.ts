@@ -20,13 +20,6 @@ vi.mock('./logger.service', () => ({ logger: { debug: vi.fn() } }));
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgLensTrainingService } from './org-lens-training.service';
 
-// The SQL under test is the real SQL of OrgLensTrainingService, executed against node:sqlite over synthetic
-// ORG_PEOPLE_TRAINING_PAIRS rows (pairs as the warehouse resolves them), so the counting is run, not pattern-matched.
-// The pair rule itself is the warehouse model's and is tested there; this spec proves the reads count its keys, keep to the
-// account, range and people list, and classify a pair into the same tab in the stats and in the group-by totals.
-//
-// Snowflake-only constructs are translated, never by weakening the SQL: IFF(a, b, c) -> IIF(a, b, c); the schema prefix is dropped.
-
 interface SqlDatabase {
   exec(sql: string): void;
   prepare(sql: string): {
@@ -106,15 +99,6 @@ const pair = (
   ...extra,
 });
 
-/**
- * All time, on the people list:      30 days, on the people list:
- *   p1|cka   certified  certifications   p1|cka  certified  certifications
- *   p1|intro enrolled   trainings        p3|cks  enrolled   certifications
- *   p2|cka   certified  certifications
- *   p2|intro certified  trainings        Off the list: p4 (both ranges), p5 (all time).
- *   p3|cks   enrolled   certifications   Another organization: p1|cka, p9|intro (all time).
- *   p3|web   certified  trainings
- */
 const PAIRS: PairRow[] = [
   pair('all', 'p1', CKA, true),
   pair('all', 'p1', INTRO, false),
@@ -202,8 +186,6 @@ afterEach(() => {
 });
 
 describe('Training reads run against SQLite over warehouse-resolved pairs', () => {
-  // [label, query, courses taken, certifications, trainings completed, in progress, people, certified people, people in training]
-  // Counted by hand from the fixture table above PAIRS.
   it.each<[string, OrgTrainingStatsQuery, number, number, number, number, number, number, number]>([
     ['all time, no filter', query({}), 6, 2, 2, 2, 3, 2, 2],
     ['30 days: only the pairs the model lists for that range', query({ range: '30d' }), 2, 1, 0, 1, 2, 1, 1],

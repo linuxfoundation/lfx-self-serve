@@ -6,11 +6,6 @@
 import type { OrgLensTimeRange, OrgTrainingGroupBy, OrgTrainingStatsQuery, OrgTrainingTabId } from '@lfx-one/shared/interfaces';
 import { orgLensTimeRangeDays } from '@lfx-one/shared/utils';
 
-/**
- * The person-course pairs of the Training page, resolved in the warehouse: one row per (time range, account, person, course),
- * each value from that account's own in-range rows. The pair rule (which rows make a pair, when it is certified, its course,
- * project and foundation, its tab) lives in the model and its tests; the reads here only filter its rows and count its keys.
- */
 export const ORG_TRAINING_PAIRS_TABLE = 'ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_PAIRS';
 
 /** Pair attribute column each filter narrows (all bound as params, never inlined). */
@@ -33,13 +28,12 @@ export const ORG_TRAINING_GROUP_SQL: Readonly<Record<OrgTrainingGroupBy, { key: 
 
 /**
  * `ACTIVITY_TS` (enrollment or certificate date) on or after N days before today; empty for all time. Inline, not bound:
- * the day count comes from the allow-listed range. Used by the People › Trainees detail rows, which read ORG_PEOPLE_TRAINING.
+ * the day count comes from the allow-listed range.
  */
 export function orgTrainingRangePredicate(range: OrgLensTimeRange): string {
   return range === 'all' ? '' : `AND ACTIVITY_TS >= DATEADD(day, -${orgLensTimeRangeDays(range)}, CURRENT_DATE())`;
 }
 
-/** The modeled tab of a pair; stats and the group-by table filter on the same column, so a pair is in one tab everywhere. */
 export function orgTrainingTabPredicate(tab: OrgTrainingTabId): string {
   return tab === 'certifications' ? "TRAINING_TAB = 'certifications'" : "TRAINING_TAB = 'trainings'";
 }
@@ -49,11 +43,6 @@ export function orgTrainingStatusPredicate(status: 'completed' | 'in-progress'):
   return status === 'completed' ? 'IS_CERTIFIED' : 'NOT IS_CERTIFIED';
 }
 
-/**
- * `WITH f`: the org's people-list pairs of the range left after the filters. Every Training number reads `f`, so the same
- * query always counts the same pairs. Counts are distinct `PAIR_KEY` / `PERSON_KEY`, never row counts.
- * Binds: `[accountId, range, ...set filter values in foundation, project, course, level, format order]`.
- */
 export function buildOrgTrainingPairsCte(accountId: string, query: OrgTrainingStatsQuery): { cte: string; binds: string[] } {
   const binds: string[] = [accountId, query.range];
   const conditions: string[] = [];

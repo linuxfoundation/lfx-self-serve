@@ -127,8 +127,7 @@ interface OrgTrainingKnownValueRow {
 }
 
 /**
- * Learner numbers of the shared Training / Trainees view: stats, options, groups and drawers all count the warehouse-resolved
- * pairs (see org-training-pairs.sql); no pair rule is applied here.
+ * Learner numbers of the shared Training / Trainees view: one pairs definition (see org-training-pairs.sql) behind stats, options, groups and drawers.
  *
  * Caching follows the Groups page (`OrgLensGroupsService.getGroups`): the shared Valkey entries are served only to a
  * caller whose access resolved as `org-grant` on this org. A caller the roster does not list and the authorizer admitted
@@ -291,13 +290,10 @@ export class OrgLensTrainingService {
   }
 
   /**
-   * Whether every filter the request sets names a value the org's people-list pairs carry. A value the org never
+   * Whether every filter the request sets names a value the org's people-list training rows carry. A value the org never
    * carries (another org's value kept across an org switch, a stale shared URL) is not an error: the callers answer it with
    * the zero payload before any stats/groups/drawer cache key or statement exists, which keeps that key space bounded by
-   * the org's own values. The set is the DISTINCT pair values over every range, not the options of one range: a pair's
-   * attribute is resolved per range, so a value it carries only in a narrower range (`Beginner` in 30d, `Intermediate`
-   * all-time) is a value that range's dropdown offers and must be accepted. A value valid for the org with no pairs in the
-   * selected range is served as zero data by the normal path.
+   * the org's own values. A value valid for the org with no rows in the selected range is served as zero data by the normal path.
    */
   private async carriesOnlyKnownFilters(accountId: string, query: OrgTrainingStatsQuery, qualification: OrgLensReadQualification): Promise<boolean> {
     const requested = ORG_TRAINING_FILTER_KEYS.filter((filter) => query[filter] !== null);
@@ -354,7 +350,7 @@ export class OrgLensTrainingService {
     `;
 
     // Learners the warehouse attributes to the org outside its people list (lfx-self-serve#4287): counted only while no filter
-    // is set, like their list, and null (not counted) otherwise; a key that also has people-list pairs is that person.
+    // is set, like their list, and null (not counted) otherwise; a key that also has people-list rows is that person.
     // They are never added to the people-list numbers: every other metric reads the people-list pairs `f`.
     const outsideSql = `
       SELECT COUNT(DISTINCT PERSON_KEY) AS PEOPLE
@@ -371,7 +367,7 @@ export class OrgLensTrainingService {
         )
     `;
 
-    // One build time for every range of the account: that of the pairs every figure is counted from.
+    // One build time for every range of the account.
     const asOfSql = `
       SELECT MAX(DBT_RUN_AT) AS AS_OF
       FROM ${ORG_TRAINING_PAIRS_TABLE}
@@ -474,7 +470,6 @@ export class OrgLensTrainingService {
         inProgress: row.IN_PROGRESS || 0,
         level: groupBy === 'course' ? (row.LEVEL ?? null) : null,
         foundation: groupBy === 'course' || groupBy === 'project' ? (row.FOUNDATION ?? null) : null,
-        // ORG_PEOPLE_TRAINING_PAIRS carries no logo column.
         logoUrl: null,
       };
     });
@@ -511,8 +506,7 @@ export class OrgLensTrainingService {
     // Identity from the all-time, all-projects ORG_PEOPLE_ALL_RANGES row of each current employee (IS_FORMER = FALSE), the
     // read People › Trainees uses, so the roster matches the pair count for any range. ORG_PEOPLE_ALL would drop members
     // whose only training is older than its 12-month engagement gate or reaches them through a merged learner. That row is
-    // unique per (account, person); one row per person however many pairs. No other training query joins ORG_PEOPLE_ALL:
-    // stats, options and groups read ORG_PEOPLE_TRAINING_PAIRS alone.
+    // unique per (account, person); one row per person however many pairs. No other training query joins ORG_PEOPLE_ALL.
     const namesSql = `
       WITH ${cte}
       SELECT

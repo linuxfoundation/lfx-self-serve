@@ -123,7 +123,6 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
     expect(sql).toMatch(/COUNT\(DISTINCT IFF\(IS_CERTIFIED AND TRAINING_TAB = 'certifications', PAIR_KEY, NULL\)\)\s+AS CERTIFICATIONS/);
     expect(sql).toMatch(/COUNT\(DISTINCT IFF\(IS_CERTIFIED AND TRAINING_TAB = 'trainings', PAIR_KEY, NULL\)\)\s+AS TRAININGS_COMPLETED/);
     expect(sql).toMatch(/COUNT\(DISTINCT PAIR_KEY\) - COUNT\(DISTINCT IFF\(IS_CERTIFIED, PAIR_KEY, NULL\)\)\s+AS COURSES_IN_PROGRESS/);
-    // The pair rule is the warehouse's: nothing here groups rows into pairs or reads a row's product type.
     expect(sql).not.toContain('COUNT(*)');
     expect(sql).not.toContain('GROUP BY');
     expect(sql).not.toContain('PRODUCT_TYPE');
