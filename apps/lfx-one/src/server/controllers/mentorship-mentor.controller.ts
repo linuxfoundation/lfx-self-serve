@@ -156,6 +156,26 @@ export class MentorshipMentorController {
     await this.respondToMentorInvitation(req, res, next, 'decline');
   }
 
+  // POST /api/mentorship/mentor/invites/details  { token } -> MentorshipMentorInviteDetails
+  // Auth: logged-in user required (401 otherwise). A read, sent as POST so the token stays out of this server's
+  // access logs; a malformed one is a 400. Upstream's 400 and 403 pass through, as for an answer.
+  public async getMentorInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_mentorship_mentor_invite';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const details = await this.mentorService.getMentorInvite(req, this.parseInviteToken(req, operation));
+      logger.success(req, operation, startTime);
+      res.json(details);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // POST /api/mentorship/mentor/invites/accept  { token } -> 204
   public async acceptMentorInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
     await this.respondToMentorInvite(req, res, next, 'accept');
@@ -318,12 +338,7 @@ export class MentorshipMentorController {
         throw new AuthenticationError('User authentication required', { operation });
       }
 
-      const token = parseTrimmedString(req.body?.token);
-      if (!token || !isMentorshipMentorInviteToken(token)) {
-        throw ServiceValidationError.forField('token', 'token must be a mentor invite token', { operation });
-      }
-
-      await this.mentorService.respondToMentorInvite(req, token, decision);
+      await this.mentorService.respondToMentorInvite(req, this.parseInviteToken(req, operation), decision);
       logger.success(req, operation, startTime);
       res.status(204).send();
     } catch (error) {
@@ -373,5 +388,14 @@ export class MentorshipMentorController {
       throw ServiceValidationError.forField('reason', `reason must be at most ${MENTORSHIP_MENTOR_TASK_CHANGES_REASON_MAX} characters`, { operation });
     }
     return reason;
+  }
+
+  /** The invite email's token from the body, trimmed; anything that is not a mentor invite token is a 400. */
+  private parseInviteToken(req: Request, operation: string): string {
+    const token = parseTrimmedString(req.body?.token);
+    if (!token || !isMentorshipMentorInviteToken(token)) {
+      throw ServiceValidationError.forField('token', 'token must be a mentor invite token', { operation });
+    }
+    return token;
   }
 }
