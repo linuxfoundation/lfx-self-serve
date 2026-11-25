@@ -13,6 +13,7 @@
         [projectSlug]="projectSlug()"
         placement="include"
         [testId]="'linkedin-targeting-editor-clause-' + i + '-facets'"
+        [unavailable]="draft().exclude"
         [picks]="clause"
         (picksChange)="onClauseChange(i, $event)" />
       <lfx-button
