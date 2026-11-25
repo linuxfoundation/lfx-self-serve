@@ -388,6 +388,7 @@ import type {
   MetaPlacement,
   MicrosoftKeyword,
   RedditAdVariant,
+  RedditBriefSeed,
   RedditCallToAction,
   RedditObjective,
   RedditVideoGoal,
@@ -498,8 +499,12 @@ import {
   linkedInImageUploadHoldsCreate,
   linkedInImageUploadOrphaned,
   linkedInVariantViews,
+  redditBriefReset,
+  redditBriefSeed,
   redditCallToActionIsUnavailable,
   redditCreateRefusal,
+  redditDraftFields,
+  redditDraftRestore,
   redditEffectiveGeoTargets,
   redditEffectiveKeywords,
   redditEffectiveSubreddits,
@@ -9180,45 +9185,24 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInRestore.budgetUsd !== undefined) this.linkedInBudgetUsd.set(linkedInRestore.budgetUsd);
     if (linkedInRestore.lifetimeBudget !== undefined) this.linkedInLifetimeBudget.set(linkedInRestore.lifetimeBudget);
     if (linkedInRestore.dailyCapUsd !== undefined) this.linkedInDailyCapUsd.set(linkedInRestore.dailyCapUsd);
-    if (draft.redditBudgetUsd !== undefined) {
-      this.redditBudgetUsd.set(draft.redditBudgetUsd);
-    }
-    // Restored even when the picker no longer offers it: `redditObjectiveIsUnavailable` renders a
-    // withheld objective as a disabled option, so the stored value stays visible and stays on the
-    // wire rather than being silently replaced by whatever sits at index 0.
-    if (draft.redditObjective !== undefined) {
-      this.redditObjective.set(draft.redditObjective);
-    }
-    // Restored on the same terms, and on `!== undefined` rather than truthiness for the reason the
-    // Microsoft arrays below are: an empty string is a deliberate clear, not an older draft.
-    if (draft.redditPostUrl !== undefined) {
-      this.redditPostUrl.set(draft.redditPostUrl);
-    }
-    if (draft.redditImageUrl !== undefined) {
-      this.redditImageUrl.set(draft.redditImageUrl);
-    }
-    if (draft.redditCallToAction !== undefined) {
-      this.redditCallToAction.set(draft.redditCallToAction);
-    }
+    // The Reddit fields, present-only, with the image and at most one upload step (`redditDraftRestore`).
+    const redditRestore = redditDraftRestore(draft);
+    if (redditRestore.budgetUsd !== undefined) this.redditBudgetUsd.set(redditRestore.budgetUsd);
+    if (redditRestore.objective !== undefined) this.redditObjective.set(redditRestore.objective);
+    if (redditRestore.postUrl !== undefined) this.redditPostUrl.set(redditRestore.postUrl);
+    if (redditRestore.imageUrl !== undefined) this.redditImageUrl.set(redditRestore.imageUrl);
+    if (redditRestore.callToAction !== undefined) this.redditCallToAction.set(redditRestore.callToAction);
     // An emitting patch, as `metaInstagramDsaForm`'s restore is: `redditConversionPixelDraft` follows
     // the group's `valueChanges`, and the draft subscription honours `seeding`, so it cannot loop.
-    if (typeof draft.redditConversionPixelId === 'string') {
-      this.redditConversionPixelForm.patchValue({ conversionPixelId: draft.redditConversionPixelId });
+    if (redditRestore.conversionPixelId !== undefined) this.redditConversionPixelForm.patchValue({ conversionPixelId: redditRestore.conversionPixelId });
+    if (redditRestore.asset) {
+      this.redditImageAssetId.set(redditRestore.asset.id);
+      this.redditImageAssetName.set(redditRestore.asset.name);
+      this.redditImageAssetBriefId.set(redditRestore.asset.briefId);
     }
-    if (draft.redditImageAssetId !== undefined) {
-      this.redditImageAssetId.set(draft.redditImageAssetId);
-      this.redditImageAssetName.set(draft.redditImageAssetName ?? '');
-      this.redditImageAssetBriefId.set(draft.redditImageAssetBriefId ?? '');
-    }
-    if (draft.redditImageUploadFailedMessage && draft.redditImageUploadFailedBriefId) {
-      this.failRedditImageUpload(draft.redditImageUploadFailedMessage, draft.redditImageUploadFailedBriefId);
-    }
-    if (draft.redditImageUploadPendingName) {
-      this.resumeRedditImageUpload(draft.redditImageUploadPendingName, draft.redditImageUploadPendingBriefId ?? '');
-    }
-    if (draft.redditVideoGoal !== undefined) {
-      this.redditVideoGoal.set(draft.redditVideoGoal);
-    }
+    if (redditRestore.failedUpload) this.failRedditImageUpload(redditRestore.failedUpload.message, redditRestore.failedUpload.briefId);
+    if (redditRestore.pendingUpload) this.resumeRedditImageUpload(redditRestore.pendingUpload.name, redditRestore.pendingUpload.briefId);
+    if (redditRestore.videoGoal !== undefined) this.redditVideoGoal.set(redditRestore.videoGoal);
     // The Meta image, on the Reddit image's terms above.
     const metaImageRestore = metaImageDraftRestore(draft);
     if (metaImageRestore.imageUrl !== undefined) this.metaImageUrl.set(metaImageRestore.imageUrl);
@@ -9763,24 +9747,25 @@ export class ImplementationTabComponent implements OnInit {
         customTargeting: this.linkedInCustomTargeting(),
         targetingDraft: this.linkedInTargetingDraft(),
       }),
-      redditBudgetUsd: this.redditBudgetUsd(),
-      redditObjective: this.redditObjective(),
       // Snapshotted whatever `redditCreativeAvailable()` says — see the draft interface for why a
-      // capability must not decide what the draft remembers.
-      redditPostUrl: this.redditPostUrl(),
-      redditImageUrl: this.redditImageUrl(),
-      redditCallToAction: this.redditCallToAction(),
-      redditConversionPixelId: this.redditConversionPixelDraft().conversionPixelId,
-      redditImageAssetId: this.redditImageAssetId(),
-      redditImageAssetName: this.redditImageAssetName(),
-      redditImageAssetBriefId: this.redditImageAssetBriefId(),
-      redditImageUploadPendingName: this.redditImageUploadPendingName(),
-      redditImageUploadPendingBriefId: this.redditImageUploadPendingBriefId(),
-      // A failed upload stays until the operator removes or replaces it, across tab switches too:
-      // dropping it on remount would lift the block and let Create go out without the image.
-      redditImageUploadFailedMessage: this.redditImageUploadFailedBriefId() ? this.redditImageUploadError() : '',
-      redditImageUploadFailedBriefId: this.redditImageUploadFailedBriefId(),
-      redditVideoGoal: this.redditVideoGoal(),
+      // capability must not decide what the draft remembers. A failed upload is kept with its brief
+      // (`redditDraftFields`): dropping it on remount would lift the block and let Create go out without the image.
+      ...redditDraftFields({
+        budgetUsd: this.redditBudgetUsd(),
+        objective: this.redditObjective(),
+        postUrl: this.redditPostUrl(),
+        imageUrl: this.redditImageUrl(),
+        callToAction: this.redditCallToAction(),
+        conversionPixelId: this.redditConversionPixelDraft().conversionPixelId,
+        assetId: this.redditImageAssetId(),
+        assetName: this.redditImageAssetName(),
+        assetBriefId: this.redditImageAssetBriefId(),
+        uploadPendingName: this.redditImageUploadPendingName(),
+        uploadPendingBriefId: this.redditImageUploadPendingBriefId(),
+        uploadError: this.redditImageUploadError(),
+        uploadFailedBriefId: this.redditImageUploadFailedBriefId(),
+        videoGoal: this.redditVideoGoal(),
+      }),
       ...metaImageDraftFields({
         imageUrl: this.metaImageUrl(),
         assetId: this.metaImageAssetId(),
@@ -9826,19 +9811,16 @@ export class ImplementationTabComponent implements OnInit {
     // the previous brief's typed post, image, button, objective, goal and budget into this one.
     // The uploaded image is left alone on purpose: it is scoped to its brief, and
     // `redditImageAssetBlock` already holds Create with a Remove for one made for another brief.
-    this.redditPostUrl.set('');
-    this.redditImageUrl.set('');
-    this.redditCallToAction.set('');
-    this.redditObjective.set(DEFAULT_REDDIT_OBJECTIVE);
-    this.redditVideoGoal.set('');
-    this.redditBudgetUsd.set(DEFAULT_REDDIT_BUDGET_USD);
-    // The lists seeded only from Reddit copy, emptied first so a brief without any opens on none
-    // rather than the previous brief's (#4648); the seed below refills them when the copy is there.
-    this.redditVariants.set([]);
-    this.redditSubreddits.set([]);
-    this.redditInterests.set([]);
-    this.redditKeywords.set([]);
-    this.redditGeoTargets.set([]);
+    // The lists seeded only from Reddit copy are emptied too, so a brief without any opens on none
+    // rather than the previous brief's (#4648); the seed below refills them (`redditBriefReset`).
+    const redditReset = redditBriefReset();
+    this.redditPostUrl.set(redditReset.postUrl);
+    this.redditImageUrl.set(redditReset.imageUrl);
+    this.redditCallToAction.set(redditReset.callToAction);
+    this.redditObjective.set(redditReset.objective);
+    this.redditVideoGoal.set(redditReset.videoGoal);
+    this.redditBudgetUsd.set(redditReset.budgetUsd);
+    this.setRedditBriefLists(redditReset);
     // The other platforms on the same terms (#4624): every value the brief does not derive, or derives
     // only when present, back to its default, so the seed below is all that survives a switch.
     this.resetMetaFields();
@@ -9984,21 +9966,9 @@ export class ImplementationTabComponent implements OnInit {
       }
     }
 
-    const redditCopy = brief.structuredCopy?.['reddit_promoted'] as Record<string, unknown> | undefined;
-    if (redditCopy) {
-      this.redditVariants.set((redditCopy['variants'] as RedditAdVariant[]) ?? []);
-      this.redditSubreddits.set((redditCopy['recommended_subreddits'] as string[]) ?? []);
-      this.redditInterests.set((redditCopy['recommended_interests'] as string[]) ?? []);
-      this.redditKeywords.set((redditCopy['recommended_keywords'] as string[]) ?? []);
-      this.redditGeoTargets.set((redditCopy['recommended_geos'] as string[]) ?? []);
-    }
-    if (brief.redditCopy) {
-      this.redditVariants.set(brief.redditCopy.variants);
-      this.redditSubreddits.set(brief.redditCopy.recommendedSubreddits);
-      this.redditInterests.set(brief.redditCopy.recommendedInterests);
-      this.redditKeywords.set(brief.redditCopy.recommendedKeywords);
-      this.redditGeoTargets.set(brief.redditCopy.recommendedGeos);
-    }
+    // The typed Reddit copy over the legacy `reddit_promoted` block (`redditBriefSeed`).
+    const redditSeed = redditBriefSeed(brief);
+    if (redditSeed) this.setRedditBriefLists(redditSeed);
 
     const metaSeed = metaBriefSeed(brief);
     if (metaSeed) {
@@ -10061,6 +10031,15 @@ export class ImplementationTabComponent implements OnInit {
     // fallback explicitly ("defaults to XX") rather than leaving it invisible.
     this.briefHsToken.set(brief.hsUtm);
     this.briefDriveFolderUrl.set(brief.driveFolderUrl);
+  }
+
+  /** The Reddit lists a brief seeds or a brief switch empties: the variants and the four targeting lists. */
+  private setRedditBriefLists(lists: RedditBriefSeed): void {
+    this.redditVariants.set(lists.variants);
+    this.redditSubreddits.set(lists.subreddits);
+    this.redditInterests.set(lists.interests);
+    this.redditKeywords.set(lists.keywords);
+    this.redditGeoTargets.set(lists.geoTargets);
   }
 
   /*

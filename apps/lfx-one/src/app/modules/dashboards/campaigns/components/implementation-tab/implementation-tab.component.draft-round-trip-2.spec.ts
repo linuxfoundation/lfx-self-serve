@@ -84,12 +84,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     redditKeywords: () => string[];
     redditGeoTargets: () => string[];
     redditVariants: () => unknown[];
-    redditBudgetUsd: () => number;
-    redditObjective: () => string;
-    redditPostUrl: () => string;
     redditConversionPixelId: () => string;
-    redditImageUrl: () => string;
-    redditCallToAction: () => string;
     redditNoAdWarning: () => string | null;
     canSubmit: () => boolean;
     metaVariants: () => unknown[];
@@ -140,20 +135,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * production regression path uncovered. That trap already cost this file once — see the note at
    * the removed `setLinkedInAccount`, which only a test ever called.
    */
-  function typeRedditBudget(f: ComponentFixture<ImplementationTabComponent>, value: number): void {
-    const input = f.nativeElement.querySelector('[data-testid="implementation-reddit-budget"]') as HTMLInputElement;
-    input.value = String(value);
-    input.dispatchEvent(new Event('input'));
-    f.detectChanges();
-  }
-
-  function pickRedditObjective(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
-    const select = f.nativeElement.querySelector('[data-testid="implementation-reddit-objective"]') as HTMLSelectElement;
-    select.value = value;
-    select.dispatchEvent(new Event('change'));
-    f.detectChanges();
-  }
-
   function typeRedditPostUrl(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
     const input = f.nativeElement.querySelector('[data-testid="implementation-reddit-post-url"]') as HTMLInputElement;
     input.value = value;
@@ -170,13 +151,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const input = redditImageUrlInput(f) as HTMLInputElement;
     input.value = value;
     input.dispatchEvent(new Event('input'));
-    f.detectChanges();
-  }
-
-  function pickRedditCallToAction(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
-    const select = f.nativeElement.querySelector('[data-testid="implementation-reddit-call-to-action"]') as HTMLSelectElement;
-    select.value = value;
-    select.dispatchEvent(new Event('change'));
     f.detectChanges();
   }
 
@@ -573,41 +547,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * green with `emitDraft()` deleted from either live LinkedIn handler. Driving the binding is
    * what makes that mutation fail, so a `set*`-style shortcut must not come back.
    */
-  it('emits the draft when the reddit budget handler runs', async () => {
-    const first = await mount(null);
-    typeRedditBudget(first.fixture, 640);
-
-    expect(first.latest()?.redditBudgetUsd).toBe(640);
-  });
-
-  it('emits the draft when the reddit objective handler runs', async () => {
-    const first = await mount(null);
-    pickRedditObjective(first.fixture, 'traffic');
-
-    expect(first.latest()?.redditObjective).toBe('traffic');
-  });
-
-  it('emits the draft when the reddit post url handler runs', async () => {
-    const first = await mount(null);
-    typeRedditPostUrl(first.fixture, 'https://redd.it/abc123');
-
-    expect(first.latest()?.redditPostUrl).toBe('https://redd.it/abc123');
-  });
-
-  it('emits the draft when the reddit image url handler runs', async () => {
-    const first = await mount(null, true);
-    typeRedditImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
-
-    expect(first.latest()?.redditImageUrl).toBe('https://cdn.example.org/promo.png');
-  });
-
-  it('emits the draft when the reddit call to action handler runs', async () => {
-    const first = await mount(null, true);
-    pickRedditCallToAction(first.fixture, 'Sign Up');
-
-    expect(first.latest()?.redditCallToAction).toBe('Sign Up');
-  });
-
   it('emits the draft when the linkedin budget handler runs', async () => {
     const first = await mount(null);
     typeLinkedInBudget(first.fixture, 1750);
@@ -629,8 +568,8 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * An older draft carries none of the budget fields, and absence must mean "keep what the brief
    * seeded" rather than "the user chose the defaults" — the same rule the Meta block follows.
    *
-   * Without it, a draft persisted before this shipped would wipe a Reddit campaign's budget on the
-   * next tab switch, which would be a strictly worse bug than the one being fixed.
+   * Without it, a draft persisted before this shipped would wipe a seeded budget on the next tab
+   * switch, which would be a strictly worse bug than the one being fixed.
    *
    * The LinkedIn pair is what gives this test teeth, and it only does so because `brief()` seeds
    * `strategy.budgetRecommendation.lifetimeBudgetUsd`. The remount therefore starts at 7300/true,
@@ -640,27 +579,12 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * and code shared the 500/false assumption, so the test passed either way while a real brief
    * carrying a non-default lifetime budget would be silently downgraded (LFXV2-3230 review).
    *
-   * Reddit has no brief-seeded budget to beat, so its 500 is the component default by nature; it
-   * is asserted to pin that an omitted field is not turned into some OTHER value — and the same
-   * for `redditObjective` and the three promoted-post fields, which every draft written before
-   * those controls shipped omits. The post fields start EMPTY by design: the brief recommends no
-   * post and no image, so there is nothing to seed and an omitted field must leave them blank
-   * rather than acquire a value from anywhere.
+   * The Reddit fields follow the same rule, as `redditDraftRestore`'s rows (#5980).
    */
   it('leaves the platform values seeded when an older draft omits them', STATE_ONLY, async () => {
     const first = await mount(null);
     const legacy = { ...(first.latest() as CampaignImplementationDraft) } as Record<string, unknown>;
-    for (const key of [
-      'redditBudgetUsd',
-      'redditObjective',
-      'redditPostUrl',
-      'redditImageUrl',
-      'redditCallToAction',
-      'linkedInBudgetUsd',
-      'linkedInLifetimeBudget',
-    ]) {
-      delete legacy[key];
-    }
+    for (const key of ['linkedInBudgetUsd', 'linkedInLifetimeBudget']) delete legacy[key];
     first.fixture.destroy();
 
     // Guard the guard: if the brief ever stops seeding a non-default pair, the assertions below
@@ -671,11 +595,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const second = await mount(legacy as unknown as CampaignImplementationDraft);
     const c = at(second.fixture);
 
-    expect(c.redditBudgetUsd()).toBe(500);
-    expect(c.redditObjective()).toBe('conversions');
-    expect(c.redditPostUrl()).toBe('');
-    expect(c.redditImageUrl()).toBe('');
-    expect(c.redditCallToAction()).toBe('');
     expect(c.linkedInBudgetUsd()).toBe(7300);
     expect(c.linkedInLifetimeBudget()).toBe(true);
   });

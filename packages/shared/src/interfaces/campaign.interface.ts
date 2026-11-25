@@ -3228,6 +3228,78 @@ export interface LinkedInBriefSeed {
   lifetimeBudgetUsd?: number;
 }
 
+/** The Reddit keys of the Implement tab draft that `redditDraftRestore` reads (#5980). Every one is optional. */
+export type RedditDraftSnapshot = Pick<
+  CampaignImplementationDraft,
+  | 'redditBudgetUsd'
+  | 'redditObjective'
+  | 'redditPostUrl'
+  | 'redditImageUrl'
+  | 'redditCallToAction'
+  | 'redditConversionPixelId'
+  | 'redditImageAssetId'
+  | 'redditImageAssetName'
+  | 'redditImageAssetBriefId'
+  | 'redditImageUploadPendingName'
+  | 'redditImageUploadPendingBriefId'
+  | 'redditImageUploadFailedMessage'
+  | 'redditImageUploadFailedBriefId'
+  | 'redditVideoGoal'
+>;
+
+/** The Reddit values `redditDraftFields` snapshots into the draft (#5980): the typed fields, the pixel and the image upload slot. */
+export interface RedditDraftState {
+  budgetUsd: number;
+  objective: RedditObjective;
+  postUrl: string;
+  imageUrl: string;
+  callToAction: RedditCallToAction | '';
+  conversionPixelId: string;
+  assetId: string;
+  assetName: string;
+  assetBriefId: string;
+  uploadPendingName: string;
+  uploadPendingBriefId: string;
+  uploadError: string;
+  uploadFailedBriefId: string;
+  videoGoal: RedditVideoGoal | '';
+}
+
+/** What a restored draft does to the Reddit section (#5980): values to set, and at most one upload step for the component to run. */
+export interface RedditDraftRestore {
+  budgetUsd?: number;
+  objective?: RedditObjective;
+  postUrl?: string;
+  imageUrl?: string;
+  callToAction?: RedditCallToAction | '';
+  conversionPixelId?: string;
+  asset?: { id: string; name: string; briefId: string };
+  /** Show a failed upload, as the draft recorded it. */
+  failedUpload?: { message: string; briefId: string };
+  /** Resume an upload the draft recorded as still running. */
+  pendingUpload?: { name: string; briefId: string };
+  videoGoal?: RedditVideoGoal | '';
+}
+
+/** The Reddit lists a brief seeds (#5980): the variants and the four targeting lists. */
+export interface RedditBriefSeed {
+  variants: RedditAdVariant[];
+  subreddits: string[];
+  interests: string[];
+  keywords: string[];
+  geoTargets: string[];
+}
+
+/** The Reddit values a brief switch resets (#5980): the typed fields at their defaults, and the brief's lists empty. */
+export interface RedditBriefReset extends RedditBriefSeed {
+  postUrl: string;
+  imageUrl: string;
+  callToAction: '';
+  objective: RedditObjective;
+  videoGoal: '';
+  budgetUsd: number;
+}
+
 /** What a restored draft does to the Meta image: values to set, and at most one upload step for the component to run. */
 export interface MetaImageDraftRestore {
   imageUrl?: string;
