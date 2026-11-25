@@ -39,7 +39,7 @@ function isGitRemote(address: string, following: string): boolean {
 const EMAIL_SHAPE = /^[^\s@]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:[Xx][Nn]--[A-Za-z0-9-]{2,}|\p{L}{2,})$/u;
 
 /** A URL that names a person: a `mailto:` link, or a LinkedIn / X / Twitter profile path. */
-const PERSONAL_URL = /(?:mailto:\S+|https?:\/\/(?:[\w-]+\.)?(?:linkedin\.com\/(?:in|pub)\/|(?:x|twitter)\.com\/(?!i\/|intent\/|share)[\w]+)\S*)/gi;
+const PERSONAL_URL = /(?:mailto:\S+|https?:\/\/(?:[\w-]+\.)?(?:linkedin\.com\/(?:in|pub)\/|(?:x|twitter)\.com\/(?!i\/|intent\/|share(?!\w))[\w]+)\S*)/gi;
 
 /**
  * Removes personal data embedded in free text: an email address inside a sentence (a commit message's

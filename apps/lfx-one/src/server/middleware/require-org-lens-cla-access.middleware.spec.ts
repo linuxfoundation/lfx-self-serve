@@ -6,7 +6,7 @@
 import '@angular/compiler';
 
 import type { NextFunction, Request, Response } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getAccessAwareOrgs, checkSingleAccessStrict, getEffectiveUsername, isImpersonating, gatewayFetch } = vi.hoisted(() => ({
   getAccessAwareOrgs: vi.fn(),
@@ -37,6 +37,13 @@ vi.mock('../services/valkey.service', () => ({
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => getEffectiveUsername(), isImpersonating: () => isImpersonating() }));
 vi.mock('../services/logger.service', () => ({
   logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+const resolveEmployeeView = vi.hoisted(() => vi.fn());
+vi.mock('../services/org-employee-view.service', () => ({
+  OrgEmployeeViewService: class {
+    public resolve = resolveEmployeeView;
+  },
 }));
 
 const { requireOrgLensClaAccess } = await import('./require-org-lens-cla-access.middleware');
@@ -81,6 +88,7 @@ beforeEach(() => {
   getAccessAwareOrgs.mockResolvedValue(noGrants());
   checkSingleAccessStrict.mockResolvedValue(false);
   gatewayFetch.mockResolvedValue(permissions());
+  resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-employer' });
 });
 
 describe('requireOrgLensClaAccess', () => {
@@ -208,5 +216,44 @@ describe('requireOrgLensClaAccess', () => {
       expect(statusOf(await run(OWN, { bearerToken: 'target-user-token' }))).toBe('allow');
       expect(gatewayFetch.mock.calls[0][2]).toEqual(expect.objectContaining({ bearerToken: 'target-user-token' }));
     });
+  });
+});
+
+describe('requireOrgLensClaAccess: all employee view (epic #5845, #5857)', () => {
+  const FLAG = 'LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED';
+
+  beforeEach(() => {
+    process.env[FLAG] = 'true';
+    resolveEmployeeView.mockResolvedValue({ eligible: true, org: { orgUid: OWN, orgName: 'Acme' } });
+  });
+
+  afterEach(() => {
+    delete process.env[FLAG];
+  });
+
+  it("refuses an employee-view caller with the read gate's 403 FORBIDDEN, without running the employee lookup", async () => {
+    const next = await run(OWN);
+
+    expect(statusOf(next)).toBe(403);
+    expect(next.mock.calls[0][0]).toMatchObject({ code: 'FORBIDDEN' });
+    expect(resolveEmployeeView).not.toHaveBeenCalled();
+  });
+
+  it('admits an employee who is also a CLA Manager of this company, by the scope', async () => {
+    gatewayFetch.mockResolvedValue(permissions(scope('cla-manager', OWN)));
+
+    expect(statusOf(await run(OWN))).toBe('allow');
+  });
+
+  it('answers 503, not a verified denial, when the scopes cannot be read for an employee', async () => {
+    gatewayFetch.mockRejectedValue(new Error('user-service down'));
+
+    expect(statusOf(await run(OWN))).toBe(503);
+  });
+
+  it('still admits a caller with a real grant', async () => {
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[OWN, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
+
+    expect(statusOf(await run(OWN))).toBe('allow');
   });
 });

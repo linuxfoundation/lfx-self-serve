@@ -32,6 +32,7 @@ import type {
 import { ButtonComponent } from '@components/button/button.component';
 import { TableComponent } from '@components/table/table.component';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
+import { OrgLensViewModeService } from '@shared/services/org-lens-view-mode.service';
 import { catchError, finalize, of, skip, switchMap } from 'rxjs';
 
 import { OrgTrainingGroupEmployeesDrawerComponent } from '../org-training-group-employees-drawer/org-training-group-employees-drawer.component';
@@ -49,6 +50,7 @@ import { OrgTrainingGroupEmployeesDrawerComponent } from '../org-training-group-
 })
 export class OrgTrainingGroupsTableComponent {
   private readonly trainingService = inject(OrgLensTrainingService);
+  private readonly viewMode = inject(OrgLensViewModeService);
 
   public readonly orgUid = input.required<string>();
   /** Range and filters from the URL. */
@@ -78,6 +80,9 @@ export class OrgTrainingGroupsTableComponent {
   protected readonly drawerParams = signal<OrgTrainingGroupEmployeesParams | null>(null);
   protected readonly drawerLabel = signal('');
   protected readonly drawerCount = signal(0);
+
+  // The drill-down lists learners by name, which the all employee view never shows: the counts stay plain numbers there.
+  protected readonly canDrillDown = computed(() => !this.viewMode.isEmployeeView());
 
   private readonly viewKey = computed(() => JSON.stringify([this.orgUid(), this.company(), this.query(), this.groupBy(), this.tab(), this.searchQuery()]));
   /** The view (org, company, filters, group-by, tab, search) the offset belongs to; a different view starts on page one. */

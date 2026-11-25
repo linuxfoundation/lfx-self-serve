@@ -25,3 +25,20 @@ export async function requireOrgAnalyticsAccess(req: Request, _res: Response, ne
     next(error);
   }
 }
+
+/**
+ * The same gate for the Overview involvement rows, which also admit the all employee view (epic #5845): they return
+ * only aggregate counts, monthly series and foundation names, and their handlers still pass the payload through
+ * `redactForEmployeeView`. Every other analytics route keeps refusing employee-view callers.
+ */
+export async function requireOrgAnalyticsAccessAllowingEmployeeView(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  try {
+    const accountId = getStringQueryParam(req, 'accountId');
+    if (accountId) {
+      await assertOrgAnalyticsRead(req, accountId, 'require_org_analytics_access', { allowEmployeeView: true });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+}

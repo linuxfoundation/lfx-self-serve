@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_ORG_LOGO_MIME_TYPES, MAX_ORG_LOGO_SIZE_BYTES } from '@lfx-one/shared/constants';
+import { ALLOWED_ORG_LOGO_MIME_TYPES, MAX_ORG_LOGO_SIZE_BYTES, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { OrgIdentityController } from '../controllers/org-identity.controller';
 import { MicroserviceError } from '../errors/microservice.error';
+import { blockEmployeeView } from '../middleware/block-employee-view.middleware';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 import { OrgLensAccessController } from '../controllers/org-lens-access.controller';
 import { OrgLensBoardCommitteeController } from '../controllers/org-lens-board-committee.controller';
@@ -22,6 +23,7 @@ import { OrgLensProjectsController } from '../controllers/org-lens-projects.cont
 import { OrgLensRoiController } from '../controllers/org-lens-roi.controller';
 import { OrgLensGroupsController } from '../controllers/org-lens-groups.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
+import { isOrgLensEmployeeViewEnabled } from '../helpers/org-lens-employee-view-flag.helper';
 import { requireOrgLensAccess } from '../middleware/require-org-lens-access.middleware';
 import { requireOrgLensRoiAudience } from '../middleware/require-org-lens-roi-audience.middleware';
 
@@ -43,6 +45,29 @@ function handleLogoUploadParseError(err: unknown, req: Request, _res: Response, 
     return;
   }
   next(err);
+}
+
+/**
+ * Epic #5845 (#5858) — the company Profile page is hidden in the all employee view, and its API (the canonical record
+ * read and edit, the addresses read, the logo upload) lives outside `/:orgUid/lens`, keyed `:uid` / `:id`. This adapts
+ * those params to `blockEmployeeView`, which reads `:orgUid`. A no-op while the rollout flag is off, so these routes
+ * behave exactly as before until the view is switched on; with it on, a caller the read gate refuses gets that gate's
+ * 403/503 instead of reaching member-service.
+ */
+function blockEmployeeViewOnOrgRecord(req: Request, res: Response, next: NextFunction): void {
+  if (!isOrgLensEmployeeViewEnabled(req)) {
+    next();
+    return;
+  }
+  const orgUid = req.params['uid'] ?? req.params['id'] ?? '';
+  // A malformed id reaches the controller's 400 first: it never names a company, so the read gate (and its lookup
+  // outages) has nothing to decide.
+  if (!ORG_ACCOUNT_ID_PATTERN.test(orgUid)) {
+    next();
+    return;
+  }
+  req.params['orgUid'] = orgUid;
+  void blockEmployeeView(req, res, next);
 }
 
 function buildOrgsRouter(): Router {
@@ -67,14 +92,14 @@ function buildOrgsRouter(): Router {
   // Spec 020 — org-selector identity & role-grants endpoints.
   router.get('/me/role-grants', (req, res, next) => orgIdentityController.getRoleGrants(req, res, next));
   router.get('/me/roll-up-set', (req, res, next) => orgIdentityController.getRollUpSet(req, res, next));
-  router.get('/uid/:uid', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
+  router.get('/uid/:uid', blockEmployeeViewOnOrgRecord, (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
   // Spec 050 — Org Lens address-segment resolver (slug or SFID → org the caller can read). Auth-only:
   // per-row FGA is applied upstream by query-service with the caller's context (contracts/
   // bff-org-slug-transport.md §3, DR-002). Do NOT mount `require-auditor.middleware.ts` here — that is
   // the root-scoped, staff-only Formations-queue guard. Declared before `/:orgUid/lens` on purpose.
   router.get('/resolve/:segment', (req, res, next) => orgIdentityController.resolveSegment(req, res, next));
-  router.put('/uid/:uid', (req, res, next) => orgIdentityController.updateOrg(req, res, next));
-  router.get('/uid/:uid/addresses', (req, res, next) => orgIdentityController.getOrgAddresses(req, res, next));
+  router.put('/uid/:uid', blockEmployeeViewOnOrgRecord, (req, res, next) => orgIdentityController.updateOrg(req, res, next));
+  router.get('/uid/:uid/addresses', blockEmployeeViewOnOrgRecord, (req, res, next) => orgIdentityController.getOrgAddresses(req, res, next));
   // LFXV2-3288 — Org logo upload proxy. Body is the raw image bytes (not multipart), forwarded as-is
   // to member-service's `POST /b2b_orgs/{uid}/logo`.
   //
@@ -85,6 +110,7 @@ function buildOrgsRouter(): Router {
   // own contract (`impersonation-readonly.middleware.ts`). Reads (GET canonical) remain available.
   router.post(
     '/uid/:uid/logo',
+    blockEmployeeViewOnOrgRecord,
     blockDuringImpersonation,
     express.raw({ type: [...ALLOWED_ORG_LOGO_MIME_TYPES], limit: MAX_ORG_LOGO_SIZE_BYTES }),
     handleLogoUploadParseError,
@@ -97,6 +123,12 @@ function buildOrgsRouter(): Router {
   // prefix covers each existing route and any future one by default. Some routes below name the
   // param `:accountId`; the prefix match still binds it as `orgUid`, and both carry the same SFID.
   router.use('/:orgUid/lens', (req, res, next) => requireOrgLensAccess(req, res, next));
+
+  // #5856 — the People page is hidden in the all employee view (epic #5845). Mounted on each prefix, not per route, so every
+  // tab, drawer, export and write behind it (and any route added later) answers 403 there. Full view and LF staff pass untouched.
+  // `/lens/people/*` serves all five tabs and the person drawers; `/lens/access/*` is the Company Lens Access tab.
+  router.use('/:orgUid/lens/people', blockEmployeeView);
+  router.use('/:orgUid/lens/access', blockEmployeeView);
 
   // #2961 — the gate above is the whole check; this only reports that it passed (204), so the page can
   // ask "may this caller read this organization?" with the server's own answer.
@@ -112,39 +144,53 @@ function buildOrgsRouter(): Router {
   // /attendees and /speakers paths, so ordering isn't strictly required; they're grouped here for readability.
   router.get('/:accountId/lens/events/summary', (req, res, next) => orgLensEventsController.getOrgEventsSummary(req, res, next));
   router.get('/:accountId/lens/events/foundations', (req, res, next) => orgLensEventsController.getOrgEventFoundations(req, res, next));
-  router.get('/:accountId/lens/events/:eventId/attendees', (req, res, next) => orgLensEventsController.getEventAttendees(req, res, next));
-  router.get('/:accountId/lens/events/:eventId/speakers', (req, res, next) => orgLensEventsController.getEventSpeakers(req, res, next));
+  router.get('/:orgUid/lens/events/:eventId/attendees', blockEmployeeView, (req, res, next) => orgLensEventsController.getEventAttendees(req, res, next));
+  router.get('/:orgUid/lens/events/:eventId/speakers', blockEmployeeView, (req, res, next) => orgLensEventsController.getEventSpeakers(req, res, next));
   router.get('/:accountId/lens/events', (req, res, next) => orgLensEventsController.getOrgEvents(req, res, next));
-  router.get('/:orgUid/lens/memberships/active', (req, res, next) => orgLensMembershipsController.getActiveMemberships(req, res, next));
-  router.get('/:orgUid/lens/memberships/expired', (req, res, next) => orgLensMembershipsController.getExpiredMemberships(req, res, next));
-  router.get('/:orgUid/lens/memberships/discover', (req, res, next) => orgLensMembershipsController.getDiscoverOpportunities(req, res, next));
-  router.get('/:orgUid/lens/memberships/:foundationSlug', (req, res, next) => orgLensMembershipsController.getMembershipDetail(req, res, next));
-  router.get('/:orgUid/lens/memberships/:foundationId/projects', (req, res, next) => orgLensMembershipsController.getFoundationProjects(req, res, next));
-  router.get('/:orgUid/lens/memberships/:foundationId/seats', (req, res, next) => orgLensBoardCommitteeController.getSeats(req, res, next));
-  router.get('/:orgUid/lens/memberships/:foundationId/voting-history', (req, res, next) => orgLensBoardCommitteeController.getVotingHistory(req, res, next));
-  router.patch('/:orgUid/lens/memberships/:foundationId/committee-seats/:seatId/reassign', (req, res, next) =>
+  router.get('/:orgUid/lens/memberships/active', blockEmployeeView, (req, res, next) => orgLensMembershipsController.getActiveMemberships(req, res, next));
+  router.get('/:orgUid/lens/memberships/expired', blockEmployeeView, (req, res, next) => orgLensMembershipsController.getExpiredMemberships(req, res, next));
+  router.get('/:orgUid/lens/memberships/discover', blockEmployeeView, (req, res, next) =>
+    orgLensMembershipsController.getDiscoverOpportunities(req, res, next)
+  );
+  router.get('/:orgUid/lens/memberships/:foundationSlug', blockEmployeeView, (req, res, next) =>
+    orgLensMembershipsController.getMembershipDetail(req, res, next)
+  );
+  router.get('/:orgUid/lens/memberships/:foundationId/projects', blockEmployeeView, (req, res, next) =>
+    orgLensMembershipsController.getFoundationProjects(req, res, next)
+  );
+  router.get('/:orgUid/lens/memberships/:foundationId/seats', blockEmployeeView, (req, res, next) => orgLensBoardCommitteeController.getSeats(req, res, next));
+  router.get('/:orgUid/lens/memberships/:foundationId/voting-history', blockEmployeeView, (req, res, next) =>
+    orgLensBoardCommitteeController.getVotingHistory(req, res, next)
+  );
+  router.patch('/:orgUid/lens/memberships/:foundationId/committee-seats/:seatId/reassign', blockEmployeeView, (req, res, next) =>
     orgLensBoardCommitteeController.reassignSeat(req, res, next)
   );
   // Spec 026 — org-wide people picker (key contacts + committee members) for the Reassign modal.
-  router.get('/:orgUid/lens/employees', (req, res, next) => orgLensBoardCommitteeController.getEmployees(req, res, next));
-  router.get('/:orgUid/lens/memberships/:foundationId/documents', (req, res, next) => orgLensDocumentsController.getMembershipDocuments(req, res, next));
-  router.get('/:orgUid/lens/key-contacts/employees', (req, res, next) => orgLensKeyContactsController.getEmployees(req, res, next));
-  router.post('/:orgUid/lens/memberships/:foundationId/key-contacts', (req, res, next) => orgLensKeyContactsController.addKeyContact(req, res, next));
-  router.put('/:orgUid/lens/memberships/:foundationId/key-contacts/:contactUid', (req, res, next) =>
+  router.get('/:orgUid/lens/employees', blockEmployeeView, (req, res, next) => orgLensBoardCommitteeController.getEmployees(req, res, next));
+  router.get('/:orgUid/lens/memberships/:foundationId/documents', blockEmployeeView, (req, res, next) =>
+    orgLensDocumentsController.getMembershipDocuments(req, res, next)
+  );
+  router.get('/:orgUid/lens/key-contacts/employees', blockEmployeeView, (req, res, next) => orgLensKeyContactsController.getEmployees(req, res, next));
+  router.post('/:orgUid/lens/memberships/:foundationId/key-contacts', blockEmployeeView, (req, res, next) =>
+    orgLensKeyContactsController.addKeyContact(req, res, next)
+  );
+  router.put('/:orgUid/lens/memberships/:foundationId/key-contacts/:contactUid', blockEmployeeView, (req, res, next) =>
     orgLensKeyContactsController.replaceKeyContact(req, res, next)
   );
-  router.delete('/:orgUid/lens/memberships/:foundationId/key-contacts/:contactUid', (req, res, next) =>
+  router.delete('/:orgUid/lens/memberships/:foundationId/key-contacts/:contactUid', blockEmployeeView, (req, res, next) =>
     orgLensKeyContactsController.removeKeyContact(req, res, next)
   );
   // LFXV2-2067 — slug-keyed proxies for the People → Key Contacts tab; skip the sfid→foundation_id bridge.
-  router.get('/:orgUid/lens/key-contacts/membership/:foundationSlug', (req, res, next) =>
+  router.get('/:orgUid/lens/key-contacts/membership/:foundationSlug', blockEmployeeView, (req, res, next) =>
     orgLensKeyContactsController.getKeyContactCatalogBySlug(req, res, next)
   );
-  router.post('/:orgUid/lens/key-contacts/membership/:foundationSlug', (req, res, next) => orgLensKeyContactsController.addKeyContactBySlug(req, res, next));
-  router.put('/:orgUid/lens/key-contacts/membership/:foundationSlug/:contactUid', (req, res, next) =>
+  router.post('/:orgUid/lens/key-contacts/membership/:foundationSlug', blockEmployeeView, (req, res, next) =>
+    orgLensKeyContactsController.addKeyContactBySlug(req, res, next)
+  );
+  router.put('/:orgUid/lens/key-contacts/membership/:foundationSlug/:contactUid', blockEmployeeView, (req, res, next) =>
     orgLensKeyContactsController.replaceKeyContactBySlug(req, res, next)
   );
-  router.delete('/:orgUid/lens/key-contacts/membership/:foundationSlug/:contactUid', (req, res, next) =>
+  router.delete('/:orgUid/lens/key-contacts/membership/:foundationSlug/:contactUid', blockEmployeeView, (req, res, next) =>
     orgLensKeyContactsController.removeKeyContactBySlug(req, res, next)
   );
   router.get('/:orgUid/lens/people/all', (req, res, next) => orgLensPeopleController.getAllEmployees(req, res, next));
@@ -195,11 +241,11 @@ function buildOrgsRouter(): Router {
   // Shared Training / Trainees view: one stats call, one options call, one group-by table + drawer.
   router.get('/:orgUid/lens/training/stats', (req, res, next) => orgLensTrainingController.getTrainingStats(req, res, next));
   router.get('/:orgUid/lens/training/filter-options', (req, res, next) => orgLensTrainingController.getFilterOptions(req, res, next));
-  router.get('/:orgUid/lens/training/groups/employees', (req, res, next) => orgLensTrainingController.getGroupEmployees(req, res, next));
+  router.get('/:orgUid/lens/training/groups/employees', blockEmployeeView, (req, res, next) => orgLensTrainingController.getGroupEmployees(req, res, next));
   router.get('/:orgUid/lens/training/groups', (req, res, next) => orgLensTrainingController.getGroups(req, res, next));
 
   // LFXV2-2014 — Org Lens Groups page (working groups / committees the org's employees participate in).
-  router.get('/:orgUid/lens/groups', (req, res, next) => orgLensGroupsController.getGroups(req, res, next));
+  router.get('/:orgUid/lens/groups', blockEmployeeView, (req, res, next) => orgLensGroupsController.getGroups(req, res, next));
 
   // LFXV2-2735 — Org Lens Meetings insights. Unlike the sibling org-lens routes these carry an
   // org-membership read gate (`assertOrgLensRead`) inside each handler, ahead of any data access.
@@ -245,12 +291,17 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/projects/:projectSlug/leaderboard/technical/organizations/:organizationId', (req, res, next) =>
     orgLensProjectDetailController.getTechnicalBreakdown(req, res, next)
   );
-  router.get('/:orgUid/lens/projects/:projectSlug/leaderboard/ecosystem/organizations/:organizationId', (req, res, next) =>
+  router.get('/:orgUid/lens/projects/:projectSlug/leaderboard/ecosystem/organizations/:organizationId', blockEmployeeView, (req, res, next) =>
     orgLensProjectDetailController.getEcosystemBreakdown(req, res, next)
   );
-  // LFXV2-1885 DN9 — per-card drawer roster (server-side paginated), fetched lazily on drawer open.
-  router.get('/:orgUid/lens/projects/:projectSlug/cards/:cardKey/roster', (req, res, next) => orgLensProjectDetailController.getCardRoster(req, res, next));
-  router.get('/:orgUid/lens/projects/:projectSlug/cards/:cardKey', (req, res, next) => orgLensProjectDetailController.getCardDrawer(req, res, next));
+  // LFXV2-1885 DN9 — per-card drawer roster (server-side paginated), fetched lazily on drawer open. The all employee view
+  // opens no card panel, Technical or Ecosystem Influence alike (epic #5845, #5849): `blockEmployeeView` answers 403.
+  router.get('/:orgUid/lens/projects/:projectSlug/cards/:cardKey/roster', blockEmployeeView, (req, res, next) =>
+    orgLensProjectDetailController.getCardRoster(req, res, next)
+  );
+  router.get('/:orgUid/lens/projects/:projectSlug/cards/:cardKey', blockEmployeeView, (req, res, next) =>
+    orgLensProjectDetailController.getCardDrawer(req, res, next)
+  );
   router.get('/:orgUid/lens/workspaces', (req, res, next) => orgLensProjectsController.getWorkspaces(req, res, next));
   router.post('/:orgUid/lens/workspaces', (req, res, next) => orgLensProjectsController.createWorkspace(req, res, next));
   router.put('/:orgUid/lens/workspaces/:workspaceId', (req, res, next) => orgLensProjectsController.renameWorkspace(req, res, next));
@@ -261,7 +312,7 @@ function buildOrgsRouter(): Router {
   );
 
   // Must stay last so specific /uid and /:orgUid/lens routes match first.
-  router.get('/:id', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
+  router.get('/:id', blockEmployeeViewOnOrgRecord, (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
   return router;
 }
 

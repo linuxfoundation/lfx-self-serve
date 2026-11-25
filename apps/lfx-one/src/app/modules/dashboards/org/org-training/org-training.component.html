@@ -55,7 +55,7 @@
     @if (statsError()) {
       <lfx-org-training-stats-error testIdPrefix="org-training-stats" (retry)="retryStats()" />
     } @else {
-      <lfx-org-training-stats [stats]="shownStats()" [range]="range()" [collapsible]="true" />
+      <lfx-org-training-stats [stats]="shownStats()" [range]="range()" [collapsible]="true" [excludeKeys]="statsExcludeKeys()" />
     }
 
     <!-- Content Card: product-type tabs over one group table (search is local to the table) -->
@@ -106,4 +106,7 @@
   }
 </div>
 
-<lfx-person-detail-drawer />
+<!-- The person drawer is only opened from the learner drill-down, which the all employee view does not have. -->
+@if (!viewMode.isEmployeeView()) {
+  <lfx-person-detail-drawer />
+}

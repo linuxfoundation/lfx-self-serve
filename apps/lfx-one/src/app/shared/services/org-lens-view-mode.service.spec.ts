@@ -3,6 +3,7 @@
 
 import { computed, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES } from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
@@ -18,6 +19,9 @@ describe('OrgLensViewModeService', () => {
   let fullAccess: WritableSignal<ReadonlySet<string>>;
   let writerSet: WritableSignal<Set<string>>;
   let isStaff: WritableSignal<boolean>;
+  let claManagerOrgSet: WritableSignal<Set<string>>;
+  let claManagerLookupFailed: WritableSignal<boolean>;
+  let lookupOutcome: WritableSignal<string>;
   let selected: WritableSignal<{ uid: string }>;
 
   beforeEach(() => {
@@ -26,6 +30,9 @@ describe('OrgLensViewModeService', () => {
     fullAccess = signal<ReadonlySet<string>>(new Set());
     writerSet = signal(new Set<string>());
     isStaff = signal(false);
+    claManagerOrgSet = signal(new Set<string>());
+    claManagerLookupFailed = signal(false);
+    lookupOutcome = signal('ok');
     selected = signal({ uid: ACME });
 
     TestBed.configureTestingModule({
@@ -54,6 +61,9 @@ describe('OrgLensViewModeService', () => {
             },
             writerSet,
             isStaff,
+            claManagerOrgSet,
+            claManagerLookupFailed,
+            lookupOutcome,
             auditorSet: signal(new Set<string>()),
             inheritedWriterSet: signal(new Set<string>()),
             inheritedAuditorSet: signal(new Set<string>()),
@@ -130,5 +140,54 @@ describe('OrgLensViewModeService', () => {
     selected.set({ uid: '' });
 
     expect(TestBed.inject(OrgLensViewModeService).viewMode()).toBe('full');
+  });
+
+  describe('hidden pages and CLA Managers', () => {
+    it('hides nothing in the full view', () => {
+      expect(TestBed.inject(OrgLensViewModeService).hiddenPages()).toEqual([]);
+    });
+
+    it('hides every hidden page, EasyCLA included, in the employee view', () => {
+      employeeViewOrgUid.set(ACME);
+      const service = TestBed.inject(OrgLensViewModeService);
+
+      expect(service.managesSelectedCompanyClas()).toBe(false);
+      expect(service.hiddenPages()).toEqual(ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES);
+      expect(service.hiddenPages()).toEqual(expect.arrayContaining(['easycla', 'initiatives', 'donations']));
+    });
+
+    it('keeps EasyCLA for an employee who is also a CLA Manager of the selected company, and hides the rest', () => {
+      employeeViewOrgUid.set(ACME);
+      claManagerOrgSet.set(new Set([ACME]));
+      const service = TestBed.inject(OrgLensViewModeService);
+
+      expect(service.managesSelectedCompanyClas()).toBe(true);
+      expect(service.hiddenPages()).toEqual(ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES.filter((page) => page !== 'easycla'));
+      expect(service.hiddenPages()).toContain('initiatives');
+    });
+
+    it('keeps EasyCLA open while the CLA scope lookup failed, since an unknown answer is not a denial', () => {
+      employeeViewOrgUid.set(ACME);
+      claManagerLookupFailed.set(true);
+      const service = TestBed.inject(OrgLensViewModeService);
+
+      expect(service.managesSelectedCompanyClas()).toBe(true);
+      expect(service.hiddenPages()).not.toContain('easycla');
+      expect(service.hiddenPages()).toContain('initiatives');
+    });
+
+    it('keeps EasyCLA open when the whole role-grants request failed, which also leaves the scope set empty and unknown', () => {
+      employeeViewOrgUid.set(ACME);
+      lookupOutcome.set('failed');
+
+      expect(TestBed.inject(OrgLensViewModeService).hiddenPages()).not.toContain('easycla');
+    });
+
+    it('does not carry a CLA scope on another company over to the selected one', () => {
+      employeeViewOrgUid.set(ACME);
+      claManagerOrgSet.set(new Set([OTHER]));
+
+      expect(TestBed.inject(OrgLensViewModeService).hiddenPages()).toContain('easycla');
+    });
   });
 });

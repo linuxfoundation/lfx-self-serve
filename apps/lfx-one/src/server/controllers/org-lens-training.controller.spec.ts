@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   assertOrgLensRead,
+  getOrgLensViewMode,
   resolveOrgLensRollUp,
   getTrainingStats,
   getFilterOptions,
@@ -18,6 +19,7 @@ const {
   logger,
 } = vi.hoisted(() => ({
   assertOrgLensRead: vi.fn(),
+  getOrgLensViewMode: vi.fn(),
   resolveOrgLensRollUp: vi.fn(),
   getTrainingStats: vi.fn(),
   getFilterOptions: vi.fn(),
@@ -50,7 +52,7 @@ vi.mock('../services/org-lens-training.service', () => ({
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
-vi.mock('../helpers/org-lens-read-access.helper', () => ({ assertOrgLensRead }));
+vi.mock('../helpers/org-lens-read-access.helper', () => ({ assertOrgLensRead, getOrgLensViewMode }));
 vi.mock('../helpers/org-lens-roll-up.helper', () => ({ resolveOrgLensRollUp }));
 
 import { ServiceValidationError } from '../errors';
@@ -72,6 +74,7 @@ describe('OrgLensTrainingController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     assertOrgLensRead.mockResolvedValue('org-grant');
+    getOrgLensViewMode.mockReturnValue('full');
     getTrainingStats.mockResolvedValue({ rosterMembers: null, peopleWithTrainingActivity: 0, coursesTaken: 0 });
     getFilterOptions.mockResolvedValue({ courses: [] });
     getGroups.mockResolvedValue({ data: [], total: 0, totals: {} });
@@ -405,5 +408,23 @@ describe('OrgLensTrainingController', () => {
       expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
       expect(getGroupEmployees).not.toHaveBeenCalled();
     });
+  });
+  it('stats: a full-view caller keeps the learners-not-on-the-people-list count', async () => {
+    getTrainingStats.mockResolvedValue({ peopleWithTrainingActivity: 5, learnersOutsidePeopleList: 12 });
+    const res = buildRes();
+
+    await controller.getTrainingStats(buildReq({}), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith({ peopleWithTrainingActivity: 5, learnersOutsidePeopleList: 12 });
+  });
+
+  it('stats: the all employee view keeps the aggregates but never receives the learners-not-on-the-people-list count', async () => {
+    getOrgLensViewMode.mockReturnValue('employee');
+    getTrainingStats.mockResolvedValue({ peopleWithTrainingActivity: 5, learnersOutsidePeopleList: 12 });
+    const res = buildRes();
+
+    await controller.getTrainingStats(buildReq({}), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith({ peopleWithTrainingActivity: 5, learnersOutsidePeopleList: null });
   });
 });

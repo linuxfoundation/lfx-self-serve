@@ -267,6 +267,29 @@ describe('OrgRoleGrantsService addressed full access', () => {
     expect(service.employeeViewOrgUids().has(UID)).toBe(true);
   });
 
+  it('keeps one current employee company: a positive answer for B replaces an addressed A, and the role-grants answer drops other notes', async () => {
+    const OTHER = '0014100000OtherAAAA';
+    service.noteEmployeeViewAddressed(UID, true);
+    service.noteEmployeeViewAddressed(OTHER, true);
+    expect(service.employeeViewOrgUids().has(UID)).toBe(false);
+    expect(service.employeeViewOrgUids().has(OTHER)).toBe(true);
+
+    await answer({ ...grants, employeeView: { orgUid: UID } });
+    expect(service.employeeViewOrgUids().has(OTHER)).toBe(false);
+    expect(service.employeeViewOrgUids().has(UID)).toBe(true);
+  });
+
+  it('drops the role-grants employee company when a fresh answer names another one (role-grants A, then addressed B)', async () => {
+    const OTHER = '0014100000OtherAAAA';
+    await answer({ ...grants, employeeView: { orgUid: UID } });
+    expect(service.employeeViewOrgUids().has(UID)).toBe(true);
+
+    service.noteEmployeeViewAddressed(OTHER, true);
+
+    expect(service.employeeViewOrgUids().has(UID)).toBe(false);
+    expect(service.employeeViewOrgUids().has(OTHER)).toBe(true);
+  });
+
   it('clears every reduced-mode source for a company a later answer says is CLA-only, and leaves other companies alone', async () => {
     const OTHER = '0014100000OtherAAAA';
     await answer({ ...grants, employeeView: { orgUid: UID }, fullAccessOrgUid: OTHER });

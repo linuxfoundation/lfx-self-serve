@@ -116,7 +116,7 @@
 
           <!-- Certified / Completed -->
           <td [attr.data-testid]="'org-training-group-completed-' + row.rowKey">
-            @if (row.completed > 0) {
+            @if (row.completed > 0 && canDrillDown()) {
               <button
                 type="button"
                 class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
@@ -125,6 +125,8 @@
                 (click)="openDrawer(row, 'completed')">
                 {{ row.completed | number }}
               </button>
+            } @else if (row.completed > 0) {
+              <span class="text-sm text-gray-900">{{ row.completed | number }}</span>
             } @else {
               <span class="text-xs text-gray-400">&mdash;</span>
             }
@@ -132,7 +134,7 @@
 
           <!-- In progress -->
           <td [attr.data-testid]="'org-training-group-in-progress-' + row.rowKey">
-            @if (row.inProgress > 0) {
+            @if (row.inProgress > 0 && canDrillDown()) {
               <button
                 type="button"
                 class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
@@ -141,6 +143,8 @@
                 (click)="openDrawer(row, 'in-progress')">
                 {{ row.inProgress | number }}
               </button>
+            } @else if (row.inProgress > 0) {
+              <span class="text-sm text-gray-900">{{ row.inProgress | number }}</span>
             } @else {
               <span class="text-xs text-gray-400">&mdash;</span>
             }
@@ -205,11 +209,13 @@
     </lfx-table>
   }
 
-  <lfx-org-training-group-employees-drawer
-    [(visible)]="drawerVisible"
-    [orgUid]="orgUid()"
-    [query]="query()"
-    [params]="drawerParams()"
-    [label]="drawerLabel()"
-    [count]="drawerCount()" />
+  @if (canDrillDown()) {
+    <lfx-org-training-group-employees-drawer
+      [(visible)]="drawerVisible"
+      [orgUid]="orgUid()"
+      [query]="query()"
+      [params]="drawerParams()"
+      [label]="drawerLabel()"
+      [count]="drawerCount()" />
+  }
 </div>

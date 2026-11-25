@@ -61,7 +61,7 @@ export const orgRollUpSingleOrgPageGuard: CanActivateFn = (route: ActivatedRoute
  * A corporate-signing return on the leftover mount: the EasyCLA page, reached at `/org/easycla/…`
  * with no `:orgSegment` above it, carrying a non-empty organization to adopt.
  */
-function isLegacyEasyclaReturn(route: ActivatedRouteSnapshot): boolean {
+export function isLegacyEasyclaReturn(route: ActivatedRouteSnapshot): boolean {
   if (!easyclaReturnOrgParam((name) => route.queryParamMap.get(name))?.trim()) {
     return false;
   }

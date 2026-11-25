@@ -92,7 +92,10 @@ describe('OrgEasyclaComponent', () => {
         provideRouter([]),
         provideNoopAnimations(),
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
-        { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: { loaded: grantsLoaded, correlationId, noteEmployeeViewAddressed: vi.fn(), noteFullAccessAddressed: vi.fn() },
+        },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
         { provide: OrgLensEmptyStateService, useValue: emptyStateService },
@@ -317,7 +320,10 @@ describe('OrgEasyclaComponent', () => {
           provideNoopAnimations(),
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}), pathFromRoot: [] } } },
           { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
-          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
+          {
+            provide: OrgRoleGrantsService,
+            useValue: { loaded: grantsLoaded, correlationId, noteEmployeeViewAddressed: vi.fn(), noteFullAccessAddressed: vi.fn() },
+          },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
           { provide: OrgLensEmptyStateService, useValue: emptyStateService },
@@ -516,7 +522,10 @@ describe('OrgEasyclaComponent', () => {
             provideRouter([]),
             provideNoopAnimations(),
             { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
-            { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
+            {
+              provide: OrgRoleGrantsService,
+              useValue: { loaded: grantsLoaded, correlationId, noteEmployeeViewAddressed: vi.fn(), noteFullAccessAddressed: vi.fn() },
+            },
             { provide: PersonaService, useValue: { personaLoaded } },
             { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
             { provide: OrgLensEmptyStateService, useValue: emptyStateService },
@@ -1262,7 +1271,10 @@ describe('OrgEasyclaComponent', () => {
               refreshCanonicalRecord,
             },
           },
-          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
+          {
+            provide: OrgRoleGrantsService,
+            useValue: { loaded: grantsLoaded, correlationId, noteEmployeeViewAddressed: vi.fn(), noteFullAccessAddressed: vi.fn() },
+          },
           { provide: PersonaService, useValue: { personaLoaded } },
           {
             provide: OrgNavigationService,

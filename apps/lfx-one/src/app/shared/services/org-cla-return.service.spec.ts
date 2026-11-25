@@ -77,6 +77,7 @@ describe('OrgClaReturnService', () => {
             fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
             noteEmployeeViewAddressed: vi.fn(),
             noteFullAccessAddressed: vi.fn(),
+            clearReducedModes: vi.fn(),
             claManagerLookupFailed: signal(false),
             employeeViewLookupFailed: signal(false),
           },
@@ -174,6 +175,41 @@ describe('OrgClaReturnService', () => {
     expect(claOnlyAccess.isClaOnly(ELSEWHERE.uid)).toBe(false);
   });
 
+  it('records the employee and full-access answers, so a positive row is not lost to the skipped resolver', async () => {
+    const grants = TestBed.inject(OrgRoleGrantsService) as unknown as {
+      noteEmployeeViewAddressed: ReturnType<typeof vi.fn>;
+      noteFullAccessAddressed: ReturnType<typeof vi.fn>;
+    };
+    items.set([catalogueItem(ELSEWHERE), { ...catalogueItem(NAMED), employeeView: true }]);
+
+    await firstValueFrom(service.adopt(NAMED.uid));
+
+    expect(grants.noteEmployeeViewAddressed).toHaveBeenCalledWith(NAMED.uid, true);
+    expect(grants.noteFullAccessAddressed).toHaveBeenCalledWith(NAMED.uid, false);
+  });
+
+  it('leaves a held employee mode alone for an unchecked CLA-only row', async () => {
+    const grants = TestBed.inject(OrgRoleGrantsService) as unknown as { noteEmployeeViewAddressed: ReturnType<typeof vi.fn> };
+    items.set([catalogueItem(ELSEWHERE), { ...catalogueItem(NAMED), claOnly: true }]);
+
+    await firstValueFrom(service.adopt(NAMED.uid));
+
+    expect(grants.noteEmployeeViewAddressed).not.toHaveBeenCalled();
+  });
+
+  it('clears a held employee mode for a CLA-only row the employee lookup confirmed', async () => {
+    const grants = TestBed.inject(OrgRoleGrantsService) as unknown as {
+      noteEmployeeViewAddressed: ReturnType<typeof vi.fn>;
+      clearReducedModes: ReturnType<typeof vi.fn>;
+    };
+    items.set([catalogueItem(ELSEWHERE), { ...catalogueItem(NAMED), claOnly: true, employeeViewChecked: true }]);
+
+    await firstValueFrom(service.adopt(NAMED.uid));
+
+    expect(grants.clearReducedModes).toHaveBeenCalledWith(NAMED.uid);
+    expect(grants.noteEmployeeViewAddressed).toHaveBeenCalledWith(NAMED.uid, false);
+  });
+
   it('lets a held grant win over the CLA-only row a signing return adopts', async () => {
     writerSet.set(new Set([ELSEWHERE.uid, NAMED.uid]));
     items.set([catalogueItem(ELSEWHERE), { ...catalogueItem(NAMED), claOnly: true }]);
@@ -190,6 +226,9 @@ function catalogueItem(org: { uid: string; accountId: string; name: string }): {
   name: string;
   logoUrl: null;
   claOnly?: boolean;
+  employeeViewChecked?: boolean;
+  employeeView?: boolean;
+  fullAccess?: boolean;
 } {
   return { uid: org.uid, accountId: org.accountId, name: org.name, logoUrl: null };
 }

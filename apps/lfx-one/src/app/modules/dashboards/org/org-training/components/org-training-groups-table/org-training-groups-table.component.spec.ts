@@ -13,7 +13,9 @@ import type {
   OrgTrainingTabId,
 } from '@lfx-one/shared/interfaces';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
+import { OrgLensViewModeService } from '@shared/services/org-lens-view-mode.service';
 import { PersonDetailDrawerService } from '@shared/services/person-detail-drawer.service';
+import { signal } from '@angular/core';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -49,7 +51,12 @@ const EMPLOYEES: OrgTrainingGroupEmployeesResponse = {
   data: [{ contactId: 'person-1', name: 'Sample Person', jobTitle: 'Engineer' }],
 };
 
-async function render(tab: OrgTrainingTabId = 'certifications', groupBy: OrgTrainingGroupBy = 'course', response: OrgTrainingGroupsResponse = RESPONSE) {
+async function render(
+  tab: OrgTrainingTabId = 'certifications',
+  groupBy: OrgTrainingGroupBy = 'course',
+  response: OrgTrainingGroupsResponse = RESPONSE,
+  employeeView = false
+) {
   const drawerOpen = vi.fn();
   const trainingService = {
     getGroups: vi.fn(() => of(response)),
@@ -63,6 +70,7 @@ async function render(tab: OrgTrainingTabId = 'certifications', groupBy: OrgTrai
       provideNoopAnimations(),
       { provide: OrgLensTrainingService, useValue: trainingService },
       { provide: PersonDetailDrawerService, useValue: { open: drawerOpen } },
+      { provide: OrgLensViewModeService, useValue: { isEmployeeView: signal(employeeView) } },
     ],
   }).compileComponents();
 
@@ -447,6 +455,7 @@ describe('OrgTrainingGroupsTableComponent', () => {
           provideNoopAnimations(),
           { provide: OrgLensTrainingService, useValue: trainingService },
           { provide: PersonDetailDrawerService, useValue: { open: drawerOpen } },
+          { provide: OrgLensViewModeService, useValue: { isEmployeeView: signal(false) } },
         ],
       }).compileComponents();
       const fixture = TestBed.createComponent(OrgTrainingGroupsTableComponent);
@@ -542,5 +551,23 @@ describe('OrgTrainingGroupsTableComponent', () => {
       expect(byTestId('org-training-groups-totals')).toBeNull();
       error.mockRestore();
     });
+  });
+});
+
+describe('OrgTrainingGroupsTableComponent in the all employee view', () => {
+  afterEach(() => {
+    TestBed.resetTestingModule();
+    document.body.innerHTML = '';
+  });
+
+  it('shows the counts as plain numbers: no drill-down button, no learner drawer, no learner request', async () => {
+    const { trainingService } = await render('certifications', 'course', RESPONSE, true);
+
+    expect(text('org-training-group-completed-Course One')).toBe('4');
+    expect(text('org-training-group-in-progress-Course One')).toBe('2');
+    expect(byTestId('org-training-group-completed-button-Course One')).toBeNull();
+    expect(byTestId('org-training-group-in-progress-button-Course One')).toBeNull();
+    expect(document.querySelector('lfx-org-training-group-employees-drawer')).toBeNull();
+    expect(trainingService.getGroupEmployees).not.toHaveBeenCalled();
   });
 });

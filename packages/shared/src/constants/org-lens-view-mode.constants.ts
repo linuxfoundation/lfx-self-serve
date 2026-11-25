@@ -25,19 +25,23 @@ export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS_BY_PAGE: Readonly<Record<strin
   // Shared shell data several pages read (company scope, no people).
   shared: [/^\/org-scope\/?$/i],
   // overview
-  overview: [],
+  overview: [/^\/foundations-and-projects\/?$/i],
   // projects
-  projects: [],
+  projects: [/^\/projects(\/search)?\/?$/i, /^\/workspaces\/?$/i],
   // project-detail
-  'project-detail': [],
+  'project-detail': [
+    /^\/projects\/[^/]+\/(hero|influence|trend)\/?$/i,
+    /^\/projects\/[^/]+\/leaderboard\/(technical|ecosystem)\/?$/i,
+    /^\/projects\/[^/]+\/leaderboard\/technical\/organizations\/[^/]+\/?$/i,
+  ],
   // contributions
-  contributions: [],
+  contributions: [/^\/contributions\/?$/i],
   // events
-  events: [],
+  events: [/^\/events(\/(summary|foundations))?\/?$/i],
   // training
-  training: [],
+  training: [/^\/training\/(stats|filter-options|groups)\/?$/i],
   // meetings
-  meetings: [],
+  meetings: [/^\/meetings\/(kpi|spend|influence)\/?$/i],
 };
 
 /** Every approved path across all pages. */
@@ -104,12 +108,12 @@ export const ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS: readonly string[] = [
 export const ORG_LENS_EMPLOYEE_VIEW_EXCEPTIONS: readonly OrgLensEmployeeViewException[] = [];
 
 /**
- * Page segments (`memberships`, `people`, `easycla`, `profile`, `groups` ...) the all employee view hides entirely: no
- * left-nav link, and `orgLensFullViewOnlyGuard()` redirects the route to Overview. EMPTY at launch; each "hide page"
- * story (#5856-#5860) adds its page here and mounts `blockEmployeeView` on that page's API routes. The sidebar reads this
- * list, so a page needs no sidebar change of its own.
+ * Page segments the all employee view hides entirely: no left-nav link, and `orgLensFullViewOnlyGuard()` redirects the
+ * route to Overview. Each hidden page's API routes answer 403 (`blockEmployeeView` on the orgs router, or the Crowdfunding
+ * controller's own refusal for Initiatives and Donations). The sidebar reads this list, so a page needs no sidebar change
+ * of its own; EasyCLA stays open for the company's CLA Manager (`OrgLensViewModeService.hiddenPages`).
  */
-export const ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES: readonly string[] = [];
+export const ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES: readonly string[] = ['memberships', 'people', 'easycla', 'profile', 'groups', 'initiatives', 'donations'];
 
 /** Selector row badge for the company a caller reaches only through the all employee view. */
 export const NAVBAR_ORG_EMPLOYEE_VIEW_ROLE = {

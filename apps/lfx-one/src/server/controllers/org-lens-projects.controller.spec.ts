@@ -4,8 +4,12 @@
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getProjects, logger } = vi.hoisted(() => ({
+const { getProjects, getWorkspaces, getEmployeeViewWorkspaces, getOrgLensViewMode, redactWorkspacesForEmployeeView, logger } = vi.hoisted(() => ({
   getProjects: vi.fn(),
+  getWorkspaces: vi.fn(),
+  getEmployeeViewWorkspaces: vi.fn(),
+  getOrgLensViewMode: vi.fn(() => 'full'),
+  redactWorkspacesForEmployeeView: vi.fn((_req: unknown, _org: string, response: unknown) => response),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
@@ -20,9 +24,16 @@ vi.mock('@lfx-one/shared/utils', async () => ({
 vi.mock('../services/org-lens-projects.service', () => ({
   OrgLensProjectsService: class {
     public getProjects = getProjects;
+    public getWorkspaces = getWorkspaces;
+    public getEmployeeViewWorkspaces = getEmployeeViewWorkspaces;
   },
 }));
 vi.mock('../services/org-role-grants.service', () => ({ OrgRoleGrantsService: class {} }));
+vi.mock('../helpers/org-lens-read-access.helper', () => ({ getOrgLensViewMode }));
+vi.mock('../helpers/org-lens-projects-employee-view.helper', () => ({
+  redactProjectsForEmployeeView: (_req: unknown, _org: string, response: unknown) => response,
+  redactWorkspacesForEmployeeView,
+}));
 vi.mock('../services/logger.service', () => ({ logger }));
 
 import { ServiceValidationError } from '../errors';
@@ -100,5 +111,38 @@ describe('OrgLensProjectsController team members (lfx-self-serve-ops#1246)', () 
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
     expect((next.mock.calls[0][0] as Error).message).toContain('teamMembers');
+  });
+});
+
+describe('OrgLensProjectsController workspaces in the all employee view (epic #5845)', () => {
+  const controller = new OrgLensProjectsController();
+  const defaultWorkspace = { workspaces: [{ id: 'all-activities', name: 'All Activities', projectSlugs: ['k8s', 'envoy'] }] };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getOrgLensViewMode.mockReturnValue('full');
+  });
+
+  it('serves a grantless employee the company-derived default workspace and never reads or seeds the workspace store', async () => {
+    getOrgLensViewMode.mockReturnValue('employee');
+    getEmployeeViewWorkspaces.mockResolvedValue(defaultWorkspace);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getWorkspaces(buildReq({}), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getEmployeeViewWorkspaces).toHaveBeenCalledWith(ORG_UID);
+    expect(getWorkspaces).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(defaultWorkspace);
+  });
+
+  it('leaves the full view on the workspace store', async () => {
+    getWorkspaces.mockResolvedValue({ workspaces: [] });
+
+    await controller.getWorkspaces(buildReq({}), buildRes(), vi.fn());
+
+    expect(getWorkspaces).toHaveBeenCalled();
+    expect(getEmployeeViewWorkspaces).not.toHaveBeenCalled();
   });
 });

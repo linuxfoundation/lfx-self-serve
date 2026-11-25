@@ -16,6 +16,7 @@ import {
   CF_ORG_DONATIONS_FLAG,
   MARKETING_OPS_FGA_ENABLED_FLAG,
   MENTORSHIP_ENABLED_FLAG,
+  ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES,
 } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -23,6 +24,7 @@ import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -56,6 +58,7 @@ describe('SidebarNavService', () => {
   const gatewazeEmbedEnabled = signal(false);
   const canWrite = signal(false);
   const selectedOrgUid = signal<string | null>(null);
+  const employeeViewOrgUids = signal<ReadonlySet<string>>(new Set());
   const orgWriterSet = signal(new Set<string>());
   const claManagerOrgSet = signal(new Set<string>());
   /** Settable so the Gatewaze embed's tenant gate can be exercised; the embed is AAIF-only. */
@@ -114,6 +117,7 @@ describe('SidebarNavService', () => {
     gatewazeEmbedEnabled.set(false);
     canWrite.set(false);
     selectedOrgUid.set(null);
+    employeeViewOrgUids.set(new Set());
     orgWriterSet.set(new Set());
     claManagerOrgSet.set(new Set());
     hasBoardRole.set(false);
@@ -217,9 +221,10 @@ describe('SidebarNavService', () => {
             inheritedAuditorSet: signal(new Set<string>()),
             claManagerOrgSet,
             claManagerLookupFailed: signal(false),
+            lookupOutcome: signal('ok'),
             employeeViewLookupFailed: signal(false),
             employeeViewOrgUid: signal<string | null>(null),
-            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            employeeViewOrgUids,
             fullAccessOrgUid: signal<string | null>(null),
             fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
             noteEmployeeViewAddressed: vi.fn(),
@@ -623,6 +628,39 @@ describe('SidebarNavService', () => {
     expect(labels(sectionItems(items, 'Company Engagement'))).toContain('People');
   });
 
+  // #5856 — the People page is hidden in the all employee view (epic #5845): no left-nav link, and the Company Engagement
+  // section keeps its other pages. The full view is unchanged.
+  it('drops the People nav item in the all employee view only', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000Te2ovAAB');
+    const service = TestBed.inject(SidebarNavService);
+
+    expect(labels(sectionItems(service.sidebarItems(), 'Company Engagement'))).toContain('People');
+
+    (TestBed.inject(OrgRoleGrantsService) as unknown as { employeeViewOrgUids: { set(uids: ReadonlySet<string>): void } }).employeeViewOrgUids.set(
+      new Set(['0014100000Te2ovAAB'])
+    );
+    const items = service.sidebarItems();
+
+    expect(findByLink(items, '/company/people')).toBeUndefined();
+    expect(labels(sectionItems(items, 'Company Engagement'))).not.toContain('People');
+    expect(labels(items)).toContain('Dashboard');
+  });
+
+  // Epic #5845 / #5859: the all employee view has no Groups link; the full view keeps it.
+  it('drops the Groups link in the all employee view only', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000Te2ovAAB');
+
+    expect(labels(sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Company Engagement'))).toContain(COMMITTEE_LABEL.plural);
+
+    employeeViewOrgUids.set(new Set(['0014100000Te2ovAAB']));
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    expect(labels(sectionItems(items, 'Company Engagement'))).not.toContain(COMMITTEE_LABEL.plural);
+    expect(labels(items)).toContain('Dashboard');
+  });
+
   // EasyCLA is single-company for the same reason as Profile: a corporate CLA belongs to one
   // company, so `/company/family-{id}/easycla` could only error (#4415, Copilot).
   it('drops EasyCLA in roll-up mode', () => {
@@ -633,6 +671,59 @@ describe('SidebarNavService', () => {
 
     expect(labels(items)).not.toContain('EasyCLA');
     expect(findByLink(items, '/company/family-0014100000RootAAAA/easycla')).toBeUndefined();
+  });
+
+  // Epic #5845 (#5857): the all employee view hides EasyCLA entirely; the full view keeps it.
+  it('drops the EasyCLA item in the all employee view and keeps it in the full view', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000MgaAAAAA');
+    const grants = TestBed.inject(OrgRoleGrantsService);
+
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('EasyCLA');
+
+    (grants.employeeViewOrgUids as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set(['0014100000MgaAAAAA']));
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).not.toContain('EasyCLA');
+    expect(findByLink(items, '/company/easycla')).toBeUndefined();
+    expect(labels(items)).toContain('Dashboard');
+  });
+
+  // An employee who is also the company's CLA Manager keeps EasyCLA (the server admits them by their `cla-manager` scope); the other hidden pages stay hidden.
+  it('keeps the EasyCLA item in the all employee view for a CLA Manager of the selected company', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000MgaAAAAA');
+    const grants = TestBed.inject(OrgRoleGrantsService);
+    (grants.employeeViewOrgUids as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set(['0014100000MgaAAAAA']));
+    claManagerOrgSet.set(new Set(['0014100000MgaAAAAA']));
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).toContain('EasyCLA');
+    expect(labels(items)).toContain('Dashboard');
+    expect(labels(items)).not.toContain('Company Profile');
+  });
+
+  // Epic #5845: Crowdfunding (Initiatives and Donations) is hidden entirely in the all employee view. An employee holds no
+  // writer grant, so Initiatives never lists; Donations lists to every viewer and is the one the view must drop.
+  it('drops Crowdfunding Donations in the all employee view, lists no Initiatives, and keeps both pages for a writer in the full view', () => {
+    const uid = '0014100000MgaAAAAA';
+    const engagement = (): SidebarMenuItem[] => sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Company Engagement');
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+    cfOrgDonationsEnabled.set(true);
+    selectedOrgUid.set(uid);
+    const grants = TestBed.inject(OrgRoleGrantsService);
+    (grants.writerSet as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set([uid]));
+
+    expect(findByLink(engagement(), '/company/acme-inc/initiatives')).toBeDefined();
+    expect(findByLink(engagement(), '/company/acme-inc/donations')).toBeDefined();
+
+    (grants.writerSet as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set());
+    (grants.employeeViewOrgUids as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set([uid]));
+
+    expect(findByLink(engagement(), '/company/acme-inc/initiatives')).toBeUndefined();
+    expect(findByLink(engagement(), '/company/acme-inc/donations')).toBeUndefined();
   });
 
   // Crowdfunding Donations is single-company too: its endpoint takes one `orgUid` (#4415, Copilot).
@@ -651,6 +742,19 @@ describe('SidebarNavService', () => {
     selectedOrgUid.set('0014100000MgaAAAAA');
 
     expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Company Profile');
+  });
+
+  // Epic #5845 (#5858): the all employee view hides the company Profile page entirely.
+  it('drops Company Profile in the all employee view, and keeps it for a caller who holds a grant', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000MgaAAAAA');
+    employeeViewOrgUids.set(new Set(['0014100000MgaAAAAA']));
+
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Company Profile');
+
+    orgWriterSet.set(new Set(['0014100000MgaAAAAA']));
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Company Profile');
+    orgWriterSet.set(new Set());
   });
 
   it('places EasyCLA as a top-level item directly before Company Profile, under the org-admin divider', () => {
@@ -822,6 +926,31 @@ describe('SidebarNavService', () => {
       impersonating.set(true);
 
       expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('LF Staff Only');
+    });
+  });
+
+  describe('the all employee view hides Memberships (#5855)', () => {
+    const MEMBERSHIPS_LINK = '/company/acme-inc/memberships';
+
+    const itemsFor = (employeeView: boolean): SidebarMenuItem[] => {
+      TestBed.overrideProvider(OrgLensViewModeService, {
+        useValue: { isEmployeeView: signal(employeeView), hiddenPages: signal(employeeView ? ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES : []) },
+      });
+      activeLens.set('org');
+      orgSegment.set('acme-inc');
+      return TestBed.inject(SidebarNavService).sidebarItems();
+    };
+
+    it('drops the Memberships link in the employee view', () => {
+      const items = itemsFor(true);
+
+      expect(findByLink(items, MEMBERSHIPS_LINK)).toBeUndefined();
+      expect(labels(items)).not.toContain('Memberships');
+      expect(findByLink(items, '/company/acme-inc/overview')).toBeDefined();
+    });
+
+    it('keeps the Memberships link in the full view', () => {
+      expect(findByLink(itemsFor(false), MEMBERSHIPS_LINK)).toEqual(expect.objectContaining({ label: 'Memberships' }));
     });
   });
 

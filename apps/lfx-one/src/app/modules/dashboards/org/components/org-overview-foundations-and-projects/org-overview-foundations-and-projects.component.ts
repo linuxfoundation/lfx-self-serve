@@ -10,6 +10,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensFoundationsService } from '@services/org-lens-foundations.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { PlausibleService } from '@services/plausible.service';
 import { catchError, combineLatest, map, of, skip, startWith, switchMap, tap } from 'rxjs';
 
@@ -36,6 +37,7 @@ export class OrgOverviewFoundationsAndProjectsComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly foundationsService = inject(OrgLensFoundationsService);
   private readonly orgLens = inject(OrgLensNavigationService);
+  private readonly viewMode = inject(OrgLensViewModeService);
   private readonly plausibleService = inject(PlausibleService);
   private readonly router = inject(Router);
 
@@ -45,6 +47,9 @@ export class OrgOverviewFoundationsAndProjectsComponent {
 
   // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
   protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
+
+  /** The Memberships page is hidden in the all employee view (epic #5845), so its link is not rendered there. */
+  protected readonly showMembershipsLink: Signal<boolean> = computed(() => !this.viewMode.isEmployeeView());
 
   protected readonly commitsDefinition = ORG_COMMITS_DEFINITION;
   protected readonly maintainerRolesLabel = ORG_LF_MAINTAINER_ROLES_LABEL;

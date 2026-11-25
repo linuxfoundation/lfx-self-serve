@@ -91,6 +91,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { runWhenRouterIdle } from '@shared/utils/router-idle.util';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, merge, of, skip, Subject, switchMap, tap } from 'rxjs';
@@ -132,6 +133,7 @@ export class OrgContributionsComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
+  protected readonly isEmployeeView = inject(OrgLensViewModeService).isEmployeeView;
 
   protected readonly dateRangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly pageSizeOptions: number[] = [...CONTRIBUTIONS_PAGE_SIZE_OPTIONS];
@@ -174,7 +176,9 @@ export class OrgContributionsComponent {
   protected readonly retryTrigger = signal<number>(0);
 
   // Repositories / Commits live on separate tabs within one content card (LFX card-tabs pattern).
-  protected readonly mainTab = signal<'repositories' | 'commits'>(this.parseInitialView());
+  private readonly selectedTab = signal<'repositories' | 'commits'>(this.parseInitialView());
+  // The all employee view (epic #5845) has no Commits feed: it lists named committers, so the page stays on Repositories.
+  protected readonly mainTab: Signal<'repositories' | 'commits'> = computed(() => (this.isEmployeeView() ? 'repositories' : this.selectedTab()));
 
   private readonly loadingState = signal<boolean>(true);
   private readonly fetchErrorState = signal<boolean>(false);
@@ -414,7 +418,7 @@ export class OrgContributionsComponent {
   }
 
   protected onMainTabChange(tabId: string): void {
-    this.mainTab.set(tabId === 'commits' ? 'commits' : 'repositories');
+    this.selectedTab.set(tabId === 'commits' ? 'commits' : 'repositories');
     this.page.set(1);
   }
 
@@ -459,7 +463,8 @@ export class OrgContributionsComponent {
       foundation: values.foundation ?? '',
       // The controls are already trimmed in the constructor; clamp again so the request can never exceed the server's cap.
       projects: (values.projects ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
-      employees: staleEmployees ? [] : (values.employees ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
+      // The employee filter lists named people, so the all employee view never sends it (the server answers 403 to it).
+      employees: staleEmployees || this.isEmployeeView() ? [] : (values.employees ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
       teamMembers: values.teamMembers ?? DEFAULT_ORG_TEAM_MEMBERS,
       orgScope: values.orgScope ?? DEFAULT_ORG_SCOPE,
       sort: this.sort(),
@@ -502,12 +507,15 @@ export class OrgContributionsComponent {
 
   private initResponse(): Signal<OrgContributionsResponse> {
     // The org and the query are read together, so an org change and the Employees it drops reach one request.
-    const request = computed(() => ({ orgUid: this.accountContext.selectedAccount().uid, query: this.query() }));
+    // The request waits for the role-grants answer: until it lands the view mode is not known, and a `?view=commits` or
+    // `?employees=` link would send what the server refuses an all employee view caller (403) before the page switches.
+    const request = computed(() => ({ orgUid: this.accountContext.selectedAccount().uid, query: this.query(), ready: this.orgRoleGrantsService.loaded() }));
     return toSignal(
       combineLatest([
         toObservable(request).pipe(distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))),
         toObservable(this.retryTrigger),
       ]).pipe(
+        filter(([{ ready }]) => ready),
         tap(() => {
           this.loadingState.set(true);
           this.fetchErrorState.set(false);

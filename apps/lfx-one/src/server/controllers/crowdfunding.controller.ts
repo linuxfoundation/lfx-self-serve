@@ -10,6 +10,9 @@ import {
   CROWDFUNDING_ATTRIBUTION_TYPES,
   CROWDFUNDING_INITIATIVE_STATUSES,
   ORG_ACCOUNT_ID_PATTERN,
+  ORG_LENS_EMPLOYEE_VIEW,
+  ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE,
+  ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_MESSAGE,
   SPONSORSHIP_DONATION_MODES,
   SPONSORSHIP_TIER_NAMES,
 } from '@lfx-one/shared/constants';
@@ -26,7 +29,9 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { isUuid, stripHtml } from '@lfx-one/shared/utils';
 
-import { AuthenticationError, ServiceValidationError } from '../errors';
+import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
+import { isOrgLensEmployeeViewEnabled } from '../helpers/org-lens-employee-view-flag.helper';
+import { resolveOrgLensViewMode } from '../helpers/org-lens-read-access.helper';
 import { CrowdfundingService } from '../services/crowdfunding.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
@@ -35,6 +40,19 @@ const parseNonNegativeInt = (val: unknown): number | undefined => {
   if (val == null || val === '') return undefined;
   const n = Number(val);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
+};
+
+/**
+ * The Crowdfunding pages (Initiatives and Donations) are hidden entirely in the all employee view (epic #5845), and the
+ * Crowdfunding service would refuse an employee's token for these company reads anyway. These routes live under
+ * `/api/crowdfunding`, not `/api/orgs/:orgUid/lens`, so the lens gate is not mounted on them: the company is the `orgUid`
+ * the request names and the gate is asked here. A no-op while the employee view is off for this request.
+ */
+const refuseEmployeeView = async (req: Request, orgUid: string, operation: string): Promise<void> => {
+  if (!isOrgLensEmployeeViewEnabled(req)) return;
+  if ((await resolveOrgLensViewMode(req, orgUid, operation)) === ORG_LENS_EMPLOYEE_VIEW) {
+    throw new MicroserviceError(ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_MESSAGE, 403, ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE, { operation, service: 'LFX_V2_SERVICE' });
+  }
 };
 
 /**
@@ -121,12 +139,12 @@ export class CrowdfundingController {
 
       const { pageSize, offset } = req.query;
 
-      const initiatives = await this.crowdfundingService.getMyInitiatives(
-        req,
-        parseNonNegativeInt(pageSize),
-        parseNonNegativeInt(offset),
-        parseInitiativesScope(req.query, 'get_my_initiatives')
-      );
+      const scope = parseInitiativesScope(req.query, 'get_my_initiatives');
+      if (scope?.kind === 'organizations') {
+        await refuseEmployeeView(req, scope.uid, 'get_my_initiatives');
+      }
+
+      const initiatives = await this.crowdfundingService.getMyInitiatives(req, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset), scope);
 
       logger.success(req, 'get_my_initiatives', startTime, { result_count: initiatives.data.length });
 
@@ -257,6 +275,8 @@ export class CrowdfundingController {
         throw ServiceValidationError.forField('orgUid', 'orgUid must be a company account id', { operation: 'get_org_donations' });
       }
 
+      await refuseEmployeeView(req, orgUid, 'get_org_donations');
+
       const donations = await this.crowdfundingService.getOrgDonations(req, orgUid, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
 
       logger.success(req, 'get_org_donations', startTime, { result_count: donations.data.length, total: donations.total });
@@ -276,7 +296,11 @@ export class CrowdfundingController {
         throw new AuthenticationError('User authentication required', { operation: 'get_initiatives_stats' });
       }
 
-      const stats = await this.crowdfundingService.getInitiativesStats(req, parseInitiativesScope(req.query, 'get_initiatives_stats'));
+      const scope = parseInitiativesScope(req.query, 'get_initiatives_stats');
+      if (scope?.kind === 'organizations') {
+        await refuseEmployeeView(req, scope.uid, 'get_initiatives_stats');
+      }
+      const stats = await this.crowdfundingService.getInitiativesStats(req, scope);
 
       logger.success(req, 'get_initiatives_stats', startTime);
 

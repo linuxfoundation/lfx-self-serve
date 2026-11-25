@@ -163,13 +163,19 @@ export class OrgRoleGrantsService {
       this.noteFullAccessAddressed(uid, false);
     }
     const current = this.addressedEmployeeViewUidsInternal();
-    if (current.has(uid) === employeeView) return;
-    const next = new Set(current);
     if (employeeView) {
-      next.add(uid);
-    } else {
-      next.delete(uid);
+      // The role-grants company is superseded the same way; the next role-grants answer restores it if the server still names it.
+      const granted = this.employeeViewOrgUidInternal();
+      if (granted !== null && granted !== uid) this.employeeViewOrgUidInternal.set(null);
+      // A caller has one employer, so a positive answer for a company replaces any earlier addressed employee company: otherwise both stay
+      // addressable and the earlier one renders pages whose APIs now refuse it.
+      if (current.size === 1 && current.has(uid)) return;
+      this.addressedEmployeeViewUidsInternal.set(new Set([uid]));
+      return;
     }
+    if (!current.has(uid)) return;
+    const next = new Set(current);
+    next.delete(uid);
     this.addressedEmployeeViewUidsInternal.set(next);
   }
 
@@ -208,6 +214,14 @@ export class OrgRoleGrantsService {
         this.fullAccessOrgUidInternal.set(response.fullAccessOrgUid ?? null);
         // A positive employee-only verdict supersedes an earlier addressed full-access note for that company; absence of the optional field never clears it.
         const employeeOnlyUid = response.employeeView?.orgUid;
+        // The role-grants answer names the one current employee company, so an addressed note for any other company is stale; an absent answer
+        // (an older server, a flag-off server, an unproven lookup) keeps the addressed fallback notes.
+        if (employeeOnlyUid) {
+          const addressed = this.addressedEmployeeViewUidsInternal();
+          if ([...addressed].some((held) => held !== employeeOnlyUid)) {
+            this.addressedEmployeeViewUidsInternal.set(new Set([...addressed].filter((held) => held === employeeOnlyUid)));
+          }
+        }
         if (employeeOnlyUid && employeeOnlyUid !== response.fullAccessOrgUid) {
           this.noteFullAccessAddressed(employeeOnlyUid, false);
         }

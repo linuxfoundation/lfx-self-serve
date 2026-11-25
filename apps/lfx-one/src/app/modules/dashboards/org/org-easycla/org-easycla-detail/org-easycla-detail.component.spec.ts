@@ -157,7 +157,10 @@ describe('OrgEasyclaDetailComponent', () => {
           useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value, pathFromRoot: mountPath() } },
         },
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
-        { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: { loaded: grantsLoaded, correlationId, noteEmployeeViewAddressed: vi.fn(), noteFullAccessAddressed: vi.fn() },
+        },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
         { provide: OrgLensEmptyStateService, useValue: emptyStateService },
@@ -3019,7 +3022,10 @@ describe('OrgEasyclaDetailComponent', () => {
               refreshCanonicalRecord: vi.fn().mockResolvedValue(undefined),
             },
           },
-          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
+          {
+            provide: OrgRoleGrantsService,
+            useValue: { loaded: grantsLoaded, correlationId, noteEmployeeViewAddressed: vi.fn(), noteFullAccessAddressed: vi.fn() },
+          },
           { provide: PersonaService, useValue: { personaLoaded } },
           {
             provide: OrgNavigationService,
@@ -3810,7 +3816,10 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
           useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value, pathFromRoot: mountPath() } },
         },
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess: signal(true), selectedUrlSegment } },
-        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true), correlationId: signal(null) } },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: { loaded: signal(true), correlationId: signal(null), noteEmployeeViewAddressed: vi.fn(), noteFullAccessAddressed: vi.fn() },
+        },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
         {
@@ -4001,7 +4010,10 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
           useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value, pathFromRoot: mountPath() } },
         },
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess: signal(true), selectedUrlSegment } },
-        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true), correlationId: signal(null) } },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: { loaded: signal(true), correlationId: signal(null), noteEmployeeViewAddressed: vi.fn(), noteFullAccessAddressed: vi.fn() },
+        },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
         {
