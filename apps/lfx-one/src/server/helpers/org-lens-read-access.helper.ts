@@ -18,6 +18,9 @@ const roleGrants = new OrgRoleGrantsService();
 const accessCheck = new AccessCheckService();
 const employeeView = new OrgEmployeeViewService();
 
+// The qualification type lives in shared; re-exported so server callers keep importing it from the gate helper.
+export type { OrgLensReadQualification };
+
 const qualificationByRequest = new WeakMap<Request, Map<string, Promise<OrgLensReadQualification>>>();
 const viewModeByRequest = new WeakMap<Request, Map<string, OrgLensViewMode>>();
 
