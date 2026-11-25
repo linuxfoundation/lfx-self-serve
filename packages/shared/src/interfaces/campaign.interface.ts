@@ -8393,6 +8393,38 @@ export interface CampaignRedditImageAssetBlock {
   message: string;
 }
 
+/** The image a Reddit create carries: an uploaded asset, a pasted URL, or none. Never both. */
+export type RedditImageField = { imageAssetId: string } | { imageUrl: string } | Record<string, never>;
+
+/** The Reddit image state `redditImageAssetBlock` (`campaign-reddit-image.utils.ts`) reads, as plain values. */
+export interface RedditImageBlockInput {
+  /** Whether the Reddit section is shown (Reddit is a selected platform). */
+  showRedditSection: boolean;
+  /** The existing post's URL; while set, the asset is withheld by design and nothing blocks. */
+  postUrl: string;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+  assetId: string;
+  assetBriefId: string;
+  uploadStatus: CreativeAssetUploadStatus;
+  uploadFailedBriefId: string;
+  uploadError: string;
+  creativeEnabled: boolean | null;
+  assetUploadEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+}
+
+/** The Reddit state `redditNoAdWarning` (`campaign-reddit-image.utils.ts`) reads, as plain values. */
+export interface RedditNoAdWarningInput {
+  /** Whether the Reddit section is shown (Reddit is a selected platform). */
+  showRedditSection: boolean;
+  postUrl: string;
+  /** The image the request carries (`redditImageField`). */
+  image: RedditImageField;
+  /** Whether the authored-post controls (the image URL) are offered: an explicit yes. */
+  creativeAvailable: boolean;
+}
+
 /**
  * Why Create is blocked for an uploaded Meta image the draft still holds but the request cannot
  * carry. The kinds mean what they do on `CampaignRedditImageAssetBlock`.

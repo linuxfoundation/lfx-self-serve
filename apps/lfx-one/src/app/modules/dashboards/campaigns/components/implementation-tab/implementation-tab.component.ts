@@ -50,7 +50,6 @@ import {
   CAMPAIGN_CHAR_LIMITS,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES,
-  CREATIVE_ASSET_MAX_BYTES,
   CREATIVE_ASSET_MIME_TYPES,
   CREATIVE_ASSET_TOO_LARGE_MESSAGE,
   CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
@@ -296,6 +295,7 @@ import type {
   CampaignAdSchedule,
   CampaignDeviceBidModifier,
   CampaignRedditImageAssetBlock,
+  RedditImageField,
   CampaignCallExtension,
   CampaignCallExtensionDraft,
   CampaignPriceExtension,
@@ -499,6 +499,16 @@ import {
   redditEffectiveKeywords,
   redditEffectiveSubreddits,
   redditEffectiveVideoGoal,
+  redditImageAssetBlock,
+  redditImageAssetForBrief,
+  redditImageCapabilities,
+  redditImageField,
+  redditImageFileDescribedBy,
+  redditImageFileRefusal,
+  redditImageUploadHoldsCreate,
+  redditImageUploadLiveMessage,
+  redditImageUploadStatusMessage,
+  redditNoAdWarning,
   redditObjectiveIsUnavailable,
   redditVideoGoalError,
   redditVideoPostError,
@@ -874,7 +884,9 @@ export class ImplementationTabComponent implements OnInit {
   public readonly redditCreativeEnabled = input<boolean | null>(null);
 
   /** @see redditCreativeEnabled — an explicit yes, never a `null`. */
-  protected readonly redditCreativeAvailable = computed<boolean>(() => this.redditCreativeEnabled() === true);
+  protected readonly redditCreativeAvailable = computed<boolean>(
+    () => redditImageCapabilities(this.redditCreativeEnabled(), this.redditAssetUploadEnabled()).creativeAvailable
+  );
 
   /**
    * Whether the Reddit section may offer an image UPLOAD (`CampaignListResult.redditAssetUploadEnabled`,
@@ -887,7 +899,9 @@ export class ImplementationTabComponent implements OnInit {
   public readonly redditAssetUploadEnabled = input<boolean | null>(null);
 
   /** @see redditAssetUploadEnabled — both capabilities an explicit yes. */
-  protected readonly redditAssetUploadAvailable = computed<boolean>(() => this.redditCreativeAvailable() && this.redditAssetUploadEnabled() === true);
+  protected readonly redditAssetUploadAvailable = computed<boolean>(
+    () => redditImageCapabilities(this.redditCreativeEnabled(), this.redditAssetUploadEnabled()).uploadAvailable
+  );
 
   /**
    * Whether the Meta section may offer an ad image (`CampaignListResult.metaCreativeEnabled`).
@@ -1985,9 +1999,7 @@ export class ImplementationTabComponent implements OnInit {
    * returning to the input re-reads why the last file was refused. The input stays enabled during
    * an upload (disabling it would drop keyboard focus); a new pick replaces the one in flight.
    */
-  protected readonly redditImageFileDescribedBy = computed(() =>
-    ['reddit-image-file-hint', 'reddit-image-file-status', ...(this.redditImageUploadStatus() === 'error' ? ['reddit-image-file-error'] : [])].join(' ')
-  );
+  protected readonly redditImageFileDescribedBy = computed(() => redditImageFileDescribedBy(this.redditImageUploadStatus()));
   /**
    * This component's subscription to the upload in flight. Unsubscribing only detaches it (a tab
    * switch must not abort the upload); `clearRedditImageAsset` cancels the request itself.
@@ -3757,22 +3769,23 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly redditImageAssetBlock: Signal<CampaignRedditImageAssetBlock | null> = this.initRedditImageAssetBlock();
   /** Whether the draft holds an uploaded Reddit image made for the brief now open — the only one sent. */
-  protected readonly redditImageAssetForThisBrief = computed(
-    () => this.redditImageAssetId() !== '' && this.redditImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  protected readonly redditImageAssetForThisBrief = computed(() =>
+    redditImageAssetForBrief(this.redditImageAssetId(), this.redditImageAssetBriefId(), this.briefPersistence().briefId)
   );
   /** The always-mounted live region's text for `redditImageAssetBlock`; `''` when nothing blocks. */
   protected readonly redditImageAssetBlockMessage = computed(() => this.redditImageAssetBlock()?.message ?? '');
   /** The upload control's progress or success line; empty when there is nothing to report. */
-  protected readonly redditImageUploadStatusMessage = computed(() => {
-    if (this.redditImageUploadStatus() === 'uploading') return 'Uploading image…';
-    return this.redditImageAssetForThisBrief() ? `Uploaded: ${this.redditImageAssetName() || 'image'}` : '';
-  });
+  protected readonly redditImageUploadStatusMessage = computed(() =>
+    redditImageUploadStatusMessage(this.redditImageUploadStatus(), this.redditImageAssetForThisBrief(), this.redditImageAssetName())
+  );
   /**
    * What the always-mounted live region announces: the control's status while it is shown. Kept out
    * of the control so the region is not created and destroyed as upload support settles, which
    * drops the first announcement; while the control is hidden, the asset block's region speaks.
    */
-  protected readonly redditImageUploadLiveMessage = computed(() => (this.redditAssetUploadAvailable() ? this.redditImageUploadStatusMessage() : ''));
+  protected readonly redditImageUploadLiveMessage = computed(() =>
+    redditImageUploadLiveMessage(this.redditAssetUploadAvailable(), this.redditImageUploadStatusMessage())
+  );
 
   /**
    * Why Create is blocked for an uploaded Meta image this tab still holds but cannot send, or
@@ -4294,7 +4307,14 @@ export class ImplementationTabComponent implements OnInit {
     // while the upload control is shown, where its status and Remove live; while it is hidden,
     // `redditImageAssetBlock` holds Create instead and shows the upload's state with a Remove. Not
     // with a post URL, which `redditImageField` sends in place of any image, as the block agrees.
-    if (this.showRedditSection() && this.redditAssetUploadAvailable() && !this.redditPostUrl() && this.redditImageUploadStatus() === 'uploading')
+    if (
+      redditImageUploadHoldsCreate({
+        showRedditSection: this.showRedditSection(),
+        uploadAvailable: this.redditAssetUploadAvailable(),
+        postUrl: this.redditPostUrl(),
+        uploadStatus: this.redditImageUploadStatus(),
+      })
+    )
       return 'Waiting for the Reddit Ads image upload to finish.';
     // Meta's sibling of the hold above, on the same terms.
     if (this.showMetaSection() && this.metaAssetUploadAvailable() && this.metaImageUploadStatus() === 'uploading')
@@ -5365,8 +5385,8 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Upload the chosen image for this brief and keep its asset id.
    *
-   * Type and size are checked here against the same shared allowlist the BFF route enforces, so
-   * the common refusals need no round trip and read the same either way. The input is cleared
+   * Type and size are checked first (`redditImageFileRefusal`) against the same shared allowlist the
+   * BFF route enforces, so the common refusals need no round trip and read the same either way. The input is cleared
    * afterwards so choosing the same file again (after a failure) fires `change` again.
    */
   protected onRedditImageFileChange(event: Event): void {
@@ -5382,18 +5402,11 @@ export class ImplementationTabComponent implements OnInit {
     this.clearRedditImageAsset();
     this.emitDraft();
 
-    if (!isCreativeAssetMimeType(file.type)) {
-      this.failRedditImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
-      return;
-    }
-    if (file.size > CREATIVE_ASSET_MAX_BYTES) {
-      this.failRedditImageUpload(CREATIVE_ASSET_TOO_LARGE_MESSAGE);
-      return;
-    }
     const briefId = this.briefPersistence().briefId ?? '';
     const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
-    if (!briefId || !projectSlug) {
-      this.failRedditImageUpload('Save the brief before uploading an image for it.');
+    const refusal = redditImageFileRefusal(file, briefId, projectSlug);
+    if (refusal !== null) {
+      this.failRedditImageUpload(refusal);
       return;
     }
 
@@ -7592,78 +7605,34 @@ export class ImplementationTabComponent implements OnInit {
     return channels.includes('search') ? 'search' : channels[0];
   }
 
-  /**
-   * The Reddit image field the create request carries: the uploaded asset, else the pasted URL.
-   *
-   * Exactly one, because campaign-service refuses `imageAssetId` alongside `imageUrl` (or
-   * `postUrl`) with a 400. The asset is withheld while a post URL is set — that post already has
-   * its image, and the combination is refused rather than ignored — and while the upload
-   * capability is off, where the legacy creator would drop it or campaign-service refuse it. The
-   * pasted URL keeps its existing rule: sent on `redditCreativeAvailable()`, and ignored upstream
-   * when a post URL is set.
-   */
-  private redditImageField(): { imageAssetId: string } | { imageUrl: string } | Record<string, never> {
-    if (this.redditAssetUploadAvailable() && this.redditImageAssetForThisBrief() && !this.redditPostUrl()) {
-      return { imageAssetId: this.redditImageAssetId() };
-    }
-    if (this.redditCreativeAvailable() && this.redditImageUrl()) return { imageUrl: this.redditImageUrl() };
-    return {};
+  /** The Reddit image field the create request carries; the rule is `redditImageField` in the shared helper. */
+  private redditImageField(): RedditImageField {
+    return redditImageField({
+      uploadAvailable: this.redditAssetUploadAvailable(),
+      assetForThisBrief: this.redditImageAssetForThisBrief(),
+      assetId: this.redditImageAssetId(),
+      postUrl: this.redditPostUrl(),
+      creativeAvailable: this.redditCreativeAvailable(),
+      imageUrl: this.redditImageUrl(),
+    });
   }
 
   private initRedditImageAssetBlock(): Signal<CampaignRedditImageAssetBlock | null> {
-    return computed(() => {
-      if (!this.showRedditSection() || this.redditPostUrl()) return null;
-      // An upload made for another brief, retained across a brief switch: `redditImageField` never
-      // sends it, whatever the capability says, so it must not read as usable either.
-      const briefId = this.briefPersistence().briefId;
-      if (this.redditImageAssetId() !== '' && briefId && this.redditImageAssetBriefId() !== briefId) {
-        return {
-          kind: 'otherBrief',
-          message:
-            'The uploaded Reddit image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again or use an image URL.',
-        };
-      }
-      // An upload still in flight counts as the image too: resumed after a tab switch it has no
-      // asset id yet, and while the upload control is hidden (support unknown, unconfirmed or off)
-      // this block is the only place its state shows and the only way to remove it.
-      const hasImage = this.redditImageAssetForThisBrief() || this.redditImageUploadStatus() === 'uploading';
-      if (this.redditAssetUploadAvailable()) return null;
-      // A failed upload's reason lives in the upload control, so while that is hidden (a resumed
-      // upload that failed after a tab switch) it is shown here, holding Create until the operator
-      // removes it: otherwise the campaign would go out without the image they chose, unannounced.
-      // Only for an upload made for the OPEN brief: one for a brief left behind (a foundation
-      // switch with the tab still open) could never have been sent with this one.
-      if (this.redditImageUploadStatus() === 'error' && briefId && this.redditImageUploadFailedBriefId() === briefId) {
-        return {
-          kind: 'uploadFailed',
-          message: `The Reddit image upload did not complete: ${this.redditImageUploadError()} Remove it to create the campaign without the image.`,
-        };
-      }
-      if (!hasImage) return null;
-      if (this.redditCreativeEnabled() === false || this.redditAssetUploadEnabled() === false) {
-        return {
-          kind: 'unsupported',
-          message:
-            'Image upload is not available on this deployment, so the uploaded Reddit image cannot be sent. Remove it to create the campaign without it.',
-        };
-      }
-      // The same create-capability read answers this and the bidding capability, so its state says
-      // whether a read is out; see `initBiddingCapabilityBlock` for why `unknown` gets a Retry.
-      if (this.createCapabilityRead() === 'pending') {
-        return { kind: 'pending', message: 'Checking Reddit image upload support…' };
-      }
-      if (!this.briefPersistence().briefId) {
-        return {
-          kind: 'unsaved',
-          message: "Reddit image upload support can't be checked until this brief is saved. Save the brief, or remove the uploaded image.",
-        };
-      }
-      return {
-        kind: 'failed',
-        message:
-          'Could not confirm that Reddit image upload is supported, so the uploaded image cannot be sent yet. Retry the check, or remove the uploaded image.',
-      };
-    });
+    return computed(() =>
+      redditImageAssetBlock({
+        showRedditSection: this.showRedditSection(),
+        postUrl: this.redditPostUrl(),
+        briefId: this.briefPersistence().briefId,
+        assetId: this.redditImageAssetId(),
+        assetBriefId: this.redditImageAssetBriefId(),
+        uploadStatus: this.redditImageUploadStatus(),
+        uploadFailedBriefId: this.redditImageUploadFailedBriefId(),
+        uploadError: this.redditImageUploadError(),
+        creativeEnabled: this.redditCreativeEnabled(),
+        assetUploadEnabled: this.redditAssetUploadEnabled(),
+        createCapabilityRead: this.createCapabilityRead(),
+      })
+    );
   }
 
   /**
@@ -12442,25 +12411,14 @@ export class ImplementationTabComponent implements OnInit {
    * drops the image, and a warning that ignored that would promise an ad the request never asks for.
    */
   private initRedditNoAdWarning(): Signal<string | null> {
-    return computed(() => {
-      if (!this.showRedditSection()) return null;
-      if (this.redditPostUrl()) return null;
-      if (Object.keys(this.redditImageField()).length > 0) return null;
-      // Names only the fields the operator can actually see: with the authored-post controls
-      // withheld, an image URL is not a remedy and telling them to supply one would be advice they
-      // cannot take.
-      const missing = this.redditCreativeAvailable() ? 'No post URL and no image URL' : 'No post URL';
-      // "Will not change that" rather than "stays refused", for the reason the post-submit sibling
-      // was corrected to the same wording in #3451: the clause has to hold on BOTH arms and the
-      // refusal is campaign-service's alone. There activation needs both child ids
-      // (`RedditDispatcher.ToggleStatus` in `internal/dispatch/reddit.go`), taken from
-      // `redditChildIDs` in the same file, which
-      // reads only the persisted Result blob — nothing re-reads Reddit, so an ad attached by hand
-      // is never discovered and the refusal never lifts. The legacy toggle has no ad-existence
-      // guard at all (`campaign-proxy.service.ts`) and goes through to a campaign with nothing to
-      // serve. Either way activating accomplishes nothing, which is what the operator needs to know.
-      return `${missing}, so this campaign is created with no ad: the campaign and its ad group are made and the create reports success, but nothing serves. Activating it from LFX will not change that, so either supply a post above or build and launch the campaign in Reddit Ads Manager.`;
-    });
+    return computed(() =>
+      redditNoAdWarning({
+        showRedditSection: this.showRedditSection(),
+        postUrl: this.redditPostUrl(),
+        image: this.redditImageField(),
+        creativeAvailable: this.redditCreativeAvailable(),
+      })
+    );
   }
 
   /**

@@ -148,20 +148,21 @@ describe('ImplementationTabComponent reddit image upload', () => {
     }).compileComponents();
   });
 
-  it.each([
-    ['unanswered', null, true],
-    ['off', false, true],
-    ['on but the authored-post capability is off', true, false],
-  ])('renders no upload control while the upload capability is %s, and keeps the image URL behaviour unchanged', async (_label, upload, creative) => {
-    const f = (await mount(upload, creative)).fixture;
+  // The capability matrix is `redditImageCapabilities`' rows; this proves the template reads it.
+  it.each([['unanswered', null, true]])(
+    'renders no upload control while the upload capability is %s, and keeps the image URL behaviour unchanged',
+    async (_label, upload, creative) => {
+      const f = (await mount(upload, creative)).fixture;
 
-    expect(fileInput(f)).toBeNull();
-    // The pasted URL is still the authored-post image whenever the creative capability allows it.
-    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-image-url"]') !== null).toBe(creative);
-  });
+      expect(fileInput(f)).toBeNull();
+      // The pasted URL is still the authored-post image whenever the creative capability allows it.
+      expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-image-url"]') !== null).toBe(creative);
+    }
+  );
 
   it('labels the upload control and uploads the chosen image for the saved brief, keeping its asset id', async () => {
     const f = (await mount(true)).fixture;
+    const revision = at(f).creativeLibraryRevision();
     const input = fileInput(f) as HTMLInputElement;
     expect(f.nativeElement.querySelector(`label[for="${input.id}"]`)?.textContent).toContain('upload an image');
     expect(input.getAttribute('accept')).toBe('image/png,image/jpeg');
@@ -176,6 +177,8 @@ describe('ImplementationTabComponent reddit image upload', () => {
     const live = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-status-live"]') as HTMLElement;
     expect(live.getAttribute('role')).toBe('status');
     expect(live.textContent).toContain('Uploaded: promo.png');
+    // The library the slot grid reads just gained an asset, so it re-reads.
+    expect(at(f).creativeLibraryRevision()).toBe(revision + 1);
   });
 
   // The slot plan is derived from the stored library, so an upload makes the grid's last answer
@@ -228,16 +231,6 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(upload.available()).toBe(true);
   });
 
-  it('bumps the creative library revision once the upload lands, so the slot grid re-reads', async () => {
-    const f = (await mount(true)).fixture;
-    const before = at(f).creativeLibraryRevision();
-
-    choose(f, png());
-
-    expect(at(f).redditImageAssetId()).toBe(ASSET_ID);
-    expect(at(f).creativeLibraryRevision()).toBe(before + 1);
-  });
-
   it('announces the upload while it is in flight', async () => {
     const pending = new Subject<unknown>();
     uploadCreativeAsset.mockReturnValue(pending);
@@ -287,58 +280,36 @@ describe('ImplementationTabComponent reddit image upload', () => {
   // Once the upload control is hidden mid-upload, the upload must still hold Create, visibly and
   // with a way out: unanswered, unconfirmed and switched-off support all hide the control, and a
   // resumed upload has no asset id yet, so without this the campaign went out without the image.
-  it.each([
-    ['still being checked', null, 'pending', 'pending'],
-    ['unconfirmed', null, 'unknown', 'failed'],
-    ['switched off', false, 'ready', 'unsupported'],
-  ] as const)('holds Create with a visible Remove for an upload in flight while support is %s', async (_label, upload, read, kind) => {
-    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
-    const f = (await mount(true)).fixture;
-    choose(f, png());
-    const c = at(f);
-    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
-    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
-    c.campaignForm.controls['startDate'].setValue('2026-09-01');
-    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+  // Which kind each state raises is `redditImageAssetBlock`'s rows; this proves the block reaches the
+  // template and Create, and that its Remove clears the upload.
+  it.each([['switched off', false, 'ready', 'unsupported']] as const)(
+    'holds Create with a visible Remove for an upload in flight while support is %s',
+    async (_label, upload, read, kind) => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      const f = (await mount(true)).fixture;
+      choose(f, png());
+      const c = at(f);
+      c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+      c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+      c.campaignForm.controls['startDate'].setValue('2026-09-01');
+      c.campaignForm.controls['endDate'].setValue('2026-09-30');
 
-    f.componentRef.setInput('createCapabilityRead', read);
-    f.componentRef.setInput('redditAssetUploadEnabled', upload);
-    f.detectChanges();
+      f.componentRef.setInput('createCapabilityRead', read);
+      f.componentRef.setInput('redditAssetUploadEnabled', upload);
+      f.detectChanges();
 
-    expect(fileInput(f)).toBeNull();
-    const block = f.nativeElement.querySelector(`[data-testid="implementation-reddit-image-asset-block-${kind}"]`) as HTMLElement | null;
-    expect(block).not.toBeNull();
-    expect(c.canSubmit()).toBe(false);
+      expect(fileInput(f)).toBeNull();
+      const block = f.nativeElement.querySelector(`[data-testid="implementation-reddit-image-asset-block-${kind}"]`) as HTMLElement | null;
+      expect(block).not.toBeNull();
+      expect(c.canSubmit()).toBe(false);
 
-    (f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-remove"] button') as HTMLButtonElement).click();
-    f.detectChanges();
+      (f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-remove"] button') as HTMLButtonElement).click();
+      f.detectChanges();
 
-    expect(c.redditImageUploadStatus()).toBe('idle');
-    expect(c.canSubmit()).toBe(true);
-  });
-
-  it('holds Create for an upload resumed after a tab switch while support is still being checked', async () => {
-    const pending = new Subject<unknown>();
-    uploadCreativeAsset.mockReturnValue(pending);
-    const first = await mount(true);
-    choose(first.fixture, png());
-    const draft = first.latest() as CampaignImplementationDraft;
-    first.fixture.destroy();
-    resumeCreativeAssetUpload.mockReturnValue(pending);
-
-    const f = (await mount(null, true, { ...draft, eventSlug: 'kubecon-eu-2026' })).fixture;
-    f.componentRef.setInput('createCapabilityRead', 'pending');
-    const c = at(f);
-    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
-    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
-    c.campaignForm.controls['startDate'].setValue('2026-09-01');
-    c.campaignForm.controls['endDate'].setValue('2026-09-30');
-    f.detectChanges();
-
-    expect(c.redditImageUploadStatus()).toBe('uploading');
-    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-pending"]')).not.toBeNull();
-    expect(c.canSubmit()).toBe(false);
-  });
+      expect(c.redditImageUploadStatus()).toBe('idle');
+      expect(c.canSubmit()).toBe(true);
+    }
+  );
 
   // A stalled upload has no timeout, so the shown control must offer a way out of it, and that way
   // out must abort the request rather than leave it running.
@@ -358,22 +329,6 @@ describe('ImplementationTabComponent reddit image upload', () => {
 
     expect(cancelCreativeAssetUpload).toHaveBeenCalled();
     expect(c.redditImageUploadStatus()).toBe('idle');
-    expect(c.canSubmit()).toBe(true);
-  });
-
-  it('does not hold Create for an upload when a post URL is what the campaign sends', async () => {
-    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
-    const f = (await mount(true)).fixture;
-    choose(f, png());
-    const c = at(f) as Internals & { redditPostUrl: { set(v: string): void } };
-    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
-    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
-    c.campaignForm.controls['startDate'].setValue('2026-09-01');
-    c.campaignForm.controls['endDate'].setValue('2026-09-30');
-
-    c.redditPostUrl.set('https://www.reddit.com/r/kubernetes/comments/abc123/promo/');
-    f.detectChanges();
-
     expect(c.canSubmit()).toBe(true);
   });
 
@@ -433,50 +388,6 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(second.latest()?.redditImageUploadPendingName).toBe('');
   });
 
-  it('shows a resumed upload that fails while the control is hidden, and holds Create until removed', async () => {
-    const pending = new Subject<unknown>();
-    uploadCreativeAsset.mockReturnValue(pending);
-    const first = await mount(true);
-    choose(first.fixture, png());
-    const draft = first.latest() as CampaignImplementationDraft;
-    first.fixture.destroy();
-    resumeCreativeAssetUpload.mockReturnValue(pending);
-
-    const f = (await mount(null, true, { ...draft, eventSlug: 'kubecon-eu-2026' })).fixture;
-    const c = at(f);
-    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
-    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
-    c.campaignForm.controls['startDate'].setValue('2026-09-01');
-    c.campaignForm.controls['endDate'].setValue('2026-09-30');
-    pending.error(new HttpErrorResponse({ status: 503 }));
-    f.detectChanges();
-
-    const block = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-uploadFailed"]') as HTMLElement | null;
-    expect(block?.textContent).toContain('The Reddit image upload did not complete');
-    expect(c.canSubmit()).toBe(false);
-
-    (f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-remove"] button') as HTMLButtonElement).click();
-    f.detectChanges();
-    expect(c.canSubmit()).toBe(true);
-  });
-
-  it('does not hold Create on another brief for an upload that failed for the one left behind', async () => {
-    const pending = new Subject<unknown>();
-    uploadCreativeAsset.mockReturnValue(pending);
-    const f = (await mount(true)).fixture;
-    choose(f, png());
-    const c = at(f);
-
-    // A foundation switch with the tab open: the brief is cleared and the capabilities reset.
-    f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: '0f8fad5b-d9cb-469f-a165-70867728950e', message: null, approved: true });
-    f.componentRef.setInput('redditAssetUploadEnabled', null);
-    pending.error(new HttpErrorResponse({ status: 503 }));
-    f.detectChanges();
-
-    expect(c.redditImageUploadStatus()).toBe('error');
-    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-uploadFailed"]')).toBeNull();
-  });
-
   // The live region must exist before the control does: created with it as upload support settles,
   // it would drop the first announcement.
   it('keeps the upload status live region mounted while the upload control is hidden', async () => {
@@ -533,35 +444,6 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(at(f).redditImageAssetId()).toBe('');
   });
 
-  it('does not send an asset uploaded to a different brief', async () => {
-    const first = await mount(true);
-    choose(first.fixture, png());
-    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026', redditImageAssetBriefId: 'another-brief' };
-    first.fixture.destroy();
-
-    const second = await mount(true, true, draft);
-    const f = second.fixture;
-    const q = (id: string): HTMLElement | null => f.nativeElement.querySelector(`[data-testid="${id}"]`);
-
-    // Never sent, so never shown as usable: no "Uploaded", and Create blocked with a way out.
-    expect(q('implementation-reddit-image-status')?.textContent).not.toContain('Uploaded');
-    expect(q('implementation-reddit-image-asset-block-otherBrief')?.textContent).toContain('uploaded for a different brief');
-    const c = at(f);
-    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
-    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
-    c.campaignForm.controls['startDate'].setValue('2026-09-01');
-    c.campaignForm.controls['endDate'].setValue('2026-09-30');
-    expect(c.canSubmit()).toBe(false);
-    c.submit();
-    expect(createCampaign).not.toHaveBeenCalled();
-
-    (q('implementation-reddit-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
-    f.detectChanges();
-
-    expect(q('implementation-reddit-image-asset-block-otherBrief')).toBeNull();
-    expect('imageAssetId' in submit(f)).toBe(false);
-  });
-
   it('replaces the previous upload when a new pick is refused, and links the refusal to the input', async () => {
     const f = (await mount(true)).fixture;
     choose(f, png());
@@ -578,25 +460,25 @@ describe('ImplementationTabComponent reddit image upload', () => {
 
   // The pick clears the old asset in the PARENT's draft too: otherwise a tab switch right after a
   // refused (or still-uploading) replacement restores the image the operator replaced.
-  it.each([
-    ['refused', (): File => new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' })],
-    ['still uploading', (): File => png()],
-  ])('drops the replaced upload from the draft when the replacement is %s', async (label, replacement) => {
-    const first = await mount(true);
-    choose(first.fixture, png());
-    expect(first.latest()?.redditImageAssetId).toBe(ASSET_ID);
-    if (label === 'still uploading') {
-      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+  it.each([['refused', (): File => new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' })]])(
+    'drops the replaced upload from the draft when the replacement is %s',
+    async (label, replacement) => {
+      const first = await mount(true);
+      choose(first.fixture, png());
+      expect(first.latest()?.redditImageAssetId).toBe(ASSET_ID);
+      if (label === 'still uploading') {
+        uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      }
+
+      choose(first.fixture, replacement());
+
+      expect(first.latest()?.redditImageAssetId).toBe('');
+      const draft = first.latest() as CampaignImplementationDraft;
+      first.fixture.destroy();
+      const second = await mount(true, true, { ...draft, eventSlug: 'kubecon-eu-2026' });
+      expect('imageAssetId' in submit(second.fixture)).toBe(false);
     }
-
-    choose(first.fixture, replacement());
-
-    expect(first.latest()?.redditImageAssetId).toBe('');
-    const draft = first.latest() as CampaignImplementationDraft;
-    first.fixture.destroy();
-    const second = await mount(true, true, { ...draft, eventSlug: 'kubecon-eu-2026' });
-    expect('imageAssetId' in submit(second.fixture)).toBe(false);
-  });
+  );
 
   it('sends imageAssetId instead of imageUrl once an image is uploaded', async () => {
     const f = (await mount(true)).fixture;
@@ -607,34 +489,6 @@ describe('ImplementationTabComponent reddit image upload', () => {
 
     expect(config['imageAssetId']).toBe(ASSET_ID);
     expect('imageUrl' in config).toBe(false);
-  });
-
-  it('falls back to the pasted image URL after the upload is removed', async () => {
-    const f = (await mount(true)).fixture;
-    typeImageUrl(f, 'https://cdn.example.org/promo.png');
-    choose(f, png());
-    (f.nativeElement.querySelector('[data-testid="implementation-reddit-image-remove"]') as HTMLButtonElement).click();
-    f.detectChanges();
-
-    const config = submit(f);
-
-    expect('imageAssetId' in config).toBe(false);
-    expect(config['imageUrl']).toBe('https://cdn.example.org/promo.png');
-  });
-
-  // Upstream refuses imageAssetId together with postUrl, where an imageUrl is merely ignored.
-  it('withholds the uploaded image while a post URL is set', async () => {
-    const f = (await mount(true)).fixture;
-    choose(f, png());
-    const post = f.nativeElement.querySelector('[data-testid="implementation-reddit-post-url"]') as HTMLInputElement;
-    post.value = 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/';
-    post.dispatchEvent(new Event('input'));
-    f.detectChanges();
-
-    const config = submit(f);
-
-    expect('imageAssetId' in config).toBe(false);
-    expect(config['postUrl']).toBe('https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
   });
 
   it('carries the uploaded image through a tab round-trip', async () => {
@@ -651,20 +505,21 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(submit(second.fixture)['imageAssetId']).toBe(ASSET_ID);
   });
 
-  it.each([
-    ['a type outside the allowlist', new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' }), CREATIVE_ASSET_WRONG_TYPE_MESSAGE],
-    ['an image over the size limit', png(CREATIVE_ASSET_MAX_BYTES + 1), CREATIVE_ASSET_TOO_LARGE_MESSAGE],
-  ])('refuses %s before uploading, with a readable alert', async (_label, file, message) => {
-    const f = (await mount(true)).fixture;
+  // Each refusal and its order is `redditImageFileRefusal`'s rows; this proves one reaches the alert.
+  it.each([['an image over the size limit', png(CREATIVE_ASSET_MAX_BYTES + 1), CREATIVE_ASSET_TOO_LARGE_MESSAGE]])(
+    'refuses %s before uploading, with a readable alert',
+    async (_label, file, message) => {
+      const f = (await mount(true)).fixture;
 
-    choose(f, file);
+      choose(f, file);
 
-    expect(uploadCreativeAsset).not.toHaveBeenCalled();
-    const alert = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-error"]') as HTMLElement;
-    expect(alert.getAttribute('role')).toBe('alert');
-    expect(alert.textContent?.trim()).toBe(message);
-    expect(at(f).redditImageAssetId()).toBe('');
-  });
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      const alert = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-error"]') as HTMLElement;
+      expect(alert.getAttribute('role')).toBe('alert');
+      expect(alert.textContent?.trim()).toBe(message);
+      expect(at(f).redditImageAssetId()).toBe('');
+    }
+  );
 
   it.each([
     [413, {}, CREATIVE_ASSET_TOO_LARGE_MESSAGE],
@@ -732,7 +587,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
       expect(submit(f)['imageAssetId']).toBe(ASSET_ID);
     });
 
-    it.each(['failed', 'unknown'] as const)('blocks Create with a Retry when the read is %s', async (read) => {
+    it.each(['failed'] as const)('blocks Create with a Retry when the read is %s', async (read) => {
       const f = await remount(null, null, read);
       const retried = vi.fn();
       f.componentRef.instance.retryCreateCapabilities.subscribe(retried);
@@ -743,32 +598,6 @@ describe('ImplementationTabComponent reddit image upload', () => {
 
       expect(retried).toHaveBeenCalledTimes(1);
       expect(createCampaign).not.toHaveBeenCalled();
-    });
-
-    it('blocks Create when the upload capability is off, until the operator removes the image', async () => {
-      const f = await remount(false, true, 'ready');
-
-      expect(at(f).canSubmit()).toBe(false);
-      expect(q(f, 'implementation-reddit-image-asset-block-unsupported')).not.toBeNull();
-
-      (q(f, 'implementation-reddit-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
-      f.detectChanges();
-      await f.whenStable();
-
-      expect(q(f, 'implementation-reddit-image-asset-block-unsupported')).toBeNull();
-      expect(at(f).redditImageAssetId()).toBe('');
-      expect('imageAssetId' in submit(f)).toBe(false);
-    });
-
-    it('does not block while a post URL is set, since the asset is withheld by design then', async () => {
-      const f = await remount(null, null, 'pending');
-      const post = f.nativeElement.querySelector('[data-testid="implementation-reddit-post-url"]') as HTMLInputElement;
-      post.value = 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/';
-      post.dispatchEvent(new Event('input'));
-      f.detectChanges();
-
-      expect(q(f, 'implementation-reddit-image-asset-block-pending')).toBeNull();
-      expect(at(f).canSubmit()).toBe(true);
     });
   });
 });
