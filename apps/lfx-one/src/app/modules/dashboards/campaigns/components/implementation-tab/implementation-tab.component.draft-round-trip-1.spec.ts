@@ -609,7 +609,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   });
 
   it('holds Create for a remembered conversion event the capability withdrew, until it is set back to Purchase', STATE_ONLY, async () => {
-    type ConversionEventHandlers = { onRedditConversionEventChange(event: Event): void; useDefaultRedditConversionEvent(): void };
+    interface ConversionEventHandlers { onRedditConversionEventChange(event: Event): void; useDefaultRedditConversionEvent(): void }
     const first = await mountWithConversionEvent(null, true);
     (first.fixture.componentInstance as unknown as ConversionEventHandlers).onRedditConversionEventChange({ target: { value: 'LEAD' } } as unknown as Event);
     const draft = first.latest();
