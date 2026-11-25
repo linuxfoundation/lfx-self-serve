@@ -261,7 +261,10 @@ export function emptyMetaDetailedTargetingPicks(): MetaDetailedTargetingPicks {
  * Whether a targeting search of `type` may be sent: the flag of the list its options fill, so the search never
  * offers an option a create would refuse. Every kind is listed; a new kind fails the type-check until it is mapped.
  */
-export function metaTargetingSearchAllowed(type: MetaTargetingSearchType, flags: Pick<MetaTargetingFlags, 'interest' | 'behavior' | 'locale' | 'region'>): boolean {
+export function metaTargetingSearchAllowed(
+  type: MetaTargetingSearchType,
+  flags: Pick<MetaTargetingFlags, 'interest' | 'behavior' | 'locale' | 'region'>
+): boolean {
   switch (type) {
     case 'interest':
       return flags.interest;
