@@ -38,6 +38,9 @@
               {{ groupLabel() }} <i [class]="sortIcons()['label']" aria-hidden="true"></i>
             </button>
           </th>
+          @if (rollUp()) {
+            <th scope="col" class="text-xs text-gray-500 font-medium" data-testid="org-training-groups-company-header">Company</th>
+          }
           <th scope="col" [attr.aria-sort]="sortAriaMap()['people']" data-testid="sort-people">
             <button
               type="button"
@@ -74,7 +77,7 @@
       </ng-template>
 
       <ng-template #body let-row let-rowIndex="rowIndex">
-        <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-training-group-row-' + row.key">
+        <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-training-group-row-' + row.rowKey">
           <!-- Group label (+ logo, foundation and level where they are meaningful) -->
           <td>
             <div class="flex items-center gap-3 min-w-0">
@@ -83,35 +86,42 @@
                   [src]="row.logoUrl"
                   alt=""
                   class="h-8 w-8 flex-shrink-0 rounded object-contain"
-                  [attr.data-testid]="'org-training-group-logo-' + row.key" />
+                  [attr.data-testid]="'org-training-group-logo-' + row.rowKey" />
               }
               <div class="flex flex-col min-w-0">
-                <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-training-group-name-' + row.key">{{ row.label }}</span>
+                <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-training-group-name-' + row.rowKey">{{ row.label }}</span>
                 @if (row.meta) {
-                  <span class="text-xs text-gray-500" [attr.data-testid]="'org-training-group-meta-' + row.key">{{ row.meta }}</span>
+                  <span class="text-xs text-gray-500" [attr.data-testid]="'org-training-group-meta-' + row.rowKey">{{ row.meta }}</span>
                 }
               </div>
             </div>
           </td>
 
+          <!-- Company (roll-up only): the company whose pairs the row counts -->
+          @if (rollUp()) {
+            <td [attr.data-testid]="'org-training-group-company-' + row.rowKey">
+              <span class="text-sm text-gray-900">{{ row.organization?.name }}</span>
+            </td>
+          }
+
           <!-- People -->
-          <td [attr.data-testid]="'org-training-group-people-' + row.key">
+          <td [attr.data-testid]="'org-training-group-people-' + row.rowKey">
             <span class="text-sm text-gray-900">{{ row.people | number }}</span>
           </td>
 
           <!-- Courses taken -->
-          <td [attr.data-testid]="'org-training-group-courses-taken-' + row.key">
+          <td [attr.data-testid]="'org-training-group-courses-taken-' + row.rowKey">
             <span class="text-sm text-gray-900">{{ row.coursesTaken | number }}</span>
           </td>
 
           <!-- Certified / Completed -->
-          <td [attr.data-testid]="'org-training-group-completed-' + row.key">
+          <td [attr.data-testid]="'org-training-group-completed-' + row.rowKey">
             @if (row.completed > 0) {
               <button
                 type="button"
                 class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
                 [attr.aria-label]="row.completedAriaLabel"
-                [attr.data-testid]="'org-training-group-completed-button-' + row.key"
+                [attr.data-testid]="'org-training-group-completed-button-' + row.rowKey"
                 (click)="openDrawer(row, 'completed')">
                 {{ row.completed | number }}
               </button>
@@ -121,13 +131,13 @@
           </td>
 
           <!-- In progress -->
-          <td [attr.data-testid]="'org-training-group-in-progress-' + row.key">
+          <td [attr.data-testid]="'org-training-group-in-progress-' + row.rowKey">
             @if (row.inProgress > 0) {
               <button
                 type="button"
                 class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
                 [attr.aria-label]="row.inProgressAriaLabel"
-                [attr.data-testid]="'org-training-group-in-progress-button-' + row.key"
+                [attr.data-testid]="'org-training-group-in-progress-button-' + row.rowKey"
                 (click)="openDrawer(row, 'in-progress')">
                 {{ row.inProgress | number }}
               </button>
@@ -146,6 +156,9 @@
               Total
               <span class="sr-only" data-testid="org-training-groups-totals-note">{{ totalsNote() }}</span>
             </td>
+            @if (rollUp()) {
+              <td></td>
+            }
             <td class="text-sm font-medium text-gray-900" data-testid="org-training-groups-totals-people">{{ groups().totals.people | number }}</td>
             <td class="text-sm font-medium text-gray-900" data-testid="org-training-groups-totals-courses-taken">
               {{ groups().totals.coursesTaken | number }}
@@ -156,7 +169,10 @@
             <td class="text-sm font-medium text-gray-900" data-testid="org-training-groups-totals-in-progress">{{ groups().totals.inProgress | number }}</td>
           </tr>
           <tr>
-            <td colspan="5" class="text-xs text-gray-500">
+            <td [attr.colspan]="columnCount()" class="text-xs text-gray-500">
+              @if (rollUp()) {
+                <p class="m-0" data-testid="org-training-groups-roll-up-totals-note">{{ rollUpTotalsNote }}</p>
+              }
               <p class="m-0" data-testid="org-training-groups-scope-note">{{ scopeNote() }}</p>
             </td>
           </tr>
@@ -165,7 +181,7 @@
 
       <ng-template #emptymessage>
         <tr>
-          <td colspan="5" class="text-center py-10">
+          <td [attr.colspan]="columnCount()" class="text-center py-10">
             <div class="flex items-center justify-center p-16">
               <div class="text-center max-w-md">
                 <div class="text-gray-400 mb-4">

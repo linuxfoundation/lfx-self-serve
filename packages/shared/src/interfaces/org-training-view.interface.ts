@@ -99,6 +99,8 @@ export interface OrgTrainingGroupRow {
 
 /** A group-by table row with its display strings resolved once (no template functions): meta line and count-button labels. */
 export interface OrgTrainingGroupRowVm extends OrgTrainingGroupRow {
+  /** Unique per row: the group key, plus the company's account id in a roll-up (one row per group value and company). */
+  rowKey: string;
   /** Foundation (and level, for courses) under the label; empty when the grouping has no such attributes. */
   meta: string;
   /** Accessible name of the completed (Certified / Completed) count button: value, status and row. */
@@ -129,6 +131,8 @@ export interface OrgTrainingGroupsParams {
   sortOrder?: 'ASC' | 'DESC';
   pageSize?: number;
   offset?: number;
+  /** Roll-up only: narrows the rows to one organization of the roll-up (its account id). */
+  company?: string;
 }
 
 /** Query params of the group drill-down drawer call (on top of range + filters). `groupValue` is the row's `key`. */
@@ -137,6 +141,8 @@ export interface OrgTrainingGroupEmployeesParams {
   groupValue: string;
   tab: OrgTrainingTabId;
   status: OrgTrainingGroupStatus;
+  /** Roll-up only: the clicked row's company; a roll-up drawer lists that company's people alone. */
+  company?: OrgLensRowOrganization;
 }
 
 /** Drill-down of one group row: `total` is the pair count (equals the cell clicked); `data` lists current employees only. */
