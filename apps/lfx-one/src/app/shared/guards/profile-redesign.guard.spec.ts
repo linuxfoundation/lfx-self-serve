@@ -9,7 +9,7 @@ import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PROFILE_REDESIGN_KEY } from '../utils/profile-redesign.util';
-import { profileRedesignEnabledGuard, profileRedesignRedirectGuard } from './profile-redesign.guard';
+import { profileRedesignEnabledGuard, profileRedesignOnlyGuard, profileRedesignRedirectGuard } from './profile-redesign.guard';
 
 describe('profile redesign guards', () => {
   let getFlagOverride: ReturnType<typeof vi.fn>;
@@ -135,6 +135,17 @@ describe('profile redesign guards', () => {
       TestBed.overrideProvider(REQUEST_CONTEXT, { useValue: { flags: { profileRedesign: false } } });
 
       expect(await activate('identities')).toBe(true);
+    });
+  });
+
+  describe('profileRedesignOnlyGuard', () => {
+    const only = () => TestBed.runInInjectionContext(() => profileRedesignOnlyGuard({ path: 'profile' } as Route, [new UrlSegment('profile', {})]));
+
+    it('matches the Profile page with the flag on, and lets the hub take /profile with it off', async () => {
+      expect(await only()).toBe(true);
+
+      flagValue.set(false);
+      expect(await only()).toBe(false);
     });
   });
 });

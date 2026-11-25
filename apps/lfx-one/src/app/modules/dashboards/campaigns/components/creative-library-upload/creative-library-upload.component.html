@@ -54,6 +54,46 @@
     </p>
   }
 
+  <!-- Stored LinkedIn videos (#5764 row 18): never offered to an image slot, listed here only so their space can be freed. -->
+  @if (videoRows().length > 0) {
+    <div class="flex flex-col gap-1" data-testid="creative-library-videos">
+      <span class="text-xs font-medium text-gray-700">Stored videos</span>
+      <ul class="flex flex-col gap-1">
+        @for (row of videoRows(); track row.id) {
+          <li class="flex flex-wrap items-center gap-2 rounded border border-gray-200 px-3 py-2" [attr.data-testid]="'creative-library-video-' + row.id">
+            <span class="min-w-0 flex-1 text-xs text-gray-900">{{ row.label }}</span>
+            <span class="text-2xs tabular-nums text-gray-500">{{ row.byteSize | fileSize }}</span>
+            @if (row.inUse) {
+              <lfx-button
+                label="Remove from ads"
+                size="small"
+                severity="secondary"
+                [text]="true"
+                [ariaLabel]="'Remove ' + row.label + ' from the ads'"
+                (onClick)="releaseVideo(row)"
+                [attr.data-testid]="'creative-library-video-release-' + row.id" />
+            }
+            <lfx-button
+              label="Delete"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              [disabled]="row.deleteDisabled"
+              [ariaLabel]="'Delete ' + row.label"
+              (onClick)="deleteVideo(row)"
+              [attr.data-testid]="'creative-library-video-delete-' + row.id" />
+            @if (row.note) {
+              <span class="w-full text-2xs text-gray-600">{{ row.note }}</span>
+            }
+          </li>
+        }
+      </ul>
+      @if (videoDeleteError()) {
+        <p role="alert" class="text-xs text-red-600" data-testid="creative-library-video-delete-error">{{ videoDeleteError() }}</p>
+      }
+    </div>
+  }
+
   @if (overHeadroom()) {
     <p class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="creative-library-upload-headroom">
       {{ overHeadroom() }}

@@ -92,6 +92,25 @@ describe('FilterPillsComponent', () => {
     expect(tooltip.disabled).toBe(true);
   });
 
+  it('shows a positive count as a badge and adds it to the accessible name unless ariaLabel is set', async () => {
+    fixture.componentRef.setInput('options', [
+      { id: 'all', label: 'All', count: 12 },
+      { id: 'kubecon', label: 'KubeCon', count: 0 },
+      { id: 'named', label: 'Named', count: 3, ariaLabel: 'Named, 3 votes' },
+    ]);
+    await fixture.whenStable();
+
+    const badge = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="filter-pills-count-${id}"]`);
+    expect(badge('all')?.textContent?.trim()).toBe('12');
+    expect(badge('all')?.getAttribute('aria-hidden')).toBe('true');
+    expect(badge('all')?.className).toContain('bg-white');
+    expect(pill('all').getAttribute('aria-label')).toBe('All, 12');
+    expect(badge('kubecon')).toBeNull();
+    expect(pill('kubecon').getAttribute('aria-label')).toBe('KubeCon');
+    expect(badge('named')?.className).toContain('bg-gray-200');
+    expect(pill('named').getAttribute('aria-label')).toBe('Named, 3 votes');
+  });
+
   it('renders the segmented variant as one labelled group with the same pill contract', async () => {
     fixture.componentRef.setInput('variant', 'segmented');
     fixture.componentRef.setInput('ariaLabel', 'Time range');

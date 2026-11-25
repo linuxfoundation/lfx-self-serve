@@ -24,14 +24,22 @@ export const SHARE_KIT_PLATFORM_LIMITS = {
   bluesky: { limit: 300, linkLength: 40 },
 } as const;
 
+/**
+ * The member box on a themed hero is the hero colour mixed with this much of the hero text colour; its buttons add
+ * the hover share on top. Theme validation checks hero text against the darkest result (box plus hover).
+ */
+export const SHARE_KIT_MEMBER_BOX_TINT = 0.1;
+export const SHARE_KIT_MEMBER_BUTTON_HOVER_TINT = 0.12;
+
 /** Sections of the public share kit page, in tab order. */
-export const SHARE_KIT_TABS = ['share', 'graphics', 'cfp'] as const;
+export const SHARE_KIT_TABS = ['share', 'newsletter', 'graphics', 'cfp'] as const;
 
 /** Display names for each section tab. */
 export const SHARE_KIT_TAB_LABELS = {
-  share: 'Share the event',
+  share: 'Social Posts',
+  newsletter: 'Newsletter',
   graphics: 'Graphics',
-  cfp: 'Call for proposals',
+  cfp: 'Call for Proposals',
 } as const;
 
 /** `utm_source` on every link the share kit hands out. */

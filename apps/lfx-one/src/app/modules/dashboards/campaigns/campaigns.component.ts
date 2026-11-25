@@ -1129,10 +1129,14 @@ export class CampaignsComponent {
   protected readonly briefCampaignsLinkedInCallToActionEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers Text Ads (`CampaignListResult.linkedInTextAdsEnabled`, #5764 row 19). */
   protected readonly briefCampaignsLinkedInTextAdsEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers video ads (`CampaignListResult.linkedInVideoAdsEnabled`, #5764 row 18). */
+  protected readonly briefCampaignsLinkedInVideoAdsEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers custom targeting (`CampaignListResult.linkedInTargetingEnabled`, #5764 rows 8–11). */
   protected readonly briefCampaignsLinkedInTargetingEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers an objective and conversion tracking (`CampaignListResult.linkedInConversionsEnabled`, #5764 rows 2 and 4). */
   protected readonly briefCampaignsLinkedInConversionsEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers a target cost (`CampaignListResult.linkedInTargetCostEnabled`, campaign-service#674). */
+  protected readonly briefCampaignsLinkedInTargetCostEnabled = signal<boolean | null>(null);
   /** Whether the Microsoft section offers an image upload — `CampaignListResult.microsoftAssetUploadEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMicrosoftAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the create flow offers the Bidding control (#3299) — `CampaignListResult.biddingEnabled`, read and cleared like the capabilities above. */
@@ -3134,8 +3138,10 @@ export class CampaignsComponent {
         this.briefCampaignsLinkedInVariantCopyEnabled.set(null);
         this.briefCampaignsLinkedInCallToActionEnabled.set(null);
         this.briefCampaignsLinkedInTextAdsEnabled.set(null);
+        this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
         this.briefCampaignsLinkedInTargetingEnabled.set(null);
         this.briefCampaignsLinkedInConversionsEnabled.set(null);
+        this.briefCampaignsLinkedInTargetCostEnabled.set(null);
         this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
         this.briefCampaignsMicrosoftScheduleEnabled.set(null);
@@ -5974,8 +5980,10 @@ export class CampaignsComponent {
           this.briefCampaignsLinkedInVariantCopyEnabled.set(result.linkedInVariantCopyEnabled);
           this.briefCampaignsLinkedInCallToActionEnabled.set(result.linkedInCallToActionEnabled);
           this.briefCampaignsLinkedInTextAdsEnabled.set(result.linkedInTextAdsEnabled);
+          this.briefCampaignsLinkedInVideoAdsEnabled.set(result.linkedInVideoAdsEnabled);
           this.briefCampaignsLinkedInTargetingEnabled.set(result.linkedInTargetingEnabled);
           this.briefCampaignsLinkedInConversionsEnabled.set(result.linkedInConversionsEnabled);
+          this.briefCampaignsLinkedInTargetCostEnabled.set(result.linkedInTargetCostEnabled);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
           this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
@@ -6030,8 +6038,10 @@ export class CampaignsComponent {
           this.briefCampaignsLinkedInVariantCopyEnabled.set(null);
           this.briefCampaignsLinkedInCallToActionEnabled.set(null);
           this.briefCampaignsLinkedInTextAdsEnabled.set(null);
+          this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
           this.briefCampaignsLinkedInTargetingEnabled.set(null);
           this.briefCampaignsLinkedInConversionsEnabled.set(null);
+          this.briefCampaignsLinkedInTargetCostEnabled.set(null);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
           this.briefCampaignsMicrosoftScheduleEnabled.set(null);
@@ -6131,8 +6141,10 @@ export class CampaignsComponent {
       this.briefCampaignsLinkedInVariantCopyEnabled.set(null);
       this.briefCampaignsLinkedInCallToActionEnabled.set(null);
       this.briefCampaignsLinkedInTextAdsEnabled.set(null);
+      this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
       this.briefCampaignsLinkedInTargetingEnabled.set(null);
       this.briefCampaignsLinkedInConversionsEnabled.set(null);
+      this.briefCampaignsLinkedInTargetCostEnabled.set(null);
       this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
       this.briefCampaignsBiddingEnabled.set(null);
       this.briefCampaignsMicrosoftScheduleEnabled.set(null);
@@ -6202,8 +6214,10 @@ export class CampaignsComponent {
             this.briefCampaignsLinkedInVariantCopyEnabled.set(result.linkedInVariantCopyEnabled);
             this.briefCampaignsLinkedInCallToActionEnabled.set(result.linkedInCallToActionEnabled);
             this.briefCampaignsLinkedInTextAdsEnabled.set(result.linkedInTextAdsEnabled);
+            this.briefCampaignsLinkedInVideoAdsEnabled.set(result.linkedInVideoAdsEnabled);
             this.briefCampaignsLinkedInTargetingEnabled.set(result.linkedInTargetingEnabled);
             this.briefCampaignsLinkedInConversionsEnabled.set(result.linkedInConversionsEnabled);
+            this.briefCampaignsLinkedInTargetCostEnabled.set(result.linkedInTargetCostEnabled);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
             this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
@@ -6256,8 +6270,10 @@ export class CampaignsComponent {
             this.briefCampaignsLinkedInVariantCopyEnabled.set(null);
             this.briefCampaignsLinkedInCallToActionEnabled.set(null);
             this.briefCampaignsLinkedInTextAdsEnabled.set(null);
+            this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
             this.briefCampaignsLinkedInTargetingEnabled.set(null);
             this.briefCampaignsLinkedInConversionsEnabled.set(null);
+            this.briefCampaignsLinkedInTargetCostEnabled.set(null);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
             this.briefCampaignsMicrosoftScheduleEnabled.set(null);

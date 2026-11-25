@@ -17,22 +17,28 @@ import {
   linkedInConversionsOwnerRefusal,
   linkedInObjectiveChoice,
   linkedInObjectiveDraftWithConversions,
+  linkedInObjectiveDraftWithTargetCost,
+  linkedInObjectiveShown,
+  linkedInTargetCostInputError,
 } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
+import { UiInputComponent } from '@shared/uikit/input/input.component';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { catchError, map, of, startWith, switchMap } from 'rxjs';
 
 /**
  * The LinkedIn objective on the Implement tab (#5764 rows 2 and 4): set by bidding (the default, nothing sent),
- * website visits or website conversions, and with conversions the ad account's conversion rules to track. The parent
- * owns the draft, sends it, and holds Create while `linkedInObjectiveCreateRefusal` refuses it. The rules are read only
- * while conversions is chosen and offered, once per project and account. The rules live in
- * `campaign-linkedin-objective-form.utils.ts`.
+ * website visits or website conversions, and with conversions the ad account's conversion rules to track. Beside it,
+ * while offered, automatic bidding's optional target cost (linuxfoundation/lfx-v2-campaign-service#674). The parent
+ * owns the draft, sends it, and holds Create while `linkedInObjectiveCreateRefusal` or `linkedInTargetCostCreateRefusal`
+ * refuses it. The rules are read while conversions is chosen and offered, again whenever the project or account changes
+ * or conversions is chosen anew, and on "Try again". The rules live in `campaign-linkedin-objective-form.utils.ts` and
+ * `campaign-linkedin-target-cost.utils.ts`.
  */
 @Component({
   selector: 'lfx-linkedin-objective-picker',
-  imports: [ButtonComponent, ReactiveFormsModule, UiOptionComponent, UiSelectComponent],
+  imports: [ButtonComponent, ReactiveFormsModule, UiInputComponent, UiOptionComponent, UiSelectComponent],
   templateUrl: './linkedin-objective-picker.component.html',
 })
 export class LinkedInObjectivePickerComponent {
@@ -45,6 +51,8 @@ export class LinkedInObjectivePickerComponent {
   public readonly owner = input<string>('');
   /** `linkedInConversionsEnabled` is an explicit yes. Off, a held choice stays on screen so it can be set back. */
   public readonly available = input<boolean>(false);
+  /** `linkedInTargetCostOffered`: the capability is on and LinkedIn bidding is automatic. Off, the field is hidden and not sent. */
+  public readonly targetCostOffered = input<boolean>(false);
   public readonly draft = model.required<LinkedInObjectiveDraft>();
 
   protected readonly maxConversions = LINKEDIN_MAX_CONVERSIONS;
@@ -60,9 +68,18 @@ export class LinkedInObjectivePickerComponent {
   protected readonly message = computed(() => linkedInConversionsMessage(this.conversionsState(), this.choices().length));
   /** Why the rules picked cannot go with this create: they were picked for another owner (the tab holds Create on it). */
   protected readonly ownerRefusal = computed(() => linkedInConversionsOwnerRefusal(this.draft(), this.owner()));
+  /** The objective select, shown while offered and while a withdrawn choice is held. */
+  protected readonly objectiveShown = computed(() => linkedInObjectiveShown(this.draft(), this.available()));
+  /** Why the typed target cost cannot be sent (the tab holds Create on the same rule), or `null`. */
+  protected readonly targetCostError = computed(() => linkedInTargetCostInputError(this.draft().targetCost, this.targetCostOffered()));
 
   protected onObjectiveChange(value: string | null): void {
     this.draft.update((draft) => ({ ...draft, objective: linkedInObjectiveChoice(value) }));
+  }
+
+  /** The target cost as typed; blank removes it, so nothing is sent. */
+  protected onTargetCostChange(value: string): void {
+    this.draft.update((draft) => linkedInObjectiveDraftWithTargetCost(draft, value));
   }
 
   protected onAdd(id: string | null): void {
@@ -84,9 +101,10 @@ export class LinkedInObjectivePickerComponent {
   }
 
   /**
-   * The conversion rule read, once per project and account while conversions is chosen and offered (and again on "Try
-   * again"). Everything is read INSIDE the trigger, so a switch drops a read that no longer applies. A 403 is the
-   * caller's role, not a fault, so only other failures are logged, by status.
+   * The conversion rule read while conversions is chosen and offered. Not cached: it runs again whenever the project or
+   * account changes, whenever conversions is chosen anew (after another objective, or the capability returning), and on
+   * "Try again"; picks alone never re-read. Everything is read INSIDE the trigger, so a switch drops a read that no
+   * longer applies. A 403 is the caller's role, not a fault, so only other failures are logged, by status.
    */
   private initConversions(): Signal<LinkedInConversionsState> {
     const loading: LinkedInConversionsState = { status: 'loading', conversions: [], failure: null };

@@ -11,6 +11,7 @@ import {
   formatIsoDateLabel,
   formatIsoDateShortLabel,
   formatMemberSince,
+  formatMemberSinceDate,
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
@@ -72,6 +73,18 @@ describe('formatIsoDateLabel', () => {
 });
 
 // Empty/unparseable input returns '' so callers can hide the field, never show a placeholder.
+describe('formatMemberSinceDate', () => {
+  it('formats the account-creation date as a full date in UTC', () => {
+    expect(formatMemberSinceDate('2013-03-14T23:30:00Z')).toBe('March 14, 2013');
+  });
+
+  it('hides what formatMemberSince hides', () => {
+    expect(formatMemberSinceDate('0001-01-01T00:00:00Z')).toBe('');
+    expect(formatMemberSinceDate('2023-02-31T00:00:00Z')).toBe('');
+    expect(formatMemberSinceDate(undefined)).toBe('');
+  });
+});
+
 describe('formatMemberSince', () => {
   it('formats a valid ISO timestamp as "Mon YYYY" in UTC', () => {
     expect(formatMemberSince('2023-03-15T10:00:00Z')).toBe('Mar 2023');

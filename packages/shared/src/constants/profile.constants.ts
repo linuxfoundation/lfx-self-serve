@@ -364,6 +364,20 @@ export const ACCOUNT_SETTINGS_SECTIONS = {
 export const PROFILE_GRID_LIMIT = 9;
 export const PROFILE_GROUP_GRID_LIMIT = 6;
 
+/** Copy of the Profile page hero, behind the profile redesign flag (#6082). */
+export const PROFILE_PAGE_COPY = {
+  addTitle: 'Add job title and company',
+  noBio: 'No bio yet. A few lines about what you work on and care about help others know who you are.',
+  addBio: 'Add bio',
+  uploadPhoto: 'Upload photo',
+  uploadNewPhoto: 'Upload new photo',
+  githubLabel: 'GitHub: ',
+  githubTooltip: 'GitHub · ',
+  memberSince: 'Member since: ',
+  loadFailed: 'We couldn’t load your profile.',
+  retry: 'Try again',
+} as const;
+
 /** Base path of the Account & Settings area that replaces the Profile & Account hub's tabs (#6067). */
 export const ACCOUNT_BASE_PATH = '/account';
 /** Account & Settings pages that start Flow C from their own address, so the server accepts them as a return path. */

@@ -8,7 +8,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { LINKEDIN_CONVERSIONS_OWNER_MESSAGE } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignImplementationDraft, LinkedInObjectiveDraft } from '@lfx-one/shared/interfaces';
-import { emptyLinkedInObjectiveDraft } from '@lfx-one/shared/utils';
+import { emptyLinkedInObjectiveDraft, linkedInTargetCostCreateRefusal } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -23,7 +23,8 @@ trackStateOnlyTests();
 /**
  * Wiring only (#5764 rows 2 and 4). What the draft sends, how a stored draft is read and why Create waits are rules in
  * `campaign-linkedin-objective-form.utils.ts`, tested there; the picker is tested in its own spec. Here: the draft
- * reaches the request (and nothing by default), the saved draft and the restore, and its refusal reaches Create.
+ * reaches the request (and nothing by default), the saved draft and the restore, and its refusal reaches Create. The
+ * target cost (campaign-service#674) on the same terms: its rules are in `campaign-linkedin-target-cost.utils.ts`.
  */
 describe('ImplementationTabComponent linkedin objective', () => {
   /** The active foundation: a foundation switch keeps the page (and the tab) mounted. */
@@ -122,6 +123,41 @@ describe('ImplementationTabComponent linkedin objective', () => {
     f.detectChanges();
     await f.whenStable();
     expect(c(f)['linkedInObjectiveDraft']()).toEqual(emptyLinkedInObjectiveDraft());
+  });
+
+  it('sends a typed target cost inside automatic bidding, holds Create on a refused one, and drops it with manual bidding', STATE_ONLY, async () => {
+    const { f } = await mount();
+    f.componentRef.setInput('biddingEnabled', true);
+    f.componentRef.setInput('linkedInTargetCostEnabled', true);
+    c(f)['onLinkedInObjectiveDraftChange']({ ...emptyLinkedInObjectiveDraft(), targetCost: '17.88' });
+    expect(c(f)['linkedInObjectivePickerShown']()).toBe(true);
+    c(f)['submit']();
+    expect(createCampaign.mock.calls.at(-1)?.[0]['linkedInConfig']['bidding']).toEqual({ strategy: 'automatic', targetAmount: 17.88 });
+
+    const refused = { ...emptyLinkedInObjectiveDraft(), targetCost: '0' };
+    c(f)['onLinkedInObjectiveDraftChange'](refused);
+    expect(c(f)['createBlockedReason']()).toBe(linkedInTargetCostCreateRefusal(refused, true));
+
+    c(f)['onBiddingChange']('linkedin-ads', { strategy: 'manual', bidAmount: 5 });
+    expect(c(f)['createBlockedReason']()).toBeNull();
+    c(f)['submit']();
+    expect(createCampaign.mock.calls.at(-1)?.[0]['linkedInConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 5 });
+  });
+
+  it('holds a typed target cost, keeping its field, while the bidding and target cost capabilities are both unread', STATE_ONLY, async () => {
+    const { f } = await mount();
+    f.componentRef.setInput('biddingEnabled', null);
+    f.componentRef.setInput('linkedInTargetCostEnabled', null);
+    const typed = { ...emptyLinkedInObjectiveDraft(), targetCost: '17.88' };
+    c(f)['onLinkedInObjectiveDraftChange'](typed);
+    expect(c(f)['linkedInTargetCostFieldShown']()).toBe(true);
+    expect(c(f)['createBlockedReason']()).toBe(linkedInTargetCostCreateRefusal(typed, false, true));
+
+    f.componentRef.setInput('biddingEnabled', true);
+    f.componentRef.setInput('linkedInTargetCostEnabled', true);
+    expect(c(f)['createBlockedReason']()).toBeNull();
+    c(f)['submit']();
+    expect(createCampaign.mock.calls.at(-1)?.[0]['linkedInConfig']['bidding']).toEqual({ strategy: 'automatic', targetAmount: 17.88 });
   });
 
   it('holds Create, never dropping the choice, for rules of another ad account and while the capability is off', STATE_ONLY, async () => {

@@ -335,12 +335,12 @@ export function normalizeToUrl(input: string): string | null {
  * Strips both the query string and the fragment before matching, so a bare prefix
  * check does not misclassify sibling routes (`/profiles`, `/profile-old`), and a fragment
  * (e.g. `/profile/settings#developer-settings`) does not defeat the match.
+ * Bare `/profile` is not the hub: the hub always moves on to a tab, and with the profile redesign on it is the Profile page.
  * @param url - The router URL (may include `?query` and/or `#fragment`)
- * @returns true when the path is exactly `/profile` or under `/profile/`
+ * @returns true when the path is under `/profile/`
  */
 export function isProfileHubPath(url: string): boolean {
-  const path = url.split(/[?#]/)[0];
-  return path === '/profile' || path.startsWith('/profile/');
+  return url.split(/[?#]/)[0].startsWith('/profile/');
 }
 /**
  * Wildcard-DNS services that resolve a spelled-out address to that address.

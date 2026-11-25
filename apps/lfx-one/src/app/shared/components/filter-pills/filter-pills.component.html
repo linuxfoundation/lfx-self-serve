@@ -54,14 +54,17 @@
       <button
         type="button"
         (click)="handleFilterChange(option.id)"
-        [class]="pillClasses()[option.id]"
+        [class]="pills()[option.id].classes"
         [pTooltip]="option.fullLabel || ''"
         [tooltipDisabled]="!option.fullLabel || option.fullLabel === option.label"
         tooltipPosition="top"
-        [attr.aria-label]="option.ariaLabel || option.fullLabel || option.label"
+        [attr.aria-label]="pills()[option.id].ariaLabel"
         [attr.aria-pressed]="selectedFilter() === option.id"
         [attr.data-testid]="'filter-pill-' + option.id">
         {{ option.label }}
+        @if (pills()[option.id].count; as count) {
+          <span [class]="pills()[option.id].badgeClasses" aria-hidden="true" [attr.data-testid]="'filter-pills-count-' + option.id">{{ count }}</span>
+        }
       </button>
     }
   </div>

@@ -13,3 +13,12 @@ export const ALLOWED_AVATAR_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp
 
 /** Maximum profile picture upload size in bytes (2MB). */
 export const MAX_AVATAR_SIZE_BYTES = 2 * 1024 * 1024;
+
+/** Toasts for a profile picture upload, shared by Account & Settings › Personal information and the Profile page. */
+export const AVATAR_UPLOAD_COPY = {
+  wrongType: 'Please choose a PNG, JPEG, or WEBP image.',
+  tooLarge: 'Image must be 2MB or smaller.',
+  updated: 'Profile picture updated',
+  failed: 'Failed to upload profile picture. Please try again.',
+  impersonating: 'Profile editing is unavailable while impersonating another user.',
+} as const;
