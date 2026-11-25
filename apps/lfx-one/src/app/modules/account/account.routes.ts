@@ -85,7 +85,7 @@ export const ACCOUNT_ROUTES: Routes = [
         path: 'password',
         title: 'Password',
         data: { embedded: true, section: ACCOUNT_SETTINGS_SECTIONS.PASSWORD },
-        loadComponent: loadAccountSettings,
+        loadComponent: () => import('./password/account-password.component').then((m) => m.AccountPasswordComponent),
       },
       {
         path: 'developer-settings',

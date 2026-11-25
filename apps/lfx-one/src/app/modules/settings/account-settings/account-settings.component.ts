@@ -645,17 +645,15 @@ export class AccountSettingsComponent {
       .pipe(finalize(() => this.sendingReset.set(false)))
       .subscribe({
         next: (response) => {
-          this.resetResultSuccess.set(true);
-          this.resetResultMessage.set(response.message || 'Password reset email has been sent to your registered email address!');
+          this.showPasswordResetResult(true, response.message || 'Password reset email has been sent to your registered email address!');
         },
         error: (error: HttpErrorResponse) => {
           if (error.error?.error === 'management_token_required' && error.error?.authorize_url) {
             this.redirectToProfileAuth(error.error.authorize_url);
             return;
           }
-          this.resetResultSuccess.set(false);
           const msg = typeof error.error === 'string' ? error.error : error.error?.message;
-          this.resetResultMessage.set(msg || 'There was a problem sending you a link. Please try again later.');
+          this.showPasswordResetResult(false, msg || 'There was a problem sending you a link. Please try again later.');
         },
       });
   }
@@ -708,6 +706,16 @@ export class AccountSettingsComponent {
       .catch(() => {
         this.messageService.add({ severity: 'error', summary: 'Copy Failed', detail: 'Failed to copy token to clipboard. Please try again.' });
       });
+  }
+
+  // ══════════════════════════════════════════
+  // PASSWORD PROTECTED METHODS
+  // ══════════════════════════════════════════
+
+  /** Shows how sending the reset link went, under the button. Account & Settings › Password shows it as a toast. */
+  protected showPasswordResetResult(success: boolean, message: string): void {
+    this.resetResultSuccess.set(success);
+    this.resetResultMessage.set(message);
   }
 
   // ══════════════════════════════════════════

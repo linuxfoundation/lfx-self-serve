@@ -9,7 +9,9 @@ import {
   EmailVerificationStatus,
   IdentityProvider,
   IdentityProviderOption,
+  PasswordStrength,
   ProfileTab,
+  UiBadgeTone,
 } from '../interfaces';
 
 /**
@@ -392,6 +394,31 @@ export const ACCOUNT_IDENTITIES_COPY = {
     'Identities are used to attribute contributions and participation across projects. Adding verified identities helps ensure accurate project affiliations.',
   emailProviderDescription: 'Add and verify an email address you use for open source work',
 } as const;
+
+/** Copy of Account & Settings › Password (#6080). */
+export const ACCOUNT_PASSWORD_COPY = {
+  changeTitle: 'Change Password',
+  changeSubtitle: 'Keep your account secure by using a strong password and enabling two-factor authentication.',
+  recoveryTitle: 'Account Recovery',
+  recoverySubtitle: 'Can’t remember your password? We’ll email a link to your primary address so you can set a new one.',
+  resetSentSummary: 'Password reset link sent to {email}',
+  resetSentDetail: 'Check your inbox and follow the link to set a new password.',
+  resetSentFallbackEmail: 'your primary email',
+  twoFactorTitle: 'Two-Factor Authentication',
+  twoFactorSubtitle:
+    'Add a second step when you sign in, like a code from an authenticator app, to keep your account secure even if your password is compromised.',
+  twoFactorUnavailable: 'Two-factor authentication settings are currently unavailable.',
+  requirementsTitle: 'Requirements (must meet at least 3 of 4 criteria):',
+  mismatch: 'Passwords do not match',
+} as const;
+
+/** The strength badge's tone for each strength on Account & Settings › Password (#6080). */
+export const ACCOUNT_PASSWORD_STRENGTH_TONES: Record<PasswordStrength['label'], UiBadgeTone> = {
+  weak: 'danger',
+  fair: 'warning',
+  good: 'warning',
+  strong: 'success',
+};
 
 /** Copy of Account & Settings › Email settings (#6079). The add and code steps keep the hub's copy. */
 export const ACCOUNT_EMAIL_SETTINGS_COPY = {

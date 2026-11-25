@@ -175,6 +175,12 @@ export interface PasswordResetRequest {
 /**
  * Password strength analysis result
  */
+/** A password criterion on Account & Settings › Password (#6080), and whether the new password meets it. */
+export interface AccountPasswordCriterion {
+  label: string;
+  met: boolean;
+}
+
 export interface PasswordStrength {
   score: number; // 0-4 (weak to strong)
   label: 'weak' | 'fair' | 'good' | 'strong';
