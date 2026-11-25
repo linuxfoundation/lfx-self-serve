@@ -9,7 +9,9 @@ import {
   countShareKitPostLength,
   formatShareKitDateRange,
   formatShareKitDay,
+  mixShareKitColors,
   shareKitContrastRatio,
+  shareKitMemberBoxColors,
 } from './share-kit.utils';
 
 describe('buildShareKitTrackedUrl', () => {
@@ -48,7 +50,7 @@ describe('countShareKitPostLength', () => {
 describe('formatShareKitDateRange', () => {
   it.each([
     ['2027-04-28', '2027-04-28', 'April 28, 2027'],
-    ['2027-04-28', '2027-04-29', 'April 28 and 29, 2027'],
+    ['2027-04-28', '2027-04-29', 'April 28–29, 2027'],
     ['2027-04-28', '2027-04-30', 'April 28–30, 2027'],
     ['2027-04-30', '2027-05-02', 'April 30 – May 2, 2027'],
     ['2027-12-31', '2028-01-02', 'December 31, 2027 – January 2, 2028'],
@@ -59,6 +61,18 @@ describe('formatShareKitDateRange', () => {
   it('formats a single day with or without the year', () => {
     expect(formatShareKitDay('2027-02-28')).toBe('February 28');
     expect(formatShareKitDay('2027-01-18', true)).toBe('January 18, 2027');
+  });
+});
+
+describe('mixShareKitColors', () => {
+  it('mixes each sRGB channel by the overlay share', () => {
+    expect(mixShareKitColors('#000000', '#FFFFFF', 0.5)).toBe('#808080');
+    expect(mixShareKitColors('#3731C9', '#FFFFFF', 0)).toBe('#3731C9');
+    expect(mixShareKitColors('#3731C9', '#FFFFFF', 1)).toBe('#FFFFFF');
+  });
+
+  it('gives the AGNTCon member box and its hover state', () => {
+    expect(shareKitMemberBoxColors('#3731C9', '#FFFFFF')).toEqual({ box: '#4B46CE', hover: '#615CD4' });
   });
 });
 

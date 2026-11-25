@@ -7,7 +7,7 @@
   "startDate": "2027-04-28",
   "endDate": "2027-04-29",
   "venue": "Moscone Center",
-  "city": "San Francisco",
+  "city": "San Francisco, California",
   "eventUrl": "https://events.linuxfoundation.org/agntcon-mcpcon-north-america/",
   "registration": {
     "url": "https://events.linuxfoundation.org/agntcon-mcpcon-north-america/register/",
@@ -17,7 +17,7 @@
   "posts": [
     {
       "id": "invite",
-      "title": "Invite your network",
+      "title": "Invite Your Network",
       "text": {
         "linkedin": "AGNTCon + MCPCon North America is coming to San Francisco on April 28 and 29. Join engineers, open source maintainers, founders, and technical leaders to talk about how teams build and run AI agents.",
         "x": "Building with AI agents or MCP? AGNTCon + MCPCon North America is in San Francisco on April 28 and 29.",
@@ -26,7 +26,7 @@
     },
     {
       "id": "builders",
-      "title": "Share with builders",
+      "title": "Share With Builders",
       "text": {
         "linkedin": "How are teams evaluating agents, securing MCP integrations, and keeping systems reliable in production? AGNTCon + MCPCon North America brings builders together to compare technical approaches. April 28 and 29 in San Francisco.",
         "x": "Agent evaluations, MCP security, and production reliability are on the program at AGNTCon + MCPCon North America. April 28 and 29 in San Francisco.",
@@ -35,7 +35,7 @@
     },
     {
       "id": "workshops",
-      "title": "Highlight workshops",
+      "title": "Highlight Workshops",
       "text": {
         "linkedin": "If your team wants time to work through practical problems, take a look at AGNTCon + MCPCon North America. Planned workshops cover topics including agent observability, access boundaries, and enterprise governance. April 28 and 29 in San Francisco.",
         "x": "Looking for practical workshops on agent tooling? AGNTCon + MCPCon North America includes workshops on topics such as observability and access boundaries.",
@@ -44,7 +44,7 @@
     },
     {
       "id": "community",
-      "title": "Connect the community",
+      "title": "Connect the Community",
       "text": {
         "linkedin": "Who else is working on the same problems your team is? AGNTCon + MCPCon North America brings together open source maintainers, infrastructure teams, and people deploying agents across their organizations. Share the event with someone you’d like to compare notes with.",
         "x": "Know someone building agent infrastructure or contributing to MCP? Pass along AGNTCon + MCPCon North America, April 28 and 29 in San Francisco.",
@@ -58,7 +58,7 @@
   },
   "graphics": [
     {
-      "label": "Event promo",
+      "label": "Event Promo",
       "url": "/share-kits/agntcon-mcpcon-na-2027/agntcon-mcpcon-na-2027.png",
       "alt": "AGNTCon + MCPCon North America, April 28–29, 2027, San Francisco, California. Headline: Where the agentic stack is being built. A Register button sits beside a stack of geometric shapes and Alf, the AAIF robot mascot, giving a thumbs up.",
       "width": 1200,
@@ -68,11 +68,11 @@
   "cfp": {
     "url": "https://events.linuxfoundation.org/agntcon-mcpcon-north-america/program/cfp/",
     "closesOn": "2027-01-18",
-    "heading": "Invite your technical team to speak",
+    "heading": "Invite Your Technical Team to Speak",
     "body": "Encourage your team to share what they’ve learned building or operating AI agents.",
     "invitation": "Have a lesson to share about MCP, agent evaluations, or running agents in production? Submit a talk for AGNTCon + MCPCon North America by January 18.",
     "guide": {
-      "title": "How to turn that tricky bug into a conference talk",
+      "title": "How to Turn That Tricky Bug Into a Conference Talk",
       "description": "Find the lesson in a tricky bug and turn it into a proposal other builders can learn from.",
       "url": "https://aaif.io/blog/how-to-turn-that-tricky-bug-into-a-conference-talk"
     }
@@ -104,7 +104,7 @@
   "memberBenefit": {
     "membershipSlug": "aaif",
     "membershipName": "AAIF",
-    "discountLabel": "20% off registration",
+    "discountLabel": "20% Off Registration",
     "joinUrl": "https://aaif.io/members#join"
   }
 }

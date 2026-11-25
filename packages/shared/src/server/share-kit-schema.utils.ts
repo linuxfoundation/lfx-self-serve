@@ -14,7 +14,7 @@ import {
   SHARE_KIT_SLUG_PATTERN,
 } from '../constants/share-kit.constants';
 import { ShareKitContent, ShareKitValidationResult } from '../interfaces/share-kit.interface';
-import { buildShareKitTrackedUrl, countShareKitPostLength, shareKitContrastRatio } from '../utils/share-kit.utils';
+import { buildShareKitTrackedUrl, countShareKitPostLength, shareKitContrastRatio, shareKitMemberBoxColors } from '../utils/share-kit.utils';
 
 const MARKUP_PATTERN = /<[a-z!/?][^>]*>/i;
 
@@ -122,6 +122,16 @@ const themeSchema = z
               message: `${text} on ${background} has contrast ${ratio.toFixed(2)}:1; it needs at least ${SHARE_KIT_MIN_TEXT_CONTRAST}:1`,
             });
           }
+        }
+        // Hero text also sits on the member box, which is lighter (or darker) than the hero, and darker still under a hovered button.
+        const { hover } = shareKitMemberBoxColors(colors.hero, colors.heroText);
+        const memberRatio = shareKitContrastRatio(colors.heroText, hover);
+        if (memberRatio < SHARE_KIT_MIN_TEXT_CONTRAST) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['hero'],
+            message: `heroText on the member box has contrast ${memberRatio.toFixed(2)}:1; it needs at least ${SHARE_KIT_MIN_TEXT_CONTRAST}:1, so the hero needs more contrast with its text`,
+          });
         }
       }),
     logo: z
