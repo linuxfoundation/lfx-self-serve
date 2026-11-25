@@ -42,7 +42,11 @@ test.describe('Mentor invite link — structure', () => {
 
     const confirm = page.getByTestId('mentorship-mentor-invite-confirm');
     await expect(confirm.getByRole('heading', { level: 1 })).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
-    await expect(page.getByTestId('mentorship-mentor-invite-description').locator('strong').getByTestId('mentorship-mentor-invite-program-name')).toBeVisible();
+    await expect(page.getByTestId('mentorship-mentor-invite-description').locator('strong[data-testid="mentorship-mentor-invite-program-name"]')).toBeVisible();
+    // Decline and Accept share one group, so a narrow row never wraps them apart.
+    const actions = page.getByTestId('mentorship-mentor-invite-actions');
+    await expect(actions.getByTestId('mentorship-mentor-invite-decline-button')).toBeVisible();
+    await expect(actions.getByTestId('mentorship-mentor-invite-accept-button')).toBeVisible();
     const viewProgram = confirm.getByRole('link', { name: /View program/ });
     await expect(viewProgram).toHaveAttribute('target', '_blank');
     await expect(viewProgram).toHaveAttribute('rel', 'noopener noreferrer');

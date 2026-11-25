@@ -50,22 +50,24 @@
                 <span class="sr-only">(opens in a new tab)</span>
               </a>
             }
-            <lfx-button
-              class="ml-auto"
-              label="Decline"
-              severity="secondary"
-              [outlined]="true"
-              [disabled]="accepting() || !canAnswer()"
-              [loading]="declining()"
-              (onClick)="onRespond('decline')"
-              data-testid="mentorship-mentor-invite-decline-button" />
-            <lfx-button
-              label="Accept"
-              severity="primary"
-              [disabled]="declining() || !canAnswer()"
-              [loading]="accepting()"
-              (onClick)="onRespond('accept')"
-              data-testid="mentorship-mentor-invite-accept-button" />
+            <!-- Grouped so Decline and Accept wrap together, on the right, when the row is narrow. -->
+            <div class="ml-auto flex gap-3" data-testid="mentorship-mentor-invite-actions">
+              <lfx-button
+                label="Decline"
+                severity="secondary"
+                [outlined]="true"
+                [disabled]="accepting() || !canAnswer()"
+                [loading]="declining()"
+                (onClick)="onRespond('decline')"
+                data-testid="mentorship-mentor-invite-decline-button" />
+              <lfx-button
+                label="Accept"
+                severity="primary"
+                [disabled]="declining() || !canAnswer()"
+                [loading]="accepting()"
+                (onClick)="onRespond('accept')"
+                data-testid="mentorship-mentor-invite-accept-button" />
+            </div>
           </div>
         </div>
       </lfx-card>
