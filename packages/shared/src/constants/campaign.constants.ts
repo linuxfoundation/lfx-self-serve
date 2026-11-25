@@ -4801,6 +4801,12 @@ export const CAMPAIGN_NEWSLETTER_PROGRAM_OPTION: CampaignProgramPickerOption = {
 /** How many pages of the brand's site one suggestions request may read. */
 export const CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS = 3;
 
+/** Longest brand name a suggestions request may carry; the same bound the brand-newsletter listing uses. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH = 120;
+
+/** Response types a suggestions page may answer with. Anything else is not a web page to read. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_CONTENT_TYPES = ['text/html', 'application/xhtml+xml'] as const;
+
 /** How many suggestions are returned at most, newest deadline-bound offers first. */
 export const CAMPAIGN_NEWSLETTER_SUGGESTION_LIMIT = 12;
 

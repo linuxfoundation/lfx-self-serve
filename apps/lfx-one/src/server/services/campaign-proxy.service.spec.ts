@@ -3093,3 +3093,114 @@ describe('CampaignProxyService generated copy and keywords', () => {
     });
   });
 });
+
+/**
+ * The suggestions read is the one place a model's answer becomes links an operator may send to a
+ * whole newsletter list, so what is pinned here is what is dropped: a link the page does not
+ * carry, an offer that has already closed, and a page that could not be read.
+ */
+describe('CampaignProxyService newsletter suggestions', () => {
+  const originalEnv = { ...process.env };
+  const PAGE = 'https://example.org/news';
+  const PAGE_HTML =
+    '<html><body><a href="https://example.org/offer">Offer</a><a href="/report">Report</a><a href="https://example.org/old">Old</a></body></html>';
+  let service: CampaignProxyService;
+  /** The model's answer for the next page read, as the JSON text it would return. */
+  let modelAnswer: string;
+
+  beforeEach(() => {
+    logger.warning.mockClear();
+    logger.debug.mockClear();
+    process.env['AI_PROXY_URL'] = 'https://ai.example.test/v1/chat';
+    process.env['AI_API_KEY'] = 'test-key';
+    modelAnswer = '[]';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: modelAnswer } }] }) }))
+    );
+    vi.mocked(fetchSafeUrl).mockReset();
+    vi.mocked(fetchSafeUrl).mockImplementation(async (url: string) => ({ html: PAGE_HTML, ok: true, status: 200, finalUrl: url }));
+    service = new CampaignProxyService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...originalEnv };
+    // Put back the file-level default so later describes read the page they expect.
+    vi.mocked(fetchSafeUrl).mockReset();
+    vi.mocked(fetchSafeUrl).mockImplementation(async (url: string) => ({ html: '<html><body></body></html>', ok: true, status: 200, finalUrl: url }));
+  });
+
+  function suggest(urls: string[], notBefore = '2026-12-01'): ReturnType<CampaignProxyService['suggestNewsletterItems']> {
+    return service.suggestNewsletterItems(req, { urls, brand: 'Synthetic Foundation', notBefore }, new AbortController().signal);
+  }
+
+  it('returns the items the page carries, deadline-bound first, and only reads web pages', async () => {
+    modelAnswer = JSON.stringify([
+      { kind: 'report', title: 'Free report', detail: 'A study', url: 'https://example.org/report' },
+      { kind: 'offer', title: ' Training offer ', detail: 'Ends soon', deadline: '2026-12-20', url: 'https://example.org/offer' },
+    ]);
+
+    const result = await suggest([PAGE]);
+
+    expect(result.failedUrls).toEqual([]);
+    expect(result.items).toEqual([
+      { kind: 'offer', title: 'Training offer', detail: 'Ends soon', deadline: '2026-12-20', url: 'https://example.org/offer', sourceUrl: PAGE },
+      { kind: 'report', title: 'Free report', detail: 'A study', deadline: '', url: 'https://example.org/report', sourceUrl: PAGE },
+    ]);
+    expect(vi.mocked(fetchSafeUrl).mock.calls[0][2], 'a non-HTML response was accepted as a page').toEqual({
+      allowedContentTypes: ['text/html', 'application/xhtml+xml'],
+    });
+  });
+
+  it('drops an item whose link the page does not carry, and one with an unknown kind', async () => {
+    modelAnswer = JSON.stringify([
+      { kind: 'offer', title: 'Invented', url: 'https://example.org/invented' },
+      { kind: 'giveaway', title: 'Unknown kind', url: 'https://example.org/offer' },
+      { kind: 'offer', title: 'Real', url: 'https://example.org/offer' },
+    ]);
+
+    const result = await suggest([PAGE]);
+
+    expect(result.items.map((item) => item.title)).toEqual(['Real']);
+  });
+
+  it('drops an item whose deadline is before the issue goes out', async () => {
+    modelAnswer = JSON.stringify([
+      { kind: 'offer', title: 'Closed', deadline: '2026-11-30', url: 'https://example.org/old' },
+      { kind: 'offer', title: 'Open', deadline: '2026-12-01', url: 'https://example.org/offer' },
+    ]);
+
+    const result = await suggest([PAGE]);
+
+    expect(result.items.map((item) => item.title)).toEqual(['Open']);
+  });
+
+  it('reports a page that cannot be fetched and still answers from the others', async () => {
+    const broken = 'https://example.org/broken';
+    const refused = 'https://example.org/refused';
+    vi.mocked(fetchSafeUrl).mockImplementation(async (url: string) => {
+      if (url === refused) throw new Error('Unsupported response content type');
+      return url === broken ? { html: '', ok: false, status: 404, finalUrl: url } : { html: PAGE_HTML, ok: true, status: 200, finalUrl: url };
+    });
+    modelAnswer = JSON.stringify([{ kind: 'offer', title: 'Real', url: 'https://example.org/offer' }]);
+
+    const result = await suggest([broken, PAGE, refused]);
+
+    expect([...result.failedUrls].sort()).toEqual([broken, refused]);
+    expect(result.items.map((item) => item.title)).toEqual(['Real']);
+    // A link the caller typed is their input, not our fault: it must not page anyone.
+    expect(logger.warning).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledTimes(2);
+  });
+
+  it('warns, with the error itself, when the model answer cannot be read', async () => {
+    modelAnswer = 'not json';
+
+    const result = await suggest([PAGE]);
+
+    expect(result).toEqual({ items: [], failedUrls: [PAGE] });
+    expect(logger.warning).toHaveBeenCalledTimes(1);
+    expect(logger.warning.mock.calls[0][3]).toMatchObject({ url: PAGE, err: expect.any(Error) });
+  });
+});

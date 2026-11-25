@@ -1680,9 +1680,7 @@ export class CampaignServiceClient {
       }
       return extractHttpLinks(loaded.brief.eventDetails?.sourceText);
     } catch (error) {
-      logger.warning(req, 'newsletter_note_links', 'Could not read the brief for its notes; no note link is vouched for', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      logger.warning(req, 'newsletter_note_links', 'Could not read the brief for its notes; no note link is vouched for', { err: error });
       return null;
     }
   }

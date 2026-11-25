@@ -9,6 +9,7 @@ import type {
   AudienceLastSentEmail,
   AudienceListDescription,
   AudienceSelectionSummaryItem,
+  AudienceSuppressionListsResult,
   CampaignAudience,
   CampaignBriefOutput,
   CampaignDeliveryType,
@@ -400,6 +401,34 @@ describe('CampaignsComponent — newsletter issue', () => {
       expect(attachExistingAudience).not.toHaveBeenCalled();
       expect(internals().emailAudience()?.platformMasterListId).toBe('4100');
       expect(host().querySelector('[data-testid="campaigns-newsletter-audience-error"]')).toBeNull();
+    });
+
+    /**
+     * The brief clones issue 900, but the brand has sent newer issues since and 900 is no longer
+     * among the few that are read. Attaching the newest issue's lists would send a clone of one
+     * issue to another issue's recipients with nobody choosing them, so nothing is attached and
+     * the suggestion is left for the operator to confirm.
+     */
+    it("does not attach another issue's lists when the issue being cloned is not among those read", async () => {
+      const service = TestBed.inject(CampaignService);
+      vi.spyOn(service, 'persistBrief').mockReturnValue(of({ enabled: true, briefId: 'brief-nl', etag: '"1"', created: true, approved: true }));
+      vi.spyOn(service, 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy: copy() }));
+      vi.spyOn(service, 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [] }));
+      vi.spyOn(service, 'getAudienceBrandNewsletters').mockReturnValue(
+        of([{ ...previousIssue, emailId: '950', emailName: '26Q2 - Acme - Newsletter - November' }])
+      );
+      const searchAudienceLists = vi.spyOn(service, 'searchAudienceLists').mockReturnValue(of([]));
+      vi.spyOn(service, 'getAudienceSuppressionLists').mockReturnValue(of({ lists: [] } as unknown as AudienceSuppressionListsResult));
+      const attachExistingAudience = vi.spyOn(service, 'attachExistingAudience');
+
+      select('newsletter');
+      internals().onEmailProceedFromPlanning(newsletterBrief);
+      await vi.waitFor(() => expect(searchAudienceLists).toHaveBeenCalled());
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(attachExistingAudience).not.toHaveBeenCalled();
+      expect(internals().emailAudience()).toBeNull();
     });
 
     it('attaches nothing when the stored audience cannot be read, and offers to try again', async () => {

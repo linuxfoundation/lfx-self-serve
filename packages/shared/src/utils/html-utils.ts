@@ -787,7 +787,12 @@ export function extractHttpLinks(text: unknown, limit: number = EMAIL_NOTE_LINK_
   const links: string[] = [];
   for (const candidate of found) {
     let raw = candidate;
-    while (raw !== '' && TRAILING_LINK_PUNCTUATION.includes(raw[raw.length - 1])) raw = raw.slice(0, -1);
+    while (raw !== '' && TRAILING_LINK_PUNCTUATION.includes(raw[raw.length - 1])) {
+      // A closing bracket that closes one opened INSIDE the address belongs to it
+      // (`…/wiki/Foo_(bar)`); only an unmatched one is the prose's ("(see https://example.org/x)").
+      if (raw.endsWith(')') && raw.split('(').length >= raw.split(')').length) break;
+      raw = raw.slice(0, -1);
+    }
     const canonical = canonicalHttpUrl(raw);
     const key = emailLinkMatchKey(canonical);
     if (key === '' || seen.has(key)) continue;

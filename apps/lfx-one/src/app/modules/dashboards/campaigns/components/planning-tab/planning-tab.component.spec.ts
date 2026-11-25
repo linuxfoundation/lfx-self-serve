@@ -5300,4 +5300,61 @@ describe('PlanningTabComponent newsletter mode', () => {
       referenceEmailIds: ['30', '10'],
     });
   });
+
+  /**
+   * Issue ids belong to one foundation's HubSpot portal. With the brand still typed, a foundation
+   * switch used to leave the previous foundation's issues ticked, and their ids went into the next
+   * brief: Implement then tried to clone an email from the other portal.
+   */
+  it("drops the previous foundation's issues and reads the brand again when the foundation changes", async () => {
+    vi.useFakeTimers();
+    try {
+      const read = vi.mocked(TestBed.inject(CampaignService).getAudienceBrandNewsletters);
+      read.mockImplementation((project: string) =>
+        of([
+          {
+            emailId: project === 'foundation-a' ? 'a-1' : 'b-1',
+            emailName: `OpenSSF Newsletter (${project})`,
+            sentAt: '2026-10-07T15:00:00Z',
+            hubspotUrl: '',
+            includedLists: [],
+            suppressionLists: [],
+          },
+        ])
+      );
+      const selected = (): string[] => (fixture.componentInstance as unknown as { selectedReferenceIds(): string[] }).selectedReferenceIds();
+
+      fill('OpenSSF', 'November 2026', 'Scorecard v5 released');
+      await vi.advanceTimersByTimeAsync(600);
+      fixture.detectChanges();
+      expect(selected()).toEqual(['a-1']);
+
+      TestBed.inject(ProjectContextService).setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+      fixture.detectChanges();
+      await vi.advanceTimersByTimeAsync(0);
+      fixture.detectChanges();
+
+      expect(read).toHaveBeenLastCalledWith('foundation-b', 'OpenSSF', expect.any(Number));
+      expect(selected(), "foundation A's issue id was still ticked under foundation B").toEqual(['b-1']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ticks and unticks a previous issue from its checkbox', () => {
+    internals().newsletterReferences.set([
+      { emailId: '30', emailName: 'OpenSSF Newsletter 30', sentAt: '2026-10-07T15:00:00Z', hubspotUrl: '', includedLists: [], suppressionLists: [] },
+    ]);
+    internals().newsletterReferencesState.set('loaded');
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const box = el.querySelector<HTMLInputElement>('[data-testid="planning-newsletter-reference-checkbox-30"] input[type="checkbox"]');
+
+    expect(box?.checked).toBe(true);
+    expect(el.querySelector('[data-testid="planning-newsletter-reference-30"]')?.textContent).toContain('sent 2026-10-07');
+    box?.click();
+    fixture.detectChanges();
+
+    expect((fixture.componentInstance as unknown as { selectedReferenceIds(): string[] }).selectedReferenceIds()).toEqual([]);
+  });
 });

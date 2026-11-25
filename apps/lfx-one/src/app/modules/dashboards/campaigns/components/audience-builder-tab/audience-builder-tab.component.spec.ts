@@ -5183,6 +5183,45 @@ describe('AudienceBuilderTabComponent', () => {
       expect(discoverAudience, 'the same page was discovered twice').toHaveBeenCalledTimes(1);
     });
 
+    // An arrow key moves along the tab strip and may only be passing through. Discovery is a paid
+    // run that resets the tab, so a focus move never starts it.
+    it('does not run discovery when an arrow key moves onto Use existing lists', async () => {
+      await render({ initialEventUrl: 'https://events.example.org/synthetic-summit' });
+
+      host()
+        .querySelector('[role="tablist"]')
+        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-mode-reuse"]')?.getAttribute('aria-selected')).toBe('true');
+      expect(discoverAudience).not.toHaveBeenCalled();
+    });
+
+    // Criteria typed into the custom builder are not visible to the tab until they are created,
+    // so the discovery that opening the tab starts must not reset the builder under them.
+    it('leaves the custom builder alone when opening Use existing lists starts discovery', async () => {
+      await render({ initialEventUrl: 'https://events.example.org/synthetic-summit' });
+      const resetKey = (): number => (fixture.componentInstance as unknown as { customResetKey(): number }).customResetKey();
+      const before = resetKey();
+
+      click('campaigns-audience-mode-reuse');
+
+      expect(discoverAudience).toHaveBeenCalledTimes(1);
+      expect(resetKey(), 'the builder was reset by a discovery nobody asked for').toBe(before);
+    });
+
+    it('does not start a second discovery by itself once another event page has been discovered', async () => {
+      await render({ initialEventUrl: 'https://events.example.org/synthetic-summit' });
+      click('campaigns-audience-mode-reuse');
+      completeDiscovery();
+      click('campaigns-audience-mode-build');
+
+      typeEventUrl('https://events.example.org/another-summit');
+      click('campaigns-audience-mode-reuse');
+
+      expect(discoverAudience, 'a different event started over without the Discover button').toHaveBeenCalledTimes(1);
+    });
+
     it('does not run discovery on opening Use existing lists with no event page', async () => {
       await render();
 

@@ -1842,6 +1842,7 @@ export class AudienceBuilderTabComponent {
           return this.campaignService.describeAudienceLists(project, { listIds: missing }).pipe(
             map((lists) => ({ project, missing, lists })),
             catchError((httpErr: HttpErrorResponse) => {
+              console.error('Failed to read what the selected lists contain:', httpErr);
               this.describeError.set(serverAuthoredMessage(httpErr, 'Could not read what the selected lists contain'));
               return of(null);
             })
@@ -2055,7 +2056,7 @@ export class AudienceBuilderTabComponent {
    * `confirmed` is true when the operator has accepted starting over (see `pendingStartOver`):
    * discovery resets the run, which wipes lists included, excluded, created or planned by hand.
    */
-  protected onDiscover(confirmed = false): void {
+  protected onDiscover(confirmed = false, keepBuilder = false): void {
     const eventUrl = this.eventUrlControl.value.trim();
     // Not while an attach is on the wire, either. Discovery resets the run, which discards that
     // attach's reply -- so its outcome, success or error, would never be shown for the brief it was
@@ -2084,7 +2085,7 @@ export class AudienceBuilderTabComponent {
     // resetRunState clearing the `discovering` it had just been set to — so the spinner never
     // appeared and the Discover button stayed live, letting a second click launch an
     // overlapping SSE request against the same panel.
-    this.resetRunState();
+    this.resetRunState(!keepBuilder);
     this.discoveredEventUrl.set(eventUrl);
     this.discovering.set(true);
     this.discoveryError.set(null);
@@ -2469,10 +2470,10 @@ export class AudienceBuilderTabComponent {
     else if (event.key === 'End') next = modes.length - 1;
     else return;
     event.preventDefault();
+    // An arrow key only moves along the tab strip, and may be passing through on the way to
+    // another tab. It never starts discovery (a paid run that resets the tab): a click or Enter
+    // on the tab does, through `onSetMode`, and so does the Discover button.
     this.mode.set(modes[next]);
-    if (modes[next] === 'reuse') {
-      this.discoverOnArrival();
-    }
     this.scrollTo(`campaigns-audience-mode-${modes[next]}`, true);
   }
 
@@ -3773,13 +3774,19 @@ export class AudienceBuilderTabComponent {
    * Never when it would wipe hand work -- that keeps its confirmation, on the button -- and never
    * twice for one page. `onDiscover` itself refuses while anything else is in flight, degraded, or
    * after a compose for the same page.
+   *
+   * Criteria typed into the custom builder but not yet created are hand work this tab cannot see
+   * (the builder reports only a create in flight), so `hasHandWork` does not count them. The first
+   * discovery of a tab therefore leaves the builder alone: nothing in it can belong to an earlier
+   * event. Once another page has been discovered, opening the tab asks nothing of discovery: a
+   * different event starts over only from the Discover button, which is an explicit act.
    */
   private discoverOnArrival(): void {
     const eventUrl = this.eventUrlControl.value.trim();
-    if (eventUrl === '' || this.discoveredEventUrl() === eventUrl || this.hasHandWork()) {
+    if (eventUrl === '' || this.discoveredEventUrl() !== '' || this.hasDiscovered() || this.hasHandWork()) {
       return;
     }
-    this.onDiscover();
+    this.onDiscover(false, true);
   }
 
   /** One summary row: the best name, size and link the tab knows, plus the description when it has arrived. */

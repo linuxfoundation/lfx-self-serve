@@ -1235,6 +1235,7 @@ export class CampaignService {
     const read = this.http.get<AudienceLastSentEmail[]>('/api/campaigns/audience-builder/brand-newsletters', { params }).pipe(
       catchError((error: unknown) => {
         this.brandNewsletterCache.delete(key);
+        console.error("Failed to load the brand's previous newsletters:", error);
         return throwError(() => error);
       }),
       shareReplay({ bufferSize: 1, refCount: false })
@@ -1258,6 +1259,7 @@ export class CampaignService {
     const read = this.http.get<AudienceNewsletterBrand[]>('/api/campaigns/audience-builder/newsletter-brands', { params }).pipe(
       catchError((error: unknown) => {
         this.newsletterBrandsCache.delete(projectSlug);
+        console.error('Failed to load the newsletter brands:', error);
         return throwError(() => error);
       }),
       shareReplay({ bufferSize: 1, refCount: false })

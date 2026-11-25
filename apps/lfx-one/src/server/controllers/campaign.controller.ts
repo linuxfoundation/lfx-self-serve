@@ -199,6 +199,7 @@ import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_EVENT_URL_MAX_LENGTH,
   CAMPAIGN_SEND_STAGES,
   CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN,
   CAMPAIGN_SEND_WORKFLOW_MAX_SENDS,
@@ -206,6 +207,7 @@ import {
   CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
   CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH,
   CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS,
   CAMPAIGN_NEWSLETTER_STAGES,
   CAMPAIGN_ETAG_HEADER_PATTERN,
@@ -706,8 +708,16 @@ export class CampaignController {
       fail('urls', `urls must hold 1 to ${CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS} page links`);
       return;
     }
+    if (urls.some((u) => u.length > CAMPAIGN_EVENT_URL_MAX_LENGTH)) {
+      fail('urls', `each page link must be ${CAMPAIGN_EVENT_URL_MAX_LENGTH} characters or fewer`);
+      return;
+    }
     if (brand === '') {
       fail('brand', 'brand is required');
+      return;
+    }
+    if (brand.length > CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH) {
+      fail('brand', `brand must be ${CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH} characters or fewer`);
       return;
     }
     const startTime = logger.startOperation(req, 'campaign_newsletter_suggestions', { pages: urls.length });
@@ -1500,7 +1510,15 @@ export class CampaignController {
       // The addresses a NEWSLETTER brief's notes carry, or null for every other create. See
       // `emailNoteLinksToVouch`.
       const emailNoteLinks = await this.emailNoteLinksToVouch(req, projectSlug, briefId, body);
-      const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId, metaTargeting, metaAdOptions, metaLeadFormIdToSend, metaDelivery, emailNoteLinks);
+      const configEnvelope = this.createConfigEnvelope(
+        body,
+        linkedInAdAccountId,
+        metaTargeting,
+        metaAdOptions,
+        metaLeadFormIdToSend,
+        metaDelivery,
+        emailNoteLinks
+      );
 
       // The channel the Google config resolved to, read ONCE for every channel fence below rather
       // than re-read and re-cast by each of them. `unknown`, not the channel union: it is whatever

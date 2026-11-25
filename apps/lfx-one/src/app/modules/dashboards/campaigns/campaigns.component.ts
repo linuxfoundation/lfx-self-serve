@@ -4330,10 +4330,11 @@ export class CampaignsComponent {
           this.newsletterAudienceExcludes.set(excludeIds.map(described));
           this.newsletterAudienceDescribing.set(false);
         },
-        error: () => {
+        error: (error: unknown) => {
           if (generation !== this.newsletterAudienceDescribeGeneration) {
             return;
           }
+          console.error("Failed to read what the newsletter's lists contain:", error);
           this.newsletterAudienceDescribing.set(false);
           this.newsletterAudienceDescribeError.set('The lists could not be read from HubSpot, so only their ids are shown. Check them there before sending.');
         },
@@ -8973,7 +8974,13 @@ export class CampaignsComponent {
         this.newsletterAudienceState.set('attached');
         return;
       }
-      const previous = issues.find((email) => email.emailId === templateId) ?? issues[0];
+      // The newest issue stands in only when the brief names no template. When it names one that
+      // is not among the issues read (it aged out of the newest few, or belongs to another
+      // portal), the draft still clones THAT email, so attaching the newest issue's lists would
+      // send the clone to a different issue's recipients without anyone choosing them. Nothing is
+      // attached then: the suggestion below is shown for the operator to confirm.
+      const named = typeof templateId === 'string' && templateId !== '';
+      const previous = named ? issues.find((email) => email.emailId === templateId) : issues[0];
       const readable = previous !== undefined && previous.listsUnavailable !== true;
       const include = readable ? previous.includedLists.filter((list) => !list.missing && list.listId !== '') : [];
       const exclude = readable ? previous.suppressionLists.filter((list) => !list.missing && list.listId !== '') : [];

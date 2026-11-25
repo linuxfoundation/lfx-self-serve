@@ -20,6 +20,12 @@ describe('extractHttpLinks', () => {
     ]);
   });
 
+  it('keeps a closing bracket the address itself opened, and drops one the prose opened', () => {
+    expect(extractHttpLinks('Background: https://acme.example/wiki/Guide_(2026).')).toEqual(['https://acme.example/wiki/Guide_(2026)']);
+    expect(extractHttpLinks('(see https://acme.example/wiki/Guide_(2026))')).toEqual(['https://acme.example/wiki/Guide_(2026)']);
+    expect(extractHttpLinks('(see https://acme.example/plain)')).toEqual(['https://acme.example/plain']);
+  });
+
   it('lists an address once, however it is repeated', () => {
     expect(extractHttpLinks('https://acme.example/a https://acme.example/a/ HTTPS://ACME.example/a#again')).toEqual(['https://acme.example/a']);
   });

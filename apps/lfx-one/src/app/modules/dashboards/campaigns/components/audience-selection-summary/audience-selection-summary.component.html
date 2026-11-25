@@ -93,9 +93,14 @@
     [attr.data-testid]="'campaigns-audience-meaning-list-' + row.item.listId">
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
       @if (row.item.hubspotUrl) {
-        <a [href]="row.item.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-sm font-medium text-gray-900 hover:underline">{{
-          row.item.name
-        }}</a>
+        <a
+          [href]="row.item.hubspotUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-sm font-medium text-gray-900 hover:underline"
+          [attr.data-testid]="'campaigns-audience-meaning-link-' + row.item.listId"
+          >{{ row.item.name }}</a
+        >
       } @else {
         <span class="text-sm font-medium text-gray-900">{{ row.item.name }}</span>
       }
@@ -110,7 +115,7 @@
     @if (row.item.description; as description) {
       <p class="text-xs text-gray-700" [attr.data-testid]="'campaigns-audience-meaning-summary-' + row.item.listId">{{ description.summary }}</p>
       @if (row.expandable) {
-        <details class="text-xs text-gray-700">
+        <details class="text-xs text-gray-700" [attr.data-testid]="'campaigns-audience-meaning-rules-toggle-' + row.item.listId">
           <!-- Each numbered line is one GROUP of rules, so a list whose groups hold several rules says both counts. -->
           <summary class="cursor-pointer font-medium text-blue-700">
             @if (description.groups.length > 1 && row.ruleCount > description.groups.length) {

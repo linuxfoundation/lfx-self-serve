@@ -368,6 +368,11 @@ function required<T>(value: T | undefined | null, field: string): T {
   return value;
 }
 
+/** An upstream description status, kept only when it is one the app knows; anything else reads as unreadable. */
+function toDescriptionStatus(value: string | undefined): AudienceListDescriptionStatus {
+  return (AUDIENCE_LIST_DESCRIPTION_STATUSES as readonly string[]).includes(value ?? '') ? (value as AudienceListDescriptionStatus) : 'unreadable';
+}
+
 /**
  * A HubSpot link from upstream, kept only when it is an absolute `http(s)` URL.
  *
@@ -376,10 +381,6 @@ function required<T>(value: T | undefined | null, field: string): T {
  * wire value enters the app, means no template has to remember to. An unusable value becomes
  * `''` so the templates' existing `@if (hubspotUrl)` guards drop the link rather than render it.
  */
-function toDescriptionStatus(value: string | undefined): AudienceListDescriptionStatus {
-  return (AUDIENCE_LIST_DESCRIPTION_STATUSES as readonly string[]).includes(value ?? '') ? (value as AudienceListDescriptionStatus) : 'unreadable';
-}
-
 function httpHref(value: string | undefined | null): string {
   if (typeof value !== 'string') return '';
   const trimmed = value.trim();

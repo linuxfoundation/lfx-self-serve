@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CAMPAIGN_NEWSLETTER_SUGGESTION_CONTENT_TYPES,
   CAMPAIGN_NEWSLETTER_SUGGESTION_LIMIT,
   CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
   CAMPAIGN_DELIVERY_TYPES,
@@ -1558,13 +1559,24 @@ export class CampaignProxyService {
     const failedUrls: string[] = [];
     const perPage = await Promise.all(
       body.urls.map(async (url) => {
+        // A page link is the caller's own input, so a link that is refused, unreachable or not a
+        // web page is logged at DEBUG: only a fault on our side (the model, its answer) is a WARN.
+        let page: Awaited<ReturnType<typeof fetchSafeUrl>>;
+        let safeUrl: string;
         try {
-          const safeUrl = await validateScrapeUrl(url);
-          const page = await fetchSafeUrl(safeUrl, signal);
-          if (!page.ok) {
-            failedUrls.push(url);
-            return [];
-          }
+          safeUrl = await validateScrapeUrl(url);
+          page = await fetchSafeUrl(safeUrl, signal, { allowedContentTypes: CAMPAIGN_NEWSLETTER_SUGGESTION_CONTENT_TYPES });
+        } catch (error) {
+          logger.debug(req, 'campaign_newsletter_suggestions', 'Could not fetch a page for suggestions', { url, err: error });
+          failedUrls.push(url);
+          return [];
+        }
+        if (!page.ok) {
+          logger.debug(req, 'campaign_newsletter_suggestions', 'A page for suggestions did not answer OK', { url, status: page.status });
+          failedUrls.push(url);
+          return [];
+        }
+        try {
           const finalUrl = page.finalUrl || safeUrl;
           const { links, baseUrl } = scanPageLinks(page.html, finalUrl);
           const raw = stripJsonFences(
@@ -1591,10 +1603,7 @@ export class CampaignProxyService {
             return [{ kind, title, detail, deadline, url: verified, sourceUrl: finalUrl }];
           });
         } catch (error) {
-          logger.warning(req, 'campaign_newsletter_suggestions', 'Could not read suggestions from a page', {
-            url,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
+          logger.warning(req, 'campaign_newsletter_suggestions', 'Could not read suggestions from a page', { url, err: error });
           failedUrls.push(url);
           return [];
         }

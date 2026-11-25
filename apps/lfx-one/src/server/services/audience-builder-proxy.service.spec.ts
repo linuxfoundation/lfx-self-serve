@@ -849,3 +849,110 @@ describe('AudienceBuilderProxyService list descriptions', () => {
     expect(list.complete).toBe(false);
   });
 });
+
+describe('AudienceBuilderProxyService newsletter brands and issues', () => {
+  let service: AudienceBuilderProxyService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new AudienceBuilderProxyService();
+  });
+
+  it('reads newsletter-brands and maps every wire field', async () => {
+    proxyRequest.mockResolvedValue({
+      brands: [
+        {
+          brand: 'Synthetic Foundation',
+          latest_email_name: 'Synthetic Foundation Newsletter - October 2026',
+          latest_sent_at: '2026-10-07T15:00:00Z',
+          issues: 4,
+        },
+      ],
+    });
+
+    const brands = await service.getNewsletterBrands(req, 'tlf');
+
+    const call = proxyRequest.mock.calls[0];
+    expect(call[2]).toBe('/projects/tlf/audience-builder/newsletter-brands');
+    expect(call[3]).toBe('GET');
+    expect(brands).toEqual([
+      { brand: 'Synthetic Foundation', latestEmailName: 'Synthetic Foundation Newsletter - October 2026', latestSentAt: '2026-10-07T15:00:00Z', issues: 4 },
+    ]);
+  });
+
+  it('drops a blank brand and defaults the fields upstream left out', async () => {
+    proxyRequest.mockResolvedValue({
+      brands: [{ brand: '   ', latest_email_name: 'Unnamed Newsletter', issues: 2 }, { brand: 'Synthetic Project' }],
+    });
+
+    const brands = await service.getNewsletterBrands(req, 'tlf');
+
+    expect(brands, 'a blank brand would render an empty picker row').toEqual([{ brand: 'Synthetic Project', latestEmailName: '', issues: 0 }]);
+  });
+
+  it('answers an empty list when upstream sends no brands', async () => {
+    proxyRequest.mockResolvedValue({});
+
+    expect(await service.getNewsletterBrands(req, 'tlf')).toEqual([]);
+  });
+
+  it('reads brand-newsletters with the brand and limit as query params and maps the rows', async () => {
+    proxyRequest.mockResolvedValue({
+      emails: [
+        {
+          email_id: '9001',
+          email_name: 'Synthetic Foundation Newsletter - October 2026',
+          subject: 'October news',
+          sent_at: '2026-10-07T15:00:00Z',
+          hubspot_url: 'https://app.hubspot.com/email/1/details/9001',
+          source_url: 'https://example.org/newsletter/october',
+          included_lists: [{ list_id: '11', name: 'Synthetic Subscribers', size: 120 }],
+          suppression_lists: [{ list_id: '12', name: 'Synthetic Unsubscribed', size: 7 }],
+        },
+      ],
+    });
+
+    const emails = await service.getBrandNewsletters(req, 'tlf', 'Synthetic Foundation', 3);
+
+    const call = proxyRequest.mock.calls[0];
+    expect(call[2]).toBe('/projects/tlf/audience-builder/brand-newsletters');
+    expect(call[3]).toBe('GET');
+    expect(call[4], 'the brand and limit must travel as query params, not a body').toEqual({ brand: 'Synthetic Foundation', limit: 3 });
+    expect(emails).toHaveLength(1);
+    expect(emails[0]).toMatchObject({
+      emailId: '9001',
+      emailName: 'Synthetic Foundation Newsletter - October 2026',
+      subject: 'October news',
+      sentAt: '2026-10-07T15:00:00Z',
+      hubspotUrl: 'https://app.hubspot.com/email/1/details/9001',
+      sourceUrl: 'https://example.org/newsletter/october',
+    });
+    expect(emails[0].includedLists.map((list) => list.listId)).toEqual(['11']);
+    expect(emails[0].suppressionLists.map((list) => list.listId)).toEqual(['12']);
+    expect(emails[0].listsUnavailable).toBeUndefined();
+  });
+
+  it('drops an unusable link, defaults a missing send date and keeps the lists-unavailable flag', async () => {
+    proxyRequest.mockResolvedValue({
+      emails: [
+        {
+          email_id: '9002',
+          email_name: 'Synthetic Foundation Newsletter - September 2026',
+          hubspot_url: 'javascript:alert(1)',
+          source_url: 'ftp://example.org/x',
+          lists_unavailable: true,
+        },
+      ],
+    });
+
+    const [email] = await service.getBrandNewsletters(req, 'tlf', 'Synthetic Foundation', 3);
+
+    expect(email.hubspotUrl, 'a non-http link reached an [href]').toBe('');
+    expect(email.sourceUrl).toBeUndefined();
+    expect(email.sentAt).toBe('');
+    expect(email.subject).toBeUndefined();
+    expect(email.includedLists).toEqual([]);
+    expect(email.suppressionLists).toEqual([]);
+    expect(email.listsUnavailable, 'a failed list read rendered as "None recorded"').toBe(true);
+  });
+});

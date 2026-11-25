@@ -130,23 +130,22 @@
                     </p>
                   } @else {
                     <ul class="flex flex-col gap-2">
-                      @for (email of newsletterReferences(); track email.emailId) {
+                      @for (row of newsletterReferenceRows(); track row.email.emailId) {
                         <li
                           class="flex items-start gap-3 rounded-md border border-gray-200 px-3 py-2"
-                          [attr.data-testid]="'planning-newsletter-reference-' + email.emailId">
-                          <input
-                            type="checkbox"
+                          [attr.data-testid]="'planning-newsletter-reference-' + row.email.emailId">
+                          <lfx-ui-checkbox
                             class="mt-0.5"
-                            [id]="'planning-newsletter-reference-check-' + email.emailId"
-                            [checked]="!excludedReferenceIds().has(email.emailId)"
-                            (change)="onToggleNewsletterReference(email.emailId)" />
-                          <label [for]="'planning-newsletter-reference-check-' + email.emailId" class="flex min-w-0 flex-col gap-0.5">
-                            <span class="truncate text-sm text-gray-900">{{ email.emailName }}</span>
-                            <span class="text-xs text-gray-500"
-                              >{{ email.subject || 'No subject' }}{{ email.sentAt ? ' · sent ' + email.sentAt.slice(0, 10) : '' }}</span
-                            >
-                          </label>
-                          @if (selectedReferenceIds()[0] === email.emailId) {
+                            [ariaLabel]="'Use ' + row.email.emailName + ' as a reference'"
+                            [checked]="row.included"
+                            (checkedChange)="onToggleNewsletterReference(row.email.emailId)"
+                            [attr.data-testid]="'planning-newsletter-reference-checkbox-' + row.email.emailId" />
+                          <!-- The name wraps instead of truncating: issue names differ only at the end (the month). -->
+                          <div class="flex min-w-0 flex-col gap-0.5">
+                            <span class="break-words text-sm text-gray-900">{{ row.email.emailName }}</span>
+                            <span class="text-xs text-gray-500">{{ row.email.subject || 'No subject' }}{{ row.sentDay ? ' · sent ' + row.sentDay : '' }}</span>
+                          </div>
+                          @if (row.isTemplate) {
                             <span
                               class="ml-auto shrink-0 rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
                               data-testid="planning-newsletter-template-badge"
@@ -240,7 +239,7 @@
                 @case ('loaded') {
                   @if (suggestionsFailedUrls().length > 0) {
                     <p class="text-xs text-amber-700" data-testid="planning-newsletter-suggestions-partial">
-                      Could not read: {{ suggestionsFailedUrls().join(', ') }}
+                      Could not read: {{ suggestionsFailedUrlsText() }}
                     </p>
                   }
                   @if (suggestions().length === 0) {
@@ -256,9 +255,14 @@
                           <div class="flex min-w-0 flex-1 flex-col gap-0.5">
                             <div class="flex flex-wrap items-center gap-2">
                               <span class="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">{{ suggestionKindLabels[item.kind] }}</span>
-                              <a [href]="item.url" target="_blank" rel="noopener noreferrer" class="text-sm font-medium text-blue-700 hover:underline">{{
-                                item.title
-                              }}</a>
+                              <a
+                                [href]="item.url"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="text-sm font-medium text-blue-700 hover:underline"
+                                [attr.data-testid]="'planning-newsletter-suggestion-link-' + $index"
+                                >{{ item.title }}</a
+                              >
                             </div>
                             @if (item.detail) {
                               <span class="text-xs text-gray-600">{{ item.detail }}</span>

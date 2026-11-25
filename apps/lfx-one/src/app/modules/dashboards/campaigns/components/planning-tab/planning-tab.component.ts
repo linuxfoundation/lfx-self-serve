@@ -24,6 +24,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
+import { UiCheckboxComponent } from '@shared/uikit/checkbox/checkbox.component';
 import {
   CAMPAIGN_EVENT_URL_MAX_LENGTH,
   CAMPAIGN_EVENT_URL_QUERY_PARAM,
@@ -139,7 +140,7 @@ type PlanningStep = 'input' | 'generating' | 'review';
 
 @Component({
   selector: 'lfx-planning-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, SelectComponent, TextareaComponent, NgClass],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, SelectComponent, TextareaComponent, UiCheckboxComponent, NgClass],
   templateUrl: './planning-tab.component.html',
   styleUrl: './planning-tab.component.scss',
 })
@@ -380,6 +381,8 @@ export class PlanningTabComponent implements OnInit {
     totalBudget: [''],
     driveFolderUrl: [''],
   });
+  /** The pages the suggestions panel reads, as typed. Its own form: it is not part of the brief. */
+  protected readonly suggestionsForm = this.fb.nonNullable.group({ sources: [''] });
 
   // === WritableSignals ===
   protected readonly step = signal<PlanningStep>('input');
@@ -407,11 +410,11 @@ export class PlanningTabComponent implements OnInit {
       value: row.brand,
     }))
   );
-  /** The pages the suggestions panel reads, as typed. Its own form: it is not part of the brief. */
-  protected readonly suggestionsForm = this.fb.nonNullable.group({ sources: [''] });
   protected readonly suggestionsState = signal<'idle' | 'loading' | 'loaded' | 'failed'>('idle');
   protected readonly suggestions = signal<CampaignNewsletterSuggestion[]>([]);
   protected readonly suggestionsFailedUrls = signal<string[]>([]);
+  /** The pages that could not be read, as one line for the partial-result notice. */
+  protected readonly suggestionsFailedUrlsText = computed(() => this.suggestionsFailedUrls().join(', '));
   protected readonly suggestionsError = signal('');
   /** Suggestions already added to the notes, so each is added once. */
   protected readonly addedSuggestionUrls = signal<ReadonlySet<string>>(new Set<string>());
@@ -426,6 +429,17 @@ export class PlanningTabComponent implements OnInit {
       .slice(0, CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT)
       .map((email) => email.emailId)
   );
+  /** The previous-issue picker's rows: each issue with its send day, its tick and the template mark. */
+  protected readonly newsletterReferenceRows = computed(() => {
+    const excluded = this.excludedReferenceIds();
+    const templateId = this.selectedReferenceIds()[0] ?? '';
+    return this.newsletterReferences().map((email) => ({
+      email,
+      sentDay: email.sentAt ? email.sentAt.slice(0, 10) : '',
+      included: !excluded.has(email.emailId),
+      isTemplate: templateId === email.emailId,
+    }));
+  });
   protected readonly selectedPlatforms = signal<Set<CampaignPlatform>>(new Set(['google-ads']));
   protected readonly statusMessages = signal<string[]>([]);
   protected readonly eventDetails = signal<CampaignEventDetails | null>(null);
@@ -1145,16 +1159,28 @@ export class PlanningTabComponent implements OnInit {
       });
     // The brand's previous issues, re-read when the brand settles. A failed read leaves the issue
     // plannable from the notes alone; it never blocks Generate.
-    this.briefForm.controls.newsletterBrand.valueChanges
-      .pipe(
+    //
+    // Keyed on the foundation and the surface as well as the brand. Issue ids belong to one
+    // foundation's HubSpot portal, so a foundation switch with the brand still typed must drop the
+    // previous foundation's issues and read again: left in place, their ids went into the next
+    // brief as `referenceEmailIds` and Implement tried to clone an email from the other portal.
+    combineLatest([
+      this.briefForm.controls.newsletterBrand.valueChanges.pipe(
         debounceTime(500),
         map((brand) => (brand ?? '').trim()),
-        distinctUntilChanged(),
-        filter(() => this.isNewsletter()),
-        switchMap((brand) => {
+        distinctUntilChanged()
+      ),
+      this.activeFoundationSlug$,
+      this.deliveryType$.pipe(map((delivery) => delivery === 'newsletter')),
+    ])
+      .pipe(
+        distinctUntilChanged((a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2]),
+        switchMap(([brand, project, isNewsletter]) => {
           this.excludedReferenceIds.set(new Set<string>());
-          const project = this.activeFoundationSlug();
-          if (brand === '' || project === '' || !isPlatformBrowser(this.platformId)) {
+          // Cleared before the read, not when it answers: until then the ticked ids are the
+          // previous key's, and Generate would send them.
+          this.newsletterReferences.set([]);
+          if (!isNewsletter || brand === '' || project === '' || !isPlatformBrowser(this.platformId)) {
             this.newsletterReferencesState.set('idle');
             return of<AudienceLastSentEmail[]>([]);
           }
@@ -1520,7 +1546,8 @@ export class PlanningTabComponent implements OnInit {
           this.suggestionsFailedUrls.set(result.failedUrls);
           this.suggestionsState.set('loaded');
         },
-        error: () => {
+        error: (error: unknown) => {
+          console.error('Failed to read newsletter suggestions:', error);
           this.suggestions.set([]);
           this.suggestionsState.set('failed');
           this.suggestionsError.set('The pages could not be read. Check the links and try again.');
