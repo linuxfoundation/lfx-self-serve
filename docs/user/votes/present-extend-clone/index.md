@@ -4,7 +4,7 @@ description: How to present a vote on screen, extend its deadline, send the resu
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, present, extend, clone, summary, qr-code, deadline]
-last_updated: 2026-11-24
+last_updated: 2026-11-25
 intercom_collection: Votes
 ---
 
@@ -45,7 +45,7 @@ While the vote is open, **Exit** (or **Esc**) asks **Leave the presenter? The vo
 
 ### After the vote ends
 
-The same page switches to the final results: the tally for each question, abstentions when the vote allowed them, turnout (how many cast a vote out of those eligible, and how many didn't), and when the vote closed. For a ranked vote, each question shows its winner banner and standings above the rank breakdown, as described in [Ranked questions](../vote-results/#ranked-questions).
+The same page switches to the final results: the tally for each question, abstentions when the vote allowed them, turnout (how many cast a vote out of those eligible, and how many didn't), and when the vote closed. For a ranked vote, each question shows its winner banner and standings above the rank breakdown, as described in [Ranked questions](../vote-results/#ranked-questions). Instant Runoff questions, and Condorcet IRV questions that fell back to instant-runoff elimination, also show the **Round-by-round count** after the standings: each option's votes per round, who was eliminated, where their ballots moved, and the winner.
 
 For Condorcet IRV, the presenter and the vote's page use the same outcome interpretation. If the voting service returns every option without selecting a winner, both say no winner could be determined rather than marking every option **Tied**. A tie among only some options still names and marks those options **Tied**, including a service-selected option missing from the result tables. For instant-runoff fallback, both views order remaining non-winning options by final-round vote counts and use their head-to-head comparison when counts match. Configured option names are kept even if the service supplies different winner text.
 
