@@ -111,7 +111,7 @@ export function linkedInImageBlock(
   if (slot.variantKey === holder.key && slot.status === 'error' && briefId && slot.failedBriefId === briefId) {
     return {
       kind: 'uploadFailed',
-      message: `The ${media} upload for LinkedIn ${label} did not complete: ${slot.error} Remove it, or choose the image again.`,
+      message: `The ${media} upload for LinkedIn ${label} did not complete: ${slot.error} Remove it, or choose the ${media} again.`,
     };
   }
   // An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes.

@@ -1496,6 +1496,11 @@ describe('creative-asset upload allowlist', () => {
     ['a QuickTime movie', ftyp('qt  '), null],
     ['a HEIF image', ftyp('heic'), null],
     ['a truncated ftyp box', ftyp('isom').subarray(0, 10), null],
+    [
+      'an MP4 whose ftyp box has a 64-bit size',
+      new Uint8Array([0, 0, 0, 1, ...new TextEncoder().encode('ftyp'), 0, 0, 0, 0, 0, 0, 0, 0x18, ...new TextEncoder().encode('isom')]),
+      'video/mp4',
+    ],
     ['a plain array', [...ftyp('isom')], null],
   ])('sniffs %s as %s for an upload', (_label, bytes, expected) => {
     expect(sniffCreativeAssetUploadMimeType(bytes)).toBe(expected);

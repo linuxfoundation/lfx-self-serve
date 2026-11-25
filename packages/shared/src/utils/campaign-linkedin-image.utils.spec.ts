@@ -140,6 +140,13 @@ describe('linkedInVariantViews', () => {
     });
   });
 
+  it('names the video in a failed video upload', () => {
+    const failed = slot({ variantKey: 'a', status: 'error', failedBriefId: 'b1', error: 'Too big.' });
+    expect(linkedInVariantViews(input({ media: 'video', slot: failed }))[0].imageBlock?.message).toBe(
+      'The video upload for LinkedIn variant 1 did not complete: Too big. Remove it, or choose the video again.'
+    );
+  });
+
   it("holds the other pickers while one variant's upload runs, and names it", () => {
     const [a, b] = linkedInVariantViews(input({ slot: slot({ variantKey: 'a', status: 'uploading' }) }));
     expect(a).toMatchObject({ imageUploading: true, imageStatusMessage: 'Uploading image…', imagePickerDisabled: false, imagePickerNote: '' });

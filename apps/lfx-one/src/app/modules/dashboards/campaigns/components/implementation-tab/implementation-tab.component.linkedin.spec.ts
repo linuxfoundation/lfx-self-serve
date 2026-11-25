@@ -1598,6 +1598,27 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(at(f).linkedInImageUploadError()).toBe('Only MP4 videos can be uploaded.');
     });
 
+    it("clears the variant's video, not its image, from the notice's Remove", STATE_ONLY, async () => {
+      // A video made for another brief, as a restored draft can hold.
+      uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
+      const f = await mountVideo();
+      pick(f, 0, mp4());
+      pick(f, 1, mp4());
+      const c = f.componentInstance as unknown as {
+        linkedInVariants: { update(fn: (v: Record<string, unknown>[]) => Record<string, unknown>[]): void };
+        linkedInVariantViews(): { imageBlock: { kind: string } | null }[];
+        onLinkedInVariantMediaRemove(key: string): void;
+      };
+      c.linkedInVariants.update((variants) =>
+        variants.map((v, i) => (i === 0 ? { ...v, imageAssetId: 'img', imageAssetBriefId: BRIEF_ID, videoAssetBriefId: 'another-brief' } : v))
+      );
+      expect(c.linkedInVariantViews()[0].imageBlock?.kind).toBe('otherBrief');
+
+      c.onLinkedInVariantMediaRemove(at(f).linkedInVariants()[0].key);
+      expect(c.linkedInVariantViews()[0].imageBlock).toBeNull();
+      expect(at(f).linkedInVariants()[0]).toMatchObject({ imageAssetId: 'img', videoAssetId: '' });
+    });
+
     it('holds Create, never sending image ads instead, when a video choice is no longer offered', STATE_ONLY, async () => {
       const f = await mountVideo();
       f.componentRef.setInput('linkedInVideoAdsEnabled', false);

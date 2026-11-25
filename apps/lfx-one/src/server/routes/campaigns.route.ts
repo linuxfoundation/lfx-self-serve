@@ -27,6 +27,7 @@ import {
   requireLinkedInConversionsAccess,
   requireMetaLeadFormsAccess,
 } from '../middleware/require-marketing-access.middleware';
+import { canSetLinkedInVideoAds } from '../services/campaign-service.service';
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
@@ -166,7 +167,12 @@ router.post('/create', (req, res, next) => campaignController.createCampaign(req
 router.post(
   '/brief/creative-assets',
   express.raw({ type: [...CREATIVE_ASSET_MIME_TYPES], limit: CREATIVE_ASSET_MAX_BYTES }),
-  express.raw({ type: CREATIVE_ASSET_VIDEO_MIME_TYPE, limit: CREATIVE_ASSET_VIDEO_MAX_BYTES }),
+  // Read only while a video can be used (`canSetLinkedInVideoAds`); otherwise the body is never buffered and the
+  // controller answers the 415.
+  express.raw({
+    type: (req) => canSetLinkedInVideoAds() && (req as Request).is(CREATIVE_ASSET_VIDEO_MIME_TYPE) === CREATIVE_ASSET_VIDEO_MIME_TYPE,
+    limit: CREATIVE_ASSET_VIDEO_MAX_BYTES,
+  }),
   handleCreativeAssetParseError,
   (req: Request, res: Response, next: NextFunction) => campaignController.uploadCreativeAsset(req, res, next)
 );

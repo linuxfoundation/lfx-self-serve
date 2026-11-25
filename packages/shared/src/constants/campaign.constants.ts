@@ -4257,8 +4257,9 @@ export const CREATIVE_ASSET_UPLOAD_MIME_TYPES = [...CREATIVE_ASSET_MIME_TYPES, C
 
 /**
  * The largest video this app uploads as a creative asset, in bytes (30 MiB): campaign-service's own decoded ceiling for
- * any asset. Images keep `CREATIVE_ASSET_MAX_BYTES`, so a 30 MiB PNG is still refused. The BFF buffers the video and a
- * base64 body a third larger, about 70 MiB at most for one upload, and only on the upload route.
+ * any asset. Images keep `CREATIVE_ASSET_MAX_BYTES`, so a 30 MiB PNG is still refused. The BFF buffers the video and
+ * writes a base64 body a third larger straight into one buffer (`creativeAssetUploadBody`): about 70 MiB for one upload,
+ * only on the upload route, and only while a video can be used.
  */
 export const CREATIVE_ASSET_VIDEO_MAX_BYTES = 30 * 1024 * 1024;
 
@@ -4479,7 +4480,11 @@ export function sniffCreativeAssetUploadMimeType(bytes: unknown): CreativeAssetU
   const image = sniffCreativeAssetMimeType(bytes);
   if (image !== null || !(bytes instanceof Uint8Array) || bytes.length < 12) return image;
   const ascii = (from: number) => String.fromCharCode(...bytes.subarray(from, from + 4));
-  return ascii(4) === 'ftyp' && CREATIVE_ASSET_MP4_MAJOR_BRANDS.includes(ascii(8)) ? CREATIVE_ASSET_VIDEO_MIME_TYPE : null;
+  // A box whose 32-bit size is 1 carries a 64-bit size after its type, which moves the brand to offset 16.
+  const largeSize = bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 0 && bytes[3] === 1;
+  const brandAt = largeSize ? 16 : 8;
+  if (bytes.length < brandAt + 4) return null;
+  return ascii(4) === 'ftyp' && CREATIVE_ASSET_MP4_MAJOR_BRANDS.includes(ascii(brandAt)) ? CREATIVE_ASSET_VIDEO_MIME_TYPE : null;
 }
 
 /** Whether a declared MIME type is one `CREATIVE_ASSET_UPLOAD_MIME_TYPES` admits: an image or the MP4 video. */

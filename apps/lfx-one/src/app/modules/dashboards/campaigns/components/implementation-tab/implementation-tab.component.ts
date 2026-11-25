@@ -4456,7 +4456,7 @@ export class ImplementationTabComponent implements OnInit {
         this.linkedInImageUploadOrphaned()
       )
     )
-      return 'Waiting for the LinkedIn Ads image upload to finish.';
+      return `Waiting for the LinkedIn Ads ${this.linkedInVideoSelected() ? 'video' : 'image'} upload to finish.`;
     if (this.showTwitterSection() && this.twitterCreateAvailable() && this.twitterImageUploadStatus() === 'uploading')
       return 'Waiting for the X image upload to finish.';
     if (
@@ -5813,6 +5813,12 @@ export class ImplementationTabComponent implements OnInit {
 
     this.followLinkedInImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'linkedin'), briefId, file.name);
     this.emitDraft();
+  }
+
+  /** The variant notice's Remove: its video while video ads are chosen (#5764 row 18), else its image. */
+  protected onLinkedInVariantMediaRemove(key: string): void {
+    if (this.linkedInVideoSelected()) this.onLinkedInVariantVideoRemove(key);
+    else this.onLinkedInVariantImageRemove(key);
   }
 
   /** Forget one variant's LinkedIn video, or its upload in flight or failed (#5764 row 18). */
@@ -8811,6 +8817,17 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * `creativeAssetUploadErrorMessage`'s video sibling (#5764 row 18). The BFF's 413 and 415 already name the video's
+   * limit and type, so its message is shown as it came.
+   */
+  private linkedInVideoUploadErrorMessage(err: unknown): string {
+    const status = err instanceof HttpErrorResponse ? err.status : 0;
+    if (status === 0 || status === 503) return 'The video service is unavailable right now. Try again in a moment.';
+    if (status === 409) return "This brief's asset library is full. Delete images or videos it no longer needs, then try again.";
+    return serverAuthoredMessage(err, 'The video could not be uploaded. Try again, or choose single image ads.');
+  }
+
+  /**
    * A readable reason for a refused upload. Size and type use the shared copy the pre-upload check
    * shows; an unreachable or overloaded service (0, 503 — campaign-service sheds concurrent uploads
    * with a 503) says to retry; any other refusal shows what the server wrote, since campaign-service
@@ -8818,16 +8835,6 @@ export class ImplementationTabComponent implements OnInit {
    * for a control with no pasted-URL alternative (LinkedIn, Microsoft), whose fallback says to remove
    * the image.
    */
-  /**
-   * `creativeAssetUploadErrorMessage`'s video sibling (#5764 row 18). The BFF's 413 and 415 already name the video's
-   * limit and type, so its message is shown as it came.
-   */
-  private linkedInVideoUploadErrorMessage(err: unknown): string {
-    const status = err instanceof HttpErrorResponse ? err.status : 0;
-    if (status === 0 || status === 503) return 'The video service is unavailable right now. Try again in a moment.';
-    return serverAuthoredMessage(err, 'The video could not be uploaded. Try again, or choose single image ads.');
-  }
-
   private creativeAssetUploadErrorMessage(err: unknown, offersImageUrl = true): string {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
     const alternative = offersImageUrl ? 'paste an image URL instead' : 'remove the image to continue without it';

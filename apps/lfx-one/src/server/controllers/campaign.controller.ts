@@ -3400,7 +3400,7 @@ export class CampaignController {
    * `POST /api/campaigns/brief/creative-assets?project=&brief_id=` — the raw image bytes, typed
    * `image/png` or `image/jpeg`, or the raw video bytes typed `video/mp4` (#5764 row 18), stored against the brief by campaign-service's
    * `upload-creative-asset`. Answers `{ id, mimeType, byteSize, checksum, created }` with 201 when
-   * the image was stored and 200 when an identical one already was (the id is usable either way).
+   * the asset was stored and 200 when an identical one already was (the id is usable either way).
    *
    * Refused before anything is sent upstream: EVERY capability off (`canUseRedditCreativeAssets`,
    * `canUseGoogleCreativeAssets`, `canUseMetaCreativeAssets`, `canUseLinkedInCreativeAssets`,
@@ -3452,14 +3452,15 @@ export class CampaignController {
     // no Buffer — told apart from an empty file by the declared type, not by the body.
     const declaredType = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
     const image: unknown = req.body;
-    if (!isCreativeAssetUploadMimeType(declaredType) || !Buffer.isBuffer(image)) {
-      next(this.unsupportedCreativeAsset(req, operation));
-      return;
-    }
-    // A video is stored only where something can use it: a LinkedIn video ad (#5764 row 18).
+    // A video is stored only where something can use it: a LinkedIn video ad (#5764 row 18). The route does not even
+    // read its body otherwise.
     const video = declaredType === CREATIVE_ASSET_VIDEO_MIME_TYPE;
     if (video && !canSetLinkedInVideoAds()) {
       next(this.unsupportedCreativeAsset(req, operation, true));
+      return;
+    }
+    if (!isCreativeAssetUploadMimeType(declaredType) || !Buffer.isBuffer(image)) {
+      next(this.unsupportedCreativeAsset(req, operation, video));
       return;
     }
     if (image.byteLength === 0) {

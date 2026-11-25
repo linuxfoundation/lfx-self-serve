@@ -62,6 +62,7 @@ import {
   adaptJobPollResponse,
   asResumeRefusal,
   CampaignServiceClient,
+  creativeAssetUploadBody,
   deriveEventSlug,
   briefDispatchEventName,
   fromBriefResponse,
@@ -6921,6 +6922,16 @@ describe('CampaignServiceClient creative-asset library reads', () => {
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/tlf/briefs/${BRIEF}/creative-assets`, 'GET');
     });
 
+    // A LinkedIn video (#5764 row 18) shares the store: it is left out of the images, and still counts toward the quota.
+    it('leaves a stored MP4 out of the images, keeping the quota as upstream counts it', async () => {
+      const video = { ...upstreamAsset, id: '9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f', mime_type: 'video/mp4', byte_size: 102_400 };
+      proxyRequest.mockResolvedValueOnce({ ...upstreamList, assets: [upstreamAsset, video], count: 2, bytes_used: 102_412 });
+
+      const result = await new CampaignServiceClient().listCreativeAssets(req, 'tlf', BRIEF);
+
+      expect(result).toEqual({ assets: [mappedAsset], count: 2, countLimit: 100, bytesUsed: 102_412, bytesLimit: 536870912 });
+    });
+
     // `width`/`height` are OPTIONAL upstream and absent means UNKNOWN, not 0 — the service began
     // recording them in migration 000047, so an older asset has none. A fabricated 0 would read to a
     // slot matcher as "fails every minimum", which is a different and wrong answer.
@@ -7399,5 +7410,14 @@ describe('CampaignServiceClient — create another campaign', () => {
     expect(adapted.status === 'done' && adapted.platformResults?.[0]).toEqual(
       expect.objectContaining({ reused: true, slotVersion: 2, variant: 'demand-gen', funnelStage: 'mid', tactic: 'retargeting' })
     );
+  });
+});
+
+// The upload body is written chunk by chunk into one buffer (#5764 row 18); it must be exactly the JSON it replaced.
+describe('creativeAssetUploadBody', () => {
+  it.each([0, 1, 2, 3, 4, 3 * 256 * 1024 + 1])('matches JSON.stringify for %i bytes', (size) => {
+    const bytes = Buffer.from(Array.from({ length: size }, (_v, i) => (i * 37) % 256));
+    const expected = JSON.stringify({ content_type: 'video/mp4', bytes: bytes.toString('base64') });
+    expect(creativeAssetUploadBody('video/mp4', bytes).toString('utf8')).toBe(expected);
   });
 });

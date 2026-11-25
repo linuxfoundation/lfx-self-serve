@@ -4287,6 +4287,8 @@
                   @if (linkedInVideoSelected()) {
                     <div class="flex flex-col gap-1" [attr.data-testid]="'implementation-linkedin-variant-video-upload-' + i">
                       <label class="text-xs font-medium text-gray-700" [attr.for]="'linkedin-variant-video-file-' + i">Video</label>
+                      <!-- A plain file input, as the variant's image picker beside it: one file, its own status, error and
+                         Remove below, which the shared upload wrapper's queue does not model. -->
                       <input
                         [id]="'linkedin-variant-video-file-' + i"
                         type="file"
@@ -4402,12 +4404,13 @@
                             (onClick)="retryCreateCapabilities.emit()"
                             [attr.data-testid]="'implementation-linkedin-variant-image-asset-block-retry-' + i" />
                         }
+                        <!-- The notice is about the variant's video while video ads are chosen (#5764 row 18), so Remove clears that. -->
                         <lfx-button
-                          label="Remove image"
+                          [label]="linkedInVideoSelected() ? 'Remove video' : 'Remove image'"
                           size="small"
                           severity="secondary"
                           [text]="true"
-                          (onClick)="onLinkedInVariantImageRemove(view.key)"
+                          (onClick)="onLinkedInVariantMediaRemove(view.key)"
                           [attr.data-testid]="'implementation-linkedin-variant-image-asset-block-remove-' + i" />
                       </div>
                     </div>

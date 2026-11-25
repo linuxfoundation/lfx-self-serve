@@ -207,10 +207,10 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
       expect(uploadCreativeAsset).not.toHaveBeenCalled();
     });
 
-    it('refuses an MP4 while LinkedIn video ads are off, though images are still taken', async () => {
+    it('refuses an MP4 while LinkedIn video ads are off without reading it, so even one over the limit is a 415', async () => {
       isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInVideo);
 
-      const response = await upload(MP4, 'video/mp4');
+      const response = await upload(Buffer.concat([MP4, Buffer.alloc(CREATIVE_ASSET_VIDEO_MAX_BYTES)]), 'video/mp4');
 
       expect(response.status).toBe(415);
       expect((await response.json()).error).toBe(CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE);

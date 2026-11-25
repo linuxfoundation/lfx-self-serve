@@ -37,6 +37,7 @@ import {
   googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
+  CREATIVE_ASSET_VIDEO_MIME_TYPE,
   isCreativeAssetMimeType,
   isGoogleAdsServableUrl,
   JOB_LOST_MESSAGE,
@@ -1013,6 +1014,27 @@ export function canUseMicrosoftCreativeAssets(): boolean {
  * asset stored before it has none. A fabricated 0 would read to a slot matcher as "fails every
  * minimum", which is a different and wrong answer, so an absent or unusable value stays absent.
  */
+/** Raw bytes base64-encoded per chunk: a multiple of 3, so each chunk's encoding ends without padding and they join. */
+const UPLOAD_BASE64_CHUNK_BYTES = 3 * 256 * 1024;
+
+/**
+ * The `upload-creative-asset` JSON body, `{"content_type":…,"bytes":"<base64>"}`, written straight into one buffer of its
+ * final size. A 30 MiB video (#5764 row 18) would otherwise sit in memory four times over (the bytes, the base64 string,
+ * the JSON string and its UTF-8 buffer); this holds the bytes and the body, and one chunk's string at a time.
+ */
+export function creativeAssetUploadBody(contentType: CreativeAssetUploadMimeType, bytes: Buffer): Buffer {
+  const head = Buffer.from(`{"content_type":${JSON.stringify(contentType)},"bytes":"`, 'utf8');
+  const tail = Buffer.from('"}', 'utf8');
+  const encodedLength = Math.ceil(bytes.byteLength / 3) * 4;
+  const body = Buffer.allocUnsafe(head.byteLength + encodedLength + tail.byteLength);
+  let offset = head.copy(body, 0);
+  for (let start = 0; start < bytes.byteLength; start += UPLOAD_BASE64_CHUNK_BYTES) {
+    offset += body.write(bytes.subarray(start, start + UPLOAD_BASE64_CHUNK_BYTES).toString('base64'), offset, 'latin1');
+  }
+  tail.copy(body, offset);
+  return body;
+}
+
 function toStoredCreativeAsset(asset: CampaignServiceCreativeAsset | undefined, briefId: string): StoredCreativeAsset | null {
   const usable =
     typeof asset?.id === 'string' &&
@@ -2702,7 +2724,7 @@ export class CampaignServiceClient {
     image: Buffer
   ): Promise<CreativeAssetUploadResult> {
     const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/creative-assets`;
-    const body = Buffer.from(JSON.stringify({ content_type: contentType, bytes: image.toString('base64') }), 'utf8');
+    const body = creativeAssetUploadBody(contentType, image);
 
     logger.debug(req, 'upload_creative_asset', 'Uploading creative asset to campaign-service', {
       brief_id: briefId,
@@ -2743,7 +2765,7 @@ export class CampaignServiceClient {
         operation: 'upload_creative_asset',
         service: 'campaign_service_client',
         path,
-        clientMessage: 'The image upload could not be confirmed. Please try again.',
+        clientMessage: 'The upload could not be confirmed. Please try again.',
       });
     }
 
@@ -2802,7 +2824,10 @@ export class CampaignServiceClient {
       Number.isFinite(list.bytes_used) &&
       typeof list.bytes_limit === 'number' &&
       Number.isFinite(list.bytes_limit);
-    const assets = countable ? list.assets.map((asset) => toStoredCreativeAsset(asset, briefId)) : [];
+    // A LinkedIn video (#5764 row 18) shares the brief's store but is no image any image slot or the library can use, so
+    // it is left out of `assets`. `count` and `bytesUsed` stay upstream's, since the quota counts it.
+    const images = countable ? list.assets.filter((asset) => asset?.mime_type !== CREATIVE_ASSET_VIDEO_MIME_TYPE) : [];
+    const assets = images.map((asset) => toStoredCreativeAsset(asset, briefId));
     if (!countable || assets.some((asset) => asset === null)) {
       logger.warning(req, 'list_creative_assets', 'Upstream answered the asset list with an unusable body', {
         brief_id: briefId,
