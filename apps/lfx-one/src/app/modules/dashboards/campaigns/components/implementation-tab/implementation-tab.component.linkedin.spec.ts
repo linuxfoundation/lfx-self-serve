@@ -828,6 +828,7 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
   let uploadCreativeAsset: ReturnType<typeof vi.fn>;
   let resumeCreativeAssetUpload: ReturnType<typeof vi.fn>;
   let cancelCreativeAssetUpload: ReturnType<typeof vi.fn>;
+  const videoDeleting = signal<{ briefId: string; id: string } | null>(null);
   const searchLinkedInGeoTargets = vi.fn();
 
   interface Internals {
@@ -955,6 +956,7 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
             resumeCreativeAssetUpload,
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
+            creativeVideoDeleting: videoDeleting.asReadonly(),
             getLinkedInAccounts: () => of([ACCOUNT]),
             getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
@@ -1531,6 +1533,146 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(q(f, 'implementation-linkedin-variant-image-asset-block-uploadFailed-1')).toBeNull();
       expect(at(f).canSubmit()).toBe(true);
       expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(false);
+    });
+  });
+
+  // Video ads (#5764 row 18): the file and payload rules are rows in `campaign-linkedin-video-form.utils.spec.ts`; these
+  // keep the wiring.
+  describe('videos', () => {
+    const VIDEO_ID = '9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f';
+    const mp4 = (size = 100 * 1024, name = 'promo.mp4'): File => new File([new Uint8Array(size)], name, { type: 'video/mp4' });
+    interface VideoInternals {
+      onLinkedInFormatChange(format: string): void;
+      onLinkedInVariantVideoFileChange(key: string, event: Event): void;
+    }
+    const video = (f: ComponentFixture<ImplementationTabComponent>): VideoInternals => f.componentInstance as unknown as VideoInternals;
+    const pick = (f: ComponentFixture<ImplementationTabComponent>, index: number, file: File): void =>
+      video(f).onLinkedInVariantVideoFileChange(at(f).linkedInVariants()[index].key, { target: { files: [file], value: '' } } as unknown as Event);
+
+    beforeEach(() => videoDeleting.set(null));
+
+    async function mountVideo(): Promise<ComponentFixture<ImplementationTabComponent>> {
+      const f = (await mount(true)).fixture;
+      f.componentRef.setInput('linkedInVideoAdsEnabled', true);
+      f.componentRef.setInput('linkedInVariantCopyEnabled', true);
+      fillForm(f);
+      video(f).onLinkedInFormatChange('video');
+      return f;
+    }
+
+    it('offers video ads only on an explicit yes, with a video picker in place of the image and no description', async () => {
+      const f = (await mount(true)).fixture;
+      f.componentRef.setInput('linkedInVariantCopyEnabled', true);
+      f.detectChanges();
+      expect(q(f, 'implementation-linkedin-format')).toBeNull();
+
+      f.componentRef.setInput('linkedInVideoAdsEnabled', true);
+      video(f).onLinkedInFormatChange('video');
+      f.detectChanges();
+      expect(q(f, 'implementation-linkedin-format')).not.toBeNull();
+      expect(q(f, 'implementation-linkedin-variant-video-file-0')?.getAttribute('accept')).toBe('video/mp4');
+      expect(q(f, 'implementation-linkedin-variant-image-file-0')).toBeNull();
+      expect(q(f, 'implementation-linkedin-variant-description-0')).toBeNull();
+    });
+
+    it('uploads a video for each ad and sends it with no image or description, holding Create until every ad has one', STATE_ONLY, async () => {
+      uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
+      const f = await mountVideo();
+      at(f).onLinkedInVariantTextChange(at(f).linkedInVariants()[0].key, 'description', 'Two days of talks');
+
+      pick(f, 0, mp4());
+      expect(uploadCreativeAsset).toHaveBeenCalledWith(expect.any(File), 'tlf', BRIEF_ID, 'linkedin');
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: upload a video for every ad.');
+
+      pick(f, 1, mp4());
+      expect(at(f).createBlockedReason()).toBeNull();
+      at(f).submit();
+      expect((createCampaign.mock.calls[0][0]['linkedInConfig'] as { variants: unknown[] }).variants).toEqual([
+        { introText: 'First intro', headline: 'First headline', videoAssetId: VIDEO_ID },
+        { introText: 'Second intro', headline: 'Second headline', videoAssetId: VIDEO_ID },
+      ]);
+    });
+
+    it("keeps the ad's video when a refused file is picked over it, without holding Create", STATE_ONLY, async () => {
+      uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
+      const f = await mountVideo();
+      pick(f, 0, mp4());
+      pick(f, 1, mp4());
+      uploadCreativeAsset.mockClear();
+
+      pick(f, 0, png());
+
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(at(f).linkedInImageUploadError()).toBe('Only MP4 videos can be uploaded.');
+      expect(at(f).linkedInVariants()[0]).toMatchObject({ videoAssetId: VIDEO_ID });
+      expect(at(f).createBlockedReason()).toBeNull();
+    });
+
+    it('refuses a file that is not an MP4 before uploading it', STATE_ONLY, async () => {
+      const f = await mountVideo();
+
+      pick(f, 0, png());
+
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(at(f).linkedInImageUploadError()).toBe('Only MP4 videos can be uploaded.');
+    });
+
+    it("clears the variant's video, not its image, from the notice's Remove", STATE_ONLY, async () => {
+      // A video made for another brief, as a restored draft can hold.
+      uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
+      const f = await mountVideo();
+      pick(f, 0, mp4());
+      pick(f, 1, mp4());
+      const c = f.componentInstance as unknown as {
+        linkedInVariants: { update(fn: (v: Record<string, unknown>[]) => Record<string, unknown>[]): void };
+        linkedInVariantViews(): { imageBlock: { kind: string } | null }[];
+        onLinkedInVariantMediaRemove(key: string): void;
+      };
+      c.linkedInVariants.update((variants) =>
+        variants.map((v, i) => (i === 0 ? { ...v, imageAssetId: 'img', imageAssetBriefId: BRIEF_ID, videoAssetBriefId: 'another-brief' } : v))
+      );
+      expect(c.linkedInVariantViews()[0].imageBlock?.kind).toBe('otherBrief');
+
+      c.onLinkedInVariantMediaRemove(at(f).linkedInVariants()[0].key);
+      expect(c.linkedInVariantViews()[0].imageBlock).toBeNull();
+      expect(at(f).linkedInVariants()[0]).toMatchObject({ imageAssetId: 'img', videoAssetId: '' });
+    });
+
+    it('holds the video picker while the library deletes a video, and clears a deleted video from the ads', STATE_ONLY, async () => {
+      uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
+      const f = await mountVideo();
+      const c = f.componentInstance as unknown as { onLibraryVideoDeleted(id: string): void };
+
+      videoDeleting.set({ briefId: BRIEF_ID, id: 'another-video' });
+      pick(f, 0, mp4());
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+
+      videoDeleting.set(null);
+      pick(f, 0, mp4());
+      expect(at(f).linkedInVariants()[0]).toMatchObject({ videoAssetId: VIDEO_ID });
+      c.onLibraryVideoDeleted(VIDEO_ID);
+      expect(at(f).linkedInVariants()[0]).toMatchObject({ videoAssetId: '' });
+    });
+
+    it('keeps a video in use whatever the format, until it is taken off the ads', STATE_ONLY, async () => {
+      uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
+      const f = await mountVideo();
+      pick(f, 0, mp4());
+      const c = f.componentInstance as unknown as { linkedInVideoIdsInUse(): string[]; onLibraryVideoDeleted(id: string): void };
+
+      video(f).onLinkedInFormatChange('single_image');
+      expect(c.linkedInVideoIdsInUse()).toEqual([VIDEO_ID]);
+      c.onLibraryVideoDeleted(VIDEO_ID);
+      expect(c.linkedInVideoIdsInUse()).toEqual([]);
+    });
+
+    it('holds Create, never sending image ads instead, when a video choice is no longer offered', STATE_ONLY, async () => {
+      const f = await mountVideo();
+      f.componentRef.setInput('linkedInVideoAdsEnabled', false);
+
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: video ads are not available right now. Choose single image ads as the ad format.');
+      video(f).onLinkedInFormatChange('single_image');
+      expect(at(f).createBlockedReason()).toBeNull();
     });
   });
 });

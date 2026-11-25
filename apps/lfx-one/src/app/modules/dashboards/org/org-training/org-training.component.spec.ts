@@ -3,9 +3,15 @@
 
 import { ApplicationRef, computed, signal, type WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
-import { EMPTY_ORG_TRAINING_FILTER_OPTIONS, EMPTY_ORG_TRAINING_GROUPS_RESPONSE } from '@lfx-one/shared/constants';
+import { ActivatedRoute, convertToParamMap, NavigationEnd, provideRouter, Router } from '@angular/router';
+import {
+  EMPTY_ORG_TRAINING_FILTER_OPTIONS,
+  EMPTY_ORG_TRAINING_GROUPS_RESPONSE,
+  ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE,
+  ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE,
+} from '@lfx-one/shared/constants';
 import type { Account, OrgLensEmptyStateName, OrgTrainingStats } from '@lfx-one/shared/interfaces';
+import { isOrgRollUpSegment, orgRollUpAccount } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
@@ -84,7 +90,7 @@ async function render(
       provideRouter([]),
       MessageService,
       { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: queryParamMap$.value }, queryParamMap: queryParamMap$.asObservable() } },
-      { provide: AccountContextService, useValue: { selectedAccount } },
+      { provide: AccountContextService, useValue: { selectedAccount, isRollUp: computed(() => isOrgRollUpSegment(selectedAccount().uid)) } },
       { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
       {
         provide: OrgLensEmptyStateService,
@@ -465,6 +471,200 @@ describe('OrgTrainingComponent — organization switch', () => {
     const extras = navigate.mock.calls[0][1] as { queryParams: Record<string, unknown>; queryParamsHandling: string };
     expect(extras.queryParamsHandling).toBe('merge');
     expect(extras.queryParams).toMatchObject({ range: '90d', foundation: null, trainingProject: null, course: null, level: null, format: null });
+    navigate.mockRestore();
+  });
+});
+
+describe('OrgTrainingComponent — family roll-up', () => {
+  const ROLL_UP = orgRollUpAccount('001000000000000AAA', 'Acme');
+  const ACME_INC = { accountId: '001000000000000AAA', name: 'Acme' };
+  const ACME_LABS = { accountId: '001000000000000BBB', name: 'Acme Labs' };
+  const ROLL_UP_STATS: OrgTrainingStats = { ...STATS, organizations: [ACME_INC, ACME_LABS], rollUp: { complete: true, excludedCount: 0 } };
+  const appRef = () => TestBed.inject(ApplicationRef);
+  const settle = async (fixture: { detectChanges: () => void }) => {
+    await appRef().whenStable();
+    fixture.detectChanges();
+  };
+
+  it('reads the family figures, offers a Company filter of the roll-up and describes the companies', async () => {
+    const { el, trainingService } = await render(null, { stats: ROLL_UP_STATS, selectedAccount: signal<Account>(ROLL_UP) });
+
+    expect(trainingService.getTrainingStats).toHaveBeenCalledTimes(1);
+    expect(trainingService.getTrainingStats).toHaveBeenCalledWith(ROLL_UP.uid, expect.objectContaining({ range: '730d' }));
+    expect(el.querySelector('[data-test="org-training-company-filter"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-training-subtitle"]')?.textContent).toContain('across your companies');
+    expect(el.querySelector('[data-testid="org-training-stat-roster-members-value"]')?.textContent?.trim()).toBe('1,250');
+    expect(el.querySelector('[data-testid="org-training-roll-up-notice"]')).toBeNull();
+  });
+
+  it('narrows the stats and the table to a picked company of the roll-up, once the roll-up names its companies', async () => {
+    const { trainingService } = await render(null, {
+      stats: ROLL_UP_STATS,
+      selectedAccount: signal<Account>(ROLL_UP),
+      params: { company: ACME_LABS.accountId },
+    });
+
+    expect(trainingService.getTrainingStats).toHaveBeenCalledTimes(2);
+    expect(trainingService.getTrainingStats).toHaveBeenNthCalledWith(1, ROLL_UP.uid, expect.anything());
+    expect(trainingService.getTrainingStats).toHaveBeenLastCalledWith(ROLL_UP.uid, expect.anything(), ACME_LABS.accountId);
+    for (const call of trainingService.getGroups.mock.calls as unknown[][]) expect(call[2]).toMatchObject({ company: ACME_LABS.accountId });
+  });
+
+  it("does not show the family's numbers under a picked company", async () => {
+    const responses = [new Subject<OrgTrainingStats>(), new Subject<OrgTrainingStats>()];
+    let call = 0;
+    const { el, fixture } = await render(null, {
+      selectedAccount: signal<Account>(ROLL_UP),
+      params: { company: ACME_LABS.accountId },
+      statsFor: () => responses[call++].asObservable(),
+    });
+    const rosterValue = () => el.querySelector('[data-testid="org-training-stat-roster-members-value"]')?.textContent?.trim();
+
+    responses[0].next(ROLL_UP_STATS);
+    responses[0].complete();
+    await settle(fixture);
+    expect(rosterValue()).toBe('—');
+
+    responses[1].next({ ...ROLL_UP_STATS, rosterMembers: 40 });
+    responses[1].complete();
+    await settle(fixture);
+    expect(rosterValue()).toBe('40');
+  });
+
+  it('drops a company outside the roll-up from the URL and reads every organization', async () => {
+    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    const { trainingService } = await render(null, {
+      stats: ROLL_UP_STATS,
+      selectedAccount: signal<Account>(ROLL_UP),
+      params: { company: '001000000000000ZZZ' },
+    });
+
+    expect(trainingService.getTrainingStats).toHaveBeenCalledTimes(1);
+    expect(trainingService.getTrainingStats).toHaveBeenCalledWith(ROLL_UP.uid, expect.anything());
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { company: null }, queryParamsHandling: 'merge' }));
+    navigate.mockRestore();
+  });
+
+  it('writes a Company pick to the URL', async () => {
+    const { fixture } = await render(null, { stats: ROLL_UP_STATS, selectedAccount: signal<Account>(ROLL_UP) });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    (
+      fixture.componentInstance as unknown as { companyForm: { controls: { company: { setValue: (value: string) => void } } } }
+    ).companyForm.controls.company.setValue(ACME_INC.accountId);
+
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { company: ACME_INC.accountId }, queryParamsHandling: 'merge', replaceUrl: true })
+    );
+  });
+
+  it('says when some of the family is left out, or could not all be loaded', async () => {
+    const { el } = await render(null, {
+      stats: { ...ROLL_UP_STATS, rollUp: { complete: false, excludedCount: 2 } },
+      selectedAccount: signal<Account>(ROLL_UP),
+    });
+    const notice = el.querySelector('[data-testid="org-training-roll-up-notice"]')?.textContent ?? '';
+
+    expect(notice).toContain(ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE);
+    expect(notice).toContain(ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE);
+  });
+
+  it('shows the error state, not zeros, when the family stats fail', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { el } = await render(null, { selectedAccount: signal<Account>(ROLL_UP), statsFor: () => throwError(() => new Error('boom')) });
+
+    expect(el.querySelector('[data-testid="org-training-stats-error"]')).not.toBeNull();
+    expect(el.querySelector('lfx-org-training-stats')).toBeNull();
+    error.mockRestore();
+  });
+
+  it('hides the table, not a spinner, while a picked company cannot be checked because the stats failed, and Retry restores it', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let attempts = 0;
+    const { el, fixture, trainingService } = await render(null, {
+      selectedAccount: signal<Account>(ROLL_UP),
+      params: { company: ACME_LABS.accountId },
+      statsFor: () => (++attempts === 1 ? throwError(() => new Error('boom')) : of(ROLL_UP_STATS)),
+    });
+
+    expect(el.querySelector('[data-testid="org-training-stats-error"]')).not.toBeNull();
+    expect(el.querySelector('lfx-org-training-groups-table')).toBeNull();
+    expect(trainingService.getGroups).not.toHaveBeenCalled();
+
+    (el.querySelector('[data-testid="org-training-stats-retry"] button') as HTMLButtonElement).click();
+    await settle(fixture);
+
+    expect(el.querySelector('lfx-org-training-groups-table')).not.toBeNull();
+    expect(trainingService.getGroups).toHaveBeenLastCalledWith(ROLL_UP.uid, expect.anything(), expect.objectContaining({ company: ACME_LABS.accountId }));
+    error.mockRestore();
+  });
+
+  it('writes a company picked again after a query-only navigation moved the URL off it', async () => {
+    const { fixture, queryParamMap$ } = await render(null, { stats: ROLL_UP_STATS, selectedAccount: signal<Account>(ROLL_UP) });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const companyControl = (fixture.componentInstance as unknown as { companyForm: { controls: { company: { setValue: (value: string) => void } } } })
+      .companyForm.controls.company;
+
+    companyControl.setValue(ACME_INC.accountId);
+    queryParamMap$.next(convertToParamMap({ company: ACME_LABS.accountId }));
+    await settle(fixture);
+    navigate.mockClear();
+
+    companyControl.setValue(ACME_INC.accountId);
+
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { company: ACME_INC.accountId } }));
+  });
+
+  describe('while another navigation (an org switch) is in flight', () => {
+    const endNavigation = async (fixture: { detectChanges: () => void }) => {
+      (TestBed.inject(Router).events as Subject<unknown>).next(new NavigationEnd(1, '/', '/'));
+      await Promise.resolve();
+      await settle(fixture);
+    };
+
+    it('waits for it to settle before dropping a company outside the roll-up', async () => {
+      const inFlight = vi.spyOn(Router.prototype, 'getCurrentNavigation').mockReturnValue({} as never);
+      const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+      const { fixture } = await render(null, { stats: ROLL_UP_STATS, selectedAccount: signal<Account>(ROLL_UP), params: { company: '001000000000000ZZZ' } });
+      expect(navigate).not.toHaveBeenCalled();
+
+      inFlight.mockReturnValue(null);
+      await endNavigation(fixture);
+
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { company: null } }));
+      inFlight.mockRestore();
+      navigate.mockRestore();
+    });
+
+    it('drops nothing once that navigation already left the company behind', async () => {
+      const inFlight = vi.spyOn(Router.prototype, 'getCurrentNavigation').mockReturnValue({} as never);
+      const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+      const { fixture, queryParamMap$ } = await render(null, {
+        stats: ROLL_UP_STATS,
+        selectedAccount: signal<Account>(ROLL_UP),
+        params: { company: '001000000000000ZZZ' },
+      });
+
+      queryParamMap$.next(convertToParamMap({}));
+      await settle(fixture);
+      inFlight.mockReturnValue(null);
+      await endNavigation(fixture);
+
+      expect(navigate).not.toHaveBeenCalled();
+      inFlight.mockRestore();
+      navigate.mockRestore();
+    });
+  });
+
+  it('offers no Company filter and sends no company on a single organization, whatever the URL says', async () => {
+    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    const { el, trainingService } = await render(null, { stats: STATS, params: { company: ACME_LABS.accountId } });
+
+    expect(el.querySelector('[data-test="org-training-company-filter"]')).toBeNull();
+    expect(trainingService.getTrainingStats).toHaveBeenCalledWith('org-uid-1', expect.anything());
+    for (const call of trainingService.getGroups.mock.calls as unknown[][]) expect(call[2]).not.toHaveProperty('company');
+    expect(el.querySelector('[data-testid="org-training-subtitle"]')?.textContent).toContain('across your company.');
     navigate.mockRestore();
   });
 });

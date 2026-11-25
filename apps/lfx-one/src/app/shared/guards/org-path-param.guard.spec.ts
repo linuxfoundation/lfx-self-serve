@@ -8,6 +8,7 @@ import { ActivatedRouteSnapshot, convertToParamMap, provideRouter, Router, Route
 import { Account, OrgResolveResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgClaOnlyAccessService } from '@shared/services/org-cla-only-access.service';
+import { OrgLensViewModeService } from '@shared/services/org-lens-view-mode.service';
 import { OrgSlugResolverService } from '@shared/services/org-slug-resolver.service';
 import { firstValueFrom, Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
@@ -30,6 +31,8 @@ describe('orgPathParamGuard', () => {
   let refreshCanonicalRecord: Mock;
   let resolve: Mock;
   let noteAddressed: Mock;
+  let noteFullAccessAddressed: Mock;
+  let noteViewModeAddressed: Mock;
   let selectRollUp: Mock;
   let setAccount: Mock;
   let demoteAddressedRollUp: Mock;
@@ -72,6 +75,8 @@ describe('orgPathParamGuard', () => {
     refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
     resolve = vi.fn().mockReturnValue(of(null));
     noteAddressed = vi.fn();
+    noteFullAccessAddressed = vi.fn();
+    noteViewModeAddressed = vi.fn();
     selectRollUp = vi.fn(() => true);
     setAccount = vi.fn((next: Account) => selectedAccount.set(next));
     demoteAddressedRollUp = vi.fn(() => null);
@@ -95,6 +100,7 @@ describe('orgPathParamGuard', () => {
         },
         { provide: OrgSlugResolverService, useValue: { resolve } },
         { provide: OrgClaOnlyAccessService, useValue: { noteAddressed } },
+        { provide: OrgLensViewModeService, useValue: { noteAddressed: noteViewModeAddressed, noteFullAccessAddressed } },
       ],
     });
     router = TestBed.inject(Router);
@@ -255,16 +261,42 @@ describe('orgPathParamGuard', () => {
       expect(await outcome(UID_B, `/company/${UID_B}/people`)).toBe(true);
     });
 
+    it('records a full-access answer from the resolver, so an authorizer reader who also manages CLAs is not CLA-only', async () => {
+      resolve.mockReturnValueOnce(of({ ...hit(UID_B, null), fullAccess: true }));
+      await outcome(UID_B, `/company/${UID_B}/people`);
+      expect(noteFullAccessAddressed).toHaveBeenLastCalledWith(UID_B, true);
+      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, false, false);
+    });
+
+    it('records an employee-view answer from the resolver', async () => {
+      resolve.mockReturnValueOnce(of({ ...hit(UID_B, null), employeeView: true }));
+      await outcome(UID_B, `/company/${UID_B}/overview`);
+      expect(noteViewModeAddressed).toHaveBeenLastCalledWith(UID_B, true);
+    });
+
     it('records whether the resolved organization is CLA-only, before adopting it', async () => {
       resolve.mockReturnValueOnce(of({ ...hit(UID_B, null), claOnly: true }));
       await outcome(UID_B, `/company/${UID_B}/easycla`);
-      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, true);
+      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, true, false);
       expect(noteAddressed.mock.invocationCallOrder[0]).toBeLessThan(adoptFromAddress.mock.invocationCallOrder[0]);
 
       selectedAccount.set(placeholder);
       resolve.mockReturnValueOnce(of(hit(UID_B, null)));
       await outcome(UID_B, `/company/${UID_B}/people`);
-      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, false);
+      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, false, false);
+    });
+
+    it('leaves a held employee or full-access mode alone for a CLA-only answer the employee lookup did not confirm', async () => {
+      resolve.mockReturnValueOnce(of({ ...hit(UID_B, null), claOnly: true }));
+      await outcome(UID_B, `/company/${UID_B}/easycla`);
+      expect(noteViewModeAddressed).not.toHaveBeenCalled();
+      expect(noteFullAccessAddressed).not.toHaveBeenCalled();
+
+      selectedAccount.set(placeholder);
+      resolve.mockReturnValueOnce(of({ ...hit(UID_B, null), claOnly: true, employeeViewChecked: true }));
+      await outcome(UID_B, `/company/${UID_B}/easycla`);
+      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, true, true);
+      expect(noteViewModeAddressed).toHaveBeenLastCalledWith(UID_B, false);
     });
 
     it('lands on not-found for a miss (404/409 surface as null) without touching the selection (FR-024)', async () => {

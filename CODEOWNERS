@@ -1,1 +1,6 @@
 * @linuxfoundation/lfx-platform
+
+# Event share kit content and graphics (#6062): the content owner can approve copy-only PRs;
+# the platform team stays an owner as a fallback.
+/apps/lfx-one/content/events/ @ccraigross @linuxfoundation/lfx-platform
+/apps/lfx-one/public/share-kits/ @ccraigross @linuxfoundation/lfx-platform

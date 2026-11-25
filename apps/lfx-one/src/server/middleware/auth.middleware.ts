@@ -75,6 +75,12 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // above (no deeper route exists) so a nested path fails closed to `required`.
   { pattern: /^\/projects\/[^/]+\/calendar\/?$/, type: 'ssr', auth: 'optional' },
 
+  // Public event share kit (#6059) — copy-ready posts, graphics and CFP invite for an event. Anchored to the
+  // exact `/events/:eventSlug/share-kit` shape so a nested path such as `/events/x/share-kit/extra` and the
+  // in-shell `/events` dashboard stay `required`. The slug class is the content slug alphabet (lowercase
+  // letters, digits, hyphens), so an encoded `%2F` or any other escape in the segment fails closed.
+  { pattern: /^\/events\/[a-z0-9-]+\/share-kit\/?$/, type: 'ssr', auth: 'optional' },
+
   // Flow C callback via /passwordless/callback — needs session auth but no bearer token
   { pattern: '/passwordless/callback', type: 'ssr', auth: 'required', tokenRequired: false },
 

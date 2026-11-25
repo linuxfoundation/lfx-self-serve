@@ -12987,6 +12987,65 @@ describe('CampaignController.createCampaign Reddit conversion pixel', () => {
 });
 
 /**
+ * `redditConfig.conversionEvent` (#6108 row 2): refused, never dropped, while this deployment cannot send it, and
+ * forwarded as typed once it can. The rules themselves are table rows in `campaign-reddit-conversion-event.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit conversion event', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('refuses a conversion event while the flag is off, creating nothing', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditConversionEvent);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, objective: 'conversions', conversionEvent: 'LEAD' } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'redditConfig.conversionEvent',
+        message: 'Reddit conversion events are not enabled on this deployment. Reload the page and create again.',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+
+  it('forwards the conversion event untouched once the flag is on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, objective: 'conversions', conversionEvent: 'LEAD' } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']['conversionEvent']).toBe('LEAD');
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * `metaConfig.variants[].imageAssetId` is honoured only by campaign-service, so it is refused — not
  * dropped — unless the create cutover AND the Meta-assets flag are on, on the Reddit field's terms.
  * A pasted `imageUrl` is not gated here: the form withholds it while `metaCreativeEnabled` is off.

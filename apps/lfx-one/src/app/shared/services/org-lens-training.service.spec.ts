@@ -43,4 +43,29 @@ describe('OrgLensTrainingService', () => {
     expect(employees.request.urlWithParams).toContain('groupValue=C%2B%2B');
     employees.flush({});
   });
+
+  it('sends a roll-up company on the stats, the groups and the drawer, and none without one', () => {
+    const rollUp = 'family-001000000000000AAA';
+    const company = { accountId: '001000000000000BBB', name: 'Acme Labs' };
+
+    service.getTrainingStats(rollUp, QUERY, company.accountId).subscribe();
+    const stats = http.expectOne((req) => req.url === `/api/orgs/${rollUp}/lens/training/stats`);
+    expect(stats.request.params.get('company')).toBe(company.accountId);
+    stats.flush({});
+
+    service.getGroups(rollUp, QUERY, { groupBy: 'course', tab: 'trainings', company: company.accountId }).subscribe();
+    const groups = http.expectOne((req) => req.url.endsWith('/groups'));
+    expect(groups.request.params.get('company')).toBe(company.accountId);
+    groups.flush({});
+
+    service.getGroupEmployees(rollUp, QUERY, { groupBy: 'course', groupValue: 'C', tab: 'trainings', status: 'completed', company }).subscribe();
+    const employees = http.expectOne((req) => req.url.endsWith('/groups/employees'));
+    expect(employees.request.params.get('company')).toBe(company.accountId);
+    employees.flush({});
+
+    service.getTrainingStats('org-1', QUERY).subscribe();
+    const single = http.expectOne((req) => req.url.endsWith('/stats'));
+    expect(single.request.params.has('company')).toBe(false);
+    single.flush({});
+  });
 });

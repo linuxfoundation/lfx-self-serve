@@ -311,6 +311,18 @@ export enum ServerFeatureFlag {
   CampaignServiceRedditAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS',
 
   /**
+   * Reddit conversion event (#6108 row 2): accept `redditConfig.conversionEvent`, the pixel event a `conversions`
+   * campaign optimizes toward (campaign-service #549), and offer its picker on the Implement tab.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_CONVERSION_EVENT_ENABLED` on,
+   * since campaign-service refuses the field with a 400 otherwise, and is only meaningful while the create cutover is on
+   * (`cutoverOwnsCreate`): the legacy creator ignores it. Off (the default), the picker is hidden and the create route
+   * refuses the field with a 400, never dropping it. Keep it off until campaign-service's flag is on and its live probe
+   * has passed. A request field only, so flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceRedditConversionEvent = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT',
+
+  /**
    * Offers a stored-image LIBRARY in each Google creative image slot — upload an image into the
    * brief's library, or pick a stored one that fits the slot — sent as `{ imageAssetId }` entries in
    * the slot's own array beside any pasted image URLs (`demandGenCreative.logoImages`,
@@ -428,6 +440,32 @@ export enum ServerFeatureFlag {
    * field only, so flipping it back strands nothing. Same accepted values as the flags above.
    */
   CampaignServiceLinkedInTextAds = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS',
+
+  /**
+   * LinkedIn video ads, LF's "Motion" (#5764 row 18): accept `linkedInConfig.variants[i].videoAssetId`, an MP4 uploaded
+   * to the brief, which makes the campaign a SINGLE_VIDEO one.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 DEPLOYED with `LINKEDIN_ADS_VIDEO_ENABLED`
+   * on, since campaign-service refuses the field with a 400 otherwise, and is only meaningful while the LinkedIn creative
+   * asset path is on (`canUseLinkedInCreativeAssets`): the legacy creator would make an image campaign instead. Off (the
+   * default), the create route refuses the field with a 400, never dropping it. Keep it off until campaign-service's
+   * paused video probe has passed (linuxfoundation/lfx-v2-campaign-service#646). A request field only, so flipping it
+   * back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInVideo = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO',
+
+  /**
+   * LinkedIn target cost (linuxfoundation/lfx-v2-campaign-service#674): accept `linkedInConfig.bidding.targetAmount`,
+   * automatic bidding's target in USD, which campaign-service sends as the campaign's `unitCost`.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `LINKEDIN_ADS_TARGET_COST_ENABLED` on,
+   * since campaign-service refuses the field with a 400 otherwise, and is only meaningful while bidding is on
+   * (`canCreateWithBidding`): the target travels inside `bidding`. Off (the default), the create route refuses the field
+   * with a 400, never dropping it. Keep it off until campaign-service's paused target-cost probe has passed (LinkedIn does
+   * not document `unitCost` on a `MAX_*` campaign). A request field only, so flipping it back strands nothing. Same
+   * accepted values as the flags above.
+   */
+  CampaignServiceLinkedInTargetCost = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGET_COST',
 
   /**
    * LinkedIn custom targeting (#5764 rows 8–11): accept `linkedInConfig.targeting`, the campaign's own include clauses
@@ -929,6 +967,29 @@ export enum ServerFeatureFlag {
    * Removing the knob is part of that same step.
    */
   OrgEasyclaReturnInPath = 'ORG_EASYCLA_RETURN_IN_PATH',
+
+  /**
+   * Opens the Company Lens "all employee view" (epic #5845): the `employee-view` qualification of
+   * `assertOrgLensRead` and the `employeeView` verdict on `GET /api/orgs/me/role-grants`.
+   *
+   * OFF by default, and the reason is sequencing, not caution about the feature itself: the gate lands
+   * before the per-page stories (#5847 onward) that redact each lens endpoint, so with this ON and a page
+   * not yet redacted, an employee would read that page's full data. Turn it ON only once every page story
+   * has shipped. OFF is a complete no-op: no extra lookup runs and the lens behaves exactly as before.
+   */
+  OrgLensEmployeeView = 'LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED',
+
+  /**
+   * A staff-only preview of the all employee view (epic #5845): the view opens ONLY for a request made under an active
+   * impersonation session, so LF staff can impersonate an employee and see exactly what that employee would see in
+   * production, while no real employee is ever let in. Real, non-impersonating callers are answered as if the view did
+   * not exist (the ordinary 403 or no row).
+   *
+   * Independent of `OrgLensEmployeeView`, and ignored when that flag is on (it already opens the view for everyone).
+   * Use {@link isOrgLensEmployeeViewEnabled} (`org-lens-employee-view-flag.helper.ts`) rather than reading either flag
+   * directly. OFF by default; same accepted values as the flags above.
+   */
+  OrgLensEmployeeViewImpersonationOnly = 'LFX_ORG_LENS_EMPLOYEE_VIEW_IMPERSONATION_ONLY',
 }
 
 /**

@@ -46,6 +46,10 @@ describe('AccountContextService — address-adopted selection', () => {
     inheritedAuditorSet: WritableSignal<Set<string>>;
     isStaff: WritableSignal<boolean>;
     claManagerOrgSet: WritableSignal<Set<string>>;
+    employeeViewOrgUid: WritableSignal<string | null>;
+    employeeViewOrgUids: WritableSignal<ReadonlySet<string>>;
+    fullAccessOrgUid: WritableSignal<string | null>;
+    fullAccessOrgUids: WritableSignal<ReadonlySet<string>>;
   };
 
   beforeEach(() => {
@@ -57,6 +61,10 @@ describe('AccountContextService — address-adopted selection', () => {
       inheritedAuditorSet: signal(new Set<string>()),
       isStaff: signal(false),
       claManagerOrgSet: signal(new Set<string>()),
+      employeeViewOrgUid: signal<string | null>(null),
+      employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+      fullAccessOrgUid: signal<string | null>(null),
+      fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -259,6 +267,26 @@ describe('AccountContextService — address-adopted selection', () => {
       grants.claManagerOrgSet.set(new Set([UID_A]));
       expect(service.hasOrgSelectorAccess()).toBe(true);
     });
+
+    it('is true for an all employee view company alone (#5845)', () => {
+      grants.employeeViewOrgUid.set(UID_A);
+      grants.employeeViewOrgUids.set(new Set([UID_A]));
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
+
+    it('is true for an addressed employee view company when role-grants never published one (#5845)', () => {
+      expect(service.hasOrgSelectorAccess()).toBe(false);
+
+      grants.employeeViewOrgUids.set(new Set([UID_A]));
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
+
+    it('is true for a company read in full through the authorizer alone (#5845)', () => {
+      expect(service.hasOrgSelectorAccess()).toBe(false);
+
+      grants.fullAccessOrgUids.set(new Set([UID_A]));
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
   });
 
   // lfx-self-serve#2570 (prod): the org-items default (or the guard's already-selected shortcut) pins
@@ -419,7 +447,16 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
         { provide: AnalyticsService, useValue: { getOrgLensAccountContext } },
         {
           provide: OrgRoleGrantsService,
-          useValue: { writerSet: signal(new Set()), auditorSet: signal(new Set()), isStaff: signal(false), claManagerOrgSet: signal(new Set()) },
+          useValue: {
+            writerSet: signal(new Set()),
+            auditorSet: signal(new Set()),
+            isStaff: signal(false),
+            claManagerOrgSet: signal(new Set()),
+            employeeViewOrgUid: signal(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            fullAccessOrgUid: signal<string | null>(null),
+            fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
+          },
         },
         {
           provide: OrgRollUpFamiliesService,
@@ -558,6 +595,10 @@ describe('AccountContextService — family roll-up', () => {
     inheritedAuditorSet: WritableSignal<Set<string>>;
     isStaff: WritableSignal<boolean>;
     claManagerOrgSet: WritableSignal<Set<string>>;
+    employeeViewOrgUid: WritableSignal<string | null>;
+    employeeViewOrgUids: WritableSignal<ReadonlySet<string>>;
+    fullAccessOrgUid: WritableSignal<string | null>;
+    fullAccessOrgUids: WritableSignal<ReadonlySet<string>>;
     loaded: WritableSignal<boolean>;
     lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
     staffCheck: WritableSignal<OrgLensStaffCheck>;
@@ -619,6 +660,10 @@ describe('AccountContextService — family roll-up', () => {
       inheritedAuditorSet: signal(new Set<string>()),
       isStaff: signal(false),
       claManagerOrgSet: signal(new Set<string>()),
+      employeeViewOrgUid: signal<string | null>(null),
+      employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+      fullAccessOrgUid: signal<string | null>(null),
+      fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
       loaded: signal(true),
       lookupOutcome: signal<OrgLensLookupOutcome>('ok'),
       staffCheck: signal<OrgLensStaffCheck>('ok'),
@@ -1810,6 +1855,23 @@ describe('AccountContextService — family roll-up', () => {
       service.selectRollUp(ROOT, { admitWhilePending: true });
       service.initializeUserOrganizations([]);
       claOnlyOrgUids.set(new Set([UID_A]));
+
+      expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
+    });
+
+    // #5845 — a company read in full through the authorizer alone (never in a grant set) is still a real address.
+    it('keeps a full-access company the caller is already addressing, and counts it as addressable', () => {
+      grants.fullAccessOrgUids.set(new Set([UID_A]));
+      service.adoptFromAddress({ accountId: UID_A, accountName: 'Alpha', membershipTier: '', uid: UID_A, slug: 'alpha-inc' });
+      service.initializeUserOrganizations([]);
+
+      expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
+    });
+
+    it('falls back to a full-access company rather than the not-found dead end', () => {
+      service.selectRollUp(ROOT, { admitWhilePending: true });
+      service.initializeUserOrganizations([]);
+      grants.fullAccessOrgUids.set(new Set([UID_A]));
 
       expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
     });

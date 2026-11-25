@@ -11,6 +11,7 @@ import type {
   LinkedInDraftState,
   LinkedInVariantDraft,
 } from '../interfaces/campaign.interface';
+import { linkedInObjectiveDraftFromStored } from './campaign-linkedin-objective-form.utils';
 import { linkedInTargetingDraftFromStored } from './campaign-linkedin-targeting-form.utils';
 
 /**
@@ -52,6 +53,7 @@ export function linkedInDraftFields(
   | 'linkedInTextAds'
   | 'linkedInCustomTargeting'
   | 'linkedInTargetingDraft'
+  | 'linkedInObjectiveDraft'
 > {
   return {
     linkedInBudgetUsd: state.budgetUsd,
@@ -67,6 +69,7 @@ export function linkedInDraftFields(
     linkedInTextAds: state.textAds.map((ad) => ({ ...ad })),
     linkedInCustomTargeting: state.customTargeting,
     linkedInTargetingDraft: structuredClone(state.targetingDraft),
+    linkedInObjectiveDraft: { ...state.objectiveDraft, conversions: [...state.objectiveDraft.conversions] },
   };
 }
 
@@ -90,8 +93,10 @@ export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraf
   if (draft.linkedInImageUploadFailedMessage && draft.linkedInImageUploadFailedBriefId) {
     restore.failedUpload = { message: draft.linkedInImageUploadFailedMessage, briefId: draft.linkedInImageUploadFailedBriefId };
   }
-  // Text Ads (#5764 row 19): present-only, so an older draft keeps the single-image default. An unknown format restores nothing.
-  if (draft.linkedInFormat === 'single_image' || draft.linkedInFormat === 'text') restore.format = draft.linkedInFormat;
+  // Text Ads (#5764 row 19) and video ads (row 18): present-only, so an older draft keeps the single-image default. An
+  // unknown format restores nothing.
+  const format = draft.linkedInFormat;
+  if (format === 'single_image' || format === 'text' || format === 'video') restore.format = format;
   // Only entries whose fields are all text: a draft is replayed from stored JSON whose inner shape is not validated.
   if (Array.isArray(draft.linkedInTextAds)) {
     restore.textAds = draft.linkedInTextAds
@@ -107,6 +112,9 @@ export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraf
   if (typeof draft.linkedInCustomTargeting === 'boolean') restore.customTargeting = draft.linkedInCustomTargeting;
   const targetingDraft = linkedInTargetingDraftFromStored(draft.linkedInTargetingDraft);
   if (targetingDraft) restore.targetingDraft = targetingDraft;
+  // The objective and conversion rules (#5764 rows 2 and 4): present-only, so an older draft keeps the default.
+  const objectiveDraft = linkedInObjectiveDraftFromStored(draft.linkedInObjectiveDraft);
+  if (objectiveDraft) restore.objectiveDraft = objectiveDraft;
   if (draft.linkedInImageUploadPendingName) {
     restore.pendingUpload = { name: draft.linkedInImageUploadPendingName, briefId: draft.linkedInImageUploadPendingBriefId ?? '' };
   }

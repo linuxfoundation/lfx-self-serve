@@ -6,7 +6,7 @@
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Params, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -59,6 +59,8 @@ export class OrgTrainingFilterBarComponent {
   private readonly router = inject(Router);
 
   public readonly showGroupBy = input<boolean>(false);
+  /** URL params of filters the host page projects into the row (e.g. a Company pick): one that is set enables Clear all, which removes it. */
+  public readonly projectedFilterParams = input<readonly string[]>([]);
 
   protected readonly moreFiltersExpanded = signal(false);
 
@@ -75,10 +77,8 @@ export class OrgTrainingFilterBarComponent {
     groupBy: new FormControl<string>('', { nonNullable: true }),
   });
 
-  private readonly state: Signal<OrgTrainingViewState> = toSignal(
-    this.route.queryParamMap.pipe(map((params) => parseOrgTrainingViewState((key) => params.get(key)))),
-    { initialValue: parseOrgTrainingViewState((key) => this.route.snapshot.queryParamMap.get(key)) }
-  );
+  private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+  private readonly state: Signal<OrgTrainingViewState> = computed(() => parseOrgTrainingViewState((key) => this.queryParamMap().get(key)));
   private readonly range: Signal<OrgLensTimeRange> = computed(() => this.state().range);
   private readonly orgUid: Signal<string> = computed(() => this.accountContext.selectedAccount().uid ?? '');
   /** Re-reads the options of the current org and range (the inline Retry). */
@@ -89,7 +89,10 @@ export class OrgTrainingFilterBarComponent {
   /** The options read failed: the dropdowns hold only "All" and the current pick until Retry succeeds. */
   protected readonly optionsFailed: Signal<boolean> = computed(() => this.optionsLoad().failed);
 
-  protected readonly hasFilter: Signal<boolean> = computed(() => hasOrgTrainingFilter(this.state()));
+  private readonly hasCourseFilter: Signal<boolean> = computed(() => hasOrgTrainingFilter(this.state()));
+  protected readonly hasFilter: Signal<boolean> = computed(
+    () => this.hasCourseFilter() || this.projectedFilterParams().some((param) => !!this.queryParamMap().get(param))
+  );
   /** Filters set behind the toggle, so a pick from the URL is never invisible while it is collapsed. */
   protected readonly hiddenFilterCount: Signal<number> = computed(() => ORG_TRAINING_FILTER_KEYS.filter((key) => this.state()[key] !== null).length);
   protected readonly foundationOptions = this.withAll('All Foundations', 'foundations', 'foundation');
@@ -127,7 +130,7 @@ export class OrgTrainingFilterBarComponent {
         takeUntilDestroyed()
       )
       .subscribe(() => {
-        if (this.hasFilter()) this.clearAll();
+        if (this.hasCourseFilter()) this.navigate(this.withoutCourseFilters());
       });
 
     // Form → URL.
@@ -135,7 +138,7 @@ export class OrgTrainingFilterBarComponent {
   }
 
   protected clearAll(): void {
-    this.navigate({ ...this.state(), foundation: null, project: null, course: null, level: null, format: null });
+    this.navigate(this.withoutCourseFilters(), Object.fromEntries(this.projectedFilterParams().map((param) => [param, null])));
   }
 
   protected retryOptions(): void {
@@ -157,9 +160,13 @@ export class OrgTrainingFilterBarComponent {
     return parseOrgTrainingViewState((key) => params[key]);
   }
 
-  /** Writes the state to the URL, leaving every other query param (the page's `tab`, …) alone; `groupBy` only when this bar owns it. */
-  private navigate(next: OrgTrainingViewState): void {
-    const queryParams = serializeOrgTrainingViewState(next);
+  private withoutCourseFilters(): OrgTrainingViewState {
+    return { ...this.state(), foundation: null, project: null, course: null, level: null, format: null };
+  }
+
+  /** Writes the state (plus `extra` params) to the URL, leaving every other query param (the page's `tab`, …) alone; `groupBy` only when this bar owns it. */
+  private navigate(next: OrgTrainingViewState, extra: Params = {}): void {
+    const queryParams: Params = { ...serializeOrgTrainingViewState(next), ...extra };
     if (!this.showGroupBy()) delete queryParams[ORG_TRAINING_VIEW_QUERY_PARAMS.groupBy];
     void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
   }

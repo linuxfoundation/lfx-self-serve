@@ -195,7 +195,9 @@ export function stubCreativeLibraryUpload(): void {
       set: {
         template: '',
         imports: [],
-        providers: [{ provide: CampaignService, useValue: { creativeAssetUploadQueue: () => [], listCreativeAssets: () => NEVER } }],
+        providers: [
+          { provide: CampaignService, useValue: { creativeAssetUploadQueue: () => [], listCreativeAssets: () => NEVER, creativeVideoDeleting: () => null } },
+        ],
       },
     });
   });

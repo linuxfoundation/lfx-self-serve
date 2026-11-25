@@ -1,11 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Committee, CommitteeServiceOrgSeat, OrgLensGroupsResponse, OrgLensGroupSummary } from '@lfx-one/shared/interfaces';
+import type { Committee, CommitteeServiceOrgSeat, OrgLensGroupsResponse, OrgLensGroupSummary, OrgLensReadQualification } from '@lfx-one/shared/interfaces';
 import { isBoardCategory, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
-import type { OrgLensReadQualification } from '../helpers/org-lens-read-access.helper';
 import { enrichFoundationNames } from './committee-seat-assignment.mapper';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';

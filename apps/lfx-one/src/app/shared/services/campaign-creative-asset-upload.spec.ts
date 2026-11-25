@@ -176,4 +176,31 @@ describe('CampaignService creative-asset upload across a tab switch', () => {
     meta.flush(ASSET);
     http.match((r) => r.url === '/api/campaigns/brief/creative-assets');
   });
+
+  // A stored video delete (#5764 row 18) is named while it runs, and cleared however it ends, including a caller that
+  // unsubscribes because the library was unmounted mid-delete.
+  it.each([
+    ['answered', true],
+    ['abandoned by its caller', false],
+  ])('names a video delete while it runs and clears it once %s', (_label, answered) => {
+    const sub = service.deleteCreativeAsset('tlf', BRIEF_ID, 'v-1').subscribe();
+    expect(service.creativeVideoDeleting()).toEqual({ briefId: BRIEF_ID, id: 'v-1' });
+    const req = http.expectOne((r) => r.method === 'DELETE' && r.url === '/api/campaigns/brief/creative-assets/v-1');
+
+    if (answered) req.flush(null);
+    else sub.unsubscribe();
+
+    expect(service.creativeVideoDeleting()).toBeNull();
+  });
+
+  it("leaves a later delete's name in place when an earlier delete ends", () => {
+    service.deleteCreativeAsset('tlf', BRIEF_ID, 'v-1').subscribe();
+    service.deleteCreativeAsset('tlf', BRIEF_ID, 'v-2').subscribe();
+    const [first, second] = http.match((r) => r.method === 'DELETE');
+
+    first.flush(null);
+    expect(service.creativeVideoDeleting()).toEqual({ briefId: BRIEF_ID, id: 'v-2' });
+    second.flush(null);
+    expect(service.creativeVideoDeleting()).toBeNull();
+  });
 });

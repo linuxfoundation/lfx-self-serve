@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_ACCESS_UNVERIFIABLE_MESSAGE } from '@lfx-one/shared/constants';
+import type { OrgLensReadQualification } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 import { OrgClaManagerScopesService } from '../services/org-cla-manager-scopes.service';
 import { getEffectiveUsername } from '../utils/auth-helper';
-import { assertOrgLensRead, type OrgLensReadQualification } from './org-lens-read-access.helper';
+import { assertOrgLensRead } from './org-lens-read-access.helper';
 
 const claManagerScopes = new OrgClaManagerScopesService();
 
@@ -37,7 +38,11 @@ export type OrgLensClaQualification = OrgLensReadQualification | 'cla-manager-sc
 export async function assertOrgLensClaRead(req: Request, orgUid: string, operation: string): Promise<OrgLensClaQualification> {
   let readGateError: unknown;
   try {
-    return await assertOrgLensRead(req, orgUid, operation);
+    // EasyCLA is hidden in the all employee view (epic #5845, #5857), so the gate is told not to try the employee view: no lookup for a
+    // CLA Manager to wait on, and it can never answer `employee-view` here. An ordinary employee therefore gets the read gate's 403, and the
+    // CLA Manager scope below is still asked. `blockEmployeeView` is deliberately not mounted on `org-clas.route.ts`: it replays the read
+    // gate, whose 403 for a CLA Manager without a grant would run ahead of this scope fallback and lock the CLA-only flow out.
+    return await assertOrgLensRead(req, orgUid, operation, undefined, undefined, { employeeView: false });
   } catch (error) {
     readGateError = error;
   }

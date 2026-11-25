@@ -53,7 +53,14 @@ describe('linkedInDraftFields', () => {
     textAds: [{ key: 'text-ad-1', headline: 'h', description: 'd' }],
     customTargeting: true,
     targetingDraft: { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {}, segmentsAccountId: null },
+    objectiveDraft: { objective: 'conversions', conversions: ['104012'], conversionsOwner: 'tlf|' },
   };
+
+  it('carries the objective and a copy of its conversion rules', () => {
+    const fields = linkedInDraftFields(state);
+    expect(fields.linkedInObjectiveDraft).toEqual(state.objectiveDraft);
+    expect(fields.linkedInObjectiveDraft?.conversions).not.toBe(state.objectiveDraft.conversions);
+  });
 
   it('carries custom targeting and a copy of its draft', () => {
     const fields = linkedInDraftFields(state);
@@ -91,7 +98,8 @@ describe('linkedInDraftRestore', () => {
   it.each([
     ['text', 'text'],
     ['single_image', 'single_image'],
-    ['video', undefined],
+    ['video', 'video'],
+    ['carousel', undefined],
   ])('restores a stored format %s as %s', (stored, expected) => {
     // A stored draft is replayed from JSON, so an unknown format is possible.
     expect(linkedInDraftRestore(draft({ linkedInFormat: stored as LinkedInDraftSnapshot['linkedInFormat'] })).format).toBe(expected);
@@ -111,6 +119,48 @@ describe('linkedInDraftRestore', () => {
     );
     expect(restore.customTargeting).toBe(true);
     expect(restore.targetingDraft).toEqual(restored ? stored : undefined);
+  });
+
+  it.each([
+    [
+      'a stored draft',
+      { objective: 'conversions', conversions: ['104012'], conversionsOwner: 'tlf|' },
+      { objective: 'conversions', conversions: ['104012'], conversionsOwner: 'tlf|' },
+    ],
+    [
+      'an unknown objective as the default',
+      { objective: 'leads', conversions: [], conversionsOwner: null },
+      { objective: null, conversions: [], conversionsOwner: null },
+    ],
+    [
+      'only text ids, and no owner without rules',
+      { objective: 'traffic', conversions: [7], conversionsOwner: 'tlf|' },
+      { objective: 'traffic', conversions: [], conversionsOwner: null },
+    ],
+    [
+      'a malformed id as it is, for the create to hold',
+      { objective: 'conversions', conversions: ['0x'], conversionsOwner: 'tlf|' },
+      { objective: 'conversions', conversions: ['0x'], conversionsOwner: 'tlf|' },
+    ],
+    [
+      'the target cost as typed, even one the create refuses',
+      { objective: null, conversions: [], conversionsOwner: null, targetCost: '17.885' },
+      { objective: null, conversions: [], conversionsOwner: null, targetCost: '17.885' },
+    ],
+    [
+      'no target cost that is not text',
+      { objective: null, conversions: [], conversionsOwner: null, targetCost: 17.88 },
+      { objective: null, conversions: [], conversionsOwner: null },
+    ],
+    [
+      'no blank target cost',
+      { objective: null, conversions: [], conversionsOwner: null, targetCost: '' },
+      { objective: null, conversions: [], conversionsOwner: null },
+    ],
+    ['nothing from a draft that is not a record', ['traffic'], undefined],
+  ])('restores the objective: %s', (_label, stored, expected) => {
+    const restore = linkedInDraftRestore(draft({ linkedInObjectiveDraft: stored as unknown as LinkedInDraftSnapshot['linkedInObjectiveDraft'] }));
+    expect(restore.objectiveDraft).toEqual(expected);
   });
 
   it('restores a copy of each text ad', () => {

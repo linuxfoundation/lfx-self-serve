@@ -62,6 +62,7 @@ import {
   adaptJobPollResponse,
   asResumeRefusal,
   CampaignServiceClient,
+  creativeAssetUploadBody,
   deriveEventSlug,
   briefDispatchEventName,
   fromBriefResponse,
@@ -4916,6 +4917,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditAssetUploadEnabled: false,
       // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
       redditConversionPixelEnabled: false,
+      redditConversionEventEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -4926,6 +4928,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInVariantCopyEnabled: false,
       linkedInCallToActionEnabled: false,
       linkedInTextAdsEnabled: false,
+      linkedInVideoAdsEnabled: false,
+      linkedInTargetCostEnabled: false,
       linkedInTargetingEnabled: false,
       linkedInConversionsEnabled: false,
       microsoftAssetUploadEnabled: false,
@@ -5571,6 +5575,44 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** LinkedIn video ads (#5764 row 18): the cutover, the LinkedIn asset flag (the video is a brief asset) and its own flag. */
+  it.each([
+    [{ cutover: true, assets: true, video: true }, true],
+    [{ cutover: true, assets: true, video: false }, false],
+    [{ cutover: true, assets: false, video: true }, false],
+    [{ cutover: false, assets: true, video: true }, false],
+  ])('reports LinkedIn video ads (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInVideo) return flags.video;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInAssets) return flags.assets;
+      return flags.cutover;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInVideoAdsEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** LinkedIn target cost (campaign-service #674): bidding (the target travels inside `bidding`) and its own flag. */
+  it.each([
+    [{ bidding: true, targetCost: true }, true],
+    [{ bidding: false, targetCost: true }, false],
+  ])('reports LinkedIn target cost (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInTargetCost) return flags.targetCost;
+      if (flag === ServerFeatureFlag.CampaignServiceBidding) return flags.bidding;
+      return true;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInTargetCostEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** LinkedIn custom targeting (#5764 rows 8–11): the cutover and its own flag. Bidding plays no part. */
   it.each([
     [{ cutover: true, targeting: true }, true],
@@ -5583,6 +5625,23 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
     try {
       expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInTargetingEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** The Reddit conversion event (#6108 row 2): the cutover and its own flag. */
+  it.each([
+    [{ cutover: true, event: true }, true],
+    [{ cutover: true, event: false }, false],
+    [{ cutover: false, event: true }, false],
+  ])('reports the Reddit conversion event (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceRedditConversionEvent ? flags.event : flags.cutover
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).redditConversionEventEnabled).toBe(expected);
     } finally {
       isServerFeatureEnabled.mockImplementation(() => false);
     }
@@ -5693,6 +5752,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditAssetUploadEnabled: false,
       // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
       redditConversionPixelEnabled: false,
+      redditConversionEventEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -5703,6 +5763,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInVariantCopyEnabled: false,
       linkedInCallToActionEnabled: false,
       linkedInTextAdsEnabled: false,
+      linkedInVideoAdsEnabled: false,
+      linkedInTargetCostEnabled: false,
       linkedInTargetingEnabled: false,
       linkedInConversionsEnabled: false,
       microsoftAssetUploadEnabled: false,
@@ -6993,8 +7055,26 @@ describe('CampaignServiceClient creative-asset library reads', () => {
 
       const result = await new CampaignServiceClient().listCreativeAssets(req, 'tlf', BRIEF);
 
-      expect(result).toEqual({ assets: [mappedAsset], count: 1, countLimit: 100, bytesUsed: 12, bytesLimit: 536870912 });
+      expect(result).toEqual({ assets: [mappedAsset], videos: [], count: 1, countLimit: 100, bytesUsed: 12, bytesLimit: 536870912 });
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/tlf/briefs/${BRIEF}/creative-assets`, 'GET');
+    });
+
+    // A LinkedIn video (#5764 row 18) shares the store: it is left out of the images, and still counts toward the quota.
+    it('lists a stored MP4 apart from the images, keeping the quota as upstream counts it', async () => {
+      const VIDEO_ID = '9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f';
+      const video = { ...upstreamAsset, id: VIDEO_ID, mime_type: 'video/mp4', byte_size: 102_400 };
+      proxyRequest.mockResolvedValueOnce({ ...upstreamList, assets: [upstreamAsset, video], count: 2, bytes_used: 102_412 });
+
+      const result = await new CampaignServiceClient().listCreativeAssets(req, 'tlf', BRIEF);
+
+      expect(result).toEqual({
+        assets: [mappedAsset],
+        videos: [{ id: VIDEO_ID, byteSize: 102_400, checksum: 'ab'.repeat(32) }],
+        count: 2,
+        countLimit: 100,
+        bytesUsed: 102_412,
+        bytesLimit: 536870912,
+      });
     });
 
     // `width`/`height` are OPTIONAL upstream and absent means UNKNOWN, not 0 — the service began
@@ -7475,5 +7555,14 @@ describe('CampaignServiceClient — create another campaign', () => {
     expect(adapted.status === 'done' && adapted.platformResults?.[0]).toEqual(
       expect.objectContaining({ reused: true, slotVersion: 2, variant: 'demand-gen', funnelStage: 'mid', tactic: 'retargeting' })
     );
+  });
+});
+
+// The upload body is written chunk by chunk into one buffer (#5764 row 18); it must be exactly the JSON it replaced.
+describe('creativeAssetUploadBody', () => {
+  it.each([0, 1, 2, 3, 4, 3 * 256 * 1024 + 1])('matches JSON.stringify for %i bytes', (size) => {
+    const bytes = Buffer.from(Array.from({ length: size }, (_v, i) => (i * 37) % 256));
+    const expected = JSON.stringify({ content_type: 'video/mp4', bytes: bytes.toString('base64') });
+    expect(creativeAssetUploadBody('video/mp4', bytes).toString('utf8')).toBe(expected);
   });
 });

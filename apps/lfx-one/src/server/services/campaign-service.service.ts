@@ -38,6 +38,7 @@ import {
   googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
+  CREATIVE_ASSET_VIDEO_MIME_TYPE,
   isCreativeAssetMimeType,
   isGoogleAdsServableUrl,
   JOB_LOST_MESSAGE,
@@ -123,6 +124,7 @@ import type {
   CampaignToggleStatus,
   CreativeAssetLibrary,
   CreativeAssetMimeType,
+  CreativeAssetUploadMimeType,
   CreativeAssetPlan,
   CreativeAssetUploadResult,
   CreativeSlotAssignment,
@@ -143,6 +145,7 @@ import type {
   RedditAdVariant,
   RedditBriefCopy,
   StoredCreativeAsset,
+  StoredCreativeVideo,
   CampaignServiceLinkedInTargetingEntities,
   CampaignServiceMetaTargetingSearch,
   MetaTargetingSearchType,
@@ -730,6 +733,15 @@ export function canSetRedditConversionPixel(): boolean {
 }
 
 /**
+ * Whether a Reddit `conversions` create may carry `conversionEvent` (#6108 row 2, campaign-service #549). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT`, which follows campaign-service's
+ * own `REDDIT_CONVERSION_EVENT_ENABLED`: campaign-service refuses the field while that is off, and the legacy creator ignores it.
+ */
+export function canSetRedditConversionEvent(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditConversionEvent);
+}
+
+/**
  * Whether a Google create may reference uploaded images by asset id.
  *
  * Needs the campaign-service create path to serve the create AND the Google-assets flag. Unlike its
@@ -953,6 +965,28 @@ export function canSetLinkedInTextAds(): boolean {
 }
 
 /**
+ * Whether a LinkedIn variant may carry a `videoAssetId`, a video ad (#5764 row 18, campaign-service #586). Needs the
+ * LinkedIn creative asset path (`canUseLinkedInCreativeAssets`, which includes the campaign-service create path), since
+ * the video is an asset uploaded to the brief, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO`, which follows
+ * campaign-service's own `LINKEDIN_ADS_VIDEO_ENABLED`: campaign-service refuses the field while that is off, and the
+ * legacy creator ignores it.
+ */
+export function canSetLinkedInVideoAds(): boolean {
+  return canUseLinkedInCreativeAssets() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInVideo);
+}
+
+/**
+ * Whether a LinkedIn create's automatic `bidding` may carry a `targetAmount`, its target cost
+ * (linuxfoundation/lfx-v2-campaign-service#674). Needs bidding (`canCreateWithBidding`, which includes the campaign-service
+ * create path), since the target travels inside `bidding`, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGET_COST`, which
+ * follows campaign-service's own `LINKEDIN_ADS_TARGET_COST_ENABLED`: campaign-service refuses the field while that is off,
+ * and the legacy creator ignores it.
+ */
+export function canSetLinkedInTargetCost(): boolean {
+  return canCreateWithBidding() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInTargetCost);
+}
+
+/**
  * Whether a LinkedIn create may carry its own `targeting` (#5764 rows 8–11, campaign-service #552). Needs the
  * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING`, which follows campaign-service's own
  * `LINKEDIN_ADS_TARGETING_ENABLED`: campaign-service refuses the field while that is off, and the legacy creator ignores it.
@@ -1009,6 +1043,40 @@ export function canUseMicrosoftCreativeAssets(): boolean {
  * asset stored before it has none. A fabricated 0 would read to a slot matcher as "fails every
  * minimum", which is a different and wrong answer, so an absent or unusable value stays absent.
  */
+/** Raw bytes base64-encoded per chunk: a multiple of 3, so each chunk's encoding ends without padding and they join. */
+const UPLOAD_BASE64_CHUNK_BYTES = 3 * 256 * 1024;
+
+/**
+ * The `upload-creative-asset` JSON body, `{"content_type":…,"bytes":"<base64>"}`, written straight into one buffer of its
+ * final size. A 30 MiB video (#5764 row 18) would otherwise sit in memory four times over (the bytes, the base64 string,
+ * the JSON string and its UTF-8 buffer); this holds the bytes and the body, and one chunk's string at a time.
+ */
+export function creativeAssetUploadBody(contentType: CreativeAssetUploadMimeType, bytes: Buffer): Buffer {
+  const head = Buffer.from(`{"content_type":${JSON.stringify(contentType)},"bytes":"`, 'utf8');
+  const tail = Buffer.from('"}', 'utf8');
+  const encodedLength = Math.ceil(bytes.byteLength / 3) * 4;
+  const body = Buffer.allocUnsafe(head.byteLength + encodedLength + tail.byteLength);
+  let offset = head.copy(body, 0);
+  for (let start = 0; start < bytes.byteLength; start += UPLOAD_BASE64_CHUNK_BYTES) {
+    offset += body.write(bytes.subarray(start, start + UPLOAD_BASE64_CHUNK_BYTES).toString('base64'), offset, 'latin1');
+  }
+  tail.copy(body, offset);
+  return body;
+}
+
+/** A stored MP4 as the library lists it (#5764 row 18), or `null` when the entry is not one of this brief's. */
+function toStoredCreativeVideo(asset: CampaignServiceCreativeAsset | undefined, briefId: string): StoredCreativeVideo | null {
+  const usable =
+    typeof asset?.id === 'string' &&
+    asset.id.length > 0 &&
+    typeof asset.brief_id === 'string' &&
+    asset.brief_id.toLowerCase() === briefId.toLowerCase() &&
+    typeof asset.byte_size === 'number' &&
+    Number.isFinite(asset.byte_size) &&
+    typeof asset.checksum === 'string';
+  return usable ? { id: asset.id, byteSize: asset.byte_size, checksum: asset.checksum } : null;
+}
+
 function toStoredCreativeAsset(asset: CampaignServiceCreativeAsset | undefined, briefId: string): StoredCreativeAsset | null {
   const usable =
     typeof asset?.id === 'string' &&
@@ -1190,6 +1258,7 @@ export class CampaignServiceClient {
         redditCreativeEnabled: canCreateRedditCreative(),
         redditAssetUploadEnabled: canUseRedditCreativeAssets(),
         redditConversionPixelEnabled: canSetRedditConversionPixel(),
+        redditConversionEventEnabled: canSetRedditConversionEvent(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
@@ -1200,6 +1269,8 @@ export class CampaignServiceClient {
         linkedInVariantCopyEnabled: canSetLinkedInVariantCopy(),
         linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
         linkedInTextAdsEnabled: canSetLinkedInTextAds(),
+        linkedInVideoAdsEnabled: canSetLinkedInVideoAds(),
+        linkedInTargetCostEnabled: canSetLinkedInTargetCost(),
         linkedInTargetingEnabled: canSetLinkedInTargeting(),
         linkedInConversionsEnabled: canSetLinkedInConversions(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
@@ -1280,6 +1351,7 @@ export class CampaignServiceClient {
       redditCreativeEnabled: canCreateRedditCreative(),
       redditAssetUploadEnabled: canUseRedditCreativeAssets(),
       redditConversionPixelEnabled: canSetRedditConversionPixel(),
+      redditConversionEventEnabled: canSetRedditConversionEvent(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
@@ -1290,6 +1362,8 @@ export class CampaignServiceClient {
       linkedInVariantCopyEnabled: canSetLinkedInVariantCopy(),
       linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
       linkedInTextAdsEnabled: canSetLinkedInTextAds(),
+      linkedInVideoAdsEnabled: canSetLinkedInVideoAds(),
+      linkedInTargetCostEnabled: canSetLinkedInTargetCost(),
       linkedInTargetingEnabled: canSetLinkedInTargeting(),
       linkedInConversionsEnabled: canSetLinkedInConversions(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
@@ -2726,11 +2800,11 @@ export class CampaignServiceClient {
     req: Request,
     projectSlug: string,
     briefId: string,
-    contentType: CreativeAssetMimeType,
+    contentType: CreativeAssetUploadMimeType,
     image: Buffer
   ): Promise<CreativeAssetUploadResult> {
     const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/creative-assets`;
-    const body = Buffer.from(JSON.stringify({ content_type: contentType, bytes: image.toString('base64') }), 'utf8');
+    const body = creativeAssetUploadBody(contentType, image);
 
     logger.debug(req, 'upload_creative_asset', 'Uploading creative asset to campaign-service', {
       brief_id: briefId,
@@ -2757,7 +2831,8 @@ export class CampaignServiceClient {
       asset.id.length > 0 &&
       typeof asset.brief_id === 'string' &&
       asset.brief_id.toLowerCase() === briefId.toLowerCase() &&
-      isCreativeAssetMimeType(asset.mime_type) &&
+      // The type stored must be the type sent: an MP4 named as an image, or the reverse, would fail the create later.
+      asset.mime_type === contentType &&
       typeof asset.byte_size === 'number' &&
       typeof asset.checksum === 'string';
     if (!usable) {
@@ -2770,13 +2845,13 @@ export class CampaignServiceClient {
         operation: 'upload_creative_asset',
         service: 'campaign_service_client',
         path,
-        clientMessage: 'The image upload could not be confirmed. Please try again.',
+        clientMessage: 'The upload could not be confirmed. Please try again.',
       });
     }
 
     return {
       id: asset.id,
-      mimeType: asset.mime_type as CreativeAssetMimeType,
+      mimeType: contentType,
       byteSize: asset.byte_size,
       checksum: asset.checksum,
       // The STATUS is authoritative upstream (201 stored, 200 already existed); `created` mirrors it.
@@ -2829,7 +2904,19 @@ export class CampaignServiceClient {
       Number.isFinite(list.bytes_used) &&
       typeof list.bytes_limit === 'number' &&
       Number.isFinite(list.bytes_limit);
-    const assets = countable ? list.assets.map((asset) => toStoredCreativeAsset(asset, briefId)) : [];
+    // A LinkedIn video (#5764 row 18) shares the brief's store but is no image any image slot can use, so it is listed
+    // apart, as `videos`, where it can be deleted to free the quota. `count` and `bytesUsed` stay upstream's.
+    const isVideo = (asset: CampaignServiceCreativeAsset | undefined) => asset?.mime_type === CREATIVE_ASSET_VIDEO_MIME_TYPE;
+    const assets = countable ? list.assets.filter((asset) => !isVideo(asset)).map((asset) => toStoredCreativeAsset(asset, briefId)) : [];
+    // An unusable video entry is dropped and logged rather than failing the read: the images every slot needs come first.
+    const listedVideos = countable ? list.assets.filter(isVideo).map((asset) => toStoredCreativeVideo(asset, briefId)) : [];
+    const videos = listedVideos.filter((video): video is StoredCreativeVideo => video !== null);
+    if (videos.length < listedVideos.length) {
+      logger.warning(req, 'list_creative_assets', 'Upstream listed a video entry this app cannot use; it is left out', {
+        brief_id: briefId,
+        dropped: listedVideos.length - videos.length,
+      });
+    }
     if (!countable || assets.some((asset) => asset === null)) {
       logger.warning(req, 'list_creative_assets', 'Upstream answered the asset list with an unusable body', {
         brief_id: briefId,
@@ -2846,6 +2933,7 @@ export class CampaignServiceClient {
 
     return {
       assets: assets as StoredCreativeAsset[],
+      videos,
       count: list.count,
       countLimit: list.count_limit,
       bytesUsed: list.bytes_used,

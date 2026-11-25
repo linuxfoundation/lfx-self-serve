@@ -97,6 +97,7 @@ import {
   GoogleAdsGeoTargetSearchResult,
   LinkedInGeoSearchResult,
   LinkedInAudiencesResult,
+  LinkedInConversionsResult,
   LinkedInTargetingSearchFacet,
   LinkedInTargetingSearchResult,
   GoogleAdsAudienceReadType,
@@ -210,9 +211,13 @@ export class CampaignService {
    * cancelled by the caller.
    */
   private readonly creativeAssetQueueAbort = new Subject<void>();
+  /** The stored creative asset being deleted and its brief (#5764 row 18), or `null`: see `deleteCreativeAsset`. */
+  private readonly creativeVideoDelete = signal<{ briefId: string; id: string } | null>(null);
 
   /** Every library upload item, in pick order. Each carries its brief; a reader shows only its own brief's. */
   public readonly creativeAssetUploadQueue = this.creativeAssetQueue.asReadonly();
+  /** The stored video being deleted and its brief (#5764 row 18), `null` when none is. */
+  public readonly creativeVideoDeleting = this.creativeVideoDelete.asReadonly();
 
   public constructor() {
     this.creativeAssetQueueWork
@@ -563,6 +568,26 @@ export class CampaignService {
   }
 
   /**
+   * Permanently delete one stored creative asset of the brief: a video the library lists (#5764 row 18). campaign-service
+   * answers 409 `creative_asset_in_use` while a live campaign could still need it, with its own remedy text.
+   *
+   * While the request runs, `creativeVideoDeleting` names it, and it is cleared however the request ends, including a
+   * caller that unsubscribes because it was destroyed. The Implement tab holds its video pickers on it, since an upload
+   * of identical bytes would answer with the asset being deleted.
+   */
+  public deleteCreativeAsset(projectSlug: string, briefId: string, assetId: string): Observable<void> {
+    return defer(() => {
+      const mine = { briefId, id: assetId };
+      this.creativeVideoDelete.set(mine);
+      return this.http
+        .delete<void>(`/api/campaigns/brief/creative-assets/${encodeURIComponent(assetId)}`, {
+          params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+        })
+        .pipe(finalize(() => this.creativeVideoDelete.update((current) => (current === mine ? null : current))));
+    });
+  }
+
+  /**
    * The brief's stored creative assets, each with the pixel dimensions recorded at upload (absent
    * for an asset stored before they were), plus the library's quota.
    *
@@ -848,6 +873,17 @@ export class CampaignService {
     let params = strictHttpParams().set('project', projectSlug);
     if (accountId) params = params.set('accountId', accountId);
     return this.http.get<LinkedInAudiencesResult>('/api/campaigns/linkedin/audiences', { params });
+  }
+
+  /**
+   * The enabled conversion rules on the LinkedIn ad account a create uses, for the objective picker (#5764 row 4), with
+   * `accountId` as for `getLinkedInAudiences`. A coded 403 for a caller without `global_marketing_ops` on the project, a
+   * coded 503 when that check cannot be made, and a 404 while conversions are off on the server.
+   */
+  public getLinkedInConversions(projectSlug: string, accountId?: string): Observable<LinkedInConversionsResult> {
+    let params = strictHttpParams().set('project', projectSlug);
+    if (accountId) params = params.set('accountId', accountId);
+    return this.http.get<LinkedInConversionsResult>('/api/campaigns/linkedin/conversions', { params });
   }
 
   /**

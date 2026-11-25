@@ -182,6 +182,13 @@ describe('linkedInCreateRefusal', () => {
       { textAdsUnavailable: true },
       'LinkedIn Ads: Text Ads are not available right now. Choose single image ads as the ad format.',
     ],
+    // Video ads (#5764 row 18): held rather than sent as image ads, and every ad needs its video.
+    [
+      'video ads no longer offered',
+      { videoAdsUnavailable: true },
+      'LinkedIn Ads: video ads are not available right now. Choose single image ads as the ad format.',
+    ],
+    ['an ad with no video', { videoMissing: true }, 'LinkedIn Ads: upload a video for every ad.'],
     [
       'custom targeting no longer offered',
       { customTargetingUnavailable: true },
@@ -203,6 +210,12 @@ describe('linkedInCreateRefusal', () => {
     // Custom targeting (#5764 rows 8–11) replaces the profile: its own refusal holds, and removals hold nothing.
     ['custom targeting refused', { customTargeting: { refusal: 'Add a value.' } }, 'LinkedIn Ads: fix the custom targeting. Add a value.'],
     ['custom targeting with profile removals', { removalsHeld: true, customTargeting: { refusal: null } }, null],
+    // The objective (#5764 rows 2 and 4) arrives as a whole message.
+    ['an objective refused', { objectiveRefusal: 'LinkedIn Ads: pick a rule.' }, 'LinkedIn Ads: pick a rule.'],
+    ['an objective that can be sent', { objectiveRefusal: null }, null],
+    // The target cost (campaign-service#674) arrives as a whole message too.
+    ['a target cost refused', { targetCostRefusal: 'LinkedIn Ads: fix it.' }, 'LinkedIn Ads: fix it.'],
+    ['a target cost that can be sent', { targetCostRefusal: null }, null],
     ['an account the catalog does not list', { accountInCatalog: false }, 'LinkedIn Ads: choose an ad account.'],
     ['an unlisted account the connection decides', { accountInCatalog: false, accountSetByConnection: true }, null],
     [

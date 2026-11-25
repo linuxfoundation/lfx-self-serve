@@ -47,6 +47,7 @@ import type {
   CampaignToggleAction,
   CampaignToggleStatus,
   CreativeAssetMimeType,
+  CreativeAssetUploadMimeType,
   CreativeAssetQueueItemStatus,
   CreativeAssetQueueStatusView,
   GoogleCreativeEitherOrRule,
@@ -85,6 +86,7 @@ import type {
   MonitorTabPlatform,
   NegativeKeywordCampaignPlatform,
   ParsedCampaignName,
+  RedditConversionEvent,
   RedditObjective,
   RedditObjectiveParams,
   RedditVideoGoal,
@@ -958,6 +960,9 @@ export const LINKEDIN_CONVERSIONS_FIELD = 'linkedInConfig.conversions';
  */
 export const LINKEDIN_MAX_CONVERSIONS = 20;
 
+/** The field a LinkedIn target cost refusal names (linuxfoundation/lfx-v2-campaign-service#674). */
+export const LINKEDIN_TARGET_AMOUNT_FIELD = 'linkedInConfig.bidding.targetAmount';
+
 /**
  * The error `code` (HTTP 403) of a LinkedIn conversion rule read, or a create naming `conversions`, refused because the
  * caller does not hold `global_marketing_ops` on the project: conversion rules belong to the shared ad account, so
@@ -969,6 +974,15 @@ export const LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE =
 /** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
 export const LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE = 'LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE';
 export const LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to LinkedIn conversion tracking could not be verified. Try again in a few minutes.';
+
+/** What the objective picker says while the ad account's conversion rules load (#5764 row 4). */
+export const LINKEDIN_CONVERSIONS_LOADING_MESSAGE = 'Loading LinkedIn conversion rules…';
+
+/** What it says when the conversion rule read failed another way than the coded 403 or 503. */
+export const LINKEDIN_CONVERSIONS_FAILED_MESSAGE = "LinkedIn conversion rules didn't load. Try again.";
+
+/** Why a create is held while the draft's conversion rules were picked for another foundation or ad account than its own. */
+export const LINKEDIN_CONVERSIONS_OWNER_MESSAGE = 'Conversion rules were picked for another LinkedIn ad account. Remove them, then pick them again.';
 
 /**
  * The facets campaign-service's targeting typeahead searches for `linkedInConfig.targeting` (`search-linkedin-ads-targeting-entities`,
@@ -988,7 +1002,7 @@ export const LINKEDIN_TARGETING_SEARCH_DEBOUNCE_MS = 400;
 
 /**
  * The facets the Implement tab's custom targeting editor offers (#5764 rows 8–11), in the order shown: the searched
- * ones (`LINKEDIN_TARGETING_SEARCH_FACETS`), the three fixed lists and the two ad segment facets. Not `interfaceLocales`.
+ * ones (`LINKEDIN_TARGETING_SEARCH_FACETS`), the four fixed lists and the two ad segment facets.
  */
 export const LINKEDIN_TARGETING_EDITOR_FACETS: readonly LinkedInTargetingEditorFacetOption[] = [
   { key: 'skills', label: 'Skills', kind: 'search' },
@@ -1000,6 +1014,7 @@ export const LINKEDIN_TARGETING_EDITOR_FACETS: readonly LinkedInTargetingEditorF
   { key: 'staffCountRanges', label: 'Company sizes', kind: 'static' },
   { key: 'groups', label: 'Member groups', kind: 'search' },
   { key: 'interests', label: 'Interests', kind: 'search' },
+  { key: 'interfaceLocales', label: 'Interface languages', kind: 'static' },
   { key: 'audienceMatchingSegments', label: 'Matched audiences', kind: 'segment' },
   { key: 'dynamicSegments', label: 'Retargeting audiences', kind: 'segment' },
 ];
@@ -1017,7 +1032,10 @@ function numbered(prefix: string, names: readonly string[]): LinkedInTargetingEn
   return names.map((name, index) => ({ urn: `${prefix}${index + 1}`, name }));
 }
 
-/** The values of the three fixed-list facets, with LinkedIn's names: seniorities, job functions and company sizes. */
+/**
+ * The values of the four fixed-list facets, with LinkedIn's names: seniorities, job functions, company sizes and the
+ * languages LinkedIn's interface is offered in (`urn:li:locale:<language>_<COUNTRY>`, include-only).
+ */
 export const LINKEDIN_TARGETING_STATIC_VALUES: Readonly<Record<LinkedInTargetingStaticFacet, readonly LinkedInTargetingEntity[]>> = {
   seniorities: numbered('urn:li:seniority:', ['Unpaid', 'Training', 'Entry', 'Senior', 'Manager', 'Director', 'VP', 'CXO', 'Partner', 'Owner']),
   jobFunctions: numbered('urn:li:function:', [
@@ -1052,6 +1070,34 @@ export const LINKEDIN_TARGETING_STATIC_VALUES: Readonly<Record<LinkedInTargeting
     urn,
     name: ['1 employee', '2–10', '11–50', '51–200', '201–500', '501–1,000', '1,001–5,000', '5,001–10,000', '10,001+'][index],
   })),
+  // The interface locales LinkedIn accepts for ads targeting, with its names: the live
+  // `adTargetingEntities?q=adTargetingFacet&facet=urn:li:adTargetingFacet:interfaceLocales` answer (26 Nov 2026).
+  // LinkedIn's older docs table differs (Finnish, Thai, Tagalog, Ukrainian and Chinese are not offered for targeting).
+  interfaceLocales: (
+    [
+      ['ar_AE', 'Arabic'],
+      ['cs_CZ', 'Czech'],
+      ['da_DK', 'Danish'],
+      ['nl_NL', 'Dutch'],
+      ['en_US', 'English'],
+      ['fr_FR', 'French'],
+      ['de_DE', 'German'],
+      ['hi_IN', 'Hindi'],
+      ['in_ID', 'Indonesian'],
+      ['it_IT', 'Italian'],
+      ['ja_JP', 'Japanese'],
+      ['ko_KR', 'Korean'],
+      ['ms_MY', 'Malaysian'],
+      ['no_NO', 'Norwegian'],
+      ['pl_PL', 'Polish'],
+      ['pt_BR', 'Portuguese'],
+      ['ro_RO', 'Romanian'],
+      ['ru_RU', 'Russian'],
+      ['es_ES', 'Spanish'],
+      ['sv_SE', 'Swedish'],
+      ['tr_TR', 'Turkish'],
+    ] as const
+  ).map(([locale, name]) => ({ urn: `urn:li:locale:${locale}`, name })),
 };
 
 /** An Images-API image URN as campaign-service accepts it (`imageURNRE`, `internal/platform/linkedin/targeting.go`). */
@@ -4208,6 +4254,60 @@ export const CREATIVE_ASSET_TOO_LARGE_MESSAGE = 'The image is larger than 10 MB.
 /** Shown, and answered by the BFF, when a file is not one of `CREATIVE_ASSET_MIME_TYPES`. */
 export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can be uploaded.';
 
+/**
+ * The video type a creative-asset upload accepts (#5764 row 18): campaign-service's `MimeTypeMP4`, checked structurally
+ * there (`validateMP4Upload`). Only a LinkedIn video ad consumes one here, so the BFF admits it only while
+ * `canSetLinkedInVideoAds()`. Kept apart from `CREATIVE_ASSET_MIME_TYPES`, which every image slot and the image library
+ * check against.
+ */
+export const CREATIVE_ASSET_VIDEO_MIME_TYPE = 'video/mp4';
+
+/** Every type the creative-asset upload route parses: the images and the MP4 video. */
+export const CREATIVE_ASSET_UPLOAD_MIME_TYPES = [...CREATIVE_ASSET_MIME_TYPES, CREATIVE_ASSET_VIDEO_MIME_TYPE] as const;
+
+/**
+ * The largest video this app uploads as a creative asset, in bytes (30 MiB): campaign-service's own decoded ceiling for
+ * any asset. Images keep `CREATIVE_ASSET_MAX_BYTES`, so a 30 MiB PNG is still refused. The BFF buffers the video and
+ * writes a base64 body a third larger straight into one buffer (`creativeAssetUploadBody`): about 70 MiB for one upload,
+ * only on the upload route, and only while a video can be used.
+ */
+export const CREATIVE_ASSET_VIDEO_MAX_BYTES = 30 * 1024 * 1024;
+
+/** Shown, and answered by the BFF, when a video exceeds `CREATIVE_ASSET_VIDEO_MAX_BYTES`. */
+export const CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE = 'The video is larger than 30 MB. Choose a smaller MP4.';
+
+/** Shown, and answered by the BFF, when a video is not an MP4, or is one while this deployment takes no video. */
+export const CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE = 'Only MP4 videos can be uploaded.';
+
+/**
+ * The smallest video LinkedIn takes as a video ad, in bytes (75 KiB): campaign-service's `linkedin.MinVideoBytes`, which
+ * it checks only at dispatch, after the campaign exists. The Implement tab refuses a smaller one before uploading.
+ */
+export const LINKEDIN_VIDEO_MIN_BYTES = 75 * 1024;
+
+/** Shown when a LinkedIn video is under `LINKEDIN_VIDEO_MIN_BYTES`. */
+export const LINKEDIN_VIDEO_TOO_SMALL_MESSAGE = 'LinkedIn video ads need a video of at least 75 KB. Choose a longer or higher-quality MP4.';
+
+/**
+ * The ftyp major brands campaign-service accepts as MP4 (`mp4MajorBrands`, `internal/service/creative_asset_video.go`).
+ * QuickTime (`qt  `) and the HEIF/AVIF still-image brands also open with ftyp and are refused.
+ */
+export const CREATIVE_ASSET_MP4_MAJOR_BRANDS: readonly string[] = [
+  'isom',
+  'iso2',
+  'iso3',
+  'iso4',
+  'iso5',
+  'iso6',
+  'mp41',
+  'mp42',
+  'avc1',
+  'M4V ',
+  'mmp4',
+  'dash',
+  'MSNV',
+];
+
 /** A library upload's refusal when campaign-service answers 409: the brief's count or byte quota is spent. */
 export const CREATIVE_ASSET_QUOTA_MESSAGE = "This brief's image library is full. Delete an image it no longer needs, then try again.";
 
@@ -4381,6 +4481,35 @@ export function sniffCreativeAssetMimeType(bytes: unknown): CreativeAssetMimeTyp
   return null;
 }
 
+/**
+ * The upload type the leading bytes actually are, or `null`: an image as `sniffCreativeAssetMimeType` reads it, or an
+ * MP4, which opens with an ftyp box whose major brand is one of `CREATIVE_ASSET_MP4_MAJOR_BRANDS`. Only the opening box
+ * is read; campaign-service walks the whole file and refuses a truncated one with a readable 400.
+ */
+export function sniffCreativeAssetUploadMimeType(bytes: unknown): CreativeAssetUploadMimeType | null {
+  // Only a real byte buffer is read, as in `sniffCreativeAssetMimeType`: a request body tampered into an array or a
+  // string would otherwise have its `length` and indexes read as bytes.
+  if (Array.isArray(bytes) || !(bytes instanceof Uint8Array)) return null;
+  const image = sniffCreativeAssetMimeType(bytes);
+  if (image !== null || bytes.length < 12) return image;
+  const ascii = (from: number) => String.fromCharCode(...bytes.subarray(from, from + 4));
+  // A box whose 32-bit size is 1 carries a 64-bit size after its type, which moves the brand to offset 16.
+  const largeSize = bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 0 && bytes[3] === 1;
+  const brandAt = largeSize ? 16 : 8;
+  if (bytes.length < brandAt + 4) return null;
+  return ascii(4) === 'ftyp' && CREATIVE_ASSET_MP4_MAJOR_BRANDS.includes(ascii(brandAt)) ? CREATIVE_ASSET_VIDEO_MIME_TYPE : null;
+}
+
+/** Whether a declared MIME type is one `CREATIVE_ASSET_UPLOAD_MIME_TYPES` admits: an image or the MP4 video. */
+export function isCreativeAssetUploadMimeType(value: unknown): value is CreativeAssetUploadMimeType {
+  return typeof value === 'string' && (CREATIVE_ASSET_UPLOAD_MIME_TYPES as readonly string[]).includes(value);
+}
+
+/** The largest upload of `type`, in bytes: `CREATIVE_ASSET_VIDEO_MAX_BYTES` for the video, `CREATIVE_ASSET_MAX_BYTES` otherwise. */
+export function creativeAssetUploadMaxBytes(type: CreativeAssetUploadMimeType): number {
+  return type === CREATIVE_ASSET_VIDEO_MIME_TYPE ? CREATIVE_ASSET_VIDEO_MAX_BYTES : CREATIVE_ASSET_MAX_BYTES;
+}
+
 /** Whether a declared MIME type is one `CREATIVE_ASSET_MIME_TYPES` admits. */
 export function isCreativeAssetMimeType(value: unknown): value is CreativeAssetMimeType {
   return typeof value === 'string' && (CREATIVE_ASSET_MIME_TYPES as readonly string[]).includes(value);
@@ -4405,6 +4534,32 @@ export const REDDIT_VIDEO_GOAL_LABELS: Readonly<Record<RedditVideoGoal, string>>
   VIDEO_VIEW_6S: '6-second video views',
   VIDEO_VIEW_15S: '15-second video views',
 } as const;
+
+/**
+ * The pixel events a Reddit `conversions` campaign may optimize toward (#6108 row 2), sent as
+ * `redditConfig.conversionEvent`. Mirrors `conversionEvents` in lfx-v2-campaign-service
+ * `internal/platform/reddit/client.go` (#549), in its order; upstream matches case-insensitively and
+ * refuses anything else.
+ */
+export const REDDIT_CONVERSION_EVENTS = ['PURCHASE', 'SIGN_UP', 'LEAD', 'PAGE_VISIT', 'VIEW_CONTENT', 'ADD_TO_CART', 'ADD_TO_WISHLIST', 'SEARCH'] as const;
+
+/** The event a conversions campaign optimizes toward when none is sent: campaign-service's own, so the picker starts on it and a create leaves it out. */
+export const DEFAULT_REDDIT_CONVERSION_EVENT: RedditConversionEvent = 'PURCHASE';
+
+/** Readable names for `REDDIT_CONVERSION_EVENTS`, for the picker. Total over `RedditConversionEvent`. */
+export const REDDIT_CONVERSION_EVENT_LABELS: Readonly<Record<RedditConversionEvent, string>> = {
+  PURCHASE: 'Purchase',
+  SIGN_UP: 'Sign up',
+  LEAD: 'Lead',
+  PAGE_VISIT: 'Page visit',
+  VIEW_CONTENT: 'View content',
+  ADD_TO_CART: 'Add to cart',
+  ADD_TO_WISHLIST: 'Add to wishlist',
+  SEARCH: 'Search',
+} as const;
+
+/** The create field a Reddit conversion event refusal names. */
+export const REDDIT_CONVERSION_EVENT_FIELD = 'redditConfig.conversionEvent';
 
 /**
  * The `REDDIT_OBJECTIVE_PARAMS` row for an objective, or a refusal.

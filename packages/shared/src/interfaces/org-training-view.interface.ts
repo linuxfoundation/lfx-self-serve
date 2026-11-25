@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
-import type { OrgDropdownOption } from './org-memberships.interface';
+import type { OrgDropdownOption, OrgLensRowOrganization } from './org-memberships.interface';
+import type { OrgLensRollUpCoverage, OrgRollUpSetOrg } from './org-selector.interface';
 import type { OrgTrainingGroupEmployee, OrgTrainingTabId } from './training.interface';
 
 /** What the Training page's table groups the filtered person-course pairs by. */
@@ -55,6 +56,21 @@ export interface OrgTrainingStats {
   /** Enrolled in range with no certificate in range. */
   coursesInProgress: number;
   peopleInTraining: number;
+  /** Roll-up only: every organization of the family the caller can read, alphabetical; the Company filter's options. */
+  organizations?: OrgLensRowOrganization[];
+  /** Roll-up only: whether the family set is complete, and how many of the caller's organizations were left out. */
+  rollUp?: OrgLensRollUpCoverage;
+}
+
+/**
+ * A family roll-up as the Training reads serve it. `members` are the organizations the figures count (one, under the Company
+ * filter); `organizations` are all the family's organizations the caller can read, which the filter options cover.
+ */
+export interface OrgTrainingFamilyScope {
+  readonly rollUpKey: string;
+  readonly members: readonly OrgRollUpSetOrg[];
+  readonly organizations: readonly OrgRollUpSetOrg[];
+  readonly coverage: OrgLensRollUpCoverage;
 }
 
 /** Options of the shared filter bar's five dropdowns for one range (people-list pairs in range). */
@@ -77,10 +93,14 @@ export interface OrgTrainingGroupRow {
   level: string | null;
   foundation: string | null;
   logoUrl: string | null;
+  /** Roll-up only: the company whose pairs the row counts; the table has one row per group value and company. */
+  organization?: OrgLensRowOrganization;
 }
 
 /** A group-by table row with its display strings resolved once (no template functions): meta line and count-button labels. */
 export interface OrgTrainingGroupRowVm extends OrgTrainingGroupRow {
+  /** Unique per row: the group key, plus the company's account id in a roll-up (one row per group value and company). */
+  rowKey: string;
   /** Foundation (and level, for courses) under the label; empty when the grouping has no such attributes. */
   meta: string;
   /** Accessible name of the completed (Certified / Completed) count button: value, status and row. */
@@ -111,6 +131,8 @@ export interface OrgTrainingGroupsParams {
   sortOrder?: 'ASC' | 'DESC';
   pageSize?: number;
   offset?: number;
+  /** Roll-up only: narrows the rows to one organization of the roll-up (its account id). */
+  company?: string;
 }
 
 /** Query params of the group drill-down drawer call (on top of range + filters). `groupValue` is the row's `key`. */
@@ -119,6 +141,8 @@ export interface OrgTrainingGroupEmployeesParams {
   groupValue: string;
   tab: OrgTrainingTabId;
   status: OrgTrainingGroupStatus;
+  /** Roll-up only: the clicked row's company; a roll-up drawer lists that company's people alone. */
+  company?: OrgLensRowOrganization;
 }
 
 /** Drill-down of one group row: `total` is the pair count (equals the cell clicked); `data` lists current employees only. */

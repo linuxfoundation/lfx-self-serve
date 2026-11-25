@@ -52,6 +52,7 @@ import {
   CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES,
   CREATIVE_ASSET_MIME_TYPES,
   CREATIVE_ASSET_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_VIDEO_MIME_TYPE,
   CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
   isCreativeAssetMimeType,
   LINKEDIN_CHAR_LIMITS,
@@ -218,8 +219,11 @@ import {
   DEFAULT_MICROSOFT_BUDGET_USD,
   DEFAULT_REDDIT_BUDGET_USD,
   DEFAULT_REDDIT_CALL_TO_ACTION,
+  DEFAULT_REDDIT_CONVERSION_EVENT,
   DEFAULT_REDDIT_OBJECTIVE,
   REDDIT_CALL_TO_ACTIONS,
+  REDDIT_CONVERSION_EVENT_LABELS,
+  REDDIT_CONVERSION_EVENTS,
   REDDIT_MAX_BUDGET_USD,
   REDDIT_OBJECTIVE_LABELS,
   REDDIT_SELECTABLE_OBJECTIVES,
@@ -376,9 +380,11 @@ import type {
   LinkedInGeoSearchState,
   LinkedInImageSlot,
   LinkedInVariantDraft,
-  LinkedInAdFormat,
+  LinkedInAdFormatChoice,
   LinkedInTargeting,
   LinkedInTargetingDraft,
+  LinkedInObjectiveDraft,
+  LinkedInTargetCostOfferInput,
   LinkedInTextAdDraft,
   LinkedInTextAdImageInput,
   LinkedInVariantView,
@@ -390,6 +396,7 @@ import type {
   RedditAdVariant,
   RedditBriefSeed,
   RedditCallToAction,
+  RedditConversionEvent,
   RedditObjective,
   RedditVideoGoal,
   StoredCreativeAsset,
@@ -484,11 +491,22 @@ import {
   linkedInTargetingEmptyWarning,
   linkedInTargetingRemovalsHeld,
   linkedInVariantsForCreate,
+  linkedInVideoFileRefusal,
+  linkedInVideoMissing,
+  linkedInVideoVariantsForCreate,
   linkedInTextAdImageFileRefusal,
   linkedInTextAdImageSizeRefusal,
   linkedInTextAdViews,
   linkedInTextAdsForCreate,
   emptyLinkedInTargetingDraft,
+  emptyLinkedInObjectiveDraft,
+  linkedInObjectiveCreateRefusal,
+  linkedInObjectiveFieldsForCreate,
+  linkedInObjectiveShown,
+  linkedInBiddingWithTargetCost,
+  linkedInTargetCostCreateRefusal,
+  linkedInTargetCostOffered,
+  linkedInTargetCostPending,
   linkedInTargetingDraftRefusal,
   linkedInTargetingForCreate,
   linkedInTargetingSegmentsAccountRefusal,
@@ -504,6 +522,10 @@ import {
   redditBriefReset,
   redditBriefSeed,
   redditCallToActionIsUnavailable,
+  redditConversionEventBlock,
+  redditConversionEventField,
+  redditConversionEventFromDraft,
+  redditConversionEventOffered,
   redditCreateRefusal,
   redditDraftFields,
   redditDraftRestore,
@@ -609,6 +631,7 @@ import {
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
 import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
+import { LinkedInObjectivePickerComponent } from '../linkedin-objective-picker/linkedin-objective-picker.component';
 import { LinkedInTargetingEditorComponent } from '../linkedin-targeting-editor/linkedin-targeting-editor.component';
 import { LinkedInTextAdsEditorComponent } from '../linkedin-text-ads-editor/linkedin-text-ads-editor.component';
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
@@ -715,6 +738,7 @@ let linkedInVariantKeySequence = 0;
     UiOptionComponent,
     UiSelectComponent,
     UiTextareaComponent,
+    LinkedInObjectivePickerComponent,
     LinkedInTargetingEditorComponent,
     LinkedInTextAdsEditorComponent,
   ],
@@ -940,6 +964,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditConversionPixelAvailable = computed<boolean>(() => this.redditConversionPixelEnabled() === true);
 
   /**
+   * Whether a Reddit `conversions` create may carry a conversion event (`CampaignListResult.redditConversionEventEnabled`,
+   * #6108 row 2). `null` until the parent has an answer, which withholds the picker and holds a non-default event.
+   */
+  public readonly redditConversionEventEnabled = input<boolean | null>(null);
+
+  /**
    * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
    * Read only together with `metaCreativeAvailable()`, as `redditAssetUploadEnabled` is with its
    * sibling; the pasted image URL stays offered whatever this answers.
@@ -992,11 +1022,35 @@ export class ImplementationTabComponent implements OnInit {
   /** @see linkedInTextAdsEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInTextAdsAvailable = computed<boolean>(() => this.linkedInTextAdsEnabled() === true);
 
+  /** Whether the LinkedIn section offers video ads (`CampaignListResult.linkedInVideoAdsEnabled`, #5764 row 18). */
+  public readonly linkedInVideoAdsEnabled = input<boolean | null>(null);
+
+  /** @see linkedInVideoAdsEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInVideoAdsAvailable = computed<boolean>(() => this.linkedInVideoAdsEnabled() === true);
+
+  /** The `accept` list of a LinkedIn video picker (#5764 row 18). */
+  protected readonly linkedInVideoAccept = CREATIVE_ASSET_VIDEO_MIME_TYPE;
+
   /** Whether the LinkedIn section offers custom targeting (`CampaignListResult.linkedInTargetingEnabled`, #5764 rows 8–11). */
   public readonly linkedInTargetingEnabled = input<boolean | null>(null);
 
   /** @see linkedInTargetingEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInTargetingAvailable = computed<boolean>(() => this.linkedInTargetingEnabled() === true);
+
+  /**
+   * Whether the LinkedIn section offers an objective and conversion tracking (`CampaignListResult.linkedInConversionsEnabled`,
+   * #5764 rows 2 and 4).
+   */
+  public readonly linkedInConversionsEnabled = input<boolean | null>(null);
+
+  /** @see linkedInConversionsEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInConversionsAvailable = computed<boolean>(() => this.linkedInConversionsEnabled() === true);
+
+  /**
+   * Whether a LinkedIn create's automatic bidding may carry a target cost (`CampaignListResult.linkedInTargetCostEnabled`,
+   * linuxfoundation/lfx-v2-campaign-service#674).
+   */
+  public readonly linkedInTargetCostEnabled = input<boolean | null>(null);
 
   /** The calls to action the variant editor offers. */
   protected readonly linkedInCallToActionOptions = LINKEDIN_CALL_TO_ACTION_OPTIONS;
@@ -1505,6 +1559,9 @@ export class ImplementationTabComponent implements OnInit {
   /** The goals offered for `video_views`, and their readable names. */
   protected readonly redditVideoGoalOptions = REDDIT_VIDEO_GOALS;
   protected readonly redditVideoGoalLabels = REDDIT_VIDEO_GOAL_LABELS;
+  /** The pixel events offered for `conversions` (#6108 row 2), and their readable names. */
+  protected readonly redditConversionEventOptions = REDDIT_CONVERSION_EVENTS;
+  protected readonly redditConversionEventLabels = REDDIT_CONVERSION_EVENT_LABELS;
   /**
    * The full CTA list, with no selectable/withheld split: upstream accepts every one of these,
    * resolving the value case-insensitively and rejecting anything outside the set. The empty
@@ -1902,12 +1959,38 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
   /** The LinkedIn ad variants as edited: seeded from the brief, carried in the draft (#5547). */
   protected readonly linkedInVariants = signal<LinkedInVariantDraft[]>([]);
-  /** The LinkedIn ad format chosen (#5764 row 19). Text goes out only while `linkedInTextAdsAvailable()`. */
-  protected readonly linkedInFormat = signal<LinkedInAdFormat>('single_image');
+  /**
+   * The LinkedIn ad format chosen (#5764 rows 18–19). Text goes out only while `linkedInTextAdsAvailable()`, and video
+   * only while `linkedInVideoAdsAvailable()`.
+   */
+  protected readonly linkedInFormat = signal<LinkedInAdFormatChoice>('single_image');
   /** The LinkedIn Text Ads as edited (#5764 row 19), carried in the draft. */
   protected readonly linkedInTextAds = signal<LinkedInTextAdDraft[]>([]);
   /** Whether this create is a Text Ads campaign: chosen, and offered by this deployment. */
   protected readonly linkedInTextAdsSelected = computed<boolean>(() => this.linkedInTextAdsAvailable() && this.linkedInFormat() === 'text');
+  /** The Ad format picker's hint: what the chosen format needs (#5764 rows 18–19). */
+  protected readonly linkedInFormatHint = computed<string>(() => {
+    if (this.linkedInFormat() === 'text') return "Text ads are a headline and description on LinkedIn's desktop right rail. They need a manual bid.";
+    if (this.linkedInFormat() === 'video') return 'Video ads play an MP4 in the feed. Every ad needs its own video, and video ads have no description.';
+    return 'Single image ads show an image with the intro text and headline in the feed.';
+  });
+  /**
+   * Whether a stored video is being deleted (#5764 row 18), which holds the video pickers. Read from the service, which
+   * clears it however the delete ends, including the library being unmounted mid-delete (a brief save, Create).
+   */
+  protected readonly linkedInVideoDeleteRunning = computed<boolean>(() => this.campaignService.creativeVideoDeleting() !== null);
+  /**
+   * The stored videos any ad on this tab names (#5764 row 18), whatever the format: the library will not delete them, so
+   * a create can never send a deleted asset. It offers "Remove from ads" for each (`onLibraryVideoDeleted`), which works
+   * even while the ads' own video controls are hidden.
+   */
+  protected readonly linkedInVideoIdsInUse = computed<string[]>(() =>
+    this.linkedInVariants()
+      .map((variant) => variant.videoAssetId ?? '')
+      .filter((id) => id !== '')
+  );
+  /** Whether this create is a video campaign (#5764 row 18): chosen, and offered by this deployment. */
+  protected readonly linkedInVideoSelected = computed<boolean>(() => this.linkedInVideoAdsAvailable() && this.linkedInFormat() === 'video');
   /** Whether custom targeting replaces the targeting profile (#5764 rows 8–11), carried in the draft. */
   protected readonly linkedInCustomTargeting = signal(false);
   /** The custom targeting clauses and exclusions as edited (#5764 rows 8–11), carried in the draft. */
@@ -1919,6 +2002,29 @@ export class ImplementationTabComponent implements OnInit {
    * switch keeps this page and its draft, and each foundation's default account differs, so both are part of it.
    */
   protected readonly linkedInSegmentsOwner = computed(() => linkedInSegmentsOwnerKey(this.activeFoundationSlug(), this.linkedInAudienceAccountId()));
+  /**
+   * The objective and conversion rules as edited (#5764 rows 2 and 4), carried in the draft. Rules are owned like segment
+   * picks (`linkedInSegmentsOwner`), and a create for another owner is held.
+   */
+  protected readonly linkedInObjectiveDraft = signal<LinkedInObjectiveDraft>(emptyLinkedInObjectiveDraft());
+  /** What decides whether the target cost is offered: the capability, the Bidding control, and LinkedIn's Bidding choice. */
+  private readonly linkedInTargetCostOfferInput = computed<LinkedInTargetCostOfferInput>(() => ({
+    enabled: this.linkedInTargetCostEnabled(),
+    biddingAvailable: this.biddingAvailable(),
+    strategy: this.biddingDrafts()['linkedin-ads']?.strategy,
+  }));
+  /** Whether the objective picker offers the target cost now (`linkedInTargetCostOffered`); hidden, a typed one is not sent. */
+  protected readonly linkedInTargetCostShown = computed<boolean>(() => linkedInTargetCostOffered(this.linkedInTargetCostOfferInput()));
+  /** A typed target cost while the capability is unread holds Create (`linkedInTargetCostPending`) rather than being dropped. */
+  private readonly linkedInTargetCostAwaitingCapability = computed<boolean>(() =>
+    linkedInTargetCostPending(this.linkedInTargetCostOfferInput(), this.linkedInObjectiveDraft())
+  );
+  /** The target cost field is on screen while it is offered, and while a typed one waits on the capability, so it can be cleared. */
+  protected readonly linkedInTargetCostFieldShown = computed<boolean>(() => this.linkedInTargetCostShown() || this.linkedInTargetCostAwaitingCapability());
+  /** The objective picker is mounted while it shows the objective or the target cost field. */
+  protected readonly linkedInObjectivePickerShown = computed<boolean>(
+    () => linkedInObjectiveShown(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable()) || this.linkedInTargetCostFieldShown()
+  );
 
   /**
    * The ad account whose segments the custom targeting editor reads: the account the create names, so the segments
@@ -1981,6 +2087,25 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditEffectiveVideoGoal = computed<RedditVideoGoal | null>(() => redditEffectiveVideoGoal(this.redditVideoGoal()));
   /** The message shown under the goal picker while Video Views has no usable goal, else `null`. */
   protected readonly redditVideoGoalError = computed(() => redditVideoGoalError(this.redditObjective(), this.redditVideoGoal()));
+  /**
+   * The pixel event a `conversions` campaign optimizes toward (#6108 row 2). Starts on campaign-service's own default,
+   * which a create leaves out, and is remembered across objective changes like the video goal; only the request is gated.
+   */
+  protected readonly redditConversionEvent = signal<RedditConversionEvent>(DEFAULT_REDDIT_CONVERSION_EVENT);
+  /** Whether the picker shows: an explicit yes, on the conversions objective. */
+  protected readonly redditConversionEventOffered = computed<boolean>(() =>
+    redditConversionEventOffered(this.redditConversionEventEnabled(), this.redditObjective())
+  );
+  /** Why Create is held for a non-default event this deployment has not confirmed, or `null` — held, never dropped. */
+  protected readonly redditConversionEventBlock = computed<CampaignBiddingCapabilityBlock | null>(() =>
+    redditConversionEventBlock(
+      this.redditConversionEvent(),
+      this.redditObjective(),
+      this.redditConversionEventEnabled(),
+      this.createCapabilityRead(),
+      this.briefPersistence().briefId
+    )
+  );
   /**
    * The message shown under the Post URL while Video Views has no post, else `null`. A video-views
    * campaign has to promote an existing video post: the image-URL route authors an IMAGE post, which
@@ -3937,7 +4062,7 @@ export class ImplementationTabComponent implements OnInit {
   );
   /** The upload's status, announced with the variant it is for. */
   protected readonly linkedInImageUploadLiveMessage = computed(() => {
-    if (!this.linkedInAssetUploadAvailable()) return '';
+    if (!this.linkedInAssetUploadAvailable() && !this.linkedInVideoSelected()) return '';
     const views = this.linkedInVariantViews();
     const index = views.findIndex((view) => view.key === this.linkedInImageUploadVariantKey());
     if (index === -1 || views[index].imageStatusMessage === '') return '';
@@ -4221,6 +4346,7 @@ export class ImplementationTabComponent implements OnInit {
           geoTargetCount: this.redditEffectiveGeoTargets().length,
           videoGoalError: this.redditVideoGoalError(),
           videoPostError: this.redditVideoPostError(),
+          conversionEventBlock: this.redditConversionEventBlock()?.message ?? null,
         })
       : null;
     if (redditRefusal !== null) return redditRefusal;
@@ -4375,7 +4501,7 @@ export class ImplementationTabComponent implements OnInit {
         this.linkedInImageUploadOrphaned()
       )
     )
-      return 'Waiting for the LinkedIn Ads image upload to finish.';
+      return `Waiting for the LinkedIn Ads ${this.linkedInVideoSelected() ? 'video' : 'image'} upload to finish.`;
     if (this.showTwitterSection() && this.twitterCreateAvailable() && this.twitterImageUploadStatus() === 'uploading')
       return 'Waiting for the X image upload to finish.';
     if (
@@ -5416,6 +5542,20 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /** The picker's choice; it offers only `REDDIT_CONVERSION_EVENTS`, so anything else (a cleared value) is ignored. */
+  protected onRedditConversionEventChange(value: string | null): void {
+    const event = redditConversionEventFromDraft(value);
+    if (event === undefined) return;
+    this.redditConversionEvent.set(event);
+    this.emitDraft();
+  }
+
+  /** Back to Purchase: the way past an `unsupported` {@link redditConversionEventBlock}, whose picker is hidden. */
+  protected useDefaultRedditConversionEvent(): void {
+    this.redditConversionEvent.set(DEFAULT_REDDIT_CONVERSION_EVENT);
+    this.emitDraft();
+  }
+
   protected onRedditPostUrlInput(event: Event): void {
     this.redditPostUrl.set((event.target as HTMLInputElement).value.trim());
     this.emitDraft();
@@ -5522,8 +5662,17 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
-  /** Choose the LinkedIn ad format (#5764 row 19). The first switch to text starts one empty text ad. */
-  protected onLinkedInFormatChange(format: LinkedInAdFormat): void {
+  /** The Ad format picker's value as a format: anything else reads as single image ads. */
+  protected onLinkedInFormatSelect(value: unknown): void {
+    this.onLinkedInFormatChange(value === 'text' || value === 'video' ? value : 'single_image');
+  }
+
+  /**
+   * Choose the LinkedIn ad format (#5764 rows 18–19). The first switch to text starts one empty text ad. A switch to or
+   * from video ends the one upload in flight or failed: it was an image or a video for the format left behind.
+   */
+  protected onLinkedInFormatChange(format: LinkedInAdFormatChoice): void {
+    if ((format === 'video') !== (this.linkedInFormat() === 'video')) this.clearLinkedInImageUpload();
     this.linkedInFormat.set(format);
     if (format === 'text' && this.linkedInTextAds().length === 0) this.linkedInTextAds.set([newLinkedInTextAdDraft([])]);
     this.emitDraft();
@@ -5532,6 +5681,12 @@ export class ImplementationTabComponent implements OnInit {
   /** Turn custom targeting on in place of the targeting profile (#5764 rows 8–11). */
   protected onLinkedInCustomTargetingOn(): void {
     this.linkedInCustomTargeting.set(true);
+    this.emitDraft();
+  }
+
+  /** The objective picker's draft as edited (#5764 rows 2 and 4). */
+  protected onLinkedInObjectiveDraftChange(draft: LinkedInObjectiveDraft): void {
+    this.linkedInObjectiveDraft.set(draft);
     this.emitDraft();
   }
 
@@ -5669,6 +5824,63 @@ export class ImplementationTabComponent implements OnInit {
   protected onLinkedInVariantImageRemove(key: string): void {
     if (this.linkedInImageUploadVariantKey() === key) this.clearLinkedInImageUpload();
     this.setLinkedInVariantImage(key, '', '', '');
+    this.emitDraft();
+  }
+
+  /**
+   * Upload the chosen MP4 for one variant of this brief (#5764 row 18): `onLinkedInVariantImageFileChange`'s sibling, in
+   * the same one LinkedIn upload slot, against LinkedIn's video limits (`linkedInVideoFileRefusal`).
+   */
+  protected onLinkedInVariantVideoFileChange(key: string, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+    if (this.linkedInImageSlotHeldByOther(key) || this.linkedInVideoDeleteRunning()) return;
+
+    // A file that cannot be uploaded is refused before anything changes: the ad keeps the video it has, and the reason
+    // shows under the picker without holding Create.
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    const refusal = linkedInVideoFileRefusal(file) ?? (!briefId || !projectSlug ? 'Save the brief before uploading a video for it.' : null);
+    if (refusal !== null) {
+      this.clearLinkedInImageUpload();
+      this.linkedInImageUploadVariantKey.set(key);
+      this.failLinkedInImageUpload(refusal);
+      this.emitDraft();
+      return;
+    }
+
+    this.clearLinkedInImageUpload();
+    this.setLinkedInVariantVideo(key, '', '', '');
+    this.linkedInImageUploadVariantKey.set(key);
+    this.emitDraft();
+    this.followLinkedInImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'linkedin'), briefId, file.name);
+    this.emitDraft();
+  }
+
+  /** The variant notice's Remove: its video while video ads are chosen (#5764 row 18), else its image. */
+  protected onLinkedInVariantMediaRemove(key: string): void {
+    if (this.linkedInVideoSelected()) this.onLinkedInVariantVideoRemove(key);
+    else this.onLinkedInVariantImageRemove(key);
+  }
+
+  /**
+   * A stored video the library deleted, or the operator took off the ads there (#5764 row 18): cleared from any ad that
+   * names it. Delete is off while an ad uses a video, so after a delete this only catches an upload that came back with it.
+   */
+  protected onLibraryVideoDeleted(assetId: string): void {
+    if (!this.linkedInVariants().some((variant) => variant.videoAssetId === assetId)) return;
+    this.linkedInVariants.update((variants) =>
+      variants.map((variant) => (variant.videoAssetId === assetId ? { ...variant, videoAssetId: '', videoAssetName: '', videoAssetBriefId: '' } : variant))
+    );
+    this.emitDraft();
+  }
+
+  /** Forget one variant's LinkedIn video, or its upload in flight or failed (#5764 row 18). */
+  protected onLinkedInVariantVideoRemove(key: string): void {
+    if (this.linkedInImageUploadVariantKey() === key) this.clearLinkedInImageUpload();
+    this.setLinkedInVariantVideo(key, '', '', '');
     this.emitDraft();
   }
   /**
@@ -7067,7 +7279,11 @@ export class ImplementationTabComponent implements OnInit {
               // The legacy creator reads the form's account. When the connection decides it, only a
               // chosen non-default account is sent, as `selectedAdAccountId` (#5809).
               ...this.linkedInAccountFieldsNow(),
-              ...this.biddingField('linkedin-ads'),
+              // With automatic bidding's target cost (campaign-service#674) only while offered and typed.
+              ...linkedInBiddingWithTargetCost(this.biddingField('linkedin-ads'), this.linkedInObjectiveDraft(), this.linkedInTargetCostShown()),
+              // The objective and conversion rules (#5764 rows 2 and 4), only when chosen, so a create without a
+              // choice sends what it always did and the bidding decides.
+              ...linkedInObjectiveFieldsForCreate(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable()),
             },
           }
         : {}),
@@ -7105,6 +7321,8 @@ export class ImplementationTabComponent implements OnInit {
               // a goal left over from an earlier Video Views choice is not sent with another
               // objective. `canSubmit` guarantees it is present whenever the objective needs it.
               ...this.redditVideoGoalPayload(),
+              // Only offered, on conversions, and other than the default; a held one blocks Create instead (#6108 row 2).
+              ...redditConversionEventField(this.redditConversionEvent(), this.redditObjective(), this.redditConversionEventEnabled()),
               // Omitted when blank rather than sent empty: upstream treats an empty `postUrl` as
               // "author a post instead", and an empty `callToAction` as "use the default" — both
               // the same decision an absent key makes, so a blank string would only add a value
@@ -7967,8 +8185,12 @@ export class ImplementationTabComponent implements OnInit {
         slot: this.linkedInImageSlot(),
         briefId: this.briefPersistence().briefId ?? '',
         briefSaving: this.briefPersistence().status === 'saving',
+        // A delete in the library could otherwise race an upload of the same bytes, which answers with that asset.
+        pickerHeld: this.linkedInVideoSelected() && this.linkedInVideoDeleteRunning(),
         showSection: this.showLinkedInSection(),
-        uploadEnabled: this.linkedInAssetUploadEnabled(),
+        // While video ads are chosen (#5764 row 18) each view describes the variant's video, sent on their own capability.
+        uploadEnabled: this.linkedInVideoSelected() ? this.linkedInVideoAdsEnabled() : this.linkedInAssetUploadEnabled(),
+        media: this.linkedInVideoSelected() ? 'video' : 'image',
         capabilityRead: this.createCapabilityRead(),
         // campaign-service builds an unnamed ad's default from the STORED brief's event name
         // (`linkedinPreflightEventName`), not the editable field, so that is the name compared here.
@@ -7991,6 +8213,13 @@ export class ImplementationTabComponent implements OnInit {
   private setLinkedInVariantImage(key: string, imageAssetId: string, imageAssetName: string, imageAssetBriefId: string): void {
     this.linkedInVariants.update((variants) =>
       variants.map((variant) => (variant.key === key ? { ...variant, imageAssetId, imageAssetName, imageAssetBriefId } : variant))
+    );
+  }
+
+  /** Set (or, with `''`, clear) one variant's video (#5764 row 18). */
+  private setLinkedInVariantVideo(key: string, videoAssetId: string, videoAssetName: string, videoAssetBriefId: string): void {
+    this.linkedInVariants.update((variants) =>
+      variants.map((variant) => (variant.key === key ? { ...variant, videoAssetId, videoAssetName, videoAssetBriefId } : variant))
     );
   }
 
@@ -8029,8 +8258,11 @@ export class ImplementationTabComponent implements OnInit {
         // Onto the variant or text ad the image was chosen for, and only that one. Gone (the brief re-seeded the
         // variants, or the ad was removed), the image has nowhere to go and the upload is simply over.
         const key = this.linkedInImageUploadVariantKey();
-        if (this.linkedInVariants().some((variant) => variant.key === key)) this.setLinkedInVariantImage(key, asset.id, fileName, briefId);
-        else if (this.linkedInTextAds().some((ad) => ad.key === key)) this.setLinkedInTextAdImage(key, asset.id, fileName, briefId);
+        // The stored type says which: an MP4 is the variant's video (#5764 row 18), anything else its image.
+        if (this.linkedInVariants().some((variant) => variant.key === key)) {
+          if (asset.mimeType === CREATIVE_ASSET_VIDEO_MIME_TYPE) this.setLinkedInVariantVideo(key, asset.id, fileName, briefId);
+          else this.setLinkedInVariantImage(key, asset.id, fileName, briefId);
+        } else if (this.linkedInTextAds().some((ad) => ad.key === key)) this.setLinkedInTextAdImage(key, asset.id, fileName, briefId);
         this.linkedInImageUploadStatus.set('idle');
         this.creativeLibraryRevision.update((revision) => revision + 1);
         this.emitDraft();
@@ -8039,7 +8271,8 @@ export class ImplementationTabComponent implements OnInit {
         this.campaignService.forgetCreativeAssetUpload('linkedin', upload$);
         this.linkedInImageUploadPendingName.set('');
         this.linkedInImageUploadPendingBriefId.set('');
-        this.failLinkedInImageUpload(this.creativeAssetUploadErrorMessage(err, false), briefId);
+        const message = this.linkedInVideoSelected() ? this.linkedInVideoUploadErrorMessage(err) : this.creativeAssetUploadErrorMessage(err, false);
+        this.failLinkedInImageUpload(message, briefId);
         this.emitDraft();
       },
     });
@@ -8643,6 +8876,17 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * `creativeAssetUploadErrorMessage`'s video sibling (#5764 row 18). The BFF's 413 and 415 already name the video's
+   * limit and type, so its message is shown as it came.
+   */
+  private linkedInVideoUploadErrorMessage(err: unknown): string {
+    const status = err instanceof HttpErrorResponse ? err.status : 0;
+    if (status === 0 || status === 503) return 'The video service is unavailable right now. Try again in a moment.';
+    if (status === 409) return "This brief's asset library is full. Delete images or videos it no longer needs, then try again.";
+    return serverAuthoredMessage(err, 'The video could not be uploaded. Try again, or choose single image ads.');
+  }
+
+  /**
    * A readable reason for a refused upload. Size and type use the shared copy the pre-upload check
    * shows; an unreachable or overloaded service (0, 503 — campaign-service sheds concurrent uploads
    * with a 503) says to retry; any other refusal shows what the server wrote, since campaign-service
@@ -8784,6 +9028,15 @@ export class ImplementationTabComponent implements OnInit {
    * are chosen and offered, else the variants exactly as before (no `format` key).
    */
   private linkedInCreativesField(): Pick<LinkedInCampaignCreateRequest, 'variants' | 'format' | 'textAds'> {
+    // Video ads (#5764 row 18) are the single-image request with a video on each variant, and no image or description.
+    if (this.linkedInVideoSelected()) {
+      return {
+        variants: linkedInVideoVariantsForCreate(this.linkedInVariants(), this.briefPersistence().briefId ?? '', {
+          copy: this.linkedInVariantCopyAvailable(),
+          callToAction: this.linkedInCallToActionAvailable(),
+        }),
+      };
+    }
     if (!this.linkedInTextAdsSelected()) return { variants: this.linkedInVariantsSent() };
     const textAds = linkedInTextAdsForCreate(this.linkedInTextAds(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '');
     return { format: 'text', textAds, variants: [] };
@@ -8798,8 +9051,10 @@ export class ImplementationTabComponent implements OnInit {
       variantCount: this.linkedInVariants().length,
       variantTextInvalid: this.linkedInVariantTextInvalid(),
       // Only fields the create sends can hold it: a hidden name or description goes nowhere.
+      // A video ad sends no description (#5764 row 18), so only its name can hold Create then.
       variantFieldsInvalid:
-        this.linkedInVariantCopyAvailable() && this.linkedInVariantViews().some((view) => view.nameError !== '' || view.descriptionError !== ''),
+        this.linkedInVariantCopyAvailable() &&
+        this.linkedInVariantViews().some((view) => view.nameError !== '' || (!this.linkedInVideoSelected() && view.descriptionError !== '')),
       removalsHeld: this.linkedInTargetingRemovalsHeld(),
       targetingEditAvailable: this.linkedInTargetingEditAvailable(),
       profileLoaded: this.linkedInSelectedTargetingProfile() !== null,
@@ -8809,9 +9064,25 @@ export class ImplementationTabComponent implements OnInit {
       createAccountStatus: this.linkedInCreateAccount().status,
       // Text Ads chosen but no longer offered: held, never sent as single image ads instead (#5764 row 19).
       textAdsUnavailable: this.linkedInFormat() === 'text' && !this.linkedInTextAdsAvailable(),
+      // Likewise video ads (#5764 row 18); while chosen, every ad needs its video for this brief.
+      videoAdsUnavailable: this.linkedInFormat() === 'video' && !this.linkedInVideoAdsAvailable(),
+      ...(this.linkedInVideoSelected() ? { videoMissing: linkedInVideoMissing(this.linkedInVariants(), this.briefPersistence().briefId ?? '') } : {}),
       customTargetingUnavailable: this.linkedInCustomTargeting() && !this.linkedInTargetingAvailable(),
       // Custom targeting (#5764 rows 8–11) holds Create while its clauses cannot be sent, and replaces the profile checks.
       ...(this.linkedInCustomTargetingSelected() ? { customTargeting: { refusal: this.linkedInCustomTargetingRefusalNow() } } : {}),
+      // The objective (#5764 rows 2 and 4), checked against the request with its bidding; a withdrawn choice is held.
+      objectiveRefusal: linkedInObjectiveCreateRefusal({
+        draft: this.linkedInObjectiveDraft(),
+        available: this.linkedInConversionsAvailable(),
+        owner: this.linkedInSegmentsOwner(),
+        bidding: this.biddingField('linkedin-ads').bidding,
+      }),
+      // The target cost (campaign-service#674): held while offered and refused; hidden, it is not sent and holds nothing.
+      targetCostRefusal: linkedInTargetCostCreateRefusal(
+        this.linkedInObjectiveDraft(),
+        this.linkedInTargetCostShown(),
+        this.linkedInTargetCostAwaitingCapability()
+      ),
       // Text Ads replace the variant checks while chosen (#5764 row 19); they need a manual bid.
       ...(this.linkedInTextAdsSelected()
         ? {
@@ -9231,6 +9502,7 @@ export class ImplementationTabComponent implements OnInit {
     if (redditRestore.failedUpload) this.failRedditImageUpload(redditRestore.failedUpload.message, redditRestore.failedUpload.briefId);
     if (redditRestore.pendingUpload) this.resumeRedditImageUpload(redditRestore.pendingUpload.name, redditRestore.pendingUpload.briefId);
     if (redditRestore.videoGoal !== undefined) this.redditVideoGoal.set(redditRestore.videoGoal);
+    if (redditRestore.conversionEvent !== undefined) this.redditConversionEvent.set(redditRestore.conversionEvent);
     // The Meta image, on the Reddit image's terms above.
     const metaImageRestore = metaImageDraftRestore(draft);
     if (metaImageRestore.imageUrl !== undefined) this.metaImageUrl.set(metaImageRestore.imageUrl);
@@ -9250,6 +9522,8 @@ export class ImplementationTabComponent implements OnInit {
     // Custom targeting and its clauses as edited (#5764 rows 8–11), present-only.
     if (linkedInRestore.customTargeting !== undefined) this.linkedInCustomTargeting.set(linkedInRestore.customTargeting);
     if (linkedInRestore.targetingDraft) this.linkedInTargetingDraft.set(linkedInRestore.targetingDraft);
+    // The objective and conversion rules (#5764 rows 2 and 4), present-only.
+    if (linkedInRestore.objectiveDraft) this.linkedInObjectiveDraft.set(linkedInRestore.objectiveDraft);
     // The LinkedIn upload, on the Meta upload's terms above, for the variant it was chosen for.
     this.linkedInImageUploadVariantKey.set(linkedInRestore.uploadVariantKey);
     if (linkedInRestore.failedUpload) this.failLinkedInImageUpload(linkedInRestore.failedUpload.message, linkedInRestore.failedUpload.briefId);
@@ -9774,6 +10048,7 @@ export class ImplementationTabComponent implements OnInit {
         textAds: this.linkedInTextAds(),
         customTargeting: this.linkedInCustomTargeting(),
         targetingDraft: this.linkedInTargetingDraft(),
+        objectiveDraft: this.linkedInObjectiveDraft(),
       }),
       // Snapshotted whatever `redditCreativeAvailable()` says — see the draft interface for why a
       // capability must not decide what the draft remembers. A failed upload is kept with its brief
@@ -9793,6 +10068,7 @@ export class ImplementationTabComponent implements OnInit {
         uploadError: this.redditImageUploadError(),
         uploadFailedBriefId: this.redditImageUploadFailedBriefId(),
         videoGoal: this.redditVideoGoal(),
+        conversionEvent: this.redditConversionEvent(),
       }),
       ...metaImageDraftFields({
         imageUrl: this.metaImageUrl(),
@@ -9847,6 +10123,7 @@ export class ImplementationTabComponent implements OnInit {
     this.redditCallToAction.set(redditReset.callToAction);
     this.redditObjective.set(redditReset.objective);
     this.redditVideoGoal.set(redditReset.videoGoal);
+    this.redditConversionEvent.set(redditReset.conversionEvent);
     this.redditBudgetUsd.set(redditReset.budgetUsd);
     this.setRedditBriefLists(redditReset);
     // The other platforms on the same terms (#4624): every value the brief does not derive, or derives
@@ -10113,6 +10390,7 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInTextAds.set([]);
     this.linkedInCustomTargeting.set(false);
     this.linkedInTargetingDraft.set(emptyLinkedInTargetingDraft());
+    this.linkedInObjectiveDraft.set(emptyLinkedInObjectiveDraft());
     this.campaignForm.patchValue({
       linkedInAccountId: untracked(() => this.linkedInAccounts())[0]?.accountId ?? '',
       linkedInGeoTargets: [],

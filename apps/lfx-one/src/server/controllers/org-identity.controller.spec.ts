@@ -3,6 +3,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { getRoleGrantEmployeeView } = vi.hoisted(() => ({ getRoleGrantEmployeeView: vi.fn() }));
+vi.mock('../services/org-employee-view.service', () => ({
+  OrgEmployeeViewService: class {
+    public resolve = vi.fn().mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
+    public getRoleGrantEmployeeView = getRoleGrantEmployeeView;
+  },
+}));
+
 const { proxyRequest, proxyRequestWithResponse, resolveSegment, getRoleGrants, getRollUpSet, getClaManagerOrgs, getRoleGrantAffiliation } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
@@ -271,6 +279,20 @@ describe('OrgIdentityController.resolveSegment', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('hands a qualification-lookup outage to the error handler as the structured 503, not a 502 or a 404 (#5845)', async () => {
+    const outage = new MicroserviceError('Try again.', 503, 'ROLE_GRANTS_UNAVAILABLE', { operation: 'op', service: 'svc' });
+    resolveSegment.mockRejectedValue(outage);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgIdentityController().resolveSegment(request('acme'), res, next);
+
+    // The central handler answers `{ error, code, ... }` with the error's own 503 and logs it once.
+    expect(next).toHaveBeenCalledWith(outage);
+    expect(outage.toResponse()).toMatchObject({ error: 'Try again.', code: 'ROLE_GRANTS_UNAVAILABLE' });
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
   it('hands validation errors to the error handler (400 stays a local answer)', async () => {
     const validation = ServiceValidationError.forField('segment', 'Invalid company segment', { operation: 'op', service: 'svc', path: '/x' });
     resolveSegment.mockRejectedValueOnce(validation);
@@ -388,6 +410,7 @@ describe('OrgIdentityController.getRoleGrants', () => {
     getRoleGrants.mockResolvedValue(grants);
     getClaManagerOrgs.mockResolvedValue({ claManagerOrgs: [], claManagerLookup: 'ok' });
     getRoleGrantAffiliation.mockResolvedValue({});
+    getRoleGrantEmployeeView.mockResolvedValue({});
   });
 
   // Spec 053: the viewer's Retry asks for a recompute past the BFF cache; nothing else does.
@@ -416,6 +439,30 @@ describe('OrgIdentityController.getRoleGrants', () => {
     expect(okRes.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     expect(okRes.setHeader).not.toHaveBeenCalledWith(ORG_ROLE_GRANTS_CORRELATION_HEADER, expect.anything());
     expect(okRes.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [], claManagerLookup: 'ok' });
+  });
+
+  describe('all employee view (#5845)', () => {
+    const employeeView = { orgUid: '0016100000ACMEAAA1', orgName: 'Acme Motors', orgSlug: 'acme-motors' };
+
+    it('merges the employee-view company into the response alongside the grants', async () => {
+      getRoleGrantEmployeeView.mockResolvedValueOnce({ employeeView });
+      const res = buildRes();
+      const req = request();
+
+      await new OrgIdentityController().getRoleGrants(req, res, vi.fn());
+
+      expect(getRoleGrantEmployeeView).toHaveBeenCalledWith(req, grants);
+      expect(res.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [], claManagerLookup: 'ok', employeeView });
+    });
+
+    it('passes a failed employee-view lookup through instead of an empty answer', async () => {
+      getRoleGrantEmployeeView.mockResolvedValueOnce({ employeeViewLookup: 'failed' });
+      const res = buildRes();
+
+      await new OrgIdentityController().getRoleGrants(request(), res, vi.fn());
+
+      expect(res.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [], claManagerLookup: 'ok', employeeViewLookup: 'failed' });
+    });
   });
 
   describe('CLA-only organizations', () => {

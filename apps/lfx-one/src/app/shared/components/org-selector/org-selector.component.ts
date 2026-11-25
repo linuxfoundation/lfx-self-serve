@@ -22,6 +22,7 @@ import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { NavigationEnd, Router } from '@angular/router';
 import {
   NAVBAR_ORG_CLA_ONLY_ROLE,
+  NAVBAR_ORG_EMPLOYEE_VIEW_ROLE,
   NAVBAR_ORG_ROLE_DIRECT_SUFFIX,
   NAVBAR_ORG_ROLE_TOOLTIPS,
   NAVBAR_ORG_ROLE_UNKNOWN_SOURCE,
@@ -46,6 +47,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { ElementIdService } from '@services/element-id.service';
 import { LensService } from '@services/lens.service';
 import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -72,6 +74,7 @@ export class OrgSelectorComponent {
   private readonly router = inject(Router);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly claOnlyAccess = inject(OrgClaOnlyAccessService);
+  private readonly viewModeService = inject(OrgLensViewModeService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
   /** Captured at construction so the afterNextRender callback below has an explicit DestroyRef + Injector — both `takeUntilDestroyed()` and `toObservable()` call inject() internally and would otherwise throw NG0203 outside the injection context. */
   private readonly destroyRef = inject(DestroyRef);
@@ -193,13 +196,18 @@ export class OrgSelectorComponent {
     const uid = this.selectedAccountUid();
     return !!uid && !this.selectedRolePersona() && this.claOnlyAccess.isClaOnly(uid);
   });
-  protected readonly selectedRoleLabel: Signal<string> = computed(() =>
-    this.selectedClaOnly() ? NAVBAR_ORG_CLA_ONLY_ROLE.label : this.personaToLabel(this.selectedRolePersona(), this.hasHierarchyAssociation())
-  );
-  protected readonly selectedRoleIcon: Signal<string> = computed(() =>
-    this.selectedClaOnly() ? NAVBAR_ORG_CLA_ONLY_ROLE.icon : this.personaToIcon(this.selectedRolePersona())
-  );
+  // Epic #5845 — the selected company is open to the caller only as an employee (read-only, no names or emails).
+  private readonly selectedEmployeeView: Signal<boolean> = computed(() => this.viewModeService.isEmployeeView() && !this.selectedRolePersona());
+  protected readonly selectedRoleLabel: Signal<string> = computed(() => {
+    if (this.selectedEmployeeView()) return NAVBAR_ORG_EMPLOYEE_VIEW_ROLE.label;
+    return this.selectedClaOnly() ? NAVBAR_ORG_CLA_ONLY_ROLE.label : this.personaToLabel(this.selectedRolePersona(), this.hasHierarchyAssociation());
+  });
+  protected readonly selectedRoleIcon: Signal<string> = computed(() => {
+    if (this.selectedEmployeeView()) return NAVBAR_ORG_EMPLOYEE_VIEW_ROLE.icon;
+    return this.selectedClaOnly() ? NAVBAR_ORG_CLA_ONLY_ROLE.icon : this.personaToIcon(this.selectedRolePersona());
+  });
   protected readonly selectedRoleTooltip: Signal<string> = computed(() => {
+    if (this.selectedEmployeeView()) return NAVBAR_ORG_EMPLOYEE_VIEW_ROLE.tooltip;
     if (this.selectedClaOnly()) return NAVBAR_ORG_CLA_ONLY_ROLE.tooltip;
     const uid = this.selectedAccountUid();
     const persona = this.selectedRolePersona();
@@ -245,6 +253,7 @@ export class OrgSelectorComponent {
 
   /** Navbar card tooltip: what the role lets the user do, in plain language (rather than repeating the label). */
   protected readonly navbarRoleTooltip: Signal<string> = computed(() => {
+    if (this.selectedEmployeeView()) return NAVBAR_ORG_EMPLOYEE_VIEW_ROLE.tooltip;
     if (this.selectedClaOnly()) return NAVBAR_ORG_CLA_ONLY_ROLE.tooltip;
     const uid = this.selectedAccountUid();
     const persona = this.selectedRolePersona();
@@ -268,13 +277,23 @@ export class OrgSelectorComponent {
       // Prefer the BFF-attached `parentName` on the item (D-006 in-memory join) — fall back to the
       // signal map only if the server response somehow omitted it on a row known to be inherited.
       const parentName = item.parentName ?? parentNameByUid.get(item.uid) ?? '';
-      if (!persona && item.claOnly === true) {
+      // Proven employee (or authorizer full) access supersedes CLA-only, as `OrgClaOnlyAccessService.isClaOnly` does for the selected company.
+      if (!persona && item.claOnly === true && item.employeeView !== true && item.fullAccess !== true) {
         return {
           item,
           isSelected: !!selectedUid && selectedUid === item.uid,
           roleLabel: NAVBAR_ORG_CLA_ONLY_ROLE.label,
           roleIcon: NAVBAR_ORG_CLA_ONLY_ROLE.icon,
           roleTooltip: NAVBAR_ORG_CLA_ONLY_ROLE.tooltip,
+        };
+      }
+      if (!persona && item.employeeView === true) {
+        return {
+          item,
+          isSelected: !!selectedUid && selectedUid === item.uid,
+          roleLabel: NAVBAR_ORG_EMPLOYEE_VIEW_ROLE.label,
+          roleIcon: NAVBAR_ORG_EMPLOYEE_VIEW_ROLE.icon,
+          roleTooltip: NAVBAR_ORG_EMPLOYEE_VIEW_ROLE.tooltip,
         };
       }
       return {
@@ -457,7 +476,12 @@ export class OrgSelectorComponent {
     // M3: the path guard skips the resolver for the organization already selected, so this pick is the
     // only place the row's CLA-only answer can reach the CLA-only shell. Recorded for a re-pick of the
     // selection too, which returns below without navigating.
-    this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true);
+    this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true, item.employeeViewChecked === true);
+    // An unchecked CLA-only row says nothing about the employee view, so it must not erase a held employee or full-access mode.
+    if (item.claOnly !== true || item.employeeViewChecked === true || item.employeeView === true) {
+      this.viewModeService.noteAddressed(item.uid, item.employeeView === true);
+      this.viewModeService.noteFullAccessAddressed(item.uid, item.fullAccess === true);
+    }
     // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —
     // no account emission (which page consumers refetch on), no canonical fetch, no navigation. The
     // one exception is the not-found dead end, where the selection is the cookie's or a default that
