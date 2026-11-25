@@ -933,6 +933,15 @@ export function canSetLinkedInTextAds(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may carry its own `targeting` (#5764 rows 8–11, campaign-service #552). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING`, which follows campaign-service's own
+ * `LINKEDIN_ADS_TARGETING_ENABLED`: campaign-service refuses the field while that is off, and the legacy creator ignores it.
+ */
+export function canSetLinkedInTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInTargeting);
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -1161,6 +1170,7 @@ export class CampaignServiceClient {
         linkedInVariantCopyEnabled: canSetLinkedInVariantCopy(),
         linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
         linkedInTextAdsEnabled: canSetLinkedInTextAds(),
+        linkedInTargetingEnabled: canSetLinkedInTargeting(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1249,6 +1259,7 @@ export class CampaignServiceClient {
       linkedInVariantCopyEnabled: canSetLinkedInVariantCopy(),
       linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
       linkedInTextAdsEnabled: canSetLinkedInTextAds(),
+      linkedInTargetingEnabled: canSetLinkedInTargeting(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),

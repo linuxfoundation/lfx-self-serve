@@ -15,13 +15,14 @@ describe('linkedInConfigKeyRefusal', () => {
     [{ ...config, variants: 'none' }, null],
     [{ ...config, variants: [null, 'text'] }, null],
     [{ ...config, format: 'text', textAds: [{ headline: 'h', description: 'd', imageUrn: 'urn:li:image:1' }, null] }, null],
+    [{ ...config, targeting: { include: [{ skills: ['urn:li:skill:1'] }] } }, null],
   ])('accepts %j', (raw, expected) => {
     expect(linkedInConfigKeyRefusal(raw)).toBe(expected);
   });
 
   it.each([
     // A field campaign-service reads that no self-serve check covers yet.
-    [{ ...config, targeting: {} }, 'linkedInConfig'],
+    [{ ...config, conversions: {} }, 'linkedInConfig'],
     [{ ...config, objective: 'conversions' }, 'linkedInConfig'],
     // Another spelling of a known key names the key; Go folds U+017F (long s) to s.
     [{ ...config, DailyCapUsd: 20 }, 'linkedInConfig.dailyCapUsd'],
