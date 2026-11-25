@@ -491,6 +491,8 @@ import {
   emptyLinkedInTargetingDraft,
   linkedInTargetingDraftRefusal,
   linkedInTargetingForCreate,
+  linkedInTargetingSegmentsAccountRefusal,
+  linkedInSegmentsOwnerKey,
   newLinkedInTextAdDraft,
   linkedInCanAddVariant,
   linkedInCanRemoveVariant,
@@ -1912,6 +1914,22 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInTargetingDraft = signal<LinkedInTargetingDraft>(emptyLinkedInTargetingDraft());
   /** Whether this create sends custom targeting: chosen, and offered by this deployment. */
   protected readonly linkedInCustomTargetingSelected = computed<boolean>(() => this.linkedInTargetingAvailable() && this.linkedInCustomTargeting());
+  /**
+   * Who segment picks are made for (#5764 rows 8–11): the active foundation and the audience account. A foundation
+   * switch keeps this page and its draft, and each foundation's default account differs, so both are part of it.
+   */
+  protected readonly linkedInSegmentsOwner = computed(() => linkedInSegmentsOwnerKey(this.activeFoundationSlug(), this.linkedInAudienceAccountId()));
+
+  /**
+   * The ad account whose segments the custom targeting editor reads: the account the create names, so the segments
+   * offered are the ones it can send. That is `selectedAdAccountId` (a non-default pick) when the connection decides
+   * the account, the legacy dropdown's `adAccountId` otherwise, and `null` (the default) when neither is sent. `||`,
+   * not `??`: the legacy dropdown holds `''` until the accounts load, which names no account.
+   */
+  protected readonly linkedInAudienceAccountId = computed<string | null>(() => {
+    const fields = this.linkedInAccountFieldsNow();
+    return fields.selectedAdAccountId || fields.adAccountId || null;
+  });
   protected readonly linkedInBudgetUsd = signal(DEFAULT_LINKEDIN_BUDGET_USD);
   protected readonly linkedInLifetimeBudget = signal(false);
   /** The optional daily cap beside a lifetime budget (#5774). null is no cap; cleared when the lifetime budget is turned off. */
@@ -8740,6 +8758,16 @@ export class ImplementationTabComponent implements OnInit {
     };
   }
 
+  /**
+   * Why the custom targeting cannot be sent (#5764 rows 8–11), or `null`: segments picked for another ad account than
+   * the one the create names (held, never dropped, as the editor may not be open to prune them), else the clauses'
+   * refusal.
+   */
+  private linkedInCustomTargetingRefusalNow(): string | null {
+    const draft = this.linkedInTargetingDraft();
+    return linkedInTargetingSegmentsAccountRefusal(draft, this.linkedInSegmentsOwner()) ?? linkedInTargetingDraftRefusal(draft);
+  }
+
   /** The account fields a create sends (#5809); see `linkedInAccountFields`. */
   private linkedInAccountFieldsNow(): Pick<LinkedInCampaignCreateRequest, 'adAccountId' | 'selectedAdAccountId'> {
     return linkedInAccountFields({
@@ -8783,7 +8811,7 @@ export class ImplementationTabComponent implements OnInit {
       textAdsUnavailable: this.linkedInFormat() === 'text' && !this.linkedInTextAdsAvailable(),
       customTargetingUnavailable: this.linkedInCustomTargeting() && !this.linkedInTargetingAvailable(),
       // Custom targeting (#5764 rows 8–11) holds Create while its clauses cannot be sent, and replaces the profile checks.
-      ...(this.linkedInCustomTargetingSelected() ? { customTargeting: { refusal: linkedInTargetingDraftRefusal(this.linkedInTargetingDraft()) } } : {}),
+      ...(this.linkedInCustomTargetingSelected() ? { customTargeting: { refusal: this.linkedInCustomTargetingRefusalNow() } } : {}),
       // Text Ads replace the variant checks while chosen (#5764 row 19); they need a manual bid.
       ...(this.linkedInTextAdsSelected()
         ? {

@@ -601,7 +601,11 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       const f = await mountWithSelection(true);
       await answer(f, chooser);
 
+      // The custom targeting editor reads the segments of the account the create names: the default until a grant is picked.
+      const audienceAccount = (f.componentInstance as unknown as { linkedInAudienceAccountId(): string | null }).linkedInAudienceAccountId;
+      expect(audienceAccount()).toBeNull();
       pick(f, GRANT.accountId);
+      expect(audienceAccount()).toBe(GRANT.accountId);
 
       expect(el(f, 'implementation-linkedin-create-account-page')?.textContent).toContain(GRANT.orgId);
       const sent = submitAndRead(f);
@@ -780,6 +784,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       selectedPlatforms: { set(v: string[]): void };
       campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
       linkedInVariants: { set(v: unknown[]): void };
+      linkedInAudienceAccountId(): string | null;
       submit(): void;
     };
 
@@ -800,6 +805,8 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
 
     const sent = (posted?.['linkedInConfig'] as { adAccountId: string } | undefined)?.adAccountId;
     expect(sent).toBe(displayed.accountId);
+    // The custom targeting editor reads the segments of the same account the legacy create sends.
+    expect(internals.linkedInAudienceAccountId()).toBe(displayed.accountId);
     // And specifically not the revoked id the draft carried.
     expect(sent).not.toBe('urn:li:sponsoredAccount:revoked-999');
   });

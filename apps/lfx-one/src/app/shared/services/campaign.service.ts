@@ -91,6 +91,7 @@ import {
   GoogleAdsGeoTargetSearchOptions,
   GoogleAdsGeoTargetSearchResult,
   LinkedInGeoSearchResult,
+  LinkedInAudiencesResult,
   LinkedInTargetingSearchFacet,
   LinkedInTargetingSearchResult,
   GoogleAdsAudienceReadType,
@@ -824,6 +825,19 @@ export class CampaignService {
     // `strictHttpParams`, because the query is user-typed text (see `searchGoogleAdsGeoTargets`).
     const params = strictHttpParams().set('project', projectSlug).set('facet', facet).set('q', query);
     return this.http.get<LinkedInTargetingSearchResult>('/api/campaigns/linkedin/targeting-entities', { params });
+  }
+
+  /**
+   * The ad segments (matched and retargeting audiences) on the LinkedIn ad account a create uses, for the custom
+   * targeting editor (#5764 rows 8–11). `accountId` names a non-default account the caller chose; without it the
+   * default is read. A coded 403 for a caller without `global_marketing_ops` on the project, a coded 503 when that
+   * check cannot be made, and a 404 while custom targeting is off on the server.
+   */
+  public getLinkedInAudiences(projectSlug: string, accountId?: string): Observable<LinkedInAudiencesResult> {
+    // `strictHttpParams`, as the targeting search beside it, so every param is encoded the same way.
+    let params = strictHttpParams().set('project', projectSlug);
+    if (accountId) params = params.set('accountId', accountId);
+    return this.http.get<LinkedInAudiencesResult>('/api/campaigns/linkedin/audiences', { params });
   }
 
   /**

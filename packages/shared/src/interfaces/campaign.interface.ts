@@ -1971,7 +1971,7 @@ export interface CampaignServiceLinkedInAudiences {
 
 /** One ad segment the Implement tab may target, under the facet campaign-service names for its type. */
 export interface LinkedInAudienceSegment extends LinkedInTargetingEntity {
-  facet: 'audienceMatchingSegments' | 'dynamicSegments';
+  facet: LinkedInTargetingSegmentFacet;
   type: string;
   /** LinkedIn's segment status. Only `READY` serves; `BUILDING`, `UPDATING` and `ARCHIVED` are listed but will not. */
   status: string;
@@ -2464,17 +2464,26 @@ export interface LinkedInTargeting {
   exclude?: Record<string, string[]>;
 }
 
-/** A facet the Implement tab's custom targeting editor offers (#5764 rows 8–11): searched, or picked from a fixed list. */
-export type LinkedInTargetingEditorFacet = LinkedInTargetingSearchFacet | LinkedInTargetingStaticFacet;
+/**
+ * A facet the Implement tab's custom targeting editor offers (#5764 rows 8–11): searched, picked from a fixed list, or
+ * an ad segment on the ad account.
+ */
+export type LinkedInTargetingEditorFacet = LinkedInTargetingSearchFacet | LinkedInTargetingStaticFacet | LinkedInTargetingSegmentFacet;
 
 /** A facet whose values are a fixed list rather than a search: seniorities, job functions and company sizes. */
 export type LinkedInTargetingStaticFacet = 'seniorities' | 'jobFunctions' | 'staffCountRanges';
 
-/** One editor facet: its key, the label shown, and whether its values come from the targeting search. */
+/** A facet whose values are ad segments (`urn:li:adSegment:<id>`) from `GET /api/campaigns/linkedin/audiences`. */
+export type LinkedInTargetingSegmentFacet = 'audienceMatchingSegments' | 'dynamicSegments';
+
+/** Where an editor facet's values come from: the targeting search, a fixed list, or the ad account's segments. */
+export type LinkedInTargetingFacetKind = 'search' | 'static' | 'segment';
+
+/** One editor facet: its key, the label shown, and where its values come from. */
 export interface LinkedInTargetingEditorFacetOption {
   key: LinkedInTargetingEditorFacet;
   label: string;
-  searchable: boolean;
+  kind: LinkedInTargetingFacetKind;
 }
 
 /** The values picked for each facet of one clause or of the exclusions, with names so a restored chip reads the same. */
@@ -2487,6 +2496,12 @@ export type LinkedInTargetingFacetPicks = Partial<Record<LinkedInTargetingEditor
 export interface LinkedInTargetingDraft {
   clauses: LinkedInTargetingFacetPicks[];
   exclude: LinkedInTargetingFacetPicks;
+  /**
+   * Whose ad account the segment picks were made for: the foundation and ad account, as `linkedInSegmentsOwnerKey`
+   * builds it (`null` once no segment is picked). Segments belong to one account, and every foundation's default
+   * account differs, so a create for another owner is held (`linkedInTargetingSegmentsAccountRefusal`). Never sent.
+   */
+  segmentsAccountId: string | null;
 }
 
 /** Where a facet's values go: an include clause or the exclusions. */
@@ -2498,6 +2513,21 @@ export interface LinkedInTargetingSearchState {
   entities: LinkedInTargetingEntity[];
   pending: boolean;
   failure: string | null;
+}
+
+/**
+ * The custom targeting editor's read of the ad account's segments (#5764 rows 8–11): loading, loaded, refused to a
+ * caller without `global_marketing_ops` (`restricted`), or failed (`unavailable`), with the message to show.
+ */
+export interface LinkedInAudiencesState {
+  status: 'loading' | 'loaded' | 'restricted' | 'unavailable';
+  audiences: LinkedInAudienceSegment[];
+  failure: string | null;
+}
+
+/** One ad segment the editor's segment select offers: its URN and name, and the label with its size and status. */
+export interface LinkedInTargetingSegmentChoice extends LinkedInTargetingEntity {
+  label: string;
 }
 
 /** A `linkedInConfig` the create route refuses for its keys (#5764): the field to name, and why. Never echoes a caller key. */

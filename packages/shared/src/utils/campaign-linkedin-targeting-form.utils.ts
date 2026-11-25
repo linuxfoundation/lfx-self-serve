@@ -2,14 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
+  LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
+  LINKEDIN_AUDIENCES_FAILED_MESSAGE,
+  LINKEDIN_AUDIENCES_LOADING_MESSAGE,
+  LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE,
   LINKEDIN_TARGETING_EDITOR_FACETS,
   LINKEDIN_TARGETING_FACETS,
   LINKEDIN_TARGETING_LIMITS,
   LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
   LINKEDIN_TARGETING_SEARCH_FAILED_MESSAGE,
+  LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE,
   LINKEDIN_TARGETING_STATIC_VALUES,
 } from '../constants/campaign.constants';
 import type {
+  LinkedInAudienceSegment,
+  LinkedInAudiencesState,
   LinkedInTargeting,
   LinkedInTargetingDraft,
   LinkedInTargetingEditorFacet,
@@ -17,6 +25,8 @@ import type {
   LinkedInTargetingEntity,
   LinkedInTargetingFacetPicks,
   LinkedInTargetingPlacement,
+  LinkedInTargetingSegmentChoice,
+  LinkedInTargetingSegmentFacet,
 } from '../interfaces/campaign.interface';
 import { linkedInTargetingRefusal } from './campaign-linkedin-targeting.utils';
 
@@ -28,9 +38,9 @@ import { linkedInTargetingRefusal } from './campaign-linkedin-targeting.utils';
 
 const NO_CLAUSE_MESSAGE = 'Add at least one included targeting clause.';
 
-/** A draft with one empty clause to start from and no exclusions. */
+/** A draft with one empty clause to start from, no exclusions and no segments. */
 export function emptyLinkedInTargetingDraft(): LinkedInTargetingDraft {
-  return { clauses: [{}], exclude: {} };
+  return { clauses: [{}], exclude: {}, segmentsAccountId: null };
 }
 
 /** How many distinct values `facet` takes in one list: employers have their own, larger cap. */
@@ -128,6 +138,114 @@ export function linkedInTargetingSearchEmptyMessage(queryRefusal: string | null,
   return failure ?? 'Nothing matches. Try another word.';
 }
 
+/**
+ * The segment read's state after it failed with `status` and the error body's `code`: `restricted` on a 403 (only
+ * `global_marketing_ops` on the project may read or send segments), else `unavailable`, saying to try again.
+ */
+export function linkedInAudiencesFailure(status: number, code: unknown): LinkedInAudiencesState {
+  if (status === 403) return { status: 'restricted', audiences: [], failure: LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE };
+  const failure =
+    status === 503 && code === LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE ? LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE : LINKEDIN_AUDIENCES_FAILED_MESSAGE;
+  return { status: 'unavailable', audiences: [], failure };
+}
+
+/** What a segment's status adds to its label: nothing once `READY`, else that it will not serve. */
+function segmentStatusNote(status: string): string {
+  if (status === 'READY') return '';
+  if (status === 'ARCHIVED') return " (archived — won't serve)";
+  return ` (${status.toLowerCase()} — won't serve until ready)`;
+}
+
+/** A segment as the select lists it: its name, its approximate size when LinkedIn gives one, and a status note. */
+export function linkedInAudienceSegmentLabel(segment: LinkedInAudienceSegment): string {
+  const size = segment.approximateMemberCount === null ? '' : ` · ~${segment.approximateMemberCount.toLocaleString('en-US')} members`;
+  return `${segment.name}${size}${segmentStatusNote(segment.status)}`;
+}
+
+/**
+ * The segments `facet` may still add: the account's segments of that facet whose URN is in neither segment facet of
+ * `taken` (this group's picks and what it must not offer). The two segment facets are one namespace for the
+ * include/exclude overlap, as `linkedInTargetingRefusal` compares them.
+ */
+export function linkedInTargetingSegmentChoices(
+  facet: LinkedInTargetingSegmentFacet,
+  audiences: readonly LinkedInAudienceSegment[],
+  taken: LinkedInTargetingFacetPicks
+): LinkedInTargetingSegmentChoice[] {
+  const picked = new Set([...(taken.audienceMatchingSegments ?? []), ...(taken.dynamicSegments ?? [])].map((pick) => pick.urn));
+  return audiences
+    .filter((segment) => segment.facet === facet && !picked.has(segment.urn))
+    .map((segment) => ({ urn: segment.urn, name: segment.name, label: linkedInAudienceSegmentLabel(segment) }));
+}
+
+/**
+ * What the segment area says in place of, or under, its select, or `null` when there are choices: loading, the read's
+ * failure, that the account has no segments of this facet, or that every one is already used in this targeting.
+ */
+export function linkedInTargetingSegmentMessage(state: LinkedInAudiencesState, facet: LinkedInTargetingSegmentFacet, choiceCount: number): string | null {
+  if (state.status === 'loading') return LINKEDIN_AUDIENCES_LOADING_MESSAGE;
+  if (state.status !== 'loaded') return state.failure;
+  if (choiceCount > 0) return null;
+  if (!state.audiences.some((segment) => segment.facet === facet)) {
+    return `No ${facet === 'dynamicSegments' ? 'retargeting' : 'matched'} audiences on this ad account.`;
+  }
+  return 'Every one of these audiences is already used in this targeting.';
+}
+
+/** `picks` without the segment facets, or `picks` itself when it holds none. */
+function picksWithoutSegments(picks: LinkedInTargetingFacetPicks): LinkedInTargetingFacetPicks {
+  if (!picks.audienceMatchingSegments && !picks.dynamicSegments) return picks;
+  const { audienceMatchingSegments: _matched, dynamicSegments: _dynamic, ...rest } = picks;
+  return rest;
+}
+
+/**
+ * `draft` without any ad segment, in every clause and in the exclusions, and so with no segment account; nothing else is
+ * dropped. Segments belong to the ad account they were read from, so the editor drops them when the create's account
+ * changes. `draft` itself when it holds none, so nothing is emitted for a draft without segments.
+ */
+export function linkedInTargetingDraftWithoutSegments(draft: LinkedInTargetingDraft): LinkedInTargetingDraft {
+  const clauses = draft.clauses.map(picksWithoutSegments);
+  const exclude = picksWithoutSegments(draft.exclude);
+  if (exclude === draft.exclude && clauses.every((clause, i) => clause === draft.clauses[i])) return draft;
+  return { clauses, exclude, segmentsAccountId: null };
+}
+
+/** Whether `draft` holds an ad segment anywhere. */
+function draftHasSegments(draft: LinkedInTargetingDraft): boolean {
+  return [...draft.clauses, draft.exclude].some((picks) => (picks.audienceMatchingSegments?.length ?? 0) + (picks.dynamicSegments?.length ?? 0) > 0);
+}
+
+/**
+ * Who segment picks are made for: the foundation and the ad account the create uses (`null`: that foundation's
+ * default, which differs per foundation, so the foundation is part of the key). Compared, never parsed.
+ */
+export function linkedInSegmentsOwnerKey(projectSlug: string, accountId: string | null): string {
+  return `${projectSlug}|${accountId ?? ''}`;
+}
+
+/**
+ * `next`, an edit of `previous`, with the ad account its segments were picked for: none once no segment is left; the
+ * editor's account (`accountId`) for the first segment picked; else `previous`'s, so a segment added beside ones picked
+ * for another account does not make those sendable.
+ */
+export function linkedInTargetingDraftWithSegmentsAccount(
+  previous: LinkedInTargetingDraft,
+  next: LinkedInTargetingDraft,
+  accountId: string | null
+): LinkedInTargetingDraft {
+  if (!draftHasSegments(next)) return { ...next, segmentsAccountId: null };
+  return { ...next, segmentsAccountId: draftHasSegments(previous) ? previous.segmentsAccountId : accountId };
+}
+
+/**
+ * Why `draft` cannot go to the ad account `accountId` (`null`: the default), or `null`: it holds segments picked for
+ * another account. Held, never dropped, so the operator sees what changed.
+ */
+export function linkedInTargetingSegmentsAccountRefusal(draft: LinkedInTargetingDraft, accountId: string | null): string | null {
+  return draftHasSegments(draft) && draft.segmentsAccountId !== accountId ? LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE : null;
+}
+
 /** Whether another include clause may be added. */
 export function linkedInTargetingCanAddClause(draft: LinkedInTargetingDraft): boolean {
   return draft.clauses.length < LINKEDIN_TARGETING_LIMITS.clauses;
@@ -192,5 +310,6 @@ export function linkedInTargetingDraftFromStored(raw: unknown): LinkedInTargetin
   const record = plainRecord(raw);
   if (!record || !Array.isArray(record['clauses'])) return null;
   const clauses = (record['clauses'] as unknown[]).slice(0, LINKEDIN_TARGETING_LIMITS.clauses).map(storedPicks);
-  return { clauses: clauses.length > 0 ? clauses : [{}], exclude: storedPicks(record['exclude']) };
+  const segmentsAccountId = typeof record['segmentsAccountId'] === 'string' ? record['segmentsAccountId'] : null;
+  return { clauses: clauses.length > 0 ? clauses : [{}], exclude: storedPicks(record['exclude']), segmentsAccountId };
 }

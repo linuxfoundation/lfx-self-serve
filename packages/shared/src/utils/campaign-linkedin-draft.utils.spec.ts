@@ -52,7 +52,7 @@ describe('linkedInDraftFields', () => {
     format: 'text',
     textAds: [{ key: 'text-ad-1', headline: 'h', description: 'd' }],
     customTargeting: true,
-    targetingDraft: { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {} },
+    targetingDraft: { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {}, segmentsAccountId: null },
   };
 
   it('carries custom targeting and a copy of its draft', () => {
@@ -98,7 +98,12 @@ describe('linkedInDraftRestore', () => {
   });
 
   it.each([
-    ['a stored draft', { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {} }, true],
+    ['a stored draft', { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {}, segmentsAccountId: null }, true],
+    [
+      'the account its segments were picked for',
+      { clauses: [{ dynamicSegments: [{ urn: 'urn:li:adSegment:7', name: 'Site visitors' }] }], exclude: {}, segmentsAccountId: '100000002' },
+      true,
+    ],
     ['a draft with no clause list', { exclude: {} }, false],
   ])('restores custom targeting and %s', (_label, stored, restored) => {
     const restore = linkedInDraftRestore(
