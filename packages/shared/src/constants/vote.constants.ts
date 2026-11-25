@@ -65,6 +65,9 @@ export const VOTE_OVERVIEW_STANDINGS_LIMIT = 3;
 export const VOTE_RANKED_OUTCOME_EXPLANATIONS = {
   condorcetWinner: 'Preferred over every other option in head-to-head comparisons.',
   condorcetIrvFallback: 'No option beat every other option head-to-head, so instant-runoff elimination decided the result.',
+  meekStv: 'using Meek STV proportional counting.',
+  irvMajority: 'a majority of continuing ballots.',
+  irvMajorityRound: 'a majority of continuing ballots in round {round}.',
   tie: 'No single winner could be determined.',
   noWinner: 'No winner could be determined.',
 } as const;

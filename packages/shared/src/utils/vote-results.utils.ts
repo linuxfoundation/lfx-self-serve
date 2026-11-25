@@ -508,11 +508,15 @@ function overviewLabel(outcome: RankedOutcome): VoteOverviewOutcome['label'] {
 /** How the outcome was decided, in the Results tab's words; null for no winner, whose names line already says so. */
 function overviewExplanation(outcome: RankedOutcome): string | null {
   if (outcome.result === 'none') return null;
-  if (outcome.kind === 'meek_stv') return 'Elected using Meek STV proportional counting.';
+  if (outcome.kind === 'meek_stv') return `Elected ${VOTE_RANKED_OUTCOME_EXPLANATIONS.meekStv}`;
   if (outcome.result === 'tie') return VOTE_RANKED_OUTCOME_EXPLANATIONS.tie;
   if (outcome.kind === 'condorcet') return VOTE_RANKED_OUTCOME_EXPLANATIONS.condorcetWinner;
   if (outcome.condorcetFallback) return VOTE_RANKED_OUTCOME_EXPLANATIONS.condorcetIrvFallback;
-  return outcome.roundCount > 0 ? `Won a majority of continuing ballots in round ${outcome.roundCount}.` : 'Won a majority of continuing ballots.';
+  const majority =
+    outcome.roundCount > 0
+      ? VOTE_RANKED_OUTCOME_EXPLANATIONS.irvMajorityRound.replace('{round}', String(outcome.roundCount))
+      : VOTE_RANKED_OUTCOME_EXPLANATIONS.irvMajority;
+  return `Won ${majority}`;
 }
 
 /**
