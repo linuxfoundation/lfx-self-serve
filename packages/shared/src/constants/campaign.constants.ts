@@ -1356,6 +1356,10 @@ export const META_CUSTOM_AUDIENCE_ID_PATTERN = /^[1-9][0-9]*$/;
 export const META_MAX_DETAILED_TARGETING_IDS = 25;
 /** At most this many distinct `locales` (Meta `adlocale` keys). */
 export const META_MAX_LOCALES = 50;
+/** At most this many distinct keys in each of `regions` and `cities` (Meta `adgeolocation` keys; #5904 row 6, campaign-service#671). */
+export const META_MAX_GEO_LOCATIONS = 25;
+/** The Meta location types the targeting search keeps and a create takes, each with its own `metaConfig.targeting` list. */
+export const META_LOCATION_TYPES = ['region', 'city'] as const;
 /** The Meta device platforms a create may name (#5904 row 6; campaign-service#612). */
 export const META_DEVICE_PLATFORMS = ['mobile', 'desktop'] as const;
 /** The device checkboxes the Implement tab offers, as a create sends them. */
@@ -1396,8 +1400,8 @@ export const META_AD_SCHEDULE_DAY_OPTIONS: readonly MetaAdScheduleDayOption[] = 
 export const DEFAULT_META_AD_SCHEDULE: MetaAdSchedule = { days: [1, 2, 3, 4, 5], startMinute: 540, endMinute: 1020 };
 /** What turning the frequency cap on starts from: 2 impressions per person every 7 days. */
 export const DEFAULT_META_FREQUENCY_CAP: MetaFrequencyCap = { maxImpressions: 2, intervalDays: 7 };
-/** The Meta targeting search's kinds, as campaign-service names them. */
-export const META_TARGETING_SEARCH_TYPES = ['interest', 'behavior', 'work_position'] as const;
+/** The Meta targeting search's kinds, as campaign-service names them (`locale` and `location` since campaign-service#671). */
+export const META_TARGETING_SEARCH_TYPES = ['interest', 'behavior', 'work_position', 'locale', 'location'] as const;
 /** A targeting search query is 2–100 characters after trimming, as campaign-service checks it. */
 export const META_TARGETING_QUERY_MIN_LENGTH = 2;
 export const META_TARGETING_QUERY_MAX_LENGTH = 100;
@@ -2122,6 +2126,9 @@ export const META_BEHAVIOR_TARGETING_OFF_MESSAGE =
   'Meta behavior and job title targeting is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for Meta languages while language targeting is off on this deployment. */
 export const META_LOCALE_TARGETING_OFF_MESSAGE = 'Meta language targeting is not available on this deployment. Reload the page, then create again without it.';
+/** The 400 a create gets for Meta regions or cities while region targeting is off on this deployment. */
+export const META_REGION_TARGETING_OFF_MESSAGE =
+  'Meta region and city targeting is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for Meta device targeting while it is off on this deployment. */
 export const META_DEVICE_TARGETING_OFF_MESSAGE = 'Meta device targeting is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for Meta operating-system targeting while it is off on this deployment. */

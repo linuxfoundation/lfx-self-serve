@@ -10,10 +10,13 @@ import {
   META_DEVICE_TARGETING_OFF_MESSAGE,
   META_INTEREST_TARGETING_OFF_MESSAGE,
   META_LOCALE_TARGETING_OFF_MESSAGE,
+  META_LOCATION_TYPES,
   META_MAX_DETAILED_TARGETING_IDS,
+  META_MAX_GEO_LOCATIONS,
   META_MAX_LOCALES,
   META_MAX_USER_OS,
   META_OS_TARGETING_OFF_MESSAGE,
+  META_REGION_TARGETING_OFF_MESSAGE,
   META_TARGETING_KINDS,
   META_TARGETING_QUERY_MAX_LENGTH,
   META_TARGETING_QUERY_MIN_LENGTH,
@@ -28,10 +31,12 @@ import {
 } from '../constants/campaign.constants';
 import type {
   CampaignMetaAudienceTargetingBlock,
+  CampaignServiceMetaTargetingSearch,
   MetaConfigRefusal,
   MetaDetailedTargeting,
   MetaDetailedTargetingBlockInput,
   MetaDetailedTargetingPicks,
+  MetaLocationType,
   MetaTargetingFlags,
   MetaTargetingKind,
   MetaTargetingPick,
@@ -44,9 +49,9 @@ import { metaConfigRecord } from './campaign-meta-ad-options.utils';
 
 /**
  * Meta detailed targeting in `metaConfig.targeting`: interests, behaviors, work positions and languages (#5904 row 4),
- * and devices and operating systems (row 6). One set of rules for the create route (which answers a refusal with a 400) and the
+ * and devices, operating systems, regions and cities (row 6). One set of rules for the create route (which answers a refusal with a 400) and the
  * Implement tab, mirroring campaign-service's `checkMetaTargeting` and `normalizeDetailedTargeting`
- * (linuxfoundation/lfx-v2-campaign-service#612).
+ * (linuxfoundation/lfx-v2-campaign-service#612, regions and cities #671).
  */
 
 const FIELD = 'metaConfig.targeting';
@@ -54,6 +59,11 @@ const ID_FIELDS = [
   ['interests', 'Interests'],
   ['behaviors', 'Behaviors'],
   ['workPositions', 'Job titles'],
+] as const;
+/** The location key lists (#5904 row 6; campaign-service#671): Meta `adgeolocation` keys, the same id rule as above. */
+const GEO_FIELDS = [
+  ['regions', 'Regions'],
+  ['cities', 'Cities'],
 ] as const;
 /** The audience fields of the same block (#5905); setting any of them needs the audience flag. */
 const AUDIENCE_FIELDS = ['ageMin', 'ageMax', 'genders', 'customAudiences', 'excludedCustomAudiences', 'advantageAudience'] as const;
@@ -67,7 +77,7 @@ function isSet(value: unknown): boolean {
 /** Whether `raw` sets any detailed field, so the audience flag is not needed for it alone. */
 export function metaTargetingHasDetailedFields(raw: unknown): boolean {
   const record = metaConfigRecord(raw);
-  return [...ID_FIELDS.map(([key]) => key), 'locales', 'devicePlatforms', 'userOs'].some((key) => isSet(record?.[key]));
+  return [...ID_FIELDS.map(([key]) => key), ...GEO_FIELDS.map(([key]) => key), 'locales', 'devicePlatforms', 'userOs'].some((key) => isSet(record?.[key]));
 }
 
 /** Whether `raw` sets any of the six audience fields. */
@@ -92,6 +102,9 @@ export function metaTargetingFlagRefusal(raw: unknown, flags: MetaTargetingFlags
   if (set('behaviors') && !flags.behavior) return { field: `${FIELD}.behaviors`, message: META_BEHAVIOR_TARGETING_OFF_MESSAGE };
   if (set('workPositions') && !flags.behavior) return { field: `${FIELD}.workPositions`, message: META_BEHAVIOR_TARGETING_OFF_MESSAGE };
   if (set('locales') && !flags.locale) return { field: `${FIELD}.locales`, message: META_LOCALE_TARGETING_OFF_MESSAGE };
+  for (const [key] of GEO_FIELDS) {
+    if (set(key) && !flags.region) return { field: `${FIELD}.${key}`, message: META_REGION_TARGETING_OFF_MESSAGE };
+  }
   if (set('devicePlatforms') && !flags.device) return { field: `${FIELD}.devicePlatforms`, message: META_DEVICE_TARGETING_OFF_MESSAGE };
   if (set('userOs') && !flags.os) return { field: `${FIELD}.userOs`, message: META_OS_TARGETING_OFF_MESSAGE };
   return null;
@@ -99,20 +112,27 @@ export function metaTargetingFlagRefusal(raw: unknown, flags: MetaTargetingFlags
 
 /**
  * Why `raw`'s detailed fields cannot be sent, or `null`. Each id list holds Meta ids (digits, no leading zero),
- * at most {@link META_MAX_DETAILED_TARGETING_IDS} distinct; `locales` holds positive integers, at most
- * {@link META_MAX_LOCALES} distinct. Absent or null is "not set"; ids are trimmed first.
+ * at most {@link META_MAX_DETAILED_TARGETING_IDS} distinct; `regions` and `cities` hold Meta location keys of the same
+ * shape, at most {@link META_MAX_GEO_LOCATIONS} distinct each; `locales` holds positive integers, at most
+ * {@link META_MAX_LOCALES} distinct. Absent or null is "not set"; ids are trimmed first. Whether a location is
+ * eligible (its country, an overlap with `geoTargets`, a city inside a listed region) needs Meta's answer, so
+ * campaign-service checks it when the job runs, before anything is created.
  */
 export function metaDetailedTargetingRefusal(raw: unknown): MetaConfigRefusal | null {
   const record = metaConfigRecord(raw);
-  for (const [key, label] of ID_FIELDS) {
+  const lists = [
+    ...ID_FIELDS.map(([key, label]) => [key, label, META_MAX_DETAILED_TARGETING_IDS] as const),
+    ...GEO_FIELDS.map(([key, label]) => [key, label, META_MAX_GEO_LOCATIONS] as const),
+  ];
+  for (const [key, label, max] of lists) {
     const value = record?.[key];
     if (value === undefined || value === null) continue;
     const field = `${FIELD}.${key}`;
     if (!Array.isArray(value) || value.some((id) => typeof id !== 'string' || !META_CUSTOM_AUDIENCE_ID_PATTERN.test(id.trim()))) {
       return { field, message: `${label} must be Meta ids: digits, without a leading zero.` };
     }
-    if (new Set(value.map((id: string) => id.trim())).size > META_MAX_DETAILED_TARGETING_IDS) {
-      return { field, message: `Choose at most ${META_MAX_DETAILED_TARGETING_IDS} ${label.toLowerCase()}.` };
+    if (new Set(value.map((id: string) => id.trim())).size > max) {
+      return { field, message: `Choose at most ${max} ${label.toLowerCase()}.` };
     }
   }
   const locales = record?.['locales'];
@@ -134,7 +154,7 @@ export function metaDetailedTargetingRefusal(raw: unknown): MetaConfigRefusal | 
 export function compactMetaDetailedTargeting(raw: unknown): MetaDetailedTargeting | null {
   const record = metaConfigRecord(raw);
   const out: MetaDetailedTargeting = {};
-  for (const [key] of ID_FIELDS) {
+  for (const [key] of [...ID_FIELDS, ...GEO_FIELDS]) {
     const value = record?.[key];
     if (!Array.isArray(value)) continue;
     const ids = [...new Set(value.filter((id): id is string => typeof id === 'string').map((id) => id.trim()))].filter((id) => id !== '');
@@ -183,6 +203,53 @@ export function metaTargetingQueryRefusal(type: unknown, query: unknown): string
 /** Narrows a checked search type ({@link metaTargetingQueryRefusal} is `null`). */
 export function isMetaTargetingSearchType(value: unknown): value is MetaTargetingSearchType {
   return typeof value === 'string' && (META_TARGETING_SEARCH_TYPES as readonly string[]).includes(value);
+}
+
+/** Narrows a Meta location type the targeting search answers. */
+function isMetaLocationType(value: unknown): value is MetaLocationType {
+  return typeof value === 'string' && (META_LOCATION_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * campaign-service's targeting search options, camel-cased for the picker. An option whose id is not one a create
+ * accepts (digits, no leading zero) cannot be sent, so it is dropped rather than offered, and so is a `location`
+ * row that is neither a region nor a city. A repeat is offered once: by id, or for `location` by type and id, since a
+ * region and a city may share a key (campaign-service#671). A nameless option reads as its id.
+ */
+export function metaTargetingSearchOptions(type: MetaTargetingSearchType, raw: CampaignServiceMetaTargetingSearch['options']): MetaTargetingSearchOption[] {
+  const num = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
+  const text = (value: unknown): string | undefined => (typeof value === 'string' && value.trim() !== '' ? value : undefined);
+  const seen = new Set<string>();
+  const out: MetaTargetingSearchOption[] = [];
+  for (const o of raw ?? []) {
+    const id = o?.id;
+    if (typeof id !== 'string' || !META_CUSTOM_AUDIENCE_ID_PATTERN.test(id)) continue;
+    const locationType = type === 'location' ? o.location_type : undefined;
+    if (type === 'location' && !isMetaLocationType(locationType)) continue;
+    const key = `${locationType ?? ''}:${id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const lower = num(o.audience_size_lower_bound);
+    const upper = num(o.audience_size_upper_bound);
+    const coverage = num(o.coverage);
+    const description = text(o.description);
+    // Location fields only on a location row, as campaign-service sends them.
+    const countryCode = type === 'location' ? text(o.country_code) : undefined;
+    const region = type === 'location' ? text(o.region) : undefined;
+    out.push({
+      id,
+      name: text(o.name) ?? id,
+      path: Array.isArray(o.path) ? o.path.filter((part): part is string => typeof part === 'string') : [],
+      ...(description !== undefined ? { description } : {}),
+      ...(lower !== undefined ? { audienceSizeLowerBound: lower } : {}),
+      ...(upper !== undefined ? { audienceSizeUpperBound: upper } : {}),
+      ...(coverage !== undefined ? { coverage } : {}),
+      ...(isMetaLocationType(locationType) ? { locationType } : {}),
+      ...(countryCode !== undefined ? { countryCode } : {}),
+      ...(region !== undefined ? { region } : {}),
+    });
+  }
+  return out;
 }
 
 /** No picks in any list: a fresh object each time, so one caller's edit never reaches another's. */

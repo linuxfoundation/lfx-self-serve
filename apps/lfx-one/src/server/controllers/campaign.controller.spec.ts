@@ -2597,12 +2597,16 @@ describe('CampaignController.createCampaign cutover', () => {
     });
 
     // Devices and operating systems (#5904 row 6): their own flags, campaign-service's rules, Meta's spelling.
-    it('forwards devices and operating systems, normalized, while audience targeting is off', async () => {
+    it('forwards devices, operating systems, regions and cities, normalized, while audience targeting is off', async () => {
       flagsOff(ServerFeatureFlag.CampaignServiceMetaAudienceTargeting);
 
-      expect((await sendWith({ devicePlatforms: ['Mobile'], userOs: ['ios_ver_8.0_and_above'] }))?.['targeting']).toEqual({
+      expect(
+        (await sendWith({ devicePlatforms: ['Mobile'], userOs: ['ios_ver_8.0_and_above'], regions: [' 3847', '3847'], cities: ['2420379'] }))?.['targeting']
+      ).toEqual({
         devicePlatforms: ['mobile'],
         userOs: ['iOS_ver_8.0_and_above'],
+        regions: ['3847'],
+        cities: ['2420379'],
       });
     });
 
@@ -2615,6 +2619,7 @@ describe('CampaignController.createCampaign cutover', () => {
         'metaConfig.targeting.devicePlatforms',
       ],
       ['OS targeting off', [ServerFeatureFlag.CampaignServiceMetaOsTargeting], { userOs: ['iOS'] }, {}, 'metaConfig.targeting.userOs'],
+      ['region targeting off', [ServerFeatureFlag.CampaignServiceMetaRegionTargeting], { cities: ['2420379'] }, {}, 'metaConfig.targeting.cities'],
       // The rules read the rest of metaConfig: an OS version on the awareness objective is refused.
       ['an OS version on awareness', [], { userOs: ['iOS_ver_8.0_and_above'] }, { objective: 'awareness' }, 'metaConfig.targeting.userOs'],
     ])('refuses %s with a 400 naming the field', async (_case, off, targeting, extra, field) => {

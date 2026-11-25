@@ -3030,7 +3030,7 @@ export interface MetaCampaignCreateRequest {
    * fields (#5904 row 4; campaign-service #612), each sent ONLY when its own capability is an explicit yes:
    * `metaAudienceTargetingEnabled` for age, gender, custom audiences and Advantage+, `metaInterestTargetingEnabled`
    * for `interests`, `metaBehaviorTargetingEnabled` for `behaviors` and `workPositions`, `metaLocaleTargetingEnabled`
-   * for `locales`. The create route refuses a field whose capability is off with a 400, so a tab opened while it
+   * for `locales`, `metaRegionTargetingEnabled` for `regions` and `cities`. The create route refuses a field whose capability is off with a 400, so a tab opened while it
    * was on must reload. A block with only detailed fields needs no audience capability.
    */
   targeting?: MetaTargeting;
@@ -3116,6 +3116,12 @@ export interface MetaDetailedTargeting {
   devicePlatforms?: string[];
   /** Meta `user_os` values (#5904 row 6): `iOS`, `Android`, or either with a listed minimum version or version range. */
   userOs?: string[];
+  /**
+   * Meta `adgeolocation` region and city keys (#5904 row 6; campaign-service#671), added to the country targeting as
+   * `geo_locations.regions` / `cities`. With no `geoTargets`, they are the whole location targeting.
+   */
+  regions?: string[];
+  cities?: string[];
 }
 
 /** The whole `metaConfig.targeting` block a Meta create may send: the audience fields and the detailed ones. */
@@ -3127,6 +3133,7 @@ export interface MetaTargetingFlags {
   interest: boolean;
   behavior: boolean;
   locale: boolean;
+  region: boolean;
   device: boolean;
   os: boolean;
 }
@@ -3139,7 +3146,13 @@ export interface MetaUserOsValue {
 }
 
 /** A kind the Meta targeting search answers (`GET /api/campaigns/meta/targeting-search?type=`). */
-export type MetaTargetingSearchType = 'interest' | 'behavior' | 'work_position';
+export type MetaTargetingSearchType = 'interest' | 'behavior' | 'work_position' | 'locale' | 'location';
+
+/** A search kind behind one of the detailed-targeting id lists (interests, behaviors, job titles). */
+export type MetaDetailedTargetingSearchType = 'interest' | 'behavior' | 'work_position';
+
+/** A Meta location type the targeting search keeps: a region fills `regions`, a city `cities`. */
+export type MetaLocationType = 'region' | 'city';
 
 /** One option of the Meta targeting search, camel-cased from campaign-service's answer. */
 export interface MetaTargetingSearchOption {
@@ -3152,6 +3165,12 @@ export interface MetaTargetingSearchOption {
   audienceSizeUpperBound?: number;
   /** Set for work positions only. */
   coverage?: number;
+  /** Set for locations only: which list the key fills. A region and a city may share a key, so a picker keys on both. */
+  locationType?: MetaLocationType;
+  /** Set for locations only: the ISO country code the location is in. */
+  countryCode?: string;
+  /** Set for cities only: the name of the region the city is in. */
+  region?: string;
 }
 
 /** The BFF's answer for a Meta targeting search. */
@@ -3165,7 +3184,7 @@ export type MetaDetailedTargetingKey = 'interests' | 'behaviors' | 'workPosition
 
 /** One detailed-targeting list the Implement tab offers: the search kind that fills it and the list it fills. */
 export interface MetaTargetingKind {
-  type: MetaTargetingSearchType;
+  type: MetaDetailedTargetingSearchType;
   key: MetaDetailedTargetingKey;
   label: string;
 }
@@ -3312,6 +3331,9 @@ export interface CampaignServiceMetaTargetingSearch {
     audience_size_lower_bound?: unknown;
     audience_size_upper_bound?: unknown;
     coverage?: unknown;
+    location_type?: unknown;
+    country_code?: unknown;
+    region?: unknown;
   }[];
   option_count?: number;
 }
@@ -8432,6 +8454,11 @@ export interface CampaignListResult {
   metaInterestTargetingEnabled?: boolean;
   metaBehaviorTargetingEnabled?: boolean;
   metaLocaleTargetingEnabled?: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.targeting.regions` and `cities` (#5904 row 6; campaign-service#671):
+   * `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_REGION_TARGETING`. Deployment-wide, as above.
+   */
+  metaRegionTargetingEnabled?: boolean;
   /**
    * Whether a Meta create may carry `metaConfig.targeting.devicePlatforms` and `userOs` (#5904 row 6), one flag each:
    * `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING` / `..._META_OS_TARGETING`.

@@ -10,6 +10,7 @@ import {
   META_INTEREST_TARGETING_OFF_MESSAGE,
   META_LOCALE_TARGETING_OFF_MESSAGE,
   META_OS_TARGETING_OFF_MESSAGE,
+  META_REGION_TARGETING_OFF_MESSAGE,
   META_TARGETING_SEARCH_BUSY_MESSAGE,
   META_TARGETING_SEARCH_FAILED_MESSAGE,
   META_TARGETING_SEARCH_NO_MATCH_MESSAGE,
@@ -17,7 +18,13 @@ import {
   META_TARGETING_SEARCH_TOO_SHORT_MESSAGE,
   META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE,
 } from '../constants/campaign.constants';
-import type { MetaTargetingFlags, MetaTargetingPick, MetaTargetingSearchOption } from '../interfaces/campaign.interface';
+import type {
+  CampaignServiceMetaTargetingSearch,
+  MetaTargetingFlags,
+  MetaTargetingPick,
+  MetaTargetingSearchOption,
+  MetaTargetingSearchType,
+} from '../interfaces/campaign.interface';
 import {
   compactMetaDetailedTargeting,
   metaDeviceOsRefusal,
@@ -41,10 +48,11 @@ import {
   metaTargetingHasAudienceFields,
   metaTargetingHasDetailedFields,
   metaTargetingQueryRefusal,
+  metaTargetingSearchOptions,
 } from './campaign-meta-detailed-targeting.utils';
 
 const ids = (n: number): string[] => Array.from({ length: n }, (_, i) => String(6003 + i));
-const allOn: MetaTargetingFlags = { audience: true, interest: true, behavior: true, locale: true, device: true, os: true };
+const allOn: MetaTargetingFlags = { audience: true, interest: true, behavior: true, locale: true, region: true, device: true, os: true };
 
 describe('which fields a block sets', () => {
   it.each([
@@ -53,6 +61,7 @@ describe('which fields a block sets', () => {
     [{ advantageAudience: false }, true, false],
     [{ interests: ['6003'] }, false, true],
     [{ locales: [6] }, false, true],
+    [{ cities: ['2420379'] }, false, true],
     // Null and an empty list are "not set", as campaign-service reads them.
     [{ genders: null, interests: null }, false, false],
     [{ genders: [], interests: [] }, false, false],
@@ -78,6 +87,10 @@ describe('metaTargetingFlagRefusal', () => {
     [{ behaviors: ['6004'] }, { ...allOn, behavior: false }, ['metaConfig.targeting.behaviors', META_BEHAVIOR_TARGETING_OFF_MESSAGE]],
     [{ workPositions: ['105'] }, { ...allOn, behavior: false }, ['metaConfig.targeting.workPositions', META_BEHAVIOR_TARGETING_OFF_MESSAGE]],
     [{ locales: [6] }, { ...allOn, locale: false }, ['metaConfig.targeting.locales', META_LOCALE_TARGETING_OFF_MESSAGE]],
+    // Regions and cities (#5904 row 6; campaign-service#671) share one flag, and are detailed-only like the rest.
+    [{ regions: ['3847'] }, { ...allOn, region: false }, ['metaConfig.targeting.regions', META_REGION_TARGETING_OFF_MESSAGE]],
+    [{ cities: ['2420379'] }, { ...allOn, region: false }, ['metaConfig.targeting.cities', META_REGION_TARGETING_OFF_MESSAGE]],
+    [{ regions: ['3847'], cities: ['2420379'] }, { ...allOn, audience: false }, null],
     // Devices and operating systems (#5904 row 6), each on its own flag, and detailed-only like the rest.
     [{ devicePlatforms: ['mobile'] }, { ...allOn, device: false }, ['metaConfig.targeting.devicePlatforms', META_DEVICE_TARGETING_OFF_MESSAGE]],
     [{ userOs: ['iOS'] }, { ...allOn, os: false }, ['metaConfig.targeting.userOs', META_OS_TARGETING_OFF_MESSAGE]],
@@ -100,6 +113,7 @@ describe('metaDetailedTargetingRefusal', () => {
     // 26 entries that de-duplicate to 25 are still 25 distinct ids.
     [{ behaviors: [...ids(25), '6003'] }],
     [{ locales: Array.from({ length: 50 }, (_, i) => i + 1) }],
+    [{ regions: [' 3847 ', '3847'], cities: ids(25) }],
   ])('accepts %j', (raw) => {
     expect(metaDetailedTargetingRefusal(raw)).toBeNull();
   });
@@ -115,20 +129,35 @@ describe('metaDetailedTargetingRefusal', () => {
     [{ locales: [1.5] }, 'metaConfig.targeting.locales'],
     [{ locales: [Number.MAX_SAFE_INTEGER + 2] }, 'metaConfig.targeting.locales'],
     [{ locales: Array.from({ length: 51 }, (_, i) => i + 1) }, 'metaConfig.targeting.locales'],
+    [{ regions: '3847' }, 'metaConfig.targeting.regions'],
+    [{ regions: [3847] }, 'metaConfig.targeting.regions'],
+    [{ cities: ['02420379'] }, 'metaConfig.targeting.cities'],
+    [{ cities: ids(26) }, 'metaConfig.targeting.cities'],
   ])('refuses %j naming %s', (raw, field) => {
     expect(metaDetailedTargetingRefusal(raw)?.field).toBe(field);
   });
 
   it('names the cap in the message', () => {
     expect(metaDetailedTargetingRefusal({ workPositions: ids(26) })?.message).toBe('Choose at most 25 job titles.');
+    expect(metaDetailedTargetingRefusal({ regions: ids(26) })?.message).toBe('Choose at most 25 regions.');
   });
 });
 
 describe('compactMetaDetailedTargeting', () => {
   it('trims and de-duplicates ids in first-seen order, and drops empty lists', () => {
-    expect(compactMetaDetailedTargeting({ interests: [' 6003', '6004', '6003'], behaviors: [], locales: [6, 6, 1001], ageMin: 30 })).toEqual({
+    expect(
+      compactMetaDetailedTargeting({
+        interests: [' 6003', '6004', '6003'],
+        behaviors: [],
+        locales: [6, 6, 1001],
+        regions: ['3847 ', '3847'],
+        cities: [],
+        ageMin: 30,
+      })
+    ).toEqual({
       interests: ['6003', '6004'],
       locales: [6, 1001],
+      regions: ['3847'],
     });
   });
 
@@ -142,6 +171,8 @@ describe('metaTargetingQueryRefusal', () => {
     ['interest', 'kubernetes'],
     ['behavior', ' it '],
     ['work_position', 'Platform engineer'],
+    ['locale', 'English'],
+    ['location', 'California'],
     ['interest', 'x'.repeat(100)],
     // Code points, not UTF-16 units: 100 emoji are 100 characters.
     ['interest', '🚀'.repeat(100)],
@@ -150,8 +181,8 @@ describe('metaTargetingQueryRefusal', () => {
   });
 
   it.each([
-    ['industry', 'kubernetes', 'The search type must be one of interest, behavior, work_position.'],
-    [undefined, 'kubernetes', 'The search type must be one of interest, behavior, work_position.'],
+    ['industry', 'kubernetes', 'The search type must be one of interest, behavior, work_position, locale, location.'],
+    [undefined, 'kubernetes', 'The search type must be one of interest, behavior, work_position, locale, location.'],
     ['interest', ' k ', 'Search with 2–100 characters, on one line.'],
     ['interest', 'x'.repeat(101), 'Search with 2–100 characters, on one line.'],
     // One emoji is one character, too short, though its UTF-16 length is 2.
@@ -165,6 +196,66 @@ describe('metaTargetingQueryRefusal', () => {
   it('narrows the search type', () => {
     expect(isMetaTargetingSearchType('work_position')).toBe(true);
     expect(isMetaTargetingSearchType('industry')).toBe(false);
+  });
+});
+
+describe('metaTargetingSearchOptions', () => {
+  it.each([
+    [
+      'camel-cases an interest, dropping an id a create would refuse and a repeat; a nameless row reads as its id',
+      'interest',
+      [
+        { id: '6003', name: 'Kubernetes', path: ['Interests', 'Technology', 7], audience_size_lower_bound: 1000, audience_size_upper_bound: 2000 },
+        { id: '6003', name: 'Repeat' },
+        { id: '6004', name: ' ', description: 'Open source' },
+        { id: 'act_1', name: 'Not an id' },
+        { id: 6005, name: 'Not a string' },
+      ],
+      [
+        { id: '6003', name: 'Kubernetes', path: ['Interests', 'Technology'], audienceSizeLowerBound: 1000, audienceSizeUpperBound: 2000 },
+        { id: '6004', name: '6004', path: [], description: 'Open source' },
+      ],
+    ],
+    [
+      'keeps coverage for a job title',
+      'work_position',
+      [{ id: '105', name: 'Platform Engineer', coverage: 0.4 }],
+      [{ id: '105', name: 'Platform Engineer', path: [], coverage: 0.4 }],
+    ],
+    [
+      'reads a language key, dropping one with a leading zero',
+      'locale',
+      [
+        { id: '6', name: 'English (US)' },
+        { id: '06', name: 'Leading zero' },
+      ],
+      [{ id: '6', name: 'English (US)', path: [] }],
+    ],
+    [
+      'keeps a region and a city that share a key, drops a location of another type, and keeps the location fields',
+      'location',
+      [
+        { id: '3847', name: 'California', location_type: 'region', country_code: 'US' },
+        { id: '3847', name: 'Some city', location_type: 'city', country_code: 'US', region: 'Texas' },
+        { id: '3847', name: 'Repeat', location_type: 'region' },
+        { id: '2420379', name: 'Country', location_type: 'country' },
+        { id: '2420380', name: 'No type' },
+      ],
+      [
+        { id: '3847', name: 'California', path: [], locationType: 'region', countryCode: 'US' },
+        { id: '3847', name: 'Some city', path: [], locationType: 'city', countryCode: 'US', region: 'Texas' },
+      ],
+    ],
+    // The location fields belong to a location row only.
+    [
+      'ignores location fields on another kind',
+      'interest',
+      [{ id: '6003', name: 'K', location_type: 'city', country_code: 'US', region: 'Texas' }],
+      [{ id: '6003', name: 'K', path: [] }],
+    ],
+    ['answers no options for none', 'interest', undefined, []],
+  ] as [string, MetaTargetingSearchType, CampaignServiceMetaTargetingSearch['options'], MetaTargetingSearchOption[]][])('%s', (_case, type, raw, expected) => {
+    expect(metaTargetingSearchOptions(type, raw)).toEqual(expected);
   });
 });
 
