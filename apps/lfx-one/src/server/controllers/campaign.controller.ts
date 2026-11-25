@@ -21,6 +21,12 @@ import { linkedInConfigNamesLeadGenForm, linkedInLeadForms, linkedInLeadGenRefus
 import { linkedInConfigNamesConversions, linkedInConversionRules, linkedInObjectiveRefusal } from '@lfx-one/shared/utils/campaign-linkedin-objective.utils';
 import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
 import { redditConversionEventRefusal } from '@lfx-one/shared/utils/campaign-reddit-conversion-event.utils';
+import {
+  redditConfigNamesCustomAudiences,
+  redditCustomAudienceQuery,
+  redditCustomAudiencesFromPayload,
+  redditCustomAudiencesRefusal,
+} from '@lfx-one/shared/utils/campaign-reddit-custom-audiences.utils';
 import { linkedInTextAdAssetField, linkedInTextAdsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-text-ads.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
 import { linkedInVideoVariantsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-video.utils';
@@ -193,6 +199,7 @@ import type {
   LinkedInTargetingSearchResult,
   MetaTargetingSearchResult,
   MetaCustomAudiencesResult,
+  RedditCustomAudiencesResult,
   MetaLeadFormsResult,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -388,6 +395,10 @@ import {
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
   META_CUSTOM_AUDIENCES_RESTRICTED_CODE,
+  REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
+  REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
+  REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE,
+  REDDIT_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE,
   LINKEDIN_MARKETING_OPS_ACCESS_ERRORS,
   LINKEDIN_GEO_SEARCH_BUSY_MESSAGE,
   LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
@@ -464,6 +475,7 @@ import {
   canSetMetaFrequencyCap,
   canSetMetaOptimizationGoal,
   canSetRedditConversionEvent,
+  canSetRedditCustomAudiences,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
@@ -1365,6 +1377,20 @@ export class CampaignController {
           })
         );
         return;
+      }
+      // Reddit custom audiences (#6108 row 1): refused, never dropped, while this deployment cannot send them, and held
+      // to campaign-service's rules (`checkRedditCustomAudiences`). See `redditCustomAudiencesRefusal`. They live on the
+      // ad account every foundation shares: named only by a caller holding `global_marketing_ops` on the project, as
+      // campaign-service requires (403), and never on a check that failed (503).
+      const redditCustomAudiencesRefused = redditCustomAudiencesRefusal(body?.redditConfig, canSetRedditCustomAudiences());
+      if (redditCustomAudiencesRefused !== null) {
+        throw ServiceValidationError.forField(redditCustomAudiencesRefused.field, redditCustomAudiencesRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      if (redditConfigNamesCustomAudiences(body?.redditConfig)) {
+        await this.requireRedditCustomAudienceAccess(req, projectSlug, 'campaign_create', 'the Reddit custom audiences');
       }
 
       // Any top-level or variant LinkedIn key the create route does not check is refused before any LinkedIn
@@ -3881,8 +3907,9 @@ export class CampaignController {
       const conversionsDeployed = canCreateWithGoogleCriteria();
       const metaTargetingDeployed = canSetMetaAudienceTargeting();
       const metaLeadFormsDeployed = canSetMetaLeadForm();
+      const redditCustomAudiencesDeployed = canSetRedditCustomAudiences();
       const marketingOps =
-        segmentsDeployed || conversionsDeployed || metaTargetingDeployed || metaLeadFormsDeployed
+        segmentsDeployed || conversionsDeployed || metaTargetingDeployed || metaLeadFormsDeployed || redditCustomAudiencesDeployed
           ? await this.googleMarketingOpsAccess(req, projectSlug, 'list_brief_campaigns', 'Google marketing-ops capabilities')
           : 'denied';
       let googleAudienceSegmentsEnabled: boolean | null = false;
@@ -3917,10 +3944,17 @@ export class CampaignController {
       if (metaLeadFormsDeployed) {
         metaLeadFormsEnabled = marketingOps === 'unverified' ? null : marketingOps === 'granted';
       }
+      // The Reddit custom audiences (#6108 row 1) on the deployment test and the same relation, which campaign-service
+      // checks before it lists them and before it creates with one (#549).
+      let redditCustomAudiencesEnabled: boolean | null = false;
+      if (redditCustomAudiencesDeployed) {
+        redditCustomAudiencesEnabled = marketingOps === 'unverified' ? null : marketingOps === 'granted';
+      }
       const result: CampaignListResult = {
         ...listed,
         metaCustomAudiencesEnabled,
         metaLeadFormsEnabled,
+        redditCustomAudiencesEnabled,
         googleAudienceSegmentsEnabled,
         googleConversionActionsEnabled,
         googleDemandGenAudienceEnabled,
@@ -5302,6 +5336,51 @@ export class CampaignController {
           })),
         truncated: payload.truncated === true,
       };
+      logger.success(req, operation, startTime, { count: result.audiences.length, truncated: result.truncated });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * The custom audiences on the Reddit ad account a create for this project uses, for the Implement tab's Reddit audience
+   * picker (#6108 row 1), camel-cased (`redditCustomAudiencesFromPayload`). The ad account is shared by every foundation,
+   * so it is answered on the relation campaign-service checks first: `global_marketing_ops` on the project
+   * (linuxfoundation/lfx-v2-campaign-service#549) — a coded 403 when refused, a coded 503 when the check cannot be made,
+   * both before any upstream call. Registered ahead of the blanket `requireCampaignManager`, behind its own
+   * `requireRedditCustomAudiencesAccess`, as the Meta picker is. 404 while Reddit custom audiences are off
+   * (`canSetRedditCustomAudiences`). Optional `?q=` (1–100 characters, not blank) filters by name here, since
+   * campaign-service takes no search; an unreadable answer is a 502, never an empty list.
+   */
+  public async getRedditCustomAudiences(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'reddit_custom_audiences';
+    if (!canSetRedditCustomAudiences()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const query = redditCustomAudienceQuery(req.query['q']);
+    if (!query.valid) {
+      next(ServiceValidationError.forField('q', 'Search with 1 to 100 characters.', { operation, service: 'campaign_controller', path: req.path }));
+      return;
+    }
+    try {
+      await this.requireRedditCustomAudienceAccess(req, projectSlug, operation, 'the Reddit custom audience read');
+      const startTime = logger.startOperation(req, operation, { viaCampaignService: true, searched: query.q !== undefined });
+      const result: RedditCustomAudiencesResult | null = redditCustomAudiencesFromPayload(
+        await this.campaignServiceClient.listRedditCustomAudiences(req, projectSlug),
+        query.q
+      );
+      if (result === null) {
+        throw new MicroserviceError('campaign-service returned an unreadable Reddit custom audience read.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
       logger.success(req, operation, startTime, { count: result.audiences.length, truncated: result.truncated });
       res.json(result);
     } catch (error) {
@@ -6907,6 +6986,31 @@ export class CampaignController {
     if (access === 'unverified') {
       const { message, code } = errors.unavailable;
       throw new MicroserviceError(message, 503, code, { operation, service: 'campaign_controller', clientMessage: message });
+    }
+  }
+
+  /**
+   * Throws unless the caller holds `global_marketing_ops` on `projectSlug`, the relation campaign-service answers a Reddit
+   * custom audience on, for the read and the create (#6108 row 1, campaign-service#549): a coded 403 when refused, a
+   * coded 503 when it cannot be checked.
+   */
+  private async requireRedditCustomAudienceAccess(req: Request, projectSlug: string, operation: string, subject: string): Promise<void> {
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, subject);
+    if (access === 'denied') {
+      throw new AuthorizationError(REDDIT_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE, {
+        operation,
+        service: 'campaign_controller',
+        path: req.path,
+        code: REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE,
+      });
+    }
+    if (access === 'unverified') {
+      throw new MicroserviceError(REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE, 503, REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE, {
+        operation,
+        service: 'campaign_controller',
+        path: req.path,
+        clientMessage: REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
+      });
     }
   }
 

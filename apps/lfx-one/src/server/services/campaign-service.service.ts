@@ -88,6 +88,7 @@ import type {
   CampaignServiceGoogleAdsAudiences,
   CampaignServiceGoogleAdsUserLists,
   CampaignServiceMetaCustomAudiences,
+  CampaignServiceRedditCustomAudiences,
   CampaignServiceLinkedInAudiences,
   CampaignServiceLinkedInConversions,
   CampaignServiceLinkedInLeadForms,
@@ -723,6 +724,17 @@ export function canSetRedditConversionPixel(): boolean {
  */
 export function canSetRedditConversionEvent(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditConversionEvent);
+}
+
+/**
+ * Whether a Reddit create may carry `customAudienceIds` / `excludedCustomAudienceIds`, and the picker's read is served
+ * (#6108 row 1, campaign-service #549). Needs the campaign-service create path AND
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CUSTOM_AUDIENCES`, which follows campaign-service's own
+ * `REDDIT_CUSTOM_AUDIENCES_ENABLED`: campaign-service refuses both while that is off, and the legacy creator ignores the
+ * fields. The caller also needs `global_marketing_ops` on the project, checked by the controller.
+ */
+export function canSetRedditCustomAudiences(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditCustomAudiences);
 }
 
 /**
@@ -3862,6 +3874,27 @@ export class CampaignServiceClient {
       `/projects/${encodePathSegment(projectSlug)}/meta-ads/custom-audiences`,
       'GET',
       q === undefined ? undefined : { q }
+    );
+  }
+
+  /**
+   * The custom audiences on the Reddit ad account a create for this project uses (`list-reddit-ads-custom-audiences`,
+   * linuxfoundation/lfx-v2-campaign-service#549), for the Implement tab's Reddit audience picker (#6108 row 1). Upstream
+   * answers it on `global_marketing_ops` of the path project, the relation the BFF checks first, and takes no search:
+   * every audience, sorted by name, with `truncated` when Reddit had more pages. Failures are left to the caller.
+   */
+  public async listRedditCustomAudiences(req: Request, projectSlug: string): Promise<CampaignServiceRedditCustomAudiences> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A custom audience read requires the project it belongs to.', {
+        operation: 'list_reddit_custom_audiences',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceRedditCustomAudiences>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/reddit-ads/custom-audiences`,
+      'GET'
     );
   }
 

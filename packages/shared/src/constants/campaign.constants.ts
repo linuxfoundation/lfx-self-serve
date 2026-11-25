@@ -4643,6 +4643,34 @@ export const REDDIT_CONVERSION_EVENT_LABELS: Readonly<Record<RedditConversionEve
 export const REDDIT_CONVERSION_EVENT_FIELD = 'redditConfig.conversionEvent';
 
 /**
+ * The two Reddit custom audience lists a create may carry (#6108 row 1), as campaign-service spells the
+ * `redditConfig` keys (`redditCustomAudienceFields`, lfx-v2-campaign-service `internal/dispatch/reddit_custom_audiences.go`, #549).
+ */
+export const REDDIT_CUSTOM_AUDIENCE_KEYS = ['customAudienceIds', 'excludedCustomAudienceIds'] as const;
+
+/**
+ * One Reddit custom audience id: 1–64 letters, digits or underscores, compared exactly (never trimmed). Mirrors
+ * `ValidCustomAudienceID` (`maxCustomAudienceIDLen` and `accountIDRe`) in lfx-v2-campaign-service
+ * `internal/platform/reddit/custom_audiences.go` (#549).
+ */
+export const REDDIT_CUSTOM_AUDIENCE_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
+
+/** At most this many ids in EACH list: campaign-service's `MaxCustomAudienceIDs` (#549). */
+export const MAX_REDDIT_CUSTOM_AUDIENCE_IDS = 100;
+
+/**
+ * The error `code` (HTTP 403) of a Reddit custom-audience read, or a create naming custom audiences, refused because the
+ * caller does not hold `global_marketing_ops` on the project: the Reddit ad account is shared by every foundation, so
+ * campaign-service answers both on that relation (linuxfoundation/lfx-v2-campaign-service#549).
+ */
+export const REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE = 'REDDIT_CUSTOM_AUDIENCES_RESTRICTED';
+export const REDDIT_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE =
+  'Reddit custom audiences can only be used by the LF marketing team, because every foundation shares one Reddit ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
+export const REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE';
+export const REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Reddit custom audiences could not be verified. Try again in a few minutes.';
+
+/**
  * The `REDDIT_OBJECTIVE_PARAMS` row for an objective, or a refusal.
  *
  * The single place any caller reads that table, because reading it safely is not a plain index.

@@ -323,6 +323,21 @@ export enum ServerFeatureFlag {
   CampaignServiceRedditConversionEvent = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT',
 
   /**
+   * Reddit custom audiences (#6108 row 1): accept `redditConfig.customAudienceIds` / `excludedCustomAudienceIds`, the
+   * audiences on the shared Reddit ad account to target and to exclude (campaign-service #549), and answer
+   * `GET /api/campaigns/reddit/custom-audiences` (404 while off).
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_CUSTOM_AUDIENCES_ENABLED` on,
+   * since campaign-service refuses both the fields and the read with a 400 otherwise, and is only meaningful while the
+   * create cutover is on (`cutoverOwnsCreate`): the legacy creator ignores the fields. Off (the default), the read is not
+   * served and the create route refuses either list with a 400, never dropping it. Both are also gated on
+   * `global_marketing_ops` on the project, whatever this flag says. Keep it off until campaign-service's flag is on and
+   * its live probe has passed. A request field only, so flipping it back strands nothing. Same accepted values as the
+   * flags above.
+   */
+  CampaignServiceRedditCustomAudiences = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CUSTOM_AUDIENCES',
+
+  /**
    * Offers a stored-image LIBRARY in each Google creative image slot — upload an image into the
    * brief's library, or pick a stored one that fits the slot — sent as `{ imageAssetId }` entries in
    * the slot's own array beside any pasted image URLs (`demandGenCreative.logoImages`,
