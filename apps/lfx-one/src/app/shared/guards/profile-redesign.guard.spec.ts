@@ -164,6 +164,11 @@ describe('profile redesign guards', () => {
       expect(await read()).toBe(true);
     });
 
+    it('keeps the browser’s answer for the page after an in-app navigation', async () => {
+      expect(await read()).toBe(true);
+      expect(TestBed.inject(TransferState).get(PROFILE_REDESIGN_KEY, null)).toBe(true);
+    });
+
     it('lets a signed-out visitor through without waiting on the flag service', async () => {
       authenticated.set(false);
       providerReady.set(false);

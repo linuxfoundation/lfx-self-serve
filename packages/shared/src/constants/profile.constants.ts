@@ -454,7 +454,7 @@ export const PROFILE_NO_ACTIVITY_COPY = {
   connectGithub: 'Connect GitHub',
 } as const;
 
-/** Section headers of the redesigned public profile, in the second person for visitors (#6088). */
+/** Section headers of the redesigned public profile, worded for visitors in the third person (#6088). */
 export const PUBLIC_PROFILE_SECTION_COPY = {
   recognitions: 'Recognitions',
   recognitionsDescription: 'Awards this person has earned for contributions and participation across Linux Foundation programs and events.',

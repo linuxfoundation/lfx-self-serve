@@ -2,7 +2,8 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <section data-testid="contributions-section">
-  <div class="flex items-start justify-between gap-4" [class.justify-end]="!showHeading()">
+  <!-- With no heading (the redesign names the block above it), the year select sits on the right with its own gap to the list. -->
+  <div class="flex items-start gap-4" [class.justify-between]="showHeading()" [class.justify-end]="!showHeading()" [class.mb-5]="!showHeading()">
     @if (showHeading()) {
       <div class="min-w-0">
         <h2 class="m-0 text-lg font-bold text-gray-900">Project contributions</h2>

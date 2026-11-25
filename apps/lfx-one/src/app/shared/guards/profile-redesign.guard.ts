@@ -72,12 +72,14 @@ export const profileRedesignRedirectGuard: CanActivateFn = async (route) => {
 export const profileRedesignOnlyGuard: CanMatchFn = () => readProfileRedesignFlag('profileRedesignOnlyGuard');
 
 /**
- * Settles the redesign flag for a page that renders either way, the public profile (#6088), and lets it load: the server
- * hands its answer to the browser, so SSR and hydration render the same version.
+ * Settles the redesign flag for a page that renders either way, the public profile (#6088), and lets it load. The answer is
+ * kept in TransferState, so SSR and hydration render the same version and an in-app navigation renders the right one at once.
  */
 export const profileRedesignReadGuard: CanActivateFn = async () => {
+  const transferState = inject(TransferState);
   // A signed-out visitor never has the flag, so the browser doesn't wait on the flag service for one.
   if (isPlatformBrowser(inject(PLATFORM_ID)) && !inject(UserService).authenticated()) return true;
-  await readProfileRedesignFlag('profileRedesignReadGuard');
+  // Kept for the page, so after an in-app navigation it renders the right version from its first frame.
+  transferState.set(PROFILE_REDESIGN_KEY, await readProfileRedesignFlag('profileRedesignReadGuard'));
   return true;
 };

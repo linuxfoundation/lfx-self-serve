@@ -70,4 +70,15 @@ describe('PublicProfilePageComponent', () => {
     expect(query('public-profile-involvement')).toBeNull();
     expect(query('public-profile-blocks')?.children).toHaveLength(1);
   });
+
+  it('keeps the involvement block’s year select on the right once its heading gives way to the section header', async () => {
+    const year = (n: number) => ({ year: n, commits: 1, deleted: 0, added: 1, prs: 0, issues: 0 });
+    const project = { Name: 'Kube', commits: 2, deleted: 0, added: 2, prs: 0, issues: 0, years: [year(2024), year(2025)] };
+    const { query } = await render(true, { ...PROFILE, technical_contribution: { projects: [project] } } as PublicProfile);
+    const row = query('contributions-year-select')?.parentElement;
+
+    expect(query('public-profile-involvement-title')?.textContent?.trim()).toBe(PUBLIC_PROFILE_SECTION_COPY.involvement);
+    expect(row?.classList).toContain('justify-end');
+    expect(row?.classList).not.toContain('justify-between');
+  });
 });
