@@ -287,4 +287,25 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
     expect(legacyCreate).not.toHaveBeenCalled();
     expect(refusal(next).field).toBe('linkedInConfig.variants[0].callToAction');
   });
+
+  // LinkedIn Text Ads (#5764 row 19); the rules are table rows in `campaign-linkedin-text-ads.utils.spec.ts`.
+  const textAds = [{ headline: 'KubeCon NA', description: 'Join cloud native engineers.' }];
+  const manual = { strategy: 'manual', bidAmount: 5 };
+
+  it('forwards a Text Ads create as it came', async () => {
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [], format: 'text', textAds, bidding: manual });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()).toMatchObject({ format: 'text', textAds, variants: [] });
+  });
+
+  it('refuses a Text Ads create while its flag is off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInTextAds);
+
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [], format: 'text', textAds, bidding: manual });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.format');
+  });
 });

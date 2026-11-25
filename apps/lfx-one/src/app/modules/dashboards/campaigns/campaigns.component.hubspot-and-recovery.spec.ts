@@ -3402,6 +3402,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       linkedInDailyCapEnabled,
       linkedInVariantCopyEnabled,
       linkedInCallToActionEnabled,
+      linkedInTextAdsEnabled: false,
       microsoftAssetUploadEnabled: false,
       biddingEnabled,
       microsoftScheduleEnabled,

@@ -24,6 +24,7 @@ import type {
   GOOGLE_BIDDING_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  LINKEDIN_AD_FORMATS,
   MICROSOFT_KEYWORDS_WINDOWS,
   MONITOR_DATE_RANGE_OPTIONS,
   REDDIT_CALL_TO_ACTIONS,
@@ -1965,6 +1966,21 @@ export interface LinkedInCreativeVariant {
 }
 
 /**
+ * One LinkedIn Text Ad (#5764 row 19, campaign-service #586): a headline and description on LinkedIn's desktop right
+ * rail, sent in `LinkedInCampaignCreateRequest.textAds` with `format: 'text'`.
+ */
+export interface LinkedInTextAd {
+  /** At most 25 characters after normalization (`LINKEDIN_TEXT_AD_LIMITS`). */
+  headline: string;
+  /** At most 75 characters after normalization. */
+  description: string;
+  /** An existing `urn:li:image`. Never sent with `imageAssetId`. */
+  imageUrn?: string;
+  /** A 100x100 PNG or JPEG of at most 2 MB uploaded to the brief. Never sent with `imageUrn`. */
+  imageAssetId?: string;
+}
+
+/**
  * One LinkedIn ad variant as the Implement tab edits it: the copy, plus the image uploaded for this
  * variant alone. Mapped to a {@link LinkedInCreativeVariant} at create; `key` and the asset's name
  * and brief are never sent.
@@ -2294,6 +2310,13 @@ export interface LinkedInCampaignCreateRequest {
   bidding?: CampaignBiddingConfig;
   /** The selected targeting profile with entries removed (#5546). Omitted when nothing was removed. */
   targetingProfileEdit?: LinkedInTargetingProfileEdit;
+  /**
+   * `'text'` creates a LinkedIn Text Ads campaign from `textAds` (#5764 row 19, campaign-service #586). Omitted, or
+   * `'single_image'`, is the single-image create from `variants`. Text needs manual bidding and an empty `variants`.
+   */
+  format?: LinkedInAdFormat;
+  /** The text ads of a `format: 'text'` create, 1 to 100. Only with that format. */
+  textAds?: LinkedInTextAd[];
 }
 
 /** A `linkedInConfig` the create route refuses for its keys (#5764): the field to name, and why. Never echoes a caller key. */
@@ -2309,6 +2332,9 @@ export interface LinkedInVariantFieldsEnabled {
   /** The call to action (`linkedInCallToActionEnabled`). */
   callToAction: boolean;
 }
+
+/** A LinkedIn ad format (#5764 row 19): one of `LINKEDIN_AD_FORMATS`. */
+export type LinkedInAdFormat = (typeof LINKEDIN_AD_FORMATS)[number];
 
 export interface LinkedInCampaignCreateResult {
   platform: 'linkedin-ads';
@@ -7758,6 +7784,12 @@ export interface CampaignListResult {
    * `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED`.
    */
   linkedInCallToActionEnabled: boolean;
+  /**
+   * Whether a LinkedIn create may be a Text Ads campaign (`format: 'text'` with `textAds`, #5764 row 19). Needs the
+   * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS`, which follows campaign-service's
+   * own `LINKEDIN_ADS_TEXT_ADS_ENABLED`.
+   */
+  linkedInTextAdsEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.

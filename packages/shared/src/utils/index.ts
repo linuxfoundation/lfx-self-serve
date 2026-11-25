@@ -160,6 +160,7 @@ export * from './campaign-reddit-form.utils';
 export * from './campaign-linkedin-config.utils';
 export * from './campaign-linkedin-geo.utils';
 export * from './campaign-linkedin-form.utils';
+export * from './campaign-linkedin-text-ads.utils';
 export * from './campaign-linkedin-variant-fields.utils';
 export * from './campaign-linkedin-image.utils';
 export * from './campaign-linkedin-draft.utils';

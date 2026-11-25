@@ -4808,6 +4808,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInDailyCapEnabled: false,
       linkedInVariantCopyEnabled: false,
       linkedInCallToActionEnabled: false,
+      linkedInTextAdsEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5431,6 +5432,21 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** LinkedIn Text Ads (#5764 row 19): the cutover and its own flag. */
+  it.each([
+    [{ cutover: true, textAds: true }, true],
+    [{ cutover: true, textAds: false }, false],
+    [{ cutover: false, textAds: true }, false],
+  ])('reports LinkedIn Text Ads (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceLinkedInTextAds ? flags.textAds : flags.cutover));
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInTextAdsEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The LinkedIn daily-cap capability (#5774): the create cutover alone, like the targeting edit above. */
   it.each([
     [{ create: true, briefs: true, jobs: true, others: false }, true],
@@ -5528,6 +5544,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInDailyCapEnabled: false,
       linkedInVariantCopyEnabled: false,
       linkedInCallToActionEnabled: false,
+      linkedInTextAdsEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
