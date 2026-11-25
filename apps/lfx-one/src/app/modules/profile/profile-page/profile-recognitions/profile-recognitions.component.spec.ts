@@ -106,6 +106,17 @@ describe('ProfileRecognitionsComponent', () => {
     expect(card?.textContent?.replace(/\s+/g, ' ')).toContain('Issued Apr 2024 · The Linux Foundation');
   });
 
+  it('names only the issuer when the issue date is missing', async () => {
+    const { pills } = await render(() => of([badge(6, { issuedDate: '' })]));
+
+    TestBed.inject(FocusMonitor).focusVia(pills()[0], 'keyboard');
+    await new Promise((resolve) => setTimeout(resolve));
+    const card = document.querySelector('[data-testid="profile-recognitions-card-b6"]');
+
+    expect(card?.textContent).toContain('The Linux Foundation');
+    expect(card?.textContent).not.toContain(PROFILE_RECOGNITIONS_COPY.issued);
+  });
+
   it('opens only http(s) Credly links', async () => {
     const { pills } = await render(() => of([badge(1, { credlyUrl: 'javascript:alert(1)' })]));
 

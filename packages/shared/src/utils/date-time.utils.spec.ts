@@ -73,7 +73,6 @@ describe('formatIsoDateLabel', () => {
   });
 });
 
-// Empty/unparseable input returns '' so callers can hide the field, never show a placeholder.
 describe('formatYearMonth', () => {
   it.each([
     ['2026-03-01', 'Mar 2026'],
@@ -87,6 +86,7 @@ describe('formatYearMonth', () => {
   });
 });
 
+// Empty/unparseable input returns '' so callers can hide the field, never show a placeholder.
 describe('formatMemberSinceDate', () => {
   it('formats the account-creation date as a full date in UTC', () => {
     expect(formatMemberSinceDate('2013-03-14T23:30:00Z')).toBe('March 14, 2013');
