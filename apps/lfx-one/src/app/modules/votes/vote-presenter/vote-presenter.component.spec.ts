@@ -538,7 +538,7 @@ describe('VotePresenterComponent', () => {
     fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED, poll_type: PollType.INSTANT_RUNOFF_VOTE })));
     await mount();
     expect(has('vote-irv-rounds')).toBe(true);
-    expect(text('vote-irv-rounds-step-1')).toBe('Round 1: Candidate C was eliminated with 1 vote. Their ballots moved: 1 to Candidate A.');
+    expect(text('vote-irv-rounds-step-1')).toBe('Round 1: Candidate C was eliminated with 1 vote. Their ballot moved: 1 to Candidate A.');
     expect(text('vote-irv-rounds-step-2')).toBe('Round 2: Candidate A won with 3 of 5 continuing ballots (majority needed: 3).');
   });
 

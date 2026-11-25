@@ -88,7 +88,7 @@ export class VoteIrvRoundsComponent {
     }
     const moves = step.transfers.map((transfer) => `${transfer.votes} to ${transfer.choiceText}`);
     if (step.exhaustedFromElimination > 0) moves.push(`${step.exhaustedFromElimination} exhausted`);
-    return `Their ballots moved: ${moves.join(', ')}.`;
+    return `${step.votes === 1 ? 'Their ballot moved' : 'Their ballots moved'}: ${moves.join(', ')}.`;
   }
 
   private tieBreakText(step: IrvRoundStep): string {

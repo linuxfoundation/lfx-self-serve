@@ -1697,7 +1697,7 @@ describe('buildRankedOverviewOutcome (#6124)', () => {
   });
 
   function view(outcome: RankedOutcome | null, standings: RankedStanding[] = []): RankedQuestionView {
-    return { questionId: 'q1', prompt: 'Pick a chair', choiceDistributions: [], outcome, standings };
+    return { questionId: 'q1', prompt: 'Pick a chair', choiceDistributions: [], outcome, standings, irvRounds: null };
   }
 
   const irv = (overrides: Partial<RankedOutcome> = {}): RankedOutcome => ({

@@ -547,6 +547,13 @@ describe('buildCondorcetQuestionViews', () => {
     );
     // The Overview reads the same outcome as the presenter, never "tied" (#6124).
     expect(buildCondorcetOverviewOutcome(detail)).toMatchObject({ result: present.outcome?.result, label: 'No winner', winnerTexts: [] });
+    expect(present.irvRounds).toEqual(detail.irvRounds);
+    if (usedIrv) {
+      expect(detail.irvRounds?.steps.at(-1)?.kind).toBe('none');
+      expect(detail.irvRounds?.rows.flatMap((row) => row.cells.map((cell) => cell.status))).not.toContain('tied');
+    } else {
+      expect(detail.irvRounds).toBeNull();
+    }
   });
 
   it.each([
@@ -592,6 +599,7 @@ describe('buildCondorcetOverviewOutcome (#6124)', () => {
       ranks: [],
       rankSummary: [],
       ballotPatterns: null,
+      irvRounds: null,
     };
     return buildCondorcetOverviewOutcome(questionView);
   }
