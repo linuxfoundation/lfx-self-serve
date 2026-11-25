@@ -66,8 +66,10 @@ function matchKeyExpression(column: string): string {
  * between the two routes (`docs/architecture/frontend/lens-system.md`). Names are
  * compared on {@link employerMatchKey} rather than literally, so a trailing legal form written on one
  * side and not the other ("Acme" / "Acme LLC") still finds the account. A name that matches no account
- * at all answers `unresolved`, never a negative: "no row came back" is a failure of this lookup, not a
- * fact about that company. Where several accounts match, the one dbt marks `IS_MEMBER` wins, so neither
+ * at all answers `unresolved`, never a negative: "no row came back" says the match did not settle the
+ * question, not that the company holds no membership. Note the word: this is an *unknown*, not a
+ * `failed` one. The request succeeded, so the client keeps today's `no-organization` copy; `failed` is
+ * reserved for a request that did not land, which rule 8 renders as `could-not-load` with a Retry. Where several accounts match, the one dbt marks `IS_MEMBER` wins, so neither
  * a duplicate nor a second current employer can downgrade a member company to the non-member copy.
  *
  * The key is built from Latin letters and digits, so a name written entirely in another script reduces
