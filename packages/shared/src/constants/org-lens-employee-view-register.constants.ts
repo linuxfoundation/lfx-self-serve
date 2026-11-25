@@ -298,7 +298,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     strippedBy: 'shared-list',
     status: 'enforced',
     publicBasis: 'Commit messages and PR titles are public on the repository.',
-    note: 'An address inside a message (Signed-off-by lines) is removed by the project detail controller scrub; the shared strip only catches whole-value emails.',
+    note: 'The shared `stripPersonalFields` replaces an address inside a message (Signed-off-by lines) and keeps valid technical text; the project detail controller runs no second pass.',
   },
 
   // ─── Project detail: ecosystem influence (blocked) ─────────────────────────
@@ -550,7 +550,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     verdict: 'count-only',
     enforcement: 'blocked-403',
     status: 'enforced',
-    note: 'Refused by the CLA read gate (403 EMPLOYEE_VIEW_FORBIDDEN) unless the caller holds the CLA Manager scope.',
+    note: 'Refused by the CLA read gate (403 FORBIDDEN, since the gate does not try the employee view) unless the caller holds the CLA Manager scope.',
   },
   {
     id: 'hidden.profile',

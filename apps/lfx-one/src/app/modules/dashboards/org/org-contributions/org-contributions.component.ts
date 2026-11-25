@@ -507,12 +507,15 @@ export class OrgContributionsComponent {
 
   private initResponse(): Signal<OrgContributionsResponse> {
     // The org and the query are read together, so an org change and the Employees it drops reach one request.
-    const request = computed(() => ({ orgUid: this.accountContext.selectedAccount().uid, query: this.query() }));
+    // The request waits for the role-grants answer: until it lands the view mode is not known, and a `?view=commits` or
+    // `?employees=` link would send what the server refuses an all employee view caller (403) before the page switches.
+    const request = computed(() => ({ orgUid: this.accountContext.selectedAccount().uid, query: this.query(), ready: this.orgRoleGrantsService.loaded() }));
     return toSignal(
       combineLatest([
         toObservable(request).pipe(distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))),
         toObservable(this.retryTrigger),
       ]).pipe(
+        filter(([{ ready }]) => ready),
         tap(() => {
           this.loadingState.set(true);
           this.fetchErrorState.set(false);

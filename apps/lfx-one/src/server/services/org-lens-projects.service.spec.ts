@@ -284,6 +284,16 @@ describe('OrgLensProjectsService.getWorkspaces', () => {
     vi.useRealTimers();
   });
 
+  it('derives the all employee view default from the company activity and never touches the workspace store', async () => {
+    execute.mockResolvedValue({ rows: [{ PROJECT_SLUG: 'k8s' }, { PROJECT_SLUG: 'envoy' }] });
+
+    const response = await service.getEmployeeViewWorkspaces(ACCOUNT_ID);
+
+    expect(response.workspaces).toHaveLength(1);
+    expect(response.workspaces[0]).toMatchObject({ projectSlugs: ['k8s', 'envoy'] });
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
   it('returns an empty list without bootstrapping when a non-editor has no workspaces', async () => {
     mockProxy({ org_workspace: () => ({ resources: [] }), org_workspace_project: () => ({ resources: [] }) });
 

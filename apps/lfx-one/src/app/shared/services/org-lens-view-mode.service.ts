@@ -42,10 +42,11 @@ export class OrgLensViewModeService {
   /**
    * The caller is a CLA Manager of the selected company (their own `cla-manager` scope). EasyCLA stays open for them in the
    * employee view: the server admits them by that scope, so hiding the page would lock a CLA Manager who also works for the
-   * company out of the one page they manage. Server-side this is `assertOrgLensClaRead`'s scope fallback.
+   * company out of the one page they manage. Server-side this is `assertOrgLensClaRead`'s scope fallback. A scope lookup that
+   * failed is unknown, not a denial: the page stays open and the server decides, so a manager is never locked out by an outage.
    */
-  public readonly managesSelectedCompanyClas: Signal<boolean> = computed(() =>
-    this.roleGrants.claManagerOrgSet().has(this.accountContext.selectedAccount().uid ?? '')
+  public readonly managesSelectedCompanyClas: Signal<boolean> = computed(
+    () => this.roleGrants.claManagerLookupFailed() || this.roleGrants.claManagerOrgSet().has(this.accountContext.selectedAccount().uid ?? '')
   );
 
   /** The pages the current mode hides (none in the full view), the one list the nav and the route guards share. */

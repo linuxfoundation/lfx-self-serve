@@ -20,6 +20,7 @@ describe('OrgLensViewModeService', () => {
   let writerSet: WritableSignal<Set<string>>;
   let isStaff: WritableSignal<boolean>;
   let claManagerOrgSet: WritableSignal<Set<string>>;
+  let claManagerLookupFailed: WritableSignal<boolean>;
   let selected: WritableSignal<{ uid: string }>;
 
   beforeEach(() => {
@@ -29,6 +30,7 @@ describe('OrgLensViewModeService', () => {
     writerSet = signal(new Set<string>());
     isStaff = signal(false);
     claManagerOrgSet = signal(new Set<string>());
+    claManagerLookupFailed = signal(false);
     selected = signal({ uid: ACME });
 
     TestBed.configureTestingModule({
@@ -58,6 +60,7 @@ describe('OrgLensViewModeService', () => {
             writerSet,
             isStaff,
             claManagerOrgSet,
+            claManagerLookupFailed,
             auditorSet: signal(new Set<string>()),
             inheritedWriterSet: signal(new Set<string>()),
             inheritedAuditorSet: signal(new Set<string>()),
@@ -157,6 +160,16 @@ describe('OrgLensViewModeService', () => {
 
       expect(service.managesSelectedCompanyClas()).toBe(true);
       expect(service.hiddenPages()).toEqual(ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES.filter((page) => page !== 'easycla'));
+      expect(service.hiddenPages()).toContain('initiatives');
+    });
+
+    it('keeps EasyCLA open while the CLA scope lookup failed, since an unknown answer is not a denial', () => {
+      employeeViewOrgUid.set(ACME);
+      claManagerLookupFailed.set(true);
+      const service = TestBed.inject(OrgLensViewModeService);
+
+      expect(service.managesSelectedCompanyClas()).toBe(true);
+      expect(service.hiddenPages()).not.toContain('easycla');
       expect(service.hiddenPages()).toContain('initiatives');
     });
 

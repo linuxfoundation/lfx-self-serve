@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, effect, inject, model, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, model, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
@@ -346,11 +346,13 @@ export class OrgProjectsComponent {
     syncOrgScopeWithUrl(this.scopeForm.controls.orgScope, this.route, this.router, { page: null });
     syncOrgTeamMembersWithUrl(this.scopeForm.controls.teamMembers, this.route, this.router, { page: null });
     // The all employee view has no Employees filter: clear a selection that arrived by link, in the form and the URL.
-    effect(() => {
-      if (this.isEmployeeView() && this.filterForm.controls.employees.value.length > 0) {
-        this.filterForm.controls.employees.setValue([]);
-      }
-    });
+    toObservable(this.isEmployeeView)
+      .pipe(filter(Boolean), takeUntilDestroyed())
+      .subscribe(() => {
+        if (this.filterForm.controls.employees.value.length > 0) {
+          this.filterForm.controls.employees.setValue([]);
+        }
+      });
     // Filter changes (foundation / employees) write through to the URL and reset to page 1.
     this.filterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (this.resettingFilters) return;
