@@ -18,7 +18,7 @@ describe('MentorInviteComponent', () => {
 
   let fixture: ComponentFixture<MentorInviteComponent>;
   let respondToMentorInvite: ReturnType<typeof vi.fn>;
-  let hasMentorProfile: ReturnType<typeof vi.fn>;
+  let checkMentorProfile: ReturnType<typeof vi.fn>;
   let getMentorInvite: ReturnType<typeof vi.fn>;
 
   const build = (
@@ -42,7 +42,7 @@ describe('MentorInviteComponent', () => {
       profile = of({ hasProfile }),
     } = options;
     respondToMentorInvite = vi.fn(() => respond);
-    hasMentorProfile = vi.fn(() => profile);
+    checkMentorProfile = vi.fn(() => profile);
     getMentorInvite = vi.fn(() => invite);
 
     TestBed.resetTestingModule();
@@ -51,7 +51,7 @@ describe('MentorInviteComponent', () => {
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
-        { provide: MentorshipMentorService, useValue: { respondToMentorInvite, hasMentorProfile, getMentorInvite } },
+        { provide: MentorshipMentorService, useValue: { respondToMentorInvite, checkMentorProfile, getMentorInvite } },
         { provide: ActivatedRoute, useValue: { queryParamMap } },
         { provide: PLATFORM_ID, useValue: platform },
       ],
@@ -154,6 +154,22 @@ describe('MentorInviteComponent', () => {
     expect(respondToMentorInvite).not.toHaveBeenCalled();
   });
 
+  it('offers Try again when the profile check fails, without claiming there is no profile', () => {
+    build({ profile: httpError(503) });
+
+    expect(byTestId('mentorship-mentor-invite-profile-check-failed')?.textContent).toContain("We couldn't check your mentor profile.");
+    expect(byTestId('mentorship-mentor-invite-profile-hint')).toBeNull();
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.querySelector('button')?.disabled).toBe(true);
+
+    checkMentorProfile.mockReturnValueOnce(of({ hasProfile: true }));
+    byTestId('mentorship-mentor-invite-profile-check-retry')?.click();
+    fixture.detectChanges();
+
+    expect(checkMentorProfile).toHaveBeenCalledTimes(2);
+    expect(byTestId('mentorship-mentor-invite-profile-check-failed')).toBeNull();
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.querySelector('button')?.disabled).toBe(false);
+  });
+
   it('keeps Accept and Decline disabled until the profile check answers', () => {
     const answer = new Subject<{ hasProfile: boolean }>();
     build({ profile: answer });
@@ -169,7 +185,7 @@ describe('MentorInviteComponent', () => {
   it('neither reads the profile nor hints on the server, whose read goes out without the session cookie, and leaves the answer to the browser', () => {
     build({ hasProfile: false, platform: 'server' });
 
-    expect(hasMentorProfile).not.toHaveBeenCalled();
+    expect(checkMentorProfile).not.toHaveBeenCalled();
     expect(byTestId('mentorship-mentor-invite-profile-hint')).toBeNull();
     expect(byTestId('mentorship-mentor-invite-accept-button')?.querySelector('button')?.disabled).toBe(true);
   });

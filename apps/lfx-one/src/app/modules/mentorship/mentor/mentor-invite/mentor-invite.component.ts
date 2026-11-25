@@ -10,7 +10,12 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE } from '@lfx-one/shared/constants';
-import { MentorshipMentorInviteDecision, MentorshipMentorInviteDetails, MentorshipMentorInviteState } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipMentorInviteDecision,
+  MentorshipMentorInviteDetails,
+  MentorshipMentorInviteState,
+  MentorshipMentorProfileCheck,
+} from '@lfx-one/shared/interfaces';
 import { isMentorshipMentorInviteToken } from '@lfx-one/shared/utils';
 import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
@@ -24,7 +29,7 @@ import { catchError, distinctUntilChanged, map, of, startWith, switchMap, tap } 
  * the signed-in user's, or for an invitation sent by email that the signed-in LF account uses the
  * address, so another account sees the forbidden state. Accept and Decline stay disabled until the
  * browser's read confirms a mentor profile; someone without one is pointed to create it first, then
- * open the link again. The page names the invited program, and links to its public page, once
+ * open the link again, and a failed check offers Try again rather than claiming there is no profile. The page names the invited program, and links to its public page, once
  * the browser has read it; until then, or when the read fails, the copy says "the program".
  */
 @Component({
@@ -44,14 +49,17 @@ export class MentorInviteComponent {
   private readonly submission = signal<MentorshipMentorInviteState | null>(null);
   private readonly decision = signal<MentorshipMentorInviteDecision | null>(null);
 
+  /** Bumped by the profile check's Try again, so the check runs once more. */
+  private readonly profileCheckRun = signal(0);
+
   private readonly token: Signal<string> = this.initToken();
   /**
-   * Whether the signed-in user has a mentor profile: undefined until the browser's read answers, and on the server, whose
-   * read goes out without the session cookie; false when the read says none or fails (the service reads a failure as none).
+   * The signed-in user's mentor profile check: `checking` until the browser's read answers, and on the server, whose read
+   * goes out without the session cookie; then `found`, `missing`, or `failed` when the read itself fails.
    */
-  protected readonly hasProfile: Signal<boolean | undefined> = this.initHasProfile();
+  protected readonly profileCheck: Signal<MentorshipMentorProfileCheck> = this.initProfileCheck();
   /** Accept and Decline need a confirmed mentor profile. */
-  protected readonly canAnswer = computed(() => this.hasProfile() === true);
+  protected readonly canAnswer = computed(() => this.profileCheck() === 'found');
   /** The invited program, or null until the browser's read returns it (never on the server, or after a failed read). */
   private readonly invite: Signal<MentorshipMentorInviteDetails | null> = this.initInvite();
   protected readonly programName = computed(() => this.invite()?.programName ?? '');
@@ -77,6 +85,11 @@ export class MentorInviteComponent {
     });
   }
 
+  /** After a failed profile check, check again rather than reloading the page. */
+  protected onRetryProfileCheck(): void {
+    this.profileCheckRun.update((run) => run + 1);
+  }
+
   /** After a failed answer, go back to the choice rather than reloading the page. */
   protected onRetry(): void {
     this.submission.set(null);
@@ -93,13 +106,24 @@ export class MentorInviteComponent {
     );
   }
 
-  private initHasProfile(): Signal<boolean | undefined> {
-    if (!isPlatformBrowser(this.platformId)) return signal<boolean | undefined>(undefined).asReadonly();
-    return toSignal(this.mentorService.hasMentorProfile().pipe(map((response) => response.hasProfile)), { initialValue: undefined });
+  private initProfileCheck(): Signal<MentorshipMentorProfileCheck> {
+    if (!isPlatformBrowser(this.platformId)) return signal<MentorshipMentorProfileCheck>('checking').asReadonly();
+    return toSignal(
+      toObservable(this.profileCheckRun).pipe(
+        switchMap(() =>
+          this.mentorService.checkMentorProfile().pipe(
+            map((response): MentorshipMentorProfileCheck => (response.hasProfile ? 'found' : 'missing')),
+            catchError(() => of<MentorshipMentorProfileCheck>('failed')),
+            startWith<MentorshipMentorProfileCheck>('checking')
+          )
+        )
+      ),
+      { initialValue: 'checking' }
+    );
   }
 
   /**
-   * Reads the program name for each usable link. The read's failure is not shown: Accept or Decline reports why
+   * Reads the program's id and name for each usable link. The read's failure is not shown: Accept or Decline reports why
    * the link cannot be used, as before the page named the program.
    */
   private initInvite(): Signal<MentorshipMentorInviteDetails | null> {

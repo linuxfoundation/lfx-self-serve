@@ -19,7 +19,18 @@
               }
             </p>
           </div>
-          @if (hasProfile() === false) {
+          @if (profileCheck() === 'failed') {
+            <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-gray-700" data-testid="mentorship-mentor-invite-profile-check-failed">
+              We couldn't check your mentor profile.
+              <button
+                type="button"
+                class="font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                (click)="onRetryProfileCheck()"
+                data-testid="mentorship-mentor-invite-profile-check-retry">
+                Try again
+              </button>
+            </p>
+          } @else if (profileCheck() === 'missing') {
             <p class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-gray-700" data-testid="mentorship-mentor-invite-profile-hint">
               You need a mentor profile to answer this invitation.
               <a [routerLink]="profileRoute" class="font-medium text-blue-600 hover:text-blue-700 hover:underline">Create your mentor profile</a>

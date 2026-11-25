@@ -109,6 +109,14 @@ describe('MentorshipMentorService — read error mapping', () => {
     expect(result).toEqual({ hasProfile: false });
   });
 
+  it('passes a failed profile check through for the invite page, rather than reading it as no profile', () => {
+    let status = 0;
+    service.checkMentorProfile().subscribe({ error: (err: HttpErrorResponse) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/mentor/has-profile').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(status).toBe(503);
+  });
+
   describe('registerMentorProfile', () => {
     const request: MentorshipMentorRegisterRequest = {
       introduction: '<p>Test intro</p>',

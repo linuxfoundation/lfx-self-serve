@@ -66,6 +66,16 @@ export class MentorshipMentorService {
   }
 
   /**
+   * As `hasMentorProfile`, but a failed check is logged and rethrown, for the invite page, which must not read a
+   * failure as "no profile".
+   */
+  public checkMentorProfile(): Observable<MentorshipMentorHasProfileResponse> {
+    return this.http
+      .get<MentorshipMentorHasProfileResponse>('/api/mentorship/mentor/has-profile')
+      .pipe(take(1), catchError(this.rethrowError('checkMentorProfile')));
+  }
+
+  /**
    * Creates the signed-in user's mentor profile from the register form. Failures propagate as the
    * raw `HttpErrorResponse` so the register page can read the status and code.
    */

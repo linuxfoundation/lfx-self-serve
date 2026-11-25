@@ -42,6 +42,7 @@ You can also answer from **Mentor Profile → Edit Mentor Profile**, where the i
 | "This invitation link can't be used"         | The invitation was already answered or revoked. Ask the Program Admin to invite you again.                                                                                                                                                  |
 | "You're viewing as another user"             | You are in a view-as session. Leave it, then open the link again.                                                                                                                                                                           |
 | "Something went wrong"                       | Your answer was not recorded. Select **Try again**.                                                                                                                                                                                         |
+| "We couldn't check your mentor profile"      | The page could not confirm your mentor profile, so **Accept** and **Decline** stay disabled. Select **Try again**.                                                                                                                          |
 
 ## Related
 
