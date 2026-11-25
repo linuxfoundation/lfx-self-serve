@@ -53,6 +53,7 @@ for (const width of [1440, 1280, 390]) {
     if (!envelope) throw new Error('Member 360 fixture is missing');
     envelope.tabs.member_ranking[1].days_to_renewal = 120;
     envelope.tabs.member_ranking[1].annual_value = null;
+    envelope.tabs.member_ranking.forEach((row, index) => (row.rank = 193 + index));
     envelope.content_sha256 = createHash('sha256').update(JSON.stringify(envelope.tabs)).digest('hex');
     await page.route(`**/api/mktg-agents/documents/member-360/${MEMBER_360_DOCUMENT_ID}**`, (route) => json(route, view));
     await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
@@ -114,7 +115,20 @@ for (const width of [1440, 1280, 390]) {
       expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
       await expect(cell).not.toHaveCSS('text-overflow', 'ellipsis');
     }
-    await page.getByTestId('member-360-expand-1').click();
+    // A three-digit rank stays on one line inside its column: the cells' break-words once split it digit by digit.
+    for (const rank of await page.getByTestId('member-360-rank').all()) {
+      await expect(rank).toHaveText(/^\s*19\d\s*$/);
+      const fit = await rank.evaluate((element) => {
+        const cell = element.closest('td');
+        if (!cell) throw new Error('Rank cell is missing');
+        const box = element.getBoundingClientRect();
+        const cellBox = cell.getBoundingClientRect();
+        return { height: box.height, lineHeight: parseFloat(getComputedStyle(element).lineHeight), right: box.right, cellRight: cellBox.right };
+      });
+      expect(fit.height).toBeLessThan(fit.lineHeight * 1.5);
+      expect(fit.right).toBeLessThanOrEqual(fit.cellRight);
+    }
+    await page.getByTestId('member-360-expand-193').click();
     for (const heading of ['Gaps', 'Rationale', 'Evidence']) {
       const column = page.getByTestId('member-360-row-detail').getByText(heading, { exact: true });
       await column.scrollIntoViewIfNeeded();

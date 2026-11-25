@@ -96,7 +96,12 @@ export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraf
   if (Array.isArray(draft.linkedInTextAds)) {
     restore.textAds = draft.linkedInTextAds
       .filter((ad) => typeof ad?.key === 'string' && typeof ad.headline === 'string' && typeof ad.description === 'string')
-      .map(({ key, headline, description }) => ({ key, headline, description }));
+      .map(({ key, headline, description, imageAssetId, imageAssetName, imageAssetBriefId }) =>
+        // The image (#5764 row 19) only whole: an id with the brief it was made for, each a string.
+        typeof imageAssetId === 'string' && imageAssetId !== '' && typeof imageAssetBriefId === 'string'
+          ? { key, headline, description, imageAssetId, imageAssetName: typeof imageAssetName === 'string' ? imageAssetName : '', imageAssetBriefId }
+          : { key, headline, description }
+      );
   }
   // Custom targeting (#5764 rows 8–11): present-only, and only a stored draft the editor can show.
   if (typeof draft.linkedInCustomTargeting === 'boolean') restore.customTargeting = draft.linkedInCustomTargeting;

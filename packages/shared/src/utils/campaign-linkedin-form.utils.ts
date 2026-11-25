@@ -16,6 +16,7 @@ import type {
   LinkedInVariantDraft,
   LinkedInVariantFieldsEnabled,
 } from '../interfaces/campaign.interface';
+import { linkedInVariantImageForBrief } from './campaign-linkedin-image.utils';
 import { linkedInCreativeTextLength, normalizeLinkedInCreativeName, roundUsdToCentsLikeGo } from './campaign-linkedin.utils';
 import { linkedInTextAdsCreateRefusal } from './campaign-linkedin-text-ads-form.utils';
 
@@ -96,11 +97,6 @@ export function linkedInAccountFields({
   if (!setByConnection) return { adAccountId: legacyAccountId };
   if (!selectionAvailable || !canChoose || !effectiveAccount || effectiveAccount.isDefault) return {};
   return { selectedAdAccountId: effectiveAccount.accountId };
-}
-
-/** Whether the variant holds an upload made for the brief now open (`briefId`, `''` for none): the only one sent. */
-export function linkedInVariantImageForBrief(variant: LinkedInVariantDraft, briefId: string): boolean {
-  return variant.imageAssetId !== '' && variant.imageAssetBriefId === briefId;
 }
 
 /**

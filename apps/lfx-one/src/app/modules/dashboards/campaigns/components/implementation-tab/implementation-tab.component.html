@@ -4190,6 +4190,11 @@
             <lfx-linkedin-text-ads-editor
               [textAds]="linkedInTextAds()"
               (textAdsChange)="onLinkedInTextAdsChange($event)"
+              [image]="linkedInTextAdImageInput()"
+              [imageUploadAvailable]="linkedInAssetUploadAvailable()"
+              (imageFileChange)="onLinkedInTextAdImageFileChange($event)"
+              (imageRemove)="onLinkedInTextAdImageRemove($event)"
+              (retryCapabilities)="retryCreateCapabilities.emit()"
               data-testid="implementation-linkedin-text-ads" />
           } @else {
             <!-- Ad variants: each one is its own LinkedIn ad, with its own copy and, when uploads are on, its own image (#5547). -->

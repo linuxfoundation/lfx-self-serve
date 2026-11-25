@@ -380,6 +380,7 @@ import type {
   LinkedInTargeting,
   LinkedInTargetingDraft,
   LinkedInTextAdDraft,
+  LinkedInTextAdImageInput,
   LinkedInVariantView,
   MetaAdVariant,
   MetaCampaignCreateRequest,
@@ -482,6 +483,8 @@ import {
   linkedInTargetingEmptyWarning,
   linkedInTargetingRemovalsHeld,
   linkedInVariantsForCreate,
+  linkedInTextAdImageFileRefusal,
+  linkedInTextAdImageSizeRefusal,
   linkedInTextAdViews,
   linkedInTextAdsForCreate,
   emptyLinkedInTargetingDraft,
@@ -2052,11 +2055,15 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly linkedInImageUploadVariantKey = signal('');
   /**
-   * The one LinkedIn upload belongs to no variant on screen: the brief re-seeded the variants (new
-   * keys) while it ran. It is not cancelled, because a draft restore that follows the re-seed brings
-   * that variant back and the upload lands on it; until then it holds no picker and not Create.
+   * The one LinkedIn upload belongs to no ad the chosen format shows: the brief re-seeded the variants (new
+   * keys) while it ran, or it is for the other format (#5764 row 19). It is not cancelled, because a draft
+   * restore that follows the re-seed brings that variant back, or a switch back to its format brings its
+   * editor back, and the upload lands on it; until then it holds no picker and not Create. The same rule the
+   * variant and text ad views apply, each to its own list, so a picker that looks enabled always takes a pick.
    */
-  private readonly linkedInImageUploadOrphaned = computed(() => linkedInImageUploadOrphaned(this.linkedInImageSlot(), this.linkedInVariants()));
+  private readonly linkedInImageUploadOrphaned = computed(() =>
+    linkedInImageUploadOrphaned(this.linkedInImageSlot(), this.linkedInTextAdsSelected() ? this.linkedInTextAds() : this.linkedInVariants())
+  );
   protected readonly linkedInImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
   private readonly linkedInImageUploadPendingName = signal('');
   private readonly linkedInImageUploadPendingBriefId = signal('');
@@ -3865,13 +3872,19 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInMaxVariants = LINKEDIN_MAX_VARIANTS;
   /** Each LinkedIn variant as the editor shows it: its copy, its limits and its own image (#5547). */
   protected readonly linkedInVariantViews: Signal<LinkedInVariantView[]> = this.initLinkedInVariantViews();
+  /** The upload slot, brief and capability state the Text Ads editor shows each ad's image against (#5764 row 19). */
+  protected readonly linkedInTextAdImageInput: Signal<LinkedInTextAdImageInput> = this.initLinkedInTextAdImageInput();
+  /** Each text ad with its image state, for the image notice that holds Create; the editor renders its own. */
+  private readonly linkedInTextAdImageViews = computed(() => linkedInTextAdViews(this.linkedInTextAds(), this.linkedInTextAdImageInput()));
   /**
    * Why Create is blocked for an uploaded LinkedIn image this tab still holds but cannot send, or
    * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL LinkedIn does not have. The first
-   * blocked variant's; each variant shows its own beside its picker.
+   * blocked variant's, or text ad's while Text Ads are chosen (#5764 row 19); each shows its own beside its picker.
    */
   protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = computed(
-    () => this.linkedInVariantViews().find((view) => view.imageBlock !== null)?.imageBlock ?? null
+    () =>
+      (this.linkedInTextAdsSelected() ? this.linkedInTextAdImageViews() : this.linkedInVariantViews()).find((view) => view.imageBlock !== null)?.imageBlock ??
+      null
   );
   protected readonly linkedInImageAssetBlockMessage = computed(() => this.linkedInImageAssetBlock()?.message ?? '');
   /** Why the daily cap (#5774) cannot be sent, or null; see `initLinkedInDailyCapError`. */
@@ -4251,8 +4264,9 @@ export class ImplementationTabComponent implements OnInit {
     if (this.redditImageAssetBlock() !== null) return 'Reddit Ads: resolve the image notice.';
     if (this.metaImageAssetBlock() !== null) return 'Meta Ads: resolve the image notice.';
     if (this.googleImageAssetBlock() !== null) return 'Google Ads: resolve the image notice.';
-    // A Text Ads create sends no variants (#5764 row 19), so a variant image it would not send holds nothing.
-    if (!this.linkedInTextAdsSelected() && this.linkedInImageAssetBlock() !== null) return 'LinkedIn Ads: resolve the image notice.';
+    // The first variant's image block, or text ad's while Text Ads are chosen (#5764 row 19); an image for the ads the
+    // chosen format hides is not sent and holds nothing (see `linkedInImageAssetBlock`).
+    if (this.linkedInImageAssetBlock() !== null) return 'LinkedIn Ads: resolve the image notice.';
     if (this.twitterImageAssetBlock() !== null) return 'X: resolve the image notice.';
     if (this.microsoftImageAssetBlock() !== null) return 'Microsoft Ads: resolve the image notice.';
     // Retained audience segments this caller may not (or may not yet be known to) send: held, never
@@ -4308,10 +4322,9 @@ export class ImplementationTabComponent implements OnInit {
     // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
     if (this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading' && this.googleImageUploadInReach())
       return 'Waiting for the Google Ads image upload to finish.';
-    // Not for an orphaned upload, whose image has no variant to land on and no Cancel on screen, nor while Text Ads are
-    // chosen (#5764 row 19): the create sends no variants, and the variant editor with its Cancel is hidden.
+    // Not for an orphaned upload, whose image has no ad on screen to land on and no Cancel: that includes one for the
+    // ads the chosen format hides (#5764 row 19), which the create does not send.
     if (
-      !this.linkedInTextAdsSelected() &&
       linkedInImageUploadHoldsCreate(
         this.showLinkedInSection(),
         this.linkedInAssetUploadAvailable(),
@@ -5492,9 +5505,75 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
-  /** The Text Ads editor's list as edited (#5764 row 19). */
+  /** The Text Ads editor's list as edited (#5764 row 19). A removed ad's upload in flight, if any, is cancelled. */
   protected onLinkedInTextAdsChange(textAds: LinkedInTextAdDraft[]): void {
+    const slotKey = this.linkedInImageUploadVariantKey();
+    const removedHolder = this.linkedInTextAds().some((ad) => ad.key === slotKey) && !textAds.some((ad) => ad.key === slotKey);
+    if (removedHolder) this.clearLinkedInImageUpload();
     this.linkedInTextAds.set(textAds);
+    this.emitDraft();
+  }
+
+  /**
+   * Upload the chosen image for one text ad of this brief (#5764 row 19): `onLinkedInVariantImageFileChange`'s sibling,
+   * in the same one LinkedIn upload slot, against the Text Ad limits. campaign-service checks the 100x100 size only after
+   * the campaign group exists, so the size is read here first, as `onMicrosoftImageFileChange` reads its bounds, and an
+   * image whose size cannot be read is refused.
+   */
+  protected onLinkedInTextAdImageFileChange({ key, event }: { key: string; event: Event }): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+    // The picker is disabled meanwhile; a new upload would cancel the other ad's.
+    if (this.linkedInTextAdImageViews().find((view) => view.key === key)?.imagePickerDisabled !== false) return;
+
+    this.clearLinkedInImageUpload();
+    this.setLinkedInTextAdImage(key, '', '', '');
+    this.linkedInImageUploadVariantKey.set(key);
+    this.emitDraft();
+
+    // A refused pick is recorded against the open brief and saved, like a failed upload.
+    const briefId = this.briefPersistence().briefId ?? '';
+    const refusal = linkedInTextAdImageFileRefusal(file);
+    if (refusal !== null) {
+      this.failLinkedInImageUpload(refusal, briefId);
+      this.emitDraft();
+      return;
+    }
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    if (!briefId || !projectSlug) {
+      this.failLinkedInImageUpload('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    // Recorded as uploading, and told to the parent, BEFORE the size read, so Create is held meanwhile and a tab switch
+    // during it raises the interrupted-upload block on remount. The read rides the upload subscription, so a clear or
+    // the component's destruction drops its answer.
+    this.linkedInImageUploadStatus.set('uploading');
+    this.linkedInImageUploadPendingName.set(file.name);
+    this.linkedInImageUploadPendingBriefId.set(briefId);
+    this.emitDraft();
+    this.linkedInImageUploadSub = from(this.readImageSize(file))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((size) => {
+        this.linkedInImageUploadPendingName.set('');
+        this.linkedInImageUploadPendingBriefId.set('');
+        const sizeRefusal = linkedInTextAdImageSizeRefusal(size);
+        if (sizeRefusal !== null) {
+          this.failLinkedInImageUpload(sizeRefusal, briefId);
+          this.emitDraft();
+          return;
+        }
+        this.followLinkedInImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'linkedin'), briefId, file.name);
+        this.emitDraft();
+      });
+  }
+
+  /** Forget one text ad's image, or its upload in flight or failed (a stored asset stays upstream, unused). */
+  protected onLinkedInTextAdImageRemove(key: string): void {
+    if (this.linkedInImageUploadVariantKey() === key) this.clearLinkedInImageUpload();
+    this.setLinkedInTextAdImage(key, '', '', '');
     this.emitDraft();
   }
 
@@ -7923,6 +8002,22 @@ export class ImplementationTabComponent implements OnInit {
     );
   }
 
+  /** Set (or, with `''`, clear) one text ad's upload (#5764 row 19). */
+  private setLinkedInTextAdImage(key: string, imageAssetId: string, imageAssetName: string, imageAssetBriefId: string): void {
+    this.linkedInTextAds.update((ads) => ads.map((ad) => (ad.key === key ? { ...ad, imageAssetId, imageAssetName, imageAssetBriefId } : ad)));
+  }
+
+  private initLinkedInTextAdImageInput(): Signal<LinkedInTextAdImageInput> {
+    return computed(() => ({
+      slot: this.linkedInImageSlot(),
+      briefId: this.briefPersistence().briefId ?? '',
+      briefSaving: this.briefPersistence().status === 'saving',
+      showSection: this.showLinkedInSection(),
+      uploadEnabled: this.linkedInAssetUploadEnabled(),
+      capabilityRead: this.createCapabilityRead(),
+    }));
+  }
+
   /** `followMetaImageUpload`'s sibling. */
   private followLinkedInImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string): void {
     this.linkedInImageUploadStatus.set('uploading');
@@ -7939,10 +8034,11 @@ export class ImplementationTabComponent implements OnInit {
           this.emitDraft();
           return;
         }
-        // Onto the variant the image was chosen for, and only that one. Gone (the brief re-seeded the
-        // variants), the image has nowhere to go and the upload is simply over.
+        // Onto the variant or text ad the image was chosen for, and only that one. Gone (the brief re-seeded the
+        // variants, or the ad was removed), the image has nowhere to go and the upload is simply over.
         const key = this.linkedInImageUploadVariantKey();
         if (this.linkedInVariants().some((variant) => variant.key === key)) this.setLinkedInVariantImage(key, asset.id, fileName, briefId);
+        else if (this.linkedInTextAds().some((ad) => ad.key === key)) this.setLinkedInTextAdImage(key, asset.id, fileName, briefId);
         this.linkedInImageUploadStatus.set('idle');
         this.creativeLibraryRevision.update((revision) => revision + 1);
         this.emitDraft();
@@ -8212,12 +8308,17 @@ export class ImplementationTabComponent implements OnInit {
     this.twitterImageUploadFailedBriefId.set(briefId);
   }
 
+  /** Whether a variant or text ad with `key` is on the page (#5764 row 19). */
+  private linkedInImageUploadHolderExists(key: string): boolean {
+    return this.linkedInVariants().some((variant) => variant.key === key) || this.linkedInTextAds().some((ad) => ad.key === key);
+  }
+
   private failLinkedInImageUpload(message: string, briefId = ''): void {
-    // A failure for a variant that no longer exists (the brief re-seeded the variants mid-upload) has
-    // no variant to show it on and no Remove to clear it, so recording it would hold every other
+    // A failure for a variant or text ad that no longer exists (the brief re-seeded the variants mid-upload) has
+    // nowhere to show it and no Remove to clear it, so recording it would hold every other
     // picker. The slot is freed instead.
     const slotKey = this.linkedInImageUploadVariantKey();
-    if (slotKey !== '' && !this.linkedInVariants().some((variant) => variant.key === slotKey)) {
+    if (slotKey !== '' && !this.linkedInImageUploadHolderExists(slotKey)) {
       this.clearLinkedInImageUpload();
       return;
     }
@@ -8682,7 +8783,8 @@ export class ImplementationTabComponent implements OnInit {
    */
   private linkedInCreativesField(): Pick<LinkedInCampaignCreateRequest, 'variants' | 'format' | 'textAds'> {
     if (!this.linkedInTextAdsSelected()) return { variants: this.linkedInVariantsSent() };
-    return { format: 'text', textAds: linkedInTextAdsForCreate(this.linkedInTextAds()), variants: [] };
+    const textAds = linkedInTextAdsForCreate(this.linkedInTextAds(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '');
+    return { format: 'text', textAds, variants: [] };
   }
 
   /** Why the LinkedIn section holds Create now, or `null`; see `linkedInCreateRefusal`. */
@@ -8712,7 +8814,7 @@ export class ImplementationTabComponent implements OnInit {
         ? {
             textAds: {
               count: this.linkedInTextAds().length,
-              textInvalid: linkedInTextAdViews(this.linkedInTextAds()).some((view) => view.headlineError !== '' || view.descriptionError !== ''),
+              textInvalid: this.linkedInTextAdImageViews().some((view) => view.headlineError !== '' || view.descriptionError !== ''),
               manualBid: this.biddingField('linkedin-ads').bidding?.strategy === 'manual',
             },
           }

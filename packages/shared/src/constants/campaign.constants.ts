@@ -4244,6 +4244,19 @@ export const LINKEDIN_IMAGE_MAX_BYTES = 5_000_000;
 export const LINKEDIN_IMAGE_TOO_LARGE_MESSAGE = 'LinkedIn accepts images up to 5 MB. Choose a smaller PNG or JPEG.';
 
 /**
+ * A LinkedIn Text Ad image's limits (#5764 row 19): campaign-service's `MaxTextAdImageBytes` (the decimal reading of
+ * "<= 2MB") and the exact `100 x 100` pixels it requires. campaign-service checks them only while it creates the
+ * campaign, after the campaign group exists, so the Implement tab checks them before uploading.
+ */
+export const LINKEDIN_TEXT_AD_IMAGE_LIMITS = {
+  maxBytes: 2_000_000,
+  side: 100,
+} as const;
+
+/** Shown when a LinkedIn Text Ad image exceeds `LINKEDIN_TEXT_AD_IMAGE_LIMITS.maxBytes`. */
+export const LINKEDIN_TEXT_AD_IMAGE_TOO_LARGE_MESSAGE = 'LinkedIn text ad images can be up to 2 MB. Choose a smaller PNG or JPEG.';
+
+/**
  * The largest image X takes on an authored tweet, in bytes: campaign-service's
  * `twitter.MaxImageBytes` (`5 << 20`, X's simple-upload limit). It refuses a larger stored asset at
  * dispatch, so the Implement tab checks it before uploading rather than storing an image the create
