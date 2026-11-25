@@ -47,6 +47,8 @@ export function linkedInDraftFields(
   | 'linkedInImageUploadPendingBriefId'
   | 'linkedInImageUploadFailedMessage'
   | 'linkedInImageUploadFailedBriefId'
+  | 'linkedInFormat'
+  | 'linkedInTextAds'
 > {
   return {
     linkedInBudgetUsd: state.budgetUsd,
@@ -58,6 +60,8 @@ export function linkedInDraftFields(
     linkedInImageUploadPendingBriefId: state.uploadPendingBriefId,
     linkedInImageUploadFailedMessage: state.uploadFailedBriefId ? state.uploadError : '',
     linkedInImageUploadFailedBriefId: state.uploadFailedBriefId,
+    linkedInFormat: state.format,
+    linkedInTextAds: state.textAds.map((ad) => ({ ...ad })),
   };
 }
 
@@ -80,6 +84,14 @@ export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraf
   if (Array.isArray(draft.linkedInVariants)) restore.variants = draft.linkedInVariants.map((variant) => ({ ...variant }));
   if (draft.linkedInImageUploadFailedMessage && draft.linkedInImageUploadFailedBriefId) {
     restore.failedUpload = { message: draft.linkedInImageUploadFailedMessage, briefId: draft.linkedInImageUploadFailedBriefId };
+  }
+  // Text Ads (#5764 row 19): present-only, so an older draft keeps the single-image default. An unknown format restores nothing.
+  if (draft.linkedInFormat === 'single_image' || draft.linkedInFormat === 'text') restore.format = draft.linkedInFormat;
+  // Only entries whose fields are all text: a draft is replayed from stored JSON whose inner shape is not validated.
+  if (Array.isArray(draft.linkedInTextAds)) {
+    restore.textAds = draft.linkedInTextAds
+      .filter((ad) => typeof ad?.key === 'string' && typeof ad.headline === 'string' && typeof ad.description === 'string')
+      .map(({ key, headline, description }) => ({ key, headline, description }));
   }
   if (draft.linkedInImageUploadPendingName) {
     restore.pendingUpload = { name: draft.linkedInImageUploadPendingName, briefId: draft.linkedInImageUploadPendingBriefId ?? '' };

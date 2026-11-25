@@ -308,4 +308,21 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
     expect(legacyCreate).not.toHaveBeenCalled();
     expect(refusal(next).field).toBe('linkedInConfig.format');
   });
+
+  it('refuses a text ad image while LinkedIn creative assets are off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInAssets);
+
+    const { next } = await create({
+      lifetimeBudget: false,
+      targetingProfile: 'cloud-native',
+      variants: [],
+      format: 'text',
+      textAds: [{ ...textAds[0], imageAssetId: 'a1' }],
+      bidding: manual,
+    });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.textAds[0].imageAssetId');
+  });
 });

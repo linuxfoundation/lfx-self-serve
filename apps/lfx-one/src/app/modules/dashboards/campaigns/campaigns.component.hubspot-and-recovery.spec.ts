@@ -3381,7 +3381,8 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     twitterCreateEnabled = false,
     linkedInDailyCapEnabled = false,
     linkedInVariantCopyEnabled = false,
-    linkedInCallToActionEnabled = false
+    linkedInCallToActionEnabled = false,
+    linkedInTextAdsEnabled = false
   ): Observable<CampaignListResult> =>
     of({
       campaigns: [],
@@ -3402,7 +3403,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       linkedInDailyCapEnabled,
       linkedInVariantCopyEnabled,
       linkedInCallToActionEnabled,
-      linkedInTextAdsEnabled: false,
+      linkedInTextAdsEnabled,
       microsoftAssetUploadEnabled: false,
       biddingEnabled,
       microsoftScheduleEnabled,
@@ -3525,12 +3526,12 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
    * 16–17) travel the same path: the real page reads them and binds each to its input.
    */
   it.each([
-    [true, true, false],
-    [false, false, true],
+    [true, true, false, true],
+    [false, false, true, false],
   ])(
-    'hands the linkedin daily-cap (%s), ad name and description (%s) and call to action (%s) capabilities to the Implementation tab',
-    async (enabled, copy, callToAction) => {
-      listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, false, enabled, copy, callToAction));
+    'hands the linkedin daily-cap (%s), ad name and description (%s), call to action (%s) and text ads (%s) capabilities to the Implementation tab',
+    async (enabled, copy, callToAction, textAds) => {
+      listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, false, enabled, copy, callToAction, textAds));
       const withLinkedIn = { ...brief, selectedPlatforms: ['linkedin-ads'] } as unknown as CampaignBriefOutput;
 
       page().onProceedToImplementation(withLinkedIn);
@@ -3539,6 +3540,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       expect(tab()['linkedInDailyCapEnabled']()).toBe(enabled);
       expect(tab()['linkedInVariantCopyEnabled']()).toBe(copy);
       expect(tab()['linkedInCallToActionEnabled']()).toBe(callToAction);
+      expect(tab()['linkedInTextAdsEnabled']()).toBe(textAds);
     }
   );
 

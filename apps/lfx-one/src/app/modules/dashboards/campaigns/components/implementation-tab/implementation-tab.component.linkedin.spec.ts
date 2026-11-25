@@ -1037,6 +1037,64 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       ]);
     });
 
+    // Text Ads (#5764 row 19); the rules are rows in `campaign-linkedin-text-ads-form.utils.spec.ts` and
+    // `campaign-linkedin-form.utils.spec.ts`, the editor's own wiring is in its spec.
+    interface TextAdsInternals {
+      biddingDrafts: { set(v: Record<string, unknown>): void };
+      onLinkedInFormatChange(format: string): void;
+      onLinkedInTextAdsChange(ads: { key: string; headline: string; description: string }[]): void;
+    }
+    const textAds = (f: ComponentFixture<ImplementationTabComponent>): TextAdsInternals => f.componentInstance as unknown as TextAdsInternals;
+    const textAd = { key: 'text-ad-1', headline: 'KubeCon EU', description: 'Join cloud native engineers.' };
+
+    it('offers Text Ads only on an explicit yes, and sends them with a manual bid in place of the variants', async () => {
+      const { fixture: f, latest } = await mount(null);
+      expect(q(f, 'implementation-linkedin-format')).toBeNull();
+
+      f.componentRef.setInput('linkedInTextAdsEnabled', true);
+      f.componentRef.setInput('biddingEnabled', true);
+      textAds(f).biddingDrafts.set({ 'linkedin-ads': { strategy: 'manual', bidAmount: 5 } });
+      textAds(f).onLinkedInFormatChange('text');
+      textAds(f).onLinkedInTextAdsChange([textAd]);
+      f.detectChanges();
+      expect(q(f, 'implementation-linkedin-text-ads')).not.toBeNull();
+      expect(q(f, 'implementation-linkedin-variants')).toBeNull();
+      expect(latest()).toMatchObject({ linkedInFormat: 'text', linkedInTextAds: [textAd] });
+
+      fillForm(f);
+      at(f).submit();
+      expect(createCampaign.mock.calls[0][0]['linkedInConfig']).toMatchObject({
+        format: 'text',
+        textAds: [{ headline: 'KubeCon EU', description: 'Join cloud native engineers.' }],
+        variants: [],
+      });
+    });
+
+    it('holds Create while Text Ads have no manual bid', STATE_ONLY, async () => {
+      const f = (await mount(null)).fixture;
+      f.componentRef.setInput('linkedInTextAdsEnabled', true);
+      f.componentRef.setInput('biddingEnabled', true);
+      fillForm(f);
+      textAds(f).onLinkedInFormatChange('text');
+      textAds(f).onLinkedInTextAdsChange([textAd]);
+
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: Text Ads need a manual bid. Choose manual bidding and set a maximum cost per click.');
+      textAds(f).biddingDrafts.set({ 'linkedin-ads': { strategy: 'manual', bidAmount: 5 } });
+      expect(at(f).createBlockedReason()).toBeNull();
+    });
+
+    it('holds Create, never sending single image ads instead, when a Text Ads choice is no longer offered', STATE_ONLY, async () => {
+      const f = (await mount(null)).fixture;
+      f.componentRef.setInput('linkedInTextAdsEnabled', true);
+      fillForm(f);
+      textAds(f).onLinkedInFormatChange('text');
+      f.componentRef.setInput('linkedInTextAdsEnabled', false);
+
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: Text Ads are not available right now. Choose single image ads as the ad format.');
+      textAds(f).onLinkedInFormatChange('single_image');
+      expect(at(f).createBlockedReason()).toBeNull();
+    });
+
     it('holds Create, with the reason under the field, while two ads share a name', async () => {
       const f = (await mount(null)).fixture;
       f.componentRef.setInput('linkedInVariantCopyEnabled', true);
@@ -1159,6 +1217,45 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
         { introText: 'First intro', headline: 'First headline' },
         { introText: 'Second intro', headline: 'Second headline', imageAssetId: ASSET_ID },
       ]);
+    });
+
+    it('does not hold a Text Ads create over a variant image upload still running (#5764 row 19)', async () => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      choose(f, png());
+      expect(at(f).createBlockedReason()).toBe('Waiting for the LinkedIn Ads image upload to finish.');
+
+      const c = f.componentInstance as unknown as {
+        biddingDrafts: { set(v: Record<string, unknown>): void };
+        onLinkedInFormatChange(format: string): void;
+        onLinkedInTextAdsChange(ads: { key: string; headline: string; description: string }[]): void;
+      };
+      f.componentRef.setInput('linkedInTextAdsEnabled', true);
+      f.componentRef.setInput('biddingEnabled', true);
+      c.biddingDrafts.set({ 'linkedin-ads': { strategy: 'manual', bidAmount: 5 } });
+      c.onLinkedInFormatChange('text');
+      c.onLinkedInTextAdsChange([{ key: 'text-ad-1', headline: 'KubeCon EU', description: 'Join cloud native engineers.' }]);
+      expect(at(f).createBlockedReason()).toBeNull();
+    });
+
+    it('does not hold a Text Ads create over a variant image it does not send (#5764 row 19)', async () => {
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      choose(f, png(5_000_001));
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: resolve the image notice.');
+
+      const c = f.componentInstance as unknown as {
+        biddingDrafts: { set(v: Record<string, unknown>): void };
+        onLinkedInFormatChange(format: string): void;
+        onLinkedInTextAdsChange(ads: { key: string; headline: string; description: string }[]): void;
+      };
+      f.componentRef.setInput('linkedInTextAdsEnabled', true);
+      f.componentRef.setInput('biddingEnabled', true);
+      c.biddingDrafts.set({ 'linkedin-ads': { strategy: 'manual', bidAmount: 5 } });
+      c.onLinkedInFormatChange('text');
+      c.onLinkedInTextAdsChange([{ key: 'text-ad-1', headline: 'KubeCon EU', description: 'Join cloud native engineers.' }]);
+      expect(at(f).createBlockedReason()).toBeNull();
     });
 
     it.each([

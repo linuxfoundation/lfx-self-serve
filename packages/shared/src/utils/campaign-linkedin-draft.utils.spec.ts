@@ -49,7 +49,15 @@ describe('linkedInDraftFields', () => {
     uploadPendingBriefId: 'b1',
     uploadError: 'Too big.',
     uploadFailedBriefId: '',
+    format: 'text',
+    textAds: [{ key: 'text-ad-1', headline: 'h', description: 'd' }],
   };
+
+  it('carries the format and a copy of each text ad', () => {
+    const fields = linkedInDraftFields(state);
+    expect(fields).toMatchObject({ linkedInFormat: 'text', linkedInTextAds: state.textAds });
+    expect(fields.linkedInTextAds?.[0]).not.toBe(state.textAds[0]);
+  });
 
   it('carries the budget pair and cap as held, and copies each variant', () => {
     const fields = linkedInDraftFields(state);
@@ -70,6 +78,28 @@ describe('linkedInDraftFields', () => {
 describe('linkedInDraftRestore', () => {
   it('restores nothing an older draft omits, and empty removals and slot', () => {
     expect(linkedInDraftRestore(draft({}))).toEqual({ targetingRemovals: { skills: [], groups: [] }, uploadVariantKey: '' });
+  });
+
+  it.each([
+    ['text', 'text'],
+    ['single_image', 'single_image'],
+    ['video', undefined],
+  ])('restores a stored format %s as %s', (stored, expected) => {
+    // A stored draft is replayed from JSON, so an unknown format is possible.
+    expect(linkedInDraftRestore(draft({ linkedInFormat: stored as LinkedInDraftSnapshot['linkedInFormat'] })).format).toBe(expected);
+  });
+
+  it('restores a copy of each text ad', () => {
+    const textAds = [{ key: 'text-ad-1', headline: 'h', description: 'd' }];
+    const restore = linkedInDraftRestore(draft({ linkedInTextAds: textAds }));
+    expect(restore.textAds).toEqual(textAds);
+    expect(restore.textAds?.[0]).not.toBe(textAds[0]);
+  });
+
+  it('drops a restored text ad whose fields are not all text', () => {
+    const textAds = [{ key: 'text-ad-1', headline: 'h', description: 'd' }, { key: 'text-ad-2', headline: 7, description: 'd' }, null];
+    // @ts-expect-error -- a draft is replayed from stored JSON whose inner shape is not validated
+    expect(linkedInDraftRestore(draft({ linkedInTextAds: textAds })).textAds).toEqual([textAds[0]]);
   });
 
   it.each([

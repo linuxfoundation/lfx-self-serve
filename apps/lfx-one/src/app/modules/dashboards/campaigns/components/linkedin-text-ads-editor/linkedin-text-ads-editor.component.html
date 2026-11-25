@@ -1,0 +1,52 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<fieldset class="flex flex-col gap-3" aria-describedby="linkedin-text-ads-hint" data-testid="linkedin-text-ads-editor">
+  <legend class="float-left text-xs font-medium text-gray-700">Text ads ({{ textAds().length }}/{{ limits.ads }})</legend>
+  <p id="linkedin-text-ads-hint" class="text-xs text-gray-500">
+    Text ads show on the right rail of LinkedIn on desktop. Each has a headline (up to {{ limits.headline }} characters) and a description (up to
+    {{ limits.description }}), and links to the registration page.
+  </p>
+  @for (view of views(); track view.key; let i = $index) {
+    <fieldset class="flex flex-col gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'linkedin-text-ads-editor-ad-' + i">
+      <legend class="float-left text-xs font-medium text-gray-700">Text ad {{ i + 1 }}</legend>
+      <lfx-ui-input
+        label="Headline"
+        size="small"
+        [value]="view.headline"
+        (valueChange)="onTextChange(view.key, 'headline', $event)"
+        [error]="view.headlineError"
+        [hint]="view.headlineLength + '/' + limits.headline + ' characters'"
+        [attr.data-testid]="'linkedin-text-ads-editor-headline-' + i" />
+      <lfx-ui-input
+        label="Description"
+        size="small"
+        [value]="view.description"
+        (valueChange)="onTextChange(view.key, 'description', $event)"
+        [error]="view.descriptionError"
+        [hint]="view.descriptionLength + '/' + limits.description + ' characters'"
+        [attr.data-testid]="'linkedin-text-ads-editor-description-' + i" />
+      <lfx-button
+        class="self-start"
+        label="Remove text ad"
+        icon="fa-light fa-trash"
+        size="small"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="textAds().length <= 1"
+        [ariaLabel]="'Remove text ad ' + (i + 1)"
+        (onClick)="remove(view.key)"
+        [attr.data-testid]="'linkedin-text-ads-editor-remove-' + i" />
+    </fieldset>
+  }
+  <lfx-button
+    class="self-start"
+    label="Add text ad"
+    icon="fa-light fa-plus"
+    size="small"
+    severity="secondary"
+    [outlined]="true"
+    [disabled]="textAds().length >= limits.ads"
+    (onClick)="add()"
+    data-testid="linkedin-text-ads-editor-add" />
+</fieldset>

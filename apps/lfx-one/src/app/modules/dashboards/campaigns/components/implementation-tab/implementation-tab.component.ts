@@ -376,6 +376,8 @@ import type {
   LinkedInGeoSearchState,
   LinkedInImageSlot,
   LinkedInVariantDraft,
+  LinkedInAdFormat,
+  LinkedInTextAdDraft,
   LinkedInVariantView,
   MetaAdVariant,
   MetaCampaignCreateRequest,
@@ -478,6 +480,9 @@ import {
   linkedInTargetingEmptyWarning,
   linkedInTargetingRemovalsHeld,
   linkedInVariantsForCreate,
+  linkedInTextAdViews,
+  linkedInTextAdsForCreate,
+  newLinkedInTextAdDraft,
   linkedInCanAddVariant,
   linkedInCanRemoveVariant,
   linkedInImageFileRefusal,
@@ -579,6 +584,7 @@ import {
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
 import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
+import { LinkedInTextAdsEditorComponent } from '../linkedin-text-ads-editor/linkedin-text-ads-editor.component';
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
 import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
 import { MetaDeviceOsOptionsComponent } from '../meta-device-os-options/meta-device-os-options.component';
@@ -683,6 +689,7 @@ let linkedInVariantKeySequence = 0;
     UiOptionComponent,
     UiSelectComponent,
     UiTextareaComponent,
+    LinkedInTextAdsEditorComponent,
   ],
   // Component-scoped so the "create another" confirmation (#4983) needs nothing from the host; the app
   // also provides one at root, and this instance behaves the same.
@@ -947,6 +954,12 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see linkedInCallToActionEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInCallToActionAvailable = computed<boolean>(() => this.linkedInCallToActionEnabled() === true);
+
+  /** Whether the LinkedIn section offers Text Ads (`CampaignListResult.linkedInTextAdsEnabled`, #5764 row 19). */
+  public readonly linkedInTextAdsEnabled = input<boolean | null>(null);
+
+  /** @see linkedInTextAdsEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInTextAdsAvailable = computed<boolean>(() => this.linkedInTextAdsEnabled() === true);
 
   /** The calls to action the variant editor offers. */
   protected readonly linkedInCallToActionOptions = LINKEDIN_CALL_TO_ACTION_OPTIONS;
@@ -1852,6 +1865,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
   /** The LinkedIn ad variants as edited: seeded from the brief, carried in the draft (#5547). */
   protected readonly linkedInVariants = signal<LinkedInVariantDraft[]>([]);
+  /** The LinkedIn ad format chosen (#5764 row 19). Text goes out only while `linkedInTextAdsAvailable()`. */
+  protected readonly linkedInFormat = signal<LinkedInAdFormat>('single_image');
+  /** The LinkedIn Text Ads as edited (#5764 row 19), carried in the draft. */
+  protected readonly linkedInTextAds = signal<LinkedInTextAdDraft[]>([]);
+  /** Whether this create is a Text Ads campaign: chosen, and offered by this deployment. */
+  protected readonly linkedInTextAdsSelected = computed<boolean>(() => this.linkedInTextAdsAvailable() && this.linkedInFormat() === 'text');
   protected readonly linkedInBudgetUsd = signal(DEFAULT_LINKEDIN_BUDGET_USD);
   protected readonly linkedInLifetimeBudget = signal(false);
   /** The optional daily cap beside a lifetime budget (#5774). null is no cap; cleared when the lifetime budget is turned off. */
@@ -4213,7 +4232,8 @@ export class ImplementationTabComponent implements OnInit {
     if (this.redditImageAssetBlock() !== null) return 'Reddit Ads: resolve the image notice.';
     if (this.metaImageAssetBlock() !== null) return 'Meta Ads: resolve the image notice.';
     if (this.googleImageAssetBlock() !== null) return 'Google Ads: resolve the image notice.';
-    if (this.linkedInImageAssetBlock() !== null) return 'LinkedIn Ads: resolve the image notice.';
+    // A Text Ads create sends no variants (#5764 row 19), so a variant image it would not send holds nothing.
+    if (!this.linkedInTextAdsSelected() && this.linkedInImageAssetBlock() !== null) return 'LinkedIn Ads: resolve the image notice.';
     if (this.twitterImageAssetBlock() !== null) return 'X: resolve the image notice.';
     if (this.microsoftImageAssetBlock() !== null) return 'Microsoft Ads: resolve the image notice.';
     // Retained audience segments this caller may not (or may not yet be known to) send: held, never
@@ -4269,8 +4289,10 @@ export class ImplementationTabComponent implements OnInit {
     // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
     if (this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading' && this.googleImageUploadInReach())
       return 'Waiting for the Google Ads image upload to finish.';
-    // Not for an orphaned upload, whose image has no variant to land on and no Cancel on screen.
+    // Not for an orphaned upload, whose image has no variant to land on and no Cancel on screen, nor while Text Ads are
+    // chosen (#5764 row 19): the create sends no variants, and the variant editor with its Cancel is hidden.
     if (
+      !this.linkedInTextAdsSelected() &&
       linkedInImageUploadHoldsCreate(
         this.showLinkedInSection(),
         this.linkedInAssetUploadAvailable(),
@@ -5427,6 +5449,19 @@ export class ImplementationTabComponent implements OnInit {
   /** Edit one LinkedIn variant's intro text, headline, ad name, description or call to action. */
   protected onLinkedInVariantTextChange(key: string, field: 'introText' | 'headline' | 'name' | 'description' | 'callToAction', value: string): void {
     this.linkedInVariants.update((variants) => variants.map((variant) => (variant.key === key ? { ...variant, [field]: value } : variant)));
+    this.emitDraft();
+  }
+
+  /** Choose the LinkedIn ad format (#5764 row 19). The first switch to text starts one empty text ad. */
+  protected onLinkedInFormatChange(format: LinkedInAdFormat): void {
+    this.linkedInFormat.set(format);
+    if (format === 'text' && this.linkedInTextAds().length === 0) this.linkedInTextAds.set([newLinkedInTextAdDraft([])]);
+    this.emitDraft();
+  }
+
+  /** The Text Ads editor's list as edited (#5764 row 19). */
+  protected onLinkedInTextAdsChange(textAds: LinkedInTextAdDraft[]): void {
+    this.linkedInTextAds.set(textAds);
     this.emitDraft();
   }
 
@@ -6878,7 +6913,8 @@ export class ImplementationTabComponent implements OnInit {
               targetingProfile: this.linkedInTargetingProfile(),
               // Only when something was removed, so an untouched profile sends what it always did.
               ...this.linkedInTargetingEditField(),
-              variants: this.linkedInVariantsSent(),
+              // Text Ads (#5764 row 19) send their ads and no variants; otherwise the variants as today.
+              ...this.linkedInCreativesField(),
               // The legacy creator reads the form's account. When the connection decides it, only a
               // chosen non-default account is sent, as `selectedAdAccountId` (#5809).
               ...this.linkedInAccountFieldsNow(),
@@ -8596,6 +8632,15 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  /**
+   * The LinkedIn creatives for the request (#5764 row 19): `format: 'text'`, the text ads and no variants while Text Ads
+   * are chosen and offered, else the variants exactly as before (no `format` key).
+   */
+  private linkedInCreativesField(): Pick<LinkedInCampaignCreateRequest, 'variants' | 'format' | 'textAds'> {
+    if (!this.linkedInTextAdsSelected()) return { variants: this.linkedInVariantsSent() };
+    return { format: 'text', textAds: linkedInTextAdsForCreate(this.linkedInTextAds()), variants: [] };
+  }
+
   /** Why the LinkedIn section holds Create now, or `null`; see `linkedInCreateRefusal`. */
   private linkedInCreateRefusalNow(): string | null {
     return linkedInCreateRefusal({
@@ -8614,6 +8659,18 @@ export class ImplementationTabComponent implements OnInit {
       accountInCatalog: this.linkedInAccounts().some((a) => a.accountId === this.linkedInAccountId()),
       accountSelectionAvailable: this.linkedInAccountSelectionAvailable(),
       createAccountStatus: this.linkedInCreateAccount().status,
+      // Text Ads chosen but no longer offered: held, never sent as single image ads instead (#5764 row 19).
+      textAdsUnavailable: this.linkedInFormat() === 'text' && !this.linkedInTextAdsAvailable(),
+      // Text Ads replace the variant checks while chosen (#5764 row 19); they need a manual bid.
+      ...(this.linkedInTextAdsSelected()
+        ? {
+            textAds: {
+              count: this.linkedInTextAds().length,
+              textInvalid: linkedInTextAdViews(this.linkedInTextAds()).some((view) => view.headlineError !== '' || view.descriptionError !== ''),
+              manualBid: this.biddingField('linkedin-ads').bidding?.strategy === 'manual',
+            },
+          }
+        : {}),
     });
   }
 
@@ -9057,6 +9114,9 @@ export class ImplementationTabComponent implements OnInit {
     // The LinkedIn variants as edited, each with its own image, over the brief's seed (#5547). Each
     // entry copied, so the parent's draft is never reachable from the editor.
     if (linkedInRestore.variants) this.linkedInVariants.set(linkedInRestore.variants);
+    // The format and Text Ads as edited (#5764 row 19), present-only.
+    if (linkedInRestore.format) this.linkedInFormat.set(linkedInRestore.format);
+    if (linkedInRestore.textAds) this.linkedInTextAds.set(linkedInRestore.textAds);
     // The LinkedIn upload, on the Meta upload's terms above, for the variant it was chosen for.
     this.linkedInImageUploadVariantKey.set(linkedInRestore.uploadVariantKey);
     if (linkedInRestore.failedUpload) this.failLinkedInImageUpload(linkedInRestore.failedUpload.message, linkedInRestore.failedUpload.briefId);
@@ -9577,6 +9637,8 @@ export class ImplementationTabComponent implements OnInit {
         uploadPendingBriefId: this.linkedInImageUploadPendingBriefId(),
         uploadError: this.linkedInImageUploadError(),
         uploadFailedBriefId: this.linkedInImageUploadFailedBriefId(),
+        format: this.linkedInFormat(),
+        textAds: this.linkedInTextAds(),
       }),
       redditBudgetUsd: this.redditBudgetUsd(),
       redditObjective: this.redditObjective(),
@@ -9917,6 +9979,8 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInLifetimeBudget.set(false);
     this.linkedInDailyCapUsd.set(null);
     this.linkedInVariants.set([]);
+    this.linkedInFormat.set('single_image');
+    this.linkedInTextAds.set([]);
     this.campaignForm.patchValue({
       linkedInAccountId: untracked(() => this.linkedInAccounts())[0]?.accountId ?? '',
       linkedInGeoTargets: [],
