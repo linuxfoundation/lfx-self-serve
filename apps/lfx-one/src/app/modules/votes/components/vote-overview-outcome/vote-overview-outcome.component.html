@@ -1,0 +1,59 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let o = outcome();
+@if (variant() === 'compact') {
+  <section class="flex flex-wrap items-center gap-2" [attr.aria-label]="ariaLabel()" data-testid="vote-overview-outcome">
+    <i class="flex-shrink-0" [class]="iconClass()" aria-hidden="true"></i>
+    <span class="min-w-0 text-sm font-semibold text-gray-900 break-words" data-testid="vote-overview-outcome-names">{{ names() }}</span>
+    <lfx-tag [value]="o.label" [severity]="tagSeverity()" />
+  </section>
+} @else {
+  <section
+    class="rounded-lg border p-4 flex flex-col gap-3"
+    [class.border-emerald-200]="isWinner()"
+    [class.bg-emerald-50]="isWinner()"
+    [class.border-slate-200]="!isWinner()"
+    [class.bg-slate-50]="!isWinner()"
+    [attr.aria-label]="ariaLabel()"
+    data-testid="vote-overview-outcome">
+    <div class="flex items-start gap-3">
+      <i class="mt-1 flex-shrink-0 text-lg" [class]="iconClass()" aria-hidden="true"></i>
+      <div class="flex min-w-0 flex-col gap-1">
+        <span
+          class="text-xs font-semibold uppercase tracking-wide"
+          [class.text-emerald-700]="isWinner()"
+          [class.text-slate-600]="!isWinner()"
+          data-testid="vote-overview-outcome-label"
+          >{{ o.label }}</span
+        >
+        <p class="text-lg font-semibold text-gray-900 break-words" data-testid="vote-overview-outcome-names">{{ names() }}</p>
+        @if (o.explanation) {
+          <p class="text-sm text-slate-600" data-testid="vote-overview-outcome-explanation">{{ o.explanation }}</p>
+        }
+      </div>
+    </div>
+
+    @if (o.standings.length > 0) {
+      <ol class="flex flex-col divide-y divide-slate-200 rounded-md border border-slate-200 bg-white" aria-label="How the other options placed">
+        @for (row of o.standings; track row.choiceId) {
+          <li class="flex items-start gap-3 px-3 py-2" [attr.data-testid]="'vote-overview-outcome-standing-' + row.choiceId">
+            <span class="w-10 flex-shrink-0 text-sm font-semibold text-slate-600">{{ row.rank | ordinal }}</span>
+            <div class="flex min-w-0 flex-col gap-0.5">
+              <span class="text-sm font-medium text-slate-800 break-words">{{ row.choiceText }}</span>
+              @if (row.detail) {
+                <span class="text-xs text-slate-500">{{ row.detail }}</span>
+              }
+            </div>
+          </li>
+        }
+      </ol>
+    }
+
+    @if (o.hiddenCount > 0) {
+      <p class="text-xs text-slate-500" data-testid="vote-overview-outcome-more">
+        +{{ o.hiddenCount }} more {{ o.hiddenCount === 1 ? 'option' : 'options' }} on the Results tab
+      </p>
+    }
+  </section>
+}

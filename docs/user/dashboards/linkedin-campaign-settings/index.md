@@ -1,6 +1,6 @@
 ---
 title: LinkedIn budget, targeting and ad variants
-description: Set a LinkedIn budget and an optional daily cap beside a lifetime budget, see and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text and headline, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
+description: Set a LinkedIn budget and an optional daily cap beside a lifetime budget, search for the locations a LinkedIn campaign targets, see and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text, headline, name and description, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -13,15 +13,18 @@ tags:
     daily cap,
     lifetime budget,
     targeting,
+    locations,
     member groups,
     skills,
     ad variants,
     intro text,
     headline,
+    ad name,
+    description,
     images,
     implement,
   ]
-last_updated: 2026-11-17
+last_updated: 2026-11-25
 intercom_collection: Dashboards
 ---
 
@@ -49,6 +52,17 @@ A campaign with a daily cap runs without its own end date in LinkedIn Campaign M
 
 After the campaign is created, you can change its lifetime budget on the **Optimize** tab and the daily cap stays as it is. Keep **Budget pacing** on **Lifetime** there: switching a capped campaign to **Daily** is refused. A new lifetime budget below the daily cap is also refused; lower the cap first. To change the daily cap itself, use LinkedIn Campaign Manager.
 
+## Locations
+
+The LinkedIn section starts with the locations the brief recommends. To change them:
+
+- To add a location, type at least 2 characters of a country, region or city in the search box under the location list, then pick a result. A location you already added is listed but can't be picked again.
+- To remove a location, select the **x** on its chip.
+
+A campaign needs at least one location. While the list is empty, **Create** stays disabled with "LinkedIn Ads: add at least one location."
+
+The campaign name includes a region taken from the first location. Only the United States, India, Japan, Singapore, South Korea, Australia, Taiwan, Hong Kong, Germany and the United Kingdom have their own region in the name. Any other first location is named "Global".
+
 ## Edit a variant
 
 Each variant has an **Intro text** box (the body of the post) and a **Headline** box (shown below the link card). They start with the brief's copy. A count under each box shows how many characters the text uses:
@@ -61,6 +75,13 @@ Each variant has an **Intro text** box (the body of the post) and a **Headline**
 Spaces at the start and end are not counted. An em dash (—) or en dash (–) is sent as a comma and a space, and counted that way, so the count can differ from what you typed. A dash at the very start or end is dropped.
 
 Both fields are required. If a field is empty, holds only spaces or a single dash, or is over its limit, a message appears under it and **Create** stays disabled with "LinkedIn Ads: fix the ad variant text." Shorten or fill in the text to continue. Longer text is not cut for you.
+
+## Name and describe each ad
+
+Where your deployment supports it, each variant also has two optional fields:
+
+- **Ad name**: how the ad is listed in LinkedIn Campaign Manager and in reporting, up to 255 characters. Left empty, the ad is named after the event and its variant number, for example "KubeCon EU 2026 | variant-2". Each ad in a campaign needs its own name. If two variants have the same name, a message appears under the second one and **Create** stays disabled with "LinkedIn Ads: fix the ad name or description."
+- **Description**: the line shown under the headline in the ad, up to 300 characters, counted the way intro text and headlines are. Left empty, the ad has no description.
 
 ## Add or remove variants
 

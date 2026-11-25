@@ -26,6 +26,7 @@ import {
   MEMBER_360_WORKBOOK_FORMATS as formats,
   MEMBER_360_SUMMARY_WIDTHS,
   MEMBER_360_SUMMARY_TIER_HEADER_ROW,
+  MEMBER_360_SUMMARY_WATCHLIST_ROWS,
   MEMBER_360_WORKBOOK_TIER_FILLS,
 } from '../constants/member-360-workbook.constants';
 import { addMember360SummaryChart } from './member-360-chart.util';
@@ -301,7 +302,7 @@ function addHeatScale(sheet: ExcelJS.Worksheet, ref: string): void {
   });
 }
 
-/** QBR canvas is width-bounded, but large watchlists continue without truncation. */
+/** One-page QBR canvas: the watchlist is capped, and a line under it points to Member Ranking for the rest. */
 function addSummary(workbook: ExcelJS.Workbook, summary: Member360Envelope['tabs']['summary']): void {
   const sheet = workbook.addWorksheet('Summary', {
     views: [{ state: 'frozen', ySplit: 5 }],
@@ -373,16 +374,25 @@ function addSummary(workbook: ExcelJS.Workbook, summary: Member360Envelope['tabs
     row += 6;
   }
   heading(row++, `Watchlist · renewal within ${MEMBER_360_RENEWAL_RED_DAYS} days`);
+  // Lowest scores first (a stable sort keeps the envelope's order within a score), then the cap.
+  const watchlist = [...summary.watchlist].sort((a, b) => a.engagement_score - b.engagement_score);
+  const shown = watchlist.slice(0, MEMBER_360_SUMMARY_WATCHLIST_ROWS);
+  const hidden = watchlist.length - shown.length;
   const first = row + 1;
   table(
     'Watchlist',
     row,
     ['Member', 'Days to Renewal', 'Score', 'Tier'],
-    summary.watchlist.map((entry) => [entry.member_organization, entry.days_to_renewal, entry.engagement_score, entry.engagement_tier])
+    shown.map((entry) => [entry.member_organization, entry.days_to_renewal, entry.engagement_score, entry.engagement_tier])
   );
-  for (let i = first; i < first + summary.watchlist.length; i++) sheet.getCell(`C${i}`).numFmt = formats.score;
-  addRiskFormats(sheet, 'B', 'D', undefined, first, first + summary.watchlist.length - 1);
-  row += Math.max(summary.watchlist.length + 1, 1) + 1;
+  for (let i = first; i < first + shown.length; i++) sheet.getCell(`C${i}`).numFmt = formats.score;
+  addRiskFormats(sheet, 'B', 'D', undefined, first, first + shown.length - 1);
+  row += shown.length + 1;
+  if (hidden > 0) {
+    const verb = hidden === 1 ? 'renews' : 'renew';
+    merged(`A${row}:F${row++}`, `${hidden} more ${verb} within ${MEMBER_360_RENEWAL_RED_DAYS} days: filter Member Ranking by Days to Renewal`);
+  }
+  row += 1;
   heading(row++, 'Action load per team');
   table(
     'Actions',

@@ -89,7 +89,7 @@ describe('VoteCondorcetResultsComponent', () => {
       name: 'a tie',
       overrides: { outcome: CondorcetOutcome.TIE, winnerNames: ['Candidate A', 'Candidate B'], usedIrv: true },
       heading: 'Tie — no single winner',
-      message: 'There is a tie between Candidate A and Candidate B. No single winner can be determined.',
+      message: 'There is a tie between Candidate A and Candidate B. No single winner could be determined.',
     },
     {
       name: 'no winner',

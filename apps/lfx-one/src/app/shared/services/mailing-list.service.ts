@@ -9,6 +9,7 @@ import {
   CreateMailingListRequest,
   GroupsIOMailingList,
   GroupsIOService,
+  InheritedGroupsIOService,
   MailingListMember,
   MyMailingList,
   QueryServiceCountResponse,
@@ -132,6 +133,13 @@ export class MailingListService {
     const params = new HttpParams().set('tags', `project_uid:${projectUid}`);
 
     return this.http.get<GroupsIOService[]>(`${this.baseUrl}/services`, { params });
+  }
+
+  /** Services a project can attach lists to through its parent project, resolved server-side for project writers. */
+  public getInheritedServices(projectUid: string): Observable<InheritedGroupsIOService[]> {
+    const params = new HttpParams().set('project_uid', projectUid);
+
+    return this.http.get<InheritedGroupsIOService[]>(`${this.baseUrl}/services/inherited`, { params });
   }
 
   public createService(data: CreateGroupsIOServiceRequest): Observable<GroupsIOService> {

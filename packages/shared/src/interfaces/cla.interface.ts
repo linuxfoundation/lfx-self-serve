@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Signal } from '@angular/core';
+import type { Signal, Type } from '@angular/core';
+import type { UiBadgeTone } from './uikit.interface';
 
 import type {
   CLA_MANAGER_REQUEST_TYPES,
@@ -1459,3 +1460,36 @@ export type OrgClaIdentifyManagerField = keyof OrgClaDesigneeNominationValidatio
 
 /** What the dialog closes with. The detail page adds the signing project and sends it. */
 export type OrgClaIdentifyManagerResult = Omit<OrgClaDesigneeNominationRequest, 'projectSfid'>;
+
+/** What a CLA row's ⋯ menu offers on Account & Settings › CLAs (#6077). */
+export interface AccountClaRowActions {
+  download: boolean;
+  requestApproval: boolean;
+  requestRemoval: boolean;
+  contact: boolean;
+}
+
+/** A CLA row as Account & Settings › CLAs shows it (#6077): the hub's row, the badge tone of its status and its menu. */
+export interface AccountClaRow {
+  row: ClaRow;
+  statusTone: UiBadgeTone;
+  typeLabel: string;
+  actions: AccountClaRowActions;
+  hasActions: boolean;
+}
+
+/** What the Account & Settings CCLA request dialog needs (#6077): the agreement it asks about and which request it makes. */
+export interface AccountClaRequestDialogData {
+  agreement: MyClaAgreement;
+  mode: ClaManagerRequestMode;
+}
+
+/**
+ * One step of the Account & Settings "Sign a CLA" dialog (#6077): the step component it shows, and the dialog config and ref
+ * the hub's signing flow gave that step. The config and ref types are the app's dialog types.
+ */
+export interface AccountSignDialogStep<C = unknown, R = unknown> {
+  component: Type<unknown>;
+  config: C;
+  ref: R;
+}

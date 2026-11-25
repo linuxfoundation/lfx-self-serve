@@ -3,7 +3,8 @@
 
 import type { Signal } from '@angular/core';
 
-import type { ACCOUNT_SETTINGS_SECTIONS } from '../constants/profile.constants';
+import type { ACCOUNT_SETTINGS_SECTIONS, PERSONAL_INFORMATION_FIELD_LIMITS } from '../constants/profile.constants';
+import type { UserMetadata } from './user-profile.interface';
 
 /**
  * Developer settings token info returned by GET /api/profile/developer.
@@ -36,6 +37,31 @@ export type AccountSettingsSection = (typeof ACCOUNT_SETTINGS_SECTIONS)[keyof ty
  * An Account & Settings page with fields the header save bar saves and reverts (#6070). The page registers itself with
  * `AccountUnsavedChangesService` while it is shown.
  */
+/**
+ * A profile change kept in session storage while a Flow C redirect authorizes it. The shell that the redirect returns to replays
+ * `userMetadata`; `avatarPending` asks the user to pick the photo again, since a file can't be kept.
+ */
+export interface PendingProfileSave {
+  savedAt: number;
+  userMetadata?: Partial<UserMetadata>;
+  avatarPending?: boolean;
+}
+
+/** A Linux.com forwarding address chosen on Account & Settings, kept while its save leaves for Flow C. */
+export interface PendingLinuxForward {
+  savedAt: number;
+  forwardTo: string;
+}
+
+/** A Personal information field that has a length limit. */
+export type PersonalInformationLimitedField = keyof typeof PERSONAL_INFORMATION_FIELD_LIMITS;
+
+/** A primary email chosen on Personal information, kept while its save leaves for Flow C. */
+export interface PendingPrimaryEmail {
+  savedAt: number;
+  email: string;
+}
+
 export interface AccountPageForm {
   /** True while the fields differ from what is saved. */
   dirty: Signal<boolean>;

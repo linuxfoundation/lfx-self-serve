@@ -14,13 +14,14 @@ import { UiChoiceboxComponent } from './choicebox.component';
   selector: 'lfx-ui-test-model-host',
   imports: [UiChoiceboxGroupComponent, UiChoiceboxComponent],
   template:
-    '<lfx-ui-choicebox-group [label]="label()" [ariaLabel]="ariaLabel()" [type]="type()" [columns]="columns()" [disabled]="disabled()" [name]="name()" [(value)]="value" [(values)]="values"><lfx-ui-choicebox value="gold" label="Gold" description="Elects board representatives." /><lfx-ui-choicebox value="silver" label="Silver" /><lfx-ui-choicebox value="associate" label="Associate" description="For academics." [disabled]="true" disabledReason="Only for academic institutions" /></lfx-ui-choicebox-group>',
+    '<lfx-ui-choicebox-group [label]="label()" [ariaLabel]="ariaLabel()" [type]="type()" [columns]="columns()" [joined]="joined()" [disabled]="disabled()" [name]="name()" [(value)]="value" [(values)]="values"><lfx-ui-choicebox value="gold" label="Gold" description="Elects board representatives." /><lfx-ui-choicebox value="silver" label="Silver" /><lfx-ui-choicebox value="associate" label="Associate" description="For academics." [disabled]="true" disabledReason="Only for academic institutions" /></lfx-ui-choicebox-group>',
 })
 class ModelHostComponent {
   public readonly label = signal('Membership Tier');
   public readonly ariaLabel = signal('');
   public readonly type = signal<UiChoiceboxType>('radio');
   public readonly columns = signal<UiChoiceboxColumns>(1);
+  public readonly joined = signal(false);
   public readonly disabled = signal(false);
   public readonly name = signal('');
   public readonly value = signal<string | null>('gold');
@@ -132,6 +133,16 @@ describe('UiChoiceboxGroupComponent and UiChoiceboxComponent', () => {
       fixture.componentInstance.columns.set(3);
       await fixture.whenStable();
       expect(grid().classList).toContain('grid-cols-3');
+    });
+
+    it('joins the tiles into one list that shares edges', async () => {
+      const grid = () => host.querySelector('[data-testid="ui-choicebox-group-fieldset"] > div') as HTMLElement;
+      fixture.componentInstance.columns.set(3);
+      fixture.componentInstance.joined.set(true);
+      await fixture.whenStable();
+      expect(grid().classList).toContain('gap-0');
+      expect(grid().classList).toContain('grid-cols-1');
+      expect(grid().classList).not.toContain('grid-cols-3');
     });
 
     it('disables one tile and explains why through a tooltip description and a hidden reason', () => {

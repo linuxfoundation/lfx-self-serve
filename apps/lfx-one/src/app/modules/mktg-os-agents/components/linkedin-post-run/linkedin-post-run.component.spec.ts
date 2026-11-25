@@ -1281,6 +1281,31 @@ describe('LinkedIn profile and post surface', () => {
     await fixture.whenStable();
   });
 
+  it.each([
+    ['cancel', false],
+    ['save', true],
+  ] as const)('a "change who this is written as" hand-off on %s stays to draft again: %s', async (action, stays) => {
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    router.setUpLocationChangeListener();
+    const documentUrl = '/project/mktg-os-agents/documents/linkedin-post/synthetic?project=example-project';
+    await router.navigateByUrl(documentUrl);
+    await router.navigateByUrl('/project/mktg-os-agents/linkedin-post?project=example-project&mode=new&profile=edit', {
+      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.redraft },
+    });
+    const fixture = await render();
+    if (action === 'cancel') fixture.componentInstance['onCancelEdit']();
+    else fixture.componentInstance['onProfileSubmit']();
+    // The saved identity reaches a post only through a new draft, so Save keeps the intake open on the source form.
+    await vi.waitFor(() => expect(router.url).toBe(stays ? '/project/mktg-os-agents/linkedin-post?project=example-project&mode=new' : documentUrl));
+    await fixture.whenStable();
+    if (!stays) return;
+    expect(api.save).toHaveBeenCalledTimes(1);
+    expect(api.startForDocument).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).not.toBeNull();
+  });
+
   it('setup → run-page Edit → Continue keeps answers and the next Back leaves intake', async () => {
     const router = TestBed.inject(Router);
     const location = TestBed.inject(Location);

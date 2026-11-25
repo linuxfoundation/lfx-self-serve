@@ -29,4 +29,26 @@ describe('CampaignService', () => {
     expect(req.request.urlWithParams).toBe('/api/campaigns/meta/targeting-search?project=tlf&type=work_position&query=C%2B%2B%20developer');
     req.flush({ type: 'work_position', options: [] });
   });
+
+  it('reads the LinkedIn audiences of the default account, or of the account named', () => {
+    service.getLinkedInAudiences('tlf').subscribe();
+    service.getLinkedInAudiences('tlf', '100000002').subscribe();
+    const reqs = http.match((r) => r.url === '/api/campaigns/linkedin/audiences');
+    expect(reqs.map((req) => req.request.urlWithParams)).toEqual([
+      '/api/campaigns/linkedin/audiences?project=tlf',
+      '/api/campaigns/linkedin/audiences?project=tlf&accountId=100000002',
+    ]);
+    reqs.forEach((req) => req.flush({ accountId: '', audiences: [] }));
+  });
+
+  it('reads the LinkedIn conversion rules of the default account, or of the account named', () => {
+    service.getLinkedInConversions('tlf').subscribe();
+    service.getLinkedInConversions('tlf', '100000002').subscribe();
+    const reqs = http.match((r) => r.url === '/api/campaigns/linkedin/conversions');
+    expect(reqs.map((req) => req.request.urlWithParams)).toEqual([
+      '/api/campaigns/linkedin/conversions?project=tlf',
+      '/api/campaigns/linkedin/conversions?project=tlf&accountId=100000002',
+    ]);
+    reqs.forEach((req) => req.flush({ accountId: '', conversions: [] }));
+  });
 });

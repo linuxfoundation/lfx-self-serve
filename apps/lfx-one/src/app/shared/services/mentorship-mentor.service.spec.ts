@@ -109,6 +109,14 @@ describe('MentorshipMentorService — read error mapping', () => {
     expect(result).toEqual({ hasProfile: false });
   });
 
+  it('passes a failed profile check through for the invite page, rather than reading it as no profile', () => {
+    let status = 0;
+    service.checkMentorProfile().subscribe({ error: (err: HttpErrorResponse) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/mentor/has-profile').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(status).toBe(503);
+  });
+
   describe('registerMentorProfile', () => {
     const request: MentorshipMentorRegisterRequest = {
       introduction: '<p>Test intro</p>',
@@ -287,6 +295,19 @@ describe('MentorshipMentorService — read error mapping', () => {
       expect(req.request.body).toEqual({ token: 'payload.sig' });
       req.flush(null, { status: 204, statusText: 'No Content' });
       expect(service.mentorRequestsRevision()).toBe(revision + 1);
+    });
+
+    it('reads the invited program with the token in the body, and leaves the cache alone', () => {
+      const revision = service.mentorRequestsRevision();
+      let programName = '';
+      service.getMentorInvite('payload.sig').subscribe((invite) => (programName = invite.programName));
+
+      const req = http.expectOne('/api/mentorship/mentor/invites/details');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ token: 'payload.sig' });
+      req.flush({ programId: 'prog-1', programName: 'Open Source Mentorship' });
+      expect(programName).toBe('Open Source Mentorship');
+      expect(service.mentorRequestsRevision()).toBe(revision);
     });
 
     it.each(['accept', 'decline'] as const)('answers an invitation by its encoded id with %s, and clears the cache', (decision) => {

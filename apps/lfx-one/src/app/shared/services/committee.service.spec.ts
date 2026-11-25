@@ -206,3 +206,51 @@ describe('CommitteeService.bulkCreateCommitteeMembers', () => {
     expect(http.get).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('CommitteeService.updateCommitteeDocument', () => {
+  let service: CommitteeService;
+  let patch: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    patch = vi.fn().mockReturnValue(of({ uid: 'doc-1', type: 'link', name: 'Renamed' }));
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch, delete: vi.fn() } }] });
+    service = TestBed.inject(CommitteeService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('patches the document with the changes, naming its type in the query', () => {
+    let result: unknown = null;
+    service.updateCommitteeDocument('committee-1', 'doc-1', 'link', { name: 'Renamed' }).subscribe((doc) => (result = doc));
+
+    expect(patch).toHaveBeenCalledTimes(1);
+    const [url, body, options] = patch.mock.calls[0];
+    expect(url).toBe('/api/committees/committee-1/documents/doc-1');
+    expect(body).toEqual({ name: 'Renamed' });
+    expect((options.params as HttpParams).get('type')).toBe('link');
+    expect(result).toEqual({ uid: 'doc-1', type: 'link', name: 'Renamed' });
+  });
+
+  it('encodes the ids it puts in the path', () => {
+    service.updateCommitteeDocument('a/b', 'c d?e', 'file', { name: 'Renamed' }).subscribe();
+
+    expect(patch.mock.calls[0][0]).toBe('/api/committees/a%2Fb/documents/c%20d%3Fe');
+  });
+
+  it('sends a move to the root as a null folder', () => {
+    service.updateCommitteeDocument('committee-1', 'doc-1', 'file', { parent_uid: null }).subscribe();
+
+    expect(patch.mock.calls[0][1]).toEqual({ parent_uid: null });
+  });
+
+  it('passes a conflict from the BFF on to the caller', () => {
+    patch.mockReturnValue(throwError(() => ({ status: 409 })));
+    let error: unknown = null;
+
+    service.updateCommitteeDocument('committee-1', 'doc-1', 'folder', { name: 'Taken' }).subscribe({ error: (err) => (error = err) });
+
+    expect(error).toEqual({ status: 409 });
+  });
+});

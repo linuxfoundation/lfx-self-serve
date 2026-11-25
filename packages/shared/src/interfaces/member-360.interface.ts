@@ -109,6 +109,10 @@ export interface Member360DisplayRow {
   trendAriaLabel: string | null;
   trendState: string;
   member: Member360RankingRow;
+  /** The membership tier without the project prefix and the word "Membership", as the tier peer medians show it. */
+  tierLabel: string;
+  /** The next action without a leading team or owner label, as Actions by Team shows it; the Owner column names the team. */
+  actionText: string;
   heat: Member360HeatCell[];
   renewalClass: string;
   tierClass: string;

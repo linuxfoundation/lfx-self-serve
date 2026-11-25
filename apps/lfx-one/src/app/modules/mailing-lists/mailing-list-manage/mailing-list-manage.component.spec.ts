@@ -44,7 +44,10 @@ describe('MailingListManageComponent — sync_mode on committee change (#4880 re
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
-        { provide: MailingListService, useValue: { getMailingList, updateMailingList, getServicesByProject: vi.fn(() => of([])) } },
+        {
+          provide: MailingListService,
+          useValue: { getMailingList, updateMailingList, getServicesByProject: vi.fn(() => of([])), getInheritedServices: vi.fn(() => of([])) },
+        },
         { provide: ProjectContextService, useValue: { activeContext: signal(null), canWrite: signal(true) } },
         { provide: ProjectService, useValue: { getProject: vi.fn(() => of(null)) } },
         { provide: LensService, useValue: { activeLens: signal('project') } },

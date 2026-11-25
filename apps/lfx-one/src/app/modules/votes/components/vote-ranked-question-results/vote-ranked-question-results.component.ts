@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, output, Signal } from '@angular/core';
+import { VOTE_RANKED_OUTCOME_EXPLANATIONS } from '@lfx-one/shared/constants';
 import { RankedOutcomeCopy, RankedQuestionView, RankedStanding, RankedStandingRow } from '@lfx-one/shared/interfaces';
 import { joinNames } from '@lfx-one/shared/utils';
 
@@ -52,26 +53,24 @@ export class VoteRankedQuestionResultsComponent {
       const names = joinNames(outcome.winnerTexts);
       const rounds = outcome.roundCount;
       const roundsText = rounds === 1 ? '1 round' : `${rounds} rounds`;
-      if (outcome.result === 'none') return { lead: 'No winner could be determined.', names: '', tail: '' };
+      if (outcome.result === 'none') return { lead: VOTE_RANKED_OUTCOME_EXPLANATIONS.noWinner, names: '', tail: '' };
       if (outcome.kind === 'meek_stv') {
         const verb = outcome.winnerTexts.length === 1 ? 'was' : 'were';
-        return { lead: '', names, tail: ` ${verb} elected using Meek STV proportional counting.` };
+        return { lead: '', names, tail: ` ${verb} elected ${VOTE_RANKED_OUTCOME_EXPLANATIONS.meekStv}` };
       }
-      if (outcome.result === 'tie') return { lead: '', names, tail: ' are tied. No single winner could be determined.' };
-      if (outcome.kind === 'condorcet') return { lead: '', names, tail: ' is the winner, having defeated every other candidate in head-to-head matchups.' };
+      // Share the Condorcet IRV method explanations and tie wording across results surfaces (#6124).
+      if (outcome.result === 'tie') return { lead: 'There is a tie between ', names, tail: `. ${VOTE_RANKED_OUTCOME_EXPLANATIONS.tie}` };
+      if (outcome.kind === 'condorcet') return { lead: '', names, tail: ` is the winner. ${VOTE_RANKED_OUTCOME_EXPLANATIONS.condorcetWinner}` };
       if (outcome.condorcetFallback) {
         return {
-          lead: 'No candidate beat every other candidate head-to-head, so the vote went to instant-runoff elimination. ',
+          lead: `${VOTE_RANKED_OUTCOME_EXPLANATIONS.condorcetIrvFallback} `,
           names,
           tail: rounds > 0 ? ` is the winner after ${roundsText}.` : ' is the winner.',
         };
       }
-      return {
-        lead: '',
-        names,
-        tail:
-          rounds > 0 ? ` is the winner, with a majority of continuing ballots in round ${rounds}.` : ' is the winner, with a majority of continuing ballots.',
-      };
+      const majority =
+        rounds > 0 ? VOTE_RANKED_OUTCOME_EXPLANATIONS.irvMajorityRound.replace('{round}', String(rounds)) : VOTE_RANKED_OUTCOME_EXPLANATIONS.irvMajority;
+      return { lead: '', names, tail: ` is the winner, with ${majority}` };
     });
   }
 

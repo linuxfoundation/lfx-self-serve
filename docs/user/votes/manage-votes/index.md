@@ -4,7 +4,7 @@ description: How to find, edit, delete, cancel, vote on, and send reminders for 
 audience: [all]
 product_area: Votes
 tags: [votes, manage, drafts, cancel, cast, results, reminders, mailing-list, copy-link]
-last_updated: 2026-11-23
+last_updated: 2026-11-24
 intercom_collection: Votes
 ---
 
@@ -86,7 +86,7 @@ Once a vote has ended, whether it was closed early, ended because everyone voted
 You vote from the **Me** lens, where **Votes** lists the votes you are invited to. You can also open a vote's page, for example from a reminder email, and select **Cast vote**.
 
 1. Find the active vote. Its button reads **Vote** if you haven't voted yet. Select **Vote**, or select the vote's name. A drawer opens with the vote's details and questions. The description keeps its paragraphs, line breaks, and lists, subject to the [description formatting rules](../create-vote/#description-formatting) for mixed placeholders and HTML. On a small screen a long description scrolls inside its own box so the ballot stays in view.
-2. Answer each question. Single-selection questions use radio buttons to pick one option. Multiple-selection questions use checkboxes, so select all that apply. For ranked-choice questions, drag the options or use the arrow buttons to put them in your preferred order, with your first choice at the top.
+2. Answer each question. Single-selection questions use radio buttons to pick one option. Multiple-selection questions use checkboxes, so select all that apply. For ranked-choice questions, drag an option from anywhere on its card (on a touchscreen, press and hold it briefly first) or use the arrow buttons to put the options in your preferred order, with your first choice at the top.
 3. If the vote has comment questions, optionally answer them under **Additional Comments (Optional)**. Each comment can be up to 5,000 characters.
 4. If the vote allows abstaining, you can select **Abstain from this vote** instead. An abstention is recorded as a non-vote and overrides your choices, though any comments are still submitted.
 5. Select **Submit Vote** at the bottom of the drawer. If the vote doesn't allow changes, a notice at the top of the ballot, before the vote's description, says **Once you submit, your vote can't be changed.** The **Submit Vote** button stays pinned to the bottom of the drawer.
@@ -99,7 +99,7 @@ After you submit, the row's button changes to **Review** and your **Your vote** 
 
 The creator's management page has no ballot-changing controls. If you also manage the vote and are an invited voter, switch to **Me → Votes → Review** to change your own ballot when allowed. Managing a vote never lets you change anyone else's response.
 
-When changing a ranked multiple-selection ballot in the Me-lens **Review** drawer, only your recorded choices are ranked. Editing a comment does not rank any additional option. Use **Add to ranking** next to an option under **Not ranked** to include it, or the option's remove button to leave it unranked. Drag or use the arrow buttons to reorder your selected options. Keep at least one ranked option unless you abstain, then select **Update Vote**.
+When changing a ranked multiple-selection ballot in the Me-lens **Review** drawer, only your recorded choices are ranked. Editing a comment does not rank any additional option. Use **Add to ranking** next to an option under **Not ranked** to include it, or the option's remove button to leave it unranked. Drag an option from anywhere on its card (on a touchscreen, press and hold it briefly first) or use the arrow buttons to reorder your selected options. Keep at least one ranked option unless you abstain, then select **Update Vote**.
 
 Personalized links preserve recorded rankings on named votes too, with the same explicit add/remove controls for ranked multiple-selection questions. Pseudo-anonymous links do not display or prefill your previous choices; when changing a private ballot, enter your intended answers again.
 

@@ -7,13 +7,17 @@ import type { GroupsIOMemberResponse, MailingListMember } from '@lfx-one/shared/
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { checkSingleAccessStrict, addAccessToResource, addAccessToResources, proxyRequest, getEffectiveEmail } = vi.hoisted(() => ({
-  checkSingleAccessStrict: vi.fn(),
-  addAccessToResource: vi.fn(async (_req: unknown, resource: unknown) => resource),
-  addAccessToResources: vi.fn(async (_req: unknown, resources: unknown) => resources),
-  proxyRequest: vi.fn(),
-  getEffectiveEmail: vi.fn(),
-}));
+const { checkSingleAccessStrict, addAccessToResource, addAccessToResources, proxyRequest, getEffectiveEmail, getProjectById, generateM2MToken } = vi.hoisted(
+  () => ({
+    checkSingleAccessStrict: vi.fn(),
+    addAccessToResource: vi.fn(async (_req: unknown, resource: unknown) => resource),
+    addAccessToResources: vi.fn(async (_req: unknown, resources: unknown) => resources),
+    proxyRequest: vi.fn(),
+    getEffectiveEmail: vi.fn(),
+    getProjectById: vi.fn(),
+    generateM2MToken: vi.fn(),
+  })
+);
 
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
@@ -28,8 +32,11 @@ vi.mock('./microservice-proxy.service', () => ({
   },
 }));
 vi.mock('./project.service', () => ({
-  ProjectService: class {},
+  ProjectService: class {
+    public getProjectById = getProjectById;
+  },
 }));
+vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken }));
 vi.mock('../utils/auth-helper', async () => {
   const actual = await vi.importActual<typeof import('../utils/auth-helper')>('../utils/auth-helper');
   return { ...actual, getEffectiveEmail };
@@ -378,5 +385,99 @@ describe('MailingListService.updateMailingList index wait', () => {
 
     expect(result.uid).toBe('list-1');
     expect(proxyRequest.mock.calls.filter((call) => call[2] === '/query/resources')).toHaveLength(1);
+  });
+});
+
+describe('MailingListService.getInheritedServices', () => {
+  const parentService = {
+    uid: 'svc-parent',
+    type: 'primary',
+    domain: 'lists.parent.example',
+    prefix: '',
+    project_slug: 'parent',
+    project_uid: 'project-parent',
+    project_name: 'Parent',
+    group_name: 'main',
+    status: 'active',
+    public: false,
+    url: 'https://lists.parent.example/g/main',
+    global_owners: ['owner@example.com'],
+    writers: [{ username: 'someone' }],
+    writer: true,
+  };
+
+  const queryResponse = (services: unknown[]) => ({ resources: services.map((data) => ({ data })) });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getProjectById.mockResolvedValue({ uid: 'project-child', parent_uid: 'project-parent' });
+    generateM2MToken.mockResolvedValue('m2m-token');
+  });
+
+  it('returns no services and makes no query when the project has no parent', async () => {
+    getProjectById.mockResolvedValue({ uid: 'project-child', parent_uid: '' });
+
+    const result = await new MailingListService().getInheritedServices(req, 'project-child');
+
+    expect(result).toEqual([]);
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(generateM2MToken).not.toHaveBeenCalled();
+  });
+
+  it('uses the user token and never an M2M token when the parent service is already visible to the user', async () => {
+    proxyRequest.mockResolvedValue(queryResponse([parentService]));
+
+    const result = await new MailingListService().getInheritedServices(req, 'project-child');
+
+    expect(result).toHaveLength(1);
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+    expect(generateM2MToken).not.toHaveBeenCalled();
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'groupsio_service', tags: 'project_uid:project-parent' });
+  });
+
+  it('falls back to an M2M-scoped lookup for a writer on the child project', async () => {
+    proxyRequest.mockResolvedValueOnce(queryResponse([])).mockResolvedValueOnce(queryResponse([parentService]));
+    checkSingleAccessStrict.mockResolvedValue(true);
+
+    const result = await new MailingListService().getInheritedServices(req, 'project-child');
+
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-child', access: 'writer_guard' });
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest.mock.calls[0][7]).toBeUndefined();
+    expect(proxyRequest.mock.calls[1][7]).toEqual({ bearerToken: 'm2m-token' });
+    expect(result).toHaveLength(1);
+    expect(result[0].uid).toBe('svc-parent');
+  });
+
+  it('returns only identity fields for a privately resolved service', async () => {
+    proxyRequest.mockResolvedValueOnce(queryResponse([])).mockResolvedValueOnce(queryResponse([parentService]));
+    checkSingleAccessStrict.mockResolvedValue(true);
+
+    const [service] = await new MailingListService().getInheritedServices(req, 'project-child');
+
+    expect(service).not.toHaveProperty('global_owners');
+    expect(service).not.toHaveProperty('writers');
+    expect(service).not.toHaveProperty('writer');
+    expect(service).toMatchObject({ uid: 'svc-parent', domain: 'lists.parent.example', type: 'primary' });
+  });
+
+  it('does not resolve the parent service with an M2M token for a user who cannot write to the child project', async () => {
+    proxyRequest.mockResolvedValue(queryResponse([]));
+    checkSingleAccessStrict.mockResolvedValue(false);
+
+    const result = await new MailingListService().getInheritedServices(req, 'project-child');
+
+    expect(result).toEqual([]);
+    expect(generateM2MToken).not.toHaveBeenCalled();
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates an access-check failure instead of reporting a false denial', async () => {
+    proxyRequest.mockResolvedValue(queryResponse([]));
+    checkSingleAccessStrict.mockRejectedValue(new Error('fga unavailable'));
+
+    await expect(new MailingListService().getInheritedServices(req, 'project-child')).rejects.toThrow('fga unavailable');
+    expect(generateM2MToken).not.toHaveBeenCalled();
   });
 });

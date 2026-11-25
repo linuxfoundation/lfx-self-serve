@@ -8,7 +8,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { VOTE_COMMENT_RESPONSE_MAX_LENGTH, VOTE_RANKED_CHOICE_DRAG_START_DELAY } from '@lfx-one/shared/constants';
 import {
   CommentResponseFormData,
   CommentResponseInput,
@@ -72,6 +72,7 @@ export class VoteBallotFormComponent {
     return getCommentPromptsData(this.commentForm, this.commentPrompts());
   });
   protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
+  protected readonly rankedDragStartDelay = VOTE_RANKED_CHOICE_DRAG_START_DELAY;
   protected readonly submitDisabled: Signal<boolean> = computed(() => {
     this.formVersion();
     if (this.submitting() || !this.commentForm.valid) return true;

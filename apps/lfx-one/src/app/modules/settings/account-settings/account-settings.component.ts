@@ -188,7 +188,7 @@ export class AccountSettingsComponent {
   // blocks starting a second delete workflow — otherwise a second row's tracker overwrite would
   // reopen the window where the first row is picked as the meeting-invite override before its
   // own delete lands.
-  private deletingEmailAddress = signal<string | null>(null);
+  protected readonly deletingEmailAddress = signal<string | null>(null);
 
   public allEmails = computed((): UserEmail[] => {
     const data = this.emailData();
@@ -548,14 +548,9 @@ export class AccountSettingsComponent {
           return;
         }
 
-        this.confirmationService.confirm({
-          message: `Are you sure you want to delete ${email.email}? This action cannot be undone.`,
-          header: 'Delete Email Address',
-          acceptLabel: 'Delete',
-          rejectLabel: 'Cancel',
-          acceptButtonStyleClass: 'p-button-danger p-button-sm',
-          rejectButtonStyleClass: 'p-button-outlined p-button-sm',
-          accept: () => {
+        this.confirmDeleteEmail(
+          email.email,
+          () => {
             // Re-check: the user may have picked this same address as the meeting-invite
             // override — or the invite fetch may have started failing — while the auth-status
             // lookup/confirm dialog was pending.
@@ -594,10 +589,10 @@ export class AccountSettingsComponent {
                 },
               });
           },
-          reject: () => {
+          () => {
             this.deletingEmailAddress.set(null);
-          },
-        });
+          }
+        );
       });
   }
 
@@ -650,17 +645,15 @@ export class AccountSettingsComponent {
       .pipe(finalize(() => this.sendingReset.set(false)))
       .subscribe({
         next: (response) => {
-          this.resetResultSuccess.set(true);
-          this.resetResultMessage.set(response.message || 'Password reset email has been sent to your registered email address!');
+          this.showPasswordResetResult(true, response.message || 'Password reset email has been sent to your registered email address!', response.email);
         },
         error: (error: HttpErrorResponse) => {
           if (error.error?.error === 'management_token_required' && error.error?.authorize_url) {
             this.redirectToProfileAuth(error.error.authorize_url);
             return;
           }
-          this.resetResultSuccess.set(false);
           const msg = typeof error.error === 'string' ? error.error : error.error?.message;
-          this.resetResultMessage.set(msg || 'There was a problem sending you a link. Please try again later.');
+          this.showPasswordResetResult(false, msg || 'There was a problem sending you a link. Please try again later.');
         },
       });
   }
@@ -713,6 +706,62 @@ export class AccountSettingsComponent {
       .catch(() => {
         this.messageService.add({ severity: 'error', summary: 'Copy Failed', detail: 'Failed to copy token to clipboard. Please try again.' });
       });
+  }
+
+  // ══════════════════════════════════════════
+  // PASSWORD PROTECTED METHODS
+  // ══════════════════════════════════════════
+
+  /**
+   * Shows how sending the reset link went, under the button. Account & Settings › Password shows it as a toast naming `email`,
+   * the primary the server confirmed, when there is one.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the subclass's toast reads it
+  protected showPasswordResetResult(success: boolean, message: string, email?: string): void {
+    this.resetResultSuccess.set(success);
+    this.resetResultMessage.set(message);
+  }
+
+  // ══════════════════════════════════════════
+  // EMAIL PROTECTED METHODS
+  // ══════════════════════════════════════════
+
+  /** Asks before deleting `email`, then runs `accept` or `reject`. Account & Settings › Email settings asks in its own dialog. */
+  protected confirmDeleteEmail(email: string, accept: () => void, reject: () => void): void {
+    this.confirmationService.confirm({
+      message: `Are you sure you want to delete ${email}? This action cannot be undone.`,
+      header: 'Delete Email Address',
+      acceptLabel: 'Delete',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept,
+      reject,
+    });
+  }
+
+  /**
+   * Why deleting is blocked, or null when it's allowed. `isInviteOverride` still reflects the
+   * previous selection until the refresh lands, so an in-flight write has to block every row —
+   * otherwise the address just picked stays deletable for the whole SET and orphans the preference.
+   * `inviteLoadFailed` means which address is protected is unknown, so every row blocks.
+   * `deletingInProgress` means another row's delete is already in flight — every row blocks so a
+   * second click can't overwrite the tracked address before the first delete lands.
+   */
+  protected getDeleteBlockedReason(isInviteOverride: boolean, savingInvite: boolean, inviteLoadFailed: boolean, deletingInProgress: boolean): string | null {
+    if (inviteLoadFailed) {
+      return 'Could not confirm your meeting-invitation email. Reload the page before deleting an address.';
+    }
+    if (savingInvite) {
+      return 'Updating the meeting-invitation email. Wait for it to finish before deleting an address.';
+    }
+    if (deletingInProgress) {
+      return 'Deleting an email address. Wait for it to finish before deleting another.';
+    }
+    if (isInviteOverride) {
+      return 'This email is set for meeting invitations. Choose a different meeting-invitation email before deleting it.';
+    }
+    return null;
   }
 
   // ══════════════════════════════════════════
@@ -797,30 +846,6 @@ export class AccountSettingsComponent {
       }
       return map;
     });
-  }
-
-  /**
-   * Why deleting is blocked, or null when it's allowed. `isInviteOverride` still reflects the
-   * previous selection until the refresh lands, so an in-flight write has to block every row —
-   * otherwise the address just picked stays deletable for the whole SET and orphans the preference.
-   * `inviteLoadFailed` means which address is protected is unknown, so every row blocks.
-   * `deletingInProgress` means another row's delete is already in flight — every row blocks so a
-   * second click can't overwrite the tracked address before the first delete lands.
-   */
-  private getDeleteBlockedReason(isInviteOverride: boolean, savingInvite: boolean, inviteLoadFailed: boolean, deletingInProgress: boolean): string | null {
-    if (inviteLoadFailed) {
-      return 'Could not confirm your meeting-invitation email. Reload the page before deleting an address.';
-    }
-    if (savingInvite) {
-      return 'Updating the meeting-invitation email. Wait for it to finish before deleting an address.';
-    }
-    if (deletingInProgress) {
-      return 'Deleting an email address. Wait for it to finish before deleting another.';
-    }
-    if (isInviteOverride) {
-      return 'This email is set for meeting invitations. Choose a different meeting-invitation email before deleting it.';
-    }
-    return null;
   }
 
   // True when the page shows this section: always on the combined page, and on a single-section page for its own.

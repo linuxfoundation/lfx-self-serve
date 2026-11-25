@@ -731,6 +731,45 @@ describe('MktgDocumentViewComponent', () => {
     );
   });
 
+  it('sends the author who objects to the identity to their profile and then a new draft, never a content comment', async () => {
+    await renderLinkedin(linkedinResponse());
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    query('mktg-linkedin-identity-change-toggle')?.click();
+    await settle();
+    expect(query('mktg-linkedin-identity-change-draft')).toBeNull();
+    query('mktg-linkedin-identity-change-edit')?.querySelector('button')?.click();
+    expect(navigate).toHaveBeenCalledWith(
+      ['linkedin-post'],
+      expect.objectContaining({
+        queryParams: expect.objectContaining({ project: PROJECT.slug, profile: 'edit', revision: null, type: null, mode: 'new' }),
+        state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.redraft },
+      })
+    );
+    expect(navigate.mock.calls.at(-1)?.[1]).not.toHaveProperty('queryParamsHandling');
+  });
+
+  it('offers another writer a draft as themselves, since only the author can change the profile', async () => {
+    await renderLinkedin(linkedinResponse('', false));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    query('mktg-linkedin-identity-change-toggle')?.click();
+    await settle();
+    expect(query('mktg-linkedin-identity-change-panel')?.textContent).toContain("Example author's LinkedIn profile");
+    expect(query('mktg-linkedin-identity-change-edit')).toBeNull();
+    query('mktg-linkedin-identity-change-draft')?.querySelector('button')?.click();
+    expect(navigate).toHaveBeenCalledWith(
+      ['linkedin-post'],
+      expect.objectContaining({ queryParams: expect.objectContaining({ project: PROJECT.slug, profile: null, mode: 'new' }) })
+    );
+    expect(navigate.mock.calls.at(-1)?.[1]).not.toHaveProperty('state');
+  });
+
+  it('hides the identity action from a reader who cannot draft', async () => {
+    projectLookup.mockReturnValue(of({ writer: false }));
+    await renderLinkedin(linkedinResponse('', false));
+    expect(query('mktg-linkedin-document-author')).not.toBeNull();
+    expect(query('mktg-linkedin-identity-change')).toBeNull();
+  });
+
   it.each(['', '?mode=new', '?mode=old'])('Draft another explicitly restores last inputs independently of the current URL (%s)', async (urlQuery) => {
     await renderLinkedin(linkedinResponse(), urlQuery);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -1814,6 +1853,10 @@ describe('MktgDocumentViewComponent', () => {
         : "Member 360 couldn't finish this run.";
     expect(query('mktg-document-view-error')?.textContent).toContain(short);
     expect(query('mktg-document-view-error')?.textContent).not.toContain('Synthetic terminal explanation');
+    // The heading names the run: a failed Member 360 run has no revision, so no period to title it with.
+    expect(query('mktg-document-view-title-loading')).toBeNull();
+    expect(query('mktg-document-view-title')?.tagName).toBe('H1');
+    expect(query('mktg-document-view-title')?.textContent?.trim()).toBe("The Member 360 run wasn't finished");
     const details = query('member-360-failure-details');
     expect(details?.hasAttribute('open')).toBe(false);
     expect(query('member-360-failure-message')?.textContent?.trim()).toBe('Synthetic terminal explanation.');

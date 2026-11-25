@@ -8,6 +8,7 @@ import type {
   CommitteeFoundationGroup,
   CommitteeMailingListLink,
   CommitteeMemberPermissionInfo,
+  CommitteeSsoGroupNameDisplay,
   GroupBehavioralClass,
   GroupChannel,
   GroupEditLink,
@@ -28,6 +29,7 @@ import {
   GROUPS_ENGAGEMENT_ICON_CLASS,
   MEMBER_FORM_VOTING_STATUSES,
   OTHER_GROUPS_LABEL,
+  SSO_GROUP_NAME_PENDING_LABEL,
 } from '../constants/committees.constants';
 import { SOCIAL_LISTENING_GROUP_CATEGORIES } from '../constants/social-listening.constants';
 import { formatRelativeTime } from './date-time.utils';
@@ -212,6 +214,23 @@ export function committeeRouteIdMatches(
   }
   const slug = committee.sso_group_name;
   return !!slug && slug.toLowerCase() === routeId.toLowerCase();
+}
+
+/**
+ * Resolves the read-only SSO group name line for a group's settings. The committee service
+ * generates `sso_group_name` whenever a group is public or SSO-enabled, so the line shows for
+ * either toggle (PCC parity) and is hidden when both are off. A missing or blank name returns
+ * the pending placeholder instead of an empty value.
+ */
+export function resolveSsoGroupNameDisplay(
+  toggles: { public?: boolean | null; sso_group_enabled?: boolean | null },
+  ssoGroupName: string | null | undefined
+): CommitteeSsoGroupNameDisplay | null {
+  if (!toggles.public && !toggles.sso_group_enabled) {
+    return null;
+  }
+  const value = ssoGroupName?.trim();
+  return value ? { value, pending: false } : { value: SSO_GROUP_NAME_PENDING_LABEL, pending: true };
 }
 
 /**

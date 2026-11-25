@@ -90,6 +90,11 @@ describe('shared document/comment attribution', () => {
     expect(await authors.resolveAuthor(req, 'opaque-writer')).toEqual({ name: 'Ada King' });
   });
 
+  it('falls through a whitespace-only directory name to the first and last name', async () => {
+    mocks.user.mockResolvedValue({ success: true, data: { name: '   ', given_name: 'Ada', family_name: 'Lovelace' } });
+    expect(await authors.resolveAuthor(req, 'opaque-writer')).toEqual({ name: 'Ada Lovelace' });
+  });
+
   it('never falls back to username when the display name is empty', async () => {
     mocks.user.mockResolvedValue({ success: true, data: { name: '', username: 'synthetic-username' } });
     expect(await authors.resolveAuthor(req, 'opaque-writer')).toEqual({ name: null });

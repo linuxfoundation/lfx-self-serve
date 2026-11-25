@@ -10,7 +10,7 @@ import { alreadySignedAgreementForGroup, alreadySignedChipLabel, alreadySignedGr
 import { MyClasService } from '@services/my-clas.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, debounceTime, map, of, Subject, switchMap } from 'rxjs';
+import { catchError, debounceTime, map, of, Subject, switchMap, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -58,7 +58,9 @@ export class ClaGroupSelectComponent {
   /** Producer capped the set — a property of the result set, so it cannot live on a result. */
   protected readonly truncated = signal(false);
 
-  private readonly query = signal('');
+  protected readonly query = signal('');
+  /** The last term a search finished for, so a no-match line never names a term still being searched. */
+  protected readonly searchedQuery = signal('');
 
   /** Position of the keyboard highlight in `options`, or -1 when nothing is highlighted. */
   protected readonly highlightedIndex = signal(-1);
@@ -100,6 +102,7 @@ export class ClaGroupSelectComponent {
           this.loading.set(true);
           this.error.set(false);
           return this.myClasService.getClaGroupOptions(searchTerm).pipe(
+            tap(() => this.searchedQuery.set(searchTerm)),
             catchError(() => {
               // Every failure takes this one branch, including a 400 or 422 from a short term
               // that slipped past the gate above: same mistake, same message, one Retry.
@@ -233,6 +236,7 @@ export class ClaGroupSelectComponent {
     this.options.set([]);
     this.truncated.set(false);
     this.highlightedIndex.set(-1);
+    this.searchedQuery.set('');
   }
 
   private initAlreadySignedByGroupId(): Signal<Map<string, AlreadySignedNote>> {

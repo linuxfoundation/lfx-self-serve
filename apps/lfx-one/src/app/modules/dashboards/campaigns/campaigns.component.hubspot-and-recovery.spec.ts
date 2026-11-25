@@ -3379,7 +3379,10 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     googleGeoSearchEnabled = false,
     metaInstagramDsaEnabled = false,
     twitterCreateEnabled = false,
-    linkedInDailyCapEnabled = false
+    linkedInDailyCapEnabled = false,
+    linkedInVariantCopyEnabled = false,
+    linkedInCallToActionEnabled = false,
+    linkedInTextAdsEnabled = false
   ): Observable<CampaignListResult> =>
     of({
       campaigns: [],
@@ -3391,6 +3394,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       redditCreativeEnabled: false,
       redditAssetUploadEnabled: false,
       redditConversionPixelEnabled: false,
+      redditConversionEventEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -3398,6 +3402,12 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       linkedInTargetingEditEnabled: false,
       linkedInAccountSelectionEnabled: false,
       linkedInDailyCapEnabled,
+      linkedInVariantCopyEnabled,
+      linkedInCallToActionEnabled,
+      linkedInTextAdsEnabled,
+      linkedInVideoAdsEnabled: false,
+      linkedInTargetingEnabled: false,
+      linkedInConversionsEnabled: false,
       microsoftAssetUploadEnabled: false,
       biddingEnabled,
       microsoftScheduleEnabled,
@@ -3515,16 +3525,28 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     expect(q(hidden)).toBeNull();
   });
 
-  /** The LinkedIn daily-cap capability (#5774) travels the same path: the real page reads it and binds it to `linkedInDailyCapEnabled`. */
-  it.each([[true], [false]])('hands a linkedin daily-cap capability of %s to the Implementation tab', async (enabled) => {
-    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, false, enabled));
-    const withLinkedIn = { ...brief, selectedPlatforms: ['linkedin-ads'] } as unknown as CampaignBriefOutput;
+  /**
+   * The LinkedIn daily-cap capability (#5774) and the ad name, description and call to action capabilities (#5764 rows
+   * 16–17) travel the same path: the real page reads them and binds each to its input.
+   */
+  it.each([
+    [true, true, false, true],
+    [false, false, true, false],
+  ])(
+    'hands the linkedin daily-cap (%s), ad name and description (%s), call to action (%s) and text ads (%s) capabilities to the Implementation tab',
+    async (enabled, copy, callToAction, textAds) => {
+      listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, false, enabled, copy, callToAction, textAds));
+      const withLinkedIn = { ...brief, selectedPlatforms: ['linkedin-ads'] } as unknown as CampaignBriefOutput;
 
-    page().onProceedToImplementation(withLinkedIn);
-    await settle();
+      page().onProceedToImplementation(withLinkedIn);
+      await settle();
 
-    expect(tab()['linkedInDailyCapEnabled']()).toBe(enabled);
-  });
+      expect(tab()['linkedInDailyCapEnabled']()).toBe(enabled);
+      expect(tab()['linkedInVariantCopyEnabled']()).toBe(copy);
+      expect(tab()['linkedInCallToActionEnabled']()).toBe(callToAction);
+      expect(tab()['linkedInTextAdsEnabled']()).toBe(textAds);
+    }
+  );
 
   /** The Meta Instagram/DSA capability travels the same path: the real page reads it, binds it, and the tab shows the inputs only on a yes. */
   it.each([[true], [false]])('hands a meta instagram/dsa capability of %s to the Implementation tab', async (enabled) => {

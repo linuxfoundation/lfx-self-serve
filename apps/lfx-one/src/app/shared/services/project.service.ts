@@ -10,6 +10,7 @@ import {
   Project,
   ProjectDocument,
   ProjectDocumentType,
+  UpdateDocumentRequest,
   UpdateFormationRecordRequest,
   WriterSummary,
 } from '@lfx-one/shared/interfaces';
@@ -334,6 +335,22 @@ export class ProjectService {
   public deleteProjectDocument(projectUid: string, documentId: string, documentType: ProjectDocumentType): Observable<void> {
     const params = new HttpParams().set('type', documentType);
     return this.http.delete<void>(`/api/projects/${projectUid}/documents/${documentId}`, { params }).pipe(take(1));
+  }
+
+  /**
+   * Renames and/or moves a project folder, link or uploaded file. `parent_uid: null` moves it to the root; a field left out is
+   * left as it is. The BFF answers 409 when another document in the project already has the name.
+   */
+  public updateProjectDocument(
+    projectUid: string,
+    documentId: string,
+    documentType: ProjectDocumentType,
+    changes: UpdateDocumentRequest
+  ): Observable<ProjectDocument> {
+    const params = new HttpParams().set('type', documentType);
+    return this.http
+      .patch<ProjectDocument>(`/api/projects/${encodeURIComponent(projectUid)}/documents/${encodeURIComponent(documentId)}`, changes, { params })
+      .pipe(take(1));
   }
 
   /**

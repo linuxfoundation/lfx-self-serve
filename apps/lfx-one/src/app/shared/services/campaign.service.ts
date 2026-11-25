@@ -90,6 +90,11 @@ import {
   GoogleAdsConversionActionsResult,
   GoogleAdsGeoTargetSearchOptions,
   GoogleAdsGeoTargetSearchResult,
+  LinkedInGeoSearchResult,
+  LinkedInAudiencesResult,
+  LinkedInConversionsResult,
+  LinkedInTargetingSearchFacet,
+  LinkedInTargetingSearchResult,
   GoogleAdsAudienceReadType,
   GoogleAdsAudiencesResult,
   GoogleAdsUserListsResult,
@@ -801,6 +806,50 @@ export class CampaignService {
    */
   public getTwitterAdsAccounts(projectSlug: string): Observable<TwitterAdsAccountsResult> {
     return this.http.get<TwitterAdsAccountsResult>('/api/campaigns/twitter/accounts', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Search LinkedIn locations for the Implement tab's location picker (#5545): campaign-service's targeting typeahead,
+   * `facet=locations`, answered as geo targets ready to add. Unflagged.
+   */
+  public searchLinkedInGeoTargets(projectSlug: string, query: string): Observable<LinkedInGeoSearchResult> {
+    // `strictHttpParams`, because the query is user-typed text (see `searchGoogleAdsGeoTargets`).
+    const params = strictHttpParams().set('project', projectSlug).set('q', query);
+    return this.http.get<LinkedInGeoSearchResult>('/api/campaigns/linkedin/geo-targets', { params });
+  }
+
+  /**
+   * Search one LinkedIn targeting facet for the Implement tab's custom targeting editor (#5764 rows 8–11): campaign-service's
+   * targeting typeahead. 404 while custom targeting is off on the server.
+   */
+  public searchLinkedInTargeting(projectSlug: string, facet: LinkedInTargetingSearchFacet, query: string): Observable<LinkedInTargetingSearchResult> {
+    // `strictHttpParams`, because the query is user-typed text (see `searchGoogleAdsGeoTargets`).
+    const params = strictHttpParams().set('project', projectSlug).set('facet', facet).set('q', query);
+    return this.http.get<LinkedInTargetingSearchResult>('/api/campaigns/linkedin/targeting-entities', { params });
+  }
+
+  /**
+   * The ad segments (matched and retargeting audiences) on the LinkedIn ad account a create uses, for the custom
+   * targeting editor (#5764 rows 8–11). `accountId` names a non-default account the caller chose; without it the
+   * default is read. A coded 403 for a caller without `global_marketing_ops` on the project, a coded 503 when that
+   * check cannot be made, and a 404 while custom targeting is off on the server.
+   */
+  public getLinkedInAudiences(projectSlug: string, accountId?: string): Observable<LinkedInAudiencesResult> {
+    // `strictHttpParams`, as the targeting search beside it, so every param is encoded the same way.
+    let params = strictHttpParams().set('project', projectSlug);
+    if (accountId) params = params.set('accountId', accountId);
+    return this.http.get<LinkedInAudiencesResult>('/api/campaigns/linkedin/audiences', { params });
+  }
+
+  /**
+   * The enabled conversion rules on the LinkedIn ad account a create uses, for the objective picker (#5764 row 4), with
+   * `accountId` as for `getLinkedInAudiences`. A coded 403 for a caller without `global_marketing_ops` on the project, a
+   * coded 503 when that check cannot be made, and a 404 while conversions are off on the server.
+   */
+  public getLinkedInConversions(projectSlug: string, accountId?: string): Observable<LinkedInConversionsResult> {
+    let params = strictHttpParams().set('project', projectSlug);
+    if (accountId) params = params.set('accountId', accountId);
+    return this.http.get<LinkedInConversionsResult>('/api/campaigns/linkedin/conversions', { params });
   }
 
   /**

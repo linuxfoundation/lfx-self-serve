@@ -15,6 +15,11 @@
       <div class="h-full rounded-full bg-slate-300 transition-all" [style.width.%]="stats().abstainedRate"></div>
     </div>
   </div>
+} @else if (variant() === 'inline') {
+  <p class="text-sm text-slate-500" [attr.data-testid]="testId()">
+    <ng-container [ngTemplateOutlet]="count" />
+    · {{ stats().abstainedRate }}%
+  </p>
 } @else {
   <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" [attr.data-testid]="testId()">
     <div class="flex items-center justify-between mb-2">

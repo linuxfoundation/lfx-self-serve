@@ -4799,6 +4799,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditAssetUploadEnabled: false,
       // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
       redditConversionPixelEnabled: false,
+      redditConversionEventEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -4806,6 +4807,12 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInTargetingEditEnabled: false,
       linkedInAccountSelectionEnabled: false,
       linkedInDailyCapEnabled: false,
+      linkedInVariantCopyEnabled: false,
+      linkedInCallToActionEnabled: false,
+      linkedInTextAdsEnabled: false,
+      linkedInVideoAdsEnabled: false,
+      linkedInTargetingEnabled: false,
+      linkedInConversionsEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5408,6 +5415,118 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** The LinkedIn variant capabilities (#5764 rows 16–17): name and description need the cutover, the call to action its flag too. */
+  it.each([
+    [{ cutover: true, callToAction: true }, true, true],
+    [{ cutover: true, callToAction: false }, true, false],
+    [{ cutover: false, callToAction: true }, false, false],
+  ])('reports the LinkedIn variant capabilities (%o): copy %s, call to action %s', async (flags, copy, callToAction) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceLinkedInCallToAction ? flags.callToAction : flags.cutover
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.linkedInVariantCopyEnabled).toBe(copy);
+      expect(result.linkedInCallToActionEnabled).toBe(callToAction);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** LinkedIn Text Ads (#5764 row 19): the cutover, bidding (a text create needs a manual bid) and its own flag. */
+  it.each([
+    [{ cutover: true, bidding: true, textAds: true }, true],
+    [{ cutover: true, bidding: true, textAds: false }, false],
+    [{ cutover: true, bidding: false, textAds: true }, false],
+    [{ cutover: false, bidding: true, textAds: true }, false],
+  ])('reports LinkedIn Text Ads (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInTextAds) return flags.textAds;
+      if (flag === ServerFeatureFlag.CampaignServiceBidding) return flags.bidding;
+      return flags.cutover;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInTextAdsEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** LinkedIn video ads (#5764 row 18): the cutover, the LinkedIn asset flag (the video is a brief asset) and its own flag. */
+  it.each([
+    [{ cutover: true, assets: true, video: true }, true],
+    [{ cutover: true, assets: true, video: false }, false],
+    [{ cutover: true, assets: false, video: true }, false],
+    [{ cutover: false, assets: true, video: true }, false],
+  ])('reports LinkedIn video ads (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInVideo) return flags.video;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInAssets) return flags.assets;
+      return flags.cutover;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInVideoAdsEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** LinkedIn custom targeting (#5764 rows 8–11): the cutover and its own flag. Bidding plays no part. */
+  it.each([
+    [{ cutover: true, targeting: true }, true],
+    [{ cutover: true, targeting: false }, false],
+    [{ cutover: false, targeting: true }, false],
+  ])('reports LinkedIn custom targeting (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceLinkedInTargeting ? flags.targeting : flags.cutover
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInTargetingEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** The Reddit conversion event (#6108 row 2): the cutover and its own flag. */
+  it.each([
+    [{ cutover: true, event: true }, true],
+    [{ cutover: true, event: false }, false],
+    [{ cutover: false, event: true }, false],
+  ])('reports the Reddit conversion event (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceRedditConversionEvent ? flags.event : flags.cutover
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).redditConversionEventEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** LinkedIn objective and conversions (#5764 rows 2 and 4): the cutover and its own flag. Bidding plays no part. */
+  it.each([
+    [{ cutover: true, conversions: true }, true],
+    [{ cutover: true, conversions: false }, false],
+    [{ cutover: false, conversions: true }, false],
+  ])('reports LinkedIn objective and conversions (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceLinkedInConversions ? flags.conversions : flags.cutover
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInConversionsEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The LinkedIn daily-cap capability (#5774): the create cutover alone, like the targeting edit above. */
   it.each([
     [{ create: true, briefs: true, jobs: true, others: false }, true],
@@ -5496,6 +5615,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditAssetUploadEnabled: false,
       // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
       redditConversionPixelEnabled: false,
+      redditConversionEventEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -5503,6 +5623,12 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInTargetingEditEnabled: false,
       linkedInAccountSelectionEnabled: false,
       linkedInDailyCapEnabled: false,
+      linkedInVariantCopyEnabled: false,
+      linkedInCallToActionEnabled: false,
+      linkedInTextAdsEnabled: false,
+      linkedInVideoAdsEnabled: false,
+      linkedInTargetingEnabled: false,
+      linkedInConversionsEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -6439,6 +6565,60 @@ describe('CampaignServiceClient.listMetaCustomAudiences', () => {
   });
 });
 
+describe('CampaignServiceClient.listLinkedInAudiences', () => {
+  const audiences = { account_id: '500000001', audiences: [], audience_count: 0, truncated: false };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's audience read, the project encoded, naming an account only when given", async () => {
+    proxyRequest.mockResolvedValue(audiences);
+
+    expect(await new CampaignServiceClient().listLinkedInAudiences(req, 'lf/ai')).toBe(audiences);
+    await new CampaignServiceClient().listLinkedInAudiences(req, 'cncf', '500000002');
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/linkedin-ads/audiences', 'GET', undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/linkedin-ads/audiences', 'GET', {
+      account_id: '500000002',
+    });
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listLinkedInAudiences(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignServiceClient.listLinkedInConversions', () => {
+  const conversions = { account_id: '500000001', conversions: [], conversion_count: 0 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's conversion rule read, the project encoded, naming an account only when given", async () => {
+    proxyRequest.mockResolvedValue(conversions);
+
+    expect(await new CampaignServiceClient().listLinkedInConversions(req, 'lf/ai')).toBe(conversions);
+    await new CampaignServiceClient().listLinkedInConversions(req, 'cncf', '500000002');
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/linkedin-ads/conversions', 'GET', undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/linkedin-ads/conversions', 'GET', {
+      account_id: '500000002',
+    });
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listLinkedInConversions(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
 describe('CampaignServiceClient.listMetaLeadForms', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -6474,6 +6654,23 @@ describe('CampaignServiceClient.searchMetaTargetingOptions', () => {
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/meta-ads/targeting-search', 'GET', {
       type: 'interest',
       query: 'kubernetes',
+    });
+  });
+});
+
+describe('CampaignServiceClient.searchLinkedInTargetingEntities', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's LinkedIn targeting entities with the facet and query, the project encoded", async () => {
+    const answer = { facet: 'locations', entities: [], entity_count: 0 };
+    proxyRequest.mockResolvedValueOnce(answer);
+
+    expect(await new CampaignServiceClient().searchLinkedInTargetingEntities(req, 'lf/ai', 'locations', 'berlin')).toBe(answer);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/linkedin-ads/targeting-entities', 'GET', {
+      facet: 'locations',
+      query: 'berlin',
     });
   });
 });
