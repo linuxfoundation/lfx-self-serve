@@ -147,7 +147,7 @@ export class OrgLensTrainingService {
       const unfiltered = await this.cached(
         qualification,
         accountId,
-        `training-stats:v6:${orgTrainingFiltersSignature({ range: query.range, foundation: null, project: null, course: null, level: null, format: null })}`,
+        `training-stats:v7:${orgTrainingFiltersSignature({ range: query.range, foundation: null, project: null, course: null, level: null, format: null })}`,
         () => this.fetchTrainingStats(accountId, { range: query.range, foundation: null, project: null, course: null, level: null, format: null }),
         isTrainingStats
       );
@@ -156,7 +156,7 @@ export class OrgLensTrainingService {
     return this.cached(
       qualification,
       accountId,
-      `training-stats:v6:${orgTrainingFiltersSignature(query)}`,
+      `training-stats:v7:${orgTrainingFiltersSignature(query)}`,
       () => this.fetchTrainingStats(accountId, query),
       isTrainingStats
     );
@@ -167,7 +167,7 @@ export class OrgLensTrainingService {
     return this.cached(
       qualification,
       accountId,
-      `training-filter-options:v1:${range}`,
+      `training-filter-options:v2:${range}`,
       async () => {
         const { cte, binds } = buildOrgTrainingPairsCte(accountId, { range, foundation: null, project: null, course: null, level: null, format: null });
         const sql = `
@@ -253,7 +253,7 @@ export class OrgLensTrainingService {
     const raw = await this.cached(
       qualification,
       accountId,
-      `training-group-employees:v1:${orgTrainingFiltersSignature(query)}:${groupBy}:${orgTrainingParamSignature([groupValue])}:${tab}:${status}`,
+      `training-group-employees:v2:${orgTrainingFiltersSignature(query)}:${groupBy}:${orgTrainingParamSignature([groupValue])}:${tab}:${status}`,
       () => this.fetchGroupEmployees(accountId, query, params),
       isGroupEmployeesRaw
     );
@@ -282,7 +282,7 @@ export class OrgLensTrainingService {
     return this.cached(
       qualification,
       accountId,
-      `training-groups:v1:${orgTrainingFiltersSignature(query)}:${groupBy}:${tab}`,
+      `training-groups:v2:${orgTrainingFiltersSignature(query)}:${groupBy}:${tab}`,
       () => this.fetchGroups(accountId, query, groupBy, tab),
       isGroupsRaw
     );
@@ -307,7 +307,7 @@ export class OrgLensTrainingService {
     return this.cached(
       qualification,
       accountId,
-      'training-filter-known:v1',
+      'training-filter-known:v2',
       async () => {
         const sql = `
           WITH known_pairs AS (

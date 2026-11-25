@@ -289,6 +289,64 @@ describe('Training reads run against SQLite over warehouse-resolved pairs', () =
     expect(execute.mock.calls.some(([, binds]) => (binds as string[]).includes('Expert'))).toBe(false);
   });
 
+  it('counts a pair once when the table repeats it in the same account and range', async () => {
+    const read = async () => ({
+      stats: pick(await service.getTrainingStats(ACCOUNT, query({}), 'auditor-entitlement')),
+      certifications: await service.getGroups({} as never, ACCOUNT, query({}), { groupBy: 'course', tab: 'certifications' }, 'auditor-entitlement'),
+      trainings: await service.getGroups({} as never, ACCOUNT, query({}), { groupBy: 'course', tab: 'trainings' }, 'auditor-entitlement'),
+      drawer: (
+        await service.getGroupEmployees(
+          {} as never,
+          ACCOUNT,
+          query({}),
+          { groupBy: 'course', groupValue: 'Kubernetes Admin', tab: 'certifications', status: 'completed' },
+          'auditor-entitlement'
+        )
+      ).total,
+    });
+    const before = await read();
+    const insert = database.prepare('INSERT INTO ORG_PEOPLE_TRAINING_PAIRS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    insert.run(
+      'all',
+      ACCOUNT,
+      'p1',
+      'cka',
+      'p1|cka',
+      1,
+      1,
+      'certifications',
+      'Kubernetes Admin',
+      'Intermediate',
+      'Exam',
+      'proj-b',
+      'Project proj-b',
+      'f-a',
+      'Foundation f-a',
+      '2026-11-25 04:15:00'
+    );
+    insert.run(
+      'all',
+      ACCOUNT,
+      'p1',
+      'intro',
+      'p1|intro',
+      1,
+      0,
+      'trainings',
+      'Intro to K8s',
+      'Beginner',
+      'E-Learning',
+      'proj-a',
+      'Project proj-a',
+      'f-a',
+      'Foundation f-a',
+      '2026-11-25 04:15:00'
+    );
+
+    expect(await read()).toEqual(before);
+    expect(before.drawer).toBe(2);
+  });
+
   it('reads the as-of time of the pairs and nothing of another organization', async () => {
     const stats = await service.getTrainingStats(OTHER_ACCOUNT, query({}), 'auditor-entitlement');
 

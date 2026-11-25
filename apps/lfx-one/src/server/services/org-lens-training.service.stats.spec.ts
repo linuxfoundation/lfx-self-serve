@@ -252,9 +252,9 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
       await keyOf({ ...QUERY, format: 'A' }),
     ]);
 
-    expect(base).toBe(`training-stats:v6:${orgTrainingFiltersSignature(QUERY)}`);
+    expect(base).toBe(`training-stats:v7:${orgTrainingFiltersSignature(QUERY)}`);
     expect(keys.size).toBe(5);
-    expect(base).toMatch(/^training-stats:v6:[A-Za-z0-9_-]+$/);
+    expect(base).toMatch(/^training-stats:v7:[A-Za-z0-9_-]+$/);
   });
 
   describe('cache guard', () => {

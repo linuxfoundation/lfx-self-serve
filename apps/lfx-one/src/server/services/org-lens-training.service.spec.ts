@@ -105,7 +105,7 @@ describe('OrgLensTrainingService — filter options', () => {
     expect(options.courses.map((o) => o.value)).toEqual(['A course', 'B course']);
     expect(options.levels).toEqual([{ label: 'Beginner', value: 'Beginner' }]);
     expect(options.formats).toEqual([{ label: 'E-Learning', value: 'E-Learning' }]);
-    expect(withOrgCache.mock.calls[0][1]).toBe('training-filter-options:v1:90d');
+    expect(withOrgCache.mock.calls[0][1]).toBe('training-filter-options:v2:90d');
     expect(execute.mock.calls[0][1]).toEqual([ACCOUNT, '90d']);
     expect(execute.mock.calls[0][0]).toContain('AND TIME_RANGE = ?');
   });
@@ -251,8 +251,8 @@ describe('OrgLensTrainingService — group-by table', () => {
     const rowsCall = execute.mock.calls.find(([sql]) => (sql as string).includes('AS GROUP_KEY'))!;
     expect(rowsCall[1]).toEqual([ACCOUNT, QUERY.range, 'Beginner']);
     const keys = withOrgCache.mock.calls.map(([, key]) => key);
-    expect(keys).toContain(`training-groups:v1:${orgTrainingFiltersSignature(query)}:level:trainings`);
-    expect(keys).not.toContain(`training-groups:v1:${orgTrainingFiltersSignature(QUERY)}:level:trainings`);
+    expect(keys).toContain(`training-groups:v2:${orgTrainingFiltersSignature(query)}:level:trainings`);
+    expect(keys).not.toContain(`training-groups:v2:${orgTrainingFiltersSignature(QUERY)}:level:trainings`);
   });
 });
 
@@ -342,7 +342,7 @@ describe('OrgLensTrainingService — group drawer', () => {
     expect(response.total).toBe(2);
     expect(drawerCalls()[0][0]).toContain('NOT IS_CERTIFIED');
     const key = withOrgCache.mock.calls.map(([, k]) => k as string).find((k) => k.startsWith('training-group-employees:'))!;
-    expect(key).toMatch(/^training-group-employees:v1:[A-Za-z0-9_-]+:course:[A-Za-z0-9_-]+:trainings:in-progress$/);
+    expect(key).toMatch(/^training-group-employees:v2:[A-Za-z0-9_-]+:course:[A-Za-z0-9_-]+:trainings:in-progress$/);
   });
 
   it('rejects a group value that is not a group of the table, before any drawer cache key or statement', async () => {
@@ -428,7 +428,7 @@ describe('OrgLensTrainingService — a filter value the organization never carri
 
       // Only the known-values entry and the unfiltered stats entry (the roster's) were read; no key or statement holds the unknown value.
       const keys = withOrgCache.mock.calls.map(([, key]) => key as string);
-      expect(new Set(keys)).toEqual(new Set(['training-filter-known:v1', `training-stats:v6:${orgTrainingFiltersSignature(QUERY)}`]));
+      expect(new Set(keys)).toEqual(new Set(['training-filter-known:v2', `training-stats:v7:${orgTrainingFiltersSignature(QUERY)}`]));
       for (const [sql, binds] of execute.mock.calls as [string, unknown[]][]) {
         expect(binds).not.toContain(Object.values(filter)[0]);
         expect(sql.includes('AS GROUP_KEY')).toBe(false);
@@ -487,7 +487,7 @@ describe('OrgLensTrainingService — a filter value the organization never carri
 
     await service.getGroups(REQ, ACCOUNT, query, { groupBy: 'course', tab: 'certifications' }, 'org-grant');
 
-    expect(withOrgCache.mock.calls.map(([, key]) => key)).toContain(`training-groups:v1:${orgTrainingFiltersSignature(query)}:course:certifications`);
+    expect(withOrgCache.mock.calls.map(([, key]) => key)).toContain(`training-groups:v2:${orgTrainingFiltersSignature(query)}:course:certifications`);
   });
 
   it('compares a request value with the known values the way the URL normalizes it (trimmed), so a padded warehouse value is not unknown', async () => {

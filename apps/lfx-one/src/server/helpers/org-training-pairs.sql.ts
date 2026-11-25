@@ -43,6 +43,10 @@ export function orgTrainingStatusPredicate(status: 'completed' | 'in-progress'):
   return status === 'completed' ? 'IS_CERTIFIED' : 'NOT IS_CERTIFIED';
 }
 
+/**
+ * The warehouse-resolved pairs of the org's people list as CTE `f`, narrowed to the range and the set filters.
+ * Binds: `[accountId, range, ...set filter values in foundation, project, course, level, format order]`.
+ */
 export function buildOrgTrainingPairsCte(accountId: string, query: OrgTrainingStatsQuery): { cte: string; binds: string[] } {
   const binds: string[] = [accountId, query.range];
   const conditions: string[] = [];
