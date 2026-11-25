@@ -55,17 +55,20 @@ function matchKeyExpression(column: string): string {
  * matched account's identifier never leaves this service, since nothing renders it and self-declared
  * employment is not permission to learn it.
  *
- * A caller may hold several current jobs; every one of them is checked, and `hasActiveMembership` is
- * true when any is a member, so a day job alongside a foundation role never reads as "not a member".
+ * A caller may hold several current jobs; every one of them is checked, and the answer is `member` when
+ * any is one, so a day job alongside a foundation role never reads as "not a member".
  *
- * Resolution is by account name, because the only employer identifier a profile carries is a CDP
- * organization id and no platinum relation maps CDP org ids to Salesforce accounts
- * (`ACCOUNT_TO_CDEV_ORG_MAPPING` maps Crowd.dev org ids, which is a different identifier). Names are
+ * Resolution is by account name rather than by identifier: the only employer identifier a profile
+ * carries is a CDP organization id, and `ACCOUNT_TO_CDEV_ORG_MAPPING` maps Crowd.dev org ids, which is
+ * a different identifier. #4225 does resolve by crowd.dev id against `ORG_LENS_ACCOUNT_CONTEXT`, but
+ * that view is account-grain and misses an employer that is a company's second mapped org; the name
+ * match answers for part of what that gap leaves unknown, which is the whole difference in reach
+ * between the two routes (`docs/architecture/frontend/lens-system.md`). Names are
  * compared on {@link employerMatchKey} rather than literally, so a trailing legal form written on one
  * side and not the other ("Acme" / "Acme LLC") still finds the account. A name that matches no account
  * at all answers `unresolved`, never a negative: "no row came back" is a failure of this lookup, not a
- * fact about that company. Where several accounts match, the one with memberships wins, so neither a
- * duplicate nor a second current employer can downgrade a member company to the non-member copy.
+ * fact about that company. Where several accounts match, the one dbt marks `IS_MEMBER` wins, so neither
+ * a duplicate nor a second current employer can downgrade a member company to the non-member copy.
  *
  * The key is built from Latin letters and digits, so a name written entirely in another script reduces
  * to nothing and is never queried. That is `unresolved` too — an unasked question, not a negative.
