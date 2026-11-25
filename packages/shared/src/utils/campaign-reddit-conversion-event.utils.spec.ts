@@ -22,6 +22,12 @@ describe('redditConversionEventRefusal', () => {
     ['no config', undefined, true, null],
     ['no field, flag off', { budgetUsd: 50 }, false, null],
     ['a case variant of the key, flag off', { ConversionEvent: 'LEAD' }, false, 'Send the conversion event as "conversionEvent", spelled exactly.'],
+    [
+      'an event with a case-variant objective key',
+      { conversionEvent: 'LEAD', Objective: 'traffic' },
+      true,
+      'Send the objective as "objective", spelled exactly, with a conversion event.',
+    ],
     ['null', { conversionEvent: null }, true, NOT_TEXT],
     ['a number, flag off (shape before flag)', { conversionEvent: 1 }, false, NOT_TEXT],
     ['blank text', { conversionEvent: '  ' }, true, 'An empty conversion event is refused. Omit it for the default, PURCHASE.'],

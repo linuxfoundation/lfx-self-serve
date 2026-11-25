@@ -60,6 +60,11 @@ export function redditConversionEventRefusal(raw: unknown, enabled: boolean): Re
     return { field, message: `The conversion event must be text naming a pixel event, one of ${EVENT_LIST}. Omit it for the default, PURCHASE.` };
   }
   if (event.trim() === '') return { field, message: 'An empty conversion event is refused. Omit it for the default, PURCHASE.' };
+  // campaign-service decodes keys ignoring case, so a case variant of "objective" is the objective it checks the event
+  // against; read only by its exact spelling here, it would look absent (conversions) and pass.
+  if (Object.keys(config).some((key) => key !== 'objective' && key.toLowerCase() === 'objective')) {
+    return { field, message: 'Send the objective as "objective", spelled exactly, with a conversion event.' };
+  }
   if (!enabled) {
     return { field, message: 'Reddit conversion events are not enabled on this deployment. Reload the page and create again.' };
   }
