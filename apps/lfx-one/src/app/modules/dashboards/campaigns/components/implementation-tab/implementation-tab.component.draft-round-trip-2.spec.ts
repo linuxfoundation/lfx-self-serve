@@ -288,9 +288,9 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(c.canSubmit()).toBe(true);
   });
 
-  /** A post URL is the one answer that works on both arms, so it clears the warning on both. */
-  it.each([[true]])('clears once a post url is typed, with redditCreativeEnabled %s', async (capability) => {
-    const f = (await mount(null, capability as boolean | undefined)).fixture;
+  /** A typed post URL reaches the warning and clears it; every capability state is `redditNoAdWarning`'s rows. */
+  it('clears once a post url is typed', async () => {
+    const f = (await mount(null, true)).fixture;
     const c = selectReddit(f);
     expect(c.redditNoAdWarning()).not.toBeNull();
 
