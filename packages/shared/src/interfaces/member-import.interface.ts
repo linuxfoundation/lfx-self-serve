@@ -107,6 +107,8 @@ export interface MemberImportRow {
   retryable?: boolean;
   /** True when a prior attempt may have committed; membership existence alone does not establish creation by this import. */
   uncertain?: boolean;
+  /** True when an `already_member` result followed an unconfirmed attempt, so this import may have created the member and applied their details (#5529). */
+  unconfirmedAddition?: boolean;
   /** The created member record, when the bulk result for an `added` row includes it. */
   member?: CommitteeMember;
   /** UID of the existing member, when a row was skipped because the person is already in the group. */

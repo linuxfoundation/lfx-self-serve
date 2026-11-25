@@ -333,6 +333,8 @@ export class CommitteeManageComponent {
       .pipe(finalize(() => this.submitting.set(false)))
       .subscribe((results) => {
         this.showMemberOperationToast(results);
+        // A bulk save can outlive the wizard; once the user has left, only report the outcome.
+        if (this.destroyRef.destroyed) return;
 
         // Don't navigate away while any staged item failed — re-entering the wizard would lose
         // it. Prune the items that did succeed so a retry doesn't resubmit them (GH-1608).
@@ -414,6 +416,8 @@ export class CommitteeManageComponent {
               detail: `${this.committeeLabel} updated successfully`,
             });
           }
+          // A bulk save can outlive the wizard; once the user has left, only report the outcome.
+          if (this.destroyRef.destroyed) return;
 
           // Don't navigate away while any staged item failed — re-entering the wizard would lose
           // it. Prune the items that did succeed so a retry doesn't resubmit them (GH-1608).
@@ -873,7 +877,7 @@ export class CommitteeManageComponent {
           member.email,
           () => this.committeeService.createCommitteeMember(committeeId, payload, createOptions),
           (createdMember) => createdMember
-        ).pipe(switchMap((result) => this.revokeImportedInvites(committeeId, pendingInviteUids, result)))
+        ).pipe(switchMap((result) => this.revokeStagedInvites(committeeId, pendingInviteUids, result)))
       );
     }
 
@@ -919,7 +923,11 @@ export class CommitteeManageComponent {
     );
   }
 
-  /** Only confirmed additions and people already in the group count as saved; any other outcome stays staged. */
+  /**
+   * Only confirmed additions and skipped rows (people already in the group, or duplicates of another row
+   * in the same request) count as saved; any other outcome stays staged. A saved row is promoted out of the
+   * staged list only when its member record is available, otherwise it stays listed and a retry skips it again.
+   */
   private toCsvOperationResult(committeeId: string, row: MemberImportRow): Observable<MemberOperationResult> {
     const result: MemberOperationResult = { type: 'add', identifier: row.normalizedEmail, success: false };
     if (row.status === 'added') {
@@ -928,7 +936,13 @@ export class CommitteeManageComponent {
     if (row.status !== 'skipped') {
       return of(result);
     }
-    const alreadyMember: MemberOperationResult = { ...result, success: true, alreadyMember: true };
+    if (!row.conflict) {
+      return of({ ...result, success: true });
+    }
+    // After a lost response, finding the person in the group does not show whether this save applied their details.
+    const alreadyMember: MemberOperationResult = row.unconfirmedAddition
+      ? { ...result, success: true, unconfirmedAddition: true }
+      : { ...result, success: true, alreadyMember: true };
     if (!row.memberUid) {
       return of(alreadyMember);
     }
@@ -940,7 +954,7 @@ export class CommitteeManageComponent {
   }
 
   /** Cleanup is best-effort: a failed revoke must never put a successfully-created member back in toAdd. */
-  private revokeImportedInvites(committeeId: string, inviteUids: string[], result: MemberOperationResult): Observable<MemberOperationResult> {
+  private revokeStagedInvites(committeeId: string, inviteUids: string[], result: MemberOperationResult): Observable<MemberOperationResult> {
     if (!result.success || inviteUids.length === 0) {
       return of(result);
     }
@@ -949,7 +963,7 @@ export class CommitteeManageComponent {
         this.committeeService.revokeCommitteeInvite(committeeId, uid).pipe(
           map(() => true),
           catchError((error: HttpErrorResponse) => {
-            console.error('CSV member import invitation cleanup failed', { status: error.status });
+            console.error('Staged member invitation cleanup failed', { status: error.status });
             return of(false);
           })
         )
@@ -1060,6 +1074,15 @@ export class CommitteeManageComponent {
         severity: 'info',
         summary: 'Already Members',
         detail: `${alreadyMembers} imported member(s) were already in the ${this.committeeLabel.toLowerCase()}; their CSV details were not applied.`,
+      });
+    }
+    const unconfirmedAdditions = results.filter((result) => result.unconfirmedAddition).length;
+    if (unconfirmedAdditions > 0) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Unconfirmed Additions',
+        detail: `${unconfirmedAdditions} imported member(s) are in the ${this.committeeLabel.toLowerCase()}, but an earlier attempt could not be confirmed, so their CSV details may not have been applied. Review their pending invitations from the Pending tab.`,
+        life: 10000,
       });
     }
   }

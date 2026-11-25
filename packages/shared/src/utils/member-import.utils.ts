@@ -336,6 +336,7 @@ export function classifyMemberImportBulkResult(result: CommitteeMemberBulkCreate
             'Already a member of this group. The earlier addition could not be confirmed; imported details may not have been applied. Review pending invitations.',
           retryable: undefined,
           uncertain: false,
+          unconfirmedAddition: true,
           memberUid: result.member_uid,
         };
       }

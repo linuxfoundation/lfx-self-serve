@@ -955,7 +955,7 @@ describe('CommitteeManageComponent', () => {
           expect.objectContaining({ email: 'retry@example.com', createOptions: { skipNotification: false }, pendingInviteUids: ['invite-2'] }),
         ]);
         expect(revokeCommitteeInvite.mock.calls).toEqual([[COMMITTEE_UID, 'invite-1']]);
-        expect(errorLog).toHaveBeenCalledExactlyOnceWith('CSV member import invitation cleanup failed', { status: 403 });
+        expect(errorLog).toHaveBeenCalledExactlyOnceWith('Staged member invitation cleanup failed', { status: 403 });
         expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Pending Invitation Cleanup' }));
         createCommitteeMember.mockReturnValue(of({ ...createdMember, uid: 'added-2', email: 'retry@example.com' }));
         component.onSubmitAll();
@@ -1046,7 +1046,7 @@ describe('CommitteeManageComponent', () => {
         expect(calls).toEqual(['delete', 'update', 'add', 'csv', 'invite']);
       });
 
-      it('counts only added and already-member rows as saved, promotes them, and keeps the rest staged', async () => {
+      it('counts only added and skipped rows as saved, promotes them, and keeps the rest staged', async () => {
         const existing = { ...createdMember, uid: 'existing-1', email: 'existing@example.com' };
         const getCommitteeMember = vi.fn((_uid: string, memberUid: string) =>
           memberUid === 'existing-1' ? of(existing) : throwError(() => new HttpErrorResponse({ status: 503 }))
@@ -1088,8 +1088,9 @@ describe('CommitteeManageComponent', () => {
         expect(toast).toHaveBeenCalledWith({
           severity: 'info',
           summary: 'Already Members',
-          detail: '3 imported member(s) were already in the group; their CSV details were not applied.',
+          detail: '2 imported member(s) were already in the group; their CSV details were not applied.',
         });
+        expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Unconfirmed Additions' }));
 
         // A retry resubmits only the rows that are still staged; already-member rows skip harmlessly again.
         runStaged.mockClear();
@@ -1113,6 +1114,52 @@ describe('CommitteeManageComponent', () => {
         component[submit]();
         expect(component.memberUpdates().toAdd.map((member) => member.email)).toEqual(['a@example.com', 'b@example.com']);
         expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Operation Failed' }));
+        expect(navigate).not.toHaveBeenCalledWith(['/groups']);
+      });
+
+      it('reports a row found in the group after an unconfirmed attempt as saved, with review-invitations guidance instead of the already-member notice', async () => {
+        const existing = { ...createdMember, uid: 'existing-1', email: 'csv@example.com' };
+        const getCommitteeMember = vi.fn(() => of(existing));
+        Object.assign(TestBed.inject(CommitteeService), { getCommitteeMember });
+        answerRuns(() => ({ status: 'skipped', conflict: true, unconfirmedAddition: true, memberUid: 'existing-1', member: undefined }));
+        const component = await setupPending([csv('csv@example.com', { pendingInviteUids: ['invite-1'] })]);
+        component.onSubmitAll();
+
+        const toast = TestBed.inject(MessageService).add;
+        expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Group and 1 member(s) updated successfully' }));
+        expect(toast).toHaveBeenCalledWith(
+          expect.objectContaining({
+            severity: 'warn',
+            summary: 'Unconfirmed Additions',
+            detail:
+              '1 imported member(s) are in the group, but an earlier attempt could not be confirmed, so their CSV details may not have been applied. Review their pending invitations from the Pending tab.',
+          })
+        );
+        expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Already Members' }));
+        // As on the Members tab, an unconfirmed outcome leaves invitation review to the user.
+        expect(revokeCommitteeInvite).not.toHaveBeenCalled();
+        expect(getCommitteeMember).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, 'existing-1');
+        expect(navigate).toHaveBeenCalledWith(['/groups']);
+      });
+
+      it.each(['onDone', 'onSubmitAll'] as const)('reports the outcome but neither prunes nor navigates once the wizard is gone (%s)', async (submit) => {
+        const rows = new Subject<MemberImportRow[]>();
+        runStaged.mockReturnValue(rows);
+        const fixture = TestBed.createComponent(CommitteeManageComponent);
+        const component = fixture.componentInstance;
+        component.memberUpdates.set({ toAdd: [csv('a@example.com'), csv('b@example.com')], toUpdate: [], toDelete: [], toInvite: [] });
+        component.form.patchValue({ name: 'Example Group', category: 'Technical Steering Committee' });
+        await fixture.whenStable();
+        if (submit === 'onDone') component.mode.set('create');
+        const prune = vi.spyOn(component['membersManager']()!, 'pruneSucceeded');
+        component[submit]();
+        fixture.destroy();
+
+        rows.next([stagedRow('a@example.com', { member: { ...createdMember, email: 'a@example.com' } }), stagedRow('b@example.com', { status: 'failed' })]);
+        rows.complete();
+
+        expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Partial Success' }));
+        expect(prune).not.toHaveBeenCalled();
         expect(navigate).not.toHaveBeenCalledWith(['/groups']);
       });
 

@@ -709,8 +709,12 @@ describe('classifyMemberImportBulkResult', () => {
       ...row,
       uncertain: true,
     });
-    expect(patch).toMatchObject({ status: 'skipped', conflict: true, uncertain: false });
+    expect(patch).toMatchObject({ status: 'skipped', conflict: true, uncertain: false, unconfirmedAddition: true });
     expect(patch.reason).toContain('imported details may not have been applied');
+  });
+
+  it('does not flag a confirmed existing membership as an unconfirmed addition', () => {
+    expect(classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'already_member' }), row).unconfirmedAddition).toBeUndefined();
   });
 
   it('carries the created member on an added row', () => {

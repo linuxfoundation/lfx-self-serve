@@ -298,6 +298,8 @@ export interface MemberOperationResult {
   cleanupWarning?: boolean;
   /** An imported `add` that found the person already in the group; its CSV details were not applied (#5529). */
   alreadyMember?: boolean;
+  /** An imported `add` found in the group after an unconfirmed attempt; its CSV details may or may not have been applied (#5529). */
+  unconfirmedAddition?: boolean;
 }
 
 /**
