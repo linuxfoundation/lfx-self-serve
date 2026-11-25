@@ -53,6 +53,7 @@ describe('LinkedInObjectivePickerComponent', () => {
 
     picker()['onAdd']('104012');
     fixture.detectChanges();
+    expect(getLinkedInConversions).toHaveBeenCalledTimes(1);
     expect(draft).toEqual({ objective: 'conversions', conversions: ['104012'], conversionsOwner: 'tlf|100000002' });
     expect(query('linkedin-objective-picker-conversion-104012')?.textContent).toContain('Registration');
     expect(query('linkedin-objective-picker-add')).toBeNull();

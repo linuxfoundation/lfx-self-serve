@@ -970,7 +970,7 @@ export const LINKEDIN_CONVERSIONS_LOADING_MESSAGE = 'Loading LinkedIn conversion
 export const LINKEDIN_CONVERSIONS_FAILED_MESSAGE = "LinkedIn conversion rules didn't load. Try again.";
 
 /** Why a create is held while the draft's conversion rules were picked for another foundation or ad account than its own. */
-export const LINKEDIN_CONVERSIONS_OWNER_MESSAGE = 'Conversion rules were picked for another LinkedIn ad account. Remove them or pick them again.';
+export const LINKEDIN_CONVERSIONS_OWNER_MESSAGE = 'Conversion rules were picked for another LinkedIn ad account. Remove them, then pick them again.';
 
 /**
  * The facets campaign-service's targeting typeahead searches for `linkedInConfig.targeting` (`search-linkedin-ads-targeting-entities`,

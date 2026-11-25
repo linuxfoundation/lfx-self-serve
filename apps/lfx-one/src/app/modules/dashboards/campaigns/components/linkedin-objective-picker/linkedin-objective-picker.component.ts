@@ -90,12 +90,17 @@ export class LinkedInObjectivePickerComponent {
    */
   private initConversions(): Signal<LinkedInConversionsState> {
     const loading: LinkedInConversionsState = { status: 'loading', conversions: [], failure: null };
-    const trigger = computed(() => ({
-      projectSlug: this.projectSlug(),
-      accountId: this.accountId(),
-      wanted: this.available() && this.draft().objective === 'conversions',
-      attempt: this.attempt(),
-    }));
+    // Compared by value: the draft changes on every pick, and an object literal is a new identity each time, which
+    // would read the rules again (and flash the loading state) on every add or remove.
+    const trigger = computed(
+      () => ({
+        projectSlug: this.projectSlug(),
+        accountId: this.accountId(),
+        wanted: this.available() && this.draft().objective === 'conversions',
+        attempt: this.attempt(),
+      }),
+      { equal: (a, b) => a.projectSlug === b.projectSlug && a.accountId === b.accountId && a.wanted === b.wanted && a.attempt === b.attempt }
+    );
     return toSignal(
       toObservable(trigger).pipe(
         switchMap(({ projectSlug, accountId, wanted }) => {
