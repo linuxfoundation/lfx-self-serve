@@ -752,6 +752,11 @@ export class UserService {
     );
   }
 
+  /** The same CDP project affiliations as {@link getCdpProjectAffiliations}, with a failure left to the caller to report. */
+  public readCdpProjectAffiliations(): Observable<CdpProjectAffiliation[]> {
+    return this.http.get<CdpProjectAffiliation[]>('/api/profile/project-affiliations');
+  }
+
   /**
    * Check if the user has a valid Flow C management token for Auth0 identity operations
    */

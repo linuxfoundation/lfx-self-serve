@@ -876,5 +876,31 @@ export interface ProfileRecognitionItem {
   issued: string;
 }
 
+/** A role the Profile page can show for a project (#6085): the hub's two, until the data carries more. */
+export type ProfileInvolvementRole = 'Maintainer' | 'Contributor';
+
+/** A project on the Profile page's Foundations & projects involvement section (#6085). */
+export interface ProfileInvolvementItem {
+  id: string;
+  name: string;
+  logo: string;
+  role: ProfileInvolvementRole;
+  /** True while any role in the project is still open. */
+  current: boolean;
+  /** "Since 2021" or "2019 – 2022"; '' when no date is known. */
+  years: string;
+  /** "Since Mar 2021" or "Jan 2019 – Jun 2022", for the card; '' when no date is known. */
+  period: string;
+  /** ISO start date, for sorting. */
+  start: string;
+}
+
+/** Load state of the Profile page's Foundations & projects involvement section (#6085). */
+export interface ProfileInvolvementState {
+  loading: boolean;
+  error: boolean;
+  items: ProfileInvolvementItem[];
+}
+
 /** What the Profile page's openprofile card knows of the public profile (#6083): `unknown` when the read failed. */
 export type ProfileOpenprofileState = 'public' | 'private' | 'unknown';
