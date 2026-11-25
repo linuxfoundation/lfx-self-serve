@@ -878,6 +878,7 @@ describe('ProfileController.getLinuxAlias', () => {
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardAuthRequired: true }));
     expect(res.json.mock.calls[0][0]).not.toHaveProperty('authorizeUrl');
+    expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardUnavailableDuringImpersonation');
     expect(forwardsSvc.getForward).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
@@ -896,6 +897,7 @@ describe('ProfileController.getLinuxAlias', () => {
         authorizeUrl: '/api/profile/auth/start?returnTo=%2Fprofile%2Flinux-email',
       })
     );
+    expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardUnavailableDuringImpersonation');
   });
 
   it('omits forwardAuthRequired and reads the forward target when a management token is present', async () => {
@@ -909,6 +911,7 @@ describe('ProfileController.getLinuxAlias', () => {
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardTo: 'forward@example.com' }));
     expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardAuthRequired');
+    expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardUnavailableDuringImpersonation');
   });
 
   it('degrades to service_unavailable when a management token is present but the forward is unreadable', async () => {
@@ -932,7 +935,11 @@ describe('ProfileController.getLinuxAlias', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('suppresses forwardAuthRequired during impersonation even without a management token', async () => {
+  // lfx-self-serve-ops#2006: an admin inspecting this response during impersonation (as happened
+  // in the reported ticket) must be able to tell "suppressed for impersonation" apart from
+  // "genuinely unset" or "unreadable" from the response alone, without separately knowing the
+  // request was impersonated.
+  it('suppresses forwardAuthRequired during impersonation even without a management token, and flags forwardUnavailableDuringImpersonation', async () => {
     isImpersonatingMock.mockReturnValue(true);
     profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
     const res = buildRes();
@@ -940,7 +947,7 @@ describe('ProfileController.getLinuxAlias', () => {
 
     await controller.getLinuxAlias(buildReq(), res, next);
 
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardTo: null }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardTo: null, forwardUnavailableDuringImpersonation: true }));
     expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardAuthRequired');
     expect(forwardsSvc.getForward).not.toHaveBeenCalled();
   });
