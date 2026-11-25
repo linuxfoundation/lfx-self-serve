@@ -278,7 +278,6 @@ describe('Org Lens roll-up routes', () => {
       'roi',
       'people',
       'contributions',
-      'training',
       'meetings',
       'groups',
     ]);
