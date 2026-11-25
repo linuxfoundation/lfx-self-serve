@@ -84,14 +84,18 @@ describe('MentorInviteComponent', () => {
     expect(byTestId('mentorship-mentor-invite-description')?.textContent).toContain('invited you to join Open Source Mentorship as a mentor');
 
     click('mentorship-mentor-invite-accept-button');
-    expect(byTestId('mentorship-mentor-invite-accepted')?.textContent).toContain("You're now a mentor on Open Source Mentorship.");
+    const accepted = byTestId('mentorship-mentor-invite-accepted');
+    expect(byTestId('mentorship-mentor-invite-accepted-message')?.textContent?.trim()).toBe("You're now a mentor on Open Source Mentorship.");
+    expect(accepted?.querySelector('strong')?.textContent).toBe('Open Source Mentorship');
+    expect(accepted?.querySelector('i')?.classList).toContain('!text-emerald-600');
   });
 
   it('names the program on a decline too', () => {
     build({ invite: of({ programName: 'Open Source Mentorship' }) });
 
     click('mentorship-mentor-invite-decline-button');
-    expect(byTestId('mentorship-mentor-invite-declined')?.textContent).toContain("We've let the admins of Open Source Mentorship know.");
+    expect(byTestId('mentorship-mentor-invite-declined-message')?.textContent?.trim()).toBe("We've let the admins of Open Source Mentorship know.");
+    expect(byTestId('mentorship-mentor-invite-declined')?.querySelector('strong')?.textContent).toBe('Open Source Mentorship');
   });
 
   it.each([

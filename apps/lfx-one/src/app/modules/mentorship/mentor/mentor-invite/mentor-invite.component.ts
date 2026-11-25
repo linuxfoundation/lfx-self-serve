@@ -53,14 +53,6 @@ export class MentorInviteComponent {
   protected readonly canAnswer = computed(() => this.hasProfile() === true);
   /** The invited program's name, or empty until the browser's read returns it (never on the server, or after a failed read). */
   protected readonly programName: Signal<string> = this.initProgramName();
-  protected readonly acceptedSubtitle = computed(() => {
-    const name = this.programName();
-    return name ? `You're now a mentor on ${name}.` : "You're now a mentor on the program.";
-  });
-  protected readonly declinedSubtitle = computed(() => {
-    const name = this.programName();
-    return name ? `We've let the admins of ${name} know.` : "We've let the program admins know.";
-  });
   protected readonly state = computed<MentorshipMentorInviteState>(
     () => this.submission() ?? (isMentorshipMentorInviteToken(this.token()) ? 'confirm' : 'invalid-link')
   );

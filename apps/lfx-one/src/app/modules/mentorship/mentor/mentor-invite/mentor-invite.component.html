@@ -50,19 +50,30 @@
         @switch (state()) {
           @case ('accepted') {
             <lfx-empty-state
-              icon="fa-light fa-circle-check"
+              icon="fa-light fa-circle-check !text-emerald-600"
               title="Invitation accepted"
-              [subtitle]="acceptedSubtitle()"
               ctaLabel="Go to My Programs"
-              [ctaRoute]="programsRoute" />
+              [ctaRoute]="programsRoute">
+              <p class="text-sm text-gray-500" data-testid="mentorship-mentor-invite-accepted-message">
+                @if (programName()) {
+                  You're now a mentor on <strong class="font-semibold text-gray-900">{{ programName() }}</strong
+                  >.
+                } @else {
+                  You're now a mentor on the program.
+                }
+              </p>
+            </lfx-empty-state>
           }
           @case ('declined') {
-            <lfx-empty-state
-              icon="fa-light fa-circle-check"
-              title="Invitation declined"
-              [subtitle]="declinedSubtitle()"
-              ctaLabel="Back to Mentorship"
-              [ctaRoute]="programsRoute" />
+            <lfx-empty-state icon="fa-light fa-circle-check" title="Invitation declined" ctaLabel="Back to Mentorship" [ctaRoute]="programsRoute">
+              <p class="text-sm text-gray-500" data-testid="mentorship-mentor-invite-declined-message">
+                @if (programName()) {
+                  We've let the admins of <strong class="font-semibold text-gray-900">{{ programName() }}</strong> know.
+                } @else {
+                  We've let the program admins know.
+                }
+              </p>
+            </lfx-empty-state>
           }
           @case ('forbidden') {
             <lfx-empty-state
