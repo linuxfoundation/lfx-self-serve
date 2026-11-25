@@ -6123,6 +6123,15 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInGeoSearchQuery.set('');
   }
 
+  /**
+   * Every keystroke in the location box. Below the two-character minimum PrimeNG emits neither `completeMethod` nor
+   * `onClear`, so the last query (and its debounce or request) would carry on; clearing it here cancels that search.
+   */
+  protected onLinkedInGeoSearchInput(event: Event): void {
+    const typed = (event.target as HTMLInputElement | null)?.value ?? '';
+    if (Array.from(linkedInGeoSearchQueryText(typed)).length < this.linkedInGeoSearchMinLength) this.linkedInGeoSearchQuery.set('');
+  }
+
   protected onGoogleGeoSearch(event: AutoCompleteCompleteEvent): void {
     // Cut to upstream's 100 characters rather than sent long and refused; a postal code or place
     // name never needs more.

@@ -971,6 +971,8 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       const c = f.componentInstance as unknown as {
         onLinkedInGeoSearch(event: { query: string }): void;
         onLinkedInGeoSearchSelect(event: { value: unknown }): void;
+        onLinkedInGeoSearchInput(event: { target: { value: string } }): void;
+        linkedInGeoSearchQuery(): string;
         linkedInGeoSearchOptions(): { urn: string; disabled: boolean }[];
       };
 
@@ -985,6 +987,11 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
         { ...BERLIN, disabled: false },
         { ...US, disabled: true },
       ]);
+
+      // Deleting back below two characters, where PrimeNG emits nothing, clears the query and so cancels the search.
+      c.onLinkedInGeoSearch({ query: 'Be' });
+      c.onLinkedInGeoSearchInput({ target: { value: 'B' } });
+      expect(c.linkedInGeoSearchQuery()).toBe('');
 
       c.onLinkedInGeoSearchSelect({ value: { ...BERLIN, disabled: false } });
       vi.useRealTimers();
