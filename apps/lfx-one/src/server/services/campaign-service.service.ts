@@ -50,6 +50,7 @@ import { encodePathSegment } from '../helpers/url-validation';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
 import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
 import { withAdoptedMarker } from '@lfx-one/shared/utils/campaign-optimize.utils';
+import { metaTargetingSearchAllowed } from '@lfx-one/shared/utils/campaign-meta-detailed-targeting.utils';
 import {
   emailLinkDestinations,
   escapeHtml,
@@ -878,6 +879,10 @@ export function canSetMetaBehaviorTargeting(): boolean {
 export function canSetMetaLocaleTargeting(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaLocaleTargeting);
 }
+/** Whether a Meta create may carry `metaConfig.targeting.regions` and `cities` (#5904 row 6; campaign-service#671). */
+export function canSetMetaRegionTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaRegionTargeting);
+}
 
 /**
  * Whether a Meta create may carry `metaConfig.targeting.devicePlatforms` and `userOs` (#5904 row 6), one flag each,
@@ -900,9 +905,19 @@ export function canSetMetaAdSchedule(): boolean {
 export function canSetMetaFrequencyCap(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaFrequencyCap);
 }
-/** Whether `GET /api/campaigns/meta/targeting-search` answers: only while interests or behaviors can be sent. */
+/** Whether `GET /api/campaigns/meta/targeting-search` answers: only while some list it fills can be sent. */
 export function canSearchMetaTargeting(): boolean {
-  return canSetMetaInterestTargeting() || canSetMetaBehaviorTargeting();
+  return canSetMetaInterestTargeting() || canSetMetaBehaviorTargeting() || canSetMetaLocaleTargeting() || canSetMetaRegionTargeting();
+}
+
+/** Whether a targeting search of `type` may be sent: the flag of the list its options fill. */
+export function canSearchMetaTargetingType(type: MetaTargetingSearchType): boolean {
+  return metaTargetingSearchAllowed(type, {
+    interest: canSetMetaInterestTargeting(),
+    behavior: canSetMetaBehaviorTargeting(),
+    locale: canSetMetaLocaleTargeting(),
+    region: canSetMetaRegionTargeting(),
+  });
 }
 
 /**
@@ -1290,6 +1305,7 @@ export class CampaignServiceClient {
         metaInterestTargetingEnabled: canSetMetaInterestTargeting(),
         metaBehaviorTargetingEnabled: canSetMetaBehaviorTargeting(),
         metaLocaleTargetingEnabled: canSetMetaLocaleTargeting(),
+        metaRegionTargetingEnabled: canSetMetaRegionTargeting(),
         metaDeviceTargetingEnabled: canSetMetaDeviceTargeting(),
         metaOsTargetingEnabled: canSetMetaOsTargeting(),
         metaAdScheduleEnabled: canSetMetaAdSchedule(),
@@ -1384,6 +1400,7 @@ export class CampaignServiceClient {
       metaInterestTargetingEnabled: canSetMetaInterestTargeting(),
       metaBehaviorTargetingEnabled: canSetMetaBehaviorTargeting(),
       metaLocaleTargetingEnabled: canSetMetaLocaleTargeting(),
+      metaRegionTargetingEnabled: canSetMetaRegionTargeting(),
       metaDeviceTargetingEnabled: canSetMetaDeviceTargeting(),
       metaOsTargetingEnabled: canSetMetaOsTargeting(),
       metaAdScheduleEnabled: canSetMetaAdSchedule(),

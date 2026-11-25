@@ -919,7 +919,8 @@ environment:
   # `metaConfig.targeting.interests`, `..._META_BEHAVIOR_TARGETING` accepts `behaviors` and `workPositions`
   # (job titles), and `..._META_LOCALE_TARGETING` accepts `locales` (languages). The targeting search
   # (`GET /api/campaigns/meta/targeting-search`) answers each kind only while that kind's flag is on:
-  # `type=interest` on the interest flag, `type=behavior` and `type=work_position` on the behavior flag.
+  # `type=interest` on the interest flag, `type=behavior` and `type=work_position` on the behavior flag, and
+  # `type=locale` on the locale flag (the language search needs campaign-service v1.0.44).
   #
   # CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
   # `META_INTEREST_TARGETING_ENABLED`, `META_BEHAVIOR_TARGETING_ENABLED` or `META_LOCALE_TARGETING_ENABLED` on,
@@ -946,6 +947,17 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING:
     value:
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_OS_TARGETING:
+    value:
+
+  # Meta region and city targeting (#5904 row 6): accepts `metaConfig.targeting.regions` and `cities` (Meta
+  # location keys, at most 25 each), and opens the targeting search's `type=location`.
+  #
+  # CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with
+  # `META_REGION_TARGETING_ENABLED` and `META_TARGETING_SEARCH_ENABLED` on, and the create pipeline on. Off (the
+  # default), the create route refuses either list with a 400, never dropping it, and the search answers 404
+  # for locations. A field and a read only, so turning it back off strands nothing. Order: set
+  # campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_REGION_TARGETING:
     value:
 
   # Meta delivery options (#5904 row 5), one flag each: `..._META_AD_SCHEDULE` accepts `metaConfig.adSchedule`

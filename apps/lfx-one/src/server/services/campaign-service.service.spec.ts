@@ -4948,6 +4948,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaInterestTargetingEnabled: false,
       metaBehaviorTargetingEnabled: false,
       metaLocaleTargetingEnabled: false,
+      metaRegionTargetingEnabled: false,
       metaDeviceTargetingEnabled: false,
       metaOsTargetingEnabled: false,
       metaAdScheduleEnabled: false,
@@ -5193,15 +5194,19 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     [{ cutover: true, own: true }, true],
     [{ cutover: true, own: false }, false],
     [{ cutover: false, own: true }, false],
-  ])('reports each meta device and OS capability only when the cutover owns the create and its flag is on (%o)', async (flags, expected) => {
-    const own = [ServerFeatureFlag.CampaignServiceMetaDeviceTargeting, ServerFeatureFlag.CampaignServiceMetaOsTargeting];
+  ])('reports each meta device, OS and region capability only when the cutover owns the create and its flag is on (%o)', async (flags, expected) => {
+    const own = [
+      ServerFeatureFlag.CampaignServiceMetaDeviceTargeting,
+      ServerFeatureFlag.CampaignServiceMetaOsTargeting,
+      ServerFeatureFlag.CampaignServiceMetaRegionTargeting,
+    ];
     isServerFeatureEnabled.mockImplementation((flag: unknown) => (own.includes(flag as ServerFeatureFlag) ? flags.own : flags.cutover));
     proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
 
     try {
       const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
-      expect([result.metaDeviceTargetingEnabled, result.metaOsTargetingEnabled]).toEqual([expected, expected]);
+      expect([result.metaDeviceTargetingEnabled, result.metaOsTargetingEnabled, result.metaRegionTargetingEnabled]).toEqual([expected, expected, expected]);
     } finally {
       isServerFeatureEnabled.mockImplementation(() => false);
     }
@@ -5799,6 +5804,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaInterestTargetingEnabled: false,
       metaBehaviorTargetingEnabled: false,
       metaLocaleTargetingEnabled: false,
+      metaRegionTargetingEnabled: false,
       metaDeviceTargetingEnabled: false,
       metaOsTargetingEnabled: false,
       metaAdScheduleEnabled: false,

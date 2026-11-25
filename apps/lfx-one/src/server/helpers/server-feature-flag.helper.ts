@@ -556,7 +556,8 @@ export enum ServerFeatureFlag {
    * Meta detailed targeting (#5904 row 4): accept `metaConfig.targeting.interests`, `behaviors` with
    * `workPositions`, and `locales` on create, one flag each. The targeting search
    * (`GET /api/campaigns/meta/targeting-search`) answers each kind only while that kind's flag is on:
-   * `type=interest` on the interest flag, `type=behavior` and `type=work_position` on the behavior flag.
+   * `type=interest` on the interest flag, `type=behavior` and `type=work_position` on the behavior flag, and
+   * `type=locale` on the locale flag (campaign-service v1.0.44, #671).
    *
    * CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
    * `META_INTEREST_TARGETING_ENABLED`, `META_BEHAVIOR_TARGETING_ENABLED` or `META_LOCALE_TARGETING_ENABLED` on
@@ -581,6 +582,19 @@ export enum ServerFeatureFlag {
    */
   CampaignServiceMetaDeviceTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING',
   CampaignServiceMetaOsTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_OS_TARGETING',
+
+  /**
+   * Meta region and city targeting (#5904 row 6): accept `metaConfig.targeting.regions` and `cities` on create, and
+   * answer the targeting search's `type=location`.
+   *
+   * CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with `META_REGION_TARGETING_ENABLED`
+   * (and `META_TARGETING_SEARCH_ENABLED` for the search) on (linuxfoundation/lfx-v2-campaign-service#671), since
+   * campaign-service refuses the field or the read with a 400 otherwise, and is only meaningful while the create
+   * cutover is on (`cutoverOwnsCreate`). Off (the default), the create route refuses either list with a 400, never
+   * dropping it, and the search answers 404 for locations. A request field and a read only, so flipping it back
+   * strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaRegionTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_REGION_TARGETING',
 
   /**
    * Meta delivery options (#5904 row 5): accept `metaConfig.adSchedule` (a lifetime-budget ad set's hours) and

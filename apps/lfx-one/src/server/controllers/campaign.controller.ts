@@ -97,6 +97,7 @@ import {
   metaDeviceOsRefusal,
   metaTargetingFlagRefusal,
   metaTargetingQueryRefusal,
+  metaTargetingSearchOptions,
 } from '@lfx-one/shared/utils/campaign-meta-detailed-targeting.utils';
 import {
   googleDemandGenAudienceCarried,
@@ -467,6 +468,8 @@ import {
   canSetMetaBehaviorTargeting,
   canSetMetaInterestTargeting,
   canSetMetaLocaleTargeting,
+  canSetMetaRegionTargeting,
+  canSearchMetaTargetingType,
   canSetMetaDeviceTargeting,
   canSetMetaOsTargeting,
   canSetMetaAdSchedule,
@@ -5247,11 +5250,11 @@ export class CampaignController {
   }
 
   /**
-   * One page of Meta's targeting taxonomy for the Implement tab's detailed targeting (#5904 row 4), camel-cased:
-   * interests, behaviors or job titles matching `?query=`, through campaign-service's `search-meta-targeting-options`
-   * (linuxfoundation/lfx-v2-campaign-service#612). 404 unless interests or behaviors can be sent. Meta taxonomy, so
-   * `requireCampaignManager` is the gate, as upstream's. Each kind answers only while its own flag is on (interests,
-   * or behaviors with job titles). The kind and query are checked here first, so a bad one
+   * One page of Meta's targeting taxonomy for the Implement tab's detailed targeting (#5904 rows 4 and 6), camel-cased:
+   * interests, behaviors, job titles, languages (`locale`) or regions and cities (`location`) matching `?query=`,
+   * through campaign-service's `search-meta-targeting-options` (linuxfoundation/lfx-v2-campaign-service#612, #671).
+   * 404 unless some list it fills can be sent. Meta taxonomy, so `requireCampaignManager` is the gate, as upstream's.
+   * Each kind answers only while the flag of the list it fills is on (`canSearchMetaTargetingType`). The kind and query are checked here first, so a bad one
    * costs no upstream call. An upstream 503 (a Meta throttle or failure, which campaign-service does not retry)
    * answers a "try again" 503 that keeps the original error; a failure to reach campaign-service at all is left
    * as it is.
@@ -5285,9 +5288,8 @@ export class CampaignController {
       );
       return;
     }
-    // Each kind answers only while it can be sent: interests on their flag, behaviors and job titles on theirs,
-    // so the search never offers an option a create would refuse.
-    if (type === 'interest' ? !canSetMetaInterestTargeting() : !canSetMetaBehaviorTargeting()) {
+    // Each kind answers only while the list it fills can be sent, so the search never offers an option a create would refuse.
+    if (!canSearchMetaTargetingType(type)) {
       next(this.monitorDisabledError(operation));
       return;
     }
@@ -5303,28 +5305,8 @@ export class CampaignController {
           service: 'campaign_controller',
         });
       }
-      const num = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
-      const result: MetaTargetingSearchResult = {
-        type,
-        // An option whose id is not one a create accepts cannot be sent, so it is dropped rather than offered;
-        // a repeated id is offered once.
-        options: payload.options
-          .filter((o, i, all) => typeof o?.id === 'string' && META_CUSTOM_AUDIENCE_ID_PATTERN.test(o.id) && all.findIndex((other) => other?.id === o.id) === i)
-          .map((o) => {
-            const lower = num(o.audience_size_lower_bound);
-            const upper = num(o.audience_size_upper_bound);
-            const coverage = num(o.coverage);
-            return {
-              id: o.id as string,
-              name: typeof o.name === 'string' && o.name.trim() !== '' ? o.name : (o.id as string),
-              path: Array.isArray(o.path) ? o.path.filter((part): part is string => typeof part === 'string') : [],
-              ...(typeof o.description === 'string' && o.description.trim() !== '' ? { description: o.description } : {}),
-              ...(lower !== undefined ? { audienceSizeLowerBound: lower } : {}),
-              ...(upper !== undefined ? { audienceSizeUpperBound: upper } : {}),
-              ...(coverage !== undefined ? { coverage } : {}),
-            };
-          }),
-      };
+      // Ids a create would refuse, and locations that are neither a region nor a city, are dropped; see `metaTargetingSearchOptions`.
+      const result: MetaTargetingSearchResult = { type, options: metaTargetingSearchOptions(type, payload.options) };
       logger.success(req, operation, startTime, { count: result.options.length, type });
       res.json(result);
     } catch (error) {
@@ -10502,7 +10484,7 @@ export class CampaignController {
    *
    * - a field this deployment does not accept (`metaTargetingFlagRefusal`): 400, never a silent drop. The audience
    *   flag covers age, gender, custom audiences and Advantage+ (and an empty block); interests, behaviors with job
-   *   titles, and languages each have their own, as campaign-service's `checkMetaTargeting`, so a block with only
+   *   titles, languages, and regions with cities each have their own, as campaign-service's `checkMetaTargeting`, so a block with only
    *   detailed fields passes while audience targeting is off. The form never sends a field that is off, so a block
    *   here comes from a tab opened while the flag was on (a rollout or a rollback); dropping it would create the
    *   campaign without the audience the operator chose;
@@ -10523,6 +10505,7 @@ export class CampaignController {
       interest: canSetMetaInterestTargeting(),
       behavior: canSetMetaBehaviorTargeting(),
       locale: canSetMetaLocaleTargeting(),
+      region: canSetMetaRegionTargeting(),
       device: canSetMetaDeviceTargeting(),
       os: canSetMetaOsTargeting(),
     });
