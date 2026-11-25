@@ -42,6 +42,7 @@ test.describe('Mentor invite link — structure', () => {
 
     const confirm = page.getByTestId('mentorship-mentor-invite-confirm');
     await expect(confirm.getByRole('heading', { level: 1 })).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+    await expect(confirm.getByRole('heading', { level: 1 }).getByTestId('mentorship-mentor-invite-program-name')).toBeVisible();
     await expect(page.getByTestId('mentorship-mentor-invite-accept-button').getByRole('button')).toBeEnabled();
     await expect(page.getByTestId('mentorship-mentor-invite-decline-button').getByRole('button')).toBeEnabled();
   });
@@ -49,7 +50,7 @@ test.describe('Mentor invite link — structure', () => {
   test('holds Decline while an Accept is in flight', async ({ page }) => {
     let release: () => void = () => undefined;
     const hold = new Promise<void>((resolve) => (release = resolve));
-    await page.route('**/api/mentorship/mentor/invites/*', async (route) => {
+    await page.route('**/api/mentorship/mentor/invites/accept', async (route) => {
       await hold;
       return route.fulfill({ status: 204 });
     });

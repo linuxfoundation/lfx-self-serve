@@ -130,10 +130,12 @@ export class MentorshipMentorService {
     );
   }
 
-  /** Names the program the invite email's token is for. Failures propagate raw, so the page can keep its generic copy. */
+  /** Names the program the invite email's token is for. A failure is logged and rethrown, so the page can keep its generic copy. */
   public getMentorInvite(token: string): Observable<MentorshipMentorInviteDetails> {
     const body: MentorshipMentorInviteResponseRequest = { token };
-    return this.http.post<MentorshipMentorInviteDetails>('/api/mentorship/mentor/invites/details', body).pipe(take(1));
+    return this.http
+      .post<MentorshipMentorInviteDetails>('/api/mentorship/mentor/invites/details', body)
+      .pipe(take(1), catchError(this.rethrowError('getMentorInvite')));
   }
 
   /** Accepts or declines a mentor invitation with the token from the invite email. Failures propagate raw; a success drops the cached requests. */
