@@ -9,6 +9,7 @@ import { ProfileOpenprofileState } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
+import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { catchError, filter, map, Observable, of, pairwise, startWith, switchMap } from 'rxjs';
 
 import { ProfileVisibilityDrawerService } from '../../components/profile-visibility-drawer/profile-visibility-drawer.service';
@@ -19,7 +20,7 @@ import { ProfileVisibilityDrawerService } from '../../components/profile-visibil
  */
 @Component({
   selector: 'lfx-profile-aside',
-  imports: [UiButtonComponent, UiSkeletonComponent],
+  imports: [UiButtonComponent, UiSkeletonComponent, UiTooltipDirective],
   templateUrl: './profile-aside.component.html',
 })
 export class ProfileAsideComponent {

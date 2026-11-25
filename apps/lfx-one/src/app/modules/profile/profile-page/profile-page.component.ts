@@ -20,7 +20,7 @@ import { ProfileAuthReturnService } from '@services/profile-auth-return.service'
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
-import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
+import { injectMediaQueryMatches } from '@shared/utils/mobile-viewport.util';
 import { stripAuthPrefixOrNull } from '@shared/utils/strip-auth-prefix.util';
 import { catchError, distinctUntilChanged, EMPTY, of, startWith, switchMap } from 'rxjs';
 
@@ -68,7 +68,7 @@ export class ProfilePageComponent {
   protected readonly recordLoaded = computed(() => this.profile()?.profile != null);
   protected readonly name: Signal<string> = this.initName();
   // The openprofile rail's media query, followed once the browser renders so SSR and hydration agree (#6083).
-  protected readonly railShown = injectIsMobileViewport(PROFILE_ASIDE_MEDIA_QUERY);
+  protected readonly railShown = injectMediaQueryMatches(PROFILE_ASIDE_MEDIA_QUERY);
   protected readonly railTop = computed(() => (this.impersonating() ? IMPERSONATION_BANNER_HEIGHT_PX : 0));
   protected readonly username = computed(() => stripAuthPrefixOrNull(this.profile()?.user.username) ?? '');
   protected readonly jobTitle = computed(() => this.profile()?.profile?.job_title?.trim() ?? '');

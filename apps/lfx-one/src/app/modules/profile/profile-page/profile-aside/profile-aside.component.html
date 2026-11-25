@@ -3,88 +3,93 @@
 
 <!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
 <div class="flex flex-col gap-[16px]" data-testid="profile-aside">
-  @if (username() && state(); as state) {
-    <section
-      class="flex flex-col gap-[14px] rounded-[12px] bg-white px-[12px] pb-[16px] pt-[12px] shadow-small"
-      aria-labelledby="profile-openprofile-title"
-      data-testid="profile-openprofile-card">
-      <!-- Preview art: a globe line drawing behind the public link. -->
-      <div class="relative h-[84px] overflow-hidden rounded-[8px] bg-gradient-to-b from-blue-50 to-blue-100">
-        <svg viewBox="0 0 264 84" preserveAspectRatio="xMidYMid slice" class="absolute inset-0 block size-full" aria-hidden="true">
-          <g fill="none" class="stroke-blue-200" stroke-width="1">
-            <circle cx="132" cy="42" r="70"></circle>
-            <ellipse cx="132" cy="42" rx="30" ry="70"></ellipse>
-            <path d="M62 42h140M72 12h120M72 72h120"></path>
-          </g>
-        </svg>
-        <!-- One line, as designed; a long link is cut short, so the tooltip carries all of it. -->
-        <div
-          class="absolute left-1/2 top-1/2 inline-flex h-[30px] max-w-[calc(100%-8px)] -translate-x-1/2 -translate-y-1/2 items-center gap-[6px] whitespace-nowrap rounded-full bg-white pl-[12px] pr-[5px] shadow-small"
-          [attr.title]="publicLink()"
-          data-testid="profile-openprofile-link">
-          <span class="min-w-0 truncate text-[10.5px] leading-[16px] text-gray-500"
-            >{{ host() }}/u/<span class="font-semibold text-gray-900">{{ username() }}</span></span
-          >
-          @if (state !== 'unknown') {
-            <span
-              role="img"
-              class="inline-flex size-[20px] flex-none items-center justify-center rounded-full text-white"
-              [class.bg-emerald-500]="state === 'public'"
-              [class.bg-gray-500]="state === 'private'"
-              [attr.aria-label]="state === 'public' ? copy.publicStatus : copy.privateStatus"
-              data-testid="profile-openprofile-status">
-              <i class="text-[10px]" [class]="state === 'public' ? 'fa-solid fa-globe' : 'fa-solid fa-eye-slash'" aria-hidden="true"></i>
-            </span>
-          }
+  @if (state(); as state) {
+    @if (username()) {
+      <section
+        class="flex flex-col gap-[14px] rounded-[12px] bg-white px-[12px] pb-[16px] pt-[12px] shadow-small"
+        aria-labelledby="profile-openprofile-title"
+        data-testid="profile-openprofile-card">
+        <!-- Preview art: a globe line drawing behind the public link. -->
+        <div class="relative h-[84px] overflow-hidden rounded-[8px] bg-gradient-to-b from-blue-50 to-blue-100">
+          <svg viewBox="0 0 264 84" preserveAspectRatio="xMidYMid slice" class="absolute inset-0 block size-full" aria-hidden="true">
+            <g fill="none" class="stroke-blue-200" stroke-width="1">
+              <circle cx="132" cy="42" r="70"></circle>
+              <ellipse cx="132" cy="42" rx="30" ry="70"></ellipse>
+              <path d="M62 42h140M72 12h120M72 72h120"></path>
+            </g>
+          </svg>
+          <!-- One line, as designed; a long link is cut short, so the tooltip carries all of it, on hover and on focus. -->
+          <div
+            tabindex="0"
+            role="group"
+            [attr.aria-label]="publicLink()"
+            [lfxUiTooltip]="publicLink()"
+            class="absolute left-1/2 top-1/2 inline-flex h-[30px] max-w-[calc(100%-8px)] -translate-x-1/2 -translate-y-1/2 items-center gap-[6px] whitespace-nowrap rounded-full bg-white pl-[12px] pr-[5px] shadow-small focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+            data-testid="profile-openprofile-link">
+            <span class="min-w-0 truncate text-[10.5px] leading-[16px] text-gray-500"
+              >{{ host() }}/u/<span class="font-semibold text-gray-900">{{ username() }}</span></span
+            >
+            @if (state !== 'unknown') {
+              <span
+                role="img"
+                class="inline-flex size-[20px] flex-none items-center justify-center rounded-full text-white"
+                [class.bg-emerald-500]="state === 'public'"
+                [class.bg-gray-500]="state === 'private'"
+                [attr.aria-label]="state === 'public' ? copy.publicStatus : copy.privateStatus"
+                data-testid="profile-openprofile-status">
+                <i class="text-[10px]" [class]="state === 'public' ? 'fa-solid fa-globe' : 'fa-solid fa-eye-slash'" aria-hidden="true"></i>
+              </span>
+            }
+          </div>
         </div>
-      </div>
 
-      @switch (state) {
-        @case ('public') {
-          <div class="flex flex-col gap-[4px] px-[4px]">
-            <h2 id="profile-openprofile-title" class="m-0 text-[14px] font-semibold leading-[20px] text-gray-900">{{ copy.publicTitle }}</h2>
-            <p class="m-0 text-[12px] leading-[16px] text-gray-500">{{ copy.publicText }}</p>
-          </div>
-          <div class="flex flex-row gap-[8px] px-[4px]">
-            <lfx-ui-button
-              variant="secondary-accent"
-              trailingIcon="fa-light fa-arrow-up-right"
-              class="flex-1 [&>a]:w-full"
-              [href]="publicPath()"
-              data-testid="profile-openprofile-view">
-              {{ copy.viewPublic }}
-            </lfx-ui-button>
-            <lfx-ui-button
-              variant="secondary"
-              icon="fa-light fa-gear"
-              iconOnly
-              [ariaLabel]="copy.settings"
-              [lfxUiTooltip]="copy.settings"
-              (click)="openSettings()"
-              data-testid="profile-openprofile-settings" />
-          </div>
+        @switch (state) {
+          @case ('public') {
+            <div class="flex flex-col gap-[4px] px-[4px]">
+              <h2 id="profile-openprofile-title" class="m-0 text-[14px] font-semibold leading-[20px] text-gray-900">{{ copy.publicTitle }}</h2>
+              <p class="m-0 text-[12px] leading-[16px] text-gray-500">{{ copy.publicText }}</p>
+            </div>
+            <div class="flex flex-row gap-[8px] px-[4px]">
+              <lfx-ui-button
+                variant="secondary-accent"
+                trailingIcon="fa-light fa-arrow-up-right"
+                class="flex-1 [&>a]:w-full"
+                [href]="publicPath()"
+                data-testid="profile-openprofile-view">
+                {{ copy.viewPublic }}
+              </lfx-ui-button>
+              <lfx-ui-button
+                variant="secondary"
+                icon="fa-light fa-gear"
+                iconOnly
+                [ariaLabel]="copy.settings"
+                [lfxUiTooltip]="copy.settings"
+                (click)="openSettings()"
+                data-testid="profile-openprofile-settings" />
+            </div>
+          }
+          @case ('private') {
+            <div class="flex flex-col gap-[4px] px-[4px]">
+              <h2 id="profile-openprofile-title" class="m-0 text-[14px] font-semibold leading-[20px] text-gray-900">{{ copy.privateTitle }}</h2>
+              <p class="m-0 text-[13px] leading-[19px] text-gray-600">{{ copy.privateText }}</p>
+            </div>
+            <div class="px-[4px]">
+              <lfx-ui-button icon="fa-light fa-globe" fullWidth (click)="openSettings()" data-testid="profile-openprofile-make-public">{{
+                copy.makePublic
+              }}</lfx-ui-button>
+            </div>
+          }
+          @default {
+            <h2 id="profile-openprofile-title" class="sr-only">{{ copy.settings }}</h2>
+            <div class="px-[4px]">
+              <lfx-ui-button variant="secondary" icon="fa-light fa-gear" fullWidth (click)="openSettings()" data-testid="profile-openprofile-unknown">{{
+                copy.settings
+              }}</lfx-ui-button>
+            </div>
+          }
         }
-        @case ('private') {
-          <div class="flex flex-col gap-[4px] px-[4px]">
-            <h2 id="profile-openprofile-title" class="m-0 text-[14px] font-semibold leading-[20px] text-gray-900">{{ copy.privateTitle }}</h2>
-            <p class="m-0 text-[13px] leading-[19px] text-gray-600">{{ copy.privateText }}</p>
-          </div>
-          <div class="px-[4px]">
-            <lfx-ui-button icon="fa-light fa-globe" fullWidth (click)="openSettings()" data-testid="profile-openprofile-make-public">{{
-              copy.makePublic
-            }}</lfx-ui-button>
-          </div>
-        }
-        @default {
-          <h2 id="profile-openprofile-title" class="sr-only">{{ copy.settings }}</h2>
-          <div class="px-[4px]">
-            <lfx-ui-button variant="secondary" icon="fa-light fa-gear" fullWidth (click)="openSettings()" data-testid="profile-openprofile-unknown">{{
-              copy.settings
-            }}</lfx-ui-button>
-          </div>
-        }
-      }
-    </section>
+      </section>
+    }
   } @else {
     <!-- Holds the card's place while it loads, so the links below don't jump. -->
     <div

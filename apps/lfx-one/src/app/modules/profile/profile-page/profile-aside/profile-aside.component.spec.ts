@@ -53,7 +53,8 @@ describe('ProfileAsideComponent', () => {
     expect(query('profile-openprofile-card')?.textContent).toContain(PROFILE_ASIDE_COPY.privateTitle);
     expect(query('profile-openprofile-status')?.getAttribute('aria-label')).toBe(PROFILE_ASIDE_COPY.privateStatus);
     expect(query('profile-openprofile-link')?.textContent?.replace(/\s+/g, '')).toBe(`${window.location.host}/u/ada`);
-    expect(query('profile-openprofile-link')?.getAttribute('title')).toBe(`${window.location.host}/u/ada`);
+    expect(query('profile-openprofile-link')?.getAttribute('aria-label')).toBe(`${window.location.host}/u/ada`);
+    expect(query('profile-openprofile-link')?.getAttribute('tabindex')).toBe('0');
 
     query('profile-openprofile-make-public')?.querySelector('button')?.click();
     expect(drawer.context()).toBe('ada');
@@ -100,6 +101,15 @@ describe('ProfileAsideComponent', () => {
 
     expect(query('profile-openprofile-loading')).not.toBeNull();
     expect(query('profile-openprofile-card')).toBeNull();
+  });
+
+  it('shows no card, and no placeholder, when no username arrives', async () => {
+    const { fixture, query } = await render(visibility(true));
+    fixture.componentInstance.username.set('');
+    await fixture.whenStable();
+
+    expect(query('profile-openprofile-card')).toBeNull();
+    expect(query('profile-openprofile-loading')).toBeNull();
   });
 
   it('links to the Account & Settings pages that edit the profile', async () => {
