@@ -859,10 +859,11 @@ export const LINKEDIN_VARIANT_FIELD_LIMITS = {
 } as const;
 
 /**
- * The ad formats a LinkedIn create may name (#5764 row 19), campaign-service's `FormatSingleImage` and `FormatText`
- * (`internal/platform/linkedin/text_ads.go`, #586). Omitted is the single-image default.
+ * The ad formats a LinkedIn create may name (#5764 row 19), campaign-service's `FormatSingleImage`, `FormatText`
+ * (`internal/platform/linkedin/text_ads.go`, #586) and `FormatCarousel` (`carousel.go`, #665). Omitted is the
+ * single-image default.
  */
-export const LINKEDIN_AD_FORMATS = ['single_image', 'text'] as const;
+export const LINKEDIN_AD_FORMATS = ['single_image', 'text', 'carousel'] as const;
 
 /**
  * LinkedIn Text Ads limits (#5764 row 19), campaign-service's `TextAdHeadlineMaxChars`, `TextAdDescriptionMaxChars`
@@ -876,6 +877,29 @@ export const LINKEDIN_TEXT_AD_LIMITS = {
 
 /** The keys one LinkedIn text ad may carry, spelled exactly (`LinkedInTextAd`). */
 export const LINKEDIN_TEXT_AD_REQUEST_KEYS = ['headline', 'description', 'imageUrn', 'imageAssetId'] as const;
+
+/**
+ * LinkedIn carousel limits (linuxfoundation/lfx-v2-campaign-service#665), campaign-service's `MinCarouselCards`,
+ * `MaxCarouselCards`, `CarouselHeadlineMaxChars`, `CarouselIntroTextMaxChars` and `MaxCarouselLandingPageChars`
+ * (`internal/platform/linkedin/carousel.go`): cards per carousel, characters after the creative normalization, and
+ * bytes of a card's destination link.
+ */
+export const LINKEDIN_CAROUSEL_LIMITS = {
+  minCards: 2,
+  maxCards: 10,
+  headline: 45,
+  introText: 255,
+  destinationBytes: 2000,
+} as const;
+
+/** The keys one LinkedIn carousel card may carry, spelled exactly (`LinkedInCarouselCard`). */
+export const LINKEDIN_CAROUSEL_CARD_REQUEST_KEYS = ['imageAssetId', 'headline', 'destinationUrl'] as const;
+
+/** The field a LinkedIn carousel card list refusal names (campaign-service#665). */
+export const LINKEDIN_CAROUSEL_CARDS_FIELD = 'linkedInConfig.carouselCards';
+
+/** The field a LinkedIn carousel intro text refusal names (campaign-service#665). */
+export const LINKEDIN_CAROUSEL_INTRO_TEXT_FIELD = 'linkedInConfig.carouselIntroText';
 
 /** The field a LinkedIn targeting refusal names (#5764 rows 8–11). */
 export const LINKEDIN_TARGETING_FIELD = 'linkedInConfig.targeting';

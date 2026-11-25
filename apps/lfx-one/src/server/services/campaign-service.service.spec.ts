@@ -4816,6 +4816,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInTargetingEnabled: false,
       linkedInConversionsEnabled: false,
       linkedInLeadGenEnabled: false,
+      linkedInCarouselEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5568,6 +5569,26 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** LinkedIn carousel ads (campaign-service#665): the cutover, the LinkedIn asset flag (each card image is a brief asset) and its own flag. */
+  it.each([
+    [{ cutover: true, assets: true, carousel: true }, true],
+    [{ cutover: true, assets: true, carousel: false }, false],
+    [{ cutover: true, assets: false, carousel: true }, false],
+    [{ cutover: false, assets: true, carousel: true }, false],
+  ])('reports LinkedIn carousel ads (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInCarousel) return flags.carousel;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInAssets) return flags.assets;
+      return flags.cutover;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInCarouselEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The LinkedIn daily-cap capability (#5774): the create cutover alone, like the targeting edit above. */
   it.each([
     [{ create: true, briefs: true, jobs: true, others: false }, true],
@@ -5672,6 +5693,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInTargetingEnabled: false,
       linkedInConversionsEnabled: false,
       linkedInLeadGenEnabled: false,
+      linkedInCarouselEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,

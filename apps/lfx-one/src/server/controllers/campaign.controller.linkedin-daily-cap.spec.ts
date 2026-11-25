@@ -345,4 +345,34 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
     expect(legacyCreate).not.toHaveBeenCalled();
     expect(refusal(next).field).toBe('linkedInConfig.variants[0].videoAssetId');
   });
+
+  // LinkedIn carousel ads (campaign-service#665); the rules are table rows in `campaign-linkedin-carousel.utils.spec.ts`.
+  const carousel = {
+    lifetimeBudget: false,
+    targetingProfile: 'cloud-native',
+    variants: [],
+    format: 'carousel',
+    carouselIntroText: 'Meet the keynote speakers',
+    carouselCards: [
+      { imageAssetId: '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b', headline: 'Keynote' },
+      { imageAssetId: '9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f', headline: 'Panel', destinationUrl: 'https://events.example.org/schedule' },
+    ],
+  };
+
+  it('forwards a carousel as it came', async () => {
+    const { next } = await create(carousel);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()).toMatchObject({ format: 'carousel', carouselIntroText: carousel.carouselIntroText, carouselCards: carousel.carouselCards });
+  });
+
+  it('refuses a carousel while its flag is off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInCarousel);
+
+    const { next } = await create(carousel);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.format');
+  });
 });
