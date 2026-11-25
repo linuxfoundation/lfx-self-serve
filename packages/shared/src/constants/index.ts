@@ -75,6 +75,7 @@ export * from './rewards.constants';
 export * from './regex.constants';
 export * from './org-lens.constants';
 export * from './org-lens-url.constants';
+export * from './org-lens-employee-view-register.constants';
 export * from './org-lens-view-mode.constants';
 export * from './org-lens-projects.constants';
 export * from './org-memberships.constants';

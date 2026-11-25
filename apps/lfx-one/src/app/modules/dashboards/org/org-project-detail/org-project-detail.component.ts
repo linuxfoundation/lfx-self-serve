@@ -11,6 +11,7 @@ import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
@@ -121,6 +122,9 @@ export class OrgProjectDetailComponent {
   private readonly ecoTrackRef = viewChild<ElementRef<HTMLElement>>('ecosystemTrack');
 
   protected readonly accountContext = inject(AccountContextService);
+  // All employee view (epic #5845, #5849): every influence card (Technical and Ecosystem) and the ecosystem leaderboard rows keep
+  // their numbers and charts but open nothing. UX only; the BFF answers 403 for the same panels.
+  protected readonly isEmployeeView = inject(OrgLensViewModeService).isEmployeeView;
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly detailService = inject(OrgLensProjectDetailService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
@@ -207,6 +211,9 @@ export class OrgProjectDetailComponent {
   }));
 
   protected readonly activeTab: Signal<OrgLensProjectDetailTab> = computed(() => this.initActiveTab());
+  /** Whether the ecosystem leaderboard rows open their score breakdown; false in the all employee view. Bound by the template. */
+  protected readonly ecosystemRowsOpenable = computed<boolean>(() => this.canOpenLeaderboardDetail('ecosystem'));
+
   protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
   protected readonly timeRange = computed<OrgLensLeaderboardTimeRange>(() => this.initTimeRange());
   // Spec 053 / #2961 — the page-level state replacing the whole page (`could-not-load`,
@@ -526,7 +533,18 @@ export class OrgProjectDetailComponent {
     });
   }
 
+  /** False for every card in the all employee view: no card detail panel opens there, Technical or Ecosystem Influence alike. */
+  protected canOpenCard(): boolean {
+    return !this.isEmployeeView();
+  }
+
+  /** False for the ecosystem leaderboard row panel in the all employee view. */
+  protected canOpenLeaderboardDetail(dimension: LeaderboardDimension): boolean {
+    return !this.isActivityMode() && (dimension === 'technical' || !this.isEmployeeView());
+  }
+
   protected openCardDetail(card: InfluenceCardVm): void {
+    if (!this.canOpenCard()) return;
     this.selectedCardKey.set(card.key);
     this.drawerOpen.set(true);
     this.resetRoster();
@@ -551,7 +569,7 @@ export class OrgProjectDetailComponent {
    * within a project, so keying by one can open another company's figures).
    */
   protected openLeaderboardDetail(dimension: LeaderboardDimension, row: BoardDisplayRow): void {
-    if (this.isActivityMode() || !row.organizationId) return;
+    if (!this.canOpenLeaderboardDetail(dimension) || !row.organizationId) return;
     this.leaderboardDetailDimension.set(dimension);
     this.leaderboardDetailOrganizationId.set(row.organizationId);
     this.leaderboardDetailOrgName.set(row.orgName);
@@ -1011,6 +1029,7 @@ export class OrgProjectDetailComponent {
       caption: card.caption,
       statLabel: card.caption.suffix.trim().replace(/\.$/, ''),
       testId: `project-detail-${group}-card-${card.key}`,
+      openable: this.canOpenCard(),
     };
   }
 

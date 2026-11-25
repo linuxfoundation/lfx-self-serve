@@ -8,6 +8,9 @@ import {
   CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
   ORG_LENS_DEFAULT_TIME_RANGE,
+  ORG_LENS_EMPLOYEE_VIEW,
+  ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE,
+  ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_MESSAGE,
   ORG_LENS_TIME_RANGES,
 } from '@lfx-one/shared/constants';
 import type {
@@ -20,7 +23,9 @@ import type {
 import { isOrgLensTimeRange, normalizeLegacyOrgLensTimeRange } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { ServiceValidationError } from '../errors';
+import { MicroserviceError, ServiceValidationError } from '../errors';
+import { redactForEmployeeView } from '../helpers/org-lens-employee-view.helper';
+import { getOrgLensViewMode } from '../helpers/org-lens-read-access.helper';
 import { parseOrgCommitFilters, parseOrgScope, parseOrgTeamMembers } from '../helpers/org-commit-filters.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { clampInteger, getStringQueryParam } from '../helpers/validation.helper';
@@ -49,6 +54,16 @@ export class OrgLensContributionsController {
     try {
       assertOrgUid(orgUid, operation);
       const query = parseContributionsQuery(req, operation);
+      // All employee view (epic #5845, #5850): aggregates only. The per-person Commits feed and the employee filter are
+      // refused outright, and the service never reads them for this caller, so no name leaves the API.
+      const employeeView = getOrgLensViewMode(req, orgUid) === ORG_LENS_EMPLOYEE_VIEW;
+      if (employeeView && (query.view === 'commits' || query.employees.length > 0)) {
+        throw new MicroserviceError(ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_MESSAGE, 403, ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE, {
+          operation,
+          service: 'LFX_V2_SERVICE',
+          path: req.path,
+        });
+      }
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         view: query.view,
@@ -65,7 +80,7 @@ export class OrgLensContributionsController {
         size: query.size,
       });
 
-      const response = await this.service.getContributions(orgUid, query);
+      const response = await this.service.getContributions(orgUid, query, employeeView);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -75,7 +90,7 @@ export class OrgLensContributionsController {
       });
 
       res.setHeader('Cache-Control', 'no-store');
-      res.json(response);
+      res.json(redactForEmployeeView(req, orgUid, response, { page: 'contributions' }));
     } catch (error) {
       next(error);
     }

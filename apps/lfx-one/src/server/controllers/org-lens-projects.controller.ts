@@ -1,10 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ORG_LENS_EMPLOYEE_VIEW } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { parseOrgScope, parseOrgTeamMembers } from '../helpers/org-commit-filters.helper';
+import { getOrgLensViewMode } from '../helpers/org-lens-read-access.helper';
+import { redactProjectsForEmployeeView, redactWorkspacesForEmployeeView } from '../helpers/org-lens-projects-employee-view.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
@@ -40,7 +43,7 @@ export class OrgLensProjectsController {
       });
 
       res.setHeader('Cache-Control', 'no-store');
-      res.json(response);
+      res.json(redactProjectsForEmployeeView(req, orgUid, response));
     } catch (error: unknown) {
       next(error);
     }
@@ -76,8 +79,11 @@ export class OrgLensProjectsController {
 
     try {
       assertOrgUid(orgUid, 'get_org_lens_project_workspaces');
-      const canEdit = await this.resolveCanEdit(req, orgUid);
-      const response = await this.service.getWorkspaces(req, orgUid, canEdit);
+      // All employee view (epic #5845): the caller holds no grant on the company, so its workspace records are not readable
+      // with their token. They get one read-only default workspace of the company's own projects, written nowhere.
+      const employeeView = getOrgLensViewMode(req, orgUid) === ORG_LENS_EMPLOYEE_VIEW;
+      const canEdit = employeeView ? false : await this.resolveCanEdit(req, orgUid);
+      const response = employeeView ? await this.service.getEmployeeViewWorkspaces(orgUid) : await this.service.getWorkspaces(req, orgUid, canEdit);
 
       logger.success(req, 'get_org_lens_project_workspaces', startTime, {
         org_uid: orgUid,
@@ -86,7 +92,7 @@ export class OrgLensProjectsController {
       });
 
       res.setHeader('Cache-Control', 'no-store');
-      res.json(response);
+      res.json(redactWorkspacesForEmployeeView(req, orgUid, response));
     } catch (error: unknown) {
       next(error);
     }

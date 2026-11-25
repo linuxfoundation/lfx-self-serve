@@ -9,6 +9,7 @@ import {
   DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER,
   DEFAULT_ORG_TRAINING_TAB_ID,
   MAX_ORG_TRAINING_GROUPS_PAGE_SIZE,
+  ORG_LENS_EMPLOYEE_VIEW,
   ORG_TRAINING_COMPANY_QUERY_PARAM,
   ORG_TRAINING_FILTER_KEYS,
   ORG_TRAINING_VIEW_QUERY_PARAMS,
@@ -20,6 +21,7 @@ import type {
   OrgTrainingGroupSortField,
   OrgTrainingGroupsParams,
   OrgTrainingGroupStatus,
+  OrgTrainingStats,
   OrgTrainingTabId,
   OrgTrainingViewState,
 } from '@lfx-one/shared/interfaces';
@@ -28,7 +30,7 @@ import { isOrgRollUpSegment } from '@lfx-one/shared/utils/org-lens-url.utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
-import { assertOrgLensRead, type OrgLensReadQualification } from '../helpers/org-lens-read-access.helper';
+import { assertOrgLensRead, getOrgLensViewMode, type OrgLensReadQualification } from '../helpers/org-lens-read-access.helper';
 import { resolveOrgLensRollUp } from '../helpers/org-lens-roll-up.helper';
 import { assertWellFormedOrgTrainingFilterValue } from '../helpers/org-training-filter.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
@@ -79,11 +81,14 @@ export class OrgLensTrainingController {
     try {
       const target = await this.readTarget(req, orgUid, operation);
       const query = orgTrainingStatsQuery(parseViewState(req, operation));
-      const response =
+      const fullResponse =
         'family' in target
           ? await this.service.getFamilyTrainingStats(req, target.family, query)
           : // orgUid is the canonical org account id (SFID); pass it straight to Snowflake.
             await this.service.getTrainingStats(target.orgUid, query, target.qualification);
+      // The all employee view has no People page, so the learners-not-on-the-people-list count means nothing there: it never leaves the API.
+      const response: OrgTrainingStats =
+        'family' in target || getOrgLensViewMode(req, orgUid) !== ORG_LENS_EMPLOYEE_VIEW ? fullResponse : { ...fullResponse, learnersOutsidePeopleList: null };
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,

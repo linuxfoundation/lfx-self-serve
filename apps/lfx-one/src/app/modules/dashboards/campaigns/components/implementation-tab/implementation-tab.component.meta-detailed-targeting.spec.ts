@@ -6,6 +6,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { CampaignBriefOutput, CampaignImplementationDraft, MetaDetailedTargetingPicks, ProjectContext } from '@lfx-one/shared/interfaces';
+import { emptyMetaDetailedTargetingPicks } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -18,7 +19,7 @@ stubCreativeLibraryUpload();
 trackStateOnlyTests();
 
 /**
- * Wiring only (#5904 row 4). Which lists a flag sends, how a saved draft is read and when Create is held are rules
+ * Wiring only (#5904 rows 4 and 6). Which lists a flag sends, how a saved draft is read and when Create is held are rules
  * in `campaign-meta-detailed-targeting.utils.ts`, tested there; the picker is tested in its own spec. Here: the
  * picks reach the request, the draft and the restore, and the block reaches Create.
  */
@@ -29,6 +30,9 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
     interests: [{ id: '6003', name: 'Open source' }],
     behaviors: [{ id: '6004', name: 'Early adopters' }],
     workPositions: [{ id: '105', name: 'Engineer' }],
+    locales: [{ id: '6', name: 'English (US)' }],
+    regions: [{ id: '3847', name: 'California, US' }],
+    cities: [{ id: '2420379', name: 'Austin, Texas, US' }],
   };
   const brief = (): CampaignBriefOutput =>
     ({
@@ -45,13 +49,16 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
   async function mount(
     interest: boolean | null,
     behavior: boolean | null,
-    draft: CampaignImplementationDraft | null = null
+    draft: CampaignImplementationDraft | null = null,
+    localeRegion: boolean | null = true
   ): Promise<ComponentFixture<ImplementationTabComponent>> {
     const f = TestBed.createComponent(tabComponentUnderTest());
     f.componentRef.setInput('createCapabilityRead', 'ready');
     f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true });
     f.componentRef.setInput('metaInterestTargetingEnabled', interest);
     f.componentRef.setInput('metaBehaviorTargetingEnabled', behavior);
+    f.componentRef.setInput('metaLocaleTargetingEnabled', localeRegion);
+    f.componentRef.setInput('metaRegionTargetingEnabled', localeRegion);
     if (draft !== null) f.componentRef.setInput('draft', draft);
     f.componentRef.setInput('briefData', brief());
     f.detectChanges();
@@ -91,7 +98,7 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
     TestBed.inject(ProjectContextService).setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
   });
 
-  it('sends the picks as metaConfig.targeting ids', STATE_ONLY, async () => {
+  it('sends the picks as metaConfig.targeting ids, languages as numbers and places split into regions and cities', STATE_ONLY, async () => {
     const f = await mount(true, true);
     c(f)['onMetaDetailedTargetingChange'](PICKS);
     f.detectChanges();
@@ -102,6 +109,9 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
       interests: ['6003'],
       behaviors: ['6004'],
       workPositions: ['105'],
+      locales: [6],
+      regions: ['3847'],
+      cities: ['2420379'],
     });
   });
 
@@ -123,11 +133,11 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
     restored.componentRef.setInput('briefData', { ...brief(), eventDetails: { ...brief().eventDetails, name: 'OSS NA 2026', slug: 'oss-na-2026' } });
     restored.detectChanges();
     await restored.whenStable();
-    expect(c(restored)['metaDetailedTargeting']()).toEqual({ interests: [], behaviors: [], workPositions: [] });
+    expect(c(restored)['metaDetailedTargeting']()).toEqual(emptyMetaDetailedTargetingPicks());
   });
 
   it('holds Create for picks in a list this deployment does not send, until they are cleared', STATE_ONLY, async () => {
-    const f = await mount(true, false);
+    const f = await mount(true, false, null, false);
     c(f)['onMetaDetailedTargetingChange'](PICKS);
     f.detectChanges();
     expect(c(f)['metaDetailedTargetingBlock']()?.kind).toBe('unsupported');

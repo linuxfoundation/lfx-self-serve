@@ -27,6 +27,7 @@ import {
   requireLinkedInConversionsAccess,
   requireLinkedInLeadFormsAccess,
   requireMetaLeadFormsAccess,
+  requireRedditCustomAudiencesAccess,
 } from '../middleware/require-marketing-access.middleware';
 import { canSetLinkedInVideoAds } from '../services/campaign-service.service';
 
@@ -114,6 +115,12 @@ router.get('/google/audiences', requireGoogleAudiencesAccess, (req, res, next) =
 // 404 while Meta audience targeting is off. Ahead of `router.use(requireCampaignManager)` for the same
 // reason as the Google lists above.
 router.get('/meta/custom-audiences', requireMetaCustomAudiencesAccess, (req, res, next) => campaignController.getMetaCustomAudiences(req, res, next));
+
+// The custom audiences on the Reddit ad account a create uses, for the Implement tab's Reddit audience picker (#6108
+// row 1). The ad account is shared, so the list names every foundation's audiences: answered only to
+// `global_marketing_ops` on the project, as campaign-service answers (lfx-v2-campaign-service#549). 404 while Reddit
+// custom audiences are off. Ahead of `router.use(requireCampaignManager)` for the same reason as the lists above.
+router.get('/reddit/custom-audiences', requireRedditCustomAudiencesAccess, (req, res, next) => campaignController.getRedditCustomAudiences(req, res, next));
 
 // The Instant Forms of the Facebook Page a Meta create uses, for the Implement tab's lead form picker (#5940).
 // A project without its own connection uses the shared LF Page, which holds every foundation's forms: answered

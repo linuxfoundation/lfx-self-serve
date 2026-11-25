@@ -8,6 +8,7 @@ import {
   LINKEDIN_CONVERSIONS_LOADING_MESSAGE,
   LINKEDIN_CONVERSIONS_OWNER_MESSAGE,
   LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE,
+  LINKEDIN_LEAD_GEN_OBJECTIVE,
   LINKEDIN_MAX_CONVERSIONS,
   LINKEDIN_OBJECTIVES,
 } from '../constants/campaign.constants';
@@ -15,10 +16,17 @@ import type {
   LinkedInCampaignCreateRequest,
   LinkedInConversionRule,
   LinkedInConversionsState,
+  LinkedInLeadGenObjective,
   LinkedInObjective,
   LinkedInObjectiveCreateInput,
   LinkedInObjectiveDraft,
 } from '../interfaces/campaign.interface';
+import {
+  linkedInLeadGenChosen,
+  linkedInLeadGenCreateRefusal,
+  linkedInLeadGenDraftFromStored,
+  linkedInLeadGenFieldsForCreate,
+} from './campaign-linkedin-lead-gen-form.utils';
 import { linkedInObjectiveRefusal } from './campaign-linkedin-objective.utils';
 
 /**
@@ -41,20 +49,24 @@ export function linkedInObjectiveShown(draft: LinkedInObjectiveDraft, available:
   return available || draft.objective !== null;
 }
 
-/** The objective a select value names, or `null` (the default) for any other value. */
-export function linkedInObjectiveChoice(value: unknown): LinkedInObjective | null {
+/** The objective a select value names (lead generation included), or `null` (the default) for any other value. */
+export function linkedInObjectiveChoice(value: unknown): LinkedInObjective | LinkedInLeadGenObjective | null {
+  if (value === LINKEDIN_LEAD_GEN_OBJECTIVE) return LINKEDIN_LEAD_GEN_OBJECTIVE;
   return (LINKEDIN_OBJECTIVES as readonly unknown[]).includes(value) ? (value as LinkedInObjective) : null;
 }
 
 /**
  * The `objective` and `conversions` a create sends: nothing while the capability is off or no objective is chosen, so a
  * create without a choice sends exactly what it always did; the conversion rules only with the `conversions`
- * objective, and only when some are picked.
+ * objective, and only when some are picked. Lead generation rides its own capability (`leadGenAvailable`) and sends
+ * `linkedInLeadGenFieldsForCreate`.
  */
 export function linkedInObjectiveFieldsForCreate(
   draft: LinkedInObjectiveDraft,
-  available: boolean
-): Pick<LinkedInCampaignCreateRequest, 'objective' | 'conversions'> {
+  available: boolean,
+  leadGenAvailable = false
+): Pick<LinkedInCampaignCreateRequest, 'objective' | 'conversions' | 'leadGenForm' | 'leadGenCallToAction'> {
+  if (linkedInLeadGenChosen(draft)) return leadGenAvailable ? linkedInLeadGenFieldsForCreate(draft) : {};
   if (!available || draft.objective === null) return {};
   if (draft.objective === 'conversions' && draft.conversions.length > 0) return { objective: draft.objective, conversions: [...draft.conversions] };
   return { objective: draft.objective };
@@ -80,10 +92,13 @@ export function linkedInConversionsOwnerRefusal(draft: LinkedInObjectiveDraft, o
  * Why the LinkedIn objective holds Create, or `null` (#5764 rows 2 and 4). Nothing chosen holds nothing. A choice this
  * deployment no longer offers is held rather than dropped, rules picked for another owner are held, and otherwise the
  * request the tab would send (with its bidding) is checked by `linkedInObjectiveRefusal`, as the create route will.
+ * Lead generation is `linkedInLeadGenCreateRefusal`'s.
  */
 export function linkedInObjectiveCreateRefusal(input: LinkedInObjectiveCreateInput): string | null {
   const { draft, available, owner, bidding } = input;
   if (draft.objective === null) return null;
+  if (linkedInLeadGenChosen(draft))
+    return linkedInLeadGenCreateRefusal(draft, { available: input.leadGenAvailable === true, owner, bidding, format: input.format });
   if (!available) return 'LinkedIn Ads: the campaign objective is not available right now. Choose "Set by bidding" as the objective.';
   const ownerRefusal = linkedInConversionsOwnerRefusal(draft, owner);
   if (ownerRefusal !== null) return `LinkedIn Ads: ${ownerRefusal}`;
@@ -143,5 +158,7 @@ export function linkedInObjectiveDraftFromStored(raw: unknown): LinkedInObjectiv
     conversionsOwner: conversions.length > 0 && typeof owner === 'string' ? owner : null,
     // The target cost as typed (campaign-service#674), only as text: the create's check holds a bad one.
     ...(typeof targetCost === 'string' && targetCost !== '' ? { targetCost } : {}),
+    // The lead gen form and button (campaign-service#664), only as text.
+    ...linkedInLeadGenDraftFromStored(record),
   };
 }

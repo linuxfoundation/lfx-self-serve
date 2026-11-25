@@ -78,7 +78,8 @@ import type {
   MetaObjective,
   MetaObjectiveParams,
   MetaPlacement,
-  MetaTargetingKind,
+  MetaTargetingBox,
+  MetaTargetingPickKey,
   MicrosoftKeywordsWindow,
   MicrosoftKeywordsWindowOption,
   MonitorConnectionPlatform,
@@ -1414,12 +1415,35 @@ export const META_TARGETING_QUERY_MIN_LENGTH = 2;
 export const META_TARGETING_QUERY_MAX_LENGTH = 100;
 /** How long the Implement tab's targeting search waits after the last keystroke before it asks Meta. */
 export const META_TARGETING_SEARCH_DEBOUNCE_MS = 300;
-/** The detailed-targeting lists the Implement tab offers, in order, with the search kind behind each. */
-export const META_TARGETING_KINDS: readonly MetaTargetingKind[] = [
-  { type: 'interest', key: 'interests', label: 'Interests' },
-  { type: 'behavior', key: 'behaviors', label: 'Behaviors' },
-  { type: 'work_position', key: 'workPositions', label: 'Job titles' },
+/**
+ * The search boxes the Implement tab's Meta targeting picker offers, in order, with the search kind behind each and
+ * the lists it fills: one location box fills regions and cities by each row's location type (#5904 rows 4 and 6).
+ */
+export const META_TARGETING_BOXES: readonly MetaTargetingBox[] = [
+  { type: 'interest', key: 'interests', lists: ['interests'], label: 'Interests', max: META_MAX_DETAILED_TARGETING_IDS, matchAny: true },
+  { type: 'behavior', key: 'behaviors', lists: ['behaviors'], label: 'Behaviors', max: META_MAX_DETAILED_TARGETING_IDS, matchAny: true },
+  { type: 'work_position', key: 'workPositions', lists: ['workPositions'], label: 'Job titles', max: META_MAX_DETAILED_TARGETING_IDS, matchAny: true },
+  {
+    type: 'locale',
+    key: 'locales',
+    lists: ['locales'],
+    label: 'Languages',
+    max: META_MAX_LOCALES,
+    matchAny: false,
+    hint: 'Only people who use one of these languages are reached.',
+  },
+  {
+    type: 'location',
+    key: 'locations',
+    lists: ['regions', 'cities'],
+    label: 'Regions and cities',
+    max: META_MAX_GEO_LOCATIONS,
+    matchAny: false,
+    hint: 'Ads also reach these places. Meta refuses a place inside a chosen country, or a city inside a chosen region, when the campaign is created.',
+  },
 ];
+/** Every list of Meta targeting picks the Implement tab keeps, in the order a draft and a create read them. */
+export const META_TARGETING_PICK_KEYS: readonly MetaTargetingPickKey[] = ['interests', 'behaviors', 'workPositions', 'locales', 'regions', 'cities'];
 export const META_AUDIENCE_GENDERS: readonly MetaAudienceGender[] = ['male', 'female'];
 /** The custom-audience lists the Implement tab offers, in order. */
 export const META_CUSTOM_AUDIENCE_LISTS: readonly MetaCustomAudienceListView[] = [
@@ -4655,6 +4679,39 @@ export const REDDIT_CONVERSION_EVENT_LABELS: Readonly<Record<RedditConversionEve
 
 /** The create field a Reddit conversion event refusal names. */
 export const REDDIT_CONVERSION_EVENT_FIELD = 'redditConfig.conversionEvent';
+
+/**
+ * The two Reddit custom audience lists a create may carry (#6108 row 1), as campaign-service spells the
+ * `redditConfig` keys (`redditCustomAudienceFields`, lfx-v2-campaign-service `internal/dispatch/reddit_custom_audiences.go`, #549).
+ */
+export const REDDIT_CUSTOM_AUDIENCE_KEYS = ['customAudienceIds', 'excludedCustomAudienceIds'] as const;
+
+/**
+ * One Reddit custom audience id: 1–64 letters, digits or underscores, compared exactly (never trimmed). Mirrors
+ * `ValidCustomAudienceID` (`maxCustomAudienceIDLen` and `accountIDRe`) in lfx-v2-campaign-service
+ * `internal/platform/reddit/custom_audiences.go` (#549).
+ */
+export const REDDIT_CUSTOM_AUDIENCE_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
+
+/** At most this many ids in EACH list: campaign-service's `MaxCustomAudienceIDs` (#549). */
+export const MAX_REDDIT_CUSTOM_AUDIENCE_IDS = 100;
+
+/**
+ * The error `code` (HTTP 403) of a Reddit custom-audience read, or a create naming custom audiences, refused because the
+ * caller does not hold `global_marketing_ops` on the project: the Reddit ad account is shared by every foundation, so
+ * campaign-service answers both on that relation (linuxfoundation/lfx-v2-campaign-service#549).
+ */
+export const REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE = 'REDDIT_CUSTOM_AUDIENCES_RESTRICTED';
+export const REDDIT_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE =
+  'Reddit custom audiences can only be used by the LF marketing team, because every foundation shares one Reddit ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
+export const REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE';
+export const REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Reddit custom audiences could not be verified. Try again in a few minutes.';
+/** The 403 and 503 a Reddit custom-audience read or create answers, shaped like `LINKEDIN_MARKETING_OPS_ACCESS_ERRORS`. */
+export const REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS = {
+  restricted: { code: REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE, message: REDDIT_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE },
+  unavailable: { code: REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE, message: REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE },
+} as const;
 
 /**
  * The `REDDIT_OBJECTIVE_PARAMS` row for an objective, or a refusal.

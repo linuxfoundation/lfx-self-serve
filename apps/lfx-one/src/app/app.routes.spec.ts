@@ -3,7 +3,17 @@
 
 import { Component, inject, PLATFORM_ID, REQUEST_CONTEXT, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, provideRouter, RedirectFunction, Router, UrlSegment } from '@angular/router';
+import {
+  ActivatedRoute,
+  ActivatedRouteSnapshot,
+  CanActivateFn,
+  provideRouter,
+  RedirectFunction,
+  Router,
+  RouterStateSnapshot,
+  UrlSegment,
+  UrlTree,
+} from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { HEALTH_METRICS_TABS, ORG_LENS_URL_ROOT, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
@@ -22,6 +32,7 @@ import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
+import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
 import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavailable-page.guard';
 import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
@@ -30,6 +41,8 @@ import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-m
 import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { AccountContextService } from './shared/services/account-context.service';
 import { LensService } from './shared/services/lens.service';
+import { OrgLensViewModeService } from './shared/services/org-lens-view-mode.service';
+import { OrgRoleGrantsService } from './shared/services/org-role-grants.service';
 
 import type { Route } from '@angular/router';
 
@@ -366,5 +379,82 @@ describe('Org Lens roll-up routes', () => {
       expect(await visitBareOrg(true, { path: '', pathMatch: 'full', redirectTo: 'overview' })).toBe('Roll-up unavailable');
       expect(TestBed.inject(Router).url).toBe('/company/overview');
     });
+  });
+});
+
+// #5855 — the Memberships page and its detail page are closed to the all employee view (epic #5845). The guard's own
+// behaviour is covered by its spec; this runs each route's real guard to pin that both routes carry it.
+describe('Company Lens Memberships routes (#5855)', () => {
+  const verdictFor = async (path: string, url: string, employeeView: boolean): Promise<string | true> => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView: signal(employeeView) } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
+      ],
+    });
+    // A page that cannot render a family roll-up is preceded by its roll-up stand-in (same path, no guard); the page itself is the one that has `canActivate`.
+    const pages = (tree: Route[]): Route[] =>
+      tree.flatMap((route) => [...(route.path === path ? [route] : []), ...(route.children ? pages(route.children) : [])]);
+    const guard = pages(routes).find((route) => route.canActivate)!.canActivate![0] as CanActivateFn;
+    const result = await TestBed.runInInjectionContext(() => guard({} as ActivatedRouteSnapshot, { url } as RouterStateSnapshot));
+    return result === true ? true : TestBed.inject(Router).serializeUrl(result as UrlTree);
+  };
+
+  it.each([
+    ['memberships', '/company/acme-inc/memberships'],
+    ['memberships/:foundationSlug', '/company/acme-inc/memberships/linux-foundation'],
+  ])('redirects %s to Overview in the employee view and opens it in the full view', async (path, url) => {
+    expect(await verdictFor(path, url, true)).toBe('/company/acme-inc/overview');
+
+    TestBed.resetTestingModule();
+    expect(await verdictFor(path, url, false)).toBe(true);
+  });
+});
+
+// #5856 — the People page is hidden in the all employee view (epic #5845): its route redirects to Overview there.
+describe('Company Lens People route (all employee view)', () => {
+  it('is guarded so the employee view redirects to Overview, and the full view opens it', async () => {
+    // The page route itself, not its roll-up stand-in (same path, match guards only), on the legacy mount.
+    const org = shellRoute.children!.find((route) => route.path === ORG_LENS_URL_ROOT)!;
+    const peopleRoute = org.children!.find((route) => route.path === 'people' && !!route.loadComponent);
+    expect(peopleRoute?.canActivate).toHaveLength(1);
+
+    const isEmployeeView = signal(true);
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
+      ],
+    });
+    const router = TestBed.inject(Router);
+    const verdict = async (): Promise<unknown> =>
+      TestBed.runInInjectionContext(() =>
+        (peopleRoute?.canActivate?.[0] as CanActivateFn)({} as ActivatedRouteSnapshot, { url: '/company/acme-inc/people' } as RouterStateSnapshot)
+      );
+
+    expect(router.serializeUrl((await verdict()) as UrlTree)).toBe('/company/acme-inc/overview');
+
+    isEmployeeView.set(false);
+    expect(await verdict()).toBe(true);
+  });
+});
+
+// Epic #5845 (#5858): the company Profile page redirects to Overview in the all employee view. The redirect itself is
+// `orgLensFullViewOnlyGuard`'s own spec; this pins that both mounts of the page carry it beside the roll-up redirect.
+describe('Org Lens Profile route in the all employee view', () => {
+  const org = shellRoute.children!.find((route) => route.path === ORG_LENS_URL_ROOT)!;
+  const addressed = org.children!.find((route) => route.path === `:${ORG_SEGMENT_PARAM}`)!;
+
+  it.each([
+    ['legacy', org.children!],
+    ['addressed', addressed.children!],
+  ])('keeps the roll-up redirect and adds the full-view-only guard (%s mount)', (_mount, children) => {
+    const profile = children.find((route) => route.path === 'profile')!;
+
+    expect(profile.canActivate).toHaveLength(2);
+    expect(profile.canActivate![0]).toBe(orgRollUpSingleOrgPageGuard);
+    expect(typeof profile.canActivate![1]).toBe('function');
   });
 });

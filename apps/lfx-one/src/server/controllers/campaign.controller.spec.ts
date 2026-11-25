@@ -41,6 +41,8 @@ import {
   MAX_SPONSORS,
   META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE,
   META_LEAD_FORMS_RESTRICTED_CODE,
+  REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
+  REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE,
 } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
@@ -11588,6 +11590,8 @@ describe('CampaignController.listBriefCampaigns', () => {
         metaCustomAudiencesEnabled: conversions,
         // Meta lead forms (#5940) on the same relation.
         metaLeadFormsEnabled: conversions,
+        // Reddit custom audiences (#6108 row 1) on the same relation.
+        redditCustomAudiencesEnabled: conversions,
       })
     );
   });
@@ -11609,6 +11613,7 @@ describe('CampaignController.listBriefCampaigns', () => {
         googlePerformanceMaxAudienceSignalEnabled: null,
         metaCustomAudiencesEnabled: null,
         metaLeadFormsEnabled: null,
+        redditCustomAudiencesEnabled: null,
       })
     );
   });
@@ -11625,6 +11630,7 @@ describe('CampaignController.listBriefCampaigns', () => {
         googleConversionActionsEnabled: false,
         metaCustomAudiencesEnabled: false,
         metaLeadFormsEnabled: false,
+        redditCustomAudiencesEnabled: false,
       })
     );
     expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
@@ -13079,6 +13085,71 @@ describe('CampaignController.createCampaign Reddit conversion event', () => {
     const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
     expect(envelope['redditConfig']['conversionEvent']).toBe('LEAD');
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `redditConfig.customAudienceIds` / `excludedCustomAudienceIds` (#6108 row 1): refused, never dropped, while this
+ * deployment cannot send them; named only by a caller holding `global_marketing_ops` on the project; forwarded as typed
+ * otherwise. Wiring only: the rules themselves are table rows in `campaign-reddit-custom-audiences.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit custom audiences', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const redditConfig = { budgetUsd: 50, customAudienceIds: ['67547345732543'], excludedCustomAudienceIds: ['t2_registrants'] };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+  });
+
+  it('refuses the lists while the flag is off, creating nothing and checking no access', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditCustomAudiences);
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'redditConfig.customAudienceIds',
+        message: 'Reddit custom audiences are not enabled on this deployment. Reload the page, then create again without them.',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+
+  it.each<[string, boolean | Error, string]>([
+    ['refused (403)', false, REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE],
+    ['unverifiable (503)', new Error('fga-sync unreachable'), REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE],
+  ])('answers the coded error when global_marketing_ops is %s, creating nothing', async (_case, access, code) => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+    const check = vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict);
+    if (access instanceof Error) check.mockRejectedValueOnce(access);
+    else check.mockResolvedValueOnce(access);
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(check).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(vi.mocked(next).mock.calls[0][0]).toMatchObject({ code });
+  });
+
+  it('forwards both lists untouched for a caller holding global_marketing_ops once the flag is on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+    vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValueOnce(true);
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']['customAudienceIds']).toEqual(['67547345732543']);
+    expect(envelope['redditConfig']['excludedCustomAudienceIds']).toEqual(['t2_registrants']);
   });
 });
 

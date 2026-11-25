@@ -4,6 +4,7 @@
 import type { Signal, WritableSignal } from '@angular/core';
 import type { Subject } from 'rxjs';
 
+import type { Account } from './account.interface';
 import type { OrgLensEmployeeViewGrant } from './org-lens-view-mode.interface';
 
 /** Selector row. Spec 002: the org account id (18-char SFID) is the canonical identifier; `uid` and `accountId` both carry it. */
@@ -602,4 +603,13 @@ export interface AccessAwareOrgsCacheEntry {
   familyRoots: [string, OrgFamilyRoot][];
   /** Stored with a `failed` staff check so a short-TTL hit renders the reference that was logged; a `failed` entry without it (or with `isStaff: true` or `isContractor: true`) fails the shape guard. */
   correlationId?: string;
+}
+
+/** A catalogue organization resolved from an address, with the access answers its selector row carries. */
+export interface NamedOrganization {
+  account: Account;
+  claOnly: boolean;
+  employeeViewChecked?: boolean;
+  employeeView?: boolean;
+  fullAccess?: boolean;
 }

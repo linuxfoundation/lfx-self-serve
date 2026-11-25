@@ -257,6 +257,20 @@ export class OrgLensProjectsService {
     return { workspaces: await Promise.all(withProjects.map((workspace) => this.ensureDefaultWorkspaceProjects(req, accountId, workspace))) };
   }
 
+  /**
+   * The workspaces of the all employee view (epic #5845): one read-only default workspace of the company's own projects.
+   * An employee holds no `b2b_org` grant, so the member-service workspace records are not readable with their token, and
+   * the caller can neither create nor seed one. The default is therefore derived from the company's project activity and
+   * nothing is read from, or written to, the workspace store.
+   */
+  public async getEmployeeViewWorkspaces(accountId: string): Promise<OrgProjectsWorkspacesResponse> {
+    return {
+      workspaces: [
+        { id: DEFAULT_ORG_PROJECTS_WORKSPACE_ID, name: DEFAULT_ORG_PROJECTS_WORKSPACE_NAME, projectSlugs: await this.fetchDefaultProjectSlugs(accountId) },
+      ],
+    };
+  }
+
   public async createWorkspace(req: Request, accountId: string, name: string): Promise<OrgProjectsWorkspace> {
     const response = await this.microserviceProxy.proxyRequest<unknown>(
       req,

@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ORG_EVENTS_PAGE_COPY, ORG_EVENTS_ROLL_UP_PAGE_COPY } from '@lfx-one/shared/constants';
 import type { OrgEvent, OrgEventsResponse } from '@lfx-one/shared/interfaces';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { describe, expect, it } from 'vitest';
 
 import { OrgEventsTableComponent } from './org-events-table.component';
@@ -27,10 +29,15 @@ const EVENT: OrgEvent = {
   isOrgSponsor: true,
 };
 
-async function render({ rollUp = false, loadFailed = false, events = [EVENT] }: { rollUp?: boolean; loadFailed?: boolean; events?: OrgEvent[] } = {}) {
+async function render({
+  rollUp = false,
+  loadFailed = false,
+  events = [EVENT],
+  employeeView = false,
+}: { rollUp?: boolean; loadFailed?: boolean; events?: OrgEvent[]; employeeView?: boolean } = {}) {
   await TestBed.configureTestingModule({
     imports: [OrgEventsTableComponent],
-    providers: [provideNoopAnimations()],
+    providers: [provideNoopAnimations(), { provide: OrgLensViewModeService, useValue: { isEmployeeView: signal(employeeView) } }],
   }).compileComponents();
 
   const fixture = TestBed.createComponent(OrgEventsTableComponent);
@@ -96,5 +103,24 @@ describe('OrgEventsTableComponent', () => {
 
     const single = await render({ loadFailed: true, events: [] });
     expect(single.querySelector('[data-testid="org-events-load-error"]')?.textContent).toContain(ORG_EVENTS_PAGE_COPY.loadError);
+  });
+
+  // Epic #5845: the all employee view shows the attendee and speaker numbers as plain text, never as a button that opens the panel.
+  it('makes the attendee and speaker numbers buttons in the full view', async () => {
+    const el = await render({ events: [{ ...EVENT, orgAttendeeCount: 12, orgSpeakerAcceptedCount: 2, orgSpeakerSubmittedCount: 5 }] });
+
+    expect(el.querySelector('[data-testid="org-event-attendees-event-one"] button')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-event-speakers-event-one"] button')).not.toBeNull();
+  });
+
+  it('shows the same numbers as plain text, with no button, in the employee view', async () => {
+    const el = await render({ employeeView: true, events: [{ ...EVENT, orgAttendeeCount: 12, orgSpeakerAcceptedCount: 2, orgSpeakerSubmittedCount: 5 }] });
+
+    const attendees = el.querySelector('[data-testid="org-event-attendees-event-one"]');
+    const speakers = el.querySelector('[data-testid="org-event-speakers-event-one"]');
+    expect(attendees?.querySelector('button')).toBeNull();
+    expect(speakers?.querySelector('button')).toBeNull();
+    expect(attendees?.textContent).toContain('12');
+    expect(speakers?.textContent).toContain('2 / 5');
   });
 });

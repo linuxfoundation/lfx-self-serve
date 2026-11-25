@@ -1188,6 +1188,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsLinkedInTargetingEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers an objective and conversion tracking (`CampaignListResult.linkedInConversionsEnabled`, #5764 rows 2 and 4). */
   protected readonly briefCampaignsLinkedInConversionsEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers lead generation (`CampaignListResult.linkedInLeadGenEnabled`, campaign-service#664). */
+  protected readonly briefCampaignsLinkedInLeadGenEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers a target cost (`CampaignListResult.linkedInTargetCostEnabled`, campaign-service#674). */
   protected readonly briefCampaignsLinkedInTargetCostEnabled = signal<boolean | null>(null);
   /** Whether the Microsoft section offers an image upload — `CampaignListResult.microsoftAssetUploadEnabled`, read and cleared like the capabilities above. */
@@ -1207,9 +1209,11 @@ export class CampaignsComponent {
   protected readonly briefCampaignsMetaCallToActionEnabled = signal<boolean | null>(null);
   /** Meta lead forms (#5940) — `CampaignListResult.metaLeadFormsEnabled`: whether THIS caller may create a lead ad. */
   protected readonly briefCampaignsMetaLeadFormsEnabled = signal<boolean | null>(null);
-  /** Meta interests, and behaviors with job titles (#5904 row 4): deployment-wide answers, read and cleared like the capabilities above. */
+  /** Meta interests, behaviors with job titles, languages (#5904 row 4), and regions with cities (row 6): deployment-wide answers, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaInterestTargetingEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaBehaviorTargetingEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaLocaleTargetingEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaRegionTargetingEnabled = signal<boolean | null>(null);
   /** The Meta ad schedule and frequency cap (#5904 row 5): deployment-wide answers, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaAdScheduleEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaFrequencyCapEnabled = signal<boolean | null>(null);
@@ -3410,6 +3414,7 @@ export class CampaignsComponent {
         this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
         this.briefCampaignsLinkedInTargetingEnabled.set(null);
         this.briefCampaignsLinkedInConversionsEnabled.set(null);
+        this.briefCampaignsLinkedInLeadGenEnabled.set(null);
         this.briefCampaignsLinkedInTargetCostEnabled.set(null);
         this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
@@ -3421,6 +3426,8 @@ export class CampaignsComponent {
         this.briefCampaignsMetaLeadFormsEnabled.set(null);
         this.briefCampaignsMetaInterestTargetingEnabled.set(null);
         this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+        this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
+        this.briefCampaignsMetaRegionTargetingEnabled.set(null);
         this.briefCampaignsMetaAdScheduleEnabled.set(null);
         this.briefCampaignsMetaFrequencyCapEnabled.set(null);
         this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
@@ -6506,6 +6513,7 @@ export class CampaignsComponent {
           this.briefCampaignsLinkedInVideoAdsEnabled.set(result.linkedInVideoAdsEnabled);
           this.briefCampaignsLinkedInTargetingEnabled.set(result.linkedInTargetingEnabled);
           this.briefCampaignsLinkedInConversionsEnabled.set(result.linkedInConversionsEnabled);
+          this.briefCampaignsLinkedInLeadGenEnabled.set(result.linkedInLeadGenEnabled);
           this.briefCampaignsLinkedInTargetCostEnabled.set(result.linkedInTargetCostEnabled);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
@@ -6517,6 +6525,8 @@ export class CampaignsComponent {
           this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
+          this.briefCampaignsMetaLocaleTargetingEnabled.set(result.metaLocaleTargetingEnabled ?? null);
+          this.briefCampaignsMetaRegionTargetingEnabled.set(result.metaRegionTargetingEnabled ?? null);
           this.briefCampaignsMetaAdScheduleEnabled.set(result.metaAdScheduleEnabled ?? null);
           this.briefCampaignsMetaFrequencyCapEnabled.set(result.metaFrequencyCapEnabled ?? null);
           this.briefCampaignsMetaDeviceTargetingEnabled.set(result.metaDeviceTargetingEnabled ?? null);
@@ -6564,6 +6574,7 @@ export class CampaignsComponent {
           this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
           this.briefCampaignsLinkedInTargetingEnabled.set(null);
           this.briefCampaignsLinkedInConversionsEnabled.set(null);
+          this.briefCampaignsLinkedInLeadGenEnabled.set(null);
           this.briefCampaignsLinkedInTargetCostEnabled.set(null);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
@@ -6575,6 +6586,8 @@ export class CampaignsComponent {
           this.briefCampaignsMetaLeadFormsEnabled.set(null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+          this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
+          this.briefCampaignsMetaRegionTargetingEnabled.set(null);
           this.briefCampaignsMetaAdScheduleEnabled.set(null);
           this.briefCampaignsMetaFrequencyCapEnabled.set(null);
           this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
@@ -6667,6 +6680,7 @@ export class CampaignsComponent {
       this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
       this.briefCampaignsLinkedInTargetingEnabled.set(null);
       this.briefCampaignsLinkedInConversionsEnabled.set(null);
+      this.briefCampaignsLinkedInLeadGenEnabled.set(null);
       this.briefCampaignsLinkedInTargetCostEnabled.set(null);
       this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
       this.briefCampaignsBiddingEnabled.set(null);
@@ -6678,6 +6692,8 @@ export class CampaignsComponent {
       this.briefCampaignsMetaLeadFormsEnabled.set(null);
       this.briefCampaignsMetaInterestTargetingEnabled.set(null);
       this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+      this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
+      this.briefCampaignsMetaRegionTargetingEnabled.set(null);
       this.briefCampaignsMetaAdScheduleEnabled.set(null);
       this.briefCampaignsMetaFrequencyCapEnabled.set(null);
       this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
@@ -6740,6 +6756,7 @@ export class CampaignsComponent {
             this.briefCampaignsLinkedInVideoAdsEnabled.set(result.linkedInVideoAdsEnabled);
             this.briefCampaignsLinkedInTargetingEnabled.set(result.linkedInTargetingEnabled);
             this.briefCampaignsLinkedInConversionsEnabled.set(result.linkedInConversionsEnabled);
+            this.briefCampaignsLinkedInLeadGenEnabled.set(result.linkedInLeadGenEnabled);
             this.briefCampaignsLinkedInTargetCostEnabled.set(result.linkedInTargetCostEnabled);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
@@ -6751,6 +6768,8 @@ export class CampaignsComponent {
             this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
+            this.briefCampaignsMetaLocaleTargetingEnabled.set(result.metaLocaleTargetingEnabled ?? null);
+            this.briefCampaignsMetaRegionTargetingEnabled.set(result.metaRegionTargetingEnabled ?? null);
             this.briefCampaignsMetaAdScheduleEnabled.set(result.metaAdScheduleEnabled ?? null);
             this.briefCampaignsMetaFrequencyCapEnabled.set(result.metaFrequencyCapEnabled ?? null);
             this.briefCampaignsMetaDeviceTargetingEnabled.set(result.metaDeviceTargetingEnabled ?? null);
@@ -6796,6 +6815,7 @@ export class CampaignsComponent {
             this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
             this.briefCampaignsLinkedInTargetingEnabled.set(null);
             this.briefCampaignsLinkedInConversionsEnabled.set(null);
+            this.briefCampaignsLinkedInLeadGenEnabled.set(null);
             this.briefCampaignsLinkedInTargetCostEnabled.set(null);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
@@ -6807,6 +6827,8 @@ export class CampaignsComponent {
             this.briefCampaignsMetaLeadFormsEnabled.set(null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+            this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
+            this.briefCampaignsMetaRegionTargetingEnabled.set(null);
             this.briefCampaignsMetaAdScheduleEnabled.set(null);
             this.briefCampaignsMetaFrequencyCapEnabled.set(null);
             this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
@@ -9045,7 +9067,8 @@ export class CampaignsComponent {
       const previous = named ? issues.find((email) => email.emailId === templateId) : issues[0];
       const readable = previous !== undefined && previous.listsUnavailable !== true;
       // Unresolved is a failed READ, not a list: its id may be an unrecovered legacy one, so it is not reused either.
-      const resolves = (list: { missing?: boolean; unresolved?: boolean; listId: string }): boolean => !list.missing && list.unresolved !== true && list.listId !== '';
+      const resolves = (list: { missing?: boolean; unresolved?: boolean; listId: string }): boolean =>
+        !list.missing && list.unresolved !== true && list.listId !== '';
       const include = readable ? previous.includedLists.filter(resolves) : [];
       const exclude = readable ? previous.suppressionLists.filter(resolves) : [];
       // Reused automatically only when EVERY list the previous issue recorded still resolves. With

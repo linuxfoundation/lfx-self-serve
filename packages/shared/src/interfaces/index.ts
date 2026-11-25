@@ -170,6 +170,7 @@ export * from './org-lens-empty-state.interface';
 
 // Org Lens URL scheme (spec 050) — address intent
 export * from './org-lens-url.interface';
+export * from './org-lens-employee-view-register.interface';
 export * from './org-lens-view-mode.interface';
 
 // Persona detection interfaces

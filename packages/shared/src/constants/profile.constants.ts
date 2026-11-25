@@ -413,6 +413,20 @@ export const PROFILE_RECOGNITIONS_COPY = {
   retry: 'Try again',
 } as const;
 
+/** Copy of the Profile page's Foundations & projects involvement section (#6085). */
+export const PROFILE_INVOLVEMENT_COPY = {
+  heading: 'Foundations & projects involvement',
+  description: 'Every foundation and project you take part in, and your role in each. Hover a card for details.',
+  missingLabel: 'Missing a project?',
+  missingTip:
+    'Projects show up when we match your commits, reviews or roles to an email or account on your profile. Add the email you use for commits in Manage identities.',
+  manage: 'Manage affiliations',
+  emptyTitle: 'No foundations or projects yet',
+  emptyText: 'Foundations and projects show up here once we can match your activity to an email or account on your profile.',
+  loadFailed: 'We couldn’t load your projects.',
+  retry: 'Try again',
+} as const;
+
 /** Training & Certifications, where the Profile page sends someone to earn badges (#6084). */
 export const PROFILE_TRAINING_PATH = '/me/training';
 

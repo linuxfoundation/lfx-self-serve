@@ -29,6 +29,8 @@ export interface InfluenceCardVm {
   caption: { prefix: string; emphasis: string; suffix: string };
   statLabel: string;
   testId: string;
+  /** False for a card whose detail panel the all employee view blocks. Precomputed so the template binds a field, not a method. */
+  openable: boolean;
 }
 
 /** LFX Insights project health classification — the 5 bands of the Insights project Health Score component; drives the hero badge color token. */

@@ -99,6 +99,7 @@ import {
   LinkedInGeoSearchResult,
   LinkedInAudiencesResult,
   LinkedInConversionsResult,
+  LinkedInLeadFormsResult,
   LinkedInTargetingSearchFacet,
   LinkedInTargetingSearchResult,
   GoogleAdsAudienceReadType,
@@ -885,6 +886,17 @@ export class CampaignService {
     let params = strictHttpParams().set('project', projectSlug);
     if (accountId) params = params.set('accountId', accountId);
     return this.http.get<LinkedInConversionsResult>('/api/campaigns/linkedin/conversions', { params });
+  }
+
+  /**
+   * The Lead Gen Forms on the LinkedIn ad account a create uses, for the lead form picker (campaign-service#664), with
+   * `accountId` as for `getLinkedInConversions`. A coded 403 for a caller without `global_marketing_ops` on the project, a
+   * coded 503 when that check cannot be made, and a 404 while lead gen is off on the server.
+   */
+  public getLinkedInLeadForms(projectSlug: string, accountId?: string): Observable<LinkedInLeadFormsResult> {
+    let params = strictHttpParams().set('project', projectSlug);
+    if (accountId) params = params.set('accountId', accountId);
+    return this.http.get<LinkedInLeadFormsResult>('/api/campaigns/linkedin/lead-forms', { params });
   }
 
   /**

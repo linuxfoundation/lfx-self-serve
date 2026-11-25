@@ -16,10 +16,20 @@ import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange, OrgScopeFil
 
 import { ServiceValidationError } from '../errors';
 import { parseOrgScope } from '../helpers/org-commit-filters.helper';
+import { redactForEmployeeView } from '../helpers/org-lens-employee-view.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensProjectDetailService } from '../services/org-lens-project-detail.service';
+
+/**
+ * The all employee view (epic #5845, #5849) shows no email addresses in any panel; the full view is returned untouched.
+ * The shared redactor already scrubs embedded addresses at every depth and keeps valid technical text (a Git remote, a
+ * package version), so no second pass runs here.
+ */
+function redactProjectDetail<T>(req: Request, orgUid: string, data: T): T {
+  return redactForEmployeeView(req, orgUid, data, { page: 'projects' });
+}
 
 /** HTTP boundary for the Org Lens · Project Detail endpoint — validation, lifecycle logging, error propagation. */
 export class OrgLensProjectDetailController {
@@ -176,7 +186,7 @@ export class OrgLensProjectDetailController {
         total: roster.total,
       });
       res.setHeader('Cache-Control', 'no-store');
-      res.json(roster);
+      res.json(redactProjectDetail(req, orgUid, roster));
     } catch (error) {
       next(error);
     }
@@ -290,6 +300,6 @@ export class OrgLensProjectDetailController {
       return;
     }
     logger.success(req, operation, startTime, { ...metadata, found: true });
-    res.json(block);
+    res.json(redactProjectDetail(req, orgUid, block));
   }
 }

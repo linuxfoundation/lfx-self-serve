@@ -100,6 +100,13 @@ describe('embedded personal data in free text', () => {
     expect(scrubFreeText('owner@acme.example/readme')).toBe('/readme');
   });
 
+  it('removes a profile handle that merely starts with the share endpoint name', () => {
+    expect(scrubFreeText('see https://x.com/sharealice and https://twitter.com/share_bob today')).toBe('see  and  today');
+    expect(scrubFreeText('post via https://x.com/share?text=hi and https://twitter.com/intent/tweet')).toBe(
+      'post via https://x.com/share?text=hi and https://twitter.com/intent/tweet'
+    );
+  });
+
   it('keeps only a git-user remote, in the scp and ssh URL forms', () => {
     expect(scrubFreeText('git@git.example.com:acme-org/repo.git')).toBe('git@git.example.com:acme-org/repo.git');
     expect(scrubFreeText('ssh://git@git.example.com/acme-org/repo.git')).toBe('ssh://git@git.example.com/acme-org/repo.git');

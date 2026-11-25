@@ -401,6 +401,7 @@ import type {
   RedditVideoGoal,
   StoredCreativeAsset,
   MetaAudienceTargetingDraft,
+  MetaDetailedTargetingEnabled,
   MetaDetailedTargetingPicks,
   MetaDeliveryDraft,
   MetaDeviceOsDraft,
@@ -500,6 +501,7 @@ import {
   linkedInTextAdsForCreate,
   emptyLinkedInTargetingDraft,
   emptyLinkedInObjectiveDraft,
+  linkedInLeadGenChosen,
   linkedInObjectiveCreateRefusal,
   linkedInObjectiveFieldsForCreate,
   linkedInObjectiveShown,
@@ -1047,6 +1049,15 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInConversionsAvailable = computed<boolean>(() => this.linkedInConversionsEnabled() === true);
 
   /**
+   * Whether the LinkedIn section offers the lead generation objective and its form picker (`CampaignListResult.linkedInLeadGenEnabled`,
+   * linuxfoundation/lfx-v2-campaign-service#664).
+   */
+  public readonly linkedInLeadGenEnabled = input<boolean | null>(null);
+
+  /** @see linkedInLeadGenEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInLeadGenAvailable = computed<boolean>(() => this.linkedInLeadGenEnabled() === true);
+
+  /**
    * Whether a LinkedIn create's automatic bidding may carry a target cost (`CampaignListResult.linkedInTargetCostEnabled`,
    * linuxfoundation/lfx-v2-campaign-service#674).
    */
@@ -1228,6 +1239,10 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaInterestTargetingEnabled = input<boolean | null>(null);
   /** The same for Meta behaviors and job titles — `CampaignListResult.metaBehaviorTargetingEnabled`. */
   public readonly metaBehaviorTargetingEnabled = input<boolean | null>(null);
+  /** The same for Meta languages — `CampaignListResult.metaLocaleTargetingEnabled`. */
+  public readonly metaLocaleTargetingEnabled = input<boolean | null>(null);
+  /** The same for Meta regions and cities (#5904 row 6) — `CampaignListResult.metaRegionTargetingEnabled`. */
+  public readonly metaRegionTargetingEnabled = input<boolean | null>(null);
   /**
    * Whether this deployment sends a Meta ad schedule (#5904 row 5) — `CampaignListResult.metaAdScheduleEnabled`, behind
    * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE`. Deployment-wide; `null` while unanswered.
@@ -1249,9 +1264,16 @@ export class ImplementationTabComponent implements OnInit {
   /** Whether either device or OS group is offered: each only on its explicit yes. */
   protected readonly metaDeviceOsShown = computed<boolean>(() => this.metaDeviceTargetingEnabled() === true || this.metaOsTargetingEnabled() === true);
 
+  /** The four detailed-targeting capability answers, as the shared rules read them. */
+  private readonly metaDetailedTargetingEnabled = computed<MetaDetailedTargetingEnabled>(() => ({
+    interest: this.metaInterestTargetingEnabled(),
+    behavior: this.metaBehaviorTargetingEnabled(),
+    locale: this.metaLocaleTargetingEnabled(),
+    region: this.metaRegionTargetingEnabled(),
+  }));
   /** Whether any detailed-targeting list is offered: each only on an explicit yes. */
-  protected readonly metaDetailedTargetingAvailable = computed<boolean>(
-    () => this.metaInterestTargetingEnabled() === true || this.metaBehaviorTargetingEnabled() === true
+  protected readonly metaDetailedTargetingAvailable = computed<boolean>(() =>
+    Object.values(this.metaDetailedTargetingEnabled()).some((enabled) => enabled === true)
   );
 
   /**
@@ -2013,18 +2035,33 @@ export class ImplementationTabComponent implements OnInit {
     biddingAvailable: this.biddingAvailable(),
     strategy: this.biddingDrafts()['linkedin-ads']?.strategy,
   }));
-  /** Whether the objective picker offers the target cost now (`linkedInTargetCostOffered`); hidden, a typed one is not sent. */
-  protected readonly linkedInTargetCostShown = computed<boolean>(() => linkedInTargetCostOffered(this.linkedInTargetCostOfferInput()));
+  /**
+   * Whether the objective picker offers the target cost now (`linkedInTargetCostOffered`); hidden, a typed one is not sent.
+   * Never with lead generation (campaign-service#664): a target cost on a MAX_LEAD campaign is not documented or probed.
+   */
+  protected readonly linkedInTargetCostShown = computed<boolean>(
+    () => linkedInTargetCostOffered(this.linkedInTargetCostOfferInput()) && !this.linkedInLeadGenSelected()
+  );
   /** A typed target cost while the capability is unread holds Create (`linkedInTargetCostPending`) rather than being dropped. */
   private readonly linkedInTargetCostAwaitingCapability = computed<boolean>(() =>
     linkedInTargetCostPending(this.linkedInTargetCostOfferInput(), this.linkedInObjectiveDraft())
   );
   /** The target cost field is on screen while it is offered, and while a typed one waits on the capability, so it can be cleared. */
   protected readonly linkedInTargetCostFieldShown = computed<boolean>(() => this.linkedInTargetCostShown() || this.linkedInTargetCostAwaitingCapability());
-  /** The objective picker is mounted while it shows the objective or the target cost field. */
+  /** The objective picker is mounted while it shows the objective (either capability offers one) or the target cost field. */
   protected readonly linkedInObjectivePickerShown = computed<boolean>(
-    () => linkedInObjectiveShown(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable()) || this.linkedInTargetCostFieldShown()
+    () =>
+      linkedInObjectiveShown(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable() || this.linkedInLeadGenAvailable()) ||
+      this.linkedInTargetCostFieldShown()
   );
+  /**
+   * Lead generation is the chosen objective (campaign-service#664), offered or not. While it is, what a lead gen create
+   * refuses is hidden or held: Text Ads are not offered, a variant's own call to action is neither shown nor sent (the
+   * form's button replaces it), and a manual bid is refused in the Bidding control.
+   */
+  protected readonly linkedInLeadGenSelected = computed<boolean>(() => linkedInLeadGenChosen(this.linkedInObjectiveDraft()));
+  /** A variant's call to action is offered (and sent) on its explicit yes, except on a lead gen create. */
+  protected readonly linkedInVariantCallToActionShown = computed<boolean>(() => this.linkedInCallToActionAvailable() && !this.linkedInLeadGenSelected());
 
   /**
    * The ad account whose segments the custom targeting editor reads: the account the create names, so the segments
@@ -3756,16 +3793,15 @@ export class ImplementationTabComponent implements OnInit {
     () => metaAudienceTargetingRefusal(this.metaAudienceTargetingRequested())?.message ?? null
   );
 
-  /** The detailed fields the create carries (#5904 row 4): each list only on its explicit yes. */
+  /** The detailed fields the create carries (#5904 rows 4 and 6): each list only on its explicit yes. */
   private readonly metaDetailedTargetingRequested = computed(() =>
-    metaDetailedTargetingForCreate(this.metaDetailedTargeting(), this.metaInterestTargetingEnabled(), this.metaBehaviorTargetingEnabled())
+    metaDetailedTargetingForCreate(this.metaDetailedTargeting(), this.metaDetailedTargetingEnabled())
   );
   /** Why Create is held for picks in a list the request cannot carry, or `null`: {@link metaAudienceTargetingBlock}'s states. */
   protected readonly metaDetailedTargetingBlock = computed(() =>
     metaDetailedTargetingBlock({
       picks: this.metaDetailedTargeting(),
-      interestEnabled: this.metaInterestTargetingEnabled(),
-      behaviorEnabled: this.metaBehaviorTargetingEnabled(),
+      enabled: this.metaDetailedTargetingEnabled(),
       createCapabilityRead: this.createCapabilityRead(),
       briefId: this.briefPersistence().briefId,
     })
@@ -6259,9 +6295,7 @@ export class ImplementationTabComponent implements OnInit {
 
   /** Empties the lists this deployment does not send: the way past an `unsupported` {@link metaDetailedTargetingBlock}, whose lists are hidden. */
   protected clearUnsendableMetaDetailedTargeting(): void {
-    this.onMetaDetailedTargetingChange(
-      metaDetailedTargetingPicksSendable(this.metaDetailedTargeting(), this.metaInterestTargetingEnabled(), this.metaBehaviorTargetingEnabled())
-    );
+    this.onMetaDetailedTargetingChange(metaDetailedTargetingPicksSendable(this.metaDetailedTargeting(), this.metaDetailedTargetingEnabled()));
   }
 
   protected onMetaPixelIdInput(event: Event): void {
@@ -7283,7 +7317,8 @@ export class ImplementationTabComponent implements OnInit {
               ...linkedInBiddingWithTargetCost(this.biddingField('linkedin-ads'), this.linkedInObjectiveDraft(), this.linkedInTargetCostShown()),
               // The objective and conversion rules (#5764 rows 2 and 4), only when chosen, so a create without a
               // choice sends what it always did and the bidding decides.
-              ...linkedInObjectiveFieldsForCreate(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable()),
+              // Lead generation (campaign-service#664) sends its form and button on its own capability.
+              ...linkedInObjectiveFieldsForCreate(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable(), this.linkedInLeadGenAvailable()),
             },
           }
         : {}),
@@ -8129,7 +8164,7 @@ export class ImplementationTabComponent implements OnInit {
   private linkedInVariantsSent(): LinkedInCreativeVariant[] {
     return linkedInVariantsForCreate(this.linkedInVariants(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '', {
       copy: this.linkedInVariantCopyAvailable(),
-      callToAction: this.linkedInCallToActionAvailable(),
+      callToAction: this.linkedInVariantCallToActionShown(),
     });
   }
 
@@ -9033,7 +9068,7 @@ export class ImplementationTabComponent implements OnInit {
       return {
         variants: linkedInVideoVariantsForCreate(this.linkedInVariants(), this.briefPersistence().briefId ?? '', {
           copy: this.linkedInVariantCopyAvailable(),
-          callToAction: this.linkedInCallToActionAvailable(),
+          callToAction: this.linkedInVariantCallToActionShown(),
         }),
       };
     }
@@ -9064,6 +9099,8 @@ export class ImplementationTabComponent implements OnInit {
       createAccountStatus: this.linkedInCreateAccount().status,
       // Text Ads chosen but no longer offered: held, never sent as single image ads instead (#5764 row 19).
       textAdsUnavailable: this.linkedInFormat() === 'text' && !this.linkedInTextAdsAvailable(),
+      // Text Ads beside lead generation (campaign-service#664): change the format, before the Text Ads checks ask for a manual bid.
+      textAdsWithLeadGen: this.linkedInFormat() === 'text' && this.linkedInLeadGenSelected(),
       // Likewise video ads (#5764 row 18); while chosen, every ad needs its video for this brief.
       videoAdsUnavailable: this.linkedInFormat() === 'video' && !this.linkedInVideoAdsAvailable(),
       ...(this.linkedInVideoSelected() ? { videoMissing: linkedInVideoMissing(this.linkedInVariants(), this.briefPersistence().briefId ?? '') } : {}),
@@ -9076,6 +9113,8 @@ export class ImplementationTabComponent implements OnInit {
         available: this.linkedInConversionsAvailable(),
         owner: this.linkedInSegmentsOwner(),
         bidding: this.biddingField('linkedin-ads').bidding,
+        leadGenAvailable: this.linkedInLeadGenAvailable(),
+        format: this.linkedInTextAdsSelected() ? 'text' : undefined,
       }),
       // The target cost (campaign-service#674): held while offered and refused; hidden, it is not sent and holds nothing.
       targetCostRefusal: linkedInTargetCostCreateRefusal(
@@ -14738,6 +14777,9 @@ export class ImplementationTabComponent implements OnInit {
       // X's manual bid may not exceed the daily budget (`twitterBidPlan`).
       case 'twitter-ads':
         return { dailyBudget: this.twitterBudgetAmount() };
+      // A lead gen create optimises for leads with automatic bidding only (campaign-service#664).
+      case 'linkedin-ads':
+        return this.linkedInLeadGenSelected() ? { manualRefusal: 'Lead generation campaigns take automatic bidding only. Choose Automatic.' } : {};
       default:
         return {};
     }

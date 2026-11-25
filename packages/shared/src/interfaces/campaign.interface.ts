@@ -2535,6 +2535,8 @@ export interface LinkedInCreateRefusalInput {
   textAds?: LinkedInTextAdsRefusalInput;
   /** Text Ads are chosen but this deployment no longer offers them (#5764 row 19). */
   textAdsUnavailable?: boolean;
+  /** Text Ads are chosen beside the lead generation objective, which has none (campaign-service#664). */
+  textAdsWithLeadGen?: boolean;
   /** Video ads are chosen but this deployment no longer offers them (#5764 row 18). */
   videoAdsUnavailable?: boolean;
   /** Present only while video ads are chosen (#5764 row 18): an ad with no video for the open brief. */
@@ -2715,7 +2717,7 @@ export interface LinkedInConfigKeyRefusal {
  */
 export interface LinkedInObjectiveDraft {
   /** The objective chosen, or `null`: none is sent, so the bidding decides, as every create did before. */
-  objective: LinkedInObjective | null;
+  objective: LinkedInObjective | LinkedInLeadGenObjective | null;
   /** The conversion rule ids picked, sent only with the `conversions` objective. */
   conversions: string[];
   /**
@@ -2728,6 +2730,25 @@ export interface LinkedInObjectiveDraft {
    * as `bidding.targetAmount` only while `linkedInTargetCostOffered`; see `linkedInBiddingWithTargetCost`.
    */
   targetCost?: string;
+  /** The Lead Gen Form picked (its numeric id), sent only with the `lead_generation` objective (campaign-service#664). */
+  leadGenForm?: string;
+  /**
+   * Who the form was picked for (`linkedInSegmentsOwnerKey`), as `conversionsOwner` is for rules: a form belongs to one ad
+   * account, so a create for another owner is held. Never sent.
+   */
+  leadGenFormOwner?: string;
+  /** The form's button label; absent is `LINKEDIN_LEAD_GEN_DEFAULT_CALL_TO_ACTION` (Register). */
+  leadGenCallToAction?: LinkedInLeadGenCallToAction;
+}
+
+/**
+ * The lead form picker's read of the ad account's Lead Gen Forms (campaign-service#664): loading, loaded, refused to a
+ * caller without `global_marketing_ops` (`restricted`), or failed (`unavailable`), with the message to show.
+ */
+export interface LinkedInLeadFormsState {
+  status: 'loading' | 'loaded' | 'restricted' | 'unavailable';
+  forms: LinkedInLeadForm[];
+  failure: string | null;
 }
 
 /** What `linkedInTargetCostOffered` reads: whether the Implement tab offers a LinkedIn target cost now. */
@@ -2759,6 +2780,10 @@ export interface LinkedInObjectiveCreateInput {
   owner: string;
   /** The `bidding` the create sends, if any. */
   bidding?: CampaignBiddingConfig;
+  /** `linkedInLeadGenEnabled` is an explicit yes (campaign-service#664). */
+  leadGenAvailable?: boolean;
+  /** The `format` the create sends, if any: a lead gen create cannot be Text Ads. */
+  format?: string;
 }
 
 /** Which of a LinkedIn variant's optional fields this deployment sends (#5764 rows 16–17). */
@@ -2899,6 +2924,14 @@ export interface RedditCampaignCreateRequest {
    * only with the conversions objective: the create route refuses it otherwise, never dropping it.
    */
   conversionEvent?: RedditConversionEvent;
+  /**
+   * Reddit custom audiences to target and to exclude (#6108 row 1, campaign-service #549), ids from
+   * `GET /api/campaigns/reddit/custom-audiences`. Only while `CampaignListResult.redditCustomAudiencesEnabled`: the
+   * create route refuses them otherwise, never dropping them, and holds them to campaign-service's rules
+   * (`redditCustomAudiencesRefusal`).
+   */
+  customAudienceIds?: string[];
+  excludedCustomAudienceIds?: string[];
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
 }
@@ -3170,9 +3203,6 @@ export interface MetaUserOsValue {
 /** A kind the Meta targeting search answers (`GET /api/campaigns/meta/targeting-search?type=`). */
 export type MetaTargetingSearchType = 'interest' | 'behavior' | 'work_position' | 'locale' | 'location';
 
-/** A search kind behind one of the detailed-targeting id lists (interests, behaviors, job titles). */
-export type MetaDetailedTargetingSearchType = 'interest' | 'behavior' | 'work_position';
-
 /** A Meta location type the targeting search keeps: a region fills `regions`, a city `cities`. */
 export type MetaLocationType = 'region' | 'city';
 
@@ -3204,11 +3234,32 @@ export interface MetaTargetingSearchResult {
 /** A detailed-targeting id list on `metaConfig.targeting`. */
 export type MetaDetailedTargetingKey = 'interests' | 'behaviors' | 'workPositions';
 
-/** One detailed-targeting list the Implement tab offers: the search kind that fills it and the list it fills. */
-export interface MetaTargetingKind {
-  type: MetaDetailedTargetingSearchType;
-  key: MetaDetailedTargetingKey;
+/** A list of picks the Implement tab keeps: the three id lists, languages (#5904 row 4), and regions and cities (row 6). */
+export type MetaTargetingPickKey = MetaDetailedTargetingKey | 'locales' | 'regions' | 'cities';
+
+/**
+ * One search box of the Meta targeting picker: the search kind behind it, the lists its picks fill (one, or regions
+ * and cities for the location box, by each row's location type), its label and each list's cap.
+ */
+export interface MetaTargetingBox {
+  type: MetaTargetingSearchType;
+  /** Names the box in test ids: a list key, or `locations` for the box that fills regions and cities. */
+  key: MetaDetailedTargetingKey | 'locales' | 'locations';
+  lists: readonly MetaTargetingPickKey[];
   label: string;
+  max: number;
+  /** Whether the box's picks join the "match any one" group (interests, behaviors, job titles); languages and places narrow instead. */
+  matchAny: boolean;
+  /** What the box's picks do, shown under its heading when they are not in the "match any one" group. */
+  hint?: string;
+}
+
+/** The detailed-targeting capability answers, one per flag: `true` yes, `false` no, `null` while unanswered. */
+export interface MetaDetailedTargetingEnabled {
+  interest: boolean | null;
+  behavior: boolean | null;
+  locale: boolean | null;
+  region: boolean | null;
 }
 
 /** One picked targeting option: the id sent, and the name kept so its chip reads the same after a restore. */
@@ -3217,23 +3268,36 @@ export interface MetaTargetingPick {
   name: string;
 }
 
-/** The detailed-targeting picks of a Meta create, one list per kind. */
-export type MetaDetailedTargetingPicks = Record<MetaDetailedTargetingKey, MetaTargetingPick[]>;
+/**
+ * The detailed-targeting picks of a Meta create, one list per field. Language picks hold the Meta locale key as a
+ * digit string (made a number only for the request); a region or city pick's name carries its region and country.
+ */
+export type MetaDetailedTargetingPicks = Record<MetaTargetingPickKey, MetaTargetingPick[]>;
 
 /** A search result row as the picker lists it: disabled when already picked or when its list is full. */
 export interface MetaTargetingSearchChoice extends MetaTargetingSearchOption {
   disabled: boolean;
 }
 
-/** One search row as the detailed-targeting picker draws it, with its taxonomy path already joined. */
+/** One search row as the detailed-targeting picker draws it, with its secondary line (taxonomy path, or a location's type and place). */
 export interface MetaDetailedTargetingChoiceView extends MetaTargetingSearchChoice {
   pathLabel: string;
 }
 
-/** One detailed-targeting list as the picker draws it. */
-export interface MetaDetailedTargetingListView extends MetaTargetingKind {
-  picks: MetaTargetingPick[];
+/** One chip of a search box: the list it sits in (regions or cities share a box), its id, and what it reads. */
+export interface MetaTargetingChipView {
+  list: MetaTargetingPickKey;
+  id: string;
+  label: string;
+}
+
+/** One search box as the picker draws it. */
+export interface MetaDetailedTargetingListView extends MetaTargetingBox {
+  /** E.g. "Interests (2 of 25)", or both counts for the location box. */
+  countLabel: string;
+  chips: MetaTargetingChipView[];
   choices: MetaDetailedTargetingChoiceView[];
+  /** Every list the box fills is at its cap. */
   full: boolean;
   /** What the search popup says while it has no rows. */
   emptyMessage: string;
@@ -3651,6 +3715,26 @@ export interface MetaCustomAudienceOption {
 export interface MetaCustomAudiencesResult {
   accountId: string;
   audiences: MetaCustomAudienceOption[];
+  truncated: boolean;
+}
+
+/** One custom audience on the Reddit ad account a create uses (#6108 row 1), camel-cased from campaign-service's `reddit-ads-custom-audience`. */
+export interface RedditCustomAudienceOption {
+  id: string;
+  name: string;
+  /** Reddit's type, verbatim (CUSTOMER_LIST, LOOKALIKE, PIXEL_RETARGETING, ...); empty when Reddit sent none. */
+  type: string;
+  /** Reddit's processing status, verbatim (VALID, PENDING, ...); every status is listed. */
+  status: string;
+  /** Reddit's estimated matched-user bounds; `null` when Reddit sent none, which is not a size of 0. */
+  sizeLower: number | null;
+  sizeUpper: number | null;
+}
+
+/** The Reddit custom-audience read: the ad account, its audiences sorted by name, and whether Reddit had more pages. */
+export interface RedditCustomAudiencesResult {
+  accountId: string;
+  audiences: RedditCustomAudienceOption[];
   truncated: boolean;
 }
 
@@ -6719,6 +6803,27 @@ export interface CampaignServiceMetaCustomAudiences {
   truncated: boolean;
 }
 
+/** One element of campaign-service's custom-audience read (`reddit-ads-custom-audience`, linuxfoundation/lfx-v2-campaign-service#549). */
+export interface CampaignServiceRedditCustomAudience {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  size_lower?: number;
+  size_upper?: number;
+}
+
+/**
+ * campaign-service `GET /projects/{project_id}/reddit-ads/custom-audiences` (`global_marketing_ops` on the project): every
+ * audience on the shared ad account, sorted by name, `truncated` when Reddit had more than 10 pages. No search upstream.
+ */
+export interface CampaignServiceRedditCustomAudiences {
+  account_id: string;
+  audiences: CampaignServiceRedditCustomAudience[];
+  audience_count: number;
+  truncated: boolean;
+}
+
 /** One element of campaign-service's `meta-lead-forms` read. */
 export interface CampaignServiceMetaLeadForm {
   id: string;
@@ -8460,6 +8565,14 @@ export interface CampaignListResult {
    */
   metaCustomAudiencesEnabled?: boolean | null;
   /**
+   * Whether THIS caller may pick Reddit custom audiences, through `GET /api/campaigns/reddit/custom-audiences`, and send
+   * `redditConfig.customAudienceIds` / `excludedCustomAudienceIds` (#6108 row 1): `canSetRedditCustomAudiences()` (the
+   * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CUSTOM_AUDIENCES`) AND `global_marketing_ops` on
+   * the listed project, the relation campaign-service checks (the Reddit ad account is shared by every foundation).
+   * `null` when that check cannot be made. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditCustomAudiencesEnabled?: boolean | null;
+  /**
    * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`
    * (#5934), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION`,
    * `..._META_CONVERSION_EVENT`, `..._META_OPTIMIZATION_GOAL`. Optional, so a BFF that predates them reads as unanswered.
@@ -8848,10 +8961,8 @@ export interface MetaAudienceTargetingBlockInput {
 /** The Meta detailed-targeting state `metaDetailedTargetingBlock` (`campaign-meta-detailed-targeting.utils.ts`) reads, as plain values. */
 export interface MetaDetailedTargetingBlockInput {
   picks: MetaDetailedTargetingPicks;
-  /** `CampaignListResult.metaInterestTargetingEnabled`: `null` while unanswered. */
-  interestEnabled: boolean | null;
-  /** `CampaignListResult.metaBehaviorTargetingEnabled`, for behaviors and job titles: `null` while unanswered. */
-  behaviorEnabled: boolean | null;
+  /** `CampaignListResult.metaInterestTargetingEnabled`, `metaBehaviorTargetingEnabled` (behaviors and job titles), `metaLocaleTargetingEnabled` and `metaRegionTargetingEnabled`. */
+  enabled: MetaDetailedTargetingEnabled;
   createCapabilityRead: CampaignCapabilityReadState;
   /** The open brief's id, or `null` while the brief is unsaved. */
   briefId: string | null;
@@ -9121,6 +9232,8 @@ export interface CampaignBiddingContext {
   objective?: string;
   /** The DAILY budget, or `null` when the budget is a lifetime one. Meta and X compare the bid with it. */
   dailyBudget?: number | null;
+  /** Why the config's other choices take automatic bidding only (a LinkedIn lead gen create), or absent when manual can be sent. */
+  manualRefusal?: string;
 }
 
 /** What one platform accepts as a manual bid, and how the control describes it. */
