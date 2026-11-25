@@ -49,7 +49,8 @@ test.describe('Mentor invite link — answering', () => {
     const writes = await stubInviteResponse(page);
     await openInvite(page);
 
-    await expect(page.getByTestId('mentorship-mentor-invite-title')).toHaveText(`You've been invited to mentor ${INVITATION_PROGRAM.name}`);
+    await expect(page.getByTestId('mentorship-mentor-invite-title')).toHaveText("You've been invited to be a mentor");
+    await expect(page.getByTestId('mentorship-mentor-invite-program-name')).toHaveText(INVITATION_PROGRAM.name);
     await expect(page.getByTestId('mentorship-mentor-invite-description')).toContainText(`invited you to join ${INVITATION_PROGRAM.name} as a mentor`);
     expect(writes).toEqual([]);
   });
@@ -71,7 +72,8 @@ test.describe('Mentor invite link — answering', () => {
     await openInvite(page);
 
     await expect(page.getByTestId('mentorship-mentor-invite-description')).toContainText('The invitation email names the program.');
-    await expect(page.getByTestId('mentorship-mentor-invite-title')).toHaveText("You've been invited to mentor");
+    await expect(page.getByTestId('mentorship-mentor-invite-title')).toHaveText("You've been invited to be a mentor");
+    await expect(page.getByTestId('mentorship-mentor-invite-program-name')).toHaveCount(0);
 
     await respond(page, 'accept');
 

@@ -70,7 +70,7 @@ describe('MentorInviteComponent', () => {
   it('asks before answering, and answers nothing when the link is opened', () => {
     build();
 
-    expect(byTestId('mentorship-mentor-invite-title')?.textContent).toContain("You've been invited to mentor");
+    expect(byTestId('mentorship-mentor-invite-title')?.textContent).toContain("You've been invited to be a mentor");
     expect(respondToMentorInvite).not.toHaveBeenCalled();
   });
 
@@ -78,7 +78,9 @@ describe('MentorInviteComponent', () => {
     build({ invite: of({ programName: 'Open Source Mentorship' }) });
 
     expect(getMentorInvite).toHaveBeenCalledWith(token);
-    expect(byTestId('mentorship-mentor-invite-program-name')?.textContent).toContain('Open Source Mentorship');
+    // The name is bold in the description; the title stays the same for every program.
+    expect(byTestId('mentorship-mentor-invite-description')?.querySelector('strong')?.textContent).toBe('Open Source Mentorship');
+    expect(byTestId('mentorship-mentor-invite-title')?.textContent?.trim()).toBe("You've been invited to be a mentor");
     expect(byTestId('mentorship-mentor-invite-description')?.textContent).toContain('invited you to join Open Source Mentorship as a mentor');
 
     click('mentorship-mentor-invite-accept-button');
