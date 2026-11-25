@@ -207,7 +207,7 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
   });
 
   it('refuses a key it does not check before anything is created', async () => {
-    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', objective: 'conversions' });
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', jobFunctions: ['urn:li:function:8'] });
 
     expect(createCampaigns).not.toHaveBeenCalled();
     expect(legacyCreate).not.toHaveBeenCalled();

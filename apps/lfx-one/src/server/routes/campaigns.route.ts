@@ -17,6 +17,7 @@ import {
   requireGoogleUserListsAccess,
   requireMetaCustomAudiencesAccess,
   requireLinkedInAudiencesAccess,
+  requireLinkedInConversionsAccess,
   requireMetaLeadFormsAccess,
 } from '../middleware/require-marketing-access.middleware';
 
@@ -114,6 +115,11 @@ router.get('/meta/lead-forms', requireMetaLeadFormsAccess, (req, res, next) => c
 // the project, as campaign-service answers. 404 while custom LinkedIn targeting is off. Ahead of
 // `router.use(requireCampaignManager)` for the same reason as the lists above.
 router.get('/linkedin/audiences', requireLinkedInAudiencesAccess, (req, res, next) => campaignController.getLinkedInAudiences(req, res, next));
+
+// The conversion rules on the LinkedIn ad account a create uses, for the Implement tab's conversion picker (#5764 row 4).
+// The ad account is shared, so answered only to `global_marketing_ops` on the project, as campaign-service answers. 404
+// while LinkedIn conversions are off. Ahead of `router.use(requireCampaignManager)` for the same reason as the lists above.
+router.get('/linkedin/conversions', requireLinkedInConversionsAccess, (req, res, next) => campaignController.getLinkedInConversions(req, res, next));
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its

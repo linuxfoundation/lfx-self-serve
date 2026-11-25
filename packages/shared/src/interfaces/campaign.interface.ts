@@ -25,6 +25,7 @@ import type {
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   LINKEDIN_AD_FORMATS,
+  LINKEDIN_OBJECTIVES,
   LINKEDIN_TARGETING_SEARCH_FACETS,
   MICROSOFT_KEYWORDS_WINDOWS,
   MONITOR_DATE_RANGE_OPTIONS,
@@ -1984,6 +1985,28 @@ export interface LinkedInAudiencesResult {
   audiences: LinkedInAudienceSegment[];
 }
 
+/** campaign-service's `list-linkedin-ads-conversions` body (`LinkedInAdsConversionRules`), as it sends it. */
+export interface CampaignServiceLinkedInConversions {
+  account_id: string;
+  conversions: { id: string; urn: string; name: string; type: string; enabled: boolean }[];
+  conversion_count: number;
+}
+
+/** One conversion rule a LinkedIn create may name in `linkedInConfig.conversions`. */
+export interface LinkedInConversionRule {
+  /** The rule's numeric id, exactly as `conversions` takes it. */
+  id: string;
+  name: string;
+  /** LinkedIn's conversion type, verbatim (e.g. `REGISTRATION`); empty when LinkedIn sent none. */
+  type: string;
+}
+
+/** `GET /api/campaigns/linkedin/conversions` (#5764 row 4): the enabled conversion rules on the ad account a create uses. */
+export interface LinkedInConversionsResult {
+  accountId: string;
+  conversions: LinkedInConversionRule[];
+}
+
 /** `GET /api/campaigns/linkedin/geo-targets` (#5545): the locations matching a query, ready to add as geo targets. */
 export interface LinkedInGeoSearchResult {
   locations: LinkedInGeoTarget[];
@@ -2453,7 +2476,21 @@ export interface LinkedInCampaignCreateRequest {
    * so it is refused with `targetingProfileEdit`. Only while `linkedInTargetingEnabled`.
    */
   targeting?: LinkedInTargeting;
+  /**
+   * The campaign's goal (#5764 row 2, campaign-service #582). Omitted lets `bidding` decide. `'conversions'` on automatic
+   * bidding needs `conversions`; `'traffic'` takes automatic bidding only. Only while `linkedInConversionsEnabled`.
+   */
+  objective?: LinkedInObjective;
+  /**
+   * Conversion rule ids on the campaign's ad account to associate once it exists (#5764 row 4, campaign-service #552),
+   * from `GET /api/campaigns/linkedin/conversions`. Only while `linkedInConversionsEnabled`, and only for a caller
+   * holding `global_marketing_ops` on the project.
+   */
+  conversions?: string[];
 }
+
+/** A goal `linkedInConfig.objective` may name (`LINKEDIN_OBJECTIVES`). */
+export type LinkedInObjective = (typeof LINKEDIN_OBJECTIVES)[number];
 
 /**
  * Custom LinkedIn targeting in campaign-service's shape (`linkedin.Targeting`): `include` clauses are ANDed (after the
@@ -8093,6 +8130,12 @@ export interface CampaignListResult {
    * `LINKEDIN_ADS_TARGETING_ENABLED`.
    */
   linkedInTargetingEnabled: boolean;
+  /**
+   * Whether a LinkedIn create may carry `objective` and `conversions` (#5764 rows 2 and 4). Needs the campaign-service
+   * create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS`, which follows campaign-service's own
+   * `LINKEDIN_ADS_CONVERSIONS_ENABLED`.
+   */
+  linkedInConversionsEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.

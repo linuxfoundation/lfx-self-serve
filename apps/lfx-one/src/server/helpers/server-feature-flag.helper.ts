@@ -443,6 +443,20 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING',
 
   /**
+   * LinkedIn objective and conversion tracking (#5764 rows 2 and 4): accept `linkedInConfig.objective` (`traffic` or
+   * `conversions`, campaign-service #582) and `linkedInConfig.conversions` (conversion rule ids, #552), and answer
+   * `GET /api/campaigns/linkedin/conversions` for the rules to pick from.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `LINKEDIN_ADS_CONVERSIONS_ENABLED` on,
+   * since campaign-service refuses `conversions` (and so a Maximum delivery conversions campaign) with a 400 otherwise,
+   * and is only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator ignores both fields.
+   * Off (the default), the create route refuses either field with a 400, never dropping it, and the read answers 404.
+   * Keep it off until campaign-service's flag is on and its live probe has passed. A request field only, so flipping it
+   * back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInConversions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS',
+
+  /**
    * Offers Meta ad set audience targeting on the Implement tab (#5905), sent as `metaConfig.targeting`:
    * age range, gender and Advantage+ audience to every campaign manager, and included/excluded custom
    * audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only to a caller holding

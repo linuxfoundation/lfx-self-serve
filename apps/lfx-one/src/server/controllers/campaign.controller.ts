@@ -17,6 +17,7 @@ import {
   linkedInAudienceSegments,
   linkedInTargetingSearchEntities,
 } from '@lfx-one/shared/utils/campaign-linkedin-targeting-lookup.utils';
+import { linkedInConfigNamesConversions, linkedInConversionRules, linkedInObjectiveRefusal } from '@lfx-one/shared/utils/campaign-linkedin-objective.utils';
 import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
 import { linkedInTextAdAssetField, linkedInTextAdsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-text-ads.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
@@ -183,6 +184,7 @@ import type {
   MetaTargeting,
   LinkedInGeoSearchResult,
   LinkedInAudiencesResult,
+  LinkedInConversionsResult,
   LinkedInTargetingSearchResult,
   MetaTargetingSearchResult,
   MetaCustomAudiencesResult,
@@ -382,6 +384,10 @@ import {
   LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
   LINKEDIN_AUDIENCES_RESTRICTED_CODE,
   LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE,
+  LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE,
+  LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE,
+  LINKEDIN_CONVERSIONS_RESTRICTED_CODE,
+  LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE,
   LINKEDIN_GEO_SEARCH_BUSY_MESSAGE,
   LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
   META_TARGETING_SEARCH_BUSY_MESSAGE,
@@ -434,6 +440,7 @@ import {
   canChooseLinkedInAdAccount,
   canEditLinkedInTargeting,
   canSetLinkedInCallToAction,
+  canSetLinkedInConversions,
   canSetLinkedInTargeting,
   canSetLinkedInTextAds,
   canSetLinkedInDailyCap,
@@ -1395,6 +1402,20 @@ export class CampaignController {
       // `global_marketing_ops` on the project, as campaign-service requires (403), and never on a check that failed (503).
       if (linkedInTargetingNamesSegments(body?.linkedInConfig)) {
         await this.requireLinkedInAudienceAccess(req, projectSlug, 'campaign_create', 'the LinkedIn audience segments');
+      }
+      // LinkedIn objective and conversions (#5764 rows 2 and 4): refused, never dropped, while this deployment cannot send
+      // them, and held to campaign-service's rules. See `linkedInObjectiveRefusal`.
+      const linkedInObjectiveRefused = linkedInObjectiveRefusal(body?.linkedInConfig, canSetLinkedInConversions());
+      if (linkedInObjectiveRefused !== null) {
+        throw ServiceValidationError.forField(linkedInObjectiveRefused.field, linkedInObjectiveRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // Conversion rules belong to the ad account every foundation shares: named only by a caller holding
+      // `global_marketing_ops` on the project, as campaign-service requires (403), and never on a check that failed (503).
+      if (linkedInConfigNamesConversions(body?.linkedInConfig)) {
+        await this.requireLinkedInAudienceAccess(req, projectSlug, 'campaign_create', 'the LinkedIn conversion rules', 'conversions');
       }
       // The LinkedIn ad account to name: only the picker's explicit choice, checked against
       // campaign-service's own list (#5809) and refused when it cannot be honoured. See
@@ -4959,6 +4980,53 @@ export class CampaignController {
   }
 
   /**
+   * The conversion rules on the LinkedIn ad account a create for this project uses, for the Implement tab's conversion
+   * picker (#5764 row 4), camel-cased: only enabled rules whose id a create accepts (`linkedInConversionRules`). Conversion
+   * rules belong to the shared ad account, so it is answered on `global_marketing_ops` on the project, as
+   * `getLinkedInAudiences` is, behind its own `requireLinkedInConversionsAccess`. 404 while a create cannot carry
+   * `conversions`. Optional `?accountId=` names the ad account the create will use; the answer's `accountId` says which.
+   */
+  public async getLinkedInConversions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'linkedin_conversions';
+    if (!canSetLinkedInConversions()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const context = { operation, service: 'campaign_controller', path: req.path };
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(ServiceValidationError.forField('project', 'A project is required to read LinkedIn conversion rules.', context));
+      return;
+    }
+    const rawAccountId = req.query['accountId'];
+    if (rawAccountId !== undefined && !(typeof rawAccountId === 'string' && LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(rawAccountId))) {
+      next(ServiceValidationError.forField('accountId', 'The LinkedIn ad account must be a numeric account id.', context));
+      return;
+    }
+    const accountId = rawAccountId === undefined ? undefined : String(rawAccountId);
+    try {
+      await this.requireLinkedInAudienceAccess(req, projectSlug, operation, 'the LinkedIn conversion rule read', 'conversions');
+      const startTime = logger.startOperation(req, operation, { viaCampaignService: true, accountNamed: accountId !== undefined });
+      const payload = await this.campaignServiceClient.listLinkedInConversions(req, projectSlug, accountId);
+      // `conversions` is required upstream; reading its absence as an empty list would say the account has none.
+      if (!Array.isArray(payload?.conversions)) {
+        throw new MicroserviceError('campaign-service returned an unreadable LinkedIn conversion rule read.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: LinkedInConversionsResult = {
+        accountId: typeof payload.account_id === 'string' ? payload.account_id : '',
+        conversions: linkedInConversionRules(payload.conversions),
+      };
+      logger.success(req, operation, startTime, { count: result.conversions.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * One page of Meta's targeting taxonomy for the Implement tab's detailed targeting (#5904 row 4), camel-cased:
    * interests, behaviors or job titles matching `?query=`, through campaign-service's `search-meta-targeting-options`
    * (linuxfoundation/lfx-v2-campaign-service#612). 404 unless interests or behaviors can be sent. Meta taxonomy, so
@@ -6714,24 +6782,30 @@ export class CampaignController {
 
   /**
    * Throws unless the caller holds `global_marketing_ops` on `projectSlug`, the relation campaign-service answers a
-   * LinkedIn audience segment on (#5764 rows 8–11): a coded 403 when refused, a coded 503 when it cannot be checked.
+   * LinkedIn audience segment (#5764 rows 8–11) and a conversion rule (row 4) on: a coded 403 when refused, a coded 503
+   * when it cannot be checked. `kind` picks the codes and messages: `audiences` or `conversions`.
    */
-  private async requireLinkedInAudienceAccess(req: Request, projectSlug: string, operation: string, subject: string): Promise<void> {
+  private async requireLinkedInAudienceAccess(
+    req: Request,
+    projectSlug: string,
+    operation: string,
+    subject: string,
+    kind: 'audiences' | 'conversions' = 'audiences'
+  ): Promise<void> {
+    const conversions = kind === 'conversions';
     const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, subject);
     if (access === 'denied') {
-      throw new AuthorizationError(LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE, {
+      throw new AuthorizationError(conversions ? LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE : LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE, {
         operation,
         service: 'campaign_controller',
         path: req.path,
-        code: LINKEDIN_AUDIENCES_RESTRICTED_CODE,
+        code: conversions ? LINKEDIN_CONVERSIONS_RESTRICTED_CODE : LINKEDIN_AUDIENCES_RESTRICTED_CODE,
       });
     }
     if (access === 'unverified') {
-      throw new MicroserviceError(LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE, 503, LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE, {
-        operation,
-        service: 'campaign_controller',
-        clientMessage: LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
-      });
+      const message = conversions ? LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE : LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE;
+      const code = conversions ? LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE : LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE;
+      throw new MicroserviceError(message, 503, code, { operation, service: 'campaign_controller', clientMessage: message });
     }
   }
 
@@ -9925,6 +9999,9 @@ export class CampaignController {
    *
    * 8. `targeting` (#5764 rows 8–11) goes out as it came, once `linkedInTargetingRefusal` passed it against the same
    *    `employerExclusions` sent here: campaign-service drops duplicates and merges those exclusions itself.
+   *
+   * 9. `objective` and `conversions` (#5764 rows 2 and 4) go out as they came, once `linkedInObjectiveRefusal` passed
+   *    them: campaign-service drops repeated conversion rule ids itself.
    */
   private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;
