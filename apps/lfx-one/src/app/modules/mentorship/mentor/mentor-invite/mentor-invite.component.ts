@@ -10,8 +10,9 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE } from '@lfx-one/shared/constants';
-import { MentorshipMentorInviteDecision, MentorshipMentorInviteState } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorInviteDecision, MentorshipMentorInviteDetails, MentorshipMentorInviteState } from '@lfx-one/shared/interfaces';
 import { isMentorshipMentorInviteToken } from '@lfx-one/shared/utils';
+import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { catchError, distinctUntilChanged, map, of, startWith, switchMap, tap } from 'rxjs';
 
@@ -23,12 +24,12 @@ import { catchError, distinctUntilChanged, map, of, startWith, switchMap, tap } 
  * the signed-in user's, or for an invitation sent by email that the signed-in LF account uses the
  * address, so another account sees the forbidden state. Accept and Decline stay disabled until the
  * browser's read confirms a mentor profile; someone without one is pointed to create it first, then
- * open the link again. The page names the invited program once
+ * open the link again. The page names the invited program, and links to its public page, once
  * the browser has read it; until then, or when the read fails, the copy says "the program".
  */
 @Component({
   selector: 'lfx-mentorship-mentor-invite',
-  imports: [ButtonComponent, CardComponent, EmptyStateComponent, RouterLink],
+  imports: [ButtonComponent, CardComponent, EmptyStateComponent, MentorshipPublicUrlPipe, RouterLink],
   templateUrl: './mentor-invite.component.html',
 })
 export class MentorInviteComponent {
@@ -51,8 +52,11 @@ export class MentorInviteComponent {
   protected readonly hasProfile: Signal<boolean | undefined> = this.initHasProfile();
   /** Accept and Decline need a confirmed mentor profile. */
   protected readonly canAnswer = computed(() => this.hasProfile() === true);
-  /** The invited program's name, or empty until the browser's read returns it (never on the server, or after a failed read). */
-  protected readonly programName: Signal<string> = this.initProgramName();
+  /** The invited program, or null until the browser's read returns it (never on the server, or after a failed read). */
+  private readonly invite: Signal<MentorshipMentorInviteDetails | null> = this.initInvite();
+  protected readonly programName = computed(() => this.invite()?.programName ?? '');
+  /** The program's id, for the View program link; the link shows only for a UUID. */
+  protected readonly programId = computed(() => this.invite()?.programId ?? '');
   protected readonly state = computed<MentorshipMentorInviteState>(
     () => this.submission() ?? (isMentorshipMentorInviteToken(this.token()) ? 'confirm' : 'invalid-link')
   );
@@ -98,21 +102,20 @@ export class MentorInviteComponent {
    * Reads the program name for each usable link. The read's failure is not shown: Accept or Decline reports why
    * the link cannot be used, as before the page named the program.
    */
-  private initProgramName(): Signal<string> {
-    if (!isPlatformBrowser(this.platformId)) return toSignal(of(''), { initialValue: '' });
+  private initInvite(): Signal<MentorshipMentorInviteDetails | null> {
+    if (!isPlatformBrowser(this.platformId)) return signal<MentorshipMentorInviteDetails | null>(null).asReadonly();
     return toSignal(
       toObservable(this.token).pipe(
         switchMap((token) =>
           isMentorshipMentorInviteToken(token)
             ? this.mentorService.getMentorInvite(token).pipe(
-                map((invite) => invite.programName),
-                catchError(() => of('')),
-                startWith('')
+                catchError(() => of(null)),
+                startWith(null)
               )
-            : of('')
+            : of(null)
         )
       ),
-      { initialValue: '' }
+      { initialValue: null }
     );
   }
 

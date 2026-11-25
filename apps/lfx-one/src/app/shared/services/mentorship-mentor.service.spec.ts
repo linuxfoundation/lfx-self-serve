@@ -297,7 +297,7 @@ describe('MentorshipMentorService — read error mapping', () => {
       const req = http.expectOne('/api/mentorship/mentor/invites/details');
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({ token: 'payload.sig' });
-      req.flush({ programName: 'Open Source Mentorship' });
+      req.flush({ programId: 'prog-1', programName: 'Open Source Mentorship' });
       expect(programName).toBe('Open Source Mentorship');
       expect(service.mentorRequestsRevision()).toBe(revision);
     });

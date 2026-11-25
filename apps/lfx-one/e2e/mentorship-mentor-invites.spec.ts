@@ -51,12 +51,15 @@ test.describe('Mentor invite link — answering', () => {
 
     await expect(page.getByTestId('mentorship-mentor-invite-title')).toHaveText("You've been invited to be a mentor");
     await expect(page.getByTestId('mentorship-mentor-invite-program-name')).toHaveText(INVITATION_PROGRAM.name);
+    const viewProgram = page.getByTestId('mentorship-mentor-invite-view-program');
+    await expect(viewProgram).toContainText('View program');
+    await expect(viewProgram).toHaveAttribute('href', new RegExp(`/programs/${INVITATION_PROGRAM.id}$`));
     await expect(page.getByTestId('mentorship-mentor-invite-description')).toContainText(`invited you to join ${INVITATION_PROGRAM.name} as a mentor`);
     expect(writes).toEqual([]);
   });
 
   test('asks someone with no mentor profile to create one, and sends nothing', async ({ page }) => {
-    const writes = await stubInviteResponse(page, [{ status: 204 }], { programName: INVITATION_PROGRAM.name }, false);
+    const writes = await stubInviteResponse(page, [{ status: 204 }], { programId: INVITATION_PROGRAM.id, programName: INVITATION_PROGRAM.name }, false);
     await openInvite(page);
 
     const hint = page.getByTestId('mentorship-mentor-invite-profile-hint');
@@ -74,6 +77,7 @@ test.describe('Mentor invite link — answering', () => {
     await expect(page.getByTestId('mentorship-mentor-invite-description')).toContainText('The invitation email names the program.');
     await expect(page.getByTestId('mentorship-mentor-invite-title')).toHaveText("You've been invited to be a mentor");
     await expect(page.getByTestId('mentorship-mentor-invite-program-name')).toHaveCount(0);
+    await expect(page.getByTestId('mentorship-mentor-invite-view-program')).toHaveCount(0);
 
     await respond(page, 'accept');
 

@@ -20,7 +20,7 @@ A Program Admin can invite you to mentor their program. The invitation arrives b
 ## Steps
 
 1. Open the invitation email and select its link.
-2. Sign in at [app.lfx.dev](https://app.lfx.dev) if you are not already signed in. The page reads **You've been invited to be a mentor** and names the program in bold.
+2. Sign in at [app.lfx.dev](https://app.lfx.dev) if you are not already signed in. The page reads **You've been invited to be a mentor** and names the program in bold. Select **View program** to open the program's public page in a new tab.
 3. Select **Accept** or **Decline**.
 
 The page only records your answer when you select one of those buttons, so a mail scanner that follows the link cannot answer on your behalf.

@@ -237,7 +237,7 @@ export class MentorshipMentorService {
   }
 
   /**
-   * Names the program the invite email's token is for, so the invite page can show it before the answer.
+   * Names the program the invite email's token is for, with its id, so the invite page can show and link it before the answer.
    * Upstream makes the same checks as an answer (400 for an expired, malformed or answered invitation, 403 for
    * another account's) and both pass through, with the token redacted as for an answer.
    */
@@ -253,7 +253,7 @@ export class MentorshipMentorService {
         `${MENTORSHIP_MENTOR_INVITES_PATH}/redacted`
       )
     );
-    return { programName: invite?.program_name?.trim() ?? '' };
+    return { programId: invite?.program_id?.trim() ?? '', programName: invite?.program_name?.trim() ?? '' };
   }
 
   /**

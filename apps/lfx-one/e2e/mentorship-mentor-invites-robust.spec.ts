@@ -43,6 +43,9 @@ test.describe('Mentor invite link — structure', () => {
     const confirm = page.getByTestId('mentorship-mentor-invite-confirm');
     await expect(confirm.getByRole('heading', { level: 1 })).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentorship-mentor-invite-description').locator('strong').getByTestId('mentorship-mentor-invite-program-name')).toBeVisible();
+    const viewProgram = confirm.getByRole('link', { name: /View program/ });
+    await expect(viewProgram).toHaveAttribute('target', '_blank');
+    await expect(viewProgram).toHaveAttribute('rel', 'noopener noreferrer');
     await expect(page.getByTestId('mentorship-mentor-invite-accept-button').getByRole('button')).toBeEnabled();
     await expect(page.getByTestId('mentorship-mentor-invite-decline-button').getByRole('button')).toBeEnabled();
   });

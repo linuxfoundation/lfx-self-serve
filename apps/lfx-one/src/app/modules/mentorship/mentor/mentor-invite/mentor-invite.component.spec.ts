@@ -14,6 +14,7 @@ import { MentorInviteComponent } from './mentor-invite.component';
 
 describe('MentorInviteComponent', () => {
   const token = 'eyJwcm9ncmFtX2lkIjoicDEifQ.c2lnbmF0dXJl';
+  const programId = 'c0e2e378-0000-4000-8000-0000000000aa';
 
   let fixture: ComponentFixture<MentorInviteComponent>;
   let respondToMentorInvite: ReturnType<typeof vi.fn>;
@@ -27,7 +28,7 @@ describe('MentorInviteComponent', () => {
       queryParamMap?: Observable<ParamMap>;
       hasProfile?: boolean;
       platform?: string;
-      invite?: Observable<{ programName: string }>;
+      invite?: Observable<{ programId: string; programName: string }>;
       profile?: Observable<{ hasProfile: boolean }>;
     } = {}
   ): void => {
@@ -37,7 +38,7 @@ describe('MentorInviteComponent', () => {
       queryParamMap = of(convertToParamMap(link === null ? {} : { token: link })),
       hasProfile = true,
       platform = 'browser',
-      invite = of({ programName: '' }),
+      invite = of({ programId: '', programName: '' }),
       profile = of({ hasProfile }),
     } = options;
     respondToMentorInvite = vi.fn(() => respond);
@@ -75,7 +76,7 @@ describe('MentorInviteComponent', () => {
   });
 
   it('names the invited program once the browser has read it, through to the answer', () => {
-    build({ invite: of({ programName: 'Open Source Mentorship' }) });
+    build({ invite: of({ programId, programName: 'Open Source Mentorship' }) });
 
     expect(getMentorInvite).toHaveBeenCalledWith(token);
     // The name is bold in the description; the title stays the same for every program.
@@ -90,8 +91,27 @@ describe('MentorInviteComponent', () => {
     expect(accepted?.querySelector('i')?.classList).toContain('!text-emerald-600');
   });
 
+  it("links to the program's public page in a new tab", () => {
+    build({ invite: of({ programId, programName: 'Open Source Mentorship' }) });
+
+    const link = byTestId('mentorship-mentor-invite-view-program') as HTMLAnchorElement | null;
+    expect(link?.textContent).toContain('View program');
+    expect(link?.getAttribute('href')).toMatch(new RegExp(`/programs/${programId}$`));
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it.each([
+    ['the read fails', httpError(503)],
+    ['the program id is not a UUID', of({ programId: 'prog-1', programName: 'Open Source Mentorship' })],
+  ])('shows no View program link when %s', (_label, invite) => {
+    build({ invite });
+
+    expect(byTestId('mentorship-mentor-invite-view-program')).toBeNull();
+  });
+
   it('names the program on a decline too', () => {
-    build({ invite: of({ programName: 'Open Source Mentorship' }) });
+    build({ invite: of({ programId, programName: 'Open Source Mentorship' }) });
 
     click('mentorship-mentor-invite-decline-button');
     expect(byTestId('mentorship-mentor-invite-declined-message')?.textContent?.trim()).toBe("We've let the admins of Open Source Mentorship know.");
@@ -100,7 +120,7 @@ describe('MentorInviteComponent', () => {
 
   it.each([
     ['the read fails', httpError(403)],
-    ['the program has no name', of({ programName: '' })],
+    ['the program has no name', of({ programId: '', programName: '' })],
   ])('keeps the generic copy when %s, and still answers', (_label, invite) => {
     build({ invite });
 

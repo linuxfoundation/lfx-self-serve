@@ -274,8 +274,9 @@ export interface MentorshipUpstreamMentorInvite {
   program_name: string;
 }
 
-/** What `POST /api/mentorship/mentor/invites/details` returns: the invited program's name, empty when upstream has none. */
+/** What `POST /api/mentorship/mentor/invites/details` returns: the invited program's id and name, each empty when upstream has none. */
 export interface MentorshipMentorInviteDetails {
+  programId: string;
   programName: string;
 }
 

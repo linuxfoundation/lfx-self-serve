@@ -29,7 +29,7 @@ export interface InviteAnswer {
 }
 
 /** How the stub answers the page's read of the invited program: the program's name, or a failure status. */
-export type InviteDetailsAnswer = { programName: string } | InviteAnswer;
+export type InviteDetailsAnswer = { programId: string; programName: string } | InviteAnswer;
 
 /** Every write the page sent, as `METHOD /path` and its JSON body. */
 export type InviteWrites = { method: string; path: string; body: unknown }[];
@@ -47,13 +47,13 @@ const record = (writes: InviteWrites, route: Route) => {
 
 /**
  * Answers the email link's Accept and Decline with each answer in turn, the last one again once they run out, and the
- * page's read of the invited program with `details` (by default `INVITATION_PROGRAM`'s name). The read is not a write.
+ * page's read of the invited program with `details` (by default `INVITATION_PROGRAM`). The read is not a write.
  * The profile check answers `hasProfile` (by default true), since the page answers only for someone with a mentor profile.
  */
 export async function stubInviteResponse(
   page: Page,
   answers: InviteAnswer[] = [{ status: 204 }],
-  details: InviteDetailsAnswer = { programName: INVITATION_PROGRAM.name },
+  details: InviteDetailsAnswer = { programId: INVITATION_PROGRAM.id, programName: INVITATION_PROGRAM.name },
   hasProfile = true
 ): Promise<InviteWrites> {
   const writes: InviteWrites = [];

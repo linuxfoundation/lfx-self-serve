@@ -404,10 +404,10 @@ describe('MentorshipMentorService mentor requests', () => {
     expect(JSON.stringify((failure as InstanceType<typeof MicroserviceError>).getLogContext())).not.toContain('SECRET');
   });
 
-  it('reads the invite with the token escaped into the path and returns the trimmed program name', async () => {
-    proxyRequest.mockResolvedValueOnce({ program_id: 'prog-1', program_name: ' Open Source Mentorship ' });
+  it('reads the invite with the token escaped into the path and returns the trimmed program id and name', async () => {
+    proxyRequest.mockResolvedValueOnce({ program_id: ' prog-1 ', program_name: ' Open Source Mentorship ' });
 
-    await expect(service.getMentorInvite(buildReq(), 'payload.sig-_')).resolves.toEqual({ programName: 'Open Source Mentorship' });
+    await expect(service.getMentorInvite(buildReq(), 'payload.sig-_')).resolves.toEqual({ programId: 'prog-1', programName: 'Open Source Mentorship' });
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/mentor-invites/payload.sig-_', 'GET', undefined, undefined);
   });
 

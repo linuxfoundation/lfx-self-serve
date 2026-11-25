@@ -293,13 +293,14 @@ describe('MentorshipMentorController', () => {
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
     });
 
-    it('reads the invite with the trimmed token and returns the program name', async () => {
-      const read = vi.spyOn(MentorshipMentorService.prototype, 'getMentorInvite').mockResolvedValue({ programName: 'Open Source Mentorship' });
+    it('reads the invite with the trimmed token and returns the program', async () => {
+      const details = { programId: PROGRAM_ID, programName: 'Open Source Mentorship' };
+      const read = vi.spyOn(MentorshipMentorService.prototype, 'getMentorInvite').mockResolvedValue(details);
 
       await controller.getMentorInvite(buildWriteReq({ token: ` ${INVITE_TOKEN} ` }), res, next);
 
       expect(read).toHaveBeenCalledWith(expect.anything(), INVITE_TOKEN);
-      expect(res.json).toHaveBeenCalledWith({ programName: 'Open Source Mentorship' });
+      expect(res.json).toHaveBeenCalledWith(details);
       expect(next).not.toHaveBeenCalled();
     });
 
