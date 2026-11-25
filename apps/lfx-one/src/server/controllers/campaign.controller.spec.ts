@@ -3274,12 +3274,15 @@ describe('CampaignController.createCampaign cutover', () => {
       const cfg = await stage({
         sourceEmailId: 'e-1',
         bodyHtml:
-          '<p><a href="https://acme.example/blog/guide">The guide</a> <a href="https://reports.example/2026">The report</a> ' +
-          '<a href="https://acme.example/blog/invented">Invented</a> <a href="https://training.linuxfoundation.org/x">LF</a></p>',
+          '<p><a href="https://acme.example/blog/guide/">The guide</a> <a href="https://reports.example/2026">The report</a> ' +
+          '<a href="https://acme.example/blog/invented">Invented</a> <a href="https://training.linuxfoundation.org/x">LF</a> ' +
+          '<a href="https://acme.example/blog/guide">Slashless</a></p>',
       });
 
       expect(newsletterNoteLinks).toHaveBeenCalledWith(expect.anything(), 'tlf', NEWSLETTER_BRIEF_ID);
-      expect(cfg['bodyHtml']).toContain('href="https://acme.example/blog/guide"');
+      expect(cfg['bodyHtml']).toContain('href="https://acme.example/blog/guide/"');
+      // The notes give the guide WITH its trailing slash; the slashless address is not one they carry.
+      expect(cfg['bodyHtml']).toContain('<a>Slashless</a>');
       expect(cfg['bodyHtml']).toContain('href="https://reports.example/2026"');
       expect(cfg['bodyHtml']).toContain('<a>Invented</a>');
       // No host is vouched for on a newsletter, an LF-owned one included.
@@ -3287,10 +3290,15 @@ describe('CampaignController.createCampaign cutover', () => {
     });
 
     it('stages a button only when it points at an address in the notes', async () => {
-      newsletterNoteLinks.mockResolvedValue(['https://acme.example/november']);
+      newsletterNoteLinks.mockResolvedValue(['https://acme.example/november/']);
 
       const vouched = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', buttonText: 'Read More', buttonUrl: 'https://acme.example/november/' });
       expect(vouched['buttonUrl']).toBe('https://acme.example/november/');
+
+      // The address must match exactly: the notes give it with its trailing slash.
+      createCampaigns.mockClear();
+      const slashless = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', buttonText: 'Read More', buttonUrl: 'https://acme.example/november' });
+      expect(slashless['buttonUrl']).toBeUndefined();
 
       createCampaigns.mockClear();
       const invented = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', buttonText: 'Read More', buttonUrl: 'https://acme.example/elsewhere' });

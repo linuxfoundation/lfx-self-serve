@@ -26,8 +26,21 @@ describe('extractHttpLinks', () => {
     expect(extractHttpLinks('(see https://acme.example/plain)')).toEqual(['https://acme.example/plain']);
   });
 
-  it('lists an address once, however it is repeated', () => {
-    expect(extractHttpLinks('https://acme.example/a https://acme.example/a/ HTTPS://ACME.example/a#again')).toEqual(['https://acme.example/a']);
+  it('lists an address once, however its scheme and host are cased', () => {
+    expect(extractHttpLinks('https://acme.example/a HTTPS://ACME.example/a https://acme.example/a/ https://acme.example/a#again')).toEqual([
+      'https://acme.example/a',
+      'https://acme.example/a/',
+      'https://acme.example/a#again',
+    ]);
+  });
+
+  it("keeps a delimited address's trailing punctuation, which open prose loses", () => {
+    expect(extractHttpLinks(`Download <https://acme.example/d?token=abc!> or "https://acme.example/q?x=1." or 'https://acme.example/s?y=2;'`)).toEqual([
+      'https://acme.example/d?token=abc!',
+      'https://acme.example/q?x=1.',
+      'https://acme.example/s?y=2;',
+    ]);
+    expect(extractHttpLinks('see https://acme.example/prose.')).toEqual(['https://acme.example/prose']);
   });
 
   it('refuses what canonicalHttpUrl refuses, so a note cannot vouch for a private host', () => {
@@ -43,9 +56,20 @@ describe('extractHttpLinks', () => {
 });
 
 describe('emailLinkMatchKey', () => {
-  it('ignores a trailing slash, a fragment and the case of the host', () => {
-    expect(emailLinkMatchKey('https://Acme.example/Events/#agenda')).toBe('https://acme.example/Events');
-    expect(emailLinkMatchKey('https://acme.example/Events')).toBe('https://acme.example/Events');
+  it('folds only the case of the scheme and host, and reads an empty path as "/"', () => {
+    expect(emailLinkMatchKey('HTTPS://Acme.example/Events/#agenda')).toBe('https://acme.example/Events/#agenda');
+    expect(emailLinkMatchKey('https://acme.example')).toBe(emailLinkMatchKey('https://acme.example/'));
+  });
+
+  it('keeps a trailing slash, the fragment and a slash inside the query, which can each name another destination', () => {
+    expect(emailLinkMatchKey('https://acme.example/report')).not.toBe(emailLinkMatchKey('https://acme.example/report/'));
+    expect(emailLinkMatchKey('https://acme.example/report#results')).not.toBe(emailLinkMatchKey('https://acme.example/report#invented'));
+    expect(emailLinkMatchKey('https://acme.example/d?file=reports/')).not.toBe(emailLinkMatchKey('https://acme.example/d?file=reports'));
+  });
+
+  it('forgives only the order of query parameters, which campaign-service sorts when it sanitises an anchor', () => {
+    expect(emailLinkMatchKey('https://acme.example/r?year=2026&format=pdf')).toBe(emailLinkMatchKey('https://acme.example/r?format=pdf&year=2026'));
+    expect(emailLinkMatchKey('https://acme.example/r?year=2026&format=pdf')).not.toBe(emailLinkMatchKey('https://acme.example/r?format=pdf&year=2025'));
   });
 
   it('keeps the path case and the query, which can both be significant', () => {
@@ -66,17 +90,20 @@ describe('stripResourceLoadingHtml — addresses vouched for one by one', () => 
 
   it("keeps a link whose address the notes carry, whatever its host, and drops every other link's href", () => {
     const html =
-      '<p style="color:red">Read <a href="https://acme.example/blog/guide" style="color:blue">the guide</a>, ' +
+      '<p style="color:red">Read <a href="https://acme.example/blog/guide/" style="color:blue">the guide</a>, ' +
       '<a href="https://reports.example/2026?ref=nl">the report</a>, ' +
-      '<a href="https://acme.example/blog/invented-post" style="color:blue">a post</a> and ' +
+      '<a href="https://acme.example/blog/invented-post" style="color:blue">a post</a>, ' +
+      '<a href="https://acme.example/blog/guide">the guide without its slash</a> and ' +
       '<a href="https://linuxfoundation.org/elsewhere">an LF page</a>.</p>';
 
     const out = stripResourceLoadingHtml(html, [], '', links);
 
-    expect(out).toContain('<a href="https://acme.example/blog/guide" style="color:blue">the guide</a>');
+    expect(out).toContain('<a href="https://acme.example/blog/guide/" style="color:blue">the guide</a>');
     expect(out).toContain('<a href="https://reports.example/2026?ref=nl">the report</a>');
     // An invented path on a real site is the link a model writes when it was given none.
     expect(out).toContain('<a>a post</a>');
+    // The notes give the guide WITH its trailing slash; "/blog/guide" is an address they do not carry.
+    expect(out).toContain('<a>the guide without its slash</a>');
     // No host is vouched for on this path, an LF-owned one included.
     expect(out).toContain('<a>an LF page</a>');
   });

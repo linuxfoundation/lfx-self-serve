@@ -3359,7 +3359,7 @@ describe('CampaignServiceClient.generateEmailCopy for a newsletter issue', () =>
     subject: 'Acme Newsletter: the guide is out',
     preheader: 'New members too',
     sections: [
-      { type: 'rich_text', html: '<h1>Acme Newsletter</h1><p>Read <a href="https://acme.example/blog/guide">the guide</a>.</p>' },
+      { type: 'rich_text', html: '<h1>Acme Newsletter</h1><p>Read <a href="https://acme.example/blog/guide/">the guide</a>.</p>' },
       {
         type: 'rich_text',
         html: '<h2>Members</h2><p><a href="https://acme.example/blog/invented">Meet them</a> or <a href="https://linuxfoundation.org/x">here</a>.</p>',
@@ -3378,7 +3378,7 @@ describe('CampaignServiceClient.generateEmailCopy for a newsletter issue', () =>
 
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Newsletter');
 
-    expect(result.copy?.body).toContain('<a href="https://acme.example/blog/guide">the guide</a>');
+    expect(result.copy?.body).toContain('<a href="https://acme.example/blog/guide/">the guide</a>');
     expect(result.copy?.body).toContain('<a>Meet them</a>');
     // An LF-owned host is not vouched for either: a newsletter's links are its notes' and no others.
     expect(result.copy?.body).toContain('<a>here</a>');

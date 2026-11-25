@@ -748,22 +748,26 @@ export function stripResourceLoadingHtml(
 /**
  * The form two link addresses are compared in when a body's links are held to an exact list: the
  * canonical URL (`canonicalHttpUrl`: public http(s) host, no userinfo, lower-cased scheme and
- * host) with its fragment and trailing slashes removed. '' for anything that is not such a URL.
+ * host, and an empty path read as "/"), with its query parameters sorted. '' for anything that is
+ * not such a URL.
  *
- * A trailing slash and a fragment are dropped because they address the same page: a model that
- * copies `https://example.org/events/` as `https://example.org/events` followed its instruction,
- * and refusing it would leave a correct link dead. The path's case and the query are kept, since
- * both can be significant. campaign-service compares the same way (`normalizeLinkForMatch`).
+ * Everything else counts, a trailing slash, the query and the fragment included: a server can serve
+ * a different page at `/report/` than at `/report`, `?file=reports/` can select a different
+ * resource from `?file=reports`, and a fragment the notes did not give sends the reader to a section
+ * the operator did not choose. A link that differs in any of them loses its href, which is the safe
+ * way to be wrong. campaign-service compares the same way (`normalizeLinkForMatch`).
  */
 export function emailLinkMatchKey(value: unknown): string {
   const canonical = canonicalHttpUrl(value);
   if (canonical === '') return '';
+  // Parameter ORDER is the one thing forgiven in the query: campaign-service sanitises every
+  // generated anchor through a re-encoding that sorts it, so notes with `?year=2026&format=pdf`
+  // reach here as `?format=pdf&year=2026`. Both sides are sorted the same way; every name and value
+  // still has to match.
   try {
     const parsed = new URL(canonical);
-    parsed.hash = '';
-    let key = parsed.href;
-    while (key.endsWith('/')) key = key.slice(0, -1);
-    return key;
+    if (parsed.search !== '') parsed.searchParams.sort();
+    return parsed.href;
   } catch {
     return '';
   }
@@ -778,16 +782,23 @@ const TRAILING_LINK_PUNCTUATION = '.,;:!?)]}>';
  * For a newsletter issue's notes: the addresses the operator wrote are the only ones the issue may
  * link to, so they are what `stripResourceLoadingHtml` is given as `exactDestinations`. An address
  * ends at whitespace or a quote; punctuation that follows it ("see https://example.org/x.") is not
- * part of it. Bounded by `limit`, and by the notes' own length limit before that.
+ * part of it, unless the address is wrapped in "<…>" or quotes. Bounded by `limit`, and by the notes' own length limit before that.
  */
 export function extractHttpLinks(text: unknown, limit: number = EMAIL_NOTE_LINK_LIMIT): string[] {
   if (typeof text !== 'string' || text === '') return [];
-  const found = text.match(/https?:\/\/[^\s<>"']+/gi) ?? [];
   const seen = new Set<string>();
   const links: string[] = [];
-  for (const candidate of found) {
-    let raw = candidate;
-    while (raw !== '' && TRAILING_LINK_PUNCTUATION.includes(raw[raw.length - 1])) {
+  for (const match of text.matchAll(/https?:\/\/[^\s<>"']+/gi)) {
+    let raw = match[0];
+    const start = match.index;
+    const end = start + raw.length;
+    // Inside "<…>" or matching quotes the address ends at the delimiter, so its trailing punctuation
+    // is its own ("<https://example.org/d?token=abc!>"): trimming it would vouch for a shorter address
+    // the notes never gave. campaign-service reads the notes the same way (`explicitlyDelimited`).
+    const opener = start > 0 ? text[start - 1] : '';
+    const closer = end < text.length ? text[end] : '';
+    const delimited = (opener === '<' && closer === '>') || (opener !== '' && (opener === '"' || opener === "'") && closer === opener);
+    while (!delimited && raw !== '' && TRAILING_LINK_PUNCTUATION.includes(raw[raw.length - 1])) {
       // A closing bracket that closes one opened INSIDE the address belongs to it
       // (`…/wiki/Foo_(bar)`); only an unmatched one is the prose's ("(see https://example.org/x)").
       if (raw.endsWith(')') && raw.split('(').length >= raw.split(')').length) break;

@@ -89,8 +89,9 @@ describe('CampaignsComponent — newsletter issue', () => {
     subject: 'Acme Newsletter: the guide is out',
     preheader: 'New members too',
     body:
-      '<h1>Acme Newsletter</h1><p>Read <a href="https://acme.example/blog/guide">the guide</a>, ' +
-      '<a href="https://acme.example/blog/invented-post">a post</a> and <a href="https://training.linuxfoundation.org/x">a course</a>.</p>',
+      '<h1>Acme Newsletter</h1><p>Read <a href="https://acme.example/blog/guide/">the guide</a>, ' +
+      '<a href="https://acme.example/blog/invented-post">a post</a>, <a href="https://acme.example/blog/guide">the guide again</a> ' +
+      'and <a href="https://training.linuxfoundation.org/x">a course</a>.</p>',
     cta: '',
     ctaUrl: '',
     ...overrides,
@@ -162,7 +163,9 @@ describe('CampaignsComponent — newsletter issue', () => {
       fixture.detectChanges();
 
       const body = internals().emailBodyHtmlPreview();
-      expect(body).toContain('<a href="https://acme.example/blog/guide">the guide</a>');
+      expect(body).toContain('<a href="https://acme.example/blog/guide/">the guide</a>');
+      // The notes give the guide WITH its trailing slash; the slashless address is not one they carry.
+      expect(body).toContain('<a>the guide again</a>');
       // An invented path on the brand's own site is the link a model writes when it was given none.
       expect(body).toContain('<a>a post</a>');
       // No host is vouched for on a newsletter, an LF-owned one included.
@@ -186,9 +189,14 @@ describe('CampaignsComponent — newsletter issue', () => {
       select('newsletter');
       internals().emailBriefOutput.set(newsletterBrief);
 
+      internals().emailCopy.set(copy({ cta: 'Read More', ctaUrl: 'https://acme.example/newsletter/november' }));
+      fixture.detectChanges();
+      expect(internals().emailCtaDestination()).toBe('https://acme.example/newsletter/november');
+
+      // The address must match exactly: the notes give it without a trailing slash.
       internals().emailCopy.set(copy({ cta: 'Read More', ctaUrl: 'https://acme.example/newsletter/november/' }));
       fixture.detectChanges();
-      expect(internals().emailCtaDestination()).toBe('https://acme.example/newsletter/november/');
+      expect(internals().emailCtaDestination()).toBe('');
 
       internals().emailCopy.set(copy({ cta: 'Read More', ctaUrl: 'https://acme.example/elsewhere' }));
       fixture.detectChanges();
