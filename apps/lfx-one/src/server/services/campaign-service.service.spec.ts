@@ -4811,6 +4811,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInCallToActionEnabled: false,
       linkedInTextAdsEnabled: false,
       linkedInVideoAdsEnabled: false,
+      linkedInTargetCostEnabled: false,
       linkedInTargetingEnabled: false,
       linkedInConversionsEnabled: false,
       microsoftAssetUploadEnabled: false,
@@ -5476,6 +5477,24 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** LinkedIn target cost (campaign-service #674): bidding (the target travels inside `bidding`) and its own flag. */
+  it.each([
+    [{ bidding: true, targetCost: true }, true],
+    [{ bidding: false, targetCost: true }, false],
+  ])('reports LinkedIn target cost (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInTargetCost) return flags.targetCost;
+      if (flag === ServerFeatureFlag.CampaignServiceBidding) return flags.bidding;
+      return true;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInTargetCostEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** LinkedIn custom targeting (#5764 rows 8–11): the cutover and its own flag. Bidding plays no part. */
   it.each([
     [{ cutover: true, targeting: true }, true],
@@ -5627,6 +5646,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInCallToActionEnabled: false,
       linkedInTextAdsEnabled: false,
       linkedInVideoAdsEnabled: false,
+      linkedInTargetCostEnabled: false,
       linkedInTargetingEnabled: false,
       linkedInConversionsEnabled: false,
       microsoftAssetUploadEnabled: false,

@@ -956,6 +956,17 @@ export function canSetLinkedInVideoAds(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create's automatic `bidding` may carry a `targetAmount`, its target cost
+ * (linuxfoundation/lfx-v2-campaign-service#674). Needs bidding (`canCreateWithBidding`, which includes the campaign-service
+ * create path), since the target travels inside `bidding`, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGET_COST`, which
+ * follows campaign-service's own `LINKEDIN_ADS_TARGET_COST_ENABLED`: campaign-service refuses the field while that is off,
+ * and the legacy creator ignores it.
+ */
+export function canSetLinkedInTargetCost(): boolean {
+  return canCreateWithBidding() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInTargetCost);
+}
+
+/**
  * Whether a LinkedIn create may carry its own `targeting` (#5764 rows 8–11, campaign-service #552). Needs the
  * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING`, which follows campaign-service's own
  * `LINKEDIN_ADS_TARGETING_ENABLED`: campaign-service refuses the field while that is off, and the legacy creator ignores it.
@@ -1205,6 +1216,7 @@ export class CampaignServiceClient {
         linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
         linkedInTextAdsEnabled: canSetLinkedInTextAds(),
         linkedInVideoAdsEnabled: canSetLinkedInVideoAds(),
+        linkedInTargetCostEnabled: canSetLinkedInTargetCost(),
         linkedInTargetingEnabled: canSetLinkedInTargeting(),
         linkedInConversionsEnabled: canSetLinkedInConversions(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
@@ -1297,6 +1309,7 @@ export class CampaignServiceClient {
       linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
       linkedInTextAdsEnabled: canSetLinkedInTextAds(),
       linkedInVideoAdsEnabled: canSetLinkedInVideoAds(),
+      linkedInTargetCostEnabled: canSetLinkedInTargetCost(),
       linkedInTargetingEnabled: canSetLinkedInTargeting(),
       linkedInConversionsEnabled: canSetLinkedInConversions(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),

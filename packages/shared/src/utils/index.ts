@@ -172,6 +172,7 @@ export * from './campaign-linkedin-objective-form.utils';
 export * from './campaign-linkedin-text-ads-form.utils';
 export * from './campaign-linkedin-variant-fields.utils';
 export * from './campaign-linkedin-video.utils';
+export * from './campaign-linkedin-target-cost.utils';
 export * from './campaign-linkedin-image.utils';
 export * from './campaign-linkedin-draft.utils';
 export * from './campaign-google-assets.utils';
