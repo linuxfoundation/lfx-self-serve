@@ -442,6 +442,19 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInTextAds = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS',
 
   /**
+   * LinkedIn video ads, LF's "Motion" (#5764 row 18): accept `linkedInConfig.variants[i].videoAssetId`, an MP4 uploaded
+   * to the brief, which makes the campaign a SINGLE_VIDEO one.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 DEPLOYED with `LINKEDIN_ADS_VIDEO_ENABLED`
+   * on, since campaign-service refuses the field with a 400 otherwise, and is only meaningful while the LinkedIn creative
+   * asset path is on (`canUseLinkedInCreativeAssets`): the legacy creator would make an image campaign instead. Off (the
+   * default), the create route refuses the field with a 400, never dropping it. Keep it off until campaign-service's
+   * paused video probe has passed (linuxfoundation/lfx-v2-campaign-service#646). A request field only, so flipping it
+   * back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInVideo = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO',
+
+  /**
    * LinkedIn custom targeting (#5764 rows 8–11): accept `linkedInConfig.targeting`, the campaign's own include clauses
    * and exclusions in place of the configured targeting profile.
    *

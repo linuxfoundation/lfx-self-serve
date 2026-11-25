@@ -4810,6 +4810,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInVariantCopyEnabled: false,
       linkedInCallToActionEnabled: false,
       linkedInTextAdsEnabled: false,
+      linkedInVideoAdsEnabled: false,
       linkedInTargetingEnabled: false,
       linkedInConversionsEnabled: false,
       microsoftAssetUploadEnabled: false,
@@ -5455,6 +5456,26 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** LinkedIn video ads (#5764 row 18): the cutover, the LinkedIn asset flag (the video is a brief asset) and its own flag. */
+  it.each([
+    [{ cutover: true, assets: true, video: true }, true],
+    [{ cutover: true, assets: true, video: false }, false],
+    [{ cutover: true, assets: false, video: true }, false],
+    [{ cutover: false, assets: true, video: true }, false],
+  ])('reports LinkedIn video ads (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInVideo) return flags.video;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInAssets) return flags.assets;
+      return flags.cutover;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInVideoAdsEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** LinkedIn custom targeting (#5764 rows 8–11): the cutover and its own flag. Bidding plays no part. */
   it.each([
     [{ cutover: true, targeting: true }, true],
@@ -5605,6 +5626,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInVariantCopyEnabled: false,
       linkedInCallToActionEnabled: false,
       linkedInTextAdsEnabled: false,
+      linkedInVideoAdsEnabled: false,
       linkedInTargetingEnabled: false,
       linkedInConversionsEnabled: false,
       microsoftAssetUploadEnabled: false,

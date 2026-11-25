@@ -2060,6 +2060,13 @@ export interface LinkedInCreativeVariant {
    */
   imageAssetId?: string;
   /**
+   * An MP4 uploaded to the brief, which makes this a video ad, LF's "Motion" (#5764 row 18, campaign-service #586).
+   * campaign-service uploads it through LinkedIn's Videos API and creates a SINGLE_VIDEO campaign. Every variant of a
+   * campaign carries one or none does; a video variant carries no image and no description. See
+   * `linkedInVideoVariantsRefusal`.
+   */
+  videoAssetId?: string;
+  /**
    * The ad's name in Campaign Manager and reporting (#5764 row 17, campaign-service #589). Omitted keeps
    * "<event> | variant-N". No two variants of one campaign may share one. Only on the campaign-service road.
    */
@@ -8202,6 +8209,12 @@ export interface CampaignListResult {
    * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TEXT_ADS`, which follows campaign-service's own `LINKEDIN_ADS_TEXT_ADS_ENABLED`.
    */
   linkedInTextAdsEnabled: boolean;
+  /**
+   * Whether a LinkedIn variant may carry a `videoAssetId`, a video ad (#5764 row 18). Needs the LinkedIn creative asset
+   * path (`canUseLinkedInCreativeAssets`) AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO`, which follows
+   * campaign-service's own `LINKEDIN_ADS_VIDEO_ENABLED`.
+   */
+  linkedInVideoAdsEnabled: boolean;
   /**
    * Whether a LinkedIn create may carry its own `targeting` (#5764 rows 8–11). Needs the campaign-service create path
    * AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TARGETING`, which follows campaign-service's own

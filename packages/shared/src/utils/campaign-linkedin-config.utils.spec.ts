@@ -17,6 +17,7 @@ describe('linkedInConfigKeyRefusal', () => {
     [{ ...config, format: 'text', textAds: [{ headline: 'h', description: 'd', imageUrn: 'urn:li:image:1' }, null] }, null],
     [{ ...config, targeting: { include: [{ skills: ['urn:li:skill:1'] }] } }, null],
     [{ ...config, objective: 'conversions', conversions: ['104012'] }, null],
+    [{ ...config, variants: [{ introText: 'Join us', headline: 'KubeCon', videoAssetId: 'v1' }] }, null],
   ])('accepts %j', (raw, expected) => {
     expect(linkedInConfigKeyRefusal(raw)).toBe(expected);
   });
@@ -28,7 +29,8 @@ describe('linkedInConfigKeyRefusal', () => {
     // Another spelling of a known key names the key; Go folds U+017F (long s) to s.
     [{ ...config, DailyCapUsd: 20 }, 'linkedInConfig.dailyCapUsd'],
     [{ ...config, ['ſelectedAdAccountId']: '1' }, 'linkedInConfig.selectedAdAccountId'],
-    [{ ...config, variants: [variant, { ...variant, videoAssetId: 'v1' }] }, 'linkedInConfig.variants[1]'],
+    [{ ...config, variants: [variant, { ...variant, VideoAssetId: 'v1' }] }, 'linkedInConfig.variants[1].videoAssetId'],
+    [{ ...config, variants: [variant, { ...variant, videoUrn: 'v1' }] }, 'linkedInConfig.variants[1]'],
     [{ ...config, variants: [{ ...variant, ImageUrn: 'urn:li:image:1' }] }, 'linkedInConfig.variants[0].imageUrn'],
     [{ ...config, textAds: [{ headline: 'h', descripton: 'd' }] }, 'linkedInConfig.textAds[0]'],
     [{ ...config, textAds: [{ Headline: 'h' }] }, 'linkedInConfig.textAds[0].headline'],
