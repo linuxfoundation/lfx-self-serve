@@ -2,7 +2,7 @@
 
 ## Overview
 
-Users create `lfi_…` tokens for the LFX Insights public API, each with an expiration they pick, from **Profile → Settings → Developer Settings**. The BFF is a thin proxy over `lfx-v2-pat-service` and adds one server-side rule: only a user the `insights-public-api-token-access` flag is on for may list, create or revoke tokens (see [Access flag](#access-flag)). There is no membership check.
+Users create `lfi_…` tokens for the LFX Insights public API, each with an expiration they pick, from **Profile → Settings → Developer Settings**, or, behind the profile redesign flag, **Account & Settings → Developer settings**. The BFF is a thin proxy over `lfx-v2-pat-service` and adds one server-side rule: only a user the `insights-public-api-token-access` flag is on for may list, create or revoke tokens (see [Access flag](#access-flag)). There is no membership check.
 
 The UI group (`lfx-insights-tokens`) is gated by the `insights-public-api` LaunchDarkly flag (`INSIGHTS_PUBLIC_API_FLAG`). This flag controls visibility only and grants no access. The flag defaults to `false`, so SSR renders nothing. `AccountSettingsComponent` also holds the flag at `false` until `afterNextRender`, so a non-production localStorage override cannot render the group on the first client pass and mismatch the SSR DOM.
 
@@ -34,7 +34,7 @@ The PAT service is reached through `LFX_V2_SERVICE`, so it needs no env var of i
 
 PAT service `409` errors (`token_name_taken`, `token_limit_reached`) pass through `MicroserviceError` as `upstreamCode`. The create dialog maps each code in `INSIGHTS_TOKEN_ERROR_CODES` to an inline message. Before rethrowing, the service drops the refusal's prose, keeping only status and code (the `withoutUpstreamBody` approach from `cla.service.ts`), because a `token_name_taken` message repeats the token name and the error handler logs both `message` and `error_body`.
 
-The secret is returned exactly once. It exists only in the reveal dialog's data, and the list displays `lfi_{lookupId}` followed by a mask.
+The secret is returned exactly once. On the settings page it exists only in the reveal dialog's data. On Account & Settings it shows in the create dialog itself: the dialog's step ref (`AccountInsightsTokenDialogRef`) holds it until the dialog closes, and only the token's metadata reaches the list. Either way, the list displays `lfi_{lookupId}` followed by a mask.
 
 ## Expiration
 

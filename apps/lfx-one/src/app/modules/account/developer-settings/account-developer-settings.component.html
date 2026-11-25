@@ -1,0 +1,64 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<div class="flex flex-col gap-[20px]" data-testid="account-developer-settings">
+  <lfx-ui-note icon="fa-light fa-shield-check" [label]="copy.guidelinesTitle" data-testid="account-developer-settings-guidelines">
+    <ul class="m-0 flex list-disc flex-col gap-[2px] pl-[18px]">
+      @for (line of guidelines(); track line) {
+        <li>{{ line }}</li>
+      }
+    </ul>
+  </lfx-ui-note>
+
+  <lfx-account-card
+    [heading]="copy.apiTokenTitle"
+    [subtitle]="insightsPublicApiEnabled() ? copy.apiTokenSubtitle : copy.apiTokenSubtitleSingle"
+    testId="account-developer-settings-api-token">
+    @if (loadingToken()) {
+      <lfx-ui-skeleton width="100%" height="52px" aria-hidden="true" data-testid="account-developer-settings-token-loading" />
+    } @else if (developerToken()) {
+      <div class="flex min-h-[52px] flex-row items-center gap-[12px]" data-testid="account-developer-settings-pat">
+        <i class="fa-light fa-key text-[14px] text-ui-neutral-500" aria-hidden="true"></i>
+        <span class="flex min-w-0 flex-1 flex-col gap-[2px]">
+          <span class="text-[14px] font-medium leading-[20px] text-ui-neutral-900">{{ copy.patLabel }}</span>
+          <!-- data-dd-privacy="mask": once shown this is a live bearer credential; keep it out of Session Replay. -->
+          <span
+            class="break-all font-mono text-[12px] leading-[16px] text-ui-neutral-500"
+            [class.truncate]="!tokenShown()"
+            data-dd-privacy="mask"
+            data-testid="account-developer-settings-token-value"
+            >{{ shownToken() }}</span
+          >
+        </span>
+        <span class="flex flex-row gap-[4px]">
+          <lfx-ui-button
+            variant="tertiary"
+            size="small"
+            iconOnly
+            [icon]="tokenShown() ? 'fa-light fa-eye-slash' : 'fa-light fa-eye'"
+            [ariaLabel]="copy.showToken"
+            [ariaPressed]="tokenShown()"
+            [lfxUiTooltip]="tokenShown() ? copy.hideToken : copy.showToken"
+            (click)="tokenShown.set(!tokenShown())"
+            data-testid="account-developer-settings-token-toggle" />
+          <lfx-ui-button
+            variant="tertiary"
+            size="small"
+            iconOnly
+            [icon]="tokenCopied() ? 'fa-light fa-check' : 'fa-light fa-copy'"
+            [ariaLabel]="tokenCopied() ? copy.copied : copy.copyToken"
+            [lfxUiTooltip]="tokenCopied() ? copy.copied : copy.copyToken"
+            (click)="copyToken(developerToken())"
+            data-testid="account-developer-settings-token-copy" />
+        </span>
+      </div>
+    } @else {
+      <lfx-ui-note variant="warning" data-testid="account-developer-settings-token-unavailable">API token is currently unavailable.</lfx-ui-note>
+    }
+  </lfx-account-card>
+
+  @if (insightsPublicApiEnabled()) {
+    <lfx-account-insights-tokens />
+  }
+</div>
