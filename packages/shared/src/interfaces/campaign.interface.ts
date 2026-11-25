@@ -1977,15 +1977,51 @@ export interface LinkedInTextAdDraft {
   key: string;
   headline: string;
   description: string;
+  /**
+   * The ad's 100x100 image uploaded to the brief, `''` or absent for none, and the file name and brief it was made for.
+   * Sent only when made for the open brief and the LinkedIn upload capability is an explicit yes. Absent on a draft saved
+   * before images existed.
+   */
+  imageAssetId?: string;
+  imageAssetName?: string;
+  imageAssetBriefId?: string;
 }
 
-/** One text ad as the editor shows it: the copy, its length after normalization, and the error under each field (`''` for none). */
+/**
+ * One text ad as the editor shows it: the copy, its length after normalization, the error under each field (`''` for
+ * none), and the state of its own image, as `LinkedInVariantView` has it for a variant.
+ */
 export interface LinkedInTextAdView extends LinkedInTextAdDraft {
   headlineLength: number;
   descriptionLength: number;
   headlineError: string;
   descriptionError: string;
+  /** "Uploading image…", "Uploaded: <name>", or `''`. */
+  imageStatusMessage: string;
+  imageUploading: boolean;
+  /** Whether the ad holds an upload (for any brief), so Remove is offered. */
+  imageHeld: boolean;
+  /** Why this ad's last pick or upload failed, or `''`. */
+  imageError: string;
+  imagePickerDisabled: boolean;
+  /** Why the picker is disabled while another upload is running or failed, or `''`. */
+  imagePickerNote: string;
+  /** Why Create is blocked for this ad's image, or `null`. */
+  imageBlock: CampaignLinkedInImageAssetBlock | null;
 }
+
+/** What one LinkedIn image rule reads of a variant or text ad: its key, and its upload and the brief it was made for. */
+export interface LinkedInImageHolder {
+  key: string;
+  imageAssetId?: string;
+  imageAssetBriefId?: string;
+}
+
+/**
+ * The image state `linkedInTextAdViews` reads (#5764 row 19): the one LinkedIn upload slot, shared with the single
+ * image variants, and the brief and capability state, as `LinkedInVariantViewsInput` has them.
+ */
+export type LinkedInTextAdImageInput = Omit<LinkedInVariantViewsInput, 'variants' | 'eventName'>;
 
 /** What the Text Ads add to the LinkedIn create refusal (#5764 row 19), given only while Text Ads are chosen. */
 export interface LinkedInTextAdsRefusalInput {

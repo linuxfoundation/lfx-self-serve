@@ -103,6 +103,15 @@ describe('linkedInDraftRestore', () => {
   });
 
   it.each([
+    ['a whole image', { imageAssetId: 'a-1', imageAssetName: 'x.png', imageAssetBriefId: 'b-1' }, { imageAssetId: 'a-1', imageAssetName: 'x.png', imageAssetBriefId: 'b-1' }],
+    ['an image with no brief', { imageAssetId: 'a-1', imageAssetName: 'x.png' }, {}],
+    ['no image', { imageAssetId: '', imageAssetBriefId: 'b-1' }, {}],
+  ])('restores a text ad with %s', (_name, imageFields, expected) => {
+    const textAds = [{ key: 'text-ad-1', headline: 'h', description: 'd', ...imageFields }];
+    expect(linkedInDraftRestore(draft({ linkedInTextAds: textAds })).textAds).toEqual([{ key: 'text-ad-1', headline: 'h', description: 'd', ...expected }]);
+  });
+
+  it.each([
     ['a cap', 20, 20],
     ['no cap', null, null],
     ['an unparsable cap', Number.NaN, null],

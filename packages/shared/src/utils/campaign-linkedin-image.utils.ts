@@ -11,13 +11,14 @@ import {
 } from '../constants/campaign.constants';
 import type {
   CampaignLinkedInImageAssetBlock,
+  LinkedInImageHolder,
   LinkedInImageSlot,
+  LinkedInTextAdImageInput,
   LinkedInVariantDraft,
   LinkedInVariantView,
   LinkedInVariantViewsInput,
 } from '../interfaces/campaign.interface';
 import { linkedInCreativeTextLength, linkedInVariantTextError } from './campaign-linkedin.utils';
-import { linkedInVariantImageForBrief } from './campaign-linkedin-form.utils';
 import { linkedInVariantFieldErrors } from './campaign-linkedin-variant-fields.utils';
 
 /**
@@ -46,11 +47,20 @@ export function linkedInImageFileRefusal(file: { type: string; size: number }): 
 }
 
 /**
- * Whether the upload belongs to no variant on screen: the brief re-seeded the variants (new keys) while it ran. It is
- * not cancelled, because a draft restore that follows brings that variant back; until then it holds nothing.
+ * Whether the variant or text ad holds an upload made for the brief now open (`briefId`, `''` for none): the only one
+ * sent. A text ad saved before images existed has no `imageAssetId` and holds none.
  */
-export function linkedInImageUploadOrphaned(slot: LinkedInImageSlot, variants: readonly LinkedInVariantDraft[]): boolean {
-  return slot.variantKey !== '' && !variants.some((variant) => variant.key === slot.variantKey);
+export function linkedInVariantImageForBrief(holder: Omit<LinkedInImageHolder, 'key'>, briefId: string): boolean {
+  return (holder.imageAssetId ?? '') !== '' && holder.imageAssetBriefId === briefId;
+}
+
+/**
+ * Whether the upload belongs to no variant or text ad on screen (`holders`): the brief re-seeded the variants (new keys)
+ * while it ran. It is not cancelled, because a draft restore that follows brings that variant back; until then it holds
+ * nothing.
+ */
+export function linkedInImageUploadOrphaned(slot: LinkedInImageSlot, holders: readonly { key: string }[]): boolean {
+  return slot.variantKey !== '' && !holders.some((holder) => holder.key === slot.variantKey);
 }
 
 /**
@@ -68,35 +78,37 @@ export function linkedInImageUploadHoldsCreate(showSection: boolean, uploadAvail
   return showSection && uploadAvailable && slot.status === 'uploading' && !orphaned;
 }
 
-/** Why one variant's image holds Create, or `null`: `metaImageAssetBlock`'s sibling for one variant's upload alone. */
-function linkedInVariantImageBlock(
-  input: LinkedInVariantViewsInput,
-  variant: LinkedInVariantDraft,
-  index: number,
+/**
+ * Why one LinkedIn image holds Create, or `null`: `metaImageAssetBlock`'s sibling for one upload alone. Shared by the
+ * single image variants and the Text Ads (#5764 row 19); `label` names the ad in each message ("variant 2", "text ad 2").
+ */
+export function linkedInImageBlock(
+  input: LinkedInTextAdImageInput,
+  holder: LinkedInImageHolder,
+  label: string,
   imageUploading: boolean
 ): CampaignLinkedInImageAssetBlock | null {
   if (!input.showSection) return null;
-  const n = index + 1;
   const { briefId, slot } = input;
-  if (variant.imageAssetId !== '' && briefId && variant.imageAssetBriefId !== briefId) {
+  if ((holder.imageAssetId ?? '') !== '' && briefId && holder.imageAssetBriefId !== briefId) {
     return {
       kind: 'otherBrief',
-      message: `The image for LinkedIn variant ${n} was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.`,
+      message: `The image for LinkedIn ${label} was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.`,
     };
   }
-  if (slot.variantKey === variant.key && slot.status === 'error' && briefId && slot.failedBriefId === briefId) {
+  if (slot.variantKey === holder.key && slot.status === 'error' && briefId && slot.failedBriefId === briefId) {
     return {
       kind: 'uploadFailed',
-      message: `The image upload for LinkedIn variant ${n} did not complete: ${slot.error} Remove it, or choose the image again.`,
+      message: `The image upload for LinkedIn ${label} did not complete: ${slot.error} Remove it, or choose the image again.`,
     };
   }
   // An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes.
-  const withheld = (linkedInVariantImageForBrief(variant, briefId) || imageUploading) && input.uploadEnabled !== true;
+  const withheld = (linkedInVariantImageForBrief(holder, briefId) || imageUploading) && input.uploadEnabled !== true;
   if (!withheld) return null;
   if (input.uploadEnabled === false) {
     return {
       kind: 'unsupported',
-      message: `LinkedIn ad images are not available on this deployment, so the image for variant ${n} cannot be sent. Remove it to create the campaign without it.`,
+      message: `LinkedIn ad images are not available on this deployment, so the image for ${label} cannot be sent. Remove it to create the campaign without it.`,
     };
   }
   if (input.capabilityRead === 'pending') return { kind: 'pending', message: 'Checking LinkedIn ad image support…' };
@@ -105,7 +117,7 @@ function linkedInVariantImageBlock(
   }
   return {
     kind: 'failed',
-    message: `Could not confirm that LinkedIn ad images are supported, so the image for variant ${n} cannot be sent yet. Retry the check, or remove the image.`,
+    message: `Could not confirm that LinkedIn ad images are supported, so the image for ${label} cannot be sent yet. Retry the check, or remove the image.`,
   };
 }
 
@@ -150,7 +162,7 @@ export function linkedInVariantViews(input: LinkedInVariantViewsInput): LinkedIn
       imageError: ownsSlot && failed ? slot.error : '',
       imagePickerDisabled: pickerBlocked || heldByOther,
       imagePickerNote: heldByOther ? `Finish or remove the image for variant ${slotIndex + 1} first.` : '',
-      imageBlock: linkedInVariantImageBlock(input, variant, index, imageUploading),
+      imageBlock: linkedInImageBlock(input, variant, `variant ${index + 1}`, imageUploading),
     };
   });
 }

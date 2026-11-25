@@ -1258,6 +1258,50 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(at(f).createBlockedReason()).toBeNull();
     });
 
+    // A text ad's image (#5764 row 19): the size and file rules are rows in `campaign-linkedin-text-ads-form.utils.spec.ts`,
+    // and the picker's wiring is in the editor's spec. These check the pick reaches the upload and the create.
+    async function textAdsWithImage(size: { width: number; height: number }): Promise<ComponentFixture<ImplementationTabComponent>> {
+      const f = (await mount(true)).fixture;
+      const c = f.componentInstance as unknown as {
+        biddingDrafts: { set(v: Record<string, unknown>): void };
+        onLinkedInFormatChange(format: string): void;
+        onLinkedInTextAdsChange(ads: { key: string; headline: string; description: string }[]): void;
+        onLinkedInTextAdImageFileChange(pick: { key: string; event: Event }): void;
+        readImageSize(file: Blob): Promise<{ width: number; height: number } | null>;
+      };
+      vi.spyOn(c, 'readImageSize').mockResolvedValue(size);
+      f.componentRef.setInput('linkedInTextAdsEnabled', true);
+      f.componentRef.setInput('biddingEnabled', true);
+      c.biddingDrafts.set({ 'linkedin-ads': { strategy: 'manual', bidAmount: 5 } });
+      c.onLinkedInFormatChange('text');
+      c.onLinkedInTextAdsChange([{ key: 'text-ad-1', headline: 'KubeCon EU', description: 'Join cloud native engineers.' }]);
+      fillForm(f);
+      c.onLinkedInTextAdImageFileChange({ key: 'text-ad-1', event: { target: { files: [png()], value: '' } } as unknown as Event });
+      // The size read settles on a later microtask.
+      await new Promise((resolve) => setTimeout(resolve));
+      return f;
+    }
+
+    it('uploads a 100x100 text ad image for the saved brief and sends it on that text ad', STATE_ONLY, async () => {
+      const f = await textAdsWithImage({ width: 100, height: 100 });
+
+      expect(uploadCreativeAsset).toHaveBeenCalledWith(expect.any(File), 'tlf', BRIEF_ID, 'linkedin');
+      at(f).submit();
+      expect(createCampaign.mock.calls[0][0]['linkedInConfig']).toMatchObject({
+        format: 'text',
+        textAds: [{ headline: 'KubeCon EU', description: 'Join cloud native engineers.', imageAssetId: ASSET_ID }],
+      });
+    });
+
+    it('never uploads a text ad image that is not 100x100, and holds Create until it is removed', STATE_ONLY, async () => {
+      const f = await textAdsWithImage({ width: 120, height: 120 });
+
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: resolve the image notice.');
+      (f.componentInstance as unknown as { onLinkedInTextAdImageRemove(key: string): void }).onLinkedInTextAdImageRemove('text-ad-1');
+      expect(at(f).createBlockedReason()).toBeNull();
+    });
+
     it.each([
       ['an oversized image', () => png(5_000_001)],
       ['a file that is not a PNG or JPEG', () => new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' })],
