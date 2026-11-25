@@ -490,6 +490,7 @@ import {
   emptyLinkedInTargetingDraft,
   linkedInTargetingDraftRefusal,
   linkedInTargetingForCreate,
+  linkedInTargetingSegmentsAccountRefusal,
   newLinkedInTextAdDraft,
   linkedInCanAddVariant,
   linkedInCanRemoveVariant,
@@ -8745,6 +8746,16 @@ export class ImplementationTabComponent implements OnInit {
     };
   }
 
+  /**
+   * Why the custom targeting cannot be sent (#5764 rows 8–11), or `null`: segments picked for another ad account than
+   * the one the create names (held, never dropped, as the editor may not be open to prune them), else the clauses'
+   * refusal.
+   */
+  private linkedInCustomTargetingRefusalNow(): string | null {
+    const draft = this.linkedInTargetingDraft();
+    return linkedInTargetingSegmentsAccountRefusal(draft, this.linkedInAudienceAccountId()) ?? linkedInTargetingDraftRefusal(draft);
+  }
+
   /** The account fields a create sends (#5809); see `linkedInAccountFields`. */
   private linkedInAccountFieldsNow(): Pick<LinkedInCampaignCreateRequest, 'adAccountId' | 'selectedAdAccountId'> {
     return linkedInAccountFields({
@@ -8788,7 +8799,7 @@ export class ImplementationTabComponent implements OnInit {
       textAdsUnavailable: this.linkedInFormat() === 'text' && !this.linkedInTextAdsAvailable(),
       customTargetingUnavailable: this.linkedInCustomTargeting() && !this.linkedInTargetingAvailable(),
       // Custom targeting (#5764 rows 8–11) holds Create while its clauses cannot be sent, and replaces the profile checks.
-      ...(this.linkedInCustomTargetingSelected() ? { customTargeting: { refusal: linkedInTargetingDraftRefusal(this.linkedInTargetingDraft()) } } : {}),
+      ...(this.linkedInCustomTargetingSelected() ? { customTargeting: { refusal: this.linkedInCustomTargetingRefusalNow() } } : {}),
       // Text Ads replace the variant checks while chosen (#5764 row 19); they need a manual bid.
       ...(this.linkedInTextAdsSelected()
         ? {

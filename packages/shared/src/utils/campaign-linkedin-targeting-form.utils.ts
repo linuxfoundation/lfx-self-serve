@@ -12,6 +12,7 @@ import {
   LINKEDIN_TARGETING_LIMITS,
   LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
   LINKEDIN_TARGETING_SEARCH_FAILED_MESSAGE,
+  LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE,
   LINKEDIN_TARGETING_STATIC_VALUES,
 } from '../constants/campaign.constants';
 import type {
@@ -37,9 +38,9 @@ import { linkedInTargetingRefusal } from './campaign-linkedin-targeting.utils';
 
 const NO_CLAUSE_MESSAGE = 'Add at least one included targeting clause.';
 
-/** A draft with one empty clause to start from and no exclusions. */
+/** A draft with one empty clause to start from, no exclusions and no segments. */
 export function emptyLinkedInTargetingDraft(): LinkedInTargetingDraft {
-  return { clauses: [{}], exclude: {} };
+  return { clauses: [{}], exclude: {}, segmentsAccountId: null };
 }
 
 /** How many distinct values `facet` takes in one list: employers have their own, larger cap. */
@@ -199,15 +200,42 @@ function picksWithoutSegments(picks: LinkedInTargetingFacetPicks): LinkedInTarge
 }
 
 /**
- * `draft` without any ad segment, in every clause and in the exclusions; nothing else is dropped. Segments belong to the
- * ad account they were read from, so the editor drops them when the create's account changes. `draft` itself when it
- * holds none, so nothing is emitted for a draft without segments.
+ * `draft` without any ad segment, in every clause and in the exclusions, and so with no segment account; nothing else is
+ * dropped. Segments belong to the ad account they were read from, so the editor drops them when the create's account
+ * changes. `draft` itself when it holds none, so nothing is emitted for a draft without segments.
  */
 export function linkedInTargetingDraftWithoutSegments(draft: LinkedInTargetingDraft): LinkedInTargetingDraft {
   const clauses = draft.clauses.map(picksWithoutSegments);
   const exclude = picksWithoutSegments(draft.exclude);
   if (exclude === draft.exclude && clauses.every((clause, i) => clause === draft.clauses[i])) return draft;
-  return { clauses, exclude };
+  return { clauses, exclude, segmentsAccountId: null };
+}
+
+/** Whether `draft` holds an ad segment anywhere. */
+function draftHasSegments(draft: LinkedInTargetingDraft): boolean {
+  return [...draft.clauses, draft.exclude].some((picks) => (picks.audienceMatchingSegments?.length ?? 0) + (picks.dynamicSegments?.length ?? 0) > 0);
+}
+
+/**
+ * `next`, an edit of `previous`, with the ad account its segments were picked for: none once no segment is left; the
+ * editor's account (`accountId`) for the first segment picked; else `previous`'s, so a segment added beside ones picked
+ * for another account does not make those sendable.
+ */
+export function linkedInTargetingDraftWithSegmentsAccount(
+  previous: LinkedInTargetingDraft,
+  next: LinkedInTargetingDraft,
+  accountId: string | null
+): LinkedInTargetingDraft {
+  if (!draftHasSegments(next)) return { ...next, segmentsAccountId: null };
+  return { ...next, segmentsAccountId: draftHasSegments(previous) ? previous.segmentsAccountId : accountId };
+}
+
+/**
+ * Why `draft` cannot go to the ad account `accountId` (`null`: the default), or `null`: it holds segments picked for
+ * another account. Held, never dropped, so the operator sees what changed.
+ */
+export function linkedInTargetingSegmentsAccountRefusal(draft: LinkedInTargetingDraft, accountId: string | null): string | null {
+  return draftHasSegments(draft) && draft.segmentsAccountId !== accountId ? LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE : null;
 }
 
 /** Whether another include clause may be added. */
@@ -274,5 +302,6 @@ export function linkedInTargetingDraftFromStored(raw: unknown): LinkedInTargetin
   const record = plainRecord(raw);
   if (!record || !Array.isArray(record['clauses'])) return null;
   const clauses = (record['clauses'] as unknown[]).slice(0, LINKEDIN_TARGETING_LIMITS.clauses).map(storedPicks);
-  return { clauses: clauses.length > 0 ? clauses : [{}], exclude: storedPicks(record['exclude']) };
+  const segmentsAccountId = typeof record['segmentsAccountId'] === 'string' ? record['segmentsAccountId'] : null;
+  return { clauses: clauses.length > 0 ? clauses : [{}], exclude: storedPicks(record['exclude']), segmentsAccountId };
 }

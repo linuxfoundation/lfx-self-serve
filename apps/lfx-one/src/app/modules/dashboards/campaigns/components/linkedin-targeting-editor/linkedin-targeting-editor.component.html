@@ -56,6 +56,9 @@
       (picksChange)="onExcludeChange($event)" />
   </fieldset>
 
+  @if (segmentsRefusal(); as message) {
+    <p role="alert" class="text-xs text-red-600" data-testid="linkedin-targeting-editor-segments-error">{{ message }}</p>
+  }
   @if (refusal(); as message) {
     <p role="alert" class="text-xs text-red-600" data-testid="linkedin-targeting-editor-error">{{ message }}</p>
   }

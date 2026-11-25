@@ -5,6 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignImplementationDraft, LinkedInTargetingDraft } from '@lfx-one/shared/interfaces';
 import { emptyLinkedInTargetingDraft } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
@@ -25,7 +26,8 @@ trackStateOnlyTests();
  */
 describe('ImplementationTabComponent linkedin custom targeting', () => {
   const ACCOUNT = { accountId: 'urn:li:sponsoredAccount:111', label: 'First Account', orgId: 'urn:li:organization:1', status: 'ACTIVE' };
-  const DRAFT: LinkedInTargetingDraft = { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {} };
+  const SECOND = { ...ACCOUNT, accountId: 'urn:li:sponsoredAccount:222', label: 'Second Account' };
+  const DRAFT: LinkedInTargetingDraft = { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {}, segmentsAccountId: null };
   let createCampaign: ReturnType<typeof vi.fn>;
 
   const brief = (slug = 'kubecon-eu-2026'): CampaignBriefOutput =>
@@ -80,7 +82,7 @@ describe('ImplementationTabComponent linkedin custom targeting', () => {
           provide: CampaignService,
           useValue: {
             createCampaign,
-            getLinkedInAccounts: () => of([ACCOUNT]),
+            getLinkedInAccounts: () => of([ACCOUNT, SECOND]),
             getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
           },
@@ -123,6 +125,24 @@ describe('ImplementationTabComponent linkedin custom targeting', () => {
     await f.whenStable();
     expect(c(f)['linkedInCustomTargeting']()).toBe(false);
     expect(c(f)['linkedInTargetingDraft']()).toEqual(emptyLinkedInTargetingDraft());
+  });
+
+  it('holds Create, never dropping them, while the segments were picked for another ad account than the create uses', STATE_ONLY, async () => {
+    const { f } = await mount();
+    c(f)['onLinkedInCustomTargetingOn']();
+    expect(c(f)['linkedInAudienceAccountId']()).toBe(ACCOUNT.accountId);
+    const segments = {
+      clauses: [{ dynamicSegments: [{ urn: 'urn:li:adSegment:7', name: 'Site visitors' }] }],
+      exclude: {},
+      segmentsAccountId: ACCOUNT.accountId,
+    };
+    c(f)['onLinkedInTargetingDraftChange'](segments);
+    expect(c(f)['createBlockedReason']()).toBeNull();
+
+    // The editor is not open to prune them (a profile is shown, or the draft was restored): the account changes under them.
+    c(f)['campaignForm'].controls['linkedInAccountId'].setValue(SECOND.accountId);
+    expect(c(f)['createBlockedReason']()).toBe(`LinkedIn Ads: fix the custom targeting. ${LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE}`);
+    expect(c(f)['linkedInTargetingDraft']()).toEqual(segments);
   });
 
   it('holds Create while the clauses are refused, and while the capability is off rather than falling back to the profile', STATE_ONLY, async () => {

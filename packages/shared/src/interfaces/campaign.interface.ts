@@ -2496,6 +2496,11 @@ export type LinkedInTargetingFacetPicks = Partial<Record<LinkedInTargetingEditor
 export interface LinkedInTargetingDraft {
   clauses: LinkedInTargetingFacetPicks[];
   exclude: LinkedInTargetingFacetPicks;
+  /**
+   * The ad account the segment picks were made for (`null`: the default account). Segments belong to one account, so
+   * a create to another is held (`linkedInTargetingSegmentsAccountRefusal`). Never sent.
+   */
+  segmentsAccountId: string | null;
 }
 
 /** Where a facet's values go: an include clause or the exclusions. */

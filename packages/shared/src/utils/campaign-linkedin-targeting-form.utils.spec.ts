@@ -12,6 +12,7 @@ import {
   LINKEDIN_TARGETING_LIMITS,
   LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
   LINKEDIN_TARGETING_SEARCH_FAILED_MESSAGE,
+  LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE,
   LINKEDIN_TARGETING_STATIC_VALUES,
 } from '../constants/campaign.constants';
 import type {
@@ -30,6 +31,7 @@ import {
   linkedInTargetingDraftFromStored,
   linkedInTargetingDraftRefusal,
   linkedInTargetingDraftWithoutSegments,
+  linkedInTargetingDraftWithSegmentsAccount,
   linkedInTargetingFacetsToAdd,
   linkedInTargetingForCreate,
   linkedInTargetingPicksWith,
@@ -39,6 +41,7 @@ import {
   linkedInTargetingSearchFailure,
   linkedInTargetingSegmentChoices,
   linkedInTargetingSegmentMessage,
+  linkedInTargetingSegmentsAccountRefusal,
   linkedInTargetingStaticChoices,
 } from './campaign-linkedin-targeting-form.utils';
 
@@ -54,7 +57,15 @@ const segment = (id: number, facet: LinkedInAudienceSegment['facet'] = 'audience
   approximateMemberCount: null,
 });
 const pick = (id: number): LinkedInTargetingEntity => ({ urn: `urn:li:adSegment:${id}`, name: `Segment ${id}` });
-const draft = (clauses: LinkedInTargetingFacetPicks[], exclude: LinkedInTargetingFacetPicks = {}): LinkedInTargetingDraft => ({ clauses, exclude });
+const draft = (
+  clauses: LinkedInTargetingFacetPicks[],
+  exclude: LinkedInTargetingFacetPicks = {},
+  segmentsAccountId: string | null = null
+): LinkedInTargetingDraft => ({
+  clauses,
+  exclude,
+  segmentsAccountId,
+});
 
 describe('linkedInTargetingPicksWith / Without', () => {
   it.each<[string, LinkedInTargetingFacetPicks, LinkedInTargetingFacetPicks]>([
@@ -255,7 +266,11 @@ describe('linkedInTargetingDraftWithoutSegments', () => {
     ['a draft without segments', draft([{ skills: [skill(1)] }], { skills: [skill(2)] }), draft([{ skills: [skill(1)] }], { skills: [skill(2)] })],
     [
       'both segment facets, in every clause and the exclusions, keeping the rest',
-      draft([{ skills: [skill(1)], audienceMatchingSegments: [pick(1)] }, { dynamicSegments: [pick(2)] }], { dynamicSegments: [pick(3)], skills: [skill(2)] }),
+      draft(
+        [{ skills: [skill(1)], audienceMatchingSegments: [pick(1)] }, { dynamicSegments: [pick(2)] }],
+        { dynamicSegments: [pick(3)], skills: [skill(2)] },
+        '100000002'
+      ),
       draft([{ skills: [skill(1)] }, {}], { skills: [skill(2)] }),
     ],
   ])('drops the segments of %s', (_label, value, expected) => {
@@ -323,18 +338,43 @@ describe('linkedInTargetingDraftFromStored', () => {
   it.each<[string, unknown, LinkedInTargetingDraft | null]>([
     ['not an object', 'x', null],
     ['no clause list', { exclude: {} }, null],
-    ['an empty clause list gets one clause', { clauses: [] }, { clauses: [{}], exclude: {} }],
+    ['an empty clause list gets one clause', { clauses: [] }, emptyLinkedInTargetingDraft()],
     [
       'unknown facets and malformed entries dropped',
       { clauses: [{ skills: [skill(1), { urn: 7 }], locales: [skill(2)] }], exclude: { titles: 'x' } },
-      { clauses: [{ skills: [skill(1)] }], exclude: {} },
+      draft([{ skills: [skill(1)] }]),
     ],
     [
-      'segment picks kept',
-      { clauses: [{ audienceMatchingSegments: [pick(1)] }], exclude: { dynamicSegments: [pick(2)] } },
-      { clauses: [{ audienceMatchingSegments: [pick(1)] }], exclude: { dynamicSegments: [pick(2)] } },
+      'segment picks kept, with the account they were picked for',
+      { clauses: [{ audienceMatchingSegments: [pick(1)] }], exclude: { dynamicSegments: [pick(2)] }, segmentsAccountId: '100000002' },
+      draft([{ audienceMatchingSegments: [pick(1)] }], { dynamicSegments: [pick(2)] }, '100000002'),
     ],
+    ['an account that is not text read as the default', { clauses: [{}], segmentsAccountId: 7 }, emptyLinkedInTargetingDraft()],
   ])('%s', (_label, raw, expected) => {
     expect(linkedInTargetingDraftFromStored(raw)).toEqual(expected);
+  });
+});
+
+describe('segment account', () => {
+  const withSegment = (account: string | null): LinkedInTargetingDraft => draft([{ audienceMatchingSegments: [pick(1)] }], {}, account);
+  const withTwo = draft([{ audienceMatchingSegments: [pick(1)] }], { dynamicSegments: [pick(2)] });
+
+  it.each<[string, LinkedInTargetingDraft, LinkedInTargetingDraft, string | null]>([
+    ['the first segment takes the editor account', draft([{ skills: [skill(1)] }]), withSegment(null), '100000002'],
+    ['a further segment keeps the account the first was picked for', withSegment('100000001'), withTwo, '100000001'],
+    ['no segment left clears it', withSegment('100000002'), draft([{ skills: [skill(1)] }]), null],
+  ])('%s', (_label, previous, next, expected) => {
+    expect(linkedInTargetingDraftWithSegmentsAccount(previous, next, '100000002').segmentsAccountId).toBe(expected);
+  });
+
+  it.each<[string, LinkedInTargetingDraft, string | null, string | null]>([
+    ['no segment', draft([{ skills: [skill(1)] }], {}, '100000001'), '100000002', null],
+    ['segments for the same account', withSegment('100000002'), '100000002', null],
+    ['segments for the default, sent to the default', withSegment(null), null, null],
+    ['segments for another account', withSegment('100000001'), '100000002', LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE],
+    ['segments for the default, sent to a chosen account', withSegment(null), '100000002', LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE],
+    ['excluded segments for another account', draft([{}], { dynamicSegments: [pick(2)] }, '100000001'), null, LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE],
+  ])('refuses %s: %j', (_label, value, account, expected) => {
+    expect(linkedInTargetingSegmentsAccountRefusal(value, account)).toBe(expected);
   });
 });

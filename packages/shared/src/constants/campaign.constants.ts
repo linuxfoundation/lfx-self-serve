@@ -975,6 +975,9 @@ export const LINKEDIN_AUDIENCES_LOADING_MESSAGE = 'Loading LinkedIn audiences…
 /** What it says when the segment read failed another way than the coded 403 or 503. */
 export const LINKEDIN_AUDIENCES_FAILED_MESSAGE = "LinkedIn audiences didn't load. Try again.";
 
+/** Why a create is held while the draft's segments were picked for another ad account than the one it uses. */
+export const LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE = 'Audience segments were picked for another LinkedIn ad account. Remove them or pick them again.';
+
 function numbered(prefix: string, names: readonly string[]): LinkedInTargetingEntity[] {
   return names.map((name, index) => ({ urn: `${prefix}${index + 1}`, name }));
 }

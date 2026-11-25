@@ -90,6 +90,8 @@ describe('LinkedInTargetingEditorComponent', () => {
     clause()['onStaticPick']('urn:li:adSegment:7');
     fixture.detectChanges();
     expect(draft.clauses[0]).toEqual({ dynamicSegments: [{ urn: 'urn:li:adSegment:7', name: 'Site visitors' }] });
+    // Recorded with the account it was picked for, which the tab compares with the create's.
+    expect(draft.segmentsAccountId).toBe('100000002');
     expect(getLinkedInAudiences).toHaveBeenCalledTimes(1);
   });
 

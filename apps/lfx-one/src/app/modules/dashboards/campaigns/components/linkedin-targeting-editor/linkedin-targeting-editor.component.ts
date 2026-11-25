@@ -12,7 +12,9 @@ import {
   linkedInTargetingCanAddClause,
   linkedInTargetingDraftRefusal,
   linkedInTargetingDraftWithoutSegments,
+  linkedInTargetingDraftWithSegmentsAccount,
   linkedInTargetingMergedPicks,
+  linkedInTargetingSegmentsAccountRefusal,
 } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { catchError, map, of, skip, startWith, switchMap } from 'rxjs';
@@ -46,6 +48,8 @@ export class LinkedInTargetingEditorComponent {
   protected readonly maxClauses = LINKEDIN_TARGETING_LIMITS.clauses;
   protected readonly canAddClause = computed(() => linkedInTargetingCanAddClause(this.draft()));
   protected readonly refusal = computed(() => linkedInTargetingDraftRefusal(this.draft()));
+  /** Why the segments picked cannot go to this account: they were picked for another one (the tab holds Create on it). */
+  protected readonly segmentsRefusal = computed(() => linkedInTargetingSegmentsAccountRefusal(this.draft(), this.accountId()));
   /** What the clauses include, which the exclusions do not offer. */
   protected readonly included = computed(() => linkedInTargetingMergedPicks(...this.draft().clauses));
 
@@ -73,11 +77,11 @@ export class LinkedInTargetingEditorComponent {
   }
 
   protected onClauseChange(index: number, picks: LinkedInTargetingFacetPicks): void {
-    this.draft.update((draft) => ({ ...draft, clauses: draft.clauses.map((clause, i) => (i === index ? picks : clause)) }));
+    this.edit((draft) => ({ ...draft, clauses: draft.clauses.map((clause, i) => (i === index ? picks : clause)) }));
   }
 
   protected onExcludeChange(picks: LinkedInTargetingFacetPicks): void {
-    this.draft.update((draft) => ({ ...draft, exclude: picks }));
+    this.edit((draft) => ({ ...draft, exclude: picks }));
   }
 
   protected retryAudiences(): void {
@@ -118,5 +122,10 @@ export class LinkedInTargetingEditorComponent {
       ),
       { initialValue: loading }
     );
+  }
+
+  /** Applies a group's edit, recording the account its segments were picked for. */
+  private edit(change: (draft: LinkedInTargetingDraft) => LinkedInTargetingDraft): void {
+    this.draft.update((draft) => linkedInTargetingDraftWithSegmentsAccount(draft, change(draft), this.accountId()));
   }
 }
