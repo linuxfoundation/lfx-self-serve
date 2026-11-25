@@ -56,7 +56,8 @@ import {
   CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
   isCreativeAssetMimeType,
   LINKEDIN_CHAR_LIMITS,
-  LINKEDIN_GEO_RESOLVE_MAP,
+  LINKEDIN_GEO_SEARCH_BOUNDS,
+  LINKEDIN_GEO_SEARCH_DEBOUNCE_MS,
   LINKEDIN_CALL_TO_ACTION_OPTIONS,
   LINKEDIN_VARIANT_FIELD_LIMITS,
   LINKEDIN_MAX_VARIANTS,
@@ -371,6 +372,8 @@ import type {
   LinkedInTargetingProfileEdit,
   LinkedInTargetingFacets,
   LinkedInTargetingRemovals,
+  LinkedInGeoSearchOption,
+  LinkedInGeoSearchState,
   LinkedInImageSlot,
   LinkedInVariantDraft,
   LinkedInVariantView,
@@ -491,6 +494,9 @@ import {
   redditObjectiveIsUnavailable,
   redditVideoGoalError,
   redditVideoPostError,
+  linkedInGeoSearchOptions,
+  linkedInGeoSearchQueryRefusal,
+  linkedInGeoSearchQueryText,
   linkedInBriefSeed,
   linkedInDraftFields,
   linkedInDraftRestore,
@@ -944,6 +950,9 @@ export class ImplementationTabComponent implements OnInit {
 
   /** The calls to action the variant editor offers. */
   protected readonly linkedInCallToActionOptions = LINKEDIN_CALL_TO_ACTION_OPTIONS;
+  /** The location search's shortest query, so the picker opens only once a search can run. */
+  protected readonly linkedInGeoSearchMinLength = LINKEDIN_GEO_SEARCH_BOUNDS.minQueryLength;
+
   /** The ad name and description limits, for the counters. */
   protected readonly linkedInVariantFieldLimits = LINKEDIN_VARIANT_FIELD_LIMITS;
 
@@ -1487,7 +1496,6 @@ export class ImplementationTabComponent implements OnInit {
    * first `<option>` carries.
    */
   protected readonly redditCallToActionIsUnavailable = computed(() => redditCallToActionIsUnavailable(this.redditCallToAction()));
-  protected readonly allKnownGeos: LinkedInGeoTarget[] = [...new Map(Object.values(LINKEDIN_GEO_RESOLVE_MAP).map((g) => [g.urn, g])).values()];
   protected readonly todayDate = new Date().toISOString().split('T')[0];
   protected readonly defaultEndDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
 
@@ -2163,6 +2171,21 @@ export class ImplementationTabComponent implements OnInit {
    * is also how the operator retries a search that failed.
    */
   protected readonly googleGeoSearchQuery = signal('', { equal: () => false });
+  /** The LinkedIn location picker (#5545): its box, its latest query (no equality check, as Google's), and its debounced search. */
+  protected readonly linkedInGeoSearchForm = this.fb.group({ location: this.fb.control<LinkedInGeoSearchOption | string | null>(null) });
+  protected readonly linkedInGeoSearchQuery = signal('', { equal: () => false });
+  private readonly linkedInGeoSearchState: Signal<LinkedInGeoSearchState> = this.initLinkedInGeoSearchState();
+  /** The picker's rows, a location already targeted marked `disabled`. */
+  protected readonly linkedInGeoSearchOptions = computed<LinkedInGeoSearchOption[]>(() =>
+    linkedInGeoSearchOptions(this.linkedInGeoSearchState().locations, this.linkedInGeoTargets())
+  );
+  protected readonly linkedInGeoSearchFailed = computed(() => this.linkedInGeoSearchState().failed);
+  /** What the picker's popup says with no rows: searching, failed, or nothing matched (a custom `#empty`, as Google's). */
+  protected readonly linkedInGeoSearchEmptyMessage = computed(() => {
+    if (this.linkedInGeoSearchState().pending) return 'Searching…';
+    if (this.linkedInGeoSearchFailed()) return 'The location search did not come back. Try again in a moment.';
+    return 'No matching locations.';
+  });
   private readonly googleGeoSearchState: Signal<GoogleAdsGeoTargetSearchState> = this.initGoogleGeoSearchState();
   /** The picker's rows, an id already on the list marked `disabled` so it cannot be picked twice. */
   protected readonly googleGeoSearchOptions = computed<GoogleAdsGeoTargetOption[]>(() => {
@@ -2579,7 +2602,7 @@ export class ImplementationTabComponent implements OnInit {
    * (LFXV2-3230).
    *
    * They moved from signals onto `campaignForm` so the draft carries them, but the template,
-   * `canSubmit` and `availableGeoTargets` all read them reactively. A plain
+   * `canSubmit` and `linkedInGeoSearchOptions` all read them reactively. A plain
    * `controls.linkedInGeoTargets.value` read is not a reactive dependency, so a `computed` over
    * it would memoise on first read and never update — the chip list would stop re-rendering as
    * the user adds and removes geos. Bridging through `toSignal` keeps every existing reader
@@ -2595,9 +2618,9 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * Coalesced to `[]` HERE rather than at each reader, because the readers are the whole surface:
-   * `canSubmit`, `availableGeoTargets`, `submit()` and two template blocks all read this, and four
+   * `canSubmit`, `linkedInGeoSearchOptions`, `submit()` and two template blocks all read this, and four
    * of the five would throw on an absent value (`.length`, `.map`, `@for`). Guarding one call site
-   * leaves the other four, and the crash in `availableGeoTargets` is reached from the TEMPLATE, so
+   * leaves the other four, and the crash in `linkedInGeoSearchOptions` is reached from the TEMPLATE, so
    * it takes down the tab rather than one control.
    *
    * The value can be absent even though `CampaignImplementationDraft` declares it non-optional:
@@ -4290,11 +4313,6 @@ export class ImplementationTabComponent implements OnInit {
     return null;
   });
 
-  protected readonly availableGeoTargets = computed(() => {
-    const selected = new Set(this.linkedInGeoTargets().map((g) => g.urn));
-    return this.allKnownGeos.filter((g) => !selected.has(g.urn));
-  });
-
   // === Reactive Signals (from form valueChanges) ===
   protected readonly displayBudgetPct: Signal<number> = this.initDisplayBudgetPct();
   /** The Google budget and flight controls as a signal, so the two readings below recompute on any edit (#4847). */
@@ -5200,11 +5218,10 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.linkedInGeoTargets.setValue(current.filter((_, i) => i !== index));
   }
 
-  protected addGeoTarget(urn: string): void {
-    if (!urn) return;
-    const geo = this.allKnownGeos.find((g) => g.urn === urn);
+  /** Add one LinkedIn location picked in the search (#5545), once. */
+  protected addGeoTarget(geo: LinkedInGeoTarget): void {
     const current = this.campaignForm.controls.linkedInGeoTargets.value;
-    if (geo && !current.some((g) => g.urn === urn)) {
+    if (geo.urn && !current.some((g) => g.urn === geo.urn)) {
       this.campaignForm.controls.linkedInGeoTargets.setValue([...current, geo]);
     }
   }
@@ -5242,12 +5259,6 @@ export class ImplementationTabComponent implements OnInit {
   // The identically-named methods on monitoring-tab and optimization-tab are live and untouched.
   protected onLinkedInAccountChange(event: Event): void {
     this.campaignForm.controls.linkedInAccountId.setValue((event.target as HTMLSelectElement).value);
-  }
-
-  protected onGeoTargetChange(event: Event): void {
-    const select = event.target as HTMLSelectElement;
-    this.addGeoTarget(select.value);
-    select.value = '';
   }
 
   // Every handler below emits, on the same rule the Meta handlers state: these signals are
@@ -6059,6 +6070,31 @@ export class ImplementationTabComponent implements OnInit {
     if (this.addGooglePostalGeoTarget(suggestion.id)) return true;
     this.googlePostalGeoLabels.set(previous);
     return false;
+  }
+
+  protected onLinkedInGeoSearch(event: AutoCompleteCompleteEvent): void {
+    this.linkedInGeoSearchQuery.set(linkedInGeoSearchQueryText(event.query));
+  }
+
+  protected onLinkedInGeoSearchSelect(event: AutoCompleteSelectEvent): void {
+    const option = event.value as LinkedInGeoSearchOption;
+    if (option && !option.disabled) this.addGeoTarget({ urn: option.urn, label: option.label });
+    // Cleared whatever the outcome, so the box reads "search another" rather than naming the pick.
+    this.linkedInGeoSearchForm.controls.location.setValue(null);
+    this.linkedInGeoSearchQuery.set('');
+  }
+
+  protected onLinkedInGeoSearchClear(): void {
+    this.linkedInGeoSearchQuery.set('');
+  }
+
+  /**
+   * Every keystroke in the location box. Below the two-character minimum PrimeNG emits neither `completeMethod` nor
+   * `onClear`, so the last query (and its debounce or request) would carry on; clearing it here cancels that search.
+   */
+  protected onLinkedInGeoSearchInput(event: Event): void {
+    const typed = (event.target as HTMLInputElement | null)?.value ?? '';
+    if (Array.from(linkedInGeoSearchQueryText(typed)).length < this.linkedInGeoSearchMinLength) this.linkedInGeoSearchQuery.set('');
   }
 
   protected onGoogleGeoSearch(event: AutoCompleteCompleteEvent): void {
@@ -9747,7 +9783,7 @@ export class ImplementationTabComponent implements OnInit {
       //
       // These EMIT, and must. The three controls are read through `toSignal` bridges over
       // `valueChanges`, so a `{ emitEvent: false }` write updates the control while every reader —
-      // the template's chip list, `canSubmit`, `availableGeoTargets`, `submit()` — keeps the stale
+      // the template's chip list, `canSubmit`, `linkedInGeoSearchOptions`, `submit()` — keeps the stale
       // initial value. Suppressing here made the seed invisible: the form held the recommendation
       // and the page rendered an empty geo list.
       //
@@ -12411,6 +12447,37 @@ export class ImplementationTabComponent implements OnInit {
   private googleProximityPayload(): Partial<CampaignCreateRequest> {
     const targets = this.googleDispatchedProximityTargets();
     return targets.length > 0 ? { proximityTargets: targets.map((t) => ({ ...t })) } : {};
+  }
+
+  /**
+   * The LinkedIn location picker's search (#5545), debounced off {@link linkedInGeoSearchQuery} on the same terms as
+   * `initGoogleGeoSearchState`: each new query cancels the request in flight and clears its rows, and a query under
+   * campaign-service's 2 characters, no project, or the LinkedIn section being hidden answers the empty state with no request.
+   */
+  private initLinkedInGeoSearchState(): Signal<LinkedInGeoSearchState> {
+    const idle = (): LinkedInGeoSearchState => ({ locations: [], failed: false, pending: false });
+    const trigger = computed(() => ({
+      query: this.linkedInGeoSearchQuery(),
+      projectSlug: this.activeFoundationSlug(),
+      shown: this.showLinkedInSection(),
+    }));
+    return toSignal(
+      toObservable(trigger).pipe(
+        switchMap(({ query, projectSlug, shown }) => {
+          if (linkedInGeoSearchQueryRefusal(query) !== null || projectSlug === '' || !shown) return of(idle());
+          return timer(LINKEDIN_GEO_SEARCH_DEBOUNCE_MS).pipe(
+            switchMap(() =>
+              this.campaignService.searchLinkedInGeoTargets(projectSlug, query).pipe(
+                map((result): LinkedInGeoSearchState => ({ locations: result.locations, failed: false, pending: false })),
+                catchError(() => of<LinkedInGeoSearchState>({ locations: [], failed: true, pending: false }))
+              )
+            ),
+            startWith<LinkedInGeoSearchState>({ locations: [], failed: false, pending: true })
+          );
+        })
+      ),
+      { initialValue: idle() }
+    );
   }
 
   /**

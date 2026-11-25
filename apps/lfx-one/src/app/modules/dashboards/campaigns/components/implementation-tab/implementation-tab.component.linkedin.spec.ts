@@ -6,12 +6,13 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { LINKEDIN_GEO_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignImplementationDraft } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
 import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
@@ -27,7 +28,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
   /** Matches the slug on the brief below — `applyDraft` ignores a draft keyed to another event. */
   const EVENT_SLUG = 'kubecon-eu-2026';
 
-  /** Two real URNs from the shared resolve map, so `addGeoTarget` can find them. */
+  /** Two real LinkedIn geo URNs. */
   const US_GEO = { urn: 'urn:li:geo:103644278', label: 'United States' };
   const DE_GEO = { urn: 'urn:li:geo:101282230', label: 'Germany' };
 
@@ -56,7 +57,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
     linkedInGeoTargets(): { urn: string; label: string }[];
     linkedInTargetingProfile(): string;
     removeGeoTarget(index: number): void;
-    addGeoTarget(urn: string): void;
+    addGeoTarget(geo: { urn: string; label: string }): void;
     setLinkedInTargetingProfile(profile: string): void;
     /**
      * The template's `(change)` handler, NOT the `setLinkedInAccount` convenience method.
@@ -118,7 +119,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
   it('restores a Germany saved with the old shared map as the real Germany', STATE_ONLY, async () => {
     const first = await mount(null);
     // Any edit emits the draft; the saved Germany below is what a draft written before the fix carries.
-    at(first.fixture).addGeoTarget(DE_GEO.urn);
+    at(first.fixture).addGeoTarget(DE_GEO);
     first.fixture.detectChanges();
     const saved = { ...(first.latest() as CampaignImplementationDraft), linkedInGeoTargets: [{ label: 'Germany', urn: 'urn:li:geo:101165590' }] };
     first.fixture.destroy();
@@ -130,7 +131,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
 
   it('keeps a removed geo target removed after a tab round-trip', STATE_ONLY, async () => {
     const first = await mount(null);
-    at(first.fixture).addGeoTarget(DE_GEO.urn);
+    at(first.fixture).addGeoTarget(DE_GEO);
     first.fixture.detectChanges();
     // Drop the brief's US recommendation, keeping the user's own addition.
     at(first.fixture).removeGeoTarget(0);
@@ -157,7 +158,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
 
   it('keeps an added geo target after a tab round-trip', STATE_ONLY, async () => {
     const first = await mount(null);
-    at(first.fixture).addGeoTarget(DE_GEO.urn);
+    at(first.fixture).addGeoTarget(DE_GEO);
     first.fixture.detectChanges();
 
     const carried = first.latest();
@@ -820,6 +821,7 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
   let uploadCreativeAsset: ReturnType<typeof vi.fn>;
   let resumeCreativeAssetUpload: ReturnType<typeof vi.fn>;
   let cancelCreativeAssetUpload: ReturnType<typeof vi.fn>;
+  const searchLinkedInGeoTargets = vi.fn();
 
   interface Internals {
     campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
@@ -949,10 +951,54 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
             getLinkedInAccounts: () => of([ACCOUNT]),
             getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
+            searchLinkedInGeoTargets: (...args: unknown[]) => searchLinkedInGeoTargets(...args),
           },
         },
       ],
     }).compileComponents();
+  });
+
+  // The location search (#5545); its rules are rows in `campaign-linkedin-geo.utils.spec.ts`.
+  describe('location search', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('searches after the debounce, offers each location once, and sends the one picked', STATE_ONLY, async () => {
+      const BERLIN = { urn: 'urn:li:geo:103035651', label: 'Berlin, Germany' };
+      const US = { urn: 'urn:li:geo:103644278', label: 'United States' };
+      searchLinkedInGeoTargets.mockReturnValue(of({ locations: [BERLIN, US] }));
+      const f = (await mount(null)).fixture;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+      const c = f.componentInstance as unknown as {
+        onLinkedInGeoSearch(event: { query: string }): void;
+        onLinkedInGeoSearchSelect(event: { value: unknown }): void;
+        onLinkedInGeoSearchInput(event: { target: { value: string } }): void;
+        linkedInGeoSearchQuery(): string;
+        linkedInGeoSearchOptions(): { urn: string; disabled: boolean }[];
+      };
+
+      c.onLinkedInGeoSearch({ query: '  Berlin ' });
+      f.detectChanges();
+      await vi.advanceTimersByTimeAsync(LINKEDIN_GEO_SEARCH_DEBOUNCE_MS);
+      f.detectChanges();
+
+      expect(searchLinkedInGeoTargets).toHaveBeenCalledWith('tlf', 'Berlin');
+      // The brief already targets the United States, so that row is offered but disabled.
+      expect(c.linkedInGeoSearchOptions()).toEqual([
+        { ...BERLIN, disabled: false },
+        { ...US, disabled: true },
+      ]);
+
+      // Deleting back below two characters, where PrimeNG emits nothing, clears the query and so cancels the search.
+      c.onLinkedInGeoSearch({ query: 'Be' });
+      c.onLinkedInGeoSearchInput({ target: { value: 'B' } });
+      expect(c.linkedInGeoSearchQuery()).toBe('');
+
+      c.onLinkedInGeoSearchSelect({ value: { ...BERLIN, disabled: false } });
+      vi.useRealTimers();
+      fillForm(f);
+      at(f).submit();
+      expect((createCampaign.mock.calls[0][0]['linkedInConfig'] as { geoTargets: unknown }).geoTargets).toEqual([US, BERLIN]);
+    });
   });
 
   describe('copy', () => {

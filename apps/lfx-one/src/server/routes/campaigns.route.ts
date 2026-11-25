@@ -196,6 +196,9 @@ router.get('/google/geo-targets', (req, res, next) => campaignController.searchG
 // targeting (#5904 row 4; campaign-service #612). Each kind answers only while its own flag is on (404 otherwise). Meta
 // taxonomy, so not root-only: `requireCampaignManager` above is the gate, as campaign-service's.
 router.get('/meta/targeting-search', (req, res, next) => campaignController.searchMetaTargetingOptions(req, res, next));
+// LinkedIn locations for the Implement tab's location search (#5545; campaign-service #643). Unflagged upstream and
+// public location data, so not root-only: `requireCampaignManager` above is the gate, as campaign-service's.
+router.get('/linkedin/geo-targets', (req, res, next) => campaignController.searchLinkedInGeoTargets(req, res, next));
 // campaign-service only (#2519), behind LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off.
 // Microsoft and X take the platform account id as `?accountKey=`; HubSpot is project-scoped and takes none.
 router.get('/microsoft/monitor', (req, res, next) => campaignController.getMicrosoftMonitor(req, res, next));

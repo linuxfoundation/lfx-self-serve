@@ -1,6 +1,6 @@
 ---
 title: LinkedIn budget, targeting and ad variants
-description: Set a LinkedIn budget and an optional daily cap beside a lifetime budget, see and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text, headline, name and description, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
+description: Set a LinkedIn budget and an optional daily cap beside a lifetime budget, search for the locations a LinkedIn campaign targets, see and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text, headline, name and description, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -13,6 +13,7 @@ tags:
     daily cap,
     lifetime budget,
     targeting,
+    locations,
     member groups,
     skills,
     ad variants,
@@ -50,6 +51,17 @@ If the cap is under $10 or over the lifetime budget, a message appears under it 
 A campaign with a daily cap runs without its own end date in LinkedIn Campaign Manager. The event's campaign group stops it on the campaign's end date instead. If the event already has a campaign group that ends later than this campaign, or never ends, the create is refused.
 
 After the campaign is created, you can change its lifetime budget on the **Optimize** tab and the daily cap stays as it is. Keep **Budget pacing** on **Lifetime** there: switching a capped campaign to **Daily** is refused. A new lifetime budget below the daily cap is also refused; lower the cap first. To change the daily cap itself, use LinkedIn Campaign Manager.
+
+## Locations
+
+The LinkedIn section starts with the locations the brief recommends. To change them:
+
+- To add a location, type at least 2 characters of a country, region or city in the search box under the location list, then pick a result. A location you already added is listed but can't be picked again.
+- To remove a location, select the **x** on its chip.
+
+A campaign needs at least one location. While the list is empty, **Create** stays disabled with "LinkedIn Ads: add at least one location."
+
+The campaign name includes a region taken from the first location. Only the United States, India, Japan, Singapore, South Korea, Australia, Taiwan, Hong Kong, Germany and the United Kingdom have their own region in the name. Any other first location is named "Global".
 
 ## Edit a variant
 

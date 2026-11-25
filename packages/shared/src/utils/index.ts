@@ -158,6 +158,7 @@ export * from './campaign-twitter.utils';
 export * from './campaign-linkedin.utils';
 export * from './campaign-reddit-form.utils';
 export * from './campaign-linkedin-config.utils';
+export * from './campaign-linkedin-geo.utils';
 export * from './campaign-linkedin-form.utils';
 export * from './campaign-linkedin-variant-fields.utils';
 export * from './campaign-linkedin-image.utils';
