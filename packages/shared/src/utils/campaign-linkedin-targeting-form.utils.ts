@@ -50,7 +50,7 @@ export function linkedInTargetingFacetCap(facet: LinkedInTargetingEditorFacet): 
 
 /**
  * The facets a clause (`include`) or the exclusions may add values to: the editor's facets, less the include-only ones
- * (`groups`) under `exclude`, and less any facet already at its cap.
+ * (`groups`, `interfaceLocales`) under `exclude`, and less any facet already at its cap.
  */
 export function linkedInTargetingFacetsToAdd(placement: LinkedInTargetingPlacement, picks: LinkedInTargetingFacetPicks): LinkedInTargetingEditorFacetOption[] {
   return LINKEDIN_TARGETING_EDITOR_FACETS.filter(

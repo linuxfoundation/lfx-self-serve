@@ -9,6 +9,7 @@ import {
   LINKEDIN_AUDIENCES_FAILED_MESSAGE,
   LINKEDIN_AUDIENCES_LOADING_MESSAGE,
   LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE,
+  LINKEDIN_TARGETING_FACETS,
   LINKEDIN_TARGETING_LIMITS,
   LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
   LINKEDIN_TARGETING_SEARCH_FAILED_MESSAGE,
@@ -108,12 +109,13 @@ describe('linkedInTargetingFacetsToAdd', () => {
         'staffCountRanges',
         'groups',
         'interests',
+        'interfaceLocales',
         'audienceMatchingSegments',
         'dynamicSegments',
       ],
     ],
     [
-      'no member groups in the exclusions',
+      'no member groups or interface languages in the exclusions',
       'exclude',
       {},
       [
@@ -142,6 +144,7 @@ describe('linkedInTargetingFacetsToAdd', () => {
         'staffCountRanges',
         'groups',
         'interests',
+        'interfaceLocales',
         'audienceMatchingSegments',
         'dynamicSegments',
       ],
@@ -156,8 +159,15 @@ describe('choices', () => {
     ['seniorities', 10],
     ['jobFunctions', 26],
     ['staffCountRanges', 9],
+    ['interfaceLocales', 21],
   ] as const)('lists every fixed %s value', (facet, count) => {
     expect(linkedInTargetingStaticChoices(facet, {})).toHaveLength(count);
+  });
+
+  it('offers only interface languages the create accepts, each once', () => {
+    const urns = LINKEDIN_TARGETING_STATIC_VALUES.interfaceLocales.map((value) => value.urn);
+    expect(urns.filter((urn) => !LINKEDIN_TARGETING_FACETS.interfaceLocales.pattern?.test(urn))).toEqual([]);
+    expect(new Set(urns).size).toBe(urns.length);
   });
 
   it('leaves out a fixed value already picked, and offers no fixed list for a searched facet', () => {
@@ -317,6 +327,7 @@ describe('linkedInTargetingDraftRefusal', () => {
       'LinkedIn does not take included titles together with included seniorities or job functions.',
     ],
     ['a value both included and excluded', draft([{ skills: [skill(1)] }], { skills: [skill(1)] }), 'Excluded skills holds a value that is also included.'],
+    ['interface languages included', draft([{ interfaceLocales: [LINKEDIN_TARGETING_STATIC_VALUES.interfaceLocales[6]] }]), null],
     ['included and excluded segments', draft([{ audienceMatchingSegments: [pick(1)] }], { dynamicSegments: [pick(2)] }), null],
     [
       'one segment included and excluded across the two facets',
@@ -336,6 +347,7 @@ describe('linkedInTargetingDraftRefusal', () => {
 });
 
 describe('linkedInTargetingDraftFromStored', () => {
+  const english = LINKEDIN_TARGETING_STATIC_VALUES.interfaceLocales[6];
   it.each<[string, unknown, LinkedInTargetingDraft | null]>([
     ['not an object', 'x', null],
     ['no clause list', { exclude: {} }, null],
@@ -351,6 +363,7 @@ describe('linkedInTargetingDraftFromStored', () => {
       draft([{ audienceMatchingSegments: [pick(1)] }], { dynamicSegments: [pick(2)] }, '100000002'),
     ],
     ['an account that is not text read as the default', { clauses: [{}], segmentsAccountId: 7 }, emptyLinkedInTargetingDraft()],
+    ['interface language picks kept', { clauses: [{ interfaceLocales: [english] }] }, draft([{ interfaceLocales: [english] }])],
   ])('%s', (_label, raw, expected) => {
     expect(linkedInTargetingDraftFromStored(raw)).toEqual(expected);
   });

@@ -2514,8 +2514,8 @@ export interface LinkedInTargeting {
  */
 export type LinkedInTargetingEditorFacet = LinkedInTargetingSearchFacet | LinkedInTargetingStaticFacet | LinkedInTargetingSegmentFacet;
 
-/** A facet whose values are a fixed list rather than a search: seniorities, job functions and company sizes. */
-export type LinkedInTargetingStaticFacet = 'seniorities' | 'jobFunctions' | 'staffCountRanges';
+/** A facet whose values are a fixed list rather than a search: seniorities, job functions, company sizes and interface languages. */
+export type LinkedInTargetingStaticFacet = 'seniorities' | 'jobFunctions' | 'staffCountRanges' | 'interfaceLocales';
 
 /** A facet whose values are ad segments (`urn:li:adSegment:<id>`) from `GET /api/campaigns/linkedin/audiences`. */
 export type LinkedInTargetingSegmentFacet = 'audienceMatchingSegments' | 'dynamicSegments';
