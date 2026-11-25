@@ -7,8 +7,8 @@ import { DocumentUpdatePatch } from '../interfaces/project.interface';
  * Lays the renames and moves a page made in this session over a fetched document list. The list is read through an index
  * that updates after the write returns, so a refetch right after can still hold the old name or folder.
  *
- * A patch applies only while it is newer than the fetched copy, so a later change someone else makes shows through.
- * A fetched copy with no readable `updated_at` is treated as older, and a patch with none as not newer.
+ * A patch applies while it is at least as new as the fetched copy, so a later change someone else makes shows through.
+ * A fetched copy with no readable `updated_at` is treated as older, and a patch with none as older.
  */
 export function applyDocumentUpdates<T extends { uid: string; name: string; parent_uid?: string; updated_at?: string }>(
   fetched: T[],
@@ -40,5 +40,6 @@ export function mergeDocumentUpdate(
 function isPatchNewer(patch: DocumentUpdatePatch, doc: { updated_at?: string }): boolean {
   const fetchedAt = Date.parse(doc.updated_at ?? '');
   if (Number.isNaN(fetchedAt)) return true;
-  return Date.parse(patch.updated_at ?? '') > fetchedAt;
+  // A tie counts as newer: whole-second timestamps cannot order two writes inside one second, and ours is the later one.
+  return Date.parse(patch.updated_at ?? '') >= fetchedAt;
 }

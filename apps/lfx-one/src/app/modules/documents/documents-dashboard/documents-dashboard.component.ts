@@ -3,8 +3,8 @@
 
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -81,6 +81,7 @@ export class DocumentsDashboardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly lensService = inject(LensService);
   private readonly personaService = inject(PersonaService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly dialogService = inject(DialogService);
   private readonly projectService = inject(ProjectService);
   private readonly messageService = inject(MessageService);
@@ -775,11 +776,17 @@ export class DocumentsDashboardComponent {
       data,
     });
 
-    dialogRef?.onClose.pipe(take(1)).subscribe((updated: ProjectDocument | undefined) => {
+    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((updated: ProjectDocument | undefined) => {
       if (!updated) return;
       this.messageService.add({ severity: 'success', summary: mode === 'rename' ? 'Renamed' : 'Moved', detail: `"${updated.name}" was updated.` });
       this.updatedDocuments.update((patches) =>
-        mergeDocumentUpdate(patches, documentUid, { name: updated.name, parent_uid: updated.parent_uid ?? null, updated_at: updated.updated_at })
+        mergeDocumentUpdate(
+          patches,
+          documentUid,
+          mode === 'rename'
+            ? { name: updated.name, updated_at: updated.updated_at }
+            : { parent_uid: updated.parent_uid ?? null, updated_at: updated.updated_at }
+        )
       );
       this.refreshTrigger.update((v) => v + 1);
     });

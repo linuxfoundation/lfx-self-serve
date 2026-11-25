@@ -56,6 +56,12 @@ describe('applyDocumentUpdates', () => {
     expect(applyDocumentUpdates(list, patches([['d-1', { name: 'Mine', updated_at: NEW }]]))[0].name).toBe('Renamed by someone else');
   });
 
+  it('applies a patch stamped in the same second as the fetched copy, which whole-second timestamps cannot order', () => {
+    const list = fetched({ name: 'Stale copy of the first write', updated_at: NEW });
+
+    expect(applyDocumentUpdates(list, patches([['d-1', { name: 'Second write', updated_at: NEW }]]))[0].name).toBe('Second write');
+  });
+
   it('is done with a patch once the fetched copy has caught up to it', () => {
     const list = fetched({ name: 'Minutes 2026', parent_uid: 'f-2', updated_at: NEW });
 

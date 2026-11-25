@@ -10,7 +10,7 @@ import { DocumentUpdateDialogData } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DocumentUpdateDialogComponent } from './document-update-dialog.component';
@@ -37,12 +37,15 @@ describe('DocumentUpdateDialogComponent', () => {
   const updateCommitteeDocument = vi.fn();
   const updateProjectDocument = vi.fn();
 
+  let config: { data: DocumentUpdateDialogData; closable?: boolean };
+
   function create(data: Partial<DocumentUpdateDialogData> = {}) {
+    config = { data: { ...baseData, ...data } };
     TestBed.configureTestingModule({
       imports: [DocumentUpdateDialogStateComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: DynamicDialogConfig, useValue: { data: { ...baseData, ...data } } },
+        { provide: DynamicDialogConfig, useValue: config },
         { provide: DynamicDialogRef, useValue: { close } },
         { provide: CommitteeService, useValue: { updateCommitteeDocument } },
         { provide: ProjectService, useValue: { updateProjectDocument } },
@@ -122,6 +125,23 @@ describe('DocumentUpdateDialogComponent', () => {
     cmp.onSubmit();
 
     expect(updateCommitteeDocument).toHaveBeenCalledWith('c-1', 'd-1', 'link', { parent_uid: null });
+  });
+
+  it('cannot be closed from the header while the save is in flight', () => {
+    const pending = new Subject<unknown>();
+    updateCommitteeDocument.mockReturnValue(pending);
+    const cmp = create();
+    cmp.form.controls.name.setValue('Bylaws');
+    cmp.onSubmit();
+    TestBed.tick();
+
+    expect(config.closable).toBe(false);
+
+    pending.next({ id: 'd-1' });
+    pending.complete();
+    TestBed.tick();
+
+    expect(config.closable).toBe(true);
   });
 
   it('shows the server message and stays open on a failure', () => {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -15,6 +15,7 @@ import {
   PROJECT_DOCUMENT_NAME_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
 import { CommitteeDocument, DocumentUpdateDialogData, ProjectDocument, UpdateDocumentRequest } from '@lfx-one/shared/interfaces';
+import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
@@ -53,18 +54,14 @@ export class DocumentUpdateDialogComponent {
 
   private readonly value = toSignal(this.form.valueChanges, { initialValue: this.form.value });
   /** Nothing to save until the value differs from what the document has now. */
-  public readonly changes = computed<UpdateDocumentRequest>(() => {
-    const value = this.value();
-    if (this.isRename) {
-      const name = (value.name ?? '').trim();
-      return name && name !== this.data.name ? { name } : {};
-    }
-    const target = value.parent_uid ?? DOCUMENT_ROOT_FOLDER_VALUE;
-    const current = this.data.parentUid ?? DOCUMENT_ROOT_FOLDER_VALUE;
-    return target === current ? {} : { parent_uid: target === DOCUMENT_ROOT_FOLDER_VALUE ? null : target };
-  });
+  public readonly changes = this.initChanges();
   public readonly unchanged = computed(() => Object.keys(this.changes()).length === 0);
   public readonly submitLabel = this.isRename ? 'Rename' : 'Move';
+
+  public constructor() {
+    // The header X and Escape would drop the saved result before the page hears of it, so they wait until the save ends.
+    lockDynamicDialogWhile(this.submitting);
+  }
 
   public onCancel(): void {
     this.dialogRef.close();
@@ -87,6 +84,19 @@ export class DocumentUpdateDialogComponent {
         this.submitting.set(false);
         this.errorMessage.set(getHttpErrorDetail(err, `Failed to ${this.isRename ? 'rename' : 'move'} the ${this.data.documentType}. Please try again.`));
       },
+    });
+  }
+
+  private initChanges(): Signal<UpdateDocumentRequest> {
+    return computed<UpdateDocumentRequest>(() => {
+      const value = this.value();
+      if (this.isRename) {
+        const name = (value.name ?? '').trim();
+        return name && name !== this.data.name ? { name } : {};
+      }
+      const target = value.parent_uid ?? DOCUMENT_ROOT_FOLDER_VALUE;
+      const current = this.data.parentUid ?? DOCUMENT_ROOT_FOLDER_VALUE;
+      return target === current ? {} : { parent_uid: target === DOCUMENT_ROOT_FOLDER_VALUE ? null : target };
     });
   }
 

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -45,6 +45,7 @@ export class CommitteeDocumentsComponent {
   // === Services ===
   private readonly committeeService = inject(CommitteeService);
   private readonly documentService = inject(DocumentService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
 
@@ -520,11 +521,17 @@ export class CommitteeDocumentsComponent {
       data,
     });
 
-    dialogRef?.onClose.pipe(take(1)).subscribe((updated: CommitteeDocument | undefined) => {
+    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((updated: CommitteeDocument | undefined) => {
       if (!updated) return;
       this.messageService.add({ severity: 'success', summary: mode === 'rename' ? 'Renamed' : 'Moved', detail: `"${updated.name}" was updated.` });
       this.updatedDocuments.update((patches) =>
-        mergeDocumentUpdate(patches, documentUid, { name: updated.name, parent_uid: updated.parent_uid ?? null, updated_at: updated.updated_at })
+        mergeDocumentUpdate(
+          patches,
+          documentUid,
+          mode === 'rename'
+            ? { name: updated.name, updated_at: updated.updated_at }
+            : { parent_uid: updated.parent_uid ?? null, updated_at: updated.updated_at }
+        )
       );
       this.onDocumentsChanged();
     });

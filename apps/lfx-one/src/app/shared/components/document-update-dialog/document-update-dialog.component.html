@@ -4,11 +4,14 @@
 <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4" data-testid="document-update-form">
   @if (isRename) {
     <div>
-      <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Name <span class="text-red-500">*</span></label>
+      <label for="document-update-name" class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1"
+        >Name <span class="text-red-500">*</span></label
+      >
       <lfx-input-text
         size="small"
         [form]="form"
         control="name"
+        inputId="document-update-name"
         [maxlength]="nameMaxLength"
         placeholder="Name"
         styleClass="w-full"
@@ -22,11 +25,12 @@
     </div>
   } @else {
     <div>
-      <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Move to</label>
+      <label for="document-update-folder" class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Move to</label>
       <lfx-select
         size="small"
         [form]="form"
         control="parent_uid"
+        inputId="document-update-folder"
         [options]="folderOptions"
         styleClass="w-full"
         data-testid="document-update-folder"></lfx-select>
