@@ -27,19 +27,20 @@
     <lfx-profile-section-empty icon="fa-light fa-award" [heading]="copy.emptyTitle" [description]="copy.emptyText" />
   } @else {
     <lfx-profile-grid [total]="badges().length" [(expanded)]="expanded" testId="profile-recognitions-grid">
-      @for (badge of shown(); track badge.id) {
+      @for (item of shown(); track item.badge.id) {
+        @let badge = item.badge;
         <lfx-profile-pill
           tile="image"
           [name]="badge.title"
           [imageUrl]="badge.imageUrl ?? ''"
-          [href]="badge.credlyUrl ?? null"
+          [href]="item.href"
           [hoverCard]="card"
           [hoverCardWidth]="280"
           [testId]="'profile-recognitions-badge-' + badge.id">
           @if (badge.category === 'speaking') {
             <lfx-ui-badge variant="outline" size="sm"><i slot="icon" class="fa-light fa-microphone" aria-hidden="true"></i>{{ copy.speaking }}</lfx-ui-badge>
           }
-          <span class="min-w-0 truncate">{{ badge.issuer }}</span>
+          <span class="min-w-0">{{ badge.issuer }}</span>
         </lfx-profile-pill>
 
         <ng-template #card>
@@ -55,7 +56,7 @@
               <p class="m-0 text-[12px] leading-[17px] text-gray-600">{{ badge.description }}</p>
             }
             <span class="flex flex-row items-center gap-[6px] text-[12px] leading-[16px] text-gray-500">
-              <i class="fa-light fa-calendar" aria-hidden="true"></i>{{ copy.issued }} {{ badge.issuedDate | date: 'MMM y' : 'UTC' }} · {{ badge.issuer }}
+              <i class="fa-light fa-calendar" aria-hidden="true"></i>{{ copy.issued }} {{ item.issued }} · {{ badge.issuer }}
             </span>
           </div>
         </ng-template>

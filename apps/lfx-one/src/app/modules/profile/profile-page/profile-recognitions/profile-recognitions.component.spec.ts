@@ -20,7 +20,8 @@ const badge = (n: number, extra: Partial<Badge> = {}): Badge =>
     title: `Badge ${n}`,
     description: `What badge ${n} is for.`,
     category: 'certifications',
-    issuedDate: `2024-${String((n % 12) + 1).padStart(2, '0')}-10T00:00:00Z`,
+    // Date-only, as Credly sends it.
+    issuedDate: `2024-${String((n % 12) + 1).padStart(2, '0')}-01`,
     issuer: 'The Linux Foundation',
     isPending: false,
     imageUrl: `https://images.example/b${n}.png`,
@@ -103,6 +104,13 @@ describe('ProfileRecognitionsComponent', () => {
 
     expect(card?.textContent).toContain('What badge 3 is for.');
     expect(card?.textContent?.replace(/\s+/g, ' ')).toContain('Issued Apr 2024 · The Linux Foundation');
+  });
+
+  it('opens only http(s) Credly links', async () => {
+    const { pills } = await render(() => of([badge(1, { credlyUrl: 'javascript:alert(1)' })]));
+
+    expect(pills()[0].tagName).toBe('DIV');
+    expect(pills()[0].getAttribute('href')).toBeNull();
   });
 
   it('says the badges could not load, and tries again', async () => {

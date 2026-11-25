@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { PROFILE_GRID_LIMIT, PROFILE_RECOGNITIONS_COPY, PROFILE_TRAINING_PATH } from '@lfx-one/shared/constants';
-import { Badge, BadgeState } from '@lfx-one/shared/interfaces';
+import { BadgeState, ProfileRecognitionItem } from '@lfx-one/shared/interfaces';
+import { compareBadgesByIssuedDateDesc, formatYearMonth, isValidUrl } from '@lfx-one/shared/utils';
 import { BadgesService } from '@services/badges.service';
 import { ProfileGridComponent } from '@shared/components/profile-section/profile-grid.component';
 import { ProfilePillComponent } from '@shared/components/profile-section/profile-pill.component';
@@ -25,7 +26,6 @@ import { catchError, map, of, startWith, switchMap } from 'rxjs';
 @Component({
   selector: 'lfx-profile-recognitions',
   imports: [
-    DatePipe,
     ProfileGridComponent,
     ProfilePillComponent,
     ProfileSectionComponent,
@@ -53,12 +53,8 @@ export class ProfileRecognitionsComponent {
 
   // Complex computed/toSignal signals
   protected readonly state: Signal<BadgeState> = this.initState();
-  /** Earned badges, newest first. */
-  protected readonly badges: Signal<Badge[]> = computed(() =>
-    this.state()
-      .data.filter((badge) => !badge.isPending)
-      .sort((a, b) => b.issuedDate.localeCompare(a.issuedDate))
-  );
+  /** Earned badges, newest first, each with a Credly link that is safe to open and its issue month. */
+  protected readonly badges: Signal<ProfileRecognitionItem[]> = this.initBadges();
   protected readonly shown = computed(() => (this.expanded() ? this.badges() : this.badges().slice(0, PROFILE_GRID_LIMIT)));
 
   protected retry(): void {
@@ -66,6 +62,20 @@ export class ProfileRecognitionsComponent {
   }
 
   // Private initializer functions
+  private initBadges(): Signal<ProfileRecognitionItem[]> {
+    return computed(() =>
+      this.state()
+        .data.filter((badge) => !badge.isPending)
+        .sort(compareBadgesByIssuedDateDesc)
+        .map((badge) => ({
+          badge,
+          // Credly sends the link; only an http(s) one is opened.
+          href: badge.credlyUrl && isValidUrl(badge.credlyUrl) ? badge.credlyUrl : null,
+          issued: formatYearMonth(badge.issuedDate),
+        }))
+    );
+  }
+
   // Browser only: the badges are the signed-in user's own, read like the Badges page reads them.
   private initState(): Signal<BadgeState> {
     const loading: BadgeState = { loading: true, error: false, data: [] };

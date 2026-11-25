@@ -12,6 +12,7 @@ import {
   formatIsoDateShortLabel,
   formatMemberSince,
   formatMemberSinceDate,
+  formatYearMonth,
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
@@ -73,6 +74,19 @@ describe('formatIsoDateLabel', () => {
 });
 
 // Empty/unparseable input returns '' so callers can hide the field, never show a placeholder.
+describe('formatYearMonth', () => {
+  it.each([
+    ['2026-03-01', 'Mar 2026'],
+    ['2026-03-01T00:00:00Z', 'Mar 2026'],
+    ['2026-12-31T23:59:59Z', 'Dec 2026'],
+    ['2026-13-01', ''],
+    ['March 2026', ''],
+    [undefined, ''],
+  ])('formats %s as %j', (value, expected) => {
+    expect(formatYearMonth(value)).toBe(expected);
+  });
+});
+
 describe('formatMemberSinceDate', () => {
   it('formats the account-creation date as a full date in UTC', () => {
     expect(formatMemberSinceDate('2013-03-14T23:30:00Z')).toBe('March 14, 2013');
