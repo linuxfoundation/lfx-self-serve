@@ -347,10 +347,28 @@ describe('OrgLensTrainingController', () => {
 
       await controller.getTrainingStats(rollUpReq({ company: OUTSIDER }), buildRes(), next);
       await controller.getGroups(rollUpReq({ company: OUTSIDER }), buildRes(), next);
-      expect(next).toHaveBeenCalledTimes(2);
+      await controller.getFilterOptions(rollUpReq({ company: OUTSIDER }), buildRes(), next);
+      expect(next).toHaveBeenCalledTimes(3);
       expect(next.mock.calls.every(([e]) => e instanceof ServiceValidationError)).toBe(true);
       expect(getFamilyTrainingStats).toHaveBeenCalledTimes(1);
       expect(getFamilyGroups).not.toHaveBeenCalled();
+      expect(getFamilyFilterOptions).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['repeated', { company: [ORG_UID, SIBLING] }],
+      ['empty', { company: '' }],
+    ])('refuses a %s company instead of widening to the whole family', async (_name, query) => {
+      const next = vi.fn();
+
+      await controller.getTrainingStats(rollUpReq(query), buildRes(), next);
+      await controller.getFilterOptions(rollUpReq(query), buildRes(), next);
+      await controller.getGroups(rollUpReq(query), buildRes(), next);
+      await controller.getGroupEmployees(rollUpReq({ ...query, groupValue: 'x', status: 'completed' }), buildRes(), next);
+
+      expect(next).toHaveBeenCalledTimes(4);
+      expect(next.mock.calls.every(([e]) => e instanceof ServiceValidationError)).toBe(true);
+      expect([getFamilyTrainingStats, getFamilyFilterOptions, getFamilyGroups, getGroupEmployees].every((fn) => fn.mock.calls.length === 0)).toBe(true);
     });
 
     it('stops before the service when the roll-up gate refuses the caller', async () => {

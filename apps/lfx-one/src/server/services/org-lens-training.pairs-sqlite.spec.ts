@@ -505,6 +505,31 @@ describe('a family roll-up over two accounts that share a person', () => {
     expect(pick(await service.getFamilyTrainingStats(req, family(), query({ level: 'Starter' }))).coursesTaken).toBe(0);
   });
 
+  // p1|cka resolves to Intermediate / proj-b in ACCOUNT and to Beginner / proj-a in OTHER_ACCOUNT, where it is certified.
+  it.each<[string, Partial<OrgTrainingStatsQuery>]>([
+    ['level Beginner', { level: 'Beginner' }],
+    ['project proj-a', { project: 'proj-a' }],
+  ])('with %s, counts the pair one company resolves into the filter in the totals and stat tiles its row shows', async (_label, filters) => {
+    database
+      .prepare("UPDATE ORG_PEOPLE_TRAINING_PAIRS SET COURSE_LEVEL = 'Beginner', PROJECT_ID = 'proj-a' WHERE ACCOUNT_ID = ? AND PAIR_KEY = 'p1|cka'")
+      .run(OTHER_ACCOUNT);
+    const scope = family();
+    const stats = await service.getFamilyTrainingStats(req, scope, query(filters));
+    const certifications = await service.getFamilyGroups(req, scope, query(filters), { groupBy: 'course', tab: 'certifications' });
+    const trainings = await service.getFamilyGroups(req, scope, query(filters), { groupBy: 'course', tab: 'trainings' });
+
+    expect(certifications.data.map((row) => [row.label, row.organization?.name, row.people, row.coursesTaken, row.completed, row.inProgress])).toEqual([
+      ['Kubernetes Admin', 'Acme Labs', 1, 1, 1, 0],
+    ]);
+    expect(certifications.totals).toEqual({ people: 1, coursesTaken: 1, completed: 1, inProgress: 0 });
+    expect(trainings.totals).toEqual({ people: 3, coursesTaken: 3, completed: 1, inProgress: 2 });
+    expect([stats.coursesTaken, stats.certifications, stats.trainingsCompleted, stats.coursesInProgress]).toEqual([4, 1, 1, 2]);
+    expect([stats.peopleWithTrainingActivity, stats.certifiedPeople, stats.peopleInTraining]).toEqual([3, 1, 2]);
+    expect(certifications.totals.completed).toBe(stats.certifications);
+    expect(trainings.totals.completed).toBe(stats.trainingsCompleted);
+    expect(certifications.totals.coursesTaken + trainings.totals.coursesTaken).toBe(stats.coursesTaken);
+  });
+
   it('narrows every figure to one company under the Company filter, which then equals its single-organization figures', async () => {
     const narrowed = family(OTHER_ACCOUNT);
     expect(narrowed.members.map((member) => member.accountId)).toEqual([OTHER_ACCOUNT]);

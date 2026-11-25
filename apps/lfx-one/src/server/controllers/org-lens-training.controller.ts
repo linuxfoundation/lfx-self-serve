@@ -17,8 +17,8 @@ import {
 } from '@lfx-one/shared/constants';
 import type {
   OrgTrainingFamilyScope,
-  OrgTrainingGroupsParams,
   OrgTrainingGroupSortField,
+  OrgTrainingGroupsParams,
   OrgTrainingGroupStatus,
   OrgTrainingTabId,
   OrgTrainingViewState,
@@ -32,11 +32,11 @@ import { assertOrgLensRead, type OrgLensReadQualification } from '../helpers/org
 import { resolveOrgLensRollUp } from '../helpers/org-lens-roll-up.helper';
 import { assertWellFormedOrgTrainingFilterValue } from '../helpers/org-training-filter.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
+import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
 import { getStringQueryParam, parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensTrainingService } from '../services/org-lens-training.service';
 
-/** What a Training read counts: one organization, with how the caller qualified on it, or a family roll-up. */
 type OrgTrainingReadTarget = { family: OrgTrainingFamilyScope } | { orgUid: string; qualification: OrgLensReadQualification };
 
 /**
@@ -82,7 +82,7 @@ export class OrgLensTrainingController {
       const response =
         'family' in target
           ? await this.service.getFamilyTrainingStats(req, target.family, query)
-          : // Spec 002: orgUid is the canonical org account id (SFID); pass it straight to Snowflake.
+          : // orgUid is the canonical org account id (SFID); pass it straight to Snowflake.
             await this.service.getTrainingStats(target.orgUid, query, target.qualification);
 
       logger.success(req, operation, startTime, {
@@ -169,10 +169,7 @@ export class OrgLensTrainingController {
     }
   }
 
-  /**
-   * GET /api/orgs/:orgUid/lens/training/groups/employees?groupBy&groupValue&tab&status + stats query. In a roll-up the drawer is
-   * one company's own: `company` is required, must be an organization of the roll-up, and the read is that company's single-organization read.
-   */
+  /** GET /api/orgs/:orgUid/lens/training/groups/employees?groupBy&groupValue&tab&status + stats query, plus company in a roll-up */
   public async getGroupEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_training_group_employees';
@@ -235,11 +232,14 @@ export class OrgLensTrainingController {
     return { orgUid, qualification: await assertOrgLensRead(req, orgUid, operation) };
   }
 
-  /** The roll-up gate's organizations for this caller, narrowed by the Company filter, which must name one of them. */
+  /**
+   * The roll-up gate's organizations for this caller, narrowed by the Company filter, which must name one of them. Absent is the
+   * whole family; a repeated or empty value is a 400, never a silent widening.
+   */
   private async familyScope(req: Request, rollUpKey: string, operation: string): Promise<OrgTrainingFamilyScope> {
     const rollUp = await resolveOrgLensRollUp(req, rollUpKey, operation);
-    const company = getStringQueryParam(req, ORG_TRAINING_COMPANY_QUERY_PARAM) || undefined;
-    if (company && !rollUp.members.some((member) => member.accountId === company)) {
+    const company = getStrictStringQueryParam(req, ORG_TRAINING_COMPANY_QUERY_PARAM, operation);
+    if (company !== undefined && !rollUp.members.some((member) => member.accountId === company)) {
       throw ServiceValidationError.forField(ORG_TRAINING_COMPANY_QUERY_PARAM, 'company must be an organization in this roll-up', { operation });
     }
     return this.service.familyScope(rollUp, company);
@@ -250,8 +250,8 @@ export class OrgLensTrainingController {
     rollUpKey: string,
     operation: string
   ): Promise<{ accountId: string; qualification: OrgLensReadQualification }> {
-    const company = getStringQueryParam(req, ORG_TRAINING_COMPANY_QUERY_PARAM);
-    if (!company) {
+    const company = getStrictStringQueryParam(req, ORG_TRAINING_COMPANY_QUERY_PARAM, operation);
+    if (company === undefined) {
       throw ServiceValidationError.forField(ORG_TRAINING_COMPANY_QUERY_PARAM, 'company is required for a roll-up drawer', { operation });
     }
     await this.familyScope(req, rollUpKey, operation);
