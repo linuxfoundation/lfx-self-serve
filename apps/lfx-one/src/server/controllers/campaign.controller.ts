@@ -206,6 +206,7 @@ import {
   CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS,
   CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
   CAMPAIGN_SURVEY_STAGES,
+  CAMPAIGN_HUBSPOT_EMAIL_ID_PATTERN,
   CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT,
   CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH,
   CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS,
@@ -10873,9 +10874,6 @@ function sendSurfaceStages(deliveryType: CampaignDeliveryType): readonly string[
   return CAMPAIGN_EMAIL_STAGES;
 }
 
-/** A HubSpot marketing-email id: digits only. Anything else cannot name an email upstream reads. */
-const HUBSPOT_EMAIL_ID_PATTERN = /^\d{1,20}$/;
-
 /**
  * Why a newsletter brief request cannot be generated, as a field and a message, or null.
  *
@@ -10906,7 +10904,7 @@ function newsletterBriefRequestProblem(body: CampaignBriefRequest): { field: str
     if (
       !Array.isArray(body.referenceEmailIds) ||
       body.referenceEmailIds.length > CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT ||
-      body.referenceEmailIds.some((id) => typeof id !== 'string' || !HUBSPOT_EMAIL_ID_PATTERN.test(id))
+      body.referenceEmailIds.some((id) => typeof id !== 'string' || !CAMPAIGN_HUBSPOT_EMAIL_ID_PATTERN.test(id))
     ) {
       return {
         field: 'referenceEmailIds',

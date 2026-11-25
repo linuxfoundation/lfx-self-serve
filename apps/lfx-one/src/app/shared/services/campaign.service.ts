@@ -1209,13 +1209,6 @@ export class CampaignService {
   }
 
   /**
-   * Past marketing emails for this event, with their recipient lists resolved.
-   *
-   * The fastest correct answer to "who did we send this to last time" — and the reason a list a
-   * previous send used but which no longer exists comes back flagged `missing` rather than
-   * silently dropped.
-   */
-  /**
    * The brand's previous sent HubSpot newsletters, newest first, with the lists each targeted. The
    * newsletter surface clones the newest and offers all of them as content references.
    */
@@ -1268,6 +1261,13 @@ export class CampaignService {
     return read;
   }
 
+  /**
+   * Past marketing emails for this event, with their recipient lists resolved.
+   *
+   * The fastest correct answer to "who did we send this to last time" — and the reason a list a
+   * previous send used but which no longer exists comes back flagged `missing` rather than
+   * silently dropped.
+   */
   public getAudienceLastSent(projectSlug: string, eventName: string, brandShort = ''): Observable<AudienceLastSentEmail[]> {
     let params = new HttpParams().set('project', projectSlug).set('eventName', eventName);
     if (brandShort !== '') {

@@ -5214,12 +5214,16 @@ describe('AudienceBuilderTabComponent', () => {
       await render({ initialEventUrl: 'https://events.example.org/synthetic-summit' });
       click('campaigns-audience-mode-reuse');
       completeDiscovery();
+      const staleNotice = (): Element | null => host().querySelector('[data-testid="campaigns-audience-reuse-stale-discovery"]');
+      expect(staleNotice(), 'the lists are for the page in the field: nothing to warn about').toBeNull();
       click('campaigns-audience-mode-build');
 
       typeEventUrl('https://events.example.org/another-summit');
       click('campaigns-audience-mode-reuse');
 
       expect(discoverAudience, 'a different event started over without the Discover button').toHaveBeenCalledTimes(1);
+      // The panel still shows the first page's lists, so it has to say whose they are.
+      expect(staleNotice()?.textContent, 'lists for one event were shown under another with no cue').toContain('https://events.example.org/synthetic-summit');
     });
 
     it('does not run discovery on opening Use existing lists with no event page', async () => {

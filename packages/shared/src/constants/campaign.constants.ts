@@ -4801,8 +4801,11 @@ export const CAMPAIGN_NEWSLETTER_PROGRAM_OPTION: CampaignProgramPickerOption = {
 /** How many pages of the brand's site one suggestions request may read. */
 export const CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS = 3;
 
+/** Longest newsletter brand name the BFF accepts; campaign-service's `MaxLength(120)` on `brand`. */
+export const CAMPAIGN_NEWSLETTER_BRAND_MAX_LENGTH = 120;
+
 /** Longest brand name a suggestions request may carry; the same bound the brand-newsletter listing uses. */
-export const CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH = 120;
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH = CAMPAIGN_NEWSLETTER_BRAND_MAX_LENGTH;
 
 /** Response types a suggestions page may answer with. Anything else is not a web page to read. */
 export const CAMPAIGN_NEWSLETTER_SUGGESTION_CONTENT_TYPES = ['text/html', 'application/xhtml+xml'] as const;
@@ -4824,6 +4827,9 @@ export const CAMPAIGN_NEWSLETTER_SOURCE_STORAGE_PREFIX = 'lfx-campaign-newslette
 
 /** How many previous issues the newsletter planner offers as references (upstream reads at most three). */
 export const CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT = 3;
+
+/** A HubSpot marketing-email id: digits only. Anything else cannot name an email upstream reads. */
+export const CAMPAIGN_HUBSPOT_EMAIL_ID_PATTERN = /^\d{1,20}$/;
 
 /** The survey type a fresh selection starts on. */
 export const DEFAULT_CAMPAIGN_SURVEY_TYPE_ID = 'survey-promo';

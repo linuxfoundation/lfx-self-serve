@@ -3165,6 +3165,29 @@ describe('CampaignProxyService newsletter suggestions', () => {
     expect(result.items.map((item) => item.title)).toEqual(['Real']);
   });
 
+  it('takes web addresses out of the words the model wrote, so the checked link is the only one', async () => {
+    modelAnswer = JSON.stringify([
+      {
+        kind: 'offer',
+        title: 'Training offer https://phish.example/t',
+        detail: 'Register at https://phish.example/x before it closes. More: www.phish.example/y',
+        url: 'https://example.org/offer',
+      },
+      // Nothing but an address: no title is left, so there is no item.
+      { kind: 'report', title: 'https://phish.example/only', url: 'https://example.org/report' },
+    ]);
+
+    const result = await suggest([PAGE]);
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].title).toBe('Training offer');
+    expect(result.items[0].detail).toBe('Register at before it closes. More');
+    expect(result.items[0].url).toBe('https://example.org/offer');
+    expect(JSON.stringify(result.items), 'an address the page was never checked for reached the operator').not.toMatch(
+      /phish\.example|https?:\/\/(?!example\.org)/
+    );
+  });
+
   it('drops an item whose deadline is before the issue goes out', async () => {
     modelAnswer = JSON.stringify([
       { kind: 'offer', title: 'Closed', deadline: '2026-11-30', url: 'https://example.org/old' },

@@ -248,35 +248,35 @@
                     </p>
                   } @else {
                     <ul class="flex flex-col gap-2">
-                      @for (item of suggestions(); track item.url) {
+                      @for (row of suggestionRows(); track row.item.url) {
                         <li
                           class="flex items-start gap-3 rounded-md border border-gray-200 px-3 py-2"
                           [attr.data-testid]="'planning-newsletter-suggestion-' + $index">
                           <div class="flex min-w-0 flex-1 flex-col gap-0.5">
                             <div class="flex flex-wrap items-center gap-2">
-                              <span class="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">{{ suggestionKindLabels[item.kind] }}</span>
+                              <span class="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">{{ suggestionKindLabels[row.item.kind] }}</span>
                               <a
-                                [href]="item.url"
+                                [href]="row.item.url"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 class="text-sm font-medium text-blue-700 hover:underline"
                                 [attr.data-testid]="'planning-newsletter-suggestion-link-' + $index"
-                                >{{ item.title }}</a
+                                >{{ row.item.title }}</a
                               >
                             </div>
-                            @if (item.detail) {
-                              <span class="text-xs text-gray-600">{{ item.detail }}</span>
+                            @if (row.item.detail) {
+                              <span class="text-xs text-gray-600">{{ row.item.detail }}</span>
                             }
-                            @if (item.deadline) {
-                              <span class="text-xs text-gray-500">Until {{ item.deadline }}</span>
+                            @if (row.item.deadline) {
+                              <span class="text-xs text-gray-500">Until {{ row.item.deadline }}</span>
                             }
                           </div>
                           <lfx-button
-                            [label]="addedSuggestionUrls().has(item.url) ? 'Added' : 'Add to notes'"
+                            [label]="row.addLabel"
                             severity="secondary"
                             size="small"
-                            [disabled]="addedSuggestionUrls().has(item.url)"
-                            (onClick)="onAddSuggestion(item)"
+                            [disabled]="row.added"
+                            (onClick)="onAddSuggestion(row.item)"
                             [attr.data-testid]="'planning-newsletter-suggestion-add-' + $index" />
                         </li>
                       }

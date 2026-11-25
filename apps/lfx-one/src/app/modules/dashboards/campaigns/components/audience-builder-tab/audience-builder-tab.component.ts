@@ -389,6 +389,17 @@ export class AudienceBuilderTabComponent {
   protected readonly hasDiscovered = signal(false);
   /** The URL the current discovery ran for, so an edited field is compared by what it discovered. */
   private readonly discoveredEventUrl = signal('');
+  /**
+   * The page the lists on screen were discovered for, when the event URL field now names a
+   * different one; '' otherwise. Opening "Use existing lists" does not run discovery again for an
+   * edited URL (that would start the operator's work over), so the reuse panel has to say whose
+   * lists it is showing: attaching them would otherwise put one event's lists on another's brief.
+   */
+  protected readonly staleDiscoveryUrl = computed(() => {
+    const discovered = this.discoveredEventUrl();
+    const typed = this.eventUrlValue().trim();
+    return this.hasDiscovered() && discovered !== '' && typed !== '' && typed !== discovered ? discovered : '';
+  });
 
   // === State: reuse ===
   protected readonly reuseLoading = signal(false);

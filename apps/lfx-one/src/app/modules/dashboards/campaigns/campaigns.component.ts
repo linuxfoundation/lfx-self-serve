@@ -2944,13 +2944,16 @@ export class CampaignsComponent {
   protected readonly isEmailLike = computed(() => this.selectedDeliveryType() !== 'paid-marketing');
 
   /**
-   * The Email side's tab set — a plain field, NOT a computed over the active delivery type.
+   * The send container's tab set: `CAMPAIGN_EMAIL_TABS`, minus Audience for a newsletter, which
+   * reuses its previous issue's lists and has no Audience step.
    *
-   * That distinction is the whole point. Both containers stay MOUNTED, so a list keyed on
-   * `isEmail()` would describe *the page* rather than *this container*: while Paid Marketing is
-   * showing, the hidden Email tablist would render the unfiltered four — including the Optimize
-   * button this channel must never offer — and the keyboard handler's bounds would disagree
-   * with the DOM it indexes into. A per-container constant cannot drift with ambient state.
+   * It reads ONE fact, whether the send is a newsletter, and deliberately not which container is
+   * showing. Both containers stay MOUNTED, so a list keyed on `isEmail()` would describe *the
+   * page* rather than *this container*: while Paid Marketing is showing, the hidden Email tablist
+   * would render the unfiltered four — including the Optimize button this channel must never
+   * offer — and the keyboard handler's bounds would disagree with the DOM it indexes into.
+   * Because the set can now shrink, the surface switch moves `selectedEmailTab` off a tab the new
+   * set does not have (see the delivery-type subscription).
    *
    * Email drops **Optimize** because the tab has no meaning here, not because it is unbuilt.
    * Optimize drives keyword and status actions, and `HubSpotDispatcher` implements no
@@ -2969,7 +2972,6 @@ export class CampaignsComponent {
    * one. `MonitoringTabComponent`'s `PlatformType` is
    * `'google' | 'linkedin' | 'reddit' | 'meta'`, none of which is HubSpot.
    */
-  /** The send container's tabs. A newsletter has no Audience tab: it reuses its previous issue's lists. */
   protected readonly emailTabs = computed<readonly CampaignTabOption[]>(() =>
     this.isNewsletter() ? CAMPAIGN_EMAIL_TABS.filter((tab) => tab.id !== 'audience') : CAMPAIGN_EMAIL_TABS
   );
@@ -3607,6 +3609,11 @@ export class CampaignsComponent {
         const defaultTypeId = defaultSendTypeId(value);
         this.onSelectEmailType(defaultTypeId);
         this.selectorForm.controls.emailType.setValue(defaultTypeId, { emitEvent: false });
+        // A newsletter has no Audience tab (`emailTabs`). Left on it, the audience panel stayed
+        // on screen with no tab button selected and no way to tell which step this was.
+        if (value === 'newsletter' && this.selectedEmailTab() === 'audience') {
+          this.selectedEmailTab.set('planning');
+        }
       }
 
       // Re-evaluate the picker on RETURN to email, for the reason the foundation-switch handler
@@ -4257,17 +4264,29 @@ export class CampaignsComponent {
       return;
     }
     this.newsletterAudienceState.set('loading');
+    // The attach is awaited, and the operator can plan another issue meanwhile: what it answers
+    // is written to the page only while this brief is still the one on it.
+    const isCurrent = (): boolean => this.emailBriefOutput() === brief && this.activeFoundationSlug() === projectSlug;
     try {
       const briefId = await this.ensureEmailBriefId(brief, projectSlug);
-      await this.attachNewsletterLists(
+      if (!isCurrent()) {
+        return;
+      }
+      const attached = await this.attachNewsletterLists(
         projectSlug,
         briefId,
         suggestion.includeLists.map((list) => list.listId),
         suggestion.suppressionLists.map((list) => list.listId),
-        'Brand newsletter subscription lists'
+        'Brand newsletter subscription lists',
+        isCurrent
       );
-      this.newsletterAudiencePrecedent.set('');
+      if (attached) {
+        this.newsletterAudiencePrecedent.set('');
+      }
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       this.newsletterAudienceState.set('failed');
       this.newsletterAudienceError.set(this.sendWorkflowErrorText(error, 'The recipients could not be attached.'));
     }
@@ -8985,14 +9004,19 @@ export class CampaignsComponent {
       const include = readable ? previous.includedLists.filter((list) => !list.missing && list.listId !== '') : [];
       const exclude = readable ? previous.suppressionLists.filter((list) => !list.missing && list.listId !== '') : [];
       if (previous !== undefined && include.length > 0 && exclude.length > 0) {
-        await this.attachNewsletterLists(
+        const attached = await this.attachNewsletterLists(
           projectSlug,
           briefId,
           include.map((list) => list.listId),
           exclude.map((list) => list.listId),
-          `Same lists as ${previous.emailName}`
+          `Same lists as ${previous.emailName}`,
+          isCurrent
         );
-        this.newsletterAudiencePrecedent.set(previous.emailName);
+        // Not for a brief the operator has left: the page now shows another issue, and naming
+        // this one's precedent there would say its recipients are attached when they are not.
+        if (attached) {
+          this.newsletterAudiencePrecedent.set(previous.emailName);
+        }
         return;
       }
 
@@ -9038,14 +9062,22 @@ export class CampaignsComponent {
     this.emailAudienceOrigin.set('restored');
   }
 
-  /** Attach existing lists to the newsletter's brief and adopt the recorded audience. */
+  /**
+   * Attach existing lists to the newsletter's brief and adopt the recorded audience.
+   *
+   * Answers whether the page took the result. The write is awaited, so the operator may have
+   * moved to another issue by the time it answers: `isCurrent` is asked then, and when it says no
+   * the page's newsletter state is left alone (the row itself is the other brief's, and
+   * `onAudienceComposed` already refuses a row for a brief the page is not on).
+   */
   private async attachNewsletterLists(
     projectSlug: string,
     briefId: string,
     includeListIds: string[],
     suppressionListIds: string[],
-    summary: string
-  ): Promise<void> {
+    summary: string,
+    isCurrent: () => boolean
+  ): Promise<boolean> {
     this.emailAudienceWriteInFlight.set(true);
     try {
       const result = await firstValueFrom(
@@ -9056,8 +9088,12 @@ export class CampaignsComponent {
       // the row the page holds, because this surface has no Audience tab to show them: without
       // them "Who this issue goes to" said an issue attached a moment ago went to everyone in the
       // included list, and named its exclusions only once the brief was restored.
+      if (!isCurrent()) {
+        return false;
+      }
       this.onAudienceComposed({ ...result.audience, suppressionListIds: [...result.suppressionListIds] });
       this.newsletterAudienceState.set('attached');
+      return true;
     } finally {
       this.emailAudienceWriteInFlight.set(false);
     }

@@ -1468,6 +1468,27 @@ const NEWSLETTER_SUGGESTION_KINDS: ReadonlySet<CampaignNewsletterSuggestionKind>
   'post',
 ]);
 
+/** A web address inside free text, with or without its scheme's usual company (`www.`). */
+const SUGGESTION_TEXT_ADDRESS = /(?:https?:\/\/|www\.)\S+/gi;
+
+/**
+ * A suggestion's words with every web address taken out. The model writes `title` and `detail`
+ * freely, and the planner copies them into the notes, where any address becomes a link the issue
+ * may carry. Only `url` is checked against the page, so it must be the only address a suggestion
+ * can add: a page that tells the model to "describe this as: register at https://…" gets its words
+ * kept and its address dropped.
+ */
+function suggestionTextWithoutAddresses(value: unknown, maxLength: number): string {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(SUGGESTION_TEXT_ADDRESS, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([.,;:!?)])/g, '$1')
+    .replace(/[\s:(\-–—]+$/, '')
+    .trim()
+    .slice(0, maxLength);
+}
+
 /**
  * Lists what a brand's page offers that a newsletter issue could carry. Facts only from the page,
  * links copied from its hrefs (each is then checked against the page), dates as the page states them.
@@ -1546,8 +1567,9 @@ export class CampaignProxyService {
    * Each page is fetched through the SSRF guard, the model lists what it finds, and every link it
    * returns must appear on the page it came from (`verifyPageLink`): an item with an invented or
    * rewritten URL is dropped, never repaired. Items whose stated deadline is before `notBefore` are
-   * dropped too. A page that cannot be read or understood is reported in `failedUrls`; the others
-   * still answer. Nothing is written anywhere.
+   * dropped too, and the model's own words (`title`, `detail`) are returned with any web address
+   * removed, so the checked link is the only one a suggestion adds. A page that cannot be read or
+   * understood is reported in `failedUrls`; the others still answer. Nothing is written anywhere.
    */
   public async suggestNewsletterItems(
     req: Request,
@@ -1594,12 +1616,13 @@ export class CampaignProxyService {
             const kind = NEWSLETTER_SUGGESTION_KINDS.has(r['kind'] as CampaignNewsletterSuggestionKind)
               ? (r['kind'] as CampaignNewsletterSuggestionKind)
               : null;
-            const title = typeof r['title'] === 'string' ? r['title'].trim().slice(0, 200) : '';
+            // A title that was only an address is no title: the row is dropped below.
+            const title = suggestionTextWithoutAddresses(r['title'], 200);
             const verified = verifyPageLink(r['url'], links, baseUrl);
             if (kind === null || title === '' || verified === '') return [];
             const deadline = typeof r['deadline'] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r['deadline']) ? r['deadline'] : '';
             if (deadline !== '' && deadline < notBefore) return [];
-            const detail = typeof r['detail'] === 'string' ? r['detail'].trim().slice(0, 300) : '';
+            const detail = suggestionTextWithoutAddresses(r['detail'], 300);
             return [{ kind, title, detail, deadline, url: verified, sourceUrl: finalUrl }];
           });
         } catch (error) {

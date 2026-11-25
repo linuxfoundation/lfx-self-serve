@@ -6,6 +6,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { Signal, WritableSignal } from '@angular/core';
 import type {
+  AudienceAttachExistingResult,
   AudienceLastSentEmail,
   AudienceListDescription,
   AudienceSelectionSummaryItem,
@@ -21,12 +22,15 @@ import { CampaignService } from '@services/campaign.service';
 import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { NEVER, of } from 'rxjs';
+import { NEVER, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CampaignsComponent } from './campaigns.component';
-import { seedSelectedFoundation } from './campaigns.spec-helper';
+import { campaignsComponentUnderTest, seedSelectedFoundation, STATE_ONLY, trackStateOnlyTests } from './campaigns.spec-helper';
 
 seedSelectedFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' });
+// Most of these assert on signals and service calls, so they mount the page with no template
+// (STATE_ONLY). The ones that read the rendered hint, note or panel keep the full render.
+trackStateOnlyTests();
 
 /**
  * The newsletter surface's Implement step: one issue of a brand's newsletter, written from the
@@ -49,6 +53,8 @@ describe('CampaignsComponent — newsletter issue', () => {
     newsletterAudienceIncludes: Signal<AudienceSelectionSummaryItem[]>;
     newsletterAudienceExcludes: Signal<AudienceSelectionSummaryItem[]>;
     newsletterAudienceDescribeError: Signal<string | null>;
+    newsletterAudienceState: Signal<string>;
+    newsletterAudiencePrecedent: Signal<string>;
     onEmailProceedFromPlanning(brief: CampaignBriefOutput): void;
     selectorForm: { controls: { deliveryType: { setValue(v: CampaignDeliveryType): void } } };
   }
@@ -138,7 +144,7 @@ describe('CampaignsComponent — newsletter issue', () => {
         { provide: DialogService, useValue: { open: vi.fn() } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(CampaignsComponent);
+    fixture = TestBed.createComponent(campaignsComponentUnderTest());
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     fixture.detectChanges();
   });
@@ -149,7 +155,7 @@ describe('CampaignsComponent — newsletter issue', () => {
      * judged by vouched for nothing, and every link the operator wrote into the notes reached the
      * preview, and then the draft, as dead text.
      */
-    it("keeps the links the notes carry and drops every other link's href", () => {
+    it("keeps the links the notes carry and drops every other link's href", STATE_ONLY, () => {
       select('newsletter');
       internals().emailBriefOutput.set(newsletterBrief);
       internals().emailCopy.set(copy());
@@ -164,7 +170,7 @@ describe('CampaignsComponent — newsletter issue', () => {
       expect(internals().emailNoteLinks()).toEqual(['https://acme.example/blog/guide/', 'https://acme.example/newsletter/november']);
     });
 
-    it('leaves every other surface on the host rule', () => {
+    it('leaves every other surface on the host rule', STATE_ONLY, () => {
       select('email');
       internals().emailBriefOutput.set(newsletterBrief);
       internals().emailCopy.set(copy());
@@ -176,7 +182,7 @@ describe('CampaignsComponent — newsletter issue', () => {
       expect(internals().emailBodyHtmlPreview()).toContain('<a>the guide</a>');
     });
 
-    it('points the one button at an address from the notes, and nowhere else', () => {
+    it('points the one button at an address from the notes, and nowhere else', STATE_ONLY, () => {
       select('newsletter');
       internals().emailBriefOutput.set(newsletterBrief);
 
@@ -187,6 +193,28 @@ describe('CampaignsComponent — newsletter issue', () => {
       internals().emailCopy.set(copy({ cta: 'Read More', ctaUrl: 'https://acme.example/elsewhere' }));
       fixture.detectChanges();
       expect(internals().emailCtaDestination()).toBe('');
+    });
+  });
+
+  describe('tabs', () => {
+    // A newsletter has no Audience tab. Switching to it from the Email surface's Audience tab left
+    // the audience panel showing with no tab selected.
+    it('moves off the Audience tab when the send becomes a newsletter', STATE_ONLY, () => {
+      select('email');
+      internals().selectedEmailTab.set('audience');
+
+      select('newsletter');
+
+      expect(internals().selectedEmailTab()).toBe('planning');
+    });
+
+    it('keeps the tab the operator was on when the newsletter has it', STATE_ONLY, () => {
+      select('email');
+      internals().selectedEmailTab.set('implementation');
+
+      select('newsletter');
+
+      expect(internals().selectedEmailTab()).toBe('implementation');
     });
   });
 
@@ -256,6 +284,8 @@ describe('CampaignsComponent — newsletter issue', () => {
   });
 
   describe('drafting on arrival', () => {
+    // Kept on the full render: on the empty-template page the draft on arrival does not start
+    // (generateEmailCopy is never called), so a state-only version would not exercise it.
     it('writes the issue as soon as the plan is handed over, with no variant', async () => {
       const service = TestBed.inject(CampaignService);
       vi.spyOn(service, 'persistBrief').mockReturnValue(of({ enabled: true, briefId: 'brief-nl', etag: '"1"', created: true, approved: true }));
@@ -409,7 +439,7 @@ describe('CampaignsComponent — newsletter issue', () => {
      * issue to another issue's recipients with nobody choosing them, so nothing is attached and
      * the suggestion is left for the operator to confirm.
      */
-    it("does not attach another issue's lists when the issue being cloned is not among those read", async () => {
+    it("does not attach another issue's lists when the issue being cloned is not among those read", STATE_ONLY, async () => {
       const service = TestBed.inject(CampaignService);
       vi.spyOn(service, 'persistBrief').mockReturnValue(of({ enabled: true, briefId: 'brief-nl', etag: '"1"', created: true, approved: true }));
       vi.spyOn(service, 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy: copy() }));
@@ -452,7 +482,50 @@ describe('CampaignsComponent — newsletter issue', () => {
       expect(host().querySelector('[data-testid="campaigns-newsletter-audience-retry"]')).not.toBeNull();
     });
 
-    it('is not read on any other surface', async () => {
+    /**
+     * The attach is awaited. If the operator plans another issue while it is in flight, its answer
+     * arrives on a page showing that other issue, and must not mark ITS recipients as attached.
+     */
+    it("does not mark another issue as attached when an earlier issue's attach answers late", STATE_ONLY, async () => {
+      const service = TestBed.inject(CampaignService);
+      vi.spyOn(service, 'persistBrief').mockReturnValue(of({ enabled: true, briefId: 'brief-nl', etag: '"1"', created: true, approved: true }));
+      vi.spyOn(service, 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy: copy() }));
+      vi.spyOn(service, 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [] }));
+      vi.spyOn(service, 'getAudienceBrandNewsletters').mockReturnValue(of([previousIssue]));
+      vi.spyOn(service, 'describeAudienceLists').mockReturnValue(of([]));
+      const searchAudienceLists = vi.spyOn(service, 'searchAudienceLists').mockReturnValue(of([]));
+      vi.spyOn(service, 'getAudienceSuppressionLists').mockReturnValue(of({ lists: [] } as unknown as AudienceSuppressionListsResult));
+      const slowAttach = new Subject<AudienceAttachExistingResult>();
+      const attachExistingAudience = vi.spyOn(service, 'attachExistingAudience').mockReturnValue(slowAttach);
+
+      select('newsletter');
+      // Issue A clones 900, which is among the issues read: its lists are attached, slowly.
+      internals().onEmailProceedFromPlanning(newsletterBrief);
+      await vi.waitFor(() => expect(attachExistingAudience).toHaveBeenCalledTimes(1));
+
+      // Issue B names a template that is not among them, so it ends on the suggestion.
+      const otherIssue = {
+        eventDetails: { ...newsletterBrief.eventDetails, name: 'Acme Newsletter - December 2026', referenceEmailIds: ['777'] },
+      } as unknown as CampaignBriefOutput;
+      internals().onEmailProceedFromPlanning(otherIssue);
+      await vi.waitFor(() => expect(searchAudienceLists).toHaveBeenCalled());
+      await vi.waitFor(() => expect(internals().newsletterAudienceState()).toBe('suggested'));
+
+      slowAttach.next({
+        master: { listId: '3797', name: 'Acme Newsletter Subscriptions', hubspotUrl: '' },
+        suppressionListIds: ['3732', '888'],
+        audience: { id: 'aud-late', briefId: 'brief-nl', platform: 'hubspot', platformMasterListId: '3797', status: 'built', version: 1 },
+      });
+      slowAttach.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(internals().newsletterAudienceState(), "issue A's late answer marked issue B as attached").toBe('suggested');
+      expect(internals().newsletterAudiencePrecedent()).toBe('');
+      expect(internals().emailAudience()).toBeNull();
+    });
+
+    it('is not read on any other surface', STATE_ONLY, async () => {
       const describeAudienceLists = vi.spyOn(TestBed.inject(CampaignService), 'describeAudienceLists').mockReturnValue(of([]));
 
       select('email');

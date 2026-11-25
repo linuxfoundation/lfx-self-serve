@@ -418,6 +418,11 @@ export class PlanningTabComponent implements OnInit {
   protected readonly suggestionsError = signal('');
   /** Suggestions already added to the notes, so each is added once. */
   protected readonly addedSuggestionUrls = signal<ReadonlySet<string>>(new Set<string>());
+  /** The suggestions as the list renders them: each with whether it is already in the notes. */
+  protected readonly suggestionRows = computed(() => {
+    const added = this.addedSuggestionUrls();
+    return this.suggestions().map((item) => ({ item, added: added.has(item.url), addLabel: added.has(item.url) ? 'Added' : 'Add to notes' }));
+  });
   protected readonly suggestionKindLabels = CAMPAIGN_NEWSLETTER_SUGGESTION_KIND_LABELS;
   protected readonly suggestionMaxUrls = CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS;
   /** Previous issues the operator unticked; every other loaded issue is a reference. */

@@ -11,6 +11,7 @@ import {
   AUDIENCE_REGISTRANTS_EVENT_MESSAGE,
   AUDIENCE_SPEAKER_SCOPES,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_NEWSLETTER_BRAND_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
@@ -36,9 +37,6 @@ import { validateScrapeUrl } from '../helpers/url-validation';
 import { AudienceBuilderProxyService, AudienceComposePartialError } from '../services/audience-builder-proxy.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
-
-/** Longest brand `/brand-newsletters` accepts; upstream's `MaxLength(120)`. */
-const NEWSLETTER_BRAND_MAX_LENGTH = 120;
 
 /** Highest `limit` `/last-sent` honours; more sends than this is a research task, not a picker. */
 const LAST_SENT_MAX_LIMIT = 10;
@@ -522,8 +520,8 @@ export class AudienceBuilderController {
     }
 
     // Upstream refuses a brand over 120 characters; say so here as a field error.
-    if (brand.length > NEWSLETTER_BRAND_MAX_LENGTH) {
-      next(invalid(req, 'audience_brand_newsletters', 'brand', `brand must be ${NEWSLETTER_BRAND_MAX_LENGTH} characters or fewer`));
+    if (brand.length > CAMPAIGN_NEWSLETTER_BRAND_MAX_LENGTH) {
+      next(invalid(req, 'audience_brand_newsletters', 'brand', `brand must be ${CAMPAIGN_NEWSLETTER_BRAND_MAX_LENGTH} characters or fewer`));
       return;
     }
 

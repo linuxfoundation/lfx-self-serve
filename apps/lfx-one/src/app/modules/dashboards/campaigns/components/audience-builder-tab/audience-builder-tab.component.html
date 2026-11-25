@@ -180,6 +180,18 @@
         data-testid="campaigns-audience-reuse-panel">
         Find the event's existing lists, reuse an earlier send's audience, and fill any gaps.
       </p>
+      @if (staleDiscoveryUrl(); as earlierUrl) {
+        <div
+          class="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3"
+          role="alert"
+          data-testid="campaigns-audience-reuse-stale-discovery">
+          <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
+          <p class="text-xs text-amber-900">
+            The lists below were found for <span class="break-all font-medium">{{ earlierUrl }}</span
+            >, not the event URL now in the field. Press Discover to find this page's lists before attaching any.
+          </p>
+        </div>
+      }
     }
 
     <!-- One builder serves the Build tab, whether the draft came from the event page or a description. -->
