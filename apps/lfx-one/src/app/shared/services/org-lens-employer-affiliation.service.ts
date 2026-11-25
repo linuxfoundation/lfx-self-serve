@@ -90,7 +90,20 @@ export class OrgLensEmployerAffiliationService {
       // 0 is the seed, not an edit: the initial grants load has already asked.
       filter((revision) => revision > 0),
       switchMap(() => this.inPopulationReached),
-      switchMap(() => this.roleGrants.refresh(true)),
+      // The guard belongs inside the inner observable, not on this pipe: an outer `catchError` would
+      // swap the whole stream for its fallback and complete it, ending the very subscription it is
+      // meant to protect. `refresh` reports its own failures and completes, so nothing errors here
+      // today — but this stream lives for the session, and one error would silently stop later edits
+      // invalidating #4225's verdict, stranding a caller who moves to a non-member employer on
+      // `affiliated-no-grant`.
+      switchMap(() =>
+        this.roleGrants.refresh(true).pipe(
+          catchError((error: unknown) => {
+            console.warn('[OrgLensEmployerAffiliationService] member-verdict invalidation failed', error);
+            return of(undefined);
+          })
+        )
+      ),
       takeUntilDestroyed()
     )
     .subscribe();

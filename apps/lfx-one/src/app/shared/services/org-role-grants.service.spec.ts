@@ -172,6 +172,41 @@ describe('OrgRoleGrantsService.affiliatedToMember', () => {
     expect(service.affiliatedToMember()).toBe(true);
   });
 
+  // Two callers refresh independently — the shared Retry and #4314's work-history invalidation — so
+  // an older response can land last. It must not reinstate the verdict the newer one just replaced.
+  it('ignores a superseded response that lands after a newer one', async () => {
+    const stale = firstValueFrom(service.refresh(true));
+    const fresh = firstValueFrom(service.refresh(true));
+    const [staleRequest, freshRequest] = http.match((request) => request.url === '/api/orgs/me/role-grants');
+
+    // The newer request answers first with the post-edit verdict...
+    freshRequest.flush({ ...grants, affiliation: { hasEmployer: true, employerIsMember: false, lookup: 'ok' } });
+    await fresh;
+    expect(service.affiliatedToMember()).toBe(false);
+
+    // ...then the older one lands carrying the member verdict it was started before the edit.
+    staleRequest.flush({ ...grants, affiliation: member });
+    await stale;
+
+    expect(service.affiliatedToMember()).toBe(false);
+  });
+
+  // A superseded failure must not report an outage over a newer good answer either.
+  it('ignores a superseded failure that lands after a newer success', async () => {
+    const stale = firstValueFrom(service.refresh(true));
+    const fresh = firstValueFrom(service.refresh(true));
+    const [staleRequest, freshRequest] = http.match((request) => request.url === '/api/orgs/me/role-grants');
+
+    freshRequest.flush({ ...grants, affiliation: member });
+    await fresh;
+
+    staleRequest.error(new ProgressEvent('error'));
+    await stale;
+
+    expect(service.affiliatedToMember()).toBe(true);
+    expect(service.lookupOutcome()).not.toBe('failed');
+  });
+
   it('is false when the server omits the field, as an older BFF does', async () => {
     await answer(grants);
 

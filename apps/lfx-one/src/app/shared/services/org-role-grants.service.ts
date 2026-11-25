@@ -58,6 +58,13 @@ export class OrgRoleGrantsService {
   // access", not "no organization". False whenever the server could not establish it, which keeps the
   // copy the user sees today rather than asserting a reason that may be wrong.
   private readonly affiliatedToMemberInternal: WritableSignal<boolean> = signal<boolean>(false);
+  /**
+   * Orders concurrent {@link refresh} calls. Several callers can have one in flight at once — the
+   * shared Retry (`OrgLensEmptyStateService.retry`) and the #4314 work-history invalidation each ask
+   * on their own — and without this an older response landing last would reinstate the state the newer
+   * one just replaced: an employer edit answered, then overwritten by a Retry begun before it.
+   */
+  private refreshSequence = 0;
   // Epic #5845 — the company the caller may open in the all employee view. Null whenever the server did not prove it,
   // which keeps today's empty state. Read it through `OrgLensViewModeService`.
   private readonly employeeViewOrgUidInternal: WritableSignal<string | null> = signal<string | null>(null);
@@ -181,9 +188,15 @@ export class OrgRoleGrantsService {
   public refresh(bypassCache = false): Observable<void> {
     this.loadingInternal.set(true);
     this.errorInternal.set(null);
+    const sequence = ++this.refreshSequence;
     const params = bypassCache ? { [ORG_ROLE_GRANTS_REFRESH_PARAM]: '1' } : undefined;
     return this.http.get<RoleGrantsResponse>('/api/orgs/me/role-grants', { params }).pipe(
       tap((response) => {
+        // Latest wins. A superseded answer is dropped whole — including `loading`, which the newer
+        // request still owns — rather than applied in part.
+        if (sequence !== this.refreshSequence) {
+          return;
+        }
         this.writerSetInternal.set(new Set(response.writers));
         this.auditorSetInternal.set(new Set(response.auditors));
         this.inheritedWriterSetInternal.set(new Set((response.cascadingWriters ?? []).map((entry: CascadingRoleGrant) => entry.uid)));
@@ -216,6 +229,9 @@ export class OrgRoleGrantsService {
         this.loadedAtMsInternal.set(Date.now());
       }),
       catchError((error: unknown) => {
+        if (sequence !== this.refreshSequence) {
+          return of(undefined);
+        }
         const message = error instanceof Error ? error.message : 'Unknown error';
         this.errorInternal.set(message);
         // BFF downgrades upstream failures to empty 200 per contract, so reaching this branch typically means a transport-level failure.
