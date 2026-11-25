@@ -90,6 +90,7 @@ import type {
   CampaignServiceMetaCustomAudiences,
   CampaignServiceLinkedInAudiences,
   CampaignServiceLinkedInConversions,
+  CampaignServiceLinkedInLeadForms,
   LinkedInTargetingSearchFacet,
   CampaignServiceMetaLeadForms,
   CampaignServiceLinkedInAdsCreateAccount,
@@ -989,6 +990,17 @@ export function canSetLinkedInConversions(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may be a Lead Gen Form campaign: `objective: "lead_generation"`, `leadGenForm` and
+ * `leadGenCallToAction` (campaign-service#664). Needs the campaign-service create path AND
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_LEAD_GEN`, which follows campaign-service's own `LINKEDIN_ADS_LEAD_GEN_ENABLED`:
+ * campaign-service refuses all three while that is off, and the legacy creator ignores them. Bidding plays no part: a
+ * lead gen create takes automatic bidding, which an omitted `bidding` already is.
+ */
+export function canSetLinkedInLeadGen(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInLeadGen);
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -1256,6 +1268,7 @@ export class CampaignServiceClient {
         linkedInTargetCostEnabled: canSetLinkedInTargetCost(),
         linkedInTargetingEnabled: canSetLinkedInTargeting(),
         linkedInConversionsEnabled: canSetLinkedInConversions(),
+        linkedInLeadGenEnabled: canSetLinkedInLeadGen(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1349,6 +1362,7 @@ export class CampaignServiceClient {
       linkedInTargetCostEnabled: canSetLinkedInTargetCost(),
       linkedInTargetingEnabled: canSetLinkedInTargeting(),
       linkedInConversionsEnabled: canSetLinkedInConversions(),
+      linkedInLeadGenEnabled: canSetLinkedInLeadGen(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -3942,6 +3956,28 @@ export class CampaignServiceClient {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/conversions`,
+      'GET',
+      accountId === undefined ? undefined : { account_id: accountId }
+    );
+  }
+
+  /**
+   * The Lead Gen Forms on the LinkedIn ad account a create for this project uses (`list-linkedin-ads-lead-forms`, #664),
+   * for the Implement tab's form picker. Answered upstream only on `global_marketing_ops` of the path project; archived
+   * forms are left out, the rest sorted by name. `accountId`, when given, names the ad account (sent as `account_id`), and
+   * omitted it is the project's default account. Failures are left to the caller.
+   */
+  public async listLinkedInLeadForms(req: Request, projectSlug: string, accountId?: string): Promise<CampaignServiceLinkedInLeadForms> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A lead form read requires the project it is made for.', {
+        operation: 'list_linkedin_lead_forms',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInLeadForms>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/lead-forms`,
       'GET',
       accountId === undefined ? undefined : { account_id: accountId }
     );

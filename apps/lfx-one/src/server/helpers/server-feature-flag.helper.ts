@@ -495,6 +495,20 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInConversions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS',
 
   /**
+   * LinkedIn Lead Gen Form campaigns (linuxfoundation/lfx-v2-campaign-service#664): accept `linkedInConfig.objective`
+   * `lead_generation` with `linkedInConfig.leadGenForm` and `linkedInConfig.leadGenCallToAction`, and answer
+   * `GET /api/campaigns/linkedin/lead-forms` for the forms to pick from.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `LINKEDIN_ADS_LEAD_GEN_ENABLED` on,
+   * since campaign-service refuses all three fields (and answers the form read 400) otherwise, and is only meaningful
+   * while the create cutover is on (`cutoverOwnsCreate`): the legacy creator ignores them. Off (the default), the create
+   * route refuses any of them with a 400, never dropping it, and the read answers 404. Keep it off until campaign-service's
+   * flag is on and its paused lead gen probe has passed. A request field only, so flipping it back strands nothing. Same
+   * accepted values as the flags above.
+   */
+  CampaignServiceLinkedInLeadGen = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_LEAD_GEN',
+
+  /**
    * Offers Meta ad set audience targeting on the Implement tab (#5905), sent as `metaConfig.targeting`:
    * age range, gender and Advantage+ audience to every campaign manager, and included/excluded custom
    * audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only to a caller holding

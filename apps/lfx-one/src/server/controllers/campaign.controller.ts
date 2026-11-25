@@ -17,6 +17,7 @@ import {
   linkedInAudienceSegments,
   linkedInTargetingSearchEntities,
 } from '@lfx-one/shared/utils/campaign-linkedin-targeting-lookup.utils';
+import { linkedInConfigNamesLeadGenForm, linkedInLeadForms, linkedInLeadGenRefusal } from '@lfx-one/shared/utils/campaign-linkedin-lead-gen.utils';
 import { linkedInConfigNamesConversions, linkedInConversionRules, linkedInObjectiveRefusal } from '@lfx-one/shared/utils/campaign-linkedin-objective.utils';
 import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
 import { redditConversionEventRefusal } from '@lfx-one/shared/utils/campaign-reddit-conversion-event.utils';
@@ -188,6 +189,7 @@ import type {
   LinkedInGeoSearchResult,
   LinkedInAudiencesResult,
   LinkedInConversionsResult,
+  LinkedInLeadFormsResult,
   LinkedInTargetingSearchResult,
   MetaTargetingSearchResult,
   MetaCustomAudiencesResult,
@@ -394,6 +396,10 @@ import {
   LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE,
   LINKEDIN_CONVERSIONS_RESTRICTED_CODE,
   LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE,
+  LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE,
+  LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE,
+  LINKEDIN_LEAD_FORMS_RESTRICTED_CODE,
+  LINKEDIN_LEAD_FORMS_RESTRICTED_MESSAGE,
   LINKEDIN_GEO_SEARCH_BUSY_MESSAGE,
   LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
   META_TARGETING_SEARCH_BUSY_MESSAGE,
@@ -447,6 +453,7 @@ import {
   canEditLinkedInTargeting,
   canSetLinkedInCallToAction,
   canSetLinkedInConversions,
+  canSetLinkedInLeadGen,
   canSetLinkedInTargeting,
   canSetLinkedInTextAds,
   canSetLinkedInDailyCap,
@@ -517,6 +524,22 @@ const NUMERIC_ID_RE = /^\d+$/;
  * unknown unit by name, so what the builder dispatches always carries one of the two.
  */
 type NormalizedProximityTarget = Omit<CampaignProximityTarget, 'radiusUnit'> & { radiusUnit: string };
+
+/** The coded 403 and 503 of each LinkedIn ad account resource answered on `global_marketing_ops` (`requireLinkedInAudienceAccess`). */
+const LINKEDIN_MARKETING_OPS_ACCESS_ERRORS = {
+  audiences: {
+    restricted: { code: LINKEDIN_AUDIENCES_RESTRICTED_CODE, message: LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE },
+    unavailable: { code: LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE, message: LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE },
+  },
+  conversions: {
+    restricted: { code: LINKEDIN_CONVERSIONS_RESTRICTED_CODE, message: LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE },
+    unavailable: { code: LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE, message: LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE },
+  },
+  leadForms: {
+    restricted: { code: LINKEDIN_LEAD_FORMS_RESTRICTED_CODE, message: LINKEDIN_LEAD_FORMS_RESTRICTED_MESSAGE },
+    unavailable: { code: LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE, message: LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE },
+  },
+} as const;
 
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
@@ -1456,6 +1479,20 @@ export class CampaignController {
       // `global_marketing_ops` on the project, as campaign-service requires (403), and never on a check that failed (503).
       if (linkedInConfigNamesConversions(body?.linkedInConfig)) {
         await this.requireLinkedInAudienceAccess(req, projectSlug, 'campaign_create', 'the LinkedIn conversion rules', 'conversions');
+      }
+      // LinkedIn Lead Gen Form campaigns (campaign-service#664): refused, never dropped, while this deployment cannot send
+      // them, and held to campaign-service's rules. See `linkedInLeadGenRefusal`.
+      const linkedInLeadGenRefused = linkedInLeadGenRefusal(body?.linkedInConfig, canSetLinkedInLeadGen());
+      if (linkedInLeadGenRefused !== null) {
+        throw ServiceValidationError.forField(linkedInLeadGenRefused.field, linkedInLeadGenRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // A Lead Gen Form belongs to the ad account every foundation shares: named only by a caller holding
+      // `global_marketing_ops` on the project, as campaign-service requires (403), and never on a check that failed (503).
+      if (linkedInConfigNamesLeadGenForm(body?.linkedInConfig)) {
+        await this.requireLinkedInAudienceAccess(req, projectSlug, 'campaign_create', 'the LinkedIn lead gen form', 'leadForms');
       }
       // The LinkedIn ad account to name: only the picker's explicit choice, checked against
       // campaign-service's own list (#5809) and refused when it cannot be honoured. See
@@ -5076,6 +5113,53 @@ export class CampaignController {
   }
 
   /**
+   * The Lead Gen Forms on the LinkedIn ad account a create for this project uses, for the Implement tab's form picker
+   * (campaign-service#664), camel-cased: only unarchived forms whose id a create accepts (`linkedInLeadForms`). A form
+   * belongs to the shared ad account, so it is answered on `global_marketing_ops` on the project, as
+   * `getLinkedInConversions` is, behind its own `requireLinkedInLeadFormsAccess`. 404 while a create cannot be lead gen.
+   * Optional `?accountId=` names the ad account the create will use; the answer's `accountId` says which.
+   */
+  public async getLinkedInLeadForms(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'linkedin_lead_forms';
+    if (!canSetLinkedInLeadGen()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const context = { operation, service: 'campaign_controller', path: req.path };
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(ServiceValidationError.forField('project', 'A project is required to read LinkedIn lead gen forms.', context));
+      return;
+    }
+    const rawAccountId = req.query['accountId'];
+    if (rawAccountId !== undefined && !(typeof rawAccountId === 'string' && LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(rawAccountId))) {
+      next(ServiceValidationError.forField('accountId', 'The LinkedIn ad account must be a numeric account id.', context));
+      return;
+    }
+    const accountId = rawAccountId === undefined ? undefined : String(rawAccountId);
+    try {
+      await this.requireLinkedInAudienceAccess(req, projectSlug, operation, 'the LinkedIn lead form read', 'leadForms');
+      const startTime = logger.startOperation(req, operation, { viaCampaignService: true, accountNamed: accountId !== undefined });
+      const payload = await this.campaignServiceClient.listLinkedInLeadForms(req, projectSlug, accountId);
+      // `forms` is required upstream; reading its absence as an empty list would say the account has none.
+      if (!Array.isArray(payload?.forms)) {
+        throw new MicroserviceError('campaign-service returned an unreadable LinkedIn lead form read.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: LinkedInLeadFormsResult = {
+        accountId: typeof payload.account_id === 'string' ? payload.account_id : '',
+        forms: linkedInLeadForms(payload.forms),
+      };
+      logger.success(req, operation, startTime, { count: result.forms.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * One page of Meta's targeting taxonomy for the Implement tab's detailed targeting (#5904 row 4), camel-cased:
    * interests, behaviors or job titles matching `?query=`, through campaign-service's `search-meta-targeting-options`
    * (linuxfoundation/lfx-v2-campaign-service#612). 404 unless interests or behaviors can be sent. Meta taxonomy, so
@@ -6831,29 +6915,24 @@ export class CampaignController {
 
   /**
    * Throws unless the caller holds `global_marketing_ops` on `projectSlug`, the relation campaign-service answers a
-   * LinkedIn audience segment (#5764 rows 8–11) and a conversion rule (row 4) on: a coded 403 when refused, a coded 503
-   * when it cannot be checked. `kind` picks the codes and messages: `audiences` or `conversions`.
+   * LinkedIn audience segment (#5764 rows 8–11), a conversion rule (row 4) and a Lead Gen Form (campaign-service#664) on:
+   * a coded 403 when refused, a coded 503 when it cannot be checked. `kind` picks the codes and messages
+   * (`LINKEDIN_MARKETING_OPS_ACCESS_ERRORS`).
    */
   private async requireLinkedInAudienceAccess(
     req: Request,
     projectSlug: string,
     operation: string,
     subject: string,
-    kind: 'audiences' | 'conversions' = 'audiences'
+    kind: keyof typeof LINKEDIN_MARKETING_OPS_ACCESS_ERRORS = 'audiences'
   ): Promise<void> {
-    const conversions = kind === 'conversions';
+    const errors = LINKEDIN_MARKETING_OPS_ACCESS_ERRORS[kind];
     const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, subject);
     if (access === 'denied') {
-      throw new AuthorizationError(conversions ? LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE : LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE, {
-        operation,
-        service: 'campaign_controller',
-        path: req.path,
-        code: conversions ? LINKEDIN_CONVERSIONS_RESTRICTED_CODE : LINKEDIN_AUDIENCES_RESTRICTED_CODE,
-      });
+      throw new AuthorizationError(errors.restricted.message, { operation, service: 'campaign_controller', path: req.path, code: errors.restricted.code });
     }
     if (access === 'unverified') {
-      const message = conversions ? LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE : LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE;
-      const code = conversions ? LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE : LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE;
+      const { message, code } = errors.unavailable;
       throw new MicroserviceError(message, 503, code, { operation, service: 'campaign_controller', clientMessage: message });
     }
   }
@@ -10060,6 +10139,9 @@ export class CampaignController {
    *
    * 11. `bidding.targetAmount` (campaign-service #674) goes out as it came, inside `bidding`, once
    *    `linkedInTargetCostRefusal` passed it.
+   *
+   * 12. The `lead_generation` objective, `leadGenForm` and `leadGenCallToAction` (campaign-service #664) go out as they
+   *    came, once `linkedInLeadGenRefusal` passed them: campaign-service trims the form and reads its URN itself.
    */
   private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;
