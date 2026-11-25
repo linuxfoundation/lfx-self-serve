@@ -444,7 +444,7 @@ export const PROFILE_GROUPS_COPY = {
 export const PROFILE_GROUPS_PATH = '/groups';
 
 /** Router state for a group opened from the Profile page: its back link returns to Profile, in the Me lens (#6086). */
-export const PROFILE_GROUP_LINK_STATE = { backLabel: 'Profile', fromMeLens: true } as const;
+export const PROFILE_GROUP_LINK_STATE = { backLabel: 'Profile', backPath: '/profile', fromMeLens: true } as const;
 
 /** The Profile page's note when every section is empty (#6082). */
 export const PROFILE_NO_ACTIVITY_COPY = {
