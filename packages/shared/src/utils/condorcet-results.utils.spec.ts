@@ -97,6 +97,7 @@ describe('buildCondorcetQuestionViews', () => {
     const v = view(question());
     expect(v.outcome).toBe(CondorcetOutcome.CONDORCET_WINNER);
     expect(v.winnerNames).toEqual(['Candidate A']);
+    expect(v.irvRounds).toBeNull();
     expect(v.rankSummary.find((row) => row.candidate.choiceId === 'b')?.counts[0]).toBe(3);
   });
 
@@ -335,12 +336,21 @@ describe('buildCondorcetQuestionViews', () => {
         ]),
       ],
     });
-    expect(view(q).standings.map((s) => [s.choiceId, s.rank, s.isWinner, s.eliminatedInRound])).toEqual([
+    const detail = view(q);
+    expect(detail.standings.map((s) => [s.choiceId, s.rank, s.isWinner, s.eliminatedInRound])).toEqual([
       ['b', 1, true, null],
       ['c', 2, false, null],
       ['a', 3, false, 2],
       ['d', 4, false, 1],
     ]);
+    // #6152: the fallback's round-by-round count, rows in standings order
+    expect(detail.irvRounds?.rows.map((row) => [row.choiceId, row.cells.map((cell) => cell.status)])).toEqual([
+      ['b', ['continuing', 'continuing', 'winner']],
+      ['c', ['continuing', 'continuing', 'continuing']],
+      ['a', ['continuing', 'eliminated', 'out']],
+      ['d', ['eliminated', 'out', 'out']],
+    ]);
+    expect(detail.irvRounds?.steps.map((step) => step.kind)).toEqual(['eliminated', 'eliminated', 'winner']);
   });
 
   it.each(['complete', 'mirrored', 'missing'])('shares the IRV survivor head-to-head tiebreaker with Present (%s pair)', (pair) => {

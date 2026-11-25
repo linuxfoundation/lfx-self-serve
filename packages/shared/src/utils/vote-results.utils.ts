@@ -22,6 +22,7 @@ import type {
   VoteResultsResponse,
   VoteResultsSummaryLine,
 } from '../interfaces/poll.interface';
+import { buildIrvRoundsView } from './irv-rounds.utils';
 import { computeParticipationPercent } from './vote-participation.utils';
 
 /** Interprets the service's Condorcet winners: one winner, a partial tie, or no winner (none or every candidate). */
@@ -167,7 +168,9 @@ export function buildVoteResultsQuestions(results: VoteResultsResponse | null, i
  * the winning choices, so it only fills ids the question does not list, and the id is the last resort. The outcome and
  * winner labels follow the server-computed winners; Condorcet returning every candidate means no winner. Condorcet standings are ordered
  * by matrix head-to-head wins; runoff and Meek STV standings put server winners first and use round summaries for
- * elimination and election order. An unrecognized `pollType` yields no outcome.
+ * elimination and election order. An instant-runoff outcome (Instant Runoff, or Condorcet-IRV that fell back to
+ * eliminations) also gets the round-by-round count (`irvRounds`, #6152), its rows in standings order; every other outcome
+ * gets null. An unrecognized `pollType` yields no outcome.
  * @param results - VoteResultsResponse from the results API, or null when not yet loaded
  * @param pollType - The vote's poll type, which selects the counting method's outcome and standings rules
  * @returns One RankedQuestionView per poll question, in API order
@@ -202,7 +205,7 @@ export function buildRankedQuestionViews(results: VoteResultsResponse | null, po
 
     const view = { questionId: pr.question.question_id, prompt: pr.question.prompt, choiceDistributions };
     const outcome = rankedVotes.length > 0 ? buildRankedOutcome(pr, pollType, textOf) : null;
-    if (!outcome) return { ...view, outcome: null, standings: [] };
+    if (!outcome) return { ...view, outcome: null, standings: [], irvRounds: null };
 
     // Candidates in ballot order (the question's configured order; unlisted ids keep payload order), plus any winner
     // the ranked votes do not carry, so a winner always gets a row.
@@ -233,7 +236,17 @@ export function buildRankedQuestionViews(results: VoteResultsResponse | null, po
             );
     }
 
-    return { ...view, outcome, standings };
+    const irvRounds =
+      outcome.kind === 'irv'
+        ? buildIrvRoundsView(
+            pr.irv_round_summary ?? [],
+            standings.map((row) => row.choiceId),
+            winnerIds,
+            textOf
+          )
+        : null;
+
+    return { ...view, outcome, standings, irvRounds };
   });
 }
 

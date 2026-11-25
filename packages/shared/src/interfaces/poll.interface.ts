@@ -1779,6 +1779,91 @@ export interface RankedStandingRow extends RankedStanding {
   statusText: string | null;
 }
 
+/**
+ * One counting round (a column) of the instant-runoff round view, built by `buildIrvRoundsView` (#6152)
+ * @description `continuingBallots` is the round's `total_votes`; `exhaustedBallots` is the running total of ballots with
+ * no continuing choice left; `threshold` is the majority needed to win that round.
+ */
+export interface IrvRoundColumn {
+  roundNumber: number;
+  continuingBallots: number;
+  exhaustedBallots: number;
+  threshold: number;
+  isFinal: boolean;
+}
+
+/**
+ * One candidate's count in one round of the instant-runoff round view (#6152)
+ * @description `percentage` is a whole-number share of that round's continuing ballots. `status` is `out` (null votes
+ * and percentage) once the candidate is no longer in the race, `eliminated` in the round it is eliminated, and
+ * `winner`/`tied` in a final round that eliminates nobody.
+ */
+export interface IrvRoundCell {
+  roundNumber: number;
+  votes: number | null;
+  percentage: number | null;
+  status: 'continuing' | 'eliminated' | 'winner' | 'tied' | 'out';
+}
+
+/** One candidate row of the instant-runoff round view, with a cell per round (#6152). */
+export interface IrvRoundRow {
+  choiceId: string;
+  choiceText: string;
+  cells: IrvRoundCell[];
+}
+
+/** Ballots an eliminated candidate passed to one continuing candidate (#6152). */
+export interface IrvRoundTransfer {
+  choiceId: string;
+  choiceText: string;
+  votes: number;
+}
+
+/**
+ * What happened in one round of the instant-runoff round view, built by `buildIrvRoundsView` (#6152)
+ * @description `kind` is `eliminated` for a round with an elimination; a final round without one is `exhausted` (no
+ * continuing ballots), `winner` (one winner), `tie` (several) or `none`. `votes` is the eliminated candidate's count,
+ * or the (first) winner's final count. `transfers` and `exhaustedFromElimination` say where an eliminated candidate's
+ * ballots went. `tieBreak` is how a tie for elimination was settled, read from the voting service's round message.
+ */
+export interface IrvRoundStep {
+  roundNumber: number;
+  kind: 'eliminated' | 'winner' | 'tie' | 'exhausted' | 'none';
+  choiceTexts: string[];
+  votes: number | null;
+  continuingBallots: number;
+  threshold: number;
+  transfers: IrvRoundTransfer[];
+  exhaustedFromElimination: number;
+  tieBreak: 'lower_preference' | 'random' | null;
+  tieBreakLevel: number | null;
+}
+
+/** Round-by-round instant-runoff count for a ranked question, rendered by `lfx-vote-irv-rounds` (#6152). */
+export interface IrvRoundsView {
+  rounds: IrvRoundColumn[];
+  rows: IrvRoundRow[];
+  steps: IrvRoundStep[];
+}
+
+/** A round cell with its display text, derived by `lfx-vote-irv-rounds`; `statusLabel` is null for a continuing or out cell (#6152). */
+export interface IrvRoundDisplayCell extends IrvRoundCell {
+  votesText: string;
+  percentageText: string;
+  statusLabel: string | null;
+}
+
+/** A candidate row with display cells, derived by `lfx-vote-irv-rounds` (#6152). */
+export interface IrvRoundDisplayRow extends IrvRoundRow {
+  cells: IrvRoundDisplayCell[];
+}
+
+/** One plain-language line of the round-by-round notes, derived by `lfx-vote-irv-rounds` (#6152). */
+export interface IrvRoundStepLine {
+  roundNumber: number;
+  text: string;
+}
+
 /** Results view model for a ranked-choice question — projection of PollQuestionResult built by `buildRankedQuestionViews` (vote.utils) and rendered by `lfx-vote-ranked-question-results`. */
 export interface RankedQuestionView {
   questionId: string;
@@ -1788,6 +1873,8 @@ export interface RankedQuestionView {
   outcome: RankedOutcome | null;
   /** Ordered standings rows, empty when `outcome` is null */
   standings: RankedStanding[];
+  /** Round-by-round count for an instant-runoff outcome (`outcome.kind === 'irv'`) with round summaries; null otherwise */
+  irvRounds: IrvRoundsView | null;
 }
 
 /** A candidate in a Condorcet IRV question, in `question.choices` order (#5969). */
@@ -1857,6 +1944,8 @@ export interface CondorcetQuestionView {
   rankSummary: CondorcetRankSummaryRow[];
   /** Distinct ballot orderings, most common first; null when individual ballots aren't available */
   ballotPatterns: CondorcetBallotPatternRow[] | null;
+  /** Round-by-round count of the instant-runoff fallback; null unless `usedIrv` and round summaries exist (#6152) */
+  irvRounds: IrvRoundsView | null;
 }
 
 /** Context for polling a named Condorcet vote's ballots on the Results tab (#5969). */

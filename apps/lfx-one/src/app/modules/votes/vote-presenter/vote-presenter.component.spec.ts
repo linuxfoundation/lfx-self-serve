@@ -474,6 +474,72 @@ describe('VotePresenterComponent', () => {
     expect(text('vote-results-ranked-outcome-q1')).toBe('Candidate B is the winner. Preferred over every other option in head-to-head comparisons.');
     expect(compact(text('vote-results-ranked-standing-b'))).toBe(compact('1st Candidate B Won 1 out of 1 possible head-to-head matchup Winner'));
     expect(compact(text('vote-results-ranked-standing-a'))).toBe(compact('2nd Candidate A Won 0 out of 1 possible head-to-head matchup'));
+    expect(has('vote-irv-rounds')).toBe(false);
+  });
+
+  it('shows the round-by-round count on an ended Instant Runoff vote (#6152)', async () => {
+    getVoteResults.mockReturnValue(
+      of({
+        num_recipients: 10,
+        num_votes_cast: 5,
+        num_abstained: 0,
+        comment_results: [],
+        poll_end_time: '2026-12-01T17:00:00Z',
+        poll_results: [
+          {
+            question: {
+              question_id: 'q1',
+              prompt: 'Elect the synthetic chair',
+              type: 'single_choice',
+              choices: [
+                { choice_id: 'a', choice_text: 'Candidate A' },
+                { choice_id: 'b', choice_text: 'Candidate B' },
+                { choice_id: 'c', choice_text: 'Candidate C' },
+              ],
+            },
+            ranked_choice_votes: [
+              { choice_id: 'a', rank_counts: [{ rank: 1, count: 2 }] },
+              { choice_id: 'b', rank_counts: [{ rank: 1, count: 2 }] },
+              { choice_id: 'c', rank_counts: [{ rank: 1, count: 1 }] },
+            ],
+            ranked_choice_winner_info: { poll_choices: [{ choice_id: 'a', choice_text: 'Candidate A' }] },
+            irv_round_summary: [
+              {
+                round_number: 1,
+                votes: [
+                  { choice_id: 'a', vote_count: 2 },
+                  { choice_id: 'b', vote_count: 2 },
+                  { choice_id: 'c', vote_count: 1 },
+                ],
+                total_votes: 5,
+                exhausted_votes: 0,
+                threshold: 3,
+                eliminated_choice_id: 'c',
+                transferred_votes: [{ choice_id: 'a', vote_count: 1 }],
+                message: 'c eliminated with 1 votes.',
+              },
+              {
+                round_number: 2,
+                votes: [
+                  { choice_id: 'a', vote_count: 3 },
+                  { choice_id: 'b', vote_count: 2 },
+                ],
+                total_votes: 5,
+                exhausted_votes: 0,
+                threshold: 3,
+                eliminated_choice_id: '',
+                message: 'a wins by majority.',
+              },
+            ],
+          },
+        ],
+      } satisfies VoteResultsResponse)
+    );
+    fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED, poll_type: PollType.INSTANT_RUNOFF_VOTE })));
+    await mount();
+    expect(has('vote-irv-rounds')).toBe(true);
+    expect(text('vote-irv-rounds-step-1')).toBe('Round 1: Candidate C was eliminated with 1 vote. Their ballots moved: 1 to Candidate A.');
+    expect(text('vote-irv-rounds-step-2')).toBe('Round 2: Candidate A won with 3 of 5 continuing ballots (majority needed: 3).');
   });
 
   it.each([false, true])('shows no winner or Tied labels when Condorcet returns every candidate (IRV: %s)', async (usedIrv) => {

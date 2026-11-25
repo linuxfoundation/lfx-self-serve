@@ -6,12 +6,16 @@ import { VOTE_RANKED_OUTCOME_EXPLANATIONS } from '@lfx-one/shared/constants';
 import { RankedOutcomeCopy, RankedQuestionView, RankedStanding, RankedStandingRow } from '@lfx-one/shared/interfaces';
 import { joinNames } from '@lfx-one/shared/utils';
 
+import { VoteIrvRoundsComponent } from '../vote-irv-rounds/vote-irv-rounds.component';
+
 /**
- * Ranked-choice breakdown for one question: the final outcome banner and standings (when `showOutcome`), then the rank
- * distribution. `creator` adds test ids and empty states; `voter` renders the same content without them.
+ * Ranked-choice breakdown for one question: the final outcome banner, standings and, for an instant-runoff outcome, the
+ * round-by-round count (when `showOutcome`), then the rank distribution. `creator` adds test ids and empty states;
+ * `voter` renders the same content without them.
  */
 @Component({
   selector: 'lfx-vote-ranked-question-results',
+  imports: [VoteIrvRoundsComponent],
   templateUrl: './vote-ranked-question-results.component.html',
   host: { class: 'contents' },
 })

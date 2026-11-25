@@ -73,6 +73,10 @@
       </div>
     }
 
+    @if (q.irvRounds; as irvRounds) {
+      <lfx-vote-irv-rounds [rounds]="irvRounds" />
+    }
+
     <h5 class="text-sm font-semibold text-gray-900">Rank distribution</h5>
   }
 

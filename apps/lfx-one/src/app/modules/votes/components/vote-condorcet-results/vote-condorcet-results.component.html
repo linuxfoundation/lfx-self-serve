@@ -88,6 +88,12 @@
     </section>
   }
 
+  @if (isClosed() && q.usedIrv && q.irvRounds; as irvRounds) {
+    <div class="border-t border-slate-200 pt-5">
+      <lfx-vote-irv-rounds [rounds]="irvRounds" />
+    </div>
+  }
+
   <section class="flex flex-col gap-3 border-t border-slate-200 pt-5" data-testid="vote-condorcet-pairwise">
     <h5 class="text-base font-semibold text-gray-900">Head-to-head results</h5>
     <p class="text-sm text-slate-600">
