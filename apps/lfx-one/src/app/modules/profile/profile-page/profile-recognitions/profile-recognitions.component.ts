@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { outputFromObservable, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { PROFILE_GRID_LIMIT, PROFILE_RECOGNITIONS_COPY, PROFILE_TRAINING_PATH } from '@lfx-one/shared/constants';
 import { BadgeState, ProfileRecognitionItem } from '@lfx-one/shared/interfaces';
 import { compareBadgesByIssuedDateDesc, formatYearMonth, isValidUrl } from '@lfx-one/shared/utils';
@@ -17,7 +17,7 @@ import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
-import { catchError, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
 
 /**
  * The Profile page's Recognitions section (#6084): the Credly badges the Badges page loads, as pills that link to Credly and
@@ -56,6 +56,11 @@ export class ProfileRecognitionsComponent {
   /** Earned badges, newest first, each with a Credly link that is safe to open and its issue month. */
   protected readonly badges: Signal<ProfileRecognitionItem[]> = this.initBadges();
   protected readonly shown = computed(() => (this.expanded() ? this.badges() : this.badges().slice(0, PROFILE_GRID_LIMIT)));
+
+  /** Whether the section has no badges once loaded: null while it loads or after a failed read. */
+  public readonly emptyChange = outputFromObservable(
+    toObservable(computed(() => (this.state().loading || this.state().error ? null : this.badges().length === 0))).pipe(distinctUntilChanged())
+  );
 
   protected retry(): void {
     this.reload.update((count) => count + 1);

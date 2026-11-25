@@ -3,8 +3,9 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { CdpProjectAffiliation, CdpProjectAffiliationEntry, CdpProjectAffiliationRole } from '../interfaces';
-import { buildProfileInvolvement } from './profile-page.utils';
+import { CdpProjectAffiliation, CdpProjectAffiliationEntry, CdpProjectAffiliationRole, MyCommittee } from '../interfaces';
+import { CommitteeMemberRole } from '../enums/committee-member.enum';
+import { buildProfileGroups, buildProfileInvolvement } from './profile-page.utils';
 
 const role = (name: string, startDate: string, endDate = ''): CdpProjectAffiliationRole => ({
   id: name,
@@ -92,5 +93,54 @@ describe('buildProfileInvolvement', () => {
         .map((item) => item.id)
         .sort()
     ).toEqual(['kube', 'other']);
+  });
+});
+
+const group = (uid: string, category: string, extra: Partial<MyCommittee> = {}): MyCommittee =>
+  ({
+    uid,
+    name: `${uid} group`,
+    category,
+    enable_voting: false,
+    public: true,
+    sso_group_enabled: false,
+    created_at: '',
+    updated_at: '',
+    total_members: 12,
+    project_uid: 'p1',
+    project_name: 'Acme Project',
+    my_role: 'Member',
+    ...extra,
+  }) as MyCommittee;
+
+describe('buildProfileGroups', () => {
+  it('names the design’s type for each group, in its Groups page colour', () => {
+    const items = buildProfileGroups([
+      group('board', 'Board'),
+      group('tsc', 'Technical Steering Committee'),
+      group('wg', 'Working Group'),
+      group('sig', 'Special Interest Group'),
+    ]);
+
+    expect(items.map((item) => [item.uid, item.type, item.typeTone])).toEqual([
+      ['board', 'Board', 'feature'],
+      ['tsc', 'Technical', 'success'],
+      ['wg', 'Working group', 'warning'],
+      ['sig', 'Special Interest Group', 'accent'],
+    ]);
+  });
+
+  it('reads the org, the role and the member count, with one member said once', () => {
+    const [item] = buildProfileGroups([
+      group('one', 'Board', {
+        foundation_name: 'Acme Foundation',
+        project_logo_url: 'https://logos.example/acme.png',
+        total_members: 1,
+        my_role: CommitteeMemberRole.CHAIR,
+      }),
+    ]);
+
+    expect(item).toEqual(expect.objectContaining({ org: 'Acme Foundation', orgLogo: 'https://logos.example/acme.png', role: 'Chair', members: '1 member' }));
+    expect(item.commands.at(-1)).toBe('one');
   });
 });

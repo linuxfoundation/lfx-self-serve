@@ -1,7 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CdpProjectAffiliation, ProfileInvolvementItem } from '../interfaces';
+import { BEHAVIORAL_CLASS_TONE } from '../constants/committees.constants';
+import { CommitteeMemberRole } from '../enums/committee-member.enum';
+import { CdpProjectAffiliation, MyCommittee, ProfileGroupItem, ProfileInvolvementItem } from '../interfaces';
+import { getGroupBehavioralClass, getGroupCommands } from './committee.utils';
 import { formatYearMonth } from './date-time.utils';
 
 /**
@@ -49,4 +52,46 @@ function involvementLabel(from: string, to: string): string {
   if (!from) return '';
   if (!to) return `Since ${from}`;
   return from === to ? from : `${from} – ${to}`;
+}
+
+/** The order group types show in on the Profile page: boards first, then technical and other committees, then working groups. */
+const PROFILE_GROUP_TYPE_ORDER = ['Board', 'Technical', 'Committee', 'Working group'];
+
+/**
+ * The Profile page's Group participation (#6086): the user's group seats, each with the design's type (Board, Technical,
+ * Committee or Working group, else the group's own category) in its Groups page colour. Boards come first, then technical
+ * and other committees, then working groups, then the rest, each by name.
+ */
+export function buildProfileGroups(committees: MyCommittee[]): ProfileGroupItem[] {
+  return committees
+    .map((committee): ProfileGroupItem => {
+      const behavioralClass = getGroupBehavioralClass(committee.category);
+      return {
+        uid: committee.uid,
+        commands: getGroupCommands(committee) ?? ['/groups', committee.uid],
+        org: committee.foundation_name || committee.project_name || '',
+        orgLogo: committee.project_logo_url || '',
+        name: committee.display_name || committee.name,
+        description: committee.description?.trim() || '',
+        type: profileGroupType(behavioralClass, committee.category),
+        typeTone: BEHAVIORAL_CLASS_TONE[behavioralClass],
+        // A seat with no named role reads as a plain membership.
+        role: committee.my_role && committee.my_role !== CommitteeMemberRole.NONE ? committee.my_role : 'Member',
+        members: committee.total_members === 1 ? '1 member' : `${committee.total_members ?? 0} members`,
+      };
+    })
+    .sort((a, b) => typeRank(a.type) - typeRank(b.type) || a.name.localeCompare(b.name));
+}
+
+// The design's four types; a group outside them keeps its own category.
+function profileGroupType(behavioralClass: ReturnType<typeof getGroupBehavioralClass>, category: string | undefined): string {
+  if (behavioralClass === 'governing-board') return 'Board';
+  if (behavioralClass === 'oversight-committee') return /technical/i.test(category ?? '') ? 'Technical' : 'Committee';
+  if (behavioralClass === 'working-group') return 'Working group';
+  return category?.trim() || 'Group';
+}
+
+function typeRank(type: string): number {
+  const rank = PROFILE_GROUP_TYPE_ORDER.indexOf(type);
+  return rank === -1 ? PROFILE_GROUP_TYPE_ORDER.length : rank;
 }
