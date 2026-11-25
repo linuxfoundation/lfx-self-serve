@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentor, invitation, accept, decline, email]
 last_generated: 2026-10-26
-last_updated: 2026-11-23
+last_updated: 2026-11-25
 intercom_collection: Mentorship
 ---
 
@@ -14,13 +14,12 @@ A Program Admin can invite you to mentor their program. The invitation arrives b
 ## Before you begin
 
 - Use the link in the invitation email. The link identifies your invitation.
-- The email names the program. The invitation page does not, so keep the email to hand.
 - If the email was sent to you because you don't have an LF account yet, follow its three steps in order: create an LF account with the email address the invitation was sent to, create your mentor profile, then answer the invitation. The invitation only works for an LF account that uses that address.
 
 ## Steps
 
 1. Open the invitation email and select its link.
-2. Sign in at [app.lfx.dev](https://app.lfx.dev) if you are not already signed in. The page reads **You've been invited to mentor**.
+2. Sign in at [app.lfx.dev](https://app.lfx.dev) if you are not already signed in. The page reads **You've been invited to mentor** followed by the program's name.
 3. Select **Accept** or **Decline**.
 
 The page only records your answer when you select one of those buttons, so a mail scanner that follows the link cannot answer on your behalf.
@@ -31,7 +30,7 @@ You can also answer from **Mentor Profile → Edit Mentor Profile**, where the i
 
 ## After completing
 
-- **Accept** shows **Invitation accepted**. Select **Go to My Programs** to see the program on your **My Programs** tab.
+- **Accept** shows **Invitation accepted** and names the program you now mentor. Select **Go to My Programs** to see the program on your **My Programs** tab.
 - **Decline** shows **Invitation declined** and lets the program admins know.
 
 ## Troubleshooting
