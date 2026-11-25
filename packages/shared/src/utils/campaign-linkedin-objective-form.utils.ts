@@ -23,13 +23,22 @@ import { linkedInObjectiveRefusal } from './campaign-linkedin-objective.utils';
 
 /**
  * The Implement tab's LinkedIn objective and conversion rules (#5764 rows 2 and 4): what the create sends, when it is
- * held, what the picker offers and says, and what a stored draft restores. The create's own checks are
+ * held, what the picker offers and says, and what a stored draft restores (its target cost included; the target cost's
+ * own rules are in `campaign-linkedin-target-cost.utils.ts`). The create's own checks are
  * `linkedInObjectiveRefusal`, reused here against the request the tab would send.
  */
 
 /** No objective chosen (the bidding decides, as before) and no conversion rule picked. */
 export function emptyLinkedInObjectiveDraft(): LinkedInObjectiveDraft {
   return { objective: null, conversions: [], conversionsOwner: null };
+}
+
+/**
+ * Whether the picker shows the objective: on an explicit yes, and while a choice is held after it is withdrawn, so the
+ * operator can set it back to the default.
+ */
+export function linkedInObjectiveShown(draft: LinkedInObjectiveDraft, available: boolean): boolean {
+  return available || draft.objective !== null;
 }
 
 /** The objective a select value names, or `null` (the default) for any other value. */
@@ -127,9 +136,12 @@ export function linkedInObjectiveDraftFromStored(raw: unknown): LinkedInObjectiv
   const stored = record['conversions'];
   const conversions = Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : [];
   const owner = record['conversionsOwner'];
+  const targetCost = record['targetCost'];
   return {
     objective: linkedInObjectiveChoice(record['objective']),
     conversions,
     conversionsOwner: conversions.length > 0 && typeof owner === 'string' ? owner : null,
+    // The target cost as typed (campaign-service#674), only as text: the create's check holds a bad one.
+    ...(typeof targetCost === 'string' && targetCost !== '' ? { targetCost } : {}),
   };
 }

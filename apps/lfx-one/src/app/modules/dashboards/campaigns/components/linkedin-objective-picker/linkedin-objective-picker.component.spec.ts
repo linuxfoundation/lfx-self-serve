@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { LINKEDIN_CONVERSIONS_FAILED_MESSAGE, LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE } from '@lfx-one/shared/constants';
 import type { LinkedInConversionsResult, LinkedInObjectiveDraft } from '@lfx-one/shared/interfaces';
-import { emptyLinkedInObjectiveDraft } from '@lfx-one/shared/utils';
+import { emptyLinkedInObjectiveDraft, linkedInTargetCostInputError } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,7 +15,8 @@ import { LinkedInObjectivePickerComponent } from './linkedin-objective-picker.co
 // The rules (what is sent, when Create waits, what the picker offers and says) are tested in
 // campaign-linkedin-objective-form.utils.spec.ts; this spec only checks the wiring: a choice reaches the draft, the
 // rules are read for the account named only once conversions is chosen, a picked rule reaches the draft with its owner,
-// and a refused or failed read says why (with Try again for a failure).
+// and a refused or failed read says why (with Try again for a failure). The target cost's rules are in
+// campaign-linkedin-target-cost.utils.spec.ts; here only that it shows while offered, reaches the draft and says why.
 const RESULT: LinkedInConversionsResult = { accountId: '100000002', conversions: [{ id: '104012', name: 'Registration', type: 'REGISTRATION' }] };
 
 describe('LinkedInObjectivePickerComponent', () => {
@@ -60,6 +61,22 @@ describe('LinkedInObjectivePickerComponent', () => {
 
     picker()['onObjectiveChange']('');
     expect(draft.objective).toBeNull();
+  });
+
+  it('offers the target cost only while told to, and a typed value reaches the draft with the shared rule saying why', () => {
+    expect(query('linkedin-objective-picker-target-cost')).toBeNull();
+    fixture.componentRef.setInput('targetCostOffered', true);
+    fixture.detectChanges();
+    const field = query('linkedin-objective-picker-target-cost')?.querySelector('input') as HTMLInputElement;
+    field.value = '17.885';
+    field.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(draft.targetCost).toBe('17.885');
+    expect(query('linkedin-objective-picker-target-cost')?.textContent).toContain(linkedInTargetCostInputError('17.885', true));
+
+    field.value = '';
+    field.dispatchEvent(new Event('input'));
+    expect(draft).toEqual(emptyLinkedInObjectiveDraft());
   });
 
   it('says the rules are for the LF marketing team on a 403, with no select', () => {

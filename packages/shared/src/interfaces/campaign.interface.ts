@@ -1478,7 +1478,8 @@ export interface CampaignImplementationDraft {
   linkedInTargetingDraft?: LinkedInTargetingDraft;
   /**
    * The LinkedIn objective and conversion rules as edited (#5764 rows 2 and 4). Restored only when present; the tab
-   * sends them only while `linkedInConversionsEnabled` is on, and holds Create while they are chosen and it is off.
+   * sends them only while `linkedInConversionsEnabled` is on, and holds Create while they are chosen and it is off. Its
+   * target cost (campaign-service#674) is sent only while offered, and otherwise kept but neither sent nor held.
    */
   linkedInObjectiveDraft?: LinkedInObjectiveDraft;
   /**
@@ -2459,6 +2460,8 @@ export interface LinkedInCreateRefusalInput {
   customTargetingUnavailable?: boolean;
   /** Why the objective or conversion rules chosen cannot be sent (#5764 rows 2 and 4), or `null`; see `linkedInObjectiveCreateRefusal`. */
   objectiveRefusal?: string | null;
+  /** Why the target cost entered cannot be sent (campaign-service#674), or `null`; see `linkedInTargetCostCreateRefusal`. */
+  targetCostRefusal?: string | null;
 }
 
 export interface LinkedInCampaignCreateRequest {
@@ -2604,7 +2607,10 @@ export interface LinkedInConfigKeyRefusal {
   message: string;
 }
 
-/** The Implement tab's LinkedIn objective and conversion rules as edited (#5764 rows 2 and 4), carried in the draft. */
+/**
+ * The Implement tab's LinkedIn objective and conversion rules as edited (#5764 rows 2 and 4), and the automatic-bidding
+ * target cost beside them (linuxfoundation/lfx-v2-campaign-service#674), carried in the draft.
+ */
 export interface LinkedInObjectiveDraft {
   /** The objective chosen, or `null`: none is sent, so the bidding decides, as every create did before. */
   objective: LinkedInObjective | null;
@@ -2615,6 +2621,21 @@ export interface LinkedInObjectiveDraft {
    * picked. Rules belong to one ad account, so a create for another owner is held. Never sent.
    */
   conversionsOwner: string | null;
+  /**
+   * The target cost as typed (USD), raw so a half-typed value survives a remount; absent or blank means no target. Sent
+   * as `bidding.targetAmount` only while `linkedInTargetCostOffered`; see `linkedInBiddingWithTargetCost`.
+   */
+  targetCost?: string;
+}
+
+/** What `linkedInTargetCostOffered` reads: whether the Implement tab offers a LinkedIn target cost now. */
+export interface LinkedInTargetCostOfferInput {
+  /** `CampaignListResult.linkedInTargetCostEnabled`, `null` until read. */
+  enabled: boolean | null;
+  /** The Bidding control is offered, so the create sends `bidding` at all. */
+  biddingAvailable: boolean;
+  /** LinkedIn's Bidding choice, or `undefined` while untouched (automatic). */
+  strategy: CampaignBiddingStrategy | undefined;
 }
 
 /**

@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { CAMPAIGN_BIDDING_CENT_SCALE, CAMPAIGN_BIDDING_MAX_BID, LINKEDIN_TARGET_AMOUNT_FIELD } from '../constants/campaign.constants';
-import type { LinkedInConfigKeyRefusal } from '../interfaces/campaign.interface';
+import type {
+  CampaignBiddingConfig,
+  LinkedInBiddingConfig,
+  LinkedInConfigKeyRefusal,
+  LinkedInObjectiveDraft,
+  LinkedInTargetCostOfferInput,
+} from '../interfaces/campaign.interface';
 
 /**
  * LinkedIn target cost (linuxfoundation/lfx-v2-campaign-service#674), mirroring campaign-service's checks on
@@ -56,4 +62,59 @@ export function linkedInTargetCostRefusal(raw: unknown, enabled: boolean): Linke
   if (Math.round(amount * CAMPAIGN_BIDDING_CENT_SCALE) < 1) return { field, message: 'The smallest target cost is 0.01 USD.' };
   if (!isWholeCents(amount)) return { field, message: 'The target cost must be a whole number of cents (at most two decimals).' };
   return null;
+}
+
+/**
+ * Whether the Implement tab offers a target cost: an explicit yes from `linkedInTargetCostEnabled`, the Bidding control
+ * offered (the target travels inside `bidding`), and LinkedIn's choice automatic, the default while untouched. The
+ * helpers below are the tab's side; the amount rules stay `linkedInTargetCostRefusal`'s, so the tab refuses exactly what
+ * the create route would.
+ */
+export function linkedInTargetCostOffered(input: LinkedInTargetCostOfferInput): boolean {
+  return input.enabled === true && input.biddingAvailable && (input.strategy ?? 'automatic') === 'automatic';
+}
+
+/**
+ * The typed text as the create would carry it: `undefined` when blank (no target), a number for a plain decimal, else the
+ * text itself, which `linkedInTargetCostRefusal` refuses as not a number. Never `Number()` alone, which reads `0x10` or
+ * `1e3` as numbers the operator did not type as an amount.
+ */
+function typedTargetCost(text: string | undefined): number | string | undefined {
+  const trimmed = text?.trim() ?? '';
+  if (trimmed === '') return undefined;
+  return /^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(trimmed) ? Number(trimmed) : trimmed;
+}
+
+/** `draft` with the target cost as typed; a blank removes it, so a cleared field sends nothing and saves nothing. */
+export function linkedInObjectiveDraftWithTargetCost(draft: LinkedInObjectiveDraft, text: string): LinkedInObjectiveDraft {
+  const next: LinkedInObjectiveDraft = { objective: draft.objective, conversions: draft.conversions, conversionsOwner: draft.conversionsOwner };
+  return text.trim() === '' ? next : { ...next, targetCost: text };
+}
+
+/** Why the typed target cost cannot be sent, as the field shows it, or `null`: blank or not offered holds nothing. */
+export function linkedInTargetCostInputError(text: string | undefined, offered: boolean): string | null {
+  const amount = typedTargetCost(text);
+  if (!offered || amount === undefined) return null;
+  return linkedInTargetCostRefusal({ bidding: { strategy: 'automatic', targetAmount: amount } }, true)?.message ?? null;
+}
+
+/** Why the target cost holds Create, as the create button says it, or `null`; see `linkedInTargetCostInputError`. */
+export function linkedInTargetCostCreateRefusal(draft: LinkedInObjectiveDraft, offered: boolean): string | null {
+  const error = linkedInTargetCostInputError(draft.targetCost, offered);
+  return error === null ? null : `LinkedIn Ads: ${error}`;
+}
+
+/**
+ * The LinkedIn `bidding` key with the target cost added: only while offered, beside an automatic `bidding`, and for a
+ * typed number. Otherwise `field` unchanged, so a value kept while hidden (manual bidding, the capability off) is never
+ * sent. A refused amount is held by `linkedInTargetCostCreateRefusal` before this is sent.
+ */
+export function linkedInBiddingWithTargetCost(
+  field: { bidding?: CampaignBiddingConfig },
+  draft: LinkedInObjectiveDraft,
+  offered: boolean
+): { bidding?: LinkedInBiddingConfig } {
+  const amount = typedTargetCost(draft.targetCost);
+  if (!offered || field.bidding?.strategy !== 'automatic' || typeof amount !== 'number') return field;
+  return { bidding: { ...field.bidding, targetAmount: amount } };
 }

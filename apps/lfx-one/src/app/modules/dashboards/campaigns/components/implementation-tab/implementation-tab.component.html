@@ -4166,14 +4166,16 @@
           }
 
           <!-- The objective and conversion tracking (#5764 rows 2 and 4), offered on an explicit yes, and kept on screen
-               while a choice can no longer be sent, so the operator can set it back to the default. -->
-          @if (linkedInConversionsAvailable() || linkedInObjectiveDraft().objective !== null) {
+               while a choice can no longer be sent, so the operator can set it back to the default; and automatic
+               bidding's target cost (campaign-service#674) while offered. -->
+          @if (linkedInObjectivePickerShown()) {
             <lfx-linkedin-objective-picker
               class="mb-4 block"
               [projectSlug]="activeFoundationSlug()"
               [accountId]="linkedInAudienceAccountId()"
               [owner]="linkedInSegmentsOwner()"
               [available]="linkedInConversionsAvailable()"
+              [targetCostOffered]="linkedInTargetCostShown()"
               [draft]="linkedInObjectiveDraft()"
               (draftChange)="onLinkedInObjectiveDraftChange($event)"
               data-testid="implementation-linkedin-objective" />

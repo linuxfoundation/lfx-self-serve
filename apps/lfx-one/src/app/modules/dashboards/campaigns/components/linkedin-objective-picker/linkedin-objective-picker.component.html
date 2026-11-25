@@ -3,17 +3,35 @@
 
 <div class="flex flex-col gap-3" data-testid="linkedin-objective-picker">
   <!-- '' is the default: no objective is sent, so the bidding decides, as before. -->
-  <lfx-ui-select
-    label="Campaign objective"
-    size="small"
-    [value]="draft().objective ?? ''"
-    (valueChange)="onObjectiveChange($event)"
-    hint="By default, automatic bidding optimizes for website visits and manual bidding for website conversions."
-    data-testid="linkedin-objective-picker-objective">
-    <lfx-ui-option value="" label="Set by bidding (default)" />
-    <lfx-ui-option value="traffic" label="Website visits" />
-    <lfx-ui-option value="conversions" label="Website conversions" />
-  </lfx-ui-select>
+  @if (objectiveShown()) {
+    <lfx-ui-select
+      label="Campaign objective"
+      size="small"
+      [value]="draft().objective ?? ''"
+      (valueChange)="onObjectiveChange($event)"
+      hint="By default, automatic bidding optimizes for website visits and manual bidding for website conversions."
+      data-testid="linkedin-objective-picker-objective">
+      <lfx-ui-option value="" label="Set by bidding (default)" />
+      <lfx-ui-option value="traffic" label="Website visits" />
+      <lfx-ui-option value="conversions" label="Website conversions" />
+    </lfx-ui-select>
+  }
+
+  <!-- Automatic bidding's optional target (campaign-service#674): blank sends none. Hidden, a typed value is kept but not sent. -->
+  @if (targetCostOffered()) {
+    <lfx-ui-input
+      class="max-w-xs"
+      label="Target cost (USD)"
+      size="small"
+      type="text"
+      inputmode="decimal"
+      placeholder="Optional, e.g. 17.88"
+      hint="LinkedIn treats it as the target cost per result on automatic bidding, in USD."
+      [value]="draft().targetCost ?? ''"
+      (valueChange)="onTargetCostChange($event)"
+      [error]="targetCostError() ?? ''"
+      data-testid="linkedin-objective-picker-target-cost" />
+  }
 
   @if (draft().objective === 'conversions') {
     <fieldset class="flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="linkedin-objective-picker-conversions">
