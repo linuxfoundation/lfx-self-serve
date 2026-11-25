@@ -1,0 +1,128 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<div class="mx-auto flex w-full max-w-[1200px] flex-col px-[64px] max-[640px]:px-[20px]" data-testid="profile-page">
+  <section class="flex flex-col border-b border-gray-200 pb-[32px]" aria-labelledby="profile-hero-name" data-testid="profile-hero">
+    <!-- The cover bleeds 24px past each side of the column. -->
+    <div
+      class="-mx-[24px] h-[140px] rounded-[16px] bg-gradient-to-b from-ui-background-100 to-ui-accent-100"
+      aria-hidden="true"
+      data-testid="profile-hero-cover"></div>
+
+    <div
+      class="group relative z-[1] -mt-[96px] ml-[24px] size-[120px] rounded-full bg-white p-[6px] shadow-small max-[640px]:ml-0"
+      data-testid="profile-hero-avatar">
+      @if (avatarUrl()) {
+        <img [src]="avatarUrl()" [alt]="name()" class="block size-full rounded-full object-cover" data-testid="profile-hero-avatar-image" />
+      } @else {
+        <div
+          class="flex size-full items-center justify-center overflow-hidden rounded-full bg-ui-background-100 text-ui-accent-200"
+          data-testid="profile-hero-avatar-fallback">
+          <i class="fa-solid fa-circle-user text-[108px] leading-none" aria-hidden="true"></i>
+        </div>
+      }
+      @if (!impersonating()) {
+        <!-- Shown on hover or focus, and always on touch screens, which have no hover. -->
+        <div
+          class="absolute inset-[6px] flex items-center justify-center rounded-full bg-gray-900/45 opacity-0 transition-opacity duration-ui-fast ease-ui focus-within:opacity-100 group-hover:opacity-100 motion-reduce:transition-none [@media(hover:none)]:opacity-100"
+          data-testid="profile-hero-avatar-controls">
+          <lfx-ui-button
+            variant="secondary"
+            icon="fa-light fa-arrow-up-from-bracket"
+            iconOnly
+            [ariaLabel]="avatarUploadLabel()"
+            [lfxUiTooltip]="avatarUploadLabel()"
+            [loading]="avatarUploading()"
+            (click)="triggerAvatarUpload()"
+            data-testid="profile-hero-avatar-upload" />
+          <input
+            #avatarInput
+            type="file"
+            class="hidden"
+            [accept]="avatarAccept"
+            (change)="onAvatarFileSelected($event)"
+            data-testid="profile-hero-avatar-input" />
+        </div>
+      }
+    </div>
+
+    <div class="mt-[16px] flex flex-row items-center justify-between gap-[16px]">
+      <h1
+        id="profile-hero-name"
+        class="m-0 min-w-0 font-display text-[32px] font-light leading-[1.2] tracking-[-0.01em] text-gray-900"
+        data-testid="profile-hero-name">
+        {{ name() }}
+      </h1>
+      @if (githubHandle(); as handle) {
+        <lfx-ui-button
+          variant="tertiary"
+          icon="fa-brands fa-github"
+          iconOnly
+          [href]="'https://github.com/' + handle"
+          [ariaLabel]="'GitHub: ' + handle"
+          [lfxUiTooltip]="'GitHub · ' + handle"
+          data-testid="profile-hero-github" />
+      }
+    </div>
+
+    <div
+      class="mt-[8px] flex flex-row flex-wrap items-center gap-x-[8px] gap-y-[4px] text-[13px] leading-[18px] text-gray-600"
+      data-testid="profile-hero-subline">
+      @if (jobTitle() || company()) {
+        <span class="inline-flex flex-row flex-wrap items-center gap-[6px]" data-testid="profile-hero-role">
+          @if (jobTitle()) {
+            <span>{{ jobTitle() }}{{ company() ? ' at' : '' }}</span>
+          }
+          @if (company()) {
+            <span class="inline-flex items-center gap-[6px]">
+              @if (companyLogo(); as logo) {
+                <img [src]="logo" alt="" class="block size-[18px] rounded-[4px] object-contain" data-testid="profile-hero-company-logo" />
+              }
+              {{ company() }}
+            </span>
+          }
+        </span>
+      } @else if (profile()) {
+        <lfx-ui-button
+          variant="tertiary-accent"
+          size="small"
+          icon="fa-light fa-plus"
+          class="-ml-[8px]"
+          [link]="personalInformationPath"
+          data-testid="profile-hero-add-title">
+          {{ copy.addTitle }}
+        </lfx-ui-button>
+      }
+      @if (location()) {
+        @if (jobTitle() || company()) {
+          <span class="text-gray-400" aria-hidden="true">•</span>
+        }
+        <span class="inline-flex items-center gap-[5px]" data-testid="profile-hero-location">
+          <i class="fa-light fa-location-dot" aria-hidden="true"></i>{{ location() }}
+        </span>
+      }
+    </div>
+
+    @if (bio()) {
+      <p class="m-0 mt-[16px] max-w-[75%] whitespace-pre-line text-[14px] leading-[1.55] text-gray-700 max-[640px]:max-w-full" data-testid="profile-hero-bio">
+        {{ bio() }}
+      </p>
+    } @else if (profile()) {
+      <div
+        class="mt-[16px] flex flex-row flex-wrap items-center gap-x-[16px] gap-y-[8px] rounded-ui-sm bg-ui-neutral-50 px-[16px] py-[12px]"
+        data-testid="profile-hero-no-bio">
+        <span class="min-w-[200px] flex-1 text-[14px] leading-[20px] text-gray-500">{{ copy.noBio }}</span>
+        <lfx-ui-button variant="tertiary-accent" size="small" icon="fa-light fa-plus" [link]="personalInformationPath" data-testid="profile-hero-add-bio">
+          {{ copy.addBio }}
+        </lfx-ui-button>
+      </div>
+    }
+
+    @if (memberSince()) {
+      <p class="m-0 mt-[12px] flex flex-row items-center gap-[6px] text-[12px] leading-[16px] text-gray-500" data-testid="profile-hero-member-since">
+        <i class="fa-light fa-flag" aria-hidden="true"></i>Member since: {{ memberSince() }}
+      </p>
+    }
+  </section>
+</div>

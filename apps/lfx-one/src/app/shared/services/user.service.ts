@@ -677,6 +677,23 @@ export class UserService {
   }
 
   /**
+   * The logo of the named company in the signed-in user's work history, a current job's before a past one's. A quiet read like
+   * {@link getCurrentEmployerName}: a failure, a timeout or no match is a null, never a toast.
+   */
+  public getWorkHistoryLogo(company: string): Observable<string | null> {
+    const name = company.trim().toLowerCase();
+    return this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
+      take(1),
+      timeout(CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS),
+      map((experiences) => {
+        const matches = experiences.filter((experience) => experience.organizationLogo && experience.organization.trim().toLowerCase() === name);
+        return (matches.find((experience) => !experience.endDate) ?? matches[0])?.organizationLogo ?? null;
+      }),
+      catchError(() => of(null))
+    );
+  }
+
+  /**
    * The signed-in user as a meeting guest, for the guest editors' "Add myself" action. A quiet
    * read like {@link getCurrentEmployerName}: the profile, meeting-invite email and employer
    * lookups run in parallel, the first two each bounded by {@link MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS},
