@@ -140,6 +140,14 @@ describe('validateShareKitContent', () => {
       expect(validateShareKitContent(kitWithLinkedIn(fitting)).ok).toBe(true);
     });
 
+    it('reports a malformed registration URL instead of throwing', () => {
+      const kit = validKit();
+      kit['registration'] = { url: 'https://', priceLabel: '$399' };
+      const result = validateShareKitContent(kit);
+      expect(result.ok).toBe(false);
+      expect(result.problems.join('\n')).toContain('registration.url');
+    });
+
     it('rejects a post one character over once the link is added', () => {
       const result = validateShareKitContent(kitWithLinkedIn(fitting + 1));
       expect(result.problems.join('\n')).toContain('posts.0.text.linkedin: is 3001 of 3000 characters once the link is added; shorten it by 1');

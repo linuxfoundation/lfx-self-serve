@@ -181,6 +181,10 @@ export const shareKitContentSchema = z
   })
   .superRefine((content, ctx) => {
     // LinkedIn counts the link in full, so check each post with the tracked link the copy button adds.
+    // A malformed registration URL is already reported above; building a link from it would throw.
+    if (!httpsUrl.safeParse(content.registration.url).success) {
+      return;
+    }
     const { limit } = SHARE_KIT_PLATFORM_LIMITS.linkedin;
     content.posts.forEach((post, index) => {
       const link = buildShareKitTrackedUrl(content.registration.url, { medium: 'linkedin', campaign: content.eventSlug, content: post.id });
