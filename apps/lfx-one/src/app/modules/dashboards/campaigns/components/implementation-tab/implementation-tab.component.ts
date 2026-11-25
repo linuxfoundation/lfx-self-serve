@@ -510,6 +510,7 @@ import {
   redditCallToActionIsUnavailable,
   redditConversionEventBlock,
   redditConversionEventField,
+  redditConversionEventFromDraft,
   redditConversionEventOffered,
   redditCreateRefusal,
   redditDraftFields,
@@ -5452,8 +5453,11 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
-  protected onRedditConversionEventChange(event: Event): void {
-    this.redditConversionEvent.set((event.target as HTMLSelectElement).value as RedditConversionEvent);
+  /** The picker's choice; it offers only `REDDIT_CONVERSION_EVENTS`, so anything else (a cleared value) is ignored. */
+  protected onRedditConversionEventChange(value: string | null): void {
+    const event = redditConversionEventFromDraft(value);
+    if (event === undefined) return;
+    this.redditConversionEvent.set(event);
     this.emitDraft();
   }
 

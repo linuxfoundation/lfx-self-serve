@@ -15,6 +15,8 @@ import type {
   RedditConversionEvent,
   RedditObjective,
 } from '../interfaces/campaign.interface';
+import { foldKey } from './campaign-linkedin-config.utils';
+import { goTrimSpace } from './campaign-linkedin.utils';
 
 /**
  * The Reddit conversion event (#6108 row 2), mirroring campaign-service's `checkRedditConversionEvent`
@@ -37,11 +39,12 @@ function isConversionEvent(value: unknown): value is RedditConversionEvent {
  * Why `raw`'s `conversionEvent` cannot be sent, or `null`. Typed runtime checks, since the create route forwards
  * `redditConfig` as it comes. In campaign-service's order: shape, then the flag, then the rules. Refused:
  *
- * - a case variant of the key (campaign-service decodes keys ignoring case), whatever the flag;
+ * - a case variant of the key (campaign-service decodes keys ignoring case, Unicode folds included: `foldKey`), whatever
+ *   the flag;
  * - a value that is not text (`null` included), or blank text;
  * - the field while this deployment cannot send it (`enabled`): refused, never dropped, since the legacy creator
  *   ignores it and campaign-service refuses it while `REDDIT_CONVERSION_EVENT_ENABLED` is off;
- * - a value outside `REDDIT_CONVERSION_EVENTS` (trimmed, any case);
+ * - a value outside `REDDIT_CONVERSION_EVENTS` (trimmed as Go's `strings.TrimSpace` does, `goTrimSpace`, any case);
  * - an objective campaign-service does not know, or any objective but `conversions` (absent or empty is
  *   `conversions`, its default).
  *
@@ -51,7 +54,7 @@ export function redditConversionEventRefusal(raw: unknown, enabled: boolean): Re
   const config = plainRecord(raw);
   if (!config) return null;
   const field = REDDIT_CONVERSION_EVENT_FIELD;
-  if (Object.keys(config).some((key) => key !== KEY && key.toLowerCase() === KEY.toLowerCase())) {
+  if (Object.keys(config).some((key) => key !== KEY && foldKey(key) === foldKey(KEY))) {
     return { field, message: 'Send the conversion event as "conversionEvent", spelled exactly.' };
   }
   if (!(KEY in config)) return null;
@@ -59,16 +62,16 @@ export function redditConversionEventRefusal(raw: unknown, enabled: boolean): Re
   if (typeof event !== 'string') {
     return { field, message: `The conversion event must be text naming a pixel event, one of ${EVENT_LIST}. Omit it for the default, PURCHASE.` };
   }
-  if (event.trim() === '') return { field, message: 'An empty conversion event is refused. Omit it for the default, PURCHASE.' };
+  if (goTrimSpace(event) === '') return { field, message: 'An empty conversion event is refused. Omit it for the default, PURCHASE.' };
   // campaign-service decodes keys ignoring case, so a case variant of "objective" is the objective it checks the event
   // against; read only by its exact spelling here, it would look absent (conversions) and pass.
-  if (Object.keys(config).some((key) => key !== 'objective' && key.toLowerCase() === 'objective')) {
+  if (Object.keys(config).some((key) => key !== 'objective' && foldKey(key) === 'objective')) {
     return { field, message: 'Send the objective as "objective", spelled exactly, with a conversion event.' };
   }
   if (!enabled) {
     return { field, message: 'Reddit conversion events are not enabled on this deployment. Reload the page and create again.' };
   }
-  if (!isConversionEvent(event.trim().toUpperCase())) return { field, message: `The conversion event must be one of ${EVENT_LIST}.` };
+  if (!isConversionEvent(goTrimSpace(event).toUpperCase())) return { field, message: `The conversion event must be one of ${EVENT_LIST}.` };
   const objective = config['objective'] ?? '';
   const resolved = objective === '' ? DEFAULT_REDDIT_OBJECTIVE : objective;
   if (typeof resolved !== 'string' || !Object.hasOwn(REDDIT_OBJECTIVE_LABELS, resolved)) {

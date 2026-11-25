@@ -5461,22 +5461,17 @@
                  own default, which a create leaves out. A non-default event the deployment no longer confirms
                  holds Create below rather than being dropped. -->
             @if (redditConversionEventOffered()) {
-              <div class="flex flex-col gap-1">
-                <label class="text-xs font-medium text-gray-700" for="reddit-conversion-event">Conversion event</label>
-                <select
-                  id="reddit-conversion-event"
-                  (change)="onRedditConversionEventChange($event)"
-                  aria-describedby="reddit-conversion-event-hint"
-                  class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  data-testid="implementation-reddit-conversion-event">
-                  @for (conversionEvent of redditConversionEventOptions; track conversionEvent) {
-                    <option [value]="conversionEvent" [selected]="conversionEvent === redditConversionEvent()">
-                      {{ redditConversionEventLabels[conversionEvent] }}
-                    </option>
-                  }
-                </select>
-                <p id="reddit-conversion-event-hint" class="text-xs text-gray-500">The pixel event the campaign optimizes toward.</p>
-              </div>
+              <lfx-ui-select
+                label="Conversion event"
+                hint="The pixel event the campaign optimizes toward."
+                size="small"
+                [value]="redditConversionEvent()"
+                (valueChange)="onRedditConversionEventChange($event)"
+                data-testid="implementation-reddit-conversion-event">
+                @for (conversionEvent of redditConversionEventOptions; track conversionEvent) {
+                  <lfx-ui-option [value]="conversionEvent" [label]="redditConversionEventLabels[conversionEvent]" />
+                }
+              </lfx-ui-select>
             }
             @if (redditConversionEventBlock(); as block) {
               <div

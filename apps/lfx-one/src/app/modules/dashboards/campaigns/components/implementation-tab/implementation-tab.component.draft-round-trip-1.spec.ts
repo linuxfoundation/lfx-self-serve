@@ -4,6 +4,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import type { CampaignBriefOutput, CampaignImplementationDraft } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
@@ -597,9 +598,8 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const first = await mountWithConversionEvent(null, true);
     at(first.fixture).selectedPlatforms.set(['reddit-ads']);
     first.fixture.detectChanges();
-    const select = first.fixture.nativeElement.querySelector('[data-testid="implementation-reddit-conversion-event"]') as HTMLSelectElement;
-    select.value = 'LEAD';
-    select.dispatchEvent(new Event('change'));
+    // The shared select's own (valueChange), as a pick reports it; the select itself is covered by its own spec.
+    first.fixture.debugElement.query(By.css('[data-testid="implementation-reddit-conversion-event"]')).triggerEventHandler('valueChange', 'LEAD');
     expect(first.latest()?.redditConversionEvent).toBe('LEAD');
     const draft = first.latest();
     first.fixture.destroy();
@@ -609,9 +609,12 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   });
 
   it('holds Create for a remembered conversion event the capability withdrew, until it is set back to Purchase', STATE_ONLY, async () => {
-    interface ConversionEventHandlers { onRedditConversionEventChange(event: Event): void; useDefaultRedditConversionEvent(): void }
+    interface ConversionEventHandlers {
+      onRedditConversionEventChange(value: string | null): void;
+      useDefaultRedditConversionEvent(): void;
+    }
     const first = await mountWithConversionEvent(null, true);
-    (first.fixture.componentInstance as unknown as ConversionEventHandlers).onRedditConversionEventChange({ target: { value: 'LEAD' } } as unknown as Event);
+    (first.fixture.componentInstance as unknown as ConversionEventHandlers).onRedditConversionEventChange('LEAD');
     const draft = first.latest();
     first.fixture.destroy();
 

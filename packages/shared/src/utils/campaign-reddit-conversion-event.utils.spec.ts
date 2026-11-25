@@ -15,6 +15,7 @@ import {
 describe('redditConversionEventRefusal', () => {
   const NOT_TEXT =
     'The conversion event must be text naming a pixel event, one of PURCHASE, SIGN_UP, LEAD, PAGE_VISIT, VIEW_CONTENT, ADD_TO_CART, ADD_TO_WISHLIST, SEARCH. Omit it for the default, PURCHASE.';
+  const UNKNOWN = 'The conversion event must be one of PURCHASE, SIGN_UP, LEAD, PAGE_VISIT, VIEW_CONTENT, ADD_TO_CART, ADD_TO_WISHLIST, SEARCH.';
   const OFF = 'Reddit conversion events are not enabled on this deployment. Reload the page and create again.';
   const OBJECTIVE = 'The conversion event applies to the conversions objective only. Omit it, or choose the conversions objective.';
 
@@ -28,17 +29,25 @@ describe('redditConversionEventRefusal', () => {
       true,
       'Send the objective as "objective", spelled exactly, with a conversion event.',
     ],
+    ['a long-s fold of the key, flag off', { 'conver\u017FionEvent': 'LEAD' }, false, 'Send the conversion event as "conversionEvent", spelled exactly.'],
+    [
+      // "objective" has no s; encoding/json folds a key rune by rune with ToUpper(ToLower(r)), so a dotless i matches.
+      'an event with a dotless-i fold of the objective key',
+      { conversionEvent: 'LEAD', objective: 'conversions', 'object\u0131ve': 'traffic' },
+      true,
+      'Send the objective as "objective", spelled exactly, with a conversion event.',
+    ],
     ['null', { conversionEvent: null }, true, NOT_TEXT],
     ['a number, flag off (shape before flag)', { conversionEvent: 1 }, false, NOT_TEXT],
     ['blank text', { conversionEvent: '  ' }, true, 'An empty conversion event is refused. Omit it for the default, PURCHASE.'],
     ['a valid event, flag off', { conversionEvent: 'LEAD' }, false, OFF],
-    [
-      'an unknown event',
-      { conversionEvent: 'COMPLETE_REGISTRATION' },
-      true,
-      'The conversion event must be one of PURCHASE, SIGN_UP, LEAD, PAGE_VISIT, VIEW_CONTENT, ADD_TO_CART, ADD_TO_WISHLIST, SEARCH.',
-    ],
+    ['an unknown event', { conversionEvent: 'COMPLETE_REGISTRATION' }, true, UNKNOWN],
     ['a lower-case event, objective omitted', { conversionEvent: ' sign_up ' }, true, null],
+    // Go's strings.TrimSpace trims Unicode White_Space only: U+00A0 and U+3000 go, U+0005 and the BOM U+FEFF stay, so
+    // campaign-service's ResolveConversionEvent sees an unknown event and refuses it.
+    ['an event padded with no-break and ideographic spaces', { conversionEvent: '\u00A0LEAD\u3000' }, true, null],
+    ['an event padded with U+0005', { conversionEvent: '\u0005LEAD\u0005' }, true, UNKNOWN],
+    ['an event padded with a BOM', { conversionEvent: '\uFEFFLEAD\uFEFF' }, true, UNKNOWN],
     ['an event, objective empty', { conversionEvent: 'LEAD', objective: '' }, true, null],
     ['an event on conversions', { conversionEvent: 'PURCHASE', objective: 'conversions' }, true, null],
     ['an event on traffic', { conversionEvent: 'LEAD', objective: 'traffic' }, true, OBJECTIVE],
