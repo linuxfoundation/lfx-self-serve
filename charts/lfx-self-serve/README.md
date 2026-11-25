@@ -467,8 +467,8 @@ picker follows in a later change.
 `LINKEDIN_ADS_LEAD_GEN_ENABLED` on). Off (the default), the create route refuses `linkedInConfig.objective`
 `"lead_generation"`, `linkedInConfig.leadGenForm` and `linkedInConfig.leadGenCallToAction` with a 400, since the legacy
 creator ignores them, and `GET /api/campaigns/linkedin/lead-forms` answers 404. Keep it off until campaign-service's flag
-is on and its paused lead gen probe (linuxfoundation/lfx-v2-campaign-service#681) has passed. The Implement tab's lead
-gen choice follows in a later change.
+is on and its paused lead gen probe (linuxfoundation/lfx-v2-campaign-service#681) has passed. With it on, the Implement
+tab offers "Lead generation (LinkedIn form)" as a LinkedIn objective, with the form picker and a button select.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT` is of the Bidding kind too (campaign-service with
 `REDDIT_CONVERSION_EVENT_ENABLED` on). Off (the default), the Implement tab hides the conversion event picker and the

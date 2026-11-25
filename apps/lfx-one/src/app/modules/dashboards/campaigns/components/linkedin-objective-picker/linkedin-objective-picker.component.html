@@ -12,9 +12,28 @@
       hint="By default, automatic bidding optimizes for website visits and manual bidding for website conversions."
       data-testid="linkedin-objective-picker-objective">
       <lfx-ui-option value="" label="Set by bidding (default)" />
-      <lfx-ui-option value="traffic" label="Website visits" />
-      <lfx-ui-option value="conversions" label="Website conversions" />
+      <!-- Each choice only while its capability offers it, or while it is the held choice, so it can be set back. -->
+      @if (available() || draft().objective === 'traffic') {
+        <lfx-ui-option value="traffic" label="Website visits" />
+      }
+      @if (available() || draft().objective === 'conversions') {
+        <lfx-ui-option value="conversions" label="Website conversions" />
+      }
+      @if (leadGenAvailable() || draft().objective === 'lead_generation') {
+        <lfx-ui-option value="lead_generation" label="Lead generation (LinkedIn form)" />
+      }
     </lfx-ui-select>
+  }
+
+  <!-- Lead generation (campaign-service#664): the form each ad opens and its button. -->
+  @if (draft().objective === 'lead_generation') {
+    <lfx-linkedin-lead-form-picker
+      [projectSlug]="projectSlug()"
+      [accountId]="accountId()"
+      [owner]="owner()"
+      [available]="leadGenAvailable()"
+      [(draft)]="draft"
+      data-testid="linkedin-objective-picker-lead-gen" />
   }
 
   <!-- Automatic bidding's optional target (campaign-service#674): blank sends none. Hidden, a typed value is kept but not sent. -->

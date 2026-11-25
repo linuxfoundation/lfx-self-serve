@@ -51,4 +51,15 @@ describe('CampaignService', () => {
     ]);
     reqs.forEach((req) => req.flush({ accountId: '', conversions: [] }));
   });
+
+  it('reads the LinkedIn lead gen forms of the default account, or of the account named', () => {
+    service.getLinkedInLeadForms('tlf').subscribe();
+    service.getLinkedInLeadForms('tlf', '100000002').subscribe();
+    const reqs = http.match((r) => r.url === '/api/campaigns/linkedin/lead-forms');
+    expect(reqs.map((req) => req.request.urlWithParams)).toEqual([
+      '/api/campaigns/linkedin/lead-forms?project=tlf',
+      '/api/campaigns/linkedin/lead-forms?project=tlf&accountId=100000002',
+    ]);
+    reqs.forEach((req) => req.flush({ accountId: '', forms: [] }));
+  });
 });

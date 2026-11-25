@@ -32,11 +32,14 @@ export function defaultCampaignBiddingDraft(): CampaignBiddingDraft {
  * Automatic is always sendable. Manual needs a finite amount greater than zero, within the
  * platform's bounds, at the platform's precision, and — per platform — the right objective (Meta,
  * Reddit) and a budget that fits the bid (Meta's daily budget of at least 5× the bid, X's bid of at
- * most the daily budget).
+ * most the daily budget). A context `manualRefusal` (a LinkedIn lead gen create) refuses manual outright.
  */
 export function campaignBiddingError(platform: CampaignBiddingPlatform, draft: CampaignBiddingDraft, context: CampaignBiddingContext = {}): string | null {
   if (draft.strategy === 'automatic') {
     return null;
+  }
+  if (context.manualRefusal) {
+    return context.manualRefusal;
   }
   const rule = CAMPAIGN_BIDDING_RULES[platform];
   const amount = draft.bidAmount;

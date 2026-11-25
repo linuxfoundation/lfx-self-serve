@@ -22,6 +22,7 @@ import {
   linkedInTargetCostInputError,
 } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
+import { LinkedInLeadFormPickerComponent } from '../linkedin-lead-form-picker/linkedin-lead-form-picker.component';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
@@ -38,7 +39,7 @@ import { catchError, map, of, startWith, switchMap } from 'rxjs';
  */
 @Component({
   selector: 'lfx-linkedin-objective-picker',
-  imports: [ButtonComponent, ReactiveFormsModule, UiInputComponent, UiOptionComponent, UiSelectComponent],
+  imports: [ButtonComponent, LinkedInLeadFormPickerComponent, ReactiveFormsModule, UiInputComponent, UiOptionComponent, UiSelectComponent],
   templateUrl: './linkedin-objective-picker.component.html',
 })
 export class LinkedInObjectivePickerComponent {
@@ -51,6 +52,11 @@ export class LinkedInObjectivePickerComponent {
   public readonly owner = input<string>('');
   /** `linkedInConversionsEnabled` is an explicit yes. Off, a held choice stays on screen so it can be set back. */
   public readonly available = input<boolean>(false);
+  /**
+   * `linkedInLeadGenEnabled` is an explicit yes (campaign-service#664): offers the lead generation objective and its form
+   * picker. Off, a held lead generation choice stays on screen so it can be set back.
+   */
+  public readonly leadGenAvailable = input<boolean>(false);
   /** `linkedInTargetCostOffered`: the capability is on and LinkedIn bidding is automatic. Off, the field is hidden and not sent. */
   public readonly targetCostOffered = input<boolean>(false);
   public readonly draft = model.required<LinkedInObjectiveDraft>();
@@ -69,7 +75,7 @@ export class LinkedInObjectivePickerComponent {
   /** Why the rules picked cannot go with this create: they were picked for another owner (the tab holds Create on it). */
   protected readonly ownerRefusal = computed(() => linkedInConversionsOwnerRefusal(this.draft(), this.owner()));
   /** The objective select, shown while offered and while a withdrawn choice is held. */
-  protected readonly objectiveShown = computed(() => linkedInObjectiveShown(this.draft(), this.available()));
+  protected readonly objectiveShown = computed(() => linkedInObjectiveShown(this.draft(), this.available() || this.leadGenAvailable()));
   /** Why the typed target cost cannot be sent (the tab holds Create on the same rule), or `null`. */
   protected readonly targetCostError = computed(() => linkedInTargetCostInputError(this.draft().targetCost, this.targetCostOffered()));
 
