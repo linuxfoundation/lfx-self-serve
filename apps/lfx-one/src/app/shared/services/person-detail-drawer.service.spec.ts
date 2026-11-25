@@ -127,3 +127,63 @@ describe('PersonDetailDrawerService — detail request', () => {
     expect(http.expectOne((req) => req.url === DETAIL).request.params.has('orgScope')).toBe(false);
   });
 });
+
+describe("PersonDetailDrawerService — an opener's own organization", () => {
+  let service: PersonDetailDrawerService;
+  let http: HttpTestingController;
+  const ROLL_UP = 'family-001000000000000AAA';
+  const COMPANY = { accountId: '001000000000000BBB', name: 'Acme Labs' };
+  const selectedAccount = signal({ uid: ROLL_UP, accountName: 'All Acme Companies' });
+
+  async function flushEffects(): Promise<void> {
+    TestBed.tick();
+    await Promise.resolve();
+  }
+
+  beforeEach(() => {
+    selectedAccount.set({ uid: ROLL_UP, accountName: 'All Acme Companies' });
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: AccountContextService, useValue: { selectedAccount } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+      ],
+    });
+    service = TestBed.inject(PersonDetailDrawerService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.match(() => true).forEach((request) => request.flush(null));
+  });
+
+  it("reads a roll-up row's person under that row's company, and names it", async () => {
+    service.open({ personKey: 'person-one', name: 'Ada', organization: COMPANY });
+    await flushEffects();
+
+    expect(service.orgUid()).toBe(COMPANY.accountId);
+    expect(service.companyName()).toBe('Acme Labs');
+    http.expectOne(`/api/orgs/${COMPANY.accountId}/lens/people/person-one/detail`);
+    http.expectOne((req) => req.url === `/api/orgs/${COMPANY.accountId}/lens/people/person-one/company-emails`);
+  });
+
+  it('follows the selection again once another organization is selected', async () => {
+    service.open({ personKey: 'person-one', name: 'Ada', organization: COMPANY });
+    await flushEffects();
+    http.match(() => true).forEach((request) => request.flush(null));
+
+    selectedAccount.set({ uid: '001000000000000CCC', accountName: 'Globex' });
+    await flushEffects();
+
+    expect(service.orgUid()).toBe('001000000000000CCC');
+    expect(service.companyName()).toBe('Globex');
+  });
+
+  it('reads under the selected organization when the opener names none', async () => {
+    service.open({ personKey: 'person-one', name: 'Ada' });
+    await flushEffects();
+
+    expect(service.orgUid()).toBe(ROLL_UP);
+  });
+});
