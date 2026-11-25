@@ -8,7 +8,7 @@
   <p #textElement class="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700" [attr.data-testid]="testId() + '-text'">{{ text() }}</p>
   <div class="flex flex-wrap items-center gap-3">
     <lfx-ui-button
-      variant="secondary"
+      [variant]="buttonVariant()"
       size="small"
       icon="fa-light fa-copy"
       [ariaLabel]="heading() ? copyLabel() + ': ' + heading() : copyLabel()"

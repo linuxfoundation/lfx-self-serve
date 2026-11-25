@@ -72,3 +72,15 @@ export function formatShareKitDay(day: string, withYear = false): string {
   const { year, month, date } = parseIsoDay(day);
   return withYear ? `${MONTHS[month]} ${date}, ${year}` : `${MONTHS[month]} ${date}`;
 }
+
+function relativeLuminance(hex: string): number {
+  const channels = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16) / 255);
+  const [r, g, b] = channels.map((value) => (value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG contrast ratio between two `#RRGGBB` colours, from 1 to 21. */
+export function shareKitContrastRatio(foreground: string, background: string): number {
+  const [lighter, darker] = [relativeLuminance(foreground), relativeLuminance(background)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+}

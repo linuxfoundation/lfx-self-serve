@@ -61,3 +61,21 @@ export const SHARE_KIT_LOCAL_ASSET_PREFIX = '/share-kits/';
  * read is an in-memory lookup of repo-owned content.
  */
 export const SHARE_KIT_PUBLIC_READ_PATTERN = /^\/events\/[a-z0-9-]+\/share-kit\/?$/;
+
+/** Heading fonts an event theme may pick. Each must exist in `SHARE_KIT_HEADING_FONT_STACKS`. */
+export const SHARE_KIT_HEADING_FONTS = ['inter', 'inter-tight'] as const;
+
+/**
+ * CSS font stack and, for fonts the app does not already load, the Google Fonts stylesheet the page adds
+ * while a kit using it is open. Add a font here before a theme can use it.
+ */
+export const SHARE_KIT_HEADING_FONT_STACKS = {
+  inter: { family: 'Inter, system-ui, sans-serif', stylesheet: null },
+  'inter-tight': {
+    family: '"Inter Tight", Inter, system-ui, sans-serif',
+    stylesheet: 'https://fonts.googleapis.com/css2?family=Inter+Tight:wght@700;800&display=swap',
+  },
+} as const;
+
+/** WCAG AA contrast for normal text, required between each themed text colour and its background. */
+export const SHARE_KIT_MIN_TEXT_CONTRAST = 4.5;

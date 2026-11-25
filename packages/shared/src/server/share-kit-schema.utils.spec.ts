@@ -104,6 +104,47 @@ describe('validateShareKitContent', () => {
     expect(validateShareKitContent(kit).problems.join('\n')).toContain('301 of 300 characters');
   });
 
+  describe('theme', () => {
+    const theme = () => ({
+      colors: {
+        hero: '#3731C9',
+        heroText: '#FFFFFF',
+        soft: '#B6B0D0',
+        accent: '#FF702D',
+        button: '#FF702D',
+        buttonText: '#0B0A1E',
+        primary: '#3731C9',
+        page: '#F6F6FB',
+      },
+      logo: { url: '/share-kits/example-summit-2027/logo.svg', alt: 'Example Summit', width: 544, height: 122 },
+      headline: 'Where builders meet',
+      headingFont: 'inter-tight',
+    });
+
+    it('accepts an event theme', () => {
+      const kit = validKit();
+      kit['theme'] = theme();
+      expect(validateShareKitContent(kit).problems).toEqual([]);
+    });
+
+    it('rejects text colours below WCAG AA against their background, naming the pair', () => {
+      const kit = validKit();
+      const bad = theme();
+      bad.colors.heroText = '#B6B0D0';
+      kit['theme'] = bad;
+      expect(validateShareKitContent(kit).problems.join('\n')).toContain('theme.colors.hero: heroText on hero has contrast 4.13:1');
+    });
+
+    it('rejects colours that are not #RRGGBB, fonts outside the allowlist and markup in the headline', () => {
+      const kit = validKit();
+      kit['theme'] = { ...theme(), colors: { ...theme().colors, accent: 'orange' }, headingFont: 'comic-sans', headline: '<b>Hi</b>' };
+      const problems = validateShareKitContent(kit).problems.join('\n');
+      expect(problems).toContain('theme.colors.accent: must be a #RRGGBB colour');
+      expect(problems).toContain('theme.headingFont');
+      expect(problems).toContain('theme.headline: must be plain text');
+    });
+  });
+
   it('requires eventSlug to match its folder name', () => {
     const result = validateShareKitContent(validKit(), 'other-event');
     expect(result.ok).toBe(false);

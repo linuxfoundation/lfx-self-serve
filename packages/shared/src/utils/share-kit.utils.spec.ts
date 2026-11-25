@@ -3,7 +3,14 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildShareKitTrackedUrl, composeShareKitPost, countShareKitPostLength, formatShareKitDateRange, formatShareKitDay } from './share-kit.utils';
+import {
+  buildShareKitTrackedUrl,
+  composeShareKitPost,
+  countShareKitPostLength,
+  formatShareKitDateRange,
+  formatShareKitDay,
+  shareKitContrastRatio,
+} from './share-kit.utils';
 
 describe('buildShareKitTrackedUrl', () => {
   it('adds the share kit tracking parameters and keeps existing ones', () => {
@@ -52,5 +59,14 @@ describe('formatShareKitDateRange', () => {
   it('formats a single day with or without the year', () => {
     expect(formatShareKitDay('2027-02-28')).toBe('February 28');
     expect(formatShareKitDay('2027-01-18', true)).toBe('January 18, 2027');
+  });
+});
+
+describe('shareKitContrastRatio', () => {
+  it('matches the WCAG ratios for known pairs, in either order', () => {
+    expect(shareKitContrastRatio('#FFFFFF', '#000000')).toBeCloseTo(21, 5);
+    expect(shareKitContrastRatio('#3731C9', '#FFFFFF')).toBeCloseTo(8.59, 2);
+    expect(shareKitContrastRatio('#FFFFFF', '#3731C9')).toBeCloseTo(8.59, 2);
+    expect(shareKitContrastRatio('#777777', '#777777')).toBe(1);
   });
 });

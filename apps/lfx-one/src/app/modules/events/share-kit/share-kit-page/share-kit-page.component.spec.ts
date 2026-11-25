@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
-import { ShareKitContent, ShareKitGraphic } from '@lfx-one/shared/interfaces';
+import { ShareKitContent, ShareKitGraphic, ShareKitTheme } from '@lfx-one/shared/interfaces';
 import { PlausibleService } from '@services/plausible.service';
 import { UserService } from '@services/user.service';
 import { of, throwError } from 'rxjs';
@@ -70,6 +70,39 @@ describe('ShareKitPageComponent', () => {
   const text = (testId: string): string => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? '';
 
   beforeEach(() => TestBed.resetTestingModule());
+
+  it('keeps the LFX look and names the foundation and event in the header without a theme', async () => {
+    await setup();
+    expect(text('share-kit-foundation')).toBe('Example Foundation · Example Summit Share Kit');
+    expect(fixture.nativeElement.querySelector('[data-testid="share-kit-logo"]')).toBeNull();
+    expect((fixture.nativeElement.querySelector('[data-testid="share-kit-page"]') as HTMLElement).style.getPropertyValue('--sk-hero')).toBe('');
+  });
+
+  it('brands the page from the event theme', async () => {
+    const theme: ShareKitTheme = {
+      colors: {
+        hero: '#3731C9',
+        heroText: '#FFFFFF',
+        soft: '#B6B0D0',
+        accent: '#FF702D',
+        button: '#FF702D',
+        buttonText: '#0B0A1E',
+        primary: '#3731C9',
+        page: '#F6F6FB',
+      },
+      logo: { url: '/share-kits/example-summit-2027/logo.svg', alt: 'Example Summit', width: 544, height: 122 },
+      headline: 'Where builders meet',
+      headingFont: 'inter-tight',
+    };
+    await setup(of({ ...kit, theme }));
+    const root = fixture.nativeElement.querySelector('[data-testid="share-kit-page"]') as HTMLElement;
+    expect(root.style.getPropertyValue('--sk-hero')).toBe('#3731C9');
+    expect(root.style.getPropertyValue('--ui-accent-500')).toBe('#3731C9');
+    expect(fixture.nativeElement.querySelector('[data-testid="share-kit-logo"]')?.getAttribute('alt')).toBe('Example Summit');
+    expect(text('share-kit-headline')).toBe('Where builders meet.');
+    expect(text('share-kit-early-bird')).toBe('$399 early-bird through February 28.');
+    expect(document.head.querySelector('link[data-share-kit-font="inter-tight"]')).not.toBeNull();
+  });
 
   it('sends one pageview with the kit foundation once the kit loads', async () => {
     await setup();

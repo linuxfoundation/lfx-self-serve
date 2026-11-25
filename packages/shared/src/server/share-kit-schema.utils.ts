@@ -6,9 +6,15 @@
 // and no keys beyond the schema (a typo'd or unexpected key fails instead of being silently ignored).
 import { z } from 'zod';
 
-import { SHARE_KIT_LOCAL_ASSET_PREFIX, SHARE_KIT_PLATFORM_LIMITS, SHARE_KIT_SLUG_PATTERN } from '../constants/share-kit.constants';
+import {
+  SHARE_KIT_HEADING_FONTS,
+  SHARE_KIT_LOCAL_ASSET_PREFIX,
+  SHARE_KIT_MIN_TEXT_CONTRAST,
+  SHARE_KIT_PLATFORM_LIMITS,
+  SHARE_KIT_SLUG_PATTERN,
+} from '../constants/share-kit.constants';
 import { ShareKitContent, ShareKitValidationResult } from '../interfaces/share-kit.interface';
-import { countShareKitPostLength } from '../utils/share-kit.utils';
+import { countShareKitPostLength, shareKitContrastRatio } from '../utils/share-kit.utils';
 
 const MARKUP_PATTERN = /<[a-z!/?][^>]*>/i;
 
@@ -79,6 +85,54 @@ const graphicSchema = z
   })
   .strict();
 
+const hexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'must be a #RRGGBB colour');
+
+// Each text colour and the background it is drawn on: white sits on `primary` (copy buttons), and `primary` is
+// text on the page and on white cards (links, tabs, outline buttons).
+const THEME_CONTRAST_PAIRS = [
+  ['heroText', 'hero'],
+  ['buttonText', 'button'],
+  ['#FFFFFF', 'primary'],
+  ['primary', 'page'],
+  ['primary', '#FFFFFF'],
+] as const;
+
+const themeSchema = z
+  .object({
+    colors: z
+      .object({
+        hero: hexColor,
+        heroText: hexColor,
+        soft: hexColor,
+        accent: hexColor,
+        button: hexColor,
+        buttonText: hexColor,
+        primary: hexColor,
+        page: hexColor,
+      })
+      .strict()
+      .superRefine((colors, ctx) => {
+        const colorOf = (key: string): string => (key.startsWith('#') ? key : colors[key as keyof typeof colors]);
+        for (const [text, background] of THEME_CONTRAST_PAIRS) {
+          const ratio = shareKitContrastRatio(colorOf(text), colorOf(background));
+          if (ratio < SHARE_KIT_MIN_TEXT_CONTRAST) {
+            ctx.addIssue({
+              code: 'custom',
+              path: [background],
+              message: `${text} on ${background} has contrast ${ratio.toFixed(2)}:1; it needs at least ${SHARE_KIT_MIN_TEXT_CONTRAST}:1`,
+            });
+          }
+        }
+      }),
+    logo: z
+      .object({ url: imageUrl, alt: plainText(120), width: z.number().int().positive(), height: z.number().int().positive() })
+      .strict()
+      .optional(),
+    headline: plainText(120).optional(),
+    headingFont: z.enum(SHARE_KIT_HEADING_FONTS),
+  })
+  .strict();
+
 export const shareKitContentSchema = z
   .object({
     eventSlug: slug,
@@ -113,6 +167,7 @@ export const shareKitContentSchema = z
       .object({ url: imageUrl, alt: plainText(300) })
       .strict()
       .optional(),
+    theme: themeSchema.optional(),
   })
   .strict()
   .refine((content) => content.endDate >= content.startDate, { message: 'endDate must not be before startDate', path: ['endDate'] })
