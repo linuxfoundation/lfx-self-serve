@@ -398,6 +398,24 @@ export const PROFILE_ASIDE_COPY = {
 /** Where the Profile page's openprofile rail shows: above 1024px (#6083). */
 export const PROFILE_ASIDE_MEDIA_QUERY = '(min-width: 1025px)';
 
+/** Copy of the Profile page's Recognitions section (#6084). */
+export const PROFILE_RECOGNITIONS_COPY = {
+  heading: 'Recognitions',
+  description: 'Awards you’ve earned for contributions and participation across Linux Foundation programs and events.',
+  missingLabel: 'Missing a badge?',
+  missingTip: 'Badges come from Credly. Add the email you use on Credly to your profile in Manage identities and they’ll show up here within 24 hours.',
+  earn: 'Earn badges',
+  speaking: 'Speaking',
+  issued: 'Issued',
+  emptyTitle: 'No badges yet',
+  emptyText: 'Badges are issued through Credly when you pass a certification, speak at an event or complete a program.',
+  loadFailed: 'We couldn’t load your badges.',
+  retry: 'Try again',
+} as const;
+
+/** Training & Certifications, where the Profile page sends someone to earn badges (#6084). */
+export const PROFILE_TRAINING_PATH = '/me/training';
+
 /** Base path of the Account & Settings area that replaces the Profile & Account hub's tabs (#6067). */
 export const ACCOUNT_BASE_PATH = '/account';
 /** Account & Settings pages that start Flow C from their own address, so the server accepts them as a return path. */

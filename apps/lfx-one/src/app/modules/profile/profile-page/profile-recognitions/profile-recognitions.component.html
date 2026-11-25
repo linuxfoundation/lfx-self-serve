@@ -1,0 +1,65 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<lfx-profile-section [heading]="copy.heading" [description]="copy.description" testId="profile-recognitions">
+  <ng-container profileSectionActions>
+    <lfx-profile-section-hint [label]="copy.missingLabel" [tip]="copy.missingTip" />
+    <lfx-ui-button variant="tertiary-accent" size="small" icon="fa-light fa-graduation-cap" [link]="trainingPath" data-testid="profile-recognitions-earn">
+      {{ copy.earn }}
+    </lfx-ui-button>
+  </ng-container>
+
+  @if (state().loading) {
+    <div class="@container" aria-hidden="true" data-testid="profile-recognitions-loading">
+      <div class="grid grid-cols-1 gap-[16px] @[480px]:grid-cols-2 @[720px]:grid-cols-3">
+        @for (skeleton of skeletons; track skeleton) {
+          <lfx-ui-skeleton height="66px" />
+        }
+      </div>
+    </div>
+  } @else if (state().error) {
+    <lfx-ui-note variant="error" data-testid="profile-recognitions-error">
+      {{ copy.loadFailed }}
+      <lfx-ui-button note-action variant="secondary" size="small" (click)="retry()" data-testid="profile-recognitions-retry">{{ copy.retry }}</lfx-ui-button>
+    </lfx-ui-note>
+  } @else if (badges().length === 0) {
+    <lfx-profile-section-empty icon="fa-light fa-award" [heading]="copy.emptyTitle" [description]="copy.emptyText" />
+  } @else {
+    <lfx-profile-grid [total]="badges().length" [(expanded)]="expanded" testId="profile-recognitions-grid">
+      @for (badge of shown(); track badge.id) {
+        <lfx-profile-pill
+          tile="image"
+          [name]="badge.title"
+          [imageUrl]="badge.imageUrl ?? ''"
+          [href]="badge.credlyUrl ?? null"
+          [hoverCard]="card"
+          [hoverCardWidth]="280"
+          [testId]="'profile-recognitions-badge-' + badge.id">
+          @if (badge.category === 'speaking') {
+            <lfx-ui-badge variant="outline" size="sm"><i slot="icon" class="fa-light fa-microphone" aria-hidden="true"></i>{{ copy.speaking }}</lfx-ui-badge>
+          }
+          <span class="min-w-0 truncate">{{ badge.issuer }}</span>
+        </lfx-profile-pill>
+
+        <ng-template #card>
+          <div class="flex flex-col items-start gap-[8px]" [attr.data-testid]="'profile-recognitions-card-' + badge.id">
+            @if (badge.imageUrl) {
+              <img class="size-[72px] object-contain" [src]="badge.imageUrl" alt="" referrerpolicy="no-referrer" />
+            }
+            <span class="text-[15px] font-bold leading-[20px] text-gray-900">{{ badge.title }}</span>
+            @if (badge.category === 'speaking') {
+              <lfx-ui-badge variant="outline" size="sm"><i slot="icon" class="fa-light fa-microphone" aria-hidden="true"></i>{{ copy.speaking }}</lfx-ui-badge>
+            }
+            @if (badge.description) {
+              <p class="m-0 text-[12px] leading-[17px] text-gray-600">{{ badge.description }}</p>
+            }
+            <span class="flex flex-row items-center gap-[6px] text-[12px] leading-[16px] text-gray-500">
+              <i class="fa-light fa-calendar" aria-hidden="true"></i>{{ copy.issued }} {{ badge.issuedDate | date: 'MMM y' : 'UTC' }} · {{ badge.issuer }}
+            </span>
+          </div>
+        </ng-template>
+      }
+    </lfx-profile-grid>
+  }
+</lfx-profile-section>

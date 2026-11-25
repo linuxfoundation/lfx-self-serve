@@ -12,6 +12,7 @@ import { CombinedProfile, EnrichedIdentity } from '@lfx-one/shared/interfaces';
 import { AccountProfileService } from '@services/account-profile.service';
 import { ProfileAuthReturnService } from '@services/profile-auth-return.service';
 import { ProfileSaveSyncService } from '@services/profile-save-sync.service';
+import { BadgesService } from '@services/badges.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { MessageService } from 'primeng/api';
@@ -69,6 +70,7 @@ describe('ProfilePageComponent', () => {
         { provide: ProfileSaveSyncService, useValue: { apply } },
         { provide: UiToastService, useValue: { show } },
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: BadgesService, useValue: { getBadges: () => of([]) } },
         { provide: BreakpointObserver, useValue: { observe: () => of({ matches: options.wide ?? true, breakpoints: {} }) } },
       ],
     });
