@@ -395,6 +395,30 @@ export const ACCOUNT_IDENTITIES_COPY = {
   emailProviderDescription: 'Add and verify an email address you use for open source work',
 } as const;
 
+/** Copy of Account & Settings › Developer settings (#6081). */
+export const ACCOUNT_DEVELOPER_SETTINGS_COPY = {
+  guidelinesTitle: 'Security Guidelines',
+  apiTokenTitle: 'API Token',
+  apiTokenSubtitle: 'Your API tokens provide programmatic access to LFX services.',
+  apiTokenSubtitleSingle: 'Your API token provides programmatic access to LFX services.',
+  patLabel: 'Personal Access Token',
+  showToken: 'Show token',
+  hideToken: 'Hide token',
+  copyToken: 'Copy token',
+  copied: 'Copied',
+  insightsTitle: 'LFX Insights API Tokens',
+  emptyTitle: 'No LFX Insights API tokens yet',
+  emptyText: 'Create a token to pull project health and contribution data into your own dashboards, reports and tools.',
+  createTitle: 'New LFX Insights API token',
+  namePlaceholder: 'e.g. Quarterly report',
+  nameHint: 'Name it after the script or tool that will use it.',
+  createdWarning: 'Copy this token now. You won’t be able to see it again.',
+  revokeTitle: 'Revoke token?',
+  revokeTextBefore: 'Anything using',
+  revokeTextAfter: 'will lose access to the LFX Insights API immediately. This action can’t be undone.',
+  revokeConfirm: 'Revoke token',
+} as const;
+
 /** Copy of Account & Settings › Password (#6080). */
 export const ACCOUNT_PASSWORD_COPY = {
   changeTitle: 'Change Password',

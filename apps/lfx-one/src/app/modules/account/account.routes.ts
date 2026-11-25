@@ -8,8 +8,6 @@ import { accountPathForProfileTab } from '@lfx-one/shared/utils';
 
 import { accountUnsavedChangesGuard } from '../../shared/guards/account-unsaved-changes.guard';
 
-const loadAccountSettings = () => import('../settings/account-settings/account-settings.component').then((m) => m.AccountSettingsComponent);
-
 /**
  * A full-page load of an old `/profile/settings#password` link reaches the server without its fragment, so the server sends
  * it here; the browser still has the fragment and moves on to the section's own page.
@@ -24,8 +22,8 @@ const withUnsavedChangesGuard = (routes: Route[]): Route[] =>
   routes.map((route) => (route.loadComponent ? { ...route, canDeactivate: [...(route.canDeactivate ?? []), accountUnsavedChangesGuard] } : route));
 
 /**
- * Account & Settings (#6067), behind the profile redesign flag. Each page reuses the Profile & Account hub tab it
- * replaces until its own redesign lands; the three settings pages share the settings page, one section each.
+ * Account & Settings (#6067), behind the profile redesign flag. Each page is its own redesign, most extending the
+ * Profile & Account hub tab it replaces so the hub keeps working unchanged until it is removed (#6094).
  */
 export const ACCOUNT_ROUTES: Routes = [
   {
@@ -91,7 +89,7 @@ export const ACCOUNT_ROUTES: Routes = [
         path: 'developer-settings',
         title: 'Developer settings',
         data: { embedded: true, section: ACCOUNT_SETTINGS_SECTIONS.DEVELOPER_SETTINGS },
-        loadComponent: loadAccountSettings,
+        loadComponent: () => import('./developer-settings/account-developer-settings.component').then((m) => m.AccountDeveloperSettingsComponent),
       },
     ]),
   },
