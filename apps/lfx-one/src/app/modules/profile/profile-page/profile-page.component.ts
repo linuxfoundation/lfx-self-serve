@@ -4,7 +4,15 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, ElementRef, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ACCOUNT_PERSONAL_INFORMATION_PATH, ALLOWED_AVATAR_MIME_TYPES, PENDING_PROFILE_SAVE_KEY, PROFILE_PAGE_COPY } from '@lfx-one/shared/constants';
+import {
+  ACCOUNT_PERSONAL_INFORMATION_PATH,
+  ALLOWED_AVATAR_MIME_TYPES,
+  IMPERSONATION_BANNER_HEIGHT_PX,
+  PENDING_PROFILE_SAVE_KEY,
+  PROFILE_ASIDE_COPY,
+  PROFILE_ASIDE_MEDIA_QUERY,
+  PROFILE_PAGE_COPY,
+} from '@lfx-one/shared/constants';
 import { EnrichedIdentity, PendingProfileSave } from '@lfx-one/shared/interfaces';
 import { formatMemberSinceDate } from '@lfx-one/shared/utils';
 import { AccountProfileService } from '@services/account-profile.service';
@@ -12,8 +20,13 @@ import { ProfileAuthReturnService } from '@services/profile-auth-return.service'
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
+import { injectMediaQueryMatches } from '@shared/utils/mobile-viewport.util';
 import { stripAuthPrefixOrNull } from '@shared/utils/strip-auth-prefix.util';
 import { catchError, distinctUntilChanged, EMPTY, of, startWith, switchMap } from 'rxjs';
+
+import { ProfileVisibilityDrawerComponent } from '../components/profile-visibility-drawer/profile-visibility-drawer.component';
+import { ProfileVisibilityDrawerService } from '../components/profile-visibility-drawer/profile-visibility-drawer.service';
+import { ProfileAsideComponent } from './profile-aside/profile-aside.component';
 
 /**
  * The Profile page (#6082), behind the profile redesign flag: a hero with the photo, name, role and bio. Every edit happens on
@@ -23,9 +36,9 @@ import { catchError, distinctUntilChanged, EMPTY, of, startWith, switchMap } fro
   selector: 'lfx-profile-page',
   // Cancels the main layout's page padding: the page sets its own gutters.
   host: { class: 'block -mx-5 md:-mx-8' },
-  imports: [UiButtonComponent, UiNoteComponent],
-  // The page owns its profile and, for a photo upload that left for authorization, the Flow C return.
-  providers: [AccountProfileService, ProfileAuthReturnService],
+  imports: [UiButtonComponent, UiNoteComponent, ProfileAsideComponent, ProfileVisibilityDrawerComponent],
+  // The page owns its profile, the Flow C return for a photo upload that left for authorization, and the Open Profile drawer.
+  providers: [AccountProfileService, ProfileAuthReturnService, ProfileVisibilityDrawerService],
   templateUrl: './profile-page.component.html',
 })
 export class ProfilePageComponent {
@@ -40,6 +53,7 @@ export class ProfilePageComponent {
   protected readonly copy = PROFILE_PAGE_COPY;
   protected readonly personalInformationPath = ACCOUNT_PERSONAL_INFORMATION_PATH;
   protected readonly avatarAccept = ALLOWED_AVATAR_MIME_TYPES.join(',');
+  protected readonly railLabel = PROFILE_ASIDE_COPY.railLabel;
 
   // Complex computed/toSignal signals
   protected readonly profile = this.accountProfile.profile;
@@ -53,6 +67,15 @@ export class ProfilePageComponent {
   // The empty-field prompts wait for a stored record: a failed metadata read also comes back without one.
   protected readonly recordLoaded = computed(() => this.profile()?.profile != null);
   protected readonly name: Signal<string> = this.initName();
+  // The openprofile rail's media query, followed once the browser renders so SSR and hydration agree (#6083).
+  protected readonly railShown = injectMediaQueryMatches(PROFILE_ASIDE_MEDIA_QUERY);
+  protected readonly railTop = computed(() => (this.impersonating() ? IMPERSONATION_BANNER_HEIGHT_PX : 0));
+  // Null while the profile is still loading, so the rail holds its placeholder; '' when none came back.
+  protected readonly username = computed<string | null>(() => {
+    const profile = this.profile();
+    if (!profile) return this.profileFailed() ? '' : null;
+    return stripAuthPrefixOrNull(profile.user.username) ?? '';
+  });
   protected readonly jobTitle = computed(() => this.profile()?.profile?.job_title?.trim() ?? '');
   protected readonly company = computed(() => this.profile()?.profile?.organization?.trim() ?? '');
   protected readonly location = computed(() => [this.profile()?.profile?.city, this.profile()?.profile?.country].filter((part) => !!part?.trim()).join(', '));

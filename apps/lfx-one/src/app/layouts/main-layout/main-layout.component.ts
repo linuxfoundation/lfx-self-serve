@@ -10,7 +10,7 @@ import { AppFooterComponent } from '@components/app-footer/app-footer.component'
 import { NavbarComponent } from '@components/navbar/navbar.component';
 import { ALL_LENSES } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
-import { isProfileHubPath } from '@lfx-one/shared/utils';
+import { isProfileHubPath, isProfilePagePath } from '@lfx-one/shared/utils';
 import { ChunkLoadRecoveryService } from '@services/chunk-load-recovery.service';
 import { AppService } from '@services/app.service';
 import { LensService } from '@services/lens.service';
@@ -70,6 +70,8 @@ export class MainLayoutComponent {
   // content/footer clear the fixed rail; below 2xl the panel renders inline instead. Only the
   // me-lens /profile route uses ProfileLayoutComponent.
   protected readonly isProfileHub = signal(false);
+  // The Profile page's openprofile rail is fixed to the right above 1024px, so content and the footer keep clear of it (#6083).
+  protected readonly isProfilePage = signal(false);
 
   /**
    * A route lens that {@link LensService.setLens} refused, held for retry.
@@ -86,6 +88,7 @@ export class MainLayoutComponent {
     // Seed the profile-hub flag from the current URL so the right gutter is correct on the first
     // paint / hard load, before the first NavigationEnd fires.
     this.isProfileHub.set(isProfileHubPath(this.router.url));
+    this.isProfilePage.set(isProfilePagePath(this.router.url));
 
     this.initDrawerFocus();
 
@@ -107,6 +110,7 @@ export class MainLayoutComponent {
         }
         this.selectorPanelOpen.set(false);
         this.isProfileHub.set(isProfileHubPath(this.router.url));
+        this.isProfilePage.set(isProfilePagePath(this.router.url));
         this.syncLensFromRoute();
       });
 
