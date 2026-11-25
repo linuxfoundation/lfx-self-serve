@@ -14,7 +14,18 @@ const role = (name: string, startDate: string, endDate = ''): CdpProjectAffiliat
   repoUrl: '',
   repoFileUrl: '',
 });
-const affiliation = (startDate: string, endDate: string | null = null, type = 'project') => ({ startDate, endDate, type }) as CdpProjectAffiliationEntry;
+const affiliation = (startDate: string, endDate: string | null = null, type = 'project'): CdpProjectAffiliationEntry => ({
+  id: `${type}-${startDate}`,
+  organizationLogo: '',
+  organizationId: 'org-1',
+  organizationName: 'Acme Motors',
+  verified: true,
+  verifiedBy: 'ada',
+  source: 'cdp',
+  startDate,
+  endDate,
+  type,
+});
 const project = (slug: string, roles: CdpProjectAffiliationRole[], affiliations: CdpProjectAffiliationEntry[] = []): CdpProjectAffiliation => ({
   id: slug,
   projectSlug: slug,
@@ -51,6 +62,12 @@ describe('buildProfileInvolvement', () => {
 
     expect(items.find((item) => item.id === 'otel')).toEqual(expect.objectContaining({ role: 'Contributor', current: false, years: '2022 – 2023' }));
     expect(items.find((item) => item.id === 'bare')).toEqual(expect.objectContaining({ current: true, years: '', period: '' }));
+  });
+
+  it('names a single year once for a stint that starts and ends in it', () => {
+    const [item] = buildProfileInvolvement([project('short', [role('Contributor', '2020-03-01', '2020-09-30')])], null);
+
+    expect(item).toEqual(expect.objectContaining({ years: '2020', period: 'Mar 2020 – Sep 2020' }));
   });
 
   it('puts current projects first, newest start first, and past ones last', () => {

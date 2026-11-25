@@ -6,7 +6,7 @@ import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { ACCOUNT_WORK_HISTORY_PATH, PROFILE_INVOLVEMENT_COPY } from '@lfx-one/shared/constants';
+import { ACCOUNT_WORK_HISTORY_PATH, PROFILE_GRID_LIMIT, PROFILE_INVOLVEMENT_COPY } from '@lfx-one/shared/constants';
 import { CdpProjectAffiliation } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -72,6 +72,16 @@ describe('ProfileInvolvementComponent', () => {
     expect(pills()[0].textContent).toContain('Since 2021');
     expect(pills()[1].querySelector('lfx-ui-badge')?.textContent?.trim()).toBe('Contributor');
     expect(pills()[1].textContent).toContain('2018 – 2020');
+  });
+
+  it('shows nine projects, then all of them', async () => {
+    const projects = Array.from({ length: PROFILE_GRID_LIMIT + 1 }, (_, index) => project(`p${index}`, 'Contributor', `20${10 + index}-01-01`));
+    const { fixture, pills, query } = await render(() => of(projects));
+    expect(pills()).toHaveLength(PROFILE_GRID_LIMIT);
+
+    query('profile-involvement-grid-toggle')?.querySelector('button')?.click();
+    await fixture.whenStable();
+    expect(pills()).toHaveLength(PROFILE_GRID_LIMIT + 1);
   });
 
   it('opens a card with the role and the dates on keyboard focus', async () => {

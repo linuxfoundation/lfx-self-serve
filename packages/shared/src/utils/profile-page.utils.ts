@@ -44,8 +44,9 @@ export function buildProfileInvolvement(affiliations: CdpProjectAffiliation[], l
     .sort((a, b) => Number(b.current) - Number(a.current) || b.start.localeCompare(a.start) || a.name.localeCompare(b.name));
 }
 
-// "Since {from}" while current, "{from} – {to}" once ended; '' without a start.
+// "Since {from}" while current, "{from} – {to}" once ended, or just "{from}" when both ends match; '' without a start.
 function involvementLabel(from: string, to: string): string {
   if (!from) return '';
-  return to ? `${from} – ${to}` : `Since ${from}`;
+  if (!to) return `Since ${from}`;
+  return from === to ? from : `${from} – ${to}`;
 }
