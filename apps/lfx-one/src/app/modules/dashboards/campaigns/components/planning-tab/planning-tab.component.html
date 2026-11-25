@@ -52,20 +52,260 @@
         </div>
       }
 
+      <!--
+        The NEWSLETTER card, newsletter surface only. An issue has no page to scrape and no link to
+        promote: it is named by its brand and issue, written from the operator's notes, and styled on
+        the brand's previous issues, the newest of which is the draft it is cloned from.
+      -->
+      @if (isNewsletter()) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-newsletter-section">
+          <h3 class="mb-2 text-sm font-semibold text-gray-900">Which newsletter issue?</h3>
+          <p class="mb-4 text-xs text-gray-500">
+            The issue is written from your notes alone, in the structure and voice of the brand&apos;s previous newsletters. Nothing is scraped, and no item,
+            date or link that is not in your notes is invented.
+          </p>
+          <div class="flex flex-col gap-4">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div class="flex flex-col gap-1">
+                <label for="planning-newsletter-brand" class="text-xs font-medium text-gray-700">Brand</label>
+                <lfx-select
+                  [form]="briefForm"
+                  control="newsletterBrand"
+                  inputId="planning-newsletter-brand"
+                  [options]="newsletterBrandOptions()"
+                  optionLabel="label"
+                  optionValue="value"
+                  [filter]="true"
+                  filterBy="label"
+                  [loading]="newsletterBrandsState() === 'loading'"
+                  placeholder="Choose a brand"
+                  size="small"
+                  ariaLabel="Newsletter brand"
+                  data-testid="planning-newsletter-brand-select" />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label for="planning-newsletter-issue" class="text-xs font-medium text-gray-700">Issue</label>
+                <lfx-input-text
+                  [form]="briefForm"
+                  control="newsletterIssue"
+                  inputId="planning-newsletter-issue"
+                  placeholder="November 2026"
+                  size="small"
+                  dataTest="planning-newsletter-issue-input" />
+              </div>
+            </div>
+            @switch (newsletterBrandsState()) {
+              @case ('loading') {
+                <p class="text-xs text-gray-500" role="status" data-testid="planning-newsletter-brands-loading">
+                  Loading the brands that have sent a newsletter. The first load reads the portal and can take up to a minute.
+                </p>
+              }
+              @case ('failed') {
+                <p class="text-xs text-red-700" role="alert" data-testid="planning-newsletter-brands-failed">
+                  The brand list could not be loaded. Reload the page to try again.
+                </p>
+              }
+              @default {
+                <p class="text-xs text-gray-500">Brands that have sent a newsletter from this HubSpot portal, most recent first.</p>
+              }
+            }
+
+            <div class="flex flex-col gap-2" data-testid="planning-newsletter-references">
+              <span class="text-xs font-medium text-gray-700">Previous newsletters</span>
+              @switch (newsletterReferencesState()) {
+                @case ('loading') {
+                  <p class="text-xs text-gray-500" role="status" data-testid="planning-newsletter-references-loading">
+                    Finding the brand&apos;s previous newsletters. This reads the portal&apos;s sent emails and can take up to a minute.
+                  </p>
+                }
+                @case ('failed') {
+                  <p class="text-xs text-amber-700" role="alert" data-testid="planning-newsletter-references-failed">
+                    The previous newsletters could not be read. You can still plan the issue; the copy is then written without a style reference.
+                  </p>
+                }
+                @case ('loaded') {
+                  @if (newsletterReferences().length === 0) {
+                    <p class="text-xs text-amber-700" data-testid="planning-newsletter-references-empty">
+                      No sent newsletter is named for this brand. Check the brand spelling, or pick a template by hand on Implement.
+                    </p>
+                  } @else {
+                    <ul class="flex flex-col gap-2">
+                      @for (email of newsletterReferences(); track email.emailId) {
+                        <li
+                          class="flex items-start gap-3 rounded-md border border-gray-200 px-3 py-2"
+                          [attr.data-testid]="'planning-newsletter-reference-' + email.emailId">
+                          <input
+                            type="checkbox"
+                            class="mt-0.5"
+                            [id]="'planning-newsletter-reference-check-' + email.emailId"
+                            [checked]="!excludedReferenceIds().has(email.emailId)"
+                            (change)="onToggleNewsletterReference(email.emailId)" />
+                          <label [for]="'planning-newsletter-reference-check-' + email.emailId" class="flex min-w-0 flex-col gap-0.5">
+                            <span class="truncate text-sm text-gray-900">{{ email.emailName }}</span>
+                            <span class="text-xs text-gray-500"
+                              >{{ email.subject || 'No subject' }}{{ email.sentAt ? ' · sent ' + email.sentAt.slice(0, 10) : '' }}</span
+                            >
+                          </label>
+                          @if (selectedReferenceIds()[0] === email.emailId) {
+                            <span
+                              class="ml-auto shrink-0 rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
+                              data-testid="planning-newsletter-template-badge"
+                              >Template</span
+                            >
+                          }
+                        </li>
+                      }
+                    </ul>
+                    <p class="text-xs text-gray-500">
+                      Ticked issues set the structure and voice; the first ticked one is the draft the new issue is cloned from.
+                    </p>
+                  }
+                }
+              }
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label for="planning-newsletter-notes" class="text-xs font-medium text-gray-700">Notes for this issue</label>
+              <lfx-textarea
+                [form]="briefForm"
+                control="sourceText"
+                inputId="planning-newsletter-notes"
+                [rows]="8"
+                placeholder="One line per item: news, announcements, upcoming events, new members, blog posts, with their links..."
+                dataTest="planning-newsletter-notes-input" />
+              <div class="flex items-start justify-between gap-3 text-xs">
+                <!-- Says where pre-filled notes came from, until they are edited: an operator who
+                     did not type them should not have to wonder whose they are. -->
+                <span class="text-gray-500" data-testid="planning-newsletter-notes-from-saved">
+                  @if (notesFromSavedBrief() && !briefForm.controls.sourceText.dirty) {
+                    Filled from the brief saved for this issue. Edit them and generate again to replace it.
+                  }
+                </span>
+                <span
+                  class="shrink-0 tabular-nums"
+                  [class.text-gray-500]="!sourceTextTooLong()"
+                  [class.text-red-700]="sourceTextTooLong()"
+                  aria-live="polite"
+                  data-testid="planning-newsletter-notes-count"
+                  >{{ sourceTextLength() }} / {{ sourceTextMaxChars }}</span
+                >
+              </div>
+              @if (sourceTextTooLong()) {
+                <p class="text-xs text-red-700" role="alert" data-testid="planning-newsletter-notes-too-long">
+                  Shorten the notes to {{ sourceTextMaxChars }} characters or fewer. Longer notes are refused rather than cut.
+                </p>
+              }
+            </div>
+
+            <!--
+              Offers and news from the brand's own site, for the operator to add to the notes. The
+              pages are pre-filled from the links in the brand's last issue; nothing is added to
+              the notes until the operator clicks.
+            -->
+            <div class="flex flex-col gap-2 border-t border-gray-100 pt-4" data-testid="planning-newsletter-suggestions">
+              <span class="text-xs font-medium text-gray-700">Offers and news from the brand&apos;s site</span>
+              <p class="text-xs text-gray-500">
+                Pages to check, up to {{ suggestionMaxUrls }}, separated by commas. Pre-filled from the links in the last issue.
+              </p>
+              <div class="flex items-start gap-2">
+                <div class="flex-1">
+                  <lfx-input-text
+                    [form]="suggestionsForm"
+                    control="sources"
+                    inputId="planning-newsletter-sources"
+                    placeholder="https://www.linuxfoundation.org/blog"
+                    size="small"
+                    ariaLabel="Pages to check for offers and news"
+                    dataTest="planning-newsletter-sources-input" />
+                </div>
+                <lfx-button
+                  label="Find offers & news"
+                  icon="fa-light fa-magnifying-glass"
+                  severity="secondary"
+                  size="small"
+                  [loading]="suggestionsState() === 'loading'"
+                  [disabled]="suggestionsState() === 'loading' || newsletterBrandValue() === ''"
+                  (onClick)="onFindSuggestions()"
+                  data-testid="planning-newsletter-suggestions-find" />
+              </div>
+              @switch (suggestionsState()) {
+                @case ('loading') {
+                  <p class="text-xs text-gray-500" role="status" data-testid="planning-newsletter-suggestions-loading">
+                    Reading the pages. This can take up to a minute.
+                  </p>
+                }
+                @case ('failed') {
+                  <p class="text-xs text-red-700" role="alert" data-testid="planning-newsletter-suggestions-failed">{{ suggestionsError() }}</p>
+                }
+                @case ('loaded') {
+                  @if (suggestionsFailedUrls().length > 0) {
+                    <p class="text-xs text-amber-700" data-testid="planning-newsletter-suggestions-partial">
+                      Could not read: {{ suggestionsFailedUrls().join(', ') }}
+                    </p>
+                  }
+                  @if (suggestions().length === 0) {
+                    <p class="text-xs text-gray-500" data-testid="planning-newsletter-suggestions-empty">
+                      No current offers or news were found on these pages.
+                    </p>
+                  } @else {
+                    <ul class="flex flex-col gap-2">
+                      @for (item of suggestions(); track item.url) {
+                        <li
+                          class="flex items-start gap-3 rounded-md border border-gray-200 px-3 py-2"
+                          [attr.data-testid]="'planning-newsletter-suggestion-' + $index">
+                          <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <div class="flex flex-wrap items-center gap-2">
+                              <span class="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">{{ suggestionKindLabels[item.kind] }}</span>
+                              <a [href]="item.url" target="_blank" rel="noopener noreferrer" class="text-sm font-medium text-blue-700 hover:underline">{{
+                                item.title
+                              }}</a>
+                            </div>
+                            @if (item.detail) {
+                              <span class="text-xs text-gray-600">{{ item.detail }}</span>
+                            }
+                            @if (item.deadline) {
+                              <span class="text-xs text-gray-500">Until {{ item.deadline }}</span>
+                            }
+                          </div>
+                          <lfx-button
+                            [label]="addedSuggestionUrls().has(item.url) ? 'Added' : 'Add to notes'"
+                            severity="secondary"
+                            size="small"
+                            [disabled]="addedSuggestionUrls().has(item.url)"
+                            (onClick)="onAddSuggestion(item)"
+                            [attr.data-testid]="'planning-newsletter-suggestion-add-' + $index" />
+                        </li>
+                      }
+                    </ul>
+                    <p class="text-xs text-gray-500">
+                      Check each item on its page before the issue goes out: dates and codes are read from the page as it is today.
+                    </p>
+                  }
+                }
+              }
+            </div>
+          </div>
+        </div>
+      }
+
       <!-- Event URL Card -->
       <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-url-section">
-        <h3 class="mb-4 text-sm font-semibold text-gray-900">{{ urlCardLabel() }}</h3>
+        <h3 class="mb-4 text-sm font-semibold text-gray-900">{{ isNewsletter() ? 'Saved brief' : urlCardLabel() }}</h3>
         <div class="flex flex-col gap-4">
-          <div class="flex flex-col gap-1">
-            <input
-              type="url"
-              formControlName="url"
-              [placeholder]="urlCardPlaceholder()"
-              (input)="onUrlInput()"
-              class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              data-testid="planning-url-input" />
-            <p class="text-xs text-gray-500">{{ urlCardHelp() }}</p>
-          </div>
+          @if (!isNewsletter()) {
+            <div class="flex flex-col gap-1">
+              <input
+                type="url"
+                formControlName="url"
+                [placeholder]="urlCardPlaceholder()"
+                (input)="onUrlInput()"
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="planning-url-input" />
+              <p class="text-xs text-gray-500">{{ urlCardHelp() }}</p>
+            </div>
+          } @else {
+            <p class="text-xs text-gray-500" data-testid="planning-newsletter-saved-hint">A brief saved for this brand and issue is offered here.</p>
+          }
 
           <!--
             Saved brief for this event.
@@ -276,7 +516,9 @@
       </div>
 
       <!-- Campaign Details Card -->
-      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-details-section">
+      <!-- Hidden on the newsletter surface: goal, audience and value prop describe an event promotion.
+           Hidden for an event email too: nothing on the email path reads them (see isEventEmail). -->
+      <div class="rounded-lg border border-gray-200 bg-white p-5" [class.hidden]="isNewsletter() || isEventEmail()" data-testid="planning-details-section">
         <h3 class="mb-4 text-sm font-semibold text-gray-900">Campaign Details</h3>
         <div class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">
@@ -394,7 +636,7 @@
     <!-- Generate Button -->
     <div class="flex items-center gap-3">
       <lfx-button
-        label="Scrape & Generate Brief"
+        [label]="isNewsletter() ? 'Generate Brief' : 'Scrape & Generate Brief'"
         icon="fa-light fa-wand-magic-sparkles"
         severity="primary"
         [disabled]="!canGenerate()"
@@ -655,7 +897,7 @@
     @if (isEmailLike() && eventDetails(); as details) {
       <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="planning-email-brief">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-semibold text-gray-900">Event details</h3>
+          <h3 class="text-sm font-semibold text-gray-900">{{ isNewsletter() ? 'Newsletter details' : 'Event details' }}</h3>
           @if (!isEditingEmailBrief()) {
             <button
               type="button"
@@ -729,22 +971,39 @@
           </div>
         } @else {
           <dl class="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2 text-sm" data-testid="planning-email-brief-view">
-            @if (isSurvey()) {
-              <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Source</dt>
+            @if (isSurvey() || isNewsletter()) {
+              <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">{{ isNewsletter() ? 'Notes' : 'Source' }}</dt>
               <dd class="max-h-48 overflow-y-auto whitespace-pre-line text-gray-900" data-testid="planning-email-brief-source">
                 {{ details.sourceText || '—' }}
               </dd>
             }
-            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Event</dt>
+            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">{{ isNewsletter() ? 'Issue' : 'Event' }}</dt>
             <dd class="text-gray-900" data-testid="planning-email-brief-name">{{ details.name || '—' }}</dd>
-            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Dates</dt>
-            <dd class="text-gray-700">{{ details.dates || '—' }}</dd>
-            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Location</dt>
-            <dd class="text-gray-700">{{ details.city || '—' }}</dd>
-            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Audience</dt>
-            <dd class="text-gray-700">{{ details.audience || '—' }}</dd>
-            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Register</dt>
-            <dd class="break-all text-gray-700">{{ details.registrationUrl || '—' }}</dd>
+            <!--
+              What the issue is built from, said before the handoff: the previous issue its draft is
+              cloned from (its header, footer and recipients come with it) and how many links the
+              notes carry. An issue links to those addresses and to no others, so a note written
+              without its link is an item that will have none.
+            -->
+            @if (isNewsletter()) {
+              <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Brand</dt>
+              <dd class="text-gray-900" data-testid="planning-newsletter-brief-brand">{{ details.newsletterBrand || '—' }}</dd>
+              <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Cloned from</dt>
+              <dd class="text-gray-700" data-testid="planning-newsletter-brief-template">{{ newsletterTemplateLabel() }}</dd>
+              <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Links</dt>
+              <dd class="text-gray-700" data-testid="planning-newsletter-brief-links">{{ newsletterNoteLinksLabel() }}</dd>
+            }
+            <!-- A newsletter issue has no dates, venue, audience or registration link. -->
+            @if (!isNewsletter()) {
+              <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Dates</dt>
+              <dd class="text-gray-700">{{ details.dates || '—' }}</dd>
+              <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Location</dt>
+              <dd class="text-gray-700">{{ details.city || '—' }}</dd>
+              <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Audience</dt>
+              <dd class="text-gray-700">{{ details.audience || '—' }}</dd>
+              <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Register</dt>
+              <dd class="break-all text-gray-700">{{ details.registrationUrl || '—' }}</dd>
+            }
           </dl>
         }
       </div>
@@ -1057,11 +1316,11 @@
              Audience step and Paid still goes straight to Implement. A shared "Proceed to
              Implement" was the kind of label an operator only discovers is wrong by pressing it. -->
         <lfx-button
-          [label]="isEmailLike() ? 'Save & Choose Audience' : 'Save & Proceed to Implement'"
+          [label]="saveProceedLabel()"
           icon="fa-light fa-arrow-right"
           severity="primary"
           (onClick)="onProceedToImplementation()"
-          [ariaLabel]="isEmailLike() ? 'Save edits and choose the send audience' : 'Save edits and proceed to implement'"
+          [ariaLabel]="saveProceedAriaLabel()"
           data-testid="planning-save-proceed-btn" />
         <lfx-button
           label="Save Edits"
@@ -1359,11 +1618,11 @@
       <div class="flex items-center gap-3">
         <!-- See the edit-mode button above: the destination differs by flow, so the label does. -->
         <lfx-button
-          [label]="isEmailLike() ? 'Choose Audience' : 'Proceed to Implement'"
+          [label]="proceedLabel()"
           icon="fa-light fa-arrow-right"
           severity="primary"
           (onClick)="onProceedToImplementation()"
-          [ariaLabel]="isEmailLike() ? 'Choose the send audience for this brief' : 'Proceed to implement with this brief'"
+          [ariaLabel]="proceedAriaLabel()"
           data-testid="planning-proceed-btn" />
         <!--
           The three copy actions, hidden together for email because all three operate on ad copy

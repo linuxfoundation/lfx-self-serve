@@ -37,8 +37,13 @@ import {
   AudienceDiscoverRequest,
   AudienceDiscoverySSEEventType,
   AudienceLastSentEmail,
+  AudienceNewsletterBrand,
+  CampaignNewsletterSuggestionsRequest,
+  CampaignNewsletterSuggestionsResult,
   AudienceListSearchResult,
   AudienceMasterListBrief,
+  AudienceDescribeListsRequest,
+  AudienceListDescription,
   AudiencePreviewCount,
   AudiencePreviewCountRequest,
   AudienceQaResult,
@@ -162,6 +167,7 @@ import {
   ReplaySubject,
   retry,
   share,
+  shareReplay,
   Subject,
   take,
   takeUntil,
@@ -175,6 +181,10 @@ import { SseService } from './sse.service';
 @Injectable({ providedIn: 'root' })
 export class CampaignService {
   private readonly http = inject(HttpClient);
+  /** Brand-newsletter reads, keyed project|brand|limit. See getAudienceBrandNewsletters. */
+  private readonly brandNewsletterCache = new Map<string, Observable<AudienceLastSentEmail[]>>();
+  /** Newsletter-brand listings, keyed by project. See getAudienceNewsletterBrands. */
+  private readonly newsletterBrandsCache = new Map<string, Observable<AudienceNewsletterBrand[]>>();
   /** Each owner's latest creative-asset upload, kept until its answer is taken up or it is cancelled: see `uploadCreativeAsset`. */
   private readonly creativeAssetUploads = new Map<
     CreativeAssetUploadOwner,
@@ -943,9 +953,15 @@ export class CampaignService {
    * default before a user knows what they are looking for, and the service already orders by
    * last-modified.
    */
-  public searchHubSpotEmails(projectSlug: string, query: string): Observable<HubSpotEmailSearchResult> {
+  public searchHubSpotEmails(projectSlug: string, query: string, match: readonly string[] = []): Observable<HubSpotEmailSearchResult> {
     let params = new HttpParams().set('project', projectSlug);
-    if (query !== '') {
+    // `match` is the brand-and-event scope: whole-word phrases, ANY of which a template must carry.
+    // Repeated params, never combined with `q` -- the server refuses the pair.
+    if (match.length > 0) {
+      for (const phrase of match) {
+        params = params.append('match', phrase);
+      }
+    } else if (query !== '') {
       params = params.set('q', query);
     }
     return this.http.get<HubSpotEmailSearchResult>('/api/campaigns/hubspot/emails', { params });
@@ -1199,6 +1215,57 @@ export class CampaignService {
    * previous send used but which no longer exists comes back flagged `missing` rather than
    * silently dropped.
    */
+  /**
+   * The brand's previous sent HubSpot newsletters, newest first, with the lists each targeted. The
+   * newsletter surface clones the newest and offers all of them as content references.
+   */
+  public getAudienceBrandNewsletters(projectSlug: string, brand: string, limit?: number): Observable<AudienceLastSentEmail[]> {
+    // Cached per project, brand and limit for the page's lifetime: the read walks the portal (tens
+    // of seconds), and the planner and Implement both ask for the same brand within a minute. A
+    // failed read is dropped from the cache so the next ask retries.
+    const key = `${projectSlug}|${brand.trim().toLowerCase()}|${limit ?? ''}`;
+    const cached = this.brandNewsletterCache.get(key);
+    if (cached) {
+      return cached;
+    }
+    let params = new HttpParams().set('project', projectSlug).set('brand', brand);
+    if (limit !== undefined) {
+      params = params.set('limit', String(limit));
+    }
+    const read = this.http.get<AudienceLastSentEmail[]>('/api/campaigns/audience-builder/brand-newsletters', { params }).pipe(
+      catchError((error: unknown) => {
+        this.brandNewsletterCache.delete(key);
+        return throwError(() => error);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.brandNewsletterCache.set(key, read);
+    return read;
+  }
+
+  /** Offers and news on the brand's site for the next newsletter issue. Read-only. */
+  public suggestNewsletterItems(projectSlug: string, request: CampaignNewsletterSuggestionsRequest): Observable<CampaignNewsletterSuggestionsResult> {
+    return this.http.post<CampaignNewsletterSuggestionsResult>('/api/campaigns/newsletter/suggestions', request, { params: { project: projectSlug } });
+  }
+
+  /** The brands that have sent a HubSpot newsletter, most recent first. Cached per project, like the above. */
+  public getAudienceNewsletterBrands(projectSlug: string): Observable<AudienceNewsletterBrand[]> {
+    const cached = this.newsletterBrandsCache.get(projectSlug);
+    if (cached) {
+      return cached;
+    }
+    const params = new HttpParams().set('project', projectSlug);
+    const read = this.http.get<AudienceNewsletterBrand[]>('/api/campaigns/audience-builder/newsletter-brands', { params }).pipe(
+      catchError((error: unknown) => {
+        this.newsletterBrandsCache.delete(projectSlug);
+        return throwError(() => error);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.newsletterBrandsCache.set(projectSlug, read);
+    return read;
+  }
+
   public getAudienceLastSent(projectSlug: string, eventName: string, brandShort = ''): Observable<AudienceLastSentEmail[]> {
     let params = new HttpParams().set('project', projectSlug).set('eventName', eventName);
     if (brandShort !== '') {
@@ -1225,6 +1292,14 @@ export class CampaignService {
    */
   public previewAudienceCount(projectSlug: string, request: AudiencePreviewCountRequest): Observable<AudiencePreviewCount> {
     return this.http.post<AudiencePreviewCount>('/api/campaigns/audience-builder/preview-count', request, { params: { project: projectSlug } });
+  }
+
+  /**
+   * Plain-English descriptions of who each list contains, rendered by campaign-service from the
+   * lists' HubSpot rules. Read-only; one description per id, in request order.
+   */
+  public describeAudienceLists(projectSlug: string, request: AudienceDescribeListsRequest): Observable<AudienceListDescription[]> {
+    return this.http.post<AudienceListDescription[]>('/api/campaigns/audience-builder/lists/describe', request, { params: { project: projectSlug } });
   }
 
   /**

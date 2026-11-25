@@ -13,37 +13,49 @@
   } @else {
     <!-- Header -->
     <div class="flex flex-col gap-3">
-      <h1 class="sr-only">{{ activeProgramTypeConfig().breadcrumbLabel }} — {{ activeDeliveryTypeConfig().breadcrumbLabel }}</h1>
+      <h1 class="sr-only">
+        {{ programBreadcrumbLabel() }}
+        @if (!isNewsletter()) {
+          — {{ activeDeliveryTypeConfig().breadcrumbLabel }}
+        }
+      </h1>
       <!-- Breadcrumb: Campaigns > {program} > {delivery type} -->
       <nav class="flex items-center gap-2 text-sm" aria-label="Breadcrumb" data-testid="campaigns-breadcrumb">
         <span class="text-gray-400">Campaigns</span>
         <i class="fa-solid fa-chevron-right text-[10px] text-gray-300" aria-hidden="true"></i>
-        <span class="text-gray-400">{{ activeProgramTypeConfig().breadcrumbLabel }}</span>
-        <i class="fa-solid fa-chevron-right text-[10px] text-gray-300" aria-hidden="true"></i>
-        <span class="font-semibold text-gray-900" aria-current="page">{{ activeDeliveryTypeConfig().breadcrumbLabel }}</span>
+        @if (isNewsletter()) {
+          <span class="font-semibold text-gray-900" aria-current="page">{{ programBreadcrumbLabel() }}</span>
+        } @else {
+          <span class="text-gray-400">{{ programBreadcrumbLabel() }}</span>
+          <i class="fa-solid fa-chevron-right text-[10px] text-gray-300" aria-hidden="true"></i>
+          <span class="font-semibold text-gray-900" aria-current="page">{{ activeDeliveryTypeConfig().breadcrumbLabel }}</span>
+        }
       </nav>
 
       <!-- Program & Delivery-Type Selectors -->
       <div class="flex items-center gap-3" data-testid="campaigns-selectors">
         <lfx-select
           [form]="selectorForm"
-          control="programType"
-          [options]="programTypeOptions"
+          control="programPicker"
+          [options]="programTypeOptions()"
           optionLabel="label"
           optionValue="id"
           size="small"
           ariaLabel="Campaign program type"
           data-testid="campaigns-program-select" />
-        <lfx-select
-          [form]="selectorForm"
-          control="deliveryType"
-          [options]="deliveryTypeOptions"
-          optionLabel="label"
-          optionValue="id"
-          optionDisabled="disabled"
-          size="small"
-          ariaLabel="Campaign delivery type"
-          data-testid="campaigns-delivery-select" />
+        <!-- Hidden for a newsletter: it is always an email, reached from the first selector. -->
+        @if (!isNewsletter()) {
+          <lfx-select
+            [form]="selectorForm"
+            control="deliveryType"
+            [options]="deliveryTypeOptions()"
+            optionLabel="label"
+            optionValue="id"
+            optionDisabled="disabled"
+            size="small"
+            ariaLabel="Campaign delivery type"
+            data-testid="campaigns-delivery-select" />
+        }
       </div>
     </div>
 
@@ -70,7 +82,7 @@
          binding stays uniform across the tablist anyway — a per-tab special case would be more
          code to say the same thing, and the lazy panels still need it. -->
       <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Email campaign tabs" data-testid="campaigns-email-tab-nav">
-        @for (tab of emailTabs; track tab.id; let i = $index) {
+        @for (tab of emailTabs(); track tab.id; let i = $index) {
           <button
             type="button"
             role="tab"
@@ -192,6 +204,10 @@
               <p class="text-xs text-gray-500">
                 Each asset is its own brief, so a survey and a report for the same programme are separate campaigns with their own audience and copy.
               </p>
+            } @else if (isNewsletter()) {
+              <p class="text-xs text-gray-500" data-testid="campaigns-newsletter-type-hint">
+                Each issue is its own brief, named by the brand and the issue. Its draft is cloned from the brand&apos;s previous newsletter.
+              </p>
             } @else {
               <p class="text-xs text-gray-500">
                 Each <em>stage</em> is its own brief for this event, so a campaign can run as a series. Some types share a stage and therefore the same brief;
@@ -259,7 +275,7 @@
             about "the event" and "a past edition". `selectedEmailSegment` is undefined there, so a
             hidden picker cannot still be steering the copy.
           -->
-          @if (!isSurvey()) {
+          @if (!isSurvey() && !isNewsletter()) {
             <div class="flex flex-col gap-2" data-testid="campaigns-email-segment-picker">
               <label for="email-segment" class="font-mono text-xs uppercase tracking-wide text-gray-400">Audience segment</label>
               <lfx-select
@@ -389,6 +405,7 @@
           [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''"
           [briefEventName]="emailBriefOutput()?.eventDetails?.name ?? ''"
           [briefEventDates]="emailBriefOutput()?.eventDetails?.dates ?? ''"
+          [newsletterBrand]="isNewsletter() ? (emailBriefOutput()?.eventDetails?.newsletterBrand ?? '') : ''"
           [emailStage]="audienceQaStage()"
           [eventKey]="emailEventKey()"
           [audienceReadFailed]="emailAudienceReadFailed()"
@@ -487,11 +504,7 @@
                     <span class="font-mono text-xs uppercase tracking-wide text-gray-400">{{ isSurvey() ? 'Asset type' : 'Email type' }}</span>
                     <p class="text-sm text-gray-900" data-testid="campaigns-email-type-display">{{ selectedEmailTypeLabel() }}</p>
                     <p class="text-xs text-gray-500" data-testid="campaigns-email-type-hint">
-                      {{
-                        isSurvey()
-                          ? 'Change the asset type above the planner — each one is its own brief.'
-                          : 'Change the type above the planner — each stage is its own brief.'
-                      }}
+                      {{ emailTypeHint() }}
                     </p>
                   </div>
 
@@ -534,7 +547,26 @@
                 best-ranked one as soon as the list loads; this says which, so the choice is still
                 visible even though it is not asked.
               -->
-              @if (isSurvey()) {
+              <!--
+                A NEWSLETTER's template was chosen on the Plan tab: the first ticked previous issue.
+                Asking again here offered an unrelated first screen of the portal's templates.
+              -->
+              @if (isNewsletter()) {
+                <div class="flex flex-col gap-1" data-testid="campaigns-newsletter-template">
+                  <h2 class="text-base font-semibold text-gray-900">Template</h2>
+                  @if (selectedEmailTemplateId() !== '') {
+                    <p class="text-sm text-gray-500">
+                      Cloning the previous issue
+                      <span class="font-medium text-gray-700">{{ newsletterTemplateName() || selectedEmailTemplateName() }}</span
+                      >, chosen on the Plan tab.
+                    </p>
+                  } @else {
+                    <p class="text-sm text-red-700" role="alert" data-testid="campaigns-newsletter-template-missing">
+                      No previous issue is ticked on the Plan tab, so there is no template to clone. Tick one there and save the brief again.
+                    </p>
+                  }
+                </div>
+              } @else if (isSurvey()) {
                 <div class="flex flex-col gap-1" data-testid="campaigns-email-template-auto">
                   <h2 class="text-base font-semibold text-gray-900">Template</h2>
                   @if (selectedEmailTemplateName(); as templateName) {
@@ -567,7 +599,27 @@
               } @else {
                 <div class="flex flex-col gap-1">
                   <h2 class="text-base font-semibold text-gray-900">Choose a template to clone</h2>
-                  <p class="text-sm text-gray-500">The send is created as a clone of one of your HubSpot marketing emails.</p>
+                  <!--
+                    Scoped by default to the event's brand (emailTemplateScope). The clone decides the
+                    send's sender, subscription type and office location, so the reason for the scope
+                    is said rather than left for the operator to infer from a shorter list.
+                  -->
+                  @if (emailTemplatesScoped() && emailTemplateScope(); as scope) {
+                    <p class="text-sm text-gray-500" data-testid="campaigns-email-template-scope-intro">
+                      @if (emailTemplatesHidingOtherEditions()) {
+                        Only <span class="font-medium text-gray-700">{{ scope.label }} {{ scope.editionLabel }}</span> emails are listed.
+                      } @else if (emailTemplateThisEditionCount() === 0 && scope.editionLabel) {
+                        <!-- Promotion for a far-off edition has not started: say so, rather than "this edition first" over a list with none. -->
+                        Only <span class="font-medium text-gray-700">{{ scope.label }}</span> emails are listed. None is from {{ scope.editionLabel }} yet, so
+                        other editions are shown.
+                      } @else {
+                        Only <span class="font-medium text-gray-700">{{ scope.label }}</span> emails are listed, this edition first.
+                      }
+                      The draft keeps the template's sender, subscription type and office location.
+                    </p>
+                  } @else {
+                    <p class="text-sm text-gray-500">The send is created as a clone of one of your HubSpot marketing emails.</p>
+                  }
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -576,7 +628,7 @@
                     [value]="emailTemplateQuery()"
                     (input)="onEmailTemplateQueryInput($any($event.target).value)"
                     (keyup.enter)="onEmailTemplateSearchSubmit()"
-                    placeholder="Search by name or subject"
+                    placeholder="Search all templates by name or subject"
                     aria-label="Search HubSpot marketing emails"
                     class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
                     data-testid="campaigns-email-template-search" />
@@ -593,7 +645,11 @@
                 @if (emailTemplatesLoading()) {
                   <p class="text-sm text-gray-500" data-testid="campaigns-email-templates-loading">
                     <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-                    Loading templates…
+                    @if (emailTemplatesScoped() && emailTemplateScope(); as scope) {
+                      Finding {{ scope.label }} templates — this reads about a year of the portal's email history and can take 15–30 seconds…
+                    } @else {
+                      Loading templates…
+                    }
                   </p>
                 } @else if (emailChannelEnabled() === false) {
                   <!-- Not an error: the steady state wherever HubSpot is not connected. -->
@@ -614,6 +670,79 @@
                       }
                     </p>
                   } @else {
+                    <!--
+                      What the list is, and the way out of it. Scoped: how many of the brand's
+                      templates, how many from this edition, and what was hidden as not a clone
+                      source -- with "Show all templates" for a template the brand search does not
+                      find. Unscoped while a scope exists: the way back to the brand's templates.
+                    -->
+                    @if (emailTemplatesScoped() && emailTemplateScope(); as scope) {
+                      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600" data-testid="campaigns-email-template-scope-status">
+                        <span>
+                          @if (emailTemplatesHidingOtherEditions()) {
+                            <!-- Only this edition is drawn, so the count is the rows on screen, not the brand's total. -->
+                            <span class="font-medium text-gray-800"
+                              >{{ emailTemplateThisEditionCount() }} template{{ emailTemplateThisEditionCount() === 1 ? '' : 's' }}</span
+                            >
+                          } @else if (emailTemplateThisEditionCount() === 0) {
+                            {{ templates.length }} {{ scope.label }} template{{ templates.length === 1 ? '' : 's' }} · none from
+                            {{ scope.editionLabel || 'this edition' }} yet
+                          } @else {
+                            {{ templates.length }} {{ scope.label }} template{{ templates.length === 1 ? '' : 's' }} ·
+                            <span class="font-medium text-gray-800">{{ emailTemplateThisEditionCount() }} from {{ scope.editionLabel || 'this edition' }}</span>
+                          }
+                          @if (emailTemplatesHiddenCount() > 0) {
+                            · {{ emailTemplatesHiddenCount() }} automated, A/B, test, newsletter or app-staged email{{
+                              emailTemplatesHiddenCount() === 1 ? '' : 's'
+                            }}
+                            hidden
+                          }
+                        </span>
+                        @if (emailTemplatesHidingOtherEditions()) {
+                          <button
+                            type="button"
+                            class="font-medium text-blue-700 underline-offset-2 hover:underline"
+                            (click)="emailTemplatesShowOtherEditions.set(true)"
+                            data-testid="campaigns-email-template-show-other-editions">
+                            Show {{ emailTemplateOtherEditionCount() }} from other editions
+                          </button>
+                        } @else if (emailTemplatesShowOtherEditions() && emailTemplateThisEditionCount() > 0 && emailTemplateOtherEditionCount() > 0) {
+                          <button
+                            type="button"
+                            class="font-medium text-blue-700 underline-offset-2 hover:underline"
+                            (click)="emailTemplatesShowOtherEditions.set(false)"
+                            data-testid="campaigns-email-template-hide-other-editions">
+                            Only {{ scope.editionLabel || 'this edition' }}
+                          </button>
+                        }
+                        <button
+                          type="button"
+                          class="font-medium text-blue-700 underline-offset-2 hover:underline disabled:opacity-50"
+                          [disabled]="emailTemplatesLoading()"
+                          (click)="onShowAllEmailTemplates()"
+                          data-testid="campaigns-email-template-show-all">
+                          Show all templates
+                        </button>
+                      </div>
+                    } @else if (emailTemplateScope(); as scope) {
+                      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600" data-testid="campaigns-email-template-scope-off">
+                        @if (emailTemplatesScopeFellBack()) {
+                          <span class="text-amber-700" data-testid="campaigns-email-template-scope-fell-back"
+                            >No {{ scope.label }} email that can be cloned was found in the portal's recent history, so all recent emails are listed.</span
+                          >
+                        } @else {
+                          <span>Showing templates from every brand.</span>
+                        }
+                        <button
+                          type="button"
+                          class="font-medium text-blue-700 underline-offset-2 hover:underline disabled:opacity-50"
+                          [disabled]="emailTemplatesLoading()"
+                          (click)="onShowScopedEmailTemplates()"
+                          data-testid="campaigns-email-template-show-scoped">
+                          Show only {{ scope.label }} templates
+                        </button>
+                      </div>
+                    }
                     @if (emailTemplatesTruncated()) {
                       <!--
                     Only ever set for an EMPTY query, where a complete listing and a truncated
@@ -678,7 +807,9 @@
                             type="button"
                             (click)="onSelectEmailTemplate(template.id)"
                             [attr.aria-pressed]="selectedEmailTemplateId() === template.id"
-                            [attr.aria-label]="template | hubspotTemplateLabel: template.id === emailTemplateSuggestionId()"
+                            [attr.aria-label]="
+                              template | hubspotTemplateLabel: template.id === emailTemplateSuggestionId() : emailTemplateFitById()[template.id]
+                            "
                             [class]="
                               selectedEmailTemplateId() === template.id
                                 ? 'flex w-full flex-col gap-0.5 rounded-md border border-blue-500 bg-blue-50 px-3 py-2 text-left'
@@ -704,6 +835,20 @@
                                 [attr.data-testid]="'campaigns-email-template-suggested-' + template.id"
                                 >Suggested</span
                               >
+                              <!-- Scoped lists only: whether the row is this edition's or another edition of the brand. Fixed per row, so an @if cannot shift it. -->
+                              @if (emailTemplateFitById()[template.id]; as fit) {
+                                <span
+                                  class="shrink-0 rounded border px-1.5 py-0.5 text-xs font-medium"
+                                  [class.border-emerald-200]="fit === 'this-edition'"
+                                  [class.bg-emerald-50]="fit === 'this-edition'"
+                                  [class.text-emerald-800]="fit === 'this-edition'"
+                                  [class.border-gray-200]="fit !== 'this-edition'"
+                                  [class.bg-gray-50]="fit !== 'this-edition'"
+                                  [class.text-gray-600]="fit !== 'this-edition'"
+                                  [attr.data-testid]="'campaigns-email-template-fit-' + template.id"
+                                  >{{ fit === 'this-edition' ? 'This edition' : 'Other edition' }}</span
+                                >
+                              }
                               <!--
                             The non-colour half of the selected state (WCAG 1.4.1): the border and
                             background above are colour ONLY, so a colour-blind user, or anyone on
@@ -762,6 +907,84 @@
                 before staging a send to it.
               -->
               <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-send-audience">
+                <!--
+                  NEWSLETTER recipients: no Audience tab. The previous issue's lists are reused as
+                  they were; when they cannot be, the brand's subscription lists are suggested.
+                -->
+                @if (isNewsletter()) {
+                  <div class="flex flex-col gap-2" data-testid="campaigns-newsletter-audience">
+                    @switch (newsletterAudienceState()) {
+                      @case ('loading') {
+                        <p class="text-sm text-gray-500" role="status" data-testid="campaigns-newsletter-audience-loading">
+                          Reusing the previous issue&apos;s recipients. Reading them can take up to a minute.
+                        </p>
+                      }
+                      @case ('attached') {
+                        @if (newsletterAudiencePrecedent(); as precedent) {
+                          <p class="text-sm text-gray-500" data-testid="campaigns-newsletter-audience-reused">
+                            Sent to the same lists, with the same exclusions, as <span class="font-medium text-gray-700">{{ precedent }}</span
+                            >.
+                          </p>
+                        }
+                      }
+                      @case ('suggested') {
+                        @if (newsletterAudienceSuggestion(); as suggestion) {
+                          <div
+                            class="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4"
+                            data-testid="campaigns-newsletter-audience-suggestion">
+                            <p class="text-sm text-amber-900">
+                              @if (suggestion.precedentName) {
+                                The lists of {{ suggestion.precedentName }} could not be reused as they were.
+                              } @else {
+                                This brand has no previous newsletter to reuse.
+                              }
+                              Suggested recipients:
+                            </p>
+                            <div class="flex flex-col gap-1 text-sm">
+                              <span class="font-medium text-gray-900">Send to</span>
+                              @for (list of suggestion.includeLists; track list.listId) {
+                                <span class="text-gray-700"
+                                  >{{ list.name }}
+                                  @if (list.size !== undefined) {
+                                    · {{ list.size | number }} contacts
+                                  }
+                                </span>
+                              } @empty {
+                                <span class="text-gray-500">No newsletter subscription list was found for this brand.</span>
+                              }
+                              <span class="mt-2 font-medium text-gray-900">Exclude</span>
+                              @for (list of suggestion.suppressionLists; track list.listId) {
+                                <span class="text-gray-700">{{ list.name }}</span>
+                              } @empty {
+                                <span class="text-gray-500">No suppression list was found.</span>
+                              }
+                            </div>
+                            <div>
+                              <lfx-button
+                                label="Use these recipients"
+                                severity="primary"
+                                size="small"
+                                [disabled]="suggestion.includeLists.length === 0 || suggestion.suppressionLists.length === 0"
+                                (onClick)="onConfirmNewsletterAudience()"
+                                data-testid="campaigns-newsletter-audience-confirm" />
+                            </div>
+                          </div>
+                        }
+                      }
+                      @case ('failed') {
+                        <div class="flex items-center gap-3">
+                          <p class="text-sm text-red-700" role="alert" data-testid="campaigns-newsletter-audience-error">{{ newsletterAudienceError() }}</p>
+                          <lfx-button
+                            label="Try again"
+                            severity="secondary"
+                            size="small"
+                            (onClick)="onRetryNewsletterAudience()"
+                            data-testid="campaigns-newsletter-audience-retry" />
+                        </div>
+                      }
+                    }
+                  </div>
+                }
                 <div class="flex flex-col gap-1">
                   <h2 class="text-base font-semibold text-gray-900">Send audience</h2>
                   <!-- ONE source, and the copy says so. The derived "build audience" action that
@@ -772,7 +995,11 @@
                   <!-- Every origin that HAS an audience says so. Only `composed` was special-cased, so a
                        restored, attached audience still read "Needed before the draft can be
                        staged" directly above the card announcing it attached. -->
-                  @if (emailAudienceOrigin() === 'composed') {
+                  @if (isNewsletter()) {
+                    <p class="text-sm text-gray-500" data-testid="campaigns-newsletter-audience-note">
+                      Set here for a newsletter: the previous issue&apos;s recipients, or the suggested lists you confirm.
+                    </p>
+                  } @else if (emailAudienceOrigin() === 'composed') {
                     <p class="text-sm text-gray-500">Composed on the Audience tab and attached to this campaign.</p>
                   } @else if (emailAudienceOrigin() === 'restored') {
                     <p class="text-sm text-gray-500" data-testid="campaigns-email-audience-restored-note">
@@ -837,6 +1064,25 @@
                 }
 
                 <!--
+                  NEWSLETTER: who the issue goes to, in plain English. The recipients were attached
+                  FOR the operator (the previous issue's lists), and a newsletter has no Audience
+                  tab to read them on, so the id above was the only thing on screen before staging
+                  to every subscriber. Each list is named, sized and explained by its own HubSpot
+                  rules, exactly as the Audience tab explains a selection.
+                -->
+                @if (isNewsletter() && newsletterAudienceIncludes().length > 0) {
+                  <lfx-audience-selection-summary
+                    heading="Who this issue goes to"
+                    headingId="newsletter-audience-meaning-heading"
+                    [includes]="newsletterAudienceIncludes()"
+                    [otherExcludes]="newsletterAudienceExcludes()"
+                    [loading]="newsletterAudienceDescribing()"
+                    [error]="newsletterAudienceDescribeError()"
+                    (retry)="describeNewsletterAudience()"
+                    data-testid="campaigns-newsletter-audience-meaning" />
+                }
+
+                <!--
                   No audience yet. The button NAVIGATES; it does not compose. Composing is not
                   idempotent -- every attempt mints a real HubSpot contact list -- so it can only
                   be started from the tab that shows the signals, the suppression set and the
@@ -846,7 +1092,9 @@
                   actually stuck in: the send is blocked, and telling them the name of a tab and
                   leaving them to find it is the dead end this flow change exists to remove.
                 -->
-                @if (emailAudience() === null && emailAudienceUnattached() === null) {
+                <!-- Not on a newsletter: it has no Audience tab to go to. Its own block at the top of
+                     this section says where its recipients stand, with its own retry and confirm. -->
+                @if (!isNewsletter() && emailAudience() === null && emailAudienceUnattached() === null) {
                   <div class="flex flex-col items-start gap-2" data-testid="campaigns-email-audience-empty">
                     @if (emailAudienceSkipped()) {
                       <!-- Reports a CHOICE, not a fault. The operator skipped this deliberately,
@@ -999,10 +1247,22 @@
                     whole widget tree, so the opposite holds: nothing of the template's own
                     content survives, and the warning that mattered is the reverse one.
                   -->
-                  <p class="text-xs text-gray-500" data-testid="campaigns-email-preview-note">
-                    Staging clones the selected template and rebuilds its content from what you see here — the template's own body, images and footer are
-                    replaced, not merged. Check the draft in HubSpot before sending.
-                  </p>
+                  <!--
+                    A NEWSLETTER is the exception: its draft is written between the previous issue's
+                    own header and footer, which are kept, and takes that issue's fonts and colours.
+                    Saying "the footer is replaced" here would describe the other surfaces' rebuild.
+                  -->
+                  @if (isNewsletter()) {
+                    <p class="text-xs text-gray-500" data-testid="campaigns-email-preview-note">
+                      Staging clones the previous issue and replaces its content with what you see here, one block per item. The previous issue&apos;s header,
+                      footer, social links, fonts and colours are kept; its images and buttons are not carried over. Check the draft in HubSpot before sending.
+                    </p>
+                  } @else {
+                    <p class="text-xs text-gray-500" data-testid="campaigns-email-preview-note">
+                      Staging clones the selected template and rebuilds its content from what you see here — the template's own body, images and footer are
+                      replaced, not merged. Check the draft in HubSpot before sending.
+                    </p>
+                  }
                 </div>
               }
 
@@ -1018,9 +1278,10 @@
               <!--
                 A/B testing is an EVENT-surface tool. A survey send goes to a list once and is
                 measured by responses, not opens, and the research team does not split-test them --
-                so offering a variant here is a control whose result nobody reads.
+                so offering a variant here is a control whose result nobody reads. Nor on a
+                newsletter: each issue goes once to the brand's subscribers.
               -->
-              @if (!isSurvey()) {
+              @if (!isSurvey() && !isNewsletter()) {
                 <div class="flex flex-col gap-3 border-t border-gray-200 pt-4" data-testid="campaigns-email-abtest">
                   <lfx-checkbox
                     [form]="abTestForm"
@@ -1202,6 +1463,8 @@
                              there, when what is actually happening is the portal listing loading. -->
                           @if (isSurvey()) {
                             {{ surveyTemplateHint() }}
+                          } @else if (isNewsletter()) {
+                            Tick a previous newsletter on the Plan tab: it is the template this issue is cloned from.
                           } @else {
                             Choose a template to clone.
                           }
@@ -1213,11 +1476,23 @@
                           The last stage ended without an answer — check HubSpot, then confirm below.
                         } @else if (emailAudienceWriteInFlight()) {
                           <!-- Before the audience-state branches: on a first compose the audience is still
-                             null, and "compose it first" told the operator to do what was running. -->
-                          An audience write is still running on the Audience tab (possibly started for another email or project) — wait for it to finish before
-                          staging.
+                             null, and "compose it first" told the operator to do what was running. A
+                             newsletter's write is the page attaching the previous issue's lists, and the
+                             surface has no Audience tab to point at. -->
+                          @if (isNewsletter()) {
+                            The recipients are being attached. See Send audience above; staging is available once that finishes.
+                          } @else {
+                            An audience write is still running on the Audience tab (possibly started for another email or project) — wait for it to finish
+                            before staging.
+                          }
                         } @else if (emailAudience() === null) {
-                          Compose the send audience on the Audience tab first.
+                          <!-- A newsletter has no Audience tab: its recipients are set in the Send audience
+                               block above, which says where that stands. -->
+                          @if (isNewsletter()) {
+                            The recipients are not set yet. See Send audience above.
+                          } @else {
+                            Compose the send audience on the Audience tab first.
+                          }
                         } @else if (emailAudience()?.status === 'building') {
                           The audience is unconfirmed — reconcile the lists it created before staging.
                         } @else if (emailAudience()?.status !== 'built') {
@@ -1228,6 +1503,8 @@
                           The email series below is staging or has an unconfirmed draft for this campaign &mdash; finish it first.
                         } @else if (isSurvey() && emailCopy() === null) {
                           Generate the email content first. A survey email is written from its source text.
+                        } @else if (isNewsletter() && emailCopy() === null) {
+                          Generate the newsletter content first, or the draft keeps the previous issue&apos;s content.
                         }
                       </span>
                     }

@@ -2169,6 +2169,16 @@ describe('PlanningTabComponent delivery-type mode', () => {
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-budget-section"]')).not.toBeNull();
   });
 
+  // Goal, Target Audience and Value Prop are read only by the PAID prompt builders, every one of
+  // which is gated off for email -- so on an event email the card was three inputs that changed nothing.
+  it('hides the Campaign Details card for an event email and keeps it for paid', async () => {
+    await build('email');
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-details-section"]')?.classList.contains('hidden')).toBe(true);
+
+    await build('paid-marketing');
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-details-section"]')?.classList.contains('hidden')).toBe(false);
+  });
+
   /**
    * The card being hidden is not on its own enough. The control still exists, so a value can
    * reach it without the card rendering — restoring a paid brief repopulates the form. The server
@@ -5168,5 +5178,126 @@ describe('PlanningTabComponent event URL in the page address', () => {
 
     expect(eventParam()).toBe(EVENT_URL);
     expect(new URL(location.path(), 'https://app.example').searchParams.get('project')).toBe('foundation-b');
+  });
+});
+
+describe('PlanningTabComponent newsletter mode', () => {
+  let fixture: ComponentFixture<PlanningTabComponent>;
+  let generateBrief: Mock;
+
+  const programTypeConfig: CampaignProgramTypeOption = {
+    id: 'events',
+    label: 'Events',
+    breadcrumbLabel: 'Events',
+    urlLabel: 'Event URL',
+    urlPlaceholder: 'https://events.example.com/event-name',
+    urlHelp: 'Enter the event registration URL',
+    goalLabel: 'Event conversions',
+    audiencePlaceholder: 'Enter target audience',
+    valuePropPlaceholder: 'Enter value proposition',
+  };
+
+  interface NewsletterInternals {
+    briefForm: FormGroup;
+    canGenerate(): boolean;
+    generate(): void;
+    newsletterReferences: { set(v: unknown[]): void };
+    newsletterReferencesState: { set(v: string): void };
+    onToggleNewsletterReference(id: string): void;
+  }
+
+  function internals(): NewsletterInternals {
+    return fixture.componentInstance as unknown as NewsletterInternals;
+  }
+
+  function fill(brand: string, issue: string, notes: string): void {
+    const form = internals().briefForm;
+    form.controls['newsletterBrand'].setValue(brand);
+    form.controls['newsletterIssue'].setValue(issue);
+    form.controls['sourceText'].setValue(notes);
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [PlanningTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    generateBrief = vi.fn().mockReturnValue(new Subject());
+    const campaignService = TestBed.inject(CampaignService);
+    vi.spyOn(campaignService, 'generateBrief').mockImplementation(generateBrief);
+    vi.spyOn(campaignService, 'getAudienceBrandNewsletters').mockReturnValue(of([]));
+    vi.spyOn(campaignService, 'getAudienceNewsletterBrands').mockReturnValue(
+      of([{ brand: 'OpenSSF', latestEmailName: '26Q2 - OpenSSF - Newsletter - October', latestSentAt: '2026-11-02T15:00:00Z', issues: 12 }])
+    );
+
+    const projectContextService = TestBed.inject(ProjectContextService);
+    projectContextService.setRouteLensKind('foundation');
+    projectContextService.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.componentRef.setInput('deliveryType', 'newsletter');
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('offers the brands that have sent a newsletter as a dropdown, not free text', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="planning-newsletter-brand-select"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="planning-newsletter-brand-input"]')).toBeNull();
+    expect((fixture.componentInstance as unknown as { newsletterBrandOptions(): { value: string }[] }).newsletterBrandOptions().map((o) => o.value)).toEqual([
+      'OpenSSF',
+    ]);
+  });
+
+  it('shows the newsletter card and no link field', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="planning-newsletter-section"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="planning-url-input"]')).toBeNull();
+  });
+
+  it('generates only once brand, issue and notes are all given, with no link', () => {
+    expect(internals().canGenerate()).toBe(false);
+    fill('OpenSSF', 'November 2026', '');
+    expect(internals().canGenerate()).toBe(false);
+    fill('OpenSSF', '', 'Scorecard v5 released');
+    expect(internals().canGenerate()).toBe(false);
+    fill('OpenSSF', 'November 2026', 'Scorecard v5 released');
+    expect(internals().canGenerate()).toBe(true);
+  });
+
+  it('sends the issue, the notes and the ticked previous issues, newest first', async () => {
+    fill('OpenSSF', 'November 2026', ' Scorecard v5 released ');
+    const email = (emailId: string) => ({
+      emailId,
+      emailName: `OpenSSF Newsletter ${emailId}`,
+      sentAt: '',
+      hubspotUrl: '',
+      includedLists: [],
+      suppressionLists: [],
+    });
+    internals().newsletterReferences.set([email('30'), email('20'), email('10')]);
+    internals().newsletterReferencesState.set('loaded');
+    internals().onToggleNewsletterReference('20');
+    fixture.detectChanges();
+
+    internals().generate();
+    await fixture.whenStable();
+
+    expect(generateBrief.mock.calls[0][1]).toMatchObject({
+      deliveryType: 'newsletter',
+      newsletterBrand: 'OpenSSF',
+      newsletterIssue: 'November 2026',
+      sourceText: 'Scorecard v5 released',
+      referenceEmailIds: ['30', '10'],
+    });
   });
 });

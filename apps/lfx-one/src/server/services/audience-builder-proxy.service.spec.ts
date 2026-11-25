@@ -783,3 +783,69 @@ describe('AudienceBuilderProxyService end-to-end test fields', () => {
     expect(out.event).toEqual({ eventName: 'E', brandShort: 'AAIF', eventDates: ['2026-09-10'] });
   });
 });
+
+/**
+ * The describe adapter: a status upstream adds later must not reach the UI as a state it has no
+ * copy for, and an absent size must stay absent rather than become 0.
+ */
+describe('AudienceBuilderProxyService list descriptions', () => {
+  let service: AudienceBuilderProxyService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new AudienceBuilderProxyService();
+  });
+
+  it('posts the ids to lists/describe and maps every field', async () => {
+    proxyRequest.mockResolvedValue({
+      lists: [
+        {
+          list_id: '31764',
+          name: 'AGNTCon + MCPCon Japan 2026 - Current Registrants',
+          size: 914,
+          processing_type: 'DYNAMIC',
+          hubspot_url: 'https://app.hubspot.com/contacts/1/objectLists/31764/filters',
+          status: 'described',
+          summary: 'Contacts matching one rule: registered for an event.',
+          match: 'any',
+          groups: [{ conditions: ['Registered for an event where event name is “AGNTCon + MCPCon Japan 2026”'] }],
+          complete: true,
+        },
+      ],
+    });
+
+    const lists = await service.describeLists(req, 'tlf', ['31764']);
+
+    const call = proxyRequest.mock.calls[0];
+    expect(call[2]).toBe('/projects/tlf/audience-builder/lists/describe');
+    expect(call[3]).toBe('POST');
+    expect(call[5]).toEqual({ list_ids: ['31764'] });
+    expect(lists).toEqual([
+      {
+        listId: '31764',
+        name: 'AGNTCon + MCPCon Japan 2026 - Current Registrants',
+        size: 914,
+        processingType: 'DYNAMIC',
+        hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/31764/filters',
+        status: 'described',
+        summary: 'Contacts matching one rule: registered for an event.',
+        match: 'any',
+        groups: [{ conditions: ['Registered for an event where event name is “AGNTCon + MCPCon Japan 2026”'] }],
+        complete: true,
+      },
+    ]);
+  });
+
+  it('reads an unknown status as unreadable, keeps an absent size absent and drops a non-http link', async () => {
+    proxyRequest.mockResolvedValue({ lists: [{ list_id: '9', status: 'archived', hubspot_url: 'javascript:alert(1)', groups: [{}] }] });
+
+    const [list] = await service.describeLists(req, 'tlf', ['9']);
+
+    expect(list.status).toBe('unreadable');
+    expect(list.size).toBeUndefined();
+    expect(list.hubspotUrl).toBe('');
+    expect(list.match).toBe('any');
+    expect(list.groups).toEqual([{ conditions: [] }]);
+    expect(list.complete).toBe(false);
+  });
+});

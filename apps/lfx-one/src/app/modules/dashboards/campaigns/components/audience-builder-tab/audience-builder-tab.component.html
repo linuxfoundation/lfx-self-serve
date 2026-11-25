@@ -15,7 +15,8 @@
       <p class="text-xs text-gray-600">Build a new list, or use lists that already exist in HubSpot. Either way, it becomes this email's send list.</p>
     </div>
     <!-- One event field for both tabs: Build drafts from it, Use existing lists discovers from it. -->
-    <div class="flex flex-col gap-1">
+    <!-- Not on a newsletter: it has no event page, and its precedent loads from the brand. -->
+    <div class="flex flex-col gap-1" [class.hidden]="newsletterBrand() !== ''">
       <label for="audience-event-url" class="text-xs font-medium text-gray-700">Event page</label>
       <input
         id="audience-event-url"
@@ -186,7 +187,7 @@
       <lfx-audience-custom-builder
         [projectSlug]="projectSlug()"
         [disabled]="selectionLocked() || degraded()"
-        [eventName]="identity()?.eventName ?? ''"
+        [eventName]="builderEventName()"
         [preset]="customPreset()"
         [resetKey]="customResetKey()"
         (created)="onCustomCreated($event)"
@@ -238,9 +239,23 @@
     </div>
   </section>
 
+  <!-- Nothing new selected, but the email already has an audience (restored, or attached earlier):
+       explain that one here, above both modes, so the operator reads what the email is already
+       set to reach before deciding whether to change it. Not a list id to look up in HubSpot. -->
+  @if (inclusionEntries().length === 0 && summaryAttachedIncludes().length > 0) {
+    <lfx-audience-selection-summary
+      heading="What the attached audience means"
+      [includes]="summaryAttachedIncludes()"
+      [otherExcludes]="summaryAttachedExcludes()"
+      [loading]="describing()"
+      [error]="describeError()"
+      (retry)="onRetryDescribe()" />
+  }
+
   <div class="flex flex-col gap-4" [class.hidden]="mode() !== 'reuse'" data-testid="campaigns-audience-reuse-view">
     <!-- === Discover === -->
     <lfx-audience-step-card
+      [class.hidden]="newsletterBrand() !== ''"
       [step]="stepNumbers().discover"
       heading="Discover qualifying lists"
       subheading="Searches HubSpot for the lists that match each audience signal of the event page above."
@@ -617,6 +632,7 @@
         icon="fa-light fa-clock-rotate-left"
         testId="campaigns-audience-step-reuse">
         <lfx-audience-last-sent
+          [newsletterMode]="newsletterBrand() !== ''"
           [emails]="lastSentEmails()"
           [masterLists]="reuseMasterLists()"
           [selectedIds]="selectedIds()"
@@ -815,6 +831,19 @@
               }
             </div>
           </div>
+        }
+
+        <!-- What the selection means, in plain English, from each list's own HubSpot rules: the
+             names above are claims about the lists, this is what they actually select. -->
+        @if (inclusionEntries().length > 0) {
+          <lfx-audience-selection-summary
+            [includes]="summaryIncludes()"
+            [standardExcludes]="summaryStandardExcludes()"
+            [otherExcludes]="summaryOtherExcludes()"
+            [pendingRegistrantsEdition]="registrantsToCreate()"
+            [loading]="describing()"
+            [error]="describeError()"
+            (retry)="onRetryDescribe()" />
         }
 
         <div class="flex flex-wrap items-center gap-2">

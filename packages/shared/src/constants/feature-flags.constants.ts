@@ -104,6 +104,14 @@ export const ORG_LENS_ROLLUP_ENABLED_FLAG = 'org-lens-rollup-enabled';
 export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
 
 /**
+ * Dark-launch gate for the Newsletter send surface on the campaigns page (draft an issue from the
+ * brand's previous newsletters, reuse their audience, stage a HubSpot draft). Default false: the
+ * delivery-type picker does not offer Newsletter until this is on. **UI-only**, like the flag above;
+ * the BFF routes it uses are the existing campaign routes and carry their own server-side gates.
+ */
+export const CAMPAIGNS_NEWSLETTER_ENABLED_FLAG = 'campaigns-newsletter-enabled';
+
+/**
  * Dark-launch gate for the LFXV2-3365 Health Metrics Overview replacement page (tiles + findings
  * list). Default false: `foundation/health-metrics` keeps rendering the existing card-based page
  * until this is on. **UI-only**, evaluated through `FeatureFlagService.getBooleanFlag` inside

@@ -283,6 +283,28 @@ export function deriveSurveySlug(url: string, sourceText: string): string {
 }
 
 /**
+ * The slug a NEWSLETTER issue's brief is keyed on: `<brand>-newsletter-<issue>`, e.g.
+ * `openssf-newsletter-november-2026`. '' when either half is blank, because a brief keyed on the
+ * brand alone would hold every issue in one row and each new issue would overwrite the last.
+ */
+export function deriveNewsletterSlug(brand: string, issue: string): string {
+  const brandSlug = slugifyForBrief(brand);
+  const issueSlug = slugifyForBrief(issue);
+  if (brandSlug === '' || issueSlug === '') {
+    return '';
+  }
+  return `${brandSlug}-newsletter-${issueSlug}`;
+}
+
+/**
+ * The operator-facing name of a newsletter issue's brief, "OpenSSF Newsletter - November 2026".
+ * It becomes the brief's event name, which campaign-service requires before it writes copy.
+ */
+export function newsletterBriefName(brand: string, issue: string): string {
+  return `${brand.trim()} Newsletter - ${issue.trim()}`;
+}
+
+/**
  * The year-suffixed slugs a saved-brief lookup tries after the bare one misses (#5492):
  * `<slug>-<year>` for `currentYear` and each of the next `CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD`
  * years, LATEST FIRST.

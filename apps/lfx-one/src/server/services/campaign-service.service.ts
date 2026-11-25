@@ -16,6 +16,7 @@ import {
   CAMPAIGN_GOALS,
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_NEWSLETTER_STAGES,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_ADOPTED_REFUSAL_REASON,
   CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
@@ -48,7 +49,14 @@ import { encodePathSegment } from '../helpers/url-validation';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
 import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
 import { withAdoptedMarker } from '@lfx-one/shared/utils/campaign-optimize.utils';
-import { emailLinkDestinations, escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
+import {
+  emailLinkDestinations,
+  escapeHtml,
+  extractHttpLinks,
+  hasVisibleHtmlText,
+  sanitizeDisplayText,
+  stripResourceLoadingHtml,
+} from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -458,6 +466,15 @@ interface CampaignServiceMarketingEmail {
  * the fact instead of re-deriving it. Not a live defect: the constants agree today.
  */
 const UNFILTERED_EMAIL_CAP = 500;
+
+/**
+ * How long the BFF waits for a HubSpot template search, filtered or scoped.
+ *
+ * Above campaign-service's own 40s search deadline (`emailSearchCallTimeout`), so the service
+ * answers -- with a typed 503 if its walk overran -- before this side gives up. A filtered walk
+ * reads up to 20 pages sequentially and measured 15-16s against the LF portal.
+ */
+const HUBSPOT_EMAIL_SEARCH_TIMEOUT_MS = 45_000;
 
 /**
  * One wire email onto the shared interface.
@@ -1646,6 +1663,31 @@ export class CampaignServiceClient {
   }
 
   /**
+   * The addresses a NEWSLETTER brief's notes carry: the only links its issue may keep.
+   *
+   * Read from the stored brief by id, so the list is the one campaign-service wrote the issue
+   * from rather than one a request supplied. `null` means the brief is not a newsletter's, was not
+   * found, could not be opened or could not be read: none of those is evidence about its notes,
+   * so the caller applies whatever rule it would have without this. A failed read is not thrown,
+   * because the callers are a copy generation and a draft staging that are still correct with
+   * fewer links, not with none of their own answer.
+   */
+  public async newsletterNoteLinks(req: Request, projectSlug: string, briefId: string): Promise<string[] | null> {
+    try {
+      const loaded = await this.loadBriefById(req, projectSlug, briefId);
+      if (loaded.status !== 'loaded' || loaded.brief === null || loaded.brief.deliveryType !== 'newsletter') {
+        return null;
+      }
+      return extractHttpLinks(loaded.brief.eventDetails?.sourceText);
+    } catch (error) {
+      logger.warning(req, 'newsletter_note_links', 'Could not read the brief for its notes; no note link is vouched for', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return null;
+    }
+  }
+
+  /**
    * Approve a brief that is ALREADY STORED, writing nothing.
    *
    * The sibling of `approveBrief` above, and deliberately a separate method rather than a
@@ -1883,6 +1925,16 @@ export class CampaignServiceClient {
         typeof firstButtonUrl === 'string' ? firstButtonUrl : '',
         LF_OWNED_EMAIL_LINK_DOMAINS.map((domain) => `https://${domain}/`)
       );
+      // A NEWSLETTER issue is the exception to all of the above. It has no button destination and
+      // no event page: its links are the addresses in the operator's notes, each on whatever site
+      // the item lives on. Judged by the host rule, every one of them lost its href, and the issue
+      // reached the preview and the draft as a newsletter with no links. So a newsletter body is
+      // held to the notes' own addresses instead, one by one, read from the stored brief. An issue
+      // whose brief cannot be read vouches for nothing, which is the same answer as before.
+      const noteLinks =
+        stage !== undefined && (CAMPAIGN_NEWSLETTER_STAGES as readonly string[]).includes(stage)
+          ? ((await this.newsletterNoteLinks(req, projectSlug, briefId)) ?? [])
+          : null;
 
       const body = sections
         .filter(
@@ -1922,6 +1974,9 @@ export class CampaignServiceClient {
           // earlier comment in this file claimed an upstream allow-list covered it; that
           // allow-list exists only on the wizard path, which this is not.
           // The button is the only base a relative href may resolve against (#3306).
+          if (noteLinks !== null) {
+            return stripResourceLoadingHtml(section.html, [], '', noteLinks);
+          }
           return stripResourceLoadingHtml(section.html, generatedDestinations, typeof firstButtonUrl === 'string' ? firstButtonUrl : '');
         })
         .join('');
@@ -3016,18 +3071,19 @@ export class CampaignServiceClient {
    * search: the service's own design warns that reading it that way invites optimising the walk
    * away, reintroducing the false absence the cap exists to prevent.
    *
-   * The filtered walk is COMPLETE-OR-ERROR, not unbounded. `SearchEmails` (campaign-service
-   * `internal/platform/hubspot/email.go`) caps at `maxListPages = 200` and, on exhausting it,
-   * returns "exceeded 200 pages; refusing to page unbounded" rather than a partial list. So a
-   * filtered search either sees every page or fails; it never quietly returns a subset. That is
-   * why `possiblyTruncated` is only meaningful for the EMPTY query — the capped screen is the one
-   * case where a partial result is returned as if complete.
+   * The filtered walk is BOUNDED, not complete. `SearchEmails` and `SearchEmailsAnyPhrase`
+   * (campaign-service `internal/platform/hubspot/email.go`) read at most `maxFilteredScan` rows
+   * (`maxFilteredPages` pages), newest first: about a year of mail on a busy portal. Reaching the
+   * bound WITH matches returns them; reaching it with NONE is a 503 (`ErrSearchIncomplete`)
+   * rather than an empty list, so a filtered search never reports a false absence. A narrower
+   * query reads the same rows, which is why `possiblyTruncated` ("search to narrow it") is only
+   * meaningful for the EMPTY unscoped query and its 500-row cap.
    *
    * `enabled: false` for a project with no usable HubSpot connection, matching `saveBrief` and
    * `createCampaigns`: an absent connection is the steady state everywhere the channel is not set
    * up, so it must not surface as an error. The caller renders "connect HubSpot" for it.
    */
-  public async searchHubSpotEmails(req: Request, projectSlug: string, query: string): Promise<HubSpotEmailSearchResult> {
+  public async searchHubSpotEmails(req: Request, projectSlug: string, query: string, match: readonly string[] = []): Promise<HubSpotEmailSearchResult> {
     if (projectSlug === '') {
       // Refused rather than defaulted, for the reason `loadBrief` refuses: `/projects//…` is a
       // DIFFERENT route that 404s at the gateway, and a gateway 404 is not the service saying
@@ -3036,16 +3092,34 @@ export class CampaignServiceClient {
     }
 
     const path = `/projects/${encodePathSegment(projectSlug)}/connection-hubspot/emails`;
+    // `match` is the picker's brand-and-event scope: whole-word phrases, ANY of which an email's
+    // name or subject must carry. Sent as a repeated param (`match=a&match=b`), which is how
+    // campaign-service reads an array. Upstream refuses `q` and `match` together, so a scoped
+    // search never carries a query.
+    const scoped = match.length > 0;
+    let params: Record<string, unknown> | undefined;
+    if (scoped) {
+      params = { match: [...match] };
+    } else if (query !== '') {
+      params = { q: query };
+    }
     try {
       // Query params go in the FIFTH argument. `proxyRequestWithResponse(req, service, path,
       // method, query, data)` — passing them sixth would send them as a body, which a GET
       // discards, and the search would silently return the unfiltered list.
+      //
+      // The 45s budget is above campaign-service's own 40s search deadline: a filtered walk reads
+      // 20 pages sequentially (15-16s on the LF portal), and the shared 30s default could abort a
+      // slow walk the service was about to answer.
       const response = await this.microserviceProxy.proxyRequestWithResponse<{ emails?: CampaignServiceMarketingEmail[] }>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
         path,
         'GET',
-        query === '' ? undefined : { q: query }
+        params,
+        undefined,
+        undefined,
+        { timeoutMs: HUBSPOT_EMAIL_SEARCH_TIMEOUT_MS }
       );
       // Rows without an id are DROPPED, not mapped to `id: ''`. This is the value the staging
       // config's required `sourceEmailId` takes, so an id-less row is a choice the user cannot
@@ -3069,7 +3143,8 @@ export class CampaignServiceClient {
       const emails = wire.filter((email) => typeof email.id === 'string' && email.id !== '').map(fromMarketingEmail);
       // Derived here because the wire cannot express it: a capped 500 and a complete 500 are the
       // same bytes. Only an EMPTY query is capped, so a filtered search is never flagged.
-      return { enabled: true, emails, error: null, possiblyTruncated: query === '' && wireCount >= UNFILTERED_EMAIL_CAP };
+      // A scoped search is FILTERED, so it is never the capped first screen, whatever its size.
+      return { enabled: true, emails, error: null, possiblyTruncated: !scoped && query === '' && wireCount >= UNFILTERED_EMAIL_CAP };
     } catch (error) {
       // A missing connection is not a failure of this request: campaign-service answers its own
       // typed 404 — "no HubSpot connection configured for this project" — which is exactly the

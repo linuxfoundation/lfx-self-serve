@@ -516,6 +516,39 @@ describe('CampaignProxyService email delivery type', () => {
     );
     expect(generatedAdCopy()).toBe(true);
   });
+  describe('newsletter delivery type', () => {
+    it('writes the brief from the notes, keyed on brand and issue: no fetch, no model call', async () => {
+      vi.mocked(fetchSafeUrl).mockClear();
+      const events = await drain(
+        service.streamBrief(
+          req,
+          {
+            url: '',
+            deliveryType: 'newsletter',
+            newsletterBrand: ' OpenSSF ',
+            newsletterIssue: 'November 2026',
+            sourceText: '  Scorecard v5 released\nMember spotlight  ',
+            referenceEmailIds: ['111', '222'],
+          },
+          new AbortController().signal
+        ) as AsyncGenerator<{ type: string; data: unknown }>
+      );
+
+      expect(vi.mocked(fetchSafeUrl)).not.toHaveBeenCalled();
+      expect(aiCalls).toEqual([]);
+      expect(events.find((e) => e.type === 'event')?.data).toMatchObject({
+        name: 'OpenSSF Newsletter - November 2026',
+        slug: 'openssf-newsletter-november-2026',
+        sourceText: 'Scorecard v5 released\nMember spotlight',
+        newsletterBrand: 'OpenSSF',
+        newsletterIssue: 'November 2026',
+        referenceEmailIds: ['111', '222'],
+        registrationUrl: '',
+      });
+      expect(events.at(-1)?.type).toBe('done');
+    });
+  });
+
   describe('survey delivery type', () => {
     const surveyRequest = {
       url: 'https://surveys.example.com/r/cloud-native-2026',

@@ -50,6 +50,7 @@ const {
   approveStoredBrief,
   loadBrief,
   loadBriefById,
+  newsletterNoteLinks,
   createCampaigns,
   generateEmailCopy,
   legacyCreate,
@@ -88,6 +89,7 @@ const {
   approveStoredBrief: vi.fn(),
   loadBrief: vi.fn(),
   loadBriefById: vi.fn(),
+  newsletterNoteLinks: vi.fn(),
   createCampaigns: vi.fn(),
   generateEmailCopy: vi.fn(),
   legacyCreate: vi.fn(),
@@ -133,6 +135,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public approveStoredBrief = approveStoredBrief;
       public loadBrief = loadBrief;
       public loadBriefById = loadBriefById;
+      public newsletterNoteLinks = newsletterNoteLinks;
       public createCampaigns = createCampaigns;
       public generateEmailCopy = generateEmailCopy;
       public getJobStatus = svcGetJobStatus;
@@ -3251,6 +3254,63 @@ describe('CampaignController.createCampaign cutover', () => {
     const cfg = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
     expect(cfg['bodyHtml']).not.toContain('training.linuxfoundation.org');
     expect(cfg['bodyHtml']).toContain('Invented');
+  });
+
+  /**
+   * A NEWSLETTER issue links to the addresses in its notes, on whatever sites its items live on.
+   * Judged by the host rule every one of them lost its href here, after the preview had shown
+   * them, so the staged issue had no links. The stored brief's notes are the authority.
+   */
+  describe('a newsletter issue', () => {
+    const NEWSLETTER_BRIEF_ID = '3f2c1d7e-8a4b-4c6d-9e1f-0a2b3c4d5e6f';
+    const stage = async (hubspotConfig: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      await controller.createCampaign(buildReq({ platforms: ['hubspot'], hubspotConfig }, { project: 'tlf', brief_id: NEWSLETTER_BRIEF_ID }), res, next);
+      return envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    };
+
+    it("keeps the links its notes carry and drops every other link's href", async () => {
+      newsletterNoteLinks.mockResolvedValue(['https://acme.example/blog/guide/', 'https://reports.example/2026']);
+
+      const cfg = await stage({
+        sourceEmailId: 'e-1',
+        bodyHtml:
+          '<p><a href="https://acme.example/blog/guide">The guide</a> <a href="https://reports.example/2026">The report</a> ' +
+          '<a href="https://acme.example/blog/invented">Invented</a> <a href="https://training.linuxfoundation.org/x">LF</a></p>',
+      });
+
+      expect(newsletterNoteLinks).toHaveBeenCalledWith(expect.anything(), 'tlf', NEWSLETTER_BRIEF_ID);
+      expect(cfg['bodyHtml']).toContain('href="https://acme.example/blog/guide"');
+      expect(cfg['bodyHtml']).toContain('href="https://reports.example/2026"');
+      expect(cfg['bodyHtml']).toContain('<a>Invented</a>');
+      // No host is vouched for on a newsletter, an LF-owned one included.
+      expect(cfg['bodyHtml']).toContain('<a>LF</a>');
+    });
+
+    it('stages a button only when it points at an address in the notes', async () => {
+      newsletterNoteLinks.mockResolvedValue(['https://acme.example/november']);
+
+      const vouched = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', buttonText: 'Read More', buttonUrl: 'https://acme.example/november/' });
+      expect(vouched['buttonUrl']).toBe('https://acme.example/november/');
+
+      createCampaigns.mockClear();
+      const invented = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', buttonText: 'Read More', buttonUrl: 'https://acme.example/elsewhere' });
+      expect(invented['buttonUrl']).toBeUndefined();
+      expect(invented['buttonText']).toBeUndefined();
+    });
+
+    it('falls back to the host rule when the brief is not a newsletter or cannot be read', async () => {
+      newsletterNoteLinks.mockResolvedValue(null);
+
+      const cfg = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p><a href="https://acme.example/blog/guide">The guide</a></p>' });
+
+      expect(cfg['bodyHtml']).toBe('<p><a>The guide</a></p>');
+    });
+
+    it('does not read the brief for a create that stages no email body', async () => {
+      await stage({ sourceEmailId: 'e-1' });
+
+      expect(newsletterNoteLinks).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps the safe inline styles of a staged body and drops the unsafe declarations', async () => {
@@ -10261,7 +10321,7 @@ describe('CampaignController.searchHubSpotEmails', () => {
 
     await controller.searchHubSpotEmails(emailReq({ project: 'tlf', q: '  kubecon  ' }), res, next);
 
-    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', 'kubecon');
+    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', 'kubecon', []);
     expect(res.json).toHaveBeenCalledWith(result);
     expect(next).not.toHaveBeenCalled();
   });
@@ -10271,8 +10331,39 @@ describe('CampaignController.searchHubSpotEmails', () => {
     // not a validation failure.
     await controller.searchHubSpotEmails(emailReq({ project: 'tlf' }), res, next);
 
-    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', '');
+    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', '', []);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // The picker's brand-and-event scope. Express hands over a single param as a string and a
+  // repeated one as an array, and both must reach the service as the same phrase list.
+  it.each([
+    ['a single match param', { project: 'tlf', match: 'KubeCon' }, ['KubeCon']],
+    ['a repeated match param', { project: 'tlf', match: ['KubeCon', ' CloudNativeCon '] }, ['KubeCon', 'CloudNativeCon']],
+    ['blank phrases among real ones', { project: 'tlf', match: ['', 'KubeCon', '   '] }, ['KubeCon']],
+  ])('forwards %s as the scope', async (_label, query, phrases) => {
+    await controller.searchHubSpotEmails(emailReq(query), res, next);
+
+    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', '', phrases);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('caps the scope at the phrase count and length upstream accepts', async () => {
+    const many = Array.from({ length: 12 }, (_, i) => `brand ${i}`);
+    await controller.searchHubSpotEmails(emailReq({ project: 'tlf', match: [...many, 'x'.repeat(300)] }), res, next);
+
+    const phrases = vi.mocked(searchHubSpotEmails).mock.calls[0][3] as string[];
+    expect(phrases).toHaveLength(8);
+    expect(phrases[0]).toBe('brand 0');
+  });
+
+  it('refuses a scope combined with a query, which upstream would refuse anyway', async () => {
+    await controller.searchHubSpotEmails(emailReq({ project: 'tlf', q: 'registration', match: 'KubeCon' }), res, next);
+
+    expect(searchHubSpotEmails).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
   });
 
   it('forwards a service failure to the error middleware instead of answering 200', async () => {
@@ -10335,7 +10426,7 @@ describe('CampaignController.refineBrief email refusal', () => {
     const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
     expect(error).toBeInstanceOf(ServiceValidationError);
     expect(error.toResponse()['errors']).toEqual([
-      { field: 'deliveryType', message: 'deliveryType must be one of: paid-marketing, email, survey', code: 'FIELD_VALIDATION_ERROR' },
+      { field: 'deliveryType', message: 'deliveryType must be one of: paid-marketing, email, survey, newsletter', code: 'FIELD_VALIDATION_ERROR' },
     ]);
   });
 
@@ -13844,6 +13935,37 @@ describe('CampaignController survey surface', () => {
     const error = vi.mocked(next).mock.calls[0][0];
     expect(error).toBeInstanceOf(ServiceValidationError);
     expect(fieldOf(error)).toBe('stage');
+  });
+
+  it.each([
+    ['no brand', { newsletterIssue: 'November 2026', sourceText: 'News' }, 'newsletterBrand'],
+    ['no issue', { newsletterBrand: 'OpenSSF', sourceText: 'News' }, 'newsletterIssue'],
+    ['no notes', { newsletterBrand: 'OpenSSF', newsletterIssue: 'November 2026' }, 'sourceText'],
+    [
+      'too many references',
+      { newsletterBrand: 'OpenSSF', newsletterIssue: 'Nov', sourceText: 'News', referenceEmailIds: ['1', '2', '3', '4'] },
+      'referenceEmailIds',
+    ],
+    [
+      'a reference that is not an email id',
+      { newsletterBrand: 'OpenSSF', newsletterIssue: 'Nov', sourceText: 'News', referenceEmailIds: ['../x'] },
+      'referenceEmailIds',
+    ],
+  ])('refuses a newsletter brief with %s before generating', async (_label, fields, field) => {
+    const req = { body: { deliveryType: 'newsletter', ...fields }, query: {}, path: '/api/campaigns/brief/generate' } as unknown as Request;
+
+    await controller.generateBrief(req, res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0];
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(fieldOf(error)).toBe(field);
+  });
+
+  it('refuses the newsletter stage on the email surface, as campaign-service does', async () => {
+    await controller.loadBrief(buildLoadReq({ event_slug: 'openssf-newsletter-nov', project: 'tlf', delivery_type: 'email', stage: 'Newsletter' }), res, next);
+
+    expect(loadBrief).not.toHaveBeenCalled();
+    expect(fieldOf(vi.mocked(next).mock.calls[0][0])).toBe('stage');
   });
 
   it("refuses a survey source over campaign-service's 3,000-character limit before generating", async () => {

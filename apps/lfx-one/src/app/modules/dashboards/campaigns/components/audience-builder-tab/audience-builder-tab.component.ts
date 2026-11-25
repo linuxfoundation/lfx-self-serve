@@ -27,6 +27,8 @@ import {
 import {
   AUDIENCE_ATTACH_MAX_LIST_IDS,
   AUDIENCE_BUILD_MODES,
+  AUDIENCE_DESCRIBE_DEBOUNCE_MS,
+  AUDIENCE_DESCRIBE_MAX_LIST_IDS,
   AUDIENCE_EDITION_YEAR_PATTERN,
   AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH,
   AUDIENCE_STANDARD_SUPPRESSION_GROUP_KEY,
@@ -61,11 +63,13 @@ import type {
   AudienceDiscoverySSEEventType,
   AudienceLastSentEmail,
   AudienceListBrief,
+  AudienceListDescription,
   AudienceListNameConflict,
   AudienceListRef,
   AudienceListSearchResult,
   AudienceReadinessAction,
   AudienceReadinessNotice,
+  AudienceSelectionSummaryItem,
   AudienceMasterListBrief,
   AudiencePendingReuseAttach,
   AudienceOptInLookup,
@@ -87,6 +91,7 @@ import { AudienceLastSentComponent } from '../audience-last-sent/audience-last-s
 import { AudienceMissingSignalsComponent } from '../audience-missing-signals/audience-missing-signals.component';
 import { AudienceQaPanelComponent } from '../audience-qa-panel/audience-qa-panel.component';
 import { AudienceReadinessBannerComponent } from '../audience-readiness-banner/audience-readiness-banner.component';
+import { AudienceSelectionSummaryComponent } from '../audience-selection-summary/audience-selection-summary.component';
 import { AudienceStepCardComponent } from '../audience-step-card/audience-step-card.component';
 import { AudienceSuppressionGridComponent } from '../audience-suppression-grid/audience-suppression-grid.component';
 import { AudienceSummaryBarComponent } from '../audience-summary-bar/audience-summary-bar.component';
@@ -114,6 +119,7 @@ import { AudienceSummaryBarComponent } from '../audience-summary-bar/audience-su
     AudienceMissingSignalsComponent,
     AudienceQaPanelComponent,
     AudienceReadinessBannerComponent,
+    AudienceSelectionSummaryComponent,
     AudienceStepCardComponent,
     AudienceSummaryBarComponent,
   ],
@@ -137,6 +143,13 @@ export class AudienceBuilderTabComponent {
   /** The brief's event name and scraped dates: a year fallback for an edition discovery returned undated. */
   public readonly briefEventName = input('');
   public readonly briefEventDates = input('');
+  /**
+   * NEWSLETTER surface only: the brand whose previous issues are this send's precedent. When set,
+   * the tab skips event discovery -- a newsletter has no event page -- and opens on "Use existing
+   * lists", filled with the lists the brand's previous newsletters were sent to, beside the
+   * standard suppressions every send keeps.
+   */
+  public readonly newsletterBrand = input('');
   /**
    * The email stage the operator picked, passed to the QA panel so a Post-Event send's audit sets
    * the current-registrants check aside (lfx-v2-campaign-service#244). Blank when none is known.
@@ -318,6 +331,14 @@ export class AudienceBuilderTabComponent {
   protected readonly hiddenCount = signal(0);
   /** The event an Event Audience was planned from, for QA when discovery has not run. */
   protected readonly plannedEvent = signal<AudienceDiscoveredEvent | null>(null);
+
+  /**
+   * The event name the custom builder labels a list with when the operator fills criteria by hand.
+   * Discovery's identity first, then the event-page plan, then the brief's own event name -- before,
+   * a hand-filled list had no label at all unless Discover had run, although the brief already
+   * named the event.
+   */
+  protected readonly builderEventName = computed(() => this.identity()?.eventName || this.plannedEvent()?.eventName || this.briefEventName().trim());
   /**
    * The event QA checks "this edition's registrants" against, with its year: edition names carry
    * one, and QA cannot run that check on a name without it. Discovery first, then an event plan.
@@ -771,6 +792,18 @@ export class AudienceBuilderTabComponent {
   protected readonly composedFor = this.composedEventUrl.asReadonly();
 
   protected readonly degradedDetail = computed(() => this.capabilities()?.detail?.trim() || null);
+
+  // === State: what the selected lists mean ===
+  /**
+   * Plain-English descriptions of the selected lists' rules, by list id, as campaign-service
+   * rendered them from HubSpot. Kept across selection changes, so unticking and re-ticking a list
+   * costs nothing; cleared with the run state, because list ids are portal-scoped.
+   */
+  private readonly listDescriptions = signal<ReadonlyMap<string, AudienceListDescription>>(new Map());
+  protected readonly describing = signal(false);
+  protected readonly describeError = signal<string | null>(null);
+  /** Re-runs the describe pipeline when the ids alone have not changed: a retry, or a batch past the per-request cap. */
+  private readonly describeTick = signal(0);
 
   protected readonly inclusionIds = computed<ReadonlySet<string>>(() => new Set(this.inclusion().keys()));
   /** Ticked row KEYS — what the suppression grid checks against. */
@@ -1490,6 +1523,80 @@ export class AudienceBuilderTabComponent {
   });
 
   /**
+   * The audience already recorded on the brief, as the list ids the summary can describe, so an
+   * operator who restores a brief can read what its attached audience means without rebuilding it.
+   * Its master when it recorded no include ids; the standing suppression list among the exclusions
+   * describes the standard lists it unions.
+   */
+  private readonly attachedAudienceIds = computed<{ includes: string[]; excludes: string[] }>(() => {
+    const existing = this.existingAudience();
+    if (existing === null || existing.status !== 'built') {
+      return { includes: [], excludes: [] };
+    }
+    let includes = [...new Set(existing.includeListIds ?? [])];
+    if (includes.length === 0 && existing.platformMasterListId) {
+      includes = [existing.platformMasterListId];
+    }
+    const excludes = [...new Set(existing.suppressionListIds ?? [])].filter((id) => !includes.includes(id));
+    return { includes, excludes };
+  });
+
+  /**
+   * Every list the "What this audience means" panel describes: the included lists, then every list
+   * the send excludes -- or, while nothing new is selected, the audience already attached.
+   */
+  private readonly describedIds = computed(() => {
+    const ids = [...this.inclusion().keys(), ...this.excludeIds()];
+    if (this.inclusion().size === 0) {
+      const attached = this.attachedAudienceIds();
+      ids.push(...attached.includes, ...attached.excludes);
+    }
+    return [...new Set(ids)];
+  });
+
+  /** The attached audience's include lists, for its summary while nothing new is selected. */
+  protected readonly summaryAttachedIncludes = computed<AudienceSelectionSummaryItem[]>(() =>
+    this.attachedAudienceIds().includes.map((id) => this.summaryItem(id, ''))
+  );
+
+  /** The attached audience's exclusions. */
+  protected readonly summaryAttachedExcludes = computed<AudienceSelectionSummaryItem[]>(() =>
+    this.attachedAudienceIds().excludes.map((id) => this.summaryItem(id, ''))
+  );
+
+  /** Names of the suppression rows by list id, for summary rows that are not otherwise named. */
+  private readonly suppressionNameIndex = computed(() => {
+    const names = new Map<string, string>();
+    this.suppressionLists().forEach((row) => {
+      if (row.listId !== '') {
+        names.set(row.listId, row.name || row.label);
+      }
+    });
+    return names;
+  });
+
+  /** The included lists, each with what it means once its description has arrived. */
+  protected readonly summaryIncludes = computed<AudienceSelectionSummaryItem[]>(() =>
+    [...this.inclusion()].map(([listId, name]) => this.summaryItem(listId, name))
+  );
+
+  /** The standard hygiene suppressions the send applies, shown as one group. */
+  protected readonly summaryStandardExcludes = computed<AudienceSelectionSummaryItem[]>(() => {
+    const standard = new Set(this.standardRowIds());
+    return this.excludeIds()
+      .filter((id) => standard.has(id))
+      .map((id) => this.summaryItem(id, ''));
+  });
+
+  /** Every other list the send excludes: brand or event suppressions, current registrants, lists marked Exclude. */
+  protected readonly summaryOtherExcludes = computed<AudienceSelectionSummaryItem[]>(() => {
+    const standard = new Set(this.standardRowIds());
+    return this.excludeIds()
+      .filter((id) => !standard.has(id))
+      .map((id) => this.summaryItem(id, this.exclusion().get(id) ?? ''));
+  });
+
+  /**
    * Headline numbers for the summary strip.
    *
    * The sum is an upper bound only when EVERY included list reported a size: overlap can only make
@@ -1710,6 +1817,60 @@ export class AudienceBuilderTabComponent {
       .pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.reconcileRegistrantsEdition());
 
+    // "What this audience means": once the selection settles, describe each selected list the tab
+    // has not described yet -- one request for a burst of ticks, never one per tick. Read-only, and
+    // only while this tab is the one on screen with a usable connection.
+    // `degraded` is part of the source, not read on the side: capabilities usually land AFTER a
+    // restored audience's ids, and read on the side the pipeline had already settled on "degraded,
+    // nothing to ask" and never looked again -- the attached audience stayed undescribed.
+    toObservable(
+      computed(() => ({ ids: this.describedIds(), project: this.projectSlug(), active: this.active(), degraded: this.degraded(), tick: this.describeTick() }))
+    )
+      .pipe(
+        debounceTime(AUDIENCE_DESCRIBE_DEBOUNCE_MS),
+        map(({ ids, project, active, degraded }) => ({
+          project,
+          missing: active && project !== '' && !degraded ? ids.filter((id) => !this.listDescriptions().has(id)).slice(0, AUDIENCE_DESCRIBE_MAX_LIST_IDS) : [],
+        })),
+        switchMap(({ project, missing }) => {
+          if (missing.length === 0) {
+            this.describing.set(false);
+            return of(null);
+          }
+          this.describing.set(true);
+          this.describeError.set(null);
+          return this.campaignService.describeAudienceLists(project, { listIds: missing }).pipe(
+            map((lists) => ({ project, missing, lists })),
+            catchError((httpErr: HttpErrorResponse) => {
+              this.describeError.set(serverAuthoredMessage(httpErr, 'Could not read what the selected lists contain'));
+              return of(null);
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((result) => {
+        this.describing.set(false);
+        // A reply for a project no longer on screen describes another portal's ids.
+        if (result === null || result.project !== this.projectSlug()) {
+          return;
+        }
+        const next = new Map(this.listDescriptions());
+        result.lists.forEach((description) => next.set(description.listId, description));
+        // An id the service did not answer for is recorded as unreadable, so it is not asked for
+        // again on every change; Retry clears it.
+        result.missing
+          .filter((id) => !next.has(id))
+          .forEach((id) =>
+            next.set(id, { listId: id, name: '', hubspotUrl: '', status: 'unreadable', summary: '', match: 'any', groups: [], complete: false })
+          );
+        this.listDescriptions.set(next);
+        // More selected than one request carries: ask for the next batch.
+        if (this.describedIds().some((id) => !next.has(id))) {
+          this.describeTick.update((tick) => tick + 1);
+        }
+      });
+
     this.existingSearchControl.valueChanges
       .pipe(
         map((value) => value.trim()),
@@ -1841,6 +2002,18 @@ export class AudienceBuilderTabComponent {
         }
         this.resetForNewContext(this.projectSlug());
         this.resetEventUrl(advertised);
+      });
+
+    // The newsletter path, in place of discovery. Runs when the tab is shown for a brand and nothing
+    // has been discovered yet -- including after the event-key handler above reset the tab for a
+    // different issue, which is what makes the new issue's precedent load.
+    toObservable(computed(() => ({ brand: this.newsletterBrand().trim(), active: this.active(), project: this.projectSlug() })))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ brand, active, project }) => {
+        if (brand === '' || !active || project === '' || this.hasDiscovered() || this.discovering()) {
+          return;
+        }
+        this.startNewsletterAudience(brand);
       });
 
     // Disabling a reactive control has to go through the control, not a `[disabled]` binding on the
@@ -2280,6 +2453,9 @@ export class AudienceBuilderTabComponent {
   protected onSetMode(mode: AudienceBuildMode): void {
     // One event page field serves both modes in this layout, so there is no second input to refresh.
     this.mode.set(mode);
+    if (mode === 'reuse') {
+      this.discoverOnArrival();
+    }
   }
 
   /** Arrow, Home and End keys move between the mode tabs, as the WAI-ARIA tabs pattern expects. */
@@ -2294,6 +2470,9 @@ export class AudienceBuilderTabComponent {
     else return;
     event.preventDefault();
     this.mode.set(modes[next]);
+    if (modes[next] === 'reuse') {
+      this.discoverOnArrival();
+    }
     this.scrollTo(`campaigns-audience-mode-${modes[next]}`, true);
   }
 
@@ -2812,6 +2991,15 @@ export class AudienceBuilderTabComponent {
     return `Up to ${count.estimate.toLocaleString('en-US')}`;
   }
 
+  // === Protected Methods: what the selected lists mean ===
+  /** Ask again for the lists whose description failed: the error's own Retry. */
+  protected onRetryDescribe(): void {
+    const kept = new Map([...this.listDescriptions()].filter(([, description]) => description.status !== 'unreadable'));
+    this.listDescriptions.set(kept);
+    this.describeError.set(null);
+    this.describeTick.update((tick) => tick + 1);
+  }
+
   // === Private Initializers ===
   private initReadinessNotices(): Signal<readonly AudienceReadinessNotice[]> {
     return computed(() => {
@@ -2928,6 +3116,48 @@ export class AudienceBuilderTabComponent {
         this.progressMessage.set(null);
         break;
     }
+  }
+
+  /**
+   * The newsletter audience: the brand's previous issues as reuse precedent, and the suppression
+   * rows for the brand. No event name is set, so no event-scoped lookup or registrants check runs:
+   * a newsletter goes to the brand's subscribers, not to an event's registrants.
+   */
+  private startNewsletterAudience(brand: string): void {
+    this.identity.set({ eventName: '', brandShort: brand, eventDates: [] });
+    this.discoveredLists.set([]);
+    this.missingSignals.set([]);
+    this.hiddenCount.set(0);
+    this.existingMasterLists.set([]);
+    this.mastersFailed.set(false);
+    this.mastersLoading.set(false);
+    this.mode.set('reuse');
+    this.hasDiscovered.set(true);
+    this.loadSuppression(brand, '');
+
+    this.reuseLoading.set(true);
+    const run = this.runGeneration;
+    this.campaignService
+      .getAudienceBrandNewsletters(this.projectSlug(), brand)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (emails) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
+          this.lastSentEmails.set(emails);
+          this.emailsFailed.set(false);
+          this.reuseLoading.set(false);
+        },
+        error: () => {
+          if (run !== this.runGeneration) {
+            return;
+          }
+          this.lastSentEmails.set([]);
+          this.emailsFailed.set(true);
+          this.reuseLoading.set(false);
+        },
+      });
   }
 
   /** Loads the post-discovery lookups: suppression always, reuse only when an event was named. */
@@ -3109,7 +3339,15 @@ export class AudienceBuilderTabComponent {
 
   private seedSuppressionRows(lists: readonly AudienceSuppressionList[]): void {
     const next = new Map(this.suppression());
-    lists.filter((list) => (list.listId !== '' || list.willCreate) && !this.inclusion().has(list.listId)).forEach((list) => next.set(list.key, list.listId));
+    // A Post-Event send (thank-you, recordings, survey) is written FOR the edition's registrants, so
+    // pre-ticking their exclusion would keep the email off the very people it is for -- and an
+    // operator who missed the tick sent it to everyone else. Left unticked; the row stays one click
+    // away for a send that really should skip them.
+    const postEvent = this.emailStage() === 'Post-Event';
+    lists
+      .filter((list) => (list.listId !== '' || list.willCreate) && !this.inclusion().has(list.listId))
+      .filter((list) => !(postEvent && list.category === 'current_registrants'))
+      .forEach((list) => next.set(list.key, list.listId));
     this.suppression.set(next);
     this.suppressionSeeded.set(true);
     this.invalidatePreview();
@@ -3389,6 +3627,10 @@ export class AudienceBuilderTabComponent {
             this.adoptCreatedRegistrantsId(result.suppressionListIds, sentExclusions, result.standardSuppression?.listId);
           }
           this.attachResult.set(result);
+          // The result renders in the summary at the top of the panel, but the button that started
+          // the attach can be far below it (a master list chosen at the bottom of the page). Without
+          // this the confirmation and its "Continue to Implement" appear off-screen.
+          this.scrollTo('campaigns-audience-attach-result');
           this.lastWriteWasAttach.set(true);
           this.refreshCreatedSuppressionRows(registrantsCreated || (!!result.standardSuppression && !dispatchContext.standingExisted));
         },
@@ -3524,6 +3766,36 @@ export class AudienceBuilderTabComponent {
   }
 
   /**
+   * "Use existing lists" is about the event's existing lists, so opening it runs discovery when it
+   * has not run for this event page yet: the "Discover lists" click was the only thing the mode asked
+   * of the operator first, with the URL already filled from the brief.
+   *
+   * Never when it would wipe hand work -- that keeps its confirmation, on the button -- and never
+   * twice for one page. `onDiscover` itself refuses while anything else is in flight, degraded, or
+   * after a compose for the same page.
+   */
+  private discoverOnArrival(): void {
+    const eventUrl = this.eventUrlControl.value.trim();
+    if (eventUrl === '' || this.discoveredEventUrl() === eventUrl || this.hasHandWork()) {
+      return;
+    }
+    this.onDiscover();
+  }
+
+  /** One summary row: the best name, size and link the tab knows, plus the description when it has arrived. */
+  private summaryItem(listId: string, fallbackName: string): AudienceSelectionSummaryItem {
+    const description = this.listDescriptions().get(listId) ?? null;
+    const name = description?.name || fallbackName || this.listNameIndex().get(listId) || this.suppressionNameIndex().get(listId) || `List ${listId}`;
+    return {
+      listId,
+      name,
+      size: description?.size ?? this.sizeIndex().get(listId),
+      hubspotUrl: description?.hubspotUrl || this.urlIndex().get(listId) || '',
+      description,
+    };
+  }
+
+  /**
    * Resets the event URL field without emitting, keeping `eventUrlValue` in step so the buttons
    * judge the URL actually in the field.
    */
@@ -3588,6 +3860,9 @@ export class AudienceBuilderTabComponent {
     // would otherwise repopulate.
     this.runGeneration += 1;
     this.optInSubscription?.unsubscribe();
+    // Descriptions are of portal-scoped list ids, so they go with the run.
+    this.listDescriptions.set(new Map());
+    this.describeError.set(null);
     this.optInSubscription = null;
     this.optIns.set(AUDIENCE_OPT_IN_LOOKUP_EMPTY);
     this.eventDraftActive.set(false);
