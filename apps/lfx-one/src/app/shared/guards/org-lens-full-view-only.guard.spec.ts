@@ -17,15 +17,22 @@ describe('orgLensFullViewOnlyGuard', () => {
   let managesClas: WritableSignal<boolean>;
   let router: Router;
 
+  /** A route snapshot with these query params, mounted at the legacy `/org/easycla/...` address when `legacyEasycla` is set. */
+  const routeFor = (query: Record<string, string>, legacyEasycla = false): ActivatedRouteSnapshot =>
+    ({
+      queryParamMap: { get: (name: string) => query[name] ?? null },
+      pathFromRoot: legacyEasycla ? [{ routeConfig: { path: 'easycla' } }] : [],
+    }) as unknown as ActivatedRouteSnapshot;
+
   const verdictFor = async (url: string, page?: string): Promise<string | true> => {
     const result = await TestBed.runInInjectionContext(() => orgLensFullViewOnlyGuard(page)({} as ActivatedRouteSnapshot, { url } as RouterStateSnapshot));
     return result === true ? true : router.serializeUrl(result as UrlTree);
   };
 
   // The EasyCLA route: CLA Managers of the company keep the page in the employee view.
-  const easyClaVerdictFor = async (url: string): Promise<string | true> => {
+  const easyClaVerdictFor = async (url: string, route: ActivatedRouteSnapshot = routeFor({})): Promise<string | true> => {
     const result = await TestBed.runInInjectionContext(() =>
-      orgLensFullViewOnlyGuard(undefined, { keepForClaManager: true })({} as ActivatedRouteSnapshot, { url } as RouterStateSnapshot)
+      orgLensFullViewOnlyGuard(undefined, { keepForClaManager: true })(route, { url } as RouterStateSnapshot)
     );
     return result === true ? true : router.serializeUrl(result as UrlTree);
   };
@@ -138,6 +145,22 @@ describe('orgLensFullViewOnlyGuard', () => {
   });
 
   describe('EasyCLA for a CLA Manager (keepForClaManager)', () => {
+    it('lets a corporate-signing return on the legacy mount through, so the page can adopt the company it names', async () => {
+      isEmployeeView.set(true);
+      managesClas.set(false);
+
+      expect(
+        await easyClaVerdictFor('/company/easycla/g1?company=0014100000OtherAAAA&signed=1', routeFor({ company: '0014100000OtherAAAA', signed: '1' }, true))
+      ).toBe(true);
+    });
+
+    it('still redirects an employee-view caller from the same query on an address that is not the legacy mount', async () => {
+      isEmployeeView.set(true);
+      managesClas.set(false);
+
+      expect(await easyClaVerdictFor('/company/easycla/g1?company=0014100000OtherAAAA', routeFor({ company: '0014100000OtherAAAA' }, false))).not.toBe(true);
+    });
+
     it('still redirects an employee who does not manage the company CLAs', async () => {
       isEmployeeView.set(true);
 

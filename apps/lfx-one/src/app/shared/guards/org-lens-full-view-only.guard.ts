@@ -10,6 +10,7 @@ import { orgLensPagePath } from '@lfx-one/shared/utils';
 import { filter, firstValueFrom, of, timeout } from 'rxjs';
 
 import { OrgLensViewModeService } from '../services/org-lens-view-mode.service';
+import { isLegacyEasyclaReturn } from './org-rollup-single-org-page.guard';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 
 /**
@@ -32,8 +33,14 @@ import { OrgRoleGrantsService } from '../services/org-role-grants.service';
  *   deciding instead of redirecting on the recorded mode alone.
  */
 export function orgLensFullViewOnlyGuard(page: string = ORG_LENS_EMPLOYEE_VIEW_HOME_PAGE, options: { keepForClaManager?: boolean } = {}): CanActivateFn {
-  return async (_route, state): Promise<boolean | UrlTree> => {
+  return async (route, state): Promise<boolean | UrlTree> => {
     if (!isPlatformBrowser(inject(PLATFORM_ID))) {
+      return true;
+    }
+    // A corporate-signing return names its own company, which the page adopts after the server's access check; the
+    // selected company here may be another, so redirecting would drop the signing confirmation. Same exception as
+    // `orgRollUpSingleOrgPageGuard`; an addressed page keeps its checks.
+    if (options.keepForClaManager && isLegacyEasyclaReturn(route)) {
       return true;
     }
     // Everything is injected before the first await: the injection context does not survive it.
