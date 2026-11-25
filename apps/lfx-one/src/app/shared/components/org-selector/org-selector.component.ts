@@ -477,8 +477,11 @@ export class OrgSelectorComponent {
     // only place the row's CLA-only answer can reach the CLA-only shell. Recorded for a re-pick of the
     // selection too, which returns below without navigating.
     this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true, item.employeeViewChecked === true);
-    this.viewModeService.noteAddressed(item.uid, item.employeeView === true);
-    this.viewModeService.noteFullAccessAddressed(item.uid, item.fullAccess === true);
+    // An unchecked CLA-only row says nothing about the employee view, so it must not erase a held employee or full-access mode.
+    if (item.claOnly !== true || item.employeeViewChecked === true || item.employeeView === true) {
+      this.viewModeService.noteAddressed(item.uid, item.employeeView === true);
+      this.viewModeService.noteFullAccessAddressed(item.uid, item.fullAccess === true);
+    }
     // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —
     // no account emission (which page consumers refetch on), no canonical fetch, no navigation. The
     // one exception is the not-found dead end, where the selection is the cookie's or a default that
