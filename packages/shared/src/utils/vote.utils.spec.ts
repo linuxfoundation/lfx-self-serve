@@ -377,6 +377,7 @@ describe('voting method in the request builders (#2921)', () => {
     ['buildDraftVoteRequest', buildDraftVoteRequest],
   ] as const)('%s sends poll_type', (_name, build) => {
     expect(build(rankedForm(), 'project-uid').poll_type).toBe(PollType.CONDORCET_IRV);
+    expect(build(rankedForm({ poll_type: PollType.INSTANT_RUNOFF_VOTE }), 'project-uid').poll_type).toBe(PollType.INSTANT_RUNOFF_VOTE);
     expect(build(formValue(), 'project-uid').poll_type).toBe(PollType.GENERIC);
   });
 
@@ -385,11 +386,18 @@ describe('voting method in the request builders (#2921)', () => {
     ['buildDraftUpdateVoteRequest', buildDraftUpdateVoteRequest],
   ] as const)('%s never sends poll_type, so the stored method is kept', (_name, build) => {
     expect('poll_type' in build(rankedForm(), 'project-uid')).toBe(false);
+    expect('poll_type' in build(rankedForm({ poll_type: PollType.INSTANT_RUNOFF_VOTE }), 'project-uid')).toBe(false);
     expect('poll_type' in build(formValue(), 'project-uid')).toBe(false);
   });
 
   it.each(voteRequestBuilders)('%s sends every Condorcet IRV question as multiple_choice', (_name, build) => {
     const request = build(rankedForm(), 'project-uid');
+
+    expect(request.poll_questions?.map((question) => question.type)).toEqual(['multiple_choice', 'multiple_choice']);
+  });
+
+  it.each(voteRequestBuilders)('%s sends every Instant Runoff question as multiple_choice (#2936)', (_name, build) => {
+    const request = build(rankedForm({ poll_type: PollType.INSTANT_RUNOFF_VOTE }), 'project-uid');
 
     expect(request.poll_questions?.map((question) => question.type)).toEqual(['multiple_choice', 'multiple_choice']);
   });
@@ -474,6 +482,7 @@ describe('parseVoteMethodParam (#2921)', () => {
   it.each([
     ['generic', PollType.GENERIC],
     ['condorcet_irv', PollType.CONDORCET_IRV],
+    ['instant_runoff_vote', PollType.INSTANT_RUNOFF_VOTE],
     ['meek_stv', PollType.GENERIC],
     ['bogus', PollType.GENERIC],
     [null, PollType.GENERIC],

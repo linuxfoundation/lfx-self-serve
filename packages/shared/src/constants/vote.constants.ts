@@ -214,13 +214,20 @@ export const VOTE_METHOD_LABELS: Record<PollType, string> = {
   [PollType.MEEK_STV]: 'Meek STV',
 };
 
-/** Voting methods offered when creating a vote (#2921) — read by the Create Vote dropdown and the form's Voting Method select. */
+/** Voting methods offered when creating a vote (#2921, #2936) — read by the Create Vote dropdown and the form's Voting Method select. */
 export const VOTE_METHOD_OPTIONS: VoteMethodOption[] = [
   {
     label: 'Plurality',
     value: PollType.GENERIC,
     icon: 'fa-light fa-check-to-slot',
     description: 'Voters pick from the options; the option with the most votes wins.',
+  },
+  {
+    label: 'Instant Runoff',
+    value: PollType.INSTANT_RUNOFF_VOTE,
+    icon: 'fa-light fa-arrow-down-wide-short',
+    description:
+      "Voters rank the options. The option with the fewest first choices is eliminated and its ballots move to each voter's next choice, until one option has a majority.",
   },
   {
     label: 'Condorcet IRV',
