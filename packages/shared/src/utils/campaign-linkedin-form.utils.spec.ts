@@ -140,6 +140,11 @@ describe('linkedInVariantsForCreate', () => {
     expect(linkedInVariantsForCreate([withFields], true, 'b1', fields)).toEqual([{ introText: 'Join us', headline: 'Summit', ...expected }]);
   });
 
+  it('sends a name of only a byte order mark, which campaign-service keeps as a name', () => {
+    const bom = variant({ name: '\uFEFF' });
+    expect(linkedInVariantsForCreate([bom], true, 'b1', { copy: true, callToAction: false })[0].name).toBe('\uFEFF');
+  });
+
   it('sends no blank name, description or call to action', () => {
     const blank = variant({ name: ' ', description: '', callToAction: '' });
     expect(linkedInVariantsForCreate([blank], true, 'b1', { copy: true, callToAction: true })).toEqual([{ introText: 'Join us', headline: 'Summit' }]);

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { LINKEDIN_GEO_SEARCH_BOUNDS, LINKEDIN_GEO_URN_PATTERN } from '../constants/campaign.constants';
-import type { LinkedInGeoTarget } from '../interfaces/campaign.interface';
+import type { LinkedInGeoSearchOption, LinkedInGeoTarget } from '../interfaces/campaign.interface';
+import { goTrimSpace } from './campaign-linkedin.utils';
 
 /**
  * The LinkedIn location search rules (#5545): what query the BFF forwards to campaign-service's targeting typeahead,
@@ -45,4 +46,15 @@ export function linkedInGeoSearchLocations(entities: unknown): LinkedInGeoTarget
     locations.push({ urn, label: typeof name === 'string' && name.trim() !== '' ? name.trim() : urn });
   }
   return locations;
+}
+
+/** The query the picker searches for what the operator typed: trimmed as campaign-service trims it, and cut to 100 characters. */
+export function linkedInGeoSearchQueryText(typed: string): string {
+  return Array.from(goTrimSpace(typed)).slice(0, LINKEDIN_GEO_SEARCH_BOUNDS.maxQueryLength).join('');
+}
+
+/** The picker's rows: each location, marked `disabled` when its URN is already a target, so it cannot be added twice. */
+export function linkedInGeoSearchOptions(locations: readonly LinkedInGeoTarget[], chosen: readonly LinkedInGeoTarget[]): LinkedInGeoSearchOption[] {
+  const added = new Set(chosen.map((geo) => geo.urn));
+  return locations.map((location) => ({ ...location, disabled: added.has(location.urn) }));
 }

@@ -3,7 +3,7 @@
 
 import { LINKEDIN_CALL_TO_ACTION_LABELS, LINKEDIN_VARIANT_FIELD_LIMITS } from '../constants/campaign.constants';
 import type { LinkedInConfigKeyRefusal, LinkedInCreativeVariant, LinkedInVariantFieldsEnabled } from '../interfaces/campaign.interface';
-import { linkedInCreativeTextLength, normalizeLinkedInCreativeName } from './campaign-linkedin.utils';
+import { goTrimSpace, linkedInCreativeTextLength, normalizeLinkedInCreativeName } from './campaign-linkedin.utils';
 
 /**
  * A LinkedIn variant's optional ad name, description and call to action (#5764 rows 16–17), mirroring campaign-service
@@ -112,7 +112,8 @@ export function linkedInVariantFieldErrors(
 ): { name: string; description: string }[] {
   // An unnamed ad goes out as "<event> | variant-N" (campaign-service `creativeName`), so a typed name equal to another
   // ad's default collides too. Skipped while the event name is blank: campaign-service refuses that on its own.
-  const event = eventName.trim().replaceAll('|', '-');
+  // Go's `strings.TrimSpace`, as campaign-service's `normalizeEventName`; JavaScript's `trim()` differs at U+0085 and U+FEFF.
+  const event = goTrimSpace(eventName).replaceAll('|', '-');
   const resolved = variants.map((variant, index) => {
     const typed = normalizeLinkedInCreativeName(variant.name ?? '');
     if (typed !== '') return typed;
