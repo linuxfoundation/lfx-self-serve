@@ -277,6 +277,8 @@ export interface LinkedInStoredVideoRow {
   /** "Video 1 (ab12cd34)": the library's order and the checksum's start, since campaign-service records no file name. */
   label: string;
   byteSize: number;
+  /** Whether an ad on the tab names it, which offers "Remove from ads" and holds Delete. */
+  inUse: boolean;
   deleteDisabled: boolean;
   /** Why Delete is off, or `''`. */
   note: string;

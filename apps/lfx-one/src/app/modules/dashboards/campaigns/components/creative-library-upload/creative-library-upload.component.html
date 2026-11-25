@@ -63,6 +63,16 @@
           <li class="flex flex-wrap items-center gap-2 rounded border border-gray-200 px-3 py-2" [attr.data-testid]="'creative-library-video-' + row.id">
             <span class="min-w-0 flex-1 text-xs text-gray-900">{{ row.label }}</span>
             <span class="text-2xs tabular-nums text-gray-500">{{ row.byteSize | fileSize }}</span>
+            @if (row.inUse) {
+              <lfx-button
+                label="Remove from ads"
+                size="small"
+                severity="secondary"
+                [text]="true"
+                [ariaLabel]="'Remove ' + row.label + ' from the ads'"
+                (onClick)="releaseVideo(row)"
+                [attr.data-testid]="'creative-library-video-release-' + row.id" />
+            }
             <lfx-button
               label="Delete"
               size="small"

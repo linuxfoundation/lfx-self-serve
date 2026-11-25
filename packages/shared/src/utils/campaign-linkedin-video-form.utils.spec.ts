@@ -86,7 +86,7 @@ describe('linkedInStoredVideoRows', () => {
   ];
   it.each([
     ['neither in use', [], false, '', [false, false], ['', '']],
-    ['the first in use by an ad', ['v-1'], false, '', [true, false], ['Used by an ad on this tab. Remove it from the ad first.', '']],
+    ['the first in use by an ad', ['v-1'], false, '', [true, false], ['Used by an ad on this tab. Remove it from the ads to delete it.', '']],
     ['a LinkedIn upload running', [], true, '', [true, true], ['Wait for the LinkedIn upload to finish.', 'Wait for the LinkedIn upload to finish.']],
     ['the second being deleted', [], false, 'v-2', [true, true], ['', 'Deleting…']],
   ])('%s', (_label, inUse, uploading, deletingId, disabled, notes) => {
@@ -94,5 +94,6 @@ describe('linkedInStoredVideoRows', () => {
     expect(rows.map((row) => row.label)).toEqual(['Video 1 (a)', 'Video 2 (b)']);
     expect(rows.map((row) => row.deleteDisabled)).toEqual(disabled);
     expect(rows.map((row) => row.note)).toEqual(notes);
+    expect(rows.map((row) => row.inUse)).toEqual(stored.map((video) => inUse.includes(video.id)));
   });
 });

@@ -828,6 +828,7 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
   let uploadCreativeAsset: ReturnType<typeof vi.fn>;
   let resumeCreativeAssetUpload: ReturnType<typeof vi.fn>;
   let cancelCreativeAssetUpload: ReturnType<typeof vi.fn>;
+  const videoDeleting = signal<{ briefId: string; id: string } | null>(null);
   const searchLinkedInGeoTargets = vi.fn();
 
   interface Internals {
@@ -955,6 +956,7 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
             resumeCreativeAssetUpload,
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
+            creativeVideoDeleting: videoDeleting.asReadonly(),
             getLinkedInAccounts: () => of([ACCOUNT]),
             getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
@@ -1547,6 +1549,8 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
     const pick = (f: ComponentFixture<ImplementationTabComponent>, index: number, file: File): void =>
       video(f).onLinkedInVariantVideoFileChange(at(f).linkedInVariants()[index].key, { target: { files: [file], value: '' } } as unknown as Event);
 
+    beforeEach(() => videoDeleting.set(null));
+
     async function mountVideo(): Promise<ComponentFixture<ImplementationTabComponent>> {
       const f = (await mount(true)).fixture;
       f.componentRef.setInput('linkedInVideoAdsEnabled', true);
@@ -1637,31 +1641,29 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
     it('holds the video picker while the library deletes a video, and clears a deleted video from the ads', STATE_ONLY, async () => {
       uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
       const f = await mountVideo();
-      const c = f.componentInstance as unknown as { linkedInVideoDeleteRunning: { set(v: boolean): void }; onLibraryVideoDeleted(id: string): void };
+      const c = f.componentInstance as unknown as { onLibraryVideoDeleted(id: string): void };
 
-      c.linkedInVideoDeleteRunning.set(true);
+      videoDeleting.set({ briefId: BRIEF_ID, id: 'another-video' });
       pick(f, 0, mp4());
       expect(uploadCreativeAsset).not.toHaveBeenCalled();
 
-      c.linkedInVideoDeleteRunning.set(false);
+      videoDeleting.set(null);
       pick(f, 0, mp4());
       expect(at(f).linkedInVariants()[0]).toMatchObject({ videoAssetId: VIDEO_ID });
       c.onLibraryVideoDeleted(VIDEO_ID);
       expect(at(f).linkedInVariants()[0]).toMatchObject({ videoAssetId: '' });
     });
 
-    it('ends the hold when a brief save unmounts the library mid-delete', STATE_ONLY, async () => {
+    it('keeps a video in use whatever the format, until it is taken off the ads', STATE_ONLY, async () => {
       uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
       const f = await mountVideo();
-      (f.componentInstance as unknown as { linkedInVideoDeleteRunning: { set(v: boolean): void } }).linkedInVideoDeleteRunning.set(true);
-
-      f.componentRef.setInput('briefPersistence', { status: 'saving', briefId: null, message: null, approved: true });
-      f.detectChanges();
-      f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: BRIEF_ID, message: null, approved: true });
-      f.detectChanges();
-
       pick(f, 0, mp4());
-      expect(uploadCreativeAsset).toHaveBeenCalled();
+      const c = f.componentInstance as unknown as { linkedInVideoIdsInUse(): string[]; onLibraryVideoDeleted(id: string): void };
+
+      video(f).onLinkedInFormatChange('single_image');
+      expect(c.linkedInVideoIdsInUse()).toEqual([VIDEO_ID]);
+      c.onLibraryVideoDeleted(VIDEO_ID);
+      expect(c.linkedInVideoIdsInUse()).toEqual([]);
     });
 
     it('holds Create, never sending image ads instead, when a video choice is no longer offered', STATE_ONLY, async () => {

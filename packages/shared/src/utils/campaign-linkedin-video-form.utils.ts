@@ -79,13 +79,15 @@ export function linkedInStoredVideoRows(
 ): LinkedInStoredVideoRow[] {
   return videos.map((video, index) => {
     let note = '';
-    if (inUse.includes(video.id)) note = 'Used by an ad on this tab. Remove it from the ad first.';
+    const used = inUse.includes(video.id);
+    if (used) note = 'Used by an ad on this tab. Remove it from the ads to delete it.';
     else if (uploading) note = 'Wait for the LinkedIn upload to finish.';
     else if (deletingId === video.id) note = 'Deleting…';
     return {
       id: video.id,
       label: `Video ${index + 1} (${video.checksum.slice(0, 8)})`,
       byteSize: video.byteSize,
+      inUse: used,
       deleteDisabled: note !== '' || deletingId !== '',
       note,
     };

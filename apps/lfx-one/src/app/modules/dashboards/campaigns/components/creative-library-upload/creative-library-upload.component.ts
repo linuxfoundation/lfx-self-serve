@@ -57,8 +57,6 @@ export class CreativeLibraryUploadComponent {
   public readonly videoUploadRunning = input(false);
 
   // === Writable Signals ===
-  /** The stored video being deleted (#5764 row 18) and its brief; shown only on that brief. */
-  private readonly deleting = signal<{ briefId: string; id: string } | null>(null);
   /** Why the last video delete failed, and on which brief; shown only on that brief. */
   private readonly deleteFailure = signal<{ briefId: string; message: string } | null>(null);
   /** Videos deleted on this page, kept off the list while the library is read again (ids are unique across briefs). */
@@ -105,11 +103,8 @@ export class CreativeLibraryUploadComponent {
   protected readonly summary: Signal<string> = this.initSummary();
   protected readonly liveMessage: Signal<string> = this.initLiveMessage();
   protected readonly canClear = computed(() => this.items().length > 0 && !this.running());
-  /** The stored video being deleted on the brief on screen, `''` for none. */
-  private readonly deletingVideoId = computed(() => {
-    const deleting = this.deleting();
-    return deleting && deleting.briefId === this.briefId() ? deleting.id : '';
-  });
+  /** The stored video being deleted, `''` for none. Any running delete holds every Delete: one runs at a time. */
+  private readonly deletingVideoId = computed(() => this.campaignService.creativeVideoDeleting()?.id ?? '');
   /** Why the last video delete on the brief on screen failed, `''` for none. */
   protected readonly videoDeleteError = computed(() => {
     const failure = this.deleteFailure();
@@ -124,13 +119,13 @@ export class CreativeLibraryUploadComponent {
   // === Outputs ===
   /** Emitted each time a file adds an asset to the library, so the host can re-read what depends on it. */
   public readonly libraryChanged = outputFromObservable(this.libraryGrowth$);
-  /**
-   * Whether a video delete is running (#5764 row 18). The host holds its video pickers meanwhile: an upload of identical
-   * bytes would answer with the asset being deleted.
-   */
-  public readonly videoDeleteRunning = output<boolean>();
   /** A stored video was deleted (#5764 row 18), so the host clears it from any ad that still names it. */
   public readonly videoDeleted = output<string>();
+  /**
+   * The operator asked to take a stored video off the ads on the tab (#5764 row 18), so it can be deleted. Offered for a
+   * video in use even when the ads' own video controls are hidden (another ad format chosen, or video withdrawn).
+   */
+  public readonly videoRelease = output<string>();
 
   // === Protected Methods ===
   protected onFilesPicked(event: Event, folder: boolean): void {
@@ -156,6 +151,11 @@ export class CreativeLibraryUploadComponent {
     this.campaignService.clearCreativeAssetUploadQueue(this.briefId());
   }
 
+  /** Take a stored video off the ads on the tab (#5764 row 18), which then lets it be deleted. */
+  protected releaseVideo(row: LinkedInStoredVideoRow): void {
+    if (row.inUse) this.videoRelease.emit(row.id);
+  }
+
   /**
    * Delete one stored video the operator chose (#5764 row 18), then read the library again. campaign-service keeps a video
    * a live campaign may still need (409) and says so; that message is shown as it came.
@@ -163,26 +163,21 @@ export class CreativeLibraryUploadComponent {
   protected deleteVideo(row: LinkedInStoredVideoRow): void {
     const briefId = this.briefId();
     if (row.deleteDisabled || briefId === '' || this.projectSlug() === '') return;
-    this.deleting.set({ briefId, id: row.id });
     this.deleteFailure.set(null);
-    this.videoDeleteRunning.emit(true);
     this.campaignService
       .deleteCreativeAsset(this.projectSlug(), briefId, row.id)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
-          this.deleting.set(null);
           this.deletedVideoIds.update((ids) => [...ids, row.id]);
-          this.videoDeleteRunning.emit(false);
           this.videoDeleted.emit(row.id);
           this.deleteRevision.update((revision) => revision + 1);
         },
         error: (err: unknown) => {
-          this.deleting.set(null);
-          this.videoDeleteRunning.emit(false);
           // Already gone (deleted elsewhere): read the library again rather than offer a Delete that can only 404.
           if (err instanceof HttpErrorResponse && err.status === 404) {
             this.deletedVideoIds.update((ids) => [...ids, row.id]);
+            this.videoDeleted.emit(row.id);
             this.deleteRevision.update((revision) => revision + 1);
             return;
           }

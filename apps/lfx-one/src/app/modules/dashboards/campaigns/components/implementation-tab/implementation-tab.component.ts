@@ -1962,9 +1962,16 @@ export class ImplementationTabComponent implements OnInit {
     if (this.linkedInFormat() === 'video') return 'Video ads play an MP4 in the feed. Every ad needs its own video, and video ads have no description.';
     return 'Single image ads show an image with the intro text and headline in the feed.';
   });
-  /** Whether the library is deleting a stored video (#5764 row 18), which holds the video pickers. */
-  protected readonly linkedInVideoDeleteRunning = signal(false);
-  /** The stored videos the ads on this tab use (#5764 row 18), which the library will not delete. */
+  /**
+   * Whether a stored video is being deleted (#5764 row 18), which holds the video pickers. Read from the service, which
+   * clears it however the delete ends, including the library being unmounted mid-delete (a brief save, Create).
+   */
+  protected readonly linkedInVideoDeleteRunning = computed<boolean>(() => this.campaignService.creativeVideoDeleting() !== null);
+  /**
+   * The stored videos any ad on this tab names (#5764 row 18), whatever the format: the library will not delete them, so
+   * a create can never send a deleted asset. It offers "Remove from ads" for each (`onLibraryVideoDeleted`), which works
+   * even while the ads' own video controls are hidden.
+   */
   protected readonly linkedInVideoIdsInUse = computed<string[]>(() =>
     this.linkedInVariants()
       .map((variant) => variant.videoAssetId ?? '')
@@ -5158,16 +5165,6 @@ export class ImplementationTabComponent implements OnInit {
       )
       .subscribe(({ pendingName, pendingBriefId }) => this.resumeTwitterImageUpload(pendingName, pendingBriefId));
 
-    // The library is unmounted while the brief id is cleared (every brief save), which cancels a video delete it was
-    // running before it can say so (#5764 row 18). Its hold on the video pickers ends with it; a delete it did not
-    // finish shows up again when the remounted library reads the store.
-    toObservable(computed(() => (this.briefPersistence().briefId ?? '') !== ''))
-      .pipe(
-        filter((libraryMounted) => !libraryMounted),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe(() => this.linkedInVideoDeleteRunning.set(false));
-
     // Emit as the user edits. `valueChanges` covers everything on `campaignForm` — copy, budget,
     // flight, campaign types, and since LFXV2-3230 the three LinkedIn picks (ad account, geo
     // targets, targeting profile). Moving those three onto the form is what makes their restore
@@ -5839,8 +5836,8 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * A stored video the library deleted (#5764 row 18): cleared from any ad that names it, so a create never sends a
-   * deleted asset. Delete is off while an ad uses a video, so this only catches an upload that came back with it.
+   * A stored video the library deleted, or the operator took off the ads there (#5764 row 18): cleared from any ad that
+   * names it. Delete is off while an ad uses a video, so after a delete this only catches an upload that came back with it.
    */
   protected onLibraryVideoDeleted(assetId: string): void {
     if (!this.linkedInVariants().some((variant) => variant.videoAssetId === assetId)) return;

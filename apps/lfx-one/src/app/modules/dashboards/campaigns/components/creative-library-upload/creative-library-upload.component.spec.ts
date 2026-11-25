@@ -42,6 +42,7 @@ describe('CreativeLibraryUploadComponent', () => {
       cancelCreativeAssetUploads: vi.fn(),
       clearCreativeAssetUploadQueue: vi.fn(),
       deleteCreativeAsset: vi.fn(() => of(undefined)),
+      creativeVideoDeleting: signal(null).asReadonly(),
     };
     await TestBed.configureTestingModule({
       imports: [CreativeLibraryUploadComponent],
@@ -255,21 +256,14 @@ describe('CreativeLibraryUploadComponent', () => {
       expect(service['listCreativeAssets']).toHaveBeenCalledTimes(2);
     });
 
-    it("takes a deleted video off the list at once, and holds the host's video pickers while the delete runs", async () => {
+    it('takes a deleted video off the list at once and tells the host', async () => {
       await build(withVideo());
-      const pending = new Subject<void>();
-      (service['deleteCreativeAsset'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(pending);
-      const running: boolean[] = [];
       const deleted: string[] = [];
-      fixture.componentInstance.videoDeleteRunning.subscribe((value) => running.push(value));
       fixture.componentInstance.videoDeleted.subscribe((id) => deleted.push(id));
 
       deleteButton().click();
-      expect(running).toEqual([true]);
-      pending.next();
       fixture.detectChanges();
 
-      expect(running).toEqual([true, false]);
       expect(deleted).toEqual(['v-1']);
       expect(q('creative-library-video-v-1')).toBeNull();
     });
@@ -285,6 +279,17 @@ describe('CreativeLibraryUploadComponent', () => {
       expect(q('creative-library-video-v-1')).toBeNull();
     });
 
+    it('tells the host a video already deleted elsewhere is gone, so an ad naming it is cleared', async () => {
+      await build(withVideo());
+      (service['deleteCreativeAsset'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      const deleted: string[] = [];
+      fixture.componentInstance.videoDeleted.subscribe((id) => deleted.push(id));
+
+      deleteButton().click();
+
+      expect(deleted).toEqual(['v-1']);
+    });
+
     it('offers no Delete for a video an ad on the tab uses', async () => {
       await build(withVideo());
       fixture.componentRef.setInput('videoIdsInUse', ['v-1']);
@@ -292,6 +297,10 @@ describe('CreativeLibraryUploadComponent', () => {
 
       expect(deleteButton().disabled).toBe(true);
       expect(text('creative-library-video-v-1')).toContain('Used by an ad on this tab');
+      const released: string[] = [];
+      fixture.componentInstance.videoRelease.subscribe((id) => released.push(id));
+      (q('creative-library-video-release-v-1')?.querySelector('button') as HTMLButtonElement).click();
+      expect(released).toEqual(['v-1']);
     });
 
     it("shows campaign-service's reason when it keeps a video a campaign may need", async () => {
