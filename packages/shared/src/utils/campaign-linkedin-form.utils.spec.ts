@@ -177,6 +177,11 @@ describe('linkedInCreateRefusal', () => {
     ['bad variant text', { variantTextInvalid: true }, 'LinkedIn Ads: fix the ad variant text.'],
     ['a bad ad name or description', { variantFieldsInvalid: true }, 'LinkedIn Ads: fix the ad name or description.'],
     // Text Ads (#5764 row 19) replace the variant checks: no variants is fine, and their own refusal wins.
+    [
+      'Text Ads no longer offered',
+      { textAdsUnavailable: true },
+      'LinkedIn Ads: Text Ads are not available right now. Choose single image ads as the ad format.',
+    ],
     ['Text Ads with no variants', { variantCount: 0, textAds: { count: 1, textInvalid: false, manualBid: true } }, null],
     [
       'Text Ads without a manual bid',

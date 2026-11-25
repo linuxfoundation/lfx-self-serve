@@ -2307,6 +2307,8 @@ export interface LinkedInCreateRefusalInput {
   variantFieldsInvalid?: boolean;
   /** Present only while Text Ads are chosen (#5764 row 19): they replace the variant checks. */
   textAds?: LinkedInTextAdsRefusalInput;
+  /** Text Ads are chosen but this deployment no longer offers them (#5764 row 19). */
+  textAdsUnavailable?: boolean;
 }
 
 export interface LinkedInCampaignCreateRequest {

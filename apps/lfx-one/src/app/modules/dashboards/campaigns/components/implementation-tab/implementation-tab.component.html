@@ -4147,8 +4147,9 @@
             {{ linkedInImageAssetBlockMessage() }}
           </div>
 
-          <!-- The ad format (#5764 row 19), offered only on an explicit yes from `linkedInTextAdsAvailable()`. -->
-          @if (linkedInTextAdsAvailable()) {
+          <!-- The ad format (#5764 row 19), offered on an explicit yes from `linkedInTextAdsAvailable()`, and kept on screen
+               while a Text Ads choice can no longer be sent, so the operator can switch back. -->
+          @if (linkedInTextAdsAvailable() || linkedInFormat() === 'text') {
             <lfx-ui-select
               label="Ad format"
               size="small"

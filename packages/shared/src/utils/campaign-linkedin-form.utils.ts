@@ -145,6 +145,8 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
   // A daily cap campaign-service would refuse (#5774); the message is under the field.
   if (input.dailyCapError !== null) return 'LinkedIn Ads: fix the daily cap.';
   if (input.geoTargetCount === 0) return 'LinkedIn Ads: add at least one location.';
+  // A Text Ads choice this deployment no longer offers is held rather than sent as single image ads (#5764 row 19).
+  if (input.textAdsUnavailable) return 'LinkedIn Ads: Text Ads are not available right now. Choose single image ads as the ad format.';
   if (input.textAds) {
     // Text Ads (#5764 row 19) take the variants' place: the create sends none.
     const textAdsRefusal = linkedInTextAdsCreateRefusal(input.textAds);

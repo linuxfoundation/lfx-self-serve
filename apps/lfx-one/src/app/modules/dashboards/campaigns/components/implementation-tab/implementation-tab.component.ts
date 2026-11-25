@@ -4289,8 +4289,10 @@ export class ImplementationTabComponent implements OnInit {
     // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
     if (this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading' && this.googleImageUploadInReach())
       return 'Waiting for the Google Ads image upload to finish.';
-    // Not for an orphaned upload, whose image has no variant to land on and no Cancel on screen.
+    // Not for an orphaned upload, whose image has no variant to land on and no Cancel on screen, nor while Text Ads are
+    // chosen (#5764 row 19): the create sends no variants, and the variant editor with its Cancel is hidden.
     if (
+      !this.linkedInTextAdsSelected() &&
       linkedInImageUploadHoldsCreate(
         this.showLinkedInSection(),
         this.linkedInAssetUploadAvailable(),
@@ -8657,6 +8659,8 @@ export class ImplementationTabComponent implements OnInit {
       accountInCatalog: this.linkedInAccounts().some((a) => a.accountId === this.linkedInAccountId()),
       accountSelectionAvailable: this.linkedInAccountSelectionAvailable(),
       createAccountStatus: this.linkedInCreateAccount().status,
+      // Text Ads chosen but no longer offered: held, never sent as single image ads instead (#5764 row 19).
+      textAdsUnavailable: this.linkedInFormat() === 'text' && !this.linkedInTextAdsAvailable(),
       // Text Ads replace the variant checks while chosen (#5764 row 19); they need a manual bid.
       ...(this.linkedInTextAdsSelected()
         ? {
