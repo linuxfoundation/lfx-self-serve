@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule } from '@angular/forms';
 import { ACCOUNT_EMAIL_SETTINGS_COPY } from '@lfx-one/shared/constants';
 import { AccountDeleteEmailDialogData, AccountEmailRow } from '@lfx-one/shared/interfaces';
@@ -46,15 +47,21 @@ import { AccountDeleteEmailDialogComponent } from './delete-email-dialog/account
 })
 export class AccountEmailSettingsComponent extends AccountSettingsComponent {
   private readonly modal = inject(UiModalService);
+  private readonly pageDestroyRef = inject(DestroyRef);
 
   protected readonly copy = ACCOUNT_EMAIL_SETTINGS_COPY;
   protected readonly rows: Signal<AccountEmailRow[]> = this.initRows();
 
   protected override confirmDeleteEmail(email: string, accept: () => void, reject: () => void): void {
-    this.modal
-      .open<boolean, AccountDeleteEmailDialogData>(AccountDeleteEmailDialogComponent, { data: { email }, role: 'alertdialog' })
-      .closed.pipe(take(1))
-      .subscribe((confirmed) => (confirmed ? accept() : reject()));
+    const dialogRef = this.modal.open<boolean, AccountDeleteEmailDialogData>(AccountDeleteEmailDialogComponent, {
+      data: { email },
+      role: 'alertdialog',
+      describedBy: true,
+    });
+    dialogRef.closed.pipe(take(1), takeUntilDestroyed(this.pageDestroyRef)).subscribe((confirmed) => (confirmed ? accept() : reject()));
+    // The modal is root-owned: it closes with the page, which then deletes nothing.
+    const stopClosingWithPage = this.pageDestroyRef.onDestroy(() => dialogRef.close());
+    dialogRef.closed.pipe(take(1)).subscribe(() => stopClosingWithPage());
   }
 
   private initRows(): Signal<AccountEmailRow[]> {

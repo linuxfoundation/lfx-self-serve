@@ -3,7 +3,7 @@
 
 <!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
 <lfx-ui-modal [heading]="copy.deleteTitle" [width]="480" closable data-testid="account-delete-email-dialog">
-  <p class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700" data-testid="account-delete-email-text">
+  <p [id]="dialogRef.id + '-subtitle'" class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700" data-testid="account-delete-email-text">
     <strong class="font-semibold text-ui-neutral-900">{{ email }}</strong> {{ copy.deleteText }}
   </p>
   <ng-container modalActions>

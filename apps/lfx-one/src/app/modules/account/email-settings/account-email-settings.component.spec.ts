@@ -34,7 +34,8 @@ class StateEmailSettingsComponent extends AccountEmailSettingsComponent {}
 describe('AccountEmailSettingsComponent', () => {
   function setup(invite: string | null = 'ada@invites.example', emails: EmailManagementData | null = EMAILS, inviteFails = false) {
     const closed = new Subject<boolean | undefined>();
-    const open = vi.fn(() => ({ closed }));
+    const close = vi.fn();
+    const open = vi.fn(() => ({ closed, close }));
     TestBed.configureTestingModule({
       providers: [
         provideNoopAnimations(),
@@ -57,7 +58,7 @@ describe('AccountEmailSettingsComponent', () => {
         { provide: UiModalService, useValue: { open } },
       ],
     });
-    return { open, closed };
+    return { open, closed, close };
   }
 
   it('offers each address what it allows, with the design’s reasons Delete is off', async () => {
@@ -103,7 +104,10 @@ describe('AccountEmailSettingsComponent', () => {
     const reject = vi.fn();
 
     fixture.componentInstance['confirmDeleteEmail']('ada@work.example', accept, reject);
-    expect(open).toHaveBeenCalledWith(AccountDeleteEmailDialogComponent, expect.objectContaining({ data: { email: 'ada@work.example' } }));
+    expect(open).toHaveBeenCalledWith(
+      AccountDeleteEmailDialogComponent,
+      expect.objectContaining({ data: { email: 'ada@work.example' }, role: 'alertdialog', describedBy: true })
+    );
     closed.next(undefined);
 
     expect(reject).toHaveBeenCalled();
@@ -112,6 +116,20 @@ describe('AccountEmailSettingsComponent', () => {
     fixture.componentInstance['confirmDeleteEmail']('ada@work.example', accept, reject);
     closed.next(true);
     expect(accept).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the dialog with the page, and deletes nothing', async () => {
+    const { close } = setup();
+    const fixture = TestBed.createComponent(StateEmailSettingsComponent);
+    await fixture.whenStable();
+    const accept = vi.fn();
+    const reject = vi.fn();
+
+    fixture.componentInstance['confirmDeleteEmail']('ada@work.example', accept, reject);
+    fixture.destroy();
+
+    expect(close).toHaveBeenCalled();
+    expect(accept).not.toHaveBeenCalled();
   });
 
   it('lists each address with its badges, the primary’s hint and the add form', async () => {
@@ -167,7 +185,10 @@ describe('AccountDeleteEmailDialogComponent', () => {
     const host = fixture.nativeElement as HTMLElement;
 
     expect(host.textContent).toContain(ACCOUNT_EMAIL_SETTINGS_COPY.deleteTitle);
-    expect(host.querySelector('[data-testid="account-delete-email-text"]')?.textContent).toContain('ada@work.example will be removed from your account.');
+    const text = host.querySelector('[data-testid="account-delete-email-text"]');
+    expect(text?.textContent).toContain('ada@work.example will be removed from your account.');
+    // The modal names its description by this id when opened with describedBy.
+    expect(text?.id).toBe('delete-email-subtitle');
     (host.querySelector('[data-testid="account-delete-email-confirm"] button') as HTMLButtonElement).click();
     expect(close).toHaveBeenCalledWith(true);
   });
