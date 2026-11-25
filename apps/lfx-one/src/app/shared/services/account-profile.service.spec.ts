@@ -116,6 +116,26 @@ describe('AccountProfileService across pages', () => {
   });
 });
 
+describe('AccountProfileService name sync', () => {
+  it('hands the sync the name from before the save, so Mentorship profiles get the new one', () => {
+    const apply = vi.fn();
+    TestBed.configureTestingModule({
+      providers: [
+        AccountProfileService,
+        { provide: UserService, useValue: { getCurrentUserProfile: () => of(PROFILE) } },
+        { provide: ProfileSaveSyncService, useValue: { apply } },
+      ],
+    });
+    const service = TestBed.inject(AccountProfileService);
+    service.load();
+
+    service.applySaved({ given_name: 'Augusta' });
+
+    expect(apply).toHaveBeenCalledWith({ given_name: 'Augusta' }, expect.objectContaining({ first_name: 'Ada' }));
+    expect(service.profile()?.user.first_name).toBe('Augusta');
+  });
+});
+
 describe('AccountProfileService.uploadAvatar', () => {
   const PNG = new File(['x'], 'ada.png', { type: 'image/png' });
 

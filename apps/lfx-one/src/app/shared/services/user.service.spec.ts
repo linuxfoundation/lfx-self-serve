@@ -1136,22 +1136,20 @@ describe('UserService', () => {
   });
 
   describe('profile saves (#6082)', () => {
-    it('records each successful save and uploaded photo, whichever editor made it', () => {
-      const http = TestBed.inject(HttpClient) as unknown as { patch: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn> };
-      http.patch.mockReturnValue(of({}));
+    it('records an uploaded photo, whichever editor uploaded it', () => {
+      const http = TestBed.inject(HttpClient) as unknown as { post: ReturnType<typeof vi.fn> };
       http.post.mockReturnValue(of({ public_url: 'https://cdn.example/ada.png' }));
 
-      service.updateUserProfile({ user_metadata: { job_title: 'Architect' } as UserMetadata }).subscribe();
       service.uploadProfilePicture(new File(['x'], 'ada.png', { type: 'image/png' })).subscribe();
 
-      expect(TestBed.inject(ProfileSavedFieldsService).fields()).toEqual({ job_title: 'Architect', picture: 'https://cdn.example/ada.png' });
+      expect(TestBed.inject(ProfileSavedFieldsService).fields()).toEqual({ picture: 'https://cdn.example/ada.png' });
     });
 
-    it('records nothing for a save that failed', () => {
+    it('leaves field saves for the editor to record after it syncs them', () => {
       const http = TestBed.inject(HttpClient) as unknown as { patch: ReturnType<typeof vi.fn> };
-      http.patch.mockReturnValue(throwError(() => new Error('boom')));
+      http.patch.mockReturnValue(of({}));
 
-      service.updateUserProfile({ user_metadata: { job_title: 'Architect' } as UserMetadata }).subscribe({ error: () => undefined });
+      service.updateUserProfile({ user_metadata: { given_name: 'Ada' } as UserMetadata }).subscribe();
 
       expect(TestBed.inject(ProfileSavedFieldsService).fields()).toEqual({});
     });

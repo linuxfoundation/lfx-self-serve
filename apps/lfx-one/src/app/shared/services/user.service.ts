@@ -274,18 +274,16 @@ export class UserService {
   /**
    * Update user profile metadata via unified NATS endpoint
    * Only sends user_metadata - username and email are extracted from OIDC claim on backend.
-   * Every editor saves through here, so each successful save is recorded for the pages that lay saves over a stale GET.
+   * Not recorded here: each editor records its save after syncing it, which compares against the name from before the save.
    */
   public updateUserProfile(data: ProfileUpdateRequest): Observable<any> {
-    return this.http.patch('/api/profile', data).pipe(
-      take(1),
-      tap(() => this.savedFields.record(data.user_metadata ?? {}))
-    );
+    return this.http.patch('/api/profile', data).pipe(take(1));
   }
 
   /**
    * Upload a new profile picture. Sent as raw bytes with the file's MIME type as
    * Content-Type (the backend parses this with express.raw, not multipart/form-data).
+   * Every editor uploads through here, so the new photo is recorded for the pages that lay saves over a stale GET.
    */
   public uploadProfilePicture(file: File): Observable<ProfilePictureUploadResponse> {
     return this.http.post<ProfilePictureUploadResponse>('/api/profile/picture-upload', file, { headers: { 'Content-Type': file.type } }).pipe(
