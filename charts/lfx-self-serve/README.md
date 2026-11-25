@@ -475,8 +475,9 @@ tab offers "Lead generation (LinkedIn form)" as a LinkedIn objective, with the f
 `LINKEDIN_ADS_CAROUSEL_ENABLED` on), and needs `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS` on as well, since each card
 image is an asset stored for the brief. Off (the default), the create route refuses `linkedInConfig.format: "carousel"`,
 `linkedInConfig.carouselCards` and `linkedInConfig.carouselIntroText` with a 400, since the legacy creator would make a
-single-image campaign instead. Keep it off until campaign-service's paused carousel probe has passed. The Implement tab's
-carousel editor follows in a later change; until then this opens the server half only.
+single-image campaign instead. Keep it off until campaign-service's paused carousel probe has passed. With it on, the
+Implement tab offers "Carousel" as a LinkedIn ad format, with a card editor that picks square images from the brief's
+library.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT` is of the Bidding kind too (campaign-service with
 `REDDIT_CONVERSION_EVENT_ENABLED` on). Off (the default), the Implement tab hides the conversion event picker and the

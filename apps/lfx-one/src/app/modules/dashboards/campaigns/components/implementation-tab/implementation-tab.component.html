@@ -4176,6 +4176,7 @@
               [owner]="linkedInSegmentsOwner()"
               [available]="linkedInConversionsAvailable()"
               [leadGenAvailable]="linkedInLeadGenAvailable()"
+              [leadGenOffered]="!linkedInCarouselSelected()"
               [targetCostOffered]="linkedInTargetCostFieldShown()"
               [draft]="linkedInObjectiveDraft()"
               (draftChange)="onLinkedInObjectiveDraftChange($event)"
@@ -4190,9 +4191,10 @@
             {{ linkedInImageAssetBlockMessage() }}
           </div>
 
-          <!-- The ad format (#5764 rows 18–19), offered on an explicit yes from `linkedInTextAdsAvailable()` or
-               `linkedInVideoAdsAvailable()`, and kept on screen while a choice can no longer be sent, so the operator can switch back. -->
-          @if (linkedInTextAdsAvailable() || linkedInVideoAdsAvailable() || linkedInFormat() !== 'single_image') {
+          <!-- The ad format (#5764 rows 18–19, campaign-service#665), offered on an explicit yes from `linkedInTextAdsAvailable()`,
+               `linkedInVideoAdsAvailable()` or `linkedInCarouselAvailable()`, and kept on screen while a choice can no longer be sent,
+               so the operator can switch back. -->
+          @if (linkedInTextAdsAvailable() || linkedInVideoAdsAvailable() || linkedInCarouselAvailable() || linkedInFormat() !== 'single_image') {
             <lfx-ui-select
               label="Ad format"
               size="small"
@@ -4208,6 +4210,10 @@
               @if ((linkedInTextAdsAvailable() && !linkedInLeadGenSelected()) || linkedInFormat() === 'text') {
                 <lfx-ui-option value="text" label="Text ads" />
               }
+              <!-- Not offered with lead generation either (campaign-service#665 builds no lead gen carousel); a held choice stays so it can be changed. -->
+              @if ((linkedInCarouselAvailable() && !linkedInLeadGenSelected()) || linkedInFormat() === 'carousel') {
+                <lfx-ui-option value="carousel" label="Carousel" />
+              }
             </lfx-ui-select>
           }
 
@@ -4221,6 +4227,18 @@
               (imageRemove)="onLinkedInTextAdImageRemove($event)"
               (retryCapabilities)="retryCreateCapabilities.emit()"
               data-testid="implementation-linkedin-text-ads" />
+          } @else if (linkedInCarouselSelected()) {
+            <!-- A carousel (campaign-service#665) replaces the single image ad variants: one post of cards picked from the brief's library. -->
+            <lfx-linkedin-carousel-editor
+              [cards]="linkedInCarouselCards()"
+              (cardsChange)="onLinkedInCarouselCardsChange($event)"
+              [introText]="linkedInCarouselIntroText()"
+              (introTextChange)="onLinkedInCarouselIntroTextChange($event)"
+              [library]="googleCreativeLibrary()"
+              [briefId]="briefPersistence().briefId ?? ''"
+              [uploadAvailable]="linkedInAssetUploadAvailable() && !!briefPersistence().briefId"
+              (upload)="onLinkedInCarouselUpload($event)"
+              data-testid="implementation-linkedin-carousel" />
           } @else {
             <!-- Ad variants: each one is its own LinkedIn ad, with its own copy and, when uploads are on, its own image (#5547). -->
             <fieldset class="flex flex-col gap-3" aria-describedby="linkedin-variants-hint" data-testid="implementation-linkedin-variants">

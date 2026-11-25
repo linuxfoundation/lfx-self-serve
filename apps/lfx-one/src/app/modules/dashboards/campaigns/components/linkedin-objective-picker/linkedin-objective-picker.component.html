@@ -19,7 +19,7 @@
       @if (available() || draft().objective === 'conversions') {
         <lfx-ui-option value="conversions" label="Website conversions" />
       }
-      @if (leadGenAvailable() || draft().objective === 'lead_generation') {
+      @if ((leadGenAvailable() && leadGenOffered()) || draft().objective === 'lead_generation') {
         <lfx-ui-option value="lead_generation" label="Lead generation (LinkedIn form)" />
       }
     </lfx-ui-select>

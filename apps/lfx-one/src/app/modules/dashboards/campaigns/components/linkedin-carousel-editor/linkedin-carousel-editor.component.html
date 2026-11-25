@@ -1,0 +1,113 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<fieldset class="flex flex-col gap-3" aria-describedby="linkedin-carousel-hint" data-testid="linkedin-carousel-editor">
+  <legend class="float-left text-xs font-medium text-gray-700">Carousel cards ({{ cards().length }}/{{ limits.maxCards }})</legend>
+  <p id="linkedin-carousel-hint" class="text-xs text-gray-500">
+    One sponsored post of {{ limits.minCards }} to {{ limits.maxCards }} swipeable cards. Each card is a square (1:1) PNG or JPEG from the brief's library, up
+    to 10 MB and {{ limits.imageMaxSide }}x{{ limits.imageMaxSide }}, with a headline (up to {{ limits.headline }} characters) and a link. Without a link, a
+    card opens the registration page.
+  </p>
+  <lfx-ui-textarea
+    label="Intro text"
+    [value]="introText()"
+    (valueChange)="introText.set($event)"
+    [error]="introLength() > limits.introText ? 'Keep the intro text to ' + limits.introText + ' characters.' : ''"
+    [hint]="introLength() + '/' + limits.introText + ' characters'"
+    data-testid="linkedin-carousel-editor-intro" />
+
+  @if (uploadAvailable()) {
+    <div class="flex flex-col gap-1" data-testid="linkedin-carousel-editor-upload">
+      <label class="text-xs font-medium text-gray-700" for="linkedin-carousel-image-files">Upload images to the brief's library</label>
+      <input
+        id="linkedin-carousel-image-files"
+        type="file"
+        multiple
+        [attr.accept]="imageAccept"
+        (change)="onFiles($event)"
+        aria-describedby="linkedin-carousel-upload-hint"
+        class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+        data-testid="linkedin-carousel-editor-upload-files" />
+      <p id="linkedin-carousel-upload-hint" class="text-xs text-gray-500">Uploads are listed with the library below and offered to every card once stored.</p>
+    </div>
+  }
+  @if (imagesNote()) {
+    <p class="text-xs text-gray-500" data-testid="linkedin-carousel-editor-images-note">{{ imagesNote() }}</p>
+  }
+
+  @for (view of views(); track view.key; let i = $index; let last = $last) {
+    <fieldset class="flex flex-col gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'linkedin-carousel-editor-card-' + i">
+      <legend class="float-left text-xs font-medium text-gray-700">Card {{ view.position }}</legend>
+      <lfx-ui-select
+        label="Image"
+        size="small"
+        placeholder="Choose a stored image"
+        [value]="view.imageAssetId"
+        (valueChange)="onImagePick(view.key, $event)"
+        [error]="view.imageProblem"
+        [attr.data-testid]="'linkedin-carousel-editor-image-' + i">
+        @for (option of view.imageOptions; track option.value) {
+          <lfx-ui-option [value]="option.value" [label]="option.label" />
+        }
+      </lfx-ui-select>
+      <lfx-ui-input
+        label="Headline"
+        size="small"
+        [value]="view.headline"
+        (valueChange)="onTextChange(view.key, 'headline', $event)"
+        [error]="view.headlineError"
+        [hint]="view.headlineLength + '/' + limits.headline + ' characters'"
+        [attr.data-testid]="'linkedin-carousel-editor-headline-' + i" />
+      <lfx-ui-input
+        label="Link (optional)"
+        size="small"
+        [value]="view.destinationUrl"
+        (valueChange)="onTextChange(view.key, 'destinationUrl', $event)"
+        [error]="view.destinationError"
+        hint="Leave empty to open the registration page."
+        [attr.data-testid]="'linkedin-carousel-editor-destination-' + i" />
+      <div class="flex flex-wrap items-center gap-2">
+        <lfx-button
+          label="Move up"
+          icon="fa-light fa-arrow-up"
+          size="small"
+          severity="secondary"
+          [text]="true"
+          [disabled]="i === 0"
+          [ariaLabel]="'Move card ' + view.position + ' up'"
+          (onClick)="move(view.key, -1)"
+          [attr.data-testid]="'linkedin-carousel-editor-up-' + i" />
+        <lfx-button
+          label="Move down"
+          icon="fa-light fa-arrow-down"
+          size="small"
+          severity="secondary"
+          [text]="true"
+          [disabled]="last"
+          [ariaLabel]="'Move card ' + view.position + ' down'"
+          (onClick)="move(view.key, 1)"
+          [attr.data-testid]="'linkedin-carousel-editor-down-' + i" />
+        <lfx-button
+          label="Remove card"
+          icon="fa-light fa-trash"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          [disabled]="cards().length <= limits.minCards"
+          [ariaLabel]="'Remove card ' + view.position"
+          (onClick)="remove(view.key)"
+          [attr.data-testid]="'linkedin-carousel-editor-remove-' + i" />
+      </div>
+    </fieldset>
+  }
+  <lfx-button
+    class="self-start"
+    label="Add card"
+    icon="fa-light fa-plus"
+    size="small"
+    severity="secondary"
+    [outlined]="true"
+    [disabled]="cards().length >= limits.maxCards"
+    (onClick)="add()"
+    data-testid="linkedin-carousel-editor-add" />
+</fieldset>

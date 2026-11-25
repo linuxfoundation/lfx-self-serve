@@ -57,6 +57,11 @@ export class LinkedInObjectivePickerComponent {
    * picker. Off, a held lead generation choice stays on screen so it can be set back.
    */
   public readonly leadGenAvailable = input<boolean>(false);
+  /**
+   * Whether the ad format chosen allows lead generation: off while a carousel is chosen (campaign-service#665 builds no
+   * lead gen carousel), when the choice is not offered. A held lead generation choice stays on screen so it can be changed.
+   */
+  public readonly leadGenOffered = input<boolean>(true);
   /** `linkedInTargetCostOffered`: the capability is on and LinkedIn bidding is automatic. Off, the field is hidden and not sent. */
   public readonly targetCostOffered = input<boolean>(false);
   public readonly draft = model.required<LinkedInObjectiveDraft>();
