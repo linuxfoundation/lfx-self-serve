@@ -8,6 +8,7 @@ import { filter, map, Observable, of, shareReplay, switchMap, take, timeout } fr
 
 import { AccountContextService } from './account-context.service';
 import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
+import { OrgLensViewModeService } from './org-lens-view-mode.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
@@ -20,6 +21,15 @@ import { PersonaService } from './persona.service';
  * parameter is allowed to do. Holding it in one service is what makes "names but does not grant"
  * a single implementation rather than a convention two components separately honour.
  */
+/** A catalogue organization resolved from an address, with the access answers its row carries. */
+interface NamedOrganization {
+  account: Account;
+  claOnly: boolean;
+  employeeViewChecked?: boolean;
+  employeeView?: boolean;
+  fullAccess?: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class OrgClaReturnService {
   /**
@@ -34,9 +44,10 @@ export class OrgClaReturnService {
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
+  private readonly viewMode = inject(OrgLensViewModeService);
   private readonly injector = inject(Injector);
 
-  private readonly resolutions = new Map<string, Observable<{ account: Account; claOnly: boolean; employeeViewChecked?: boolean } | null>>();
+  private readonly resolutions = new Map<string, Observable<NamedOrganization | null>>();
 
   /**
    * True once both grant fetches have returned and the caller holds no org access.
@@ -90,6 +101,12 @@ export class OrgClaReturnService {
       map((match) => {
         if (!match) return null;
         this.claOnlyAccess.noteAddressed(named, match.claOnly, match.employeeViewChecked === true);
+        // Recorded like the selector does: the path guard skips the resolver for the adopted company, so a checked CLA-only row clears a stale mode
+        // and a positive row records its own; an unchecked CLA-only row leaves a held employee or full-access mode alone.
+        if (!match.claOnly || match.employeeViewChecked || match.employeeView) {
+          this.viewMode.noteAddressed(named, match.employeeView === true);
+          this.viewMode.noteFullAccessAddressed(named, match.fullAccess === true);
+        }
         this.accountContext.adoptFromAddress(match.account);
         this.accountContext.refreshCanonicalRecord(match.account).catch(() => {
           // Errors are already logged inside refreshCanonicalRecord.
@@ -110,7 +127,7 @@ export class OrgClaReturnService {
     return this.resolution(named).pipe(map((match) => match?.account ?? null));
   }
 
-  private resolution(named: string): Observable<{ account: Account; claOnly: boolean; employeeViewChecked?: boolean } | null> {
+  private resolution(named: string): Observable<NamedOrganization | null> {
     const cached = this.resolutions.get(named);
     if (cached) return cached;
 
@@ -135,7 +152,7 @@ export class OrgClaReturnService {
    *
    * Ask is not a grant: the second pass still only selects what the catalogue returns.
    */
-  private resolveNamedOrganization(named: string): Observable<{ account: Account; claOnly: boolean; employeeViewChecked?: boolean } | null> {
+  private resolveNamedOrganization(named: string): Observable<NamedOrganization | null> {
     // A caller may reach this from a component constructor or from a later event, so the injector
     // is passed rather than relying on an ambient injection context.
     const catalogue$ = toObservable(this.catalogue, { injector: this.injector });
@@ -174,7 +191,7 @@ export class OrgClaReturnService {
    * Still only a resolution, never a grant: an organization that is not in this list is not
    * matched, so a crafted address selects nothing.
    */
-  private catalogueAccountNamed(items: OrgItem[], named: string): { account: Account; claOnly: boolean; employeeViewChecked?: boolean } | null {
+  private catalogueAccountNamed(items: OrgItem[], named: string): NamedOrganization | null {
     const match = items.find((item: OrgItem) => item.uid === named || item.accountId === named);
     if (!match) return null;
     return {
@@ -188,6 +205,8 @@ export class OrgClaReturnService {
       },
       claOnly: match.claOnly === true,
       employeeViewChecked: match.employeeViewChecked === true,
+      employeeView: match.employeeView === true,
+      fullAccess: match.fullAccess === true,
     };
   }
 }
