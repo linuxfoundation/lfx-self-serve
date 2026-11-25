@@ -475,7 +475,7 @@ export class LinkedinPostRunComponent {
     });
   }
   protected onCancelEdit(): void {
-    this.finishEditing();
+    this.finishEditing(true, true);
     this.error.set('');
   }
   protected onProfileSubmit(): void {
@@ -877,11 +877,13 @@ export class LinkedinPostRunComponent {
     this.contentForm.controls.share_link.markAsPristine();
     this.error.set('');
   }
-  private finishEditing(returnToOrigin = true): void {
+  private finishEditing(returnToOrigin = true, cancelled = false): void {
     this.editing.set(false);
     if (this.route.snapshot.queryParamMap.get('profile') !== 'edit') return;
     const origin = this.editEntryOrigin();
-    if (origin && (returnToOrigin || origin === LINKEDIN_PROFILE_EDIT_ORIGINS.run)) {
+    // A changed identity only reaches a post through a new draft: a redraft entry returns to its document only when cancelled.
+    const redraft = origin === LINKEDIN_PROFILE_EDIT_ORIGINS.redraft;
+    if (redraft ? cancelled : origin && (returnToOrigin || origin === LINKEDIN_PROFILE_EDIT_ORIGINS.run)) {
       this.location.back();
       return;
     }
@@ -902,7 +904,7 @@ export class LinkedinPostRunComponent {
     const state = this.location.getState();
     if (!state || typeof state !== 'object' || !(LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY in state)) return null;
     const marker = state[LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY];
-    if (marker === LINKEDIN_PROFILE_EDIT_ORIGINS.run) return marker;
+    if (marker === LINKEDIN_PROFILE_EDIT_ORIGINS.run || marker === LINKEDIN_PROFILE_EDIT_ORIGINS.redraft) return marker;
     // Legacy boolean entries stay conservative for setup-only submissions.
     if (marker === true || marker === LINKEDIN_PROFILE_EDIT_ORIGINS.document) return LINKEDIN_PROFILE_EDIT_ORIGINS.document;
     return null;
