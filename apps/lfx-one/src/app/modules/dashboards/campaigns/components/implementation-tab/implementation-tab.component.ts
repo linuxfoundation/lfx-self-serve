@@ -1465,9 +1465,7 @@ export class ImplementationTabComponent implements OnInit {
    * falls back to index 0 and shows `awareness`, while the signal keeps the stored objective and
    * still sends it. The screen and the payload then disagree, and the first touch of the control
    * overwrites the stored value for good. A disabled option is what keeps the two in step.
-   *
-   * The widening cast is deliberate, as it is on the Meta computed: the constant is narrowed to
-   * `SelectableRedditObjective`, which would make `.includes()` reject the very value asked about.
+   * The rule itself is `redditObjectiveIsUnavailable` in `campaign-reddit-form.utils` (#5980).
    */
   protected readonly redditObjectiveIsUnavailable = computed(() => redditObjectiveIsUnavailable(this.redditObjective()));
   /**
@@ -4105,8 +4103,8 @@ export class ImplementationTabComponent implements OnInit {
     // rather than an error on the request. Refuse locally instead.
     //
     // Most of Reddit's other inputs are AI-recommended from the brief and rendered read-only for
-    // review; the user-entered ones that can make a create fail are checked here and below (the
-    // video goal). Deliberately not an enumeration — a list is a claim the next field falsifies.
+    // review; the user-entered ones that can make a create fail are held, in order, by `redditCreateRefusal`
+    // (`campaign-reddit-form.utils`, #5980). Deliberately not an enumeration here — a list is a claim the next field falsifies.
     const redditRefusal = redditSelected
       ? redditCreateRefusal({
           budgetUsd: this.redditBudgetUsd(),

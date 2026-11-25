@@ -66,7 +66,11 @@ export function redditVideoPostError(objective: RedditObjective, postUrl: string
   return objective === 'video_views' && !postUrl ? 'Video Views promotes an existing Reddit video post — enter its Post URL.' : null;
 }
 
-/** Whether a restored objective is no longer one the picker offers, so the control would show another while sending it. */
+/**
+ * Whether a restored objective is no longer one the picker offers, so the control would show another while sending it.
+ * The widening cast is deliberate: the constant is narrowed to `SelectableRedditObjective`, which would make `.includes()`
+ * reject the very value asked about.
+ */
 export function redditObjectiveIsUnavailable(objective: RedditObjective): boolean {
   return !(REDDIT_SELECTABLE_OBJECTIVES as readonly RedditObjective[]).includes(objective);
 }

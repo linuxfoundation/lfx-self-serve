@@ -395,7 +395,9 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     at(f).selectedPlatforms.set(['reddit-ads']);
     makeSubmittable(f);
     pickRedditObjective(f, 'video_views');
-    // The Post URL is valid first, so the goal is the ONLY thing blocking the submit below: without
+    // With no Post URL yet, its reason is on screen too (`redditVideoPostError` reaches the template).
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-post-error"]')?.textContent).toContain('enter its Post URL');
+    // The Post URL is valid next, so the goal is the ONLY thing blocking the submit below: without
     // it the Post URL guard alone would keep canSubmit() false and hide a missing goal guard.
     typeRedditPostUrl(f, 'https://www.reddit.com/r/kubernetes/comments/abc123/video/');
 
@@ -411,10 +413,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-goal-error"]')).toBeNull();
   });
 
-  /**
-   * Video Views must promote an existing video post: an image URL authors an IMAGE post, which can
-   * never earn a video view, and neither creator checks the creative against the objective.
-   */
   /** The chosen goal reaches `redditConfig`, picked through the template and carried across a tab round-trip. */
   it('carries the reddit video goal through a tab round-trip and into the request', async () => {
     const first = await mount(null);

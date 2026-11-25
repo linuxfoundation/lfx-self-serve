@@ -73,6 +73,9 @@ describe('ImplementationTabComponent reddit budget gate', () => {
   });
 
   it('blocks submit when the reddit budget is zero', () => {
+    // The positive control first, so the zero case is held by the budget rule and not by some unrelated guard.
+    setup(500);
+    expect(canSubmit()).toBe(true);
     setup(0);
     expect(canSubmit()).toBe(false);
   });
@@ -250,10 +253,6 @@ describe('ImplementationTabComponent reddit objective', () => {
   });
 
   /**
-   * `video_views` is offered now that a goal picker collects the `videoGoal` both creators require
-   * for it — and offered as an ordinary, choosable option, not the disabled restore affordance.
-   */
-  /**
    * Driven through the REAL draft input rather than by setting the signal: a signal-only test
    * leaves `applyDraft` unexercised, and a coercion added there would silently discard the stored
    * objective while passing.
@@ -376,12 +375,6 @@ describe('ImplementationTabComponent reddit call to action', () => {
     expect(Array.from(select.options).filter((o) => o.disabled)).toEqual([]);
     expect(Array.from(select.options).map((o) => o.value)).toEqual(['', ...REDDIT_CALL_TO_ACTIONS]);
   });
-
-  /**
-   * And the empty string is NOT unavailable: it is the real "let upstream default" selection the
-   * first option carries, so treating it as a stale value would render a duplicate disabled
-   * option reading " (no longer available)".
-   */
 });
 
 /**
