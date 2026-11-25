@@ -36,7 +36,7 @@ export class OrgClaReturnService {
   private readonly personaService = inject(PersonaService);
   private readonly injector = inject(Injector);
 
-  private readonly resolutions = new Map<string, Observable<{ account: Account; claOnly: boolean } | null>>();
+  private readonly resolutions = new Map<string, Observable<{ account: Account; claOnly: boolean; employeeViewChecked?: boolean } | null>>();
 
   /**
    * True once both grant fetches have returned and the caller holds no org access.
@@ -89,7 +89,7 @@ export class OrgClaReturnService {
     return this.resolution(named).pipe(
       map((match) => {
         if (!match) return null;
-        this.claOnlyAccess.noteAddressed(named, match.claOnly);
+        this.claOnlyAccess.noteAddressed(named, match.claOnly, match.employeeViewChecked === true);
         this.accountContext.adoptFromAddress(match.account);
         this.accountContext.refreshCanonicalRecord(match.account).catch(() => {
           // Errors are already logged inside refreshCanonicalRecord.
@@ -110,7 +110,7 @@ export class OrgClaReturnService {
     return this.resolution(named).pipe(map((match) => match?.account ?? null));
   }
 
-  private resolution(named: string): Observable<{ account: Account; claOnly: boolean } | null> {
+  private resolution(named: string): Observable<{ account: Account; claOnly: boolean; employeeViewChecked?: boolean } | null> {
     const cached = this.resolutions.get(named);
     if (cached) return cached;
 
@@ -135,7 +135,7 @@ export class OrgClaReturnService {
    *
    * Ask is not a grant: the second pass still only selects what the catalogue returns.
    */
-  private resolveNamedOrganization(named: string): Observable<{ account: Account; claOnly: boolean } | null> {
+  private resolveNamedOrganization(named: string): Observable<{ account: Account; claOnly: boolean; employeeViewChecked?: boolean } | null> {
     // A caller may reach this from a component constructor or from a later event, so the injector
     // is passed rather than relying on an ambient injection context.
     const catalogue$ = toObservable(this.catalogue, { injector: this.injector });
@@ -174,7 +174,7 @@ export class OrgClaReturnService {
    * Still only a resolution, never a grant: an organization that is not in this list is not
    * matched, so a crafted address selects nothing.
    */
-  private catalogueAccountNamed(items: OrgItem[], named: string): { account: Account; claOnly: boolean } | null {
+  private catalogueAccountNamed(items: OrgItem[], named: string): { account: Account; claOnly: boolean; employeeViewChecked?: boolean } | null {
     const match = items.find((item: OrgItem) => item.uid === named || item.accountId === named);
     if (!match) return null;
     return {
@@ -187,6 +187,7 @@ export class OrgClaReturnService {
         slug: match.slug ?? null,
       },
       claOnly: match.claOnly === true,
+      employeeViewChecked: match.employeeViewChecked === true,
     };
   }
 }

@@ -525,9 +525,12 @@ export class OrgNavigationService {
         }
         // M3: with the slug known the path guard skips the resolver, so the row is the only answer
         // the CLA-only shell gets for a restored selection when the role-grants lookup failed.
-        this.claOnlyAccess.noteAddressed(match.uid, match.claOnly === true);
-        this.viewMode.noteAddressed(match.uid, match.employeeView === true);
-        this.viewMode.noteFullAccessAddressed(match.uid, match.fullAccess === true);
+        this.claOnlyAccess.noteAddressed(match.uid, match.claOnly === true, match.employeeViewChecked === true);
+        // An unchecked CLA-only row says nothing about the employee view, so it must not erase a held employee or full-access mode.
+        if (match.claOnly !== true || match.employeeViewChecked === true || match.employeeView === true) {
+          this.viewMode.noteAddressed(match.uid, match.employeeView === true);
+          this.viewMode.noteFullAccessAddressed(match.uid, match.fullAccess === true);
+        }
         // Pinned before the address is written (lfx-self-serve#2570): the persona refresh can land
         // between here and the page's render, and for a grant-only (staff) viewer it carries no
         // seeds — unpinned, that resets the selection to the placeholder under the address just
@@ -637,9 +640,11 @@ export class OrgNavigationService {
   private selectDefaultOrg(item: OrgItem): void {
     const account = this.toAccountFromOrgItem(item);
     // M3: recorded before the address is written, for the same path-guard reason as a restored selection.
-    this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true);
-    this.viewMode.noteAddressed(item.uid, item.employeeView === true);
-    this.viewMode.noteFullAccessAddressed(item.uid, item.fullAccess === true);
+    this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true, item.employeeViewChecked === true);
+    if (item.claOnly !== true || item.employeeViewChecked === true || item.employeeView === true) {
+      this.viewMode.noteAddressed(item.uid, item.employeeView === true);
+      this.viewMode.noteFullAccessAddressed(item.uid, item.fullAccess === true);
+    }
     this.accountContextService.setAccount(account);
     // The default is what the address is written from next, so it is pinned like an adopted one
     // (lfx-self-serve#2570): the persona refresh that lands after this — with no seeds at all for a

@@ -286,6 +286,19 @@ describe('orgPathParamGuard', () => {
       expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, false, false);
     });
 
+    it('leaves a held employee or full-access mode alone for a CLA-only answer the employee lookup did not confirm', async () => {
+      resolve.mockReturnValueOnce(of({ ...hit(UID_B, null), claOnly: true }));
+      await outcome(UID_B, `/company/${UID_B}/easycla`);
+      expect(noteViewModeAddressed).not.toHaveBeenCalled();
+      expect(noteFullAccessAddressed).not.toHaveBeenCalled();
+
+      selectedAccount.set(placeholder);
+      resolve.mockReturnValueOnce(of({ ...hit(UID_B, null), claOnly: true, employeeViewChecked: true }));
+      await outcome(UID_B, `/company/${UID_B}/easycla`);
+      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, true, true);
+      expect(noteViewModeAddressed).toHaveBeenLastCalledWith(UID_B, false);
+    });
+
     it('lands on not-found for a miss (404/409 surface as null) without touching the selection (FR-024)', async () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
       resolve.mockReturnValue(of(null));
