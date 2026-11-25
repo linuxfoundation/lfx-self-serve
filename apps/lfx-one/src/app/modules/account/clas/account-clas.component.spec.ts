@@ -144,7 +144,11 @@ describe('AccountClasComponent', () => {
     await fixture.whenStable();
     fixture.componentInstance['openSignDialog']();
 
-    expect(open).toHaveBeenCalledWith(AccountSignClaDialogComponent, expect.objectContaining({ autoFocus: 'dialog' }));
+    expect(open).toHaveBeenCalledWith(
+      AccountSignClaDialogComponent,
+      expect.objectContaining({ autoFocus: 'dialog' }),
+      expect.objectContaining({ closePredicate: expect.any(Function) })
+    );
     const host = fixture.debugElement.injector.get(AccountSignDialogHostService);
     expect(host.step()?.component).toBe(AccountClaGroupStepComponent);
     expect(host.step()?.config.data).toEqual({ agreements: [ICLA] });

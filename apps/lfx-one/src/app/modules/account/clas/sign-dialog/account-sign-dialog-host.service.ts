@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { DialogRef } from '@angular/cdk/dialog';
-import { inject, Injectable, Injector, Signal, signal, Type } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
+import { DestroyRef, inject, Injectable, Injector, Signal, signal, Type } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { AccountSignDialogStep } from '@lfx-one/shared/interfaces';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -29,6 +29,7 @@ import { AccountIdentityStepComponent } from './steps/account-identity-step.comp
 export class AccountSignDialogHostService implements AccountSignDialogContext {
   private readonly modal = inject(UiModalService);
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
   // The account version of each hub step; a step without one shows as it is.
   private readonly accountSteps = new Map<Type<unknown>, Type<unknown>>([
     [ClaGroupSelectComponent, AccountClaGroupStepComponent],
@@ -48,9 +49,11 @@ export class AccountSignDialogHostService implements AccountSignDialogContext {
   /** Keeps the dialog open between steps while `busy` is true, and closes it when that ends with no step to show. */
   public holdOpenWhile(busy: Signal<boolean>): void {
     this.hold = busy;
-    toObservable(busy, { injector: this.injector }).subscribe((isBusy) => {
-      if (!isBusy) this.closeIfIdle();
-    });
+    toObservable(busy, { injector: this.injector })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((isBusy) => {
+        if (!isBusy) this.closeIfIdle();
+      });
   }
 
   /** PrimeNG's `DialogService.open`, as the hub calls it: shows the step and returns a ref that settles when the step ends. */
@@ -58,7 +61,8 @@ export class AccountSignDialogHostService implements AccountSignDialogContext {
     const ref = new DynamicDialogRef();
     this.step.set({ component: this.accountSteps.get(component) ?? component, config, ref });
     if (!this.dialogRef) {
-      const dialogRef = this.modal.open(AccountSignClaDialogComponent, { data: this, autoFocus: 'dialog' });
+      // Escape, the backdrop and the close button can't end the flow mid-request; its toast or next step does.
+      const dialogRef = this.modal.open(AccountSignClaDialogComponent, { data: this, autoFocus: 'dialog' }, { closePredicate: () => !this.isBusy() });
       this.dialogRef = dialogRef;
       dialogRef.closed.pipe(take(1)).subscribe(() => this.onDialogClosed(dialogRef));
     }
@@ -72,6 +76,11 @@ export class AccountSignDialogHostService implements AccountSignDialogContext {
       });
     });
     return ref;
+  }
+
+  /** Between steps while the flow works, such as looking up linked accounts. */
+  private isBusy(): boolean {
+    return !this.step() && this.hold();
   }
 
   private closeIfIdle(): void {

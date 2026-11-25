@@ -4,6 +4,7 @@
 import { Type, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { CLA_GROUP_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { SignIdentityDialogData } from '@lfx-one/shared/interfaces';
 import { MyClasService } from '@services/my-clas.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -51,6 +52,17 @@ describe('Account & Settings "Sign a CLA" steps', () => {
 
     expect(context.pickedName()).toBe('Project One');
     expect(close).toHaveBeenCalledWith(option);
+  });
+
+  it('names the search that found nothing only once it has run', async () => {
+    const { fixture, query } = await render(AccountClaGroupStepComponent);
+    fixture.componentInstance['searchForm'].controls.query.setValue('kube');
+    await fixture.whenStable();
+    expect(query('account-sign-cla-no-match')).toBeNull();
+
+    await new Promise((resolve) => setTimeout(resolve, CLA_GROUP_SEARCH_DEBOUNCE_MS + 50));
+    await fixture.whenStable();
+    expect(query('account-sign-cla-no-match')?.textContent).toContain('No CLA groups match “kube”.');
   });
 
   it('asks which contributor type, and continues with the one picked', async () => {

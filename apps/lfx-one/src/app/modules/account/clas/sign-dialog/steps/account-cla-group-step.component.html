@@ -35,14 +35,15 @@
         <p class="m-0 px-[14px] py-[10px] text-[13px] text-ui-neutral-500">Search for a project, CLA group or repository, or paste a repository link.</p>
       } @else if (queryBand() === 'short') {
         <p class="m-0 px-[14px] py-[10px] text-[13px] text-ui-neutral-500" data-testid="account-sign-cla-short">Type at least 3 characters.</p>
-      } @else if (loading() && options().length === 0) {
+      } @else if (options().length === 0 && noMatchQuery() === null) {
+        <!-- Also while the typing settles, so no-match never names a term not yet searched. -->
         <p class="m-0 flex flex-row items-center gap-[8px] px-[14px] py-[10px] text-[13px] text-ui-neutral-500">
           <lfx-ui-spinner [size]="14" label="Searching" />
           Searching…
         </p>
-      } @else if (!loading() && options().length === 0) {
+      } @else if (options().length === 0) {
         <p class="m-0 px-[14px] py-[10px] text-[13px] text-ui-neutral-500" data-testid="account-sign-cla-no-match">
-          No CLA groups match “{{ trimmedQuery() }}”.
+          No CLA groups match “{{ noMatchQuery() }}”.
         </p>
       } @else {
         <!-- The results stay while the next search runs, rather than flashing empty for a slow search. -->

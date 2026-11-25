@@ -73,6 +73,22 @@ describe('AccountSignDialogHostService', () => {
     expect(close).toHaveBeenCalled();
   });
 
+  it('can’t be dismissed while the flow works between steps', async () => {
+    const busy = signal(false);
+    host.holdOpenWhile(busy);
+    const step = host.open(ClaGroupSelectComponent, config('Sign a CLA'));
+    const canClose = () => open.mock.calls[0][2].closePredicate() as boolean;
+    expect(canClose()).toBe(true);
+
+    busy.set(true);
+    step.close({ claGroupId: 'cg-1' });
+    await flush();
+    expect(canClose()).toBe(false);
+
+    host.open(SignIdentitySelectComponent, config('Select a GitHub account'));
+    expect(canClose()).toBe(true);
+  });
+
   it('ends the step without a result when the dialog is dismissed', () => {
     const step = host.open(ClaGroupSelectComponent, config('Sign a CLA'));
     const settled = { closed: false, destroyed: false };

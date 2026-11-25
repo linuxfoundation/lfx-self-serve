@@ -1,14 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, Signal } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
 import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
-import { map } from 'rxjs';
 
 import { ClaGroupSelectComponent } from '../../../../profile/clas/cla-group-select.component';
 import { AccountSignDialogContext } from '../account-sign-dialog-context';
@@ -26,14 +24,19 @@ import { AccountSignDialogContext } from '../account-sign-dialog-context';
 export class AccountClaGroupStepComponent extends ClaGroupSelectComponent {
   private readonly context = inject(AccountSignDialogContext);
 
-  /** The search as typed, trimmed, for the no-match line. */
-  protected readonly trimmedQuery: Signal<string> = toSignal(this.searchForm.controls.query.valueChanges.pipe(map((value) => (value ?? '').trim())), {
-    initialValue: '',
-  });
+  /** The term a finished search found nothing for, or `null` while the typed term is still being searched. */
+  protected readonly noMatchQuery: Signal<string | null> = this.initNoMatchQuery();
 
   protected override onContinue(): void {
     const option = this.selected();
     if (option) this.context.pickedName.set(option.primaryName);
     super.onContinue();
+  }
+
+  private initNoMatchQuery(): Signal<string | null> {
+    return computed(() => {
+      const query = this.query().trim();
+      return !this.loading() && this.searchedQuery() === query ? query : null;
+    });
   }
 }

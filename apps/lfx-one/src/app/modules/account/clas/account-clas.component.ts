@@ -49,8 +49,8 @@ import { AccountSignDialogHostService } from './sign-dialog/account-sign-dialog-
     UiTableComponent,
     UiTableCellDirective,
   ],
-  // The hub's signing flow opens a PrimeNG dialog per step; here they all run in one "Sign a CLA" uikit dialog. Toasts go to the
-  // app's own, as the account pages do.
+  // The hub's signing flow opens a PrimeNG dialog per step; here they all run in one "Sign a CLA" uikit dialog, so any other
+  // hub dialog must open through `this.modal`, as `openRequest` does. Toasts go to the app's own, as the account pages do.
   providers: [AccountSignDialogHostService, { provide: DialogService, useExisting: AccountSignDialogHostService }],
   templateUrl: './account-clas.component.html',
 })

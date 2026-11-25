@@ -11,7 +11,11 @@ import { AccountSignClaDialogComponent } from './account-sign-cla-dialog.compone
 import { AccountSignDialogContext } from './account-sign-dialog-context';
 
 /** A stand-in step that shows what it was handed by injection. */
-@Component({ selector: 'lfx-test-sign-step', template: '<button data-testid="step">{{ config.header }} · {{ context.pickedName() }}</button>' })
+@Component({
+  selector: 'lfx-test-sign-step',
+  template:
+    '<button data-testid="other">Other</button><div data-autofocus><button data-testid="step">{{ config.header }} · {{ context.pickedName() }}</button></div>',
+})
 class TestStepComponent {
   protected readonly config = inject(DynamicDialogConfig);
   protected readonly ref = inject(DynamicDialogRef);
@@ -28,10 +32,11 @@ describe('AccountSignClaDialogComponent', () => {
     return { fixture, host, query: (testId: string) => element.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null };
   }
 
-  it('shows it is busy between steps', async () => {
+  it('shows it is busy between steps, with no way out until the flow moves on', async () => {
     const { query } = await render();
 
     expect(query('account-sign-cla-busy')?.textContent).toContain('Checking your linked accounts');
+    expect(query('ui-modal-close')).toBeNull();
   });
 
   it('shows the current step under its heading, with its ref, config and the shared pick', async () => {
@@ -42,5 +47,14 @@ describe('AccountSignClaDialogComponent', () => {
     expect(query('account-sign-cla-busy')).toBeNull();
     expect(query('step')?.textContent).toBe('Select a GitHub account · Project One');
     expect(query('account-sign-cla-dialog')?.textContent).toContain('Select a GitHub account');
+    expect(query('ui-modal-close')).not.toBeNull();
+  });
+
+  it('moves focus to the step’s marked control, not the Close button before it', async () => {
+    const { fixture, host, query } = await render();
+    host.step.set({ component: TestStepComponent, config: { header: 'Sign a CLA' }, ref: new DynamicDialogRef() });
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(query('step'));
   });
 });
