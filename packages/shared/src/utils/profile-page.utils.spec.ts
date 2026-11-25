@@ -14,7 +14,7 @@ const role = (name: string, startDate: string, endDate = ''): CdpProjectAffiliat
   repoUrl: '',
   repoFileUrl: '',
 });
-const affiliation = (startDate: string, endDate: string | null = null) => ({ startDate, endDate }) as CdpProjectAffiliationEntry;
+const affiliation = (startDate: string, endDate: string | null = null, type = 'project') => ({ startDate, endDate, type }) as CdpProjectAffiliationEntry;
 const project = (slug: string, roles: CdpProjectAffiliationRole[], affiliations: CdpProjectAffiliationEntry[] = []): CdpProjectAffiliation => ({
   id: slug,
   projectSlug: slug,
@@ -26,7 +26,7 @@ const project = (slug: string, roles: CdpProjectAffiliationRole[], affiliations:
 });
 
 describe('buildProfileInvolvement', () => {
-  it('reads the first role, with the years it covers', () => {
+  it('takes the badge from the first role, and the years from the whole involvement', () => {
     const [item] = buildProfileInvolvement([project('kube', [role('Maintainer', '2021-03-01'), role('Contributor', '2019-06-01', '2021-02-28')])], null);
 
     expect(item).toEqual(
@@ -43,8 +43,11 @@ describe('buildProfileInvolvement', () => {
     expect(item).toEqual(expect.objectContaining({ role: 'Contributor', current: false, years: '2018 – 2022', period: 'Jan 2018 – Jun 2022' }));
   });
 
-  it('falls back to the affiliations without roles, and to no date without either', () => {
-    const items = buildProfileInvolvement([project('otel', [], [affiliation('2022-09-01', '2023-01-31')]), project('bare', [])], null);
+  it('falls back to the project affiliations without roles, and to no date without either', () => {
+    const items = buildProfileInvolvement(
+      [project('otel', [], [affiliation('2022-09-01', '2023-01-31'), affiliation('2015-01-01', null, 'organization')]), project('bare', [])],
+      null
+    );
 
     expect(items.find((item) => item.id === 'otel')).toEqual(expect.objectContaining({ role: 'Contributor', current: false, years: '2022 – 2023' }));
     expect(items.find((item) => item.id === 'bare')).toEqual(expect.objectContaining({ current: true, years: '', period: '' }));

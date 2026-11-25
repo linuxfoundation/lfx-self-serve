@@ -6,15 +6,18 @@ import { formatYearMonth } from './date-time.utils';
 
 /**
  * The Profile page's Foundations & projects involvement (#6085): the user's LFX projects, read the way the hub's affiliations
- * tab reads them. The first role decides Maintainer or Contributor; a project is current while any role (or, with no roles,
- * any affiliation) is open. Current projects come first, then the newest start, then by name. `lfxSlugs` null keeps every
- * project, as the hub does when the slug list is unavailable.
+ * tab reads them. The first role decides the Maintainer or Contributor badge; the dates span the whole involvement, every role
+ * (or, with no roles, every project affiliation), and a project is current while any of those is open. Current projects come
+ * first, then the newest start, then by name. `lfxSlugs` null keeps every project, as the hub does when the slug list is unavailable.
  */
 export function buildProfileInvolvement(affiliations: CdpProjectAffiliation[], lfxSlugs: ReadonlySet<string> | null): ProfileInvolvementItem[] {
   return affiliations
     .filter((project) => project.projectSlug && (!lfxSlugs || lfxSlugs.has(project.projectSlug)))
     .map((project): ProfileInvolvementItem => {
-      const spans = (project.roles.length > 0 ? project.roles : project.affiliations).map((span) => ({ start: span.startDate || '', end: span.endDate || '' }));
+      const spans = (project.roles.length > 0 ? project.roles : project.affiliations.filter((affiliation) => affiliation.type === 'project')).map((span) => ({
+        start: span.startDate || '',
+        end: span.endDate || '',
+      }));
       const current = spans.length === 0 || spans.some((span) => !span.end);
       const start =
         spans

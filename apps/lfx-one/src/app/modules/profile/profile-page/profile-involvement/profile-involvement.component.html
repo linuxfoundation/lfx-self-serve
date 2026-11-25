@@ -50,7 +50,8 @@
                 }
               </span>
               <span class="flex min-w-0 flex-col items-start gap-[4px]">
-                <span class="max-w-full truncate text-[15px] font-semibold leading-[20px] text-gray-900" [attr.title]="item.name">{{ item.name }}</span>
+                <!-- Wraps rather than cutting off: the card is not focusable, so a tooltip couldn't show the rest. -->
+                <span class="max-w-full break-words text-[15px] font-semibold leading-[20px] text-gray-900">{{ item.name }}</span>
                 <ng-container *ngTemplateOutlet="roleBadge; context: { $implicit: item }" />
               </span>
             </div>
