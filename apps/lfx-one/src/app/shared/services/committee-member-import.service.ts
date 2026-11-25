@@ -89,6 +89,8 @@ export class CommitteeMemberImportService {
   /** Ends a run's current pause early, keyed by run ID so a replacement run never receives a stale stop. */
   private readonly stopRequests = new Map<string, Subject<void>>();
   private readonly retryDeadlineTimers = new Map<string, Subscription>();
+  /** Wizard runs discard row data on settlement, but server cooldowns survive later saves by this owner. */
+  private readonly wizardRetryDeadlines = new Map<string, number>();
   /** Delivers a wizard run's settled rows, keyed by run ID; completed without a value when the run is discarded. */
   private readonly stagedResults = new Map<string, Subject<MemberImportRow[]>>();
   private owner: string | null = null;
@@ -414,6 +416,7 @@ export class CommitteeMemberImportService {
    */
   private discardAll(): void {
     this.runs.set(new Map());
+    this.wizardRetryDeadlines.clear();
     for (const runId of [...this.stopRequests.keys(), ...this.retryDeadlineTimers.keys(), ...this.stagedResults.keys()]) {
       this.retireRun(runId);
     }
@@ -492,6 +495,12 @@ export class CommitteeMemberImportService {
         this.markUnsubmitted(ref, rows, run.stopReason);
         return EMPTY;
       }
+      const wizardDeadline = run.origin === 'wizard' ? (this.wizardRetryDeadlines.get(ref.committeeUid) ?? 0) : 0;
+      if (Date.now() < wizardDeadline) {
+        this.markUnsubmitted(ref, rows, 'The service cooldown is still active. Retry once the service permits.');
+        return EMPTY;
+      }
+      if (run.origin === 'wizard') this.wizardRetryDeadlines.delete(ref.committeeUid);
       const sendable = rows.filter((row) => row.payload);
       const missing = rows.filter((row) => !row.payload);
       this.patchRows(ref, missing, { status: 'failed', reason: 'Not sent: missing member data.', retryable: false });
@@ -681,6 +690,10 @@ export class CommitteeMemberImportService {
     if (!this.updateRun(ref, (run) => ({ ...run, retryNotBefore: deadline }))) {
       return;
     }
+    const run = this.currentRun(ref);
+    if (run?.origin === 'wizard' && deadline > Date.now()) {
+      this.wizardRetryDeadlines.set(ref.committeeUid, Math.max(this.wizardRetryDeadlines.get(ref.committeeUid) ?? 0, deadline));
+    }
     const remaining = deadline - Date.now();
     if (remaining <= 0 || !Number.isFinite(remaining)) {
       return;
@@ -697,13 +710,17 @@ export class CommitteeMemberImportService {
    */
   private revokePendingInvite(ref: MemberImportRunRef, row: MemberImportRow): Observable<string | undefined> {
     return defer(() => {
+      if (!this.currentRun(ref)) return EMPTY;
       if (row.pendingInviteUids?.length) {
         return from(row.pendingInviteUids).pipe(
           concatMap((inviteUid) =>
-            this.committeeService.revokeCommitteeInvite(ref.committeeUid, inviteUid).pipe(
-              map((): string | undefined => undefined),
-              catchError((err: HttpErrorResponse) => of(this.inviteCleanupFailure(ref, err)))
-            )
+            defer(() => {
+              if (!this.currentRun(ref)) return EMPTY;
+              return this.committeeService.revokeCommitteeInvite(ref.committeeUid, inviteUid).pipe(
+                map((): string | undefined => undefined),
+                catchError((err: HttpErrorResponse) => of(this.inviteCleanupFailure(ref, err)))
+              );
+            })
           ),
           toArray(),
           map((warnings) => warnings.find((warning) => !!warning))

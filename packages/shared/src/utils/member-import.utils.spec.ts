@@ -731,6 +731,15 @@ describe('classifyMemberImportBulkResult', () => {
     expect(classifyMemberImportBulkResult(result({ status: 'added', member_uid: 'member-1', member }), row)).toMatchObject({ status: 'added', member });
   });
 
+  it('carries the UID of an added member when its body is absent', () => {
+    expect(classifyMemberImportBulkResult(result({ member_uid: 'added-member' }), row)).toMatchObject({
+      status: 'added',
+      memberUid: 'added-member',
+      member: undefined,
+      uncertain: false,
+    });
+  });
+
   it.each([false, true])('carries the existing member UID on an already-member row (uncertain: %s)', (uncertain) => {
     const patch = classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'already_member', member_uid: 'existing-member' }), {
       ...row,

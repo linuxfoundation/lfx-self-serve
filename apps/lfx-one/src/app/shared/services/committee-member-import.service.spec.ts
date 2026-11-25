@@ -620,6 +620,26 @@ describe('CommitteeMemberImportService', () => {
       expect(delivered[0][0]).toMatchObject({ status: 'added', cleanupWarning: expect.stringContaining('could not be revoked') });
     });
 
+    it.each(['subject', 'transition', 'discarded'] as const)('stops queued row and invitation cleanup after ownership loss (%s)', (change) => {
+      run(staged(7, {}, (index) => [`invite-${index}-a`, `invite-${index}-b`]));
+      respond(0);
+      expect(revokes).toHaveLength(5);
+      if (change === 'transition') {
+        transition.set('switching');
+      } else {
+        user.set({ sub: 'synthetic-replacement' });
+      }
+      if (change === 'discarded') TestBed.tick();
+      for (const revoke of [...revokes]) {
+        revoke.next();
+        revoke.complete();
+      }
+      expect(revokes).toHaveLength(5);
+      expect(delivered).toHaveLength(0);
+      TestBed.tick();
+      expect(completed).toBe(true);
+    });
+
     it('pauses on a 429 and resubmits the throttled rows', () => {
       vi.useFakeTimers();
       run(staged(2));
@@ -630,6 +650,39 @@ describe('CommitteeMemberImportService', () => {
       expect(pending[1].members).toHaveLength(2);
       respond(1);
       expect(delivered[0].map((row) => row.status)).toEqual(['added', 'added']);
+    });
+
+    it('retains a long cooldown across notification groups and manual saves until its exact expiry', () => {
+      vi.useFakeTimers();
+      run(staged(1));
+      pending[0].response.error(new HttpErrorResponse({ status: 429, headers: new HttpHeaders({ 'Retry-After': '300' }) }));
+      expect(completed).toBe(true);
+      expect(delivered[0][0].status).toBe('not_submitted');
+
+      run(staged(1, { skipNotification: true }));
+      expect(pending).toHaveLength(1);
+      expect(delivered[1][0]).toMatchObject({ status: 'not_submitted', reason: expect.stringContaining('cooldown') });
+      vi.advanceTimersByTime(299_999);
+      run(staged(1));
+      expect(pending).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      run(staged(1));
+      expect(pending).toHaveLength(2);
+      respond(1);
+      expect(delivered[3][0].status).toBe('added');
+    });
+
+    it('scopes retained wizard cooldowns to the group and initiating subject', () => {
+      vi.useFakeTimers();
+      run(staged(1));
+      pending[0].response.error(new HttpErrorResponse({ status: 429, headers: new HttpHeaders({ 'Retry-After': '300' }) }));
+      run(staged(1, { committeeUid: 'group-b' }));
+      expect(pending).toHaveLength(2);
+      respond(1);
+      switchUser('synthetic-replacement');
+      run(staged(1));
+      expect(pending).toHaveLength(3);
+      respond(2);
     });
 
     it('stops later chunks after a 403 and reports their rows unsent', () => {

@@ -352,6 +352,12 @@ export class CommitteeManageComponent {
 
   public onMemberUpdatesChange(updates: MemberPendingChanges): void {
     this.memberUpdates.set(updates);
+    const committeeUid = this.resolveCommitteeWriteUid();
+    if (!committeeUid) return;
+    const stagedKeys = new Set(updates.toAdd.map((member) => `${committeeUid}:${member.email.trim().toLowerCase()}`));
+    for (const key of this.uncertainCsvMembers) {
+      if (key.startsWith(`${committeeUid}:`) && !stagedKeys.has(key)) this.uncertainCsvMembers.delete(key);
+    }
   }
 
   public onSubmitAll(): void {
@@ -394,6 +400,7 @@ export class CommitteeManageComponent {
     const committeeData = this.cleanFormData(formValue);
 
     // Prepare committee update
+    const owner = this.importService.viewerSubject();
     const updateCommittee$ = this.committeeService.updateCommittee(committeeUid, committeeData);
 
     // Invite creation snapshots committee_name/organization_required server-side at POST time, so
@@ -401,7 +408,7 @@ export class CommitteeManageComponent {
     // committee metadata into an invite. Sequence rather than run them in parallel.
     updateCommittee$
       .pipe(
-        switchMap((committee) => this.flushMemberUpdates(committeeUid).pipe(map((members) => ({ committee, members })))),
+        switchMap((committee) => this.flushMemberUpdates(committeeUid, owner).pipe(map((members) => ({ committee, members })))),
         finalize(() => this.submitting.set(false))
       )
       .subscribe({
@@ -847,23 +854,17 @@ export class CommitteeManageComponent {
     return committee.uid;
   }
 
-  private buildMemberOperations(committeeId: string, memberUpdates: MemberPendingChanges) {
+  private buildMemberOperations(committeeId: string, memberUpdates: MemberPendingChanges, ownsSave: () => boolean) {
     const operations: ReturnType<typeof this.createMemberOperation>[] = [];
 
-    // Add delete operation if there are members to delete
-    if (memberUpdates.toDelete.length > 0) {
-      for (const memberId of memberUpdates.toDelete) {
-        operations.push(this.createMemberOperation('delete', memberId, () => this.committeeService.deleteCommitteeMember(committeeId, memberId)));
-      }
+    // Each factory is deferred and checks the owner before sending the next write.
+    for (const memberId of memberUpdates.toDelete) {
+      operations.push(this.createMemberOperation('delete', memberId, () => this.committeeService.deleteCommitteeMember(committeeId, memberId), ownsSave));
     }
-
-    // Add update operation if there are members to update
-    if (memberUpdates.toUpdate.length > 0) {
-      for (const update of memberUpdates.toUpdate) {
-        operations.push(
-          this.createMemberOperation('update', update.uid, () => this.committeeService.updateCommitteeMember(committeeId, update.uid, update.changes))
-        );
-      }
+    for (const update of memberUpdates.toUpdate) {
+      operations.push(
+        this.createMemberOperation('update', update.uid, () => this.committeeService.updateCommitteeMember(committeeId, update.uid, update.changes), ownsSave)
+      );
     }
 
     // Manual and self additions are created one by one; CSV imports are saved in bulk afterwards (#5529).
@@ -878,8 +879,9 @@ export class CommitteeManageComponent {
           'add',
           member.email,
           () => this.committeeService.createCommitteeMember(committeeId, payload, createOptions),
+          ownsSave,
           (createdMember) => createdMember
-        ).pipe(switchMap((result) => this.revokeStagedInvites(committeeId, pendingInviteUids, result)))
+        ).pipe(switchMap((result) => this.revokeStagedInvites(committeeId, pendingInviteUids, result, ownsSave)))
       );
     }
 
@@ -890,7 +892,7 @@ export class CommitteeManageComponent {
       csvGroups.set(skipNotification, [...(csvGroups.get(skipNotification) ?? []), member]);
     }
     for (const [skipNotification, members] of csvGroups) {
-      operations.push(this.buildCsvImportOperation(committeeId, skipNotification, members));
+      operations.push(this.buildCsvImportOperation(committeeId, skipNotification, members, ownsSave));
     }
 
     return operations;
@@ -901,9 +903,15 @@ export class CommitteeManageComponent {
    * pauses, uncertain-outcome resubmission and invite cleanup, then reports one result per row.
    * A run that never starts or is discarded reports every row as failed, so it stays staged for retry.
    */
-  private buildCsvImportOperation(committeeId: string, skipNotification: boolean, members: StagedCommitteeMemberRequest[]): Observable<MemberOperationResult> {
-    return defer(() =>
-      this.importService.runStaged({
+  private buildCsvImportOperation(
+    committeeId: string,
+    skipNotification: boolean,
+    members: StagedCommitteeMemberRequest[],
+    ownsSave: () => boolean
+  ): Observable<MemberOperationResult> {
+    return defer(() => {
+      if (!ownsSave()) return EMPTY;
+      return this.importService.runStaged({
         committeeUid: committeeId,
         committeeName: this.committee()?.name ?? '',
         skipNotification,
@@ -915,8 +923,8 @@ export class CommitteeManageComponent {
           const key = `${committeeId}:${payload.email.trim().toLowerCase()}`;
           return { payload, pendingInviteUids, ...(this.uncertainCsvMembers.has(key) ? { uncertain: true } : {}) };
         }),
-      })
-    ).pipe(
+      });
+    }).pipe(
       defaultIfEmpty(null),
       concatMap((rows) =>
         rows
@@ -934,48 +942,58 @@ export class CommitteeManageComponent {
   private toCsvOperationResult(committeeId: string, row: MemberImportRow): Observable<MemberOperationResult> {
     const result: MemberOperationResult = { type: 'add', identifier: row.normalizedEmail, success: false };
     const key = `${committeeId}:${row.normalizedEmail}`;
-    if (row.uncertain) this.uncertainCsvMembers.add(key);
-    if (row.status === 'added' || row.status === 'skipped') this.uncertainCsvMembers.delete(key);
+    if (row.uncertain || row.unconfirmedAddition) this.uncertainCsvMembers.add(key);
+    let saved: MemberOperationResult;
     if (row.status === 'added') {
-      return of({ ...result, success: true, createdMember: row.member, cleanupWarning: !!row.cleanupWarning });
-    }
-    if (row.status !== 'skipped') {
+      this.uncertainCsvMembers.delete(key);
+      saved = { ...result, success: true, createdMember: row.member, cleanupWarning: !!row.cleanupWarning };
+    } else if (row.status === 'skipped') {
+      saved = { ...result, success: true };
+      if (row.conflict) {
+        // Presence after a lost response does not prove which request applied their details.
+        saved = row.unconfirmedAddition ? { ...saved, unconfirmedAddition: true } : { ...saved, alreadyMember: true };
+      }
+    } else {
       return of(result);
     }
-    if (!row.conflict) {
-      return of({ ...result, success: true });
-    }
-    // After a lost response, finding the person in the group does not show whether this save applied their details.
-    const alreadyMember: MemberOperationResult = row.unconfirmedAddition
-      ? { ...result, success: true, unconfirmedAddition: true }
-      : { ...result, success: true, alreadyMember: true };
-    if (!row.memberUid) {
-      return of(alreadyMember);
-    }
-    // Best effort: the existing record promotes the staged row; without it, a retry skips the row again.
+    if (saved.createdMember || !row.memberUid) return of(saved);
+
+    // Best effort for both confirmed additions and existing members; keep uncertainty until promotion.
     return this.committeeService.getCommitteeMember(committeeId, row.memberUid).pipe(
-      map((member) => (member ? { ...alreadyMember, createdMember: member } : alreadyMember)),
+      map((member) => {
+        if (!member) return saved;
+        this.uncertainCsvMembers.delete(key);
+        return { ...saved, createdMember: member };
+      }),
       catchError((error: HttpErrorResponse) => {
         console.error('Existing member lookup failed', { status: error.status });
-        return of(alreadyMember);
+        return of(saved);
       })
     );
   }
 
   /** Cleanup is best-effort: a failed revoke must never put a successfully-created member back in toAdd. */
-  private revokeStagedInvites(committeeId: string, inviteUids: string[], result: MemberOperationResult): Observable<MemberOperationResult> {
+  private revokeStagedInvites(
+    committeeId: string,
+    inviteUids: string[],
+    result: MemberOperationResult,
+    ownsSave: () => boolean
+  ): Observable<MemberOperationResult> {
     if (!result.success || inviteUids.length === 0) {
       return of(result);
     }
     return from(inviteUids).pipe(
       concatMap((uid) =>
-        this.committeeService.revokeCommitteeInvite(committeeId, uid).pipe(
-          map(() => true),
-          catchError((error: HttpErrorResponse) => {
-            console.error('Staged member invitation cleanup failed', { status: error.status });
-            return of(false);
-          })
-        )
+        defer(() => {
+          if (!ownsSave()) return of(false);
+          return this.committeeService.revokeCommitteeInvite(committeeId, uid).pipe(
+            map(() => true),
+            catchError((error: HttpErrorResponse) => {
+              console.error('Staged member invitation cleanup failed', { status: error.status });
+              return of(false);
+            })
+          );
+        })
       ),
       toArray(),
       map((outcomes) => ({ ...result, cleanupWarning: outcomes.some((success) => !success) }))
@@ -989,10 +1007,11 @@ export class CommitteeManageComponent {
    * completion (LFXV2-2606) — then run with the same bounded concurrency as the immediate-send
    * invite path (COMMITTEE_INVITE_CONCURRENCY), after the member mutations finish.
    */
-  private flushMemberUpdates(committeeId: string): Observable<MemberOperationResult[]> {
+  private flushMemberUpdates(committeeId: string, owner = this.importService.viewerSubject()): Observable<MemberOperationResult[]> {
     const memberUpdates = this.memberUpdates();
+    const ownsSave = (): boolean => !!owner && this.importService.viewerSubject() === owner;
 
-    const memberOperations = this.buildMemberOperations(committeeId, memberUpdates);
+    const memberOperations = this.buildMemberOperations(committeeId, memberUpdates, ownsSave);
     const memberOps$ = memberOperations.length > 0 ? concat(...memberOperations) : EMPTY;
 
     const invites = memberUpdates.toInvite;
@@ -1000,7 +1019,8 @@ export class CommitteeManageComponent {
       invites.length > 0
         ? from(invites).pipe(
             mergeMap(
-              (invite) => this.createMemberOperation('invite', invite.invitee_email, () => this.committeeService.createCommitteeInvite(committeeId, invite)),
+              (invite) =>
+                this.createMemberOperation('invite', invite.invitee_email, () => this.committeeService.createCommitteeInvite(committeeId, invite), ownsSave),
               COMMITTEE_INVITE_CONCURRENCY
             )
           )
@@ -1013,12 +1033,16 @@ export class CommitteeManageComponent {
     type: MemberOperationType,
     identifier: string,
     operation: () => Observable<T>,
+    ownsSave: () => boolean,
     captureMember?: (result: T) => CommitteeMember
   ): Observable<MemberOperationResult> {
-    return operation().pipe(
-      switchMap((result) => of({ type, identifier, success: true, createdMember: captureMember?.(result) })),
-      catchError(() => of({ type, identifier, success: false }))
-    );
+    return defer(() => {
+      if (!ownsSave()) return of({ type, identifier, success: false });
+      return operation().pipe(
+        switchMap((result) => of({ type, identifier, success: true, createdMember: captureMember?.(result) })),
+        catchError(() => of({ type, identifier, success: false }))
+      );
+    });
   }
 
   /** Groups the identifiers of successfully-flushed operations so the members-manager child can prune them (GH-1608). */

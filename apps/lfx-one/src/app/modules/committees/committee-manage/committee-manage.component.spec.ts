@@ -65,6 +65,7 @@ describe('CommitteeManageComponent', () => {
   let personaLoaded: ReturnType<typeof signal<boolean>>;
   let createCommittee: ReturnType<typeof vi.fn>;
   let runStaged: ReturnType<typeof vi.fn>;
+  let importOwner: ReturnType<typeof signal<string | null>>;
 
   // Enriched detail payload: project_slug + is_foundation populated by the BFF — drives
   // syncEntityProjectContext directly. Unenriched: project_uid only — triggers the by-uid
@@ -103,6 +104,7 @@ describe('CommitteeManageComponent', () => {
     getCommittee = vi.fn();
     createCommittee = vi.fn();
     runStaged = vi.fn(() => EMPTY);
+    importOwner = signal<string | null>('synthetic-manager');
     currentPersona = signal<PersonaType>('maintainer');
     personaLoaded = signal(true);
     getProject = vi.fn().mockReturnValue(of(resolvedProject()));
@@ -161,7 +163,7 @@ describe('CommitteeManageComponent', () => {
         { provide: UserService, useValue: { user: signal(null) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         // CSV wizard additions save through the import service's bulk run (#5529).
-        { provide: CommitteeMemberImportService, useValue: { runStaged } },
+        { provide: CommitteeMemberImportService, useValue: { runStaged, viewerSubject: importOwner } },
         // Real class, not a useValue fake — ConfirmDialog touches ConfirmationService's internal
         // Subjects in its constructor (same pattern as committee-settings-tab.component.spec.ts).
         ConfirmationService,
@@ -1068,6 +1070,82 @@ describe('CommitteeManageComponent', () => {
         expect(calls).toEqual(['delete', 'update', 'add', 'csv', 'invite']);
       });
 
+      it.each([
+        ['onDone', null],
+        ['onDone', 'synthetic-replacement'],
+        ['onSubmitAll', null],
+        ['onSubmitAll', 'synthetic-replacement'],
+      ] as const)('does not send later CSV groups or invitations after ownership loss on %s (%s)', async (submit, replacement) => {
+        const rows = new Subject<MemberImportRow[]>();
+        runStaged.mockReturnValue(rows);
+        const createCommitteeInvite = vi.fn(() => of({ uid: 'invite' }));
+        Object.assign(TestBed.inject(CommitteeService), { createCommitteeInvite });
+        const component = await setupPending(
+          [csv('first@example.com'), csv('second@example.com', { createOptions: { skipNotification: false } })],
+          { toInvite: [{ invitee_email: 'invited@example.com' }] },
+          true
+        );
+        if (submit === 'onDone') component.mode.set('create');
+        component[submit]();
+        expect(runStaged).toHaveBeenCalledTimes(1);
+        importOwner.set(replacement);
+        rows.complete();
+        expect(runStaged).toHaveBeenCalledTimes(1);
+        expect(createCommitteeInvite).not.toHaveBeenCalled();
+        expect(navigate).not.toHaveBeenCalledWith(['/groups']);
+        expect(component.submitting()).toBe(false);
+      });
+
+      it('pins the subject before the group update completes', async () => {
+        const updated = new Subject<Committee>();
+        updateCommittee.mockReturnValue(updated);
+        const component = await setupPending([csv('csv@example.com')], {}, true);
+        component.onSubmitAll();
+        importOwner.set('synthetic-replacement');
+        updated.next(enrichedCommittee());
+        updated.complete();
+        expect(runStaged).not.toHaveBeenCalled();
+        expect(navigate).not.toHaveBeenCalledWith(['/groups']);
+      });
+
+      it('guards queued manual additions and their cleanup before continuing to CSV rows', async () => {
+        const revoked = new Subject<void>();
+        revokeCommitteeInvite.mockReturnValue(revoked);
+        const component = await setupPending(
+          [{ email: 'manual@example.com', pendingInviteUids: ['invite-1', 'invite-2'] }, { email: 'later@example.com' }, csv('csv@example.com')],
+          {},
+          true
+        );
+        component.onSubmitAll();
+        expect(createCommitteeMember).toHaveBeenCalledTimes(1);
+        expect(revokeCommitteeInvite).toHaveBeenCalledTimes(1);
+        importOwner.set(null);
+        revoked.next();
+        revoked.complete();
+        expect(revokeCommitteeInvite).toHaveBeenCalledTimes(1);
+        expect(createCommitteeMember).toHaveBeenCalledTimes(1);
+        expect(runStaged).not.toHaveBeenCalled();
+        expect(navigate).not.toHaveBeenCalledWith(['/groups']);
+      });
+
+      it.each([true, false])('looks up an added member without a body, preserving success when lookup succeeds: %s', async (lookupSucceeds) => {
+        const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const member = { ...createdMember, uid: 'added-uid' };
+        const getCommitteeMember = vi.fn(() => (lookupSucceeds ? of(member) : throwError(() => new HttpErrorResponse({ status: 503 }))));
+        Object.assign(TestBed.inject(CommitteeService), { getCommitteeMember });
+        answerRuns((email) =>
+          email === 'failed@example.com' ? { status: 'failed', member: undefined } : { status: 'added', member: undefined, memberUid: 'added-uid' }
+        );
+        const component = await setupPending([csv('ada@example.com'), csv('failed@example.com')]);
+        component.onSubmitAll();
+        expect(getCommitteeMember).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, 'added-uid');
+        expect(component.memberUpdates().toAdd.map((entry) => entry.email)).toEqual(
+          lookupSucceeds ? ['failed@example.com'] : ['ada@example.com', 'failed@example.com']
+        );
+        expect(TestBed.inject(MessageService).add).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Already Members' }));
+        errorLog.mockRestore();
+      });
+
       it('counts only added and skipped rows as saved, promotes them, and keeps the rest staged', async () => {
         const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const existing = { ...createdMember, uid: 'existing-1', email: 'existing@example.com' };
@@ -1210,6 +1288,48 @@ describe('CommitteeManageComponent', () => {
         // A settled row no longer carries uncertainty into any later save.
         component[submit]();
         expect(runStaged.mock.calls[2][0].members[0].uncertain).toBeUndefined();
+      });
+
+      it.each(['missing-uid', 'failed-lookup'] as const)('keeps unconfirmed additions uncertain while staged (%s)', async (lookup) => {
+        const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const getCommitteeMember = vi.fn(() => throwError(() => new HttpErrorResponse({ status: 503 })));
+        Object.assign(TestBed.inject(CommitteeService), { getCommitteeMember });
+        let attempt = 0;
+        runStaged.mockImplementation((input: MemberImportStagedRunInput) => {
+          const firstAttempt = attempt++ === 0;
+          return of(
+            input.members.map(({ payload, uncertain }) => {
+              if (payload.email === 'failed@example.com') return stagedRow(payload.email, { status: 'failed' });
+              const row = stagedRow(payload.email, { uncertain: firstAttempt || uncertain });
+              return {
+                ...row,
+                ...classifyMemberImportBulkResult(
+                  {
+                    index: 0,
+                    email: payload.email,
+                    status: 'skipped',
+                    reason: 'already_member',
+                    retryable: false,
+                    ...(lookup === 'failed-lookup' ? { member_uid: 'existing-uid' } : {}),
+                  },
+                  row
+                ),
+              };
+            })
+          );
+        });
+        const component = await setupPending([csv('ada@example.com'), csv('failed@example.com')]);
+        const toast = TestBed.inject(MessageService).add;
+        component.onSubmitAll();
+        expect(component.memberUpdates().toAdd).toHaveLength(2);
+        vi.mocked(toast).mockClear();
+        component.onSubmitAll();
+        expect(runStaged.mock.calls[1][0].members[0].uncertain).toBe(true);
+        expect(toast).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Unconfirmed Additions' }));
+        expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Already Members' }));
+        component.onMemberUpdatesChange({ ...component.memberUpdates(), toAdd: [csv('failed@example.com')] });
+        expect(component['uncertainCsvMembers'].size).toBe(0);
+        errorLog.mockRestore();
       });
 
       it.each(['onDone', 'onSubmitAll'] as const)('reports the outcome but neither prunes nor navigates once the wizard is gone (%s)', async (submit) => {

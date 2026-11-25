@@ -318,12 +318,12 @@ export function prepareMemberImportRows(
  * Added rows and people already in the group never go back into the queue. An `already_member`
  * result confirms presence, not which request created the membership or applied its details.
  * Temporary and not-attempted rows wait for resubmission; invalid rows cannot succeed unchanged.
- * Added rows carry the created `member` and `already_member` rows the existing `memberUid` when
- * upstream returns them, so the create or edit wizard can promote the staged row (#5529).
+ * Added and `already_member` rows carry their `memberUid` when upstream returns it, and added rows
+ * also carry the created `member`, so the create or edit wizard can promote the staged row (#5529).
  */
 export function classifyMemberImportBulkResult(result: CommitteeMemberBulkCreateRowResult, row: MemberImportRow): Partial<MemberImportRow> {
   if (result.status === 'added') {
-    return { status: 'added', reason: undefined, retryable: undefined, uncertain: false, member: result.member };
+    return { status: 'added', reason: undefined, retryable: undefined, uncertain: false, member: result.member, memberUid: result.member_uid };
   }
 
   if (result.status === 'skipped') {
