@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
@@ -41,6 +42,7 @@ describe('ProfilePageComponent', () => {
       upload?: () => Observable<unknown>;
       avatar?: string;
       impersonating?: boolean;
+      wide?: boolean;
     } = {}
   ) {
     const show = vi.fn();
@@ -67,6 +69,7 @@ describe('ProfilePageComponent', () => {
         { provide: ProfileSaveSyncService, useValue: { apply } },
         { provide: UiToastService, useValue: { show } },
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: options.wide ?? true, breakpoints: {} }) } },
       ],
     });
     return { show, apply, userService };
@@ -102,12 +105,22 @@ describe('ProfilePageComponent', () => {
     expect(github?.getAttribute('aria-label')).toBe('GitHub: ada');
   });
 
-  it('pins the openprofile rail to the right, for the signed-in username', async () => {
-    setup();
+  it('pins the openprofile rail to the right on a wide screen, below the impersonation banner', async () => {
+    setup({ impersonating: true });
+    const { query } = await render();
+    const rail = query('profile-aside-rail');
+
+    expect(rail?.classList).toContain('fixed');
+    expect(rail?.style.top).toBe('36px');
+    expect(query('profile-openprofile-link')?.textContent).toContain('ada');
+  });
+
+  it('leaves the rail out on a narrow screen, so it reads nothing for it', async () => {
+    const { userService } = setup({ wide: false });
     const { query } = await render();
 
-    expect(query('profile-aside-rail')?.classList).toContain('fixed');
-    expect(query('profile-openprofile-link')?.textContent).toContain('ada');
+    expect(query('profile-aside-rail')).toBeNull();
+    expect(userService.getProfileVisibility).not.toHaveBeenCalled();
   });
 
   it('leaves GitHub out when no owned account is linked', async () => {

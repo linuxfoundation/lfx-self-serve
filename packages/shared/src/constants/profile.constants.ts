@@ -392,7 +392,11 @@ export const PROFILE_ASIDE_COPY = {
   manageAffiliations: 'Manage affiliations',
   publicStatus: 'Public',
   privateStatus: 'Private',
+  railLabel: 'Open Profile',
 } as const;
+
+/** Where the Profile page's openprofile rail shows: above 1024px (#6083). */
+export const PROFILE_ASIDE_MEDIA_QUERY = '(min-width: 1025px)';
 
 /** Base path of the Account & Settings area that replaces the Profile & Account hub's tabs (#6067). */
 export const ACCOUNT_BASE_PATH = '/account';
