@@ -9090,6 +9090,8 @@ export class ImplementationTabComponent implements OnInit {
       createAccountStatus: this.linkedInCreateAccount().status,
       // Text Ads chosen but no longer offered: held, never sent as single image ads instead (#5764 row 19).
       textAdsUnavailable: this.linkedInFormat() === 'text' && !this.linkedInTextAdsAvailable(),
+      // Text Ads beside lead generation (campaign-service#664): change the format, before the Text Ads checks ask for a manual bid.
+      textAdsWithLeadGen: this.linkedInFormat() === 'text' && this.linkedInLeadGenSelected(),
       // Likewise video ads (#5764 row 18); while chosen, every ad needs its video for this brief.
       videoAdsUnavailable: this.linkedInFormat() === 'video' && !this.linkedInVideoAdsAvailable(),
       ...(this.linkedInVideoSelected() ? { videoMissing: linkedInVideoMissing(this.linkedInVariants(), this.briefPersistence().briefId ?? '') } : {}),

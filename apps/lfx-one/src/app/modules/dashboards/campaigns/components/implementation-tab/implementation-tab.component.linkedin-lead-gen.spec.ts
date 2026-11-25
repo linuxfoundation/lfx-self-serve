@@ -116,6 +116,14 @@ describe('ImplementationTabComponent linkedin lead gen', () => {
     expect(c(f)['canSubmit']()).toBe(false);
   });
 
+  it('asks for another format, not a manual bid, when Text Ads are held beside lead generation', STATE_ONLY, async () => {
+    const f = await mount();
+    c(f)['onLinkedInFormatSelect']('text');
+    c(f)['onLinkedInObjectiveDraftChange'](DRAFT);
+
+    expect(c(f)['createBlockedReason']()).toContain('lead generation campaigns have no Text Ads');
+  });
+
   it('offers lead generation and its form, hiding Text Ads and the per-ad call to action', async () => {
     const f = await mount();
     const query = (testId: string): HTMLElement | null => f.nativeElement.querySelector(`[data-testid="${testId}"]`);

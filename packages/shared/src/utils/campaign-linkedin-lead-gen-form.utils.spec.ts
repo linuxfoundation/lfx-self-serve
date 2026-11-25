@@ -89,11 +89,21 @@ describe('lead gen draft and picker rules', () => {
       { id: '11', name: 'CFP interest', state: 'PUBLISHED' },
       { id: '12', name: 'Waitlist', state: 'DRAFT' },
     ]);
-    expect(linkedInLeadFormOptions(state, '11')).toEqual([
+    expect(linkedInLeadFormOptions(state, undefined)).toEqual([
       { value: '11', label: 'CFP interest' },
       { value: '12', label: 'Waitlist (draft)' },
     ]);
-    expect(linkedInLeadFormOptions(state, '99')[0]).toEqual({ value: '99', label: 'Form 99' });
+    expect(linkedInLeadFormOptions(state, '99')[1]).toEqual({ value: '99', label: 'Form 99' });
+  });
+
+  it('offers a way to clear a held form, so a form held for another account can be picked again when it is the only one', () => {
+    const only = loaded([{ id: '11', name: 'CFP interest', state: 'PUBLISHED' }]);
+    expect(linkedInLeadFormOptions(only, '11')).toEqual([
+      { value: '', label: 'No form (choose again)' },
+      { value: '11', label: 'CFP interest' },
+    ]);
+    // The clear option empties the form and its owner (the picker sends '' through `onFormChange`).
+    expect(linkedInObjectiveDraftWithLeadGenForm(leadGen, '', 'tlf|urn:li:sponsoredAccount:222')).not.toHaveProperty('leadGenFormOwner');
   });
 
   it('says why there is nothing to pick', () => {

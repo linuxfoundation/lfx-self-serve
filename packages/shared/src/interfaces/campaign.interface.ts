@@ -2513,6 +2513,8 @@ export interface LinkedInCreateRefusalInput {
   textAds?: LinkedInTextAdsRefusalInput;
   /** Text Ads are chosen but this deployment no longer offers them (#5764 row 19). */
   textAdsUnavailable?: boolean;
+  /** Text Ads are chosen beside the lead generation objective, which has none (campaign-service#664). */
+  textAdsWithLeadGen?: boolean;
   /** Video ads are chosen but this deployment no longer offers them (#5764 row 18). */
   videoAdsUnavailable?: boolean;
   /** Present only while video ads are chosen (#5764 row 18): an ad with no video for the open brief. */

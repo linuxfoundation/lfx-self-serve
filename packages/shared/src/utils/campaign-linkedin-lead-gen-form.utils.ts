@@ -101,11 +101,15 @@ export function linkedInLeadFormsFailure(status: number, code: unknown): LinkedI
 /**
  * The forms the picker offers, as select options: each loaded form, a DRAFT one marked as such (LinkedIn accepts it, but
  * it collects nothing until published), and a picked form the read does not list (picked for another account, or not
- * loaded) kept as its id, so it stays on screen and can be changed.
+ * loaded) kept as its id, so it stays on screen and can be changed. While a form is picked, a first "No form" option
+ * (value `''`) clears it: the select does not re-emit the value it holds, so without it a form held for another ad
+ * account after a foundation or account switch could not be picked again when it is the only one, and Create would stay
+ * held on its owner.
  */
 export function linkedInLeadFormOptions(state: LinkedInLeadFormsState, picked: string | undefined): { value: string; label: string }[] {
   const options = state.forms.map((form) => ({ value: form.id, label: form.state === 'DRAFT' ? `${form.name} (draft)` : form.name }));
   if (picked && !state.forms.some((form) => form.id === picked)) options.unshift({ value: picked, label: `Form ${picked}` });
+  if (picked) options.unshift({ value: '', label: 'No form (choose again)' });
   return options;
 }
 
