@@ -42,7 +42,7 @@ import { AppFooterComponent } from '@shared/components/app-footer/app-footer.com
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
-import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap, take, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, map, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { ShareKitCopyCardComponent } from '../components/share-kit-copy-card/share-kit-copy-card.component';
 import { PublicShareKitService } from '../services/public-share-kit.service';
@@ -153,11 +153,13 @@ export class ShareKitPageComponent {
     settled$.pipe(takeUntilDestroyed()).subscribe((state) => this.applyMetadata(state.shareKit));
     if (isPlatformBrowser(this.platformId)) {
       // This route defers its pageview (PlausibleService) so it carries the kit's foundation, not the visitor's lens.
+      // A new load cancels a view still waiting for Plausible, and each requested slug is counted once, loaded or not.
       const ready$ = toObservable(this.plausible.ready).pipe(filter(Boolean), take(1));
-      settled$
+      toObservable(this.state)
         .pipe(
-          distinctUntilChanged((a, b) => a.shareKit?.eventSlug === b.shareKit?.eventSlug),
-          switchMap((state) => ready$.pipe(map(() => state.shareKit))),
+          switchMap((state) => (state.loading ? EMPTY : ready$.pipe(map(() => state)))),
+          distinctUntilChanged((a, b) => a.eventSlug === b.eventSlug),
+          map((state) => state.shareKit),
           takeUntilDestroyed()
         )
         .subscribe((kit) =>
@@ -192,7 +194,7 @@ export class ShareKitPageComponent {
   }
 
   private initState(): Signal<ShareKitPageState> {
-    const initial: ShareKitPageState = { loading: true, error: false, notFound: false, shareKit: null };
+    const initial: ShareKitPageState = { eventSlug: null, loading: true, error: false, notFound: false, shareKit: null };
     const transferred = this.transferState.get(this.stateKey, null);
     if (isPlatformBrowser(this.platformId) && transferred) {
       this.transferState.remove(this.stateKey);
@@ -202,15 +204,17 @@ export class ShareKitPageComponent {
         map((params) => params.get('eventSlug')),
         filter((slug): slug is string => !!slug),
         distinctUntilChanged(),
-        switchMap((slug, index) =>
-          this.shareKitService.getShareKit(slug).pipe(
-            map((shareKit): ShareKitPageState => ({ loading: false, error: false, notFound: false, shareKit })),
+        switchMap((slug, index) => {
+          // Another kit may lack the section that was open (Graphics, CFP), so a new slug starts on the Share tab.
+          if (index > 0) this.tab.set('share');
+          return this.shareKitService.getShareKit(slug).pipe(
+            map((shareKit): ShareKitPageState => ({ eventSlug: slug, loading: false, error: false, notFound: false, shareKit })),
             catchError((err) => {
               if (err?.status === 404) {
-                return of<ShareKitPageState>({ loading: false, error: false, notFound: true, shareKit: null });
+                return of<ShareKitPageState>({ eventSlug: slug, loading: false, error: false, notFound: true, shareKit: null });
               }
               console.error('Failed to load share kit', err?.status);
-              return of<ShareKitPageState>({ loading: false, error: true, notFound: false, shareKit: null });
+              return of<ShareKitPageState>({ eventSlug: slug, loading: false, error: true, notFound: false, shareKit: null });
             }),
             tap((state) => {
               if (isPlatformServer(this.platformId) && !state.loading) {
@@ -224,9 +228,9 @@ export class ShareKitPageComponent {
                 }
               }
             }),
-            startWith(index === 0 && transferred ? transferred : initial)
-          )
-        )
+            startWith(index === 0 && transferred ? transferred : { ...initial, eventSlug: slug })
+          );
+        })
       ),
       { initialValue: transferred ?? initial }
     );
