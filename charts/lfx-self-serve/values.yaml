@@ -352,6 +352,13 @@ environment:
   ORG_EASYCLA_RETURN_IN_PATH:
     value: "false"
 
+  # Company Lens all employee view, staff-only preview (lfx-self-serve#5845). On, the view opens ONLY
+  # for a request made under an active impersonation session, so LF staff can check it as an employee
+  # would see it; no real employee reaches it. LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED (the full release)
+  # is not set here and stays off. Remove this entry to close the view again.
+  LFX_ORG_LENS_EMPLOYEE_VIEW_IMPERSONATION_ONLY:
+    value: "true"
+
   # required environment variable secrets
 
   PCC_AUTH0_CLIENT_ID:
