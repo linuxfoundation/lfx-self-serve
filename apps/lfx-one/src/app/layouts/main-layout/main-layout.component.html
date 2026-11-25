@@ -76,8 +76,12 @@
 
   <!-- Main Content Area -->
   <!-- On the profile hub, reserve a right gutter (2xl:pr-[300px]) so content and the footer clear the fixed profile rail at 2xl and up; below 2xl the panel renders inline instead. -->
+  <!-- The Profile page's fixed openprofile rail gets the same gutter above 1024px, where it shows. -->
   <!-- The left gutter follows the desktop navbar: 288px docked open, 56px docked to its rail (a peek floats over it). -->
-  <main class="flex-1 min-w-0 flex flex-col" [ngClass]="[navbarCollapse.gutterClass(), isProfileHub() ? '2xl:pr-[300px]' : '']" data-testid="main-content">
+  <main
+    class="flex-1 min-w-0 flex flex-col"
+    [ngClass]="[navbarCollapse.gutterClass(), isProfileHub() ? '2xl:pr-[300px]' : '', isProfilePage() ? 'min-[1025px]:pr-[300px]' : '']"
+    data-testid="main-content">
     <!-- Mobile Menu Button — touch devices below lg only; a non-touch device keeps the navbar rail instead. -->
     <div
       class="lg:hidden sticky z-30 bg-white border-b border-gray-200 px-5 py-3"

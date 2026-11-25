@@ -66,3 +66,6 @@ export const profileRedesignRedirectGuard: CanActivateFn = async (route) => {
   if (!(await readProfileRedesignFlag('profileRedesignRedirectGuard'))) return true;
   return router.createUrlTree([accountPath], { queryParams: route.queryParams });
 };
+
+/** Matches a route only with the redesign flag on, so the route after it (the Profile & Account hub) serves everyone else (#6082). */
+export const profileRedesignOnlyGuard: CanMatchFn = () => readProfileRedesignFlag('profileRedesignOnlyGuard');

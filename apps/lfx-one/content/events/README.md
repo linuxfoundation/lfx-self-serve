@@ -23,7 +23,18 @@ Every kit is behind the `event-share-kit` LaunchDarkly flag (`EVENT_SHARE_KIT_FL
 
 ## Member discount
 
-A kit can describe a member-only discount in `memberBenefit` (membership slug, display name, discount label and a join link). The code itself never goes in this repository: it is read from the `SHARE_KIT_MEMBER_CODES` environment variable, a JSON object of event slug to code set from the deployment's secret store, and is only sent to a signed-in visitor whose verified email belongs to an active member company of that membership. With no code configured for an event, the page shows no offer.
+A kit can describe a member-only discount in `memberBenefit`. Everything the member box says about the organisation comes from these fields, so set them for each new event:
+
+| Field            | Example (AGNTCon + MCPCon NA 2027) | Where it shows                                                                      |
+| ---------------- | ---------------------------------- | ----------------------------------------------------------------------------------- |
+| `membershipSlug` | `aaif`                             | Not shown. The LFX project whose active member companies qualify                    |
+| `membershipName` | `AAIF`                             | Heading ("AAIF Members Get …"), "is a member of AAIF", "isn't a member of AAIF yet" |
+| `discountLabel`  | `20% Off Registration`             | End of the heading. Write it in Title Case, as the heading is                       |
+| `joinUrl`        | `https://aaif.io/members#join`     | The "Learn About Membership" button for visitors whose company isn't a member       |
+
+The rest of the box ("Work at a member company?", "Sign In to See Your Code", "Enter it when you register") names no organisation, so it needs no change per event. Post titles, the graphic label and the CFP heading and guide title are shown as written, so write those in Title Case too.
+
+The code itself never goes in this repository: it is read from the `SHARE_KIT_MEMBER_CODES` environment variable, a JSON object of event slug to code set from the deployment's secret store, and is only sent to a signed-in visitor whose verified email belongs to an active member company of that membership. With no code configured for an event, the page shows no offer.
 
 To set or rotate codes:
 

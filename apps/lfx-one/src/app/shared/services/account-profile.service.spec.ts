@@ -3,6 +3,10 @@
 
 import { TestBed } from '@angular/core/testing';
 import { CombinedProfile } from '@lfx-one/shared/interfaces';
+import { HttpErrorResponse } from '@angular/common/http';
+import { createEnvironmentInjector, EnvironmentInjector, signal } from '@angular/core';
+import { AVATAR_UPLOAD_COPY } from '@lfx-one/shared/constants';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -89,5 +93,103 @@ describe('AccountProfileService', () => {
     slow.next({ ...PROFILE, user: { ...PROFILE.user, first_name: 'Stale' } });
 
     expect(service.profile()?.user.first_name).toBe('Ada');
+  });
+});
+
+describe('AccountProfileService across pages', () => {
+  it('lays a save made on one page over another page’s stale fetch (#6082)', () => {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: UserService, useValue: { getCurrentUserProfile: () => of(PROFILE) } },
+        { provide: ProfileSaveSyncService, useValue: { apply: vi.fn() } },
+      ],
+    });
+    const injector = TestBed.inject(EnvironmentInjector);
+    const account = createEnvironmentInjector([AccountProfileService], injector).get(AccountProfileService);
+    account.load();
+    account.applySaved({ job_title: 'Architect' });
+
+    const profilePage = createEnvironmentInjector([AccountProfileService], injector).get(AccountProfileService);
+    profilePage.load();
+
+    expect(profilePage.profile()?.profile?.job_title).toBe('Architect');
+  });
+});
+
+describe('AccountProfileService name sync', () => {
+  it('hands the sync the name from before the save, so Mentorship profiles get the new one', () => {
+    const apply = vi.fn();
+    TestBed.configureTestingModule({
+      providers: [
+        AccountProfileService,
+        { provide: UserService, useValue: { getCurrentUserProfile: () => of(PROFILE) } },
+        { provide: ProfileSaveSyncService, useValue: { apply } },
+      ],
+    });
+    const service = TestBed.inject(AccountProfileService);
+    service.load();
+
+    service.applySaved({ given_name: 'Augusta' });
+
+    expect(apply).toHaveBeenCalledWith({ given_name: 'Augusta' }, expect.objectContaining({ first_name: 'Ada' }));
+    expect(service.profile()?.user.first_name).toBe('Augusta');
+  });
+});
+
+describe('AccountProfileService.uploadAvatar', () => {
+  const PNG = new File(['x'], 'ada.png', { type: 'image/png' });
+
+  function setup(upload: () => unknown, impersonating = false) {
+    const show = vi.fn();
+    const uploadProfilePicture = vi.fn(upload);
+    TestBed.configureTestingModule({
+      providers: [
+        AccountProfileService,
+        { provide: UserService, useValue: { getCurrentUserProfile: () => of(PROFILE), impersonating: signal(impersonating), uploadProfilePicture } },
+        { provide: ProfileSaveSyncService, useValue: { apply: vi.fn() } },
+        { provide: UiToastService, useValue: { show } },
+      ],
+    });
+    return { service: TestBed.inject(AccountProfileService), show, uploadProfilePicture };
+  }
+
+  const forbidden = (body: Record<string, string>) => () => throwError(() => new HttpErrorResponse({ status: 403, error: body }));
+
+  it('shows the new photo at once', () => {
+    const { service, show } = setup(() => of({ public_url: 'https://cdn.example/ada.png' }));
+
+    service.uploadAvatar(PNG, vi.fn());
+
+    expect(service.savedFields()).toEqual({ picture: 'https://cdn.example/ada.png' });
+    expect(service.avatarUploading()).toBe(false);
+    expect(show).toHaveBeenCalledWith({ variant: 'dark', message: AVATAR_UPLOAD_COPY.updated });
+  });
+
+  it('hands a change that needs authorization to the page, with the URL to leave for', () => {
+    const { service, show } = setup(forbidden({ error: 'management_token_required', authorize_url: '/api/profile/auth/start?returnTo=%2Fprofile' }));
+    const authorize = vi.fn();
+
+    service.uploadAvatar(PNG, authorize);
+
+    expect(authorize).toHaveBeenCalledWith('/api/profile/auth/start?returnTo=%2Fprofile');
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it('reports a failure when authorization is asked for without a URL', () => {
+    const { service, show } = setup(forbidden({ error: 'management_token_required' }));
+    const authorize = vi.fn();
+
+    service.uploadAvatar(PNG, authorize);
+
+    expect(authorize).not.toHaveBeenCalled();
+    expect(show).toHaveBeenCalledWith({ variant: 'error', message: AVATAR_UPLOAD_COPY.failed });
+  });
+
+  it('uploads nothing while impersonating', () => {
+    const { service, uploadProfilePicture } = setup(() => of({ public_url: 'https://cdn.example/ada.png' }), true);
+
+    service.uploadAvatar(PNG, vi.fn());
+
+    expect(uploadProfilePicture).not.toHaveBeenCalled();
   });
 });

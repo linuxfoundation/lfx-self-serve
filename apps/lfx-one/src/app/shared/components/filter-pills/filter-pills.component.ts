@@ -3,7 +3,7 @@
 
 import { afterRenderEffect, Component, computed, ElementRef, input, output, Signal, viewChild } from '@angular/core';
 import { TooltipModule } from 'primeng/tooltip';
-import { FilterPillColor, FilterPillOption } from '@lfx-one/shared/interfaces';
+import { FilterPillColor, FilterPillOption, FilterPillView } from '@lfx-one/shared/interfaces';
 
 /** @deprecated Use FilterPillOption from @lfx-one/shared/interfaces instead */
 export type FilterOption = FilterPillOption;
@@ -33,8 +33,11 @@ export class FilterPillsComponent {
 
   private readonly track = viewChild<ElementRef<HTMLElement>>('track');
 
-  /** Classes for each `pill` variant option, keyed by option id; an option's `color` replaces the default blue selected style. */
-  protected readonly pillClasses: Signal<Record<string, string>> = this.initPillClasses();
+  /**
+   * Classes and accessible name for each `pill` variant option, keyed by option id; an option's `color` replaces the
+   * default blue selected style. A positive `count` renders as a badge and joins the accessible name unless `ariaLabel` is set.
+   */
+  protected readonly pills: Signal<Record<string, FilterPillView>> = this.initPills();
 
   public constructor() {
     // A long track opens scrolled to the start, so bring a selected chip past its edge (e.g. one set by the URL)
@@ -60,21 +63,58 @@ export class FilterPillsComponent {
     this.filterChange.emit(filterId);
   }
 
-  private initPillClasses(): Signal<Record<string, string>> {
+  private initPills(): Signal<Record<string, FilterPillView>> {
     return computed(() => {
-      const base = 'px-3 py-1 rounded-full text-sm transition-colors';
-      const palette: Record<FilterPillColor | 'default', { selected: string; idle: string }> = {
-        default: { selected: 'bg-blue-500 text-white', idle: 'bg-gray-100 text-gray-700 hover:bg-gray-200' },
-        green: { selected: 'bg-emerald-600 text-white', idle: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
-        red: { selected: 'bg-red-600 text-white', idle: 'bg-red-50 text-red-700 hover:bg-red-100' },
-        purple: { selected: 'bg-purple-600 text-white', idle: 'bg-purple-50 text-purple-700 hover:bg-purple-100' },
-        blue: { selected: 'bg-blue-600 text-white', idle: 'bg-blue-50 text-blue-600 hover:bg-blue-100' },
+      const base = 'inline-flex items-center px-3 py-1 rounded-full text-sm transition-colors';
+      const badgeBase = 'ml-1.5 rounded-full px-1.5 text-xs font-semibold';
+      const palette: Record<FilterPillColor | 'default', { selected: string; idle: string; selectedBadge: string; idleBadge: string }> = {
+        default: {
+          selected: 'bg-blue-500 text-white',
+          idle: 'bg-gray-100 text-gray-700 hover:bg-gray-200',
+          selectedBadge: 'bg-white text-blue-800',
+          idleBadge: 'bg-gray-200 text-gray-700',
+        },
+        green: {
+          selected: 'bg-emerald-600 text-white',
+          idle: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+          selectedBadge: 'bg-white text-emerald-800',
+          idleBadge: 'bg-emerald-100 text-emerald-700',
+        },
+        red: {
+          selected: 'bg-red-600 text-white',
+          idle: 'bg-red-50 text-red-700 hover:bg-red-100',
+          selectedBadge: 'bg-white text-red-800',
+          idleBadge: 'bg-red-100 text-red-700',
+        },
+        purple: {
+          selected: 'bg-purple-600 text-white',
+          idle: 'bg-purple-50 text-purple-700 hover:bg-purple-100',
+          selectedBadge: 'bg-white text-purple-800',
+          idleBadge: 'bg-purple-100 text-purple-700',
+        },
+        blue: {
+          selected: 'bg-blue-600 text-white',
+          idle: 'bg-blue-50 text-blue-600 hover:bg-blue-100',
+          selectedBadge: 'bg-white text-blue-800',
+          idleBadge: 'bg-blue-100 text-blue-700',
+        },
       };
 
       return Object.fromEntries(
         this.options().map((option) => {
           const colors = palette[option.color ?? 'default'];
-          return [option.id, `${base} ${this.selectedFilter() === option.id ? colors.selected : colors.idle}`];
+          const selected = this.selectedFilter() === option.id;
+          const count = option.count && option.count > 0 ? option.count : null;
+          const name = option.fullLabel || option.label;
+          return [
+            option.id,
+            {
+              classes: `${base} ${selected ? colors.selected : colors.idle}`,
+              badgeClasses: `${badgeBase} ${selected ? colors.selectedBadge : colors.idleBadge}`,
+              count,
+              ariaLabel: option.ariaLabel || (count === null ? name : `${name}, ${count}`),
+            },
+          ];
         })
       );
     });

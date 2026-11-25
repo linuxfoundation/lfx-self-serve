@@ -865,3 +865,6 @@ export interface CdpProjectAffiliation {
   roles: CdpProjectAffiliationRole[];
   affiliations: CdpProjectAffiliationEntry[];
 }
+
+/** What the Profile page's openprofile card knows of the public profile (#6083): `unknown` when the read failed. */
+export type ProfileOpenprofileState = 'public' | 'private' | 'unknown';
