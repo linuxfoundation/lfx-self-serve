@@ -1302,6 +1302,22 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(at(f).createBlockedReason()).toBeNull();
     });
 
+    it('drops a text ad image upload in flight when its text ad is removed, and no other', STATE_ONLY, async () => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      const f = await textAdsWithImage({ width: 100, height: 100 });
+      const c = f.componentInstance as unknown as { onLinkedInTextAdsChange(ads: { key: string; headline: string; description: string }[]): void };
+      const kept = { key: 'text-ad-1', headline: 'KubeCon EU', description: 'Join cloud native engineers.' };
+      const other = { key: 'text-ad-2', headline: 'KubeCon NA', description: 'Meet the maintainers.' };
+      expect(at(f).createBlockedReason()).toBe('Waiting for the LinkedIn Ads image upload to finish.');
+
+      c.onLinkedInTextAdsChange([kept, other]);
+      c.onLinkedInTextAdsChange([kept]);
+      expect(at(f).createBlockedReason()).toBe('Waiting for the LinkedIn Ads image upload to finish.');
+
+      c.onLinkedInTextAdsChange([other]);
+      expect(at(f).createBlockedReason()).not.toBe('Waiting for the LinkedIn Ads image upload to finish.');
+    });
+
     it('lets a variant take a pick after switching back from Text Ads with a failed text ad image', STATE_ONLY, async () => {
       const f = await textAdsWithImage({ width: 120, height: 120 });
       const c = f.componentInstance as unknown as {
