@@ -9,6 +9,7 @@ import {
   LINKEDIN_AUDIENCES_RESTRICTED_CODE,
   LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE,
   LINKEDIN_CONVERSIONS_RESTRICTED_CODE,
+  LINKEDIN_LEAD_FORMS_RESTRICTED_CODE,
   LINKEDIN_TARGETING_PROFILE_EDIT_FIELD,
 } from '@lfx-one/shared/constants';
 import type { LinkedInRuntimeConfig } from '@lfx-one/shared/interfaces';
@@ -378,6 +379,48 @@ describe('CampaignController LinkedIn objective and conversions (#5764)', () => 
     vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockRejectedValueOnce(new Error('access-check unavailable'));
     const unverified = await create({ targetingProfile: 'cloud-native', conversions: ['104012'] });
     expect(vi.mocked(unverified.next).mock.calls[0]?.[0]).toMatchObject({ code: LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE });
+    expect(createCampaigns).not.toHaveBeenCalled();
+  });
+});
+
+// Lead Gen Form campaigns (campaign-service#664): wiring only. The rules are `linkedInLeadGenRefusal`'s, tested in shared.
+describe('CampaignController LinkedIn lead gen (campaign-service#664)', () => {
+  const leadGen = { targetingProfile: 'cloud-native', objective: 'lead_generation', leadGenForm: '6755260984438374400', leadGenCallToAction: 'ATTEND' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    linkedInConfig.current = CONFIG;
+    // Conversions off: the lead generation objective rides its own flag, not the conversions one.
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInConversions);
+    loadBriefById.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-1', error: null });
+  });
+
+  it('forwards the objective, form and button as they came, on global_marketing_ops', async () => {
+    const { next } = await create(leadGen);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()).toMatchObject({ objective: 'lead_generation', leadGenForm: '6755260984438374400', leadGenCallToAction: 'ATTEND' });
+    expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).toHaveBeenCalledWith(expect.anything(), 'tlf');
+  });
+
+  it('refuses them while the flag is off, or with a manual bid, creating nothing', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInLeadGen);
+    expect(refusal((await create(leadGen)).next).field).toBe('linkedInConfig.leadGenForm');
+
+    isServerFeatureEnabled.mockImplementation(() => true);
+    expect(refusal((await create({ ...leadGen, bidding: { strategy: 'manual', bidAmount: 4.5 } })).next).field).toBe('linkedInConfig.objective');
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+  });
+
+  it('refuses a form from a caller without global_marketing_ops (403), creating nothing', async () => {
+    vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValueOnce(false);
+
+    const { next } = await create(leadGen);
+
+    expect(vi.mocked(next).mock.calls[0]?.[0]).toMatchObject({ code: LINKEDIN_LEAD_FORMS_RESTRICTED_CODE });
     expect(createCampaigns).not.toHaveBeenCalled();
   });
 });

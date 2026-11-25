@@ -26,6 +26,8 @@ import type {
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   LINKEDIN_AD_FORMATS,
+  LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS,
+  LINKEDIN_LEAD_GEN_OBJECTIVE,
   LINKEDIN_OBJECTIVES,
   LINKEDIN_TARGETING_SEARCH_FACETS,
   MICROSOFT_KEYWORDS_WINDOWS,
@@ -2061,6 +2063,28 @@ export interface LinkedInConversionsResult {
   conversions: LinkedInConversionRule[];
 }
 
+/** campaign-service's `list-linkedin-ads-lead-forms` body (`LinkedInAdsLeadForms`, #664), as it sends it. */
+export interface CampaignServiceLinkedInLeadForms {
+  account_id: string;
+  forms: { id: string; urn: string; name: string; state: string }[];
+  form_count: number;
+}
+
+/** One Lead Gen Form a LinkedIn create may name in `linkedInConfig.leadGenForm`. */
+export interface LinkedInLeadForm {
+  /** The form's numeric id, exactly as `leadGenForm` takes it. */
+  id: string;
+  name: string;
+  /** LinkedIn's form state, verbatim: `DRAFT` or `PUBLISHED` (archived forms are never listed). */
+  state: string;
+}
+
+/** `GET /api/campaigns/linkedin/lead-forms` (campaign-service#664): the Lead Gen Forms on the ad account a create uses. */
+export interface LinkedInLeadFormsResult {
+  accountId: string;
+  forms: LinkedInLeadForm[];
+}
+
 /** `GET /api/campaigns/linkedin/geo-targets` (#5545): the locations matching a query, ready to add as geo targets. */
 export interface LinkedInGeoSearchResult {
   locations: LinkedInGeoTarget[];
@@ -2556,7 +2580,15 @@ export interface LinkedInCampaignCreateRequest {
    * The campaign's goal (#5764 row 2, campaign-service #582). Omitted lets `bidding` decide. `'conversions'` on automatic
    * bidding needs `conversions`; `'traffic'` takes automatic bidding only. Only while `linkedInConversionsEnabled`.
    */
-  objective?: LinkedInObjective;
+  objective?: LinkedInObjective | LinkedInLeadGenObjective;
+  /**
+   * The Lead Gen Form the creatives open (campaign-service#664): its numeric id or `urn:li:adForm:<id>`, from
+   * `GET /api/campaigns/linkedin/lead-forms`. Required with the `lead_generation` objective, refused without it. Only
+   * while `linkedInLeadGenEnabled`, and only for a caller holding `global_marketing_ops` on the project.
+   */
+  leadGenForm?: string;
+  /** The form's button label (`LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS`); omitted is `REGISTER`. Only with `leadGenForm`. */
+  leadGenCallToAction?: LinkedInLeadGenCallToAction;
   /**
    * Conversion rule ids on the campaign's ad account to associate once it exists (#5764 row 4, campaign-service #552),
    * from `GET /api/campaigns/linkedin/conversions`. Only while `linkedInConversionsEnabled`, and only for a caller
@@ -2567,6 +2599,12 @@ export interface LinkedInCampaignCreateRequest {
 
 /** A goal `linkedInConfig.objective` may name (`LINKEDIN_OBJECTIVES`). */
 export type LinkedInObjective = (typeof LINKEDIN_OBJECTIVES)[number];
+
+/** The `linkedInConfig.objective` of a Lead Gen Form campaign (`LINKEDIN_LEAD_GEN_OBJECTIVE`, campaign-service#664). */
+export type LinkedInLeadGenObjective = typeof LINKEDIN_LEAD_GEN_OBJECTIVE;
+
+/** A lead gen creative's button label (`LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS`). */
+export type LinkedInLeadGenCallToAction = (typeof LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS)[number];
 
 /**
  * Custom LinkedIn targeting in campaign-service's shape (`linkedin.Targeting`): `include` clauses are ANDed (after the
@@ -8304,6 +8342,12 @@ export interface CampaignListResult {
    * `LINKEDIN_ADS_CONVERSIONS_ENABLED`.
    */
   linkedInConversionsEnabled: boolean;
+  /**
+   * Whether a LinkedIn create may be a Lead Gen Form campaign: `objective: "lead_generation"`, `leadGenForm` and
+   * `leadGenCallToAction` (campaign-service#664). Needs the campaign-service create path AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_LEAD_GEN`, which follows campaign-service's own `LINKEDIN_ADS_LEAD_GEN_ENABLED`.
+   */
+  linkedInLeadGenEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.

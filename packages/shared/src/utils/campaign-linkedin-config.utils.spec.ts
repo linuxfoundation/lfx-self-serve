@@ -17,6 +17,7 @@ describe('linkedInConfigKeyRefusal', () => {
     [{ ...config, format: 'text', textAds: [{ headline: 'h', description: 'd', imageUrn: 'urn:li:image:1' }, null] }, null],
     [{ ...config, targeting: { include: [{ skills: ['urn:li:skill:1'] }] } }, null],
     [{ ...config, objective: 'conversions', conversions: ['104012'] }, null],
+    [{ ...config, objective: 'lead_generation', leadGenForm: '6755260984438374400', leadGenCallToAction: 'REGISTER' }, null],
     [{ ...config, variants: [{ introText: 'Join us', headline: 'KubeCon', videoAssetId: 'v1' }] }, null],
   ])('accepts %j', (raw, expected) => {
     expect(linkedInConfigKeyRefusal(raw)).toBe(expected);
@@ -26,6 +27,7 @@ describe('linkedInConfigKeyRefusal', () => {
     // A field campaign-service reads that no self-serve check covers yet.
     [{ ...config, jobFunctions: ['urn:li:function:8'] }, 'linkedInConfig'],
     [{ ...config, Objective: 'conversions' }, 'linkedInConfig.objective'],
+    [{ ...config, LeadGenForm: '1' }, 'linkedInConfig.leadGenForm'],
     // Another spelling of a known key names the key; Go folds U+017F (long s) to s.
     [{ ...config, DailyCapUsd: 20 }, 'linkedInConfig.dailyCapUsd'],
     [{ ...config, ['ſelectedAdAccountId']: '1' }, 'linkedInConfig.selectedAdAccountId'],

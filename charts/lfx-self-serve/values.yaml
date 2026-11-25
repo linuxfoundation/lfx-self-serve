@@ -849,6 +849,17 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS:
     value:
 
+  # LinkedIn Lead Gen Form campaigns (linuxfoundation/lfx-v2-campaign-service#664): accepts `linkedInConfig.objective`
+  # `lead_generation` with `linkedInConfig.leadGenForm` and `linkedInConfig.leadGenCallToAction`, and answers
+  # `GET /api/campaigns/linkedin/lead-forms` (global_marketing_ops only) for the forms to pick from.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `LINKEDIN_ADS_LEAD_GEN_ENABLED` on
+  # and the create pipeline on. Off (the default), the create route refuses any of the three with a 400, never dropping
+  # it, and the read answers 404. A field only, so turning it back off strands nothing. Order: set campaign-service's
+  # flag and pass its paused lead gen probe, THEN this. Keep it off until then. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_LEAD_GEN:
+    value:
+
   # Offers Meta ad set audience targeting on the Implement tab (#5905), sent as
   # `metaConfig.targeting`: age range, gender and Advantage+ audience for every campaign manager, and
   # included/excluded custom audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only for

@@ -34,6 +34,8 @@ const LINKEDIN_CONFIG_REQUEST_KEYS = [
   'targeting',
   'objective',
   'conversions',
+  'leadGenForm',
+  'leadGenCallToAction',
 ] as const;
 
 /** The `linkedInConfig.variants[i]` keys a create may carry, spelled exactly (`LinkedInCreativeVariant`). */

@@ -978,6 +978,94 @@ export const LINKEDIN_CONVERSIONS_FAILED_MESSAGE = "LinkedIn conversion rules di
 export const LINKEDIN_CONVERSIONS_OWNER_MESSAGE = 'Conversion rules were picked for another LinkedIn ad account. Remove them, then pick them again.';
 
 /**
+ * The `linkedInConfig.objective` of a Lead Gen Form campaign (linuxfoundation/lfx-v2-campaign-service#664),
+ * campaign-service's `linkedinObjectiveLeadGeneration`, spelled exactly. Gated on its own flag, apart from
+ * `LINKEDIN_OBJECTIVES`.
+ */
+export const LINKEDIN_LEAD_GEN_OBJECTIVE = 'lead_generation';
+
+/** The fields a LinkedIn lead gen refusal names (campaign-service#664). */
+export const LINKEDIN_LEAD_GEN_FORM_FIELD = 'linkedInConfig.leadGenForm';
+export const LINKEDIN_LEAD_GEN_CALL_TO_ACTION_FIELD = 'linkedInConfig.leadGenCallToAction';
+
+/**
+ * The button labels a lead gen creative may carry, campaign-service's `LeadGenCallToActionLabels`
+ * (`internal/platform/linkedin/lead_gen.go`, li-lms-2026-11), in its order and matched exactly. Unlike a variant's call to
+ * action it includes `UNLOCK_FULL_DOCUMENT`.
+ */
+export const LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS = [
+  'APPLY',
+  'DOWNLOAD',
+  'VIEW_QUOTE',
+  'LEARN_MORE',
+  'SIGN_UP',
+  'SUBSCRIBE',
+  'REGISTER',
+  'REQUEST_DEMO',
+  'JOIN',
+  'ATTEND',
+  'UNLOCK_FULL_DOCUMENT',
+  'SHOP_NOW',
+  'BUY_NOW',
+  'SEE_MORE',
+] as const;
+
+/** campaign-service's `DefaultLeadGenCallToAction`: the button a lead gen create gets when it names none. */
+export const LINKEDIN_LEAD_GEN_DEFAULT_CALL_TO_ACTION = 'REGISTER';
+
+/** How each of `LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS` reads in the button select; a missing label fails type-checking. */
+const LINKEDIN_LEAD_GEN_CALL_TO_ACTION_TEXT: Record<(typeof LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS)[number], string> = {
+  ...LINKEDIN_CALL_TO_ACTION_TEXT,
+  UNLOCK_FULL_DOCUMENT: 'Unlock full document',
+};
+
+/** The button labels the lead gen select offers, in `LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS` order. */
+export const LINKEDIN_LEAD_GEN_CALL_TO_ACTION_OPTIONS: readonly LinkedInCallToActionOption[] = LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS.map((value) => ({
+  value,
+  label: LINKEDIN_LEAD_GEN_CALL_TO_ACTION_TEXT[value],
+}));
+
+/**
+ * The error `code` (HTTP 403) of a LinkedIn lead form read, or a create naming `leadGenForm`, refused because the caller
+ * does not hold `global_marketing_ops` on the project: a form is a resource of the shared ad account, so campaign-service
+ * answers both on that relation (#664).
+ */
+export const LINKEDIN_LEAD_FORMS_RESTRICTED_CODE = 'LINKEDIN_LEAD_FORMS_RESTRICTED';
+export const LINKEDIN_LEAD_FORMS_RESTRICTED_MESSAGE =
+  'LinkedIn lead gen forms can only be picked by the LF marketing team, because every foundation shares one LinkedIn ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
+export const LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE = 'LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE';
+export const LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to LinkedIn lead gen forms could not be verified. Try again in a few minutes.';
+
+/** What the lead form picker says while the ad account's forms load. */
+export const LINKEDIN_LEAD_FORMS_LOADING_MESSAGE = 'Loading LinkedIn lead gen forms…';
+
+/** What it says when the lead form read failed another way than the coded 403 or 503. */
+export const LINKEDIN_LEAD_FORMS_FAILED_MESSAGE = "LinkedIn lead gen forms didn't load. Try again.";
+
+/** Why a create is held while the draft's form was picked for another foundation or ad account than its own. */
+export const LINKEDIN_LEAD_FORM_OWNER_MESSAGE = 'The lead gen form was picked for another LinkedIn ad account. Pick a form again.';
+
+/**
+ * The coded 403 and 503 of each LinkedIn ad account resource answered on `global_marketing_ops`: audience segments,
+ * conversion rules and Lead Gen Forms. Read by the campaign controller's `requireLinkedInAudienceAccess`.
+ */
+export const LINKEDIN_MARKETING_OPS_ACCESS_ERRORS = {
+  audiences: {
+    restricted: { code: LINKEDIN_AUDIENCES_RESTRICTED_CODE, message: LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE },
+    unavailable: { code: LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE, message: LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE },
+  },
+  conversions: {
+    restricted: { code: LINKEDIN_CONVERSIONS_RESTRICTED_CODE, message: LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE },
+    unavailable: { code: LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE, message: LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE },
+  },
+  leadForms: {
+    restricted: { code: LINKEDIN_LEAD_FORMS_RESTRICTED_CODE, message: LINKEDIN_LEAD_FORMS_RESTRICTED_MESSAGE },
+    unavailable: { code: LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE, message: LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE },
+  },
+} as const;
+
+/**
  * The facets campaign-service's targeting typeahead searches for `linkedInConfig.targeting` (`search-linkedin-ads-targeting-entities`,
  * #585): its `locations` answer `geoTargets`, and seniorities, job functions, company sizes, locales and segments are
  * not searched (segments come from `GET /api/campaigns/linkedin/audiences`).

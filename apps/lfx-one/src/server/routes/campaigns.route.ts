@@ -25,6 +25,7 @@ import {
   requireMetaCustomAudiencesAccess,
   requireLinkedInAudiencesAccess,
   requireLinkedInConversionsAccess,
+  requireLinkedInLeadFormsAccess,
   requireMetaLeadFormsAccess,
 } from '../middleware/require-marketing-access.middleware';
 import { canSetLinkedInVideoAds } from '../services/campaign-service.service';
@@ -130,6 +131,11 @@ router.get('/linkedin/audiences', requireLinkedInAudiencesAccess, (req, res, nex
 // The ad account is shared, so answered only to `global_marketing_ops` on the project, as campaign-service answers. 404
 // while LinkedIn conversions are off. Ahead of `router.use(requireCampaignManager)` for the same reason as the lists above.
 router.get('/linkedin/conversions', requireLinkedInConversionsAccess, (req, res, next) => campaignController.getLinkedInConversions(req, res, next));
+
+// The Lead Gen Forms on the LinkedIn ad account a create uses, for the Implement tab's form picker (campaign-service#664).
+// A form belongs to the shared ad account, so answered only to `global_marketing_ops` on the project, as campaign-service
+// answers. 404 while LinkedIn lead gen is off. Ahead of `router.use(requireCampaignManager)` for the same reason as above.
+router.get('/linkedin/lead-forms', requireLinkedInLeadFormsAccess, (req, res, next) => campaignController.getLinkedInLeadForms(req, res, next));
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
