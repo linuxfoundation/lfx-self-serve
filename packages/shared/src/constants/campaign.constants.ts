@@ -3809,6 +3809,15 @@ export const MICROSOFT_KEYWORDS_WINDOW_OPTIONS: readonly MicrosoftKeywordsWindow
   { value: 'last_month', label: 'Last month' },
 ] as const;
 
+/** The window the Microsoft keyword table opens on: upstream's own default. */
+export const DEFAULT_MICROSOFT_KEYWORDS_WINDOW: MicrosoftKeywordsWindow = 'last_30_days';
+
+// NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and
+// targeting profile URN lists are loaded at runtime from a mounted ConfigMap
+// (see apps/lfx-one/src/server/services/linkedin-ads.service.ts → loadLinkedInConfig).
+// They are kept out of source control entirely so vendor IDs never ship in the
+// client bundle or the public chart repo.
+
 /**
  * The LinkedIn location search query bounds (#5545): campaign-service's `search-linkedin-ads-targeting-entities` takes
  * 2 to 100 characters with no control characters, so the BFF checks the same before any upstream call.
@@ -3820,15 +3829,6 @@ export const LINKEDIN_GEO_URN_PATTERN = /^urn:li:geo:[0-9]+$/;
 
 /** The message a LinkedIn location search answers while LinkedIn throttles or fails it (an upstream 503, not retried). */
 export const LINKEDIN_GEO_SEARCH_BUSY_MESSAGE = "LinkedIn location search isn't available right now. Wait a few seconds, then search again.";
-
-/** The window the Microsoft keyword table opens on: upstream's own default. */
-export const DEFAULT_MICROSOFT_KEYWORDS_WINDOW: MicrosoftKeywordsWindow = 'last_30_days';
-
-// NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and
-// targeting profile URN lists are loaded at runtime from a mounted ConfigMap
-// (see apps/lfx-one/src/server/services/linkedin-ads.service.ts → loadLinkedInConfig).
-// They are kept out of source control entirely so vendor IDs never ship in the
-// client bundle or the public chart repo.
 
 export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget>> = {
   japan: { label: 'Japan', urn: 'urn:li:geo:101355337' },
