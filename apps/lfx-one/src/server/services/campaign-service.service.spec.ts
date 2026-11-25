@@ -6609,6 +6609,17 @@ describe('CampaignServiceClient.listMetaCustomAudiences', () => {
   });
 });
 
+/** The Reddit custom-audience read (#6108 row 1): wiring only. campaign-service takes no search, so none is sent. */
+describe('CampaignServiceClient.listRedditCustomAudiences', () => {
+  it("GETs the project's custom-audience read, the project encoded, with no query", async () => {
+    const audiences = { account_id: 't2_acct', audiences: [], audience_count: 0, truncated: false };
+    proxyRequest.mockResolvedValueOnce(audiences);
+
+    expect(await new CampaignServiceClient().listRedditCustomAudiences(req, 'lf/ai')).toBe(audiences);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/reddit-ads/custom-audiences', 'GET');
+  });
+});
+
 describe('CampaignServiceClient.listLinkedInAudiences', () => {
   const audiences = { account_id: '500000001', audiences: [], audience_count: 0, truncated: false };
 

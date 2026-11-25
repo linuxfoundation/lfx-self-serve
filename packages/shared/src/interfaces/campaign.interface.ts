@@ -2877,6 +2877,14 @@ export interface RedditCampaignCreateRequest {
    * only with the conversions objective: the create route refuses it otherwise, never dropping it.
    */
   conversionEvent?: RedditConversionEvent;
+  /**
+   * Reddit custom audiences to target and to exclude (#6108 row 1, campaign-service #549), ids from
+   * `GET /api/campaigns/reddit/custom-audiences`. Only while `CampaignListResult.redditCustomAudiencesEnabled`: the
+   * create route refuses them otherwise, never dropping them, and holds them to campaign-service's rules
+   * (`redditCustomAudiencesRefusal`).
+   */
+  customAudienceIds?: string[];
+  excludedCustomAudienceIds?: string[];
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
 }
@@ -3629,6 +3637,26 @@ export interface MetaCustomAudienceOption {
 export interface MetaCustomAudiencesResult {
   accountId: string;
   audiences: MetaCustomAudienceOption[];
+  truncated: boolean;
+}
+
+/** One custom audience on the Reddit ad account a create uses (#6108 row 1), camel-cased from campaign-service's `reddit-ads-custom-audience`. */
+export interface RedditCustomAudienceOption {
+  id: string;
+  name: string;
+  /** Reddit's type, verbatim (CUSTOMER_LIST, LOOKALIKE, PIXEL_RETARGETING, ...); empty when Reddit sent none. */
+  type: string;
+  /** Reddit's processing status, verbatim (VALID, PENDING, ...); every status is listed. */
+  status: string;
+  /** Reddit's estimated matched-user bounds; `null` when Reddit sent none, which is not a size of 0. */
+  sizeLower: number | null;
+  sizeUpper: number | null;
+}
+
+/** The Reddit custom-audience read: the ad account, its audiences sorted by name, and whether Reddit had more pages. */
+export interface RedditCustomAudiencesResult {
+  accountId: string;
+  audiences: RedditCustomAudienceOption[];
   truncated: boolean;
 }
 
@@ -6697,6 +6725,27 @@ export interface CampaignServiceMetaCustomAudiences {
   truncated: boolean;
 }
 
+/** One element of campaign-service's custom-audience read (`reddit-ads-custom-audience`, linuxfoundation/lfx-v2-campaign-service#549). */
+export interface CampaignServiceRedditCustomAudience {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  size_lower?: number;
+  size_upper?: number;
+}
+
+/**
+ * campaign-service `GET /projects/{project_id}/reddit-ads/custom-audiences` (`global_marketing_ops` on the project): every
+ * audience on the shared ad account, sorted by name, `truncated` when Reddit had more than 10 pages. No search upstream.
+ */
+export interface CampaignServiceRedditCustomAudiences {
+  account_id: string;
+  audiences: CampaignServiceRedditCustomAudience[];
+  audience_count: number;
+  truncated: boolean;
+}
+
 /** One element of campaign-service's `meta-lead-forms` read. */
 export interface CampaignServiceMetaLeadForm {
   id: string;
@@ -8437,6 +8486,14 @@ export interface CampaignListResult {
    * is shared by every foundation). `null` when that check cannot be made. Optional, as above.
    */
   metaCustomAudiencesEnabled?: boolean | null;
+  /**
+   * Whether THIS caller may pick Reddit custom audiences, through `GET /api/campaigns/reddit/custom-audiences`, and send
+   * `redditConfig.customAudienceIds` / `excludedCustomAudienceIds` (#6108 row 1): `canSetRedditCustomAudiences()` (the
+   * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CUSTOM_AUDIENCES`) AND `global_marketing_ops` on
+   * the listed project, the relation campaign-service checks (the Reddit ad account is shared by every foundation).
+   * `null` when that check cannot be made. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditCustomAudiencesEnabled?: boolean | null;
   /**
    * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`
    * (#5934), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION`,

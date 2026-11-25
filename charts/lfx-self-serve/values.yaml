@@ -703,6 +703,17 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT:
     value:
 
+  # Reddit custom audiences (#6108 row 1): accepts the audiences on the shared Reddit ad account a campaign targets and
+  # excludes, sent as `redditConfig.customAudienceIds` / `excludedCustomAudienceIds`, and serves
+  # `GET /api/campaigns/reddit/custom-audiences` for their picker. Both also need `global_marketing_ops` on the project.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_CUSTOM_AUDIENCES_ENABLED` on
+  # and the create pipeline on. Off (the default), the read answers 404 and the create route refuses either list with a
+  # 400, never dropping it. A field only, so turning it back off strands nothing. Order: set campaign-service's flag and
+  # pass its live probe, THEN this. Keep it off until then. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CUSTOM_AUDIENCES:
+    value:
+
   # Offers a stored-image LIBRARY in each Google creative image slot (Demand Gen, Performance Max
   # and Display): upload a PNG/JPEG into the brief's library (the same library REDDIT_ASSETS and
   # META_ASSETS upload into), or pick a stored image that fits the slot's aspect ratio and minimum
