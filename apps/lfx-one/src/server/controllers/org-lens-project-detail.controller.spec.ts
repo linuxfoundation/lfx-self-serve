@@ -27,7 +27,7 @@ const ORG_UID = '0014100000Te2ovAAB';
 const ROSTER = {
   total: 2,
   rows: [
-    { cells: [{ person: { name: 'octocat', initials: 'OC' } }, { text: 'fix: thing\n\nSigned-off-by: Octo Cat <octo@acme.com>' }, { text: 'octo@acme.com' }] },
+    { cells: [{ person: { name: 'octocat', initials: 'OC' } }, { text: 'fix: thing\n\nSigned-off-by: Octo Cat <octo@example.com>' }, { text: 'octo@example.com' }] },
     { cells: [{ person: { name: 'Mona', initials: 'MO' } }, { text: 'feat: more' }, { text: '—' }] },
   ],
 };
@@ -44,7 +44,7 @@ const call = async (method: 'getCardRoster' | 'getCardDrawer') => {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getCardRoster.mockResolvedValue(structuredClone(ROSTER));
-  mocks.getCardDrawer.mockResolvedValue({ key: 'commits', text: 'Contact a@b.co', rows: [] });
+  mocks.getCardDrawer.mockResolvedValue({ key: 'commits', text: 'Contact a@example.com', rows: [] });
 });
 
 describe('OrgLensProjectDetailController all employee view', () => {
