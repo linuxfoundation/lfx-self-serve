@@ -74,7 +74,8 @@ import type {
   MetaObjective,
   MetaObjectiveParams,
   MetaPlacement,
-  MetaTargetingKind,
+  MetaTargetingBox,
+  MetaTargetingPickKey,
   MicrosoftKeywordsWindow,
   MicrosoftKeywordsWindowOption,
   MonitorConnectionPlatform,
@@ -1433,12 +1434,35 @@ export const META_TARGETING_QUERY_MIN_LENGTH = 2;
 export const META_TARGETING_QUERY_MAX_LENGTH = 100;
 /** How long the Implement tab's targeting search waits after the last keystroke before it asks Meta. */
 export const META_TARGETING_SEARCH_DEBOUNCE_MS = 300;
-/** The detailed-targeting lists the Implement tab offers, in order, with the search kind behind each. */
-export const META_TARGETING_KINDS: readonly MetaTargetingKind[] = [
-  { type: 'interest', key: 'interests', label: 'Interests' },
-  { type: 'behavior', key: 'behaviors', label: 'Behaviors' },
-  { type: 'work_position', key: 'workPositions', label: 'Job titles' },
+/**
+ * The search boxes the Implement tab's Meta targeting picker offers, in order, with the search kind behind each and
+ * the lists it fills: one location box fills regions and cities by each row's location type (#5904 rows 4 and 6).
+ */
+export const META_TARGETING_BOXES: readonly MetaTargetingBox[] = [
+  { type: 'interest', key: 'interests', lists: ['interests'], label: 'Interests', max: META_MAX_DETAILED_TARGETING_IDS, matchAny: true },
+  { type: 'behavior', key: 'behaviors', lists: ['behaviors'], label: 'Behaviors', max: META_MAX_DETAILED_TARGETING_IDS, matchAny: true },
+  { type: 'work_position', key: 'workPositions', lists: ['workPositions'], label: 'Job titles', max: META_MAX_DETAILED_TARGETING_IDS, matchAny: true },
+  {
+    type: 'locale',
+    key: 'locales',
+    lists: ['locales'],
+    label: 'Languages',
+    max: META_MAX_LOCALES,
+    matchAny: false,
+    hint: 'Only people who use one of these languages are reached.',
+  },
+  {
+    type: 'location',
+    key: 'locations',
+    lists: ['regions', 'cities'],
+    label: 'Regions and cities',
+    max: META_MAX_GEO_LOCATIONS,
+    matchAny: false,
+    hint: 'Ads also reach these places. Meta refuses a place inside a chosen country, or a city inside a chosen region, when the campaign is created.',
+  },
 ];
+/** Every list of Meta targeting picks the Implement tab keeps, in the order a draft and a create read them. */
+export const META_TARGETING_PICK_KEYS: readonly MetaTargetingPickKey[] = ['interests', 'behaviors', 'workPositions', 'locales', 'regions', 'cities'];
 export const META_AUDIENCE_GENDERS: readonly MetaAudienceGender[] = ['male', 'female'];
 /** The custom-audience lists the Implement tab offers, in order. */
 export const META_CUSTOM_AUDIENCE_LISTS: readonly MetaCustomAudienceListView[] = [

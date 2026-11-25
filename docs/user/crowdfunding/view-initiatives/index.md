@@ -4,7 +4,7 @@ description: How to view and filter your crowdfunding initiatives by status in L
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, view, status, list]
-last_updated: 2026-11-06
+last_updated: 2026-11-17
 intercom_collection: Crowdfunding
 ---
 
@@ -38,7 +38,7 @@ When you have no initiatives, the empty list also offers **New Initiative**. If 
 
 ## Initiatives under other lenses
 
-The same page appears under the **Projects**, **Foundation**, and **Company** lenses as **Crowdfunding Initiatives**, listing the initiatives run on behalf of the selected entity. Its description reads "Fundraising initiatives on LFX Crowdfunding run on behalf of" the entity, and it can show two extra states:
+The same page appears under the **Projects** and **Foundation** lenses as **Crowdfunding Initiatives**, listing the initiatives run on behalf of the selected project or foundation. Its description reads "Fundraising initiatives on LFX Crowdfunding run on behalf of" the entity. Under the **Company** lens it is the **Initiatives** tab of **Crowdfunding**, below the shared **Crowdfunding — {company name}** header, with no separate description. Either way it can show two extra states:
 
 - **You don't have access to these initiatives** — only writers on the project or foundation, or Admins granted directly on the company, can see the initiatives run on its behalf.
 - **Initiatives couldn't be loaded** — LFX Crowdfunding is temporarily unavailable. Select **Try again**.

@@ -5,6 +5,7 @@ import { CurrencyPipe, DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
@@ -29,9 +30,13 @@ export class OrgDonationsComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
   private readonly crowdfundingService = inject(CrowdfundingService);
   private readonly accountContext = inject(AccountContextService);
+  private readonly route = inject(ActivatedRoute);
 
   // Public crowdfunding site, without the trailing slash.
   private readonly crowdfundingUrl = environment.urls.crowdfunding.replace(/\/+$/, '');
+
+  // Shown as a tab of the Company lens Crowdfunding page (#5838), whose shell owns the page header.
+  protected readonly embedded = this.route.snapshot.data['embedded'] === true;
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
   protected readonly isLoading = signal(true);

@@ -125,7 +125,7 @@ export class InitiativeDetailComponent {
 
   // ─── Private Initializers ──────────────────────────────────────────────────
   private initBackLink(): string | string[] {
-    if (this.lens === 'org') return this.orgLensNavigation.orgLensLink('initiatives');
+    if (this.lens === 'org') return this.orgLensNavigation.orgLensLink('crowdfunding', 'initiatives');
     return this.isNavLens ? `/${this.lens}/initiatives` : '/crowdfunding/initiatives';
   }
 

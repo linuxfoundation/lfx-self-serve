@@ -86,6 +86,8 @@ describe('orgLensPagePath', () => {
     expect(orgLensPagePath(['company', 'roi'], 'overview')).toBe('/company/overview');
     expect(orgLensPagePath(['company', 'easycla', 'group-1'], 'overview')).toBe('/company/overview');
     expect(orgLensPagePath(['company'], 'overview')).toBe('/company/overview');
+    // Crowdfunding (#5838) is a page name, not a company slug.
+    expect(orgLensPagePath(['company', 'crowdfunding', 'donations'], 'overview')).toBe('/company/overview');
     expect(orgLensPagePath(['project', 'acme'], 'overview')).toBe('/company/overview');
   });
 });

@@ -402,6 +402,7 @@ import type {
   RedditVideoGoal,
   StoredCreativeAsset,
   MetaAudienceTargetingDraft,
+  MetaDetailedTargetingEnabled,
   MetaDetailedTargetingPicks,
   MetaDeliveryDraft,
   MetaDeviceOsDraft,
@@ -1250,6 +1251,10 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaInterestTargetingEnabled = input<boolean | null>(null);
   /** The same for Meta behaviors and job titles — `CampaignListResult.metaBehaviorTargetingEnabled`. */
   public readonly metaBehaviorTargetingEnabled = input<boolean | null>(null);
+  /** The same for Meta languages — `CampaignListResult.metaLocaleTargetingEnabled`. */
+  public readonly metaLocaleTargetingEnabled = input<boolean | null>(null);
+  /** The same for Meta regions and cities (#5904 row 6) — `CampaignListResult.metaRegionTargetingEnabled`. */
+  public readonly metaRegionTargetingEnabled = input<boolean | null>(null);
   /**
    * Whether this deployment sends a Meta ad schedule (#5904 row 5) — `CampaignListResult.metaAdScheduleEnabled`, behind
    * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE`. Deployment-wide; `null` while unanswered.
@@ -1271,9 +1276,16 @@ export class ImplementationTabComponent implements OnInit {
   /** Whether either device or OS group is offered: each only on its explicit yes. */
   protected readonly metaDeviceOsShown = computed<boolean>(() => this.metaDeviceTargetingEnabled() === true || this.metaOsTargetingEnabled() === true);
 
+  /** The four detailed-targeting capability answers, as the shared rules read them. */
+  private readonly metaDetailedTargetingEnabled = computed<MetaDetailedTargetingEnabled>(() => ({
+    interest: this.metaInterestTargetingEnabled(),
+    behavior: this.metaBehaviorTargetingEnabled(),
+    locale: this.metaLocaleTargetingEnabled(),
+    region: this.metaRegionTargetingEnabled(),
+  }));
   /** Whether any detailed-targeting list is offered: each only on an explicit yes. */
-  protected readonly metaDetailedTargetingAvailable = computed<boolean>(
-    () => this.metaInterestTargetingEnabled() === true || this.metaBehaviorTargetingEnabled() === true
+  protected readonly metaDetailedTargetingAvailable = computed<boolean>(() =>
+    Object.values(this.metaDetailedTargetingEnabled()).some((enabled) => enabled === true)
   );
 
   /**
@@ -3801,16 +3813,15 @@ export class ImplementationTabComponent implements OnInit {
     () => metaAudienceTargetingRefusal(this.metaAudienceTargetingRequested())?.message ?? null
   );
 
-  /** The detailed fields the create carries (#5904 row 4): each list only on its explicit yes. */
+  /** The detailed fields the create carries (#5904 rows 4 and 6): each list only on its explicit yes. */
   private readonly metaDetailedTargetingRequested = computed(() =>
-    metaDetailedTargetingForCreate(this.metaDetailedTargeting(), this.metaInterestTargetingEnabled(), this.metaBehaviorTargetingEnabled())
+    metaDetailedTargetingForCreate(this.metaDetailedTargeting(), this.metaDetailedTargetingEnabled())
   );
   /** Why Create is held for picks in a list the request cannot carry, or `null`: {@link metaAudienceTargetingBlock}'s states. */
   protected readonly metaDetailedTargetingBlock = computed(() =>
     metaDetailedTargetingBlock({
       picks: this.metaDetailedTargeting(),
-      interestEnabled: this.metaInterestTargetingEnabled(),
-      behaviorEnabled: this.metaBehaviorTargetingEnabled(),
+      enabled: this.metaDetailedTargetingEnabled(),
       createCapabilityRead: this.createCapabilityRead(),
       briefId: this.briefPersistence().briefId,
     })
@@ -6333,9 +6344,7 @@ export class ImplementationTabComponent implements OnInit {
 
   /** Empties the lists this deployment does not send: the way past an `unsupported` {@link metaDetailedTargetingBlock}, whose lists are hidden. */
   protected clearUnsendableMetaDetailedTargeting(): void {
-    this.onMetaDetailedTargetingChange(
-      metaDetailedTargetingPicksSendable(this.metaDetailedTargeting(), this.metaInterestTargetingEnabled(), this.metaBehaviorTargetingEnabled())
-    );
+    this.onMetaDetailedTargetingChange(metaDetailedTargetingPicksSendable(this.metaDetailedTargeting(), this.metaDetailedTargetingEnabled()));
   }
 
   protected onMetaPixelIdInput(event: Event): void {

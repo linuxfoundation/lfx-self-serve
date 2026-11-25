@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { outputFromObservable, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ACCOUNT_WORK_HISTORY_PATH, PROFILE_GRID_LIMIT, PROFILE_INVOLVEMENT_COPY } from '@lfx-one/shared/constants';
 import { ProfileInvolvementState } from '@lfx-one/shared/interfaces';
 import { buildProfileInvolvement } from '@lfx-one/shared/utils';
@@ -18,7 +18,7 @@ import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
-import { catchError, forkJoin, map, Observable, of, startWith, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, forkJoin, map, Observable, of, startWith, switchMap } from 'rxjs';
 
 /**
  * The Profile page's Foundations & projects involvement section (#6085): the user's LFX projects, from the project
@@ -59,6 +59,14 @@ export class ProfileInvolvementComponent {
   protected readonly state: Signal<ProfileInvolvementState> = this.initState();
   protected readonly items = computed(() => this.state().items);
   protected readonly shown = computed(() => (this.expanded() ? this.items() : this.items().slice(0, PROFILE_GRID_LIMIT)));
+
+  /** Whether the section has no projects once loaded: null while it loads or after a failed read. */
+  public readonly emptyChange = outputFromObservable(
+    toObservable(this.state).pipe(
+      map((state) => (state.loading || state.error ? null : state.items.length === 0)),
+      distinctUntilChanged()
+    )
+  );
 
   protected retry(): void {
     this.reload.update((count) => count + 1);
