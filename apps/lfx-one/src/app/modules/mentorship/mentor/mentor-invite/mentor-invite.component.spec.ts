@@ -28,6 +28,7 @@ describe('MentorInviteComponent', () => {
       hasProfile?: boolean;
       platform?: string;
       invite?: Observable<{ programName: string }>;
+      profile?: Observable<{ hasProfile: boolean }>;
     } = {}
   ): void => {
     const {
@@ -37,9 +38,10 @@ describe('MentorInviteComponent', () => {
       hasProfile = true,
       platform = 'browser',
       invite = of({ programName: '' }),
+      profile = of({ hasProfile }),
     } = options;
     respondToMentorInvite = vi.fn(() => respond);
-    hasMentorProfile = vi.fn(() => of({ hasProfile }));
+    hasMentorProfile = vi.fn(() => profile);
     getMentorInvite = vi.fn(() => invite);
 
     TestBed.resetTestingModule();
@@ -112,22 +114,38 @@ describe('MentorInviteComponent', () => {
     expect(getMentorInvite).not.toHaveBeenCalled();
   });
 
-  it('points someone with no mentor profile to create one, without blocking the answer', () => {
+  it('points someone with no mentor profile to create one, and disables Accept and Decline', () => {
     build({ hasProfile: false });
 
     const hint = byTestId('mentorship-mentor-invite-profile-hint');
-    expect(hint?.textContent).toContain("You don't have a mentor profile yet.");
+    expect(hint?.textContent).toContain('You need a mentor profile to answer this invitation.');
     expect(hint?.querySelector('a')?.getAttribute('href')).toBe('/mentorship/mentor');
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.querySelector('button')?.disabled).toBe(true);
+    expect(byTestId('mentorship-mentor-invite-decline-button')?.querySelector('button')?.disabled).toBe(true);
 
-    click('mentorship-mentor-invite-accept-button');
-    expect(respondToMentorInvite).toHaveBeenCalledWith(token, 'accept');
+    // The handler refuses too, so nothing but a confirmed profile sends an answer.
+    (fixture.componentInstance as unknown as { onRespond(decision: string): void }).onRespond('accept');
+    expect(respondToMentorInvite).not.toHaveBeenCalled();
   });
 
-  it('neither reads the profile nor hints on the server, whose read goes out without the session cookie', () => {
+  it('keeps Accept and Decline disabled until the profile check answers', () => {
+    const answer = new Subject<{ hasProfile: boolean }>();
+    build({ profile: answer });
+
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.querySelector('button')?.disabled).toBe(true);
+    expect(byTestId('mentorship-mentor-invite-profile-hint')).toBeNull();
+
+    answer.next({ hasProfile: true });
+    fixture.detectChanges();
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.querySelector('button')?.disabled).toBe(false);
+  });
+
+  it('neither reads the profile nor hints on the server, whose read goes out without the session cookie, and leaves the answer to the browser', () => {
     build({ hasProfile: false, platform: 'server' });
 
     expect(hasMentorProfile).not.toHaveBeenCalled();
     expect(byTestId('mentorship-mentor-invite-profile-hint')).toBeNull();
+    expect(byTestId('mentorship-mentor-invite-accept-button')?.querySelector('button')?.disabled).toBe(true);
   });
 
   it('shows no profile hint to someone who has a mentor profile', () => {

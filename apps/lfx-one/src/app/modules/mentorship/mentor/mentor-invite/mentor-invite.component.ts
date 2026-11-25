@@ -21,8 +21,9 @@ import { catchError, distinctUntilChanged, map, of, startWith, switchMap, tap } 
  * Opening the link never answers the invitation. Mail scanners fetch links before the recipient
  * does, so the page asks first and only POSTs on Accept or Decline. Upstream checks the token is
  * the signed-in user's, or for an invitation sent by email that the signed-in LF account uses the
- * address, so another account sees the forbidden state. Someone with no mentor profile yet is
- * pointed to create one first; it never blocks the answer. The page names the invited program once
+ * address, so another account sees the forbidden state. Accept and Decline stay disabled until the
+ * browser's read confirms a mentor profile; someone without one is pointed to create it first, then
+ * open the link again. The page names the invited program once
  * the browser has read it; until then, or when the read fails, the copy says "the program".
  */
 @Component({
@@ -44,10 +45,12 @@ export class MentorInviteComponent {
 
   private readonly token: Signal<string> = this.initToken();
   /**
-   * False once the browser's read says the signed-in user has no mentor profile, or the read fails (the service reads a
-   * failure as no profile); true until then, and on the server, whose read goes out without the session cookie.
+   * Whether the signed-in user has a mentor profile: undefined until the browser's read answers, and on the server, whose
+   * read goes out without the session cookie; false when the read says none or fails (the service reads a failure as none).
    */
-  protected readonly hasProfile: Signal<boolean> = this.initHasProfile();
+  protected readonly hasProfile: Signal<boolean | undefined> = this.initHasProfile();
+  /** Accept and Decline need a confirmed mentor profile. */
+  protected readonly canAnswer = computed(() => this.hasProfile() === true);
   /** The invited program's name, or empty until the browser's read returns it (never on the server, or after a failed read). */
   protected readonly programName: Signal<string> = this.initProgramName();
   protected readonly acceptedSubtitle = computed(() => {
@@ -66,7 +69,7 @@ export class MentorInviteComponent {
   protected readonly declining = computed(() => this.submitting() && this.decision() === 'decline');
 
   protected onRespond(decision: MentorshipMentorInviteDecision): void {
-    if (this.state() !== 'confirm') return;
+    if (this.state() !== 'confirm' || !this.canAnswer()) return;
 
     const token = this.token();
     this.decision.set(decision);
@@ -94,9 +97,9 @@ export class MentorInviteComponent {
     );
   }
 
-  private initHasProfile(): Signal<boolean> {
-    if (!isPlatformBrowser(this.platformId)) return toSignal(of(true), { initialValue: true });
-    return toSignal(this.mentorService.hasMentorProfile().pipe(map((response) => response.hasProfile)), { initialValue: true });
+  private initHasProfile(): Signal<boolean | undefined> {
+    if (!isPlatformBrowser(this.platformId)) return signal<boolean | undefined>(undefined).asReadonly();
+    return toSignal(this.mentorService.hasMentorProfile().pipe(map((response) => response.hasProfile)), { initialValue: undefined });
   }
 
   /**

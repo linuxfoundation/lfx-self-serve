@@ -23,30 +23,30 @@
               }
             </p>
           </div>
+          @if (hasProfile() === false) {
+            <p class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-gray-700" data-testid="mentorship-mentor-invite-profile-hint">
+              You need a mentor profile to answer this invitation.
+              <a [routerLink]="profileRoute" class="font-medium text-blue-600 hover:text-blue-700 hover:underline">Create your mentor profile</a>
+              so program admins and mentees can see who you are, then open this link again.
+            </p>
+          }
           <div class="flex flex-wrap justify-end gap-3">
             <lfx-button
               label="Decline"
               severity="secondary"
               [outlined]="true"
-              [disabled]="accepting()"
+              [disabled]="accepting() || !canAnswer()"
               [loading]="declining()"
               (onClick)="onRespond('decline')"
               data-testid="mentorship-mentor-invite-decline-button" />
             <lfx-button
               label="Accept"
               severity="primary"
-              [disabled]="declining()"
+              [disabled]="declining() || !canAnswer()"
               [loading]="accepting()"
               (onClick)="onRespond('accept')"
               data-testid="mentorship-mentor-invite-accept-button" />
           </div>
-          @if (!hasProfile()) {
-            <p class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-gray-700" data-testid="mentorship-mentor-invite-profile-hint">
-              You don't have a mentor profile yet.
-              <a [routerLink]="profileRoute" class="font-medium text-blue-600 hover:text-blue-700 hover:underline">Create your mentor profile</a>
-              first so program admins and mentees can see who you are, then open this link again.
-            </p>
-          }
         </div>
       </lfx-card>
     } @else {

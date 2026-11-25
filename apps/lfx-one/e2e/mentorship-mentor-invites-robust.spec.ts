@@ -18,7 +18,7 @@
 import { expect, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage, stubMentorHasProfile } from './helpers/mentor-profile.helper';
 import {
   INVITATION_ID,
   INVITATION_PROGRAM,
@@ -50,6 +50,7 @@ test.describe('Mentor invite link — structure', () => {
   test('holds Decline while an Accept is in flight', async ({ page }) => {
     let release: () => void = () => undefined;
     const hold = new Promise<void>((resolve) => (release = resolve));
+    await stubMentorHasProfile(page, true);
     await page.route('**/api/mentorship/mentor/invites/accept', async (route) => {
       await hold;
       return route.fulfill({ status: 204 });

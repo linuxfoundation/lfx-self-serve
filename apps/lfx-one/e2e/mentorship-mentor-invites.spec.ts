@@ -54,6 +54,18 @@ test.describe('Mentor invite link — answering', () => {
     expect(writes).toEqual([]);
   });
 
+  test('asks someone with no mentor profile to create one, and sends nothing', async ({ page }) => {
+    const writes = await stubInviteResponse(page, [{ status: 204 }], { programName: INVITATION_PROGRAM.name }, false);
+    await openInvite(page);
+
+    const hint = page.getByTestId('mentorship-mentor-invite-profile-hint');
+    await expect(hint).toContainText('You need a mentor profile to answer this invitation.');
+    await expect(hint.getByRole('link', { name: 'Create your mentor profile' })).toHaveAttribute('href', '/mentorship/mentor');
+    await expect(page.getByTestId('mentorship-mentor-invite-accept-button').getByRole('button')).toBeDisabled();
+    await expect(page.getByTestId('mentorship-mentor-invite-decline-button').getByRole('button')).toBeDisabled();
+    expect(writes).toEqual([]);
+  });
+
   test('keeps the generic copy when the program cannot be read, and still answers', async ({ page }) => {
     const writes = await stubInviteResponse(page, [{ status: 204 }], { status: 503 });
     await openInvite(page);

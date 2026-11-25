@@ -14,6 +14,7 @@ A Program Admin can invite you to mentor their program. The invitation arrives b
 ## Before you begin
 
 - Use the link in the invitation email. The link identifies your invitation.
+- You need a mentor profile to answer. If you don't have one yet, create it first.
 - If the email was sent to you because you don't have an LF account yet, follow its three steps in order: create an LF account with the email address the invitation was sent to, create your mentor profile, then answer the invitation. The invitation only works for an LF account that uses that address.
 
 ## Steps
@@ -24,7 +25,7 @@ A Program Admin can invite you to mentor their program. The invitation arrives b
 
 The page only records your answer when you select one of those buttons, so a mail scanner that follows the link cannot answer on your behalf.
 
-If you don't have a mentor profile yet, the page says so under the buttons and links to **Create your mentor profile**. You can still answer without one.
+If you don't have a mentor profile yet, **Accept** and **Decline** are disabled, and the page links to **Create your mentor profile**. Create your profile, then open the invitation link again.
 
 You can also answer from **Mentor Profile → Edit Mentor Profile**, where the invitation is listed with the status **Invited**. See [Your Mentor Programs](../mentor-programs/). An invitation sent to an email address before you had an LF account is not listed there; answer it from the email link.
 

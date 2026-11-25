@@ -12,6 +12,8 @@
 import { MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE } from '@lfx-one/shared/constants';
 import { Page, Route } from '@playwright/test';
 
+import { stubMentorHasProfile } from './mentor-profile.helper';
+
 /** Shaped like upstream's signed token (`payload.signature`), so the page sends it. */
 export const INVITE_TOKEN = 'e2e-invite-payload.e2e-invite-signature';
 export const INVITE_PAGE_URL = `/mentorship/mentor/invites?token=${INVITE_TOKEN}`;
@@ -46,13 +48,16 @@ const record = (writes: InviteWrites, route: Route) => {
 /**
  * Answers the email link's Accept and Decline with each answer in turn, the last one again once they run out, and the
  * page's read of the invited program with `details` (by default `INVITATION_PROGRAM`'s name). The read is not a write.
+ * The profile check answers `hasProfile` (by default true), since the page answers only for someone with a mentor profile.
  */
 export async function stubInviteResponse(
   page: Page,
   answers: InviteAnswer[] = [{ status: 204 }],
-  details: InviteDetailsAnswer = { programName: INVITATION_PROGRAM.name }
+  details: InviteDetailsAnswer = { programName: INVITATION_PROGRAM.name },
+  hasProfile = true
 ): Promise<InviteWrites> {
   const writes: InviteWrites = [];
+  await stubMentorHasProfile(page, hasProfile);
   await page.route('**/api/mentorship/mentor/invites/*', (route) => {
     if (new URL(route.request().url()).pathname.endsWith('/invites/details')) {
       return 'programName' in details
