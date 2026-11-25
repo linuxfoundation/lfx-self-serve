@@ -56,6 +56,7 @@ import {
   CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
   isCreativeAssetMimeType,
   LINKEDIN_CHAR_LIMITS,
+  LINKEDIN_GEO_SEARCH_BOUNDS,
   LINKEDIN_GEO_SEARCH_DEBOUNCE_MS,
   LINKEDIN_CALL_TO_ACTION_OPTIONS,
   LINKEDIN_VARIANT_FIELD_LIMITS,
@@ -940,6 +941,9 @@ export class ImplementationTabComponent implements OnInit {
 
   /** The calls to action the variant editor offers. */
   protected readonly linkedInCallToActionOptions = LINKEDIN_CALL_TO_ACTION_OPTIONS;
+  /** The location search's shortest query, so the picker opens only once a search can run. */
+  protected readonly linkedInGeoSearchMinLength = LINKEDIN_GEO_SEARCH_BOUNDS.minQueryLength;
+
   /** The ad name and description limits, for the counters. */
   protected readonly linkedInVariantFieldLimits = LINKEDIN_VARIANT_FIELD_LIMITS;
 
@@ -12486,18 +12490,6 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * The location picker's search, debounced off {@link googleGeoSearchQuery} and answered as a state
-   * rather than a bare list, so the template can tell "nothing matched" from "the search failed".
-   *
-   * The delay sits INSIDE the outer `switchMap`, not before it. Every new query therefore cancels the
-   * request still in flight for the previous one and clears its rows at once (`startWith`), and only
-   * then waits out the debounce. With `debounceTime` in front instead, the old request stayed
-   * subscribed for the whole pause and its answer — for text the operator had already changed — could
-   * land as pickable rows. A blank query, no active project, or the picker not being offered answers
-   * the empty state without a request, the last because a query typed before the capability flipped
-   * off must not reach a 404 route.
-   */
-  /**
    * The LinkedIn location picker's search (#5545), debounced off {@link linkedInGeoSearchQuery} on the same terms as
    * `initGoogleGeoSearchState`: each new query cancels the request in flight and clears its rows, and a query under
    * campaign-service's 2 characters, no project, or the LinkedIn section being hidden answers the empty state with no request.
@@ -12528,6 +12520,18 @@ export class ImplementationTabComponent implements OnInit {
     );
   }
 
+  /**
+   * The location picker's search, debounced off {@link googleGeoSearchQuery} and answered as a state
+   * rather than a bare list, so the template can tell "nothing matched" from "the search failed".
+   *
+   * The delay sits INSIDE the outer `switchMap`, not before it. Every new query therefore cancels the
+   * request still in flight for the previous one and clears its rows at once (`startWith`), and only
+   * then waits out the debounce. With `debounceTime` in front instead, the old request stayed
+   * subscribed for the whole pause and its answer — for text the operator had already changed — could
+   * land as pickable rows. A blank query, no active project, or the picker not being offered answers
+   * the empty state without a request, the last because a query typed before the capability flipped
+   * off must not reach a 404 route.
+   */
   private initGoogleGeoSearchState(): Signal<GoogleAdsGeoTargetSearchState> {
     // A FRESH object every time, never one shared constant: `toSignal` drops an update equal by
     // reference to the last, so a second blank completion would set no new suggestions and leave

@@ -3905,7 +3905,7 @@
 
           <!-- Geo Targets -->
           <div class="mb-4">
-            <label class="mb-2 block text-xs font-medium text-gray-700">Geo Targets (AI-recommended)</label>
+            <label class="mb-2 block text-xs font-medium text-gray-700" for="linkedin-geo-search">Geo Targets (AI-recommended)</label>
             <div class="flex flex-wrap gap-2">
               @for (geo of linkedInGeoTargets(); track geo.urn; let i = $index) {
                 <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
@@ -3932,6 +3932,7 @@
               optionLabel="label"
               optionDisabled="disabled"
               placeholder="Search a country, region or city"
+              [minLength]="linkedInGeoSearchMinLength"
               [delay]="0"
               [forceSelection]="true"
               [invalid]="linkedInGeoSearchFailed()"

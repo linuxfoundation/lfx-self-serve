@@ -119,7 +119,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
   it('restores a Germany saved with the old shared map as the real Germany', STATE_ONLY, async () => {
     const first = await mount(null);
     // Any edit emits the draft; the saved Germany below is what a draft written before the fix carries.
-    at(first.fixture).addGeoTarget(DE_GEO.urn);
+    at(first.fixture).addGeoTarget(DE_GEO);
     first.fixture.detectChanges();
     const saved = { ...(first.latest() as CampaignImplementationDraft), linkedInGeoTargets: [{ label: 'Germany', urn: 'urn:li:geo:101165590' }] };
     first.fixture.destroy();
@@ -962,7 +962,7 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
   describe('location search', () => {
     afterEach(() => vi.useRealTimers());
 
-    it('searches after the debounce, offers each location once, and sends the one picked', async () => {
+    it('searches after the debounce, offers each location once, and sends the one picked', STATE_ONLY, async () => {
       const BERLIN = { urn: 'urn:li:geo:103035651', label: 'Berlin, Germany' };
       const US = { urn: 'urn:li:geo:103644278', label: 'United States' };
       searchLinkedInGeoTargets.mockReturnValue(of({ locations: [BERLIN, US] }));
