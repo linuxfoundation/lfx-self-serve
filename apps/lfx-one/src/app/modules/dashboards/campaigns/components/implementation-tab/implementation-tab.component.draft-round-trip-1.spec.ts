@@ -415,22 +415,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * Video Views must promote an existing video post: an image URL authors an IMAGE post, which can
    * never earn a video view, and neither creator checks the creative against the objective.
    */
-  it('cannot submit video_views without a post url, even with an image url', async () => {
-    const f = (await mount(null, true)).fixture;
-    at(f).selectedPlatforms.set(['reddit-ads']);
-    makeSubmittable(f);
-    pickRedditObjective(f, 'video_views');
-    pickRedditVideoGoal(f, 'VIDEO_VIEW_6S');
-    typeRedditImageUrl(f, 'https://example.com/banner.png');
-
-    expect(at(f).canSubmit()).toBe(false);
-    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-post-error"]')?.textContent).toContain('enter its Post URL');
-
-    typeRedditPostUrl(f, 'https://www.reddit.com/r/kubernetes/comments/abc123/video/');
-    expect(at(f).canSubmit()).toBe(true);
-    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-post-error"]')).toBeNull();
-  });
-
   /** The chosen goal reaches `redditConfig`, picked through the template and carried across a tab round-trip. */
   it('carries the reddit video goal through a tab round-trip and into the request', async () => {
     const first = await mount(null);

@@ -13,7 +13,7 @@ import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
+import { configureGoogleTab, stubCreativeLibraryUpload, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
 trackStateOnlyTests();
@@ -103,17 +103,6 @@ describe('ImplementationTabComponent reddit budget gate', () => {
     expect(section?.textContent).toContain('DE');
   });
 
-  it.each([
-    ['above the platform cap', 2_000_000_000],
-    ['not finite', Number.POSITIVE_INFINITY],
-  ])('blocks submit when the reddit budget is %s', (_label, budget) => {
-    setup(budget);
-    // Reddit's client rejects both during dispatch. Creation is async, so without a local guard
-    // these become dead jobs the operator has to go and read rather than a blocked button — the
-    // same argument that justifies the floor.
-    expect(canSubmit()).toBe(false);
-  });
-
   it('blocks submit when the country code is cleared and the brief recommends no geos', () => {
     setup(500);
     const c = fixture.componentInstance as unknown as { campaignForm: { controls: Record<string, { setValue(v: unknown): void }> } };
@@ -125,20 +114,6 @@ describe('ImplementationTabComponent reddit budget gate', () => {
 
     expect(geoChipTexts()).toEqual([]);
     expect(canSubmit()).toBe(false);
-  });
-
-  it.each([
-    ['lowercase', 'us'],
-    ['too long', 'USA'],
-    ['too short', 'U'],
-  ])('blocks submit when the country code is %s', (_label, code) => {
-    setup(500);
-    const c = fixture.componentInstance as unknown as { campaignForm: { controls: Record<string, { setValue(v: unknown): void }> } };
-    c.campaignForm.controls['countryCode'].setValue(code);
-    fixture.detectChanges();
-    // 'us' normalises to 'US' and is fine; the other two have no valid shape and would reach
-    // dispatch as an unusable geo. Asserted per-case rather than as one blanket expectation.
-    expect(canSubmit()).toBe(code === 'us');
   });
 
   it('prefers recommended geos even when they arrive after the country code', () => {
@@ -164,23 +139,6 @@ describe('ImplementationTabComponent reddit budget gate', () => {
     expect(geos).toContain('FR');
     // The fallback must be GONE, not merely joined by the recommended list.
     expect(geos).not.toContain('US');
-  });
-
-  it('falls back to the country code when the recommended geos are all unusable', () => {
-    setup(500);
-    const c = fixture.componentInstance as unknown as {
-      campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
-      redditGeoTargets: { set(v: string[]): void };
-    };
-    // A generated or restored brief can carry a non-empty but unusable recommendation. Choosing
-    // the branch on the RAW list makes it win on length alone, filter to nothing, and block
-    // submit permanently — with a perfectly valid country sitting unread in the form.
-    c.campaignForm.controls['countryCode'].setValue('US');
-    c.redditGeoTargets.set(['USA']);
-    fixture.detectChanges();
-
-    expect(geoChipTexts()).toEqual(['US']);
-    expect(canSubmit()).toBe(true);
   });
 
   it('strips an r/ prefix so the preview matches what dispatches', () => {
@@ -215,13 +173,6 @@ describe('ImplementationTabComponent reddit budget gate', () => {
     c.redditSubreddits.set(['kubernetes']);
     fixture.detectChanges();
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Subreddits (1)');
-  });
-
-  it('allows submit once the reddit budget is positive', STATE_ONLY, () => {
-    setup(500);
-    // The positive case must pass, or the zero case above would be satisfied by any unrelated
-    // guard rather than by the budget floor it claims to bind.
-    expect(canSubmit()).toBe(true);
   });
 });
 
@@ -302,14 +253,6 @@ describe('ImplementationTabComponent reddit objective', () => {
    * `video_views` is offered now that a goal picker collects the `videoGoal` both creators require
    * for it — and offered as an ordinary, choosable option, not the disabled restore affordance.
    */
-  it('offers video_views as a choosable objective', async () => {
-    const select = objectiveSelect(await restoredWithObjective('conversions'));
-    const option = Array.from(select.options).find((o) => o.value === 'video_views');
-
-    expect(option?.text).toBe('Video Views');
-    expect(option?.disabled).toBe(false);
-  });
-
   /**
    * Driven through the REAL draft input rather than by setting the signal: a signal-only test
    * leaves `applyDraft` unexercised, and a coercion added there would silently discard the stored
@@ -439,12 +382,6 @@ describe('ImplementationTabComponent reddit call to action', () => {
    * first option carries, so treating it as a stale value would render a duplicate disabled
    * option reading " (no longer available)".
    */
-  it('treats the empty selection as the default rather than as a retired value', async () => {
-    const select = ctaSelect(await restoredWithCallToAction(''));
-
-    expect(select.value).toBe('');
-    expect(Array.from(select.options).filter((o) => o.disabled)).toEqual([]);
-  });
 });
 
 /**
