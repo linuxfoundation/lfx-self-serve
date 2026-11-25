@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LINKEDIN_GEO_URN_CORRECTIONS, LINKEDIN_TEXT_AD_REQUEST_KEYS } from '../constants/campaign.constants';
+import { LINKEDIN_CAROUSEL_CARD_REQUEST_KEYS, LINKEDIN_GEO_URN_CORRECTIONS, LINKEDIN_TEXT_AD_REQUEST_KEYS } from '../constants/campaign.constants';
 import type { LinkedInConfigKeyRefusal } from '../interfaces/campaign.interface';
 
 /**
@@ -36,6 +36,8 @@ const LINKEDIN_CONFIG_REQUEST_KEYS = [
   'conversions',
   'leadGenForm',
   'leadGenCallToAction',
+  'carouselCards',
+  'carouselIntroText',
 ] as const;
 
 /** The `linkedInConfig.variants[i]` keys a create may carry, spelled exactly (`LinkedInCreativeVariant`). */
@@ -65,8 +67,9 @@ function keyRefusalIn(record: Record<string, unknown>, known: readonly string[],
  * Why `raw`'s keys cannot be sent, or `null` (#5764). The create route used to forward `linkedInConfig` as it came, so any
  * field campaign-service reads (its targeting, objective, conversions, Text Ads, a variant's call to action or video) went
  * past every check here, and a differently cased known key past the checks that read it by exact spelling. Now any top-level
- * key outside {@link LINKEDIN_CONFIG_REQUEST_KEYS}, a variant key outside {@link LINKEDIN_VARIANT_REQUEST_KEYS}, or a text
- * ad key outside `LINKEDIN_TEXT_AD_REQUEST_KEYS` (#5764 row 19) is refused whatever the flags. Only those levels are
+ * key outside {@link LINKEDIN_CONFIG_REQUEST_KEYS}, a variant key outside {@link LINKEDIN_VARIANT_REQUEST_KEYS}, a text
+ * ad key outside `LINKEDIN_TEXT_AD_REQUEST_KEYS` (#5764 row 19), or a carousel card key outside
+ * `LINKEDIN_CAROUSEL_CARD_REQUEST_KEYS` (campaign-service#665) is refused whatever the flags. Only those levels are
  * walked: the keys inside `bidding`, `geoTargets[i]`, `targetingProfileEdit` and `targeting` are left to the checks that read them. A
  * variant or text ad that is not an object is left to the checks that read it, as before.
  */
@@ -77,7 +80,8 @@ export function linkedInConfigKeyRefusal(raw: unknown): LinkedInConfigKeyRefusal
   if (top !== null) return top;
   return (
     listKeyRefusal(config['variants'], LINKEDIN_VARIANT_REQUEST_KEYS, 'linkedInConfig.variants') ??
-    listKeyRefusal(config['textAds'], LINKEDIN_TEXT_AD_REQUEST_KEYS, 'linkedInConfig.textAds')
+    listKeyRefusal(config['textAds'], LINKEDIN_TEXT_AD_REQUEST_KEYS, 'linkedInConfig.textAds') ??
+    listKeyRefusal(config['carouselCards'], LINKEDIN_CAROUSEL_CARD_REQUEST_KEYS, 'linkedInConfig.carouselCards')
   );
 }
 

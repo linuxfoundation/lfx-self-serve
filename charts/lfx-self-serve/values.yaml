@@ -878,6 +878,18 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_LEAD_GEN:
     value:
 
+  # LinkedIn carousel ads (linuxfoundation/lfx-v2-campaign-service#665): accepts `linkedInConfig.format: "carousel"` with
+  # `linkedInConfig.carouselCards` (2 to 10 square PNG/JPEG images stored for the brief, each with a headline of at most
+  # 45 characters and an optional link) and `linkedInConfig.carouselIntroText` (at most 255 characters).
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with `LINKEDIN_ADS_CAROUSEL_ENABLED`
+  # on, the create pipeline on, and LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS on (each card image is a brief asset).
+  # Off (the default), the create route refuses the fields with a 400, never dropping them. A field only, so turning it
+  # back off strands nothing. Order: set campaign-service's flag and pass its paused carousel probe, THEN this. Same
+  # accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CAROUSEL:
+    value:
+
   # Offers Meta ad set audience targeting on the Implement tab (#5905), sent as
   # `metaConfig.targeting`: age range, gender and Advantage+ audience for every campaign manager, and
   # included/excluded custom audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only for
