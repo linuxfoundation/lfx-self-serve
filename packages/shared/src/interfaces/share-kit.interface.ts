@@ -163,6 +163,8 @@ export interface ShareKitPostView {
 
 /** Page state for the public share kit, serialized through TransferState after SSR. */
 export interface ShareKitPageState {
+  /** The event slug this state was requested for (from the route), so it is known even when the kit failed to load. */
+  eventSlug: string | null;
   loading: boolean;
   error: boolean;
   notFound: boolean;

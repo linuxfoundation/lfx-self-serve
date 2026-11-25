@@ -30,6 +30,9 @@ export class PublicShareKitController {
     const startTime = logger.startOperation(req, 'get_public_share_kit', { event_slug: eventSlug });
 
     try {
+      // Not cacheable unless it ends as a kit served to a signed-out visitor (below): a 404 from the flag or an unknown
+      // slug must not be kept by a browser or proxy past the moment the kit is turned on.
+      res.setHeader('Cache-Control', 'private, no-store');
       const signedIn = !!getEffectiveUsername(req);
       // Signed-in visitors are targeted by LFID username (staff first); everyone else shares one context.
       const enabled = await this.flags.isFlagEnabled(req, EVENT_SHARE_KIT_FLAG, false, signedIn ? undefined : ANONYMOUS_SHARE_KIT_CONTEXT);
@@ -58,7 +61,9 @@ export class PublicShareKitController {
       logger.success(req, 'get_public_share_kit', startTime, { event_slug: eventSlug });
       // Repo-owned content that only changes on deploy; short shared caching keeps crawlers cheap. A signed-in
       // visitor may be let in by flag targeting that a signed-out one is not, so theirs stays out of shared caches.
-      res.setHeader('Cache-Control', signedIn ? 'private, no-store' : 'public, max-age=300');
+      if (!signedIn) {
+        res.setHeader('Cache-Control', 'public, max-age=300');
+      }
       res.json(shareKit);
     } catch (error) {
       next(error);

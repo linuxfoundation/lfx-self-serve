@@ -45,6 +45,8 @@ describe('PublicShareKitController.getShareKit', () => {
     await controller.getShareKit(req, res, next);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ResourceNotFoundError);
     expect(res.json).not.toHaveBeenCalled();
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+    expect(res.setHeader).not.toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
   });
 
   it('evaluates signed-out visitors as one anonymous context and lets shared caches keep the answer', async () => {

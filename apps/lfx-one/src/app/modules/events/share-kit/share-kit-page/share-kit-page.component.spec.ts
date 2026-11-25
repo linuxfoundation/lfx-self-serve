@@ -4,11 +4,11 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, ParamMap } from '@angular/router';
 import { ShareKitContent, ShareKitGraphic, ShareKitTheme } from '@lfx-one/shared/interfaces';
 import { PlausibleService } from '@services/plausible.service';
 import { UserService } from '@services/user.service';
-import { of, throwError } from 'rxjs';
+import { BehaviorSubject, Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PublicShareKitService } from '../services/public-share-kit.service';
@@ -48,14 +48,17 @@ describe('ShareKitPageComponent', () => {
   let trackPage: ReturnType<typeof vi.fn>;
   let getShareKit: ReturnType<typeof vi.fn>;
 
-  async function setup(response = of(kit)): Promise<PageHandlers> {
+  async function setup(
+    response: Observable<ShareKitContent> = of(kit),
+    paramMap: Observable<ParamMap> = of(convertToParamMap({ eventSlug: 'example-summit-2027' }))
+  ): Promise<PageHandlers> {
     trackEvent = vi.fn();
     trackPage = vi.fn();
     getShareKit = vi.fn(() => response);
     await TestBed.configureTestingModule({
       imports: [ShareKitPageComponent],
       providers: [
-        { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ eventSlug: 'example-summit-2027' })) } },
+        { provide: ActivatedRoute, useValue: { paramMap } },
         { provide: PublicShareKitService, useValue: { getShareKit } },
         { provide: PlausibleService, useValue: { trackEvent, trackPage, ready: signal(true) } },
         { provide: UserService, useValue: { authenticated: signal(false) } },
@@ -102,6 +105,21 @@ describe('ShareKitPageComponent', () => {
     expect(text('share-kit-headline')).toBe('Where builders meet.');
     expect(text('share-kit-early-bird')).toBe('$399 early-bird through February 28.');
     expect(document.head.querySelector('link[data-share-kit-font="inter-tight"]')).not.toBeNull();
+  });
+
+  it('opens the next kit on the Share tab and counts one pageview per kit, even when both are missing', async () => {
+    const params = new BehaviorSubject(convertToParamMap({ eventSlug: 'example-summit-2027' }));
+    await setup(
+      throwError(() => new HttpErrorResponse({ status: 404 })),
+      params
+    );
+    const page = fixture.componentInstance as unknown as { tab: { (): string; set(value: string): void } };
+    page.tab.set('cfp');
+    params.next(convertToParamMap({ eventSlug: 'other-summit-2027' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(page.tab()).toBe('share');
+    expect(trackPage).toHaveBeenCalledTimes(2);
   });
 
   it('sends one pageview with the kit foundation once the kit loads', async () => {
