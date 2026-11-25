@@ -3,13 +3,19 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, model, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { LINKEDIN_TARGETING_LIMITS } from '@lfx-one/shared/constants';
 import type { LinkedInAudiencesState, LinkedInTargetingDraft, LinkedInTargetingFacetPicks } from '@lfx-one/shared/interfaces';
-import { linkedInAudiencesFailure, linkedInTargetingCanAddClause, linkedInTargetingDraftRefusal, linkedInTargetingMergedPicks } from '@lfx-one/shared/utils';
+import {
+  linkedInAudiencesFailure,
+  linkedInTargetingCanAddClause,
+  linkedInTargetingDraftRefusal,
+  linkedInTargetingDraftWithoutSegments,
+  linkedInTargetingMergedPicks,
+} from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
-import { catchError, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, map, of, skip, startWith, switchMap } from 'rxjs';
 
 import { LinkedInTargetingFacetGroupComponent } from '../linkedin-targeting-facet-group/linkedin-targeting-facet-group.component';
 
@@ -56,6 +62,15 @@ export class LinkedInTargetingEditorComponent {
     if (this.keys.length > count) this.keys = this.keys.slice(0, count);
     return [...this.keys];
   });
+
+  public constructor() {
+    // Segments belong to the ad account they were read from: when the create's account changes, the picks of the
+    // previous one are dropped rather than sent with the new one. skip(1) leaves the first value (the account the
+    // editor opened on, a restored draft included) alone. toObservable + subscribe per frontend-checklist §5.
+    toObservable(this.accountId)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => this.draft.update(linkedInTargetingDraftWithoutSegments));
+  }
 
   protected onClauseChange(index: number, picks: LinkedInTargetingFacetPicks): void {
     this.draft.update((draft) => ({ ...draft, clauses: draft.clauses.map((clause, i) => (i === index ? picks : clause)) }));

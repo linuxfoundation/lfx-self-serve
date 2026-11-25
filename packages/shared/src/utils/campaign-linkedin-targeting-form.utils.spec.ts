@@ -29,6 +29,7 @@ import {
   linkedInTargetingCanAddClause,
   linkedInTargetingDraftFromStored,
   linkedInTargetingDraftRefusal,
+  linkedInTargetingDraftWithoutSegments,
   linkedInTargetingFacetsToAdd,
   linkedInTargetingForCreate,
   linkedInTargetingPicksWith,
@@ -246,6 +247,24 @@ describe('linkedInTargetingCanAddClause', () => {
     [LINKEDIN_TARGETING_LIMITS.clauses, false],
   ])('with %s clauses: %s', (count, expected) => {
     expect(linkedInTargetingCanAddClause(draft(Array.from({ length: count }, () => ({}))))).toBe(expected);
+  });
+});
+
+describe('linkedInTargetingDraftWithoutSegments', () => {
+  it.each<[string, LinkedInTargetingDraft, LinkedInTargetingDraft]>([
+    ['a draft without segments', draft([{ skills: [skill(1)] }], { skills: [skill(2)] }), draft([{ skills: [skill(1)] }], { skills: [skill(2)] })],
+    [
+      'both segment facets, in every clause and the exclusions, keeping the rest',
+      draft([{ skills: [skill(1)], audienceMatchingSegments: [pick(1)] }, { dynamicSegments: [pick(2)] }], { dynamicSegments: [pick(3)], skills: [skill(2)] }),
+      draft([{ skills: [skill(1)] }, {}], { skills: [skill(2)] }),
+    ],
+  ])('drops the segments of %s', (_label, value, expected) => {
+    expect(linkedInTargetingDraftWithoutSegments(value)).toEqual(expected);
+  });
+
+  it('returns a draft without segments as it is, so nothing is emitted', () => {
+    const value = draft([{ skills: [skill(1)] }]);
+    expect(linkedInTargetingDraftWithoutSegments(value)).toBe(value);
   });
 });
 

@@ -191,6 +191,25 @@ export function linkedInTargetingSegmentMessage(state: LinkedInAudiencesState, f
   return 'Every one of these audiences is already used in this targeting.';
 }
 
+/** `picks` without the segment facets, or `picks` itself when it holds none. */
+function picksWithoutSegments(picks: LinkedInTargetingFacetPicks): LinkedInTargetingFacetPicks {
+  if (!picks.audienceMatchingSegments && !picks.dynamicSegments) return picks;
+  const { audienceMatchingSegments: _matched, dynamicSegments: _dynamic, ...rest } = picks;
+  return rest;
+}
+
+/**
+ * `draft` without any ad segment, in every clause and in the exclusions; nothing else is dropped. Segments belong to the
+ * ad account they were read from, so the editor drops them when the create's account changes. `draft` itself when it
+ * holds none, so nothing is emitted for a draft without segments.
+ */
+export function linkedInTargetingDraftWithoutSegments(draft: LinkedInTargetingDraft): LinkedInTargetingDraft {
+  const clauses = draft.clauses.map(picksWithoutSegments);
+  const exclude = picksWithoutSegments(draft.exclude);
+  if (exclude === draft.exclude && clauses.every((clause, i) => clause === draft.clauses[i])) return draft;
+  return { clauses, exclude };
+}
+
 /** Whether another include clause may be added. */
 export function linkedInTargetingCanAddClause(draft: LinkedInTargetingDraft): boolean {
   return draft.clauses.length < LINKEDIN_TARGETING_LIMITS.clauses;

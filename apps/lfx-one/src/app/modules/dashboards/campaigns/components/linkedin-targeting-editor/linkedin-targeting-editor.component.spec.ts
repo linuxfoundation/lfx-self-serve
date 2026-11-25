@@ -112,6 +112,20 @@ describe('LinkedInTargetingEditorComponent', () => {
     expect(query('linkedin-targeting-editor-clause-0-facets-segment-message')).toBeNull();
   });
 
+  it("drops the previous account's segment picks when the account changes, keeping everything else", () => {
+    const segment = { urn: 'urn:li:adSegment:7', name: 'Site visitors' };
+    const go = { urn: 'urn:li:skill:1', name: 'Go' };
+    fixture.componentRef.setInput('draft', { clauses: [{ skills: [go], dynamicSegments: [segment] }], exclude: {} });
+    fixture.detectChanges();
+    expect(query('linkedin-targeting-editor-clause-0-facets-dynamicSegments-urn:li:adSegment:7')).not.toBeNull();
+
+    fixture.componentRef.setInput('accountId', '100000003');
+    fixture.detectChanges();
+    expect(draft.clauses[0]).toEqual({ skills: [go] });
+    expect(query('linkedin-targeting-editor-clause-0-facets-dynamicSegments-urn:li:adSegment:7')).toBeNull();
+    expect(getLinkedInAudiences).toHaveBeenLastCalledWith('tlf', '100000003');
+  });
+
   it('shows why the clauses cannot be sent until one holds a value', () => {
     expect(query('linkedin-targeting-editor-error')?.textContent).toContain('Add at least one included targeting clause.');
     fixture.componentRef.setInput('draft', { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {} });
