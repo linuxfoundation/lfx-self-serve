@@ -4799,6 +4799,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditAssetUploadEnabled: false,
       // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
       redditConversionPixelEnabled: false,
+      redditConversionEventEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -5492,6 +5493,23 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** The Reddit conversion event (#6108 row 2): the cutover and its own flag. */
+  it.each([
+    [{ cutover: true, event: true }, true],
+    [{ cutover: true, event: false }, false],
+    [{ cutover: false, event: true }, false],
+  ])('reports the Reddit conversion event (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceRedditConversionEvent ? flags.event : flags.cutover
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).redditConversionEventEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** LinkedIn objective and conversions (#5764 rows 2 and 4): the cutover and its own flag. Bidding plays no part. */
   it.each([
     [{ cutover: true, conversions: true }, true],
@@ -5597,6 +5615,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditAssetUploadEnabled: false,
       // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
       redditConversionPixelEnabled: false,
+      redditConversionEventEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,

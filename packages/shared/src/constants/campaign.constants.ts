@@ -82,6 +82,7 @@ import type {
   MonitorTabPlatform,
   NegativeKeywordCampaignPlatform,
   ParsedCampaignName,
+  RedditConversionEvent,
   RedditObjective,
   RedditObjectiveParams,
   RedditVideoGoal,
@@ -4515,6 +4516,32 @@ export const REDDIT_VIDEO_GOAL_LABELS: Readonly<Record<RedditVideoGoal, string>>
   VIDEO_VIEW_6S: '6-second video views',
   VIDEO_VIEW_15S: '15-second video views',
 } as const;
+
+/**
+ * The pixel events a Reddit `conversions` campaign may optimize toward (#6108 row 2), sent as
+ * `redditConfig.conversionEvent`. Mirrors `conversionEvents` in lfx-v2-campaign-service
+ * `internal/platform/reddit/client.go` (#549), in its order; upstream matches case-insensitively and
+ * refuses anything else.
+ */
+export const REDDIT_CONVERSION_EVENTS = ['PURCHASE', 'SIGN_UP', 'LEAD', 'PAGE_VISIT', 'VIEW_CONTENT', 'ADD_TO_CART', 'ADD_TO_WISHLIST', 'SEARCH'] as const;
+
+/** The event a conversions campaign optimizes toward when none is sent: campaign-service's own, so the picker starts on it and a create leaves it out. */
+export const DEFAULT_REDDIT_CONVERSION_EVENT: RedditConversionEvent = 'PURCHASE';
+
+/** Readable names for `REDDIT_CONVERSION_EVENTS`, for the picker. Total over `RedditConversionEvent`. */
+export const REDDIT_CONVERSION_EVENT_LABELS: Readonly<Record<RedditConversionEvent, string>> = {
+  PURCHASE: 'Purchase',
+  SIGN_UP: 'Sign up',
+  LEAD: 'Lead',
+  PAGE_VISIT: 'Page visit',
+  VIEW_CONTENT: 'View content',
+  ADD_TO_CART: 'Add to cart',
+  ADD_TO_WISHLIST: 'Add to wishlist',
+  SEARCH: 'Search',
+} as const;
+
+/** The create field a Reddit conversion event refusal names. */
+export const REDDIT_CONVERSION_EVENT_FIELD = 'redditConfig.conversionEvent';
 
 /**
  * The `REDDIT_OBJECTIVE_PARAMS` row for an objective, or a refusal.

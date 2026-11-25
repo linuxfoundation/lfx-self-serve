@@ -76,6 +76,7 @@ function listResult(campaigns: CampaignIndexDoc[]): CampaignListResult {
     redditCreativeEnabled: false,
     redditAssetUploadEnabled: false,
     redditConversionPixelEnabled: false,
+    redditConversionEventEnabled: false,
     googleAssetUploadEnabled: false,
     metaCreativeEnabled: false,
     metaAssetUploadEnabled: false,

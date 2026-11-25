@@ -5519,6 +5519,49 @@
               </div>
             }
 
+            <!-- Conversion event (#6108 row 2), only for Conversions and only on an explicit yes
+                 (LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT). Starts on Purchase, campaign-service's
+                 own default, which a create leaves out. A non-default event the deployment no longer confirms
+                 holds Create below rather than being dropped. -->
+            @if (redditConversionEventOffered()) {
+              <lfx-ui-select
+                label="Conversion event"
+                hint="The pixel event the campaign optimizes toward."
+                size="small"
+                [value]="redditConversionEvent()"
+                (valueChange)="onRedditConversionEventChange($event)"
+                data-testid="implementation-reddit-conversion-event">
+                @for (conversionEvent of redditConversionEventOptions; track conversionEvent) {
+                  <lfx-ui-option [value]="conversionEvent" [label]="redditConversionEventLabels[conversionEvent]" />
+                }
+              </lfx-ui-select>
+            }
+            @if (redditConversionEventBlock(); as block) {
+              <div
+                role="alert"
+                class="flex flex-col items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                [attr.data-testid]="'implementation-reddit-conversion-event-block-' + block.kind">
+                <p>{{ block.message }}</p>
+                @if (block.kind === 'failed') {
+                  <lfx-button
+                    label="Retry"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="retryCreateCapabilities.emit()"
+                    data-testid="implementation-reddit-conversion-event-block-retry" />
+                } @else if (block.kind === 'unsupported') {
+                  <lfx-button
+                    label="Use Purchase"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="useDefaultRedditConversionEvent()"
+                    data-testid="implementation-reddit-conversion-event-use-default" />
+                }
+              </div>
+            }
+
             <!-- Conversion pixel override (#3484). Optional and normally blank: campaign-service
                  falls back to the connection's own pixel. Offered only on an explicit yes from
                  `redditConversionPixelAvailable()`, because the legacy creator never reads the field

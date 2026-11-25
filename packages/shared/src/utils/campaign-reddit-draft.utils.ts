@@ -1,10 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_REDDIT_BUDGET_USD, DEFAULT_REDDIT_OBJECTIVE } from '../constants/campaign.constants';
+import { DEFAULT_REDDIT_BUDGET_USD, DEFAULT_REDDIT_CONVERSION_EVENT, DEFAULT_REDDIT_OBJECTIVE } from '../constants/campaign.constants';
 import type {
   CampaignBriefOutput,
-  CampaignImplementationDraft,
   RedditAdVariant,
   RedditBriefReset,
   RedditBriefSeed,
@@ -12,6 +11,7 @@ import type {
   RedditDraftSnapshot,
   RedditDraftState,
 } from '../interfaces/campaign.interface';
+import { redditConversionEventFromDraft } from './campaign-reddit-conversion-event.utils';
 
 /**
  * The Implement tab's Reddit draft rules (#5980): what the draft carries, what a restore sets, what a brief switch resets
@@ -23,25 +23,7 @@ import type {
  * not what the draft remembers), and the upload slot. A failure is carried only with the brief it failed for, so it
  * stays, and keeps holding Create, across a tab switch.
  */
-export function redditDraftFields(
-  state: RedditDraftState
-): Pick<
-  CampaignImplementationDraft,
-  | 'redditBudgetUsd'
-  | 'redditObjective'
-  | 'redditPostUrl'
-  | 'redditImageUrl'
-  | 'redditCallToAction'
-  | 'redditConversionPixelId'
-  | 'redditImageAssetId'
-  | 'redditImageAssetName'
-  | 'redditImageAssetBriefId'
-  | 'redditImageUploadPendingName'
-  | 'redditImageUploadPendingBriefId'
-  | 'redditImageUploadFailedMessage'
-  | 'redditImageUploadFailedBriefId'
-  | 'redditVideoGoal'
-> {
+export function redditDraftFields(state: RedditDraftState): RedditDraftSnapshot {
   return {
     redditBudgetUsd: state.budgetUsd,
     redditObjective: state.objective,
@@ -57,6 +39,7 @@ export function redditDraftFields(
     redditImageUploadFailedMessage: state.uploadFailedBriefId ? state.uploadError : '',
     redditImageUploadFailedBriefId: state.uploadFailedBriefId,
     redditVideoGoal: state.videoGoal,
+    redditConversionEvent: state.conversionEvent,
   };
 }
 
@@ -65,6 +48,7 @@ export function redditDraftFields(
  * the brief's seed or the default standing, while an empty string is a deliberate clear and is restored. An objective the
  * picker no longer offers is restored too, so it stays visible and on the wire. The pixel only when it is a string. The
  * uploaded image whole, keyed on its id. A failed upload only with the brief it failed for; a running one is resumed.
+ * The conversion event only when it is one Reddit takes; any other leaves the default standing.
  */
 export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftRestore {
   const restore: RedditDraftRestore = {};
@@ -84,6 +68,8 @@ export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftResto
     restore.pendingUpload = { name: draft.redditImageUploadPendingName, briefId: draft.redditImageUploadPendingBriefId ?? '' };
   }
   if (draft.redditVideoGoal !== undefined) restore.videoGoal = draft.redditVideoGoal;
+  const conversionEvent = redditConversionEventFromDraft(draft.redditConversionEvent);
+  if (conversionEvent !== undefined) restore.conversionEvent = conversionEvent;
   return restore;
 }
 
@@ -99,6 +85,7 @@ export function redditBriefReset(): RedditBriefReset {
     callToAction: '',
     objective: DEFAULT_REDDIT_OBJECTIVE,
     videoGoal: '',
+    conversionEvent: DEFAULT_REDDIT_CONVERSION_EVENT,
     budgetUsd: DEFAULT_REDDIT_BUDGET_USD,
     variants: [],
     subreddits: [],
