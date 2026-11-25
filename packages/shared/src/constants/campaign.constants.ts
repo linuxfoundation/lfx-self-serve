@@ -952,6 +952,9 @@ export const LINKEDIN_CONVERSIONS_FIELD = 'linkedInConfig.conversions';
  */
 export const LINKEDIN_MAX_CONVERSIONS = 20;
 
+/** The field a LinkedIn target cost refusal names (linuxfoundation/lfx-v2-campaign-service#674). */
+export const LINKEDIN_TARGET_AMOUNT_FIELD = 'linkedInConfig.bidding.targetAmount';
+
 /**
  * The error `code` (HTTP 403) of a LinkedIn conversion rule read, or a create naming `conversions`, refused because the
  * caller does not hold `global_marketing_ops` on the project: conversion rules belong to the shared ad account, so
