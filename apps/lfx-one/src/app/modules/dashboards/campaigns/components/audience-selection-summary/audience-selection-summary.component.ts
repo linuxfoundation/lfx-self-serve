@@ -103,7 +103,9 @@ export class AudienceSelectionSummaryComponent {
    * is recorded with an empty summary so it is not asked for again; it is "could not be read", not a
    * described list with a blank rules line, and its `complete: false` is not a partial description.
    */
-  private hasShownSummary(item: AudienceSelectionSummaryItem): item is AudienceSelectionSummaryItem & { description: NonNullable<AudienceSelectionSummaryItem['description']> } {
+  private hasShownSummary(
+    item: AudienceSelectionSummaryItem
+  ): item is AudienceSelectionSummaryItem & { description: NonNullable<AudienceSelectionSummaryItem['description']> } {
     return item.description !== null && item.description.summary.trim() !== '';
   }
 }

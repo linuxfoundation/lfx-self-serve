@@ -113,7 +113,16 @@ describe('AudienceSelectionSummaryComponent', () => {
   });
 
   it('reads a list the describe call did not answer for as unreadable, not as a partial description', () => {
-    const unanswered: AudienceListDescription = { listId: '8', name: '', hubspotUrl: '', status: 'unreadable', summary: '', match: 'any', groups: [], complete: false };
+    const unanswered: AudienceListDescription = {
+      listId: '8',
+      name: '',
+      hubspotUrl: '',
+      status: 'unreadable',
+      summary: '',
+      match: 'any',
+      groups: [],
+      complete: false,
+    };
     const host = render({ includes: [item('8', unanswered, 'Unanswered list')] });
 
     expect(text(host, 'campaigns-audience-meaning-list-8')).toContain('Its rules could not be read');

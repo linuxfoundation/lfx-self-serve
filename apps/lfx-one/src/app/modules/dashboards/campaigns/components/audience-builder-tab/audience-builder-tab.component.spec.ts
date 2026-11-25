@@ -5275,7 +5275,14 @@ describe('AudienceBuilderTabComponent', () => {
     it('follows a later switch to and from Post-Event, until the operator sets the row themselves', async () => {
       getAudienceSuppressionLists.mockReturnValue(
         of([
-          { key: 'current_registrants', label: 'Current registrants', listId: '9001', name: 'Synthetic Summit 2026 - Current Registrants', category: 'current_registrants', hubspotUrl: 'u' },
+          {
+            key: 'current_registrants',
+            label: 'Current registrants',
+            listId: '9001',
+            name: 'Synthetic Summit 2026 - Current Registrants',
+            category: 'current_registrants',
+            hubspotUrl: 'u',
+          },
         ])
       );
       await render();
@@ -5285,7 +5292,8 @@ describe('AudienceBuilderTabComponent', () => {
       click('campaigns-audience-discover');
       completeDiscovery();
       click('audience-card-grid-toggle-101');
-      const toggle = (): HTMLInputElement | null => host().querySelector<HTMLInputElement>('[data-testid="audience-suppression-grid-toggle-current_registrants"]');
+      const toggle = (): HTMLInputElement | null =>
+        host().querySelector<HTMLInputElement>('[data-testid="audience-suppression-grid-toggle-current_registrants"]');
       expect(toggle()?.checked).toBe(true);
 
       // The same discovery run, moved to a thank-you send: the registrants are who it is for.

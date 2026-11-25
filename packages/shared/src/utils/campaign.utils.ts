@@ -251,14 +251,16 @@ export function campaignSurveySourceTextTooLong(sourceText: string): boolean {
 
 /** A value as a brief slug: lowercase ASCII words joined by hyphens, at most 100 characters. */
 function slugifyForBrief(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^a-z0-9]+/g, '-')
-    // One hyphen at most at each end: the line above collapses every run to one. `-+` here was
-    // polynomial on a long run (CodeQL js/polynomial-redos) for no difference in the result.
-    .replace(/^-|-$/g, '')
-    .slice(0, 100);
+  return (
+    value
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^a-z0-9]+/g, '-')
+      // One hyphen at most at each end: the line above collapses every run to one. `-+` here was
+      // polynomial on a long run (CodeQL js/polynomial-redos) for no difference in the result.
+      .replace(/^-|-$/g, '')
+      .slice(0, 100)
+  );
 }
 
 /**
