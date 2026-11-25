@@ -6,12 +6,21 @@
   <p class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700" data-testid="account-cla-request-text">
     @switch (request.mode) {
       @case ('approval') {
-        We’ll ask the CLA managers at <strong class="font-semibold text-ui-neutral-900">{{ company }}</strong> to add you to the
+        <!-- With no company name on the agreement, the sentence names the CLA managers without it. -->
+        We’ll ask the CLA managers
+        @if (company) {
+          at <strong class="font-semibold text-ui-neutral-900">{{ company }}</strong>
+        }
+        to add you to the
         <strong class="font-semibold text-ui-neutral-900">{{ project }}</strong> Corporate CLA approval list. You’re covered once a manager approves it in the
         Corporate CLA Console.
       }
       @case ('removal') {
-        We’ll ask the CLA managers at <strong class="font-semibold text-ui-neutral-900">{{ company }}</strong> to remove you from the
+        We’ll ask the CLA managers
+        @if (company) {
+          at <strong class="font-semibold text-ui-neutral-900">{{ company }}</strong>
+        }
+        to remove you from the
         <strong class="font-semibold text-ui-neutral-900">{{ project }}</strong> Corporate CLA approval list.
       }
       @default {
@@ -50,6 +59,8 @@
         [formControl]="messageControl"
         [error]="messageErrorText()"
         data-testid="account-cla-request-message" />
+      <!-- The field shows its error without announcing it, so this reads it out when it appears. -->
+      <span class="sr-only" role="alert" data-testid="account-cla-request-message-alert">{{ messageErrorText() }}</span>
       <span class="self-end text-[12px] leading-[16px] text-ui-neutral-500" data-testid="account-cla-request-counter">
         {{ messageLength() }} / {{ messageMaxLength }}
       </span>

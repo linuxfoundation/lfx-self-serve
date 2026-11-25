@@ -71,7 +71,7 @@
     <!-- Narrow screens scroll the table sideways from 640px. -->
     <lfx-ui-table class="[&_table]:min-w-[640px]" label="CLAs" rowKey="id" [columns]="columns" [rows]="tableRows()" data-testid="account-clas-table">
       <ng-template lfxUiTableCell="project" let-row>
-        @if (rowsById().get(row.id); as cla) {
+        @if (row.cla; as cla) {
           <span class="flex min-w-0 flex-row items-center gap-[12px]" [attr.data-testid]="'account-clas-project-' + cla.row.id">
             <span class="grid h-[28px] w-[28px] flex-none place-items-center overflow-hidden rounded-ui-xs bg-ui-background-100 shadow-small">
               @if (cla.row.agreement.projectLogo) {
@@ -91,7 +91,7 @@
       </ng-template>
 
       <ng-template lfxUiTableCell="type" let-row>
-        @if (rowsById().get(row.id); as cla) {
+        @if (row.cla; as cla) {
           <!-- A long company name ends in an ellipsis inside the badge; the title shows it whole. -->
           <lfx-ui-badge
             variant="outline"
@@ -105,7 +105,7 @@
       </ng-template>
 
       <ng-template lfxUiTableCell="status" let-row>
-        @if (rowsById().get(row.id); as cla) {
+        @if (row.cla; as cla) {
           <span class="flex min-w-0 flex-col items-start gap-[2px]" [attr.data-testid]="'account-clas-status-' + cla.row.id">
             @if (cla.row.status.plainText) {
               <span class="text-ui-neutral-600">{{ cla.row.status.label }}</span>
@@ -120,7 +120,7 @@
       </ng-template>
 
       <ng-template lfxUiTableCell="signed" let-row>
-        @if (rowsById().get(row.id); as cla) {
+        @if (row.cla; as cla) {
           <span class="flex min-w-0 flex-col" [attr.data-testid]="'account-clas-signed-' + cla.row.id">
             <span>{{ cla.row.signedOnLabel }}</span>
             @if (cla.row.signedAsLine) {
@@ -131,7 +131,7 @@
       </ng-template>
 
       <ng-template lfxUiTableCell="actions" let-row>
-        @if (rowsById().get(row.id); as cla) {
+        @if (row.cla; as cla) {
           @if (cla.hasActions) {
             <span class="flex justify-end">
               <lfx-ui-button

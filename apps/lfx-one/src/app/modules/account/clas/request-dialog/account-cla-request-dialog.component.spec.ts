@@ -71,6 +71,26 @@ describe('AccountClaRequestDialogComponent', () => {
     expect(query('account-cla-request-text')?.textContent?.replace(/\s+/g, ' ')).toContain('to remove you from the Project One Corporate CLA approval list.');
   });
 
+  it('names the managers without a company when the agreement has none', async () => {
+    const { query } = await render('approval', { ...CCLA, companyName: undefined });
+
+    expect(query('account-cla-request-text')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      'We’ll ask the CLA managers to add you to the Project One Corporate CLA approval list.'
+    );
+  });
+
+  it('announces a message error', async () => {
+    const { fixture, query } = await render('contact');
+    const textarea = query('account-cla-request-message')?.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'x';
+    textarea.dispatchEvent(new Event('input'));
+    textarea.value = '';
+    textarea.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+
+    expect(query('account-cla-request-message-alert')?.textContent?.trim()).toBe('A message is required.');
+  });
+
   it('sends the request to the chosen managers and closes', async () => {
     const { query, close, createClaManagerRequest } = await render('approval');
     expect(query('account-cla-request-manager-jdoe')).not.toBeNull();

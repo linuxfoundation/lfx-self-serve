@@ -65,9 +65,8 @@ export class AccountClasComponent extends ProfileClasComponent {
     { key: 'actions', header: '' },
   ];
   protected readonly accountRows: Signal<AccountClaRow[]> = this.initAccountRows();
-  /** The table's rows, keyed by agreement id; each cell template reads its `AccountClaRow` back by that id. */
-  protected readonly tableRows: Signal<Record<string, unknown>[]> = computed(() => this.accountRows().map((row) => ({ id: row.row.id })));
-  protected readonly rowsById: Signal<Map<string, AccountClaRow>> = computed(() => new Map(this.accountRows().map((row) => [row.row.id, row])));
+  /** The table's rows: the agreement id it keys on, and the prepared row the cells show. */
+  protected readonly tableRows: Signal<Record<string, unknown>[]> = computed(() => this.accountRows().map((row) => ({ id: row.row.id, cla: row })));
 
   /** Opens the CCLA request dialog for a row: approval, removal, or a message to its managers. */
   protected openRequest(agreement: MyClaAgreement, mode: ClaManagerRequestMode): void {
