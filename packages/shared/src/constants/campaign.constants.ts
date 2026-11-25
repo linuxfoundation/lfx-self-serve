@@ -981,7 +981,7 @@ export const LINKEDIN_TARGETING_SEARCH_DEBOUNCE_MS = 400;
 
 /**
  * The facets the Implement tab's custom targeting editor offers (#5764 rows 8–11), in the order shown: the searched
- * ones (`LINKEDIN_TARGETING_SEARCH_FACETS`), the three fixed lists and the two ad segment facets. Not `interfaceLocales`.
+ * ones (`LINKEDIN_TARGETING_SEARCH_FACETS`), the four fixed lists and the two ad segment facets.
  */
 export const LINKEDIN_TARGETING_EDITOR_FACETS: readonly LinkedInTargetingEditorFacetOption[] = [
   { key: 'skills', label: 'Skills', kind: 'search' },
@@ -993,6 +993,7 @@ export const LINKEDIN_TARGETING_EDITOR_FACETS: readonly LinkedInTargetingEditorF
   { key: 'staffCountRanges', label: 'Company sizes', kind: 'static' },
   { key: 'groups', label: 'Member groups', kind: 'search' },
   { key: 'interests', label: 'Interests', kind: 'search' },
+  { key: 'interfaceLocales', label: 'Interface languages', kind: 'static' },
   { key: 'audienceMatchingSegments', label: 'Matched audiences', kind: 'segment' },
   { key: 'dynamicSegments', label: 'Retargeting audiences', kind: 'segment' },
 ];
@@ -1010,7 +1011,10 @@ function numbered(prefix: string, names: readonly string[]): LinkedInTargetingEn
   return names.map((name, index) => ({ urn: `${prefix}${index + 1}`, name }));
 }
 
-/** The values of the three fixed-list facets, with LinkedIn's names: seniorities, job functions and company sizes. */
+/**
+ * The values of the four fixed-list facets, with LinkedIn's names: seniorities, job functions, company sizes and the
+ * languages LinkedIn's interface is offered in (`urn:li:locale:<language>_<COUNTRY>`, include-only).
+ */
 export const LINKEDIN_TARGETING_STATIC_VALUES: Readonly<Record<LinkedInTargetingStaticFacet, readonly LinkedInTargetingEntity[]>> = {
   seniorities: numbered('urn:li:seniority:', ['Unpaid', 'Training', 'Entry', 'Senior', 'Manager', 'Director', 'VP', 'CXO', 'Partner', 'Owner']),
   jobFunctions: numbered('urn:li:function:', [
@@ -1045,6 +1049,35 @@ export const LINKEDIN_TARGETING_STATIC_VALUES: Readonly<Record<LinkedInTargeting
     urn,
     name: ['1 employee', '2–10', '11–50', '51–200', '201–500', '501–1,000', '1,001–5,000', '5,001–10,000', '10,001+'][index],
   })),
+  interfaceLocales: (
+    [
+      ['ar_AE', 'Arabic'],
+      ['zh_CN', 'Chinese (Simplified)'],
+      ['zh_TW', 'Chinese (Traditional)'],
+      ['cs_CZ', 'Czech'],
+      ['da_DK', 'Danish'],
+      ['nl_NL', 'Dutch'],
+      ['en_US', 'English'],
+      ['fr_FR', 'French'],
+      ['de_DE', 'German'],
+      ['in_ID', 'Indonesian'],
+      ['it_IT', 'Italian'],
+      ['ja_JP', 'Japanese'],
+      ['ko_KR', 'Korean'],
+      ['ms_MY', 'Malay'],
+      ['no_NO', 'Norwegian'],
+      ['pl_PL', 'Polish'],
+      ['pt_BR', 'Portuguese'],
+      ['ro_RO', 'Romanian'],
+      ['ru_RU', 'Russian'],
+      ['es_ES', 'Spanish'],
+      ['sv_SE', 'Swedish'],
+      ['tl_PH', 'Tagalog'],
+      ['th_TH', 'Thai'],
+      ['tr_TR', 'Turkish'],
+      ['uk_UA', 'Ukrainian'],
+    ] as const
+  ).map(([locale, name]) => ({ urn: `urn:li:locale:${locale}`, name })),
 };
 
 /** An Images-API image URN as campaign-service accepts it (`imageURNRE`, `internal/platform/linkedin/targeting.go`). */

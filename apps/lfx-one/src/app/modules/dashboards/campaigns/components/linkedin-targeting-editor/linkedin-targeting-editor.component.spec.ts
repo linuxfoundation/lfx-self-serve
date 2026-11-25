@@ -75,11 +75,14 @@ describe('LinkedInTargetingEditorComponent', () => {
     expect(query('linkedin-targeting-editor-clause-0-facets-skills-urn:li:skill:1')?.textContent).toContain('Go');
   });
 
-  it('adds a fixed-list value to the clause from the facet chosen', () => {
-    clause()['onFacetChange']('seniorities');
-    clause()['onStaticPick']('urn:li:seniority:4');
+  it.each([
+    ['seniorities', 'urn:li:seniority:4', 'Senior'],
+    ['interfaceLocales', 'urn:li:locale:de_DE', 'German'],
+  ])('adds a fixed-list value to the clause from the facet chosen: %s', (facet, urn, name) => {
+    clause()['onFacetChange'](facet);
+    clause()['onStaticPick'](urn);
     fixture.detectChanges();
-    expect(draft.clauses[0]).toEqual({ seniorities: [{ urn: 'urn:li:seniority:4', name: 'Senior' }] });
+    expect(draft.clauses[0]).toEqual({ [facet]: [{ urn, name }] });
     expect(searchLinkedInTargeting).not.toHaveBeenCalled();
   });
 
