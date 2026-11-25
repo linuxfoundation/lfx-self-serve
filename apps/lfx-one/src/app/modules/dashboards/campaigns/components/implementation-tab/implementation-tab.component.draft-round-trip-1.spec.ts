@@ -578,6 +578,52 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     }
   });
 
+  // === Reddit: the conversion event (#6108 row 2) ===
+
+  /** Mounts with the conversion event capability answered; the rules are `campaign-reddit-conversion-event.utils` rows. */
+  async function mountWithConversionEvent(
+    draft: CampaignImplementationDraft | null,
+    enabled: boolean | null
+  ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const mounted = await mount(draft);
+    mounted.fixture.componentRef.setInput('redditConversionEventEnabled', enabled);
+    mounted.fixture.componentRef.setInput('createCapabilityRead', 'ready');
+    mounted.fixture.detectChanges();
+    await mounted.fixture.whenStable();
+    return mounted;
+  }
+
+  it('carries a picked conversion event through a tab round-trip and into the request', async () => {
+    const first = await mountWithConversionEvent(null, true);
+    at(first.fixture).selectedPlatforms.set(['reddit-ads']);
+    first.fixture.detectChanges();
+    const select = first.fixture.nativeElement.querySelector('[data-testid="implementation-reddit-conversion-event"]') as HTMLSelectElement;
+    select.value = 'LEAD';
+    select.dispatchEvent(new Event('change'));
+    expect(first.latest()?.redditConversionEvent).toBe('LEAD');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const second = await mountWithConversionEvent(draft, true);
+    expect(submitReddit(second.fixture)['conversionEvent']).toBe('LEAD');
+  });
+
+  it('holds Create for a remembered conversion event the capability withdrew, until it is set back to Purchase', STATE_ONLY, async () => {
+    type ConversionEventHandlers = { onRedditConversionEventChange(event: Event): void; useDefaultRedditConversionEvent(): void };
+    const first = await mountWithConversionEvent(null, true);
+    (first.fixture.componentInstance as unknown as ConversionEventHandlers).onRedditConversionEventChange({ target: { value: 'LEAD' } } as unknown as Event);
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const f = (await mountWithConversionEvent(draft, false)).fixture;
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+
+    expect(at(f).canSubmit()).toBe(false);
+    (f.componentInstance as unknown as ConversionEventHandlers).useDefaultRedditConversionEvent();
+    expect(at(f).canSubmit()).toBe(true);
+  });
+
   // === The other platforms on the same live brief switch (#4624) ===
 
   /** The next brief: another event, same platforms. `strip` removes copy blocks the conditional resets key on. */

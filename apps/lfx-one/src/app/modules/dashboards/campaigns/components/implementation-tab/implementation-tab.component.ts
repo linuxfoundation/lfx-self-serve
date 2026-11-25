@@ -218,8 +218,11 @@ import {
   DEFAULT_MICROSOFT_BUDGET_USD,
   DEFAULT_REDDIT_BUDGET_USD,
   DEFAULT_REDDIT_CALL_TO_ACTION,
+  DEFAULT_REDDIT_CONVERSION_EVENT,
   DEFAULT_REDDIT_OBJECTIVE,
   REDDIT_CALL_TO_ACTIONS,
+  REDDIT_CONVERSION_EVENT_LABELS,
+  REDDIT_CONVERSION_EVENTS,
   REDDIT_MAX_BUDGET_USD,
   REDDIT_OBJECTIVE_LABELS,
   REDDIT_SELECTABLE_OBJECTIVES,
@@ -390,6 +393,7 @@ import type {
   RedditAdVariant,
   RedditBriefSeed,
   RedditCallToAction,
+  RedditConversionEvent,
   RedditObjective,
   RedditVideoGoal,
   StoredCreativeAsset,
@@ -504,6 +508,9 @@ import {
   redditBriefReset,
   redditBriefSeed,
   redditCallToActionIsUnavailable,
+  redditConversionEventBlock,
+  redditConversionEventField,
+  redditConversionEventOffered,
   redditCreateRefusal,
   redditDraftFields,
   redditDraftRestore,
@@ -938,6 +945,12 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see redditConversionPixelEnabled — an explicit yes, never a `null`. */
   protected readonly redditConversionPixelAvailable = computed<boolean>(() => this.redditConversionPixelEnabled() === true);
+
+  /**
+   * Whether a Reddit `conversions` create may carry a conversion event (`CampaignListResult.redditConversionEventEnabled`,
+   * #6108 row 2). `null` until the parent has an answer, which withholds the picker and holds a non-default event.
+   */
+  public readonly redditConversionEventEnabled = input<boolean | null>(null);
 
   /**
    * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
@@ -1505,6 +1518,9 @@ export class ImplementationTabComponent implements OnInit {
   /** The goals offered for `video_views`, and their readable names. */
   protected readonly redditVideoGoalOptions = REDDIT_VIDEO_GOALS;
   protected readonly redditVideoGoalLabels = REDDIT_VIDEO_GOAL_LABELS;
+  /** The pixel events offered for `conversions` (#6108 row 2), and their readable names. */
+  protected readonly redditConversionEventOptions = REDDIT_CONVERSION_EVENTS;
+  protected readonly redditConversionEventLabels = REDDIT_CONVERSION_EVENT_LABELS;
   /**
    * The full CTA list, with no selectable/withheld split: upstream accepts every one of these,
    * resolving the value case-insensitively and rejecting anything outside the set. The empty
@@ -1981,6 +1997,25 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditEffectiveVideoGoal = computed<RedditVideoGoal | null>(() => redditEffectiveVideoGoal(this.redditVideoGoal()));
   /** The message shown under the goal picker while Video Views has no usable goal, else `null`. */
   protected readonly redditVideoGoalError = computed(() => redditVideoGoalError(this.redditObjective(), this.redditVideoGoal()));
+  /**
+   * The pixel event a `conversions` campaign optimizes toward (#6108 row 2). Starts on campaign-service's own default,
+   * which a create leaves out, and is remembered across objective changes like the video goal; only the request is gated.
+   */
+  protected readonly redditConversionEvent = signal<RedditConversionEvent>(DEFAULT_REDDIT_CONVERSION_EVENT);
+  /** Whether the picker shows: an explicit yes, on the conversions objective. */
+  protected readonly redditConversionEventOffered = computed<boolean>(() =>
+    redditConversionEventOffered(this.redditConversionEventEnabled(), this.redditObjective())
+  );
+  /** Why Create is held for a non-default event this deployment has not confirmed, or `null` — held, never dropped. */
+  protected readonly redditConversionEventBlock = computed<CampaignBiddingCapabilityBlock | null>(() =>
+    redditConversionEventBlock(
+      this.redditConversionEvent(),
+      this.redditObjective(),
+      this.redditConversionEventEnabled(),
+      this.createCapabilityRead(),
+      this.briefPersistence().briefId
+    )
+  );
   /**
    * The message shown under the Post URL while Video Views has no post, else `null`. A video-views
    * campaign has to promote an existing video post: the image-URL route authors an IMAGE post, which
@@ -4221,6 +4256,7 @@ export class ImplementationTabComponent implements OnInit {
           geoTargetCount: this.redditEffectiveGeoTargets().length,
           videoGoalError: this.redditVideoGoalError(),
           videoPostError: this.redditVideoPostError(),
+          conversionEventBlock: this.redditConversionEventBlock()?.message ?? null,
         })
       : null;
     if (redditRefusal !== null) return redditRefusal;
@@ -5413,6 +5449,17 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onRedditVideoGoalChange(event: Event): void {
     this.redditVideoGoal.set((event.target as HTMLSelectElement).value as RedditVideoGoal | '');
+    this.emitDraft();
+  }
+
+  protected onRedditConversionEventChange(event: Event): void {
+    this.redditConversionEvent.set((event.target as HTMLSelectElement).value as RedditConversionEvent);
+    this.emitDraft();
+  }
+
+  /** Back to Purchase: the way past an `unsupported` {@link redditConversionEventBlock}, whose picker is hidden. */
+  protected useDefaultRedditConversionEvent(): void {
+    this.redditConversionEvent.set(DEFAULT_REDDIT_CONVERSION_EVENT);
     this.emitDraft();
   }
 
@@ -7105,6 +7152,8 @@ export class ImplementationTabComponent implements OnInit {
               // a goal left over from an earlier Video Views choice is not sent with another
               // objective. `canSubmit` guarantees it is present whenever the objective needs it.
               ...this.redditVideoGoalPayload(),
+              // Only offered, on conversions, and other than the default; a held one blocks Create instead (#6108 row 2).
+              ...redditConversionEventField(this.redditConversionEvent(), this.redditObjective(), this.redditConversionEventEnabled()),
               // Omitted when blank rather than sent empty: upstream treats an empty `postUrl` as
               // "author a post instead", and an empty `callToAction` as "use the default" — both
               // the same decision an absent key makes, so a blank string would only add a value
@@ -9231,6 +9280,7 @@ export class ImplementationTabComponent implements OnInit {
     if (redditRestore.failedUpload) this.failRedditImageUpload(redditRestore.failedUpload.message, redditRestore.failedUpload.briefId);
     if (redditRestore.pendingUpload) this.resumeRedditImageUpload(redditRestore.pendingUpload.name, redditRestore.pendingUpload.briefId);
     if (redditRestore.videoGoal !== undefined) this.redditVideoGoal.set(redditRestore.videoGoal);
+    if (redditRestore.conversionEvent !== undefined) this.redditConversionEvent.set(redditRestore.conversionEvent);
     // The Meta image, on the Reddit image's terms above.
     const metaImageRestore = metaImageDraftRestore(draft);
     if (metaImageRestore.imageUrl !== undefined) this.metaImageUrl.set(metaImageRestore.imageUrl);
@@ -9793,6 +9843,7 @@ export class ImplementationTabComponent implements OnInit {
         uploadError: this.redditImageUploadError(),
         uploadFailedBriefId: this.redditImageUploadFailedBriefId(),
         videoGoal: this.redditVideoGoal(),
+        conversionEvent: this.redditConversionEvent(),
       }),
       ...metaImageDraftFields({
         imageUrl: this.metaImageUrl(),
@@ -9847,6 +9898,7 @@ export class ImplementationTabComponent implements OnInit {
     this.redditCallToAction.set(redditReset.callToAction);
     this.redditObjective.set(redditReset.objective);
     this.redditVideoGoal.set(redditReset.videoGoal);
+    this.redditConversionEvent.set(redditReset.conversionEvent);
     this.redditBudgetUsd.set(redditReset.budgetUsd);
     this.setRedditBriefLists(redditReset);
     // The other platforms on the same terms (#4624): every value the brief does not derive, or derives

@@ -3394,6 +3394,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       redditCreativeEnabled: false,
       redditAssetUploadEnabled: false,
       redditConversionPixelEnabled: false,
+      redditConversionEventEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
