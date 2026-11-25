@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
   LINKEDIN_AUDIENCES_RESTRICTED_CODE,
+  LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE,
   LINKEDIN_CONVERSIONS_RESTRICTED_CODE,
   LINKEDIN_TARGETING_PROFILE_EDIT_FIELD,
 } from '@lfx-one/shared/constants';
@@ -369,12 +370,14 @@ describe('CampaignController LinkedIn objective and conversions (#5764)', () => 
     expect(createCampaigns).not.toHaveBeenCalled();
   });
 
-  it('refuses conversions from a caller without global_marketing_ops on the project, creating nothing', async () => {
+  it('refuses conversions from a caller without global_marketing_ops (403) or when it cannot be checked (503), creating nothing', async () => {
     vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValueOnce(false);
+    const denied = await create({ targetingProfile: 'cloud-native', conversions: ['104012'] });
+    expect(vi.mocked(denied.next).mock.calls[0]?.[0]).toMatchObject({ code: LINKEDIN_CONVERSIONS_RESTRICTED_CODE });
 
-    const { next } = await create({ targetingProfile: 'cloud-native', conversions: ['104012'] });
-
-    expect(vi.mocked(next).mock.calls[0]?.[0]).toMatchObject({ code: LINKEDIN_CONVERSIONS_RESTRICTED_CODE });
+    vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockRejectedValueOnce(new Error('access-check unavailable'));
+    const unverified = await create({ targetingProfile: 'cloud-native', conversions: ['104012'] });
+    expect(vi.mocked(unverified.next).mock.calls[0]?.[0]).toMatchObject({ code: LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE });
     expect(createCampaigns).not.toHaveBeenCalled();
   });
 });

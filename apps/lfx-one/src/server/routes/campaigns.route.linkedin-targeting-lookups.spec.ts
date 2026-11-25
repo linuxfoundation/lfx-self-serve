@@ -214,6 +214,11 @@ describe('GET /api/campaigns/linkedin/conversions', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ accountId: '500000001', conversions: [{ id: '104012', name: 'Registration', type: 'REGISTRATION' }] });
     expect(svcConversions).toHaveBeenCalledWith(expect.anything(), 'tlf', '500000002');
+
+    // A malformed account id is refused before any upstream call.
+    svcConversions.mockClear();
+    expect((await fetch(`${baseUrl}/api/campaigns/linkedin/conversions?project=tlf&accountId=act_1`)).status).toBe(400);
+    expect(svcConversions).not.toHaveBeenCalled();
   });
 
   it('answers 404 while LinkedIn conversions are off, with no upstream call', async () => {
