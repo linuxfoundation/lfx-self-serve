@@ -16,6 +16,7 @@ import {
   requireGoogleMonitorAccess,
   requireGoogleUserListsAccess,
   requireMetaCustomAudiencesAccess,
+  requireLinkedInAudiencesAccess,
   requireMetaLeadFormsAccess,
 } from '../middleware/require-marketing-access.middleware';
 
@@ -108,6 +109,12 @@ router.get('/meta/custom-audiences', requireMetaCustomAudiencesAccess, (req, res
 // Ahead of `router.use(requireCampaignManager)` for the same reason as the lists above.
 router.get('/meta/lead-forms', requireMetaLeadFormsAccess, (req, res, next) => campaignController.getMetaLeadForms(req, res, next));
 
+// The ad segments on the LinkedIn ad account a create uses, for the Implement tab's targeting editor (#5764 rows 8–11).
+// The ad account is shared, so the list names every foundation's audiences: answered only to `global_marketing_ops` on
+// the project, as campaign-service answers. 404 while custom LinkedIn targeting is off. Ahead of
+// `router.use(requireCampaignManager)` for the same reason as the lists above.
+router.get('/linkedin/audiences', requireLinkedInAudiencesAccess, (req, res, next) => campaignController.getLinkedInAudiences(req, res, next));
+
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
 // server flag is off — this is an intentional tightening of the prior (fully open) behavior, not
@@ -199,6 +206,9 @@ router.get('/meta/targeting-search', (req, res, next) => campaignController.sear
 // LinkedIn locations for the Implement tab's location search (#5545; campaign-service #643). Unflagged upstream and
 // public location data, so not root-only: `requireCampaignManager` above is the gate, as campaign-service's.
 router.get('/linkedin/geo-targets', (req, res, next) => campaignController.searchLinkedInGeoTargets(req, res, next));
+// LinkedIn targeting values (skills, titles, employers and the other searchable facets) for the Implement tab's targeting
+// editor (#5764 rows 8–11). 404 while custom LinkedIn targeting is off. LinkedIn taxonomy: `requireCampaignManager` is the gate.
+router.get('/linkedin/targeting-entities', (req, res, next) => campaignController.searchLinkedInTargetingEntities(req, res, next));
 // campaign-service only (#2519), behind LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off.
 // Microsoft and X take the platform account id as `?accountKey=`; HubSpot is project-scoped and takes none.
 router.get('/microsoft/monitor', (req, res, next) => campaignController.getMicrosoftMonitor(req, res, next));

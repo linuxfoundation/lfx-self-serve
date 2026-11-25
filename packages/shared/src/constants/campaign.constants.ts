@@ -931,6 +931,16 @@ export const LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE =
 export const LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE';
 export const LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to LinkedIn audiences could not be verified. Try again in a few minutes.';
 
+/**
+ * The facets campaign-service's targeting typeahead searches for `linkedInConfig.targeting` (`search-linkedin-ads-targeting-entities`,
+ * #585): its `locations` answer `geoTargets`, and seniorities, job functions, company sizes, locales and segments are
+ * not searched (segments come from `GET /api/campaigns/linkedin/audiences`).
+ */
+export const LINKEDIN_TARGETING_SEARCH_FACETS = ['employers', 'groups', 'industries', 'interests', 'skills', 'titles'] as const;
+
+/** The message a LinkedIn targeting search answers while LinkedIn throttles or fails it (an upstream 503, not retried). */
+export const LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE = "LinkedIn targeting search isn't available right now. Wait a few seconds, then search again.";
+
 /** An Images-API image URN as campaign-service accepts it (`imageURNRE`, `internal/platform/linkedin/targeting.go`). */
 export const LINKEDIN_IMAGE_URN_PATTERN = /^urn:li:image:[A-Za-z0-9_-]+$/;
 

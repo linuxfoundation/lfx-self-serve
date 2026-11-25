@@ -12,6 +12,11 @@ import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.ut
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
 import { correctLinkedInGeoTargets, linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
 import { linkedInGeoSearchLocations, linkedInGeoSearchQueryRefusal } from '@lfx-one/shared/utils/campaign-linkedin-geo.utils';
+import {
+  isLinkedInTargetingSearchFacet,
+  linkedInAudienceSegments,
+  linkedInTargetingSearchEntities,
+} from '@lfx-one/shared/utils/campaign-linkedin-targeting-lookup.utils';
 import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
 import { linkedInTextAdAssetField, linkedInTextAdsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-text-ads.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
@@ -177,6 +182,8 @@ import type {
   MetaAudienceTargeting,
   MetaTargeting,
   LinkedInGeoSearchResult,
+  LinkedInAudiencesResult,
+  LinkedInTargetingSearchResult,
   MetaTargetingSearchResult,
   MetaCustomAudiencesResult,
   MetaLeadFormsResult,
@@ -376,6 +383,7 @@ import {
   LINKEDIN_AUDIENCES_RESTRICTED_CODE,
   LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE,
   LINKEDIN_GEO_SEARCH_BUSY_MESSAGE,
+  LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
   META_TARGETING_SEARCH_BUSY_MESSAGE,
   META_AD_OPTION_FIELDS,
   META_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE,
@@ -4834,6 +4842,108 @@ export class CampaignController {
         );
         return;
       }
+      next(error);
+    }
+  }
+
+  /**
+   * The values of one LinkedIn targeting facet matching `?q=`, for the Implement tab's targeting editor (#5764 rows
+   * 8–11), through campaign-service's targeting typeahead (`search-linkedin-ads-targeting-entities`, #585). 404 while a
+   * create cannot carry `targeting`, so the editor never offers a value a create would refuse. LinkedIn taxonomy, so
+   * `requireCampaignManager` on the router is the gate, as campaign-service's. `?facet=` must be one of
+   * `LINKEDIN_TARGETING_SEARCH_FACETS`; the facet and query are checked here first, so a bad one costs no upstream call.
+   * Only values that facet accepts in `targeting` are offered. An upstream 503 (a LinkedIn throttle, not retried)
+   * answers a "try again" 503 that keeps the original error.
+   */
+  public async searchLinkedInTargetingEntities(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'linkedin_targeting_search';
+    if (!canSetLinkedInTargeting()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const context = { operation, service: 'campaign_controller', path: req.path };
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(ServiceValidationError.forField('project', 'A project is required to search LinkedIn targeting.', context));
+      return;
+    }
+    const facet = req.query['facet'];
+    if (!isLinkedInTargetingSearchFacet(facet)) {
+      next(ServiceValidationError.forField('facet', 'Choose what kind of LinkedIn targeting to search for.', context));
+      return;
+    }
+    const refusal = typeof req.query['q'] === 'string' ? linkedInGeoSearchQueryRefusal(req.query['q']) : 'Enter text to search for.';
+    if (refusal !== null) {
+      next(ServiceValidationError.forField('q', refusal, context));
+      return;
+    }
+    const query = String(req.query['q']).trim();
+    // This handler does not log the query text (only its facet); the request logger records the URL as for every route.
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true, facet });
+    try {
+      const payload = await this.campaignServiceClient.searchLinkedInTargetingEntities(req, projectSlug, facet, query);
+      // `entities` is required upstream; reading its absence as an empty list would say nothing matched.
+      if (!Array.isArray(payload?.entities)) {
+        throw new MicroserviceError('campaign-service returned an unreadable LinkedIn targeting search.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: LinkedInTargetingSearchResult = { facet, entities: linkedInTargetingSearchEntities(facet, payload.entities) };
+      logger.success(req, operation, startTime, { count: result.entities.length, facet });
+      res.json(result);
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 503 && error.transportFailure !== true) {
+        next(
+          new MicroserviceError(LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE, 503, 'LINKEDIN_TARGETING_SEARCH_UNAVAILABLE', {
+            operation,
+            service: 'campaign_controller',
+            clientMessage: LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
+            originalError: error,
+          })
+        );
+        return;
+      }
+      next(error);
+    }
+  }
+
+  /**
+   * The ad segments on the LinkedIn ad account a create for this project uses, for the Implement tab's targeting editor
+   * (#5764 rows 8–11), camel-cased: matched audiences and retargeting segments, each under the facet `targeting` names
+   * it with. The ad account is shared by every foundation, so it is answered on the relation campaign-service checks
+   * first: `global_marketing_ops` on the project — a coded 403 when refused, a coded 503 when the check cannot be made,
+   * both before any upstream call. Registered ahead of the blanket `requireCampaignManager`, behind its own
+   * `requireLinkedInAudiencesAccess`, as the Meta and Google pickers are. 404 while a create cannot carry `targeting`.
+   */
+  public async getLinkedInAudiences(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'linkedin_audiences';
+    if (!canSetLinkedInTargeting()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    try {
+      await this.requireLinkedInAudienceAccess(req, projectSlug, operation, 'the LinkedIn audience read');
+      const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+      const payload = await this.campaignServiceClient.listLinkedInAudiences(req, projectSlug);
+      // `audiences` is required upstream; reading its absence as an empty list would say the account has none.
+      if (!Array.isArray(payload?.audiences)) {
+        throw new MicroserviceError('campaign-service returned an unreadable LinkedIn audience read.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: LinkedInAudiencesResult = {
+        accountId: typeof payload.account_id === 'string' ? payload.account_id : '',
+        audiences: linkedInAudienceSegments(payload.audiences),
+      };
+      logger.success(req, operation, startTime, { count: result.audiences.length });
+      res.json(result);
+    } catch (error) {
       next(error);
     }
   }
