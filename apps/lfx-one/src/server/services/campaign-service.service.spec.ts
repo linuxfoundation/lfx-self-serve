@@ -6505,6 +6505,33 @@ describe('CampaignServiceClient.listMetaCustomAudiences', () => {
   });
 });
 
+describe('CampaignServiceClient.listLinkedInAudiences', () => {
+  const audiences = { account_id: '500000001', audiences: [], audience_count: 0, truncated: false };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's audience read, the project encoded, naming an account only when given", async () => {
+    proxyRequest.mockResolvedValue(audiences);
+
+    expect(await new CampaignServiceClient().listLinkedInAudiences(req, 'lf/ai')).toBe(audiences);
+    await new CampaignServiceClient().listLinkedInAudiences(req, 'cncf', '500000002');
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/linkedin-ads/audiences', 'GET', undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/linkedin-ads/audiences', 'GET', {
+      account_id: '500000002',
+    });
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listLinkedInAudiences(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
 describe('CampaignServiceClient.listMetaLeadForms', () => {
   beforeEach(() => {
     vi.clearAllMocks();

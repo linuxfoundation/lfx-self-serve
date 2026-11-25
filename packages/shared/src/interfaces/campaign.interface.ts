@@ -25,6 +25,7 @@ import type {
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   LINKEDIN_AD_FORMATS,
+  LINKEDIN_TARGETING_SEARCH_FACETS,
   MICROSOFT_KEYWORDS_WINDOWS,
   MONITOR_DATE_RANGE_OPTIONS,
   REDDIT_CALL_TO_ACTIONS,
@@ -1929,6 +1930,52 @@ export interface CampaignServiceLinkedInTargetingEntities {
   facet: string;
   entities: { urn: string; name: string }[];
   entity_count: number;
+}
+
+/** A facet `GET /api/campaigns/linkedin/targeting-entities` searches (`LINKEDIN_TARGETING_SEARCH_FACETS`). */
+export type LinkedInTargetingSearchFacet = (typeof LINKEDIN_TARGETING_SEARCH_FACETS)[number];
+
+/** One LinkedIn targeting value a search or audience read offers: its URN and the name to show. */
+export interface LinkedInTargetingEntity {
+  urn: string;
+  name: string;
+}
+
+/** `GET /api/campaigns/linkedin/targeting-entities` (#5764 rows 8–11): the values of one facet matching a query. */
+export interface LinkedInTargetingSearchResult {
+  facet: LinkedInTargetingSearchFacet;
+  entities: LinkedInTargetingEntity[];
+}
+
+/** campaign-service's `list-linkedin-ads-audiences` body (`LinkedInAdsAudienceSegments`), as it sends it. */
+export interface CampaignServiceLinkedInAudiences {
+  account_id: string;
+  audiences: {
+    id: string;
+    urn: string;
+    name: string;
+    type: string;
+    status: string;
+    facet?: string;
+    approximate_member_count?: number;
+  }[];
+  audience_count: number;
+  truncated: boolean;
+}
+
+/** One ad segment the Implement tab may target, under the facet campaign-service names for its type. */
+export interface LinkedInAudienceSegment extends LinkedInTargetingEntity {
+  facet: 'audienceMatchingSegments' | 'dynamicSegments';
+  type: string;
+  /** LinkedIn's segment status. Only `READY` serves; `BUILDING`, `UPDATING` and `ARCHIVED` are listed but will not. */
+  status: string;
+  approximateMemberCount: number | null;
+}
+
+/** `GET /api/campaigns/linkedin/audiences` (#5764 rows 8–11): the ad segments on the ad account a create uses. */
+export interface LinkedInAudiencesResult {
+  accountId: string;
+  audiences: LinkedInAudienceSegment[];
 }
 
 /** `GET /api/campaigns/linkedin/geo-targets` (#5545): the locations matching a query, ready to add as geo targets. */
