@@ -72,7 +72,7 @@ export const ACCOUNT_ROUTES: Routes = [
         path: 'transactions',
         title: 'Transactions',
         data: { embedded: true },
-        loadComponent: () => import('../transactions/transactions-dashboard/transactions-dashboard.component').then((m) => m.TransactionsDashboardComponent),
+        loadComponent: () => import('./transactions/account-transactions.component').then((m) => m.AccountTransactionsComponent),
       },
       {
         path: 'email-settings',
