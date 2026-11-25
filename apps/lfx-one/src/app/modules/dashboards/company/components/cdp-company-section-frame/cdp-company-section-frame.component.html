@@ -1,0 +1,23 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" [attr.data-testid]="testIdPrefix() + '-page'" [attr.data-state]="state()">
+  <lfx-page-header
+    [title]="meta().label"
+    [description]="meta().description"
+    [titleTestId]="testIdPrefix() + '-title'"
+    [descriptionTestId]="testIdPrefix() + '-subtitle'" />
+
+  @if (emptyState(); as stateName) {
+    <lfx-org-lens-empty-state [state]="stateName" [testId]="testIdPrefix()" [values]="emptyStateValues()" (retry)="retry.emit()" />
+  } @else if (state() === 'loading') {
+    <div class="flex flex-col gap-4" [attr.data-testid]="testIdPrefix() + '-loading'">
+      <p-skeleton height="5rem" />
+      <p-skeleton height="16rem" />
+    </div>
+  } @else {
+    <div class="flex flex-col gap-6" [attr.data-testid]="testIdPrefix() + '-content'">
+      <ng-content />
+    </div>
+  }
+</div>

@@ -14,6 +14,7 @@ import {
   model,
   output,
   PLATFORM_ID,
+  signal,
   Signal,
   viewChild,
 } from '@angular/core';
@@ -21,6 +22,11 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { NavigationEnd, Router } from '@angular/router';
 import {
+  CDP_COMPANY_ROUTE_PREFIX,
+  CDP_COMPANY_SEARCH_DEBOUNCE_MS,
+  CDP_COMPANY_SEARCH_NO_ACCOUNT_MATCH_MESSAGE,
+  CDP_COMPANY_SEARCH_TAG,
+  CDP_COMPANY_SEARCH_UNAVAILABLE_MESSAGE,
   NAVBAR_ORG_CLA_ONLY_ROLE,
   NAVBAR_ORG_ROLE_DIRECT_SUFFIX,
   NAVBAR_ORG_ROLE_TOOLTIPS,
@@ -39,10 +45,14 @@ import {
   OrgRollUpFamily,
   OrgRollUpSelectorRow,
   OrgRollUpSetOrg,
+  OrgSelectorCdpGroup,
+  OrgSelectorCdpTrigger,
   OrgSelectorRow,
 } from '@lfx-one/shared/interfaces';
 import { orgRollUpAccount, resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { CdpCompanyContextService } from '@services/cdp-company-context.service';
+import { CdpCompanyService } from '@services/cdp-company.service';
 import { ElementIdService } from '@services/element-id.service';
 import { LensService } from '@services/lens.service';
 import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
@@ -56,7 +66,7 @@ import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { TooltipModule } from 'primeng/tooltip';
-import { distinctUntilChanged, filter, map, merge } from 'rxjs';
+import { debounceTime, distinctUntilChanged, filter, map, merge, Observable, of, startWith, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-org-selector',
@@ -70,6 +80,8 @@ export class OrgSelectorComponent {
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly lensService = inject(LensService);
   private readonly router = inject(Router);
+  private readonly cdpCompanyService = inject(CdpCompanyService);
+  private readonly cdpCompanyContext = inject(CdpCompanyContextService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly claOnlyAccess = inject(OrgClaOnlyAccessService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
@@ -122,8 +134,27 @@ export class OrgSelectorComponent {
   protected readonly selectedAccount: Signal<Account> = this.accountContextService.selectedAccount;
   protected readonly selectedAccountUid: Signal<string | null> = computed(() => this.selectedAccount().uid ?? null);
 
-  protected readonly displayName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Select Company');
-  protected readonly displayLogo: Signal<string> = computed(() => this.selectedAccount().logoUrl ?? '');
+  /**
+   * On a CDP company page the trigger card shows that company (name, logo and the "CDP" tag, no role) rather than the
+   * selected B2B company, which stays selected and comes back when the viewer leaves. Read from the CDP context the
+   * page shell fills from the address before its first render, so the server and the browser show the same card. An
+   * address that opened no CDP page (an outsider, an unknown id) keeps the B2B card, as the sidebar does.
+   */
+  protected readonly cdpTrigger: Signal<OrgSelectorCdpTrigger | null> = computed(() => {
+    const context = this.cdpCompanyContext.context();
+    if (!context) return null;
+    if (!context.settled) return { name: '', logoUrl: '', pending: true };
+    const company = context.page?.company;
+    return company ? { name: company.name, logoUrl: company.logoUrl ?? '', pending: false } : null;
+  });
+  /** A selected roll-up as the trigger shows it: never on a CDP page, which shows the CDP company instead. */
+  protected readonly triggerShowsRollUp: Signal<boolean> = computed(() => !this.cdpTrigger() && this.accountContextService.isRollUp());
+
+  protected readonly displayName: Signal<string> = computed(() => {
+    const cdp = this.cdpTrigger();
+    return cdp ? cdp.name : this.selectedAccount().accountName || 'Select Company';
+  });
+  protected readonly displayLogo: Signal<string> = computed(() => this.cdpTrigger()?.logoUrl ?? this.selectedAccount().logoUrl ?? '');
 
   private readonly searchRollUpRows: Signal<OrgRollUpSelectorRow[]> = computed(() => this.initSearchRollUpRows());
 
@@ -208,13 +239,16 @@ export class OrgSelectorComponent {
     return this.personaToTooltip(persona, parentName);
   });
 
-  /** Whether the router sits on the org-lens not-found dead end, re-read on every navigation. */
-  private readonly onNotFound: Signal<boolean> = toSignal(
+  /**
+   * Whether the router sits on an address that names no selected company — the org-lens not-found dead end or a CDP
+   * company page — re-read on every navigation. Re-picking the selected row is the way out of both.
+   */
+  private readonly onUnselectedAddress: Signal<boolean> = toSignal(
     this.router.events.pipe(
       filter((event) => event instanceof NavigationEnd),
-      map(() => this.orgLensNavigation.isOnNotFound())
+      map(() => this.isOnUnselectedAddress())
     ),
-    { initialValue: this.orgLensNavigation.isOnNotFound() }
+    { initialValue: this.isOnUnselectedAddress() }
   );
 
   /**
@@ -232,8 +266,8 @@ export class OrgSelectorComponent {
       return false;
     }
     // The one row must be the selection: a deep-linked selection outside the list still needs the
-    // panel to switch back, and the not-found dead end recovers through picking the selected row.
-    return items[0].uid === this.selectedAccountUid() && !this.onNotFound();
+    // panel to switch back, and the not-found dead end and a CDP company page recover through picking the selected row.
+    return items[0].uid === this.selectedAccountUid() && !this.onUnselectedAddress();
   });
 
   /**
@@ -336,6 +370,32 @@ export class OrgSelectorComponent {
 
   protected readonly autoLoadTriggerIndex: Signal<number> = computed(() => Math.max(0, this.displayedItems().length - 8));
 
+  protected readonly cdpSearchTag = CDP_COMPANY_SEARCH_TAG;
+  protected readonly cdpSearchUnavailableMessage = CDP_COMPANY_SEARCH_UNAVAILABLE_MESSAGE;
+  protected readonly cdpSearchNoAccountMatchMessage = CDP_COMPANY_SEARCH_NO_ACCOUNT_MATCH_MESSAGE;
+
+  /** The search box's term as the catalogue search reads it. */
+  private readonly trimmedSearchTerm: Signal<string> = computed(() => this.orgNavigationService.searchTerm()().trim());
+
+  /**
+   * True while THIS selector's own popover is shown. Unlike `isPanelOpen` (two-way bound to a layout flag the desktop
+   * and mobile-drawer navbars share), it is never true for both instances at once, so only the selector the viewer is
+   * typing in runs the CDP search.
+   */
+  private readonly popoverShown = signal(false);
+
+  /**
+   * CDP companies matching the term, asked once per term — the B2B list's first page —
+   * alongside the B2B request and never holding it up. Debounced on its own, and a newer term cancels the
+   * request in flight (`switchMap`). Only an `available` audience asks; everyone else never sees a CDP group.
+   * Driven only while this selector's popover is shown: the search term lives in a root service both navbar
+   * selectors read, and a mounted mobile drawer would otherwise send every search twice.
+   */
+  private readonly cdpSearch: Signal<OrgSelectorCdpGroup | null> = this.initCdpSearchGroup();
+
+  /** The CDP group under the B2B rows; hidden while the term moved on, without a term, or when the B2B search failed. */
+  protected readonly cdpGroup: Signal<OrgSelectorCdpGroup | null> = this.initCdpGroup();
+
   public constructor() {
     // Server-side search via OrgNavigationService — drop the legacy in-memory filter.
     this.searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((term) => {
@@ -390,6 +450,12 @@ export class OrgSelectorComponent {
    * Returns whether something was activated, so the caller only restores focus when it was.
    */
   protected activateOption(active: HTMLElement): boolean {
+    if (active.dataset['optionKind'] === 'cdp') {
+      const cdpId = active.dataset['cdpId'];
+      if (!cdpId) return false;
+      this.selectCdpCompany(cdpId);
+      return true;
+    }
     if (active.dataset['optionKind'] === 'rollup') {
       const rootUid = active.dataset['familyRoot'];
       if (!rootUid) return false;
@@ -420,7 +486,8 @@ export class OrgSelectorComponent {
     // the same not-found exception: on the dead end the pick is the viewer's way out, and the
     // selection there never made it into the address.
     if (this.accountContextService.selectedRollUpRootUid() === rootUid) {
-      if (this.orgLensNavigation.isOnNotFound()) {
+      // A CDP company page shows no company account either, so re-picking the selection leaves it too.
+      if (this.isOnUnselectedAddress()) {
         this.orgLensNavigation.navigateToRollUpHome(rootUid);
       }
       this.rollUpSelected.emit();
@@ -448,6 +515,15 @@ export class OrgSelectorComponent {
     this.popoverRef()?.hide();
   }
 
+  /**
+   * A CDP row opens that company's page. It is not a company account, so it never becomes the
+   * selection — no account context, cookie, role-grants or CLA-only bookkeeping.
+   */
+  protected selectCdpCompany(cdpId: string): void {
+    void this.router.navigate(['/', CDP_COMPANY_ROUTE_PREFIX, cdpId]);
+    this.popoverRef()?.hide();
+  }
+
   protected selectRelated(org: OrgRollUpSetOrg): void {
     const listed = this.items().find((item) => item.uid === org.uid);
     this.selectItem(listed ?? { uid: org.uid, accountId: org.accountId, name: org.name, logoUrl: org.logoUrl, isAssigned: false });
@@ -466,7 +542,8 @@ export class OrgSelectorComponent {
     // `/org/{page}` address a `'switch'` for the same organization would insert the segment, which
     // FR-014 forbids for a same-organization pick.
     if (item.uid === this.selectedAccountUid()) {
-      if (this.orgLensNavigation.isOnNotFound()) {
+      // A CDP company page shows no company account either, so re-picking the selection leaves it too.
+      if (this.isOnUnselectedAddress()) {
         this.orgLensNavigation.navigateToSelectedOrg('switch');
       }
       this.itemSelected.emit(item);
@@ -510,6 +587,7 @@ export class OrgSelectorComponent {
 
   protected onPopoverShow(): void {
     this.isPanelOpen.set(true);
+    this.popoverShown.set(true);
     this.alignPanelTop();
     // Safety net when bootstrap raced ahead of the visibility gate (enabled was false on first tick).
     if (this.enabled() && this.items().length === 0 && !this.loading()) {
@@ -526,6 +604,7 @@ export class OrgSelectorComponent {
 
   protected onPopoverHide(): void {
     this.isPanelOpen.set(false);
+    this.popoverShown.set(false);
     this.pendingInitialFocus = false;
     this.searchControl.setValue('', { emitEvent: true });
     this.detachKeyboardHandler();
@@ -657,6 +736,11 @@ export class OrgSelectorComponent {
     }
   }
 
+  /** The not-found dead end or a CDP company page: an address that names no selected company. */
+  private isOnUnselectedAddress(): boolean {
+    return this.orgLensNavigation.isOnNotFound() || this.orgLensNavigation.isOnCdpCompanyPage();
+  }
+
   /**
    * True when the event target is inside the popover panel or is the combobox trigger. Keeps
    * modifier variants (e.g. Shift+Home) on unrelated inputs from being hijacked while the panel
@@ -719,6 +803,52 @@ export class OrgSelectorComponent {
   private closeAndRestoreFocus(): void {
     this.popoverRef()?.hide();
     this.triggerRef()?.nativeElement.focus();
+  }
+
+  /** One term's CDP group: nothing below the catalogue minimum or for a caller CDP results are not available to. */
+  private initCdpSearchGroup(): Signal<OrgSelectorCdpGroup | null> {
+    return toSignal(
+      toObservable(computed(() => (this.popoverShown() ? this.trimmedSearchTerm() : ''))).pipe(
+        debounceTime(CDP_COMPANY_SEARCH_DEBOUNCE_MS),
+        distinctUntilChanged(),
+        switchMap((term) => this.initCdpSearch(term))
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initCdpGroup(): Signal<OrgSelectorCdpGroup | null> {
+    return computed(() => {
+      const group = this.cdpSearch();
+      if (!group || !this.isStaff() || group.term !== this.trimmedSearchTerm() || this.searchFailed()) return null;
+      // The CDP group (loading, rows or "unavailable") belongs below the B2B results of the SAME search. Until
+      // that search's first page lands, the rows on screen are an older search's, so nothing shows for CDP yet. Paging
+      // keeps the term, so the group stays while later pages load.
+      if (group.term !== this.orgNavigationService.displayedTerm()) return null;
+      if (group.status === 'settled' && !group.unavailable && group.items.length === 0) return null;
+      return group;
+    });
+  }
+
+  private initCdpSearch(term: string): Observable<OrgSelectorCdpGroup | null> {
+    if (term.length < ORG_CATALOGUE_SEARCH_MIN_CHARS) return of(null);
+    return this.cdpCompanyService.availability().pipe(
+      take(1),
+      switchMap((audience) => {
+        if (audience !== 'available') return of(null);
+        return this.cdpCompanyService.search(term).pipe(
+          map(
+            (response): OrgSelectorCdpGroup => ({
+              term,
+              status: 'settled',
+              items: response.items.map((item) => ({ ...item, initial: item.name.trim().charAt(0).toUpperCase() })),
+              unavailable: response.unavailable === true,
+            })
+          ),
+          startWith<OrgSelectorCdpGroup>({ term, status: 'loading', items: [], unavailable: false })
+        );
+      })
+    );
   }
 
   private initRollUpRows(): OrgRollUpSelectorRow[] {

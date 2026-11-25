@@ -3,6 +3,7 @@
 
 import type { Signal, WritableSignal } from '@angular/core';
 import type { Subject } from 'rxjs';
+import type { CdpCompanyItem } from './cdp-company.interface';
 
 /** Selector row. Spec 002: the org account id (18-char SFID) is the canonical identifier; `uid` and `accountId` both carry it. */
 export interface OrgItem {
@@ -564,4 +565,31 @@ export interface AccessAwareOrgsCacheEntry {
   familyRoots: [string, OrgFamilyRoot][];
   /** Stored with a `failed` staff check so a short-TTL hit renders the reference that was logged; a `failed` entry without it (or with `isStaff: true` or `isContractor: true`) fails the shape guard. */
   correlationId?: string;
+}
+
+/** One CDP row in the org selector: the search item plus the logo fallback initial, computed once when mapped. */
+export interface OrgSelectorCdpRow extends CdpCompanyItem {
+  initial: string;
+}
+
+/**
+ * The org selector's CDP group for the current search term: `loading` until the CDP
+ * search settles, then its rows, or `unavailable` when the read missed its deadline, failed, or its list was stale.
+ */
+export interface OrgSelectorCdpGroup {
+  /** The trimmed term the group answers; the group renders only while it is still the search box's term. */
+  term: string;
+  status: 'loading' | 'settled';
+  items: OrgSelectorCdpRow[];
+  unavailable: boolean;
+}
+
+/**
+ * What the org selector's trigger card shows on a CDP company page instead of the selected B2B company. `pending` while
+ * the page has not answered yet (also the server render), so the card carries no name, logo or tag until it does.
+ */
+export interface OrgSelectorCdpTrigger {
+  name: string;
+  logoUrl: string;
+  pending: boolean;
 }

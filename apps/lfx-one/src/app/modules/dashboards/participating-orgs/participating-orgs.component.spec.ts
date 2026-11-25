@@ -12,6 +12,7 @@ import type {
   MembershipTierClass,
   ProjectContext,
   ProjectParticipatingOrg,
+  ProjectParticipatingOrgsOrgLensLinksAnswer,
   ProjectParticipatingOrgsPage,
   ProjectParticipatingOrgsQuery,
   ProjectParticipatingOrgsRange,
@@ -31,6 +32,9 @@ import {
 } from '../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { ParticipatingOrgsComponent } from './participating-orgs.component';
 import { ParticipatingOrgsService } from './services/participating-orgs.service';
+
+type LinksIds = Parameters<ParticipatingOrgsService['getOrgLensLinks']>[1];
+type LinksAnswer = Omit<ProjectParticipatingOrgsOrgLensLinksAnswer, 'key'>;
 
 const PROJECT_SLUG = 'synthetic-project';
 const FOUNDATION_SLUG = 'synthetic-foundation';
@@ -60,6 +64,7 @@ function org(overrides: Partial<ProjectParticipatingOrg> = {}): ProjectParticipa
   return {
     participantKey: SYNTHETIC_ORG_ACCOUNT_ID,
     accountId: SYNTHETIC_ORG_ACCOUNT_ID,
+    organizationId: null,
     name: SYNTHETIC_ORG_NAME,
     logoUrl: null,
     isUnidentified: false,
@@ -79,6 +84,11 @@ function page(rows: ProjectParticipatingOrg[] = [org()]): ProjectParticipatingOr
   return { rows, totalRecords: rows.length, foundationSlug: FOUNDATION_SLUG };
 }
 
+/** A links answer reading `readable` account ids and no CDP company. */
+function links(readable: string[]): LinksAnswer {
+  return { readable: new Set(readable), cdpCompanyIds: new Set<string>() };
+}
+
 function httpError(status: number): Observable<never> {
   return throwError(() => new HttpErrorResponse({ status }));
 }
@@ -87,7 +97,7 @@ describe('ParticipatingOrgsComponent', () => {
   let fixture: ComponentFixture<ParticipatingOrgsComponent>;
   let getSummary: Mock<(slug: string, range: ProjectParticipatingOrgsRange) => Observable<ProjectParticipatingOrgsSummaryResponse>>;
   let getPage: Mock<(slug: string, query: ProjectParticipatingOrgsQuery) => Observable<ProjectParticipatingOrgsPage>>;
-  let getLinks: Mock<(slug: string, accountIds: string[]) => Observable<ReadonlySet<string> | null>>;
+  let getLinks: Mock<(slug: string, ids: LinksIds) => Observable<LinksAnswer | null>>;
   let activeContext: WritableSignal<ProjectContext>;
 
   async function render(): Promise<void> {
@@ -99,7 +109,7 @@ describe('ParticipatingOrgsComponent', () => {
         { provide: ProjectContextService, useValue: { activeContext } },
         {
           provide: ParticipatingOrgsService,
-          useValue: { getSummary, getPage, getOrgLensReadableAccountIds: getLinks, exportCsv: vi.fn(() => of(undefined)) },
+          useValue: { getSummary, getPage, getOrgLensLinks: getLinks, exportCsv: vi.fn(() => of(undefined)) },
         },
       ],
     }).compileComponents();
@@ -127,7 +137,7 @@ describe('ParticipatingOrgsComponent', () => {
       of({ summary: summary() })
     );
     getPage = vi.fn<(slug: string, query: ProjectParticipatingOrgsQuery) => Observable<ProjectParticipatingOrgsPage>>(() => of(page()));
-    getLinks = vi.fn<(slug: string, accountIds: string[]) => Observable<ReadonlySet<string> | null>>(() => of(new Set([SYNTHETIC_ORG_ACCOUNT_ID])));
+    getLinks = vi.fn<(slug: string, ids: LinksIds) => Observable<LinksAnswer | null>>(() => of(links([SYNTHETIC_ORG_ACCOUNT_ID])));
     activeContext = signal<ProjectContext>({ uid: 'project-uid', name: 'Synthetic Project', slug: PROJECT_SLUG });
   });
 
@@ -227,7 +237,7 @@ describe('ParticipatingOrgsComponent', () => {
   });
 
   it('renders a member the viewer cannot open as focusable plain text carrying the access hint', async () => {
-    getLinks.mockReturnValue(of(new Set<string>()));
+    getLinks.mockReturnValue(of(links([])));
     await render();
 
     const name = query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`);
@@ -238,9 +248,9 @@ describe('ParticipatingOrgsComponent', () => {
     expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}`)?.querySelector('a')).toBeNull();
   });
 
-  it('shows member names plain, without the access hint, until the viewer’s links arrive, asking only for members', async () => {
-    const links = new Subject<ReadonlySet<string>>();
-    getLinks.mockReturnValue(links);
+  it('shows member names plain, without the access hint, until the viewer’s links arrive', async () => {
+    const answer = new Subject<LinksAnswer>();
+    getLinks.mockReturnValue(answer);
     getPage.mockReturnValue(
       of(
         page([
@@ -254,9 +264,13 @@ describe('ParticipatingOrgsComponent', () => {
     const pending = query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`);
     expect(pending?.tagName).toBe('SPAN');
     expect(pending?.getAttribute('role')).toBeNull();
-    expect(getLinks).toHaveBeenCalledWith(PROJECT_SLUG, [SYNTHETIC_ORG_ACCOUNT_ID]);
+    expect(getLinks).toHaveBeenCalledWith(PROJECT_SLUG, {
+      accountIds: [SYNTHETIC_ORG_ACCOUNT_ID],
+      nonMemberAccountIds: [SYNTHETIC_SECOND_ORG_ACCOUNT_ID],
+      cdpIds: [],
+    });
 
-    links.next(new Set([SYNTHETIC_ORG_ACCOUNT_ID]));
+    answer.next(links([SYNTHETIC_ORG_ACCOUNT_ID]));
     await settle();
 
     expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`)?.tagName).toBe('A');
@@ -267,7 +281,11 @@ describe('ParticipatingOrgsComponent', () => {
     const malformed = org({ participantKey: '001SHORT', accountId: '001SHORT' });
     getPage.mockReturnValue(of(page([org(), second, malformed])));
     await render();
-    expect(getLinks).toHaveBeenCalledExactlyOnceWith(PROJECT_SLUG, [SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_SECOND_ORG_ACCOUNT_ID].sort());
+    expect(getLinks).toHaveBeenCalledExactlyOnceWith(PROJECT_SLUG, {
+      accountIds: [SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_SECOND_ORG_ACCOUNT_ID].sort(),
+      nonMemberAccountIds: [],
+      cdpIds: [],
+    });
 
     getPage.mockReturnValue(of(page([second, malformed, org()])));
     fixture.componentInstance['onSort']('name');
@@ -281,7 +299,7 @@ describe('ParticipatingOrgsComponent', () => {
     await render();
     expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`)?.tagName).toBe('A');
 
-    getLinks.mockReturnValue(new Subject<ReadonlySet<string>>());
+    getLinks.mockReturnValue(new Subject<LinksAnswer>());
     getPage.mockReturnValue(of(page([org({ participantKey: SYNTHETIC_SECOND_ORG_ACCOUNT_ID, accountId: SYNTHETIC_SECOND_ORG_ACCOUNT_ID })])));
     fixture.componentInstance['offset'].set(10);
     await settle();
@@ -304,7 +322,7 @@ describe('ParticipatingOrgsComponent', () => {
     expect(query('participating-orgs-table')?.parentElement?.getAttribute('aria-busy')).toBe('true');
   });
 
-  it('shows an Unidentified company as a plain, unlinked name, and badges non-members', async () => {
+  it('shows an Unidentified company outside the CDP answer as a plain name, and links a readable non-member to its Company Lens home', async () => {
     getPage.mockReturnValue(
       of(
         page([
@@ -319,16 +337,15 @@ describe('ParticipatingOrgsComponent', () => {
         ])
       )
     );
-    // Even if the access check named a non-member, it is never linked.
-    getLinks.mockReturnValue(of(new Set([SYNTHETIC_SECOND_ORG_ACCOUNT_ID])));
+    getLinks.mockReturnValue(of(links([SYNTHETIC_SECOND_ORG_ACCOUNT_ID])));
     await render();
 
     expect(text(`participating-orgs-row-${UNIDENTIFIED_KEY}-name`)).toBe('unmatched-org');
     expect(query(`participating-orgs-row-${UNIDENTIFIED_KEY}`)?.textContent).not.toContain('Unidentified');
     expect(query(`participating-orgs-row-${UNIDENTIFIED_KEY}`)?.querySelector('a')).toBeNull();
     expect(text(`participating-orgs-row-${UNIDENTIFIED_KEY}-membership`)).toBe('Non-member');
-    // A non-member is never linked.
-    expect(query(`participating-orgs-row-${SYNTHETIC_SECOND_ORG_ACCOUNT_ID}`)?.querySelector('a')).toBeNull();
+    // A non-member the viewer reads links to its Company Lens home.
+    expect(query(`participating-orgs-row-${SYNTHETIC_SECOND_ORG_ACCOUNT_ID}-name`)?.getAttribute('data-name-kind')).toBe('org-lens-home-link');
   });
 
   it('badges members "{Tier} Member" in the tier colour, falling back to slate for unlisted tiers', async () => {

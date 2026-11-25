@@ -1,0 +1,14 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-cdp-company-section-frame
+  sectionKey="training"
+  [state]="section.state()"
+  [emptyState]="section.emptyState()"
+  [companyName]="section.companyName()"
+  (retry)="section.retry()">
+  @if (section.data()) {
+    <lfx-stat-card-grid [cards]="cards()" [columns]="2" data-testid="cdp-company-training-stats" />
+    <p class="text-xs text-gray-500" data-testid="cdp-company-training-note">A total made up of fewer than 5 people is not shown.</p>
+  }
+</lfx-cdp-company-section-frame>

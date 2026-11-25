@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CDP_COMPANY_ID_PATTERN,
   MEMBERSHIP_TIER_ORDER,
   ORG_ACCOUNT_ID_PATTERN,
   PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_FILTERS,
@@ -11,6 +12,8 @@ import {
   PROJECT_PARTICIPATING_ORGS_EXPORT_CSV_HEADER,
   PROJECT_PARTICIPATING_ORGS_EXPORT_TRUNCATED_HEADER,
   PROJECT_PARTICIPATING_ORGS_LINKS_ACCOUNT_IDS_PARAM,
+  PROJECT_PARTICIPATING_ORGS_LINKS_CDP_IDS_PARAM,
+  PROJECT_PARTICIPATING_ORGS_LINKS_NON_MEMBER_ACCOUNT_IDS_PARAM,
   PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE,
   PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH,
   PROJECT_PARTICIPATING_ORGS_PAGE_SIZE,
@@ -89,19 +92,38 @@ export class ProjectParticipatingOrgsController {
     }
   }
 
-  // GET /api/projects/:slug/participating-orgs/org-lens-links?accountIds=a,b -> { readableAccountIds }, per caller
+  // GET /api/projects/:slug/participating-orgs/org-lens-links?accountIds=&nonMemberAccountIds=&cdpIds= -> { readableAccountIds, cdpCompanyIds }, per caller
   public async getOrgLensLinks(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_project_participating_orgs_org_lens_links';
     const startTime = logger.startOperation(req, operation);
 
     try {
-      const accountIds = parseAccountIds(req, operation);
-      const readableAccountIds = await this.service.getOrgLensReadableAccountIds(req, accountIds);
+      const accountIds = parseIds(req, PROJECT_PARTICIPATING_ORGS_LINKS_ACCOUNT_IDS_PARAM, ORG_ACCOUNT_ID_PATTERN, 'canonical company account ids', operation);
+      const nonMemberAccountIds = parseIds(
+        req,
+        PROJECT_PARTICIPATING_ORGS_LINKS_NON_MEMBER_ACCOUNT_IDS_PARAM,
+        ORG_ACCOUNT_ID_PATTERN,
+        'canonical company account ids',
+        operation
+      );
+      const cdpIds = parseIds(req, PROJECT_PARTICIPATING_ORGS_LINKS_CDP_IDS_PARAM, CDP_COMPANY_ID_PATTERN, 'CDP ids', operation);
+      if (accountIds.length === 0 && nonMemberAccountIds.length === 0 && cdpIds.length === 0) {
+        throw ServiceValidationError.forField(PROJECT_PARTICIPATING_ORGS_LINKS_ACCOUNT_IDS_PARAM, 'at least one id list is required', { operation });
+      }
 
-      logger.success(req, operation, startTime, { slug: req.params['slug'], requested: accountIds.length, readable: readableAccountIds.length });
+      const links = await this.service.getOrgLensLinks(req, { accountIds, nonMemberAccountIds, cdpIds });
+
+      logger.success(req, operation, startTime, {
+        slug: req.params['slug'],
+        requested: accountIds.length,
+        requested_non_members: nonMemberAccountIds.length,
+        requested_cdp: cdpIds.length,
+        readable: links.readableAccountIds.length,
+        cdp_linked: links.cdpCompanyIds.length,
+      });
       // Per-caller answer: never let a shared cache keep it.
       res.setHeader('Cache-Control', 'private, no-store');
-      res.json({ readableAccountIds });
+      res.json(links);
     } catch (error) {
       next(error);
     }
@@ -181,18 +203,17 @@ function parseFilters(req: Request, operation: string): ProjectParticipatingOrgs
   };
 }
 
-/** The member account ids of one shown page: comma-separated canonical ids, deduplicated, at most one max-size page. */
-function parseAccountIds(req: Request, operation: string): string[] {
-  const name = PROJECT_PARTICIPATING_ORGS_LINKS_ACCOUNT_IDS_PARAM;
+/** One comma-separated id list of the shown page: deduplicated, at most one max-size page, each id in `pattern`; absent → empty. */
+function parseIds(req: Request, name: string, pattern: RegExp, label: string, operation: string): string[] {
   const value = getStrictStringQueryParam(req, name, operation);
-  if (!value) throw ServiceValidationError.forField(name, `${name} is required`, { operation });
+  if (!value) return [];
 
-  const accountIds = [...new Set(value.split(',').map((id) => id.trim()))];
-  if (accountIds.length > PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE) {
+  const ids = [...new Set(value.split(',').map((id) => id.trim()))];
+  if (ids.length > PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE) {
     throw ServiceValidationError.forField(name, `${name} must list at most ${PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE} ids`, { operation });
   }
-  if (accountIds.some((id) => !ORG_ACCOUNT_ID_PATTERN.test(id))) {
-    throw ServiceValidationError.forField(name, `${name} must be canonical company account ids`, { operation });
+  if (ids.some((id) => !pattern.test(id))) {
+    throw ServiceValidationError.forField(name, `${name} must be ${label}`, { operation });
   }
-  return accountIds;
+  return ids;
 }

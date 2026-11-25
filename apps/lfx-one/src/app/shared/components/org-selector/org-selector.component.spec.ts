@@ -4,19 +4,25 @@
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
+import { CDP_COMPANY_SEARCH_DEBOUNCE_MS, ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
 import { Account, DisplayOrgItem, OrgItem, OrgRelatedCompanyRow, OrgRollUpFamily, OrgRollUpSetOrg, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, orgRollUpAccount } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { CdpCompanyContextService } from '@services/cdp-company-context.service';
+import { CdpCompanyService } from '@services/cdp-company.service';
 import { LensService } from '@services/lens.service';
 import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { of } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgSelectorComponent } from './org-selector.component';
+
+// CDP search stays off here — the selector never asks unless the audience is `available`.
+const cdpCompanyServiceStub = { availability: () => of('unavailable'), search: () => of({ items: [] }) };
 
 /**
  * What a pick in the selector does to the selection and to the address (spec 050 US2 — FR-013,
@@ -65,6 +71,7 @@ describe('OrgSelectorComponent.selectItem', () => {
       imports: [OrgSelectorComponent],
       providers: [
         provideNoopAnimations(),
+        { provide: CdpCompanyService, useValue: cdpCompanyServiceStub },
         { provide: OrgClaOnlyAccessService, useValue: { noteAddressed, isClaOnly: () => false } },
         {
           provide: AccountContextService,
@@ -119,7 +126,7 @@ describe('OrgSelectorComponent.selectItem', () => {
             parentNameByUid: signal(new Map<string, string>()),
           },
         },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnNotFound } },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnNotFound, isOnCdpCompanyPage: () => false } },
         // Spec 053: the FR-010 list-incomplete notice reads this service; a stub keeps the spec off HttpClient.
         { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retrying, retry } },
       ],
@@ -137,6 +144,46 @@ describe('OrgSelectorComponent.selectItem', () => {
     expect(el.querySelector('[data-testid="org-selector-trigger-logo-fallback"]')?.textContent?.trim()).toBe('No logo');
     expect(el.querySelector('.fa-building')).toBeNull();
   });
+
+  it.each(['default', 'navbar'] as const)(
+    'shows the CDP company with its tag and no role on a CDP page, then the stored company once the page is left (%s)',
+    (variant) => {
+      fixture.componentRef.setInput('variant', variant);
+      (TestBed.inject(OrgRoleGrantsService).writerSet as WritableSignal<Set<string>>).set(new Set([UID_A]));
+      const context = TestBed.inject(CdpCompanyContextService);
+      const el: HTMLElement = fixture.nativeElement;
+      const text = (testId: string) => el.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? null;
+      const cdpId = '1a2b3c4d-0000-4000-8000-000000000001';
+
+      fixture.detectChanges();
+      expect(text('org-selector-trigger-name')).toBe('Acme');
+      expect(el.querySelector('[data-testid="org-selector-trigger-role-badge"]')).not.toBeNull();
+
+      // Still loading (as on the server render): no name, tag or role yet.
+      context.enter(cdpId);
+      fixture.detectChanges();
+      expect(text('org-selector-trigger-name')).toBe('');
+      expect(el.querySelector('[data-testid="org-selector-trigger-cdp-tag"]')).toBeNull();
+      expect(el.querySelector('[data-testid="org-selector-trigger-role-badge"]')).toBeNull();
+
+      context.settle(cdpId, {
+        state: 'ok',
+        company: { cdpId, name: 'Example Labs', lastActiveMonth: '2026-10' },
+        sections: [],
+      });
+      fixture.detectChanges();
+      expect(text('org-selector-trigger-name')).toBe('Example Labs');
+      expect(text('org-selector-trigger-cdp-tag')).toBe('CDP');
+      expect(el.querySelector('[data-testid="org-selector-trigger-role-badge"]')).toBeNull();
+      expect(setAccount).not.toHaveBeenCalled();
+
+      context.leave(cdpId);
+      fixture.detectChanges();
+      expect(text('org-selector-trigger-name')).toBe('Acme');
+      expect(el.querySelector('[data-testid="org-selector-trigger-cdp-tag"]')).toBeNull();
+      expect(el.querySelector('[data-testid="org-selector-trigger-role-badge"]')).not.toBeNull();
+    }
+  );
 
   it('selects another organization and re-addresses the page as a switch', () => {
     const selected = vi.fn();
@@ -301,6 +348,7 @@ describe('OrgSelectorComponent navbar card', () => {
       imports: [OrgSelectorComponent],
       providers: [
         provideNoopAnimations(),
+        { provide: CdpCompanyService, useValue: cdpCompanyServiceStub },
         {
           provide: AccountContextService,
           useValue: {
@@ -351,7 +399,10 @@ describe('OrgSelectorComponent navbar card', () => {
             claManagerLookupFailed: signal(false),
           },
         },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: vi.fn(), isOnNotFound: vi.fn(() => false) } },
+        {
+          provide: OrgLensNavigationService,
+          useValue: { navigateToSelectedOrg: vi.fn(), isOnNotFound: vi.fn(() => false), isOnCdpCompanyPage: () => false },
+        },
         { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retrying: signal(false), retry: vi.fn() } },
         { provide: LensService, useValue: { previewingMenuLens: signal(false) } },
       ],
@@ -517,6 +568,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
       imports: [OrgSelectorComponent],
       providers: [
         provideNoopAnimations(),
+        { provide: CdpCompanyService, useValue: cdpCompanyServiceStub },
         {
           provide: AccountContextService,
           useValue: {
@@ -570,7 +622,15 @@ describe('OrgSelectorComponent family roll-ups', () => {
             parentNameByUid: signal(new Map<string, string>()),
           },
         },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: navigateSpy, navigateToRollUpHome: rollUpHomeSpy, isOnNotFound: onNotFound } },
+        {
+          provide: OrgLensNavigationService,
+          useValue: {
+            navigateToSelectedOrg: navigateSpy,
+            navigateToRollUpHome: rollUpHomeSpy,
+            isOnNotFound: onNotFound,
+            isOnCdpCompanyPage: () => false,
+          },
+        },
         { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retrying: signal(false), retry: vi.fn() } },
         { provide: LensService, useValue: { previewingMenuLens: signal(false) } },
       ],
@@ -931,5 +991,123 @@ describe('OrgSelectorComponent family roll-ups', () => {
       const view = await create({ families: [], claOnlyPending: true });
       expect(await runInitialFocus(view)).toBe(true);
     });
+  });
+});
+
+/**
+ * The CDP group belongs below the B2B results of the SAME search. A CDP answer for a newer term must
+ * wait until that term's B2B first page is the one on screen, and paging the same search must not hide it.
+ */
+describe('OrgSelectorComponent CDP group follows the displayed B2B search', () => {
+  const rowA: OrgItem = { uid: '0014100000MgaAAAAA', accountId: '0014100000MgaAAAAA', name: 'Alpha', logoUrl: null, slug: 'alpha' };
+  const rowB: OrgItem = { uid: '0014100000MgbBBBBB', accountId: '0014100000MgbBBBBB', name: 'Beta', logoUrl: null, slug: 'beta' };
+  const rowB2: OrgItem = { uid: '0014100000MgcCCCCC', accountId: '0014100000MgcCCCCC', name: 'Beta Two', logoUrl: null, slug: 'beta-two' };
+  const cdpRow = { cdpId: '1a2b3c4d-0000-4000-8000-000000000001', name: 'Beta Labs', logoUrl: null };
+
+  interface CdpView {
+    popoverShown: WritableSignal<boolean>;
+    cdpGroup(): { term: string; status: string; items: unknown[] } | null;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('waits for the same search, then keeps the group while later pages load', async () => {
+    vi.useFakeTimers();
+    const searchTerm = signal('beta');
+    const displayedTerm = signal('alpha');
+    const items = signal<OrgItem[]>([rowA]);
+    const search = vi.fn((term: string) => of({ items: term === 'beta' ? [cdpRow] : [] }));
+    const loading = signal(true);
+
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [OrgSelectorComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: CdpCompanyService, useValue: { availability: () => of('available'), search } },
+        {
+          provide: AccountContextService,
+          useValue: {
+            selectedAccount: signal<Account>({ accountId: rowA.uid, accountName: 'Alpha', membershipTier: '', uid: rowA.uid, slug: 'alpha' }),
+            setAccount: vi.fn(),
+            refreshCanonicalRecord: vi.fn(),
+            getStoredUid: () => null,
+            orgListPinUid: () => rowA.uid,
+            canSelectRollUp: signal(false),
+            rollUpFamiliesLoading: signal(false),
+            rollUpFamiliesIncomplete: signal(false),
+            eligibleRollUpFamilies: signal([]),
+            selectedRollUpRootUid: signal(null),
+            selectedRollUpFamily: signal(null),
+            isRollUp: signal(false),
+            rollUpOrganizationCount: signal(0),
+            relatedCompanies: signal([]),
+            selectRollUp: vi.fn(() => false),
+            rollUpEnabled: signal(false),
+            rollUpFamiliesUnsettled: signal(false),
+            canSelectRollUpFor: vi.fn(() => false),
+          },
+        },
+        {
+          provide: OrgNavigationService,
+          useValue: {
+            items,
+            loading,
+            displayedTerm,
+            claOnlyPending: signal(false),
+            loaded: signal(true),
+            hasMore: signal(true),
+            upstreamFailed: signal(false),
+            searchTerm: () => searchTerm,
+            setSearchTerm: vi.fn(),
+            resetAndReload: vi.fn(),
+            loadNextPage: vi.fn(),
+          },
+        },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: {
+            isStaff: signal(true),
+            writerSet: signal(new Set<string>()),
+            auditorSet: signal(new Set<string>()),
+            inheritedWriterSet: signal(new Set<string>()),
+            inheritedAuditorSet: signal(new Set<string>()),
+            parentNameByUid: signal(new Map<string, string>()),
+          },
+        },
+        {
+          provide: OrgLensNavigationService,
+          useValue: { navigateToSelectedOrg: vi.fn(), navigateToRollUpHome: vi.fn(), isOnNotFound: () => false, isOnCdpCompanyPage: () => false },
+        },
+        { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retrying: signal(false), retry: vi.fn() } },
+        { provide: LensService, useValue: { previewingMenuLens: signal(false) } },
+      ],
+    })
+      .overrideComponent(OrgSelectorComponent, { set: { template: '' } })
+      .compileComponents();
+    const fixture = TestBed.createComponent(OrgSelectorComponent);
+    fixture.componentRef.setInput('enabled', false);
+    const view = fixture.componentInstance as unknown as CdpView;
+    view.popoverShown.set(true);
+    TestBed.tick();
+    await vi.advanceTimersByTimeAsync(CDP_COMPANY_SEARCH_DEBOUNCE_MS);
+    TestBed.tick();
+
+    // The CDP answer for "beta" is in, but the rows on screen are still the "alpha" search's.
+    expect(search).toHaveBeenCalledWith('beta');
+    expect(view.cdpGroup()).toBeNull();
+
+    // The "beta" first page lands.
+    items.set([rowB]);
+    displayedTerm.set('beta');
+    loading.set(false);
+    expect(view.cdpGroup()).toMatchObject({ term: 'beta', status: 'settled', items: [expect.objectContaining({ cdpId: cdpRow.cdpId })] });
+
+    // Page 2 of the same search: the group stays.
+    loading.set(true);
+    items.set([rowB, rowB2]);
+    expect(view.cdpGroup()).toMatchObject({ term: 'beta', status: 'settled' });
   });
 });

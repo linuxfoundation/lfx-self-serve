@@ -15,12 +15,14 @@
     [attr.aria-expanded]="isSingleOrg() ? null : isPanelOpen()"
     [attr.aria-disabled]="isSingleOrg() || null"
     [attr.aria-label]="'Company switcher, currently ' + displayName()"
-    [attr.aria-describedby]="navbarRoleTooltip() ? roleDescriptionId : null"
+    [attr.aria-describedby]="navbarRoleTooltip() && !cdpTrigger() ? roleDescriptionId : null"
     data-testid="org-selector">
     <span class="lfxn__context-body">
-      <span class="lfxn__tile lfxn__tile--logo" [class.lfxn__tile--rollup]="isRollUpSelected()" data-testid="org-selector-trigger-logo">
-        @if (isRollUpSelected()) {
+      <span class="lfxn__tile lfxn__tile--logo" [class.lfxn__tile--rollup]="triggerShowsRollUp()" data-testid="org-selector-trigger-logo">
+        @if (triggerShowsRollUp()) {
           <i class="fa-light fa-buildings" aria-hidden="true" data-testid="org-selector-trigger-rollup-icon"></i>
+        } @else if (cdpTrigger()?.pending) {
+          <!-- A CDP page still loading (and its server render): an empty tile until the company answers. -->
         } @else if (displayLogo()) {
           <img [src]="displayLogo()" alt="" data-testid="org-selector-trigger-logo-image" />
         } @else {
@@ -31,7 +33,12 @@
         <span class="lfxn__context-name" [lfxNavTooltip]="displayName()" [lfxNavTooltipOnlyIfTruncated]="true" data-testid="org-selector-trigger-name">{{
           displayName()
         }}</span>
-        @if (isRollUpSelected()) {
+        @if (cdpTrigger(); as cdp) {
+          <!-- A CDP company page: the company and its tag, never a role (the viewer holds none on it). -->
+          @if (!cdp.pending) {
+            <span class="lfxn__org-role" data-testid="org-selector-trigger-cdp-tag">{{ cdpSearchTag }}</span>
+          }
+        } @else if (isRollUpSelected()) {
           <!-- A view mode has no persona, so the role line carries the size of the set instead (#4132). -->
           <span class="lfxn__org-role" data-testid="org-selector-trigger-rollup-count">{{ rollUpTriggerSubtitle() }}</span>
         } @else if (selectedRoleLabel()) {
@@ -71,8 +78,10 @@
     data-testid="org-selector">
     <div class="bg-gray-100 overflow-clip relative rounded-lg shrink-0 size-11 border border-gray-200" data-testid="org-selector-trigger-logo">
       <div class="flex items-center justify-center size-full p-1.5">
-        @if (isRollUpSelected()) {
+        @if (triggerShowsRollUp()) {
           <i class="fa-light fa-buildings text-blue-700 text-lg" aria-hidden="true" data-testid="org-selector-trigger-rollup-icon"></i>
+        } @else if (cdpTrigger()?.pending) {
+          <!-- A CDP page still loading (and its server render): an empty tile until the company answers. -->
         } @else if (displayLogo()) {
           <img [alt]="displayName()" class="w-full h-full object-contain" [src]="displayLogo()" data-testid="org-selector-trigger-logo-image" />
         } @else {
@@ -84,7 +93,16 @@
     <div class="flex flex-col gap-1.5 grow items-start relative min-w-0 overflow-hidden">
       <p class="sidebar-org-name" [attr.title]="displayName()" data-testid="org-selector-trigger-name">{{ displayName() }}</p>
       <div class="flex items-center gap-1.5 w-full min-w-0 text-left">
-        @if (isRollUpSelected()) {
+        @if (cdpTrigger(); as cdp) {
+          <!-- A CDP company page: the company and its tag, never a role (the viewer holds none on it). -->
+          @if (!cdp.pending) {
+            <span
+              class="inline-flex items-center shrink-0 text-[10px] leading-none px-1.5 py-0.5 rounded border border-gray-200 text-gray-500"
+              data-testid="org-selector-trigger-cdp-tag"
+              >{{ cdpSearchTag }}</span
+            >
+          }
+        } @else if (isRollUpSelected()) {
           <span class="text-xs font-normal text-gray-500 leading-none truncate" data-testid="org-selector-trigger-rollup-count">{{
             rollUpTriggerSubtitle()
           }}</span>
@@ -392,7 +410,10 @@
           } @else if (showSearchPrompt()) {
             <div class="text-center py-8 text-gray-500 text-sm" data-testid="org-selector-search-prompt">Search for any company…</div>
           } @else {
-            <div class="text-center py-8 text-gray-500 text-sm" data-testid="org-selector-empty">No companies found</div>
+            <!-- With a CDP group below, the empty B2B list is scoped to company accounts so it never contradicts CDP rows. -->
+            <div class="text-center py-8 text-gray-500 text-sm" data-testid="org-selector-empty">
+              {{ cdpGroup() ? cdpSearchNoAccountMatchMessage : 'No companies found' }}
+            </div>
           }
         }
       }
@@ -401,6 +422,55 @@
         <div class="flex items-center justify-center py-3 text-gray-500 text-sm gap-2" data-testid="org-selector-loading">
           <i class="fa-light fa-spinner fa-spin"></i>
           <span>Loading...</span>
+        </div>
+      }
+
+      <!-- CDP companies for the term, below the B2B rows and their paging; never paged. -->
+      @if (cdpGroup(); as cdp) {
+        <div class="mt-1 flex flex-col gap-1" data-testid="org-selector-cdp-group" [attr.data-status]="cdp.status">
+          <div role="presentation" class="h-px bg-gray-200 mx-2 mb-1"></div>
+          <p role="presentation" class="text-xs font-semibold text-gray-500 uppercase tracking-wide px-2 pt-1 pb-1 mb-0" data-testid="org-selector-section-cdp">
+            CDP companies
+          </p>
+          @if (cdp.status === 'loading') {
+            <div class="flex items-center gap-2 px-2 py-2 text-gray-500 text-sm" role="status" data-testid="org-selector-cdp-loading">
+              <i class="fa-light fa-spinner fa-spin" aria-hidden="true"></i>
+              <span>Searching CDP companies...</span>
+            </div>
+          } @else if (cdp.unavailable) {
+            <div class="px-2 py-2 text-gray-500 text-sm" role="status" data-testid="org-selector-cdp-unavailable">{{ cdpSearchUnavailableMessage }}</div>
+          } @else {
+            @for (company of cdp.items; track company.cdpId) {
+              <button
+                type="button"
+                role="option"
+                aria-selected="false"
+                tabindex="-1"
+                class="flex items-center gap-3 p-2 w-full text-left rounded-lg transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                (click)="selectCdpCompany(company.cdpId)"
+                [attr.data-testid]="'org-selector-cdp-row-' + company.cdpId"
+                data-option-kind="cdp"
+                [attr.data-cdp-id]="company.cdpId"
+                [attr.title]="company.name">
+                <div class="bg-gray-100 overflow-clip rounded-lg shrink-0 size-9 border border-gray-200">
+                  <div class="flex items-center justify-center size-full p-1.5">
+                    @if (company.logoUrl) {
+                      <img [alt]="company.name" class="w-full h-full object-contain" [src]="company.logoUrl" />
+                    } @else {
+                      <span class="text-sm font-medium text-gray-500" aria-hidden="true">{{ company.initial }}</span>
+                    }
+                  </div>
+                </div>
+                <p class="flex-1 min-w-0 font-medium text-sm text-gray-900 mb-0 truncate">{{ company.name }}</p>
+                <!-- 10px matches the B2B membership chip above: a compact tag that must not compete with the row's name. -->
+                <span
+                  class="inline-flex items-center shrink-0 text-[10px] leading-none px-1.5 py-0.5 rounded border border-gray-200 text-gray-500"
+                  [attr.data-testid]="'org-selector-cdp-row-' + company.cdpId + '-tag'"
+                  >{{ cdpSearchTag }}</span
+                >
+              </button>
+            }
+          }
         </div>
       }
     </div>

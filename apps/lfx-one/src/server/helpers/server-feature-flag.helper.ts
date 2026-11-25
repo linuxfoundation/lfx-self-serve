@@ -929,6 +929,29 @@ export enum ServerFeatureFlag {
    * Removing the knob is part of that same step.
    */
   OrgEasyclaReturnInPath = 'ORG_EASYCLA_RETURN_IN_PATH',
+
+  /**
+   * Adds the global org admins team (`CDP_GLOBAL_ORG_ADMINS_TEAM_ID`) to the CDP company audience.
+   * OFF keeps the audience to `lf-staff` alone: `cdpAudienceTeamIds()` then returns `lf-staff` only, so
+   * the strict audience batch never asks about the global org admins team. It covers CDP pages, sections,
+   * redirects, search and the Participating Companies CDP links; Meetings and Groups stay `lf-staff`-only whatever
+   * this says.
+   *
+   * OFF by default. Turn it on per environment only after a real `cdp_company_view` event was confirmed in
+   * that environment. Rolling-update overlap is harmless: a pod with it off answers a global org admin
+   * exactly as it answers an unknown address, and nothing is written.
+   */
+  OrgLensCdpGlobalOrgAdmins = 'LFX_ORG_LENS_CDP_GLOBAL_ORG_ADMINS',
+
+  /**
+   * Serves the CDP company Meetings and Groups sections to callers the
+   * audience batch answers `lf-staff` for. OFF reports both sections `off-by-design` in the page payload and
+   * refuses their data with 403 `SECTION_OFF_BY_DESIGN`, so the browser needs no flag of its own.
+   *
+   * OFF by default; turned on last in the epic, after the parity check. Rolling-update overlap is
+   * harmless: a page loaded from a flag-on pod whose section read lands on a flag-off pod shows the off state.
+   */
+  OrgLensCdpMeetingsGroups = 'LFX_ORG_LENS_CDP_MEETINGS_GROUPS',
 }
 
 /**

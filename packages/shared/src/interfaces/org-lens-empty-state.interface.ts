@@ -1,7 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** Names of the Org Lens empty states shipped in spec 053 phase 1 (`ORG_LENS_EMPTY_STATE_COPY` keys), plus `affiliated-no-grant` (#4225). */
+/**
+ * Names of the Org Lens empty states (`ORG_LENS_EMPTY_STATE_COPY` keys), including `affiliated-no-grant` (#4225) and the
+ * CDP company states: `off-by-design`, the two `low-activity-*` variants and `no-company`.
+ */
 export type OrgLensEmptyStateName =
   | 'no-organization'
   | 'no-access'
@@ -15,7 +18,12 @@ export type OrgLensEmptyStateName =
   | 'section-could-not-load'
   | 'section-no-access'
   | 'section-could-not-verify'
-  | 'roll-up-unavailable';
+  | 'roll-up-unavailable'
+  | 'off-by-design'
+  | 'low-activity-none'
+  | 'low-activity-not-enough'
+  | 'no-company'
+  | 'section-staff-only';
 
 /** #2961 — the Org Lens read gate's answer for the organization a contractor has selected; `admitted` is `undefined` until it lands. */
 export interface OrgLensContractorProbe {
@@ -81,4 +89,6 @@ export interface OrgLensEmptyStateValues {
   orgList?: { uid: string; name: string }[];
   /** FR-013 — false when no caller-set filter narrows the query, so `section-empty` renders reason-only. Defaults true. */
   filterActive?: boolean;
+  /** A CDP company's last active month and year ("March 2026"), for the `low-activity-*` states. */
+  lastActive?: string | null;
 }

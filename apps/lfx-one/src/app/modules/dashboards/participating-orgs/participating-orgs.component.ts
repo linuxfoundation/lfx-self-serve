@@ -55,7 +55,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
-import { decorateParticipatingOrgRow, linksKey, memberAccountIdsOf } from './participating-orgs.util';
+import { decorateParticipatingOrgRow, linksIdsOf, linksKey } from './participating-orgs.util';
 import { ParticipatingOrgsService } from './services/participating-orgs.service';
 
 /**
@@ -163,23 +163,23 @@ export class ParticipatingOrgsComponent {
     const state = this.pageState();
     return state.slug === this.slug() ? state.page : EMPTY_PROJECT_PARTICIPATING_ORGS_PAGE;
   });
-  /** The shown page's canonical member account ids, sorted, so a re-sort of the same members compares equal. */
-  private readonly memberAccountIds = computed(() => memberAccountIdsOf(this.page()), { equal: (a, b) => a.join(',') === b.join(',') });
+  /** The shown page's ids the links read asks about, sorted, so a re-sort of the same rows compares equal. */
+  private readonly linksIds = computed(() => linksIdsOf(this.page()), { equal: (a, b) => linksKey('', a) === linksKey('', b) });
   private readonly linksAnswer: Signal<ProjectParticipatingOrgsOrgLensLinksAnswer | null> = this.initLinksAnswer();
   /**
-   * Which of the shown page's members the viewer can open in Org Lens; null while that is still loading (and on the
-   * server). An answer only counts for the member set it was asked about, so a new page never borrows the last one's.
+   * Which of the shown page's companies the viewer can open; null while that is still loading (and on the server). An
+   * answer only counts for the ids it was asked about, so a new page never borrows the last one's.
    */
-  private readonly readableAccountIds: Signal<ReadonlySet<string> | null> = computed(() => {
+  private readonly links: Signal<ProjectParticipatingOrgsOrgLensLinksAnswer | null> = computed(() => {
     const answer = this.linksAnswer();
-    return answer && answer.key === linksKey(this.slug(), this.memberAccountIds()) ? answer.readable : null;
+    return answer && answer.key === linksKey(this.slug(), this.linksIds()) ? answer : null;
   });
 
   protected readonly viewState: Signal<ProjectParticipatingOrgsViewState> = computed(() => this.initViewState());
   protected readonly rows: Signal<ProjectParticipatingOrgRowVm[]> = computed(() => {
     const foundationSlug = this.page().foundationSlug ?? this.summary()?.foundationSlug ?? null;
-    const readable = this.readableAccountIds();
-    return this.page().rows.map((row) => decorateParticipatingOrgRow(row, foundationSlug, readable));
+    const links = this.links();
+    return this.page().rows.map((row) => decorateParticipatingOrgRow(row, foundationSlug, links));
   });
   /** Skeleton rows only before there is anything to show; a refresh keeps the current rows on screen, dimmed. */
   protected readonly showSkeleton = computed(() => this.pageLoading() && this.page().rows.length === 0);
@@ -336,20 +336,18 @@ export class ParticipatingOrgsComponent {
   }
 
   /**
-   * Org Lens links are per caller, so they load after the shared, cacheable page: the rows render first and member
-   * names become links when the answer arrives. Re-asked only when the page's member set changes (a re-sort of the
-   * same members keeps its links). Only canonical ids are sent: Org Lens cannot open any other, and one malformed
-   * warehouse id must not get the whole page's request rejected.
+   * Company links are per caller, so they load after the shared, cacheable page: the rows render first and names
+   * become links when the answer arrives. Re-asked only when the page's ids change (a re-sort of the same rows keeps
+   * its links). Only well-formed ids are sent: Company Lens cannot open any other, and one malformed warehouse id must
+   * not get the whole page's request rejected.
    */
   private initLinksAnswer(): Signal<ProjectParticipatingOrgsOrgLensLinksAnswer | null> {
     return toSignal(
-      toObservable(computed(() => ({ slug: this.slug(), accountIds: this.memberAccountIds() }))).pipe(
+      toObservable(computed(() => ({ slug: this.slug(), ids: this.linksIds() }))).pipe(
         filter(({ slug }) => slug.length > 0),
-        distinctUntilChanged((a, b) => linksKey(a.slug, a.accountIds) === linksKey(b.slug, b.accountIds)),
-        switchMap(({ slug, accountIds }) =>
-          this.dataService
-            .getOrgLensReadableAccountIds(slug, accountIds)
-            .pipe(map((readable) => (readable === null ? null : { key: linksKey(slug, accountIds), readable })))
+        distinctUntilChanged((a, b) => linksKey(a.slug, a.ids) === linksKey(b.slug, b.ids)),
+        switchMap(({ slug, ids }) =>
+          this.dataService.getOrgLensLinks(slug, ids).pipe(map((links) => (links === null ? null : { key: linksKey(slug, ids), ...links })))
         )
       ),
       { initialValue: null }

@@ -184,34 +184,37 @@
                           {{ row.initial }}
                         </span>
                       }
-                      @switch (row.nameKind) {
-                        @case ('org-lens-link') {
-                          <a
-                            class="truncate rounded text-sm font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                            [routerLink]="row.orgLensLink"
-                            [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-name'">
-                            {{ row.name }}
-                          </a>
-                        }
-                        @case ('no-access') {
-                          <span
-                            class="truncate text-sm font-medium text-gray-900"
-                            tabindex="0"
-                            role="note"
-                            [attr.aria-label]="row.name + ' — ' + noAccessTooltip"
-                            [pTooltip]="noAccessTooltip"
-                            tooltipPosition="top"
-                            tooltipEvent="both"
-                            [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-name'">
-                            {{ row.name }}
-                          </span>
-                        }
-                        @default {
-                          <span
-                            class="truncate text-sm font-medium text-gray-900"
-                            [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-name'"
-                            >{{ row.name }}</span
-                          >
+                      <!-- Every link kind (membership, Company Lens home, CDP page) renders as one router link. -->
+                      @if (row.orgLensLink) {
+                        <a
+                          class="truncate rounded text-sm font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          [routerLink]="row.orgLensLink"
+                          [attr.data-name-kind]="row.nameKind"
+                          [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-name'">
+                          {{ row.name }}
+                        </a>
+                      } @else {
+                        @switch (row.nameKind) {
+                          @case ('no-access') {
+                            <span
+                              class="truncate text-sm font-medium text-gray-900"
+                              tabindex="0"
+                              role="note"
+                              [attr.aria-label]="row.name + ' — ' + noAccessTooltip"
+                              [pTooltip]="noAccessTooltip"
+                              tooltipPosition="top"
+                              tooltipEvent="both"
+                              [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-name'">
+                              {{ row.name }}
+                            </span>
+                          }
+                          @default {
+                            <span
+                              class="truncate text-sm font-medium text-gray-900"
+                              [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-name'"
+                              >{{ row.name }}</span
+                            >
+                          }
                         }
                       }
                     </div>

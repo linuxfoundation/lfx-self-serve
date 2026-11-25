@@ -45,6 +45,14 @@ export interface SnowflakeQueryOptions {
    * toward the circuit breaker; the query still rejects so the caller can retry a legacy query.
    */
   expectInvalidIdentifier?: string | readonly string[];
+
+  /**
+   * This caller set a deadline it expects to miss sometimes (the CDP search): when the query times out
+   * on the service's own `timeout` timer, the miss is not counted toward the circuit breaker — the HALF_OPEN probe slot
+   * is released, as for pool backpressure — and the query still rejects so the caller can degrade. Every other error
+   * still counts, and an OPEN breaker still fails the query fast. Scoped to the caller that sets it, never global.
+   */
+  expectTimeout?: boolean;
 }
 
 /**

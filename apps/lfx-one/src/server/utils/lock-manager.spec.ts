@@ -37,5 +37,7 @@ describe('LockManager.hashQuery', () => {
     expect(lockManager.hashQuery('SELECT 1', [], { ...baseOptions, fetchAsString: ['Date'] })).not.toBe(baseKey);
     expect(lockManager.hashQuery('SELECT 1', [], { ...baseOptions, expectMissingObject: false })).not.toBe(baseKey);
     expect(lockManager.hashQuery('SELECT 1', [], { ...baseOptions, expectInvalidIdentifier: 'CONV' })).not.toBe(baseKey);
+    expect(lockManager.hashQuery('SELECT 1', [], { ...baseOptions, expectTimeout: true })).not.toBe(baseKey);
+    expect(lockManager.hashQuery('SELECT 1', [], { ...baseOptions, expectTimeout: false })).toBe(baseKey);
   });
 });

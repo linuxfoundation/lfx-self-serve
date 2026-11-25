@@ -1,0 +1,29 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-cdp-company-section-frame
+  sectionKey="meetings"
+  [state]="section.state()"
+  [emptyState]="section.emptyState()"
+  [companyName]="section.companyName()"
+  (retry)="section.retry()">
+  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+    <lfx-table [value]="rows()" sortField="attendance" [sortOrder]="-1" data-testid="cdp-company-meetings-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col">Project</th>
+          <th scope="col">Meeting type</th>
+          <th scope="col" class="text-right">Attendance</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-row>
+        <tr data-testid="cdp-company-meetings-row">
+          <td class="font-medium text-gray-900">{{ row.projectName }}</td>
+          <td>{{ row.meetingType }}</td>
+          <td class="text-right">{{ row.attendance | number }}</td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  </lfx-card>
+  <p class="text-xs text-gray-500" data-testid="cdp-company-meetings-note">Visible to LF staff only. Rows made up of fewer than 4 people are not shown.</p>
+</lfx-cdp-company-section-frame>

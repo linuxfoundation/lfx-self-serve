@@ -43,6 +43,7 @@ import changelogRouter from './routes/changelog.route';
 import committeesRouter from './routes/committees.route';
 import copilotRouter from './routes/copilot.route';
 import createPickerRouter from './routes/create-picker.route';
+import companiesRouter from './routes/companies.route';
 import documentsRouter from './routes/documents.route';
 import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
@@ -448,6 +449,9 @@ app.use('/api/organizations', organizationsRouter);
 // second would run the grant lookup there and again on the route that finally handles it.
 app.use('/api/orgs', orgClasRouter);
 app.use('/api/orgs', orgsRouter);
+// CDP companies (LF staff, plus global org admins behind a server switch); every route but
+// `/availability` runs the strict CDP audience gate first.
+app.use('/api/companies', companiesRouter);
 app.use('/api/past-meetings', pastMeetingsRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/search', searchRouter);

@@ -19,6 +19,7 @@ import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
+import { cdpCompanyGuard, cdpCompanyMatchGuard } from './shared/guards/cdp-company.guard';
 import { authenticatedMatchGuard } from './shared/guards/authenticated-match.guard';
 import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
@@ -521,6 +522,18 @@ export const routes: Routes = [
           },
           // Legacy `/company/{page}` addresses (no organization named) (spec 050 Phase 5 adds the default-organization redirect guard).
           ...orgLensPageRoutes(),
+          {
+            // `/company/{CDP id}/{section}`: a company seen only in open source activity. Declared
+            // before `:orgSegment` and matched only by a CDP-shaped segment, which `isOrgSlugSegment` rejects, so the
+            // two trees never share an address. The shell renders every outcome in place: an outsider, an unknown and
+            // a malformed id read the same. The id is never adopted as the selected B2B company.
+            path: ':cdpId',
+            canMatch: [cdpCompanyMatchGuard],
+            canActivate: [cdpCompanyGuard],
+            data: { lens: 'org' },
+            loadComponent: () => import('./modules/dashboards/company/cdp-company-shell/cdp-company-shell.component').then((m) => m.CdpCompanyShellComponent),
+            loadChildren: () => import('./modules/dashboards/company/cdp-company.routes').then((m) => m.CDP_COMPANY_ROUTES),
+          },
           {
             // Spec 050 — `/company/{orgSegment}/{page}`: the organization is named in the address (slug, or
             // 18-char SFID when it has none). Declared after every static page so a page name can never

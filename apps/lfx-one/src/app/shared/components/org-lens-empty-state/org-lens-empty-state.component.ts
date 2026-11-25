@@ -10,8 +10,18 @@ import { OrgLensEmptyStateAction, OrgLensEmptyStateName, OrgLensEmptyStateValues
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 
-/** States whose wording must never carry an addressed organization's name (spec 050 DR-002 / 053 DR-001). */
-const UNHELD_ORG_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['no-access', 'wrong-organization', 'section-no-access', 'section-could-not-verify']);
+/**
+ * States whose wording must never carry an addressed organization's name, and the CDP
+ * `no-company` state, which names neither the id nor any company, and the CDP `section-staff-only` state.
+ */
+const UNHELD_ORG_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set([
+  'no-access',
+  'wrong-organization',
+  'section-no-access',
+  'section-could-not-verify',
+  'no-company',
+  'section-staff-only',
+]);
 
 /**
  * Spec 053 — the one shared Org Lens empty state. Renders headline → reason → primary → secondary from
@@ -128,6 +138,7 @@ export class OrgLensEmptyStateComponent {
       .replace(/\{orgName\}/g, orgName)
       .replace(/\{noun\}/g, values.noun ?? 'records')
       .replace(/\{period\}/g, values.period ?? 'this period')
-      .replace(/\{correlationId\}/g, values.correlationId ?? '—');
+      .replace(/\{correlationId\}/g, values.correlationId ?? '—')
+      .replace(/\{lastActive\}/g, values.lastActive?.trim() || 'unknown');
   }
 }

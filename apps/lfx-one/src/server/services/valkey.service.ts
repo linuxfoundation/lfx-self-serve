@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { CDP_COMPANY_CACHE_NAMESPACE, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { CacheCodec, CachePort, GetDelResult, LockAcquireResult } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils/org-selector.utils';
 import { createHash, randomUUID } from 'crypto';
@@ -764,6 +764,31 @@ export function withProjectParticipatingOrgsCache<T>(
     fetcher,
     accept
   );
+}
+
+/**
+ * CDP company cache key, `cdp-company:v1:<cdp id>:<sub-resource>`: unfiltered warehouse rows per CDP id,
+ * shared across callers and read or filled only behind the CDP audience check. Null (fail-closed → direct
+ * fetch) when the id isn't filter-safe, so it can't corrupt the `:`-delimited key.
+ */
+export function buildCdpCompanyCacheKey(cdpId: string, subResource: string): string | null {
+  if (!isFilterSafeIdentifier(cdpId)) return null;
+  return `${keyPrefix()}:${CDP_COMPANY_CACHE_NAMESPACE}:${cdpId}:${subResource}`;
+}
+
+/**
+ * CDP search cache key for one normalized term, `cdp-company:v1:search:<digest>`. The term is sha256-hashed,
+ * not concatenated, so a typed value can't corrupt the key (as the participating-orgs search key does).
+ */
+export function buildCdpCompanySearchCacheKey(normalizedTerm: string): string {
+  const digest = createHash('sha256').update(normalizedTerm).digest('hex').slice(0, 32);
+  return `${keyPrefix()}:${CDP_COMPANY_CACHE_NAMESPACE}:search:${digest}`;
+}
+
+/** A project slug's v2 uid, for the CDP Projects `project#viewer` check; null for an unsafe slug (direct lookup). */
+export function buildCdpProjectUidCacheKey(projectSlug: string): string | null {
+  if (!isFilterSafeIdentifier(projectSlug)) return null;
+  return `${keyPrefix()}:${CDP_COMPANY_CACHE_NAMESPACE}:project-uid:${projectSlug}`;
 }
 
 /**

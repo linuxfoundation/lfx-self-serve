@@ -5,6 +5,11 @@ import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   AKRITES_ENABLED_FLAG,
+  CDP_COMPANY_ENGAGEMENT_SECTION_KEYS,
+  CDP_COMPANY_OFF_BY_DESIGN_REASON,
+  CDP_COMPANY_OFF_NAV_ITEMS,
+  CDP_COMPANY_ROUTE_PREFIX,
+  CDP_COMPANY_SECTION_META,
   COMMITTEE_LABEL,
   DOCUMENT_LABEL,
   FORMATION_CHECKLIST_PATH,
@@ -29,10 +34,11 @@ import {
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
-import { PersonaApiResponse, SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { CdpCompanyOffNavItem, CdpSectionKey, PersonaApiResponse, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { isFormationStageGate, isGwEmbedAllowedForSlug } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
+import { CdpCompanyContextService } from '@services/cdp-company-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
@@ -66,6 +72,7 @@ export class SidebarNavService {
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
   private readonly socialListeningService = inject(SocialListeningService);
+  private readonly cdpCompanyContext = inject(CdpCompanyContextService);
 
   /** The Me lens section Formations (#2753) is appended to; matched by label because the tree is built inline. */
   private readonly meEngagementSectionLabel = 'Engagement';
@@ -273,7 +280,8 @@ export class SidebarNavService {
         return marketingSection ? [...items, marketingSection] : items;
       }
       case 'org':
-        return this.visibleOrgLensItems();
+        // On a CDP company page, its own navigation; everywhere else (and on "no company") the B2B one.
+        return this.cdpLensItems() ?? this.visibleOrgLensItems();
       default:
         return this.visibleMeLensItems();
     }
@@ -284,6 +292,56 @@ export class SidebarNavService {
    * matching the route guard and the server gate (`requireOrgLensRoiAudience`).
    */
   private readonly showsOrgLfStaffOnlySection = computed(() => this.personaService.isLFStaff() && !this.userService.impersonating());
+
+  /**
+   * The Company Lens navigation of the CDP company on screen: the sections its page marks `on` as
+   * links to `/company/{CDP id}/{section}`, and every other Company Lens section, EasyCLA included, greyed in its usual
+   * place with the reason "Not available for CDP companies". Null off CDP pages, and when the address opened no page
+   * (no company, could not verify), so the B2B navigation shows as on any other Company Lens page. Empty while the
+   * page is loading, so neither navigation flashes in before the answer, and on a low-activity page, which serves no
+   * section and shows only its low-activity state.
+   */
+  private readonly cdpLensItems = computed((): SidebarMenuItem[] | null => {
+    const context = this.cdpCompanyContext.context();
+    if (!context) return null;
+    if (!context.settled) return [];
+    const page = context.page;
+    if (!page) return null;
+    if (page.state !== 'ok') return [];
+    const base = `/${CDP_COMPANY_ROUTE_PREFIX}/${context.cdpId}`;
+    const on = new Set(page.sections.filter((section) => section.state === 'on').map((section) => section.key));
+    const off = (item: CdpCompanyOffNavItem): SidebarMenuItem => ({
+      label: item.label,
+      icon: item.icon,
+      disabled: true,
+      disabledReason: CDP_COMPANY_OFF_BY_DESIGN_REASON,
+      testId: `sidebar-cdp-off-${item.key}`,
+    });
+    const sectionItem = (key: CdpSectionKey): SidebarMenuItem => {
+      const meta = CDP_COMPANY_SECTION_META[key];
+      return on.has(key) ? { label: meta.label, icon: meta.icon, routerLink: `${base}/${key}`, testId: `sidebar-cdp-${key}` } : off(meta);
+    };
+    const engagement = [
+      off(CDP_COMPANY_OFF_NAV_ITEMS.people),
+      off(CDP_COMPANY_OFF_NAV_ITEMS.contributions),
+      ...CDP_COMPANY_ENGAGEMENT_SECTION_KEYS.map((key) => sectionItem(key)),
+      off(CDP_COMPANY_OFF_NAV_ITEMS.initiatives),
+      // Donations stays dark-launched here as on B2B pages.
+      ...(this.isCfOrgDonationsEnabled() ? [off(CDP_COMPANY_OFF_NAV_ITEMS.donations)] : []),
+    ];
+    const items: SidebarMenuItem[] = [
+      sectionItem('dashboard'),
+      off(CDP_COMPANY_OFF_NAV_ITEMS.memberships),
+      sectionItem('projects'),
+      { label: this.orgEngagementSectionLabel, isSection: true, expanded: true, items: engagement },
+      { ...off(CDP_COMPANY_OFF_NAV_ITEMS.easycla), dividerBefore: true },
+      sectionItem('profile'),
+    ];
+    // ROI Metrics is greyed in the LF Staff Only section, which only LF staff see on any Company Lens page.
+    return this.showsOrgLfStaffOnlySection()
+      ? [...items, { label: 'LF Staff Only', isSection: true, expanded: true, items: [off(CDP_COMPANY_OFF_NAV_ITEMS.roi)] }]
+      : items;
+  });
 
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
     // M3: an org reached only as its CLA Manager has the EasyCLA tab and nothing else.

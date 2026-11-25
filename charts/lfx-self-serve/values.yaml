@@ -352,6 +352,14 @@ environment:
   ORG_EASYCLA_RETURN_IN_PATH:
     value: "false"
 
+  # CDP company switches (lfx-self-serve#2092), both off by default. The first adds the
+  # global org admins team to the CDP audience (LF staff only while off); the second serves the
+  # CDP Meetings and Groups sections to LF staff. See the chart README, "CDP Companies".
+  LFX_ORG_LENS_CDP_GLOBAL_ORG_ADMINS:
+    value: "false"
+  LFX_ORG_LENS_CDP_MEETINGS_GROUPS:
+    value: "false"
+
   # required environment variable secrets
 
   PCC_AUTH0_CLIENT_ID:

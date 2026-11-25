@@ -479,3 +479,8 @@ export * from './uikit.interface';
 export * from './social-share.interface';
 export * from './org-training-view.interface';
 export * from './formation-pipeline.interface';
+
+// Company Lens — CDP companies (lfx-self-serve#2092)
+export * from './cdp-company.interface';
+export * from './cdp-company.internal.interface';
+export * from './cdp-company-view.interface';

@@ -82,6 +82,9 @@ export class LockManager {
             fetchAsString: options.fetchAsString ? [...options.fetchAsString].sort() : [],
             expectMissingObject: options.expectMissingObject ?? false,
             expectInvalidIdentifier: options.expectInvalidIdentifier ?? null,
+            // Breaker policy is per caller: a deadline one caller expects to miss must not exempt, or
+            // be counted for, another caller sharing the same statement.
+            expectTimeout: options.expectTimeout ?? false,
           }
         : null,
     };

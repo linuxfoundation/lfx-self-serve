@@ -99,11 +99,13 @@ describe('OrgLensEmptyStateComponent', () => {
   // and LFX Insights. A support action — or any control that opens the support messenger — fails here.
   it('offers no support action in any registry state', () => {
     const allowedKinds = new Set<string | undefined>([undefined, 'retry', 'reset-filters', 'org-list']);
-    // Only the person's own profile, plus the staff dead end's way back to the Company Lens overview and the
-    // roll-up state's way to Memberships (the page swaps in the roll-up's own address through `primaryRoute`).
+    // Only the person's own profile, plus the staff dead end's way back to the Company Lens overview, the
+    // roll-up state's way to Memberships (the page swaps in the roll-up's own address through `primaryRoute`), and
+    // the CDP no-company state's way back to the Company Lens overview.
     const allowedRoutes: Partial<Record<OrgLensEmptyStateName, string[]>> = {
       'not-found-staff': ['/company/overview'],
       'roll-up-unavailable': ['/company/memberships'],
+      'no-company': ['/company/overview'],
     };
     for (const [state, copy] of Object.entries(ORG_LENS_EMPTY_STATE_COPY)) {
       expect(copy.reason, `${state}: reason must not mention support (#5447)`).not.toMatch(/support/i);
@@ -245,7 +247,7 @@ describe('OrgLensEmptyStateComponent', () => {
       'The "Company" section of LFX Self-Serve shows how your company is involved with LF projects'
     );
     const others = (Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]).filter((name) => !firstVisit.includes(name));
-    expect(others).toHaveLength(9);
+    expect(others).toHaveLength(14);
     for (const name of others) {
       const fixture = render(name, { orgList: ORG_LIST, filterActive: true });
       expect(byTestId(fixture, 'description')?.textContent, name).not.toContain('Company Lens shows');

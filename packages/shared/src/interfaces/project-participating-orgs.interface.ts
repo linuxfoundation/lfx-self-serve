@@ -73,6 +73,11 @@ export interface ProjectParticipatingOrg {
   participantKey: string;
   /** Salesforce account id (the b2b_org uid); null for Unidentified companies. */
   accountId: string | null;
+  /**
+   * The crowd.dev organization id of an Unidentified company (its CDP id); null for every other row. A row
+   * key only: whether it opens a CDP company page is decided per caller by the links read.
+   */
+  organizationId: string | null;
   name: string;
   logoUrl: string | null;
   /** Seen in contribution data but not matched to a company record. Never a member, never linked. */
@@ -119,18 +124,35 @@ export interface ProjectParticipatingOrgsPage {
 }
 
 /**
- * `GET /api/projects/:slug/participating-orgs/org-lens-links?accountIds=` — which of the given member
- * companies the caller can open in Org Lens (`b2b_org#auditor`, the Org Lens gate). Per caller, never
- * shared-cached; empty when the access check fails, so names fall back to plain text.
+ * `GET /api/projects/:slug/participating-orgs/org-lens-links?accountIds=&nonMemberAccountIds=&cdpIds=` — which of the
+ * shown page's companies the caller can open: members through the Org Lens gate (`b2b_org#auditor`), non-members
+ * through the caller's own Company Lens index read, CDP ids only inside the CDP audience. Per caller,
+ * never shared-cached; each failed check drops only the links it decides, so names fall back to plain text.
  */
 export interface ProjectParticipatingOrgsOrgLensLinksResponse {
+  /** Member ids the caller's roster reads, plus non-member ids the caller reads from the Company Lens index. */
   readableAccountIds: string[];
+  /** The given CDP ids that are addressable CDP companies; always empty outside the CDP audience. */
+  cdpCompanyIds: string[];
+}
+
+/** The validated links read query: the shown page's member account ids, non-member account ids and CDP ids (each possibly empty). */
+export interface ProjectParticipatingOrgsLinksQuery {
+  accountIds: string[];
+  nonMemberAccountIds: string[];
+  cdpIds: string[];
+}
+
+/** The viewer's Org Lens access for a page's rows: B2B account ids it may open, and CDP ids that open a CDP company page. */
+export interface ProjectParticipatingOrgsLinks {
+  readable: ReadonlySet<string>;
+  /** CDP ids of the page that open a CDP company page for the viewer. */
+  cdpCompanyIds: ReadonlySet<string>;
 }
 
 /** The viewer's Org Lens access for one page's member set (`key`), so it is never applied to another page's rows. */
-export interface ProjectParticipatingOrgsOrgLensLinksAnswer {
+export interface ProjectParticipatingOrgsOrgLensLinksAnswer extends ProjectParticipatingOrgsLinks {
   key: string;
-  readable: ReadonlySet<string>;
 }
 
 /** Filters the CSV export takes: the list query without paging. */
@@ -141,9 +163,10 @@ export type ProjectParticipatingOrgsViewState = 'ready' | 'empty' | 'forbidden' 
 
 /**
  * How a row's company name renders for the viewer: an Org Lens membership link, a member the viewer
- * cannot open (plain text + access tooltip), or a plain name (non-members, including Unidentified companies).
+ * cannot open (plain text + access tooltip), a non-member's Company Lens home link, a CDP company
+ * page link, or a plain name (anything else, with no hint).
  */
-export type ProjectParticipatingOrgNameKind = 'org-lens-link' | 'no-access' | 'plain';
+export type ProjectParticipatingOrgNameKind = 'org-lens-link' | 'no-access' | 'org-lens-home-link' | 'cdp-link' | 'plain';
 
 /** Colour of a change cell: up (green), down (red), flat (gray), first-period ("New"), or no comparison ("—"). */
 export type ProjectParticipatingOrgChangeTone = 'positive' | 'negative' | 'neutral' | 'new' | 'none';
@@ -166,7 +189,7 @@ export interface ProjectParticipatingOrgRowVm {
   /** Uppercase first letter of the name, shown when there is no logo. */
   initial: string;
   nameKind: ProjectParticipatingOrgNameKind;
-  /** `routerLink` commands to the company's Org Lens membership page for this foundation; set only for `org-lens-link`. */
+  /** `routerLink` commands of the name link: the membership page (`org-lens-link`), the Company Lens home (`org-lens-home-link`) or the CDP page (`cdp-link`); null otherwise. */
   orgLensLink: string[] | null;
   /** Member badge text (`Gold Member`, or `Member` when the tier is unknown); null for non-members. */
   membershipLabel: string | null;
