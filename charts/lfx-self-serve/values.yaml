@@ -827,6 +827,17 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS:
     value:
 
+  # LinkedIn video ads (#5764 row 18): accepts `linkedInConfig.variants[i].videoAssetId`, an MP4 uploaded to the brief,
+  # which campaign-service posts as a video (SINGLE_VIDEO) campaign. Every variant carries one or none does.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `LINKEDIN_ADS_VIDEO_ENABLED` on, and
+  # `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS` (with the create pipeline) on here, since the video is a stored asset.
+  # Off (the default), the create route refuses the field with a 400, never dropping it. A field only, so turning it back
+  # off strands nothing. Keep it off until campaign-service's `LINKEDIN_ADS_VIDEO_ENABLED` is on and probed. Same
+  # accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO:
+    value:
+
   # Offers Meta ad set audience targeting on the Implement tab (#5905), sent as
   # `metaConfig.targeting`: age range, gender and Advantage+ audience for every campaign manager, and
   # included/excluded custom audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only for

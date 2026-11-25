@@ -325,4 +325,27 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
     expect(legacyCreate).not.toHaveBeenCalled();
     expect(refusal(next).field).toBe('linkedInConfig.textAds[0].imageAssetId');
   });
+
+  // LinkedIn video ads (#5764 row 18); the rules are table rows in `campaign-linkedin-video.utils.spec.ts`.
+  const videoVariant = { ...variant, videoAssetId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301' };
+
+  it('forwards a video create as it came', async () => {
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [videoVariant] });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()['variants']).toEqual([videoVariant]);
+  });
+
+  it.each([ServerFeatureFlag.CampaignServiceLinkedInVideo, ServerFeatureFlag.CampaignServiceLinkedInAssets])(
+    'refuses a video while %s is off, before anything is created',
+    async (off) => {
+      isServerFeatureEnabled.mockImplementation((flag) => flag !== off);
+
+      const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [videoVariant] });
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusal(next).field).toBe('linkedInConfig.variants[0].videoAssetId');
+    }
+  );
 });

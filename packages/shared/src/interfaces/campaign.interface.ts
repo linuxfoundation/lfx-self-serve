@@ -2068,6 +2068,12 @@ export interface LinkedInCreativeVariant {
   description?: string;
   /** One of `LINKEDIN_CALL_TO_ACTION_LABELS` (campaign-service #588). Omitted sends no button. */
   callToAction?: string;
+  /**
+   * An MP4 uploaded to the brief (#5764 row 18, campaign-service #586), which campaign-service uploads through LinkedIn's
+   * Videos API and posts as this variant's dark post. All or none: every variant of a video campaign carries one, with
+   * no image and no description. Only while `linkedInVideoEnabled`.
+   */
+  videoAssetId?: string;
 }
 
 /** One LinkedIn Text Ad as the Implement tab edits it (#5764 row 19). `key` is the tab's own and is never sent. */
@@ -8214,6 +8220,12 @@ export interface CampaignListResult {
    * `LINKEDIN_ADS_CONVERSIONS_ENABLED`.
    */
   linkedInConversionsEnabled: boolean;
+  /**
+   * Whether a LinkedIn variant may carry a `videoAssetId` (#5764 row 18), making the campaign a video one. Needs uploaded
+   * LinkedIn assets (`linkedInAssetUploadEnabled`) AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO`, which follows
+   * campaign-service's own `LINKEDIN_ADS_VIDEO_ENABLED`.
+   */
+  linkedInVideoEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.

@@ -964,6 +964,16 @@ export function canSetLinkedInConversions(): boolean {
 }
 
 /**
+ * Whether a LinkedIn variant may carry a `videoAssetId` (#5764 row 18, campaign-service #586). Needs uploaded LinkedIn
+ * assets (`canUseLinkedInCreativeAssets`, the create cutover included), since the video is a creative asset stored on the
+ * brief, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO`, which follows campaign-service's own
+ * `LINKEDIN_ADS_VIDEO_ENABLED`: campaign-service refuses the field while that is off, and the legacy creator ignores it.
+ */
+export function canSetLinkedInVideo(): boolean {
+  return canUseLinkedInCreativeAssets() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInVideo);
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -1195,6 +1205,7 @@ export class CampaignServiceClient {
         linkedInTextAdsEnabled: canSetLinkedInTextAds(),
         linkedInTargetingEnabled: canSetLinkedInTargeting(),
         linkedInConversionsEnabled: canSetLinkedInConversions(),
+        linkedInVideoEnabled: canSetLinkedInVideo(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1286,6 +1297,7 @@ export class CampaignServiceClient {
       linkedInTextAdsEnabled: canSetLinkedInTextAds(),
       linkedInTargetingEnabled: canSetLinkedInTargeting(),
       linkedInConversionsEnabled: canSetLinkedInConversions(),
+      linkedInVideoEnabled: canSetLinkedInVideo(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),

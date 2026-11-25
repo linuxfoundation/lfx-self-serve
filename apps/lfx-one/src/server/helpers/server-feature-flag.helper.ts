@@ -469,6 +469,19 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInConversions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CONVERSIONS',
 
   /**
+   * LinkedIn video ads (#5764 row 18): accept `linkedInConfig.variants[i].videoAssetId`, an MP4 uploaded to the brief,
+   * which campaign-service uploads through LinkedIn's Videos API and posts as a SINGLE_VIDEO campaign's dark posts.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `LINKEDIN_ADS_VIDEO_ENABLED` on, since
+   * campaign-service refuses the field with a 400 otherwise, and is only meaningful while uploaded LinkedIn assets are on
+   * (`canUseLinkedInCreativeAssets`, which needs the create cutover): the video is a stored asset, and the legacy creator
+   * would make an image campaign instead. Off (the default), the create route refuses the field with a 400, never dropping
+   * it. Keep it off until campaign-service's flag is on and its live probe has passed. A request field only, so flipping
+   * it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInVideo = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VIDEO',
+
+  /**
    * Offers Meta ad set audience targeting on the Implement tab (#5905), sent as `metaConfig.targeting`:
    * age range, gender and Advantage+ audience to every campaign manager, and included/excluded custom
    * audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only to a caller holding

@@ -4812,6 +4812,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInTextAdsEnabled: false,
       linkedInTargetingEnabled: false,
       linkedInConversionsEnabled: false,
+      linkedInVideoEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5506,6 +5507,26 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** LinkedIn video ads (#5764 row 18): uploaded LinkedIn assets (with the cutover) and its own flag. */
+  it.each([
+    [{ cutover: true, assets: true, video: true }, true],
+    [{ cutover: true, assets: true, video: false }, false],
+    [{ cutover: true, assets: false, video: true }, false],
+    [{ cutover: false, assets: true, video: true }, false],
+  ])('reports LinkedIn video ads (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInVideo) return flags.video;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInAssets) return flags.assets;
+      return flags.cutover;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInVideoEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The LinkedIn daily-cap capability (#5774): the create cutover alone, like the targeting edit above. */
   it.each([
     [{ create: true, briefs: true, jobs: true, others: false }, true],
@@ -5607,6 +5628,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInTextAdsEnabled: false,
       linkedInTargetingEnabled: false,
       linkedInConversionsEnabled: false,
+      linkedInVideoEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
