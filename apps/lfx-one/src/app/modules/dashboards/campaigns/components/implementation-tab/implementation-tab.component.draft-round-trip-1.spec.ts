@@ -106,9 +106,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     redditKeywords: () => string[];
     redditGeoTargets: () => string[];
     redditVariants: () => unknown[];
-    redditBudgetUsd: () => number;
-    redditObjective: () => string;
-    redditPostUrl: () => string;
     redditConversionPixelId: () => string;
     redditImageUrl: () => string;
     redditCallToAction: () => string;
@@ -258,32 +255,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   // === Reddit: the bound controls ===
 
   /**
-   * Driven through the real `(input)` binding: a test calling `redditBudgetUsd.set` directly would
-   * stay green with the handler's `emitDraft()` removed, since it never exercises the emission
-   * path a live edit takes.
-   *
-   * 750 is neither the component's 500 default nor anything the brief carries, so the assertion
-   * cannot be satisfied by a re-stamp.
-   */
-  it('carries the reddit budget through a tab round-trip and into the request', async () => {
-    const first = await mount(null);
-    typeRedditBudget(first.fixture, 750);
-    const draft = first.latest();
-    first.fixture.destroy();
-
-    expect(draft?.redditBudgetUsd).toBe(750);
-
-    const second = await mount(draft);
-    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
-    makeSubmittable(second.fixture);
-    second.fixture.detectChanges();
-    at(second.fixture).submit();
-
-    expect(at(second.fixture).redditBudgetUsd()).toBe(750);
-    expect(sentConfig('redditConfig')['budgetUsd']).toBe(750);
-  });
-
-  /**
    * The untouched picker must dispatch what both creators already assumed. `conversions` is
    * `defaultRedditObjective` upstream and `config.objective ?? 'conversions'` in the legacy
    * creator, so sending it explicitly changes nobody's campaign — which is the only thing that
@@ -301,30 +272,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   });
 
   /**
-   * The picked objective through the full round trip. `awareness` is neither the component
-   * default nor anything the brief carries, so a restore that dropped the field would fail here
-   * rather than coincide with a re-stamp. Driven through the template's own `(change)` binding
-   * for the reason the budget is.
-   */
-  it('carries the reddit objective through a tab round-trip and into the request', async () => {
-    const first = await mount(null);
-    pickRedditObjective(first.fixture, 'awareness');
-    const draft = first.latest();
-    first.fixture.destroy();
-
-    expect(draft?.redditObjective).toBe('awareness');
-
-    const second = await mount(draft);
-    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
-    makeSubmittable(second.fixture);
-    second.fixture.detectChanges();
-    at(second.fixture).submit();
-
-    expect(at(second.fixture).redditObjective()).toBe('awareness');
-    expect(sentConfig('redditConfig')['objective']).toBe('awareness');
-  });
-
-  /**
    * The Post URL is UNGATED, and this is the test that holds that open. Both creators read the
    * field and build the ad from it — the legacy one extracts the post id in
    * `reddit-ads.service.ts` exactly as campaign-service does — so gating it behind the creative
@@ -332,20 +279,13 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * capability left unanswered, which is the state that withholds the other two.
    */
   it('offers the reddit post url while the creative capability is unanswered', async () => {
-    const first = await mount(null);
-    typeRedditPostUrl(first.fixture, 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
-    const draft = first.latest();
-    first.fixture.destroy();
+    const f = (await mount(null)).fixture;
+    typeRedditPostUrl(f, 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+    f.detectChanges();
+    at(f).submit();
 
-    expect(draft?.redditPostUrl).toBe('https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
-
-    const second = await mount(draft);
-    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
-    makeSubmittable(second.fixture);
-    second.fixture.detectChanges();
-    at(second.fixture).submit();
-
-    expect(at(second.fixture).redditPostUrl()).toBe('https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
     expect(sentConfig('redditConfig')['postUrl']).toBe('https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
   });
 
@@ -421,29 +361,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(at(f).canSubmit()).toBe(true);
   });
 
-  /** The chosen goal reaches `redditConfig`, picked through the template and carried across a tab round-trip. */
-  it('carries the reddit video goal through a tab round-trip and into the request', async () => {
-    const first = await mount(null);
-    pickRedditObjective(first.fixture, 'video_views');
-    pickRedditVideoGoal(first.fixture, 'VIDEO_VIEW_15S');
-    typeRedditPostUrl(first.fixture, 'https://www.reddit.com/r/kubernetes/comments/abc123/video/');
-    const draft = first.latest();
-    first.fixture.destroy();
-
-    expect(draft?.redditVideoGoal).toBe('VIDEO_VIEW_15S');
-
-    const second = await mount(draft);
-    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
-    makeSubmittable(second.fixture);
-    second.fixture.detectChanges();
-
-    expect(redditVideoGoalSelect(second.fixture)?.value).toBe('VIDEO_VIEW_15S');
-
-    at(second.fixture).submit();
-
-    expect(sentConfig('redditConfig')).toMatchObject({ objective: 'video_views', videoGoal: 'VIDEO_VIEW_15S' });
-  });
-
   /** A goal left over from an earlier Video Views choice is not sent with another objective. */
   it('omits the reddit video goal for any other objective', async () => {
     const f = (await mount(null)).fixture;
@@ -458,32 +375,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const config = sentConfig('redditConfig');
     expect(config['objective']).toBe('awareness');
     expect('videoGoal' in config).toBe(false);
-  });
-
-  /**
-   * The authored-post pair on an explicit yes: typed through the real bindings, carried across
-   * the remount, and dispatched. `Shop Now` is neither the component default nor upstream's, so a
-   * restore that dropped the field could not coincide with a re-stamp.
-   */
-  it('carries the reddit creative pair through a tab round-trip and into the request', async () => {
-    const first = await mount(null, true);
-    typeRedditImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
-    pickRedditCallToAction(first.fixture, 'Shop Now');
-    const draft = first.latest();
-    first.fixture.destroy();
-
-    expect(draft?.redditImageUrl).toBe('https://cdn.example.org/promo.png');
-    expect(draft?.redditCallToAction).toBe('Shop Now');
-
-    const second = await mount(draft, true);
-    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
-    makeSubmittable(second.fixture);
-    second.fixture.detectChanges();
-    at(second.fixture).submit();
-
-    const config = sentConfig('redditConfig');
-    expect(config['imageUrl']).toBe('https://cdn.example.org/promo.png');
-    expect(config['callToAction']).toBe('Shop Now');
   });
 
   /**
@@ -509,9 +400,10 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   /** Mounts with the pixel capability answered, which `mount` leaves at the parent's `null`. */
   async function mountWithPixel(
     draft: CampaignImplementationDraft | null,
-    pixel: boolean | null
+    pixel: boolean | null,
+    redditCreative?: boolean
   ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const mounted = await mount(draft);
+    const mounted = await mount(draft, redditCreative);
     mounted.fixture.componentRef.setInput('redditConversionPixelEnabled', pixel);
     mounted.fixture.detectChanges();
     await mounted.fixture.whenStable();
@@ -588,35 +480,54 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   });
 
   /**
-   * A brief switch on a LIVE mount: the parent clears the draft and hands over the next brief, and
-   * the component re-seeds in place. The pixel typed on the first brief must not ride along.
+   * Every Reddit value an operator can change, through the real bindings. The draft is read after EACH handler, so one
+   * missing its `emitDraft()` fails here even though a later handler would snapshot its value. Each value is neither the
+   * default nor the brief's, so the remount's request cannot pass on a re-seed. What the draft carries and what a restore
+   * sets, field by field, are `redditDraftFields` and `redditDraftRestore`'s rows (#5980).
    */
-  it('drops a typed pixel when a different brief is handed over', async () => {
-    const mounted = await mountWithPixel(null, true);
-    const f = mounted.fixture;
+  it('carries every reddit field through a tab round-trip and into the request', async () => {
+    const postUrl = 'https://www.reddit.com/r/kubernetes/comments/abc123/video/';
+    const first = await mountWithPixel(null, true, true);
+    const f = first.fixture;
+    typeRedditBudget(f, 750);
+    expect(first.latest()?.redditBudgetUsd).toBe(750);
+    pickRedditObjective(f, 'video_views');
+    expect(first.latest()?.redditObjective).toBe('video_views');
+    pickRedditVideoGoal(f, 'VIDEO_VIEW_15S');
+    expect(first.latest()?.redditVideoGoal).toBe('VIDEO_VIEW_15S');
+    typeRedditPostUrl(f, postUrl);
+    expect(first.latest()?.redditPostUrl).toBe(postUrl);
+    typeRedditImageUrl(f, 'https://cdn.example.org/promo.png');
+    expect(first.latest()?.redditImageUrl).toBe('https://cdn.example.org/promo.png');
+    pickRedditCallToAction(f, 'Shop Now');
+    expect(first.latest()?.redditCallToAction).toBe('Shop Now');
     typeRedditPixel(f, 't2_synthpixel');
-    expect(mounted.latest()?.redditConversionPixelId).toBe('t2_synthpixel');
+    expect(first.latest()?.redditConversionPixelId).toBe('t2_synthpixel');
+    const draft = first.latest();
+    f.destroy();
 
-    const next = brief();
-    f.componentRef.setInput('draft', null);
-    f.componentRef.setInput('briefData', { ...next, eventDetails: { ...next.eventDetails, name: 'Open Source Summit', slug: 'oss-na-2026' } });
-    f.detectChanges();
-    await f.whenStable();
-
-    expect(mounted.latest()?.eventSlug).toBe('oss-na-2026');
-    expect(mounted.latest()?.redditConversionPixelId).toBe('');
-    expect(redditPixelInput(f)?.value ?? '').toBe('');
-    expect('conversionPixelId' in submitReddit(f)).toBe(false);
+    const second = await mountWithPixel(draft, true, true);
+    expect(redditVideoGoalSelect(second.fixture)?.value).toBe('VIDEO_VIEW_15S');
+    expect(submitReddit(second.fixture)).toMatchObject({
+      budgetUsd: 750,
+      objective: 'video_views',
+      videoGoal: 'VIDEO_VIEW_15S',
+      postUrl,
+      imageUrl: 'https://cdn.example.org/promo.png',
+      callToAction: 'Shop Now',
+      conversionPixelId: 't2_synthpixel',
+    });
   });
 
   /**
-   * The rest of the Reddit fields the brief does not derive, on the same live brief switch (#4589).
-   * Every typed value is one neither the component default nor the brief carries, so a field that
-   * survived the switch could not pass by coinciding with a re-seed.
+   * A brief switch on a LIVE mount: the parent clears the draft and hands over the next brief, and the component re-seeds
+   * in place. No Reddit field the brief does not derive may ride along (#3484, #4589); the values they reset to are
+   * `redditBriefReset`'s row. Every typed value is one neither the component default nor the brief carries.
    */
   it('drops every typed reddit field when a different brief is handed over', async () => {
-    const mounted = await mount(null, true);
+    const mounted = await mountWithPixel(null, true, true);
     const f = mounted.fixture;
+    typeRedditPixel(f, 't2_synthpixel');
     typeRedditBudget(f, 750);
     pickRedditObjective(f, 'video_views');
     pickRedditVideoGoal(f, 'VIDEO_VIEW_15S');
@@ -630,6 +541,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
       redditPostUrl: 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/',
       redditImageUrl: 'https://cdn.example.org/promo.png',
       redditCallToAction: 'Shop Now',
+      redditConversionPixelId: 't2_synthpixel',
     });
 
     const next = brief();
@@ -646,6 +558,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
       redditPostUrl: '',
       redditImageUrl: '',
       redditCallToAction: '',
+      redditConversionPixelId: '',
     });
     const el = (testId: string): HTMLInputElement | HTMLSelectElement =>
       f.nativeElement.querySelector(`[data-testid="implementation-reddit-${testId}"]`) as HTMLInputElement | HTMLSelectElement;
@@ -655,11 +568,12 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(el('post-url').value).toBe('');
     expect(el('image-url').value).toBe('');
     expect(el('call-to-action').value).toBe('');
+    expect(redditPixelInput(f)?.value).toBe('');
 
     const config = submitReddit(f);
     expect(config['budgetUsd']).toBe(500);
     expect(config['objective']).toBe('conversions');
-    for (const key of ['videoGoal', 'postUrl', 'imageUrl', 'imageAssetId', 'callToAction']) {
+    for (const key of ['videoGoal', 'postUrl', 'imageUrl', 'imageAssetId', 'callToAction', 'conversionPixelId']) {
       expect(key in config).toBe(false);
     }
   });
@@ -859,18 +773,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
 
     expect(redditPixelInput(f)?.closest('lfx-input-text')).not.toBeNull();
     expect(redditPixelInput(f)?.getAttribute('aria-describedby')).toBe('reddit-conversion-pixel-hint');
-  });
-
-  it('carries the typed pixel across a tab round-trip through the draft', async () => {
-    const first = await mountWithPixel(null, true);
-    typeRedditPixel(first.fixture, 't2_synthpixel');
-    const draft = first.latest();
-    first.fixture.destroy();
-
-    expect(draft?.redditConversionPixelId).toBe('t2_synthpixel');
-
-    const second = await mountWithPixel(draft, true);
-    expect(submitReddit(second.fixture)['conversionPixelId']).toBe('t2_synthpixel');
   });
 
   /**

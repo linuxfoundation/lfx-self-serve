@@ -156,6 +156,7 @@ export * from './credential-redaction.utils';
 export * from './campaign-bidding.utils';
 export * from './campaign-twitter.utils';
 export * from './campaign-linkedin.utils';
+export * from './campaign-reddit-draft.utils';
 export * from './campaign-reddit-form.utils';
 export * from './campaign-reddit-image.utils';
 export * from './campaign-linkedin-config.utils';
