@@ -5,12 +5,14 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, ElementRef, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
+  ACCOUNT_IDENTITIES_PATH,
   ACCOUNT_PERSONAL_INFORMATION_PATH,
   ALLOWED_AVATAR_MIME_TYPES,
   IMPERSONATION_BANNER_HEIGHT_PX,
   PENDING_PROFILE_SAVE_KEY,
   PROFILE_ASIDE_COPY,
   PROFILE_ASIDE_MEDIA_QUERY,
+  PROFILE_NO_ACTIVITY_COPY,
   PROFILE_PAGE_COPY,
 } from '@lfx-one/shared/constants';
 import { EnrichedIdentity, PendingProfileSave } from '@lfx-one/shared/interfaces';
@@ -27,6 +29,7 @@ import { catchError, distinctUntilChanged, EMPTY, of, startWith, switchMap } fro
 import { ProfileVisibilityDrawerComponent } from '../components/profile-visibility-drawer/profile-visibility-drawer.component';
 import { ProfileVisibilityDrawerService } from '../components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { ProfileAsideComponent } from './profile-aside/profile-aside.component';
+import { ProfileGroupsComponent } from './profile-groups/profile-groups.component';
 import { ProfileInvolvementComponent } from './profile-involvement/profile-involvement.component';
 import { ProfileRecognitionsComponent } from './profile-recognitions/profile-recognitions.component';
 
@@ -44,6 +47,7 @@ import { ProfileRecognitionsComponent } from './profile-recognitions/profile-rec
     ProfileAsideComponent,
     ProfileRecognitionsComponent,
     ProfileInvolvementComponent,
+    ProfileGroupsComponent,
     ProfileVisibilityDrawerComponent,
   ],
   // The page owns its profile, the Flow C return for a photo upload that left for authorization, and the Open Profile drawer.
@@ -63,6 +67,14 @@ export class ProfilePageComponent {
   protected readonly personalInformationPath = ACCOUNT_PERSONAL_INFORMATION_PATH;
   protected readonly avatarAccept = ALLOWED_AVATAR_MIME_TYPES.join(',');
   protected readonly railLabel = PROFILE_ASIDE_COPY.railLabel;
+  protected readonly noActivityCopy = PROFILE_NO_ACTIVITY_COPY;
+  protected readonly identitiesPath = ACCOUNT_IDENTITIES_PATH;
+
+  // Simple WritableSignals
+  /** Each section's answer to "is it empty?": null until it has loaded. */
+  protected readonly recognitionsEmpty = signal<boolean | null>(null);
+  protected readonly involvementEmpty = signal<boolean | null>(null);
+  protected readonly groupsEmpty = signal<boolean | null>(null);
 
   // Complex computed/toSignal signals
   protected readonly profile = this.accountProfile.profile;
@@ -78,6 +90,8 @@ export class ProfilePageComponent {
   protected readonly name: Signal<string> = this.initName();
   // The openprofile rail's media query, followed once the browser renders so SSR and hydration agree (#6083).
   protected readonly railShown = injectMediaQueryMatches(PROFILE_ASIDE_MEDIA_QUERY);
+  /** Every section loaded and empty: the page asks for the emails and accounts that would bring in the user's work. */
+  protected readonly noActivity = computed(() => this.recognitionsEmpty() === true && this.involvementEmpty() === true && this.groupsEmpty() === true);
   protected readonly railTop = computed(() => (this.impersonating() ? IMPERSONATION_BANNER_HEIGHT_PX : 0));
   // Null while the profile is still loading, so the rail holds its placeholder; '' when none came back.
   protected readonly username = computed<string | null>(() => {

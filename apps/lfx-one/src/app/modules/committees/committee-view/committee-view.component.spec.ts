@@ -6,7 +6,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { VOTE_INVITATION_COUNT_REFRESH_MS } from '@lfx-one/shared/constants';
+import { VOTE_INVITATION_COUNT_REFRESH_MS, PROFILE_GROUP_LINK_STATE } from '@lfx-one/shared/constants';
 import { PollStatus } from '@lfx-one/shared/enums';
 import type { Committee, CommitteeMember, CommitteeTab, Meeting, Vote } from '@lfx-one/shared/interfaces';
 import { getGroupCommands } from '@lfx-one/shared/utils';
@@ -667,6 +667,16 @@ describe('CommitteeViewComponent', () => {
       expect(component.backLabel()).toBe('Surveys');
       expect(TestBed.inject(LensService).setLens).toHaveBeenCalledWith('me');
       expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/surveys']);
+    });
+
+    it('returns to the Profile page when opened from its Group participation section', () => {
+      const component = openedWithState(PROFILE_GROUP_LINK_STATE);
+
+      component.goBack();
+
+      expect(component.backLabel()).toBe('Profile');
+      expect(TestBed.inject(LensService).setLens).toHaveBeenCalledWith('me');
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/profile']);
     });
 
     it('restores the foundation a rolled-up meetings list was scoped to', () => {

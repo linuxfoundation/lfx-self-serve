@@ -7,12 +7,20 @@ import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { ACCOUNT_PERSONAL_INFORMATION_PATH, AVATAR_UPLOAD_COPY, PENDING_PROFILE_SAVE_KEY, PROFILE_PAGE_COPY } from '@lfx-one/shared/constants';
-import { CombinedProfile, EnrichedIdentity } from '@lfx-one/shared/interfaces';
+import {
+  ACCOUNT_IDENTITIES_PATH,
+  ACCOUNT_PERSONAL_INFORMATION_PATH,
+  PROFILE_NO_ACTIVITY_COPY,
+  AVATAR_UPLOAD_COPY,
+  PENDING_PROFILE_SAVE_KEY,
+  PROFILE_PAGE_COPY,
+} from '@lfx-one/shared/constants';
+import { CombinedProfile, EnrichedIdentity, MyCommittee } from '@lfx-one/shared/interfaces';
 import { AccountProfileService } from '@services/account-profile.service';
 import { ProfileAuthReturnService } from '@services/profile-auth-return.service';
 import { ProfileSaveSyncService } from '@services/profile-save-sync.service';
 import { BadgesService } from '@services/badges.service';
+import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
@@ -45,6 +53,7 @@ describe('ProfilePageComponent', () => {
       avatar?: string;
       impersonating?: boolean;
       wide?: boolean;
+      groups?: MyCommittee[];
     } = {}
   ) {
     const show = vi.fn();
@@ -74,6 +83,7 @@ describe('ProfilePageComponent', () => {
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: BadgesService, useValue: { getBadges: () => of([]) } },
         { provide: ProjectService, useValue: { getProjectSlugs: () => of(null) } },
+        { provide: CommitteeService, useValue: { getMyCommitteesOrError: () => of(options.groups ?? []) } },
         { provide: BreakpointObserver, useValue: { observe: () => of({ matches: options.wide ?? true, breakpoints: {} }) } },
       ],
     });
@@ -126,6 +136,22 @@ describe('ProfilePageComponent', () => {
 
     expect(query('profile-aside-rail')).toBeNull();
     expect(userService.getProfileVisibility).not.toHaveBeenCalled();
+  });
+
+  it('asks for the emails and accounts that bring in work when every section is empty', async () => {
+    setup();
+    const { query } = await render();
+
+    expect(query('profile-no-activity')?.textContent).toContain(PROFILE_NO_ACTIVITY_COPY.title);
+    expect(query('profile-no-activity-email')?.querySelector('a')?.getAttribute('href')).toBe(ACCOUNT_IDENTITIES_PATH);
+    expect(query('profile-no-activity-github')?.querySelector('a')?.getAttribute('href')).toBe(ACCOUNT_IDENTITIES_PATH);
+  });
+
+  it('leaves the note out once any section has something', async () => {
+    setup({ groups: [{ uid: 'g1', name: 'Board', category: 'Board', total_members: 3, my_role: 'Member' } as MyCommittee] });
+    const { query } = await render();
+
+    expect(query('profile-no-activity')).toBeNull();
   });
 
   it('leaves GitHub out when no owned account is linked', async () => {

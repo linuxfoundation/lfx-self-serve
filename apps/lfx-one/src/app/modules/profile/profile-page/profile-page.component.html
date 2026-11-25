@@ -134,8 +134,22 @@
 
   <!-- The sections, 64px apart (#6071). -->
   <div class="mt-[48px] flex flex-col gap-[64px]" data-testid="profile-sections">
-    <lfx-profile-recognitions />
-    <lfx-profile-involvement />
+    @if (noActivity()) {
+      <lfx-ui-note variant="secondary" icon="fa-light fa-magnifying-glass" [label]="noActivityCopy.title" data-testid="profile-no-activity">
+        {{ noActivityCopy.text }}
+        <span note-action class="flex flex-row flex-wrap gap-[8px]">
+          <lfx-ui-button variant="secondary" size="small" icon="fa-light fa-envelope" [link]="identitiesPath" data-testid="profile-no-activity-email">{{
+            noActivityCopy.addEmail
+          }}</lfx-ui-button>
+          <lfx-ui-button variant="secondary" size="small" icon="fa-brands fa-github" [link]="identitiesPath" data-testid="profile-no-activity-github">{{
+            noActivityCopy.connectGithub
+          }}</lfx-ui-button>
+        </span>
+      </lfx-ui-note>
+    }
+    <lfx-profile-recognitions (emptyChange)="recognitionsEmpty.set($event)" />
+    <lfx-profile-involvement (emptyChange)="involvementEmpty.set($event)" />
+    <lfx-profile-groups (emptyChange)="groupsEmpty.set($event)" />
   </div>
 </div>
 

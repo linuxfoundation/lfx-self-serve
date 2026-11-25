@@ -5,6 +5,7 @@ import type { Signal } from '@angular/core';
 
 import type { ACCOUNT_SETTINGS_SECTIONS, PERSONAL_INFORMATION_FIELD_LIMITS } from '../constants/profile.constants';
 import type { Badge } from './badge.interface';
+import type { UiTone } from './uikit.interface';
 import type { UserMetadata } from './user-profile.interface';
 
 /**
@@ -900,6 +901,35 @@ export interface ProfileInvolvementState {
   loading: boolean;
   error: boolean;
   items: ProfileInvolvementItem[];
+}
+
+/** A group seat on the Profile page's Group participation section (#6086). */
+export interface ProfileGroupItem {
+  uid: string;
+  /** Router commands to the group's page, and the project it opens under, as the Groups page links it. */
+  commands: string[];
+  queryParams: Record<string, string> | null;
+  /** The card's accessible name: the group, then its org when known. */
+  ariaLabel: string;
+  /** The foundation or project the group belongs to, and its logo. */
+  org: string;
+  orgLogo: string;
+  name: string;
+  description: string;
+  /** Board, Technical, Committee, Working group, or the group's own category. */
+  type: string;
+  typeTone: UiTone;
+  /** The user's role in the group, e.g. "Chair" or "Member". */
+  role: string;
+  /** "12 members" or "1 member". */
+  members: string;
+}
+
+/** Load state of the Profile page's Group participation section (#6086). */
+export interface ProfileGroupsState {
+  loading: boolean;
+  error: boolean;
+  items: ProfileGroupItem[];
 }
 
 /** What the Profile page's openprofile card knows of the public profile (#6083): `unknown` when the read failed. */
