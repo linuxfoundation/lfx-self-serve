@@ -5,14 +5,13 @@ import { DIALOG_DATA } from '@angular/cdk/dialog';
 import { NgComponentOutlet } from '@angular/common';
 import { afterNextRender, Component, computed, ElementRef, inject, Injector, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { ACCOUNT_SIGN_DIALOG_FOCUSABLE } from '@lfx-one/shared/constants';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
 import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import type { AccountSignDialogHostService } from './account-sign-dialog-host.service';
 import { AccountSignDialogContext } from './account-sign-dialog-context';
-
-const FOCUSABLE = 'input:not([disabled]):not([aria-disabled="true"]), button:not([disabled])';
 
 /**
  * The "Sign a CLA" dialog of Account & Settings › CLAs (#6077): one uikit dialog that shows whichever signing step the hub's
@@ -43,7 +42,9 @@ export class AccountSignClaDialogComponent {
           () => {
             // In priority order: one selector list would match the header's Close button first.
             const step = this.element.querySelector<HTMLElement>('[data-testid="account-sign-cla-step"]');
-            const target = step?.querySelector<HTMLElement>(`[data-autofocus] :is(${FOCUSABLE})`) ?? step?.querySelector<HTMLElement>(FOCUSABLE);
+            const target =
+              step?.querySelector<HTMLElement>(`[data-autofocus] :is(${ACCOUNT_SIGN_DIALOG_FOCUSABLE})`) ??
+              step?.querySelector<HTMLElement>(ACCOUNT_SIGN_DIALOG_FOCUSABLE);
             target?.focus();
           },
           { injector: this.injector }

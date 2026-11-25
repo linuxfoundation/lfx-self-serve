@@ -236,6 +236,7 @@ export class ClaGroupSelectComponent {
     this.options.set([]);
     this.truncated.set(false);
     this.highlightedIndex.set(-1);
+    this.searchedQuery.set('');
   }
 
   private initAlreadySignedByGroupId(): Signal<Map<string, AlreadySignedNote>> {

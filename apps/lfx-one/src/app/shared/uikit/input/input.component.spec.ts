@@ -68,6 +68,17 @@ describe('UiInputComponent', () => {
     expect(field().getAttribute('aria-label')).toBe('Search projects');
   });
 
+  it('acts as the combobox of a listbox beside it, keeping focus while the highlight moves', async () => {
+    expect(field().getAttribute('role')).toBeNull();
+
+    await set('combobox', { controls: 'results', expanded: true, activeDescendant: 'option-2' });
+
+    expect(field().getAttribute('role')).toBe('combobox');
+    expect(field().getAttribute('aria-controls')).toBe('results');
+    expect(field().getAttribute('aria-expanded')).toBe('true');
+    expect(field().getAttribute('aria-activedescendant')).toBe('option-2');
+  });
+
   it('writes typed text to the value model', async () => {
     field().value = 'linux';
     field().dispatchEvent(new Event('input'));

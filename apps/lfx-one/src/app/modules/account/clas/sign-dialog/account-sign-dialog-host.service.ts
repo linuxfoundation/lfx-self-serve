@@ -40,11 +40,17 @@ export class AccountSignDialogHostService implements AccountSignDialogContext {
   private dialogRef: DialogRef<unknown, AccountSignClaDialogComponent> | null = null;
   // While true, such as while the hub looks up linked accounts between steps, the dialog stays open showing it is busy.
   private hold: Signal<boolean> = signal(false);
+  // Set once the page goes: the modal is root-owned, so it is closed then and any later step is never shown.
+  private destroyed = false;
 
   /** The step the dialog shows, or `null` between steps. */
   public readonly step = signal<AccountSignDialogStep<DynamicDialogConfig, DynamicDialogRef> | null>(null);
   /** The CLA group picked in the first step, which later steps name. */
   public readonly pickedName = signal('');
+
+  public constructor() {
+    this.destroyRef.onDestroy(() => this.teardown());
+  }
 
   /** Keeps the dialog open between steps while `busy` is true, and closes it when that ends with no step to show. */
   public holdOpenWhile(busy: Signal<boolean>): void {
@@ -59,14 +65,15 @@ export class AccountSignDialogHostService implements AccountSignDialogContext {
   /** PrimeNG's `DialogService.open`, as the hub calls it: shows the step and returns a ref that settles when the step ends. */
   public open(component: Type<unknown>, config: DynamicDialogConfig): DynamicDialogRef {
     const ref = new DynamicDialogRef();
+    if (this.destroyed) return ref;
     this.step.set({ component: this.accountSteps.get(component) ?? component, config, ref });
     if (!this.dialogRef) {
       // Escape, the backdrop and the close button can't end the flow mid-request; its toast or next step does.
       const dialogRef = this.modal.open(AccountSignClaDialogComponent, { data: this, autoFocus: 'dialog' }, { closePredicate: () => !this.isBusy() });
       this.dialogRef = dialogRef;
-      dialogRef.closed.pipe(take(1)).subscribe(() => this.onDialogClosed(dialogRef));
+      dialogRef.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.onDialogClosed(dialogRef));
     }
-    ref.onClose.pipe(take(1)).subscribe(() => {
+    ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (this.step()?.ref === ref) this.step.set(null);
       // As PrimeNG does: the step is destroyed after it closes. The hub opens some next steps from there, so the dialog only
       // closes once that has had its turn.
@@ -88,6 +95,18 @@ export class AccountSignDialogHostService implements AccountSignDialogContext {
     const dialogRef = this.dialogRef;
     this.dialogRef = null;
     dialogRef.close();
+  }
+
+  // Ends the open step without a result and closes the modal, now that nothing holds it open.
+  private teardown(): void {
+    this.destroyed = true;
+    this.hold = signal(false);
+    const step = this.step();
+    this.step.set(null);
+    step?.ref.destroy();
+    const dialogRef = this.dialogRef;
+    this.dialogRef = null;
+    dialogRef?.close();
   }
 
   // Escape, the backdrop or the close button ends the step without a result, which the hub reads as cancelled.

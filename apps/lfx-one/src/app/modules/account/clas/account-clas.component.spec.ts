@@ -52,7 +52,10 @@ describe('AccountClasComponent', () => {
       agreements === 'error'
         ? throwError(() => new Error('down'))
         : of({ agreements, identity: { matchedUserIds: agreements.length ? 1 : 0, unmatched: !agreements.length, githubLinked: true } });
-    const open = vi.fn<(content: unknown, config: unknown, overrides: ModalOverrides) => { closed: Observable<undefined> }>(() => ({ closed: of(undefined) }));
+    const open = vi.fn<(content: unknown, config: unknown, overrides: ModalOverrides) => { closed: Observable<undefined>; close: () => void }>(() => ({
+      closed: of(undefined),
+      close: vi.fn(),
+    }));
     TestBed.configureTestingModule({
       providers: [
         provideNoopAnimations(),
@@ -139,7 +142,8 @@ describe('AccountClasComponent', () => {
 
   it('signs in the one "Sign a CLA" dialog, starting with the account search step', async () => {
     const { open } = setup([ICLA]);
-    open.mockReturnValueOnce({ closed: NEVER });
+    const dialog = { closed: NEVER, close: vi.fn() };
+    open.mockReturnValueOnce(dialog);
     const fixture = TestBed.createComponent(StateClasComponent);
     await fixture.whenStable();
     fixture.componentInstance['openSignDialog']();
@@ -152,6 +156,9 @@ describe('AccountClasComponent', () => {
     const host = fixture.debugElement.injector.get(AccountSignDialogHostService);
     expect(host.step()?.component).toBe(AccountClaGroupStepComponent);
     expect(host.step()?.config.data).toEqual({ agreements: [ICLA] });
+
+    fixture.destroy();
+    expect(dialog.close).toHaveBeenCalled();
   });
 
   it('shows the agreements in a table, with the identities link below', async () => {

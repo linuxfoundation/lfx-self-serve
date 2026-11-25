@@ -14,6 +14,7 @@
     prefixIcon="fa-light fa-magnifying-glass"
     autocomplete="off"
     [formControl]="searchForm.controls.query"
+    [combobox]="combobox()"
     data-testid="account-sign-cla-search" />
 
   @if (resultsOpen()) {
@@ -21,7 +22,6 @@
       id="account-sign-cla-results"
       role="listbox"
       aria-label="Matching CLA groups"
-      [attr.aria-activedescendant]="highlightedIndex() >= 0 ? 'account-sign-cla-option-' + options()[highlightedIndex()]?.claGroupId : null"
       class="flex max-h-[256px] flex-col overflow-y-auto rounded-ui-md bg-ui-background-100 shadow-[inset_0_0_0_1px] shadow-ui-neutral-alpha-200"
       data-testid="account-sign-cla-results">
       @if (error()) {
@@ -47,6 +47,12 @@
         </p>
       } @else {
         <!-- The results stay while the next search runs, rather than flashing empty for a slow search. -->
+        @if (loading()) {
+          <p class="m-0 flex flex-row items-center gap-[8px] px-[14px] py-[8px] text-[12px] text-ui-neutral-500" data-testid="account-sign-cla-refreshing">
+            <lfx-ui-spinner [size]="12" label="Searching" />
+            Searching…
+          </p>
+        }
         @let alreadySignedNotes = alreadySignedByGroupId();
         @for (option of options(); track option.claGroupId; let index = $index) {
           @let alreadySigned = alreadySignedNotes.get(option.claGroupId);

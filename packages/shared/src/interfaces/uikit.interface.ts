@@ -209,6 +209,16 @@ export type UiInputType = 'text' | 'email' | 'url' | 'tel' | 'password' | 'searc
 /** Virtual keyboard hint of a uikit text input, the native `inputmode` values. */
 export type UiInputMode = 'none' | 'text' | 'tel' | 'url' | 'email' | 'numeric' | 'decimal' | 'search';
 
+/** Makes a `lfx-ui-input` the combobox of a listbox drawn beside it, so focus stays in the field while arrows move the highlight. */
+export interface UiInputCombobox {
+  /** The listbox's id. */
+  controls: string;
+  /** Whether the listbox shows. */
+  expanded: boolean;
+  /** The highlighted option's id, or `null` when none is. */
+  activeDescendant: string | null;
+}
+
 /** Scroll axis of the uikit scroller: a snapping rail, a fading list, or a free two-axis pane. */
 export type UiScrollerDirection = 'horizontal' | 'vertical' | 'both';
 

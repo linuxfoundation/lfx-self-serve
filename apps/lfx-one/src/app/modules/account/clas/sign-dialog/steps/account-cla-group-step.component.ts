@@ -3,6 +3,7 @@
 
 import { Component, computed, inject, Signal } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
+import { UiInputCombobox } from '@lfx-one/shared/interfaces';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
@@ -26,11 +27,24 @@ export class AccountClaGroupStepComponent extends ClaGroupSelectComponent {
 
   /** The term a finished search found nothing for, or `null` while the typed term is still being searched. */
   protected readonly noMatchQuery: Signal<string | null> = this.initNoMatchQuery();
+  /** Focus stays in the field, so it carries the listbox's state and the highlighted option. */
+  protected readonly combobox: Signal<UiInputCombobox> = this.initCombobox();
 
   protected override onContinue(): void {
     const option = this.selected();
     if (option) this.context.pickedName.set(option.primaryName);
     super.onContinue();
+  }
+
+  private initCombobox(): Signal<UiInputCombobox> {
+    return computed(() => {
+      const highlighted = this.options()[this.highlightedIndex()];
+      return {
+        controls: 'account-sign-cla-results',
+        expanded: this.resultsOpen(),
+        activeDescendant: highlighted ? `account-sign-cla-option-${highlighted.claGroupId}` : null,
+      };
+    });
   }
 
   private initNoMatchQuery(): Signal<string | null> {

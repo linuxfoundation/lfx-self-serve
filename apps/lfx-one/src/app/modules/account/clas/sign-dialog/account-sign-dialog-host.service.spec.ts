@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { createEnvironmentInjector, EnvironmentInjector, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { DynamicDialogConfig } from 'primeng/dynamicdialog';
@@ -87,6 +87,26 @@ describe('AccountSignDialogHostService', () => {
 
     host.open(SignIdentitySelectComponent, config('Select a GitHub account'));
     expect(canClose()).toBe(true);
+  });
+
+  it('closes the dialog and shows no later step once the page goes, even mid-request', async () => {
+    const pageInjector = createEnvironmentInjector(
+      [AccountSignDialogHostService, { provide: UiModalService, useValue: { open } }],
+      TestBed.inject(EnvironmentInjector)
+    );
+    const pageHost = pageInjector.get(AccountSignDialogHostService);
+    pageHost.holdOpenWhile(signal(true));
+    const step = pageHost.open(ClaGroupSelectComponent, config('Sign a CLA'));
+    step.close({ claGroupId: 'cg-1' });
+    await flush();
+    expect(close).not.toHaveBeenCalled();
+
+    pageInjector.destroy();
+    expect(close).toHaveBeenCalled();
+
+    pageHost.open(SignIdentitySelectComponent, config('Select a GitHub account'));
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(pageHost.step()).toBeNull();
   });
 
   it('ends the step without a result when the dialog is dismissed', () => {

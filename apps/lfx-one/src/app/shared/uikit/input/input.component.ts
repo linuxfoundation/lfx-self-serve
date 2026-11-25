@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { _IdGenerator } from '@angular/cdk/a11y';
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject, input, model, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { COMPOSITION_BUFFER_MODE, ControlValueAccessor, NgControl } from '@angular/forms';
-import { UiInputMode, UiInputSize, UiInputType } from '@lfx-one/shared/interfaces';
+import { UiInputCombobox, UiInputMode, UiInputSize, UiInputType } from '@lfx-one/shared/interfaces';
 
 import { UiErrorComponent } from '../error/error.component';
 
@@ -68,6 +68,8 @@ export class UiInputComponent implements ControlValueAccessor {
   public readonly suffixText = input<string>('');
   /** Gives the prefix and suffix a grey well with a divider. */
   public readonly affixStyled = input<boolean, unknown>(false, { transform: booleanAttribute });
+  /** Makes the field the combobox of a listbox beside it: its role, `aria-controls`, `aria-expanded` and `aria-activedescendant`. */
+  public readonly combobox = input<UiInputCombobox | null>(null);
   /** The current text. Supports two-way binding with `[(value)]`. */
   public readonly value = model<string>('');
 

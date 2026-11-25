@@ -63,6 +63,24 @@ describe('Account & Settings "Sign a CLA" steps', () => {
     await new Promise((resolve) => setTimeout(resolve, CLA_GROUP_SEARCH_DEBOUNCE_MS + 50));
     await fixture.whenStable();
     expect(query('account-sign-cla-no-match')?.textContent).toContain('No CLA groups match “kube”.');
+
+    // Shortened below the minimum, then retyped: the earlier answer is no longer the one shown.
+    fixture.componentInstance['searchForm'].controls.query.setValue('ku');
+    await new Promise((resolve) => setTimeout(resolve, CLA_GROUP_SEARCH_DEBOUNCE_MS + 50));
+    fixture.componentInstance['searchForm'].controls.query.setValue('kube');
+    await fixture.whenStable();
+    expect(query('account-sign-cla-no-match')).toBeNull();
+  });
+
+  it('lets the field carry the results list and its highlighted option', async () => {
+    const { fixture, host } = await render(AccountClaGroupStepComponent);
+    fixture.componentInstance['searchForm'].controls.query.setValue('kube');
+    await fixture.whenStable();
+    const field = host.querySelector('[data-testid="ui-input"]') as HTMLInputElement;
+
+    expect(field.getAttribute('role')).toBe('combobox');
+    expect(field.getAttribute('aria-controls')).toBe('account-sign-cla-results');
+    expect(field.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('asks which contributor type, and continues with the one picked', async () => {
