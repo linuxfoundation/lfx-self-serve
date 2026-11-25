@@ -112,6 +112,8 @@ export class CommitteeManageComponent {
   public memberUpdates = signal<MemberPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [], toInvite: [] });
   /** Unconfirmed CSV writes stay uncertain across manual saves, scoped to the target group and email. */
   private readonly uncertainCsvMembers = new Set<string>();
+  /** Confirmed additions still staged must not be relabeled as pre-existing members on retry. */
+  private readonly confirmedCsvMembers = new Set<string>();
   /**
    * uids of members whose delete failed on the most recent flush, owned here (rather than in the
    * members-manager child) so the failure survives the child remounting when the PrimeNG step
@@ -355,8 +357,10 @@ export class CommitteeManageComponent {
     const committeeUid = this.resolveCommitteeWriteUid();
     if (!committeeUid) return;
     const stagedKeys = new Set(updates.toAdd.map((member) => `${committeeUid}:${member.email.trim().toLowerCase()}`));
-    for (const key of this.uncertainCsvMembers) {
-      if (key.startsWith(`${committeeUid}:`) && !stagedKeys.has(key)) this.uncertainCsvMembers.delete(key);
+    for (const markers of [this.uncertainCsvMembers, this.confirmedCsvMembers]) {
+      for (const key of markers) {
+        if (key.startsWith(`${committeeUid}:`) && !stagedKeys.has(key)) markers.delete(key);
+      }
     }
   }
 
@@ -928,7 +932,7 @@ export class CommitteeManageComponent {
       defaultIfEmpty(null),
       concatMap((rows) =>
         rows
-          ? from(rows).pipe(concatMap((row) => this.toCsvOperationResult(committeeId, row)))
+          ? from(rows).pipe(mergeMap((row) => this.toCsvOperationResult(committeeId, row, ownsSave), COMMITTEE_INVITE_CONCURRENCY))
           : from(members.map((member): MemberOperationResult => ({ type: 'add', identifier: member.email, success: false })))
       )
     );
@@ -939,17 +943,19 @@ export class CommitteeManageComponent {
    * in the same request) count as saved; any other outcome stays staged. A saved row is promoted out of the
    * staged list only when its member record is available, otherwise it stays listed and a retry skips it again.
    */
-  private toCsvOperationResult(committeeId: string, row: MemberImportRow): Observable<MemberOperationResult> {
+  private toCsvOperationResult(committeeId: string, row: MemberImportRow, ownsSave: () => boolean): Observable<MemberOperationResult> {
     const result: MemberOperationResult = { type: 'add', identifier: row.normalizedEmail, success: false };
+    if (!ownsSave()) return of(result);
     const key = `${committeeId}:${row.normalizedEmail}`;
     if (row.uncertain || row.unconfirmedAddition) this.uncertainCsvMembers.add(key);
     let saved: MemberOperationResult;
     if (row.status === 'added') {
       this.uncertainCsvMembers.delete(key);
+      this.confirmedCsvMembers.add(key);
       saved = { ...result, success: true, createdMember: row.member, cleanupWarning: !!row.cleanupWarning };
     } else if (row.status === 'skipped') {
       saved = { ...result, success: true };
-      if (row.conflict) {
+      if (row.conflict && !this.confirmedCsvMembers.has(key)) {
         // Presence after a lost response does not prove which request applied their details.
         saved = row.unconfirmedAddition ? { ...saved, unconfirmedAddition: true } : { ...saved, alreadyMember: true };
       }
@@ -961,11 +967,12 @@ export class CommitteeManageComponent {
     // Best effort for both confirmed additions and existing members; keep uncertainty until promotion.
     return this.committeeService.getCommitteeMember(committeeId, row.memberUid).pipe(
       map((member) => {
+        if (!ownsSave()) return result;
         if (!member) return saved;
-        this.uncertainCsvMembers.delete(key);
         return { ...saved, createdMember: member };
       }),
       catchError((error: HttpErrorResponse) => {
+        if (!ownsSave()) return of(result);
         console.error('Existing member lookup failed', { status: error.status });
         return of(saved);
       })

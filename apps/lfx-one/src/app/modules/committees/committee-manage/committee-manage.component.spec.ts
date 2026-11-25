@@ -14,6 +14,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { COMMITTEE_INVITE_CONCURRENCY } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import {
   Committee,
@@ -1128,6 +1129,112 @@ describe('CommitteeManageComponent', () => {
         expect(navigate).not.toHaveBeenCalledWith(['/groups']);
       });
 
+      it.each([
+        ['onDone', null, false],
+        ['onDone', 'synthetic-replacement', true],
+        ['onSubmitAll', null, true],
+        ['onSubmitAll', 'synthetic-replacement', false],
+      ] as const)('rejects late lookup outcomes and buffered rows after ownership loss on %s (%s, error: %s)', async (submit, replacement, fails) => {
+        const lookups = Array.from({ length: COMMITTEE_INVITE_CONCURRENCY + 2 }, () => new Subject<CommitteeMember>());
+        const getCommitteeMember = vi.fn((_group: string, uid: string) => lookups[Number(uid)]);
+        Object.assign(TestBed.inject(CommitteeService), { getCommitteeMember });
+        answerRuns((email) => ({ status: 'added', member: undefined, memberUid: email.split('@')[0] }));
+        const staged = lookups.map((_, index) => csv(`${index}@example.com`));
+        const component = await setupPending(staged, {}, true);
+        if (submit === 'onDone') component.mode.set('create');
+        const toast = TestBed.inject(MessageService).add;
+        component[submit]();
+        expect(getCommitteeMember).toHaveBeenCalledTimes(COMMITTEE_INVITE_CONCURRENCY);
+        importOwner.set(replacement);
+        for (const lookup of lookups.slice(0, COMMITTEE_INVITE_CONCURRENCY)) {
+          if (fails) {
+            lookup.error(new HttpErrorResponse({ status: 503 }));
+          } else {
+            lookup.next(createdMember);
+            lookup.complete();
+          }
+        }
+        expect(getCommitteeMember).toHaveBeenCalledTimes(COMMITTEE_INVITE_CONCURRENCY);
+        expect(component.memberUpdates().toAdd).toEqual(staged);
+        expect(component.submitting()).toBe(false);
+        expect(navigate).not.toHaveBeenCalledWith(['/groups']);
+        expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Operation Failed' }));
+        expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Success' }));
+      });
+
+      it('bounds member lookups while keeping later notification groups and invitations sequential', async () => {
+        const lookups = Array.from({ length: COMMITTEE_INVITE_CONCURRENCY + 2 }, () => new Subject<CommitteeMember>());
+        const getCommitteeMember = vi.fn((_group: string, uid: string) => lookups[Number(uid)]);
+        const createCommitteeInvite = vi.fn(() => of({ uid: 'invite' }));
+        Object.assign(TestBed.inject(CommitteeService), { getCommitteeMember, createCommitteeInvite });
+        answerRuns((email) => (email === 'later@example.com' ? {} : { member: undefined, memberUid: email.split('@')[0] }));
+        const component = await setupPending(
+          [...lookups.map((_, index) => csv(`${index}@example.com`)), csv('later@example.com', { createOptions: { skipNotification: false } })],
+          { toInvite: [{ invitee_email: 'invited@example.com' }] },
+          true
+        );
+        component.onSubmitAll();
+        expect(getCommitteeMember).toHaveBeenCalledTimes(COMMITTEE_INVITE_CONCURRENCY);
+        expect(runStaged).toHaveBeenCalledTimes(1);
+        expect(createCommitteeInvite).not.toHaveBeenCalled();
+        const finishLookup = (index: number) => {
+          lookups[index].next({ ...createdMember, uid: `${index}`, email: `${index}@example.com` });
+          lookups[index].complete();
+        };
+        // Finish out of order: each completion releases exactly one slot.
+        finishLookup(4);
+        expect(getCommitteeMember).toHaveBeenCalledTimes(COMMITTEE_INVITE_CONCURRENCY + 1);
+        finishLookup(5);
+        expect(getCommitteeMember).toHaveBeenCalledTimes(COMMITTEE_INVITE_CONCURRENCY + 2);
+        for (const index of [0, 1, 2, 3]) finishLookup(index);
+        expect(runStaged).toHaveBeenCalledTimes(1);
+        expect(createCommitteeInvite).not.toHaveBeenCalled();
+        expect(component.submitting()).toBe(true);
+        finishLookup(6);
+        expect(runStaged).toHaveBeenCalledTimes(2);
+        expect(createCommitteeInvite).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, { invitee_email: 'invited@example.com' });
+        expect(component.submitting()).toBe(false);
+        expect(navigate).toHaveBeenCalledWith(['/groups']);
+      });
+
+      it.each(['missing-uid', 'failed-lookup'] as const)(
+        'remembers confirmed additions still staged after %s without claiming their details were not applied',
+        async (lookup) => {
+          const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+          try {
+            const getCommitteeMember = vi.fn(() => throwError(() => new HttpErrorResponse({ status: 503 })));
+            Object.assign(TestBed.inject(CommitteeService), { getCommitteeMember });
+            let attempt = 0;
+            runStaged.mockImplementation((input: MemberImportStagedRunInput) => {
+              const firstAttempt = attempt++ === 0;
+              return of(
+                input.members.map(({ payload }) => {
+                  if (payload.email === 'failed@example.com') return stagedRow(payload.email, { status: 'failed' });
+                  return stagedRow(payload.email, {
+                    status: firstAttempt ? 'added' : 'skipped',
+                    conflict: !firstAttempt,
+                    ...(lookup === 'failed-lookup' ? { memberUid: 'added-uid' } : {}),
+                  });
+                })
+              );
+            });
+            const component = await setupPending([csv('ada@example.com'), csv('failed@example.com')]);
+            const toast = TestBed.inject(MessageService).add;
+            component.onSubmitAll();
+            expect(component.memberUpdates().toAdd).toHaveLength(2);
+            vi.mocked(toast).mockClear();
+            component.onSubmitAll();
+            expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Already Members' }));
+            expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Unconfirmed Additions' }));
+            expect(component['confirmedCsvMembers'].size).toBe(1);
+            component.onMemberUpdatesChange({ ...component.memberUpdates(), toAdd: [csv('failed@example.com')] });
+            expect(component['confirmedCsvMembers'].size).toBe(0);
+          } finally {
+            errorLog.mockRestore();
+          }
+        }
+      );
+
       it.each([true, false])('looks up an added member without a body, preserving success when lookup succeeds: %s', async (lookupSucceeds) => {
         const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const member = { ...createdMember, uid: 'added-uid' };
@@ -1285,9 +1392,58 @@ describe('CommitteeManageComponent', () => {
         expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Already Members' }));
         expect(revokeCommitteeInvite).not.toHaveBeenCalled();
         expect(navigate).toHaveBeenCalledWith(['/groups']);
-        // A settled row no longer carries uncertainty into any later save.
-        component[submit]();
-        expect(runStaged.mock.calls[2][0].members[0].uncertain).toBeUndefined();
+        // A successful lookup cannot clear uncertainty while the row is still staged.
+        expect(component['uncertainCsvMembers'].size).toBe(1);
+        component.onMemberUpdatesChange({ ...component.memberUpdates(), toAdd: [] });
+        expect(component['uncertainCsvMembers'].size).toBe(0);
+      });
+
+      it('retains uncertainty after a successful lookup when step navigation prevents promotion', async () => {
+        queryParamMap$.next(convertToParamMap({ step: '4' }));
+        TestBed.overrideComponent(CommitteeManageComponent, {
+          set: {
+            template: `@if (isLastStep()) {
+              <lfx-committee-members-manager [committeeId]="committeeId()" [memberUpdates]="memberUpdates()"
+                [isEditMode]="isEditMode()" [submitting]="submitting()" (memberUpdatesChange)="onMemberUpdatesChange($event)" />
+            }`,
+          },
+        });
+        const lookup = new Subject<CommitteeMember>();
+        const getCommitteeMember = vi.fn(() => lookup.asObservable());
+        Object.assign(TestBed.inject(CommitteeService), { getCommitteeMember });
+        runStaged.mockImplementation((input: MemberImportStagedRunInput) =>
+          of(
+            input.members.map(({ payload, uncertain }) =>
+              stagedRow(
+                payload.email,
+                payload.email === 'failed@example.com'
+                  ? { status: 'failed' }
+                  : { status: 'skipped', conflict: true, unconfirmedAddition: uncertain ?? true, memberUid: 'existing-uid' }
+              )
+            )
+          )
+        );
+        const fixture = TestBed.createComponent(CommitteeManageComponent);
+        const component = fixture.componentInstance;
+        component.memberUpdates.set({ toAdd: [csv('ada@example.com'), csv('failed@example.com')], toUpdate: [], toDelete: [], toInvite: [] });
+        component.form.patchValue({ name: 'Example Group', category: 'Technical Steering Committee' });
+        await fixture.whenStable();
+        component.onSubmitAll();
+        queryParamMap$.next(convertToParamMap({ step: '3' }));
+        await fixture.whenStable();
+        expect(component['membersManager']()).toBeUndefined();
+        lookup.next({ ...createdMember, uid: 'existing-uid' });
+        lookup.complete();
+        expect(component.memberUpdates().toAdd).toHaveLength(2);
+        expect(component['uncertainCsvMembers'].size).toBe(1);
+
+        queryParamMap$.next(convertToParamMap({ step: '4' }));
+        await fixture.whenStable();
+        getCommitteeMember.mockReturnValue(of({ ...createdMember, uid: 'existing-uid' }));
+        component.onSubmitAll();
+        expect(runStaged.mock.calls[1][0].members[0].uncertain).toBe(true);
+        expect(component.memberUpdates().toAdd.map((member) => member.email)).toEqual(['failed@example.com']);
+        expect(component['uncertainCsvMembers'].size).toBe(0);
       });
 
       it.each(['missing-uid', 'failed-lookup'] as const)('keeps unconfirmed additions uncertain while staged (%s)', async (lookup) => {
