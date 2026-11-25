@@ -44,7 +44,6 @@ import {
   HEALTH_SCORE_LABELS,
   PD_HEALTH_TAG,
   PD_NON_LF_MARKER,
-  PD_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS,
   PD_VALID_DRAWER_CARD_KEYS,
   lfxColors,
   PD_METRIC_OPTIONS,
@@ -123,8 +122,8 @@ export class OrgProjectDetailComponent {
   private readonly ecoTrackRef = viewChild<ElementRef<HTMLElement>>('ecosystemTrack');
 
   protected readonly accountContext = inject(AccountContextService);
-  // All employee view (epic #5845, #5849): the Ecosystem Influence cards and the ecosystem leaderboard rows keep their
-  // numbers and charts but open nothing. UX only; the BFF answers 403 for the same panels.
+  // All employee view (epic #5845, #5849): every influence card (Technical and Ecosystem) and the ecosystem leaderboard rows keep
+  // their numbers and charts but open nothing. UX only; the BFF answers 403 for the same panels.
   protected readonly isEmployeeView = inject(OrgLensViewModeService).isEmployeeView;
 
   /** Whether the ecosystem leaderboard rows open their score breakdown; false in the all employee view. Bound by the template. */
@@ -534,9 +533,9 @@ export class OrgProjectDetailComponent {
     });
   }
 
-  /** False for a card whose detail panel the all employee view blocks: every card outside the Technical Influence section. */
-  protected canOpenCard(key: string): boolean {
-    return !this.isEmployeeView() || PD_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS.has(key);
+  /** False for every card in the all employee view: no card detail panel opens there, Technical or Ecosystem Influence alike. */
+  protected canOpenCard(): boolean {
+    return !this.isEmployeeView();
   }
 
   /** False for the ecosystem leaderboard row panel in the all employee view. */
@@ -545,7 +544,7 @@ export class OrgProjectDetailComponent {
   }
 
   protected openCardDetail(card: InfluenceCardVm): void {
-    if (!this.canOpenCard(card.key)) return;
+    if (!this.canOpenCard()) return;
     this.selectedCardKey.set(card.key);
     this.drawerOpen.set(true);
     this.resetRoster();
@@ -1030,7 +1029,7 @@ export class OrgProjectDetailComponent {
       caption: card.caption,
       statLabel: card.caption.suffix.trim().replace(/\.$/, ''),
       testId: `project-detail-${group}-card-${card.key}`,
-      openable: this.canOpenCard(card.key),
+      openable: this.canOpenCard(),
     };
   }
 

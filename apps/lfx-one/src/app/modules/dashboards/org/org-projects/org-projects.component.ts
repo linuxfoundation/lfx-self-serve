@@ -240,10 +240,15 @@ export class OrgProjectsComponent {
   private readonly addProjectsFormValue = toSignal(this.addProjectsForm.valueChanges, { initialValue: this.addProjectsForm.getRawValue() });
   /** Project Detail links keep the organization scope picked on another page (lfx-self-serve-ops#1219). */
   protected readonly projectDetailQueryParams: Signal<Params> = computed(() => orgScopeQueryParams(this.queryParamMap()));
-  protected readonly contributorsDrawerQueryParams: Signal<Params> = computed(() => ({
-    ...this.projectDetailQueryParams(),
-    [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY,
-  }));
+  // The all employee view opens no card panel on Project detail, so the contributors count there links to the page alone.
+  protected readonly contributorsDrawerQueryParams: Signal<Params> = computed(() =>
+    this.isEmployeeView()
+      ? this.projectDetailQueryParams()
+      : {
+          ...this.projectDetailQueryParams(),
+          [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY,
+        }
+  );
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);

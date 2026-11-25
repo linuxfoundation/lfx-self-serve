@@ -7,7 +7,6 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import * as shared from '@lfx-one/shared/constants';
 import {
   ORG_LENS_EMPLOYEE_VIEW_ANALYTICS_OPT_INS,
   ORG_LENS_EMPLOYEE_VIEW_ECOSYSTEM_CARD_KEYS,
@@ -69,17 +68,14 @@ describe('the register itself', () => {
     }
   });
 
-  it('allows only public code contribution data, and only on the Technical Influence panels', () => {
-    const allowed = ORG_LENS_EMPLOYEE_VIEW_REGISTER.filter((entry) => entry.verdict === 'allowed');
+  it('allows no personal data on any page: every Project detail card, Technical or Ecosystem Influence, is blocked', () => {
+    expect(ORG_LENS_EMPLOYEE_VIEW_REGISTER.filter((entry) => entry.verdict === 'allowed')).toEqual([]);
+    for (const key of ORG_LENS_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS) {
+      const entry = ORG_LENS_EMPLOYEE_VIEW_REGISTER.find((row) => row.id === `project-detail.technical.${key}`);
 
-    expect(allowed.length).toBeGreaterThan(0);
-    for (const entry of allowed) {
-      expect(entry.page, `${entry.id} is allowed outside Project detail`).toBe('project-detail');
-      expect(entry.publicBasis, `${entry.id} needs a publicBasis`).toBeTruthy();
-      expect(['github', 'insights', 'cdp']).toContain(entry.source);
-      expect(entry.endpoint, `${entry.id} is not a technical card`).toMatch(
-        new RegExp(`cards/(${ORG_LENS_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS.join('|')})|cards/\\{`)
-      );
+      expect(entry, `missing row for technical card ${key}`).toBeDefined();
+      expect(entry?.verdict).toBe('count-only');
+      expect(entry?.enforcement).toBe('blocked-403');
     }
   });
 
@@ -243,13 +239,5 @@ describe('project detail cards', () => {
 
     expect(start).toBeGreaterThan(-1);
     expect(keys.sort()).toEqual([...ORG_LENS_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS, ...ORG_LENS_EMPLOYEE_VIEW_ECOSYSTEM_CARD_KEYS].sort());
-  });
-
-  it('matches the technical key set the project detail story ships, once it is merged', () => {
-    const shipped = (shared as Record<string, unknown>)['PD_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS'] as ReadonlySet<string> | undefined;
-
-    if (shipped) {
-      expect([...shipped].sort()).toEqual([...ORG_LENS_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS].sort());
-    }
   });
 });

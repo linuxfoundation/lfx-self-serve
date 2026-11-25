@@ -141,9 +141,3 @@ export const PD_STACKED_PALETTE: string[] = [
   lfxColors.emerald[300],
   lfxColors.gray[400],
 ];
-
-/**
- * Technical Influence card keys, the only project detail card panels the all employee view may open (epic #5845, #5849):
- * public GitHub data. Everything else, every Ecosystem Influence card, is blocked, so a new card is blocked by default.
- */
-export const PD_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS: ReadonlySet<string> = new Set(['maintainers', 'contributors', 'commits', 'pull-requests', 'avg-merge-time']);

@@ -33,7 +33,6 @@ export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS_BY_PAGE: Readonly<Record<strin
     /^\/projects\/[^/]+\/(hero|influence|trend)\/?$/i,
     /^\/projects\/[^/]+\/leaderboard\/(technical|ecosystem)\/?$/i,
     /^\/projects\/[^/]+\/leaderboard\/technical\/organizations\/[^/]+\/?$/i,
-    /^\/projects\/[^/]+\/cards\/[^/]+(\/roster)?\/?$/i,
   ],
   // contributions
   contributions: [/^\/contributions\/?$/i],

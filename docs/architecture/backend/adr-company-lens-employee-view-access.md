@@ -17,7 +17,7 @@ For this release the BFF derives the entitlement at request time, as a third qua
 
 - A tuple needs a writer: something must create and revoke `b2b_org:<uid>#employee` when a validated email or work-history entry changes. Neither source emits an event today, so a writer would be a poller or a sync job.
 - The inputs are self-asserted (work history) or non-expiring (verified email); a stored tuple would make a soft signal look like a hard grant and outlive it.
-- The view exposes aggregates and one reviewed exception: Project detail's five Technical Influence panels show contributor, maintainer and commit author names, avatars and GitHub usernames (CDP profile data, approved by the product owner on 2026-11-18; recorded in the personal data register). Everything else is counts and company-level totals, with no email address anywhere. That bounds the cost of the soft signal while the proof is derived, and the exception is the part the architect sign-off must accept.
+- The view exposes aggregates only: no names, avatars or email addresses. Every Project detail card panel, Technical and Ecosystem Influence alike, is blocked, so the soft signal never reaches a person's data. A later update will reopen some panels under a different access model; what they would show is data equal to LFX Insights, which is publicly visible, and the architect sign-off for that update decides the model. That bounds the cost of the soft signal while the proof is derived.
 
 ## Consequences
 

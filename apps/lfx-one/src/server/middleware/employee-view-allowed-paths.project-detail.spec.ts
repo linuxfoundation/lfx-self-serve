@@ -14,13 +14,18 @@ describe('all employee view allow-list: project-detail', () => {
     '/projects/linux/leaderboard/technical',
     '/projects/linux/leaderboard/ecosystem',
     '/projects/linux/leaderboard/technical/organizations/o1',
-    '/projects/linux/cards/k1',
-    '/projects/linux/cards/k1/roster',
   ])('allows %s', (path) => {
     expect(isAllowed(path)).toBe(true);
   });
 
-  it.each(['/projects/linux/leaderboard/ecosystem/organizations/o1', '/people/all', '/projects/linux/other'])('refuses %s', (path) => {
+  it.each([
+    '/projects/linux/leaderboard/ecosystem/organizations/o1',
+    '/projects/linux/cards/maintainers',
+    '/projects/linux/cards/maintainers/roster',
+    '/projects/linux/cards/board-members',
+    '/people/all',
+    '/projects/linux/other',
+  ])('refuses %s', (path) => {
     expect(isAllowed(path)).toBe(false);
   });
 });

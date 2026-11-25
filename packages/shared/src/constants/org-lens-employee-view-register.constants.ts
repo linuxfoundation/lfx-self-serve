@@ -9,19 +9,18 @@ import type {
   OrgLensEmployeeViewReviewedShape,
 } from '../interfaces/org-lens-employee-view-register.interface';
 import { ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES } from './org-lens-view-mode.constants';
-import { PD_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS } from './org-lens-project-detail.constants';
 
-/** Fields every Technical Influence row shares: allowed, public code contribution data, product owner approved the CDP name and avatar (2026-11-18). */
+/** Fields every Technical Influence card row shares: the panel is blocked in the employee view (the card keeps its count and chart). */
 const TECHNICAL_ROW = {
   page: 'project-detail',
   source: 'insights',
-  verdict: 'allowed',
-  enforcement: 'not-in-field-list',
+  verdict: 'count-only',
+  enforcement: 'blocked-403',
   status: 'enforced',
 } as const;
 
-/** Technical Influence card keys, the only project detail panels that may open (mirrors `PD_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS` from #5849). */
-export const ORG_LENS_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS: readonly string[] = [...PD_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS];
+/** Technical Influence card keys: every one is blocked in the employee view, like the Ecosystem Influence cards (their rosters list people by name). */
+export const ORG_LENS_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS: readonly string[] = ['maintainers', 'contributors', 'commits', 'pull-requests', 'avg-merge-time'];
 
 /** Ecosystem Influence card keys: every one is blocked in the employee view (their rosters list people by name). */
 export const ORG_LENS_EMPLOYEE_VIEW_ECOSYSTEM_CARD_KEYS: readonly string[] = [
@@ -234,7 +233,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     note: 'The CSV is built in the browser from the anonymised payload and writes counts only. There is no server export.',
   },
 
-  // ─── Project detail: technical influence (allowed) ─────────────────────────
+  // ─── Project detail: technical influence (blocked) ─────────────────────────
   {
     ...TECHNICAL_ROW,
     id: 'project-detail.technical.maintainers',
@@ -242,8 +241,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     endpoint: 'GET /api/orgs/:orgUid/lens/projects/:slug/cards/maintainers[/roster]',
     field: 'rows[].cells[].person.name / avatarUrl / initials, role start and end dates',
     example: "name: 'Ada Example'",
-    publicBasis: 'Maintainer role on a public LF project, shown on LFX Insights without login.',
-    note: 'The name is the CDP maintainer name and the avatar comes from the project people table, not necessarily the public GitHub profile. Approved by the product owner (2026-11-18): the CDP profile may be shown here.',
+    note: 'Blocked by `blockEmployeeView` and by the path allow-list; the client greys the card. The card keeps its count and chart. A later access model may reopen it.',
   },
   {
     ...TECHNICAL_ROW,
@@ -252,8 +250,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     endpoint: 'GET /api/orgs/:orgUid/lens/projects/:slug/cards/contributors[/roster]',
     field: 'rows[].cells[].person.name / avatarUrl / initials, username, first and last activity, contributions',
     example: "username: 'example-handle'",
-    publicBasis: 'Public GitHub username and contribution counts, on LFX Insights without login.',
-    note: 'The GitHub username is public; the display name and avatar come from the CDP identity, which the product owner approved showing (2026-11-18).',
+    note: 'Blocked by `blockEmployeeView` and by the path allow-list; the client greys the card. The card keeps its count and chart. A later access model may reopen it.',
   },
   {
     ...TECHNICAL_ROW,
@@ -262,8 +259,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     endpoint: 'GET /api/orgs/:orgUid/lens/projects/:slug/cards/commits[/roster]',
     field: 'rows[].cells[].person.name / avatarUrl / initials, commit date',
     example: "name: 'Ada Example'",
-    publicBasis: 'Commit author on a public repository.',
-    note: 'Commit author names are public in git history.',
+    note: 'Blocked by `blockEmployeeView` and by the path allow-list; the client greys the card. The card keeps its count and chart. A later access model may reopen it.',
   },
   {
     ...TECHNICAL_ROW,
@@ -272,8 +268,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     endpoint: 'GET /api/orgs/:orgUid/lens/projects/:slug/cards/pull-requests[/roster]',
     field: 'rows[].cells[].person.name / avatarUrl / initials, opened date',
     example: "name: 'Ada Example'",
-    publicBasis: 'Pull request author on a public repository.',
-    note: 'Pull request authors are public on the repository.',
+    note: 'Blocked by `blockEmployeeView` and by the path allow-list; the client greys the card. The card keeps its count and chart. A later access model may reopen it.',
   },
   {
     ...TECHNICAL_ROW,
@@ -282,8 +277,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     endpoint: 'GET /api/orgs/:orgUid/lens/projects/:slug/cards/avg-merge-time[/roster]',
     field: 'rows[].cells[].person.name / avatarUrl / initials, merge time',
     example: "name: 'Ada Example'",
-    publicBasis: 'Pull request author and merge time on a public repository.',
-    note: 'Public pull request data.',
+    note: 'Blocked by `blockEmployeeView` and by the path allow-list; the client greys the card. The card keeps its count and chart. A later access model may reopen it.',
   },
   {
     id: 'project-detail.technical.free-text',
@@ -293,12 +287,10 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     field: 'rows[].cells[].text (commit message, PR title)',
     example: "text: 'Fix cache eviction'",
     source: 'github',
-    verdict: 'allowed',
-    enforcement: 'stripped',
-    strippedBy: 'shared-list',
+    verdict: 'count-only',
+    enforcement: 'blocked-403',
     status: 'enforced',
-    publicBasis: 'Commit messages and PR titles are public on the repository.',
-    note: 'The shared `stripPersonalFields` replaces an address inside a message (Signed-off-by lines) and keeps valid technical text; the project detail controller runs no second pass.',
+    note: 'Blocked by `blockEmployeeView` and by the path allow-list; the client greys the card. The card keeps its count and chart. A later access model may reopen it.',
   },
 
   // ─── Project detail: ecosystem influence (blocked) ─────────────────────────
@@ -314,7 +306,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
       verdict: 'count-only',
       enforcement: 'blocked-403',
       status: 'enforced',
-      note: 'Every card key outside the technical set answers 403, so a card added later is blocked by default. The card keeps its count and chart.',
+      note: 'Every card key answers 403, so a card added later is blocked by default. The card keeps its count and chart.',
     })
   ),
   {

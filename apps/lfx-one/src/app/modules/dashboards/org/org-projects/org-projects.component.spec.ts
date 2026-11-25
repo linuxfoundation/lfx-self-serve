@@ -126,6 +126,16 @@ describe('OrgProjectsComponent', () => {
 
     expect(has('org-projects-employee-filter')).toBe(false);
   });
+
+  it('links the contributors count to the project detail page alone in the all employee view, since no card panel opens there', async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance['contributorsDrawerQueryParams']()).toMatchObject({ card: 'contributors' });
+
+    employeeView.set(true);
+
+    expect(fixture.componentInstance['contributorsDrawerQueryParams']()).not.toHaveProperty('card');
+  });
 });
 
 const makeProject = (name: string, overrides: Partial<OrgLensProject> = {}): OrgLensProject => ({

@@ -642,14 +642,14 @@ describe('OrgProjectDetailComponent — all employee view', () => {
 
   const card = (key: string) => ({ key, title: key }) as never;
 
-  it.each(['maintainers', 'contributors', 'commits', 'pull-requests', 'avg-merge-time'])('opens the %s technical panel', (key) => {
-    expect(component['canOpenCard'](key)).toBe(true);
+  it.each(['maintainers', 'contributors', 'commits', 'pull-requests', 'avg-merge-time'])('opens nothing for the %s technical card', (key) => {
+    expect(component['canOpenCard']()).toBe(false);
     component['openCardDetail'](card(key));
-    expect(component['drawerOpen']()).toBe(true);
+    expect(component['drawerOpen']()).toBe(false);
   });
 
   it.each(['collaboration', 'meeting-attendance', 'board-members', 'a-future-card'])('opens nothing for the %s ecosystem card', (key) => {
-    expect(component['canOpenCard'](key)).toBe(false);
+    expect(component['canOpenCard']()).toBe(false);
     component['openCardDetail'](card(key));
     expect(component['drawerOpen']()).toBe(false);
   });
@@ -664,7 +664,7 @@ describe('OrgProjectDetailComponent — all employee view', () => {
 
   it('leaves every card and row panel open in the full view', () => {
     employeeView.set(false);
-    expect(component['canOpenCard']('board-members')).toBe(true);
+    expect(component['canOpenCard']()).toBe(true);
     expect(component['canOpenLeaderboardDetail']('ecosystem')).toBe(true);
   });
 });
