@@ -268,9 +268,12 @@ export class Member360ResultComponent {
   private initRows() {
     return computed<Member360DisplayRow[]>(() => {
       const envelope = this.envelope();
+      const projectName = envelope.lfx_project_name ?? envelope.project_name;
       return rankMember360Rows(envelope.tabs.member_ranking, this.filterValues(), this.sortKey(), this.direction()).map((member) => ({
         member,
         key: envelope.tabs.member_ranking.indexOf(member),
+        tierLabel: member360TierGroupLabel(member.membership_tier, projectName),
+        actionText: member360ActionText({ recommended_action: member.recommended_next_action }),
         ...this.trendState(member, envelope),
         heat: MEMBER_360_HEAT_ORDER.map((key) => {
           const value = member[CATEGORY_SCORE_KEYS[key]];
