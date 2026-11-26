@@ -190,16 +190,36 @@ describe('OrgPeopleTraineesService warehouse pairs (lfx-self-serve#6229)', () =>
     }
   });
 
-  it('ships slim date rows keyed on their pair, the certificate id standing in for a missing course id, and drops a row of no pair', async () => {
+  it('ships date rows keyed on their pair, the certificate id standing in for a missing course id, and drops a row of no pair', async () => {
     const { details } = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
-    expect(details).toEqual([
+    expect(details.map(({ personKey, courseId, status, activityTs }) => ({ personKey, courseId, status, activityTs }))).toEqual([
       { personKey: 'person-one', courseId: 'course-one', status: 'Certified', activityTs: '2026-04-12T10:30:00.000Z' },
       { personKey: 'person-one', courseId: 'course-one', status: 'Enrolled', activityTs: '2026-05-01T08:00:00.000Z' },
       { personKey: 'person-two', courseId: 'course-one', status: 'Enrolled', activityTs: '2026-03-01T08:00:00.000Z' },
       { personKey: 'person-two', courseId: 'enroll-two', status: 'Enrolled', activityTs: '2026-02-01T08:00:00.000Z' },
     ]);
     expect(JSON.stringify(details)).not.toMatch(/cert-one|enroll-one-again|course-orphan/);
+  });
+
+  it('keeps the legacy course attributes on every date row, copied from its pair, for clients loaded before pairs were served', async () => {
+    const { details } = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
+
+    expect(details[0]).toEqual({
+      personKey: 'person-one',
+      courseId: 'course-one',
+      status: 'Certified',
+      activityTs: '2026-04-12T10:30:00.000Z',
+      productType: 'Certification',
+      courseName: 'Project Fundamentals',
+      courseLevel: 'Beginner',
+      courseFormat: null,
+      foundationId: 'foundation-one',
+      foundationName: 'Foundation One',
+      projectId: 'project-one',
+      projectName: 'Project One',
+    });
+    expect(details[3]).toEqual(expect.objectContaining({ courseId: 'enroll-two', productType: 'Training', courseName: null, projectId: null }));
   });
 
   it('drops a date row with an unknown status or no parseable date', async () => {
@@ -495,7 +515,7 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
     const [outside, binds] = callFor((query) => query.includes('ORG_TRAINING_OUTSIDE_LEARNERS'));
     expect(outside).toMatch(/SELECT\s+o\.LEARNER_NAME,\s+p\.IS_CERTIFIED\s+FROM/);
     expect(outside).toMatch(
-      /FROM ANALYTICS\.PLATINUM_LFX_ONE\.ORG_PEOPLE_TRAINING_PAIRS\s+WHERE ACCOUNT_ID = \?\s+AND TIME_RANGE = \?\s+AND NOT IS_ON_PEOPLE_LIST\s+AND PERSON_KEY NOT IN \(\s*SELECT PERSON_KEY\s+FROM ANALYTICS\.PLATINUM_LFX_ONE\.ORG_PEOPLE_TRAINING_PAIRS\s+WHERE ACCOUNT_ID = \?\s+AND TIME_RANGE = \?\s+AND IS_ON_PEOPLE_LIST/
+      /FROM ANALYTICS\.PLATINUM_LFX_ONE\.ORG_PEOPLE_TRAINING_PAIRS\s+WHERE ACCOUNT_ID = \?\s+AND TIME_RANGE = \?\s+AND NOT IS_ON_PEOPLE_LIST\s+AND PERSON_KEY NOT IN \(\s*SELECT PERSON_KEY\s+FROM ANALYTICS\.PLATINUM_LFX_ONE\.ORG_PEOPLE_TRAINING_PAIRS\s+WHERE ACCOUNT_ID = \?\s+AND TIME_RANGE = \?\s+AND IS_ON_PEOPLE_LIST\s+AND PERSON_KEY IS NOT NULL\s*\)/
     );
     expect(outside).toContain('BOOLOR_AGG(IS_CERTIFIED) AS IS_CERTIFIED');
     expect(outside).not.toMatch(/\b(EMAIL|TITLE|COURSE_ID|COURSE_NAME|PROJECT_ID|FOUNDATION_ID|COURSE_OR_CERT_ID|ACTIVITY_TS)\b/);

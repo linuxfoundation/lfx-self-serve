@@ -380,6 +380,28 @@ describe('TraineesComponent', () => {
       });
     });
 
+    it('shows the load error with Retry for a response without pairs from a server on the previous release, and recovers on retry', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getTrainees.mockImplementation((_orgUid: string, range: OrgLensTimeRange) => {
+        const legacy: Partial<OrgTraineesResponse> = { ...responseFor(range) };
+        delete legacy.pairs;
+        return of(legacy as OrgTraineesResponse);
+      });
+      await mount('/?tab=training');
+
+      expect(el().querySelector('[data-testid="org-people-trainees-error"]')).not.toBeNull();
+      expect(listed()).toEqual([]);
+      expect(error).toHaveBeenCalled();
+
+      getTrainees.mockImplementation((_orgUid: string, range: OrgLensTimeRange) => of(responseFor(range)));
+      (el().querySelector('[data-testid="org-people-trainees-error"] button') as HTMLElement).click();
+      await settle();
+
+      expect(el().querySelector('[data-testid="org-people-trainees-error"]')).toBeNull();
+      expect(listed().sort()).toEqual(['p-1', 'p-2', 'p-3']);
+      error.mockRestore();
+    });
+
     it('keeps a URL filter with no rows in the range applied and shows the zeros the stats call returns, not an error', async () => {
       getTrainingStats.mockImplementation((_orgUid: string, query: OrgTrainingStatsQuery) =>
         of({

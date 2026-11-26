@@ -335,6 +335,7 @@ export const VALKEY_CACHE = {
     // and `v10` two integer counts (`formerOnPeopleList`, no keys: a few bytes), both carried over unmeasured like v6-v8 (v8 only
     // drops outside learners already counted through people-list rows). Re-measure it on the
     // largest organization after lf-dbt enables outside learners (rollout step 3).
+    // `v11` replaces the detail rows with pairs and date rows; the 9 MiB cap is carried over unmeasured.
     'org-lens-sf:v1:people-trainees:v11': 9 * 1_048_576,
     // Training / Trainees shared-view caches (lfx-self-serve#4285), each far under 1 MiB: measured maximum × 1.25 rounds up to
     // 1 MiB (the default's size), and each is an explicit entry so its measurement lives here. Measured 2026-11-03 on

@@ -471,6 +471,11 @@ export class TraineesComponent {
             return of({ ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange });
           }
           return this.dataService.getTrainees(orgUid, timeRange).pipe(
+            map((response) => {
+              // A server still on the previous release sends no pairs; show Retry rather than an empty table.
+              if (!Array.isArray(response?.pairs)) throw new Error('Trainees response has no pairs');
+              return response;
+            }),
             tap(() => this.loadingState.set(false)),
             catchError((error: unknown) => {
               console.error('Failed to load trainees', error);

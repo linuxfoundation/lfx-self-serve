@@ -44,6 +44,9 @@ export class OrgPeopleTraineesService {
   }
 
   /**
+   * Returns the range's trainees, their warehouse-resolved training pairs, the date rows for the expanded sub-table, and
+   * the learners outside the people list.
+   *
    * The cards come from the shared stats call and the dropdowns from /filter-options, so the server ships neither here.
    *
    * Cached in the shared Valkey entry for an `org-grant` caller only; a caller the roster does not list and the authorizer
@@ -111,10 +114,28 @@ export class OrgPeopleTraineesService {
         : []
     );
 
+    const pairByKey = new Map<string, OrgTraineePair>(pairs.map((pair) => [pairKeyOf(pair.personKey, pair.courseId), pair]));
     const details: OrgTraineeDetailRow[] = dateRows.flatMap<OrgTraineeDetailRow>((row) => {
       const activityTs = toIsoTimestamp(row.ACTIVITY_TS);
-      if (!activityTs || !listedKeys.has(row.PERSON_KEY) || (row.STATUS !== 'Enrolled' && row.STATUS !== 'Certified')) return [];
-      return [{ personKey: row.PERSON_KEY, courseId: row.COURSE_KEY, status: row.STATUS, activityTs }];
+      const pair = pairByKey.get(pairKeyOf(row.PERSON_KEY, row.COURSE_KEY));
+      if (!activityTs || !pair || (row.STATUS !== 'Enrolled' && row.STATUS !== 'Certified')) return [];
+      return [
+        {
+          personKey: row.PERSON_KEY,
+          courseId: row.COURSE_KEY,
+          status: row.STATUS,
+          activityTs,
+          // Remove after one release: tabs loaded before pairs were served still count and filter from these.
+          productType: pair.productType,
+          courseName: pair.courseName,
+          courseLevel: pair.courseLevel,
+          courseFormat: pair.courseFormat,
+          foundationId: pair.foundationId,
+          foundationName: pair.foundationName,
+          projectId: pair.projectId,
+          projectName: pair.projectName,
+        },
+      ];
     });
 
     return {
@@ -198,6 +219,7 @@ export class OrgPeopleTraineesService {
             WHERE ACCOUNT_ID = ?
               AND TIME_RANGE = ?
               AND IS_ON_PEOPLE_LIST
+              AND PERSON_KEY IS NOT NULL
           )
         GROUP BY PERSON_KEY
       ) p

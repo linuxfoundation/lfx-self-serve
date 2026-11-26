@@ -19,27 +19,53 @@ export type OrgTraineeSortDirection = 1 | -1;
  */
 export type OrgTraineesEmptyState = 'filters' | 'people-list-search' | 'people-list-range' | 'range' | 'none';
 
+/** One enrollment or certificate row of a listed pair, dated in the range; the expanded row reads its dates. */
 export interface OrgTraineeDetailRow {
   /** Warehouse key of the people-list member on the matching trainee row. */
   personKey: string;
+  /** Course key of the pair the row belongs to. */
   courseId: string;
   status: OrgTraineeStatus;
+  /** ISO timestamp: the enrollment time on Enrolled rows, the issue time on Certified rows. */
   activityTs: string;
+  /** @deprecated Legacy: sent only for clients loaded before pairs were served; the current client does not read it. */
+  productType?: string | null;
+  /** @deprecated Legacy: sent only for clients loaded before pairs were served; the current client does not read it. */
+  courseName?: string | null;
+  /** @deprecated Legacy: sent only for clients loaded before pairs were served; the current client does not read it. */
+  courseLevel?: string | null;
+  /** @deprecated Legacy: sent only for clients loaded before pairs were served; the current client does not read it. */
+  courseFormat?: string | null;
+  /** @deprecated Legacy: sent only for clients loaded before pairs were served; the current client does not read it. */
+  foundationId?: string | null;
+  /** @deprecated Legacy: sent only for clients loaded before pairs were served; the current client does not read it. */
+  foundationName?: string | null;
+  /** @deprecated Legacy: sent only for clients loaded before pairs were served; the current client does not read it. */
+  projectId?: string | null;
+  /** @deprecated Legacy: sent only for clients loaded before pairs were served; the current client does not read it. */
+  projectName?: string | null;
 }
 
+/** One person-course pair of a listed person in the range, as the warehouse resolved it: the grain the stat cards count. */
 export interface OrgTraineePair {
   personKey: string;
+  /** Course key: the course id, or the certificate id for a certificate with no course. */
   courseId: string;
   /** Certified when any of the pair's rows in the range is a certificate. */
   status: OrgTraineeStatus;
+  /** Product type of the course: `Certification` or `Training`; splits certified pairs into the Certifications and Trainings-completed cards. */
   productType: string | null;
+  /** The course's name; null when the warehouse has none. Display falls back to `courseId`. */
   courseName: string | null;
+  /** Beginner, Intermediate, Advanced, Executive; null for courses without a level. */
   courseLevel: string | null;
+  /** Instruction type (E-Learning, Instructor Led, …). */
   courseFormat: string | null;
   foundationId: string | null;
   foundationName: string | null;
   projectId: string | null;
   projectName: string | null;
+  /** ISO timestamp of the pair's latest enrollment or certificate in the range; orders Most Recent Course. */
   lastActivityTs: string | null;
 }
 
@@ -78,11 +104,27 @@ export interface OrgTraineesResponse {
   accountId: string;
   /** Echo of the range the BFF read — lets the client drop a late response from a previous range. */
   timeRange: OrgLensTimeRange;
+  /** People-list members with a training pair in the range. */
   trainees: OrgTraineeRow[];
+  /** The warehouse-resolved person-course pairs of the people in `trainees`: the same pairs the stat cards count. */
   pairs: OrgTraineePair[];
+  /**
+   * Enrolled and completed dates for the expanded sub-table, never a source of counts. Each row also carries the
+   * deprecated legacy attribute fields, for clients loaded before pairs were served.
+   */
   details: OrgTraineeDetailRow[];
+  /**
+   * Learners outside the people list with a training pair in the range, sorted by name; filtered by the range only. A
+   * learner whose warehouse key also has people-list pairs is left out, so the people card counts them once.
+   */
   outsideLearners: OrgTraineeOutsideLearner[];
+  /**
+   * Counts only, no keys: the people-list members with NO current-employee row (unlisted former employees) that have
+   * in-range pairs, which the stat cards count but `trainees` / `pairs` never list. `people` = distinct persons,
+   * `pairs` = distinct (person, course) pairs.
+   */
   formerOnPeopleList: OrgTraineeFormerOnPeopleListCounts;
+  /** ISO build time of the training pairs (`MAX(DBT_RUN_AT)` over the account's rows, every range): the date the training data reflects. Null when the account has no rows. */
   asOf: string | null;
 }
 
@@ -140,45 +182,6 @@ export interface OrgPeopleAllTraineeRow {
   NAME: string | null;
   TITLE: string | null;
   EMAIL: string | null;
-}
-
-export interface OrgPeopleTrainingPairRow {
-  PERSON_KEY: string;
-  COURSE_KEY: string;
-  IS_CERTIFIED: boolean | null;
-  PRODUCT_TYPE: string | null;
-  COURSE_NAME: string | null;
-  COURSE_LEVEL: string | null;
-  COURSE_FORMAT: string | null;
-  FOUNDATION_ID: string | null;
-  FOUNDATION_NAME: string | null;
-  PROJECT_ID: string | null;
-  PROJECT_NAME: string | null;
-  LAST_ACTIVITY_TS: Date | string | null;
-}
-
-export interface OrgPeopleTrainingDateRow {
-  PERSON_KEY: string;
-  COURSE_ID: string | null;
-  COURSE_OR_CERT_ID: string;
-  STATUS: string | null;
-  ACTIVITY_TS: Date | string | null;
-}
-
-export interface OrgTraineeDateRow {
-  PERSON_KEY: string;
-  COURSE_KEY: string;
-  STATUS: string | null;
-  ACTIVITY_TS: Date | string | null;
-}
-
-export interface OrgTraineesRaw {
-  traineeRows: OrgPeopleAllTraineeRow[];
-  outsideLearnerRows: OrgTrainingOutsideLearnerRow[];
-  pairRows: OrgPeopleTrainingPairRow[];
-  dateRows: OrgTraineeDateRow[];
-  formerOnPeopleList: OrgTraineeFormerOnPeopleListCounts;
-  asOf: string | null;
 }
 
 export interface TraineeAsOfRow {
