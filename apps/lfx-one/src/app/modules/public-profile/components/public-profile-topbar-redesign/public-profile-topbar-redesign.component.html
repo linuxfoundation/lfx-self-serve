@@ -1,0 +1,77 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. A gradient fade replaces the bottom border. -->
+<div
+  class="sticky top-0 z-50 -mx-[8px] flex flex-row items-center justify-between gap-[16px] bg-gradient-to-b from-ui-background-100 from-70% to-transparent px-[8px] py-[16px]"
+  data-testid="public-profile-topbar">
+  <div class="relative min-h-[40px] min-w-0 flex-1">
+    <!-- At rest: "Powered by LFX". -->
+    <div
+      class="absolute left-0 top-1/2 -translate-y-1/2 transition-opacity duration-ui-base motion-reduce:transition-none"
+      [class.opacity-0]="scrolled()"
+      [class.pointer-events-none]="scrolled()"
+      [attr.aria-hidden]="scrolled()"
+      [attr.inert]="scrolled() ? '' : null"
+      data-testid="topbar-powered-by">
+      <lfx-ui-button variant="secondary" size="small" href="https://app.lfx.dev/">
+        <span>{{ copy.poweredBy }}</span>
+        <img src="/images/logo_lfx.svg" alt="LFX" class="h-[13px] w-auto [[data-theme=dark]_&]:brightness-0 [[data-theme=dark]_&]:invert" />
+      </lfx-ui-button>
+    </div>
+
+    <!-- Past 240px of scroll: the LF tile, a divider, then who this profile is. -->
+    <div
+      class="absolute left-0 top-1/2 flex w-full -translate-y-1/2 flex-row items-center gap-[12px] transition-opacity duration-ui-base motion-reduce:transition-none"
+      [class.opacity-0]="!scrolled()"
+      [class.pointer-events-none]="!scrolled()"
+      [attr.aria-hidden]="!scrolled()"
+      [attr.inert]="scrolled() ? null : ''"
+      data-testid="topbar-identity">
+      <a
+        href="https://app.lfx.dev/"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="flex size-[36px] flex-none items-center justify-center rounded-[10px] bg-white shadow-small"
+        [attr.aria-label]="copy.lfHome">
+        <img src="/images/logo_lf_icon.png" alt="" class="block size-[22px] object-contain" />
+      </a>
+      <span class="h-[28px] w-px flex-none bg-ui-neutral-200" aria-hidden="true"></span>
+      <lfx-ui-avatar [src]="avatarImage()" [name]="name()" icon="fa-solid fa-circle-user" [size]="34" />
+      <div class="flex min-w-0 flex-col">
+        <span class="truncate text-[15px] font-semibold leading-[20px] text-ui-neutral-900" data-testid="topbar-name">{{ name() }}</span>
+        @if (headline()) {
+          <span class="truncate text-[12px] leading-[16px] text-ui-neutral-500" [attr.title]="headline()" data-testid="topbar-headline">{{ headline() }}</span>
+        }
+      </div>
+    </div>
+  </div>
+
+  <div class="flex flex-none flex-row items-center gap-[8px]" data-testid="topbar-actions">
+    <lfx-ui-button
+      variant="tertiary"
+      [icon]="theme.dark() ? 'fa-light fa-sun' : 'fa-light fa-moon'"
+      iconOnly
+      [ariaLabel]="themeLabel()"
+      [lfxUiTooltip]="themeLabel()"
+      (click)="theme.toggle()"
+      data-testid="topbar-theme" />
+    @if (owner()) {
+      <lfx-ui-button
+        variant="secondary"
+        size="small"
+        icon="fa-light fa-circle-user"
+        trailingIcon="fa-light fa-arrow-up-right"
+        href="/profile"
+        [ariaLabel]="copy.manageProfile"
+        data-testid="topbar-manage">
+        <span class="max-[640px]:hidden">{{ copy.manageProfile }}</span>
+      </lfx-ui-button>
+    } @else if (!signedIn()) {
+      <lfx-ui-button variant="secondary" size="small" [href]="signInUrl()" target="_self" data-testid="topbar-sign-in">{{ copy.signIn }}</lfx-ui-button>
+      <lfx-ui-button variant="secondary-accent" size="small" [href]="signInUrl()" target="_self" data-testid="topbar-create-account">{{
+        copy.createAccount
+      }}</lfx-ui-button>
+    }
+  </div>
+</div>

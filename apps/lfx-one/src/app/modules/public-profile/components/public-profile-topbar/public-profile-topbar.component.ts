@@ -23,6 +23,8 @@ export class PublicProfileTopbarComponent {
 
   // Toggles the cross-fade between the "Powered by" pill and the scroll-revealed identity.
   protected readonly scrolled = signal(false);
+  /** Scroll (px) past which the identity replaces the pill; the redesigned bar sets its own. */
+  protected readonly revealOffset: number = IDENTITY_REVEAL_OFFSET;
 
   protected readonly name = computed(() => this.basic()?.Name?.trim() || 'LFX Contributor');
 
@@ -54,7 +56,7 @@ export class PublicProfileTopbarComponent {
     }
     this.scrollFramePending = true;
     window.requestAnimationFrame(() => {
-      this.scrolled.set(window.scrollY > IDENTITY_REVEAL_OFFSET);
+      this.scrolled.set(window.scrollY > this.revealOffset);
       this.scrollFramePending = false;
     });
   }
