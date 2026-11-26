@@ -2417,6 +2417,12 @@ export interface MeetingComposerPreviewRow {
   color?: string;
 }
 
+/** Options for `MeetingComposerFormService.initialize()` that differ between composer surfaces. */
+export interface MeetingComposerInitOptions {
+  /** Create only: recording and AI summary start on. Meant for the redesigned modal; the drawer leaves it off. */
+  featureDefaultsOn?: boolean;
+}
+
 /**
  * What the meeting composer was opened with.
  * @description Set by whichever entry point calls `MeetingComposerService.open()` — a dashboard

@@ -12,8 +12,8 @@
         <!-- Design: 10px trigger radius. -->
         <button
           type="button"
-          class="flex h-10 w-full items-center gap-2 rounded-[10px] border border-gray-300 bg-white px-3 text-left text-sm hover:border-gray-400"
-          [class.border-red-500]="startDateRequiredError()"
+          class="flex h-10 w-full items-center gap-2 rounded-[10px] border bg-white px-3 text-left text-sm"
+          [class]="startDateRequiredError() ? 'border-red-500' : 'border-gray-300 hover:border-gray-400'"
           aria-labelledby="composer-start-date-label composer-start-date-value"
           [attr.aria-invalid]="startDateRequiredError() ? 'true' : null"
           [lfxUiPopover]="calendarTpl"
