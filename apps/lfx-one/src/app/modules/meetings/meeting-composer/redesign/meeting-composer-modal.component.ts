@@ -19,14 +19,8 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MEETING_COMPOSER_OCCURRENCE_NOTES, MEETING_COMPOSER_SECTION_DESCRIPTIONS, MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
-import type {
-  MeetingComposerDeleteDialogData,
-  MeetingComposerProjectLabel,
-  MeetingComposerScopeNote,
-  MeetingComposerSection,
-  MeetingComposerSectionId,
-} from '@lfx-one/shared/interfaces';
-import { formatMeetingOccurrenceLabel, resolveMeetingBaseCount, toUpcomingMeetingHomeRow } from '@lfx-one/shared/utils';
+import type { MeetingComposerProjectLabel, MeetingComposerScopeNote, MeetingComposerSection, MeetingComposerSectionId } from '@lfx-one/shared/interfaces';
+import { formatMeetingOccurrenceLabel, toUpcomingMeetingHomeRow } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
@@ -41,14 +35,13 @@ import { MeetingComposerPreviewComponent } from '../meeting-composer-preview.com
 import { MeetingsHomeDeleteService } from '../../meetings-redesign/services/meetings-home-delete.service';
 import { MeetingComposerService } from '../meeting-composer.service';
 import { ComposerAgendaResourcesComponent } from '../sections/composer-agenda-resources.component';
-import { ComposerPlatformFeaturesComponent } from '../sections/composer-platform-features.component';
-import { MeetingComposerDeleteDialogComponent } from './meeting-composer-delete-dialog.component';
 import { MeetingComposerDiscardDialogComponent } from './meeting-composer-discard-dialog.component';
 import { MeetingComposerModalRailComponent } from './meeting-composer-modal-rail.component';
 import { MeetingComposerScopeNoteComponent } from './meeting-composer-scope-note.component';
 import { ComposerDateScheduleRedesignComponent } from './sections/composer-date-schedule-redesign.component';
 import { ComposerDetailsAccessRedesignComponent } from './sections/composer-details-access-redesign.component';
 import { ComposerGuestsRedesignComponent } from './sections/composer-guests-redesign.component';
+import { ComposerPlatformFeaturesRedesignComponent } from './sections/composer-platform-features-redesign.component';
 
 /**
  * Near-fullscreen composer modal behind `meetings-redesign`: rail, section column, footer and preview.
@@ -67,7 +60,7 @@ import { ComposerGuestsRedesignComponent } from './sections/composer-guests-rede
     MeetingComposerPreviewComponent,
     ComposerDetailsAccessRedesignComponent,
     ComposerDateScheduleRedesignComponent,
-    ComposerPlatformFeaturesComponent,
+    ComposerPlatformFeaturesRedesignComponent,
     ComposerGuestsRedesignComponent,
     ComposerAgendaResourcesComponent,
   ],
@@ -95,7 +88,7 @@ export class MeetingComposerModalComponent {
   public readonly editSeries = output<MeetingComposerSectionId>();
   public readonly goToTitleSection = output<void>();
   public readonly occurrenceCancelled = output<void>();
-  public readonly deleted = output<MeetingComposerDeleteDialogData>();
+  public readonly deleteRequested = output<void>();
 
   protected readonly root = viewChild.required<ElementRef<HTMLElement>>('root');
   protected readonly scroll = viewChild<ElementRef<HTMLElement>>('scroll');
@@ -222,26 +215,9 @@ export class MeetingComposerModalComponent {
   }
 
   protected onDelete(): void {
-    const meeting = this.formService.meeting();
-
-    if (!meeting || this.formService.submitting()) {
-      return;
+    if (this.formService.meeting() && !this.formService.submitting()) {
+      this.deleteRequested.emit();
     }
-
-    // The saved count, as the meetings list's delete reads it; the draft roster includes unsaved guests.
-    const data: MeetingComposerDeleteDialogData = { meeting, guestCount: meeting.rsvp_summary?.invited ?? resolveMeetingBaseCount(meeting) ?? null };
-    const ref = this.modal.open<boolean, MeetingComposerDeleteDialogData, MeetingComposerDeleteDialogComponent>(
-      MeetingComposerDeleteDialogComponent,
-      { data, role: 'alertdialog', describedBy: true, autoFocus: '[data-autofocus] button' },
-      { closePredicate: (_result, _config, dialog) => !(dialog instanceof MeetingComposerDeleteDialogComponent && dialog.busy()) }
-    );
-    // Goes with the composer if it closes on its own; a request already running keeps it open until it settles.
-    this.destroyRef.onDestroy(() => ref.close());
-    ref.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((done) => {
-      if (done) {
-        this.deleted.emit(data);
-      }
-    });
   }
 
   protected onEditSeries(): void {

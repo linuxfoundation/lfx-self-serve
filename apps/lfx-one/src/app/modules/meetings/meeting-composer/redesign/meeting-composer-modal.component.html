@@ -110,7 +110,7 @@
                     [showSeriesSchedule]="!isOccurrenceEdit()" />
                 }
                 @case ('platform-features') {
-                  <lfx-composer-platform-features [form]="formService.form()" (goToTitleSection)="goToTitleSection.emit()" />
+                  <lfx-composer-platform-features-redesign [form]="formService.form()" (goToTitleSection)="goToTitleSection.emit()" />
                 }
                 @case ('guests') {
                   <lfx-composer-guests-redesign class="flex flex-1 flex-col" [form]="formService.form()" />
