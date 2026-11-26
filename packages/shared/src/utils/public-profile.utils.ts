@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PublicProfileBasic } from '../interfaces/public-profile.interface';
+import { PUBLIC_PROFILE_INVOLVEMENT_COPY } from '../constants/public-profile.constants';
+import { PublicProfileBasic, PublicProfileInvolvementItem, PublicProfileProject } from '../interfaces/public-profile.interface';
+import { formatInvolvementPeriod } from './profile-page.utils';
 
 /**
  * Resolves the contributor's current employer for display. `AccountName` values
@@ -49,4 +51,33 @@ export function formatAffiliation(basic: PublicProfileBasic | null | undefined):
     return `${title} at ${company}`;
   }
   return title || company;
+}
+
+/**
+ * The redesigned public profile's Foundations & projects involvement (#6093): each project with its totals and the span of
+ * years that had any activity. A project is current when its latest such year is `currentYear`; current projects come
+ * first, each group keeping the profile's own order.
+ */
+export function buildPublicProfileInvolvement(projects: PublicProfileProject[], currentYear: number): PublicProfileInvolvementItem[] {
+  return projects
+    .map((project, index): PublicProfileInvolvementItem => {
+      const active = (project.years ?? [])
+        .filter((row) => row.commits + row.prs + row.issues + row.added + row.deleted > 0)
+        .map((row) => row.year)
+        .sort((a, b) => a - b);
+      const first = active[0];
+      const last = active.at(-1);
+      const current = last !== undefined && last >= currentYear;
+      return {
+        id: `${index}`,
+        name: project.Name?.trim() || project.Slug?.trim() || PUBLIC_PROFILE_INVOLVEMENT_COPY.untitled,
+        logo: project.LogoURL?.trim() ?? '',
+        current,
+        years: first === undefined ? '' : formatInvolvementPeriod(`${first}`, current ? '' : `${last}`),
+        commits: project.commits,
+        prs: project.prs,
+        issues: project.issues,
+      };
+    })
+    .sort((a, b) => Number(b.current) - Number(a.current));
 }
