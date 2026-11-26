@@ -24,6 +24,10 @@ export const NEWSLETTER_BODY_MAX_LENGTH = 100_000;
 // serialized size in bytes so a save or test send, with the echoed body_html
 // beside it, stays under the newsletter service's 1 MiB request limit.
 export const NEWSLETTER_BODY_LAYOUT_MAX_BYTES = 800_000;
+// The block editor nests one level: a container and its children. A deeper layout can only come from the API,
+// and the editor walks every level when it opens a draft, so the BFF refuses one and the editor ignores the
+// extra levels (#5296).
+export const NEWSLETTER_LAYOUT_MAX_DEPTH = 2;
 // render-preview's wrapper_content carries only a few edition.* fields.
 export const NEWSLETTER_WRAPPER_CONTENT_MAX_BYTES = 16_384;
 

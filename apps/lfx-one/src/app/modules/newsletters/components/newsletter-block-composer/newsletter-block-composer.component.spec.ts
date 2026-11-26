@@ -74,6 +74,7 @@ describe('NewsletterBlockComposerComponent — Outline keyboard nesting', () => 
             renderWrapperChrome: () => ({ header: '', footer: '' }),
             renderContainerChrome: () => ({ shellClass: '', shellStyle: '', before: '', after: '' }),
             collectEditableFields: () => new Set(),
+            collectUrlFields: () => new Map(),
           },
         },
         { provide: DomSanitizer, useValue: { bypassSecurityTrustHtml: (v: string) => v, sanitize: (_: unknown, v: string) => v } },
@@ -81,6 +82,63 @@ describe('NewsletterBlockComposerComponent — Outline keyboard nesting', () => 
     });
     fixture = TestBed.createComponent(NewsletterBlockComposerComponent);
     component = fixture.componentInstance;
+  });
+
+  it('does not save a focus and blur on rich text the canvas shows cleaned, then saves edits and their undo (#5295)', () => {
+    api().blocks.set([{ ...leaf('b1'), content: { body: "<p class='ql-align-center'>Hi</p>" } }]);
+    const emitted: NewsletterLayout[] = [];
+    component.layoutChange.subscribe((l) => emitted.push(l));
+    const el = document.createElement('div');
+    el.setAttribute('data-nl-field', 'body');
+    el.setAttribute('data-nl-richtext', 'true');
+    el.innerHTML = '<p>Hi</p>';
+    api()['wireEditable'](el, 'b1');
+
+    el.dispatchEvent(new Event('focus'));
+    api()['commitInlineEdit'](el, 'b1');
+    expect(emitted).toHaveLength(0);
+
+    el.innerHTML = '<p>Hello</p>';
+    api()['commitInlineEdit'](el, 'b1');
+    el.innerHTML = '<p>Hi</p>';
+    api()['commitInlineEdit'](el, 'b1');
+    expect(emitted).toHaveLength(2);
+  });
+
+  it('strips class and stray targets from pasted rich text before it reaches the page (#5295)', () => {
+    (component as unknown as { platformId: string }).platformId = 'browser';
+    const original = document.execCommand;
+    const execCommand = vi.fn(() => true);
+    document.execCommand = execCommand as unknown as typeof document.execCommand;
+    try {
+      const el = document.createElement('div');
+      el.setAttribute('data-nl-richtext', 'true');
+      const html = '<p class="fixed inset-0">x</p><a href="https://example.com" target="_top">y</a>';
+      const data = { getData: (type: string) => (type === 'text/html' ? html : 'xy') } as unknown as DataTransfer;
+
+      api()['insertSanitizedTransfer'](el, 'missing', data);
+
+      expect(execCommand).toHaveBeenCalledWith('insertHTML', false, '<p>x</p><a href="https://example.com">y</a>');
+    } finally {
+      document.execCommand = original;
+    }
+  });
+
+  it('does not count stripped attributes as an inline edit, but saves a real one (#5295)', () => {
+    api().blocks.set([{ ...leaf('b1'), content: { body: '<p class="ql-align-center">Hi</p>' } }]);
+    const emitted: NewsletterLayout[] = [];
+    component.layoutChange.subscribe((l) => emitted.push(l));
+    const el = document.createElement('div');
+    el.setAttribute('data-nl-field', 'body');
+    el.setAttribute('data-nl-richtext', 'true');
+
+    el.innerHTML = '<p>Hi</p>';
+    api()['commitInlineEdit'](el, 'b1');
+    expect(emitted).toHaveLength(0);
+
+    el.innerHTML = '<p>Hello</p>';
+    api()['commitInlineEdit'](el, 'b1');
+    expect(emitted).toHaveLength(1);
   });
 
   it('reorders a child within its container (down, then clamps at the ends)', () => {
@@ -241,6 +299,24 @@ describe('NewsletterBlockComposerComponent — starter blocks and template picke
     expect(resolve({ wrapper_key: 'w', template_key: 'aaif-weekly-agentic', blocks: [] })).toBe('aaif-weekly-agentic');
     expect(resolve({ wrapper_key: 'w', blocks: [] })).toBe('aaif-user-community');
     expect(resolve(null)).toBe('aaif-member');
+  });
+
+  it('does not load or save over a layout nested deeper than the editor supports (#5296)', () => {
+    const f = TestBed.createComponent(NewsletterBlockComposerComponent);
+    f.componentRef.setInput('initialLayout', {
+      wrapper_key: 'w',
+      template_key: 'aaif-member',
+      blocks: [{ block_type: 'card', content: {}, blocks: [{ block_type: 'card', content: {}, blocks: [{ block_type: 'intro', content: {} }] }] }],
+    } as NewsletterLayout);
+    f.componentInstance.ngOnInit();
+    const deep = f.componentInstance as unknown as { blocks: () => NewsletterComposerBlock[]; layoutTooDeep: () => boolean; emit: () => void };
+    const emitted: NewsletterLayout[] = [];
+    f.componentInstance.layoutChange.subscribe((l) => emitted.push(l));
+
+    expect(deep.layoutTooDeep()).toBe(true);
+    expect(deep.blocks()).toEqual([]);
+    deep.emit();
+    expect(emitted).toEqual([]);
   });
 
   it('lists the service templates with curated labels, and keeps the active key when the list lacks it', () => {

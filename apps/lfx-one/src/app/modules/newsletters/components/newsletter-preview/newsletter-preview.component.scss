@@ -66,6 +66,9 @@
   }
 
   &__body {
+    // The body is stored content shown in the app page. Paint containment keeps anything it draws inside the
+    // preview (#5295).
+    contain: paint;
     padding: 1.5rem 2rem 2rem;
     font-size: 1rem;
     color: theme('colors.gray.800');
