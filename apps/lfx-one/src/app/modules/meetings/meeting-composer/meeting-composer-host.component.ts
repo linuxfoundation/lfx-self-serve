@@ -14,9 +14,10 @@ import type {
   MeetingComposerSection,
   MeetingComposerSectionId,
   MeetingComposerToastData,
+  UiToastConfig,
   UiToastRef,
 } from '@lfx-one/shared/interfaces';
-import { formatMeetingOccurrenceLabel } from '@lfx-one/shared/utils';
+import { combineDateTime, formatMeetingOccurrenceLabel, formatMeetingToastWhen } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { LensService } from '@services/lens.service';
@@ -379,6 +380,7 @@ export class MeetingComposerHostComponent {
 
     const wasEditMode = this.formService.isEditMode();
     const wasOccurrenceEdit = this.formService.isOccurrenceEdit();
+    const savedEdit = this.redesign() && wasEditMode ? this.redesignEditToast() : null;
 
     // `submit()` completes without emitting when the save outlived its open, so reaching here always
     // means the current open is the one that was saved. `take(1)` because the stream is single-shot and
@@ -387,7 +389,9 @@ export class MeetingComposerHostComponent {
       .submit()
       .pipe(take(1))
       .subscribe((meeting) => {
-        if (wasOccurrenceEdit) {
+        if (savedEdit) {
+          this.toast.show(savedEdit);
+        } else if (wasOccurrenceEdit) {
           this.messageService.add({
             severity: 'success',
             summary: 'Occurrence updated',
@@ -402,6 +406,12 @@ export class MeetingComposerHostComponent {
         this.composer.notifySaved();
         this.composer.close();
       });
+  }
+
+  /** The occurrence is gone, so there is nothing left to edit; the cancel dialog has already confirmed it. */
+  protected onOccurrenceCancelled(): void {
+    this.composer.notifySaved();
+    this.composer.close();
   }
 
   /**
@@ -491,6 +501,23 @@ export class MeetingComposerHostComponent {
     return this.formService.isEditMode() && this.formService.meeting() === null;
   }
 
+  /** The redesigned composer's edit toast, read from the form before the save resets it. */
+  private redesignEditToast(): UiToastConfig {
+    const value = this.formService.form().getRawValue();
+    const title = `“${value.title ?? ''}”`;
+
+    if (!this.isOccurrenceEdit() && this.formService.meeting()?.recurrence) {
+      return { variant: 'dark', message: 'Series updated', description: `${title} · changes apply to every upcoming occurrence` };
+    }
+
+    const when = formatMeetingToastWhen(combineDateTime(value.startDate, value.startTime, value.timezone), value.timezone);
+    return {
+      variant: 'dark',
+      message: this.isOccurrenceEdit() ? 'Occurrence updated' : 'Meeting updated',
+      description: when ? `${title} · ${when}` : title,
+    };
+  }
+
   /**
    * Raises the post-create toast (GH-1461).
    * @description Creating no longer navigates to the saved meeting, so this toast is the only route back
@@ -517,6 +544,21 @@ export class MeetingComposerHostComponent {
     };
 
     this.createdToastPath = this.router.url.split(/[?#]/)[0];
+
+    if (this.redesign()) {
+      const when = formatMeetingToastWhen(meeting.start_time, meeting.timezone);
+      this.createdToast = this.toast.show({
+        variant: 'dark',
+        message: 'Meeting created',
+        description: when ? `“${data.meetingTitle}” · ${when}` : `“${data.meetingTitle}”`,
+        actions: [
+          { label: 'View meeting', run: () => void this.router.navigateByUrl(data.meetingUrl, { state: data.meetingLinkState }) },
+          { label: 'Edit', run: () => this.onEditCreatedMeeting(data) },
+        ],
+      });
+      return;
+    }
+
     this.createdToast = this.toast.show({
       variant: 'success',
       position: MEETING_COMPOSER_TOAST_POSITION,

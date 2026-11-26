@@ -91,6 +91,11 @@ export class MeetingComposerService {
     this._saveCount.update((count) => count + 1);
   }
 
+  /** Marks sections as seen without moving to them. */
+  public markVisited(sections: readonly MeetingComposerSectionId[]): void {
+    this._visitedSections.update((visited) => new Set([...visited, ...sections]));
+  }
+
   public setSection(section: MeetingComposerSectionId): void {
     this._activeSection.set(section);
     this._visitedSections.update((visited) => new Set(visited).add(section));

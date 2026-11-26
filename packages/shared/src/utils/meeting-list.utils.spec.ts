@@ -15,6 +15,7 @@ import {
   expandMeetingOccurrences,
   filterMeetingsHome,
   formatMeetingDateTime,
+  formatMeetingToastWhen,
   formatMeetingTimeRange,
   formatMeetingWhen,
   formatMeetingWhenFull,
@@ -696,6 +697,16 @@ describe('getMeetingRecurrenceTooltip', () => {
   it('returns null for one-time meetings', () => {
     expect(getMeetingRecurrenceTooltip({ ...base, recurrence: null })).toBeNull();
     expect(getMeetingRecurrenceTooltip({ ...base, recurrence: { ...WEEKLY, end_times: 1 } })).toBeNull();
+  });
+});
+
+describe('formatMeetingToastWhen', () => {
+  it('formats the start in the given zone', () => {
+    expect(formatMeetingToastWhen('2026-10-06T16:00:00Z', 'America/Los_Angeles')).toBe('Tue, Oct 6, 2026 at 9:00 AM');
+  });
+
+  it('is empty for an invalid start', () => {
+    expect(formatMeetingToastWhen('not a date')).toBe('');
   });
 });
 

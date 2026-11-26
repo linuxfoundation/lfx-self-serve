@@ -30,6 +30,15 @@ describe('MeetingComposerService', () => {
     expect(service.isQuickCreate()).toBe(false);
   });
 
+  it('marks sections visited without moving the active one', () => {
+    service.open({ mode: 'edit', meetingUid: 'meeting-1', section: 'guests' });
+
+    service.markVisited(['details-access', 'platform-features']);
+
+    expect(service.activeSection()).toBe('guests');
+    expect([...service.visitedSections()].sort()).toEqual(['details-access', 'guests', 'platform-features']);
+  });
+
   it('opens the quick dialog when the entry point asks for it', () => {
     service.open({ mode: 'create', variant: 'quick' });
 
