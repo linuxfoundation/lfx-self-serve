@@ -4,9 +4,9 @@
 import { FocusMonitor } from '@angular/cdk/a11y';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { PUBLIC_PROFILE_INVOLVEMENT_COPY } from '@lfx-one/shared/constants';
+import { PUBLIC_PROFILE_INVOLVEMENT_COPY, PUBLIC_PROFILE_THEME_STORAGE_KEY } from '@lfx-one/shared/constants';
 import { PublicProfileProject, PublicProfileYearContribution } from '@lfx-one/shared/interfaces';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { PublicProfileThemeService } from '../../services/public-profile-theme.service';
 import { PublicProfileInvolvementComponent } from './public-profile-involvement.component';
@@ -35,6 +35,8 @@ const project = (name: string, years: number[]): PublicProfileProject => ({
 });
 
 describe('PublicProfileInvolvementComponent', () => {
+  afterEach(() => localStorage.removeItem(PUBLIC_PROFILE_THEME_STORAGE_KEY));
+
   async function render(projects: PublicProfileProject[]) {
     const fixture = TestBed.createComponent(HostComponent);
     fixture.componentInstance.projects.set(projects);

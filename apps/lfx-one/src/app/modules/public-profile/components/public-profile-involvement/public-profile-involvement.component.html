@@ -24,7 +24,9 @@
         [attr.data-theme]="theme()"
         [attr.data-testid]="'public-profile-project-card-' + item.id">
         <div class="flex min-w-0 flex-row items-center gap-[12px]">
-          <span class="flex size-[40px] flex-none items-center justify-center overflow-hidden rounded-[12px] border border-ui-neutral-200">
+          <!-- White under a dark theme, as the pill's tile, so a dark logo still reads. -->
+          <span
+            class="flex size-[40px] flex-none items-center justify-center overflow-hidden rounded-[12px] border border-ui-neutral-200 [[data-theme=dark]_&]:bg-white">
             @if (item.logo) {
               <img class="size-[40px] object-contain" [src]="item.logo" alt="" referrerpolicy="no-referrer" />
             }
