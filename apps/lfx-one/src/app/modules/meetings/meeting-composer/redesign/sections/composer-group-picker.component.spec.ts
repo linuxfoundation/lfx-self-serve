@@ -85,6 +85,34 @@ describe('ComposerGroupPickerComponent', () => {
     expect(committeesValue()).toEqual([]);
   });
 
+  it('moves focus to the next group, then the picker, after a keyboard removal', async () => {
+    await mount();
+    fixture.componentInstance['committeesControl'].setValue([TSC.uid, LEGAL.uid]);
+    await render();
+
+    // `click()` reports no click count, as a keyboard activation does.
+    click(`meeting-committee-chip-remove-${TSC.uid}`);
+    await render();
+    expect(document.activeElement).toBe(el(`meeting-committee-chip-remove-${LEGAL.uid}`)?.querySelector('button'));
+
+    click(`meeting-committee-chip-remove-${LEGAL.uid}`);
+    await render();
+    expect(document.activeElement).toBe(el('ui-multi-select-trigger'));
+  });
+
+  it('leaves focus alone after a pointer removal', async () => {
+    await mount();
+    fixture.componentInstance['committeesControl'].setValue([TSC.uid, LEGAL.uid]);
+    await render();
+
+    el(`meeting-committee-chip-remove-${TSC.uid}`)
+      ?.querySelector('button')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    await render();
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it('filters a voting group by voting status from its menu', async () => {
     await mount({ selected: [{ uid: TSC.uid }] });
 

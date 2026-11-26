@@ -416,11 +416,12 @@ export class MeetingComposerHostComponent {
   }
 
   protected onDeleted({ meeting, guestCount }: MeetingComposerDeleteDialogData): void {
-    this.toast.show({
-      variant: 'dark',
-      message: 'Meeting deleted',
-      description: `“${meeting.title}” · ${guestCount} ${guestCount === 1 ? 'guest' : 'guests'} notified`,
-    });
+    const description = [`“${meeting.title}”`];
+    if (guestCount !== null) {
+      description.push(`${guestCount} ${guestCount === 1 ? 'guest' : 'guests'} notified`);
+    }
+
+    this.toast.show({ variant: 'dark', message: 'Meeting deleted', description: description.join(' · ') });
     this.composer.notifySaved();
     this.composer.close();
   }

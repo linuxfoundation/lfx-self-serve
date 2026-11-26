@@ -373,7 +373,7 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
     });
 
     it('deletes a one-time meeting after confirming, then closes with a toast', async () => {
-      await openEdit();
+      await openEdit({ registrant_count: 3 });
 
       button('meeting-composer-delete')?.click();
       await flush();
@@ -381,15 +381,39 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
       const details = document.querySelector('[data-testid="meeting-composer-delete-details"]')?.textContent?.replace(/\s+/g, ' ') ?? '';
       expect(details).toContain('Title:Weekly sync');
       expect(details).toContain('Date:Tue, Jan 8, 2030');
-      expect(details).toContain('Guests:0 guests');
+      expect(details).toContain('Guests:3 guests');
+      expect(document.querySelector('[data-testid="meeting-composer-delete-dialog"] [data-testid="ui-modal-subtitle"]')?.textContent).toContain(
+        'This permanently deletes the meeting.'
+      );
 
       fromDocument('meeting-composer-delete-confirm')?.click();
       await flush();
 
       expect(deleteMeeting).toHaveBeenCalledWith('meeting-1');
-      expect(lastToast()).toMatchObject({ variant: 'dark', message: 'Meeting deleted', description: '“Weekly sync” · 0 guests notified' });
+      expect(lastToast()).toMatchObject({ variant: 'dark', message: 'Meeting deleted', description: '“Weekly sync” · 3 guests notified' });
       expect(composer.isOpen()).toBe(false);
       expect(composer.saveCount()).toBe(1);
+    });
+
+    it('cannot be dismissed while the delete request runs', async () => {
+      const request = new Subject<void>();
+      deleteMeeting.mockReturnValue(request);
+      await openEdit();
+
+      button('meeting-composer-delete')?.click();
+      await flush();
+      fromDocument('meeting-composer-delete-confirm')?.click();
+      await flush();
+      document.querySelector('[data-testid="meeting-composer-delete-dialog"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await flush();
+
+      expect(document.querySelectorAll('[data-testid="meeting-composer-delete-dialog"]').length).toBeGreaterThan(0);
+      expect(composer.isOpen()).toBe(true);
+
+      request.next();
+      request.complete();
+      await flush();
+      expect(composer.isOpen()).toBe(false);
     });
 
     it('keeps the meeting and the composer when the organizer backs out of the delete', async () => {

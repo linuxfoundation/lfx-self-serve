@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, type Signal } from '@angular/core';
+import { afterNextRender, Component, computed, ElementRef, inject, Injector, type Signal } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import type { ComposerGroupRow, ComposerVotingStatusOption } from '@lfx-one/shared/interfaces';
 import { composerGroupMeta } from '@lfx-one/shared/utils';
@@ -25,6 +25,9 @@ import { MeetingCommitteeManagerComponent } from '../../../components/meeting-co
   templateUrl: './composer-group-picker.component.html',
 })
 export class ComposerGroupPickerComponent extends MeetingCommitteeManagerComponent {
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+
   protected readonly committeeLabelPluralLower = this.committeeLabel.plural.toLowerCase();
   protected readonly committeesControl = this.committeeForm.get('committees') as FormControl<string[]>;
 
@@ -42,6 +45,27 @@ export class ComposerGroupPickerComponent extends MeetingCommitteeManagerCompone
   protected onVotingStatusChange(status: string, checked: boolean): void {
     const current = this.selectedVotingStatuses().filter((value) => value !== status);
     this.committeeForm.get('votingStatuses')?.setValue(checked ? [...current, status] : current);
+  }
+
+  /** Removes a picked group; from the keyboard, focus moves to the next group's remove button, or the picker when none remain. */
+  protected onRemoveCommittee(uid: string, index: number, event: MouseEvent): void {
+    this.removeCommittee(uid);
+
+    // A keyboard activation reports no clicks; without this, focus drops to the body with the removed button.
+    if (event.detail !== 0) {
+      return;
+    }
+
+    afterNextRender(
+      () => {
+        const element = this.host.nativeElement;
+        const removeButtons = element.querySelectorAll<HTMLElement>('[data-testid^="meeting-committee-chip-remove-"] button');
+        const target =
+          removeButtons[Math.min(index, removeButtons.length - 1)] ?? element.querySelector<HTMLElement>('[data-testid="ui-multi-select-trigger"]');
+        target?.focus();
+      },
+      { injector: this.injector }
+    );
   }
 
   private initOptionRows(): Signal<ComposerGroupRow[]> {

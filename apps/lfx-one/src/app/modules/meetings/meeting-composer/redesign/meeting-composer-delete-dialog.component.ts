@@ -9,14 +9,13 @@ import type { MeetingComposerDeleteDialogData } from '@lfx-one/shared/interfaces
 import { MeetingService } from '@services/meeting.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
-import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { take } from 'rxjs';
 
 /** Confirms deleting a one-time meeting from the composer, then deletes it; closes with `true` once done. */
 @Component({
   selector: 'lfx-meeting-composer-delete-dialog',
-  imports: [UiModalComponent, UiButtonComponent, UiNoteComponent],
+  imports: [UiModalComponent, UiButtonComponent],
   templateUrl: './meeting-composer-delete-dialog.component.html',
 })
 export class MeetingComposerDeleteDialogComponent {
@@ -32,7 +31,7 @@ export class MeetingComposerDeleteDialogComponent {
   protected readonly title = this.data.meeting.title;
   protected readonly date = this.format({ weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
   protected readonly time = this.format({ hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
-  protected readonly guests = `${this.data.guestCount} ${this.data.guestCount === 1 ? 'guest' : 'guests'}`;
+  protected readonly guests: string | null = this.guestLabel();
 
   protected keep(): void {
     this.dialogRef.close(false);
@@ -56,6 +55,12 @@ export class MeetingComposerDeleteDialogComponent {
           this.toast.show({ variant: 'error', position: 'bottom-center', message: 'Delete Failed', description: this.describeFailure(status) });
         },
       });
+  }
+
+  private guestLabel(): string | null {
+    const count = this.data.guestCount;
+    if (count === null) return null;
+    return `${count} ${count === 1 ? 'guest' : 'guests'}`;
   }
 
   private format(options: Intl.DateTimeFormatOptions): string {

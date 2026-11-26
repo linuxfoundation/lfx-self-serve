@@ -1,8 +1,12 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Exact px from the design: the 14px root shrinks the rem scale. -->
-<lfx-ui-modal heading="Delete meeting?" [width]="560" data-testid="meeting-composer-delete-dialog">
+<!-- Exact px from the design: the 14px root shrinks the rem scale. The warning is the subtitle so the alert dialog announces it. -->
+<lfx-ui-modal
+  heading="Delete meeting?"
+  subtitle="This permanently deletes the meeting. This can’t be undone."
+  [width]="560"
+  data-testid="meeting-composer-delete-dialog">
   <div
     class="-mx-[24px] flex flex-col gap-[6px] border-y border-gray-200 px-[24px] py-[14px] text-[14px] leading-[20px]"
     data-testid="meeting-composer-delete-details">
@@ -16,14 +20,12 @@
     <span class="flex gap-[8px]"
       ><span class="w-[64px] shrink-0 font-medium text-gray-600">Time:</span><span>{{ time }}</span></span
     >
-    <span class="flex gap-[8px]"
-      ><span class="w-[64px] shrink-0 font-medium text-gray-600">Guests:</span><span>{{ guests }}</span></span
-    >
+    @if (guests) {
+      <span class="flex gap-[8px]"
+        ><span class="w-[64px] shrink-0 font-medium text-gray-600">Guests:</span><span>{{ guests }}</span></span
+      >
+    }
   </div>
-
-  <lfx-ui-note variant="error" plain size="small" icon="fa-solid fa-circle-exclamation" data-testid="meeting-composer-delete-warning">
-    This permanently deletes the meeting. This can’t be undone.
-  </lfx-ui-note>
 
   <ng-container modalActions>
     <lfx-ui-button data-autofocus variant="secondary" [disabled]="busy()" data-testid="meeting-composer-delete-keep" (click)="keep()"
