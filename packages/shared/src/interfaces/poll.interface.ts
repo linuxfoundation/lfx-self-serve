@@ -1821,10 +1821,10 @@ export interface IrvRoundTransfer {
 
 /**
  * What happened in one round of the instant-runoff round view, built by `buildIrvRoundsView` (#6152)
- * @description `kind` is `eliminated` for a round with an elimination; a final round without one is `exhausted` (no
- * continuing ballots), `winner` (one winner), `tie` (several) or `none`. `votes` is the eliminated candidate's count,
- * or the (first) winner's final count. `transfers` and `exhaustedFromElimination` say where an eliminated candidate's
- * ballots went. `tieBreak` is how a tie for elimination was settled, read from the voting service's round message.
+ * @description `kind` is `eliminated` for a round with an elimination; a final round without one follows the displayed
+ * winner or tie. With no displayed winners, it is `exhausted` (no continuing ballots) or `none`. `votes` is the eliminated
+ * candidate's count, or the (first) winner's final count. `transfers` and `exhaustedFromElimination` say where an eliminated
+ * candidate's ballots went; exhaustion is null when transfer details are missing. `tieBreak` is read from the round message.
  */
 export interface IrvRoundStep {
   roundNumber: number;
@@ -1834,7 +1834,7 @@ export interface IrvRoundStep {
   continuingBallots: number;
   threshold: number;
   transfers: IrvRoundTransfer[];
-  exhaustedFromElimination: number;
+  exhaustedFromElimination: number | null;
   tieBreak: 'lower_preference' | 'random' | null;
   tieBreakLevel: number | null;
 }

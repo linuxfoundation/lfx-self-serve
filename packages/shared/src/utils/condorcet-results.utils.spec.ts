@@ -351,6 +351,7 @@ describe('buildCondorcetQuestionViews', () => {
       ['d', ['eliminated', 'out', 'out']],
     ]);
     expect(detail.irvRounds?.steps.map((step) => step.kind)).toEqual(['eliminated', 'eliminated', 'winner']);
+    expect(detail.irvRounds?.steps.slice(0, 2).map((step) => step.exhaustedFromElimination)).toEqual([null, null]);
   });
 
   it.each(['complete', 'mirrored', 'missing'])('shares the IRV survivor head-to-head tiebreaker with Present (%s pair)', (pair) => {

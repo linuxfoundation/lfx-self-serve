@@ -3,6 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { IrvRoundCell, IrvRoundColumn, IrvRoundsView, IrvRoundStep } from '@lfx-one/shared/interfaces';
+import { buildIrvRoundsView } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { VoteIrvRoundsComponent } from './vote-irv-rounds.component';
@@ -133,6 +134,35 @@ describe('VoteIrvRoundsComponent', () => {
     expect(stepText(el, 1)).toBe('Round 1: Candidate A and Candidate B tied with 50 votes each, so no single winner could be determined.');
   });
 
+  it.each([
+    { winnerIds: ['a'], label: 'Winner', expected: 'Candidate A won with 0 of 0 continuing ballots (majority needed: 1).' },
+    { winnerIds: ['a', 'b'], label: 'Tied', expected: 'Candidate A and Candidate B tied with 0 votes each, so no single winner could be determined.' },
+  ])('keeps zero-ballot $label cells and notes consistent with the service outcome', ({ winnerIds, label, expected }) => {
+    const view = buildIrvRoundsView(
+      [
+        {
+          round_number: 1,
+          votes: [
+            { choice_id: 'a', vote_count: 0 },
+            { choice_id: 'b', vote_count: 0 },
+          ],
+          total_votes: 0,
+          exhausted_votes: 4,
+          threshold: 1,
+          message: '',
+        },
+      ],
+      ['a', 'b'],
+      winnerIds,
+      (id) => `Candidate ${id.toUpperCase()}`
+    );
+    const el = render(view!);
+
+    expect(text(cellEl(el, 'a', 1))).toContain(label);
+    expect(stepText(el, 1)).toBe(`Round 1: ${expected}`);
+    expect(stepText(el, 1)).not.toContain('Every ballot was exhausted');
+  });
+
   it('renders continuing ballots, exhausted ballots and majority needed per round', () => {
     const el = render(MAJORITY);
 
@@ -159,6 +189,11 @@ describe('VoteIrvRoundsComponent', () => {
       name: 'nothing to transfer',
       step: step(1, { kind: 'eliminated', choiceTexts: ['Candidate C'], votes: 0 }),
       expected: 'Candidate C was eliminated with 0 votes. No ballots to transfer.',
+    },
+    {
+      name: 'missing transfer details',
+      step: step(1, { kind: 'eliminated', choiceTexts: ['Candidate C'], votes: 3, exhaustedFromElimination: null }),
+      expected: 'Candidate C was eliminated with 3 votes. Transfer details were not provided.',
     },
     {
       name: 'a single vote, all exhausted, picked at random',

@@ -83,6 +83,7 @@ export class VoteIrvRoundsComponent {
   /** Where an eliminated option's ballots went: "Their ballots moved: 5 to A, 3 to B, 2 exhausted." */
   private transferText(step: IrvRoundStep): string {
     if (!step.votes) return 'No ballots to transfer.';
+    if (step.exhaustedFromElimination === null) return 'Transfer details were not provided.';
     if (step.transfers.length === 0) {
       return step.exhaustedFromElimination === 1 ? 'Their ballot was exhausted.' : `All ${step.exhaustedFromElimination} of their ballots were exhausted.`;
     }

@@ -103,14 +103,13 @@ function buildStep(
       choiceTexts: [textOf(eliminatedId)],
       votes,
       transfers,
-      exhaustedFromElimination: Math.max(0, votes - transferred),
+      exhaustedFromElimination: round.transferred_votes === undefined && votes > 0 ? null : Math.max(0, votes - transferred),
       ...parseTieBreak(round.message),
     };
   }
 
   if (!isFinal) return step;
-  if (round.total_votes === 0) return { ...step, kind: 'exhausted' };
-  if (!orderedWinnerIds.length) return step;
+  if (!orderedWinnerIds.length) return round.total_votes === 0 ? { ...step, kind: 'exhausted' } : step;
   return {
     ...step,
     kind: orderedWinnerIds.length === 1 ? 'winner' : 'tie',

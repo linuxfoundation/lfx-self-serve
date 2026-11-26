@@ -90,6 +90,24 @@ describe('buildIrvRoundsView', () => {
     expect(view?.steps[2]).toMatchObject({ kind: 'winner', choiceTexts: ['Candidate A'], votes: 49, continuingBallots: 97, threshold: 49 });
   });
 
+  it('keeps missing transfer details unknown instead of reporting exhaustion', () => {
+    const view = buildIrvRoundsView([round(1, { a: 2, b: 2, c: 1 }, { eliminated: 'c' }), round(2, { a: 2, b: 3 })], ['a', 'b', 'c'], ['b'], textOf);
+
+    expect(view?.steps[0]).toMatchObject({ kind: 'eliminated', votes: 1, transfers: [], exhaustedFromElimination: null });
+    expect(view?.rounds.map((column) => column.exhaustedBallots)).toEqual([0, 0]);
+  });
+
+  it('distinguishes confirmed empty transfers from missing transfer details', () => {
+    const view = buildIrvRoundsView(
+      [round(1, { a: 2, b: 2, c: 1 }, { eliminated: 'c', transfers: {} }), round(2, { a: 2, b: 2 }, { exhausted: 1 })],
+      ['a', 'b', 'c'],
+      ['a', 'b'],
+      textOf
+    );
+
+    expect(view?.steps[0]).toMatchObject({ transfers: [], exhaustedFromElimination: 1 });
+  });
+
   it('treats an eliminated candidate with no votes and no transfers as nothing to transfer', () => {
     const view = buildIrvRoundsView([round(1, { a: 3, b: 2, c: 0 }, { eliminated: 'c' }), round(2, { a: 3, b: 2 })], ['a', 'b', 'c'], ['a'], textOf);
 
@@ -124,10 +142,18 @@ describe('buildIrvRoundsView', () => {
     expect(view?.steps[0]).toMatchObject({ kind: 'tie', choiceTexts: ['Candidate B', 'Candidate A'], votes: 5 });
   });
 
-  it('reads a final round with no continuing ballots as exhausted', () => {
-    const view = buildIrvRoundsView([round(1, { a: 0, b: 0 }, { exhausted: 4 })], ['a', 'b'], ['a', 'b'], textOf);
+  it.each([['a'], ['a', 'b']])('keeps zero-ballot notes consistent with declared winners %j', (...winnerIds) => {
+    const view = buildIrvRoundsView([round(1, { a: 0, b: 0 }, { exhausted: 4 })], ['a', 'b'], winnerIds, textOf);
+    const expectedKind = winnerIds.length === 1 ? 'winner' : 'tie';
 
-    expect(view?.rows[0].cells[0]).toEqual({ roundNumber: 1, votes: 0, percentage: 0, status: 'tied' });
+    expect(view?.steps[0]).toMatchObject({ kind: expectedKind, choiceTexts: winnerIds.map(textOf), votes: 0 });
+    expect(view?.rows[0].cells[0].status).toBe(winnerIds.length === 1 ? 'winner' : 'tied');
+  });
+
+  it('reads a final round with no continuing ballots or declared winner as exhausted', () => {
+    const view = buildIrvRoundsView([round(1, { a: 0, b: 0 }, { exhausted: 4 })], ['a', 'b'], [], textOf);
+
+    expect(view?.rows[0].cells[0]).toEqual({ roundNumber: 1, votes: 0, percentage: 0, status: 'continuing' });
     expect(view?.steps[0]).toMatchObject({ kind: 'exhausted', choiceTexts: [], votes: null });
   });
 

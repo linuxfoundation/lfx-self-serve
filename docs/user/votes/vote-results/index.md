@@ -4,7 +4,7 @@ description: How to see live and final results, abstentions, ranked questions, c
 audience: [all]
 product_area: Votes
 tags: [votes, results, abstain, comments, ranked, condorcet, tallies, voters]
-last_updated: 2026-11-25
+last_updated: 2026-11-26
 intercom_collection: Votes
 ---
 
@@ -83,7 +83,7 @@ The outcome is hidden while voting is open. After the vote ends and its final re
   - An option is marked **Eliminated** in the round it was knocked out. Later rounds show a dash, because it is no longer in the race.
   - The last column is labelled **Final round** and marks the **Winner**, or every option that tied as **Tied**.
   - Rows under the options show each round's **Continuing ballots**, **Exhausted ballots** (ballots with no remaining choices, counted as a running total) and **Majority needed** to win.
-  - Below the table, one line per round says who was eliminated with how many votes, and where their ballots moved: how many went to each remaining option, and how many were exhausted. The final line names the winner with their votes and the majority needed, or says the options tied or that no winner could be determined.
+  - Below the table, one line per round says who was eliminated with how many votes, and, when transfer details are available, where their ballots moved: how many went to each remaining option, and how many were exhausted. If the voting service omits those details, the line says **Transfer details were not provided.** rather than assuming the ballots were exhausted. The final line follows the service's declared winner or tie, or says that no winner could be determined.
   - When options tied for the fewest votes, the line says how the tie was settled: by comparing lower-ranked preferences, or picked at random by the voting service. A random choice can differ between reads of the same results.
   - On a narrow screen, scroll the table sideways. Keyboard users can Tab to it and use the arrow keys. The option names stay in view.
 - The per-rank breakdown follows under **Rank distribution**.
