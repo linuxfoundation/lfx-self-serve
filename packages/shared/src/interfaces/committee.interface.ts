@@ -1153,6 +1153,25 @@ export type DocumentFormMode = CreateCommitteeDocumentType | 'file';
 /** Which resource type the shared document form dialog operates against. Drives service dispatch + copy. */
 export type DocumentFormEntityType = 'committee' | 'project';
 
+/** What the update dialog does to a document: change its name, or change its folder. */
+export type DocumentUpdateMode = 'rename' | 'move';
+
+/** What a page hands the update dialog (through the dialog config's `data`) to rename or move one document. */
+export interface DocumentUpdateDialogData {
+  mode: DocumentUpdateMode;
+  entityType: DocumentFormEntityType;
+  /** UID of the committee or project the document belongs to. */
+  entityId: string;
+  documentUid: string;
+  documentType: 'file' | 'link' | 'folder';
+  /** The name it has now. */
+  name: string;
+  /** The folder it is in now, or null at the root. */
+  parentUid: string | null;
+  /** Every folder it could be moved into. */
+  folders: { label: string; value: string }[];
+}
+
 /**
  * Upload status of a single file staged in the document form dialog's multi-file file-mode flow.
  * No `'success'` state — a successfully uploaded file is removed from the pending list entirely

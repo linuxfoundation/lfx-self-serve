@@ -262,6 +262,19 @@ export interface UpdateDocumentRequest {
   parent_uid?: string | null;
 }
 
+/**
+ * What a page remembers of a rename or move it made, to lay over a fetched list that may not have caught up. It holds what
+ * was applied, not the returned document: the BFF omits an absent folder from its JSON, which would read as "unchanged".
+ */
+export interface DocumentUpdatePatch {
+  /** The name it was renamed to. */
+  name?: string;
+  /** The folder it was moved into, or `null` for the root. */
+  parent_uid?: string | null;
+  /** When the update happened, as the service stamped it; a fetched copy stamped later wins over the patch. */
+  updated_at?: string;
+}
+
 /** The editable fields of a group or project document, link or folder as the upstream services return them. */
 export interface UpstreamDocumentRecord {
   name: string;

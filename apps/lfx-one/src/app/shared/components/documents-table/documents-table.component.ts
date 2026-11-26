@@ -58,6 +58,13 @@ export class DocumentsTableComponent {
   // Whether the viewer may change the documents shown. Rows still need `manageableType` set by the page to get actions.
   public readonly canManage = input<boolean>(false);
 
+  /** The folders a document could be moved into. "Move to…" is offered only on non-folder rows, and only when there is a folder to move to. */
+  public readonly folders = input<{ label: string; value: string }[]>([]);
+
+  /** Emitted when the user picks Rename on a manageable row. The page opens the dialog and keeps the result. */
+  public readonly documentRename = output<MyDocumentItem>();
+  /** Emitted when the user picks "Move to…" on a manageable file or link row. */
+  public readonly documentMove = output<MyDocumentItem>();
   /** Emitted when a row with `isFolder: true` is clicked. Consumers use this to drill into the folder. */
   public readonly folderOpen = output<MyDocumentItem>();
   /** Emitted after the user confirms deleting a manageable row. The page makes the API call and refreshes. */
@@ -150,14 +157,17 @@ export class DocumentsTableComponent {
       const menus = new Map<string, MenuItem[]>();
       for (const doc of this.documents()) {
         if (!doc.manageableType) continue;
-        menus.set(doc.id, [
-          {
-            label: 'Delete',
-            icon: 'fa-light fa-trash',
-            styleClass: 'text-red-600',
-            command: () => this.onDeleteClick(doc),
-          },
-        ]);
+        const items: MenuItem[] = [{ label: 'Rename', icon: 'fa-light fa-pen', command: () => this.documentRename.emit(doc) }];
+        if (!doc.isFolder && this.folders().length > 0) {
+          items.push({ label: 'Move to…', icon: 'fa-light fa-folder-arrow-down', command: () => this.documentMove.emit(doc) });
+        }
+        items.push({
+          label: 'Delete',
+          icon: 'fa-light fa-trash',
+          styleClass: 'text-red-600',
+          command: () => this.onDeleteClick(doc),
+        });
+        menus.set(doc.id, items);
       }
       return menus;
     });

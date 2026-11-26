@@ -4,7 +4,7 @@
 import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
-  COMMITTEE_DOCUMENT_DELETE_TYPES,
+  DOCUMENT_DELETE_TYPES,
   DOCUMENT_UPDATE_TYPES,
   DOCUMENT_UPSTREAM_PATH_SEGMENTS,
   MEMBER_IMPORT_BULK_TIMEOUT_MS,
@@ -2292,19 +2292,15 @@ export class CommitteeService {
   /**
    * Deletes a committee folder, link or uploaded file using ETag for concurrency control.
    * A folder is only deleted when it is empty.
-   * @param documentType 'link' or 'file' — determines which upstream endpoint to call
+   * @param documentType 'folder', 'link' or 'file' — determines which upstream endpoint to call
    */
   public async deleteCommitteeDocument(req: Request, committeeId: string, documentId: string, documentType: ProjectDocumentType): Promise<void> {
     // Defense-in-depth: the controller validates this too, but an unknown type must never fall through to another resource's path on a destructive route.
-    if (!COMMITTEE_DOCUMENT_DELETE_TYPES.includes(documentType)) {
-      throw ServiceValidationError.forField(
-        'type',
-        `Unsupported document type: ${documentType}. Must be one of: ${COMMITTEE_DOCUMENT_DELETE_TYPES.join(', ')}.`,
-        {
-          operation: 'delete_committee_document',
-          service: 'committee_service',
-        }
-      );
+    if (!DOCUMENT_DELETE_TYPES.includes(documentType)) {
+      throw ServiceValidationError.forField('type', `Unsupported document type: ${documentType}. Must be one of: ${DOCUMENT_DELETE_TYPES.join(', ')}.`, {
+        operation: 'delete_committee_document',
+        service: 'committee_service',
+      });
     }
 
     const resourcePath = `/committees/${committeeId}/${DOCUMENT_UPSTREAM_PATH_SEGMENTS[documentType]}/${documentId}`;

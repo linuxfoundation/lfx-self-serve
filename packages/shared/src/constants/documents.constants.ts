@@ -11,16 +11,14 @@ export const DOCUMENT_LABEL = { singular: 'Document', plural: 'Documents' };
 /** Group and project document types a writer can delete from the Documents tab. */
 export const DOCUMENT_DELETE_TYPES: readonly ProjectDocumentType[] = ['file', 'link', 'folder'];
 
-/**
- * Group document types a writer can delete. Folders are left out for now: the committee service's folder delete only
- * rejects a folder holding links, and the BFF can't see a just-uploaded file through the query index, so a folder with a
- * file in it could be deleted. Add 'folder' back (use DOCUMENT_DELETE_TYPES) once a committee service release with
- * linuxfoundation/lfx-v2-committee-service#277, which rejects a folder holding documents, is deployed.
- */
-export const COMMITTEE_DOCUMENT_DELETE_TYPES: readonly ProjectDocumentType[] = ['file', 'link'];
-
 /** Group and project document types a writer can rename or move from the Documents tab. */
 export const DOCUMENT_UPDATE_TYPES: readonly ProjectDocumentType[] = ['file', 'link', 'folder'];
+
+/** The folder-picker value for "no folder". A real folder UID is a UUID, so it cannot collide. */
+export const DOCUMENT_ROOT_FOLDER_VALUE = '__root__';
+
+/** Label of the folder-picker entry that moves a document out of every folder. */
+export const DOCUMENT_ROOT_FOLDER_LABEL = 'Documents (root)';
 
 /** Longest name the committee service accepts when a group file, link or folder is updated; a longer one is refused here with a 400. */
 export const COMMITTEE_DOCUMENT_NAME_MAX_LENGTH: Record<ProjectDocumentType, number> = { file: 500, link: 500, folder: 200 };

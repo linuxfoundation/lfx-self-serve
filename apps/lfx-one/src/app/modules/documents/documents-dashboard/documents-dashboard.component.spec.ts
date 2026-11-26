@@ -16,6 +16,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { of, throwError } from 'rxjs';
 import type { Mock } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +33,8 @@ describe('DocumentsDashboardComponent', () => {
   let messageService: { add: Mock };
   let getProjectDocuments: Mock;
   let deleteProjectDocument: Mock;
+  let dialogOpen: Mock;
+  let dialogResult: ProjectDocument | undefined;
   /**
    * The context's resolved project. `canUpload` requires its uid to match `activeContext`'s uid,
    * so the default agrees with the rendered project and only the staleness test drives them apart
@@ -53,6 +56,8 @@ describe('DocumentsDashboardComponent', () => {
     messageService = { add: vi.fn() };
     getProjectDocuments = vi.fn(() => of(projectDocuments));
     deleteProjectDocument = vi.fn(() => of(undefined));
+    dialogResult = undefined;
+    dialogOpen = vi.fn(() => ({ onClose: of(dialogResult) }));
   });
 
   async function render(): Promise<void> {
@@ -70,7 +75,10 @@ describe('DocumentsDashboardComponent', () => {
         { provide: LensService, useValue: { activeLens: signal('project') } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
       ],
-    }).compileComponents();
+    })
+      // The component provides its own DialogService, so it is replaced on the component, not on the module.
+      .overrideComponent(DocumentsDashboardComponent, { set: { providers: [{ provide: DialogService, useValue: { open: dialogOpen } }] } })
+      .compileComponents();
 
     fixture = TestBed.createComponent(DocumentsDashboardComponent);
     fixture.detectChanges();
@@ -393,6 +401,69 @@ describe('DocumentsDashboardComponent', () => {
       await fixture.whenStable();
 
       expect(deleteProjectDocument).not.toHaveBeenCalled();
+    });
+
+    describe('renaming and moving', () => {
+      it('opens the rename dialog with the document as it is now and the folders to choose from', async () => {
+        await render();
+
+        tableInstance().documentRename.emit(rowFor('project_link:own-link'));
+
+        expect(dialogOpen).toHaveBeenCalledTimes(1);
+        expect(dialogOpen.mock.calls[0][1].data).toEqual({
+          mode: 'rename',
+          entityType: 'project',
+          entityId: 'project-1',
+          documentUid: 'own-link',
+          documentType: 'link',
+          name: 'own-link',
+          parentUid: null,
+          folders: [{ label: 'own-folder', value: 'own-folder' }],
+        });
+        expect(tableInstance().folders()).toEqual([{ label: 'own-folder', value: 'own-folder' }]);
+      });
+
+      it('changes nothing when the dialog is dismissed', async () => {
+        await render();
+
+        tableInstance().documentRename.emit(rowFor('project_link:own-link'));
+        await fixture.whenStable();
+
+        expect(getProjectDocuments).toHaveBeenCalledTimes(1);
+        expect(messageService.add).not.toHaveBeenCalled();
+      });
+
+      it('shows the new name and reloads, even when the reload still returns the old name', async () => {
+        dialogResult = document('own-link', '2026-10-01', { name: 'Renamed', updated_at: '2026-11-24T10:00:00Z' });
+        await render();
+
+        tableInstance().documentRename.emit(rowFor('project_link:own-link'));
+        await fixture.whenStable();
+
+        expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Renamed' }));
+        expect(getProjectDocuments).toHaveBeenCalledTimes(2);
+        expect(rowFor('project_link:own-link').name).toBe('Renamed');
+      });
+
+      it('shows a moved document in its new folder even when the reload is stale', async () => {
+        dialogResult = document('own-link', '2026-10-01', { parent_uid: 'own-folder', updated_at: '2026-11-24T10:00:00Z' });
+        await render();
+
+        tableInstance().documentMove.emit(rowFor('project_link:own-link'));
+        await fixture.whenStable();
+
+        expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Moved' }));
+        expect(rowFor('project_folder:own-folder').childCount).toBe(1);
+        expect(rowFor('project_link:own-link')).toBeUndefined();
+      });
+
+      it('ignores a row the page cannot manage', async () => {
+        await render();
+
+        tableInstance().documentRename.emit(rowFor('project_link:group-link'));
+
+        expect(dialogOpen).not.toHaveBeenCalled();
+      });
     });
   });
 });

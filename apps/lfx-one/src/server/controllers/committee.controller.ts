@@ -3,7 +3,7 @@
 
 import {
   ALLOWED_FILE_TYPES,
-  COMMITTEE_DOCUMENT_DELETE_TYPES,
+  DOCUMENT_DELETE_TYPES,
   COMMITTEE_DOCUMENT_NAME_MAX_LENGTH,
   DOCUMENT_UPDATE_TYPES,
   MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX,
@@ -1347,7 +1347,7 @@ export class CommitteeController {
   public async deleteCommitteeDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id, documentId } = req.params;
     const documentType = req.query['type'] as string;
-    const validDeleteTypes: readonly string[] = COMMITTEE_DOCUMENT_DELETE_TYPES;
+    const validDeleteTypes: readonly string[] = DOCUMENT_DELETE_TYPES;
     const startTime = logger.startOperation(req, 'delete_committee_document', {
       committee_id: id,
       document_id: documentId,
