@@ -82,9 +82,9 @@ const CONFIG: LinkedInRuntimeConfig = {
   ],
 };
 
-function buildReq(linkedInConfigBody: Record<string, unknown>): Request {
+function buildReq(linkedInConfigBody: Record<string, unknown>, extra: Record<string, unknown> = {}): Request {
   return {
-    body: { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100, ...linkedInConfigBody } },
+    body: { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100, ...linkedInConfigBody }, ...extra },
     query: { project: 'tlf', brief_id: 'b-1' },
     path: '/api/campaigns/create',
   } as unknown as Request;
@@ -98,10 +98,10 @@ function sentLinkedInConfig(): Record<string, unknown> {
   return (createCampaigns.mock.calls[0][4] as Record<string, unknown>)['linkedInConfig'] as Record<string, unknown>;
 }
 
-async function create(linkedInConfigBody: Record<string, unknown>): Promise<{ res: Response; next: NextFunction }> {
+async function create(linkedInConfigBody: Record<string, unknown>, extra: Record<string, unknown> = {}): Promise<{ res: Response; next: NextFunction }> {
   const res = buildRes();
   const next = vi.fn() as unknown as NextFunction;
-  await new CampaignController().createCampaign(buildReq(linkedInConfigBody), res, next);
+  await new CampaignController().createCampaign(buildReq(linkedInConfigBody, extra), res, next);
   return { res, next };
 }
 
@@ -406,6 +406,18 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
     loadBriefById.mockResolvedValue({ status: 'loaded', briefId: 'b-1', brief: { eventDetails: { registrationUrl: '' } }, etag: 'e', approved: true });
 
     const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [{ introText: 'a', headline: 'b' }] });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('registrationUrl');
+  });
+
+  it('still asks the other platforms of a document create for the registration URL', async () => {
+    loadBriefById.mockResolvedValue({ status: 'loaded', briefId: 'b-1', brief: { eventDetails: { registrationUrl: '' } }, etag: 'e', approved: true });
+
+    const { next } = await create(documentAd, {
+      platforms: ['linkedin-ads', 'meta-ads'],
+      metaConfig: { budgetUsd: 100, variants: [{ primaryText: 'a', headline: 'b', imageUrl: 'https://example.com/a.png' }] },
+    });
 
     expect(createCampaigns).not.toHaveBeenCalled();
     expect(refusal(next).field).toBe('registrationUrl');
