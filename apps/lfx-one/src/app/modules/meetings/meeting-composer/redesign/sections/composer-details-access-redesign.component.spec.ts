@@ -73,6 +73,15 @@ describe('ComposerDetailsAccessRedesignComponent', () => {
       expect(query('composer-title-youtube-counter')?.textContent?.trim()).toBe(`0/${YOUTUBE_MAX_MEETING_TITLE_LENGTH}`);
     });
 
+    it('names the 150-character cap when a stored title exceeds it without YouTube uploads', () => {
+      const title = formService.form().get('title');
+      title?.setValue('x'.repeat(MEETING_TITLE_MAX_LENGTH + 1));
+      title?.markAsTouched();
+      fixture.detectChanges();
+
+      expect(query('composer-title-input')?.textContent).toContain(`Meeting title cannot exceed ${MEETING_TITLE_MAX_LENGTH} characters.`);
+    });
+
     it('shows the required error once the title is touched', () => {
       expect(query('composer-title-input')?.textContent).not.toContain('Meeting title is required');
 

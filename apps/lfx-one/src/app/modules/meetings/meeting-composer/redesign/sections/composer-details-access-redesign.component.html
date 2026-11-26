@@ -122,11 +122,11 @@
           (valueChange)="pickOrganizer($event)"
           data-testid="composer-organizer-search">
           @for (user of organizerResults(); track user.uid) {
-            <lfx-ui-option [value]="user.uid" [label]="fullName(user)" [attr.data-testid]="'composer-organizer-option-' + user.uid">
+            <lfx-ui-option [value]="user.uid" [label]="user | fullName" [attr.data-testid]="'composer-organizer-option-' + user.uid">
               <span class="flex items-center gap-2.5 py-1.5">
-                <lfx-ui-avatar [name]="fullName(user)" [size]="28" decorative />
+                <lfx-ui-avatar [name]="user | fullName" [size]="28" decorative />
                 <span class="flex min-w-0 flex-col">
-                  <span class="truncate text-sm font-medium text-gray-900">{{ fullName(user) }}</span>
+                  <span class="truncate text-sm font-medium text-gray-900">{{ user | fullName }}</span>
                   <span class="truncate text-xs font-normal text-gray-500" [attr.title]="user.email">{{ user.email }}</span>
                 </span>
               </span>
