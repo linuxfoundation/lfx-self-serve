@@ -24,15 +24,20 @@ function plainRecord(value: unknown): Record<string, unknown> | null {
 }
 
 /**
- * The value campaign-service decodes for `key`, as Go's `encoding/json` matches keys: the exact spelling when present,
- * else the first key equal to it ignoring case (Unicode folds included: `foldKey`). The keys the exclusions are compared
- * against (`subreddits`, `geoTargets`, `subCountryGeoTargets`) are read this way, so a case variant of one cannot make
- * the comparison differ from campaign-service's.
+ * The value campaign-service decodes for `key`. Its create path re-marshals the config (`marshalAny` in
+ * `internal/service/brief.go`), so the keys reach the decoder sorted by byte order. Go's `encoding/json` then assigns
+ * every key equal to `key` ignoring case (Unicode folds included: `foldKey`), exact spelling or not, in that order, so
+ * the last such key in byte order wins. The keys the exclusions are compared against (`subreddits`, `geoTargets`,
+ * `subCountryGeoTargets`) are read this way, so a case variant of one cannot make the comparison differ from
+ * campaign-service's. JavaScript's `<` compares UTF-16 code units, which orders BMP keys as their UTF-8 bytes do, and
+ * every fold variant of these ASCII names (`ſ`, the Kelvin sign) is in the BMP.
  */
 function decodedValue(config: Record<string, unknown>, key: string): unknown {
-  if (key in config) return config[key];
-  const match = Object.keys(config).find((k) => foldKey(k) === foldKey(key));
-  return match === undefined ? undefined : config[match];
+  let last: string | undefined;
+  for (const k of Object.keys(config)) {
+    if (foldKey(k) === foldKey(key) && (last === undefined || k > last)) last = k;
+  }
+  return last === undefined ? undefined : config[last];
 }
 
 function fieldOf(key: RedditTargetingExclusionKey): string {

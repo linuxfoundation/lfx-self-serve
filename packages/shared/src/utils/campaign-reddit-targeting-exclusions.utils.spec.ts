@@ -58,6 +58,23 @@ describe('redditTargetingExclusionsRefusal', () => {
     expect(refusal?.message).toContain(message);
   });
 
+  // campaign-service re-marshals the config with sorted keys and keeps the last match, so of two spellings of one key the
+  // later one in byte order decides, whichever order the caller sent them in.
+  describe.each<[string, string, string, unknown, unknown, Record<string, unknown>, string]>([
+    ['geoTargets', 'geoTargets', 'geotargets', ['US'], ['CA'], { excludedGeoTargets: ['US'] }, GEOS],
+    ['subreddits', 'Subreddits', 'subreddits', ['news'], ['gaming'], { excludedSubreddits: ['news'] }, SUBS],
+    ['subCountryGeoTargets', 'subCountryGeoTargets', 'subcountrygeotargets', [], ['6252001'], { excludedGeoTargets: ['US'] }, GEOS],
+  ])('two spellings of %s', (_key, earlier, later, colliding, clear, exclusions, field) => {
+    it.each([true, false])('the later spelling decides (later sent last: %s)', (laterLast) => {
+      const config = (earlierValue: unknown, laterValue: unknown): Record<string, unknown> =>
+        laterLast
+          ? { [earlier]: earlierValue, [later]: laterValue, ...exclusions }
+          : { [later]: laterValue, [earlier]: earlierValue, ...exclusions };
+      expect(redditTargetingExclusionsRefusal(config(colliding, clear), true)).toBeNull();
+      expect(redditTargetingExclusionsRefusal(config(clear, colliding), true)?.field).toBe(field);
+    });
+  });
+
   it('never echoes a caller value', () => {
     expect(redditTargetingExclusionsRefusal({ excludedSubreddits: ['<script>'] }, true)?.message).not.toContain('<script>');
   });
