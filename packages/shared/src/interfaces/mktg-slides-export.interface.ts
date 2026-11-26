@@ -72,11 +72,15 @@ export interface MktgSlidesExportIconImage {
   icon: string;
 }
 
-/** Why one icon image was not published: the image, the rasterizer's or the publisher's reason, and its detail for the log (server-side). */
+/**
+ * Why one icon image was not published: the image, the rasterizer's or the publisher's reason, its detail for the log, and
+ * the raw rejection when the failure was unexpected, so the log carries the error itself (server-side).
+ */
 export interface MktgSlidesExportIconFailure {
   image: MktgSlidesExportIconImage;
   reason: string;
   detail: string;
+  err?: unknown;
 }
 
 /** One icon image as the server drew and published it: its public URL, or why there is none (server-side). */
