@@ -25,6 +25,21 @@ export interface ProfileVisibilityUpdateRequest {
   sections: ProfileVisibilitySections;
 }
 
+/** A switch row in the Profile page's Open Profile settings drawer (#6087), and the stored key it shows on the public profile. */
+export interface ProfileSettingsRow {
+  key: ProfileVisibilityKey;
+  name: string;
+  description: string;
+}
+
+/** A drawer row with whether its block shows today, as the drawer renders it. */
+export interface ProfileSettingsRowState extends ProfileSettingsRow {
+  shown: boolean;
+}
+
+/** The Open Profile settings drawer's tabs (#6087). */
+export type ProfileSettingsTab = 'blocks' | 'personal';
+
 /** Drawer auto-save status, driving the inline "Saving… / Saved" indicator (no explicit Save button). */
 export type ProfileVisibilitySaveState = 'idle' | 'saving' | 'saved' | 'error';
 

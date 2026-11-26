@@ -26,7 +26,7 @@ import { injectMediaQueryMatches } from '@shared/utils/mobile-viewport.util';
 import { stripAuthPrefixOrNull } from '@shared/utils/strip-auth-prefix.util';
 import { catchError, distinctUntilChanged, EMPTY, of, startWith, switchMap } from 'rxjs';
 
-import { ProfileVisibilityDrawerComponent } from '../components/profile-visibility-drawer/profile-visibility-drawer.component';
+import { ProfileSettingsDrawerComponent } from '../components/profile-settings-drawer/profile-settings-drawer.component';
 import { ProfileVisibilityDrawerService } from '../components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { ProfileAsideComponent } from './profile-aside/profile-aside.component';
 import { ProfileGroupsComponent } from './profile-groups/profile-groups.component';
@@ -48,9 +48,9 @@ import { ProfileRecognitionsComponent } from './profile-recognitions/profile-rec
     ProfileRecognitionsComponent,
     ProfileInvolvementComponent,
     ProfileGroupsComponent,
-    ProfileVisibilityDrawerComponent,
+    ProfileSettingsDrawerComponent,
   ],
-  // The page owns its profile, the Flow C return for a photo upload that left for authorization, and the Open Profile drawer.
+  // The page owns its profile, the Flow C return for a photo upload that left for authorization, and the Open Profile settings drawer (#6087).
   providers: [AccountProfileService, ProfileAuthReturnService, ProfileVisibilityDrawerService],
   templateUrl: './profile-page.component.html',
 })
