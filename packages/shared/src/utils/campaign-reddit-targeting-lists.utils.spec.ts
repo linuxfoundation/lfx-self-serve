@@ -9,6 +9,7 @@ import {
   redditTargetingListEntry,
   redditTargetingListHeld,
   redditTargetingListsCapability,
+  redditTargetingListsInEffect,
 } from './campaign-reddit-targeting-lists.utils';
 
 describe('redditTargetingListsCapability', () => {
@@ -18,6 +19,20 @@ describe('redditTargetingListsCapability', () => {
     [null, false],
   ])('reads %s as %s', (enabled, expected) => {
     expect(redditTargetingListsCapability(enabled)).toBe(expected);
+  });
+});
+
+describe('redditTargetingListsInEffect', () => {
+  const seed = { subreddits: ['r/kubernetes'], interests: ['Technology'] };
+  const edited = { subreddits: ['devops'], interests: [] };
+
+  it.each<[string, typeof edited | null, boolean | null, typeof seed]>([
+    ['the edits on a yes', edited, true, edited],
+    ['the seed on a no, keeping the edits out of the request', edited, false, seed],
+    ['the seed while the answer is out', edited, null, seed],
+    ['the seed when nothing was edited', null, true, seed],
+  ])('uses %s', (_name, edits, enabled, expected) => {
+    expect(redditTargetingListsInEffect(seed, edits, enabled)).toEqual(expected);
   });
 });
 
@@ -39,6 +54,14 @@ describe('redditTargetingListAddRefusal', () => {
   it.each<[string, string[], RedditTargetingListKey, string, string | null]>([
     ['a new subreddit', ['kubernetes'], 'subreddits', 'golang', null],
     ['a held subreddit, in another case (adding changes nothing)', ['kubernetes'], 'subreddits', 'Kubernetes', null],
+    ['a subreddit seeded with its r/ (adding changes nothing)', ['r/kubernetes'], 'subreddits', 'kubernetes', null],
+    [
+      'a subreddit that is not a subreddit name',
+      [],
+      'subreddits',
+      'cloud-native',
+      'Enter a subreddit name: 2 to 21 letters, digits or underscores, optionally after r/.',
+    ],
     ['a blank subreddit', [], 'subreddits', '', 'Enter a subreddit name.'],
     ['a blank interest', [], 'interests', '', 'Enter a Reddit interest name or id.'],
     ['a 101st subreddit', full(100), 'subreddits', 'golang', 'At most 100 subreddits.'],
@@ -49,6 +72,7 @@ describe('redditTargetingListAddRefusal', () => {
   });
 
   it('matches held entries ignoring case', () => {
-    expect(redditTargetingListHeld(['Technology'], 'technology')).toBe(true);
+    expect(redditTargetingListHeld(['Technology'], 'interests', 'technology')).toBe(true);
+    expect(redditTargetingListHeld(['r/Kubernetes'], 'subreddits', 'kubernetes')).toBe(true);
   });
 });

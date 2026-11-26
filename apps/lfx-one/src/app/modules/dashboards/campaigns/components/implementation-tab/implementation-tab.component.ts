@@ -546,6 +546,7 @@ import {
   redditTargetingExclusionsBlock,
   redditTargetingExclusionsCapability,
   redditTargetingListsCapability,
+  redditTargetingListsInEffect,
   redditTargetingExclusionsDraftRefusal,
   redditTargetingExclusionsField,
   redditDraftFields,
@@ -1023,13 +1024,19 @@ export class ImplementationTabComponent implements OnInit {
   public readonly redditTargetingResolutionEnabled = input<boolean | null>(null);
   /** @see redditTargetingResolutionEnabled — an explicit yes, never a `null`. */
   protected readonly redditTargetingListsAvailable = computed<boolean>(() => redditTargetingListsCapability(this.redditTargetingResolutionEnabled()));
-  /** Whether the operator edited the subreddits or interests on this brief; only then does the draft carry them. */
-  protected readonly redditTargetingListsEdited = signal<boolean>(false);
-  /** The two editable lists, as the editor takes them. */
-  protected readonly redditTargetingLists = computed<RedditTargetingListsDraft>(() => ({
-    subreddits: this.redditSubreddits(),
-    interests: this.redditInterests(),
-  }));
+  /**
+   * The subreddits and interests as the operator edited them on this brief, else `null`. Kept apart from the brief's seed
+   * (`redditSubreddits` / `redditInterests`), and in the draft only once edited.
+   */
+  protected readonly redditEditedTargetingLists = signal<RedditTargetingListsDraft | null>(null);
+  /** The lists shown and sent: the edits on an explicit yes, else the brief's seed (`redditTargetingListsInEffect`). */
+  protected readonly redditTargetingLists = computed<RedditTargetingListsDraft>(() =>
+    redditTargetingListsInEffect(
+      { subreddits: this.redditSubreddits(), interests: this.redditInterests() },
+      this.redditEditedTargetingLists(),
+      this.redditTargetingResolutionEnabled()
+    )
+  );
 
   /**
    * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
@@ -3033,7 +3040,7 @@ export class ImplementationTabComponent implements OnInit {
    * under a fixed `r/` prefix previews `r/r/k8s` — a section whose entire purpose is showing
    * what will be sent must not show something else.
    */
-  protected readonly redditEffectiveSubreddits: Signal<string[]> = computed(() => redditEffectiveSubreddits(this.redditSubreddits()));
+  protected readonly redditEffectiveSubreddits: Signal<string[]> = computed(() => redditEffectiveSubreddits(this.redditTargetingLists().subreddits));
 
   /**
    * The geo list a Meta create would ACTUALLY send — one value for both the preview and `submit()`.
@@ -5709,9 +5716,7 @@ export class ImplementationTabComponent implements OnInit {
 
   /** The edited subreddits and interests, kept in the draft from now on (#6108 row 4). */
   protected onRedditTargetingListsChange(lists: RedditTargetingListsDraft): void {
-    this.redditSubreddits.set(lists.subreddits);
-    this.redditInterests.set(lists.interests);
-    this.redditTargetingListsEdited.set(true);
+    this.redditEditedTargetingLists.set(lists);
     this.emitDraft();
   }
 
@@ -7503,7 +7508,7 @@ export class ImplementationTabComponent implements OnInit {
               // does: dispatch strips an optional `r/`, so sending the raw value would submit
               // something the operator was never shown.
               subreddits: this.redditEffectiveSubreddits(),
-              interests: this.redditInterests(),
+              interests: this.redditTargetingLists().interests,
               keywords: this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term),
               variants: this.redditVariants(),
               // Always sent, never conditioned on differing from the default: both creators fall
@@ -9744,11 +9749,7 @@ export class ImplementationTabComponent implements OnInit {
     if (redditRestore.conversionEvent !== undefined) this.redditConversionEvent.set(redditRestore.conversionEvent);
     if (redditRestore.customAudiences !== undefined) this.redditCustomAudiences.set(redditRestore.customAudiences);
     if (redditRestore.targetingExclusions !== undefined) this.redditTargetingExclusions.set(redditRestore.targetingExclusions);
-    if (redditRestore.editedTargetingLists !== undefined) {
-      this.redditSubreddits.set(redditRestore.editedTargetingLists.subreddits);
-      this.redditInterests.set(redditRestore.editedTargetingLists.interests);
-      this.redditTargetingListsEdited.set(true);
-    }
+    if (redditRestore.editedTargetingLists !== undefined) this.redditEditedTargetingLists.set(redditRestore.editedTargetingLists);
     // The Meta image, on the Reddit image's terms above.
     const metaImageRestore = metaImageDraftRestore(draft);
     if (metaImageRestore.imageUrl !== undefined) this.metaImageUrl.set(metaImageRestore.imageUrl);
@@ -10322,7 +10323,7 @@ export class ImplementationTabComponent implements OnInit {
         conversionEvent: this.redditConversionEvent(),
         customAudiences: this.redditCustomAudiences(),
         targetingExclusions: this.redditTargetingExclusions(),
-        editedTargetingLists: this.redditTargetingListsEdited() ? this.redditTargetingLists() : null,
+        editedTargetingLists: this.redditEditedTargetingLists(),
       }),
       ...metaImageDraftFields({
         imageUrl: this.metaImageUrl(),
@@ -10380,7 +10381,7 @@ export class ImplementationTabComponent implements OnInit {
     this.redditConversionEvent.set(redditReset.conversionEvent);
     this.redditCustomAudiences.set(redditReset.customAudiences);
     this.redditTargetingExclusions.set(redditReset.targetingExclusions);
-    this.redditTargetingListsEdited.set(false);
+    this.redditEditedTargetingLists.set(null);
     this.redditBudgetUsd.set(redditReset.budgetUsd);
     this.setRedditBriefLists(redditReset);
     // The other platforms on the same terms (#4624): every value the brief does not derive, or derives

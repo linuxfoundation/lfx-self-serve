@@ -16,6 +16,7 @@ import type {
   RedditTargetingExclusionsDraft,
 } from '../interfaces/campaign.interface';
 import { googleAdsToUpperCode } from './campaign-google-assets.utils';
+import { redditTargetingListFromDraft } from './campaign-reddit-targeting-lists.utils';
 import { foldKey } from './campaign-linkedin-config.utils';
 import { goTrimSpace } from './campaign-linkedin.utils';
 
@@ -270,5 +271,5 @@ export function redditTargetingExclusionsBlock(input: RedditTargetingExclusionsB
 
 /** A stored draft list as the boxes hold it: the strings of an array, else `undefined` (the reset empty list stands). */
 export function redditTargetingExclusionsFromDraft(value: unknown): string[] | undefined {
-  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : undefined;
+  return redditTargetingListFromDraft(value);
 }

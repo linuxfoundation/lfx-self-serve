@@ -46,11 +46,12 @@ export class RedditTargetingListsComponent {
     const held = this.lists()[key];
     const error = redditTargetingListAddRefusal(held, key, entry);
     this.addError.set(error);
-    if (error === null && !redditTargetingListHeld(held, entry)) this.lists.update((current) => ({ ...current, [key]: [...current[key], entry] }));
+    if (error === null && !redditTargetingListHeld(held, key, entry)) this.lists.update((current) => ({ ...current, [key]: [...current[key], entry] }));
     box.writeValue(null);
   }
 
   protected onRemove(key: RedditTargetingListKey, entry: string): void {
+    this.addError.set(null);
     this.lists.update((current) => ({ ...current, [key]: current[key].filter((held) => held !== entry) }));
   }
 }

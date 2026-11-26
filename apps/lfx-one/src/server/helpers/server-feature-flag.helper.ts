@@ -357,9 +357,9 @@ export enum ServerFeatureFlag {
    * communities AND interests.
    *
    * A CAPABILITY flag that follows campaign-service's `REDDIT_TARGETING_RESOLUTION_ENABLED`: it changes no request field.
-   * It is served as `redditTargetingResolutionEnabled`, which the Implement tab's row 4 screen (a follow-up) will read to
-   * offer the two lists for editing, since an edit is only kept when campaign-service resolves it. Until then, and while
-   * off (the default), the lists stay the brief's, read-only. Keep it off
+   * It is served as `redditTargetingResolutionEnabled`, which the Implement tab reads to offer the two lists for editing,
+   * since an edit is only kept when campaign-service resolves it. While off (the default), the lists stay the brief's,
+   * read-only, and edits a draft kept are not sent. Keep it off
    * until campaign-service's flag is on and probed. Same accepted values as the flags above.
    */
   CampaignServiceRedditTargetingResolution = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION',
