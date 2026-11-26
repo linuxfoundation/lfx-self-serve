@@ -2411,6 +2411,22 @@ export interface MeetingComposerEditScope {
   label?: string;
 }
 
+/** What the redesigned composer's scope note says an edit changes. */
+export interface MeetingComposerScopeNote {
+  /** `single` is a one-time meeting; the other two are the scopes of a recurring one. */
+  kind: 'single' | RecurringMeetingEditScope;
+  /** Title of the meeting as loaded. */
+  title: string;
+  /** Saved start of the meeting or occurrence; absent for a series. */
+  label?: string;
+}
+
+/** Project the redesigned composer names above its title. */
+export interface MeetingComposerProjectLabel {
+  name: string;
+  logoUrl: string;
+}
+
 /** Options for the show-attendees lock (`isShowMeetingAttendeesLocked` and its helpers). */
 export interface ShowMeetingAttendeesLockOptions {
   /**

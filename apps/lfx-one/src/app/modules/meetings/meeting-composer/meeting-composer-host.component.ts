@@ -6,16 +6,18 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
-import { MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
+import { MEETING_COMPOSER_TOAST_POSITION, MEETINGS_REDESIGN_FLAG } from '@lfx-one/shared/constants';
 import type {
   EntityWithProject,
   Meeting,
   MeetingComposerEditScope,
   MeetingComposerSection,
+  MeetingComposerSectionId,
   MeetingComposerToastData,
   UiToastRef,
 } from '@lfx-one/shared/interfaces';
 import { formatMeetingOccurrenceLabel } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
@@ -32,6 +34,7 @@ import { MeetingComposerPreviewComponent } from './meeting-composer-preview.comp
 import { MeetingComposerRailComponent } from './meeting-composer-rail.component';
 import { MeetingComposerService } from './meeting-composer.service';
 import { QuickCreateDialogComponent } from './quick-create-dialog.component';
+import { MeetingComposerModalComponent } from './redesign/meeting-composer-modal.component';
 import { ComposerAgendaResourcesComponent } from './sections/composer-agenda-resources.component';
 import { ComposerDateScheduleComponent } from './sections/composer-date-schedule.component';
 import { ComposerDetailsAccessComponent } from './sections/composer-details-access.component';
@@ -60,6 +63,7 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
     ComposerGuestsComponent,
     ComposerAgendaResourcesComponent,
     QuickCreateDialogComponent,
+    MeetingComposerModalComponent,
   ],
   templateUrl: './meeting-composer-host.component.html',
   providers: [MeetingComposerFormService],
@@ -74,9 +78,13 @@ export class MeetingComposerHostComponent {
   private readonly intercomService = inject(IntercomService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   protected readonly composer = inject(MeetingComposerService);
   protected readonly formService = inject(MeetingComposerFormService);
+
+  /** Opens every composer in the redesigned modal instead of the drawer or the quick create dialog. */
+  protected readonly redesign: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETINGS_REDESIGN_FLAG, false);
 
   /** Narrower for a single-occurrence edit, which drops the series-only sections. */
   protected readonly sections: Signal<readonly MeetingComposerSection[]> = this.formService.visibleSections;
@@ -349,14 +357,14 @@ export class MeetingComposerHostComponent {
    * every series setting the occurrence form never loaded, so an in-place switch would save defaults
    * over them. Anything typed into the occurrence form is discarded, which the banner's copy says.
    */
-  protected onEditSeriesInstead(): void {
+  protected onEditSeriesInstead(section?: MeetingComposerSectionId): void {
     const context = this.composer.context();
 
     if (this.formService.submitting() || !context?.meetingUid) {
       return;
     }
 
-    this.composer.open({ mode: 'edit', meetingUid: context.meetingUid, projectUid: context.projectUid });
+    this.composer.open({ mode: 'edit', meetingUid: context.meetingUid, projectUid: context.projectUid, ...(section ? { section } : {}) });
   }
 
   /** Jumps to the section that owns the title field. */
