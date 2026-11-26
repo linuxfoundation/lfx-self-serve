@@ -5620,6 +5620,28 @@
                 }
               </div>
             }
+            <lfx-reddit-targeting-exclusions
+              [enabled]="redditTargetingExclusionsAvailable()"
+              [targeted]="redditTargetedLists()"
+              [exclusions]="redditTargetingExclusions()"
+              (exclusionsChange)="onRedditTargetingExclusionsChange($event)" />
+            @if (redditTargetingExclusionsBlock(); as block) {
+              <div
+                role="alert"
+                class="flex flex-col items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                [attr.data-testid]="'implementation-reddit-targeting-exclusions-block-' + block.kind">
+                <p>{{ block.message }}</p>
+                @if (block.kind === 'failed') {
+                  <lfx-button
+                    label="Retry"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="retryCreateCapabilities.emit()"
+                    data-testid="implementation-reddit-targeting-exclusions-block-retry" />
+                }
+              </div>
+            }
 
             <!-- Conversion pixel override (#3484). Optional and normally blank: campaign-service
                  falls back to the connection's own pixel. Offered only on an explicit yes from

@@ -669,6 +669,45 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-custom-audiences-block-restricted"]')).not.toBeNull();
   });
 
+  // Reddit targeting exclusions (#6108 row 3): the rules are in `campaign-reddit-targeting-exclusions.utils.spec.ts`; these test the wiring.
+  async function mountWithExclusions(
+    draft: CampaignImplementationDraft | null,
+    enabled: boolean | null
+  ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const mounted = await mount(draft);
+    mounted.fixture.componentRef.setInput('redditTargetingExclusionsEnabled', enabled);
+    mounted.fixture.componentRef.setInput('createCapabilityRead', 'ready');
+    at(mounted.fixture).selectedPlatforms.set(['reddit-ads']);
+    mounted.fixture.detectChanges();
+    await mounted.fixture.whenStable();
+    return mounted;
+  }
+  const EXCLUSIONS = { excludedSubreddits: ['synth_offtopic'], excludedGeoTargets: ['AQ'] };
+
+  it('carries exclusions from the boxes through a tab round-trip and into the request', async () => {
+    const first = await mountWithExclusions(null, true);
+    first.fixture.debugElement.query(By.css('lfx-reddit-targeting-exclusions')).triggerEventHandler('exclusionsChange', EXCLUSIONS);
+    expect(first.latest()).toMatchObject({ redditExcludedSubreddits: ['synth_offtopic'], redditExcludedGeoTargets: ['AQ'] });
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const second = await mountWithExclusions(draft, true);
+    expect(submitReddit(second.fixture)).toMatchObject(EXCLUSIONS);
+  });
+
+  it('holds Create for remembered exclusions the deployment answered no to, and shows why', async () => {
+    const first = await mountWithExclusions(null, true);
+    first.fixture.debugElement.query(By.css('lfx-reddit-targeting-exclusions')).triggerEventHandler('exclusionsChange', EXCLUSIONS);
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const f = (await mountWithExclusions(draft, false)).fixture;
+    makeSubmittable(f);
+
+    expect(at(f).canSubmit()).toBe(false);
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-targeting-exclusions-block-restricted"]')).not.toBeNull();
+  });
+
   // === The other platforms on the same live brief switch (#4624) ===
 
   /** The next brief: another event, same platforms. `strip` removes copy blocks the conditional resets key on. */

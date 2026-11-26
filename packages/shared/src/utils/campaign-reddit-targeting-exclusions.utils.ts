@@ -7,7 +7,14 @@ import {
   REDDIT_TARGETING_EXCLUSION_KEYS,
   REDDIT_TARGETING_EXCLUSION_LIMITS,
 } from '../constants/campaign.constants';
-import type { RedditConfigRefusal, RedditTargetingExclusionKey } from '../interfaces/campaign.interface';
+import type {
+  CampaignRedditTargetingExclusionsBlock,
+  RedditConfigRefusal,
+  RedditTargetedLists,
+  RedditTargetingExclusionKey,
+  RedditTargetingExclusionsBlockInput,
+  RedditTargetingExclusionsDraft,
+} from '../interfaces/campaign.interface';
 import { googleAdsToUpperCode } from './campaign-google-assets.utils';
 import { foldKey } from './campaign-linkedin-config.utils';
 import { goTrimSpace } from './campaign-linkedin.utils';
@@ -154,4 +161,114 @@ export function redditTargetingExclusionsRefusal(raw: unknown, enabled: boolean)
     return { field: fieldOf(set), message: 'Reddit targeting exclusions are not enabled on this deployment. Remove them and create again.' };
   }
   return subredditRefusal(lists.excludedSubreddits, config) ?? geoRefusal(lists.excludedGeoTargets, config);
+}
+
+/** Whether the Implement tab offers the exclusion boxes and sends the lists: only on an explicit yes, so an unanswered (`null`) read withholds them like a no. */
+export function redditTargetingExclusionsCapability(enabled: boolean | null): boolean {
+  return enabled === true;
+}
+
+/** Whether the draft holds any entry in either list. */
+export function redditTargetingExclusionsPicked(exclusions: RedditTargetingExclusionsDraft): boolean {
+  return exclusions.excludedSubreddits.length + exclusions.excludedGeoTargets.length > 0;
+}
+
+/**
+ * The `redditConfig` keys a create carries: each list only when the capability is an explicit yes and the list holds an
+ * entry, so an empty list is never sent. Entries the capability does not confirm are held by
+ * {@link redditTargetingExclusionsBlock} instead, never dropped here unseen.
+ */
+export function redditTargetingExclusionsField(
+  exclusions: RedditTargetingExclusionsDraft,
+  enabled: boolean | null
+): Partial<Record<RedditTargetingExclusionKey, string[]>> {
+  if (!redditTargetingExclusionsCapability(enabled)) return {};
+  const field: Partial<Record<RedditTargetingExclusionKey, string[]>> = {};
+  for (const key of REDDIT_TARGETING_EXCLUSION_KEYS) {
+    if (exclusions[key].length > 0) field[key] = [...exclusions[key]];
+  }
+  return field;
+}
+
+/**
+ * Why the held lists break campaign-service's rules against the targeting the create sends, or `null`:
+ * {@link redditTargetingExclusionsRefusal} with the flag on. A geo target or subreddit changed after an entry was added
+ * can make it overlap, which is caught here rather than when it was added.
+ */
+export function redditTargetingExclusionsDraftRefusal(exclusions: RedditTargetingExclusionsDraft, targeted: RedditTargetedLists): string | null {
+  const config = { subreddits: targeted.subreddits, geoTargets: targeted.geoTargets, ...redditTargetingExclusionsField(exclusions, true) };
+  return redditTargetingExclusionsRefusal(config, true)?.message ?? null;
+}
+
+/** A typed or picked entry as the list holds it: a subreddit without its `r/` prefix, or a country code trimmed and upper-cased as Go does. */
+export function redditTargetingExclusionEntry(key: RedditTargetingExclusionKey, raw: string): string {
+  return key === 'excludedSubreddits' ? subredditName(raw) : googleAdsToUpperCode(goTrimSpace(raw));
+}
+
+/** The country codes a create targets, which no excluded country may repeat: the geo targets as sent, or `US` when there are none. */
+export function redditTargetedGeoCodes(targeted: RedditTargetedLists): Set<string> {
+  return effectiveGeoSet({ geoTargets: targeted.geoTargets });
+}
+
+/** Whether `list` already holds `entry`: subreddits compared ignoring case, as campaign-service drops repeats that way; codes exactly. */
+export function redditTargetingExclusionHeld(exclusions: RedditTargetingExclusionsDraft, key: RedditTargetingExclusionKey, entry: string): boolean {
+  if (key === 'excludedGeoTargets') return exclusions.excludedGeoTargets.includes(entry);
+  const name = entry.toLowerCase();
+  return exclusions.excludedSubreddits.some((held) => held.toLowerCase() === name);
+}
+
+/**
+ * Why an entry ({@link redditTargetingExclusionEntry}) is not added to its list, or `null`: blank, one a create would
+ * refuse, one the campaign targets, or a full list. An entry the list already holds is not an error (adding it again
+ * changes nothing).
+ */
+export function redditTargetingExclusionAddRefusal(
+  exclusions: RedditTargetingExclusionsDraft,
+  key: RedditTargetingExclusionKey,
+  entry: string,
+  targeted: RedditTargetedLists
+): string | null {
+  const max = REDDIT_TARGETING_EXCLUSION_LIMITS[key];
+  const full = !redditTargetingExclusionHeld(exclusions, key, entry) && exclusions[key].length >= max;
+  if (key === 'excludedSubreddits') {
+    if (entry === '') return 'Enter a subreddit name.';
+    if (!REDDIT_SUBREDDIT_NAME_PATTERN.test(entry)) return 'Enter a subreddit name: 2 to 21 letters, digits or underscores, optionally after r/.';
+    const targetedNames = new Set(targeted.subreddits.map(subredditName).map((name) => name.toLowerCase()));
+    if (targetedNames.has(entry.toLowerCase())) return `r/${entry} is targeted. A community cannot be both targeted and excluded.`;
+    return full ? `Exclude at most ${max} subreddits.` : null;
+  }
+  if (entry === '') return 'Enter a country.';
+  if (!/^[A-Z]{2}$/.test(entry) || !ASSIGNED_COUNTRY_CODES.has(entry)) return 'Pick a country, or enter its two-letter ISO country code.';
+  if (redditTargetedGeoCodes(targeted).has(entry)) {
+    return `${entry} is targeted (the geo targets, or the US default when there are none). A country cannot be both targeted and excluded.`;
+  }
+  return full ? `Exclude at most ${max} countries.` : null;
+}
+
+/**
+ * Why Create is held for Reddit exclusions the draft holds but the request cannot carry, or `null`. Held rather than
+ * dropped, because they change who the campaign reaches. An explicit no (`restricted`: the deployment) leaves the
+ * entries listed with Remove; while the answer is out or failed, Create waits or offers Retry, as
+ * `redditCustomAudiencesBlock` does.
+ */
+export function redditTargetingExclusionsBlock(input: RedditTargetingExclusionsBlockInput): CampaignRedditTargetingExclusionsBlock | null {
+  if (!redditTargetingExclusionsPicked(input.exclusions) || redditTargetingExclusionsCapability(input.enabled)) return null;
+  if (input.enabled === false) {
+    return { kind: 'restricted', message: 'Excluded communities and countries are not on for Reddit on this deployment. Remove them to create the campaign.' };
+  }
+  if (input.createCapabilityRead === 'pending') {
+    return { kind: 'pending', message: 'Checking whether Reddit exclusions can be sent. Create waits so they are not dropped.' };
+  }
+  if (!input.briefId) {
+    return { kind: 'unsaved', message: "Reddit exclusions can't be checked until this brief is saved. Save the brief, or remove them." };
+  }
+  return {
+    kind: 'failed',
+    message: 'Could not confirm that Reddit exclusions can be sent, so Create waits rather than dropping them. Retry the check, or remove them.',
+  };
+}
+
+/** A stored draft list as the boxes hold it: the strings of an array, else `undefined` (the reset empty list stands). */
+export function redditTargetingExclusionsFromDraft(value: unknown): string[] | undefined {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : undefined;
 }

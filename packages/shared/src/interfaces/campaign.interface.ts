@@ -493,6 +493,10 @@ export interface RedditCreateRefusalInput {
   customAudiencesBlock: string | null;
   /** Why the custom audience lists break campaign-service's rules (`redditCustomAudiencesRefusal`), or `null`. */
   customAudiencesRefusal: string | null;
+  /** Why the excluded communities and countries cannot be sent yet (`redditTargetingExclusionsBlock`), or `null`. */
+  targetingExclusionsBlock: string | null;
+  /** Why the exclusion lists break campaign-service's rules (`redditTargetingExclusionsDraftRefusal`), or `null`. */
+  targetingExclusionsRefusal: string | null;
 }
 
 /** The three inputs needed to author a promoted post, once a creator has decided to author one. */
@@ -1510,6 +1514,12 @@ export interface CampaignImplementationDraft {
    */
   redditCustomAudienceIds?: string[];
   redditExcludedCustomAudienceIds?: string[];
+  /**
+   * The subreddits and countries to exclude (#6108 row 3), on the same terms as the custom audiences above: kept whatever
+   * the capability says, and held for Create when it no longer confirms them.
+   */
+  redditExcludedSubreddits?: string[];
+  redditExcludedGeoTargets?: string[];
   /**
    * The Meta ad image, on the same terms as the Reddit image fields above: a pasted URL, or an
    * upload made for ONE brief (its asset id, file name and brief), plus an upload still in flight
@@ -3719,6 +3729,8 @@ export type RedditDraftSnapshot = Pick<
   | 'redditConversionEvent'
   | 'redditCustomAudienceIds'
   | 'redditExcludedCustomAudienceIds'
+  | 'redditExcludedSubreddits'
+  | 'redditExcludedGeoTargets'
 >;
 
 /** The Reddit values `redditDraftFields` snapshots into the draft (#5980): the typed fields, the pixel and the image upload slot. */
@@ -3739,6 +3751,7 @@ export interface RedditDraftState {
   videoGoal: RedditVideoGoal | '';
   conversionEvent: RedditConversionEvent;
   customAudiences: RedditCustomAudiencesDraft;
+  targetingExclusions: RedditTargetingExclusionsDraft;
 }
 
 /** What a restored draft does to the Reddit section (#5980): values to set, and at most one upload step for the component to run. */
@@ -3757,6 +3770,7 @@ export interface RedditDraftRestore {
   videoGoal?: RedditVideoGoal | '';
   conversionEvent?: RedditConversionEvent;
   customAudiences?: RedditCustomAudiencesDraft;
+  targetingExclusions?: RedditTargetingExclusionsDraft;
 }
 
 /** The Reddit lists a brief seeds (#5980): the variants and the four targeting lists. */
@@ -3777,6 +3791,7 @@ export interface RedditBriefReset extends RedditBriefSeed {
   videoGoal: '';
   conversionEvent: RedditConversionEvent;
   customAudiences: RedditCustomAudiencesDraft;
+  targetingExclusions: RedditTargetingExclusionsDraft;
   budgetUsd: number;
 }
 
@@ -3861,6 +3876,48 @@ export type RedditCustomAudienceListKey = 'customAudienceIds' | 'excludedCustomA
 
 /** The two Reddit targeting exclusion lists, keyed as `redditConfig` spells them (`REDDIT_TARGETING_EXCLUSION_KEYS`, #6108 row 3). */
 export type RedditTargetingExclusionKey = 'excludedSubreddits' | 'excludedGeoTargets';
+
+/** The Reddit targeting exclusions the Implement tab holds (#6108 row 3): subreddit names without `r/`, and country codes. */
+export type RedditTargetingExclusionsDraft = Record<RedditTargetingExclusionKey, string[]>;
+
+/** One Reddit targeting exclusion list as the Implement tab renders it. */
+export interface RedditTargetingExclusionListView {
+  key: RedditTargetingExclusionKey;
+  label: string;
+  placeholder: string;
+  emptyText: string;
+}
+
+/** One Reddit targeting exclusion list with its entries: the box's label with the count against the cap, and the chips. */
+export interface RedditTargetingExclusionListState extends RedditTargetingExclusionListView {
+  heading: string;
+  chips: MetaCustomAudienceChipView[];
+}
+
+/** The targeting a create sends, which the exclusions must not overlap: the subreddits and the geo targets as sent. */
+export interface RedditTargetedLists {
+  subreddits: string[];
+  geoTargets: string[];
+}
+
+/**
+ * Why Create is held for Reddit exclusions the draft holds but the request cannot carry (#6108 row 3). `restricted` when
+ * the deployment says no (`redditTargetingExclusionsEnabled === false`), and the capability read's own states while it
+ * is unanswered.
+ */
+export interface CampaignRedditTargetingExclusionsBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'restricted';
+  message: string;
+}
+
+/** The state `redditTargetingExclusionsBlock` (`campaign-reddit-targeting-exclusions.utils.ts`) reads, as plain values. */
+export interface RedditTargetingExclusionsBlockInput {
+  exclusions: RedditTargetingExclusionsDraft;
+  enabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
 
 /** The Reddit custom audiences the Implement tab holds (#6108 row 1): the ids to target and to exclude, as picked or typed. */
 export type RedditCustomAudiencesDraft = Record<RedditCustomAudienceListKey, string[]>;

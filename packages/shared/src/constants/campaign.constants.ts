@@ -90,6 +90,8 @@ import type {
   RedditConversionEvent,
   RedditCustomAudienceListView,
   RedditCustomAudiencesDraft,
+  RedditTargetingExclusionListView,
+  RedditTargetingExclusionsDraft,
   RedditObjective,
   RedditObjectiveParams,
   RedditVideoGoal,
@@ -4828,6 +4830,14 @@ export const REDDIT_TARGETING_EXCLUSION_LIMITS = { excludedSubreddits: 100, excl
 
 /** A subreddit name campaign-service accepts (`subredditNameRE`): 2 to 21 ASCII letters, digits or underscores. */
 export const REDDIT_SUBREDDIT_NAME_PATTERN = /^[A-Za-z0-9_]{2,21}$/;
+
+/** The Reddit targeting exclusion lists the Implement tab offers, in order (#6108 row 3). */
+export const REDDIT_TARGETING_EXCLUSION_LISTS: readonly RedditTargetingExclusionListView[] = [
+  { key: 'excludedSubreddits', label: 'Exclude communities', placeholder: 'Enter a subreddit, e.g. r/politics', emptyText: 'Press Enter to add it' },
+  { key: 'excludedGeoTargets', label: 'Exclude countries', placeholder: 'Search countries or enter a country code', emptyText: 'No country matches' },
+];
+/** The Reddit targeting exclusions a fresh form starts from, which sends nothing. */
+export const DEFAULT_REDDIT_TARGETING_EXCLUSIONS: Readonly<RedditTargetingExclusionsDraft> = { excludedSubreddits: [], excludedGeoTargets: [] };
 
 /**
  * The two Reddit custom audience lists a create may carry (#6108 row 1), as campaign-service spells the

@@ -1209,6 +1209,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsMetaCustomAudiencesEnabled = signal<boolean | null>(null);
   /** Whether THIS caller may pick Reddit custom audiences (#6108 row 1) — `CampaignListResult.redditCustomAudiencesEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsRedditCustomAudiencesEnabled = signal<boolean | null>(null);
+  /** `CampaignListResult.redditTargetingExclusionsEnabled` (#6108 row 3): whether a Reddit create may carry excluded communities and countries. */
+  protected readonly briefCampaignsRedditTargetingExclusionsEnabled = signal<boolean | null>(null);
   /** The Meta call to action, conversion event and optimization goal (#5934), one capability each, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaCallToActionEnabled = signal<boolean | null>(null);
   /** Meta lead forms (#5940) — `CampaignListResult.metaLeadFormsEnabled`: whether THIS caller may create a lead ad. */
@@ -3441,6 +3443,7 @@ export class CampaignsComponent {
         this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
         this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
         this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
+        this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
         this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
         this.briefCampaignsGoogleConversionActionsEnabled.set(null);
         this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
@@ -6542,6 +6545,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaOptimizationGoalEnabled.set(result.metaOptimizationGoalEnabled ?? null);
           this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
           this.briefCampaignsRedditCustomAudiencesEnabled.set(result.redditCustomAudiencesEnabled ?? null);
+          this.briefCampaignsRedditTargetingExclusionsEnabled.set(result.redditTargetingExclusionsEnabled ?? null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
           this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
           this.briefCampaignsGoogleDemandGenAudienceEnabled.set(result.googleDemandGenAudienceEnabled ?? null);
@@ -6605,6 +6609,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
           this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
           this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
+          this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
           this.briefCampaignsGoogleConversionActionsEnabled.set(null);
           this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
@@ -6713,6 +6718,7 @@ export class CampaignsComponent {
       this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
       this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
       this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
+      this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
       this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
       this.briefCampaignsGoogleConversionActionsEnabled.set(null);
       this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
@@ -6791,6 +6797,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaOptimizationGoalEnabled.set(result.metaOptimizationGoalEnabled ?? null);
             this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
             this.briefCampaignsRedditCustomAudiencesEnabled.set(result.redditCustomAudiencesEnabled ?? null);
+            this.briefCampaignsRedditTargetingExclusionsEnabled.set(result.redditTargetingExclusionsEnabled ?? null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
             this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
             this.briefCampaignsGoogleDemandGenAudienceEnabled.set(result.googleDemandGenAudienceEnabled ?? null);
@@ -6852,6 +6859,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
             this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
             this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
+            this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
             this.briefCampaignsGoogleConversionActionsEnabled.set(null);
             this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);

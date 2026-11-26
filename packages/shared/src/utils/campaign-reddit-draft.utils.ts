@@ -6,6 +6,7 @@ import {
   DEFAULT_REDDIT_CONVERSION_EVENT,
   DEFAULT_REDDIT_CUSTOM_AUDIENCES,
   DEFAULT_REDDIT_OBJECTIVE,
+  DEFAULT_REDDIT_TARGETING_EXCLUSIONS,
 } from '../constants/campaign.constants';
 import type {
   CampaignBriefOutput,
@@ -18,6 +19,7 @@ import type {
 } from '../interfaces/campaign.interface';
 import { redditConversionEventFromDraft } from './campaign-reddit-conversion-event.utils';
 import { redditCustomAudienceIdsFromDraft } from './campaign-reddit-custom-audiences.utils';
+import { redditTargetingExclusionsFromDraft } from './campaign-reddit-targeting-exclusions.utils';
 
 /**
  * The Implement tab's Reddit draft rules (#5980): what the draft carries, what a restore sets, what a brief switch resets
@@ -48,6 +50,8 @@ export function redditDraftFields(state: RedditDraftState): RedditDraftSnapshot 
     redditConversionEvent: state.conversionEvent,
     redditCustomAudienceIds: [...state.customAudiences.customAudienceIds],
     redditExcludedCustomAudienceIds: [...state.customAudiences.excludedCustomAudienceIds],
+    redditExcludedSubreddits: [...state.targetingExclusions.excludedSubreddits],
+    redditExcludedGeoTargets: [...state.targetingExclusions.excludedGeoTargets],
   };
 }
 
@@ -57,7 +61,8 @@ export function redditDraftFields(state: RedditDraftState): RedditDraftSnapshot 
  * picker no longer offers is restored too, so it stays visible and on the wire. The pixel only when it is a string. The
  * uploaded image whole, keyed on its id. A failed upload only with the brief it failed for; a running one is resumed.
  * The conversion event only when it is one Reddit takes; any other leaves the default standing. The custom audience lists
- * when either is an array, keeping only its strings (a list the create would refuse stays visible, and holds Create).
+ * when either is an array, keeping only its strings (a list the create would refuse stays visible, and holds Create); the
+ * targeting exclusion lists the same way.
  */
 export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftRestore {
   const restore: RedditDraftRestore = {};
@@ -84,6 +89,11 @@ export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftResto
   if (customAudienceIds !== undefined || excludedCustomAudienceIds !== undefined) {
     restore.customAudiences = { customAudienceIds: customAudienceIds ?? [], excludedCustomAudienceIds: excludedCustomAudienceIds ?? [] };
   }
+  const excludedSubreddits = redditTargetingExclusionsFromDraft(draft.redditExcludedSubreddits);
+  const excludedGeoTargets = redditTargetingExclusionsFromDraft(draft.redditExcludedGeoTargets);
+  if (excludedSubreddits !== undefined || excludedGeoTargets !== undefined) {
+    restore.targetingExclusions = { excludedSubreddits: excludedSubreddits ?? [], excludedGeoTargets: excludedGeoTargets ?? [] };
+  }
   return restore;
 }
 
@@ -103,6 +113,10 @@ export function redditBriefReset(): RedditBriefReset {
     customAudiences: {
       customAudienceIds: [...DEFAULT_REDDIT_CUSTOM_AUDIENCES.customAudienceIds],
       excludedCustomAudienceIds: [...DEFAULT_REDDIT_CUSTOM_AUDIENCES.excludedCustomAudienceIds],
+    },
+    targetingExclusions: {
+      excludedSubreddits: [...DEFAULT_REDDIT_TARGETING_EXCLUSIONS.excludedSubreddits],
+      excludedGeoTargets: [...DEFAULT_REDDIT_TARGETING_EXCLUSIONS.excludedGeoTargets],
     },
     budgetUsd: DEFAULT_REDDIT_BUDGET_USD,
     variants: [],

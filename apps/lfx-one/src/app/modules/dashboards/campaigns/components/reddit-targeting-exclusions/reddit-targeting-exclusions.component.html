@@ -1,0 +1,54 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (enabled() || hasEntries()) {
+  <fieldset class="flex flex-col gap-3" data-testid="reddit-targeting-exclusions">
+    <legend class="mb-2 text-xs font-medium text-gray-700">Exclusions</legend>
+    @for (list of lists(); track list.key) {
+      <div class="flex flex-col gap-2" [attr.data-testid]="'reddit-targeting-exclusions-' + list.key">
+        @if (enabled()) {
+          <lfx-ui-combobox
+            #box
+            freeText
+            size="small"
+            [label]="list.heading"
+            [placeholder]="list.placeholder"
+            [emptyText]="list.emptyText"
+            (valueChange)="onAdd(list.key, $event, box)"
+            [attr.data-testid]="'reddit-targeting-exclusions-' + list.key + '-add'">
+            @if (list.key === 'excludedGeoTargets') {
+              @for (country of countryOptions(); track country.id) {
+                <lfx-ui-option [value]="country.id" [label]="country.label" />
+              }
+            }
+          </lfx-ui-combobox>
+        } @else if (list.chips.length > 0) {
+          <span class="text-xs font-medium text-gray-700">{{ list.heading }}</span>
+        }
+        <div class="flex flex-wrap items-center gap-2">
+          @for (chip of list.chips; track chip.id) {
+            <span
+              class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+              [attr.data-testid]="'reddit-targeting-exclusions-' + list.key + '-' + chip.id">
+              {{ chip.label }}
+              <button
+                type="button"
+                (click)="onRemove(list.key, chip.id)"
+                class="ml-0.5 text-blue-600 hover:text-blue-800"
+                [attr.aria-label]="'Remove ' + chip.label"
+                [attr.data-testid]="'reddit-targeting-exclusions-' + list.key + '-remove-' + chip.id">
+                <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+              </button>
+            </span>
+          }
+        </div>
+      </div>
+    }
+    @if (addError(); as error) {
+      <p role="alert" class="text-xs text-red-600" data-testid="reddit-targeting-exclusions-add-error">{{ error }}</p>
+    }
+    @if (refusal(); as refused) {
+      <p role="alert" class="text-xs text-red-600" data-testid="reddit-targeting-exclusions-error">{{ refused }}</p>
+    }
+  </fieldset>
+}
