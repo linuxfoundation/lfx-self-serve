@@ -5,8 +5,8 @@ import { LINKEDIN_DOCUMENT_LIMITS } from '../constants/campaign.constants';
 import type {
   CreativeAssetLibraryState,
   LinkedInCampaignCreateRequest,
-  LinkedInCarouselImageOption,
   LinkedInDocumentDraft,
+  LinkedInDocumentPdfOption,
   LinkedInDocumentView,
 } from '../interfaces/campaign.interface';
 import { linkedInDocumentRefusal } from './campaign-linkedin-document.utils';
@@ -34,7 +34,7 @@ function pdfLabel(position: number, checksum: string, byteSize: number): string 
  * a PDF is held, a first "No PDF" option (value `''`) clears it: the select does not re-emit the value it holds, so
  * without it a PDF held for another brief could not be picked again when it is the only one.
  */
-export function linkedInDocumentPdfOptions(library: CreativeAssetLibraryState, held: string): LinkedInCarouselImageOption[] {
+export function linkedInDocumentPdfOptions(library: CreativeAssetLibraryState, held: string): LinkedInDocumentPdfOption[] {
   const documents = library.documents ?? [];
   const options = documents.map((document, index) => ({ value: document.id, label: pdfLabel(index + 1, document.checksum, document.byteSize) }));
   if (held !== '' && !documents.some((document) => document.id === held)) options.unshift({ value: held, label: `Stored PDF ${held.slice(0, 8)}` });

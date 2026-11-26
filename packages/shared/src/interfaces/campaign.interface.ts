@@ -2211,7 +2211,13 @@ export interface LinkedInDocumentView {
   assetProblem: string;
   /** Why the picker offers nothing (unsaved brief, loading, failed, no PDF stored), or `''`. */
   pdfNote: string;
-  pdfOptions: LinkedInCarouselImageOption[];
+  pdfOptions: LinkedInDocumentPdfOption[];
+}
+
+/** One stored PDF the LinkedIn document picker offers. */
+export interface LinkedInDocumentPdfOption {
+  value: string;
+  label: string;
 }
 
 /** One stored image a carousel card's picker offers. */
