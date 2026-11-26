@@ -286,3 +286,60 @@ describe('DocumentService.getMyDocuments — mailing list documents', () => {
     expect(logger.warning).not.toHaveBeenCalledWith(expect.anything(), 'get_my_documents', 'Failed to fetch groupsio artifacts', expect.anything());
   });
 });
+
+describe('DocumentService.getMyDocuments — committee parent ref documents', () => {
+  const req = { bearerToken: 'user-token' } as unknown as Request;
+  const unsatisfiableParent = (type: string) => unsatisfiable(`parent kind "committee:" is not carried by any indexed ${type} document`);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getMyCommitteesMock.mockResolvedValue([]);
+    getPastMeetingOccurrenceIdsMock.mockResolvedValue([]);
+    proxyRequestMock.mockImplementation(async (_req: Request, _service: string, _path: string, _method: string, params: Record<string, unknown>) => ({
+      resources: [],
+      type: params['type'],
+    }));
+  });
+
+  it('lists no meeting documents, without a warning, when the committee parent filter is unsatisfiable (#6184)', async () => {
+    const parentTypes = [
+      'v1_meeting_attachment',
+      'v1_past_meeting_attachment',
+      'v1_past_meeting_recording',
+      'v1_past_meeting_transcript',
+      'v1_past_meeting_summary',
+    ];
+    fetchAllQueryResourcesMock.mockImplementation(async (_req: Request, fetchPage: (pageToken?: string) => Promise<{ type?: string }>) => {
+      const { type } = await fetchPage();
+      if (type && parentTypes.includes(type)) throw unsatisfiableParent(type);
+      return [];
+    });
+
+    const documents = await new DocumentService().getMyDocuments(req, { committee_uid: COMMITTEE_UID });
+
+    expect(documents).toEqual([]);
+    expect(logger.warning).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'get_my_documents',
+      expect.stringContaining('by committee parent ref'),
+      expect.anything()
+    );
+  });
+
+  it('still warns when a committee parent ref fetch fails for another reason', async () => {
+    fetchAllQueryResourcesMock.mockImplementation(async (_req: Request, fetchPage: (pageToken?: string) => Promise<{ type?: string }>) => {
+      const { type } = await fetchPage();
+      if (type === 'v1_past_meeting_summary') throw new MicroserviceError('upstream unavailable', 503, 'SERVICE_UNAVAILABLE');
+      return [];
+    });
+
+    await new DocumentService().getMyDocuments(req, { committee_uid: COMMITTEE_UID });
+
+    expect(logger.warning).toHaveBeenCalledWith(
+      expect.anything(),
+      'get_my_documents',
+      'Failed to fetch past meeting summaries by committee parent ref',
+      expect.objectContaining({ committee_uid: COMMITTEE_UID })
+    );
+  });
+});

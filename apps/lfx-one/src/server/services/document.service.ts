@@ -451,6 +451,10 @@ export class DocumentService {
           ...(pageToken && { page_token: pageToken }),
         })
       ).catch((err) => {
+        if (isUnsatisfiableFilterError(err)) {
+          logger.debug(req, 'get_my_documents', 'v1_meeting_attachment filter is unsatisfiable, no meeting attachments', { committee_uid: committeeUid });
+          return [];
+        }
         logger.warning(req, 'get_my_documents', 'Failed to fetch meeting attachments by committee parent ref', {
           committee_uid: committeeUid,
           error: err instanceof Error ? err.message : 'Unknown error',
@@ -520,6 +524,10 @@ export class DocumentService {
         ...(pageToken && { page_token: pageToken }),
       })
     ).catch((err) => {
+      if (isUnsatisfiableFilterError(err)) {
+        logger.debug(req, 'get_my_documents', `${type} filter is unsatisfiable, no ${resourceLabel}`, { committee_uid: committeeUid });
+        return [];
+      }
       logger.warning(req, 'get_my_documents', `Failed to fetch ${resourceLabel} by committee parent ref`, {
         committee_uid: committeeUid,
         error: err instanceof Error ? err.message : 'Unknown error',
