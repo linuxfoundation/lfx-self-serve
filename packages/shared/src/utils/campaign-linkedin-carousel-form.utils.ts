@@ -53,9 +53,12 @@ export function linkedInCarouselImageMisfit(asset: Pick<StoredCreativeAsset, 'wi
   return '';
 }
 
-/** What is wrong with the card's picked image, or `''`. Judged against the library only once it was read. */
+/**
+ * What is wrong with the card's picked image, or `''`. Judged against the library only once it was read, and against the
+ * brief only while its id is known: the tab has none while a save runs, which is no evidence of another brief.
+ */
 function cardImageProblem(card: LinkedInCarouselCardDraft, library: CreativeAssetLibraryState, briefId: string): string {
-  if (card.imageAssetId === '') return '';
+  if (card.imageAssetId === '' || briefId === '') return '';
   if (card.imageAssetBriefId !== briefId) return "Stored for a different brief. Choose an image from this brief's library.";
   if (library.status !== 'ready') return '';
   const asset = library.assets.find((stored) => stored.id === card.imageAssetId);
@@ -137,8 +140,9 @@ export function linkedInCarouselFieldsForCreate(
 }
 
 /**
- * Why a carousel create waits, or `null`: a picked image that cannot be used (the message is under the card), then the
- * request the tab would send checked by `linkedInCarouselRefusal`, as the create route will.
+ * Why a carousel create waits, or `null`: no brief id (the cards' images are the saved brief's), then a picked image that
+ * cannot be used (the message is under the card), then the request the tab would send checked by
+ * `linkedInCarouselRefusal`, as the create route will. A save in flight is the caller's to hold first.
  */
 export function linkedInCarouselCreateRefusal(
   cards: readonly LinkedInCarouselCardDraft[],
@@ -146,6 +150,7 @@ export function linkedInCarouselCreateRefusal(
   library: CreativeAssetLibraryState,
   briefId: string
 ): string | null {
+  if (briefId === '') return "LinkedIn Ads: save the brief, so the carousel cards can use its library's images.";
   const misfit = linkedInCarouselCardViews(cards, library, briefId).find((view) => view.imageProblem !== '');
   if (misfit) return `LinkedIn Ads: choose another image for card ${misfit.position}.`;
   const refused = linkedInCarouselRefusal(linkedInCarouselFieldsForCreate(cards, introText, briefId), true);

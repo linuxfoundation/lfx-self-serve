@@ -65,6 +65,11 @@ describe('linkedInCarouselCardViews', () => {
     expect(problem === '' ? view.imageProblem === '' : view.imageProblem.includes(problem)).toBe(true);
   });
 
+  // The tab has no brief id while a save runs: that is no evidence an image is another brief's.
+  it('calls no image another brief while the brief id is unknown', () => {
+    expect(linkedInCarouselCardViews([card()], ready, '')[0].imageProblem).toBe('');
+  });
+
   it('counts the headline as campaign-service does and checks the link', () => {
     const [view] = linkedInCarouselCardViews([card({ headline: `${'h'.repeat(22)}—${'h'.repeat(22)}`, destinationUrl: 'events.example.org' })], ready, 'b1');
     expect(view.headlineLength).toBe(46);
@@ -129,6 +134,14 @@ describe('linkedInCarouselCreateRefusal', () => {
     const refusal = linkedInCarouselCreateRefusal(cards, intro, ready, 'b1');
     if (message === null) expect(refusal).toBeNull();
     else expect(refusal).toContain(message);
+  });
+});
+
+describe('linkedInCarouselCreateRefusal without a brief id', () => {
+  it('asks for the saved brief, never another image', () => {
+    const refusal = linkedInCarouselCreateRefusal(two(), 'Intro', ready, '');
+    expect(refusal).toContain('save the brief');
+    expect(refusal).not.toContain('another image');
   });
 });
 

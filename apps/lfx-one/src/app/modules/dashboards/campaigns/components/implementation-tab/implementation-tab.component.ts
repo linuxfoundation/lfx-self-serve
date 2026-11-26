@@ -9168,16 +9168,20 @@ export class ImplementationTabComponent implements OnInit {
       carouselUnavailable: this.linkedInFormat() === 'carousel' && !this.linkedInCarouselAvailable(),
       // A carousel beside lead generation, which campaign-service builds none of: change the format or the objective.
       carouselWithLeadGen: this.linkedInFormat() === 'carousel' && this.linkedInLeadGenSelected(),
-      // While a carousel is chosen, its cards replace the variant checks.
+      // While a carousel is chosen, its cards replace the variant checks. Not while the brief saves: the tab has no brief
+      // id then, and the save's own hold ("Waiting for the brief to finish saving.") is the one to show.
       ...(this.linkedInCarouselSelected()
         ? {
             carousel: {
-              refusal: linkedInCarouselCreateRefusal(
-                this.linkedInCarouselCards(),
-                this.linkedInCarouselIntroText(),
-                this.googleCreativeLibrary(),
-                this.briefPersistence().briefId ?? ''
-              ),
+              refusal:
+                this.briefSaveInFlight() || this.briefPersistence().status === 'saving'
+                  ? null
+                  : linkedInCarouselCreateRefusal(
+                      this.linkedInCarouselCards(),
+                      this.linkedInCarouselIntroText(),
+                      this.googleCreativeLibrary(),
+                      this.briefPersistence().briefId ?? ''
+                    ),
             },
           }
         : {}),

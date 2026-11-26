@@ -141,6 +141,13 @@ describe('ImplementationTabComponent linkedin carousel', () => {
     c(f)['onLinkedInCarouselCardsChange']([card('card-1', SQUARE), card('card-2', WIDE)]);
     expect(c(f)['createBlockedReason']()).toContain('choose another image for card 2');
 
+    // While the brief saves the tab has no brief id: the save's hold shows, not the cards'.
+    f.componentRef.setInput('briefSaveInFlight', true);
+    f.componentRef.setInput('briefPersistence', { status: 'saving', briefId: null, message: null, approved: true });
+    expect(c(f)['createBlockedReason']()).toBe('Waiting for the brief to finish saving.');
+    f.componentRef.setInput('briefSaveInFlight', false);
+    f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true });
+
     // A hidden single image variant whose image is for another brief holds nothing: the carousel does not send it.
     const variantKey = c(f)['linkedInVariants']()[0].key;
     c(f)['linkedInVariants'].update((variants: Record<string, unknown>[]) =>
