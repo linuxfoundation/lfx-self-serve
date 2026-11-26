@@ -100,7 +100,7 @@ describe('MetaDetailedTargetingComponent', () => {
     const box = lists()[4];
     call('onSelect', box, { value: box.choices[0], originalEvent: new Event('click') });
     fixture.detectChanges();
-    expect(picks).toEqual({ ...emptyMetaDetailedTargetingPicks(), cities: [{ id: '2420379', name: 'Austin, Texas, US' }] });
+    expect(picks).toEqual({ ...emptyMetaDetailedTargetingPicks(), cities: [{ id: '2420379', name: 'Austin, Texas, US', countryCode: 'US' }] });
     expect(query('meta-detailed-targeting-cities-2420379')?.textContent).toContain('Austin, Texas, US (city)');
 
     query('meta-detailed-targeting-cities-remove-2420379')?.click();
