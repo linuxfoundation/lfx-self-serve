@@ -28,6 +28,8 @@ import {
   frameworkPortraitCutNoteHeight,
   frameworkPortraitFactRowHeight,
   frameworkPortraitFigureSize,
+  FRAMEWORK_PORTRAIT_MATRIX_FACE_WIDTH,
+  frameworkPortraitGlyphProofHeight,
   frameworkPortraitGlyphTextHeight,
   frameworkPortraitNumberTiles,
   frameworkPortraitLfxSourced,
@@ -77,6 +79,7 @@ import type {
   FoundationMessagePrintGoal,
   FoundationMessagePrintGoalProof,
   FoundationMessagePrintIcp,
+  FoundationMessagePrintMatrix,
   FoundationMessagePrintView,
 } from '../interfaces/mktg-print.interface';
 import type { FoundationMessagePillarView } from '../interfaces/foundation-message.interface';
@@ -264,7 +267,7 @@ describe('the framework portrait book’s bounded blocks', () => {
     expect(bounded.height).toBeLessThanOrEqual(664);
   });
 
-  it('fits the matrix’s text cells at the record’s cap: eight goals with long cells and four proofs each end inside the room, the proofs keeping their note', () => {
+  it('fits the matrix’s text cells at the record’s cap: eight goals with long cells and four proofs each end inside the room, the proofs dropped to the goal pages when the fitted rows leave them less than the floor', () => {
     const text = long.repeat(3).trim();
     const goals = Array.from({ length: 8 }, (_, index) =>
       goal(4, { id: `g${index}`, n: index + 1, t: `Goal ${index + 1} title`, vp: text, key: text, bite: long.trim() })
@@ -283,17 +286,17 @@ describe('the framework portrait book’s bounded blocks', () => {
       expect(cell.key.size <= 11).toBe(true);
       expect(cell.bite?.text.length ?? 0).toBeGreaterThan(0);
     }
-    // Every proof cell keeps its note at the real count: none is cut to nothing without the line that says so.
-    for (const cell of matrix.proofs) {
-      expect(cell.rows.length + cell.cut).toBe(4);
-      if (cell.cut > 0) expect(cell.note).toBe(`+${cell.cut} more in LFX One`);
-    }
+    // The fitted text rows leave the proofs less than the tight floor: the strip drops its proof row (never a proof below 10.5 px), the
+    // note under it saying so; every proof cell is empty rather than cut to a line too small to read.
+    expect(matrix.rows).toEqual({ value: true, bite: true, proof: false });
+    expect(matrix.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.proofs]);
+    for (const cell of matrix.proofs) expect(cell).toEqual({ rows: [], cut: 0, tight: false, note: '' });
   });
 
-  it('never leaves a matrix proof cell with only its note: the first proof stays, set smaller to the room above the note (editor F3)', () => {
+  it('never prints a matrix proof cell below the tight floor: where the first proof could only stay set smaller, the strip drops its proofs to the goal pages (editor F3, bounded by the floor)', () => {
     // The editor's shapes: a goal whose proofs are long sentences beside goals with short ones, in a matrix whose text rows take the room.
+    // F3 kept the first proof set smaller rather than leave only the note; the floor rules that out, so the proof row goes instead.
     const sentence = `${long.trim()}. ${long.trim()}.`;
-    const column = frameworkPortraitMatrixColumn(4);
     const goals = [
       goal(4, { id: 'g1', n: 1, vp: long.repeat(3).trim(), key: long.repeat(3).trim(), bite: long.trim() }),
       goal(1, { id: 'g2', n: 2 }),
@@ -302,23 +305,18 @@ describe('the framework portrait book’s bounded blocks', () => {
     ].map((entry, index) => (index === 0 || index === 3 ? { ...entry, proofRows: entry.proofRows.map((proof) => ({ ...proof, fact: sentence })) } : entry));
     const matrix = frameworkPortraitMatrix(goals, 'Across the goals.', 400);
     expect(matrix.height).toBeLessThanOrEqual(400);
-    for (const [index, cell] of matrix.proofs.entries()) {
+    expect(matrix.rows).toEqual({ value: true, bite: true, proof: false });
+    expect(matrix.notes).toEqual(['Proofs are on each goal page.']);
+    for (const cell of matrix.proofs) expect(cell).toEqual({ rows: [], cut: 0, tight: false, note: '' });
+    // No cell is ever only its note, and no proof prints under the floor: in a room that holds the proofs, every cell keeps a row at the floor or above.
+    const roomy = frameworkPortraitMatrix(goals, 'Across the goals.', 1200);
+    expect(roomy.rows.proof).toBe(true);
+    for (const cell of roomy.proofs) {
       expect(cell.rows.length).toBeGreaterThan(0);
-      expect(cell.rows.length + cell.cut).toBe(goals[index].proofRows.length);
-      // The first row is the goal's first proof: as written, or its opening cut at a sentence; smaller than the tight type when it had to be.
-      expect(goals[index].proofRows[0].fact.startsWith(cell.rows[0].fact.replace(/…$/, ''))).toBe(true);
-      expect(cell.rows[0].size ?? FRAMEWORK_PORTRAIT_TYPE.matrixProofTight.size).toBeLessThanOrEqual(FRAMEWORK_PORTRAIT_TYPE.matrixProofTight.size);
+      for (const row of cell.rows)
+        expect(row.size ?? FRAMEWORK_PORTRAIT_TYPE.matrixProofTight.size).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_TYPE.matrixProofTight.size);
     }
-    // The long goals kept one proof, smaller or cut, with the note counting the three left off; the short goals print theirs whole.
-    for (const index of [0, 3]) {
-      const cell = matrix.proofs[index];
-      expect(cell.cut).toBe(3);
-      expect(cell.note).toBe('+3 more in LFX One');
-      expect((cell.rows[0].size ?? 10.5) < 10.5 || cell.rows[0].fact.length < sentence.length).toBe(true);
-      const type = { ...FRAMEWORK_PORTRAIT_TYPE.matrixProofTight, size: cell.rows[0].size ?? 10.5 };
-      expect(frameworkPortraitTextHeight(`${cell.rows[0].fact} ${cell.rows[0].source}`, type, column)).toBeLessThan(400);
-    }
-    expect(matrix.proofs[1]).toMatchObject({ cut: 0, rows: goals[1].proofRows });
+    expect(roomy.proofs[1]).toMatchObject({ cut: 0, rows: goals[1].proofRows });
   });
 
   it('bounds every head title to its column at one size, and breaks eight goals into two bands of four where the strip cannot hold their words (editor C2b)', () => {
@@ -385,6 +383,15 @@ describe('the framework portrait book’s bounded blocks', () => {
     expect(frameworkPortraitPillWidth(phrase, false)).toBeGreaterThan(2 * 320);
     expect(frameworkPortraitPillHeight(phrase, 320, false)).toBe(3 * 13 * 1.2 + 18);
     expect(frameworkPortraitPillsHeight(['open', phrase, 'honest'], 320, false)).toBe(13 * 1.2 + 18 + 8 + 3 * 13 * 1.2 + 18 + 8 + 13 * 1.2 + 18);
+    // The pill breaks its text at words (`.fwp-say-pill`): three compounds each wider than half the padded column take a line each,
+    // where the phrase's width over the column's counted two (#5345, 607OFx); tightened, two compounds share a line and two lines hold it.
+    const uneven = 'Interoperability-tested, specification-conformant, independently-audited';
+    expect(Math.ceil((frameworkPortraitPillWidth(uneven, false) - 30) / (320 - 30))).toBe(2);
+    expect(frameworkPortraitPillHeight(uneven, 320, false)).toBe(3 * 13 * 1.2 + 18);
+    expect(frameworkPortraitPillHeight(uneven, 320, true)).toBe(2 * 12 * 1.2 + 14);
+    expect(frameworkPortraitPillsHeight(['open', uneven], 320, false)).toBe(13 * 1.2 + 18 + 8 + 3 * 13 * 1.2 + 18);
+    // A pill that fits the column is one line, whatever the glyph measure says of its words.
+    expect(frameworkPortraitPillHeight('Open, everywhere, governed in the open', 320, false)).toBe(13 * 1.2 + 18);
     expect(frameworkPortraitPillList(['open', 'honest'], 320, frameworkPortraitSayRoom())).toEqual({
       rows: ['open', 'honest'],
       cut: 0,
@@ -1054,44 +1061,45 @@ describe('the framework portrait book’s goal matrix in bands (editor W1)', () 
     }
   });
 
-  it('prints the same rows in bands at any room: no row comes back when the room is wide, the proof row alone goes when it is narrow; the key message always prints whole (W1b, FA1b stepping)', () => {
-    // The band shape has two steps, by the room: the value and bite rows are gone by rule (the former bites-then-values stepping went with
-    // the clamp); the proof row prints while its cells hold the tight floor and goes, once, below it (the editor's FA1b), never back.
-    // The ladder's three steps by the room, in order and never back: the proofs with their own "+N more" lines; those lines folded
-    // into the caption (the maintainer's word of 7 Nov 2026); the proof row dropped.
-    const steps: string[] = [
-      FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages,
-      FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold,
-      FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesAll,
+  it('drops the bands’ rows in a fixed order by the room, sound bites, then value propositions, then the cells’ "+N more" lines folded into the caption, then proofs, never back; the key message always prints whole (the editor’s ladder)', () => {
+    // The ladder (standalone and in the family alike): every row whole, then the sound bites dropped, then the value propositions, then
+    // the proof cells' own "+N more" lines folded into the one caption (the maintainer's word of 7 Nov 2026), then the proofs, each step
+    // taken only while the matrix does not fit its room with every kept row whole and the proofs at the tight floor or above. Over the
+    // rooms from wide to narrow the step only ever rises, and no kept row is ever clamped.
+    const ladder = [
+      { rows: { value: true, bite: true, proof: true }, fold: false, notes: [] as string[] },
+      { rows: { value: true, bite: false, proof: true }, fold: false, notes: [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites] },
+      { rows: { value: false, bite: false, proof: true }, fold: false, notes: [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages] },
+      { rows: { value: false, bite: false, proof: true }, fold: true, notes: [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold] },
+      { rows: { value: false, bite: false, proof: false }, fold: false, notes: [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesAll] },
     ];
+    const stepOf = (matrix: FoundationMessagePrintMatrix): number =>
+      ladder.findIndex((level) => JSON.stringify(level.rows) === JSON.stringify(matrix.rows) && JSON.stringify(level.notes) === JSON.stringify(matrix.notes));
     let step = 0;
-    let proofsDropped = false;
+    const seen = new Set<number>();
     for (let at = 2000; at >= 200; at -= 10) {
       const matrix = frameworkPortraitMatrix(goals(overfull), '', at);
-      expect(matrix.cells.map((cell) => cell.key.text)).toEqual(overfull.map((goal) => goal[2]));
-      expect(matrix.cells.every((cell) => cell.key.size === type.matrixKey.size)).toBe(true);
-      expect(matrix.notes).toHaveLength(1);
-      const now = steps.indexOf(matrix.notes[0]);
+      const now = stepOf(matrix);
       expect(now).toBeGreaterThanOrEqual(step);
       step = now;
-      if (!matrix.rows.proof) proofsDropped = true;
-      if (proofsDropped) {
-        expect(matrix.rows).toEqual({ value: false, bite: false, proof: false });
-        expect(matrix.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesAll]);
-        expect(matrix.proofs.every((cell) => cell.rows.length === 0)).toBe(true);
-      } else {
-        expect(matrix.rows).toEqual({ value: false, bite: false, proof: true });
+      seen.add(now);
+      expect(matrix.notes).toEqual(ladder[now].notes);
+      expect(matrix.cells.map((cell) => cell.key)).toEqual(overfull.map((goal) => ({ text: goal[2], size: type.matrixKey.size })));
+      if (matrix.rows.value) expect(matrix.cells.map((cell) => cell.vp)).toEqual(overfull.map((goal) => ({ text: goal[1], size: type.matrixCell.size })));
+      if (matrix.rows.bite) expect(matrix.cells.map((cell) => cell.bite?.text)).toEqual(overfull.map((goal) => goal[3]));
+      if (matrix.rows.proof) {
         expect(matrix.proofs.every((cell) => cell.rows.length > 0)).toBe(true);
         // Folded: no cell prints its own line, its cut still counted; not folded: every cut cell says "+N more".
-        expect(matrix.proofs.every((cell) => (now === 1 ? cell.note === '' : cell.cut === 0 || cell.note !== ''))).toBe(true);
+        expect(matrix.proofs.every((cell) => (ladder[now].fold ? cell.note === '' : cell.cut === 0 || cell.note !== ''))).toBe(true);
         for (const cell of matrix.proofs)
           for (const row of cell.rows) expect(row.size ?? type.matrixProofTight.size).toBeGreaterThanOrEqual(type.matrixProofTight.size);
+      } else {
+        expect(matrix.proofs.every((cell) => cell.rows.length === 0)).toBe(true);
       }
     }
-    expect(proofsDropped).toBe(true);
-    expect(step).toBe(2);
-    // The page's own room keeps the proofs (one row at the floor): the overfull record's page does not move.
-    expect(frameworkPortraitMatrix(goals(overfull), crosscut, room).rows.proof).toBe(true);
+    expect([...seen].sort()).toEqual([0, 1, 2, 3, 4]);
+    // The page's own room lands the overfull record on step 2 (bites and value propositions dropped, the proofs kept at the floor with their own lines).
+    expect(stepOf(frameworkPortraitMatrix(goals(overfull), crosscut, room))).toBe(2);
     // The one note takes one caption line of the matrix's room, between the bands and the crosscut.
     const bare = frameworkPortraitMatrix(goals(overfull), '', 200);
     const noted = frameworkPortraitMatrix(goals(overfull), crosscut, 200);
@@ -1099,9 +1107,10 @@ describe('the framework portrait book’s goal matrix in bands (editor W1)', () 
       FRAMEWORK_PORTRAIT_ROOM.matrixCrosscutGap + frameworkPortraitTextHeight(crosscut, type.matrixCrosscut, 704 - FRAMEWORK_PORTRAIT_ROOM.matrixPadding),
       6
     );
-    // A wide room holds the bands with their proofs at the normal type: the note still prints (the rows are gone by rule, not by room).
+    // A wide room holds the bands with every row whole and the proofs at the normal type: no note.
     const wide = frameworkPortraitMatrix(goals(overfull), '', 2000);
-    expect(wide.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    expect(wide.rows).toEqual({ value: true, bite: true, proof: true });
+    expect(wide.notes).toEqual([]);
     expect(wide.proofs.every((cell) => !cell.tight && cell.cut === 0)).toBe(true);
   });
 
@@ -1115,20 +1124,22 @@ describe('the framework portrait book’s goal matrix in bands (editor W1)', () 
     expect(strip.cells.map((cell) => cell.key.text)).toEqual(overfull.slice(0, 4).map((goal) => goal[2]));
     expect(strip.cells.map((cell) => cell.bite?.text)).toEqual(overfull.slice(0, 4).map((goal) => goal[3]));
     expect(strip.height).toBeLessThanOrEqual(room);
-    // A strip whose rows crowd the proofs is still fitted by the fit model (smaller, then cut at a sentence), not clamped to two lines.
+    // A strip whose rows crowd the proofs is still fitted by the fit model (smaller, then cut at a sentence), not clamped to two lines;
+    // its proofs, which would print below the floor in that room, go to the goal pages with the strip's note.
     const crowded = frameworkPortraitMatrix(goals(overfull.slice(0, 4)), '', 300);
-    expect(crowded.rows).toEqual({ value: true, bite: true, proof: true });
-    expect(crowded.notes).toEqual([]);
+    expect(crowded.rows).toEqual({ value: true, bite: true, proof: false });
+    expect(crowded.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.proofs]);
     expect(crowded.cells.some((cell) => cell.vp.size < type.matrixCell.size)).toBe(true);
-    // Eight goals with short titles are one strip of eight, not bands: no clamp, no note.
+    // Eight goals with short titles are one strip of eight, not bands: no clamp; the record's texts fitted into eight narrow columns leave
+    // the proofs below the floor, so the strip's proof row goes to the goal pages with its note (the value and sound-bite rows stay).
     const eight = frameworkPortraitMatrix(
       goals(overfull).map((goal, index) => ({ ...goal, t: `Goal ${index + 1}` })),
       crosscut,
       room
     );
     expect(eight.bands).toEqual([{ offset: 0, count: 8, columns: 8 }]);
-    expect(eight.rows).toEqual({ value: true, bite: true, proof: true });
-    expect(eight.notes).toEqual([]);
+    expect(eight.rows).toEqual({ value: true, bite: true, proof: false });
+    expect(eight.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.proofs]);
   });
 });
 
@@ -1170,8 +1181,8 @@ describe('the framework portrait book’s goal matrix proof row (editor W4)', ()
     expect(tightened.proofs.flatMap((cell) => cell.rows.map((row) => row.size))).toEqual(tightened.proofs.flatMap((cell) => cell.rows.map(() => undefined)));
     expect(tightened.proofs[1]).toEqual({ rows: goal(1).proofRows, cut: 0, tight: true, note: '' });
     expect(frameworkPortraitMatrixProofRowSize(tightened.proofs)).toBe(tight);
-    // The editor's F3 shape: a kept first proof set smaller carries its size to every cell of the row, the short cells keeping their
-    // row at it, and the row's height is measured at that size.
+    // The editor's F3 shape: where a kept first proof could only be set smaller than the tight type, the floor rules the row out
+    // instead, so no cell of the row ever carries a size under it: the strip drops its proofs to the goal pages.
     const sentence = `${long.trim()}. ${long.trim()}.`;
     const wordy = { vp: long.repeat(3).trim(), key: long.repeat(3).trim(), bite: long.trim() };
     const shapes = [
@@ -1180,20 +1191,20 @@ describe('the framework portrait book’s goal matrix proof row (editor W4)', ()
       goal(1, { id: 'g3', n: 3 }),
       goal(4, { id: 'g4', n: 4, ...wordy, proofRows: Array.from({ length: 4 }, () => ({ fact: sentence, source: 'Source' })) }),
     ];
-    const kept = frameworkPortraitMatrix(shapes, '', 400);
-    expect(kept.height).toBeLessThanOrEqual(400);
+    const dropped = frameworkPortraitMatrix(shapes, '', 400);
+    expect(dropped.height).toBeLessThanOrEqual(400);
+    expect(dropped.rows.proof).toBe(false);
+    expect(dropped.proofs.every((cell) => cell.rows.length === 0)).toBe(true);
+    // In a room where the long cells' first proof holds the tight type, the row prints at one size, the floor or above, every cell a row.
+    const kept = frameworkPortraitMatrix(shapes, '', 1200);
+    expect(kept.rows.proof).toBe(true);
     const sizes = new Set(kept.proofs.map(sizeOf));
     expect(sizes.size).toBe(1);
-    const [size] = [...sizes];
-    expect(size).toBeLessThan(tight);
+    expect([...sizes][0]).toBeGreaterThanOrEqual(tight);
     for (const [index, cell] of kept.proofs.entries()) {
-      expect(cell.tight).toBe(true);
       expect(cell.rows.length).toBeGreaterThan(0);
       expect(cell.rows.length + cell.cut).toBe(shapes[index].proofRows.length);
-      for (const row of cell.rows) expect(row.size).toBe(size);
     }
-    expect(kept.proofs[1].rows).toEqual([{ ...shapes[1].proofRows[0], size }]);
-    expect(kept.proofs[1].cut).toBe(0);
   });
 
   it('prints each band’s proof row of the overfull shape at one size, no cell smaller than its neighbors', () => {
@@ -1383,7 +1394,7 @@ describe('the framework portrait book’s goal matrix head row (editor FA1)', ()
     expect(strip.height).toBeLessThanOrEqual(room);
   });
 
-  it('folds the cells’ "+N more" lines into the caption before any proof goes, and drops the proof row when even folded it ends under the buffer above the footer gap (FA1b, the maintainer’s fold step, the editor’s 12 px)', () => {
+  it('folds the cells’ "+N more" lines into the caption before any proof goes, and drops the proof row, the ladder’s last step, when even folded it ends under the buffer above the footer gap (FA1b, the maintainer’s fold step, the editor’s 12 px)', () => {
     // The family seeds' shape (the long names on the overfull record's key messages and proofs) on its page, in the record's brand
     // face: with the cells' own "+3 more" lines the proof row would end under the buffer, so the lines fold into the one caption
     // (the drop note as is plus one sentence, on one line) and every goal keeps one whole first proof at the tight type; the key
@@ -1432,24 +1443,48 @@ describe('the framework portrait book’s goal matrix head row (editor FA1)', ()
     expect(dropped.cells.some((cell) => cell.key.text.includes('…'))).toBe(false);
     expect(dropped.cells.map((cell) => cell.title.text)).toEqual(longTitles);
     expect(dropped.height).toBeLessThanOrEqual(room);
-    // ... and a little more room (the buffer's worth) folds it instead: the drop was the buffer's, not the floor's.
+    // ... measured on the sheet's chrome the drop is the room's, not only the buffer's: the buffer's worth more room still drops it
+    // (the folded bands run a few px past the room itself), and that plus the few px folds it: the drop was never the floor's.
     const almost = frameworkPortraitMatrix(named, crosscut, room + FRAMEWORK_PORTRAIT_ROOM.matrixBuffer);
-    expect(almost.rows.proof).toBe(true);
-    expect(almost.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold]);
-    // A wide room needs neither step: the proofs print with their own lines under the plain caption.
+    expect(almost.rows.proof).toBe(false);
+    const folds = frameworkPortraitMatrix(named, crosscut, room + FRAMEWORK_PORTRAIT_ROOM.matrixBuffer + 4);
+    expect(folds.rows.proof).toBe(true);
+    expect(folds.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold]);
+    // In the record's face the fold IS the buffer's call: the folded bands end 15 px above the footer gap, over the 12 px buffer, so
+    // they print; a buffer four px wider would drop them (the buffer, not the glyph table, decides the last few px).
+    expect(room - folded.height).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBuffer);
+    expect(room - folded.height).toBeLessThan(FRAMEWORK_PORTRAIT_ROOM.matrixBuffer + 4);
+    expect(frameworkPortraitMatrix(named, crosscut, room - 4, face).rows.proof).toBe(false);
+    // The same shape in twice the room keeps every row with the cells' own lines: the steps went by the room, not by rule.
     const wide = frameworkPortraitMatrix(named, crosscut, room * 2);
-    expect(wide.rows.proof).toBe(true);
-    expect(wide.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    expect(wide.rows).toEqual({ value: true, bite: true, proof: true });
+    expect(wide.notes).toEqual([]);
     expect(wide.proofs.every((cell) => cell.cut === 0 || cell.note !== '')).toBe(true);
-    // The overfull record itself keeps its proofs (one row at the tight floor) with their own "+3 more" lines and the plain caption:
-    // nothing moves on its page.
+    // THE GATE (the editor's second condition): short names land where they landed before the ladder. The overfull record's one-word
+    // titles: step 2, the value propositions and sound bites dropped, the proofs kept (one row each at the tight floor) with their own
+    // "+3 more" lines and the plain caption: nothing moves on its page.
     const kept = frameworkPortraitMatrix(goals(overfull), crosscut, room);
     expect(kept.rows).toEqual({ value: false, bite: false, proof: true });
-    expect(kept.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    expect(kept.notes).toEqual(['Value propositions and sound bites are on each goal page.']);
     expect(kept.proofs.every((cell) => cell.rows.length === 1 && cell.cut === 3 && cell.note === '+3 more in LFX One')).toBe(true);
     for (const cell of kept.proofs)
       for (const row of cell.rows) expect(row.size ?? type.matrixProofTight.size).toBeGreaterThanOrEqual(type.matrixProofTight.size);
     expect(kept.height).toBeLessThanOrEqual(room);
+    // Four goals or fewer (the live store's and the minimal seeds' shapes) are a strip: every row, no note, whatever the names.
+    for (const count of [1, 2, 3, 4]) {
+      const strip = frameworkPortraitMatrix(goals(overfull).slice(0, count), crosscut, room);
+      expect(strip.bands).toEqual([{ offset: 0, count, columns: count }]);
+      expect(strip.rows).toEqual({ value: true, bite: true, proof: true });
+      expect(strip.notes).toEqual([]);
+    }
+    // Step 1 on its own: short value propositions and key messages with one proof each fit once the sound bites go.
+    const light = goals(overfull).map((goal) => ({ ...goal, vp: 'A short value.', key: 'A short key.', proofRows: goal.proofRows.slice(0, 1) }));
+    const bitesOnly = frameworkPortraitMatrix(light, crosscut, room);
+    expect(bitesOnly.rows).toEqual({ value: true, bite: false, proof: true });
+    expect(bitesOnly.notes).toEqual(['Sound bites are on each goal page.']);
+    expect(bitesOnly.cells.every((cell) => cell.vp.text === 'A short value.' && cell.vp.size === type.matrixCell.size)).toBe(true);
+    expect(bitesOnly.proofs.every((cell) => cell.rows.length === 1 && cell.cut === 0)).toBe(true);
+    expect(bitesOnly.height).toBeLessThanOrEqual(room);
   });
 
   it('re-measures the bands after each step: the room the dropped rows freed goes to the proof row first, in its minimal format, by need and not in halves, and the proofs drop only when that row does not fit (the editor’s rule, 7 Nov 2026)', () => {
@@ -1460,9 +1495,10 @@ describe('the framework portrait book’s goal matrix head row (editor FA1)', ()
     const column = frameworkPortraitMatrixColumn(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
     const bandsOf = (all: readonly FoundationMessagePrintGoal[]) => [all.slice(0, 4), all.slice(4)];
     const fixed = (band: readonly FoundationMessagePrintGoal[], titleSize: number) =>
-      2 * FRAMEWORK_PORTRAIT_ROOM.matrixRow +
-      type.cutNote.size * type.cutNote.line +
-      3 +
+      FRAMEWORK_PORTRAIT_ROOM.matrixGoalHeadRow +
+      FRAMEWORK_PORTRAIT_ROOM.matrixGoalHeadLabel +
+      FRAMEWORK_PORTRAIT_ROOM.matrixGoalHeadTitleTop +
+      FRAMEWORK_PORTRAIT_ROOM.matrixRow +
       Math.max(...band.map((goal) => frameworkPortraitGlyphTextHeight(goal.t, { ...type.matrixGoal, size: titleSize }, column))) +
       Math.max(...band.map((goal) => frameworkPortraitGlyphTextHeight(goal.key, type.matrixKey, column)));
     const minimal = (band: readonly FoundationMessagePrintGoal[], fold: boolean) =>
@@ -1472,7 +1508,7 @@ describe('the framework portrait book’s goal matrix head row (editor FA1)', ()
           (goal) =>
             frameworkPortraitGlyphTextHeight(`${goal.proofRows[0].fact} ${goal.proofRows[0].source}`, type.matrixProofTight, column) +
             FRAMEWORK_PORTRAIT_ROOM.matrixProofGap +
-            (fold ? 0 : frameworkPortraitCutNoteHeightIn(goal.proofRows.length - 1, column))
+            (fold ? 0 : frameworkPortraitCutNoteHeightIn(goal.proofRows.length - 1, column) - FRAMEWORK_PORTRAIT_ROOM.matrixProofGap)
         )
       );
     const captionWidth = MKTG_PORTRAIT_PAGE.contentWidth - FRAMEWORK_PORTRAIT_ROOM.matrixPadding;
@@ -1524,5 +1560,154 @@ describe('the framework portrait book’s goal matrix head row (editor FA1)', ()
     expect(kept.cells.map((cell) => cell.title.text)).toEqual(mixed.map((goal) => goal.t));
     expect(room - kept.height).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBuffer);
     expect(kept.height).toBeGreaterThan(dropped.height);
+  });
+
+  it('measures a band’s head row and a cell’s note as the sheet lays them: the "Goal N" label on the page body’s 20 px line, no hairline on the head, the note’s margin collapsing with the last proof’s (Chromium and WebKit, 7 Nov 2026)', () => {
+    // The e2e band record (the overfull record's titles, key messages and facts, source "Report", the real-shaped crosscut) in the LF
+    // look's face, laid by the sheet's own rules in Playwright's Chromium with Inter loaded: each band's head 61 px (20 padding, the
+    // label's 20 px strut, 3 above the title, one 18 px title line), its key row 82.56 (21 + 4 × 15.4), its proof row 112.55 (21 +
+    // 5 × 14.175 + the note's 6 + 14.7: the list's 5 px margin under its last proof met the note's 6 above and collapsed), the bands'
+    // 16, the caption's 6 + 14.69, the crosscut's 8 + 33: 589.91 px, WebKit 582. The model, head and note as the sheet draws them,
+    // lands within a quarter px of Chromium; before this reading it counted the head 4.3 under and the note 5 over, a band.
+    const column = frameworkPortraitMatrixColumn(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
+    const face = "'Inter', sans-serif";
+    const record = goals(overfull).map((goal) => ({ ...goal, proofRows: goal.proofRows.map((proof) => ({ ...proof, source: 'Report' })) }));
+    const bandCrosscut =
+      'Every goal reinforces the others: adoption brings contributors, contributors bring members, and members fund the audits and events that make the next wave of adoption safe.';
+    const laid = frameworkPortraitMatrix(record, bandCrosscut, room, face);
+    expect(laid.rows).toEqual({ value: false, bite: false, proof: true });
+    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    // The chrome alone (the glyph table's Inter and the tag as a word) put this shape at 590.05, a quarter px off a Chromium replica
+    // of the sheet with Google's Inter; the served book's Chrome sets Inter wider and the tag on its own line (the tests below), so
+    // the model reads 633.8 here, the row a line taller in each band than the replica. Against the served render of the overfull
+    // record's page (the one shape with a measured print, 7 Nov 2026): matrix bottom 969.8 vs the render's 969.3.
+    expect(laid.height).toBeCloseTo(633.8, 0);
+    expect(FRAMEWORK_PORTRAIT_TOPS.matrix + laid.height).toBeCloseTo(969.3, -1);
+    expect(Math.abs(FRAMEWORK_PORTRAIT_TOPS.matrix + laid.height - 969.3)).toBeLessThan(1);
+    // The head's chrome as the sheet's: `.fwp-matrix-head` has padding 10 + 10 and no rule; the label is an inline span in the page's
+    // 12.5 / 1.6 body, so its line box is the body's 20 px strut (CSS 2.1 §10.8), not the label's own 10 × 1.2; the title's margin 3.
+    expect(FRAMEWORK_PORTRAIT_ROOM.matrixGoalHeadRow).toBe(FRAMEWORK_PORTRAIT_ROOM.matrixRow - 1);
+    expect(FRAMEWORK_PORTRAIT_ROOM.matrixGoalHeadLabel).toBe(20);
+    expect(FRAMEWORK_PORTRAIT_ROOM.matrixGoalHeadTitleTop).toBe(3);
+    expect(FRAMEWORK_PORTRAIT_ROOM.matrixGoalHeadRow + FRAMEWORK_PORTRAIT_ROOM.matrixGoalHeadLabel + FRAMEWORK_PORTRAIT_ROOM.matrixGoalHeadTitleTop + 18).toBe(
+      61
+    );
+    // The cell with one five-line first proof and its "+3 more" line, as Chromium laid it: 91.55 (WebKit 90).
+    const cell = 5 * type.matrixProofTight.size * type.matrixProofTight.line + frameworkPortraitCutNoteHeightIn(3, column);
+    expect(cell).toBeCloseTo(91.575, 2);
+    expect(frameworkPortraitCutNoteHeightIn(3, column)).toBe(FRAMEWORK_PORTRAIT_ROOM.cutNoteGap + type.cutNote.size * type.cutNote.line);
+  });
+
+  it('measures a proof cell’s source tag as the sheet sets it: small tracked capitals that never break, beside the fact’s last line when they fit there, else on a line of their own (the served render, 7 Nov 2026)', () => {
+    // The overfull record's page 2 as the served book printed it (Chrome, Letter, Inter): goal 2's "More than 250 projects …" ran
+    // four lines and its LFX FIELD tag took a fifth; goal 1's five-line fact put WEBSITE on a sixth; goal 4's fact kept its tag on
+    // its fifth line. The tag measured as one more word of the fact at 10.5 px counted a line short in three cells of eight.
+    const column = frameworkPortraitMatrixColumn(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
+    const face = "'Inter', sans-serif";
+    const line = type.matrixProofTight.size * type.matrixProofTight.line;
+    const lines = (fact: string, source: string) => Math.round(frameworkPortraitGlyphProofHeight(fact, source, type.matrixProofTight, column, face) / line);
+    expect(lines(facts[0], 'Website')).toBe(6);
+    expect(lines(facts[1], 'LFX field')).toBe(5);
+    expect(lines(facts[2], 'Website')).toBe(5);
+    expect(lines(facts[3], 'Website')).toBe(5);
+    expect(lines(facts[4], 'Website')).toBe(5);
+    expect(lines(facts[5], 'LFX field')).toBe(6);
+    expect(lines(facts[6], 'Website')).toBe(5);
+    expect(lines(facts[7], 'Website')).toBe(5);
+    // The tag's own measure: 8 px, semibold, capitals tracked 0.1 em (`.fwp-matrix-source`); a tag beside a short last line adds no line.
+    expect(type.matrixSource).toEqual({ size: 8, line: 1.3, weight: 600 });
+    expect(FRAMEWORK_PORTRAIT_ROOM.matrixSourceTracking).toBe(0.1);
+    expect(lines('A short fact.', 'Website')).toBe(1);
+    expect(frameworkPortraitGlyphProofHeight('', 'Website', type.matrixProofTight, column, face)).toBe(line);
+  });
+
+  it('reads the served render of the overfull record’s page: sixteen cells wrap as the model counts, the matrix ends where the print did (Chrome, Letter, Inter, 7 Nov 2026)', () => {
+    // The served framework book at 7d16a677e, the overfull record's page 2, read from the PDF's text boxes (CSS px): the eight key
+    // messages wrap to 4, 3, 4, 5 | 4, 3, 4, 3 lines of their 130 px columns at 11 px semibold; the eight first proofs with their tags
+    // to 6, 5, 5, 5 | 5, 6, 5, 5 at 10.5 px; band 0 spans 336–622, band 1 638–907.6, the caption and the two-line crosscut end at
+    // 969.3; the footer's text begins at 1018.5. The glyph table's Inter factor (1.05, a Chromium replica's with Google's Inter variable
+    // at default axes) counted four cells a line short against this print; the matrix's own factor 1.15 counts every cell as the print
+    // set it, and the page within a px (the same record prints with identical glyph widths in the standalone and the family books).
+    const column = frameworkPortraitMatrixColumn(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
+    const face = "'Inter', sans-serif";
+    const sources = ['Website', 'LFX field', 'Website', 'Website', 'Website', 'LFX field', 'Website', 'Website'];
+    const printed = goals(overfull).map((goal, index) => ({
+      ...goal,
+      proofRows: goal.proofRows.map((proof, at) => (at === 0 ? { ...proof, source: sources[index] } : proof)),
+    }));
+    expect(
+      printed.map((goal) => Math.round(frameworkPortraitGlyphTextHeight(goal.key, type.matrixKey, column, face) / (type.matrixKey.size * type.matrixKey.line)))
+    ).toEqual([4, 3, 4, 5, 4, 3, 4, 3]);
+    expect(
+      printed.map((goal) =>
+        Math.round(
+          frameworkPortraitGlyphProofHeight(goal.proofRows[0].fact, goal.proofRows[0].source, type.matrixProofTight, column, face) /
+            (type.matrixProofTight.size * type.matrixProofTight.line)
+        )
+      )
+    ).toEqual([6, 5, 5, 5, 5, 6, 5, 5]);
+    expect(
+      printed.map((goal) => Math.round(frameworkPortraitGlyphTextHeight(goal.t, type.matrixGoal, column, face) / (type.matrixGoal.size * type.matrixGoal.line)))
+    ).toEqual(Array.from({ length: 8 }, () => 1));
+    expect(FRAMEWORK_PORTRAIT_MATRIX_FACE_WIDTH).toEqual({ inter: 1.15 });
+    const laid = frameworkPortraitMatrix(printed, crosscut, room, face);
+    expect(laid.rows).toEqual({ value: false, bite: false, proof: true });
+    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    expect(laid.proofs.every((cell) => cell.rows.length === 1 && cell.cut === 3 && cell.tight && cell.note === '+3 more in LFX One')).toBe(true);
+    const bottom = FRAMEWORK_PORTRAIT_TOPS.matrix + laid.height;
+    expect(Math.abs(bottom - 969.3)).toBeLessThan(1);
+    // The print's distance to the footer's text, 1018.5 px from the page top: the model's within three px of the measured 51.
+    const footerText = 1056 - 28 - 9.5;
+    expect(Math.abs(footerText - bottom - 51)).toBeLessThanOrEqual(3);
+    expect(room - laid.height).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBuffer);
+  });
+
+  it('never prints a band’s first proof cut at a word: where a cell’s room falls short of its whole first proof the ladder steps on (fold, then drop) instead of the strip’s text cut', () => {
+    // The long names in the record's face: a level whose bands' room would hold the proof row only by cutting first proofs at a word
+    // (the fit model's cut, which a strip may take) is not a fit for a band, so the ladder steps on and every kept first proof is the
+    // record's, whole, at the tight type: on this shape the cells' lines fold into the caption.
+    const named = goals(overfull).map((goal, index) => ({ ...goal, t: longTitles[index] }));
+    const face = "'Instrument Sans', sans-serif";
+    const folded = frameworkPortraitMatrix(named, crosscut, room, face);
+    expect(folded.rows).toEqual({ value: false, bite: false, proof: true });
+    expect(folded.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold]);
+    expect(folded.proofs.map((cell) => cell.rows[0].fact)).toEqual(named.map((goal) => goal.proofRows[0].fact));
+    expect(folded.proofs.some((cell) => cell.rows[0].fact.endsWith('…'))).toBe(false);
+    // Every level the ladder lays on this shape, at any room from under the drop to twice the page: no kept first proof is ever cut.
+    for (const at of [room - 40, room - 20, room - 8, room, room + 8, room + 20, room + 60, room * 2]) {
+      const matrix = frameworkPortraitMatrix(named, crosscut, at, face);
+      for (const [index, cell] of matrix.proofs.entries()) if (cell.rows.length > 0) expect(cell.rows[0].fact).toBe(named[index].proofRows[0].fact);
+    }
+  });
+
+  it('drops a strip’s proofs alone, with its own note, when they would print below the tight floor; the small shapes keep every row (the floor holds everywhere)', () => {
+    // Six of the overfull record's goals are a strip (their one-word titles fit six columns): the fitted value, key and sound-bite rows
+    // leave the proofs only the fallback's 8.8 px, below the floor, so the proof row goes to the goal pages and the note says so; the
+    // value propositions and sound bites still print, as the strip fits them.
+    const six = goals(overfull).slice(0, 6);
+    expect(frameworkPortraitMatrixColumns(six)).toBe(6);
+    const strip = frameworkPortraitMatrix(six, crosscut, room);
+    expect(strip.bands).toEqual([{ offset: 0, count: 6, columns: 6 }]);
+    expect(strip.rows).toEqual({ value: true, bite: true, proof: false });
+    expect(strip.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.proofs]);
+    expect(strip.notes).toEqual(['Proofs are on each goal page.']);
+    expect(strip.proofs).toHaveLength(6);
+    expect(strip.proofs.every((cell) => cell.rows.length === 0 && cell.cut === 0 && cell.note === '')).toBe(true);
+    expect(strip.cells.every((cell) => cell.vp.text.length > 0 && cell.key.text.length > 0 && (cell.bite?.text.length ?? 0) > 0)).toBe(true);
+    expect(strip.height).toBeLessThanOrEqual(room);
+    // With the proofs kept the same strip would have set them below the floor: the drop's reason.
+    const wide = frameworkPortraitMatrix(six, crosscut, room * 2);
+    expect(wide.rows).toEqual({ value: true, bite: true, proof: true });
+    expect(wide.notes).toEqual([]);
+    // THE GATE: the live store's and the small seeds' shapes (one to four goals, the record's text) keep every row at the floor or above.
+    for (const count of [1, 2, 3, 4]) {
+      const small = frameworkPortraitMatrix(goals(overfull).slice(0, count), crosscut, room);
+      expect(small.rows).toEqual({ value: true, bite: true, proof: true });
+      expect(small.notes).toEqual([]);
+      expect(small.proofs.every((cell) => cell.rows.length > 0)).toBe(true);
+      for (const cell of small.proofs)
+        for (const row of cell.rows) expect(row.size ?? type.matrixProofTight.size).toBeGreaterThanOrEqual(type.matrixProofTight.size);
+      expect(small.height).toBeLessThanOrEqual(room);
+    }
   });
 });

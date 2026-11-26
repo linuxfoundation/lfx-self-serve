@@ -235,7 +235,7 @@ export function mktgPortraitCharEm(para: Pick<MktgPortraitFitPara, 'weight' | 'c
 }
 
 /** The first family of a CSS font stack, lowercased and unquoted: `'Instrument Sans', sans-serif` → `instrument sans`. */
-function firstFamily(stack: string | undefined): string {
+export function mktgPortraitFirstFamily(stack: string | undefined): string {
   return (stack ?? '').split(',')[0].replace(/['"]/g, '').trim().toLowerCase();
 }
 
@@ -260,7 +260,7 @@ export function mktgPortraitTextWidth(text: string, size: number, para: Pick<Mkt
   const glyphs = Array.from(shown).reduce((sum, char) => sum + (MKTG_PORTRAIT_GLYPH_WIDTHS[char] ?? MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT), 0) / 1000;
   const trackingEm = para.tracking ?? (para.caps ? MKTG_PORTRAIT_CAPS_TRACKING_EM : 0);
   const tracking = Math.max(0, Array.from(shown).length - 1) * trackingEm;
-  const family = MKTG_PORTRAIT_FAMILY_WIDTH[firstFamily(para.family)] ?? MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT;
+  const family = MKTG_PORTRAIT_FAMILY_WIDTH[mktgPortraitFirstFamily(para.family)] ?? MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT;
   return (glyphs * family * weightWidth(para.weight ?? 400) + tracking) * size;
 }
 
