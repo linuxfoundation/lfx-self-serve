@@ -8,6 +8,7 @@ import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, T
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import {
   PROFILE_SETTINGS_DRAWER_COPY,
+  PROFILE_VISIBILITY_BASIC_CHILD_KEYS,
   PROFILE_VISIBILITY_DEFAULTS,
   PROFILE_VISIBILITY_KEYS,
   PROFILE_VISIBILITY_PUBLIC_DEFAULT_KEYS,
@@ -35,9 +36,6 @@ import { MessageService } from 'primeng/api';
 import { catchError, filter, finalize, of, Subscription, take } from 'rxjs';
 
 import { ProfileVisibilityDrawerService } from '../profile-visibility-drawer/profile-visibility-drawer.service';
-
-/** The sections under General profile information. */
-const PERSONAL_CHILD_KEYS: readonly ProfileVisibilityKey[] = PROFILE_VISIBILITY_SECTIONS.filter((row) => row.parent === 'basic').map((row) => row.key);
 
 /**
  * The Profile page's Open Profile settings drawer (#6087), behind the profile redesign flag: the Private / Public switch with the
@@ -128,9 +126,9 @@ export class ProfileSettingsDrawerComponent {
       const next = { ...sections, [key]: shown };
       // As the hub's drawer: General profile information switches its children with it, and stays on while either is on.
       if (key === 'basic') {
-        for (const child of PERSONAL_CHILD_KEYS) next[child] = shown;
-      } else if (PERSONAL_CHILD_KEYS.includes(key)) {
-        next.basic = PERSONAL_CHILD_KEYS.some((child) => next[child]);
+        for (const child of PROFILE_VISIBILITY_BASIC_CHILD_KEYS) next[child] = shown;
+      } else if (PROFILE_VISIBILITY_BASIC_CHILD_KEYS.includes(key)) {
+        next.basic = PROFILE_VISIBILITY_BASIC_CHILD_KEYS.some((child) => next[child]);
       }
       return next;
     });

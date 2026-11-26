@@ -66,6 +66,11 @@ export const PROFILE_VISIBILITY_SECTIONS: readonly {
   { key: 'skills', name: 'Skills', description: 'Skills listed on your profile.' },
 ];
 
+/** The sections under General profile information (`basic`), which it switches on and off with it. */
+export const PROFILE_VISIBILITY_BASIC_CHILD_KEYS: readonly (typeof PROFILE_VISIBILITY_KEYS)[number][] = PROFILE_VISIBILITY_SECTIONS.filter(
+  (section) => section.parent === 'basic'
+).map((section) => section.key);
+
 /**
  * Segmented Private/Public options for the drawer's master-flag control. `value` is the boolean the
  * `isPublic` form control binds to (false = Private, true = Public).
