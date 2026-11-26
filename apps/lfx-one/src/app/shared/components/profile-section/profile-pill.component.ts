@@ -3,7 +3,7 @@
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { booleanAttribute, Component, computed, input, TemplateRef } from '@angular/core';
-import { ProfilePillTile } from '@lfx-one/shared/interfaces';
+import { ProfilePillTile, UiPopoverPadding } from '@lfx-one/shared/interfaces';
 import { UiHoverCardDirective } from '@shared/uikit/hover-card/hover-card.directive';
 
 /**
@@ -23,6 +23,8 @@ export class ProfilePillComponent {
   public readonly href = input<string | null>(null);
   public readonly hoverCard = input<TemplateRef<unknown> | null>(null);
   public readonly hoverCardWidth = input<number | null>(null);
+  /** `none` for a card that paints its own background, such as one in the public profile's theme (#6093). */
+  public readonly hoverCardPadding = input<UiPopoverPadding>('default');
   public readonly testId = input<string>('profile-pill');
   /** Shows the picture alone, for a badge known only by its image; the name still names the pill to assistive tech (#6092). */
   public readonly imageOnly = input<boolean, unknown>(false, { transform: booleanAttribute });

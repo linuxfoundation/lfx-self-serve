@@ -22,6 +22,7 @@ import { PublicProfileCertificationsComponent } from '../components/public-profi
 import { PublicProfileContributionsComponent } from '../components/public-profile-contributions/public-profile-contributions.component';
 import { PublicProfileHeroRedesignComponent } from '../components/public-profile-hero-redesign/public-profile-hero-redesign.component';
 import { PublicProfileHeroComponent } from '../components/public-profile-hero/public-profile-hero.component';
+import { PublicProfileInvolvementComponent } from '../components/public-profile-involvement/public-profile-involvement.component';
 import { PublicProfileRecognitionsComponent } from '../components/public-profile-recognitions/public-profile-recognitions.component';
 import { PublicProfileTopbarRedesignComponent } from '../components/public-profile-topbar-redesign/public-profile-topbar-redesign.component';
 import { PublicProfileTopbarComponent } from '../components/public-profile-topbar/public-profile-topbar.component';
@@ -48,6 +49,7 @@ import { PublicProfileService } from '../services/public-profile.service';
     PublicProfileTrainingsComponent,
     PublicProfileNotFoundComponent,
     PublicProfileRecognitionsComponent,
+    PublicProfileInvolvementComponent,
   ],
   // The visitor's light or dark theme under the redesign (#6091).
   providers: [PublicProfileThemeService],
@@ -99,11 +101,12 @@ export class PublicProfilePageComponent {
   protected readonly basic = computed(() => this.profile()?.basic ?? null);
   protected readonly about = computed(() => this.profile()?.About?.trim() || '');
   protected readonly technicalContribution = computed(() => this.profile()?.technical_contribution ?? null);
+  protected readonly projects = computed(() => this.technicalContribution()?.projects ?? []);
   protected readonly badges = computed(() => this.profile()?.badges ?? []);
   protected readonly certifications = computed(() => this.profile()?.certification_activities ?? []);
   protected readonly trainings = computed(() => this.profile()?.training_activities ?? []);
 
-  protected readonly hasContributions = computed(() => (this.technicalContribution()?.projects?.length ?? 0) > 0);
+  protected readonly hasContributions = computed(() => this.projects().length > 0);
   // `Image` is omitempty upstream and the template only renders badges that have one — gate on at
   // least one renderable badge so a `Url`-only badge can't leave the heading above an empty grid.
   protected readonly hasBadges = computed(() => this.badges().some((badge) => !!badge.Image?.trim()));

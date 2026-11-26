@@ -51,10 +51,7 @@
               [heading]="sectionCopy.involvement"
               [description]="owner() ? sectionCopy.involvementDescriptionOwner : sectionCopy.involvementDescription"
               testId="public-profile-involvement">
-              <lfx-public-profile-contributions
-                [technicalContribution]="technicalContribution()"
-                [showHeading]="false"
-                data-testid="public-profile-contributions"></lfx-public-profile-contributions>
+              <lfx-public-profile-involvement [projects]="projects()" data-testid="public-profile-projects"></lfx-public-profile-involvement>
             </lfx-profile-section>
           }
           <!-- Certifications and Training enrollment are left out of the redesign (#6092). -->
