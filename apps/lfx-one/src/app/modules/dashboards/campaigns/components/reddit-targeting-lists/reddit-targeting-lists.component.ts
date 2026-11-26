@@ -24,20 +24,15 @@ export class RedditTargetingListsComponent {
   /** Why the last typed entry was not added, or `null`. */
   protected readonly addError = signal<string | null>(null);
 
-  /** Both lists with their entries: the heading with the count against the cap. */
+  /** Both lists with their entries as chips: a subreddit as `r/name` (a brief may seed it with or without the prefix), an interest as held. */
   protected readonly listStates: Signal<RedditTargetingListState[]> = computed(() => {
     const held = this.lists();
     return REDDIT_TARGETING_LISTS.map((list) => ({
       ...list,
       heading: `${list.label} (${held[list.key].length}/${REDDIT_TARGETING_LIST_LIMITS[list.key]})`,
-      entries: held[list.key],
+      chips: held[list.key].map((entry) => ({ id: entry, label: list.key === 'subreddits' ? `r/${redditTargetingListEntry('subreddits', entry)}` : entry })),
     }));
   });
-
-  /** A subreddit as `r/name` (a brief may seed it with or without the prefix); an interest as held. */
-  protected chipLabel(key: RedditTargetingListKey, entry: string): string {
-    return key === 'subreddits' ? `r/${redditTargetingListEntry('subreddits', entry)}` : entry;
-  }
 
   /** Adds a typed entry, refusing a blank one or a full list (`redditTargetingListAddRefusal`), then clears the box. */
   protected onAdd(key: RedditTargetingListKey, value: string | null, box: UiComboboxComponent): void {

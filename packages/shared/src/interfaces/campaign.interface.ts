@@ -3904,10 +3904,10 @@ export interface RedditTargetingListView {
   placeholder: string;
 }
 
-/** One editable Reddit targeting list with its entries: the box's label with the count against the cap, and the entries. */
+/** One editable Reddit targeting list with its entries: the box's label with the count against the cap, and the chips (`id` is the entry as held). */
 export interface RedditTargetingListState extends RedditTargetingListView {
   heading: string;
-  entries: string[];
+  chips: MetaCustomAudienceChipView[];
 }
 
 /** The Reddit targeting exclusions the Implement tab holds (#6108 row 3): subreddit names without `r/`, and country codes. */
