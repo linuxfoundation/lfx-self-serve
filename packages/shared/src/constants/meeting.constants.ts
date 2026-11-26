@@ -822,6 +822,9 @@ export const COMPOSER_ATTENDEE_LOCK: ShowMeetingAttendeesLockOptions = { allowRe
 /** Character limit for the meeting agenda (`description`) */
 export const MEETING_AGENDA_MAX_LENGTH = 2000;
 
+/** Native cap on the meeting title input in the redesigned composer; the API sets none. */
+export const MEETING_TITLE_MAX_LENGTH = 150;
+
 /** Character limit for the note sent with a cancelled occurrence (matches the upstream ITX cap) */
 export const MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH = 4000;
 
