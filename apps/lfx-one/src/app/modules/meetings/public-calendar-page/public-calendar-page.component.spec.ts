@@ -13,8 +13,9 @@ import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.com
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectValueDirective } from '@shared/uikit/select/select-value.directive';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
+import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
-import { BehaviorSubject, Observable, of, throwError } from 'rxjs';
+import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsCalendarGridComponent } from '../meetings-redesign/components/meetings-calendar-grid/meetings-calendar-grid.component';
@@ -63,11 +64,15 @@ describe('PublicCalendarPageComponent', () => {
   let query: BehaviorSubject<ParamMap>;
   let feed: () => Observable<PublicProjectMeetingsResponse>;
   let navigate: ReturnType<typeof vi.fn>;
+  let openModal: ReturnType<typeof vi.fn>;
+  let modalClosed: Subject<void>;
   let phone: boolean;
+  let directoryFails: boolean;
 
   beforeEach(() => {
     query = new BehaviorSubject(convertToParamMap({}));
     phone = false;
+    directoryFails = false;
     feed = () =>
       of({
         meetings: [meeting('a', BOARD), meeting('b', TSC, { meeting_type: 'Technical' })],
@@ -75,6 +80,8 @@ describe('PublicCalendarPageComponent', () => {
         project: { uid: 'p', name: 'Synthetic Project', logo_url: null },
       });
     navigate = vi.fn().mockResolvedValue(true);
+    modalClosed = new Subject();
+    openModal = vi.fn(() => ({ closed: modalClosed, close: vi.fn() }));
     vi.stubGlobal('matchMedia', () => ({ matches: phone, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   });
 
@@ -87,8 +94,9 @@ describe('PublicCalendarPageComponent', () => {
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ projectSlug: 'synthetic' })), queryParamMap: query } },
         { provide: Router, useValue: { navigate } },
         { provide: MeetingService, useValue: { getPublicProjectMeetings: vi.fn(() => feed()) } },
-        { provide: GroupService, useValue: { getPublicProjectGroups: () => of(directory) } },
+        { provide: GroupService, useValue: { getPublicProjectGroups: () => (directoryFails ? throwError(() => new Error('down')) : of(directory)) } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
+        { provide: UiModalService, useValue: { open: openModal } },
       ],
     });
   };
@@ -166,6 +174,7 @@ describe('PublicCalendarPageComponent', () => {
       ++calls === 1 ? throwError(() => new Error('down')) : of({ meetings: [], total: 0, project: { uid: 'p', name: 'Synthetic Project', logo_url: null } });
     const fixture = await render();
     expect(byTestId(fixture, 'public-calendar-error')?.textContent).toContain('Unable to load calendar');
+    expect(byTestId(fixture, 'public-calendar-heading')).toBeNull();
 
     byTestId(fixture, 'public-calendar-retry')?.querySelector('button')?.click();
     await fixture.whenStable();
@@ -185,5 +194,31 @@ describe('PublicCalendarPageComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(byTestId(fixture, 'public-calendar-unknown-group')?.textContent).toContain('Group not found');
+  });
+
+  it('opens a clicked meeting through ?meeting=, and drops it from the URL on close', async () => {
+    const fixture = await render();
+    (fixture.nativeElement.querySelector('[data-testid="public-calendar-grid-chip"]') as HTMLElement).click();
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { meeting: expect.stringMatching(/^[ab]$/) } }));
+
+    query.next(convertToParamMap({ meeting: 'a' }));
+    await fixture.whenStable();
+    expect(openModal).toHaveBeenCalledWith(expect.anything(), {
+      data: expect.objectContaining({ entry: expect.objectContaining({ key: 'a' }), groups: ['Board'], meeting: expect.objectContaining({ id: 'a' }) }),
+    });
+
+    modalClosed.next();
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { meeting: null } }));
+  });
+
+  it('offers all meetings when the group directory fails while a group is selected', async () => {
+    directoryFails = true;
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    query.next(convertToParamMap({ committee: TSC }));
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'public-calendar-group')).toBeNull();
+    byTestId(fixture, 'public-calendar-group-clear')?.querySelector('button')?.click();
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { committee: null } }));
   });
 });

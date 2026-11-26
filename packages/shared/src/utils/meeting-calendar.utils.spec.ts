@@ -17,12 +17,14 @@ import {
   meetingToCalendarEvents,
   publicMeetingToCalendarEvents,
   publicMeetingToCalendarGridEntries,
+  toPublicCalendarItems,
+  resolvePublicCalendarModalState,
   resolveMeetingCalendarClickRoute,
   resolvePublicCalendarLegend,
 } from './meeting-calendar.utils';
 
 import { MeetingVisibility } from '../enums';
-import type { Meeting, MeetingOccurrenceSummary, PublicCalendarMeeting } from '../interfaces';
+import type { Meeting, MeetingOccurrenceSummary, PublicCalendarMeeting, PublicCalendarModalFacts } from '../interfaces';
 import type { PublicCalendarCommittee, PublicCalendarCommitteeContext } from '../interfaces/calendar.interface';
 
 describe('meetingToCalendarEvents', () => {
@@ -310,5 +312,81 @@ describe('publicMeetingToCalendarGridEntries', () => {
     );
 
     expect(entry).toMatchObject({ key: '99152950841-1630560600000', startTime: '2026-10-02T15:00:00Z', past: true });
+  });
+});
+
+describe('resolvePublicCalendarModalState', () => {
+  const facts = (over: Partial<PublicCalendarModalFacts> = {}): PublicCalendarModalFacts => ({
+    signedIn: false,
+    past: false,
+    live: false,
+    restricted: false,
+    invited: false,
+    recording: false,
+    summary: false,
+    access: true,
+    ...over,
+  });
+
+  it.each([
+    ['past, signed out, both published', facts({ past: true, recording: true, summary: true }), 'Ended', null, ['sign-in-summary', 'sign-in-watch']],
+    [
+      'past, signed in, both published',
+      facts({ past: true, signedIn: true, recording: true, summary: true }),
+      'Ended',
+      null,
+      ['view-summary', 'watch-recording'],
+    ],
+    ['past, nothing published', facts({ past: true }), 'Ended', 'No recording or summary was published for this meeting.', []],
+    [
+      'past, signed in without access',
+      facts({ past: true, signedIn: true, access: false, recording: true }),
+      'Ended',
+      "Only the meeting's invited guests can see its recording and summary.",
+      [],
+    ],
+    ['restricted, signed out', facts({ restricted: true }), 'Invite only', "Only invited guests can join. Sign in to check if you're invited.", ['sign-in']],
+    ['restricted, invited', facts({ restricted: true, signedIn: true, invited: true }), "You're invited", null, []],
+    ['restricted, invited, live', facts({ restricted: true, signedIn: true, invited: true, live: true }), "You're invited", null, ['join']],
+    [
+      'restricted, not invited',
+      facts({ restricted: true, signedIn: true }),
+      'Invite only',
+      'Only invited guests can join this meeting. Contact the organizers if you think you should be invited.',
+      [],
+    ],
+    ['public, live', facts({ live: true }), null, null, ['join']],
+    ['public, signed out', facts(), null, null, ['sign-in-register']],
+    ['public, registered', facts({ signedIn: true, invited: true }), 'Registered', "You'll get the join link by email before the meeting starts.", []],
+    ['public, not registered', facts({ signedIn: true }), null, null, ['register']],
+  ])('%s', (_case, input, badge, note, actions) => {
+    const state = resolvePublicCalendarModalState(input);
+
+    expect([state.badge?.label ?? null, state.note?.text ?? null, state.actions]).toEqual([badge, note, actions]);
+  });
+});
+
+describe('toPublicCalendarItems', () => {
+  it('keeps a date that is both live and archived once, as the archived row', () => {
+    const base: PublicCalendarMeeting = {
+      id: 'series-1',
+      title: 'Sync',
+      start_time: '2026-10-01T15:00:00Z',
+      duration: 60,
+      timezone: 'UTC',
+      meeting_type: null,
+      restricted: false,
+      recurrence: null,
+    };
+    const items = toPublicCalendarItems(
+      [
+        { ...base, occurrences: [{ occurrence_id: '1790000000', start_time: '2026-10-01T15:00:00Z', duration: 60 }] },
+        { ...base, scheduled_start_time: '2026-10-01T15:00:00Z', meeting_and_occurrence_id: 'series-1-1790000000000' },
+        { ...base, id: 'series-2', start_time: '2026-09-30T15:00:00Z' },
+      ],
+      new Date('2026-10-10T12:00:00Z')
+    );
+
+    expect(items.map((item) => item.entry.key)).toEqual(['series-2', 'series-1-1790000000000']);
   });
 });

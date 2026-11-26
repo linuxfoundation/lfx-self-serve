@@ -39,4 +39,17 @@ describe('MeetingsCalendarGridComponent', () => {
     chips[0].click();
     expect(clicked).toEqual([legal]);
   });
+
+  it('starts a grid that opens on the week at 8 AM', async () => {
+    const fixture = TestBed.createComponent(MeetingsCalendarGridComponent);
+    fixture.componentRef.setInput('entries', []);
+    fixture.componentRef.setInput('now', NOW);
+    fixture.componentRef.setInput('focus', NOW);
+    fixture.componentRef.setInput('view', 'week');
+    fixture.componentRef.setInput('layout', 'page');
+    await fixture.whenStable();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect((fixture.nativeElement.querySelector('[data-testid="meetings-calendar-grid-body"]') as HTMLElement).scrollTop).toBe(376);
+  });
 });

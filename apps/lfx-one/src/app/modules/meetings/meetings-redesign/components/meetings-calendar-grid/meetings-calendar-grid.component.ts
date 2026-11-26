@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, model, output, Signal, signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  input,
+  model,
+  output,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import {
   MEETINGS_HOME_CALENDAR_CHIP_TOOLTIP_HEIGHT_PX,
   MEETINGS_HOME_CALENDAR_HOUR_PX,
@@ -92,6 +106,10 @@ export class MeetingsCalendarGridComponent {
     this.destroyRef.onDestroy(() => {
       clearTimeout(this.scrollTimer);
       clearTimeout(this.hideTimer);
+    });
+    // A grid that opens on the week, from `?view=week`, starts at 8 AM as a switch to it does.
+    afterNextRender(() => {
+      if (this.view() === 'week') this.scrollToStartHour();
     });
   }
 
