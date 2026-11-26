@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { RedditTargetingExclusionsDraft } from '../interfaces/campaign.interface';
 import {
+  redditTargetedGeoCodes,
   redditTargetingExclusionAddRefusal,
   redditTargetingExclusionEntry,
   redditTargetingExclusionHeld,
@@ -160,6 +161,18 @@ describe('redditTargetingExclusionAddRefusal', () => {
 
   it('counts the US default as targeted when there are no geo targets', () => {
     expect(redditTargetingExclusionAddRefusal(NONE, 'excludedGeoTargets', 'US', { subreddits: [], geoTargets: [] })).toContain('US is targeted');
+  });
+});
+
+describe('redditTargetedGeoCodes', () => {
+  it.each<[string[], string[]]>([
+    [
+      ['us', ' gb '],
+      ['US', 'GB'],
+    ],
+    [[], ['US']],
+  ])('reads %j as %j', (geoTargets, expected) => {
+    expect([...redditTargetedGeoCodes({ subreddits: [], geoTargets })]).toEqual(expected);
   });
 });
 

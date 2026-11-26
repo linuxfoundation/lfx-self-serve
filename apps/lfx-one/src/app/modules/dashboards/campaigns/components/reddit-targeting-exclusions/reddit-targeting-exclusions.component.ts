@@ -11,6 +11,7 @@ import type {
   RedditTargetingExclusionsDraft,
 } from '@lfx-one/shared/interfaces';
 import {
+  redditTargetedGeoCodes,
   redditTargetingExclusionAddRefusal,
   redditTargetingExclusionEntry,
   redditTargetingExclusionHeld,
@@ -46,10 +47,10 @@ export class RedditTargetingExclusionsComponent {
   protected readonly refusal = computed<string | null>(() => redditTargetingExclusionsDraftRefusal(this.exclusions(), this.targeted()));
   /** Whether either list holds an entry, which keeps the lists (and their Remove) on screen without the capability. */
   protected readonly hasEntries = computed<boolean>(() => redditTargetingExclusionsPicked(this.exclusions()));
-  /** The countries not yet excluded, as the country box offers them. */
+  /** The countries neither excluded nor targeted, as the country box offers them; a typed targeted code is still refused on add. */
   protected readonly countryOptions: Signal<MetaCustomAudienceChipView[]> = computed(() => {
-    const held = new Set(this.exclusions().excludedGeoTargets);
-    return COUNTRIES.filter((c) => !held.has(c.value)).map((c) => ({ id: c.value, label: `${c.label} (${c.value})` }));
+    const taken = new Set([...this.exclusions().excludedGeoTargets, ...redditTargetedGeoCodes(this.targeted())]);
+    return COUNTRIES.filter((c) => !taken.has(c.value)).map((c) => ({ id: c.value, label: `${c.label} (${c.value})` }));
   });
   /** Both lists with their entries as chips: subreddits as `r/name`, countries by name. */
   protected readonly lists: Signal<RedditTargetingExclusionListState[]> = computed(() => {

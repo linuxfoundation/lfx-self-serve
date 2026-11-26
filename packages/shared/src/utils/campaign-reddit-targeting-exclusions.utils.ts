@@ -205,6 +205,11 @@ export function redditTargetingExclusionEntry(key: RedditTargetingExclusionKey, 
   return key === 'excludedSubreddits' ? subredditName(raw) : googleAdsToUpperCode(goTrimSpace(raw));
 }
 
+/** The country codes a create targets, which no excluded country may repeat: the geo targets as sent, or `US` when there are none. */
+export function redditTargetedGeoCodes(targeted: RedditTargetedLists): Set<string> {
+  return effectiveGeoSet({ geoTargets: targeted.geoTargets });
+}
+
 /** Whether `list` already holds `entry`: subreddits compared ignoring case, as campaign-service drops repeats that way; codes exactly. */
 export function redditTargetingExclusionHeld(exclusions: RedditTargetingExclusionsDraft, key: RedditTargetingExclusionKey, entry: string): boolean {
   if (key === 'excludedGeoTargets') return exclusions.excludedGeoTargets.includes(entry);
@@ -234,7 +239,7 @@ export function redditTargetingExclusionAddRefusal(
   }
   if (entry === '') return 'Enter a country.';
   if (!/^[A-Z]{2}$/.test(entry) || !ASSIGNED_COUNTRY_CODES.has(entry)) return 'Pick a country, or enter its two-letter ISO country code.';
-  if (effectiveGeoSet({ geoTargets: targeted.geoTargets }).has(entry)) {
+  if (redditTargetedGeoCodes(targeted).has(entry)) {
     return `${entry} is targeted (the geo targets, or the US default when there are none). A country cannot be both targeted and excluded.`;
   }
   return full ? `Exclude at most ${max} countries.` : null;
