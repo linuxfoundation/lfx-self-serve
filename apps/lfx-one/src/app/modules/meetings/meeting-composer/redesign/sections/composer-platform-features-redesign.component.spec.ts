@@ -97,7 +97,7 @@ describe('ComposerPlatformFeaturesRedesignComponent', () => {
     hours?.markAsTouched();
     fixture.detectChanges();
 
-    expect(query('composer-reminder-error')?.textContent).toContain('Set the reminder between 2 and 24 hours before the meeting.');
+    expect(query('composer-reminder-error')?.textContent).toContain('Set the reminder to a whole number of hours between 2 and 24.');
   });
 
   it('names what the artifact setting covers and hides it with both features off', async () => {
