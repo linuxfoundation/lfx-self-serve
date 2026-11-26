@@ -1134,11 +1134,17 @@ describe('CommitteeManageComponent', () => {
         ['onDone', 'synthetic-replacement', true],
         ['onSubmitAll', null, true],
         ['onSubmitAll', 'synthetic-replacement', false],
-      ] as const)('rejects late lookup outcomes and buffered rows after ownership loss on %s (%s, error: %s)', async (submit, replacement, fails) => {
+      ] as const)('retains settled markers but rejects late lookup outcomes after ownership loss on %s (%s, error: %s)', async (submit, replacement, fails) => {
         const lookups = Array.from({ length: COMMITTEE_INVITE_CONCURRENCY + 2 }, () => new Subject<CommitteeMember>());
         const getCommitteeMember = vi.fn((_group: string, uid: string) => lookups[Number(uid)]);
         Object.assign(TestBed.inject(CommitteeService), { getCommitteeMember });
-        answerRuns((email) => ({ status: 'added', member: undefined, memberUid: email.split('@')[0] }));
+        const uncertainEmail = `${lookups.length - 1}@example.com`;
+        answerRuns((email) => ({
+          status: email === uncertainEmail ? 'unknown' : 'added',
+          uncertain: email === uncertainEmail,
+          member: undefined,
+          memberUid: email.split('@')[0],
+        }));
         const staged = lookups.map((_, index) => csv(`${index}@example.com`));
         const component = await setupPending(staged, {}, true);
         if (submit === 'onDone') component.mode.set('create');
@@ -1160,6 +1166,22 @@ describe('CommitteeManageComponent', () => {
         expect(navigate).not.toHaveBeenCalledWith(['/groups']);
         expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Operation Failed' }));
         expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Success' }));
+        expect(component['confirmedCsvMembers'].size).toBe(lookups.length - 1);
+        expect(component['uncertainCsvMembers']).toEqual(new Set([`${COMMITTEE_UID}:${uncertainEmail}`]));
+
+        importOwner.set('synthetic-manager');
+        runStaged.mockImplementation((input: MemberImportStagedRunInput) =>
+          of(
+            input.members.map(({ payload, uncertain }) =>
+              stagedRow(payload.email, { status: 'skipped', conflict: true, unconfirmedAddition: uncertain ?? false })
+            )
+          )
+        );
+        vi.mocked(toast).mockClear();
+        component[submit]();
+        expect(runStaged.mock.calls[1][0].members.at(-1)?.uncertain).toBe(true);
+        expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Already Members' }));
+        expect(toast).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Unconfirmed Additions', detail: expect.stringMatching(/^1 imported member/) }));
       });
 
       it('bounds member lookups while keeping later notification groups and invitations sequential', async () => {

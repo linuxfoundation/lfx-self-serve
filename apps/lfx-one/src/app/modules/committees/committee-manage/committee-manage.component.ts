@@ -930,11 +930,20 @@ export class CommitteeManageComponent {
       });
     }).pipe(
       defaultIfEmpty(null),
-      concatMap((rows) =>
-        rows
-          ? from(rows).pipe(mergeMap((row) => this.toCsvOperationResult(committeeId, row, ownsSave), COMMITTEE_INVITE_CONCURRENCY))
-          : from(members.map((member): MemberOperationResult => ({ type: 'add', identifier: member.email, success: false })))
-      )
+      concatMap((rows) => {
+        if (!rows) return from(members.map((member): MemberOperationResult => ({ type: 'add', identifier: member.email, success: false })));
+
+        // Retain every settled outcome before lookups can buffer rows or lose save ownership.
+        for (const row of rows) {
+          const key = `${committeeId}:${row.normalizedEmail}`;
+          if (row.uncertain || row.unconfirmedAddition) this.uncertainCsvMembers.add(key);
+          if (row.status === 'added') {
+            this.uncertainCsvMembers.delete(key);
+            this.confirmedCsvMembers.add(key);
+          }
+        }
+        return from(rows).pipe(mergeMap((row) => this.toCsvOperationResult(committeeId, row, ownsSave), COMMITTEE_INVITE_CONCURRENCY));
+      })
     );
   }
 
@@ -947,11 +956,8 @@ export class CommitteeManageComponent {
     const result: MemberOperationResult = { type: 'add', identifier: row.normalizedEmail, success: false };
     if (!ownsSave()) return of(result);
     const key = `${committeeId}:${row.normalizedEmail}`;
-    if (row.uncertain || row.unconfirmedAddition) this.uncertainCsvMembers.add(key);
     let saved: MemberOperationResult;
     if (row.status === 'added') {
-      this.uncertainCsvMembers.delete(key);
-      this.confirmedCsvMembers.add(key);
       saved = { ...result, success: true, createdMember: row.member, cleanupWarning: !!row.cleanupWarning };
     } else if (row.status === 'skipped') {
       saved = { ...result, success: true };
