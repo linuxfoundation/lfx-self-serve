@@ -19,7 +19,13 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MEETING_COMPOSER_OCCURRENCE_NOTES, MEETING_COMPOSER_SECTION_DESCRIPTIONS, MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
-import type { MeetingComposerProjectLabel, MeetingComposerScopeNote, MeetingComposerSection, MeetingComposerSectionId } from '@lfx-one/shared/interfaces';
+import type {
+  MeetingComposerDeleteDialogData,
+  MeetingComposerProjectLabel,
+  MeetingComposerScopeNote,
+  MeetingComposerSection,
+  MeetingComposerSectionId,
+} from '@lfx-one/shared/interfaces';
 import { formatMeetingOccurrenceLabel, toUpcomingMeetingHomeRow } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -39,6 +45,7 @@ import { ComposerDateScheduleComponent } from '../sections/composer-date-schedul
 import { ComposerDetailsAccessComponent } from '../sections/composer-details-access.component';
 import { ComposerGuestsComponent } from '../sections/composer-guests.component';
 import { ComposerPlatformFeaturesComponent } from '../sections/composer-platform-features.component';
+import { MeetingComposerDeleteDialogComponent } from './meeting-composer-delete-dialog.component';
 import { MeetingComposerDiscardDialogComponent } from './meeting-composer-discard-dialog.component';
 import { MeetingComposerModalRailComponent } from './meeting-composer-modal-rail.component';
 import { MeetingComposerScopeNoteComponent } from './meeting-composer-scope-note.component';
@@ -88,6 +95,7 @@ export class MeetingComposerModalComponent {
   public readonly editSeries = output<MeetingComposerSectionId>();
   public readonly goToTitleSection = output<void>();
   public readonly occurrenceCancelled = output<void>();
+  public readonly deleted = output<MeetingComposerDeleteDialogData>();
 
   protected readonly root = viewChild.required<ElementRef<HTMLElement>>('root');
   protected readonly scroll = viewChild<ElementRef<HTMLElement>>('scroll');
@@ -117,7 +125,7 @@ export class MeetingComposerModalComponent {
       )
       .subscribe(() => this.composer.markVisited(MEETING_COMPOSER_SECTIONS.map((section) => section.id)));
 
-    // Registered on PrimeNG's modal layer so the body-appended overlays of the sections stack above it.
+    // On PrimeNG's modal layer (~1100) so section overlays stack above it; uikit dialogs open at 10000, above both.
     afterNextRender(() => {
       const root = this.root().nativeElement;
       const scrollBlock = this.overlay.scrollStrategies.block();
@@ -171,7 +179,12 @@ export class MeetingComposerModalComponent {
   protected onEscape(event: KeyboardEvent): void {
     // Left to an input method's composition, or to the open overlay of the focused select or picker.
     const target = event.target instanceof Element ? event.target : null;
-    if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || target?.closest('[aria-expanded="true"]')) {
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.keyCode === 229 ||
+      target?.closest('[aria-expanded="true"]:is([role="combobox"], [aria-haspopup])')
+    ) {
       return;
     }
 
@@ -208,6 +221,26 @@ export class MeetingComposerModalComponent {
       });
   }
 
+  protected onDelete(): void {
+    const meeting = this.formService.meeting();
+
+    if (!meeting || this.formService.submitting()) {
+      return;
+    }
+
+    const data: MeetingComposerDeleteDialogData = { meeting, guestCount: this.formService.guests().length };
+    const ref = this.modal.open<boolean, MeetingComposerDeleteDialogData, MeetingComposerDeleteDialogComponent>(
+      MeetingComposerDeleteDialogComponent,
+      { data, role: 'alertdialog', autoFocus: '[data-autofocus] button' },
+      { closePredicate: (_result, _config, dialog) => !(dialog instanceof MeetingComposerDeleteDialogComponent && dialog.busy()) }
+    );
+    ref.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((done) => {
+      if (done) {
+        this.deleted.emit(data);
+      }
+    });
+  }
+
   protected onEditSeries(): void {
     this.editSeries.emit(this.composer.activeSection());
   }
@@ -231,7 +264,8 @@ export class MeetingComposerModalComponent {
 
     return (
       !!value.title?.trim() ||
-      !!value.meeting_type ||
+      // A type picked from the create menu is where the organizer started, not something entered here.
+      (!!value.meeting_type && value.meeting_type !== this.composer.context()?.meetingType) ||
       !!value.description?.trim() ||
       !!value.startDate ||
       !!value.startTime ||

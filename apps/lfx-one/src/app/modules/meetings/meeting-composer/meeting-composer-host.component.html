@@ -12,7 +12,8 @@
       (submitted)="onSubmit()"
       (editSeries)="onEditSeriesInstead($event)"
       (goToTitleSection)="onGoToTitleSection()"
-      (occurrenceCancelled)="onOccurrenceCancelled()" />
+      (occurrenceCancelled)="onOccurrenceCancelled()"
+      (deleted)="onDeleted($event)" />
   }
 } @else if (composer.isQuickCreate()) {
   <lfx-quick-create-dialog (create)="onSubmit()" (switchToAdvanced)="onSwitchToAdvanced()" />

@@ -10,6 +10,7 @@ import { MEETING_COMPOSER_TOAST_POSITION, MEETINGS_REDESIGN_FLAG } from '@lfx-on
 import type {
   EntityWithProject,
   Meeting,
+  MeetingComposerDeleteDialogData,
   MeetingComposerEditScope,
   MeetingComposerSection,
   MeetingComposerSectionId,
@@ -414,6 +415,16 @@ export class MeetingComposerHostComponent {
     this.composer.close();
   }
 
+  protected onDeleted({ meeting, guestCount }: MeetingComposerDeleteDialogData): void {
+    this.toast.show({
+      variant: 'dark',
+      message: 'Meeting deleted',
+      description: `“${meeting.title}” · ${guestCount} ${guestCount === 1 ? 'guest' : 'guests'} notified`,
+    });
+    this.composer.notifySaved();
+    this.composer.close();
+  }
+
   /**
    * Reopens the composer on the meeting the toast was raised for.
    * @description Guarded by `editFromToastBlockedReason`; running the action dismisses the toast.
@@ -506,7 +517,7 @@ export class MeetingComposerHostComponent {
     const value = this.formService.form().getRawValue();
     const title = `“${value.title ?? ''}”`;
 
-    if (!this.isOccurrenceEdit() && this.formService.meeting()?.recurrence) {
+    if (!this.isOccurrenceEdit() && this.formService.recurrencePayload()) {
       return { variant: 'dark', message: 'Series updated', description: `${title} · changes apply to every upcoming occurrence` };
     }
 
