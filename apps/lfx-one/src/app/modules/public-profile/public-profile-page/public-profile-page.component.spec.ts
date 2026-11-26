@@ -5,7 +5,7 @@ import { PLATFORM_ID, signal, TransferState } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
-import { PUBLIC_PROFILE_SECTION_COPY } from '@lfx-one/shared/constants';
+import { PUBLIC_PROFILE_SECTION_COPY, PUBLIC_PROFILE_THEME_STORAGE_KEY } from '@lfx-one/shared/constants';
 import { PublicProfile } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { TranscendService } from '@services/transcend.service';
@@ -80,5 +80,19 @@ describe('PublicProfilePageComponent', () => {
     expect(query('public-profile-involvement-title')?.textContent?.trim()).toBe(PUBLIC_PROFILE_SECTION_COPY.involvement);
     expect(row?.classList).toContain('justify-end');
     expect(row?.classList).not.toContain('justify-between');
+  });
+
+  it('renders the redesign light, then in the dark theme a visitor chose before', async () => {
+    let { query } = await render(true);
+    expect(query('public-profile-redesign')?.getAttribute('data-theme')).toBe('light');
+
+    TestBed.resetTestingModule();
+    localStorage.setItem(PUBLIC_PROFILE_THEME_STORAGE_KEY, 'dark');
+    try {
+      ({ query } = await render(true));
+      expect(query('public-profile-redesign')?.getAttribute('data-theme')).toBe('dark');
+    } finally {
+      localStorage.removeItem(PUBLIC_PROFILE_THEME_STORAGE_KEY);
+    }
   });
 });

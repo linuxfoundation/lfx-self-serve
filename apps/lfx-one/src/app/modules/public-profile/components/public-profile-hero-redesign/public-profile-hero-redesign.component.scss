@@ -1,0 +1,36 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// The About markdown takes the design's 14px/1.55 and the page's token colours, so it reads in light and dark alike (#6091).
+// The renderer's own `.prose` rules set these, so they are overridden on its `.prose` element here.
+:host ::ng-deep .hero-about .prose {
+  --tw-prose-body: var(--ui-neutral-700);
+  --tw-prose-headings: var(--ui-neutral-900);
+  --tw-prose-bold: var(--ui-neutral-900);
+  --tw-prose-code: var(--ui-neutral-900);
+  --tw-prose-quotes: var(--ui-neutral-700);
+  --tw-prose-quote-borders: var(--ui-neutral-200);
+  --tw-prose-bullets: var(--ui-neutral-500);
+  --tw-prose-counters: var(--ui-neutral-600);
+  --tw-prose-hr: var(--ui-neutral-200);
+  --tw-prose-th-borders: var(--ui-neutral-200);
+  --tw-prose-td-borders: var(--ui-neutral-200);
+  --tw-prose-captions: var(--ui-neutral-600);
+  --tw-prose-links: var(--ui-accent-700);
+
+  font-size: 14px;
+  line-height: 1.55;
+
+  p {
+    line-height: 1.55;
+  }
+
+  // AA on both surfaces: accent-600 falls short on white and on the dark page.
+  a {
+    color: var(--ui-accent-700);
+  }
+
+  code {
+    background-color: var(--ui-neutral-100);
+  }
+}

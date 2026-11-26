@@ -24,6 +24,7 @@ import { PublicProfileHeroComponent } from '../components/public-profile-hero/pu
 import { PublicProfileTopbarComponent } from '../components/public-profile-topbar/public-profile-topbar.component';
 import { PublicProfileTrainingsComponent } from '../components/public-profile-trainings/public-profile-trainings.component';
 import { PublicProfileNotFoundComponent } from '../public-profile-not-found/public-profile-not-found.component';
+import { PublicProfileThemeService } from '../services/public-profile-theme.service';
 import { PublicProfileService } from '../services/public-profile.service';
 
 @Component({
@@ -43,6 +44,8 @@ import { PublicProfileService } from '../services/public-profile.service';
     PublicProfileTrainingsComponent,
     PublicProfileNotFoundComponent,
   ],
+  // The visitor's light or dark theme under the redesign (#6091).
+  providers: [PublicProfileThemeService],
   templateUrl: './public-profile-page.component.html',
 })
 export class PublicProfilePageComponent {
@@ -54,6 +57,7 @@ export class PublicProfilePageComponent {
   private readonly transferState = inject(TransferState);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
+  protected readonly theme = inject(PublicProfileThemeService);
 
   // Persists the SSR-resolved page state so the client's first paint matches the server DOM on every
   // branch — failed responses aren't in HttpTransferCache, so not-found/error would else mismatch.
