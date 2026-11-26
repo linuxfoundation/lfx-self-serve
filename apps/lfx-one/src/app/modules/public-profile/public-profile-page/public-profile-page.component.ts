@@ -10,6 +10,7 @@ import { PUBLIC_PROFILE_SECTION_COPY } from '@lfx-one/shared/constants';
 import { PublicProfilePageState, ServerRequestContext } from '@lfx-one/shared/interfaces';
 import { formatAffiliation, formatLfxDocumentTitle } from '@lfx-one/shared/utils';
 import { TranscendService } from '@services/transcend.service';
+import { UserService } from '@services/user.service';
 import { ProfileSectionComponent } from '@shared/components/profile-section/profile-section.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { injectProfileRedesignEnabled } from '@shared/utils/profile-redesign.util';
@@ -21,6 +22,7 @@ import { PublicProfileCertificationsComponent } from '../components/public-profi
 import { PublicProfileContributionsComponent } from '../components/public-profile-contributions/public-profile-contributions.component';
 import { PublicProfileHeroRedesignComponent } from '../components/public-profile-hero-redesign/public-profile-hero-redesign.component';
 import { PublicProfileHeroComponent } from '../components/public-profile-hero/public-profile-hero.component';
+import { PublicProfileTopbarRedesignComponent } from '../components/public-profile-topbar-redesign/public-profile-topbar-redesign.component';
 import { PublicProfileTopbarComponent } from '../components/public-profile-topbar/public-profile-topbar.component';
 import { PublicProfileTrainingsComponent } from '../components/public-profile-trainings/public-profile-trainings.component';
 import { PublicProfileNotFoundComponent } from '../public-profile-not-found/public-profile-not-found.component';
@@ -36,6 +38,7 @@ import { PublicProfileService } from '../services/public-profile.service';
     ProfileSectionComponent,
     UiSkeletonComponent,
     PublicProfileTopbarComponent,
+    PublicProfileTopbarRedesignComponent,
     PublicProfileHeroComponent,
     PublicProfileHeroRedesignComponent,
     PublicProfileContributionsComponent,
@@ -57,6 +60,7 @@ export class PublicProfilePageComponent {
   private readonly transferState = inject(TransferState);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
+  private readonly userService = inject(UserService);
   protected readonly theme = inject(PublicProfileThemeService);
 
   // Persists the SSR-resolved page state so the client's first paint matches the server DOM on every
@@ -76,6 +80,16 @@ export class PublicProfilePageComponent {
   protected readonly notFound = computed(() => this.state().notFound);
   protected readonly isPrivate = computed(() => this.state().isPrivate);
   protected readonly profile = computed(() => this.state().profile);
+  /** The username this page is for, as the route names it. */
+  private readonly routeUsername = toSignal(this.activatedRoute.paramMap.pipe(map((params) => params.get('username') ?? '')), { initialValue: '' });
+  protected readonly profilePath = computed(() => `/u/${encodeURIComponent(this.routeUsername())}`);
+  // Signed-out visitors keep today's page until the flag is on for everyone (#6094), so the bar's visitor actions wait for that.
+  protected readonly signedIn = computed(() => this.userService.authenticated());
+  /** The viewer is signed in as this profile's owner, matched by LFID; no silent login is attempted for anyone else (#6090). */
+  protected readonly owner = computed(() => {
+    const viewer = this.userService.viewerUsername()?.toLowerCase();
+    return this.signedIn() && !!viewer && viewer === this.routeUsername().toLowerCase();
+  });
   /** The profile redesign (#6088): the server's answer for this render, so SSR and hydration agree; off for signed-out visitors. */
   protected readonly redesign: Signal<boolean> = injectProfileRedesignEnabled(this.hydrated);
 

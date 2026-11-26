@@ -9,6 +9,7 @@ import { PUBLIC_PROFILE_SECTION_COPY, PUBLIC_PROFILE_THEME_STORAGE_KEY } from '@
 import { PublicProfile } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { TranscendService } from '@services/transcend.service';
+import { UserService } from '@services/user.service';
 import { PROFILE_REDESIGN_KEY } from '@shared/utils/profile-redesign.util';
 import { of } from 'rxjs';
 import { describe, expect, it } from 'vitest';
@@ -26,7 +27,11 @@ const PROFILE: PublicProfile = {
 } as PublicProfile;
 
 describe('PublicProfilePageComponent', () => {
-  async function render(redesign: boolean, profile: PublicProfile = PROFILE) {
+  async function render(
+    redesign: boolean,
+    profile: PublicProfile = PROFILE,
+    viewer: { signedIn: boolean; username: string | null } = { signedIn: true, username: 'grace' }
+  ) {
     TestBed.configureTestingModule({
       providers: [
         provideNoopAnimations(),
@@ -35,6 +40,7 @@ describe('PublicProfilePageComponent', () => {
         { provide: PublicProfileService, useValue: { getPublicProfile: () => of(profile) } },
         { provide: TranscendService, useValue: { preferencesAvailable: false, showPreferences: () => undefined } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: UserService, useValue: { authenticated: signal(viewer.signedIn), viewerUsername: signal(viewer.username) } },
       ],
     });
     // As the route guard leaves it after the server answered for this render.
@@ -94,5 +100,29 @@ describe('PublicProfilePageComponent', () => {
     } finally {
       localStorage.removeItem(PUBLIC_PROFILE_THEME_STORAGE_KEY);
     }
+  });
+
+  it('offers a visitor Sign in and Create LFX account, both returning to this profile', async () => {
+    const { query } = await render(true, PROFILE, { signedIn: false, username: null });
+
+    expect(query('topbar-sign-in')?.querySelector('a')?.getAttribute('href')).toBe('/login?returnTo=%2Fu%2Fada');
+    expect(query('topbar-create-account')?.querySelector('a')?.getAttribute('href')).toBe('/login?returnTo=%2Fu%2Fada');
+    expect(query('topbar-manage')).toBeNull();
+  });
+
+  it('offers a signed-in viewer who isn’t the owner neither sign-in nor Manage my profile', async () => {
+    const { query } = await render(true);
+
+    expect(query('topbar-sign-in')).toBeNull();
+    expect(query('topbar-manage')).toBeNull();
+    expect(query('topbar-theme')).not.toBeNull();
+  });
+
+  it('offers the owner Manage my profile and speaks to them in the section copy', async () => {
+    const { query } = await render(true, PROFILE, { signedIn: true, username: 'ADA' });
+
+    expect(query('topbar-manage')?.querySelector('a')?.getAttribute('href')).toBe('/profile');
+    expect(query('topbar-sign-in')).toBeNull();
+    expect(query('public-profile-recognitions-description')?.textContent).toContain('you’ve earned');
   });
 });

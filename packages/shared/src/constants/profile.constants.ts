@@ -469,7 +469,23 @@ export const PUBLIC_PROFILE_SECTION_COPY = {
   recognitionsDescription: 'Awards this person has earned for contributions and participation across Linux Foundation programs and events.',
   involvement: 'Foundations & projects involvement',
   involvementDescription: 'Every foundation and project this person takes part in, and their role in each.',
+  recognitionsDescriptionOwner: 'Awards you’ve earned for contributions and participation across Linux Foundation programs and events.',
+  involvementDescriptionOwner: 'Every foundation and project you take part in, and your role in each.',
 } as const;
+
+/** Copy of the redesigned public profile's top bar (#6090). */
+export const PUBLIC_PROFILE_TOPBAR_COPY = {
+  poweredBy: 'Powered by',
+  darkTheme: 'Switch to dark theme',
+  lightTheme: 'Switch to light theme',
+  signIn: 'Sign in',
+  createAccount: 'Create LFX account',
+  manageProfile: 'Manage my profile',
+  lfHome: 'The Linux Foundation',
+} as const;
+
+/** Scroll (px) past which the redesigned public profile's top bar shows the person (#6090). */
+export const PUBLIC_PROFILE_TOPBAR_REVEAL_OFFSET = 240;
 
 /** Training & Certifications, where the Profile page sends someone to earn badges (#6084). */
 export const PROFILE_TRAINING_PATH = '/me/training';
