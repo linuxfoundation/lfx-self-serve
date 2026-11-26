@@ -189,6 +189,14 @@ describe('linkedInCreateRefusal', () => {
       'LinkedIn Ads: video ads are not available right now. Choose single image ads as the ad format.',
     ],
     ['an ad with no video', { videoMissing: true }, 'LinkedIn Ads: upload a video for every ad.'],
+    // A document (campaign-service#665): held rather than sent as image ads, and it replaces the variant checks.
+    [
+      'a document no longer offered',
+      { documentUnavailable: true },
+      'LinkedIn Ads: document ads are not available right now. Choose single image ads as the ad format.',
+    ],
+    ['a document that can be sent, with no variants', { document: { refusal: null }, variantCount: 0 }, null],
+    ['a document that cannot be sent', { document: { refusal: 'LinkedIn Ads: Choose the PDF.' } }, 'LinkedIn Ads: Choose the PDF.'],
     [
       'custom targeting no longer offered',
       { customTargetingUnavailable: true },

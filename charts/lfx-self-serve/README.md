@@ -486,8 +486,8 @@ is an asset stored for the brief. Off (the default), the create route refuses `l
 `linkedInConfig.documentAssetId`, `linkedInConfig.documentTitle` and `linkedInConfig.documentIntroText` with a 400, since
 the legacy creator would make a single-image campaign instead, and the creative-asset upload refuses a PDF (415) without
 reading it. On, it takes a PDF of at most 30 MiB; images keep their 10 MiB limit. Keep it off until campaign-service's
-paused document probe has passed. The Implement tab's document picker follows in a later change; until then this opens
-the server half only.
+paused document probe has passed. With it on, the Implement tab offers "Document" as a LinkedIn ad format: a PDF picked
+from (or uploaded to) the brief's library, a title and intro text, as an engagement ad or a gated lead generation ad.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT` is of the Bidding kind too (campaign-service with
 `REDDIT_CONVERSION_EVENT_ENABLED` on). Off (the default), the Implement tab hides the conversion event picker and the

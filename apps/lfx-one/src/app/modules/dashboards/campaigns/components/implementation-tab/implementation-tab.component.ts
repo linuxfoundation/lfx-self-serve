@@ -387,6 +387,7 @@ import type {
   LinkedInTargetCostOfferInput,
   LinkedInTextAdDraft,
   LinkedInCarouselCardDraft,
+  LinkedInDocumentDraft,
   LinkedInTextAdImageInput,
   LinkedInVariantView,
   MetaAdVariant,
@@ -502,6 +503,10 @@ import {
   linkedInTextAdsForCreate,
   linkedInCarouselCreateRefusal,
   linkedInCarouselFieldsForCreate,
+  emptyLinkedInDocumentDraft,
+  linkedInDocumentCreateRefusal,
+  linkedInDocumentFieldsForCreate,
+  linkedInDocumentGatedWarning,
   emptyLinkedInTargetingDraft,
   emptyLinkedInObjectiveDraft,
   linkedInLeadGenChosen,
@@ -641,6 +646,7 @@ import { LinkedInObjectivePickerComponent } from '../linkedin-objective-picker/l
 import { LinkedInTargetingEditorComponent } from '../linkedin-targeting-editor/linkedin-targeting-editor.component';
 import { LinkedInTextAdsEditorComponent } from '../linkedin-text-ads-editor/linkedin-text-ads-editor.component';
 import { LinkedInCarouselEditorComponent } from '../linkedin-carousel-editor/linkedin-carousel-editor.component';
+import { LinkedInDocumentEditorComponent } from '../linkedin-document-editor/linkedin-document-editor.component';
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
 import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
 import { MetaDeviceOsOptionsComponent } from '../meta-device-os-options/meta-device-os-options.component';
@@ -749,6 +755,7 @@ let linkedInVariantKeySequence = 0;
     LinkedInTargetingEditorComponent,
     LinkedInTextAdsEditorComponent,
     LinkedInCarouselEditorComponent,
+    LinkedInDocumentEditorComponent,
   ],
   // Component-scoped so the "create another" confirmation (#4983) needs nothing from the host; the app
   // also provides one at root, and this instance behaves the same.
@@ -1068,6 +1075,12 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see linkedInCarouselEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInCarouselAvailable = computed<boolean>(() => this.linkedInCarouselEnabled() === true);
+
+  /** Whether the LinkedIn section offers document ads (`CampaignListResult.linkedInDocumentEnabled`, linuxfoundation/lfx-v2-campaign-service#665). */
+  public readonly linkedInDocumentEnabled = input<boolean | null>(null);
+
+  /** @see linkedInDocumentEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInDocumentAvailable = computed<boolean>(() => this.linkedInDocumentEnabled() === true);
 
   /**
    * Whether a LinkedIn create's automatic bidding may carry a target cost (`CampaignListResult.linkedInTargetCostEnabled`,
@@ -2007,11 +2020,20 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInCarouselIntroText = signal('');
   /** Whether this create is a carousel (campaign-service#665): chosen, and offered by this deployment. */
   protected readonly linkedInCarouselSelected = computed<boolean>(() => this.linkedInCarouselAvailable() && this.linkedInFormat() === 'carousel');
+  /** The LinkedIn document ad as edited (campaign-service#665), carried in the draft. */
+  protected readonly linkedInDocument = signal<LinkedInDocumentDraft>(emptyLinkedInDocumentDraft());
+  /** Whether this create is a document ad (campaign-service#665): chosen, and offered by this deployment. */
+  protected readonly linkedInDocumentSelected = computed<boolean>(() => this.linkedInDocumentAvailable() && this.linkedInFormat() === 'document');
+  /** The gated-document warning (decision 2026-11-25): a one-page PDF cannot be gated. Shown, never holding Create. */
+  protected readonly linkedInDocumentGatedWarning = computed<string>(() =>
+    linkedInDocumentGatedWarning(this.linkedInDocumentSelected() && this.linkedInLeadGenSelected())
+  );
   /** The Ad format picker's hint: what the chosen format needs (#5764 rows 18–19). */
   protected readonly linkedInFormatHint = computed<string>(() => {
     if (this.linkedInFormat() === 'text') return "Text ads are a headline and description on LinkedIn's desktop right rail. They need a manual bid.";
     if (this.linkedInFormat() === 'video') return 'Video ads play an MP4 in the feed. Every ad needs its own video, and video ads have no description.';
     if (this.linkedInFormat() === 'carousel') return 'A carousel is one post of 2 to 10 swipeable square image cards, each with its own headline and link.';
+    if (this.linkedInFormat() === 'document') return 'A document ad is one post of a PDF members page through in the feed, such as a prospectus or report.';
     return 'Single image ads show an image with the intro text and headline in the feed.';
   });
   /**
@@ -2278,7 +2300,8 @@ export class ImplementationTabComponent implements OnInit {
    * (campaign-service#665) holds no upload, so while one is chosen any upload is orphaned and holds nothing.
    */
   private readonly linkedInImageUploadOrphaned = computed(() => {
-    if (this.linkedInCarouselSelected()) return linkedInImageUploadOrphaned(this.linkedInImageSlot(), []);
+    // Likewise a document (campaign-service#665), whose PDF is picked from the library.
+    if (this.linkedInCarouselSelected() || this.linkedInDocumentSelected()) return linkedInImageUploadOrphaned(this.linkedInImageSlot(), []);
     return linkedInImageUploadOrphaned(this.linkedInImageSlot(), this.linkedInTextAdsSelected() ? this.linkedInTextAds() : this.linkedInVariants());
   });
   protected readonly linkedInImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
@@ -4100,7 +4123,7 @@ export class ImplementationTabComponent implements OnInit {
    * while a carousel is chosen (campaign-service#665): its cards pick stored images, and the hidden variants send nothing.
    */
   protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = computed(() => {
-    if (this.linkedInCarouselSelected()) return null;
+    if (this.linkedInCarouselSelected() || this.linkedInDocumentSelected()) return null;
     const views = this.linkedInTextAdsSelected() ? this.linkedInTextAdImageViews() : this.linkedInVariantViews();
     return views.find((view) => view.imageBlock !== null)?.imageBlock ?? null;
   });
@@ -5721,7 +5744,7 @@ export class ImplementationTabComponent implements OnInit {
 
   /** The Ad format picker's value as a format: anything else reads as single image ads. */
   protected onLinkedInFormatSelect(value: unknown): void {
-    this.onLinkedInFormatChange(value === 'text' || value === 'video' || value === 'carousel' ? value : 'single_image');
+    this.onLinkedInFormatChange(value === 'text' || value === 'video' || value === 'carousel' || value === 'document' ? value : 'single_image');
   }
 
   /**
@@ -5744,6 +5767,23 @@ export class ImplementationTabComponent implements OnInit {
   protected onLinkedInCarouselCardsChange(cards: LinkedInCarouselCardDraft[]): void {
     this.linkedInCarouselCards.set(cards);
     this.emitDraft();
+  }
+
+  /** The document editor's PDF, title and intro text as edited (campaign-service#665). */
+  protected onLinkedInDocumentChange(document: LinkedInDocumentDraft): void {
+    this.linkedInDocument.set(document);
+    this.emitDraft();
+  }
+
+  /**
+   * A PDF chosen in the document editor (campaign-service#665), queued into the brief's library the way the library upload
+   * below queues images, so it is listed and offered to the picker once stored (`onCreativeLibraryChanged`).
+   */
+  protected onLinkedInDocumentUpload(files: File[]): void {
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.activeFoundationSlug();
+    if (!briefId || !projectSlug) return;
+    this.campaignService.enqueueCreativeAssetUploads(files, projectSlug, briefId, { documents: true });
   }
 
   /** The carousel editor's intro text as edited (campaign-service#665). */
@@ -9110,10 +9150,13 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The LinkedIn creatives for the request (#5764 row 19, campaign-service#665): `format: 'text'`, the text ads and no
    * variants while Text Ads are chosen and offered; `format: 'carousel'`, the cards, the intro text and no variants while a
-   * carousel is chosen and offered; else the variants exactly as before (no `format` key), each with its video while video
-   * ads are chosen.
+   * carousel is chosen and offered; `format: 'document'`, the PDF, title, intro text and no variants while a document is
+   * chosen and offered; else the variants exactly as before (no `format` key), each with its video while video ads are chosen.
    */
-  private linkedInCreativesField(): Pick<LinkedInCampaignCreateRequest, 'variants' | 'format' | 'textAds' | 'carouselCards' | 'carouselIntroText'> {
+  private linkedInCreativesField(): Pick<
+    LinkedInCampaignCreateRequest,
+    'variants' | 'format' | 'textAds' | 'carouselCards' | 'carouselIntroText' | 'documentAssetId' | 'documentTitle' | 'documentIntroText'
+  > {
     // Video ads (#5764 row 18) are the single-image request with a video on each variant, and no image or description.
     if (this.linkedInVideoSelected()) {
       return {
@@ -9127,14 +9170,17 @@ export class ImplementationTabComponent implements OnInit {
     if (this.linkedInCarouselSelected()) {
       return linkedInCarouselFieldsForCreate(this.linkedInCarouselCards(), this.linkedInCarouselIntroText(), this.briefPersistence().briefId ?? '');
     }
+    // A document (campaign-service#665) is one creative built from its PDF, and sends no variants.
+    if (this.linkedInDocumentSelected()) return linkedInDocumentFieldsForCreate(this.linkedInDocument(), this.briefPersistence().briefId ?? '');
     if (!this.linkedInTextAdsSelected()) return { variants: this.linkedInVariantsSent() };
     const textAds = linkedInTextAdsForCreate(this.linkedInTextAds(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '');
     return { format: 'text', textAds, variants: [] };
   }
 
-  /** The request `format` the objective checks are run against: Text Ads or a carousel while chosen and offered, else none. */
-  private linkedInFormatSent(): 'text' | 'carousel' | undefined {
+  /** The request `format` the objective checks are run against: Text Ads, a carousel or a document while chosen and offered, else none. */
+  private linkedInFormatSent(): 'text' | 'carousel' | 'document' | undefined {
     if (this.linkedInTextAdsSelected()) return 'text';
+    if (this.linkedInDocumentSelected()) return 'document';
     return this.linkedInCarouselSelected() ? 'carousel' : undefined;
   }
 
@@ -9182,6 +9228,23 @@ export class ImplementationTabComponent implements OnInit {
                       this.googleCreativeLibrary(),
                       this.briefPersistence().briefId ?? ''
                     ),
+            },
+          }
+        : {}),
+      // Likewise a document (campaign-service#665).
+      documentUnavailable: this.linkedInFormat() === 'document' && !this.linkedInDocumentAvailable(),
+      // While a document is chosen, its PDF, title and intro replace the variant checks, judged with the objective and
+      // bidding the create sends. Not while the brief saves, for the carousel's reason above.
+      ...(this.linkedInDocumentSelected()
+        ? {
+            document: {
+              refusal:
+                this.briefSaveInFlight() || this.briefPersistence().status === 'saving'
+                  ? null
+                  : linkedInDocumentCreateRefusal(this.linkedInDocument(), this.googleCreativeLibrary(), this.briefPersistence().briefId ?? '', {
+                      objective: this.linkedInObjectiveDraft().objective,
+                      bidding: this.biddingField('linkedin-ads').bidding,
+                    }),
             },
           }
         : {}),
@@ -9643,6 +9706,8 @@ export class ImplementationTabComponent implements OnInit {
     // The carousel cards and intro text as edited (campaign-service#665), present-only.
     if (linkedInRestore.carouselCards) this.linkedInCarouselCards.set(linkedInRestore.carouselCards);
     if (linkedInRestore.carouselIntroText !== undefined) this.linkedInCarouselIntroText.set(linkedInRestore.carouselIntroText);
+    // The document ad as edited (campaign-service#665), present-only.
+    if (linkedInRestore.document) this.linkedInDocument.set(linkedInRestore.document);
     // Custom targeting and its clauses as edited (#5764 rows 8–11), present-only.
     if (linkedInRestore.customTargeting !== undefined) this.linkedInCustomTargeting.set(linkedInRestore.customTargeting);
     if (linkedInRestore.targetingDraft) this.linkedInTargetingDraft.set(linkedInRestore.targetingDraft);
@@ -10172,6 +10237,7 @@ export class ImplementationTabComponent implements OnInit {
         textAds: this.linkedInTextAds(),
         carouselCards: this.linkedInCarouselCards(),
         carouselIntroText: this.linkedInCarouselIntroText(),
+        document: this.linkedInDocument(),
         customTargeting: this.linkedInCustomTargeting(),
         targetingDraft: this.linkedInTargetingDraft(),
         objectiveDraft: this.linkedInObjectiveDraft(),
@@ -10516,6 +10582,7 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInTextAds.set([]);
     this.linkedInCarouselCards.set([]);
     this.linkedInCarouselIntroText.set('');
+    this.linkedInDocument.set(emptyLinkedInDocumentDraft());
     this.linkedInCustomTargeting.set(false);
     this.linkedInTargetingDraft.set(emptyLinkedInTargetingDraft());
     this.linkedInObjectiveDraft.set(emptyLinkedInObjectiveDraft());
@@ -11165,8 +11232,9 @@ export class ImplementationTabComponent implements OnInit {
         projectSlug: this.activeFoundationSlug(),
         briefId: this.briefPersistence().briefId ?? '',
         revision: this.creativeLibraryRevision(),
-        // Also while a LinkedIn carousel is chosen (campaign-service#665): its cards pick from the same library.
-        wanted: (this.googleAssetUploadAvailable() && this.googleCreativeSections().length > 0) || this.linkedInCarouselSelected(),
+        // Also while a LinkedIn carousel or document is chosen (campaign-service#665): its cards and its PDF pick from the same library.
+        wanted:
+          (this.googleAssetUploadAvailable() && this.googleCreativeSections().length > 0) || this.linkedInCarouselSelected() || this.linkedInDocumentSelected(),
       }),
       {
         equal: (a, b) => a.projectSlug === b.projectSlug && a.briefId === b.briefId && a.revision === b.revision && a.wanted === b.wanted,
@@ -11177,7 +11245,7 @@ export class ImplementationTabComponent implements OnInit {
         switchMap((target) => {
           if (!target.wanted || target.projectSlug === '' || target.briefId === '') return of(idle);
           return this.campaignService.listCreativeAssets(target.projectSlug, target.briefId).pipe(
-            map((library): CreativeAssetLibraryState => ({ status: 'ready', assets: library.assets })),
+            map((library): CreativeAssetLibraryState => ({ status: 'ready', assets: library.assets, documents: library.documents })),
             catchError(() => of<CreativeAssetLibraryState>({ status: 'error', assets: [] })),
             startWith<CreativeAssetLibraryState>({ status: 'loading', assets: [] })
           );

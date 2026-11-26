@@ -174,6 +174,7 @@ export * from './campaign-linkedin-lead-gen.utils';
 export * from './campaign-linkedin-carousel.utils';
 export * from './campaign-linkedin-carousel-form.utils';
 export * from './campaign-linkedin-document.utils';
+export * from './campaign-linkedin-document-form.utils';
 export * from './campaign-linkedin-lead-gen-form.utils';
 export * from './campaign-linkedin-objective-form.utils';
 export * from './campaign-linkedin-text-ads-form.utils';

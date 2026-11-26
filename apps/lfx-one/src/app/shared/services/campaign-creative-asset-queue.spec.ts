@@ -5,10 +5,13 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting, TestRequest } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import {
+  CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE,
   CREATIVE_ASSET_EMPTY_MESSAGE,
   CREATIVE_ASSET_MAX_BYTES,
   CREATIVE_ASSET_QUOTA_MESSAGE,
   CREATIVE_ASSET_SUBFOLDER_MESSAGE,
+  CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { CreativeAssetQueueItem, CreativeAssetUploadResult } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -94,6 +97,23 @@ describe('CampaignService library upload queue', () => {
     // Only the one top-level image ever reaches the wire.
     open()[0].flush(asset('a-1'));
     expect(open().length).toBe(0);
+  });
+
+  // LinkedIn document ads (campaign-service#665): the document editor's upload takes only a PDF, within its own limit.
+  it("takes a PDF from the document editor, refusing an image there and an image upload's PDF", () => {
+    const pdf = new File([new Uint8Array(16)], 'deck.pdf', { type: 'application/pdf' });
+
+    service.enqueueCreativeAssetUploads([png('hero.png'), pdf], 'tlf', BRIEF_ID, { documents: true });
+    service.enqueueCreativeAssetUploads([pdf], 'tlf', BRIEF_ID);
+
+    expect(items().map((item) => [item.name, item.status, item.message])).toEqual([
+      ['hero.png', 'refused', CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE],
+      ['deck.pdf', 'uploading', ''],
+      ['deck.pdf', 'refused', CREATIVE_ASSET_WRONG_TYPE_MESSAGE],
+    ]);
+    // A 413 from the route names the PDF limit, not the image one.
+    open()[0].flush({ message: 'too large' }, { status: 413, statusText: 'Payload Too Large' });
+    expect(items()[1]).toMatchObject({ status: 'refused', refusal: 'size', message: CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE });
   });
 
   it('reports a 409 as refused over quota and carries on with the next file', () => {
