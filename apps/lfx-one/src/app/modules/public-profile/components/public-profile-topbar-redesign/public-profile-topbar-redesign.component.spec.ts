@@ -17,7 +17,13 @@ import { PublicProfileTopbarRedesignComponent } from './public-profile-topbar-re
   template: '<lfx-public-profile-topbar-redesign [basic]="basic" />',
 })
 class HostComponent {
-  public readonly basic: PublicProfileBasic = { Name: 'Ada Lovelace', Title: 'Engineer', AccountName: 'Acme Motors' };
+  public basic: PublicProfileBasic = {
+    Name: 'Ada Lovelace',
+    Title: 'Engineer',
+    AccountName: 'Acme Motors',
+    avatarUrl: 'https://cdn.example/ada.png',
+    LogoURL: 'https://cdn.example/logo.png',
+  };
 }
 
 describe('PublicProfileTopbarRedesignComponent', () => {
@@ -38,15 +44,18 @@ describe('PublicProfileTopbarRedesignComponent', () => {
       callback(0);
       return 0;
     });
-    Object.defineProperty(window, 'scrollY', { value: PUBLIC_PROFILE_TOPBAR_REVEAL_OFFSET + 1, configurable: true });
-    window.dispatchEvent(new Event('scroll'));
-    await fixture.whenStable();
+    try {
+      Object.defineProperty(window, 'scrollY', { value: PUBLIC_PROFILE_TOPBAR_REVEAL_OFFSET + 1, configurable: true });
+      window.dispatchEvent(new Event('scroll'));
+      await fixture.whenStable();
 
-    expect(query('topbar-identity')?.getAttribute('aria-hidden')).toBe('false');
-    expect(query('topbar-name')?.textContent?.trim()).toBe('Ada Lovelace');
-    expect(query('topbar-headline')?.textContent?.trim()).toBe('Engineer at Acme Motors');
-    frame.mockRestore();
-    Object.defineProperty(window, 'scrollY', { value: 0, configurable: true });
+      expect(query('topbar-identity')?.getAttribute('aria-hidden')).toBe('false');
+      expect(query('topbar-name')?.textContent?.trim()).toBe('Ada Lovelace');
+      expect(query('topbar-headline')?.textContent?.trim()).toBe('Engineer at Acme Motors');
+    } finally {
+      frame.mockRestore();
+      Object.defineProperty(window, 'scrollY', { value: 0, configurable: true });
+    }
   });
 
   it('switches the theme, naming the one it switches to', async () => {
@@ -58,5 +67,18 @@ describe('PublicProfileTopbarRedesignComponent', () => {
     await fixture.whenStable();
     expect(query('topbar-theme')?.querySelector('button')?.getAttribute('aria-label')).toBe(PUBLIC_PROFILE_TOPBAR_COPY.lightTheme);
     localStorage.removeItem('lfx-public-profile-theme');
+  });
+
+  it('falls back from the uploaded photo to the logo, then to the person icon, as the hero does', async () => {
+    const { fixture, query } = await render();
+    expect(query('topbar-avatar-image')?.getAttribute('src')).toBe('https://cdn.example/ada.png');
+
+    query('topbar-avatar-image')?.dispatchEvent(new Event('error'));
+    await fixture.whenStable();
+    expect(query('topbar-avatar-image')?.getAttribute('src')).toBe('https://cdn.example/logo.png');
+
+    query('topbar-avatar-image')?.dispatchEvent(new Event('error'));
+    await fixture.whenStable();
+    expect(query('topbar-avatar-fallback')).not.toBeNull();
   });
 });

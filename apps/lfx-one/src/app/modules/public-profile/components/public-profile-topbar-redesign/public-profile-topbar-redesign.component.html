@@ -20,7 +20,7 @@
       </lfx-ui-button>
     </div>
 
-    <!-- Past 240px of scroll: the LF tile, a divider, then who this profile is. -->
+    <!-- Past 240px of scroll: the LF tile, a divider, then who this profile is, on one line as designed; the hero above shows both in full. -->
     <div
       class="absolute left-0 top-1/2 flex w-full -translate-y-1/2 flex-row items-center gap-[12px] transition-opacity duration-ui-base motion-reduce:transition-none"
       [class.opacity-0]="!scrolled()"
@@ -37,11 +37,22 @@
         <img src="/images/logo_lf_icon.png" alt="" class="block size-[22px] object-contain" />
       </a>
       <span class="h-[28px] w-px flex-none bg-ui-neutral-200" aria-hidden="true"></span>
-      <lfx-ui-avatar [src]="avatarImage()" [name]="name()" icon="fa-solid fa-circle-user" [size]="34" />
+      <!-- Decorative: the name sits beside it. One element per URL, each reporting its own URL, as in the hero. -->
+      <span
+        class="flex size-[34px] flex-none items-center justify-center overflow-hidden rounded-full bg-ui-background-100 text-ui-accent-200"
+        aria-hidden="true">
+        @if (photo()) {
+          @for (url of [photo()]; track url) {
+            <img [src]="url" alt="" class="block size-full object-cover" (error)="onPhotoError(url)" data-testid="topbar-avatar-image" />
+          }
+        } @else {
+          <i class="fa-solid fa-circle-user text-[34px] leading-none" data-testid="topbar-avatar-fallback"></i>
+        }
+      </span>
       <div class="flex min-w-0 flex-col">
         <span class="truncate text-[15px] font-semibold leading-[20px] text-ui-neutral-900" data-testid="topbar-name">{{ name() }}</span>
         @if (headline()) {
-          <span class="truncate text-[12px] leading-[16px] text-ui-neutral-500" [attr.title]="headline()" data-testid="topbar-headline">{{ headline() }}</span>
+          <span class="truncate text-[12px] leading-[16px] text-ui-neutral-500" data-testid="topbar-headline">{{ headline() }}</span>
         }
       </div>
     </div>
