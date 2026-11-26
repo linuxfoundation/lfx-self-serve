@@ -890,19 +890,19 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(toggle).toHaveBeenCalledTimes(1);
     });
 
-    it.each([PollType.CONDORCET_IRV, PollType.INSTANT_RUNOFF_VOTE])(
-      'opens the create form with the method chosen in the Create Vote dropdown (%s, #2921, #2936)',
-      async (pollType) => {
-        canWrite.set(true);
-        await freshDashboard('project');
-        const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-        const menu = fixture.debugElement.query(By.directive(VoteCreateMenuComponent)).componentInstance as VoteCreateMenuComponent;
+    it('opens the create form with the method chosen in the Create Vote dropdown (#2921, #2936)', async () => {
+      canWrite.set(true);
+      await freshDashboard('project');
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const menu = fixture.debugElement.query(By.directive(VoteCreateMenuComponent)).componentInstance as VoteCreateMenuComponent;
 
+      for (const pollType of [PollType.CONDORCET_IRV, PollType.INSTANT_RUNOFF_VOTE]) {
+        navigate.mockClear();
         menu.methodSelected.emit(pollType);
 
-        expect(navigate).toHaveBeenCalledWith(['/votes', 'create'], { queryParams: { poll_type: pollType } });
+        expect(navigate).toHaveBeenCalledExactlyOnceWith(['/votes', 'create'], { queryParams: { poll_type: pollType } });
       }
-    );
+    });
   });
 
   it('preserves plain status labels in the Org lens where counts are not sourced', async () => {
