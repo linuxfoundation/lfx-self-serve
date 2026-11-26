@@ -1060,6 +1060,16 @@ export function canSetLinkedInDocument(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may boost an existing organization post: `format: "boost"` with `boostPost`
+ * (campaign-service#673). Needs the campaign-service create path (`cutoverOwnsCreate`), since the legacy creator ignores
+ * the fields, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_BOOST`, which follows campaign-service's own
+ * `LINKEDIN_ADS_BOOST_POST_ENABLED`: campaign-service refuses the fields while that is off.
+ */
+export function canSetLinkedInBoost(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInBoost);
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -1333,6 +1343,7 @@ export class CampaignServiceClient {
         linkedInLeadGenEnabled: canSetLinkedInLeadGen(),
         linkedInCarouselEnabled: canSetLinkedInCarousel(),
         linkedInDocumentEnabled: canSetLinkedInDocument(),
+        linkedInBoostEnabled: canSetLinkedInBoost(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1430,6 +1441,7 @@ export class CampaignServiceClient {
       linkedInLeadGenEnabled: canSetLinkedInLeadGen(),
       linkedInCarouselEnabled: canSetLinkedInCarousel(),
       linkedInDocumentEnabled: canSetLinkedInDocument(),
+      linkedInBoostEnabled: canSetLinkedInBoost(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),

@@ -432,4 +432,24 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
     expect(legacyCreate).not.toHaveBeenCalled();
     expect(refusal(next).field).toBe('linkedInConfig.format');
   });
+
+  // Boosting an existing LinkedIn post (campaign-service#673); the rules are table rows in `campaign-linkedin-boost.utils.spec.ts`.
+  const boost = { lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [], format: 'boost', boostPost: 'urn:li:share:7518402035831111680' };
+
+  it('forwards a boost as it came', async () => {
+    const { next } = await create(boost);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()).toMatchObject({ format: 'boost', boostPost: boost.boostPost });
+  });
+
+  it('refuses a boost while its flag is off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInBoost);
+
+    const { next } = await create(boost);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.format');
+  });
 });

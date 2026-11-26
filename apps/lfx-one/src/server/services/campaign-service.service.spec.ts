@@ -4959,6 +4959,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInLeadGenEnabled: false,
       linkedInCarouselEnabled: false,
       linkedInDocumentEnabled: false,
+      linkedInBoostEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5751,6 +5752,21 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** Boosting a LinkedIn post (campaign-service#673): the create cutover and its own flag; no asset path, since nothing is uploaded. */
+  it.each([
+    [{ cutover: true, boost: true }, true],
+    [{ cutover: true, boost: false }, false],
+    [{ cutover: false, boost: true }, false],
+  ])('reports LinkedIn boost (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceLinkedInBoost ? flags.boost : flags.cutover));
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInBoostEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The LinkedIn daily-cap capability (#5774): the create cutover alone, like the targeting edit above. */
   it.each([
     [{ create: true, briefs: true, jobs: true, others: false }, true],
@@ -5857,6 +5873,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInLeadGenEnabled: false,
       linkedInCarouselEnabled: false,
       linkedInDocumentEnabled: false,
+      linkedInBoostEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,

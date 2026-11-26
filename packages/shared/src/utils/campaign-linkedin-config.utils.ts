@@ -41,6 +41,7 @@ const LINKEDIN_CONFIG_REQUEST_KEYS = [
   'documentAssetId',
   'documentTitle',
   'documentIntroText',
+  'boostPost',
 ] as const;
 
 /** The `linkedInConfig.variants[i]` keys a create may carry, spelled exactly (`LinkedInCreativeVariant`). */
