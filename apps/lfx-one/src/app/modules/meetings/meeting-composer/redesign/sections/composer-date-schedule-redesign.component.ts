@@ -110,9 +110,11 @@ export class ComposerDateScheduleRedesignComponent extends ComposerDateScheduleC
       const storedTime = stored ? parseTime12Hour(stored) : null;
       const storedMinute = storedTime ? storedTime.hours * 60 + storedTime.minutes : null;
 
-      const upcoming = MEETING_START_TIME_SLOTS.filter((slot) => slot.minuteOfDay >= firstMinute || slot.minuteOfDay === storedMinute);
+      const hasUpcoming = MEETING_START_TIME_SLOTS.some((slot) => slot.minuteOfDay >= firstMinute);
       // Late in the day nothing is left; list every slot and let the future-time error explain.
-      const slots = upcoming.length ? upcoming : [...MEETING_START_TIME_SLOTS];
+      const slots = hasUpcoming
+        ? MEETING_START_TIME_SLOTS.filter((slot) => slot.minuteOfDay >= firstMinute || slot.minuteOfDay === storedMinute)
+        : [...MEETING_START_TIME_SLOTS];
       if (storedMinute === null || !stored) {
         return slots;
       }

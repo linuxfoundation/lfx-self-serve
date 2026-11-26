@@ -574,6 +574,12 @@ export const EMAIL_REMINDER_TOOLTIP =
  */
 export const REMINDER_MINUTES_ERROR_KEYS = ['required', 'pattern', 'min', 'max'] as const;
 
+/** Redesigned composer: one note on every feature that needs recording. */
+export const RECORDING_REQUIRED_NOTE = 'Turn on recording to use this';
+
+/** Redesigned composer: suffix on a platform that is not available yet. */
+export const MEETING_PLATFORM_SOON_SUFFIX = ' (Soon)';
+
 /**
  * Why a recording-gated feature toggle can't be switched on yet, keyed by its form control
  * @description Transcripts and YouTube upload are both produced from the Zoom recording, so each row

@@ -11,7 +11,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SearchService } from '@services/search.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingComposerFormService } from '../../meeting-composer-form.service';
@@ -163,6 +163,32 @@ describe('ComposerDetailsAccessRedesignComponent', () => {
       expect(query('composer-organizer-chip')).toBeNull();
       expect(query('composer-organizer-search')).not.toBeNull();
       expect(query('composer-organizer-hint')?.textContent).toContain('Defaults to the meeting creator.');
+    });
+
+    it('stays in the searching state when a new search replaces a pending one', async () => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      await render();
+      const pending = new Subject<UserSearchResult[]>();
+      searchUsers.mockReturnValue(pending);
+      const component = fixture.componentInstance;
+      const search = query('composer-organizer-search')!.querySelector('input') as HTMLInputElement;
+
+      search.value = 'ja';
+      search.dispatchEvent(new Event('input'));
+      TestBed.tick();
+      vi.advanceTimersByTime(250);
+      expect(component['organizerLoading']()).toBe(true);
+
+      search.value = 'jan';
+      search.dispatchEvent(new Event('input'));
+      TestBed.tick();
+      vi.advanceTimersByTime(250);
+      expect(searchUsers).toHaveBeenCalledTimes(2);
+      expect(component['organizerLoading']()).toBe(true);
+
+      pending.next([JANE]);
+      pending.complete();
+      expect(component['organizerLoading']()).toBe(false);
     });
 
     it('keeps the stored organizer when edit clears the chip', async () => {

@@ -41,6 +41,7 @@ import {
   MeetingAttachment,
   MeetingAttachmentOperationResults,
   MeetingComposerContext,
+  MeetingComposerInitOptions,
   MeetingComposerLoadFailure,
   MeetingComposerMode,
   MeetingComposerSection,
@@ -426,7 +427,7 @@ export class MeetingComposerFormService {
   }
 
   /** Resets every piece of composer state and, in edit mode, hydrates from the saved meeting. */
-  public initialize(context: MeetingComposerContext): void {
+  public initialize(context: MeetingComposerContext, options: MeetingComposerInitOptions = {}): void {
     this.formSubscriptions.unsubscribe();
     this.formSubscriptions = new Subscription();
     this.reset$.next();
@@ -488,6 +489,14 @@ export class MeetingComposerFormService {
       if (detectedTimezone) {
         this.form().get('timezone')?.setValue(detectedTimezone);
       }
+    }
+
+    // Create only, and only for the surfaces that ask: recording and AI summary start on.
+    if (context.mode === 'create' && options.featureDefaultsOn) {
+      const form = this.form();
+      form.patchValue({ recording_enabled: true, zoom_ai_enabled: true });
+      form.get('transcript_enabled')?.enable();
+      form.get('youtube_upload_enabled')?.enable();
     }
 
     // Set after the subscriptions are wired so the type's visibility/restriction defaults still apply.

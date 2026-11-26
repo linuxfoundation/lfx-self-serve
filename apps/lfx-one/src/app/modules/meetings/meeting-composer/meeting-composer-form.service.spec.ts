@@ -990,6 +990,20 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
     service = TestBed.inject(MeetingComposerFormService);
   });
 
+  it('keeps recording and AI summary off by default, and turns them on only when asked', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    expect(service.form().get('recording_enabled')?.value).toBe(false);
+    expect(service.form().get('zoom_ai_enabled')?.value).toBe(false);
+    expect(service.form().get('transcript_enabled')?.disabled).toBe(true);
+
+    service.initialize({ mode: 'create', projectUid: 'project-1' }, { featureDefaultsOn: true });
+    expect(service.form().get('recording_enabled')?.value).toBe(true);
+    expect(service.form().get('zoom_ai_enabled')?.value).toBe(true);
+    expect(service.form().get('transcript_enabled')?.enabled).toBe(true);
+    expect(service.form().get('youtube_upload_enabled')?.enabled).toBe(true);
+    expect(service.form().dirty).toBe(false);
+  });
+
   it('turns a board meeting private and invite-only in the drawer', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
 
