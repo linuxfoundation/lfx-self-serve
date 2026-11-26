@@ -3,23 +3,27 @@
 
 import { createRequire } from 'node:module';
 
-import type { OrgTrainingStats, OrgTrainingStatsQuery, OrgTrainingTabId } from '@lfx-one/shared/interfaces';
+import type { OrgTraineesResponse, OrgTrainingStats, OrgTrainingStatsQuery, OrgTrainingTabId } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
 
-// The service imports `@lfx-one/shared/utils`, whose barrel pulls Angular; only the view-state and range utils are needed.
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-training-view-state.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/compact-cache.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-trainee-pairs.utils')),
 }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
-vi.mock('./valkey.service', () => ({ withOrgCache: vi.fn() }));
+vi.mock('./valkey.service', () => ({ withOrgCache: vi.fn(), withOrgCompactCache: vi.fn() }));
 vi.mock('./logger.service', () => ({ logger: { debug: vi.fn() } }));
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
+import { countOrgTraineePairs, mostRecentOrgTraineePair } from '../../../../../packages/shared/src/utils/org-trainee-pairs.utils';
+import { matchesOrgTrainingFilters } from '../../../../../packages/shared/src/utils/org-training-view-state.utils';
 import { OrgLensTrainingService } from './org-lens-training.service';
+import { OrgPeopleTraineesService } from './org-people-trainees.service';
 import { withOrgCache } from './valkey.service';
 
 interface SqlDatabase {
@@ -38,7 +42,11 @@ const ACCOUNT = SYNTHETIC_ORG_ACCOUNT_ID;
 const OTHER_ACCOUNT = 'other-account';
 
 function toSqlite(sql: string): string {
-  return sql.replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '').replaceAll('IFF(', 'IIF(');
+  return sql
+    .replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')
+    .replaceAll('IFF(', 'IIF(')
+    .replaceAll('BOOLOR_AGG(', 'MAX(')
+    .replace(/DATEADD\(day, -(\d+), TO_DATE\((\(SELECT MAX\(DBT_RUN_AT\) FROM \w+ WHERE ACCOUNT_ID = \?\))\)\)/g, "date($2, '-$1 days')");
 }
 
 interface PairRow {
@@ -538,5 +546,180 @@ describe('a family roll-up over two accounts that share a person', () => {
     const single = await service.getTrainingStats(OTHER_ACCOUNT, query({}), 'auditor-entitlement');
     expect({ ...stats, organizations: undefined, rollUp: undefined }).toEqual({ ...single, organizations: undefined, rollUp: undefined });
     expect(stats.organizations).toHaveLength(2);
+  });
+});
+
+describe('People › Trainees over the same pairs as the stats', () => {
+  const TRAINEES_ACCOUNT = 'trainees-account';
+  const BUILT = '2026-11-25 04:15:00';
+  const MIXED = { course: 'cert-mixed', courseName: 'Mixed Type Exam', level: 'Intermediate', format: 'Exam', projectId: 'proj-b', foundationId: 'f-a' };
+  const COURSES = { 'cert-mixed': MIXED, intro: INTRO, web: WEB } as const;
+  const TYPES = { 'cert-mixed': ['Certification', 'certifications'], intro: ['Training', 'trainings'], web: ['Training', 'trainings'] } as const;
+
+  const TRAINEE_PAIRS: [string, string, keyof typeof COURSES, boolean, boolean, string][] = [
+    ['all', 't1', 'cert-mixed', true, true, '2026-10-26 10:00:00'],
+    ['all', 't1', 'intro', true, false, '2026-08-01 09:00:00'],
+    ['all', 't2', 'intro', true, true, '2026-11-20 10:00:00'],
+    ['all', 't2', 'web', true, false, '2026-11-20 10:00:00'],
+    ['all', 't-gone', 'web', true, false, '2026-11-21 09:00:00'],
+    ['all', 'o1', 'intro', false, false, '2026-11-22 09:00:00'],
+    ['all', 't2-elsewhere', 'web', false, false, '2026-11-22 09:00:00'],
+    ['30d', 't1', 'cert-mixed', true, true, '2026-10-26 10:00:00'],
+    ['30d', 't2', 'intro', true, true, '2026-11-20 10:00:00'],
+    ['30d', 't2', 'web', true, false, '2026-11-20 10:00:00'],
+    ['30d', 't-gone', 'web', true, false, '2026-11-21 09:00:00'],
+    ['30d', 'o1', 'intro', false, false, '2026-11-22 09:00:00'],
+  ];
+  const TRAINING_ROWS: [string, keyof typeof COURSES, boolean, string, string, string][] = [
+    ['t1', 'cert-mixed', true, 'Enrolled', '2026-09-01 09:00:00', 'Training'],
+    ['t1', 'cert-mixed', true, 'Certified', '2026-10-26 10:00:00', 'Certification'],
+    ['t1', 'intro', true, 'Enrolled', '2026-08-01 09:00:00', 'Training'],
+    ['t2', 'intro', true, 'Enrolled', '2026-08-01 09:00:00', 'Training'],
+    ['t2', 'intro', true, 'Certified', '2026-11-20 10:00:00', 'Training'],
+    ['t2', 'web', true, 'Enrolled', '2026-11-20 10:00:00', 'Training'],
+    ['t-gone', 'web', true, 'Enrolled', '2026-11-21 09:00:00', 'Training'],
+    ['o1', 'intro', false, 'Enrolled', '2026-11-22 09:00:00', 'Training'],
+  ];
+
+  let trainees: OrgPeopleTraineesService;
+
+  beforeEach(() => {
+    database.exec(`
+      ALTER TABLE ORG_PEOPLE_TRAINING_PAIRS ADD COLUMN PRODUCT_TYPE TEXT;
+      ALTER TABLE ORG_PEOPLE_TRAINING_PAIRS ADD COLUMN LAST_ACTIVITY_TS TEXT;
+      ALTER TABLE ORG_PEOPLE_ALL_RANGES ADD COLUMN LFID TEXT;
+      ALTER TABLE ORG_PEOPLE_ALL_RANGES ADD COLUMN CDP_MEMBER_ID TEXT;
+      ALTER TABLE ORG_PEOPLE_ALL_RANGES ADD COLUMN EMAIL TEXT;
+      CREATE TABLE ORG_PEOPLE_TRAINING (
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, IS_ON_PEOPLE_LIST INTEGER, COURSE_ID TEXT, COURSE_OR_CERT_ID TEXT, STATUS TEXT, ACTIVITY_TS TEXT, PRODUCT_TYPE TEXT
+      );
+      CREATE TABLE ORG_TRAINING_OUTSIDE_LEARNERS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LEARNER_NAME TEXT);
+    `);
+    const insertPair = database.prepare(`
+      INSERT INTO ORG_PEOPLE_TRAINING_PAIRS (
+        TIME_RANGE, ACCOUNT_ID, PERSON_KEY, COURSE_KEY, PAIR_KEY, IS_ON_PEOPLE_LIST, IS_CERTIFIED, TRAINING_TAB, COURSE_NAME, COURSE_LEVEL,
+        COURSE_FORMAT, PROJECT_ID, PROJECT_NAME, FOUNDATION_ID, FOUNDATION_NAME, DBT_RUN_AT, PRODUCT_TYPE, LAST_ACTIVITY_TS
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const [range, person, course, onList, certified, lastActivity] of TRAINEE_PAIRS) {
+      const c = COURSES[course];
+      const [productType, tab] = TYPES[course];
+      insertPair.run(
+        range,
+        TRAINEES_ACCOUNT,
+        person,
+        course,
+        `${person}|${course}`,
+        onList ? 1 : 0,
+        certified ? 1 : 0,
+        tab,
+        c.courseName,
+        c.level,
+        c.format,
+        c.projectId,
+        c.projectId && `Project ${c.projectId}`,
+        c.foundationId,
+        c.foundationId && `Foundation ${c.foundationId}`,
+        BUILT,
+        productType,
+        lastActivity
+      );
+    }
+    const insertRow = database.prepare('INSERT INTO ORG_PEOPLE_TRAINING VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    for (const [person, course, onList, status, date, productType] of TRAINING_ROWS) {
+      insertRow.run(TRAINEES_ACCOUNT, person, onList ? 1 : 0, course, `${status}:${person}:${course}:${date}`, status, date, productType);
+    }
+    const insertPerson = database.prepare(
+      'INSERT INTO ORG_PEOPLE_ALL_RANGES (ACCOUNT_ID, TIME_RANGE, PROJECT_SCOPE, IS_FORMER, PERSON_KEY, NAME, TITLE) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    );
+    insertPerson.run(TRAINEES_ACCOUNT, 'all', 'all', 0, 't1', 'Trainee One', null);
+    insertPerson.run(TRAINEES_ACCOUNT, 'all', 'all', 0, 't2', 'Trainee Two', null);
+    insertPerson.run(TRAINEES_ACCOUNT, 'all', 'all', 1, 't-gone', 'Former Trainee', null);
+    const insertLearner = database.prepare('INSERT INTO ORG_TRAINING_OUTSIDE_LEARNERS VALUES (?, ?, ?)');
+    insertLearner.run(TRAINEES_ACCOUNT, 'o1', 'Outside Learner');
+    insertLearner.run(TRAINEES_ACCOUNT, 't2-elsewhere', 'Elsewhere Learner');
+    insertLearner.run(TRAINEES_ACCOUNT, 't2', 'Shared Key Learner');
+
+    const sqlite = execute.getMockImplementation()!;
+    execute.mockImplementation(async (sql: string, binds: string[]) => {
+      const result = (await sqlite(sql, binds)) as { rows: Record<string, unknown>[] };
+      return { rows: result.rows.map((row) => ('IS_CERTIFIED' in row ? { ...row, IS_CERTIFIED: row['IS_CERTIFIED'] === 1 } : row)) };
+    });
+    trainees = new OrgPeopleTraineesService();
+  });
+
+  const tableTotals = (response: OrgTraineesResponse, q: OrgTrainingStatsQuery) => {
+    const listed = new Set(response.trainees.map((trainee) => trainee.personKey));
+    const pairs = response.pairs.filter((p) => listed.has(p.personKey) && matchesOrgTrainingFilters(p, q));
+    return { people: new Set(pairs.map((p) => p.personKey)).size, ...countOrgTraineePairs(pairs) };
+  };
+
+  it.each<[string, OrgTrainingStatsQuery]>([
+    ['all time, no filter', query({})],
+    ['30 days, no filter', query({ range: '30d' })],
+    ['all time, foundation f-a', query({ foundation: 'f-a' })],
+    ['30 days, foundation f-a', query({ range: '30d', foundation: 'f-a' })],
+    ['all time, level Beginner', query({ level: 'Beginner' })],
+    ['all time, course Mixed Type Exam', query({ course: 'Mixed Type Exam' })],
+  ])('%s: table totals plus the former employee pairs equal the stats', async (_label, q) => {
+    const response = await trainees.getTrainees(TRAINEES_ACCOUNT, q.range, 'auditor-entitlement');
+    const stats = await service.getTrainingStats(TRAINEES_ACCOUNT, q, 'auditor-entitlement');
+    const table = tableTotals(response, q);
+    const filtered = [q.foundation, q.project, q.course, q.level, q.format].some((value) => value !== null);
+    const former = filtered ? { people: 0, pairs: 0 } : response.formerOnPeopleList;
+
+    expect(stats.peopleWithTrainingActivity).toBe(table.people + former.people);
+    expect(stats.coursesTaken).toBe(table.coursesTaken + former.pairs);
+    expect(stats.certifications).toBe(table.certifications);
+    expect(stats.trainingsCompleted).toBe(table.trainingsCompleted);
+    expect(stats.coursesInProgress).toBe(table.inProgress + former.pairs);
+  });
+
+  it.each(['all', '30d'] as const)('gives every pair of %s at least one date, even one whose only row sits on the build-day boundary', async (range) => {
+    const response = await trainees.getTrainees(TRAINEES_ACCOUNT, range, 'auditor-entitlement');
+    const dated = new Set(response.details.map((row) => `${row.personKey}|${row.courseId}`));
+
+    expect(response.pairs.length).toBeGreaterThan(0);
+    expect(response.pairs.filter((p) => !dated.has(`${p.personKey}|${p.courseId}`))).toEqual([]);
+    expect(execute.mock.calls.every(([sql]) => !(sql as string).includes('CURRENT_DATE'))).toBe(true);
+  });
+
+  it('keeps 30-day dates inside the window the pairs were built with', async () => {
+    const response = await trainees.getTrainees(TRAINEES_ACCOUNT, '30d', 'auditor-entitlement');
+
+    expect(response.details.filter((row) => row.courseId === 'cert-mixed').map((row) => row.status)).toEqual(['Certified']);
+  });
+
+  it('counts a course whose rows disagree on the product type as the course classifies it, as the stats do', async () => {
+    const response = await trainees.getTrainees(TRAINEES_ACCOUNT, 'all', 'auditor-entitlement');
+    const mixed = response.pairs.find((p) => p.personKey === 't1' && p.courseId === 'cert-mixed')!;
+
+    expect(mixed.productType).toBe('Certification');
+    expect(countOrgTraineePairs([mixed])).toEqual({ coursesTaken: 1, certifications: 1, trainingsCompleted: 0, inProgress: 0 });
+  });
+
+  it('names the certified course as most recent when two pairs share the latest activity', async () => {
+    const response = await trainees.getTrainees(TRAINEES_ACCOUNT, 'all', 'auditor-entitlement');
+
+    expect(mostRecentOrgTraineePair(response.pairs.filter((p) => p.personKey === 't2'))?.courseName).toBe('Intro to K8s');
+  });
+
+  it('lists the outside learners the stats count, and not a key that has people-list pairs', async () => {
+    const response = await trainees.getTrainees(TRAINEES_ACCOUNT, 'all', 'auditor-entitlement');
+    const stats = await service.getTrainingStats(TRAINEES_ACCOUNT, query({}), 'auditor-entitlement');
+
+    expect(response.outsideLearners).toEqual([
+      { personKey: 'outside:1', name: 'Elsewhere Learner', status: 'Enrolled' },
+      { personKey: 'outside:2', name: 'Outside Learner', status: 'Enrolled' },
+    ]);
+    expect(stats.learnersOutsidePeopleList).toBe(response.outsideLearners.length);
+    expect(JSON.stringify(response)).not.toMatch(/Shared Key Learner|t-gone|t2-elsewhere/);
+  });
+
+  it('lists current employees only, and counts the former one apart', async () => {
+    const response = await trainees.getTrainees(TRAINEES_ACCOUNT, 'all', 'auditor-entitlement');
+
+    expect(response.trainees.map((trainee) => trainee.personKey)).toEqual(['t1', 't2']);
+    expect(response.formerOnPeopleList).toEqual({ people: 1, pairs: 1 });
   });
 });

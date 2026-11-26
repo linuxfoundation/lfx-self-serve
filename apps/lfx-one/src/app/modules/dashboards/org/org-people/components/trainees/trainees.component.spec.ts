@@ -10,6 +10,7 @@ import { EMPTY_ORG_TRAINEES_RESPONSE } from '@lfx-one/shared/constants';
 import type {
   OrgLensTimeRange,
   OrgTraineeDetailRow,
+  OrgTraineePair,
   OrgTraineeRowVm,
   OrgTraineesResponse,
   OrgTrainingFilterOptions,
@@ -28,11 +29,12 @@ import { TraineesComponent } from './trainees.component';
 
 const ORG = SYNTHETIC_ORG_ACCOUNT_ID;
 
-function detail(personKey: string, courseId: string, status: OrgTraineeDetailRow['status'], overrides: Partial<OrgTraineeDetailRow> = {}): OrgTraineeDetailRow {
+type WarehouseRow = Omit<OrgTraineePair, 'lastActivityTs'> & { activityTs: string };
+
+function detail(personKey: string, courseId: string, status: OrgTraineePair['status'], overrides: Partial<WarehouseRow> = {}): WarehouseRow {
   return {
     personKey,
     status,
-    courseOrCertId: `${status}:${personKey}:${courseId}`,
     courseId,
     courseName: courseId,
     foundationId: 'foundation-a',
@@ -45,6 +47,23 @@ function detail(personKey: string, courseId: string, status: OrgTraineeDetailRow
     activityTs: '2026-09-01T00:00:00.000Z',
     ...overrides,
   };
+}
+
+function withPairs(rows: readonly WarehouseRow[]): Pick<OrgTraineesResponse, 'pairs' | 'details'> {
+  const pairs = new Map<string, OrgTraineePair>();
+  for (const row of [...rows].sort((a, b) => a.activityTs.localeCompare(b.activityTs))) {
+    const key = `${row.personKey}|${row.courseId}`;
+    const { activityTs, ...attributes } = row;
+    const certified = row.status === 'Certified' || pairs.get(key)?.status === 'Certified';
+    pairs.set(key, { ...attributes, status: certified ? 'Certified' : 'Enrolled', lastActivityTs: activityTs });
+  }
+  const details: OrgTraineeDetailRow[] = rows.map((row) => ({
+    personKey: row.personKey,
+    courseId: row.courseId,
+    status: row.status,
+    activityTs: row.activityTs,
+  }));
+  return { pairs: [...pairs.values()], details };
 }
 
 const PEOPLE = [
@@ -92,7 +111,7 @@ function responseFor(range: OrgLensTimeRange): OrgTraineesResponse {
     accountId: ORG,
     timeRange: range,
     trainees: PEOPLE.filter((person) => details.some((d) => d.personKey === person.personKey)),
-    details,
+    ...withPairs(details),
     asOf: '2026-10-30T09:48:21.094Z',
   };
 }
@@ -447,25 +466,26 @@ describe('TraineesComponent', () => {
     });
   });
 
-  describe('course names resolved over the pair', () => {
-    const respond = (details: OrgTraineeDetailRow[]) =>
-      getTrainees.mockReturnValue(of({ ...EMPTY_ORG_TRAINEES_RESPONSE, accountId: ORG, timeRange: '730d', trainees: [PEOPLE[0]], details, asOf: null }));
+  describe('the pairs as the server resolves them', () => {
+    const pair = (courseId: string, overrides: Partial<OrgTraineePair> = {}): OrgTraineePair => {
+      const { activityTs, ...attributes } = detail('p-1', courseId, 'Enrolled');
+      return { ...attributes, lastActivityTs: activityTs, ...overrides };
+    };
+    const respond = (pairs: OrgTraineePair[], details: OrgTraineeDetailRow[] = []) =>
+      getTrainees.mockReturnValue(of({ ...EMPTY_ORG_TRAINEES_RESPONSE, accountId: ORG, timeRange: '730d', trainees: [PEOPLE[0]], pairs, details, asOf: null }));
     const recent = (): string => cell('p-1', 7);
+    const subRows = async (): Promise<string[]> => {
+      el().querySelector<HTMLElement>('[data-testid="org-people-trainees-row-p-1"]')!.click();
+      await settle();
+      return [...el().querySelectorAll('[data-testid="org-people-trainees-row-p-1-detail-row"] tbody tr')].map(
+        (tr) => tr.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+      );
+    };
 
-    it('names the Most Recent Course and its foundation from the resolved pair, not from the latest raw row', async () => {
+    it('names the Most Recent Course and its foundation from the pair with the latest activity', async () => {
       respond([
-        detail('p-1', 'c-1', 'Enrolled', {
-          courseName: 'Alpha Name',
-          foundationId: 'f-1',
-          foundationName: 'Old Foundation',
-          activityTs: '2026-01-01T00:00:00.000Z',
-        }),
-        detail('p-1', 'c-1', 'Certified', {
-          courseName: 'Zulu Name',
-          foundationId: 'f-2',
-          foundationName: 'New Foundation',
-          activityTs: '2026-09-01T00:00:00.000Z',
-        }),
+        pair('c-1', { courseName: 'Alpha Name', foundationName: 'Old Foundation', lastActivityTs: '2026-01-01T00:00:00.000Z' }),
+        pair('c-2', { courseName: 'Zulu Name', foundationName: 'New Foundation', lastActivityTs: '2026-09-01T00:00:00.000Z' }),
       ]);
       await mount('/?tab=training');
 
@@ -474,23 +494,63 @@ describe('TraineesComponent', () => {
       expect(recent()).not.toContain('Alpha Name');
     });
 
-    it('lets a real name beat a row without one, so the course filter matches what the stats count', async () => {
-      respond([detail('p-1', 'c-1', 'Enrolled', { courseName: null }), detail('p-1', 'c-1', 'Certified', { courseName: 'Real Name' })]);
-      await mount('/?tab=training&course=Real%20Name');
+    it('on a tie in the latest activity, names the certified course', async () => {
+      respond([pair('c-1', { courseName: 'Alpha Name' }), pair('c-2', { courseName: 'Zulu Name', status: 'Certified' })]);
+      await mount('/?tab=training');
 
-      expect(listed()).toEqual(['p-1']);
-      expect(recent()).toContain('Real Name');
+      expect(recent()).toContain('Zulu Name');
     });
 
-    it('falls back to the course id only when no row of the pair has a name, and never matches a course filter then', async () => {
-      respond([detail('p-1', 'c-orphan', 'Enrolled', { courseName: null })]);
+    it('counts a certified Certification, a certified Training and an enrolled course into their own columns', async () => {
+      respond([
+        pair('c-1', { status: 'Certified', productType: 'Certification' }),
+        pair('c-2', { status: 'Certified', productType: 'Training' }),
+        pair('c-3', { status: 'Enrolled', productType: 'Certification' }),
+      ]);
+      await mount('/?tab=training');
+
+      // columns: chevron, name, status, courses, certs, trainings, in progress, recent
+      expect([3, 4, 5, 6].map((i) => cell('p-1', i))).toEqual(['3', '1', '1', '1']);
+    });
+
+    it('falls back to the course id when the pair has no name, and never matches a course filter then', async () => {
+      respond([pair('c-orphan', { courseName: null })]);
       await mount('/?tab=training');
       expect(recent()).toContain('c-orphan');
 
       TestBed.resetTestingModule();
-      respond([detail('p-1', 'c-orphan', 'Enrolled', { courseName: null })]);
+      respond([pair('c-orphan', { courseName: null })]);
       await mount('/?tab=training&course=c-orphan');
       expect(listed()).toEqual([]);
+    });
+
+    it('dates each sub-table row from the first enrollment and the first certificate of its pair', async () => {
+      respond(
+        [pair('c-1', { courseName: 'Dated Course', status: 'Certified', productType: 'Certification' })],
+        [
+          { personKey: 'p-1', courseId: 'c-1', status: 'Enrolled', activityTs: '2026-05-10T00:00:00.000Z' },
+          { personKey: 'p-1', courseId: 'c-1', status: 'Enrolled', activityTs: '2026-02-10T00:00:00.000Z' },
+          { personKey: 'p-1', courseId: 'c-1', status: 'Certified', activityTs: '2026-06-10T00:00:00.000Z' },
+        ]
+      );
+      await mount('/?tab=training');
+
+      const [row] = await subRows();
+      expect(row).toContain('Dated Course');
+      expect(row).toContain('Certification');
+      expect(row).toContain('Feb 2026');
+      expect(row).toContain('Jun 2026');
+      expect(row).not.toContain('May 2026');
+    });
+
+    it('still lists a pair whose rows did not arrive, with dashes for its dates', async () => {
+      respond([pair('c-1', { courseName: 'Undated Course' })]);
+      await mount('/?tab=training');
+
+      const rows = await subRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toContain('Undated Course');
+      expect(rows[0]).toContain('—');
     });
   });
 
@@ -543,7 +603,7 @@ describe('TraineesComponent', () => {
         of({
           ...responseFor(range),
           trainees: [PEOPLE[0]],
-          details: [detail('p-1', 'lfs101', 'Enrolled', { foundationId: 'lf' })],
+          ...withPairs([detail('p-1', 'lfs101', 'Enrolled', { foundationId: 'lf' })]),
           // Name and one status each, nothing else; sent unsorted so the list's own order shows.
           outsideLearners: [
             { personKey: 'outside:1', name: 'Zoe Outside', status: 'Certified' },
@@ -651,11 +711,13 @@ describe('TraineesComponent', () => {
           timeRange: range,
           trainees: manyPeople(count),
           // One course each, every other person in a second foundation, so a filter can narrow the list.
-          details: manyPeople(count).map((person, i) =>
-            detail(person.personKey, `course-${i}`, 'Enrolled', {
-              foundationId: i % 2 === 0 ? 'foundation-a' : 'lf',
-              foundationName: i % 2 === 0 ? 'foundation-a' : 'lf',
-            })
+          ...withPairs(
+            manyPeople(count).map((person, i) =>
+              detail(person.personKey, `course-${i}`, 'Enrolled', {
+                foundationId: i % 2 === 0 ? 'foundation-a' : 'lf',
+                foundationName: i % 2 === 0 ? 'foundation-a' : 'lf',
+              })
+            )
           ),
           outsideLearners: Array.from({ length: outside }, (_, i) => ({
             personKey: `outside:${i + 1}`,
@@ -936,7 +998,7 @@ describe('TraineesComponent', () => {
         of({
           ...responseFor(range),
           trainees: [PEOPLE[0]],
-          details: [detail('p-1', 'lfs101', 'Enrolled'), detail('outside:2', 'cka', 'Certified', { productType: 'Certification' })],
+          ...withPairs([detail('p-1', 'lfs101', 'Enrolled'), detail('outside:2', 'cka', 'Certified', { productType: 'Certification' })]),
         })
       );
       await mount('/?tab=training');
