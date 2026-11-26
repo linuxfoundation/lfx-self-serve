@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { QUERY_SERVICE_MAX_PAGES } from '@lfx-one/shared/constants';
+import { QUERY_SERVICE_MAX_PAGES, QUERY_SERVICE_UNSATISFIABLE_FILTER_PATTERN } from '@lfx-one/shared/constants';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -19,6 +19,24 @@ function isRetryableError(error: unknown): boolean {
     return typeof statusCode === 'number' && statusCode >= 500;
   }
   return false;
+}
+
+/**
+ * Checks if an error is the query service's documented "unsatisfiable filter" 400: the filter names a
+ * dimension no indexed document of the type carries, so the true result is empty (#6184). Callers can
+ * treat it as a count of zero or an empty list; every other error keeps its normal handling.
+ */
+export function isUnsatisfiableFilterError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const statusCode = (error as any).statusCode ?? (error as any).status;
+  if (statusCode !== 400) {
+    return false;
+  }
+  const bodyMessage = (error as any).errorBody?.message;
+  const message = typeof bodyMessage === 'string' ? bodyMessage : (error as any).message;
+  return typeof message === 'string' && QUERY_SERVICE_UNSATISFIABLE_FILTER_PATTERN.test(message);
 }
 
 /**
