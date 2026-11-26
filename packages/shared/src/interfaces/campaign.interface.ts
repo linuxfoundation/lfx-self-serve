@@ -3358,6 +3358,8 @@ export interface MetaDetailedTargetingEnabled {
 export interface MetaTargetingPick {
   id: string;
   name: string;
+  /** Set on region and city picks only: the ISO country the location is in, from the search row (#5904). */
+  countryCode?: string;
 }
 
 /**

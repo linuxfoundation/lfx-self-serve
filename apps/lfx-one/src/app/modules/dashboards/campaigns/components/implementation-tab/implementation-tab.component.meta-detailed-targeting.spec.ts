@@ -20,8 +20,9 @@ trackStateOnlyTests();
 
 /**
  * Wiring only (#5904 rows 4 and 6). Which lists a flag sends, how a saved draft is read and when Create is held are rules
- * in `campaign-meta-detailed-targeting.utils.ts`, tested there; the picker is tested in its own spec. Here: the
- * picks reach the request, the draft and the restore, and the block reaches Create.
+ * in `campaign-meta-detailed-targeting.utils.ts`; when sent places replace the country fallback is in
+ * `campaign-meta-form.utils.ts`; both are tested there, and the picker in its own spec. Here: the picks reach the
+ * request, the draft and the restore, the block reaches Create, and sent places reach the geo list and DSA (the preview line is checked in the meta-objective-1 full render).
  */
 describe('ImplementationTabComponent meta detailed targeting', () => {
   let createCampaign: ReturnType<typeof vi.fn>;
@@ -31,8 +32,8 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
     behaviors: [{ id: '6004', name: 'Early adopters' }],
     workPositions: [{ id: '105', name: 'Engineer' }],
     locales: [{ id: '6', name: 'English (US)' }],
-    regions: [{ id: '3847', name: 'California, US' }],
-    cities: [{ id: '2420379', name: 'Austin, Texas, US' }],
+    regions: [{ id: '3847', name: 'California, US', countryCode: 'US' }],
+    cities: [{ id: '2420379', name: 'Austin, Texas, US', countryCode: 'US' }],
   };
   const brief = (): CampaignBriefOutput =>
     ({
@@ -113,6 +114,24 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
       regions: ['3847'],
       cities: ['2420379'],
     });
+  });
+
+  it('sends a city pick with no country fallback when no geo chip is set', STATE_ONLY, async () => {
+    const f = await mount(true, true);
+    c(f)['metaGeoTargets'].set([]);
+    c(f)['onMetaDetailedTargetingChange']({ ...emptyMetaDetailedTargetingPicks(), cities: [{ id: '2420379', name: 'Austin, Texas, US', countryCode: 'US' }] });
+    f.detectChanges();
+    expect(c(f)['createBlockedReason']()).toBeNull();
+    c(f)['submit']();
+    await f.whenStable();
+    expect(createCampaign.mock.calls.at(-1)?.[0]['metaConfig']).toMatchObject({ geoTargets: [], targeting: { cities: ['2420379'] } });
+  });
+
+  it('makes the DSA disclosures required for a city in the EU', STATE_ONLY, async () => {
+    const f = await mount(true, true);
+    c(f)['onMetaDetailedTargetingChange']({ ...emptyMetaDetailedTargetingPicks(), cities: [{ id: '2420381', name: 'Paris, FR', countryCode: 'FR' }] });
+    f.detectChanges();
+    expect(c(f)['metaDsaCountries']()).toEqual(['FR']);
   });
 
   it('saves the picks in the draft, restores them, and drops them on a brief switch', STATE_ONLY, async () => {

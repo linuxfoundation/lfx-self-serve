@@ -326,12 +326,27 @@ function pickIdAccepted(list: MetaTargetingPickKey, id: string): boolean {
  */
 export function metaTargetingPicksWith(
   picks: MetaTargetingPick[],
-  option: Pick<MetaTargetingSearchOption, 'id' | 'name'>,
+  option: Pick<MetaTargetingSearchOption, 'id' | 'name' | 'countryCode'>,
   list: MetaTargetingPickKey
 ): MetaTargetingPick[] {
   const id = option.id.trim();
   if (!pickIdAccepted(list, id) || picks.length >= pickListMax(list) || picks.some((pick) => pick.id === id)) return picks;
-  return [...picks, { id, name: option.name.trim() || id }];
+  const pick: MetaTargetingPick = { id, name: option.name.trim() || id };
+  const countryCode = isLocationList(list) ? pickCountryCode(option.countryCode) : undefined;
+  if (countryCode !== undefined) pick.countryCode = countryCode;
+  return [...picks, pick];
+}
+
+/** Whether `list` holds locations (regions or cities), the only picks that keep a country code. */
+function isLocationList(list: MetaTargetingPickKey): boolean {
+  return list === 'regions' || list === 'cities';
+}
+
+/** `raw` as an ISO country code (two letters, upper-cased), or `undefined` when it is not one. */
+function pickCountryCode(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const code = raw.trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(code) ? code : undefined;
 }
 
 /** `picks` without the one whose id is `id`. */
@@ -369,7 +384,7 @@ export function metaTargetingPicksAdd(picks: MetaDetailedTargetingPicks, box: Me
   if (list === null) return picks;
   const place = option.locationType === undefined ? '' : locationPlace(option);
   const name = place === '' ? option.name : `${option.name.trim()}, ${place}`;
-  const next = metaTargetingPicksWith(picks[list], { id: option.id, name }, list);
+  const next = metaTargetingPicksWith(picks[list], { id: option.id, name, countryCode: option.countryCode }, list);
   return next === picks[list] ? picks : { ...picks, [list]: next };
 }
 
@@ -467,10 +482,19 @@ export function metaDetailedTargetingPicksFromDraft(raw: unknown): MetaDetailedT
       const id = entry?.['id'];
       const name = entry?.['name'];
       if (typeof id !== 'string' || typeof name !== 'string') continue;
-      picks[key] = metaTargetingPicksWith(picks[key], { id, name }, key);
+      const countryCode = entry?.['countryCode'];
+      picks[key] = metaTargetingPicksWith(picks[key], { id, name, countryCode: typeof countryCode === 'string' ? countryCode : nameCountryCode(name) }, key);
     }
   }
   return picks;
+}
+
+/**
+ * The country code at the end of a location pick's name ("Paris, FR"), which {@link metaTargetingPicksAdd} always puts
+ * last: how a draft saved before picks kept `countryCode` still gets its DSA check. `undefined` when the name has none.
+ */
+function nameCountryCode(name: string): string | undefined {
+  return /, ([A-Z]{2})$/.exec(name.trim())?.[1];
 }
 
 /** A copy of `picks`, so the parent's draft never holds a live view of the tab's signal. */
@@ -499,6 +523,23 @@ export function metaDetailedTargetingForCreate(picks: MetaDetailedTargetingPicks
     else out[key] = ids;
   }
   return compactMetaDetailedTargeting(out);
+}
+
+/**
+ * The region and city picks a Meta create sends: those lists' picks while the region flag is an explicit yes, else
+ * none ({@link metaDetailedTargetingForCreate} sends them on the same rule).
+ */
+export function metaLocationPicksSent(picks: MetaDetailedTargetingPicks, enabled: MetaDetailedTargetingEnabled): MetaTargetingPick[] {
+  return (['regions', 'cities'] as const).filter((list) => pickListFlag(list, enabled) === true).flatMap((list) => picks[list]);
+}
+
+/** The countries `locations` lie in, de-duplicated in first-seen order; a pick without a country code adds none. */
+export function metaLocationPickCountries(locations: readonly MetaTargetingPick[]): string[] {
+  const out: string[] = [];
+  for (const pick of locations) {
+    if (pick.countryCode !== undefined && !out.includes(pick.countryCode)) out.push(pick.countryCode);
+  }
+  return out;
 }
 
 /** `picks` with every list this deployment answered no to emptied: the Clear past an `unsupported` block, whose lists are hidden. An unanswered list is kept, since it may yet be sendable. */

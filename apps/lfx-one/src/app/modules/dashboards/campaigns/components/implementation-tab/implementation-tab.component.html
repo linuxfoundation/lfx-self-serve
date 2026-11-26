@@ -4640,9 +4640,14 @@
                 Reads the SAME computed `submit()` sends, so the line cannot name one country while
                 the request buys another. The empty arm is a real state — nothing usable was
                 supplied — and `canSubmit` blocks there rather than letting the server default.
+                Region and city picks the create sends replace the country fallback (#5904).
               -->
               @if (metaGeoTargets().length === 0) {
-                @if (metaEffectiveGeoTargets().length > 0) {
+                @if (metaLocationPicksSent().length > 0) {
+                  <span class="text-xs text-gray-400" data-testid="implementation-meta-geo-locations"
+                    >No geo targets selected — targeting the picked regions and cities</span
+                  >
+                } @else if (metaEffectiveGeoTargets().length > 0) {
                   <span class="text-xs text-gray-400">No geo targets selected — defaults to {{ metaEffectiveGeoTargets().join(', ') }}</span>
                 } @else {
                   <span class="text-xs text-red-500" data-testid="implementation-meta-geo-none">Add at least one geo target — no usable country is set.</span>
