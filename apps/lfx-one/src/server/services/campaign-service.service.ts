@@ -1036,6 +1036,17 @@ export function canSetLinkedInLeadGen(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may be a carousel: `format: "carousel"`, `carouselCards` and `carouselIntroText`
+ * (campaign-service#665). Needs the LinkedIn creative asset path (`canUseLinkedInCreativeAssets`, which includes the
+ * campaign-service create path), since each card's image is an asset stored for the brief, AND
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CAROUSEL`, which follows campaign-service's own `LINKEDIN_ADS_CAROUSEL_ENABLED`:
+ * campaign-service refuses the fields while that is off, and the legacy creator ignores them.
+ */
+export function canSetLinkedInCarousel(): boolean {
+  return canUseLinkedInCreativeAssets() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInCarousel);
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -1304,6 +1315,7 @@ export class CampaignServiceClient {
         linkedInTargetingEnabled: canSetLinkedInTargeting(),
         linkedInConversionsEnabled: canSetLinkedInConversions(),
         linkedInLeadGenEnabled: canSetLinkedInLeadGen(),
+        linkedInCarouselEnabled: canSetLinkedInCarousel(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1399,6 +1411,7 @@ export class CampaignServiceClient {
       linkedInTargetingEnabled: canSetLinkedInTargeting(),
       linkedInConversionsEnabled: canSetLinkedInConversions(),
       linkedInLeadGenEnabled: canSetLinkedInLeadGen(),
+      linkedInCarouselEnabled: canSetLinkedInCarousel(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),

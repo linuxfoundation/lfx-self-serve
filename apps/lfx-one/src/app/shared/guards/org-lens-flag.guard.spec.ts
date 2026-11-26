@@ -11,7 +11,7 @@ import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.s
 
 import { CF_ORG_DONATIONS_FLAG } from '@lfx-one/shared/constants';
 
-import { cfOrgDonationsGuard } from './org-lens-flag.guard';
+import { cfOrgDonationsGuard, cfOrgDonationsTabGuard } from './org-lens-flag.guard';
 
 describe('cfOrgDonationsGuard', () => {
   let getFlagOverride: ReturnType<typeof vi.fn>;
@@ -162,5 +162,31 @@ describe('cfOrgDonationsGuard', () => {
 
     expect(result).toBe(true);
     expect(getBooleanFlag).toHaveBeenCalledWith(CF_ORG_DONATIONS_FLAG, false);
+  });
+
+  // The combined Crowdfunding page (#5838): a closed flag declines to match so a sibling redirect lands on Initiatives.
+  describe('cfOrgDonationsTabGuard', () => {
+    const runTab = (): ReturnType<typeof cfOrgDonationsTabGuard> => TestBed.runInInjectionContext(() => cfOrgDonationsTabGuard(route, segments));
+
+    it('declines to match, without redirecting out of Crowdfunding, when the flag is off', async () => {
+      getFlagOverride.mockReturnValue(false);
+
+      expect(await runTab()).toBe(false);
+      expect(router.parseUrl).not.toHaveBeenCalled();
+      expect(router.createUrlTree).not.toHaveBeenCalled();
+    });
+
+    it('declines to match when the provider never becomes ready', async () => {
+      providerReady.set(false);
+      waitForReady.mockResolvedValue(false);
+
+      expect(await runTab()).toBe(false);
+    });
+
+    it('matches when the flag is on', async () => {
+      getBooleanFlag.mockReturnValue(signal(true));
+
+      expect(await runTab()).toBe(true);
+    });
   });
 });

@@ -30,6 +30,7 @@ import {
 import { linkedInTextAdAssetField, linkedInTextAdsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-text-ads.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
 import { linkedInVideoVariantsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-video.utils';
+import { linkedInCarouselRefusal } from '@lfx-one/shared/utils/campaign-linkedin-carousel.utils';
 import { linkedInTargetCostRefusal } from '@lfx-one/shared/utils/campaign-linkedin-target-cost.utils';
 import {
   googleAdScheduleRefusal,
@@ -459,6 +460,7 @@ import {
   canChooseLinkedInAdAccount,
   canEditLinkedInTargeting,
   canSetLinkedInCallToAction,
+  canSetLinkedInCarousel,
   canSetLinkedInConversions,
   canSetLinkedInLeadGen,
   canSetLinkedInTargeting,
@@ -1512,6 +1514,15 @@ export class CampaignController {
       const linkedInVideoRefused = linkedInVideoVariantsRefusal(body?.linkedInConfig, canSetLinkedInVideoAds());
       if (linkedInVideoRefused !== null) {
         throw ServiceValidationError.forField(linkedInVideoRefused.field, linkedInVideoRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // LinkedIn carousel ads (campaign-service#665): refused, never dropped, while this deployment cannot send them, and
+      // held to campaign-service's rules. See `linkedInCarouselRefusal`.
+      const linkedInCarouselRefused = linkedInCarouselRefusal(body?.linkedInConfig, canSetLinkedInCarousel());
+      if (linkedInCarouselRefused !== null) {
+        throw ServiceValidationError.forField(linkedInCarouselRefused.field, linkedInCarouselRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });

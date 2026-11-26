@@ -427,6 +427,33 @@ export const PROFILE_INVOLVEMENT_COPY = {
   retry: 'Try again',
 } as const;
 
+/** Copy of the Profile page's Group participation section (#6086). */
+export const PROFILE_GROUPS_COPY = {
+  heading: 'Group participation',
+  description: 'Seats you hold on governing boards, technical steering committees and working groups, trusted positions in the open source community.',
+  missingLabel: 'Missing a group?',
+  missingTip: 'Groups show up when an admin adds you with an email on your profile. Add that email in Manage identities, or ask the group admin to add you.',
+  find: 'Find groups',
+  emptyTitle: 'No board or committee seats yet',
+  emptyText: 'Seats on governing boards, technical committees and working groups show up here.',
+  loadFailed: 'We couldn’t load your groups.',
+  retry: 'Try again',
+} as const;
+
+/** Groups, where the Profile page sends someone to find a group (#6086). */
+export const PROFILE_GROUPS_PATH = '/groups';
+
+/** Router state for a group opened from the Profile page: its back link returns to Profile, in the Me lens (#6086). */
+export const PROFILE_GROUP_LINK_STATE = { backLabel: 'Profile', backPath: '/profile', fromMeLens: true } as const;
+
+/** The Profile page's note when every section is empty (#6082). */
+export const PROFILE_NO_ACTIVITY_COPY = {
+  title: 'We haven’t found any activity for you yet',
+  text: 'We match commits, meetings, votes, badges and talks to the emails and accounts on your profile. Add the ones you use in open source and we’ll pull in your work.',
+  addEmail: 'Add an email',
+  connectGithub: 'Connect GitHub',
+} as const;
+
 /** Training & Certifications, where the Profile page sends someone to earn badges (#6084). */
 export const PROFILE_TRAINING_PATH = '/me/training';
 

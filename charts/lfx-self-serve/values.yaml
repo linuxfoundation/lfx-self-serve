@@ -352,6 +352,13 @@ environment:
   ORG_EASYCLA_RETURN_IN_PATH:
     value: "false"
 
+  # Company Lens all employee view, staff-only preview (lfx-self-serve#5845). On, the view opens ONLY
+  # for a request made under an active impersonation session, so LF staff can check it as an employee
+  # would see it; no real employee reaches it. LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED (the full release)
+  # is not set here and stays off. Remove this entry to close the view again.
+  LFX_ORG_LENS_EMPLOYEE_VIEW_IMPERSONATION_ONLY:
+    value: "true"
+
   # required environment variable secrets
 
   PCC_AUTH0_CLIENT_ID:
@@ -869,6 +876,18 @@ environment:
   # it, and the read answers 404. A field only, so turning it back off strands nothing. Order: set campaign-service's
   # flag and pass its paused lead gen probe, THEN this. Keep it off until then. Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_LEAD_GEN:
+    value:
+
+  # LinkedIn carousel ads (linuxfoundation/lfx-v2-campaign-service#665): accepts `linkedInConfig.format: "carousel"` with
+  # `linkedInConfig.carouselCards` (2 to 10 square PNG/JPEG images stored for the brief, each with a headline of at most
+  # 45 characters and an optional link) and `linkedInConfig.carouselIntroText` (at most 255 characters).
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with `LINKEDIN_ADS_CAROUSEL_ENABLED`
+  # on, the create pipeline on, and LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS on (each card image is a brief asset).
+  # Off (the default), the create route refuses the fields with a 400, never dropping them. A field only, so turning it
+  # back off strands nothing. Order: set campaign-service's flag and pass its paused carousel probe, THEN this. Same
+  # accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CAROUSEL:
     value:
 
   # Offers Meta ad set audience targeting on the Implement tab (#5905), sent as

@@ -2596,6 +2596,13 @@ export interface LinkedInCampaignCreateRequest {
   /** The text ads of a `format: 'text'` create, 1 to 100. Only with that format. */
   textAds?: LinkedInTextAd[];
   /**
+   * The cards of a `format: 'carousel'` create (campaign-service#665), 2 to 10, in order: ONE sponsored post of swipeable
+   * images, sent with an empty `variants`. Only while `linkedInCarouselEnabled`.
+   */
+  carouselCards?: LinkedInCarouselCard[];
+  /** The carousel post's intro text, at most 255 characters. Only with `format: 'carousel'`. */
+  carouselIntroText?: string;
+  /**
    * The campaign's own LinkedIn targeting (#5764 rows 8–11, campaign-service #552). Set, it REPLACES `targetingProfile`,
    * so it is refused with `targetingProfileEdit`. Only while `linkedInTargetingEnabled`.
    */
@@ -2792,6 +2799,19 @@ export interface LinkedInVariantFieldsEnabled {
   copy: boolean;
   /** The call to action (`linkedInCallToActionEnabled`). */
   callToAction: boolean;
+}
+
+/**
+ * One card of a LinkedIn carousel (campaign-service#665). campaign-service tags each card's link with the create's UTM
+ * parameters and `utm_content=card-<k>`, so the card carries none of its own.
+ */
+export interface LinkedInCarouselCard {
+  /** A stored PNG or JPEG of THIS brief, exactly square, at most 10 MB and 4320x4320. */
+  imageAssetId: string;
+  /** At most 45 characters after the creative normalization; refused, never cut. */
+  headline: string;
+  /** An absolute http(s) link; omitted is the brief's registration URL. */
+  destinationUrl?: string;
 }
 
 /** A LinkedIn ad format (#5764 row 19): one of `LINKEDIN_AD_FORMATS`. */
@@ -8497,6 +8517,13 @@ export interface CampaignListResult {
    * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_LEAD_GEN`, which follows campaign-service's own `LINKEDIN_ADS_LEAD_GEN_ENABLED`.
    */
   linkedInLeadGenEnabled: boolean;
+  /**
+   * Whether a LinkedIn create may be a carousel (`format: 'carousel'` with `carouselCards` and `carouselIntroText`,
+   * campaign-service#665). Needs the LinkedIn creative asset path (`canUseLinkedInCreativeAssets`), since each card's image
+   * is a brief asset, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CAROUSEL`, which follows campaign-service's own
+   * `LINKEDIN_ADS_CAROUSEL_ENABLED`.
+   */
+  linkedInCarouselEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.
