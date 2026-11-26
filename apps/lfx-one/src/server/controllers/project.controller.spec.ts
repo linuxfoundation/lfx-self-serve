@@ -595,7 +595,10 @@ describe('ProjectController.getProjectMeetings', () => {
         'duration',
         'id',
         'meeting_and_occurrence_id',
+        'meeting_type',
         'occurrences',
+        'recurrence',
+        'restricted',
         'scheduled_start_time',
         'start_time',
         'timezone',
@@ -603,7 +606,116 @@ describe('ProjectController.getProjectMeetings', () => {
       ].sort()
     );
     expect(response.total).toBe(1);
-    expect(response.project).toEqual({ uid: PROJECT_UID, name: 'CNCF' });
+    expect(response.project).toEqual({ uid: PROJECT_UID, name: 'CNCF', logo_url: null });
+  });
+
+  it('projects the type, restricted flag, recurrence and description the calendar renders', async () => {
+    const recurrence = { type: 2, repeat_interval: 1, weekly_days: '3' } as Meeting['recurrence'];
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data: resourceType === 'v1_meeting' ? [buildMeeting({ meeting_type: 'Technical', recurrence, description: 'Roadmap review' })] : [],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json.mock.calls[0][0].meetings[0]).toMatchObject({ meeting_type: 'Technical', restricted: false, recurrence, description: 'Roadmap review' });
+  });
+
+  it('restricted meeting has no description', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data: [buildMeeting({ id: `${resourceType}-1`, restricted: true, description: 'Invite-only agenda' })],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    const { meetings } = res.json.mock.calls[0][0];
+    expect(meetings).toHaveLength(2);
+    for (const meeting of meetings) {
+      expect(meeting.restricted).toBe(true);
+      expect(meeting).not.toHaveProperty('description');
+    }
+    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('Invite-only agenda');
+  });
+
+  it('keeps the series agenda off past-occurrence rows', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({ data: resourceType === 'v1_past_meeting' ? [buildMeeting({ description: 'Roadmap review' })] : [], page_token: undefined })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json.mock.calls[0][0].meetings[0]).not.toHaveProperty('description');
+  });
+
+  it('projects recurrence field by field, dropping unknown upstream keys', async () => {
+    const recurrence = { type: 2, repeat_interval: 1, weekly_days: '3', internal_note: 'x' } as unknown as Meeting['recurrence'];
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting({ recurrence })] : [], page_token: undefined })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json.mock.calls[0][0].meetings[0].recurrence).toMatchObject({ type: 2, repeat_interval: 1, weekly_days: '3' });
+    expect(res.json.mock.calls[0][0].meetings[0].recurrence).not.toHaveProperty('internal_note');
+  });
+
+  it('omits an empty description and defaults a missing type and recurrence to null', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting({ meeting_type: undefined, recurrence: undefined })] : [], page_token: undefined })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    const [meeting] = res.json.mock.calls[0][0].meetings;
+    expect(meeting).not.toHaveProperty('description');
+    expect(meeting.meeting_type).toBeNull();
+    expect(meeting.recurrence).toBeNull();
+  });
+
+  it('keeps cancelled occurrences identifiable by status and by the cancelled list', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data:
+          resourceType === 'v1_meeting'
+            ? [
+                buildMeeting({
+                  cancelled_occurrences: ['1630647000'],
+                  occurrences: [
+                    { occurrence_id: '1630560600', start_time: '2026-09-01T15:00:00Z', duration: 60, status: 'cancel' },
+                    { occurrence_id: '1630647000', start_time: '2026-09-02T15:00:00Z', duration: 60, status: 'available' },
+                  ],
+                }),
+              ]
+            : [],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    const [meeting] = res.json.mock.calls[0][0].meetings;
+    expect(meeting.occurrences[0].status).toBe('cancel');
+    expect(meeting.cancelled_occurrences).toEqual(['1630647000']);
+  });
+
+  it('includes the project logo in the envelope', async () => {
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(buildProject({ logo_url: 'https://example.com/cncf.svg' }));
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json.mock.calls[0][0].project).toEqual({ uid: PROJECT_UID, name: 'CNCF', logo_url: 'https://example.com/cncf.svg' });
   });
 
   it('never serializes credentials or organizer PII to anonymous callers', async () => {
@@ -822,7 +934,7 @@ describe('ProjectController.getProjectMeetings', () => {
     expect(meetingSvc.getMeetings).not.toHaveBeenCalled();
     expect(committeeSvc.getCommittees).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ meetings: [], total: 0, project: { uid: PROJECT_UID, name: '' } });
+    expect(res.json).toHaveBeenCalledWith({ meetings: [], total: 0, project: { uid: PROJECT_UID, name: '', logo_url: null } });
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
   });
 
@@ -849,7 +961,7 @@ describe('ProjectController.getProjectMeetings', () => {
 
     await controller.getProjectMeetings(req, res, next);
 
-    expect(res.json).toHaveBeenCalledWith({ meetings: [], total: 0, project: { uid: PROJECT_UID, name: '' } });
+    expect(res.json).toHaveBeenCalledWith({ meetings: [], total: 0, project: { uid: PROJECT_UID, name: '', logo_url: null } });
   });
 
   it('passes next() the same not-found error for a non-discoverable slug as for an unknown slug', async () => {

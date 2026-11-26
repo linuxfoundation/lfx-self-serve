@@ -2248,7 +2248,15 @@ export interface PublicCalendarMeeting {
   duration: number;
   /** IANA timezone (e.g. "America/New_York") */
   timezone: string;
-  /** Occurrence timestamps and status only — no titles, descriptions, or registrant counts */
+  /** Meeting type (e.g. "Board", "Technical"); drives chip colour and the type label */
+  meeting_type: string | null;
+  /** Invite-only: listed on the calendar, but only invited guests can join */
+  restricted: boolean;
+  /** Series recurrence pattern; null for a one-time meeting and on past-occurrence rows, which carry none upstream */
+  recurrence: MeetingRecurrence | null;
+  /** Agenda; only on live-series rows of non-restricted meetings, matching `GET /public/api/meetings/:id` */
+  description?: string;
+  /** Occurrence timestamps and status only — no titles, descriptions, or registrant counts; see `isMeetingOccurrenceCancelled` for cancelled ones */
   occurrences?: MeetingOccurrenceSummary[];
   /** Cancelled occurrence IDs from the live series (10-digit Unix-second keys) */
   cancelled_occurrences?: string[];
@@ -2283,8 +2291,8 @@ export interface PublicProjectMeetingsResponse {
   meetings: PublicCalendarMeeting[];
   /** Number of entries in `meetings` */
   total: number;
-  /** Slim project envelope; `name` is empty for an unknown or non-discoverable UID. Transient UID lookup failures return an error, not this envelope. */
-  project: { uid: string; name: string };
+  /** Slim project envelope; `name` is empty and `logo_url` null for an unknown or non-discoverable UID. Transient UID lookup failures return an error, not this envelope. */
+  project: { uid: string; name: string; logo_url: string | null };
 }
 
 /** Confidence-driven tab in the attendance reconciliation drawer */
