@@ -12,6 +12,7 @@ import {
   CAMPAIGN_SERVICE_MULTI_CAMPAIGN_CAPABLE_PLATFORMS,
   CAMPAIGN_TACTIC_OPTIONS,
   CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN,
+  CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN,
   CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN,
   CAMPAIGN_GOALS,
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
@@ -759,6 +760,16 @@ export function canSetRedditTargetingExclusions(): boolean {
 }
 
 /**
+ * Whether campaign-service resolves a Reddit create's `subreddits` and `interests` before creating anything (#6108 row 4,
+ * campaign-service #573), so the Implement tab may offer them for editing. Needs the campaign-service create path AND
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION`, which follows campaign-service's own
+ * `REDDIT_TARGETING_RESOLUTION_ENABLED`.
+ */
+export function canResolveRedditTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditTargetingResolution);
+}
+
+/**
  * Whether a Google create may reference uploaded images by asset id.
  *
  * Needs the campaign-service create path to serve the create AND the Google-assets flag. Unlike its
@@ -1337,6 +1348,7 @@ export class CampaignServiceClient {
         redditConversionPixelEnabled: canSetRedditConversionPixel(),
         redditConversionEventEnabled: canSetRedditConversionEvent(),
         redditTargetingExclusionsEnabled: canSetRedditTargetingExclusions(),
+        redditTargetingResolutionEnabled: canResolveRedditTargeting(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
@@ -1436,6 +1448,7 @@ export class CampaignServiceClient {
       redditConversionPixelEnabled: canSetRedditConversionPixel(),
       redditConversionEventEnabled: canSetRedditConversionEvent(),
       redditTargetingExclusionsEnabled: canSetRedditTargetingExclusions(),
+      redditTargetingResolutionEnabled: canResolveRedditTargeting(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
@@ -2619,10 +2632,13 @@ export class CampaignServiceClient {
         ) {
           return { enabled: true, jobId: null, error: CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE };
         }
-        // The one refusal worth naming: an invalid bid (#3299). Matched on the service's own wording,
-        // so nothing else upstream sends is rendered — see `CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN`.
+        // The refusals worth naming: an invalid bid (#3299), and a Reddit community or interest Reddit does
+        // not know (#6108 row 4). Matched on the service's own wording, so nothing else upstream sends is
+        // rendered — see `CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN` and `CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN`.
         const biddingRefusal =
-          error instanceof MicroserviceError && error.statusCode === 400 ? CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN.exec(error.message) : null;
+          error instanceof MicroserviceError && error.statusCode === 400
+            ? (CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN.exec(error.message) ?? CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN.exec(error.message))
+            : null;
         if (biddingRefusal !== null) {
           return { enabled: true, jobId: null, error: `Campaign creation was rejected and nothing was created: ${biddingRefusal[0]}` };
         }

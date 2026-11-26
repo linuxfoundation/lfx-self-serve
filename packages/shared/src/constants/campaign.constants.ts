@@ -1857,6 +1857,16 @@ export const CAMPAIGN_BIDDING_CREATE_PLATFORMS: readonly CampaignBiddingPlatform
 export const CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN = /invalid campaign config: (?:linkedIn|meta|microsoft|reddit|twitter)Config\.bidding: .+/;
 
 /**
+ * campaign-service's synchronous refusal of a Reddit community or interest it could not resolve (#6108 row 4,
+ * `internal/dispatch/reddit_targeting_resolution.go`, #573), e.g.
+ * `invalid campaign config: redditConfig.interests: entry 2 names 3 Reddit interests; send the interest id instead`.
+ * The entry is named by position, and the only caller value it can echo passes `domain.CallerValue` (letters, digits and
+ * `._:-`, at most 64, quoted; anything else is withheld). So, like the bidding refusal, the BFF may show it: it tells
+ * the operator which entry to fix.
+ */
+export const CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN = /invalid campaign config: redditConfig\.(?:subreddits|interests): entry \d+ .+/;
+
+/**
  * campaign-service's two refusals of a create whose brief is no longer the approved version this page
  * read (#4983). Both mean the stored brief moved since this tab loaded it, most often because it was
  * edited and saved in another tab: a replace resets it to `draft` and bumps its version.

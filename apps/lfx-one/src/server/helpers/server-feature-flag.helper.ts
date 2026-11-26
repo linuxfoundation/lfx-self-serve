@@ -351,6 +351,19 @@ export enum ServerFeatureFlag {
   CampaignServiceRedditTargetingExclusions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_EXCLUSIONS',
 
   /**
+   * Reddit community and interest resolution (#6108 row 4, linuxfoundation/lfx-v2-campaign-service#573): campaign-service
+   * resolves `redditConfig.subreddits` and `interests` to Reddit's own names and ids before anything is created, and
+   * refuses an unknown one with a 400. Off there, Reddit refuses interest labels and the create quietly retries without
+   * communities AND interests.
+   *
+   * A CAPABILITY flag that follows campaign-service's `REDDIT_TARGETING_RESOLUTION_ENABLED`: it changes no request field,
+   * only whether the Implement tab offers the two lists for editing (`redditTargetingResolutionEnabled`), since an edit is
+   * only kept when campaign-service resolves it. Off (the default), the lists stay the brief's, read-only. Keep it off
+   * until campaign-service's flag is on and probed. Same accepted values as the flags above.
+   */
+  CampaignServiceRedditTargetingResolution = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION',
+
+  /**
    * Offers a stored-image LIBRARY in each Google creative image slot — upload an image into the
    * brief's library, or pick a stored one that fits the slot — sent as `{ imageAssetId }` entries in
    * the slot's own array beside any pasted image URLs (`demandGenCreative.logoImages`,
