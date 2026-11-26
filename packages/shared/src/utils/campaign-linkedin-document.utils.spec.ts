@@ -23,12 +23,13 @@ describe('linkedInDocumentRefusal', () => {
     ['empty document fields without the format, on a deployment without documents', { documentTitle: '', documentIntroText: '' }, false],
     ['an engagement document', document(), true],
     ['a gated (lead generation) document', document({ objective: 'lead_generation', leadGenForm: '123' }), true],
-    ['an empty objective, which campaign-service reads as omitted', document({ objective: '' }), true],
+    // `linkedInObjectiveRefusal` refuses an empty objective, as campaign-service's `checkObjectiveShape` does.
+    ['an empty objective, which is left to the objective check', document({ objective: '' }), true],
     ['automatic bidding', document({ bidding: { strategy: 'automatic' } }), true],
     ['an empty carousel intro text', document({ carouselIntroText: '' }), true],
     ['a 70-character title and a 600-character intro', document({ documentTitle: 't'.repeat(70), documentIntroText: 'i'.repeat(600) }), true],
-    // A dash becomes ", " before it is counted, as campaign-service normalizes it.
-    ['a title of 68 characters and a dash', document({ documentTitle: `${'t'.repeat(68)}—` }), true],
+    // A dash inside the text becomes ", " before it is counted, as campaign-service normalizes it: 69 typed, 70 counted.
+    ['a title of 69 characters with a dash, 70 once normalized', document({ documentTitle: `${'t'.repeat(67)}—t` }), true],
     ['not an object', null, true],
   ])('accepts %s', (_name, raw, enabled) => {
     expect(linkedInDocumentRefusal(raw, enabled)).toBeNull();
@@ -69,6 +70,13 @@ describe('linkedInDocumentRefusal', () => {
     ['a blank title', document({ documentTitle: ' ' }), true, 'documentTitle', 'Enter the document title'],
     ['a dash-only title', document({ documentTitle: '—' }), true, 'documentTitle', 'Enter the document title'],
     ['a 71-character title', document({ documentTitle: 't'.repeat(71) }), true, 'documentTitle', 'at most 70'],
+    [
+      'a title of 70 characters with a dash, 71 once normalized',
+      document({ documentTitle: `${'t'.repeat(34)}—${'t'.repeat(35)}` }),
+      true,
+      'documentTitle',
+      'at most 70',
+    ],
     ['no intro text', (({ documentIntroText: _omitted, ...rest }) => rest)(document()), true, 'documentIntroText', 'Enter the document intro text'],
     ['a 601-character intro', document({ documentIntroText: 'i'.repeat(601) }), true, 'documentIntroText', 'at most 600'],
   ])('refuses %s', (_name, raw, enabled, field, message) => {

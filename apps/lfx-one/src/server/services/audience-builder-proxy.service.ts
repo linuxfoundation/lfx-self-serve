@@ -18,7 +18,10 @@ import type {
   AudienceDiscoveredList,
   AudienceDiscoveryResult,
   AudienceLastSentEmail,
+  AudienceNewsletterBrand,
   AudienceListBrief,
+  AudienceListDescription,
+  AudienceListDescriptionStatus,
   AudienceListSearchResult,
   AudienceMasterListBrief,
   AudiencePreviewCount,
@@ -36,12 +39,15 @@ import type {
   AudienceSuppressionCategory,
   AudienceSuppressionListsResult,
   CampaignAudience,
+  AudienceWireListDescription,
+  AudienceWireNewsletterBrandsResponse,
 } from '@lfx-one/shared/interfaces';
 import {
   AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS,
   AUDIENCE_CUSTOM_OPERATORS,
   AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS,
   AUDIENCE_LAST_SENT_MATCH_REASONS,
+  AUDIENCE_LIST_DESCRIPTION_STATUSES,
   AUDIENCE_SPEAKER_SCOPES,
 } from '@lfx-one/shared/constants';
 
@@ -113,6 +119,8 @@ interface WireListBrief {
   name: string;
   size?: number;
   missing: boolean;
+  /** Upstream-required since campaign-service #403: the list READ failed, which says nothing about the list. */
+  unresolved?: boolean;
   resolved_from_legacy_id?: string;
   hubspot_url?: string;
 }
@@ -127,6 +135,7 @@ interface WireLastSentEmail {
   lists_unavailable?: boolean;
   subject?: string;
   match_reason?: string;
+  source_url?: string;
 }
 
 interface WireMasterListBrief {
@@ -346,6 +355,11 @@ function required<T>(value: T | undefined | null, field: string): T {
   return value;
 }
 
+/** An upstream description status, kept only when it is one the app knows; anything else reads as unreadable. */
+function toDescriptionStatus(value: string | undefined): AudienceListDescriptionStatus {
+  return (AUDIENCE_LIST_DESCRIPTION_STATUSES as readonly string[]).includes(value ?? '') ? (value as AudienceListDescriptionStatus) : 'unreadable';
+}
+
 /**
  * A HubSpot link from upstream, kept only when it is an absolute `http(s)` URL.
  *
@@ -384,6 +398,7 @@ function toListBrief(wire: WireListBrief): AudienceListBrief {
     name: wire.name,
     size: wire.size,
     missing: wire.missing,
+    ...(wire.unresolved === true ? { unresolved: true } : {}),
     resolvedFromLegacyId: wire.resolved_from_legacy_id,
     hubspotUrl: httpHref(wire.hubspot_url) || undefined,
   };
@@ -769,6 +784,41 @@ export class AudienceBuilderProxyService {
     }));
   }
 
+  /** The brands with a sent newsletter (`GET /audience-builder/newsletter-brands`), newest first. */
+  public async getNewsletterBrands(req: Request, projectSlug: string): Promise<AudienceNewsletterBrand[]> {
+    const wire = await this.get<AudienceWireNewsletterBrandsResponse>(req, projectSlug, 'newsletter-brands', {});
+
+    return (wire.brands ?? [])
+      .filter((row) => typeof row.brand === 'string' && row.brand.trim() !== '')
+      .map((row) => ({
+        brand: row.brand,
+        latestEmailName: row.latest_email_name ?? '',
+        ...(row.latest_sent_at ? { latestSentAt: row.latest_sent_at } : {}),
+        issues: typeof row.issues === 'number' ? row.issues : 0,
+      }));
+  }
+
+  /**
+   * The brand's previous sent newsletters (`GET /audience-builder/brand-newsletters`), in the
+   * last-sent row shape. A newsletter is a sent email whose name carries the brand and the word
+   * "newsletter"; drafts and scheduled sends are never returned.
+   */
+  public async getBrandNewsletters(req: Request, projectSlug: string, brand: string, limit: number): Promise<AudienceLastSentEmail[]> {
+    const wire = await this.get<{ emails?: WireLastSentEmail[] }>(req, projectSlug, 'brand-newsletters', { brand, limit });
+
+    return (wire.emails ?? []).map((email) => ({
+      ...(httpHref(email.source_url) ? { sourceUrl: httpHref(email.source_url) } : {}),
+      emailId: email.email_id,
+      emailName: email.email_name,
+      subject: email.subject || undefined,
+      sentAt: email.sent_at ?? '',
+      hubspotUrl: httpHref(email.hubspot_url),
+      includedLists: (email.included_lists ?? []).map(toListBrief),
+      suppressionLists: (email.suppression_lists ?? []).map(toListBrief),
+      ...(email.lists_unavailable === true ? { listsUnavailable: true } : {}),
+    }));
+  }
+
   public async getExistingMasterLists(req: Request, projectSlug: string, brandShort: string, eventName: string): Promise<AudienceMasterListBrief[]> {
     const wire = await this.get<{ lists?: WireMasterListBrief[] }>(req, projectSlug, 'existing-master-lists', {
       event_name: eventName,
@@ -780,6 +830,30 @@ export class AudienceBuilderProxyService {
       name: list.name,
       size: list.size,
       hubspotUrl: httpHref(list.hubspot_url),
+    }));
+  }
+
+  /**
+   * Plain-English descriptions of each list's rules, rendered upstream from the HubSpot filter
+   * tree (deterministically -- no model). One per requested id, in request order.
+   *
+   * An unknown `status` from a newer upstream is read as `unreadable` rather than passed through,
+   * so the UI never renders a state it has no copy for; `match` defaults to `any`, HubSpot's
+   * OR-of-groups shape.
+   */
+  public async describeLists(req: Request, projectSlug: string, listIds: string[]): Promise<AudienceListDescription[]> {
+    const wire = await this.post<{ lists?: AudienceWireListDescription[] }>(req, projectSlug, 'lists/describe', { list_ids: listIds });
+    return (wire.lists ?? []).map((list) => ({
+      listId: list.list_id,
+      name: list.name ?? '',
+      size: typeof list.size === 'number' ? list.size : undefined,
+      processingType: list.processing_type,
+      hubspotUrl: httpHref(list.hubspot_url),
+      status: toDescriptionStatus(list.status),
+      summary: list.summary ?? '',
+      match: list.match === 'all' ? 'all' : 'any',
+      groups: (list.groups ?? []).map((group) => ({ conditions: (group.conditions ?? []).filter((c) => typeof c === 'string' && c !== '') })),
+      complete: list.complete === true,
     }));
   }
 

@@ -58,7 +58,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     selectedEmailTab: WritableSignal<Exclude<CampaignTab, 'optimization'>>;
     briefOutput: WritableSignal<CampaignBriefOutput | null>;
     emailBriefOutput: WritableSignal<CampaignBriefOutput | null>;
-    emailTabs: readonly CampaignTabOption[];
+    emailTabs: () => readonly CampaignTabOption[];
     tabs: readonly CampaignTabOption[];
     isEmail: Signal<boolean>;
     selectTab(tab: CampaignTab, owner: CampaignDeliveryType): void;
@@ -1206,6 +1206,29 @@ describe('CampaignsComponent — email delivery channel', () => {
       await internals().onStageEmailSend();
 
       expect(internals().emailStaging()).toBe('done');
+      expect(internals().emailStagingMessage()).toBe('Draft created in HubSpot. Review and send it from there.');
+    });
+
+    it('says a reused draft was staged before, not created now', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailBriefId.set('brief-77');
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1', result: undefined, error: undefined }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({ campaigns: [], errors: [], platformResults: [{ platform: 'hubspot', ok: true, campaignId: '9001', reused: true }] }) as never
+      );
+
+      await internals().onStageEmailSend();
+
+      // campaign-service returned this send's EARLIER draft (idempotent create); it may since have
+      // been deleted in HubSpot, so "created" would send the operator after a draft that is not new.
+      expect(internals().emailStaging()).toBe('done');
+      expect(internals().emailStagingMessage()).toContain('already staged as HubSpot draft 9001, so nothing new was created');
+      // campaign-service re-clones a draft deleted in HubSpot, so staging again is the remedy.
+      expect(internals().emailStagingMessage()).toContain('if it has been deleted in HubSpot, staging again creates a new one');
+      expect(internals().emailStagingMessage()).not.toContain('Draft created');
     });
 
     it('clears variant B when the A/B toggle is switched off', STATE_ONLY, async () => {
@@ -3870,6 +3893,74 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       // The picker is hidden on this surface, so an empty selection would never be filled.
       expect(seq().selectedEmailTemplateId()).toBe('hs-7');
+    });
+  });
+  /**
+   * Clicks the Implement tab no longer asks for: drafting the email on arrival (a missed click
+   * cloned the template's OLD content into the new draft) and drafting variant B on the A/B tick.
+   */
+  describe('input shortcuts on Implement', () => {
+    const eventBrief = { eventDetails: { name: 'Synthetic Summit 2026', slug: 'synthetic-summit-2026' } } as unknown as CampaignBriefOutput;
+    const copyOf = (subject: string) => ({ enabled: true, copy: { subject, preheader: 'p', body: `<p>${subject}</p>`, cta: '', ctaUrl: '' } });
+    const settle = async (): Promise<void> => {
+      await fixture.whenStable();
+      await Promise.resolve();
+      fixture.detectChanges();
+    };
+
+    it('drafts the email on the first arrival at Implement for an event email, and only once', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(eventBrief);
+      internals().emailBriefId.set('brief-9');
+      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of(copyOf('Drafted')) as never);
+
+      internals().selectTab('implementation', 'email');
+      await settle();
+
+      expect(gen).toHaveBeenCalledTimes(1);
+      expect(internals().emailCopy()?.subject).toBe('Drafted');
+
+      internals().selectTab('audience', 'email');
+      internals().selectTab('implementation', 'email');
+      await settle();
+      expect(gen, 'returning to Implement redrafted over the review').toHaveBeenCalledTimes(1);
+    });
+
+    it('does not draft on arrival over copy that already exists, or with no brief', async () => {
+      selectEmail();
+      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of(copyOf('Drafted')) as never);
+
+      internals().selectTab('implementation', 'email');
+      await settle();
+      expect(gen, 'no brief, nothing to draft from').not.toHaveBeenCalled();
+
+      internals().selectTab('audience', 'email');
+      internals().emailBriefOutput.set(eventBrief);
+      internals().emailBriefId.set('brief-9');
+      internals().emailCopy.set({ subject: 'Kept', preheader: 'p', body: '<p>kept</p>' } as EmailBriefCopy);
+      internals().selectTab('implementation', 'email');
+      await settle();
+      expect(gen).not.toHaveBeenCalled();
+      expect(internals().emailCopy()?.subject).toBe('Kept');
+    });
+
+    it('drafts variant B as soon as the A/B box is ticked, but never over a variant already written', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(eventBrief);
+      internals().emailBriefId.set('brief-9');
+      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of(copyOf('Variant B')) as never);
+
+      internals().abTestForm.controls.enabled.setValue(true);
+      await settle();
+      expect(gen).toHaveBeenCalledTimes(1);
+      expect(internals().abTestSubjectB()).toBe('Variant B');
+
+      internals().abTestForm.controls.enabled.setValue(false);
+      internals().abTestForm.controls.subjectB.setValue('Hand-written B');
+      internals().abTestForm.controls.enabled.setValue(true);
+      await settle();
+      expect(gen, 'a tick regenerated over a variant the operator wrote').toHaveBeenCalledTimes(1);
+      expect(internals().abTestSubjectB()).toBe('Hand-written B');
     });
   });
 });

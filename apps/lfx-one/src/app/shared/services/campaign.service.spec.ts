@@ -6,6 +6,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CAMPAIGN_NEWSLETTER_CACHE_TTL_MS } from '@lfx-one/shared/constants';
+
 import { CampaignService } from './campaign.service';
 import { SseService } from './sse.service';
 
@@ -61,5 +63,22 @@ describe('CampaignService', () => {
       '/api/campaigns/linkedin/lead-forms?project=tlf&accountId=100000002',
     ]);
     reqs.forEach((req) => req.flush({ accountId: '', forms: [] }));
+  });
+
+  describe('newsletter caches', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it("reuses a brand's previous-issue read for a few minutes, then reads again so a newly sent issue shows", () => {
+      vi.useFakeTimers();
+      const url = '/api/campaigns/audience-builder/brand-newsletters';
+      service.getAudienceBrandNewsletters('tlf', 'Acme', 3).subscribe();
+      http.expectOne((req) => req.url === url).flush([]);
+      service.getAudienceBrandNewsletters('tlf', 'Acme', 3).subscribe();
+      http.expectNone((req) => req.url === url);
+
+      vi.advanceTimersByTime(CAMPAIGN_NEWSLETTER_CACHE_TTL_MS + 1);
+      service.getAudienceBrandNewsletters('tlf', 'Acme', 3).subscribe();
+      http.expectOne((req) => req.url === url).flush([]);
+    });
   });
 });

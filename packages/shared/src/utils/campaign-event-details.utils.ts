@@ -62,6 +62,10 @@ export function coerceCampaignEventDetails(value: unknown): CampaignEventDetails
     sponsorshipUrl: url('sponsorshipUrl'),
     heroImageUrl: url('heroImageUrl'),
     sponsors: coerceCampaignEventSponsors(raw['sponsors']),
+    // Newsletter only, and omitted rather than defaulted elsewhere so an event brief's blob is unchanged.
+    ...(text('newsletterBrand') !== '' ? { newsletterBrand: text('newsletterBrand') } : {}),
+    ...(text('newsletterIssue') !== '' ? { newsletterIssue: text('newsletterIssue') } : {}),
+    ...(list('referenceEmailIds').length > 0 ? { referenceEmailIds: list('referenceEmailIds') } : {}),
   };
 }
 

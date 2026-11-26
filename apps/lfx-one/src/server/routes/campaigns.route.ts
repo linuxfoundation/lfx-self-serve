@@ -155,6 +155,7 @@ router.get('/linkedin/lead-forms', requireLinkedInLeadFormsAccess, (req, res, ne
 router.use(requireCampaignManager);
 
 router.post('/brief/generate', (req, res, next) => campaignController.generateBrief(req, res, next));
+router.post('/newsletter/suggestions', (req, res, next) => campaignController.suggestNewsletterItems(req, res, next));
 router.post('/brief/refine', (req, res, next) => campaignController.refineBrief(req, res, next));
 router.post('/brief/persist', (req, res, next) => campaignController.persistBrief(req, res, next));
 router.get('/brief', (req, res, next) => campaignController.loadBrief(req, res, next));
@@ -172,7 +173,7 @@ router.post('/brief/:briefId/approve', (req, res, next) => campaignController.ap
 // campaign-service arm, which reads only the project's own campaigns (#4837).
 router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
-// An image or video for the brief, stored by campaign-service and named by asset id in a platform's
+// An image, video or PDF for the brief, stored by campaign-service and named by asset id in a platform's
 // creative config — `redditConfig.imageAssetId` (decision D3), the Google creative fields, and a
 // LinkedIn video ad's `videoAssetId` (#5764 row 18), and a LinkedIn document ad's PDF `documentAssetId`
 // (campaign-service#665). The body is the raw bytes, buffered here so the upstream JSON body can be sent
@@ -333,8 +334,11 @@ router.post('/audience-builder/discover', (req, res, next) => audienceBuilderCon
 router.get('/audience-builder/lists/search', (req, res, next) => audienceBuilderController.searchLists(req, res, next));
 router.get('/audience-builder/suppression-lists', (req, res, next) => audienceBuilderController.getSuppressionLists(req, res, next));
 router.get('/audience-builder/last-sent', (req, res, next) => audienceBuilderController.getLastSent(req, res, next));
+router.get('/audience-builder/brand-newsletters', (req, res, next) => audienceBuilderController.getBrandNewsletters(req, res, next));
+router.get('/audience-builder/newsletter-brands', (req, res, next) => audienceBuilderController.getNewsletterBrands(req, res, next));
 router.get('/audience-builder/existing-master-lists', (req, res, next) => audienceBuilderController.getExistingMasterLists(req, res, next));
 router.post('/audience-builder/preview-count', (req, res, next) => audienceBuilderController.previewCount(req, res, next));
+router.post('/audience-builder/lists/describe', (req, res, next) => audienceBuilderController.describeLists(req, res, next));
 router.post('/audience-builder/compose-master', (req, res, next) => audienceBuilderController.composeMaster(req, res, next));
 // `attach-existing` creates nothing in HubSpot: it records lists that already exist (an earlier
 // send's selection, or a master built before) as the brief's send audience.

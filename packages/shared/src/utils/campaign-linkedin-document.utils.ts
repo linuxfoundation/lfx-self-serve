@@ -83,7 +83,8 @@ export function linkedInDocumentRefusal(raw: unknown, enabled: boolean): LinkedI
     return { field: LINKEDIN_CAROUSEL_INTRO_TEXT_FIELD, message: 'Carousel cards go only with the carousel format.' };
   }
   const objective = config['objective'];
-  // Omitted (or `""`, which campaign-service reads as omitted) is the engagement default.
+  // Omitted is the engagement default. An empty objective is left to `linkedInObjectiveRefusal`, which refuses it as
+  // campaign-service's `checkObjectiveShape` does.
   if (objective !== undefined && objective !== '' && objective !== LINKEDIN_LEAD_GEN_OBJECTIVE) {
     return {
       field: LINKEDIN_OBJECTIVE_FIELD,

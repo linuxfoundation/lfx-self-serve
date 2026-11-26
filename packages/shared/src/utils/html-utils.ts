@@ -7,6 +7,7 @@ import {
   EMAIL_BODY_ALLOWED_STYLE_PROPERTIES,
   EMAIL_BODY_MARGIN_VALUE_PATTERN,
   EMAIL_BODY_STYLE_VALUE_PATTERN,
+  EMAIL_NOTE_LINK_LIMIT,
   EMAIL_SECONDARY_LINK_LIMIT,
   LF_OWNED_EMAIL_LINK_DOMAINS,
 } from '../constants/campaign.constants';
@@ -581,11 +582,25 @@ function allowedDestinationHref(href: string, allowedHosts: Set<string>): string
  *
  * Omitting `allowedDestinations` keeps every `http(s)` anchor -- the prior behaviour, for callers
  * that have no destination to vouch against. Pass it wherever one is known.
+ *
+ * `exactDestinations` vouches for ADDRESSES rather than hosts, for a body whose links must each be
+ * one a person supplied: a newsletter issue links only to the addresses in the operator's notes
+ * (`extractHttpLinks`). An anchor whose address is on the list keeps its link whatever its host.
+ * Given WITHOUT `allowedDestinations`, it is the whole rule: every other anchor loses its href. A
+ * host rule would not do here -- it passes an invented path on a real site, which is the link a
+ * model writes when it wants one and was given none.
  */
-export function stripResourceLoadingHtml(html: string | null | undefined, allowedDestinations?: readonly string[], relativeBase?: string): string {
+export function stripResourceLoadingHtml(
+  html: string | null | undefined,
+  allowedDestinations?: readonly string[],
+  relativeBase?: string,
+  exactDestinations?: readonly string[]
+): string {
   if (!html) return '';
 
   const allowedHosts = buildAllowedHosts(allowedDestinations);
+  // `undefined` means no address list was given. An EMPTY one is a list that vouches for nothing.
+  const exactKeys = exactDestinations === undefined ? null : new Set(exactDestinations.map((link) => emailLinkMatchKey(link)).filter((key) => key !== ''));
   // The base a relative href resolves against. '' resolves nothing: a relative href then loses its
   // href, which is the same "nothing is vouched for" answer an empty list gives.
   //
@@ -665,8 +680,15 @@ export function stripResourceLoadingHtml(html: string | null | undefined, allowe
       // line, not the first. Do not simplify this to a bare host comparison on the assumption
       // that the scheme was already validated.
       a: (tagName, attribs) => {
-        if (allowedHosts === null) return { tagName, attribs };
         const raw = typeof attribs['href'] === 'string' ? attribs['href'] : '';
+        // An address vouched for one by one keeps its link, in the canonical form that was judged.
+        // With an address list and no host list, that list is the whole rule.
+        if (exactKeys !== null) {
+          const key = emailLinkMatchKey(raw);
+          if (key !== '' && exactKeys.has(key)) return { tagName, attribs: { ...attribs, href: canonicalHttpUrl(raw) } };
+          if (allowedHosts === null) return { tagName, attribs: omitHref(attribs) };
+        }
+        if (allowedHosts === null) return { tagName, attribs };
         // A RELATIVE href is RESOLVED against the vouched destination and then judged like any
         // other, rather than forwarded unchanged.
         //
@@ -721,6 +743,83 @@ export function stripResourceLoadingHtml(html: string | null | undefined, allowe
     //                              left to explain where it came from
     nonTextTags: ['script', 'style', 'iframe', 'object', 'embed', 'noscript', 'textarea', 'title', 'svg', 'math'],
   });
+}
+
+/**
+ * The form two link addresses are compared in when a body's links are held to an exact list: the
+ * canonical URL (`canonicalHttpUrl`: public http(s) host, no userinfo, lower-cased scheme and
+ * host, and an empty path read as "/"), with its query parameters sorted. '' for anything that is
+ * not such a URL.
+ *
+ * Everything else counts, a trailing slash, the query and the fragment included: a server can serve
+ * a different page at `/report/` than at `/report`, `?file=reports/` can select a different
+ * resource from `?file=reports`, and a fragment the notes did not give sends the reader to a section
+ * the operator did not choose. A link that differs in any of them loses its href, which is the safe
+ * way to be wrong. campaign-service compares the same way (`normalizeLinkForMatch`).
+ */
+export function emailLinkMatchKey(value: unknown): string {
+  const canonical = canonicalHttpUrl(value);
+  if (canonical === '') return '';
+  // Parameter ORDER is the one thing forgiven in the query: campaign-service sanitises every
+  // generated anchor through a re-encoding that sorts it, so notes with `?year=2026&format=pdf`
+  // reach here as `?format=pdf&year=2026`. Both sides are sorted the same way; every name and value
+  // still has to match.
+  try {
+    const parsed = new URL(canonical);
+    if (parsed.search !== '') parsed.searchParams.sort();
+    return parsed.href;
+  } catch {
+    return '';
+  }
+}
+
+/** Characters prose puts after an address without meaning them as part of it, CJK and typographic ones included. */
+const TRAILING_LINK_PUNCTUATION = '.,;:!?)]}>…。、，；：！？';
+
+/**
+ * Every http(s) address in free text, canonical and de-duplicated, in the order written.
+ *
+ * For a newsletter issue's notes: the addresses the operator wrote are the only ones the issue may
+ * link to, so they are what `stripResourceLoadingHtml` is given as `exactDestinations`. An address
+ * ends at whitespace or a quote; punctuation that follows it ("see https://example.org/x.") is not
+ * part of it, unless the address is wrapped in "<…>" or quotes. Bounded by `limit`, and by the notes' own length limit before that.
+ */
+export function extractHttpLinks(text: unknown, limit: number = EMAIL_NOTE_LINK_LIMIT): string[] {
+  if (typeof text !== 'string' || text === '') return [];
+  const seen = new Set<string>();
+  const links: string[] = [];
+  // An address also ends at a typographic quote (pasted from a document editor), at "](" (the
+  // seam of a Markdown link, `[label](https://…)`), and at a comma directly followed by another
+  // address (`https://a.example/x,https://b.example/y`). Each would otherwise make one address the
+  // operator never wrote, and the real link would never be vouched for.
+  for (const match of text.matchAll(/https?:\/\/(?:(?!\]\(|,https?:\/\/)[^\s<>"'“”‘’])+/gi)) {
+    let raw = match[0];
+    const start = match.index;
+    const end = start + raw.length;
+    // Inside "<…>" or matching quotes the address ends at the delimiter, so its trailing punctuation
+    // is its own ("<https://example.org/d?token=abc!>"): trimming it would vouch for a shorter address
+    // the notes never gave. campaign-service reads the notes the same way (`explicitlyDelimited`).
+    const opener = start > 0 ? text[start - 1] : '';
+    const closer = end < text.length ? text[end] : '';
+    const delimited =
+      (opener === '<' && closer === '>') ||
+      (opener !== '' && (opener === '"' || opener === "'") && closer === opener) ||
+      (opener === '“' && closer === '”') ||
+      (opener === '‘' && closer === '’');
+    while (!delimited && raw !== '' && TRAILING_LINK_PUNCTUATION.includes(raw[raw.length - 1])) {
+      // A closing bracket that closes one opened INSIDE the address belongs to it
+      // (`…/wiki/Foo_(bar)`); only an unmatched one is the prose's ("(see https://example.org/x)").
+      if (raw.endsWith(')') && raw.split('(').length >= raw.split(')').length) break;
+      raw = raw.slice(0, -1);
+    }
+    const canonical = canonicalHttpUrl(raw);
+    const key = emailLinkMatchKey(canonical);
+    if (key === '' || seen.has(key)) continue;
+    seen.add(key);
+    links.push(canonical);
+    if (links.length >= limit) break;
+  }
+  return links;
 }
 
 /**

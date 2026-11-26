@@ -53,7 +53,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     selectedEmailTab: WritableSignal<Exclude<CampaignTab, 'optimization'>>;
     briefOutput: WritableSignal<CampaignBriefOutput | null>;
     emailBriefOutput: WritableSignal<CampaignBriefOutput | null>;
-    emailTabs: readonly CampaignTabOption[];
+    emailTabs: () => readonly CampaignTabOption[];
     tabs: readonly CampaignTabOption[];
     isEmail: Signal<boolean>;
     selectTab(tab: CampaignTab, owner: CampaignDeliveryType): void;
@@ -182,12 +182,20 @@ describe('CampaignsComponent — email delivery channel', () => {
     // keyword and metrics data that is not this channel's to begin with.
     // Audience sits second, between naming the campaign and implementing it: the master list has
     // to exist before the send can be staged against it.
-    expect(internals().emailTabs.map((t) => t.id)).toEqual(['planning', 'audience', 'implementation', 'insights']);
+    expect(
+      internals()
+        .emailTabs()
+        .map((t) => t.id)
+    ).toEqual(['planning', 'audience', 'implementation', 'insights']);
 
     selectEmail();
 
     // Unchanged by the switch — that is what "per-container" means.
-    expect(internals().emailTabs.map((t) => t.id)).not.toContain('optimization');
+    expect(
+      internals()
+        .emailTabs()
+        .map((t) => t.id)
+    ).not.toContain('optimization');
     expect(internals().tabs.map((t) => t.id)).toContain('optimization');
   });
 

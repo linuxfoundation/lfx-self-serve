@@ -49,6 +49,8 @@ function reportedMembershipsLabel(sizedCount: number, includedCount: number, tot
 export class AudienceLastSentComponent {
   // === Inputs ===
   public readonly emails = input<readonly AudienceLastSentEmail[]>([]);
+  /** Newsletter surface: the rows are the brand's previous issues, not an event's sends. */
+  public readonly newsletterMode = input(false);
   public readonly masterLists = input<readonly AudienceMasterListBrief[]>([]);
   public readonly selectedIds = input<ReadonlySet<string>>(new Set<string>());
   /** Lists the operator marked as exclusions, so their Exclude buttons read as on. */

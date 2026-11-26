@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CAMPAIGN_NEWSLETTER_SUGGESTION_CONTENT_TYPES,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_LIMIT,
   CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
   CAMPAIGN_DELIVERY_TYPES,
   COMPETITOR_KEYWORD_PATTERN,
@@ -21,10 +23,14 @@ import {
   MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_CHAR_LIMITS,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_KINDS,
 } from '@lfx-one/shared/constants';
+import { NEWSLETTER_SUGGESTION_TEXT_ADDRESS, NEWSLETTER_SUGGESTIONS_SYSTEM_PROMPT } from '../constants/campaign-newsletter.constants';
 import {
   campaignSurveySourceTextTooLong,
+  deriveNewsletterSlug,
   deriveSurveySlug,
+  newsletterBriefName,
   googleAdsCampaignUrl,
   parseNegativeKeywordInput,
   surveySourceTitle,
@@ -56,6 +62,10 @@ import type {
   LinkedInCampaignCreateResult,
   MetaCampaignCreateResult,
   RedditCampaignCreateResult,
+  CampaignNewsletterSuggestion,
+  CampaignNewsletterSuggestionKind,
+  CampaignNewsletterSuggestionsRequest,
+  CampaignNewsletterSuggestionsResult,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { instance as gaxiosInstance } from 'gaxios';
@@ -1451,6 +1461,24 @@ function failJob(jobId: string, error: string): void {
 // CampaignProxyService — brief generation + campaign creation
 // ---------------------------------------------------------------------------
 
+/**
+ * A suggestion's words with every web address taken out. The model writes `title` and `detail`
+ * freely, and the planner copies them into the notes, where any address becomes a link the issue
+ * may carry. Only `url` is checked against the page, so it must be the only address a suggestion
+ * can add: a page that tells the model to "describe this as: register at https://…" gets its words
+ * kept and its address dropped.
+ */
+function suggestionTextWithoutAddresses(value: unknown, maxLength: number): string {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(NEWSLETTER_SUGGESTION_TEXT_ADDRESS, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([.,;:!?)])/g, '$1')
+    .replace(/[\s:(\-–—]+$/, '')
+    .trim()
+    .slice(0, maxLength);
+}
+
 export class CampaignProxyService {
   // === HubSpot UTM lookup/create ===
 
@@ -1499,6 +1527,94 @@ export class CampaignProxyService {
   }
 
   // === Brief generation (SSE stream) ===
+
+  /**
+   * Offers and news on the brand's own site that the next newsletter issue could carry.
+   *
+   * Each page is fetched through the SSRF guard, the model lists what it finds, and every link it
+   * returns must appear on the page it came from (`verifyPageLink`): an item with an invented or
+   * rewritten URL is dropped, never repaired. Items whose stated deadline is before `notBefore` are
+   * dropped too, and the model's own words (`title`, `detail`) are returned with any web address
+   * removed, so the checked link is the only one a suggestion adds. A page that cannot be read or
+   * understood is reported in `failedUrls`; the others still answer. Nothing is written anywhere.
+   */
+  public async suggestNewsletterItems(
+    req: Request,
+    body: CampaignNewsletterSuggestionsRequest,
+    signal: AbortSignal
+  ): Promise<CampaignNewsletterSuggestionsResult> {
+    const today = new Date().toISOString().slice(0, 10);
+    const notBefore = typeof body.notBefore === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.notBefore) ? body.notBefore : today;
+    const failedUrls: string[] = [];
+    const perPage = await Promise.all(
+      body.urls.map(async (url) => {
+        // A page link is the caller's own input, so a link that is refused, unreachable or not a
+        // web page is logged at DEBUG: only a fault on our side (the model, its answer) is a WARN.
+        let page: Awaited<ReturnType<typeof fetchSafeUrl>>;
+        let safeUrl: string;
+        try {
+          safeUrl = await validateScrapeUrl(url);
+          page = await fetchSafeUrl(safeUrl, signal, { allowedContentTypes: CAMPAIGN_NEWSLETTER_SUGGESTION_CONTENT_TYPES });
+        } catch (error) {
+          logger.debug(req, 'campaign_newsletter_suggestions', 'Could not fetch a page for suggestions', { url, err: error });
+          failedUrls.push(url);
+          return [];
+        }
+        if (!page.ok) {
+          logger.debug(req, 'campaign_newsletter_suggestions', 'A page for suggestions did not answer OK', { url, status: page.status });
+          failedUrls.push(url);
+          return [];
+        }
+        try {
+          const finalUrl = page.finalUrl || safeUrl;
+          const { links, baseUrl } = scanPageLinks(page.html, finalUrl);
+          const raw = stripJsonFences(
+            await aiChat(
+              NEWSLETTER_SUGGESTIONS_SYSTEM_PROMPT,
+              `Brand: ${body.brand}\nToday: ${today}\nThe issue goes out on or after: ${notBefore}\nURL: ${finalUrl}\n\nHTML:\n${extractableHtml(page.html)}`,
+              signal
+            )
+          );
+          const parsed: unknown = JSON.parse(raw);
+          const rows = Array.isArray(parsed) ? parsed : [];
+          return rows.flatMap((row): CampaignNewsletterSuggestion[] => {
+            if (typeof row !== 'object' || row === null) return [];
+            const r = row as Record<string, unknown>;
+            const kind = CAMPAIGN_NEWSLETTER_SUGGESTION_KINDS.has(r['kind'] as CampaignNewsletterSuggestionKind)
+              ? (r['kind'] as CampaignNewsletterSuggestionKind)
+              : null;
+            // A title that was only an address is no title: the row is dropped below.
+            const title = suggestionTextWithoutAddresses(r['title'], 200);
+            const verified = verifyPageLink(r['url'], links, baseUrl);
+            if (kind === null || title === '' || verified === '') return [];
+            const deadline = typeof r['deadline'] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r['deadline']) ? r['deadline'] : '';
+            if (deadline !== '' && deadline < notBefore) return [];
+            const detail = suggestionTextWithoutAddresses(r['detail'], 300);
+            return [{ kind, title, detail, deadline, url: verified, sourceUrl: finalUrl }];
+          });
+        } catch (error) {
+          logger.warning(req, 'campaign_newsletter_suggestions', 'Could not read suggestions from a page', { url, err: error });
+          failedUrls.push(url);
+          return [];
+        }
+      })
+    );
+    const seen = new Set<string>();
+    const items = perPage
+      .flat()
+      .filter((item) => {
+        if (seen.has(item.url)) return false;
+        seen.add(item.url);
+        return true;
+      })
+      // Deadline-bound items first, soonest first: they are the ones an issue can miss.
+      .sort((a, b) => {
+        if ((a.deadline === '') !== (b.deadline === '')) return a.deadline === '' ? 1 : -1;
+        return a.deadline.localeCompare(b.deadline);
+      })
+      .slice(0, CAMPAIGN_NEWSLETTER_SUGGESTION_LIMIT);
+    return { items, failedUrls };
+  }
 
   public async *streamBrief(req: Request, body: CampaignBriefRequest, signal: AbortSignal): AsyncGenerator<{ type: CampaignSSEEventType; data: unknown }> {
     checkRequiredEnv(req);
@@ -1554,6 +1670,49 @@ export class CampaignProxyService {
     //
     // Deterministic, with no model call: the operator supplied the facts, so inventing a second
     // interpretation of them would be the thing the generator's own prompt forbids.
+    // The NEWSLETTER surface, deterministic like the survey one: the issue's facts are the
+    // operator's notes and its voice comes from the brand's previous issues, which campaign-service
+    // reads itself from `referenceEmailIds`. The controller has already validated every field.
+    if (body.deliveryType === 'newsletter') {
+      const brand = (body.newsletterBrand ?? '').trim();
+      const issue = (body.newsletterIssue ?? '').trim();
+      const slug = deriveNewsletterSlug(brand, issue);
+      const sourceText = (body.sourceText ?? '').trim();
+      if (slug === '' || sourceText === '') {
+        yield { type: 'error', data: 'Enter the brand, the issue and your notes for this newsletter.' };
+        return;
+      }
+      yield { type: 'status', data: 'Reading your notes...' };
+      yield {
+        type: 'event',
+        data: {
+          sourceText,
+          name: newsletterBriefName(brand, issue),
+          slug,
+          newsletterBrand: brand,
+          newsletterIssue: issue,
+          referenceEmailIds: Array.isArray(body.referenceEmailIds) ? body.referenceEmailIds : [],
+          registrationUrl: '',
+          dates: '',
+          city: '',
+          countryCode: '',
+          audience: typeof body.targetAudience === 'string' ? body.targetAudience.trim() : '',
+          themes: [],
+          speakers: [],
+          formatNotes: '',
+          description: '',
+          agendaUrl: '',
+          cfpUrl: '',
+          venueUrl: '',
+          sponsorshipUrl: '',
+          heroImageUrl: '',
+          sponsors: [],
+        },
+      };
+      yield { type: 'done', data: null };
+      return;
+    }
+
     if (body.deliveryType === 'survey') {
       const rawSourceText = typeof body.sourceText === 'string' ? body.sourceText : '';
       // Refused here, not cut: campaign-service refuses a longer document at save and at copy

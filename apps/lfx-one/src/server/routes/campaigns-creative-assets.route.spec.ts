@@ -268,8 +268,8 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
       expect(uploadCreativeAsset).not.toHaveBeenCalled();
     });
 
-    it('keeps a 30 MiB image a 413 while PDFs are taken', async () => {
-      const response = await upload(Buffer.concat([PNG, Buffer.alloc(CREATIVE_ASSET_MAX_BYTES)]), 'image/png');
+    it('keeps an image over the 10 MiB image limit a 413 while PDFs of up to 30 MiB are taken', async () => {
+      const response = await upload(Buffer.concat([PNG, Buffer.alloc(2 * CREATIVE_ASSET_MAX_BYTES)]), 'image/png');
 
       expect(response.status).toBe(413);
       expect((await response.json()).error).toBe(CREATIVE_ASSET_TOO_LARGE_MESSAGE);
