@@ -4815,6 +4815,21 @@ export const REDDIT_CONVERSION_EVENT_LABELS: Readonly<Record<RedditConversionEve
 export const REDDIT_CONVERSION_EVENT_FIELD = 'redditConfig.conversionEvent';
 
 /**
+ * The two Reddit targeting exclusion lists a create may carry (#6108 row 3), as campaign-service spells the `redditConfig`
+ * keys (`redditExclusionFields`, lfx-v2-campaign-service `internal/dispatch/reddit_targeting_exclusions.go`, #549).
+ */
+export const REDDIT_TARGETING_EXCLUSION_KEYS = ['excludedSubreddits', 'excludedGeoTargets'] as const;
+
+/**
+ * Reddit targeting exclusion caps (#6108 row 3), campaign-service's `MaxExcludedSubreddits` and `MaxExcludedGeoTargets`
+ * (`internal/platform/reddit/targeting_exclusions.go`), counted on the raw list.
+ */
+export const REDDIT_TARGETING_EXCLUSION_LIMITS = { excludedSubreddits: 100, excludedGeoTargets: 50 } as const;
+
+/** A subreddit name campaign-service accepts (`subredditNameRE`): 2 to 21 ASCII letters, digits or underscores. */
+export const REDDIT_SUBREDDIT_NAME_PATTERN = /^[A-Za-z0-9_]{2,21}$/;
+
+/**
  * The two Reddit custom audience lists a create may carry (#6108 row 1), as campaign-service spells the
  * `redditConfig` keys (`redditCustomAudienceFields`, lfx-v2-campaign-service `internal/dispatch/reddit_custom_audiences.go`, #549).
  */

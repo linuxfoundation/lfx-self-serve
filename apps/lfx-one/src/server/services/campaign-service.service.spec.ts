@@ -4942,6 +4942,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
       redditConversionPixelEnabled: false,
       redditConversionEventEnabled: false,
+      redditTargetingExclusionsEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -5663,6 +5664,23 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** Reddit targeting exclusions (#6108 row 3): the cutover and its own flag. */
+  it.each([
+    [{ cutover: true, exclusions: true }, true],
+    [{ cutover: true, exclusions: false }, false],
+    [{ cutover: false, exclusions: true }, false],
+  ])('reports Reddit targeting exclusions (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceRedditTargetingExclusions ? flags.exclusions : flags.cutover
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).redditTargetingExclusionsEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The Reddit conversion event (#6108 row 2): the cutover and its own flag. */
   it.each([
     [{ cutover: true, event: true }, true],
@@ -5856,6 +5874,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
       redditConversionPixelEnabled: false,
       redditConversionEventEnabled: false,
+      redditTargetingExclusionsEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,

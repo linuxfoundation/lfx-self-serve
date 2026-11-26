@@ -21,6 +21,7 @@ import { linkedInConfigNamesLeadGenForm, linkedInLeadForms, linkedInLeadGenRefus
 import { linkedInConfigNamesConversions, linkedInConversionRules, linkedInObjectiveRefusal } from '@lfx-one/shared/utils/campaign-linkedin-objective.utils';
 import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
 import { redditConversionEventRefusal } from '@lfx-one/shared/utils/campaign-reddit-conversion-event.utils';
+import { redditTargetingExclusionsRefusal } from '@lfx-one/shared/utils/campaign-reddit-targeting-exclusions.utils';
 import {
   redditConfigNamesCustomAudiences,
   redditCustomAudienceQuery,
@@ -490,6 +491,7 @@ import {
   canSetMetaOptimizationGoal,
   canSetRedditConversionEvent,
   canSetRedditCustomAudiences,
+  canSetRedditTargetingExclusions,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
@@ -1465,6 +1467,15 @@ export class CampaignController {
       const redditCustomAudiencesRefused = redditCustomAudiencesRefusal(body?.redditConfig, canSetRedditCustomAudiences());
       if (redditCustomAudiencesRefused !== null) {
         throw ServiceValidationError.forField(redditCustomAudiencesRefused.field, redditCustomAudiencesRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // Reddit targeting exclusions (#6108 row 3): refused, never dropped, while this deployment cannot send them, and held
+      // to campaign-service's rules (`checkRedditTargetingExclusions`). See `redditTargetingExclusionsRefusal`.
+      const redditTargetingExclusionsRefused = redditTargetingExclusionsRefusal(body?.redditConfig, canSetRedditTargetingExclusions());
+      if (redditTargetingExclusionsRefused !== null) {
+        throw ServiceValidationError.forField(redditTargetingExclusionsRefused.field, redditTargetingExclusionsRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });
