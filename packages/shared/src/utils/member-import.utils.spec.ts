@@ -13,7 +13,7 @@ import {
   MEMBER_IMPORT_VOTING_COLUMNS,
 } from '../constants/member-import.constants';
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { CommitteeMemberBulkCreateRowResult } from '../interfaces/member.interface';
+import type { CommitteeMember, CommitteeMemberBulkCreateRowResult } from '../interfaces/member.interface';
 import type { MemberImportCells, MemberImportGroupRules, MemberImportRow } from '../interfaces/member-import.interface';
 import { rowsToCsv } from './file.utils';
 import {
@@ -709,12 +709,49 @@ describe('classifyMemberImportBulkResult', () => {
       ...row,
       uncertain: true,
     });
-    expect(patch).toMatchObject({ status: 'skipped', conflict: true, uncertain: false });
+    expect(patch).toMatchObject({ status: 'skipped', conflict: true, uncertain: false, unconfirmedAddition: true });
     expect(patch.reason).toContain('imported details may not have been applied');
   });
 
+  it('does not flag a confirmed existing membership as an unconfirmed addition', () => {
+    expect(classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'already_member' }), row).unconfirmedAddition).toBeUndefined();
+  });
+
+  it('carries the created member on an added row', () => {
+    const member: CommitteeMember = {
+      uid: 'member-1',
+      committee_uid: 'group-1',
+      committee_name: 'Example Group',
+      email: 'ada@example.com',
+      first_name: 'Ada',
+      last_name: 'Example',
+      created_at: '2026-11-25T00:00:00Z',
+      updated_at: '2026-11-25T00:00:00Z',
+    };
+    expect(classifyMemberImportBulkResult(result({ status: 'added', member_uid: 'member-1', member }), row)).toMatchObject({ status: 'added', member });
+  });
+
+  it('carries the UID of an added member when its body is absent', () => {
+    expect(classifyMemberImportBulkResult(result({ member_uid: 'added-member' }), row)).toMatchObject({
+      status: 'added',
+      memberUid: 'added-member',
+      member: undefined,
+      uncertain: false,
+    });
+  });
+
+  it.each([false, true])('carries the existing member UID on an already-member row (uncertain: %s)', (uncertain) => {
+    const patch = classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'already_member', member_uid: 'existing-member' }), {
+      ...row,
+      uncertain,
+    });
+    expect(patch).toMatchObject({ status: 'skipped', memberUid: 'existing-member' });
+  });
+
   it('skips a duplicate within the request', () => {
-    expect(classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'duplicate_in_request' }), row)).toMatchObject({ status: 'skipped' });
+    const patch = classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'duplicate_in_request' }), row);
+    expect(patch).toMatchObject({ status: 'skipped' });
+    expect(patch.memberUid).toBeUndefined();
   });
 
   it('fails an invalid row for good with the upstream message', () => {
