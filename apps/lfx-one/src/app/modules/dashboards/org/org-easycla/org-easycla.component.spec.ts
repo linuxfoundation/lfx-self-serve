@@ -1014,7 +1014,7 @@ describe('OrgEasyclaComponent', () => {
         const fixture = await render();
         const state = byTestId(fixture, 'org-easycla-access-refused-state');
 
-        expect(state?.querySelector('h3')?.textContent?.trim()).toBe("You don't have access to this organization's CLAs");
+        expect(state?.querySelector('h3')?.textContent?.trim()).toBe("You don't have access to this company's CLAs");
         expect(byTestId(fixture, 'org-easycla-access-refused-description')?.textContent?.trim()).toBe(
           'Just added as a CLA manager? Access can take up to a minute.'
         );

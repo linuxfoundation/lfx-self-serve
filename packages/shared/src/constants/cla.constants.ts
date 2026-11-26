@@ -260,10 +260,10 @@ export const ORG_CLA_EASYCLA_ROLE_MISSING_COPY = {
 } as const;
 
 export const ORG_CLA_ACCESS_REFUSED_COPY = {
-  title: "You don't have access to this organization's CLAs",
+  title: "You don't have access to this company's CLAs",
   retryLead: 'Just added as a CLA manager? Access can take up to a minute.',
   retryLabel: 'Try again',
-  signClaAriaLabel: "Sign a corporate CLA — you don't have access to this organization's CLAs",
+  signClaAriaLabel: "Sign a corporate CLA — you don't have access to this company's CLAs",
 } as const;
 
 /**
