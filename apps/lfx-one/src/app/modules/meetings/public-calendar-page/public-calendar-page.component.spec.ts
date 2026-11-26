@@ -65,7 +65,7 @@ describe('PublicCalendarPageComponent', () => {
   let feed: () => Observable<PublicProjectMeetingsResponse>;
   let navigate: ReturnType<typeof vi.fn>;
   let openModal: ReturnType<typeof vi.fn>;
-  let modalClosed: Subject<void>;
+  let modalClosed: Subject<boolean | undefined>;
   let phone: boolean;
   let directoryFails: boolean;
 
@@ -207,8 +207,15 @@ describe('PublicCalendarPageComponent', () => {
       data: expect.objectContaining({ entry: expect.objectContaining({ key: 'a' }), groups: ['Board'], meeting: expect.objectContaining({ id: 'a' }) }),
     });
 
-    modalClosed.next();
+    modalClosed.next(undefined);
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { meeting: null } }));
+
+    // A modal that went on to a meeting page leaves the URL to that navigation.
+    navigate.mockClear();
+    query.next(convertToParamMap({ meeting: 'b' }));
+    await fixture.whenStable();
+    modalClosed.next(true);
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('offers all meetings when the group directory fails while a group is selected', async () => {
@@ -220,5 +227,23 @@ describe('PublicCalendarPageComponent', () => {
     expect(byTestId(fixture, 'public-calendar-group')).toBeNull();
     byTestId(fixture, 'public-calendar-group-clear')?.querySelector('button')?.click();
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { committee: null } }));
+  });
+
+  it('opens an archived date from the link of its live occurrence', async () => {
+    feed = () =>
+      of({
+        meetings: [meeting('c', BOARD, { start_time: '2026-09-21T15:00:00Z', meeting_and_occurrence_id: 'c-1790000000000' })],
+        total: 1,
+        project: { uid: 'p', name: 'Synthetic Project', logo_url: null },
+      });
+    query.next(convertToParamMap({ meeting: 'c-1790000000' }));
+    await render();
+
+    expect(openModal).toHaveBeenCalledWith(expect.anything(), {
+      data: expect.objectContaining({ entry: expect.objectContaining({ key: 'c-1790000000000' }) }),
+    });
+
+    modalClosed.next(undefined);
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { meeting: null } }));
   });
 });

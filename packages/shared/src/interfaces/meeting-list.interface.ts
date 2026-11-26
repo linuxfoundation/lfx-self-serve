@@ -621,6 +621,7 @@ export interface PublicCalendarMeetingModalData {
 /** A call to action in the public calendar meeting modal. */
 export type PublicCalendarModalAction =
   | 'join'
+  | 'add-to-calendar'
   | 'register'
   | 'sign-in'
   | 'sign-in-register'
@@ -639,6 +640,8 @@ export interface PublicCalendarModalActionStyle {
 /** What the viewer is and what is known about one meeting date, for the public calendar modal. */
 export interface PublicCalendarModalFacts {
   signedIn: boolean;
+  /** The viewer's details failed to load. */
+  failed: boolean;
   past: boolean;
   live: boolean;
   restricted: boolean;
@@ -655,6 +658,8 @@ export interface PublicCalendarModalFacts {
 /** What the public calendar modal loads about the viewer and the date once it opens. */
 export interface PublicCalendarModalDetails {
   loading: boolean;
+  /** The lookup failed, so nothing is known about the viewer or the date's artifacts. */
+  failed: boolean;
   invited: boolean;
   /** Past, signed in: the viewer may see the meeting's recording and summary. */
   access: boolean;

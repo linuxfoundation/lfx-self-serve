@@ -3,6 +3,7 @@
 
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { DOCUMENT } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
@@ -17,6 +18,8 @@ import {
   PublicMeetingRegistrationResponse,
 } from '@lfx-one/shared/interfaces';
 import {
+  buildPublicMeetingIcs,
+  downloadFromUrl,
   formatMeetingCalendarDay,
   formatMeetingCalendarTime,
   getLargestSessionShareUrl,
@@ -34,6 +37,7 @@ import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { catchError, forkJoin, map, Observable, of, startWith, switchMap, take } from 'rxjs';
 
 import { MeetingDetailsRegisterModalComponent } from '../../meetings-redesign/components/meeting-details-drawer/register/meeting-details-register-modal.component';
@@ -57,6 +61,7 @@ export class PublicCalendarMeetingModalComponent {
   private readonly document = inject(DOCUMENT);
   private readonly meetingService = inject(MeetingService);
   private readonly modal = inject(UiModalService);
+  private readonly toast = inject(UiToastService);
   private readonly dialogs = inject(MeetingsHomeDialogsService);
   private readonly userService = inject(UserService);
   protected readonly data = inject<PublicCalendarMeetingModalData>(DIALOG_DATA);
@@ -69,7 +74,7 @@ export class PublicCalendarMeetingModalComponent {
   protected readonly cadence = getMeetingRecurrenceLabel(this.data.meeting);
   protected readonly groupNames = this.data.groups.join(', ');
   /** Read from the clock when it opens, not the calendar's, which may have been open a while. */
-  protected readonly past = isOccurrencePast(this.data.entry.startTime, this.data.entry.durationMinutes);
+  protected readonly past = !!this.data.meeting.meeting_and_occurrence_id || isOccurrencePast(this.data.entry.startTime, this.data.entry.durationMinutes);
   protected readonly live = !this.past && Date.parse(this.data.entry.startTime) <= Date.now();
   /** The meeting page of this date: the past meeting's page once it ended, else the series at this occurrence. */
   protected readonly pageLink: { path: string[]; queryParams: Record<string, string> } = this.initPageLink();
@@ -80,6 +85,7 @@ export class PublicCalendarMeetingModalComponent {
     const details = this.details();
     return resolvePublicCalendarModalState({
       signedIn: this.userService.authenticated(),
+      failed: details.failed,
       past: this.past,
       live: this.live,
       restricted: this.data.meeting.restricted,
@@ -95,6 +101,9 @@ export class PublicCalendarMeetingModalComponent {
       case 'join':
       case 'view-summary':
         this.openPage();
+        return;
+      case 'add-to-calendar':
+        this.downloadIcs();
         return;
       case 'register':
         this.register();
@@ -113,7 +122,8 @@ export class PublicCalendarMeetingModalComponent {
   }
 
   protected openPage(): void {
-    this.dialogRef.close();
+    // True: the calendar leaves `?meeting=` alone, so its own navigation can't cancel this one.
+    this.dialogRef.close(true);
     void this.router.navigate(this.pageLink.path, { queryParams: this.pageLink.queryParams });
   }
 
@@ -144,7 +154,12 @@ export class PublicCalendarMeetingModalComponent {
           // Signed out, the meeting's settings say what signing in could show.
           if (!signedIn) {
             const past = response.meeting as Partial<Meeting>;
-            return of({ ...PUBLIC_CALENDAR_MODAL_NO_DETAILS, recording: !!past.recording_enabled, summary: !!past.ai_summary_enabled });
+            return of({
+              ...PUBLIC_CALENDAR_MODAL_NO_DETAILS,
+              recording: !!past.recording_enabled,
+              summary: !!past.ai_summary_enabled,
+              description: past.description ?? '',
+            });
           }
           if (!response.full_access) return of(PUBLIC_CALENDAR_MODAL_NO_DETAILS);
           const logged = <T>(what: string) =>
@@ -164,6 +179,7 @@ export class PublicCalendarMeetingModalComponent {
                 recording: !!shareUrl,
                 shareUrl,
                 summary: !!getPastMeetingSummaryContent(response.meeting as Meeting, summary),
+                description: (response.meeting as Partial<Meeting>).description ?? '',
               };
             })
           );
@@ -181,15 +197,26 @@ export class PublicCalendarMeetingModalComponent {
     }
     return toSignal(
       details$.pipe(
-        // Without them the modal offers what any viewer gets.
-        catchError((error) => {
+        catchError((error: unknown) => {
+          // An ended date not archived yet has no past meeting: nothing is published for it so far.
+          if (this.past && error instanceof HttpErrorResponse && error.status === 404) return of({ ...PUBLIC_CALENDAR_MODAL_NO_DETAILS, access: true });
           console.error(`Failed to load the public calendar details of meeting ${meeting.id}:`, error);
-          return of({ ...PUBLIC_CALENDAR_MODAL_NO_DETAILS, access: true });
+          return of({ ...PUBLIC_CALENDAR_MODAL_NO_DETAILS, failed: true });
         }),
         startWith({ ...PUBLIC_CALENDAR_MODAL_NO_DETAILS, loading: this.past || signedIn })
       ),
       { initialValue: PUBLIC_CALENDAR_MODAL_NO_DETAILS }
     );
+  }
+
+  private downloadIcs(): void {
+    const view = this.document.defaultView;
+    if (!view) return;
+    const url = view.URL.createObjectURL(new Blob([buildPublicMeetingIcs(this.data.meeting)], { type: 'text/calendar;charset=utf-8' }));
+    downloadFromUrl(url, `${this.data.meeting.title.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'meeting'}.ics`);
+    // Deferred: some browsers start the download asynchronously, and revoking at once can invalidate the URL first.
+    setTimeout(() => view.URL.revokeObjectURL(url), 0);
+    this.toast.show({ message: 'Calendar file downloaded', description: `${this.data.meeting.title} was added as an .ics file.` });
   }
 
   private register(): void {

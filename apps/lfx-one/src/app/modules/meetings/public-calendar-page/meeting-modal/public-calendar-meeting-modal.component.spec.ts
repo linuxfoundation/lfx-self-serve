@@ -9,8 +9,9 @@ import { PublicCalendarMeeting, PublicCalendarMeetingModalData } from '@lfx-one/
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
-import { of, Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
+import { of, Subject, throwError } from 'rxjs';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { MeetingsHomeDialogsService } from '../../meetings-redesign/services/meetings-home-dialogs.service';
 import { PublicCalendarMeetingModalComponent } from './public-calendar-meeting-modal.component';
@@ -43,6 +44,7 @@ class SignInUrlComponent extends PublicCalendarMeetingModalComponent {
 describe('PublicCalendarMeetingModalComponent', () => {
   let signedIn: boolean;
   let navigate: ReturnType<typeof vi.fn>;
+  let show: ReturnType<typeof vi.fn>;
   let close: ReturnType<typeof vi.fn>;
   let registerClosed: Subject<unknown>;
   let services: { getPublicMeeting: ReturnType<typeof vi.fn>; getPublicPastMeeting: ReturnType<typeof vi.fn> };
@@ -50,6 +52,7 @@ describe('PublicCalendarMeetingModalComponent', () => {
   beforeEach(() => {
     signedIn = false;
     navigate = vi.fn().mockResolvedValue(true);
+    show = vi.fn();
     close = vi.fn();
     registerClosed = new Subject();
     services = {
@@ -74,6 +77,7 @@ describe('PublicCalendarMeetingModalComponent', () => {
         { provide: MeetingService, useValue: { ...services, getPastMeetingRecording: vi.fn(), getPastMeetingSummary: vi.fn() } },
         { provide: UserService, useValue: { authenticated: signal(signedIn), user: signal(null) } },
         { provide: UiModalService, useValue: { open: vi.fn(() => ({ closed: registerClosed })) } },
+        { provide: UiToastService, useValue: { show } },
         { provide: MeetingsHomeDialogsService, useValue: { openRecording: vi.fn() } },
       ],
     });
@@ -99,6 +103,7 @@ describe('PublicCalendarMeetingModalComponent', () => {
     expect(text(fixture, 'public-calendar-modal-meta')).toContain('Weekly on');
     expect(text(fixture, 'public-calendar-modal-meta')).toContain('TSC');
     expect(text(fixture, 'public-calendar-modal-description')).toBe('Roadmap review');
+    expect(fixture.nativeElement.querySelector('[data-testid="public-calendar-modal-add-to-calendar"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="public-calendar-modal-sign-in-register"]')).toBeTruthy();
     expect(services.getPublicMeeting).not.toHaveBeenCalled();
   });
@@ -121,8 +126,24 @@ describe('PublicCalendarMeetingModalComponent', () => {
     expect(text(fixture, 'public-calendar-modal-badge')).toBe('Registered');
 
     await click(fixture, 'public-calendar-modal-page');
-    expect(close).toHaveBeenCalled();
+    expect(close).toHaveBeenCalledWith(true);
     expect(navigate).toHaveBeenCalledWith(['/meetings', 'series-1'], { queryParams: { occurrence: String(START.getTime()) } });
+  });
+
+  it('downloads the whole series as an .ics file', async () => {
+    const createObjectURL = vi.fn(() => 'blob:ics');
+    const original = { createObjectURL: URL.createObjectURL, revokeObjectURL: URL.revokeObjectURL };
+    Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+    onTestFinished(() => {
+      Object.assign(URL, original);
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const fixture = await render();
+
+    await click(fixture, 'public-calendar-modal-add-to-calendar');
+
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+    expect(show).toHaveBeenCalledWith({ message: 'Calendar file downloaded', description: 'Technical Steering Committee was added as an .ics file.' });
   });
 
   it('asks a signed-out visitor to sign in to watch a past recording', async () => {
@@ -161,5 +182,29 @@ describe('PublicCalendarMeetingModalComponent', () => {
     await fixture.whenStable();
     expect(text(fixture, 'public-calendar-modal-badge')).toBe("You're invited");
     expect(text(fixture, 'public-calendar-modal-description')).toBe('Budget review');
+  });
+
+  it('says when the viewer details fail to load, without guessing a state', async () => {
+    signedIn = true;
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    services.getPublicMeeting = vi.fn(() => throwError(() => new Error('down')));
+    const fixture = await render({ meeting: meeting({ restricted: true }) });
+
+    expect(text(fixture, 'public-calendar-modal-note')).toBe("We couldn't load your details for this meeting. Try again in a moment.");
+    expect(text(fixture, 'public-calendar-modal-badge')).toBe('');
+    expect(fixture.nativeElement.querySelector('[data-testid="public-calendar-modal-register"]')).toBeNull();
+  });
+
+  it('treats an archived row as past and shows its agenda from the lookup', async () => {
+    const archived = meeting({ meeting_and_occurrence_id: 'series-1-1790000000000', description: undefined, occurrences: [] });
+    services.getPublicPastMeeting = vi.fn(() =>
+      of({ meeting: { recording_enabled: false, ai_summary_enabled: true, description: 'Q4 review' }, project: {}, full_access: false })
+    );
+    const fixture = await render({ meeting: archived });
+
+    expect(services.getPublicPastMeeting).toHaveBeenCalledWith('series-1-1790000000000');
+    expect(text(fixture, 'public-calendar-modal-badge')).toBe('Ended');
+    expect(text(fixture, 'public-calendar-modal-description')).toBe('Q4 review');
+    expect(fixture.nativeElement.querySelector('[data-testid="public-calendar-modal-sign-in-summary"]')).toBeTruthy();
   });
 });
