@@ -870,10 +870,19 @@ export const LINKEDIN_VARIANT_FIELD_LIMITS = {
 
 /**
  * The ad formats a LinkedIn create may name (#5764 row 19), campaign-service's `FormatSingleImage`, `FormatText`
- * (`internal/platform/linkedin/text_ads.go`, #586), `FormatCarousel` (`carousel.go`, #665) and `FormatDocument`
- * (`documents.go`, #665). Omitted is the single-image default.
+ * (`internal/platform/linkedin/text_ads.go`, #586), `FormatCarousel` (`carousel.go`, #665), `FormatDocument`
+ * (`documents.go`, #665) and `FormatBoost` (`boost.go`, #673). Omitted is the single-image default.
  */
-export const LINKEDIN_AD_FORMATS = ['single_image', 'text', 'carousel', 'document'] as const;
+export const LINKEDIN_AD_FORMATS = ['single_image', 'text', 'carousel', 'document', 'boost'] as const;
+
+/** The field a LinkedIn boost refusal names (linuxfoundation/lfx-v2-campaign-service#673). */
+export const LINKEDIN_BOOST_POST_FIELD = 'linkedInConfig.boostPost';
+
+/**
+ * A post a LinkedIn boost may sponsor, campaign-service's `postURNRe` (`internal/platform/linkedin/client.go`): exactly
+ * `urn:li:share:<digits>` or `urn:li:ugcPost:<digits>`, the two references a creative accepts. Go's `\d` is ASCII only.
+ */
+export const LINKEDIN_BOOST_POST_URN_PATTERN = /^urn:li:(share|ugcPost):[0-9]+$/;
 
 /**
  * LinkedIn Text Ads limits (#5764 row 19), campaign-service's `TextAdHeadlineMaxChars`, `TextAdDescriptionMaxChars`

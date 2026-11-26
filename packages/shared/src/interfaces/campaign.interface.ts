@@ -2675,6 +2675,11 @@ export interface LinkedInCampaignCreateRequest {
   /** The document post's intro text, at most 600 characters (LinkedIn recommends about 150). Only with `format: 'document'`. */
   documentIntroText?: string;
   /**
+   * The existing organization post a `format: 'boost'` create sponsors (campaign-service#673): exactly
+   * `urn:li:share:<id>` or `urn:li:ugcPost:<id>`, sent with an empty `variants`. Only while `linkedInBoostEnabled`.
+   */
+  boostPost?: string;
+  /**
    * The campaign's own LinkedIn targeting (#5764 rows 8–11, campaign-service #552). Set, it REPLACES `targetingProfile`,
    * so it is refused with `targetingProfileEdit`. Only while `linkedInTargetingEnabled`.
    */
@@ -8662,6 +8667,12 @@ export interface CampaignListResult {
    * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DOCUMENT`, which follows campaign-service's own `LINKEDIN_ADS_DOCUMENT_ENABLED`.
    */
   linkedInDocumentEnabled: boolean;
+  /**
+   * Whether a LinkedIn create may boost an existing organization post (`format: 'boost'` with `boostPost`,
+   * campaign-service#673). Needs the campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_BOOST`, which
+   * follows campaign-service's own `LINKEDIN_ADS_BOOST_POST_ENABLED`.
+   */
+  linkedInBoostEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.

@@ -24,8 +24,11 @@ import { compactLinkedInVariantFields } from './campaign-linkedin-variant-fields
 /** The creative destination's URN type; `leadGenForm` may be given as the id or as this prefix and the id. */
 const AD_FORM_URN_PREFIX = 'urn:li:adForm:';
 
-/** The formats a lead gen create cannot take: LinkedIn has no lead gen Text Ad, and campaign-service builds no lead gen carousel. */
-const LEAD_GEN_REFUSED_FORMATS: readonly unknown[] = ['text', 'carousel'];
+/**
+ * The formats a lead gen create cannot take: LinkedIn has no lead gen Text Ad, and campaign-service builds no lead gen
+ * carousel or boost (a boosted post's creative carries no form, #673).
+ */
+const LEAD_GEN_REFUSED_FORMATS: readonly unknown[] = ['text', 'carousel', 'boost'];
 
 /** The form's state LinkedIn serves nothing from: never listed, and campaign-service refuses a create naming one. */
 const ARCHIVED_FORM_STATE = 'ARCHIVED';
@@ -55,7 +58,7 @@ export function linkedInLeadGenFormId(raw: string): string | null {
  * - a manual bid: a lead gen campaign optimises for leads with automatic bidding only;
  * - `lead_generation` without a form, or a form that is not a positive integer id or `urn:li:adForm:<id>`;
  * - a label outside `LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS`, spelled exactly (omitted is `REGISTER`);
- * - `format: "text"` or `"carousel"`, `offsiteDeliveryEnabled: true` (LinkedIn serves no lead gen on the Audience
+ * - `format: "text"`, `"carousel"` or `"boost"`, `offsiteDeliveryEnabled: true` (LinkedIn serves no lead gen on the Audience
  *   Network), and a variant's call to action, since the form's button is the call to action.
  *
  * Messages never echo a caller value.

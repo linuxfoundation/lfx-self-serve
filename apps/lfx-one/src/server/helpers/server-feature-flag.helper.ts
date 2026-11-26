@@ -553,6 +553,19 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInDocument = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DOCUMENT',
 
   /**
+   * Boosting an existing LinkedIn organization post (linuxfoundation/lfx-v2-campaign-service#673): accept
+   * `linkedInConfig.format` `boost` with `linkedInConfig.boostPost` (`urn:li:share:<id>` or `urn:li:ugcPost:<id>`).
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES a campaign-service release carrying #673 (after v1.0.44) DEPLOYED with
+   * `LINKEDIN_ADS_BOOST_POST_ENABLED` on, since campaign-service refuses the fields with a 400 otherwise, and is only
+   * meaningful on the campaign-service create path (`cutoverOwnsCreate`): the legacy creator would make a single-image
+   * campaign instead. Off (the default), the create route refuses the fields with a 400, never dropping them. Keep it off
+   * until campaign-service's paused boost probe has passed. Request fields only, so flipping it back strands nothing. Same
+   * accepted values as the flags above.
+   */
+  CampaignServiceLinkedInBoost = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_BOOST',
+
+  /**
    * Offers Meta ad set audience targeting on the Implement tab (#5905), sent as `metaConfig.targeting`:
    * age range, gender and Advantage+ audience to every campaign manager, and included/excluded custom
    * audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only to a caller holding

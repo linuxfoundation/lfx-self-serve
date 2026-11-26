@@ -31,6 +31,7 @@ import { linkedInTextAdAssetField, linkedInTextAdsRefusal } from '@lfx-one/share
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
 import { linkedInVideoVariantsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-video.utils';
 import { linkedInCarouselRefusal } from '@lfx-one/shared/utils/campaign-linkedin-carousel.utils';
+import { linkedInBoostRefusal } from '@lfx-one/shared/utils/campaign-linkedin-boost.utils';
 import { linkedInConfigIsDocument, linkedInDocumentRefusal } from '@lfx-one/shared/utils/campaign-linkedin-document.utils';
 import { linkedInTargetCostRefusal } from '@lfx-one/shared/utils/campaign-linkedin-target-cost.utils';
 import {
@@ -461,6 +462,7 @@ import {
   canEditLinkedInTargeting,
   canSetLinkedInCallToAction,
   canSetLinkedInCarousel,
+  canSetLinkedInBoost,
   canSetLinkedInDocument,
   canSetLinkedInConversions,
   canSetLinkedInLeadGen,
@@ -1533,6 +1535,15 @@ export class CampaignController {
       const linkedInDocumentRefused = linkedInDocumentRefusal(body?.linkedInConfig, canSetLinkedInDocument());
       if (linkedInDocumentRefused !== null) {
         throw ServiceValidationError.forField(linkedInDocumentRefused.field, linkedInDocumentRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // Boosting an existing LinkedIn post (campaign-service#673): refused, never dropped, while this deployment cannot send
+      // it, and held to campaign-service's rules. See `linkedInBoostRefusal`.
+      const linkedInBoostRefused = linkedInBoostRefusal(body?.linkedInConfig, canSetLinkedInBoost());
+      if (linkedInBoostRefused !== null) {
+        throw ServiceValidationError.forField(linkedInBoostRefused.field, linkedInBoostRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });
