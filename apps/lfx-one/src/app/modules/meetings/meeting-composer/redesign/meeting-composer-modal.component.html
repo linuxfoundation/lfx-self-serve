@@ -140,12 +140,23 @@
 
         <!-- Side padding keeps the buttons on the 760px content column. -->
         <div
-          class="flex items-center justify-between gap-[12px] border-t border-gray-200 bg-white px-[max(40px,calc((100%-760px)/2))] py-[14px] max-[972px]:px-[24px] max-[640px]:px-[20px] max-[640px]:py-[12px]"
+          class="flex flex-wrap items-center justify-between gap-[12px] border-t border-gray-200 bg-white px-[max(40px,calc((100%-760px)/2))] py-[14px] max-[972px]:px-[24px] max-[640px]:px-[20px] max-[640px]:py-[12px]"
           data-testid="meeting-composer-footer">
           <span class="flex items-center gap-[8px]">
             @if (!isEditMode()) {
               <lfx-ui-button variant="secondary" size="large" [disabled]="formService.submitting()" data-testid="meeting-composer-cancel" (click)="onClose()">
                 Cancel
+              </lfx-ui-button>
+            }
+            @if (scope()?.kind === 'single') {
+              <lfx-ui-button
+                variant="danger-tertiary"
+                size="large"
+                icon="fa-light fa-trash"
+                [disabled]="formService.submitting()"
+                data-testid="meeting-composer-delete"
+                (click)="onDelete()">
+                Delete meeting
               </lfx-ui-button>
             }
             @if (scope()?.kind === 'occurrence') {
@@ -161,7 +172,7 @@
             }
           </span>
 
-          <div class="flex items-center gap-[8px]">
+          <div class="ml-auto flex flex-wrap items-center justify-end gap-[8px]">
             @if (isEditMode()) {
               <lfx-ui-button variant="secondary" size="large" [disabled]="formService.submitting()" data-testid="meeting-composer-cancel" (click)="onClose()">
                 Cancel

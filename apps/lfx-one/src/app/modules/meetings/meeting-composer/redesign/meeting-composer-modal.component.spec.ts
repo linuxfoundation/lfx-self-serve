@@ -33,6 +33,8 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
   let formService: MeetingComposerFormService;
   let getMeeting: ReturnType<typeof vi.fn>;
   let toast: { show: ReturnType<typeof vi.fn> };
+  let deleteMeeting: ReturnType<typeof vi.fn>;
+  let cancelOccurrence: ReturnType<typeof vi.fn>;
 
   const meeting = {
     id: 'meeting-1',
@@ -71,6 +73,8 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
   beforeEach(async () => {
     getMeeting = vi.fn(() => of(meeting));
     toast = { show: vi.fn(() => ({ id: 'toast', dismiss: vi.fn() })) };
+    deleteMeeting = vi.fn(() => of(undefined));
+    cancelOccurrence = vi.fn(() => of(undefined));
 
     TestBed.configureTestingModule({
       providers: [
@@ -86,6 +90,8 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
             getMeetingAttachments: vi.fn(() => of([])),
             getMeetingRegistrants: vi.fn(() => of([])),
             getMeetingDetail: vi.fn(() => of(null)),
+            deleteMeeting,
+            cancelOccurrence,
           },
         },
         {
@@ -231,6 +237,16 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
       expect(lastToast().actions?.map((action) => action.label)).toEqual(['View meeting', 'Edit']);
     });
 
+    it('treats a type picked from the create menu as a starting point, not entered work', async () => {
+      composer.open({ mode: 'create', projectUid: 'project-1', meetingType: 'Technical' as never });
+      await flush();
+
+      button('meeting-composer-close')?.click();
+      await flush();
+
+      expect(composer.isOpen()).toBe(false);
+    });
+
     it('closes untouched without asking', async () => {
       button('meeting-composer-close')?.click();
       expect(composer.isOpen()).toBe(false);
@@ -250,6 +266,7 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
     it('leaves Escape to an open overlay or an input method composition', async () => {
       const trigger = document.createElement('button');
       trigger.setAttribute('aria-expanded', 'true');
+      trigger.setAttribute('role', 'combobox');
       query('meeting-composer-body')?.appendChild(trigger);
 
       trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -355,10 +372,43 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
       expect(lastToast()).toMatchObject({ variant: 'dark', message: 'Meeting updated', description: '“Renamed sync” · Tue, Jan 8, 2030 at 10:00 AM' });
     });
 
+    it('deletes a one-time meeting after confirming, then closes with a toast', async () => {
+      await openEdit();
+
+      button('meeting-composer-delete')?.click();
+      await flush();
+
+      const details = document.querySelector('[data-testid="meeting-composer-delete-details"]')?.textContent?.replace(/\s+/g, ' ') ?? '';
+      expect(details).toContain('Title:Weekly sync');
+      expect(details).toContain('Date:Tue, Jan 8, 2030');
+      expect(details).toContain('Guests:0 guests');
+
+      fromDocument('meeting-composer-delete-confirm')?.click();
+      await flush();
+
+      expect(deleteMeeting).toHaveBeenCalledWith('meeting-1');
+      expect(lastToast()).toMatchObject({ variant: 'dark', message: 'Meeting deleted', description: '“Weekly sync” · 0 guests notified' });
+      expect(composer.isOpen()).toBe(false);
+      expect(composer.saveCount()).toBe(1);
+    });
+
+    it('keeps the meeting and the composer when the organizer backs out of the delete', async () => {
+      await openEdit();
+
+      button('meeting-composer-delete')?.click();
+      await flush();
+      fromDocument('meeting-composer-delete-keep')?.click();
+      await flush();
+
+      expect(deleteMeeting).not.toHaveBeenCalled();
+      expect(composer.isOpen()).toBe(true);
+    });
+
     it('says a recurring edit applies to the whole series', async () => {
       await openEdit({ recurrence: { type: 2, repeat_interval: 1 } as Meeting['recurrence'] });
 
       expect(text('meeting-composer-scope-series')).toContain('Changes apply to every upcoming occurrence.');
+      expect(button('meeting-composer-delete')).toBeNull();
 
       vi.spyOn(formService, 'validateForSubmit').mockReturnValue(true);
       vi.spyOn(formService, 'submit').mockReturnValue(of(null));
@@ -370,6 +420,26 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
         message: 'Series updated',
         description: '“Weekly sync” · changes apply to every upcoming occurrence',
       });
+    });
+
+    it('cancels the occurrence from the footer, then closes and refreshes the page', async () => {
+      await openEdit(
+        {
+          recurrence: { type: 2, repeat_interval: 1 } as Meeting['recurrence'],
+          meeting_type: 'Technical',
+          occurrences: [{ occurrence_id: '1894114800', start_time: '2030-01-09T15:00:00Z', duration: 60 }],
+        } as Partial<Meeting>,
+        '1894114800'
+      );
+
+      button('meeting-composer-cancel-occurrence')?.click();
+      await flush();
+      fromDocument('meetings-home-delete-confirm')?.click();
+      await flush();
+
+      expect(cancelOccurrence).toHaveBeenCalledWith('meeting-1', '1894114800', undefined);
+      expect(composer.isOpen()).toBe(false);
+      expect(composer.saveCount()).toBe(1);
     });
 
     it('notes what an occurrence edit leaves out and reopens the series on the same section', async () => {

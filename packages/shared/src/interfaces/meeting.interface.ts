@@ -2468,6 +2468,13 @@ export interface MeetingComposerScopeNote {
   label?: string;
 }
 
+/** What the redesigned composer's delete dialog shows about the meeting it deletes. */
+export interface MeetingComposerDeleteDialogData {
+  meeting: Meeting;
+  /** Guests the delete notifies. */
+  guestCount: number;
+}
+
 /** Project the redesigned composer names above its title. */
 export interface MeetingComposerProjectLabel {
   name: string;
