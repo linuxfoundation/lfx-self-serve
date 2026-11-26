@@ -82,9 +82,9 @@
 
   <!-- The long-form About when there is one, else the short Bio. -->
   @if (about()) {
-    <!-- The renderer's own prose sizing gives way here, so About reads at the design's 14px/1.55, like the Bio. -->
+    <!-- The renderer's own prose sizing and colours give way here, so About reads at the design's 14px/1.55 in the page's theme, like the Bio. -->
     <div
-      class="mt-[16px] max-w-[75%] text-[14px] leading-[1.55] text-ui-neutral-700 max-[640px]:max-w-full [&_.prose]:!text-[14px] [&_.prose]:!leading-[1.55] [&_.prose_p]:!leading-[1.55]"
+      class="mt-[16px] max-w-[75%] text-[14px] leading-[1.55] text-ui-neutral-700 max-[640px]:max-w-full [&_.prose]:!text-[14px] [&_.prose]:!leading-[1.55] [&_.prose_p]:!leading-[1.55] [&_.prose]:[--tw-prose-body:var(--ui-neutral-700)] [&_.prose]:[--tw-prose-headings:var(--ui-neutral-900)] [&_.prose]:[--tw-prose-bold:var(--ui-neutral-900)] [&_.prose]:[--tw-prose-bullets:var(--ui-neutral-500)] [&_.prose]:[--tw-prose-counters:var(--ui-neutral-500)] [&_.prose_a]:!text-ui-accent-600 [&_.prose_code]:!bg-ui-neutral-100"
       data-testid="hero-bio">
       <lfx-markdown-renderer [content]="about()"></lfx-markdown-renderer>
     </div>

@@ -9,7 +9,7 @@ import { PublicProfileTheme } from '@lfx-one/shared/interfaces';
 /**
  * A visitor's light or dark theme for the redesigned public profile (#6091), kept in `localStorage` so it holds across visits.
  * It starts light, as the server renders, and reads the stored choice once the browser has rendered, so SSR and hydration agree.
- * Provided by the page.
+ * Provided by the page rather than at the root, so each mount of the page re-reads the stored choice after its own render.
  */
 @Injectable()
 export class PublicProfileThemeService {
@@ -29,6 +29,7 @@ export class PublicProfileThemeService {
   /** Switches the theme and remembers the choice. */
   public setTheme(theme: PublicProfileTheme): void {
     this.themeState.set(theme);
+    if (!this.isBrowser) return;
     try {
       this.document.defaultView?.localStorage.setItem(PUBLIC_PROFILE_THEME_STORAGE_KEY, theme);
     } catch {

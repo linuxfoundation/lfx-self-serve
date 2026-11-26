@@ -151,11 +151,7 @@
   <!-- Footer — matches design markup: LF horizontal logo, three-line legal text, cookie link -->
   <footer
     class="border-t text-[13px] leading-[1.7]"
-    [ngClass]="
-      redesigned
-        ? 'mt-[64px] border-ui-neutral-200 pt-[48px] text-ui-neutral-500 [&_a]:text-ui-neutral-700 [&_button]:text-ui-neutral-700'
-        : 'mt-[72px] border-gray-200 pt-12 text-gray-500'
-    "
+    [ngClass]="redesigned ? 'mt-[64px] border-ui-neutral-200 pt-[48px] text-ui-neutral-500' : 'mt-[72px] border-gray-200 pt-12 text-gray-500'"
     data-testid="public-profile-footer">
     <img
       src="/images/logo_lf_horizontal_color.png"
@@ -166,22 +162,45 @@
       Copyright © 2026 The Linux Foundation®. All rights reserved. <br />
       The Linux Foundation has registered trademarks and uses trademarks. <br />
       For more information, including terms of use,
-      <a href="https://www.linuxfoundation.org/legal/platform-use-agreement" target="_blank" rel="noopener noreferrer" class="text-gray-700 hover:underline"
+      <a
+        href="https://www.linuxfoundation.org/legal/platform-use-agreement"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="hover:underline"
+        [ngClass]="redesigned ? 'text-ui-neutral-700' : 'text-gray-700'"
         >Platform Usage</a
       >,
-      <a href="https://www.linuxfoundation.org/legal/privacy-policy" target="_blank" rel="noopener noreferrer" class="text-gray-700 hover:underline"
+      <a
+        href="https://www.linuxfoundation.org/legal/privacy-policy"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="hover:underline"
+        [ngClass]="redesigned ? 'text-ui-neutral-700' : 'text-gray-700'"
         >Privacy Policy</a
       >, and
-      <a href="https://www.linuxfoundation.org/legal/trademark-usage" target="_blank" rel="noopener noreferrer" class="text-gray-700 hover:underline"
+      <a
+        href="https://www.linuxfoundation.org/legal/trademark-usage"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="hover:underline"
+        [ngClass]="redesigned ? 'text-ui-neutral-700' : 'text-gray-700'"
         >Trademark Usage</a
       >, please see our
-      <a href="https://www.linuxfoundation.org/legal/policies" target="_blank" rel="noopener noreferrer" class="text-gray-500 hover:underline">Policies</a>
+      <a
+        href="https://www.linuxfoundation.org/legal/policies"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="hover:underline"
+        [ngClass]="redesigned ? 'text-ui-neutral-500' : 'text-gray-500'"
+        >Policies</a
+      >
       page.
     </p>
     <button
       type="button"
       (click)="manageCookies()"
-      class="cursor-pointer border-0 bg-transparent p-0 text-xs text-gray-700 hover:underline"
+      class="cursor-pointer border-0 bg-transparent p-0 text-xs hover:underline"
+      [ngClass]="redesigned ? 'text-ui-neutral-700' : 'text-gray-700'"
       [class.hidden]="!cookieSettingsAvailable"
       data-testid="public-profile-footer-cookie-settings">
       Manage cookie preferences.
