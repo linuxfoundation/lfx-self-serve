@@ -26,7 +26,7 @@
       } @else if (error()) {
         <ng-container *ngTemplateOutlet="errorCard" />
       } @else if (profile()) {
-        <lfx-public-profile-hero [basic]="basic()" [about]="about()" data-testid="public-profile-hero"></lfx-public-profile-hero>
+        <lfx-public-profile-hero-redesign [basic]="basic()" [about]="about()" data-testid="public-profile-hero"></lfx-public-profile-hero-redesign>
 
         <!-- Blocks with data, in the design's order: 48px below the hero, 64px apart; one with no data leaves no gap. -->
         <div class="mt-[48px] flex flex-col gap-[64px] empty:hidden" data-testid="public-profile-blocks">

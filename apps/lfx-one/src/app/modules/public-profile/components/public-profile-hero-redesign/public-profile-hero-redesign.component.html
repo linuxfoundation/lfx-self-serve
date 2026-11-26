@@ -1,0 +1,84 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. No card chrome: a bottom divider closes the hero. -->
+<section class="flex flex-col border-b border-gray-200 pb-[24px]" [attr.aria-label]="name()" data-testid="hero-card">
+  <!-- The cover bleeds 24px past each side of the column; on phones the 20px gutter leaves no room, so it stays inside. -->
+  <div class="-mx-[24px] h-[140px] rounded-[16px] bg-gradient-to-b from-white to-blue-100 max-[640px]:mx-0" aria-hidden="true" data-testid="hero-cover"></div>
+
+  <div class="relative z-[1] -mt-[96px] ml-[24px] size-[120px] rounded-full bg-white p-[6px] max-[640px]:ml-0" data-testid="hero-avatar">
+    @if (photo()) {
+      <!-- One element per URL, each reporting its own URL, so a late or replayed error from a replaced photo names that photo. -->
+      @for (url of [photo()]; track url) {
+        <img [src]="url" [alt]="name()" class="block size-full rounded-full object-cover" (error)="onPhotoError(url)" data-testid="hero-avatar-image" />
+      }
+    } @else {
+      <div
+        role="img"
+        class="flex size-full items-center justify-center overflow-hidden rounded-full bg-white text-blue-200"
+        [attr.aria-label]="copy.noPhoto"
+        data-testid="hero-avatar-fallback">
+        <i class="fa-solid fa-circle-user text-[108px] leading-none" aria-hidden="true"></i>
+      </div>
+    }
+  </div>
+
+  <!-- On phones the name takes the full width and the links drop below it. -->
+  <div class="mt-[16px] flex flex-row flex-wrap items-center justify-between gap-x-[16px] gap-y-[8px]" data-testid="hero-head">
+    <h1 class="m-0 min-w-0 font-display text-[32px] font-light leading-[1.2] tracking-[-0.01em] text-gray-900 max-[640px]:basis-full" data-testid="hero-name">
+      {{ name() }}
+    </h1>
+    @if (github() || linkedIn()) {
+      <div class="flex flex-none flex-row items-center gap-[4px]" data-testid="hero-actions">
+        @if (github(); as github) {
+          <lfx-ui-button
+            variant="tertiary"
+            icon="fa-brands fa-github"
+            iconOnly
+            [href]="github.url"
+            [ariaLabel]="copy.githubLabel + github.handle"
+            [lfxUiTooltip]="copy.githubTooltip + github.handle"
+            data-testid="hero-github" />
+        }
+        @if (linkedIn(); as linkedIn) {
+          <lfx-ui-button
+            variant="tertiary"
+            icon="fa-brands fa-linkedin"
+            iconOnly
+            [href]="linkedIn.url"
+            [ariaLabel]="copy.linkedInLabel + linkedIn.handle"
+            [lfxUiTooltip]="copy.linkedInTooltip + linkedIn.handle"
+            data-testid="hero-linkedin" />
+        }
+      </div>
+    }
+  </div>
+
+  @if (title() || company()) {
+    <div class="mt-[8px] flex flex-row flex-wrap items-center gap-x-[6px] gap-y-[4px] text-[13px] leading-[18px] text-gray-600" data-testid="hero-meta">
+      @if (title()) {
+        <span>{{ title() }}{{ company() ? ' at ' : '' }}</span>
+      }
+      @if (company()) {
+        <span class="inline-flex items-center gap-[6px]">
+          @if (accountLogo()) {
+            <img [src]="accountLogo()" alt="" class="block size-[18px] rounded-[4px] object-contain" data-testid="hero-company-logo" />
+          }
+          <span>{{ company() }}</span>
+        </span>
+      }
+    </div>
+  }
+
+  <!-- The long-form About when there is one, else the short Bio. -->
+  @if (about()) {
+    <!-- The renderer's own prose sizing gives way here, so About reads at the design's 14px/1.55, like the Bio. -->
+    <div
+      class="mt-[16px] max-w-[75%] text-[14px] leading-[1.55] text-gray-700 max-[640px]:max-w-full [&_.prose]:!text-[14px] [&_.prose]:!leading-[1.55] [&_.prose_p]:!leading-[1.55]"
+      data-testid="hero-bio">
+      <lfx-markdown-renderer [content]="about()"></lfx-markdown-renderer>
+    </div>
+  } @else if (bio()) {
+    <p class="m-0 mt-[16px] max-w-[75%] text-[14px] leading-[1.55] text-gray-700 max-[640px]:max-w-full" [textContent]="bio()" data-testid="hero-bio"></p>
+  }
+</section>

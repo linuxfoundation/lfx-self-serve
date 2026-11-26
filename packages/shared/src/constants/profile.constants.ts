@@ -454,6 +454,15 @@ export const PROFILE_NO_ACTIVITY_COPY = {
   connectGithub: 'Connect GitHub',
 } as const;
 
+/** Copy of the redesigned public profile hero (#6089). */
+export const PUBLIC_PROFILE_HERO_COPY = {
+  githubLabel: 'GitHub: ',
+  githubTooltip: 'GitHub · ',
+  linkedInLabel: 'LinkedIn: ',
+  linkedInTooltip: 'LinkedIn · ',
+  noPhoto: 'No profile photo',
+} as const;
+
 /** Section headers of the redesigned public profile, worded for visitors in the third person (#6088). */
 export const PUBLIC_PROFILE_SECTION_COPY = {
   recognitions: 'Recognitions',
