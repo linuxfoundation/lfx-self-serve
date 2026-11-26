@@ -11,6 +11,7 @@ import { PublicProfilePageState, ServerRequestContext } from '@lfx-one/shared/in
 import { formatAffiliation, formatLfxDocumentTitle } from '@lfx-one/shared/utils';
 import { TranscendService } from '@services/transcend.service';
 import { ProfileSectionComponent } from '@shared/components/profile-section/profile-section.component';
+import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { injectProfileRedesignEnabled } from '@shared/utils/profile-redesign.util';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap, tap } from 'rxjs';
@@ -31,6 +32,7 @@ import { PublicProfileService } from '../services/public-profile.service';
     NgTemplateOutlet,
     SkeletonModule,
     ProfileSectionComponent,
+    UiSkeletonComponent,
     PublicProfileTopbarComponent,
     PublicProfileHeroComponent,
     PublicProfileContributionsComponent,

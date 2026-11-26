@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID, REQUEST_CONTEXT, signal, TransferState } from '@angular/core';
+import { makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, signal, TransferState } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, Route, Router, RouterStateSnapshot, UrlSegment, UrlTree } from '@angular/router';
 import { PROFILE_REDESIGN_FLAG } from '@lfx-one/shared/constants';
@@ -167,6 +167,21 @@ describe('profile redesign guards', () => {
     it('keeps the browser’s answer for the page after an in-app navigation', async () => {
       expect(await read()).toBe(true);
       expect(TestBed.inject(TransferState).get(PROFILE_REDESIGN_KEY, null)).toBe(true);
+    });
+
+    it('counts the server’s auth hand-off as signed in before AppComponent runs', async () => {
+      authenticated.set(false);
+      TestBed.inject(TransferState).set(makeStateKey<{ authenticated: boolean }>('auth'), { authenticated: true });
+
+      expect(await read()).toBe(true);
+      expect(TestBed.inject(TransferState).get(PROFILE_REDESIGN_KEY, null)).toBe(true);
+    });
+
+    it('leaves a timed-out read unsaved, so the next navigation asks again', async () => {
+      providerReady.set(false);
+
+      expect(await read()).toBe(true);
+      expect(TestBed.inject(TransferState).get(PROFILE_REDESIGN_KEY, null)).toBeNull();
     });
 
     it('lets a signed-out visitor through without waiting on the flag service', async () => {
