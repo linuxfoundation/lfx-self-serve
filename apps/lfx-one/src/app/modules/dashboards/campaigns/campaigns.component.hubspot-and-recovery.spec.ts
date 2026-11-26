@@ -695,6 +695,11 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     selectedEmailTypeId: WritableSignal<string>;
     canStageEmail: Signal<boolean>;
     emailAudience: WritableSignal<CampaignAudience | null>;
+    emailTemplatesShowAll: WritableSignal<boolean>;
+    emailTemplatesScoped: Signal<boolean>;
+    emailTemplatesScopeFellBack: Signal<boolean>;
+    emailTemplatesHiddenCount: Signal<number>;
+    emailTemplateThisEditionCount: Signal<number>;
   }
   const picker = (): PickerInternals => fixture.componentInstance as unknown as PickerInternals;
 
@@ -738,6 +743,11 @@ describe('CampaignsComponent — HubSpot template picker', () => {
    * only a recommendation: nothing is selected until the operator clicks a row.
    */
   describe('event-derived template suggestion', () => {
+    // These pin the suggestion over the portal's FULL listing, which is what an event email listed
+    // before the brand scope existed and what "Show all templates" still lists. The scope has its
+    // own block below; here it is switched off so each test keeps exercising the same rows.
+    beforeEach(() => picker().emailTemplatesShowAll.set(true));
+
     const briefFor = (name: string, slug: string, city = ''): CampaignBriefOutput => ({ eventDetails: { name, slug, city } }) as unknown as CampaignBriefOutput;
 
     /**
@@ -2009,6 +2019,258 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       expect(picker().emailTemplatesRendered()[0].id).toBe('mcp');
+    });
+  });
+
+  /**
+   * The brand-and-event scope.
+   *
+   * The LF portal holds every brand's email, and an unfiltered listing is its newest 500 rows of
+   * mixed mail. An event email lists its OWN brand's templates instead -- the clone decides the
+   * send's sender, subscription type and office location -- this edition first, with automated,
+   * A/B, newsletter and app-staged rows hidden, and the full portal one click away.
+   */
+  describe('brand-and-event scope', () => {
+    const kubecon = {
+      eventDetails: {
+        name: 'KubeCon + CloudNativeCon North America 2026',
+        slug: 'kubecon-cloudnativecon-north-america',
+        city: 'Salt Lake City',
+        countryCode: 'US',
+      },
+    } as unknown as CampaignBriefOutput;
+
+    const rows = [
+      { id: 'eu', name: 'Registration Is Open! KubeCon + CloudNativeCon Europe 2027', state: 'PUBLISHED' },
+      { id: 'na-draft', name: 'KubeCon + CloudNativeCon NA 2026 | Final Countdown', state: 'DRAFT' },
+      { id: 'na-sent', name: 'Last Chance to Join KubeCon + CloudNativeCon North America', state: 'PUBLISHED' },
+      { id: 'staged', name: 'KubeCon + CloudNativeCon North America — 46e6130a-bc46-43b4-ae65-443971cc567d', state: 'DRAFT' },
+      { id: 'variant', name: 'KubeCon + CloudNativeCon NA — Variant B', state: 'DRAFT_AB_VARIANT' },
+      { id: 'letter', name: 'CNCF Newsletter: KubeCon + CloudNativeCon NA recap', state: 'PUBLISHED' },
+    ] as HubSpotMarketingEmail[];
+
+    const emailRequests = () => httpMock.match((r) => r.url === '/api/campaigns/hubspot/emails');
+
+    /** Email/Implement with the entry search answered, then the KubeCon brief in place. */
+    const toImplement = (): void => {
+      const c = fixture.componentInstance as unknown as {
+        selectorForm: { controls: { deliveryType: { setValue(v: string): void } } };
+        selectTab(tab: string, owner: string): void;
+      };
+      c.selectorForm.controls.deliveryType.setValue('email');
+      c.selectTab('implementation', 'email');
+      fixture.detectChanges();
+      emailRequests().forEach((r) => r.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [] }));
+      picker().emailBriefOutput.set(kubecon);
+      fixture.detectChanges();
+    };
+
+    const text = (testId: string): string =>
+      (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    it("searches the event's brand phrases rather than listing the portal", () => {
+      toImplement();
+      picker().searchEmailTemplates('');
+
+      const req = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
+      expect(req.request.params.getAll('match')).toEqual(['kubecon', 'cloudnativecon']);
+      expect(req.request.params.has('q')).toBe(false);
+      req.flush({ enabled: true, error: null, possiblyTruncated: false, emails: rows });
+      fixture.detectChanges();
+
+      expect(picker().emailTemplatesScoped()).toBe(true);
+      expect(
+        picker()
+          .emailTemplates()
+          ?.map((t) => t.id)
+      ).toEqual(['eu', 'na-draft', 'na-sent']);
+      expect(picker().emailTemplatesHiddenCount()).toBe(3);
+    });
+
+    it('lists this edition first, sent before draft, and labels every row', () => {
+      toImplement();
+      picker().searchEmailTemplates('');
+      httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').flush({ enabled: true, error: null, possiblyTruncated: false, emails: rows });
+      fixture.detectChanges();
+
+      // Only this edition by default; the brand's other editions are one click away.
+      expect(
+        picker()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toEqual(['na-sent', 'na-draft']);
+      expect(text('campaigns-email-template-fit-na-sent')).toBe('This edition');
+      expect(text('campaigns-email-template-scope-intro')).toContain('Only KubeCon + CloudNativeCon North America 2026 emails are listed.');
+      expect(text('campaigns-email-template-scope-status')).toContain('2 templates');
+      expect(text('campaigns-email-template-show-other-editions')).toBe('Show 1 from other editions');
+
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="campaigns-email-template-show-other-editions"]')?.click();
+      fixture.detectChanges();
+      expect(
+        picker()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toEqual(['na-sent', 'na-draft', 'eu']);
+      expect(text('campaigns-email-template-fit-eu')).toBe('Other edition');
+      const status = text('campaigns-email-template-scope-status');
+      expect(status).toContain('3 KubeCon + CloudNativeCon templates');
+      expect(status).toContain('2 from North America 2026');
+      expect(status).toContain('3 automated, A/B, test, newsletter or app-staged emails hidden');
+      expect(text('campaigns-email-template-scope-intro')).toContain('emails are listed, this edition first.');
+
+      // And back to this edition only.
+      expect(text('campaigns-email-template-hide-other-editions')).toBe('Only North America 2026');
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="campaigns-email-template-hide-other-editions"]')?.click();
+      fixture.detectChanges();
+      expect(
+        picker()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toEqual(['na-sent', 'na-draft']);
+      // Nothing is selected for the operator (#2057), scoped or not.
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    it('says when this edition has no templates yet, and lists the other editions', () => {
+      toImplement();
+      picker().searchEmailTemplates('');
+      httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').flush({ enabled: true, error: null, possiblyTruncated: false, emails: [rows[0]] });
+      fixture.detectChanges();
+
+      expect(
+        picker()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toEqual(['eu']);
+      expect(text('campaigns-email-template-scope-status')).toContain('1 KubeCon + CloudNativeCon template · none from North America 2026 yet');
+      expect(text('campaigns-email-template-scope-intro')).toContain('None is from North America 2026 yet, so other editions are shown.');
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-show-other-editions"]')).toBeNull();
+    });
+
+    it("ranks and suggests the same place's other editions before the brand's other series", () => {
+      toImplement();
+      picker().searchEmailTemplates('');
+      httpMock
+        .expectOne((r) => r.url === '/api/campaigns/hubspot/emails')
+        .flush({
+          enabled: true,
+          error: null,
+          possiblyTruncated: false,
+          emails: [
+            { id: 'india', name: 'KubeCon + CloudNativeCon India 2026: Early Bird Registration', state: 'PUBLISHED' },
+            { id: 'na-2025', name: 'KubeCon + CloudNativeCon North America 2025 | Registration Is Open', state: 'PUBLISHED' },
+          ],
+        });
+      fixture.detectChanges();
+
+      // Neither is this edition's; last year's North America send comes first for a North America brief.
+      expect(picker().emailTemplateThisEditionCount()).toBe(0);
+      expect(
+        picker()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toEqual(['na-2025', 'india']);
+      expect(picker().emailTemplateSuggestionId()).toBe('na-2025');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    it('falls back to the portal listing, and says so, when the brand has nothing to clone', () => {
+      toImplement();
+      picker().searchEmailTemplates('');
+      httpMock
+        .expectOne((r) => r.url === '/api/campaigns/hubspot/emails')
+        .flush({ enabled: true, error: null, possiblyTruncated: false, emails: [rows[3], rows[5]] });
+      fixture.detectChanges();
+
+      const fallback = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
+      expect(fallback.request.params.has('match')).toBe(false);
+      fallback.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: 'other', name: 'Some other brand', state: 'PUBLISHED' }] });
+      fixture.detectChanges();
+
+      expect(picker().emailTemplatesScoped()).toBe(false);
+      expect(picker().emailTemplatesScopeFellBack()).toBe(true);
+      expect(text('campaigns-email-template-scope-fell-back')).toContain('No KubeCon + CloudNativeCon email that can be cloned was found');
+      expect(
+        picker()
+          .emailTemplates()
+          ?.map((t) => t.id)
+      ).toEqual(['other']);
+    });
+
+    it('falls back to the portal listing when the scoped search fails, keeping the selection', () => {
+      toImplement();
+      picker().selectedEmailTemplateId.set('kept');
+      picker().searchEmailTemplates('');
+      httpMock
+        .expectOne((r) => r.url === '/api/campaigns/hubspot/emails')
+        .flush({ enabled: true, error: 'HubSpot templates could not be loaded.', possiblyTruncated: false, emails: [] });
+      fixture.detectChanges();
+
+      const fallback = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
+      expect(fallback.request.params.has('match')).toBe(false);
+      fallback.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [] });
+      fixture.detectChanges();
+
+      expect(picker().selectedEmailTemplateId()).toBe('kept');
+      expect(picker().emailTemplatesError()).toBeNull();
+    });
+
+    it('lets the operator leave the scope and come back to it', () => {
+      toImplement();
+      picker().searchEmailTemplates('');
+      httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').flush({ enabled: true, error: null, possiblyTruncated: false, emails: rows });
+      fixture.detectChanges();
+
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="campaigns-email-template-show-all"]')?.click();
+      fixture.detectChanges();
+      const all = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
+      expect(all.request.params.has('match')).toBe(false);
+      all.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: 'other', name: 'Some other brand' }] });
+      fixture.detectChanges();
+      expect(text('campaigns-email-template-scope-off')).toContain('Showing templates from every brand.');
+
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="campaigns-email-template-show-scoped"]')?.click();
+      fixture.detectChanges();
+      const scoped = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
+      expect(scoped.request.params.getAll('match')).toEqual(['kubecon', 'cloudnativecon']);
+      scoped.flush({ enabled: true, error: null, possiblyTruncated: false, emails: rows });
+    });
+
+    it("suggests this edition's template over another edition's that ties on the brand", () => {
+      toImplement();
+      picker().emailBriefOutput.set({
+        eventDetails: { name: 'Kubecon Cloudnativecon Europe 2028', slug: 'kubecon-cloudnativecon-europe-2028' },
+      } as unknown as CampaignBriefOutput);
+      picker().searchEmailTemplates('');
+      // Server order puts the other edition first, which is how it used to win the tie.
+      httpMock
+        .expectOne((r) => r.url === '/api/campaigns/hubspot/emails')
+        .flush({
+          enabled: true,
+          error: null,
+          possiblyTruncated: false,
+          emails: [
+            { id: 'na', name: 'KubeCon + CloudNativeCon NA 2026 - Modern Registration Template', state: 'PUBLISHED' },
+            { id: 'eu', name: 'KubeCon + CloudNativeCon Europe | Registration', state: 'DRAFT' },
+          ],
+        });
+      fixture.detectChanges();
+
+      expect(picker().emailTemplateSuggestionId()).toBe('eu');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    it('searches the whole portal for a typed query, with the way back to the brand offered', () => {
+      toImplement();
+      picker().searchEmailTemplates('welcome');
+
+      const req = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
+      expect(req.request.params.get('q')).toBe('welcome');
+      expect(req.request.params.has('match')).toBe(false);
+      req.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: 'w', name: 'Welcome series' }] });
+      fixture.detectChanges();
+
+      expect(text('campaigns-email-template-show-scoped')).toBe('Show only KubeCon + CloudNativeCon templates');
     });
   });
 

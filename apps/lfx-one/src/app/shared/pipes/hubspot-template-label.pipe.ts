@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Pipe, PipeTransform } from '@angular/core';
-import { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
+import { CampaignEmailTemplateFit, HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { formatHubSpotUpdatedAt } from '@lfx-one/shared/utils';
 
 /**
@@ -17,17 +17,21 @@ import { formatHubSpotUpdatedAt } from '@lfx-one/shared/utils';
  * up to 500 rows per change-detection pass. Taking the object also sidesteps the Angular
  * parse error that makes a piped value unusable inside a template ternary.
  *
- * `suggested` marks the event-derived recommendation, which is badged but never selected.
+ * `suggested` marks the event-derived recommendation, which is badged but never selected. `fit` is
+ * the scoped list's "This edition" / "Other edition" chip, hidden from the accessible name the
+ * same way and carried here for the same reason.
  */
 @Pipe({
   name: 'hubspotTemplateLabel',
 })
 export class HubSpotTemplateLabelPipe implements PipeTransform {
-  public transform(template: HubSpotMarketingEmail, suggested = false): string {
+  public transform(template: HubSpotMarketingEmail, suggested = false, fit: CampaignEmailTemplateFit | null | undefined = null): string {
     const parts = [`Use template ${template.name || template.subject || template.id}`];
     // The row's visible "Suggested" badge is hidden from the accessible name by this label, so the
     // fact is carried here instead.
     if (suggested) parts.push('suggested for this event');
+    if (fit === 'this-edition') parts.push('this edition');
+    if (fit === 'other-edition') parts.push('another edition of this event');
     if (template.subject && template.name) parts.push(`subject ${template.subject}`);
     if (template.state) parts.push(template.state);
     const updated = formatHubSpotUpdatedAt(template.updatedAt);

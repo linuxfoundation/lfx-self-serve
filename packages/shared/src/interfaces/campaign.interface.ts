@@ -7,6 +7,7 @@ import type {
   CAMPAIGN_BIDDING_STRATEGIES,
   CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_NEWSLETTER_STAGES,
   CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
@@ -138,7 +139,7 @@ export type CampaignProgramType = 'events' | 'education';
  * stage)`, so modelling it as an email stage would put a survey brief in the same identity slot as
  * that event's sends and let one displace the other.
  */
-export type CampaignDeliveryType = 'paid-marketing' | 'email' | 'survey';
+export type CampaignDeliveryType = 'paid-marketing' | 'email' | 'survey' | 'newsletter';
 
 export type RedditObjective = 'awareness' | 'traffic' | 'conversions' | 'video_views';
 
@@ -643,6 +644,18 @@ export interface CampaignBriefRequest {
    * so the survey path skips fetching and extraction entirely and takes this as the whole truth.
    */
   sourceText?: string;
+  /**
+   * The NEWSLETTER surface's brand, as it appears in the brand's HubSpot newsletter names
+   * ("OpenSSF"). With `newsletterIssue` it names and keys the brief. Ignored on other surfaces.
+   */
+  newsletterBrand?: string;
+  /** The newsletter issue this brief is for, e.g. "November 2026". Newsletter surface only. */
+  newsletterIssue?: string;
+  /**
+   * Previous issues of the brand's newsletter chosen as content references, newest first: the
+   * first is the template the issue is cloned from. Newsletter surface only.
+   */
+  referenceEmailIds?: string[];
   programType?: CampaignProgramType;
   campaignGoal?: CampaignGoal;
   targetAudience?: string;
@@ -833,6 +846,15 @@ export interface CampaignEventDetails {
   sponsorshipUrl: string;
   heroImageUrl?: string;
   sponsors?: CampaignEventSponsor[];
+  /** Newsletter surface only: the brand and issue the brief was planned for. */
+  newsletterBrand?: string;
+  newsletterIssue?: string;
+  /**
+   * Newsletter surface only: the previous issues chosen as content references, newest first.
+   * campaign-service reads them back as `referenceEmailIds` and styles the copy on them, and the
+   * first is the HubSpot email the issue is cloned from.
+   */
+  referenceEmailIds?: string[];
 }
 
 export interface CampaignKeyword {
@@ -9898,7 +9920,10 @@ export type CampaignSurveyStage = (typeof CAMPAIGN_SURVEY_STAGES)[number];
  * carry a stage — the brief payload, the copy request — take this union, while the places that
  * OFFER a choice take the surface's own list.
  */
-export type CampaignSendStage = CampaignEmailStage | CampaignSurveyStage;
+export type CampaignSendStage = CampaignEmailStage | CampaignSurveyStage | CampaignNewsletterStage;
+
+/** A stage on the NEWSLETTER surface: one issue of a brand's recurring newsletter. */
+export type CampaignNewsletterStage = (typeof CAMPAIGN_NEWSLETTER_STAGES)[number];
 
 /**
  * Requests a differently-styled draft of the same stage's copy from `generate-email-copy` --
@@ -9950,6 +9975,14 @@ export interface CampaignSurveyTypeOption {
   id: string;
   label: string;
   stage: CampaignSurveyStage;
+  keywords: readonly string[];
+}
+
+/** What the newsletter surface's type picker offers. Same shape as the email and survey options. */
+export interface CampaignNewsletterTypeOption {
+  id: string;
+  label: string;
+  stage: CampaignNewsletterStage;
   keywords: readonly string[];
 }
 
@@ -10082,6 +10115,11 @@ export interface AudienceListBrief {
   name: string;
   size?: number;
   missing: boolean;
+  /**
+   * The read of this list failed (a throttle, a timeout), so whether it exists is unknown. Never
+   * true together with `missing`. A list in this state is not reused automatically.
+   */
+  unresolved?: boolean;
   resolvedFromLegacyId?: string;
   /** Deep link to the list in HubSpot; absent when the list no longer resolves. */
   hubspotUrl?: string;
@@ -10119,6 +10157,11 @@ export interface AudienceLastSentEmail {
   subject?: string;
   /** Why this send is listed — a brand-only row is weaker precedent than one named for the event. */
   matchReason?: AudienceLastSentMatchReason;
+  /**
+   * Brand newsletters only, on the newest issue: the brand site or blog that issue links to, where
+   * the next issue's offers and news are found.
+   */
+  sourceUrl?: string;
 }
 
 export type AudienceLastSentMatchReason = 'event_name' | 'subject' | 'related_words' | 'brand_only';
@@ -10153,6 +10196,132 @@ export interface AudiencePreviewCount {
 export interface AudiencePreviewCountRequest {
   listIds: string[];
 }
+
+/**
+ * Which outcome a list description reports.
+ *
+ * `static` is an answer, not a failure: a MANUAL or SNAPSHOT list has members added by hand or by
+ * import and no rules to describe. `not_found` is HubSpot's 404; `unreadable` is any other read
+ * failure, so the list may well still exist.
+ */
+export type AudienceListDescriptionStatus = 'described' | 'static' | 'not_found' | 'unreadable';
+
+/** One group of a list's rules: a contact is in the group when every condition holds. */
+export interface AudienceRuleGroup {
+  conditions: string[];
+}
+
+/**
+ * A plain-English reading of who a HubSpot contact list contains, rendered by campaign-service
+ * from the list's filter tree. Deterministic, not model-written, so each condition says exactly
+ * what one HubSpot filter does.
+ */
+/** One rule group of a list description, as campaign-service sends it (`POST /audience-builder/lists/describe`). */
+export interface AudienceWireRuleGroup {
+  conditions?: string[];
+}
+
+/** One list description, as campaign-service sends it; the BFF maps it onto `AudienceListDescription`. */
+export interface AudienceWireListDescription {
+  list_id: string;
+  name?: string;
+  size?: number;
+  processing_type?: string;
+  hubspot_url?: string;
+  status?: string;
+  summary?: string;
+  match?: string;
+  groups?: AudienceWireRuleGroup[];
+  complete?: boolean;
+}
+
+/** `GET /audience-builder/newsletter-brands`, as campaign-service sends it. */
+export interface AudienceWireNewsletterBrandsResponse {
+  brands?: { brand: string; latest_email_name: string; latest_sent_at?: string; issues: number }[];
+}
+
+export interface AudienceListDescription {
+  listId: string;
+  /** Empty when the list could not be read. */
+  name: string;
+  /** Absent when HubSpot reported no size, which is not the same as an empty list. */
+  size?: number;
+  /** HubSpot's processingType as reported: DYNAMIC, MANUAL or SNAPSHOT. */
+  processingType?: string;
+  hubspotUrl: string;
+  status: AudienceListDescriptionStatus;
+  /** One sentence on who the list contains. */
+  summary: string;
+  /** How the groups combine: `any` (in ANY group) or `all` (in EVERY group). */
+  match: 'any' | 'all';
+  /** Empty unless `status` is `described`. */
+  groups: AudienceRuleGroup[];
+  /** False when some rule had a shape campaign-service does not model and is named only generically. */
+  complete: boolean;
+}
+
+export interface AudienceDescribeListsRequest {
+  listIds: string[];
+}
+
+/**
+ * One list in the Audience tab's "What this audience means" panel: the list as the tab knows it
+ * (name, size, link) and campaign-service's description of its rules once it has arrived.
+ */
+export interface AudienceSelectionSummaryItem {
+  listId: string;
+  name: string;
+  /** Known size, from the description or anything the tab has seen; absent when unknown. */
+  size?: number;
+  hubspotUrl: string;
+  /** Null until the description arrives (or when it could not be fetched). */
+  description: AudienceListDescription | null;
+}
+
+/** A summary item as the "What this audience means" panel renders it. */
+export interface AudienceSelectionSummaryRow {
+  item: AudienceSelectionSummaryItem;
+  /**
+   * The description to show, or null when there is none to show: not read yet, or a placeholder for
+   * a list the describe call did not answer for (it carries no summary), which reads as "could not be read".
+   */
+  shownDescription: AudienceListDescription | null;
+  /** HubSpot's processingType in HubSpot's own words ("Active list"); '' when unknown. */
+  kindLabel: string;
+  /** Whether the rules are worth expanding: more than the one sentence the summary already says. */
+  expandable: boolean;
+  ruleCount: number;
+}
+
+/**
+ * The brand-and-event scope the email template picker searches with before anyone has typed.
+ *
+ * Derived from the brief's event details by `deriveEmailTemplateScope`. `phrases` go to
+ * campaign-service's `match` search (whole words, ANY phrase); `editionTerms` and `year` are
+ * matched here, on the rows that come back, to tell THIS edition's templates from the brand's
+ * other editions.
+ */
+export interface CampaignEmailTemplateScope {
+  /** Display name of the brand, e.g. "KubeCon + CloudNativeCon". */
+  label: string;
+  /** Display name of this edition, e.g. "North America 2026". Empty when nothing names one. */
+  editionLabel: string;
+  /** Brand phrases for the server-side search, lower-cased. Never empty when a scope exists. */
+  phrases: string[];
+  /** Lower-cased location words naming this edition ("north america", "na", "salt lake city"). */
+  editionTerms: string[];
+  /** The edition's year, or '' when the event names none. */
+  year: string;
+  /**
+   * The edition's first day as `YYYY-MM-DD`, read from the brief's free-text dates; '' when they
+   * name none. With it, a template edited too long before or after the edition counts as another
+   * edition even when its name carries no year; without it, the year alone bounds the edit date.
+   */
+  editionStart: string;
+}
+
+/** Where a template sits relative to the event the email is for. */
+export type CampaignEmailTemplateFit = 'this-edition' | 'other-edition' | 'excluded';
 
 export interface AudienceComposeMasterRequest {
   listIds: string[];
@@ -10783,3 +10952,76 @@ export interface AudienceBuilderCapabilities {
  * or `unconfirmed` (it may exist; search before creating again).
  */
 export type AudienceCustomCreateOutcome = { kind: 'created'; list: AudienceComposedList } | { kind: 'unconfirmed'; name: string };
+
+/** A brand that has sent at least one HubSpot newsletter, for the newsletter brand picker. */
+export interface AudienceNewsletterBrand {
+  brand: string;
+  latestEmailName: string;
+  /** RFC 3339; absent when the portal reported no send date. */
+  latestSentAt?: string;
+  issues: number;
+}
+
+/**
+ * What the campaigns page's FIRST selector offers: the program types, plus Newsletter. Newsletter
+ * is a UI-only choice, not a `CampaignProgramType`: a newsletter brief is stored under the default
+ * program upstream, and choosing it switches the send surface to `newsletter`.
+ */
+export type CampaignProgramPickerId = CampaignProgramType | 'newsletter';
+
+export interface CampaignProgramPickerOption {
+  id: CampaignProgramPickerId;
+  label: string;
+}
+
+/** Where a newsletter's recipients stand on Implement. */
+export type CampaignNewsletterAudienceState = 'idle' | 'loading' | 'attached' | 'suggested' | 'failed';
+
+/** One list in a newsletter audience suggestion. */
+export interface CampaignNewsletterAudienceList {
+  listId: string;
+  name: string;
+  size?: number;
+}
+
+/**
+ * The recipients suggested for a newsletter whose previous issue could not be reused as it was:
+ * the brand's newsletter subscription lists and the suppressions every send keeps.
+ */
+export interface CampaignNewsletterAudienceSuggestion {
+  includeLists: CampaignNewsletterAudienceList[];
+  suppressionLists: CampaignNewsletterAudienceList[];
+  /** Name of the previous issue, when there was one but its lists could not be read or reused. */
+  precedentName?: string;
+}
+
+/** What a newsletter suggestion is: an offer or discount, a call for papers, an event, a free report, or a post. */
+export type CampaignNewsletterSuggestionKind = 'offer' | 'cfp' | 'event' | 'report' | 'post';
+
+/** One item found on the brand's site that the next newsletter issue could carry. */
+export interface CampaignNewsletterSuggestion {
+  kind: CampaignNewsletterSuggestionKind;
+  title: string;
+  /** One line: what it is, the code or price, who it is for, as the page states it. */
+  detail: string;
+  /** The deadline or end date the page states, YYYY-MM-DD; '' when it states none. */
+  deadline: string;
+  /** The item's link, verified to appear on the page it came from. */
+  url: string;
+  /** The page the item was found on. */
+  sourceUrl: string;
+}
+
+/** Ask for suggestions from up to `CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS` pages of the brand's site. */
+export interface CampaignNewsletterSuggestionsRequest {
+  urls: string[];
+  brand: string;
+  /** Drop items whose deadline is before this date (YYYY-MM-DD): the issue's planned send date. Defaults to today. */
+  notBefore?: string;
+}
+
+export interface CampaignNewsletterSuggestionsResult {
+  items: CampaignNewsletterSuggestion[];
+  /** Pages that could not be read or understood; the items come from the rest. */
+  failedUrls: string[];
+}

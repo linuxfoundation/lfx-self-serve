@@ -25,8 +25,11 @@ const proxyMethods = {
   searchLists: vi.fn(),
   getSuppressionLists: vi.fn(),
   getLastSent: vi.fn(),
+  getBrandNewsletters: vi.fn(),
+  getNewsletterBrands: vi.fn(),
   getExistingMasterLists: vi.fn(),
   previewCount: vi.fn(),
+  describeLists: vi.fn(),
   composeMaster: vi.fn(),
   attachExisting: vi.fn(),
   runQa: vi.fn(),
@@ -409,6 +412,47 @@ describe('getLastSent', () => {
   });
 });
 
+describe('getNewsletterBrands', () => {
+  it('requires a project', async () => {
+    await controller.getNewsletterBrands(buildReq({}, { project: undefined }), buildRes(), next);
+
+    expect(proxyMethods.getNewsletterBrands).not.toHaveBeenCalled();
+  });
+
+  it('passes the project through and returns the brands', async () => {
+    proxyMethods.getNewsletterBrands.mockResolvedValue([{ brand: 'OpenSSF', latestEmailName: 'x', issues: 1 }]);
+    const res = buildRes();
+
+    await controller.getNewsletterBrands(buildReq({}, {}), res, next);
+
+    expect(proxyMethods.getNewsletterBrands).toHaveBeenCalledWith(expect.anything(), 'tlf');
+  });
+});
+
+describe('getBrandNewsletters', () => {
+  it('requires a brand', async () => {
+    await controller.getBrandNewsletters(buildReq({}, {}), buildRes(), next);
+
+    expect(proxyMethods.getBrandNewsletters).not.toHaveBeenCalled();
+    expect(nextError(next)).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it("refuses a brand over upstream's 120-character limit", async () => {
+    await controller.getBrandNewsletters(buildReq({}, { brand: 'x'.repeat(121) }), buildRes(), next);
+
+    expect(proxyMethods.getBrandNewsletters).not.toHaveBeenCalled();
+    expect(nextError(next)).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('passes the brand through with the limit clamped', async () => {
+    proxyMethods.getBrandNewsletters.mockResolvedValue([]);
+
+    await controller.getBrandNewsletters(buildReq({}, { brand: 'OpenSSF', limit: '50' }), buildRes(), next);
+
+    expect(proxyMethods.getBrandNewsletters).toHaveBeenCalledWith(expect.anything(), 'tlf', 'OpenSSF', 10);
+  });
+});
+
 describe('getExistingMasterLists', () => {
   it('requires an event name', async () => {
     await controller.getExistingMasterLists(buildReq({}, { brandShort: 'CNCF' }), buildRes(), next);
@@ -455,6 +499,42 @@ describe('previewCount', () => {
     await controller.previewCount(buildReq({ listIds: ['10', '  ', ' 20 '] }), buildRes(), next);
 
     expect(proxyMethods.previewCount).toHaveBeenCalledWith(expect.anything(), 'tlf', ['10', '20']);
+  });
+});
+
+describe('describeLists', () => {
+  it('answers an empty selection itself with no descriptions', async () => {
+    const res = buildRes();
+
+    await controller.describeLists(buildReq({ listIds: [] }), res, next);
+
+    // Upstream's `list_ids` has `MinLength(1)`; "nothing selected" has an empty answer.
+    expect(proxyMethods.describeLists).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith([]);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-array and an over-long selection before calling upstream', async () => {
+    await controller.describeLists(buildReq({ listIds: '10' }), buildRes(), next);
+    expect(nextError(next)).toBeInstanceOf(ServiceValidationError);
+
+    const tooMany = vi.fn();
+    const ids = Array.from({ length: 26 }, (_, i) => String(i + 1));
+    await controller.describeLists(buildReq({ listIds: ids }), buildRes(), tooMany);
+    expect(vi.mocked(tooMany).mock.calls[0]?.[0]).toBeInstanceOf(ServiceValidationError);
+
+    expect(proxyMethods.describeLists).not.toHaveBeenCalled();
+  });
+
+  it('de-duplicates and trims the ids, then forwards the descriptions unchanged', async () => {
+    const described = [{ listId: '10', name: 'A', hubspotUrl: '', status: 'static', summary: 's', match: 'any', groups: [], complete: true }];
+    proxyMethods.describeLists.mockResolvedValue(described);
+    const res = buildRes();
+
+    await controller.describeLists(buildReq({ listIds: ['10', ' 10 ', '20'] }), res, next);
+
+    expect(proxyMethods.describeLists).toHaveBeenCalledWith(expect.anything(), 'tlf', ['10', '20']);
+    expect(res.json).toHaveBeenCalledWith(described);
   });
 });
 

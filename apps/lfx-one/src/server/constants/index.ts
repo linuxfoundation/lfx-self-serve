@@ -16,3 +16,4 @@ export * from './rewards.constants';
 export * from './vote.constants';
 export * from './weekly-brief.constants';
 export * from './campaign-multi.constants';
+export * from './campaign-newsletter.constants';

@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
+  CAMPAIGN_EVENT_URL_MAX_LENGTH,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS,
   CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
   CAMPAIGN_RESUME_REFUSED_CODE,
   GOOGLE_ADS_LANGUAGE_MAP,
@@ -52,6 +55,7 @@ const {
   approveStoredBrief,
   loadBrief,
   loadBriefById,
+  newsletterNoteLinks,
   createCampaigns,
   generateEmailCopy,
   legacyCreate,
@@ -84,12 +88,17 @@ const {
   isServerFeatureEnabled,
   logger,
   svcGetLinkedInCreateAccount,
+  legacySuggestNewsletterItems,
+  isShuttingDown,
 } = vi.hoisted(() => ({
   svcGetLinkedInCreateAccount: vi.fn(),
+  legacySuggestNewsletterItems: vi.fn(),
+  isShuttingDown: vi.fn(() => false),
   saveBrief: vi.fn(),
   approveStoredBrief: vi.fn(),
   loadBrief: vi.fn(),
   loadBriefById: vi.fn(),
+  newsletterNoteLinks: vi.fn(),
   createCampaigns: vi.fn(),
   generateEmailCopy: vi.fn(),
   legacyCreate: vi.fn(),
@@ -135,6 +144,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public approveStoredBrief = approveStoredBrief;
       public loadBrief = loadBrief;
       public loadBriefById = loadBriefById;
+      public newsletterNoteLinks = newsletterNoteLinks;
       public createCampaigns = createCampaigns;
       public generateEmailCopy = generateEmailCopy;
       public getJobStatus = svcGetJobStatus;
@@ -172,6 +182,7 @@ vi.mock('../services/campaign-proxy.service', () => ({
     public executeKeywordActions = legacyKeywordActions;
     public lookupHubSpotUtm = legacyLookupUtm;
     public createHubSpotUtm = legacyCreateUtm;
+    public suggestNewsletterItems = legacySuggestNewsletterItems;
   },
 }));
 vi.mock('../services/campaign-metrics.service', () => ({
@@ -184,7 +195,7 @@ vi.mock('../services/campaign-metrics.service', () => ({
   MetaMetricsService: class {},
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
-vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn(), isShuttingDown: () => false }));
+vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn(), isShuttingDown }));
 // The real helper pulls the `@lfx-one/shared/utils` barrel, which loads `@angular/forms` and throws
 // outside Angular (GH-2381). The shared-account monitor gate is covered in campaign.controller.monitor.spec.ts.
 vi.mock('../utils/persona-helper', () => ({
@@ -3258,6 +3269,87 @@ describe('CampaignController.createCampaign cutover', () => {
     const cfg = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
     expect(cfg['bodyHtml']).not.toContain('training.linuxfoundation.org');
     expect(cfg['bodyHtml']).toContain('Invented');
+  });
+
+  /**
+   * A NEWSLETTER issue links to the addresses in its notes, on whatever sites its items live on.
+   * Judged by the host rule every one of them lost its href here, after the preview had shown
+   * them, so the staged issue had no links. The stored brief's notes are the authority.
+   */
+  describe('a newsletter issue', () => {
+    const NEWSLETTER_BRIEF_ID = '3f2c1d7e-8a4b-4c6d-9e1f-0a2b3c4d5e6f';
+    const stage = async (hubspotConfig: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      await controller.createCampaign(buildReq({ platforms: ['hubspot'], hubspotConfig }, { project: 'tlf', brief_id: NEWSLETTER_BRIEF_ID }), res, next);
+      return envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    };
+
+    it("keeps the links its notes carry and drops every other link's href", async () => {
+      newsletterNoteLinks.mockResolvedValue(['https://acme.example/blog/guide/', 'https://reports.example/2026']);
+
+      const cfg = await stage({
+        sourceEmailId: 'e-1',
+        bodyHtml:
+          '<p><a href="https://acme.example/blog/guide/">The guide</a> <a href="https://reports.example/2026">The report</a> ' +
+          '<a href="https://acme.example/blog/invented">Invented</a> <a href="https://training.linuxfoundation.org/x">LF</a> ' +
+          '<a href="https://acme.example/blog/guide">Slashless</a></p>',
+      });
+
+      expect(newsletterNoteLinks).toHaveBeenCalledWith(expect.anything(), 'tlf', NEWSLETTER_BRIEF_ID);
+      expect(cfg['bodyHtml']).toContain('href="https://acme.example/blog/guide/"');
+      // The notes give the guide WITH its trailing slash; the slashless address is not one they carry.
+      expect(cfg['bodyHtml']).toContain('<a>Slashless</a>');
+      expect(cfg['bodyHtml']).toContain('href="https://reports.example/2026"');
+      expect(cfg['bodyHtml']).toContain('<a>Invented</a>');
+      // No host is vouched for on a newsletter, an LF-owned one included.
+      expect(cfg['bodyHtml']).toContain('<a>LF</a>');
+    });
+
+    it('stages a button only when it points at an address in the notes', async () => {
+      newsletterNoteLinks.mockResolvedValue(['https://acme.example/november/']);
+
+      const vouched = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', buttonText: 'Read More', buttonUrl: 'https://acme.example/november/' });
+      expect(vouched['buttonUrl']).toBe('https://acme.example/november/');
+
+      // The address must match exactly: the notes give it with its trailing slash.
+      createCampaigns.mockClear();
+      const slashless = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', buttonText: 'Read More', buttonUrl: 'https://acme.example/november' });
+      expect(slashless['buttonUrl']).toBeUndefined();
+
+      createCampaigns.mockClear();
+      const invented = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', buttonText: 'Read More', buttonUrl: 'https://acme.example/elsewhere' });
+      expect(invented['buttonUrl']).toBeUndefined();
+      expect(invented['buttonText']).toBeUndefined();
+    });
+
+    it('stages no link and no button when the brief cannot be read, even on the button host', async () => {
+      // newsletterNoteLinks answers [] for a brief it could not read: the brief may be a newsletter,
+      // so its body must not fall back to the host rule, which would vouch for the button's host.
+      newsletterNoteLinks.mockResolvedValue([]);
+
+      const cfg = await stage({
+        sourceEmailId: 'e-1',
+        bodyHtml: '<p><a href="https://acme.example/invented">Invented</a></p>',
+        buttonText: 'Read More',
+        buttonUrl: 'https://acme.example/november',
+      });
+
+      expect(cfg['bodyHtml']).toBe('<p><a>Invented</a></p>');
+      expect(cfg['buttonUrl']).toBeUndefined();
+    });
+
+    it('falls back to the host rule when the brief is not a newsletter', async () => {
+      newsletterNoteLinks.mockResolvedValue(null);
+
+      const cfg = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p><a href="https://acme.example/blog/guide">The guide</a></p>' });
+
+      expect(cfg['bodyHtml']).toBe('<p><a>The guide</a></p>');
+    });
+
+    it('does not read the brief for a create that stages no email body', async () => {
+      await stage({ sourceEmailId: 'e-1' });
+
+      expect(newsletterNoteLinks).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps the safe inline styles of a staged body and drops the unsafe declarations', async () => {
@@ -10268,7 +10360,7 @@ describe('CampaignController.searchHubSpotEmails', () => {
 
     await controller.searchHubSpotEmails(emailReq({ project: 'tlf', q: '  kubecon  ' }), res, next);
 
-    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', 'kubecon');
+    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', 'kubecon', []);
     expect(res.json).toHaveBeenCalledWith(result);
     expect(next).not.toHaveBeenCalled();
   });
@@ -10278,8 +10370,39 @@ describe('CampaignController.searchHubSpotEmails', () => {
     // not a validation failure.
     await controller.searchHubSpotEmails(emailReq({ project: 'tlf' }), res, next);
 
-    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', '');
+    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', '', []);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // The picker's brand-and-event scope. Express hands over a single param as a string and a
+  // repeated one as an array, and both must reach the service as the same phrase list.
+  it.each([
+    ['a single match param', { project: 'tlf', match: 'KubeCon' }, ['KubeCon']],
+    ['a repeated match param', { project: 'tlf', match: ['KubeCon', ' CloudNativeCon '] }, ['KubeCon', 'CloudNativeCon']],
+    ['blank phrases among real ones', { project: 'tlf', match: ['', 'KubeCon', '   '] }, ['KubeCon']],
+  ])('forwards %s as the scope', async (_label, query, phrases) => {
+    await controller.searchHubSpotEmails(emailReq(query), res, next);
+
+    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', '', phrases);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('caps the scope at the phrase count and length upstream accepts', async () => {
+    const many = Array.from({ length: 12 }, (_, i) => `brand ${i}`);
+    await controller.searchHubSpotEmails(emailReq({ project: 'tlf', match: [...many, 'x'.repeat(300)] }), res, next);
+
+    const phrases = vi.mocked(searchHubSpotEmails).mock.calls[0][3] as string[];
+    expect(phrases).toHaveLength(8);
+    expect(phrases[0]).toBe('brand 0');
+  });
+
+  it('refuses a scope combined with a query, which upstream would refuse anyway', async () => {
+    await controller.searchHubSpotEmails(emailReq({ project: 'tlf', q: 'registration', match: 'KubeCon' }), res, next);
+
+    expect(searchHubSpotEmails).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
   });
 
   it('forwards a service failure to the error middleware instead of answering 200', async () => {
@@ -10342,7 +10465,7 @@ describe('CampaignController.refineBrief email refusal', () => {
     const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
     expect(error).toBeInstanceOf(ServiceValidationError);
     expect(error.toResponse()['errors']).toEqual([
-      { field: 'deliveryType', message: 'deliveryType must be one of: paid-marketing, email, survey', code: 'FIELD_VALIDATION_ERROR' },
+      { field: 'deliveryType', message: 'deliveryType must be one of: paid-marketing, email, survey, newsletter', code: 'FIELD_VALIDATION_ERROR' },
     ]);
   });
 
@@ -13981,6 +14104,37 @@ describe('CampaignController survey surface', () => {
     expect(fieldOf(error)).toBe('stage');
   });
 
+  it.each([
+    ['no brand', { newsletterIssue: 'November 2026', sourceText: 'News' }, 'newsletterBrand'],
+    ['no issue', { newsletterBrand: 'OpenSSF', sourceText: 'News' }, 'newsletterIssue'],
+    ['no notes', { newsletterBrand: 'OpenSSF', newsletterIssue: 'November 2026' }, 'sourceText'],
+    [
+      'too many references',
+      { newsletterBrand: 'OpenSSF', newsletterIssue: 'Nov', sourceText: 'News', referenceEmailIds: ['1', '2', '3', '4'] },
+      'referenceEmailIds',
+    ],
+    [
+      'a reference that is not an email id',
+      { newsletterBrand: 'OpenSSF', newsletterIssue: 'Nov', sourceText: 'News', referenceEmailIds: ['../x'] },
+      'referenceEmailIds',
+    ],
+  ])('refuses a newsletter brief with %s before generating', async (_label, fields, field) => {
+    const req = { body: { deliveryType: 'newsletter', ...fields }, query: {}, path: '/api/campaigns/brief/generate' } as unknown as Request;
+
+    await controller.generateBrief(req, res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0];
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(fieldOf(error)).toBe(field);
+  });
+
+  it('refuses the newsletter stage on the email surface, as campaign-service does', async () => {
+    await controller.loadBrief(buildLoadReq({ event_slug: 'openssf-newsletter-nov', project: 'tlf', delivery_type: 'email', stage: 'Newsletter' }), res, next);
+
+    expect(loadBrief).not.toHaveBeenCalled();
+    expect(fieldOf(vi.mocked(next).mock.calls[0][0])).toBe('stage');
+  });
+
   it("refuses a survey source over campaign-service's 3,000-character limit before generating", async () => {
     const req = {
       body: { deliveryType: 'survey', url: 'https://surveys.example.com/r/cloud-2026', sourceText: 'x'.repeat(3001) },
@@ -14107,5 +14261,98 @@ describe('CampaignController survey surface', () => {
       expect(res.json).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(failure);
     });
+  });
+});
+
+/**
+ * POST /newsletter/suggestions starts up to CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS page fetches and
+ * as many model calls, so every refusal must happen before any of them, and a draining server must
+ * not start them at all.
+ */
+describe('CampaignController.suggestNewsletterItems', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const call = (body: unknown): Promise<void> => controller.suggestNewsletterItems(buildReq(body), res, next);
+  const fieldOf = (): string | undefined => {
+    const error = (next as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as ServiceValidationError | undefined;
+    return (error?.toResponse()['errors'] as { field: string }[] | undefined)?.[0]?.field;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isShuttingDown.mockReturnValue(false);
+    controller = new CampaignController();
+    res = { ...buildRes(), on: vi.fn() } as unknown as Response;
+    next = vi.fn();
+    legacySuggestNewsletterItems.mockResolvedValue({ items: [{ title: 'Offer' }], failedUrls: [] });
+  });
+
+  it.each([
+    ['no urls', { brand: 'Acme' }, 'urls'],
+    ['an empty url list', { urls: [], brand: 'Acme' }, 'urls'],
+    ['only blank urls', { urls: ['  '], brand: 'Acme' }, 'urls'],
+    [
+      'too many urls',
+      { urls: Array.from({ length: CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS + 1 }, (_, i) => `https://acme.example/${i}`), brand: 'Acme' },
+      'urls',
+    ],
+    ['an over-long url', { urls: [`https://acme.example/${'x'.repeat(CAMPAIGN_EVENT_URL_MAX_LENGTH)}`], brand: 'Acme' }, 'urls'],
+    ['no brand', { urls: ['https://acme.example/'] }, 'brand'],
+    ['a blank brand', { urls: ['https://acme.example/'], brand: '   ' }, 'brand'],
+    ['an over-long brand', { urls: ['https://acme.example/'], brand: 'b'.repeat(CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH + 1) }, 'brand'],
+  ])('refuses %s as a field error before any fetch', async (_label, body, field) => {
+    await call(body);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect((next as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(fieldOf()).toBe(field);
+    expect(legacySuggestNewsletterItems).not.toHaveBeenCalled();
+  });
+
+  it('answers 503 and starts nothing while the server is shutting down', async () => {
+    isShuttingDown.mockReturnValue(true);
+
+    await call({ urls: ['https://acme.example/'], brand: 'Acme' });
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(legacySuggestNewsletterItems).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes trimmed urls, the brand and notBefore through, with an abort signal tied to the response', async () => {
+    await call({ urls: [' https://acme.example/news ', 42], brand: ' Acme ', notBefore: '2026-11-01' });
+
+    expect(legacySuggestNewsletterItems).toHaveBeenCalledWith(
+      expect.anything(),
+      { urls: ['https://acme.example/news'], brand: 'Acme', notBefore: '2026-11-01' },
+      expect.any(AbortSignal)
+    );
+    expect(res.on).toHaveBeenCalledWith('close', expect.any(Function));
+    expect(res.json).toHaveBeenCalledWith({ items: [{ title: 'Offer' }], failedUrls: [] });
+  });
+
+  it('aborts the outbound work when the client goes away', async () => {
+    let signal: AbortSignal | undefined;
+    legacySuggestNewsletterItems.mockImplementation(async (_req: unknown, _input: unknown, s: AbortSignal) => {
+      signal = s;
+      return { items: [], failedUrls: [] };
+    });
+
+    await call({ urls: ['https://acme.example/'], brand: 'Acme' });
+    const onClose = (res.on as unknown as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[0] === 'close')?.[1] as () => void;
+    onClose();
+
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('hands an upstream failure to the error middleware', async () => {
+    const failure = new MicroserviceError('upstream timed out', 503, 'UNAVAILABLE');
+    legacySuggestNewsletterItems.mockRejectedValue(failure);
+
+    await call({ urls: ['https://acme.example/'], brand: 'Acme' });
+
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(res.json).not.toHaveBeenCalled();
   });
 });

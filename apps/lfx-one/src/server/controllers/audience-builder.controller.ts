@@ -5,11 +5,13 @@ import {
   AUDIENCE_ATTACH_MAX_LIST_IDS,
   AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH,
   AUDIENCE_CUSTOM_OPERATORS,
+  AUDIENCE_DESCRIBE_MAX_LIST_IDS,
   AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
   AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH,
   AUDIENCE_REGISTRANTS_EVENT_MESSAGE,
   AUDIENCE_SPEAKER_SCOPES,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_NEWSLETTER_BRAND_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
@@ -23,6 +25,7 @@ import type {
   AudienceComposeMasterPartial,
   AudienceComposeMasterRequest,
   AudienceDiscoverRequest,
+  AudienceDescribeListsRequest,
   AudienceDiscoverySSEEventType,
   AudiencePreviewCountRequest,
   AudienceQaRunRequest,
@@ -476,6 +479,67 @@ export class AudienceBuilderController {
     }
   }
 
+  /** The brands that have sent a HubSpot newsletter, most recent first, for the brand picker. */
+  public async getNewsletterBrands(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = this.projectSlug(req);
+
+    if (!projectSlug) {
+      next(invalid(req, 'audience_newsletter_brands', 'project', 'project is required'));
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'audience_newsletter_brands', {});
+
+    try {
+      const brands = await this.audienceBuilder.getNewsletterBrands(req, projectSlug);
+
+      logger.success(req, 'audience_newsletter_brands', startTime, { count: brands.length });
+      res.json(brands);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * The brand's previous SENT newsletters, newest first, with the lists each one targeted. The
+   * newsletter surface clones the newest and offers the rest as content references.
+   */
+  public async getBrandNewsletters(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = this.projectSlug(req);
+
+    if (!projectSlug) {
+      next(invalid(req, 'audience_brand_newsletters', 'project', 'project is required'));
+      return;
+    }
+
+    const brand = queryString(req, 'brand');
+
+    if (!brand) {
+      next(invalid(req, 'audience_brand_newsletters', 'brand', 'brand is required'));
+      return;
+    }
+
+    // Upstream refuses a brand over 120 characters; say so here as a field error.
+    if (brand.length > CAMPAIGN_NEWSLETTER_BRAND_MAX_LENGTH) {
+      next(invalid(req, 'audience_brand_newsletters', 'brand', `brand must be ${CAMPAIGN_NEWSLETTER_BRAND_MAX_LENGTH} characters or fewer`));
+      return;
+    }
+
+    const requested = Number(queryString(req, 'limit'));
+    const limit = Number.isFinite(requested) && requested > 0 ? Math.min(Math.floor(requested), LAST_SENT_MAX_LIMIT) : LAST_SENT_DEFAULT_LIMIT;
+
+    const startTime = logger.startOperation(req, 'audience_brand_newsletters', { limit });
+
+    try {
+      const emails = await this.audienceBuilder.getBrandNewsletters(req, projectSlug, brand, limit);
+
+      logger.success(req, 'audience_brand_newsletters', startTime, { count: emails.length });
+      res.json(emails);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public async getExistingMasterLists(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectSlug = this.projectSlug(req);
 
@@ -497,6 +561,51 @@ export class AudienceBuilderController {
       const lists = await this.audienceBuilder.getExistingMasterLists(req, projectSlug, queryString(req, 'brandShort'), eventName);
 
       logger.success(req, 'audience_existing_master_lists', startTime, { count: lists.length });
+      res.json(lists);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Plain-English descriptions of the selected lists' rules, for the Audience tab's summary.
+   *
+   * An empty selection is answered here with `[]` rather than sent upstream, where `list_ids` has
+   * `MinLength(1)`: "nothing selected" has an empty answer, not a malformed request.
+   */
+  public async describeLists(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = this.projectSlug(req);
+
+    if (!projectSlug) {
+      next(invalid(req, 'audience_describe_lists', 'project', 'project is required'));
+      return;
+    }
+
+    const body = (req.body ?? {}) as AudienceDescribeListsRequest;
+    const listIds = stringArray(body.listIds);
+
+    if (!listIds) {
+      next(invalid(req, 'audience_describe_lists', 'listIds', 'listIds must be an array of strings'));
+      return;
+    }
+    const unique = [...new Set(listIds)];
+    if (unique.length > AUDIENCE_DESCRIBE_MAX_LIST_IDS) {
+      next(invalid(req, 'audience_describe_lists', 'listIds', `at most ${AUDIENCE_DESCRIBE_MAX_LIST_IDS} lists can be described at once`));
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'audience_describe_lists', { lists: unique.length });
+
+    if (!unique.length) {
+      logger.success(req, 'audience_describe_lists', startTime, { count: 0 });
+      res.json([]);
+      return;
+    }
+
+    try {
+      const lists = await this.audienceBuilder.describeLists(req, projectSlug, unique);
+
+      logger.success(req, 'audience_describe_lists', startTime, { count: lists.length });
       res.json(lists);
     } catch (error) {
       next(error);

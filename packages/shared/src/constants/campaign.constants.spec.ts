@@ -28,6 +28,8 @@ import {
   MONITOR_PLATFORM_BUTTON_COLORS,
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_TYPES,
+  CAMPAIGN_NEWSLETTER_STAGES,
+  CAMPAIGN_NEWSLETTER_TYPES,
   CAMPAIGN_SEND_STAGES,
   CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS,
   CAMPAIGN_SURVEY_STAGES,
@@ -576,10 +578,10 @@ describe('CAMPAIGN_SURVEY_TYPES', () => {
 });
 
 describe('CAMPAIGN_SEND_STAGES', () => {
-  it('is exactly the email and survey vocabularies together, in that order', () => {
+  it('is exactly the email, survey and newsletter vocabularies together, in that order', () => {
     // The BFF validates a brief lookup's stage against this, so a stage missing here is a 400
     // for a brief campaign-service would have opened.
-    expect([...CAMPAIGN_SEND_STAGES]).toEqual([...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES]);
+    expect([...CAMPAIGN_SEND_STAGES]).toEqual([...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES, ...CAMPAIGN_NEWSLETTER_STAGES]);
   });
 });
 
@@ -603,10 +605,10 @@ describe('CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS', () => {
 });
 
 describe('CAMPAIGN_DELIVERY_TYPES', () => {
-  it('offers the three surfaces campaign-service accepts', () => {
+  it('offers the four surfaces campaign-service accepts', () => {
     // The dropdown IS the contract here: the BFF derives its validation set from this list, so a
     // surface missing from it is unreachable and one that upstream does not know is a 400.
-    expect(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id)).toEqual(['paid-marketing', 'email', 'survey']);
+    expect(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id)).toEqual(['paid-marketing', 'email', 'survey', 'newsletter']);
   });
 
   it('gives every surface a label and a breadcrumb label', () => {
@@ -1616,5 +1618,13 @@ describe('GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS', () => {
 
   it('has a rule for Demand Gen and Display, and none for Performance Max', () => {
     expect(Object.keys(GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS).sort()).toEqual(['google-ads/DEMAND_GEN', 'google-ads/DISPLAY']);
+  });
+});
+
+describe('CAMPAIGN_NEWSLETTER_TYPES', () => {
+  it('offers one type, on the single newsletter stage upstream accepts', () => {
+    // campaign-service's pair CHECK admits exactly `(newsletter, 'Newsletter')`.
+    expect([...CAMPAIGN_NEWSLETTER_STAGES]).toEqual(['Newsletter']);
+    expect(CAMPAIGN_NEWSLETTER_TYPES.map((t) => t.stage)).toEqual(['Newsletter']);
   });
 });
