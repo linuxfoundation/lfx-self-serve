@@ -3,7 +3,7 @@
 
 import { Component, PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { PUBLIC_PROFILE_TOPBAR_COPY, PUBLIC_PROFILE_TOPBAR_REVEAL_OFFSET } from '@lfx-one/shared/constants';
+import { PUBLIC_PROFILE_THEME_STORAGE_KEY, PUBLIC_PROFILE_TOPBAR_COPY, PUBLIC_PROFILE_TOPBAR_REVEAL_OFFSET } from '@lfx-one/shared/constants';
 import { PublicProfileBasic } from '@lfx-one/shared/interfaces';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -60,13 +60,16 @@ describe('PublicProfileTopbarRedesignComponent', () => {
 
   it('switches the theme, naming the one it switches to', async () => {
     const { fixture, query } = await render();
-    const toggle = query('topbar-theme')?.querySelector('button');
-    expect(toggle?.getAttribute('aria-label')).toBe(PUBLIC_PROFILE_TOPBAR_COPY.darkTheme);
+    try {
+      const toggle = query('topbar-theme')?.querySelector('button');
+      expect(toggle?.getAttribute('aria-label')).toBe(PUBLIC_PROFILE_TOPBAR_COPY.darkTheme);
 
-    toggle?.click();
-    await fixture.whenStable();
-    expect(query('topbar-theme')?.querySelector('button')?.getAttribute('aria-label')).toBe(PUBLIC_PROFILE_TOPBAR_COPY.lightTheme);
-    localStorage.removeItem('lfx-public-profile-theme');
+      toggle?.click();
+      await fixture.whenStable();
+      expect(query('topbar-theme')?.querySelector('button')?.getAttribute('aria-label')).toBe(PUBLIC_PROFILE_TOPBAR_COPY.lightTheme);
+    } finally {
+      localStorage.removeItem(PUBLIC_PROFILE_THEME_STORAGE_KEY);
+    }
   });
 
   it('falls back from the uploaded photo to the logo, then to the person icon, as the hero does', async () => {

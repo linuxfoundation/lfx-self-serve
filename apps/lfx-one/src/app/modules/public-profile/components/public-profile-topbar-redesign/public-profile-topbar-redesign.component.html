@@ -80,9 +80,16 @@
       </lfx-ui-button>
     } @else if (!signedIn()) {
       <lfx-ui-button variant="secondary" size="small" [href]="signInUrl()" target="_self" data-testid="topbar-sign-in">{{ copy.signIn }}</lfx-ui-button>
-      <lfx-ui-button variant="secondary-accent" size="small" [href]="signInUrl()" target="_self" data-testid="topbar-create-account">{{
-        copy.createAccount
-      }}</lfx-ui-button>
+      <!-- Phones keep only Sign in, which opens the same page, so the bar keeps room for the person (#6090). -->
+      <lfx-ui-button
+        variant="secondary-accent"
+        size="small"
+        class="max-[640px]:hidden"
+        [href]="signInUrl()"
+        target="_self"
+        data-testid="topbar-create-account"
+        >{{ copy.createAccount }}</lfx-ui-button
+      >
     }
   </div>
 </div>

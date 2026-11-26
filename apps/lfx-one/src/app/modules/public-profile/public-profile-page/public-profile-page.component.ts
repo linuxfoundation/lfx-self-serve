@@ -83,6 +83,7 @@ export class PublicProfilePageComponent {
   /** The username this page is for, as the route names it. */
   private readonly routeUsername = toSignal(this.activatedRoute.paramMap.pipe(map((params) => params.get('username') ?? '')), { initialValue: '' });
   protected readonly profilePath = computed(() => `/u/${encodeURIComponent(this.routeUsername())}`);
+  // Signed-out visitors keep today's page until the flag is on for everyone (#6094), so the bar's visitor actions wait for that.
   protected readonly signedIn = computed(() => this.userService.authenticated());
   /** The viewer is signed in as this profile's owner, matched by LFID; no silent login is attempted for anyone else (#6090). */
   protected readonly owner = computed(() => {
