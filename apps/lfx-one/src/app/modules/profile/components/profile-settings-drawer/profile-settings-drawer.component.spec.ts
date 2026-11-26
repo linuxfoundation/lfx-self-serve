@@ -3,7 +3,8 @@
 
 import { Component, inject, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { PROFILE_SETTINGS_DRAWER_COPY, PROFILE_VISIBILITY_DEFAULTS } from '@lfx-one/shared/constants';
+import { HttpErrorResponse } from '@angular/common/http';
+import { PROFILE_SETTINGS_DRAWER_COPY, PROFILE_VISIBILITY_DEFAULTS, PROFILE_VISIBILITY_SECTIONS } from '@lfx-one/shared/constants';
 import { ProfileVisibility } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -34,12 +35,16 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 describe('ProfileSettingsDrawerComponent', () => {
   afterEach(() => document.querySelectorAll('.cdk-overlay-container').forEach((container) => (container.innerHTML = '')));
 
-  async function render(read: () => Observable<ProfileVisibility>, update = vi.fn((body: { isPublic: boolean }) => of(visibility(body.isPublic)))) {
+  async function render(
+    read: () => Observable<ProfileVisibility>,
+    update = vi.fn((body: { isPublic: boolean }): Observable<ProfileVisibility> => of(visibility(body.isPublic))),
+    impersonating = false
+  ) {
     const getProfileVisibility = vi.fn(read);
     const add = vi.fn();
     TestBed.configureTestingModule({
       providers: [
-        { provide: UserService, useValue: { impersonating: signal(false), getProfileVisibility, updateProfileVisibility: update } },
+        { provide: UserService, useValue: { impersonating: signal(impersonating), getProfileVisibility, updateProfileVisibility: update } },
         { provide: MessageService, useValue: { add } },
       ],
     });
@@ -65,7 +70,7 @@ describe('ProfileSettingsDrawerComponent', () => {
     return { fixture, drawer, getProfileVisibility, update, add, query, open, button, toggle, flush };
   }
 
-  it('reads the stored settings on open, with the four blocks and Save off until something changes', async () => {
+  it('reads the stored settings on open, with every section the hub drawer has, and Save off until something changes', async () => {
     const { getProfileVisibility, query, open, button, toggle } = await render(() => of(visibility(true, { badges: true })));
     await open();
 
@@ -73,8 +78,9 @@ describe('ProfileSettingsDrawerComponent', () => {
     expect(query('profile-settings-drawer')?.textContent).toContain(PROFILE_SETTINGS_DRAWER_COPY.title);
     expect(toggle('badges').checked).toBe(true);
     expect(toggle('technical_contribution').checked).toBe(false);
-    expect(query('profile-settings-drawer-row-community_roles')).not.toBeNull();
-    expect(query('profile-settings-drawer-row-event_activities')).not.toBeNull();
+    for (const section of PROFILE_VISIBILITY_SECTIONS.filter((row) => row.key !== 'basic' && !row.parent)) {
+      expect(query(`profile-settings-drawer-row-${section.key}`)?.textContent).toContain(section.name);
+    }
     expect(button('profile-settings-drawer-save').disabled).toBe(true);
   });
 
@@ -147,5 +153,59 @@ describe('ProfileSettingsDrawerComponent', () => {
 
     expect(query('profile-settings-drawer-error')).toBeNull();
     expect(toggle('badges')).not.toBeNull();
+  });
+
+  it('switches About me and Personal information with General profile information, as the hub drawer does', async () => {
+    const { query, open, toggle, flush } = await render(() => of(visibility(true, { basic: true, aboutMe: true, personalInfo: true })));
+    await open();
+    (query('ui-tab-personal') as HTMLButtonElement).click();
+    await flush();
+
+    toggle('basic').click();
+    await flush();
+    expect([toggle('aboutMe').checked, toggle('personalInfo').checked]).toEqual([false, false]);
+
+    toggle('aboutMe').click();
+    await flush();
+    expect(toggle('basic').checked).toBe(true);
+  });
+
+  it('hides every section on going private, and says so once saved', async () => {
+    const { update, add, query, open, button, flush } = await render(() => of(visibility(true, { basic: true, badges: true })));
+    await open();
+
+    (query('profile-settings-drawer-private')?.querySelector('input') as HTMLInputElement).click();
+    await flush();
+    button('profile-settings-drawer-save').click();
+    await flush();
+
+    expect(update).toHaveBeenCalledWith({ isPublic: false, sections: { ...PROFILE_VISIBILITY_DEFAULTS } });
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ detail: PROFILE_SETTINGS_DRAWER_COPY.nowPrivate }));
+  });
+
+  it('keeps the drawer open with the changes when a save fails', async () => {
+    const update = vi.fn(() => throwError(() => new HttpErrorResponse({ status: 500 })));
+    const { drawer, add, open, button, toggle, flush } = await render(() => of(visibility(true)), update);
+    await open();
+
+    toggle('badges').click();
+    await flush();
+    button('profile-settings-drawer-save').click();
+    await flush();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: PROFILE_SETTINGS_DRAWER_COPY.saveFailed }));
+    expect(drawer.isOpen()).toBe(true);
+    expect(toggle('badges').checked).toBe(true);
+    expect(button('profile-settings-drawer-save').disabled).toBe(false);
+  });
+
+  it('is read-only while impersonating', async () => {
+    const { query, open, button, toggle } = await render(() => of(visibility(true, { badges: true })), undefined, true);
+    await open();
+
+    expect(query('profile-settings-drawer-readonly')?.textContent).toContain(PROFILE_SETTINGS_DRAWER_COPY.readOnly);
+    expect((query('profile-settings-drawer-public')?.querySelector('input') as HTMLInputElement).disabled).toBe(true);
+    expect(toggle('badges').disabled).toBe(true);
+    expect(button('profile-settings-drawer-save').disabled).toBe(true);
   });
 });

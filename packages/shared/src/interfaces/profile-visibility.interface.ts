@@ -25,15 +25,13 @@ export interface ProfileVisibilityUpdateRequest {
   sections: ProfileVisibilitySections;
 }
 
-/** A switch row in the Profile page's Open Profile settings drawer (#6087), and the stored key it shows on the public profile. */
-export interface ProfileSettingsRow {
+/** A switch row in the Profile page's Open Profile settings drawer (#6087), as the drawer renders it. */
+export interface ProfileSettingsRowState {
   key: ProfileVisibilityKey;
   name: string;
   description: string;
-}
-
-/** A drawer row with whether its block shows today, as the drawer renders it. */
-export interface ProfileSettingsRowState extends ProfileSettingsRow {
+  /** Sits under General profile information, which turns it on and off with it. */
+  child: boolean;
   shown: boolean;
 }
 

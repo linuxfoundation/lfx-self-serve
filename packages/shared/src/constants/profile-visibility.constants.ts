@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ProfileSettingsRow } from '../interfaces/profile-visibility.interface';
-
 // Section-level public-profile visibility, mirroring the myprofile "visibility" preference
 // (`Name='visibility'`, `Type='json'`). Each key gates one public-profile section. See LFXV2-2629.
 
@@ -98,7 +96,6 @@ export const PROFILE_SETTINGS_DRAWER_COPY = {
   tabsLabel: 'Open Profile settings',
   blocksTab: 'Blocks',
   personalTab: 'Personal data',
-  personalNote: 'Your name, job title, affiliation and avatar are always visible on your public profile.',
   cancel: 'Cancel',
   save: 'Save changes',
   nowPublic: 'Your profile is now public',
@@ -113,20 +110,3 @@ export const PROFILE_SETTINGS_DRAWER_COPY = {
   readOnly: 'You are viewing this profile while impersonating another user, so these settings are read-only.',
   impersonationBlocked: 'Visibility changes are unavailable while impersonating another user.',
 } as const;
-
-/** The Blocks tab's rows: the public profile blocks we store a visibility for, in the page's order (#6087). */
-export const PROFILE_SETTINGS_BLOCKS: readonly ProfileSettingsRow[] = [
-  { key: 'badges', name: 'Recognitions', description: 'Badges and certifications you have earned through Credly.' },
-  {
-    key: 'technical_contribution',
-    name: 'Foundations & projects involvement',
-    description: 'Every foundation and project you take part in, and your role in each.',
-  },
-  { key: 'community_roles', name: 'Group participation', description: 'Boards, committees and working groups you hold a seat in.' },
-  { key: 'event_activities', name: 'Event speaking', description: 'Talks you have given at Linux Foundation events.' },
-];
-
-/** The Personal data tab's rows (#6087). */
-export const PROFILE_SETTINGS_PERSONAL_ROWS: readonly ProfileSettingsRow[] = [
-  { key: 'personalInfo', name: 'Location', description: 'Your city and country only.' },
-];

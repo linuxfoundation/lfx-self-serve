@@ -7,12 +7,11 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, TemplateRef, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import {
-  PROFILE_SETTINGS_BLOCKS,
   PROFILE_SETTINGS_DRAWER_COPY,
-  PROFILE_SETTINGS_PERSONAL_ROWS,
   PROFILE_VISIBILITY_DEFAULTS,
   PROFILE_VISIBILITY_KEYS,
   PROFILE_VISIBILITY_PUBLIC_DEFAULT_KEYS,
+  PROFILE_VISIBILITY_SECTIONS,
 } from '@lfx-one/shared/constants';
 import {
   ProfileSettingsRowState,
@@ -37,10 +36,13 @@ import { catchError, filter, finalize, of, Subscription, take } from 'rxjs';
 
 import { ProfileVisibilityDrawerService } from '../profile-visibility-drawer/profile-visibility-drawer.service';
 
+/** The sections under General profile information. */
+const PERSONAL_CHILD_KEYS: readonly ProfileVisibilityKey[] = PROFILE_VISIBILITY_SECTIONS.filter((row) => row.parent === 'basic').map((row) => row.key);
+
 /**
  * The Profile page's Open Profile settings drawer (#6087), behind the profile redesign flag: the Private / Public switch with the
- * public link, then the Blocks and Personal data switches, saved together with "Save changes". It reads and writes the same
- * visibility preference as the hub's drawer, which the old hub keeps.
+ * public link, then a switch for every section the hub's drawer has, saved together with "Save changes". It reads and writes the
+ * same visibility preference as the hub's drawer, which the old hub keeps.
  */
 @Component({
   selector: 'lfx-profile-settings-drawer',
@@ -122,7 +124,16 @@ export class ProfileSettingsDrawerComponent {
 
   protected onSectionChange(key: ProfileVisibilityKey, shown: boolean): void {
     if (this.locked()) return;
-    this.sections.update((sections) => ({ ...sections, [key]: shown }));
+    this.sections.update((sections) => {
+      const next = { ...sections, [key]: shown };
+      // As the hub's drawer: General profile information switches its children with it, and stays on while either is on.
+      if (key === 'basic') {
+        for (const child of PERSONAL_CHILD_KEYS) next[child] = shown;
+      } else if (PERSONAL_CHILD_KEYS.includes(key)) {
+        next.basic = PERSONAL_CHILD_KEYS.some((child) => next[child]);
+      }
+      return next;
+    });
   }
 
   protected async onCopyUrl(): Promise<void> {
@@ -180,11 +191,18 @@ export class ProfileSettingsDrawerComponent {
     });
   }
 
+  // Blocks: the activity sections; Personal data: General profile information and the sections under it.
   private initRows(): Signal<ProfileSettingsRowState[]> {
     return computed(() => {
       const sections = this.sections();
-      const rows = this.activeTab() === 'blocks' ? PROFILE_SETTINGS_BLOCKS : PROFILE_SETTINGS_PERSONAL_ROWS;
-      return rows.map((row) => ({ ...row, shown: sections[row.key] }));
+      const personal = this.activeTab() === 'personal';
+      return PROFILE_VISIBILITY_SECTIONS.filter((row) => (row.key === 'basic' || !!row.parent) === personal).map((row) => ({
+        key: row.key,
+        name: row.name,
+        description: row.description,
+        child: !!row.parent,
+        shown: sections[row.key],
+      }));
     });
   }
 
