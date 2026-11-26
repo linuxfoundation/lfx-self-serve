@@ -4958,6 +4958,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInConversionsEnabled: false,
       linkedInLeadGenEnabled: false,
       linkedInCarouselEnabled: false,
+      linkedInDocumentEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5730,6 +5731,26 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** LinkedIn document ads (campaign-service#665): the cutover, the LinkedIn asset flag (the PDF is a brief asset) and its own flag. */
+  it.each([
+    [{ cutover: true, assets: true, document: true }, true],
+    [{ cutover: true, assets: true, document: false }, false],
+    [{ cutover: true, assets: false, document: true }, false],
+    [{ cutover: false, assets: true, document: true }, false],
+  ])('reports LinkedIn document ads (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInDocument) return flags.document;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInAssets) return flags.assets;
+      return flags.cutover;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInDocumentEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The LinkedIn daily-cap capability (#5774): the create cutover alone, like the targeting edit above. */
   it.each([
     [{ create: true, briefs: true, jobs: true, others: false }, true],
@@ -5835,6 +5856,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInConversionsEnabled: false,
       linkedInLeadGenEnabled: false,
       linkedInCarouselEnabled: false,
+      linkedInDocumentEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -7157,7 +7179,7 @@ describe('CampaignServiceClient creative-asset library reads', () => {
 
       const result = await new CampaignServiceClient().listCreativeAssets(req, 'tlf', BRIEF);
 
-      expect(result).toEqual({ assets: [mappedAsset], videos: [], count: 1, countLimit: 100, bytesUsed: 12, bytesLimit: 536870912 });
+      expect(result).toEqual({ assets: [mappedAsset], videos: [], documents: [], count: 1, countLimit: 100, bytesUsed: 12, bytesLimit: 536870912 });
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/tlf/briefs/${BRIEF}/creative-assets`, 'GET');
     });
 
@@ -7172,11 +7194,23 @@ describe('CampaignServiceClient creative-asset library reads', () => {
       expect(result).toEqual({
         assets: [mappedAsset],
         videos: [{ id: VIDEO_ID, byteSize: 102_400, checksum: 'ab'.repeat(32) }],
+        documents: [],
         count: 2,
         countLimit: 100,
         bytesUsed: 102_412,
         bytesLimit: 536870912,
       });
+    });
+
+    // A PDF (campaign-service#665) shares the store too: listed as a document, never as an image, so the read does not fail.
+    it('lists a stored PDF apart from the images and videos', async () => {
+      const PDF_ID = '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b';
+      const pdf = { ...upstreamAsset, id: PDF_ID, mime_type: 'application/pdf', byte_size: 2048 };
+      proxyRequest.mockResolvedValueOnce({ ...upstreamList, assets: [upstreamAsset, pdf], count: 2, bytes_used: 2060 });
+
+      const result = await new CampaignServiceClient().listCreativeAssets(req, 'tlf', BRIEF);
+
+      expect(result).toMatchObject({ assets: [mappedAsset], videos: [], documents: [{ id: PDF_ID, byteSize: 2048, checksum: 'ab'.repeat(32) }], count: 2 });
     });
 
     // `width`/`height` are OPTIONAL upstream and absent means UNKNOWN, not 0 — the service began

@@ -38,6 +38,9 @@ const LINKEDIN_CONFIG_REQUEST_KEYS = [
   'leadGenCallToAction',
   'carouselCards',
   'carouselIntroText',
+  'documentAssetId',
+  'documentTitle',
+  'documentIntroText',
 ] as const;
 
 /** The `linkedInConfig.variants[i]` keys a create may carry, spelled exactly (`LinkedInCreativeVariant`). */

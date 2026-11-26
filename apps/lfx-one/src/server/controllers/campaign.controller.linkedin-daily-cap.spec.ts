@@ -82,9 +82,9 @@ const CONFIG: LinkedInRuntimeConfig = {
   ],
 };
 
-function buildReq(linkedInConfigBody: Record<string, unknown>): Request {
+function buildReq(linkedInConfigBody: Record<string, unknown>, extra: Record<string, unknown> = {}): Request {
   return {
-    body: { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100, ...linkedInConfigBody } },
+    body: { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100, ...linkedInConfigBody }, ...extra },
     query: { project: 'tlf', brief_id: 'b-1' },
     path: '/api/campaigns/create',
   } as unknown as Request;
@@ -98,10 +98,10 @@ function sentLinkedInConfig(): Record<string, unknown> {
   return (createCampaigns.mock.calls[0][4] as Record<string, unknown>)['linkedInConfig'] as Record<string, unknown>;
 }
 
-async function create(linkedInConfigBody: Record<string, unknown>): Promise<{ res: Response; next: NextFunction }> {
+async function create(linkedInConfigBody: Record<string, unknown>, extra: Record<string, unknown> = {}): Promise<{ res: Response; next: NextFunction }> {
   const res = buildRes();
   const next = vi.fn() as unknown as NextFunction;
-  await new CampaignController().createCampaign(buildReq(linkedInConfigBody), res, next);
+  await new CampaignController().createCampaign(buildReq(linkedInConfigBody, extra), res, next);
   return { res, next };
 }
 
@@ -370,6 +370,63 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
     isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInCarousel);
 
     const { next } = await create(carousel);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.format');
+  });
+
+  // LinkedIn document ads (campaign-service#665); the rules are table rows in `campaign-linkedin-document.utils.spec.ts`.
+  const documentAd = {
+    lifetimeBudget: false,
+    targetingProfile: 'cloud-native',
+    variants: [],
+    format: 'document',
+    documentAssetId: '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b',
+    documentTitle: 'Sponsor prospectus',
+    documentIntroText: 'Sponsor the conference',
+  };
+
+  it('forwards a document as it came, with no registration URL on the brief', async () => {
+    // A stored brief with no registration URL: a document post has no landing page, so campaign-service needs none.
+    loadBriefById.mockResolvedValue({ status: 'loaded', briefId: 'b-1', brief: { eventDetails: { registrationUrl: '' } }, etag: 'e', approved: true });
+
+    const { next } = await create(documentAd);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()).toMatchObject({
+      format: 'document',
+      documentAssetId: documentAd.documentAssetId,
+      documentTitle: documentAd.documentTitle,
+      documentIntroText: documentAd.documentIntroText,
+    });
+  });
+
+  it('still asks a single image create for the registration URL', async () => {
+    loadBriefById.mockResolvedValue({ status: 'loaded', briefId: 'b-1', brief: { eventDetails: { registrationUrl: '' } }, etag: 'e', approved: true });
+
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [{ introText: 'a', headline: 'b' }] });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('registrationUrl');
+  });
+
+  it('still asks the other platforms of a document create for the registration URL', async () => {
+    loadBriefById.mockResolvedValue({ status: 'loaded', briefId: 'b-1', brief: { eventDetails: { registrationUrl: '' } }, etag: 'e', approved: true });
+
+    const { next } = await create(documentAd, {
+      platforms: ['linkedin-ads', 'meta-ads'],
+      metaConfig: { budgetUsd: 100, variants: [{ primaryText: 'a', headline: 'b', imageUrl: 'https://example.com/a.png' }] },
+    });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('registrationUrl');
+  });
+
+  it('refuses a document while its flag is off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInDocument);
+
+    const { next } = await create(documentAd);
 
     expect(createCampaigns).not.toHaveBeenCalled();
     expect(legacyCreate).not.toHaveBeenCalled();
