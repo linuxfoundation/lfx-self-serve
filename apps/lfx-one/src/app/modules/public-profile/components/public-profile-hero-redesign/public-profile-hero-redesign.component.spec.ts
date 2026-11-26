@@ -68,6 +68,19 @@ describe('PublicProfileHeroRedesignComponent', () => {
     expect(query('hero-linkedin')?.querySelector('a')?.getAttribute('aria-label')).toBe('LinkedIn: ada-l');
   });
 
+  it('names a LinkedIn URL with a malformed escape as written, rather than breaking the hero', async () => {
+    const { query } = await render({ ...BASIC, LinkedInID: 'https://www.linkedin.com/in/ada%zz/' });
+
+    expect(query('hero-linkedin')?.querySelector('a')?.getAttribute('aria-label')).toBe('LinkedIn: ada%zz');
+    expect(query('hero-name')?.textContent?.trim()).toBe('Ada Lovelace');
+  });
+
+  it('turns a LinkedIn value that is not a web address into a linkedin.com profile link', async () => {
+    const { query } = await render({ ...BASIC, LinkedInID: 'javascript:alert(1)' });
+
+    expect(query('hero-linkedin')?.querySelector('a')?.getAttribute('href')).toBe('https://www.linkedin.com/in/javascript%3Aalert(1)');
+  });
+
   it('leaves the links out when there are none', async () => {
     const { query } = await render({ Name: 'Ada Lovelace' });
 
@@ -87,6 +100,18 @@ describe('PublicProfileHeroRedesignComponent', () => {
     await fixture.whenStable();
     expect(query('hero-avatar-image')).toBeNull();
     expect(query('hero-avatar-fallback')).not.toBeNull();
+  });
+
+  it('keeps a loaded logo when a late error arrives from the uploaded photo', async () => {
+    const { fixture, query } = await render({ ...BASIC, avatarUrl: 'https://cdn.example/ada.png', LogoURL: 'https://cdn.example/logo.png' });
+    query('hero-avatar-image')?.dispatchEvent(new Event('error'));
+    await fixture.whenStable();
+
+    // A replayed error for the uploaded photo, after the swap to the logo.
+    const hero = fixture.debugElement.children[0].componentInstance as { onPhotoError(url: string): void };
+    hero.onPhotoError('https://cdn.example/ada.png');
+    await fixture.whenStable();
+    expect(query('hero-avatar-image')?.getAttribute('src')).toBe('https://cdn.example/logo.png');
   });
 
   it('shows the person icon when there is no photo', async () => {

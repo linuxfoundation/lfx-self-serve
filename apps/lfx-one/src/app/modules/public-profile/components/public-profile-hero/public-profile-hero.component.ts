@@ -26,7 +26,7 @@ export class PublicProfileHeroComponent {
   // Prefers the uploaded avatar (guessed from username, existence unverified) over the SFDC-derived
   // LogoURL artifact — falls back to LogoURL if the uploaded one 404s (e.g. no avatar ever
   // uploaded), tracked by comparing against the exact URL that errored (LFXV2-2628).
-  protected readonly erroredAvatarUrl = signal<string | null>(null);
+  private readonly erroredAvatarUrl = signal<string | null>(null);
   protected readonly avatarImage = computed(() => {
     const basic = this.basic();
     const uploaded = basic?.avatarUrl?.trim();

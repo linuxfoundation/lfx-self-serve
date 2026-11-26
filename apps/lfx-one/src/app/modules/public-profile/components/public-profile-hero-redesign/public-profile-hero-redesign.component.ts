@@ -38,20 +38,27 @@ export class PublicProfileHeroRedesignComponent extends PublicProfileHeroCompone
     return url ? { handle: this.linkedInHandle(url), url } : null;
   });
 
-  /** The uploaded photo falls back to the profile's logo; once that fails too, the person icon shows. */
-  protected onPhotoError(): void {
-    const image = this.avatarImage();
-    const uploaded = this.basic()?.avatarUrl?.trim();
-    if (uploaded && image === uploaded) {
+  /**
+   * The uploaded photo falls back to the profile's logo; once that fails too, the person icon shows. Keyed on the URL that
+   * failed, so a late or replayed error from the uploaded photo can't hide a logo that loaded.
+   */
+  protected onPhotoError(url: string): void {
+    if (url === this.basic()?.avatarUrl?.trim()) {
       this.handleAvatarError();
       return;
     }
-    this.failedImage.set(image);
+    this.failedImage.set(url);
   }
 
   // The vanity name from a LinkedIn profile URL, for the link's label; the URL itself when it has no /in/ path.
   private linkedInHandle(url: string): string {
     const match = /linkedin\.com\/in\/([^/?#]+)/i.exec(url);
-    return match ? decodeURIComponent(match[1]) : url;
+    if (!match) return url;
+    // A malformed escape in a URL the owner typed shows as written rather than breaking the hero.
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return match[1];
+    }
   }
 }
