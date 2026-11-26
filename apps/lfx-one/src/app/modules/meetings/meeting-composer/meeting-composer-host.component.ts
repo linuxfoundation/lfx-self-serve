@@ -207,7 +207,8 @@ export class MeetingComposerHostComponent {
         filter((context) => !!context),
         takeUntilDestroyed()
       )
-      .subscribe((context) => this.formService.initialize(context));
+      // Recording and AI summary start on in the redesigned modal; the drawer keeps today's defaults.
+      .subscribe((context) => this.formService.initialize(context, { featureDefaultsOn: this.redesign() }));
 
     // Losing write access while the composer is open would make submit fail upstream; close it instead
     // of evicting the user from the page underneath. `canWriteMeetings`, not `canWrite`: the latter is
@@ -614,7 +615,7 @@ export class MeetingComposerHostComponent {
     this.toast.show({ variant: 'dark', message: 'Meeting deleted', description: description.join(' · ') });
     this.composer.notifySaved();
     // A late result must not close a composer opened since for another meeting.
-    if (!this.composer.isOpen() || this.formService.meeting()?.id === meeting.id) {
+    if (!this.composer.isOpen() || this.composer.context()?.meetingUid === meeting.id) {
       this.composer.close();
     }
   }
