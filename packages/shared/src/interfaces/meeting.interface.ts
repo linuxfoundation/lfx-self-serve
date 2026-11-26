@@ -972,6 +972,23 @@ export interface ComposerRedesignGuestRow extends ComposerGuestRow {
   resending: boolean;
 }
 
+/** A group in the redesigned composer's picker or its selected list. */
+export interface ComposerGroupRow {
+  uid: string;
+  name: string;
+  /** `{category} · {n} members`, with unknown parts dropped. */
+  meta: string;
+  /** Whether the voting-status filter applies to this group. */
+  voting: boolean;
+}
+
+/** A voting status in the composer's per-group menu, with whether the meeting's filter includes it. */
+export interface ComposerVotingStatusOption {
+  label: string;
+  value: string;
+  checked: boolean;
+}
+
 /**
  * Guest removals since the last add or dismiss, kept so they can be undone together
  * @description Removal has no confirm step, so this is the way back from misclicks. Undo puts back the

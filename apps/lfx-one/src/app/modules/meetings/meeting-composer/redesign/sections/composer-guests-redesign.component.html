@@ -205,10 +205,9 @@
   @if (!isOccurrenceEdit()) {
     <hr class="m-0 border-0 border-t border-gray-200" />
     <div class="flex min-w-0 flex-col gap-[8px]" role="group" aria-label="Groups" data-testid="composer-guests-groups">
-      <lfx-meeting-committee-manager
+      <lfx-composer-group-picker
         [selectedCommittees]="selectedCommittees()"
         [allowRestrictedAttendees]="true"
-        [composerLayout]="true"
         [form]="form()"
         [savedAttendeeVisibility]="savedAttendeeVisibility()"
         [committeeContext]="formService.committeeContext()"

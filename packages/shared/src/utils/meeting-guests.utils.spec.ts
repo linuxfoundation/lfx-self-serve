@@ -12,6 +12,7 @@ import { CommitteeMember, MeetingCommittee, MeetingRegistrant, MeetingRsvp, Past
 import {
   buildParticipantGuestRows,
   buildRegistrantGuestRows,
+  composerGroupMeta,
   composerGuestSubline,
   filterMeetingGuestRows,
   getMeetingGuestFilterChips,
@@ -338,5 +339,17 @@ describe('composerGuestSubline', () => {
     ['a guest without an email', { ...guest, email: '', committee_name: 'TSC' }, false, 'via TSC'],
   ])('describes %s', (_label, input, occurrenceEdit, expected) => {
     expect(composerGuestSubline(input, occurrenceEdit)).toBe(expected);
+  });
+});
+
+describe('composerGroupMeta', () => {
+  it.each([
+    ['a group with category and members', { category: 'Board', total_members: 12 }, 'Board · 12 members'],
+    ['one member', { category: 'Technical', total_members: 1 }, 'Technical · 1 member'],
+    ['no member count', { category: 'Board' }, 'Board'],
+    ['no category', { category: '', total_members: 0 }, '0 members'],
+    ['an unknown group', undefined, ''],
+  ])('describes %s', (_label, input, expected) => {
+    expect(composerGroupMeta(input)).toBe(expected);
   });
 });
