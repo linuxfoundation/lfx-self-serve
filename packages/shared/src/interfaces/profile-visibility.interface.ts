@@ -25,6 +25,19 @@ export interface ProfileVisibilityUpdateRequest {
   sections: ProfileVisibilitySections;
 }
 
+/** A switch row in the Profile page's Open Profile settings drawer (#6087), as the drawer renders it. */
+export interface ProfileSettingsRowState {
+  key: ProfileVisibilityKey;
+  name: string;
+  description: string;
+  /** Sits under General profile information, which turns it on and off with it. */
+  child: boolean;
+  shown: boolean;
+}
+
+/** The Open Profile settings drawer's tabs (#6087). */
+export type ProfileSettingsTab = 'blocks' | 'personal';
+
 /** Drawer auto-save status, driving the inline "Saving… / Saved" indicator (no explicit Save button). */
 export type ProfileVisibilitySaveState = 'idle' | 'saving' | 'saved' | 'error';
 

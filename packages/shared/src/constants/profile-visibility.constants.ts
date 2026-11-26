@@ -66,6 +66,11 @@ export const PROFILE_VISIBILITY_SECTIONS: readonly {
   { key: 'skills', name: 'Skills', description: 'Skills listed on your profile.' },
 ];
 
+/** The sections under General profile information (`basic`), which it switches on and off with it. */
+export const PROFILE_VISIBILITY_BASIC_CHILD_KEYS: readonly (typeof PROFILE_VISIBILITY_KEYS)[number][] = PROFILE_VISIBILITY_SECTIONS.filter(
+  (section) => section.parent === 'basic'
+).map((section) => section.key);
+
 /**
  * Segmented Private/Public options for the drawer's master-flag control. `value` is the boolean the
  * `isPublic` form control binds to (false = Private, true = Public).
@@ -80,3 +85,33 @@ export const VISIBILITY_PREFERENCE_NAME = 'visibility';
 
 /** user-service preference `AppName`. Preserved from myprofile so the existing pipeline keeps matching. */
 export const VISIBILITY_PREFERENCE_APP_NAME = 'myprofile';
+
+/** Copy for the Profile page's Open Profile settings drawer (#6087), behind the profile redesign flag. */
+export const PROFILE_SETTINGS_DRAWER_COPY = {
+  title: 'Open Profile settings',
+  subtitle:
+    'Control whether your contributor profile is publicly visible and which sections it exposes. Changes take effect the next time your public profile is regenerated.',
+  visibilityTitle: 'Profile visibility',
+  visibilityDescription: 'When private, your profile is hidden and no sections are exposed.',
+  visibilityLabel: 'Profile visibility',
+  private: 'Private',
+  public: 'Public',
+  copyLink: 'Copy link',
+  open: 'Open',
+  tabsLabel: 'Open Profile settings',
+  blocksTab: 'Blocks',
+  personalTab: 'Personal data',
+  cancel: 'Cancel',
+  save: 'Save changes',
+  nowPublic: 'Your profile is now public',
+  nowPrivate: 'Your profile is now private',
+  saved: 'Open Profile settings saved',
+  copied: 'Public profile link copied to clipboard.',
+  copyFailed: "Couldn't copy the link.",
+  loading: 'Loading your Open Profile settings…',
+  loadFailed: "Couldn't load your Open Profile settings.",
+  retry: 'Try again',
+  saveFailed: "Couldn't save your Open Profile settings. Please try again.",
+  readOnly: 'You are viewing this profile while impersonating another user, so these settings are read-only.',
+  impersonationBlocked: 'Visibility changes are unavailable while impersonating another user.',
+} as const;
