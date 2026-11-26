@@ -23,8 +23,8 @@ trackStateOnlyTests();
 /**
  * Wiring only (linuxfoundation/lfx-v2-campaign-service#665). What a document sends and why Create waits are rules in
  * `campaign-linkedin-document-form.utils.ts` and `campaign-linkedin-document.utils.ts`, tested there. Here: the PDF, title
- * and intro reach the request with no variants, a PDF of another brief, a manual bid and the website visits objective hold
- * Create, a gated document warns without holding it, and (one render) the format is offered while the single image
+ * and intro reach the request with no variants, a PDF of another brief or no longer stored and the website visits objective
+ * hold Create (a manual bid is a row in the form utils spec), a gated document warns without holding it, and (one render) the format is offered while the single image
  * variants and the website objectives are hidden.
  */
 describe('ImplementationTabComponent linkedin document', () => {
@@ -45,6 +45,7 @@ describe('ImplementationTabComponent linkedin document', () => {
     ...fields,
   });
   let createCampaign: ReturnType<typeof vi.fn>;
+  let enqueueCreativeAssetUploads: ReturnType<typeof vi.fn>;
 
   const brief = (): CampaignBriefOutput =>
     ({
@@ -83,6 +84,7 @@ describe('ImplementationTabComponent linkedin document', () => {
 
   beforeEach(async () => {
     createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+    enqueueCreativeAssetUploads = vi.fn();
     await TestBed.configureTestingModule({
       imports: [ImplementationTabComponent],
       providers: [
@@ -95,6 +97,7 @@ describe('ImplementationTabComponent linkedin document', () => {
           provide: CampaignService,
           useValue: {
             createCampaign,
+            enqueueCreativeAssetUploads,
             getLinkedInAccounts: () => of([ACCOUNT]),
             getLinkedInTargetingProfiles: () => of([]),
             getLinkedInLeadForms: () => of({ accountId: '111', forms: [] }),
@@ -149,6 +152,19 @@ describe('ImplementationTabComponent linkedin document', () => {
     // A held website visits objective is refused for a document.
     c(f)['onLinkedInObjectiveDraftChange']({ objective: 'traffic', conversions: [], conversionsOwner: null });
     expect(c(f)['createBlockedReason']()).toContain('no website visits or conversions');
+
+    // A PDF chosen in the editor goes to the brief's library queue as a document, so the queue takes a PDF.
+    const pdf = new File([new Uint8Array(16)], 'deck.pdf', { type: 'application/pdf' });
+    c(f)['onLinkedInDocumentUpload']([pdf]);
+    expect(enqueueCreativeAssetUploads).toHaveBeenCalledWith([pdf], 'tlf', 'b-1', { documents: true });
+
+    // The target cost is not offered beside a document, as beside lead generation.
+    f.componentRef.setInput('linkedInTargetCostEnabled', true);
+    f.componentRef.setInput('biddingEnabled', true);
+    c(f)['onLinkedInFormatSelect']('single_image');
+    expect(c(f)['linkedInTargetCostShown']()).toBe(true);
+    c(f)['onLinkedInFormatSelect']('document');
+    expect(c(f)['linkedInTargetCostShown']()).toBe(false);
 
     // A gated document is offered, and warns about one-page PDFs (decision 2026-11-25: a warning, not a refusal).
     expect(c(f)['linkedInDocumentGatedWarning']()).toBe('');

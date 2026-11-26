@@ -2078,9 +2078,10 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Whether the objective picker offers the target cost now (`linkedInTargetCostOffered`); hidden, a typed one is not sent.
    * Never with lead generation (campaign-service#664): a target cost on a MAX_LEAD campaign is not documented or probed.
+   * Nor with a document ad (campaign-service#665), for the same reason on its MAX_REACH engagement campaign.
    */
   protected readonly linkedInTargetCostShown = computed<boolean>(
-    () => linkedInTargetCostOffered(this.linkedInTargetCostOfferInput()) && !this.linkedInLeadGenSelected()
+    () => linkedInTargetCostOffered(this.linkedInTargetCostOfferInput()) && !this.linkedInLeadGenSelected() && !this.linkedInDocumentSelected()
   );
   /** A typed target cost while the capability is unread holds Create (`linkedInTargetCostPending`) rather than being dropped. */
   private readonly linkedInTargetCostAwaitingCapability = computed<boolean>(() =>
@@ -4120,7 +4121,7 @@ export class ImplementationTabComponent implements OnInit {
    * Why Create is blocked for an uploaded LinkedIn image this tab still holds but cannot send, or
    * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL LinkedIn does not have. The first
    * blocked variant's, or text ad's while Text Ads are chosen (#5764 row 19); each shows its own beside its picker. None
-   * while a carousel is chosen (campaign-service#665): its cards pick stored images, and the hidden variants send nothing.
+   * while a carousel or a document is chosen (campaign-service#665): they pick stored assets, and the hidden variants send nothing.
    */
   protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = computed(() => {
     if (this.linkedInCarouselSelected() || this.linkedInDocumentSelected()) return null;
@@ -9231,7 +9232,7 @@ export class ImplementationTabComponent implements OnInit {
             },
           }
         : {}),
-      // Likewise a document (campaign-service#665).
+      // A document chosen but no longer offered: held, never sent as single image ads instead (campaign-service#665).
       documentUnavailable: this.linkedInFormat() === 'document' && !this.linkedInDocumentAvailable(),
       // While a document is chosen, its PDF, title and intro replace the variant checks, judged with the objective and
       // bidding the create sends. Not while the brief saves, for the carousel's reason above.

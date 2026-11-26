@@ -152,7 +152,7 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
   if (input.carouselUnavailable) return 'LinkedIn Ads: carousel ads are not available right now. Choose single image ads as the ad format.';
   // A carousel beside lead generation, which campaign-service builds none of yet.
   if (input.carouselWithLeadGen) return 'LinkedIn Ads: lead generation campaigns cannot be carousels yet. Choose single image or video ads as the ad format.';
-  // Likewise a document (campaign-service#665).
+  // A document chosen but no longer offered: held, never sent as single image ads instead (campaign-service#665).
   if (input.documentUnavailable) return 'LinkedIn Ads: document ads are not available right now. Choose single image ads as the ad format.';
   // Custom targeting this deployment no longer offers is held rather than sent as the profile, a wider audience (#5764 rows 8–11).
   if (input.customTargetingUnavailable) return 'LinkedIn Ads: custom targeting is not available right now. Choose a targeting profile.';

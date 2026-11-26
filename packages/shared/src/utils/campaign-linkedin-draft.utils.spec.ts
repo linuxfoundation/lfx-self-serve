@@ -122,14 +122,10 @@ describe('linkedInDraftRestore', () => {
     expect(linkedInDraftRestore(draft({ linkedInFormat: stored as LinkedInDraftSnapshot['linkedInFormat'] })).format).toBe(expected);
   });
 
-  it('restores a stored document ad with every field as text, present-only', () => {
-    const stored = { assetId: 'pdf', assetBriefId: 7, title: 'Prospectus', introText: null } as unknown as LinkedInDraftSnapshot['linkedInDocument'];
-    expect(linkedInDraftRestore(draft({ linkedInDocument: stored })).document).toEqual({
-      assetId: 'pdf',
-      assetBriefId: '',
-      title: 'Prospectus',
-      introText: '',
-    });
+  // A malformed stored document is `linkedInDocumentDraftFromStored`'s, tested in its own spec.
+  it('restores a stored document ad, present-only', () => {
+    const stored = { assetId: 'pdf', assetBriefId: 'b1', title: 'Prospectus', introText: 'Sponsor us' };
+    expect(linkedInDraftRestore(draft({ linkedInDocument: stored })).document).toEqual(stored);
     expect(linkedInDraftRestore(draft({})).document).toBeUndefined();
   });
 
