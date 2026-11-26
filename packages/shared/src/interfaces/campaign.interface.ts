@@ -273,6 +273,16 @@ export interface StoredCreativeVideo {
   checksum: string;
 }
 
+/**
+ * A stored PDF (linuxfoundation/lfx-v2-campaign-service#665): the source of a LinkedIn document ad, listed apart from the
+ * images, which every image slot draws from. campaign-service records no file name or pixel size for it.
+ */
+export interface StoredCreativeDocument {
+  id: string;
+  byteSize: number;
+  checksum: string;
+}
+
 /** One stored video as the library lists it (#5764 row 18), and whether it may be deleted now. */
 export interface LinkedInStoredVideoRow {
   id: string;
@@ -298,6 +308,8 @@ export interface CreativeAssetLibrary {
   assets: StoredCreativeAsset[];
   /** The stored videos (#5764 row 18), shown only so they can be deleted. `count` and `bytesUsed` include them. */
   videos: StoredCreativeVideo[];
+  /** The stored PDFs (campaign-service#665), which only a LinkedIn document ad uses. `count` and `bytesUsed` include them. */
+  documents: StoredCreativeDocument[];
   count: number;
   countLimit: number;
   bytesUsed: number;
@@ -2620,6 +2632,16 @@ export interface LinkedInCampaignCreateRequest {
   carouselCards?: LinkedInCarouselCard[];
   /** The carousel post's intro text, at most 255 characters. Only with `format: 'carousel'`. */
   carouselIntroText?: string;
+  /**
+   * The PDF of a `format: 'document'` create (campaign-service#665): a creative asset stored for THIS brief, sent with an
+   * empty `variants`. Only while `linkedInDocumentEnabled`. A document create is an engagement ad unless `objective` is
+   * `lead_generation` (a gated document); it takes no other objective and no manual bid.
+   */
+  documentAssetId?: string;
+  /** The document's title, at most 70 characters. Only with `format: 'document'`. */
+  documentTitle?: string;
+  /** The document post's intro text, at most 600 characters (LinkedIn recommends about 150). Only with `format: 'document'`. */
+  documentIntroText?: string;
   /**
    * The campaign's own LinkedIn targeting (#5764 rows 8–11, campaign-service #552). Set, it REPLACES `targetingProfile`,
    * so it is refused with `targetingProfileEdit`. Only while `linkedInTargetingEnabled`.
@@ -8549,6 +8571,13 @@ export interface CampaignListResult {
    * `LINKEDIN_ADS_CAROUSEL_ENABLED`.
    */
   linkedInCarouselEnabled: boolean;
+  /**
+   * Whether a LinkedIn create may be a document ad (`format: 'document'` with `documentAssetId`, `documentTitle` and
+   * `documentIntroText`, campaign-service#665), and the creative-asset upload takes a PDF. Needs the LinkedIn creative
+   * asset path (`canUseLinkedInCreativeAssets`), since the PDF is a brief asset, AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DOCUMENT`, which follows campaign-service's own `LINKEDIN_ADS_DOCUMENT_ENABLED`.
+   */
+  linkedInDocumentEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.

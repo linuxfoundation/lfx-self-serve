@@ -861,10 +861,10 @@ export const LINKEDIN_VARIANT_FIELD_LIMITS = {
 
 /**
  * The ad formats a LinkedIn create may name (#5764 row 19), campaign-service's `FormatSingleImage`, `FormatText`
- * (`internal/platform/linkedin/text_ads.go`, #586) and `FormatCarousel` (`carousel.go`, #665). Omitted is the
- * single-image default.
+ * (`internal/platform/linkedin/text_ads.go`, #586), `FormatCarousel` (`carousel.go`, #665) and `FormatDocument`
+ * (`documents.go`, #665). Omitted is the single-image default.
  */
-export const LINKEDIN_AD_FORMATS = ['single_image', 'text', 'carousel'] as const;
+export const LINKEDIN_AD_FORMATS = ['single_image', 'text', 'carousel', 'document'] as const;
 
 /**
  * LinkedIn Text Ads limits (#5764 row 19), campaign-service's `TextAdHeadlineMaxChars`, `TextAdDescriptionMaxChars`
@@ -903,6 +903,34 @@ export const LINKEDIN_CAROUSEL_CARDS_FIELD = 'linkedInConfig.carouselCards';
 
 /** The field a LinkedIn carousel intro text refusal names (campaign-service#665). */
 export const LINKEDIN_CAROUSEL_INTRO_TEXT_FIELD = 'linkedInConfig.carouselIntroText';
+
+/**
+ * LinkedIn document ad limits (linuxfoundation/lfx-v2-campaign-service#665), campaign-service's `DocumentTitleMaxChars`
+ * and `DocumentIntroTextMaxChars` (`internal/platform/linkedin/documents.go`): characters after the creative
+ * normalization. `recommendedIntroText` is LinkedIn's recommended length for a document's intro text, which the Implement
+ * tab suggests without refusing a longer one (decision 2026-11-25: the limit stays 600).
+ */
+export const LINKEDIN_DOCUMENT_LIMITS = {
+  title: 70,
+  introText: 600,
+  recommendedIntroText: 150,
+} as const;
+
+/** The field a LinkedIn document asset refusal names (campaign-service#665). */
+export const LINKEDIN_DOCUMENT_ASSET_FIELD = 'linkedInConfig.documentAssetId';
+
+/** The field a LinkedIn document title refusal names (campaign-service#665). */
+export const LINKEDIN_DOCUMENT_TITLE_FIELD = 'linkedInConfig.documentTitle';
+
+/** The field a LinkedIn document intro text refusal names (campaign-service#665). */
+export const LINKEDIN_DOCUMENT_INTRO_TEXT_FIELD = 'linkedInConfig.documentIntroText';
+
+/** A LinkedIn document's request keys, spelled exactly, with the field each refusal names, in the order they are checked. */
+export const LINKEDIN_DOCUMENT_REQUEST_FIELDS = [
+  ['documentAssetId', LINKEDIN_DOCUMENT_ASSET_FIELD],
+  ['documentTitle', LINKEDIN_DOCUMENT_TITLE_FIELD],
+  ['documentIntroText', LINKEDIN_DOCUMENT_INTRO_TEXT_FIELD],
+] as const;
 
 /** The field a LinkedIn targeting refusal names (#5764 rows 8–11). */
 export const LINKEDIN_TARGETING_FIELD = 'linkedInConfig.targeting';
@@ -4400,8 +4428,15 @@ export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can b
  */
 export const CREATIVE_ASSET_VIDEO_MIME_TYPE = 'video/mp4';
 
-/** Every type the creative-asset upload route parses: the images and the MP4 video. */
-export const CREATIVE_ASSET_UPLOAD_MIME_TYPES = [...CREATIVE_ASSET_MIME_TYPES, CREATIVE_ASSET_VIDEO_MIME_TYPE] as const;
+/**
+ * The document type a creative-asset upload accepts (linuxfoundation/lfx-v2-campaign-service#665): campaign-service's
+ * `MimeTypePDF`, checked structurally there (`validatePDFUpload`). Only a LinkedIn document ad consumes one, so the BFF
+ * admits it only while `canSetLinkedInDocument()`. Kept apart from `CREATIVE_ASSET_MIME_TYPES`, like the video.
+ */
+export const CREATIVE_ASSET_DOCUMENT_MIME_TYPE = 'application/pdf';
+
+/** Every type the creative-asset upload route parses: the images, the MP4 video and the PDF document. */
+export const CREATIVE_ASSET_UPLOAD_MIME_TYPES = [...CREATIVE_ASSET_MIME_TYPES, CREATIVE_ASSET_VIDEO_MIME_TYPE, CREATIVE_ASSET_DOCUMENT_MIME_TYPE] as const;
 
 /**
  * The largest video this app uploads as a creative asset, in bytes (30 MiB): campaign-service's own decoded ceiling for
@@ -4416,6 +4451,27 @@ export const CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE = 'The video is larger than 
 
 /** Shown, and answered by the BFF, when a video is not an MP4, or is one while this deployment takes no video. */
 export const CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE = 'Only MP4 videos can be uploaded.';
+
+/**
+ * The largest PDF this app uploads as a creative asset, in bytes (30 MiB): campaign-service's own decoded ceiling for any
+ * asset, as for the video. Images keep `CREATIVE_ASSET_MAX_BYTES`. LinkedIn's own 100 MB document limit is above it.
+ */
+export const CREATIVE_ASSET_DOCUMENT_MAX_BYTES = 30 * 1024 * 1024;
+
+/** Shown, and answered by the BFF, when a PDF exceeds `CREATIVE_ASSET_DOCUMENT_MAX_BYTES`. */
+export const CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE = 'The PDF is larger than 30 MB. Choose a smaller PDF.';
+
+/** Shown, and answered by the BFF, when a file is not a complete PDF, or is one while this deployment takes no document. */
+export const CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE = 'Only complete PDF documents can be uploaded.';
+
+/**
+ * campaign-service's structural PDF check (`pdfStructurally`, `internal/service/creative_asset_document.go`): the
+ * smallest file worth a look (`minPDFBytes`), and how far from the end the final `%%EOF` may sit (`pdfTrailerWindow`).
+ */
+export const CREATIVE_ASSET_PDF_LIMITS = {
+  minBytes: 64,
+  trailerWindow: 1024,
+} as const;
 
 /**
  * The smallest video LinkedIn takes as a video ad, in bytes (75 KiB): campaign-service's `linkedin.MinVideoBytes`, which
@@ -4620,16 +4676,38 @@ export function sniffCreativeAssetMimeType(bytes: unknown): CreativeAssetMimeTyp
 }
 
 /**
- * The upload type the leading bytes actually are, or `null`: an image as `sniffCreativeAssetMimeType` reads it, or an
- * MP4, which opens with an ftyp box whose major brand is one of `CREATIVE_ASSET_MP4_MAJOR_BRANDS`. Only the opening box
- * is read; campaign-service walks the whole file and refuses a truncated one with a readable 400.
+ * Whether `bytes` pass campaign-service's structural PDF check (`pdfStructurally`): at least
+ * `CREATIVE_ASSET_PDF_LIMITS.minBytes`, a `%PDF-` header with a 1.x or 2.x version, and a final `%%EOF` within the last
+ * `CREATIVE_ASSET_PDF_LIMITS.trailerWindow` bytes followed only by CR, LF, space, tab or NUL, so a truncated upload is
+ * refused here rather than by campaign-service's 400. Nothing is rendered: whether LinkedIn can use it is LinkedIn's call.
+ */
+function pdfStructurally(bytes: Uint8Array): boolean {
+  const { minBytes, trailerWindow } = CREATIVE_ASSET_PDF_LIMITS;
+  const ascii = (from: number, to: number) => String.fromCharCode(...bytes.subarray(from, to));
+  if (bytes.length < minBytes || ascii(0, 5) !== '%PDF-') return false;
+  // "%PDF-1.7" or "%PDF-2.0": a major version of 1 or 2, a dot, a digit.
+  if (!/^[12]\.[0-9]$/.test(ascii(5, 8))) return false;
+  // The FINAL marker must end the file. Only the trailer window is read: an earlier marker does not count.
+  const tail = ascii(Math.max(0, bytes.length - trailerWindow), bytes.length);
+  const last = tail.lastIndexOf('%%EOF');
+  return last !== -1 && /^[\r\n \t\0]*$/.test(tail.slice(last + 5));
+}
+
+/**
+ * The upload type the leading bytes actually are, or `null`: an image as `sniffCreativeAssetMimeType` reads it, an MP4,
+ * which opens with an ftyp box whose major brand is one of `CREATIVE_ASSET_MP4_MAJOR_BRANDS`, or a PDF that passes
+ * `pdfStructurally`. Only an MP4's opening box is read; campaign-service walks the whole file and refuses a truncated one
+ * with a readable 400.
  */
 export function sniffCreativeAssetUploadMimeType(bytes: unknown): CreativeAssetUploadMimeType | null {
   // Only a real byte buffer is read, as in `sniffCreativeAssetMimeType`: a request body tampered into an array or a
   // string would otherwise have its `length` and indexes read as bytes.
   if (Array.isArray(bytes) || !(bytes instanceof Uint8Array)) return null;
   const image = sniffCreativeAssetMimeType(bytes);
-  if (image !== null || bytes.length < 12) return image;
+  if (image !== null) return image;
+  // A PDF (campaign-service#665) opens with `%PDF-`, which no image or MP4 does.
+  if (pdfStructurally(bytes)) return CREATIVE_ASSET_DOCUMENT_MIME_TYPE;
+  if (bytes.length < 12) return null;
   const ascii = (from: number) => String.fromCharCode(...bytes.subarray(from, from + 4));
   // A box whose 32-bit size is 1 carries a 64-bit size after its type, which moves the brand to offset 16.
   const largeSize = bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 0 && bytes[3] === 1;
@@ -4638,14 +4716,33 @@ export function sniffCreativeAssetUploadMimeType(bytes: unknown): CreativeAssetU
   return ascii(4) === 'ftyp' && CREATIVE_ASSET_MP4_MAJOR_BRANDS.includes(ascii(brandAt)) ? CREATIVE_ASSET_VIDEO_MIME_TYPE : null;
 }
 
-/** Whether a declared MIME type is one `CREATIVE_ASSET_UPLOAD_MIME_TYPES` admits: an image or the MP4 video. */
+/** Whether a declared MIME type is one `CREATIVE_ASSET_UPLOAD_MIME_TYPES` admits: an image, the MP4 video or the PDF document. */
 export function isCreativeAssetUploadMimeType(value: unknown): value is CreativeAssetUploadMimeType {
   return typeof value === 'string' && (CREATIVE_ASSET_UPLOAD_MIME_TYPES as readonly string[]).includes(value);
 }
 
-/** The largest upload of `type`, in bytes: `CREATIVE_ASSET_VIDEO_MAX_BYTES` for the video, `CREATIVE_ASSET_MAX_BYTES` otherwise. */
+/**
+ * The largest upload of `type`, in bytes: `CREATIVE_ASSET_VIDEO_MAX_BYTES` for the video, `CREATIVE_ASSET_DOCUMENT_MAX_BYTES`
+ * for the PDF, `CREATIVE_ASSET_MAX_BYTES` otherwise.
+ */
 export function creativeAssetUploadMaxBytes(type: CreativeAssetUploadMimeType): number {
-  return type === CREATIVE_ASSET_VIDEO_MIME_TYPE ? CREATIVE_ASSET_VIDEO_MAX_BYTES : CREATIVE_ASSET_MAX_BYTES;
+  if (type === CREATIVE_ASSET_VIDEO_MIME_TYPE) return CREATIVE_ASSET_VIDEO_MAX_BYTES;
+  if (type === CREATIVE_ASSET_DOCUMENT_MIME_TYPE) return CREATIVE_ASSET_DOCUMENT_MAX_BYTES;
+  return CREATIVE_ASSET_MAX_BYTES;
+}
+
+/** The 413 message for an upload of `type`: each kind names its own limit. */
+export function creativeAssetTooLargeMessage(type: unknown): string {
+  if (type === CREATIVE_ASSET_VIDEO_MIME_TYPE) return CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE;
+  if (type === CREATIVE_ASSET_DOCUMENT_MIME_TYPE) return CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE;
+  return CREATIVE_ASSET_TOO_LARGE_MESSAGE;
+}
+
+/** The 415 message for an upload declared as `type`: a video or a PDF is named as such, anything else as an image. */
+export function creativeAssetWrongTypeMessage(type: unknown): string {
+  if (type === CREATIVE_ASSET_VIDEO_MIME_TYPE) return CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE;
+  if (type === CREATIVE_ASSET_DOCUMENT_MIME_TYPE) return CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE;
+  return CREATIVE_ASSET_WRONG_TYPE_MESSAGE;
 }
 
 /** Whether a declared MIME type is one `CREATIVE_ASSET_MIME_TYPES` admits. */

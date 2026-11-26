@@ -12,7 +12,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CreativeLibraryUploadComponent } from './creative-library-upload.component';
 
 const BRIEF_ID = 'b-1';
-const LIBRARY: CreativeAssetLibrary = { assets: [], videos: [], count: 98, countLimit: 100, bytesUsed: 100 * 1024 * 1024, bytesLimit: 512 * 1024 * 1024 };
+const LIBRARY: CreativeAssetLibrary = {
+  assets: [],
+  videos: [],
+  documents: [],
+  count: 98,
+  countLimit: 100,
+  bytesUsed: 100 * 1024 * 1024,
+  bytesLimit: 512 * 1024 * 1024,
+};
 
 const item = (id: string, status: CreativeAssetQueueItem['status'], message = '', briefId = BRIEF_ID): CreativeAssetQueueItem => ({
   id,

@@ -1506,10 +1506,29 @@ describe('creative-asset upload allowlist', () => {
     expect(sniffCreativeAssetUploadMimeType(bytes)).toBe(expected);
   });
 
+  // LinkedIn document ads (campaign-service#665): campaign-service's structural PDF check, mirrored.
+  const ascii = (text: string) => new TextEncoder().encode(text);
+  const pdf = (head = '%PDF-1.7\n', tail = '%%EOF\n', pad = 64) => new Uint8Array([...ascii(head), ...new Uint8Array(pad).fill(0x20), ...ascii(tail)]);
+  it.each([
+    ['a PDF 1.7', pdf(), 'application/pdf'],
+    ['a PDF 2.0 ending in CR LF and NULs', pdf('%PDF-2.0\n', '%%EOF\r\n\0\0'), 'application/pdf'],
+    ['a PDF 3.0', pdf('%PDF-3.0\n'), null],
+    ['a header with no version digit', pdf('%PDF-1.x\n'), null],
+    ['a PDF with no end-of-file marker', pdf('%PDF-1.7\n', 'trailer'), null],
+    ["a PDF cut off after an earlier revision's marker", pdf('%PDF-1.7\n', '%%EOF\n1 0 obj'), null],
+    ['a PDF whose marker sits more than 1024 bytes from the end', new Uint8Array([...pdf(), ...new Uint8Array(1025).fill(0x20)]), null],
+    ['a PDF under 64 bytes', ascii('%PDF-1.7\n%%EOF\n'), null],
+    ['a plain array', [...pdf()], null],
+  ])('sniffs %s as the PDF check reads it', (_label, bytes, expected) => {
+    expect(sniffCreativeAssetUploadMimeType(bytes)).toBe(expected);
+  });
+
   it('bounds each upload type by its own limit, a video at the upstream 30 MiB ceiling', () => {
     expect(creativeAssetUploadMaxBytes('image/png')).toBe(CREATIVE_ASSET_MAX_BYTES);
     expect(creativeAssetUploadMaxBytes('image/jpeg')).toBe(CREATIVE_ASSET_MAX_BYTES);
     expect(creativeAssetUploadMaxBytes('video/mp4')).toBe(30 * 1024 * 1024);
+    expect(creativeAssetUploadMaxBytes('application/pdf')).toBe(30 * 1024 * 1024);
+    expect(isCreativeAssetMimeType('application/pdf')).toBe(false);
     expect(isCreativeAssetUploadMimeType('video/mp4')).toBe(true);
     expect(isCreativeAssetMimeType('video/mp4')).toBe(false);
   });

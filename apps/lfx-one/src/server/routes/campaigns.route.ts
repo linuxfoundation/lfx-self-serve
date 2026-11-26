@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CREATIVE_ASSET_DOCUMENT_MAX_BYTES,
+  CREATIVE_ASSET_DOCUMENT_MIME_TYPE,
   CREATIVE_ASSET_MAX_BYTES,
   CREATIVE_ASSET_MIME_TYPES,
-  CREATIVE_ASSET_TOO_LARGE_MESSAGE,
   CREATIVE_ASSET_VIDEO_MAX_BYTES,
   CREATIVE_ASSET_VIDEO_MIME_TYPE,
-  CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE,
+  creativeAssetTooLargeMessage,
 } from '@lfx-one/shared/constants';
 import express, { NextFunction, Request, Response, Router } from 'express';
 
@@ -29,7 +30,7 @@ import {
   requireMetaLeadFormsAccess,
   requireRedditCustomAudiencesAccess,
 } from '../middleware/require-marketing-access.middleware';
-import { canSetLinkedInVideoAds } from '../services/campaign-service.service';
+import { canSetLinkedInDocument, canSetLinkedInVideoAds } from '../services/campaign-service.service';
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
@@ -39,9 +40,9 @@ import { canSetLinkedInVideoAds } from '../services/campaign-service.service';
 function handleCreativeAssetParseError(err: unknown, req: Request, _res: Response, next: NextFunction): void {
   if (err && typeof err === 'object' && (err as { type?: string }).type === 'entity.too.large') {
     // Each type has its own parser and limit (see the route), so the message names the one that was exceeded.
-    const video = req.is(CREATIVE_ASSET_VIDEO_MIME_TYPE) === CREATIVE_ASSET_VIDEO_MIME_TYPE;
+    const declared = [CREATIVE_ASSET_VIDEO_MIME_TYPE, CREATIVE_ASSET_DOCUMENT_MIME_TYPE].find((type) => req.is(type) === type);
     next(
-      new MicroserviceError(video ? CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE : CREATIVE_ASSET_TOO_LARGE_MESSAGE, 413, 'PAYLOAD_TOO_LARGE', {
+      new MicroserviceError(creativeAssetTooLargeMessage(declared), 413, 'PAYLOAD_TOO_LARGE', {
         operation: 'campaign_upload_creative_asset',
         service: 'campaign_controller',
         path: req.path,
@@ -173,10 +174,12 @@ router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetr
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
 // An image or video for the brief, stored by campaign-service and named by asset id in a platform's
 // creative config — `redditConfig.imageAssetId` (decision D3), the Google creative fields, and a
-// LinkedIn video ad's `videoAssetId` (#5764 row 18). The body is the raw bytes, buffered here so the
-// upstream JSON body can be sent with a declared Content-Length. One parser per kind, each with its
-// own limit: a PNG/JPEG at most CREATIVE_ASSET_MAX_BYTES, an MP4 at most CREATIVE_ASSET_VIDEO_MAX_BYTES.
-// Each parser skips a body of the other's type, and only this route gets the larger video limit.
+// LinkedIn video ad's `videoAssetId` (#5764 row 18), and a LinkedIn document ad's PDF `documentAssetId`
+// (campaign-service#665). The body is the raw bytes, buffered here so the upstream JSON body can be sent
+// with a declared Content-Length. One parser per kind, each with its own limit: a PNG/JPEG at most
+// CREATIVE_ASSET_MAX_BYTES, an MP4 at most CREATIVE_ASSET_VIDEO_MAX_BYTES, a PDF at most
+// CREATIVE_ASSET_DOCUMENT_MAX_BYTES. Each parser skips a body of the others' types, and only this route
+// gets the larger limits.
 router.post(
   '/brief/creative-assets',
   express.raw({ type: [...CREATIVE_ASSET_MIME_TYPES], limit: CREATIVE_ASSET_MAX_BYTES }),
@@ -185,6 +188,12 @@ router.post(
   express.raw({
     type: (req) => canSetLinkedInVideoAds() && (req as Request).is(CREATIVE_ASSET_VIDEO_MIME_TYPE) === CREATIVE_ASSET_VIDEO_MIME_TYPE,
     limit: CREATIVE_ASSET_VIDEO_MAX_BYTES,
+  }),
+  // Read only while a document ad can be used (`canSetLinkedInDocument`); otherwise the body is never buffered and the
+  // controller answers the 415.
+  express.raw({
+    type: (req) => canSetLinkedInDocument() && (req as Request).is(CREATIVE_ASSET_DOCUMENT_MIME_TYPE) === CREATIVE_ASSET_DOCUMENT_MIME_TYPE,
+    limit: CREATIVE_ASSET_DOCUMENT_MAX_BYTES,
   }),
   handleCreativeAssetParseError,
   (req: Request, res: Response, next: NextFunction) => campaignController.uploadCreativeAsset(req, res, next)

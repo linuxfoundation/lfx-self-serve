@@ -890,6 +890,21 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CAROUSEL:
     value:
 
+  # LinkedIn document ads (linuxfoundation/lfx-v2-campaign-service#665): accepts `linkedInConfig.format: "document"` with
+  # `linkedInConfig.documentAssetId` (a PDF stored for the brief), `documentTitle` (at most 70 characters) and
+  # `documentIntroText` (at most 600), and admits a PDF (`application/pdf`, at most 30 MiB, its own parser) on the
+  # creative-asset upload. A document is an engagement ad, or a gated lead generation ad with a form; website visits,
+  # conversions and manual bids are refused. A document-only create needs no registration URL on the brief.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with `LINKEDIN_ADS_DOCUMENT_ENABLED`
+  # on, the create pipeline on, and LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS on (the PDF is a brief asset). Off (the
+  # default), the create route refuses the fields with a 400, never dropping them, and the upload route refuses a PDF
+  # without reading its body. Fields only, so turning it back off strands nothing (a stored PDF stays listed in the
+  # library). Order: set campaign-service's flag and pass its paused document probe, THEN this. Same accepted values as
+  # the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DOCUMENT:
+    value:
+
   # Offers Meta ad set audience targeting on the Implement tab (#5905), sent as
   # `metaConfig.targeting`: age range, gender and Advantage+ audience for every campaign manager, and
   # included/excluded custom audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only for

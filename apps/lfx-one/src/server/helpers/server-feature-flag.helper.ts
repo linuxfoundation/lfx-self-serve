@@ -538,6 +538,21 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInCarousel = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CAROUSEL',
 
   /**
+   * LinkedIn document ads (linuxfoundation/lfx-v2-campaign-service#665): accept `linkedInConfig.format` `document` with
+   * `linkedInConfig.documentAssetId` (a PDF stored for the brief), `documentTitle` and `documentIntroText`, and admit a PDF
+   * (`application/pdf`, at most 30 MiB) on the creative-asset upload.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with `LINKEDIN_ADS_DOCUMENT_ENABLED`
+   * on, since campaign-service refuses the fields with a 400 otherwise, and is only meaningful while the LinkedIn creative
+   * asset path is on (`canUseLinkedInCreativeAssets`): the PDF is a brief asset, and the legacy creator would make a
+   * single-image campaign instead. Off (the default), the create route refuses the fields with a 400, never dropping them,
+   * and the upload route refuses a PDF without reading it. Keep it off until campaign-service's paused document probe has
+   * passed. Request fields only, so flipping it back strands nothing (a stored PDF stays listed). Same accepted values as
+   * the flags above.
+   */
+  CampaignServiceLinkedInDocument = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DOCUMENT',
+
+  /**
    * Offers Meta ad set audience targeting on the Implement tab (#5905), sent as `metaConfig.targeting`:
    * age range, gender and Advantage+ audience to every campaign manager, and included/excluded custom
    * audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only to a caller holding

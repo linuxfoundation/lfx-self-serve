@@ -37,6 +37,7 @@ import {
   googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
+  CREATIVE_ASSET_DOCUMENT_MIME_TYPE,
   CREATIVE_ASSET_VIDEO_MIME_TYPE,
   isCreativeAssetMimeType,
   isGoogleAdsServableUrl,
@@ -140,6 +141,7 @@ import type {
   RedditAdVariant,
   RedditBriefCopy,
   StoredCreativeAsset,
+  StoredCreativeDocument,
   StoredCreativeVideo,
   CampaignServiceLinkedInTargetingEntities,
   CampaignServiceMetaTargetingSearch,
@@ -1039,6 +1041,17 @@ export function canSetLinkedInCarousel(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may be a document ad: `format: "document"`, `documentAssetId`, `documentTitle` and
+ * `documentIntroText` (campaign-service#665), and whether the creative-asset upload takes a PDF. Needs the LinkedIn
+ * creative asset path (`canUseLinkedInCreativeAssets`, which includes the campaign-service create path), since the PDF is
+ * an asset stored for the brief, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DOCUMENT`, which follows campaign-service's own
+ * `LINKEDIN_ADS_DOCUMENT_ENABLED`: campaign-service refuses the fields while that is off, and the legacy creator ignores them.
+ */
+export function canSetLinkedInDocument(): boolean {
+  return canUseLinkedInCreativeAssets() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInDocument);
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -1097,8 +1110,11 @@ export function creativeAssetUploadBody(contentType: CreativeAssetUploadMimeType
   return body;
 }
 
-/** A stored MP4 as the library lists it (#5764 row 18), or `null` when the entry is not one of this brief's. */
-function toStoredCreativeVideo(asset: CampaignServiceCreativeAsset | undefined, briefId: string): StoredCreativeVideo | null {
+/**
+ * A stored MP4 (#5764 row 18) or PDF (campaign-service#665) as the library lists it, or `null` when the entry is not one
+ * of this brief's. Neither records a file name or pixel size.
+ */
+function toStoredCreativeFile(asset: CampaignServiceCreativeAsset | undefined, briefId: string): StoredCreativeVideo | StoredCreativeDocument | null {
   const usable =
     typeof asset?.id === 'string' &&
     asset.id.length > 0 &&
@@ -1308,6 +1324,7 @@ export class CampaignServiceClient {
         linkedInConversionsEnabled: canSetLinkedInConversions(),
         linkedInLeadGenEnabled: canSetLinkedInLeadGen(),
         linkedInCarouselEnabled: canSetLinkedInCarousel(),
+        linkedInDocumentEnabled: canSetLinkedInDocument(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1404,6 +1421,7 @@ export class CampaignServiceClient {
       linkedInConversionsEnabled: canSetLinkedInConversions(),
       linkedInLeadGenEnabled: canSetLinkedInLeadGen(),
       linkedInCarouselEnabled: canSetLinkedInCarousel(),
+      linkedInDocumentEnabled: canSetLinkedInDocument(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -2910,16 +2928,23 @@ export class CampaignServiceClient {
     // A LinkedIn video (#5764 row 18) shares the brief's store but is no image any image slot can use, so it is listed
     // apart, as `videos`, where it can be deleted to free the quota. `count` and `bytesUsed` stay upstream's.
     const isVideo = (asset: CampaignServiceCreativeAsset | undefined) => asset?.mime_type === CREATIVE_ASSET_VIDEO_MIME_TYPE;
-    const assets = countable ? list.assets.filter((asset) => !isVideo(asset)).map((asset) => toStoredCreativeAsset(asset, briefId)) : [];
-    // An unusable video entry is dropped and logged rather than failing the read: the images every slot needs come first.
-    const listedVideos = countable ? list.assets.filter(isVideo).map((asset) => toStoredCreativeVideo(asset, briefId)) : [];
-    const videos = listedVideos.filter((video): video is StoredCreativeVideo => video !== null);
-    if (videos.length < listedVideos.length) {
-      logger.warning(req, 'list_creative_assets', 'Upstream listed a video entry this app cannot use; it is left out', {
-        brief_id: briefId,
-        dropped: listedVideos.length - videos.length,
-      });
-    }
+    // Likewise a PDF (campaign-service#665), which only a LinkedIn document ad uses, listed as `documents`.
+    const isDocument = (asset: CampaignServiceCreativeAsset | undefined) => asset?.mime_type === CREATIVE_ASSET_DOCUMENT_MIME_TYPE;
+    const assets = countable ? list.assets.filter((asset) => !isVideo(asset) && !isDocument(asset)).map((asset) => toStoredCreativeAsset(asset, briefId)) : [];
+    // An unusable video or PDF entry is dropped and logged rather than failing the read: the images every slot needs come first.
+    const listedFiles = (kind: string, isKind: (asset: CampaignServiceCreativeAsset | undefined) => boolean) => {
+      const listed = countable ? list.assets.filter(isKind).map((asset) => toStoredCreativeFile(asset, briefId)) : [];
+      const usable = listed.filter((file): file is StoredCreativeVideo | StoredCreativeDocument => file !== null);
+      if (usable.length < listed.length) {
+        logger.warning(req, 'list_creative_assets', `Upstream listed a ${kind} entry this app cannot use; it is left out`, {
+          brief_id: briefId,
+          dropped: listed.length - usable.length,
+        });
+      }
+      return usable;
+    };
+    const videos = listedFiles('video', isVideo);
+    const documents = listedFiles('document', isDocument);
     if (!countable || assets.some((asset) => asset === null)) {
       logger.warning(req, 'list_creative_assets', 'Upstream answered the asset list with an unusable body', {
         brief_id: briefId,
@@ -2937,6 +2962,7 @@ export class CampaignServiceClient {
     return {
       assets: assets as StoredCreativeAsset[],
       videos,
+      documents,
       count: list.count,
       countLimit: list.count_limit,
       bytesUsed: list.bytes_used,
