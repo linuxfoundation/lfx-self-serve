@@ -692,11 +692,17 @@
     margin-left: auto;
   }
 
-  // The profile redesign's two links share the strip evenly, centred, with a hairline between them.
+  // The profile redesign's two links, centred, with a hairline between them: Profile fits its label and Account & Settings
+  // takes the rest of the strip, as designed (#6290).
   .lfxn__me-action--split {
     flex: 1 1 0;
     justify-content: center;
     padding: 0 6px;
+  }
+
+  .lfxn__me-action--fit {
+    flex: 0 0 auto;
+    padding: 0 12px;
   }
 
   .lfxn__me-sep {
